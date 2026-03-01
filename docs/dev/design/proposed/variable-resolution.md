@@ -151,7 +151,7 @@ validateVar decl val = do
 
 ### Resolution with Exports
 
-```
+```text
 Given: Module C depends on [Module A, Module B]
 
 Module A vars:    {project.name, project.version, internal.flag}
@@ -216,7 +216,7 @@ evalExpr vars = \case
 
 Expressions use a simple infix syntax:
 
-```
+```ebnf
 expr     = or_expr
 or_expr  = and_expr ("||" and_expr)*
 and_expr = not_expr ("&&" not_expr)*
@@ -233,7 +233,7 @@ value    = quoted_string | bare_word
 
 The `seihou vars <module> --explain` command shows resolution provenance:
 
-```
+```text
 Variable Resolution for haskell-base:
 
   project.name     = "my-app"          [CLI: --var project.name=my-app]

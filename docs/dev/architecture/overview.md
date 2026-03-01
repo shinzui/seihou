@@ -14,7 +14,7 @@ This document describes the end-to-end system architecture: the execution pipeli
 
 ## Execution Pipeline
 
-```
+```text
 CLI input
   │
   ▼
@@ -109,7 +109,7 @@ type AppEffects =
 
 Seihou is organized as a multi-package Cabal workspace:
 
-```
+```text
 seihou/
 ├── cabal.project                  # Workspace definition
 ├── flake.nix                      # Nix flake for dev environment + CI

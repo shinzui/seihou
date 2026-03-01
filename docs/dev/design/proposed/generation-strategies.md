@@ -115,7 +115,7 @@ Placeholder substitution with no logic. The engine scans for `{{var.name}}` patt
 
 ### Placeholder Syntax
 
-```
+```ebnf
 placeholder = "{{" path "}}"
 path        = segment ("." segment)*
 segment     = [a-zA-Z][a-zA-Z0-9_-]*
@@ -123,7 +123,7 @@ escaped     = "\{{"                     -- Literal {{ in output
 ```
 
 Examples:
-```
+```text
 # {{project.name}}
 
 Version: {{project.version}}
@@ -207,7 +207,7 @@ ${if vars.enableHLS then "          pkgs.haskell-language-server" else ""}
 
 ### Evaluation Pipeline
 
-```
+```text
 DhallText source file
        │
        ▼
@@ -277,7 +277,7 @@ Example: `package.json.gen` → strategy is Structured, output format is JSON (f
 
 ### Evaluation Pipeline
 
-```
+```text
 Structured source file (.gen)
        │
        ▼

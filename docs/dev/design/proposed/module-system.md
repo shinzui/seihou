@@ -35,7 +35,7 @@ Seihou modules solve these problems by making every input, output, and dependenc
 
 A module is a directory with this layout:
 
-```
+```text
 <module-name>/
 ├── module.dhall          # Module definition (required)
 ├── schema/               # Dhall type definitions (optional)
@@ -222,7 +222,7 @@ The first match wins. Explicit paths (`seihou run ./path/to/module`) bypass disc
 
 ### Loading Pipeline
 
-```
+```text
 module.dhall path
        │
        ▼

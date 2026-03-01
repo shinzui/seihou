@@ -84,7 +84,7 @@ data ValidateOpts = ValidateOpts
 
 Initialize Seihou configuration directories.
 
-```
+```sh
 seihou init
 ```
 
@@ -98,7 +98,7 @@ seihou init
 **Flags**: None
 
 **Output**:
-```
+```text
 Initialized Seihou configuration at ~/.config/seihou/
   Created: config.dhall (global defaults)
   Created: modules/ (user modules)
@@ -119,7 +119,7 @@ Initialized Seihou configuration at ~/.config/seihou/
 
 Run one or more modules to generate or update a project.
 
-```
+```sh
 seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] [--diff] [--force] [--no-commands]
 ```
 
@@ -148,7 +148,7 @@ seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] 
 11. Update/create manifest
 
 **Output (plan view)**:
-```
+```text
 Generation Plan (haskell-base + nix-flake):
 
   Variables:
@@ -184,7 +184,7 @@ Generation Plan (haskell-base + nix-flake):
 
 Inspect resolved variable values for a module.
 
-```
+```sh
 seihou vars <module> [--explain] [--var key=value...]
 ```
 
@@ -196,7 +196,7 @@ seihou vars <module> [--explain] [--var key=value...]
 | `--var key=value` | No | Provide values for resolution context |
 
 **Output (default)**:
-```
+```text
 Variables for haskell-base:
 
   project.name     = (required, no default)
@@ -205,7 +205,7 @@ Variables for haskell-base:
 ```
 
 **Output (--explain with --var)**:
-```
+```text
 seihou vars haskell-base --explain --var project.name=my-app
 
 Variables for haskell-base:
@@ -227,7 +227,7 @@ Variables for haskell-base:
 
 Install a module from a git repository.
 
-```
+```sh
 seihou install <git-url> [--name <name>]
 ```
 
@@ -244,7 +244,7 @@ seihou install <git-url> [--name <name>]
 4. Name defaults to the repository name (last path segment without `.git`)
 
 **Output**:
-```
+```text
 Installing module from https://github.com/user/haskell-nix-module.git...
   Cloned repository
   Validated module definition
@@ -266,7 +266,7 @@ Module available as: haskell-nix-module
 
 Show the manifest state for the current project.
 
-```
+```sh
 seihou status
 ```
 
@@ -276,7 +276,7 @@ seihou status
 3. Display applied modules, tracked files with status, and variable values
 
 **Output**:
-```
+```text
 Seihou Status:
 
 Applied modules:
@@ -295,7 +295,7 @@ Variables: 4 resolved
 ```
 
 **Output (no manifest)**:
-```
+```sh
 No Seihou manifest found. Run 'seihou run <module>' to generate a project.
 ```
 
@@ -311,7 +311,7 @@ No Seihou manifest found. Run 'seihou run <module>' to generate a project.
 
 Scaffold a new module directory with boilerplate.
 
-```
+```sh
 seihou new-module <name> [--path <directory>]
 ```
 
@@ -322,7 +322,7 @@ seihou new-module <name> [--path <directory>]
 | `--path <dir>` | No | Output directory (default: `./<name>/`) |
 
 **What it generates**:
-```
+```text
 <name>/
 ├── module.dhall          # Boilerplate module definition
 ├── schema/
@@ -381,7 +381,7 @@ in Module::{
 
 Validate that a module directory is well-formed.
 
-```
+```sh
 seihou validate-module [<path>]
 ```
 
@@ -401,7 +401,7 @@ seihou validate-module [<path>]
 8. `when` expressions parse successfully
 
 **Output (valid)**:
-```
+```text
 Validating module at ./haskell-base/...
 
   ✓ module.dhall evaluates successfully
@@ -416,7 +416,7 @@ Module is valid.
 ```
 
 **Output (invalid)**:
-```
+```text
 Validating module at ./broken-module/...
 
   ✓ module.dhall evaluates successfully
