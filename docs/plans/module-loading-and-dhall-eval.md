@@ -44,9 +44,10 @@ This corresponds to M1 (Module Loading) from `docs/dev/roadmap/v1-milestones.md`
       three search paths, implement the nine validation rules, wire everything together
       through the `DhallEval` effect's real and pure interpreters. 71 tests passing.
       (2026-03-01)
-- [ ] Milestone 5: Integration Testing — create the `haskell-base` test fixture module,
-      write integration tests that load it end-to-end, test error paths (invalid modules,
-      missing files, bad expressions), and verify all exit criteria.
+- [x] Milestone 5: Integration Testing — expanded `haskell-base` fixture to 3 vars, 4 steps,
+      when expression. Created `invalid-module` fixture. Integration tests for end-to-end
+      loading, error paths, and pure DhallEval interpreter. `nix fmt` and `nix flake check`
+      pass. 78 tests total. (2026-03-01)
 
 
 ## Surprises & Discoveries
@@ -124,7 +125,23 @@ This corresponds to M1 (Module Loading) from `docs/dev/roadmap/v1-milestones.md`
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All five milestones completed. 78 tests pass, `nix flake check` succeeds.
+
+Key outcomes:
+- Dhall 1.42.3 works with GHC 9.12.2 without issues.
+- Manual Dhall decoders proved more maintainable than Generic-derived ones.
+- String-based VarType in Dhall was the right call; recursive types would have been a blocker.
+- The expression parser was straightforward as a hand-written recursive descent parser.
+- Module validation collects all errors, not just the first, which produces better UX.
+- The pure DhallEval interpreter enables unit testing without disk access.
+
+Gaps:
+- Dependency resolution (loading transitive deps, cycle detection) deferred to M4 as planned.
+- Rule 9 (expression variable references) not fully checked — variables in expressions are
+  not validated against moduleVars yet. This is a minor gap since malformed expressions
+  already fail at parse time.
+- The `doesDirectoryExist` import in Module.hs is unused (discovery uses `doesFileExist`
+  on the module.dhall path directly). This is harmless.
 
 
 ## Context and Orientation

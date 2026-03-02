@@ -233,8 +233,8 @@ spec = do
       case result of
         Right m -> do
           moduleName m `shouldBe` "haskell-base"
-          length (moduleVars m) `shouldBe` 2
-          length (moduleSteps m) `shouldBe` 3
+          length (moduleVars m) `shouldBe` 3
+          length (moduleSteps m) `shouldBe` 4
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
 
     it "returns ModuleNotFound for nonexistent module" $ do

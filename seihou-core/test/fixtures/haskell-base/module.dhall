@@ -15,6 +15,13 @@
     , required = False
     , validation = None Text
     }
+  , { name = "license"
+    , type = "text"
+    , default = Some "MIT"
+    , description = Some "License type"
+    , required = False
+    , validation = None Text
+    }
   ]
 , exports = [ { var = "project.name", alias = None Text } ]
 , prompts =
@@ -39,6 +46,11 @@
     , src = "LICENSE"
     , dest = "LICENSE"
     , when = Some "IsSet license"
+    }
+  , { strategy = "template"
+    , src = "package.cabal.tpl"
+    , dest = "{{project.name}}.cabal"
+    , when = None Text
     }
   ]
 , dependencies = [] : List Text

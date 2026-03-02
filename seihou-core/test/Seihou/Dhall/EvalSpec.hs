@@ -30,9 +30,9 @@ spec = do
         Right m -> do
           moduleName m `shouldBe` ModuleName "haskell-base"
           moduleDescription m `shouldBe` Just "A Haskell project template"
-          length (moduleVars m) `shouldBe` 2
+          length (moduleVars m) `shouldBe` 3
           length (modulePrompts m) `shouldBe` 1
-          length (moduleSteps m) `shouldBe` 3
+          length (moduleSteps m) `shouldBe` 4
           length (moduleExports m) `shouldBe` 1
           moduleDependencies m `shouldBe` []
 
