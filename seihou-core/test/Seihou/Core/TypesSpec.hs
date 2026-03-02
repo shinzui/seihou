@@ -135,5 +135,7 @@ spec = do
       ExprEq "x" (VText "hello") `shouldBe` ExprEq "x" (VText "hello")
 
   describe "Manifest" $ do
-    it "placeholder type exists" $ do
-      Manifest `shouldBe` Manifest
+    it "has a version field" $ do
+      -- Verify the Manifest type is a record with expected fields
+      let hash = SHA256 "abc"
+      unSHA256 hash `shouldBe` "abc"

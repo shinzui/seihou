@@ -14,6 +14,15 @@ module Seihou.Core.Types
     Operation (..),
     ModuleLoadError (..),
     Manifest (..),
+    AppliedModule (..),
+    FileRecord (..),
+    SHA256 (..),
+    DiffResult (..),
+    PlannedFile (..),
+    ModifiedFile (..),
+    ConflictFile (..),
+    OrphanedFile (..),
+    ConflictResolution (..),
     VarSource (..),
     ResolvedVar (..),
     VarError (..),
@@ -21,8 +30,10 @@ module Seihou.Core.Types
   )
 where
 
+import Data.Map.Strict (Map)
 import Data.String (IsString)
 import Data.Text (Text)
+import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 
 -- | A module identifier such as @"haskell-base"@.
@@ -190,7 +201,89 @@ data PlaceholderError
   | MalformedPlaceholder Text Int
   deriving stock (Eq, Show, Generic)
 
--- | Placeholder manifest type. Will be expanded in M5 with file records,
--- hashes, and timestamps.
+-- | Tracks the state of generated files for incremental re-generation
+-- and conflict detection. Stored at @.seihou/manifest.json@.
 data Manifest = Manifest
+  { manifestVersion :: Int,
+    manifestGenAt :: UTCTime,
+    manifestModules :: [AppliedModule],
+    manifestVars :: Map VarName Text,
+    manifestFiles :: Map FilePath FileRecord
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A module that has been applied to generate files.
+data AppliedModule = AppliedModule
+  { appliedName :: ModuleName,
+    appliedSource :: FilePath,
+    appliedAt :: UTCTime
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A record of a generated file, stored in the manifest.
+data FileRecord = FileRecord
+  { fileHash :: SHA256,
+    fileModule :: ModuleName,
+    fileStrategy :: Strategy,
+    fileGeneratedAt :: UTCTime
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A SHA256 content hash, stored as a hex-encoded text string.
+newtype SHA256 = SHA256 {unSHA256 :: Text}
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving newtype (IsString)
+
+-- | Result of the three-state diff: manifest vs plan vs disk.
+data DiffResult = DiffResult
+  { diffNew :: [PlannedFile],
+    diffModified :: [ModifiedFile],
+    diffUnchanged :: [FilePath],
+    diffConflict :: [ConflictFile],
+    diffOrphaned :: [OrphanedFile]
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A file that exists in the plan but not in the manifest or on disk.
+data PlannedFile = PlannedFile
+  { plannedPath :: FilePath,
+    plannedModule :: ModuleName,
+    plannedContent :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A file that has changed between the manifest and the plan,
+-- but the user has not modified the disk copy.
+data ModifiedFile = ModifiedFile
+  { modifiedPath :: FilePath,
+    modifiedModule :: ModuleName,
+    modifiedOldHash :: SHA256,
+    modifiedNewContent :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A file where the user has modified the disk copy since it was generated.
+data ConflictFile = ConflictFile
+  { conflictPath :: FilePath,
+    conflictModule :: ModuleName,
+    conflictManifest :: SHA256,
+    conflictDisk :: SHA256,
+    conflictPlan :: Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A file that exists in the manifest but not in the current plan
+-- (the module that generated it was removed or no longer produces it).
+data OrphanedFile = OrphanedFile
+  { orphanedPath :: FilePath,
+    orphanedModule :: ModuleName
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | How to resolve a conflict when a user has modified a generated file.
+data ConflictResolution
+  = AcceptNew
+  | KeepCurrent
+  | Skip
+  | Abort
   deriving stock (Eq, Show, Generic)

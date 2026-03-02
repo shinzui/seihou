@@ -22,20 +22,33 @@ library
     Seihou.Effect.DhallEval
     Seihou.Effect.DhallEvalInterp
     Seihou.Effect.Filesystem
+    Seihou.Effect.FilesystemInterp
+    Seihou.Effect.FilesystemPure
     Seihou.Effect.Logger
     Seihou.Effect.ManifestStore
+    Seihou.Effect.ManifestStoreInterp
+    Seihou.Effect.ManifestStorePure
     Seihou.Effect.Process
+    Seihou.Engine.Diff
+    Seihou.Engine.Execute
     Seihou.Engine.Plan
     Seihou.Engine.Template
+    Seihou.Manifest.Hash
+    Seihou.Manifest.Types
 
   build-depends:
+    aeson >=2.1 && <3,
     base >=4.18 && <5,
+    base16-bytestring >=1.0 && <2,
+    bytestring >=0.11 && <1,
     containers >=0.6 && <1,
+    cryptohash-sha256 >=0.11 && <1,
     dhall >=1.42 && <2,
     directory >=1.3 && <2,
     effectful-core >=2.4 && <3,
     filepath >=1.4 && <2,
     text >=2.0 && <3,
+    time >=1.12 && <2,
 
 test-suite seihou-core-test
   type: exitcode-stdio-1.0
@@ -49,13 +62,20 @@ test-suite seihou-core-test
     Seihou.Core.TypesSpec
     Seihou.Core.VariableSpec
     Seihou.Dhall.EvalSpec
+    Seihou.Effect.FilesystemSpec
+    Seihou.Effect.ManifestStoreSpec
+    Seihou.Engine.DiffSpec
+    Seihou.Engine.ExecuteSpec
     Seihou.Engine.PlanSpec
     Seihou.Engine.TemplateSpec
+    Seihou.Integration.ExecutionSpec
     Seihou.Integration.GenerationSpec
     Seihou.Integration.ModuleLoadSpec
+    Seihou.Manifest.TypesSpec
 
   build-depends:
     base >=4.18 && <5,
+    bytestring >=0.11 && <1,
     containers >=0.6 && <1,
     dhall >=1.42 && <2,
     directory >=1.3 && <2,
@@ -67,3 +87,4 @@ test-suite seihou-core-test
     tasty-hspec >=1.2 && <2,
     temporary >=1.3 && <2,
     text >=2.0 && <3,
+    time >=1.12 && <2,
