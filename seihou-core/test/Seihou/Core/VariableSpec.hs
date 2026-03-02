@@ -168,7 +168,7 @@ spec = do
       let decls = [textVar "project.name" True Nothing Nothing]
           cli = Map.fromList [("project.name", "my-app")]
           env = Map.empty
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved -> do
           let rv = resolved Map.! "project.name"
           resolvedValue rv `shouldBe` VText "my-app"
@@ -179,7 +179,7 @@ spec = do
       let decls = [textVar "project.name" True Nothing Nothing]
           cli = Map.empty
           env = Map.fromList [("SEIHOU_VAR_PROJECT_NAME", "env-app")]
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved -> do
           let rv = resolved Map.! "project.name"
           resolvedValue rv `shouldBe` VText "env-app"
@@ -190,7 +190,7 @@ spec = do
       let decls = [textVar "project.version" False (Just (VText "0.1.0.0")) Nothing]
           cli = Map.empty
           env = Map.empty
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved -> do
           let rv = resolved Map.! "project.version"
           resolvedValue rv `shouldBe` VText "0.1.0.0"
@@ -201,7 +201,7 @@ spec = do
       let decls = [textVar "project.name" True Nothing Nothing]
           cli = Map.empty
           env = Map.empty
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Left errs -> errs `shouldBe` [MissingRequiredVar "project.name"]
         Right _ -> expectationFailure "Expected Left"
 
@@ -209,7 +209,7 @@ spec = do
       let decls = [textVar "project.name" True Nothing Nothing]
           cli = Map.fromList [("project.name", "cli-app")]
           env = Map.fromList [("SEIHOU_VAR_PROJECT_NAME", "env-app")]
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved -> do
           resolvedValue (resolved Map.! "project.name") `shouldBe` VText "cli-app"
           resolvedSource (resolved Map.! "project.name") `shouldBe` FromCLI
@@ -219,7 +219,7 @@ spec = do
       let decls = [textVar "project.name" True (Just (VText "default-app")) Nothing]
           cli = Map.empty
           env = Map.fromList [("SEIHOU_VAR_PROJECT_NAME", "env-app")]
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved -> do
           resolvedValue (resolved Map.! "project.name") `shouldBe` VText "env-app"
           resolvedSource (resolved Map.! "project.name") `shouldBe` FromEnv "SEIHOU_VAR_PROJECT_NAME"
@@ -229,7 +229,7 @@ spec = do
       let decls = [textVar "project.name" True (Just (VText "default-app")) Nothing]
           cli = Map.fromList [("project.name", "cli-app")]
           env = Map.empty
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved ->
           resolvedValue (resolved Map.! "project.name") `shouldBe` VText "cli-app"
         Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
@@ -242,7 +242,7 @@ spec = do
             ]
           cli = Map.fromList [("project.name", "my-app")]
           env = Map.fromList [("SEIHOU_VAR_LICENSE", "BSD3")]
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved -> do
           resolvedValue (resolved Map.! "project.name") `shouldBe` VText "my-app"
           resolvedSource (resolved Map.! "project.name") `shouldBe` FromCLI
@@ -256,7 +256,7 @@ spec = do
       let decls = [boolVar "enable.tests" True Nothing]
           cli = Map.fromList [("enable.tests", "true")]
           env = Map.empty
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved ->
           resolvedValue (resolved Map.! "enable.tests") `shouldBe` VBool True
         Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
@@ -265,7 +265,7 @@ spec = do
       let decls = [intVar "port" True Nothing Nothing]
           cli = Map.empty
           env = Map.fromList [("SEIHOU_VAR_PORT", "8080")]
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved ->
           resolvedValue (resolved Map.! "port") `shouldBe` VInt 8080
         Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
@@ -274,7 +274,7 @@ spec = do
       let decls = [intVar "port" True Nothing Nothing]
           cli = Map.fromList [("port", "abc")]
           env = Map.empty
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Left errs -> errs `shouldBe` [CoercionFailed "port" VTInt "abc"]
         Right _ -> expectationFailure "Expected Left"
 
@@ -282,7 +282,7 @@ spec = do
       let decls = [textVar "project.name" True Nothing (Just (ValPattern "[a-z][a-z0-9-]*"))]
           cli = Map.fromList [("project.name", "MyBad")]
           env = Map.empty
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Left (err : _) -> case err of
           ValidationFailed _ _ -> pure ()
           other -> expectationFailure ("Expected ValidationFailed, got: " <> show other)
@@ -293,7 +293,7 @@ spec = do
       let decls = [choiceVar "license" True ["MIT", "BSD3", "Apache"] Nothing]
           cli = Map.fromList [("license", "MIT")]
           env = Map.empty
-      case resolveVariables decls cli env of
+      case resolveVariables decls cli env Map.empty Map.empty Map.empty of
         Right resolved ->
           resolvedValue (resolved Map.! "license") `shouldBe` VText "MIT"
         Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
@@ -320,3 +320,162 @@ spec = do
               [("license", ResolvedVar (VText "MIT") (FromEnv "SEIHOU_VAR_LICENSE") decl)]
           output = formatExplain resolved
       T.isInfixOf "from env SEIHOU_VAR_LICENSE" output `shouldBe` True
+
+    it "formats local config source" $ do
+      let decl = textVar "license" True Nothing Nothing
+          resolved =
+            Map.fromList
+              [("license", ResolvedVar (VText "MIT") FromLocalConfig decl)]
+          output = formatExplain resolved
+      T.isInfixOf "from local config" output `shouldBe` True
+
+    it "formats namespace config source" $ do
+      let decl = textVar "haskell.ghc" True Nothing Nothing
+          resolved =
+            Map.fromList
+              [("haskell.ghc", ResolvedVar (VText "9.12.2") (FromNamespaceConfig "haskell") decl)]
+          output = formatExplain resolved
+      T.isInfixOf "from namespace haskell config" output `shouldBe` True
+
+    it "formats global config source" $ do
+      let decl = textVar "license" True Nothing Nothing
+          resolved =
+            Map.fromList
+              [("license", ResolvedVar (VText "MIT") FromGlobalConfig decl)]
+          output = formatExplain resolved
+      T.isInfixOf "from global config" output `shouldBe` True
+
+  describe "resolveVariables (six-layer precedence)" $ do
+    it "resolves from local config" $ do
+      let decls = [textVar "license" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+          local = Map.fromList [("license", "MIT")]
+      case resolveVariables decls cli env local Map.empty Map.empty of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "MIT"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromLocalConfig
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "resolves from namespace config" $ do
+      let decls = [textVar "haskell.ghc" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+          nsCfg = Map.fromList [("haskell.ghc", "9.12.2")]
+      case resolveVariables decls cli env Map.empty nsCfg Map.empty of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "haskell.ghc") `shouldBe` VText "9.12.2"
+          resolvedSource (resolved Map.! "haskell.ghc") `shouldBe` FromNamespaceConfig ""
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "resolves from global config" $ do
+      let decls = [textVar "license" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+          global = Map.fromList [("license", "MIT")]
+      case resolveVariables decls cli env Map.empty Map.empty global of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "MIT"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromGlobalConfig
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "local config overrides global config" $ do
+      let decls = [textVar "license" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+          local = Map.fromList [("license", "BSD3")]
+          global = Map.fromList [("license", "MIT")]
+      case resolveVariables decls cli env local Map.empty global of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "BSD3"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromLocalConfig
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "namespace config overrides global config" $ do
+      let decls = [textVar "license" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+          nsCfg = Map.fromList [("license", "Apache")]
+          global = Map.fromList [("license", "MIT")]
+      case resolveVariables decls cli env Map.empty nsCfg global of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "Apache"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromNamespaceConfig ""
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "local config overrides namespace config" $ do
+      let decls = [textVar "license" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+          local = Map.fromList [("license", "GPL")]
+          nsCfg = Map.fromList [("license", "Apache")]
+      case resolveVariables decls cli env local nsCfg Map.empty of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "GPL"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromLocalConfig
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "env overrides local config" $ do
+      let decls = [textVar "license" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.fromList [("SEIHOU_VAR_LICENSE", "env-license")]
+          local = Map.fromList [("license", "local-license")]
+      case resolveVariables decls cli env local Map.empty Map.empty of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "env-license"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromEnv "SEIHOU_VAR_LICENSE"
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "CLI overrides all config layers" $ do
+      let decls = [textVar "license" True Nothing Nothing]
+          cli = Map.fromList [("license", "cli-license")]
+          env = Map.fromList [("SEIHOU_VAR_LICENSE", "env-license")]
+          local = Map.fromList [("license", "local-license")]
+          nsCfg = Map.fromList [("license", "ns-license")]
+          global = Map.fromList [("license", "global-license")]
+      case resolveVariables decls cli env local nsCfg global of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "cli-license"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromCLI
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "global config overrides module default" $ do
+      let decls = [textVar "license" False (Just (VText "default-license")) Nothing]
+          cli = Map.empty
+          env = Map.empty
+          global = Map.fromList [("license", "global-license")]
+      case resolveVariables decls cli env Map.empty Map.empty global of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "global-license"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromGlobalConfig
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "resolves mixed sources across multiple variables" $ do
+      let decls =
+            [ textVar "project.name" True Nothing Nothing,
+              textVar "license" False (Just (VText "MIT")) Nothing,
+              textVar "haskell.ghc" False (Just (VText "9.8.1")) Nothing
+            ]
+          cli = Map.fromList [("project.name", "cli-app")]
+          env = Map.empty
+          local = Map.fromList [("license", "BSD3")]
+          nsCfg = Map.fromList [("haskell.ghc", "9.12.2")]
+      case resolveVariables decls cli env local nsCfg Map.empty of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "project.name") `shouldBe` VText "cli-app"
+          resolvedSource (resolved Map.! "project.name") `shouldBe` FromCLI
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "BSD3"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromLocalConfig
+          resolvedValue (resolved Map.! "haskell.ghc") `shouldBe` VText "9.12.2"
+          resolvedSource (resolved Map.! "haskell.ghc") `shouldBe` FromNamespaceConfig ""
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "coerces config values through type system" $ do
+      let decls = [boolVar "enable.tests" True Nothing]
+          cli = Map.empty
+          env = Map.empty
+          local = Map.fromList [("enable.tests", "true")]
+      case resolveVariables decls cli env local Map.empty Map.empty of
+        Right resolved ->
+          resolvedValue (resolved Map.! "enable.tests") `shouldBe` VBool True
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)

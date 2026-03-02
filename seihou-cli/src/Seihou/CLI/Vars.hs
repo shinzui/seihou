@@ -4,13 +4,17 @@ module Seihou.CLI.Vars
 where
 
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Effectful
 import Seihou.CLI.Commands (VarsOpts (..))
 import Seihou.Core.Module (defaultSearchPaths, loadModule)
 import Seihou.Core.Types
 import Seihou.Core.Variable (formatExplain, resolveVariables)
+import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
+import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import System.Environment (getEnvironment)
 import System.Exit (exitFailure)
 
@@ -79,7 +83,16 @@ explainMode modul vopts = do
   envPairs <- getEnvironment
   let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- varsVars vopts]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-  case resolveVariables (moduleVars modul) cliOverrides envVars of
+      namespace = fromMaybe (deriveNamespace (varsModule vopts)) (varsNamespace vopts)
+  result <- runEff $ runConfigReader $ do
+    localCfg <- readLocalConfig
+    namespaceCfg <- readNamespaceConfig namespace
+    globalCfg <- readGlobalConfig
+    let localMap = toVarNameMap localCfg
+        nsMap = toVarNameMap namespaceCfg
+        globalMap = toVarNameMap globalCfg
+    pure $ resolveVariables (moduleVars modul) cliOverrides envVars localMap nsMap globalMap
+  case result of
     Left errs -> do
       TIO.putStrLn "Error resolving variables:"
       mapM_ (TIO.putStrLn . ("  " <>) . formatVarError) errs
@@ -88,6 +101,16 @@ explainMode modul vopts = do
       TIO.putStrLn $ "Variable provenance for module '" <> unModuleName (moduleName modul) <> "':"
       TIO.putStrLn ""
       TIO.putStr (formatExplain resolved)
+
+-- | Derive the namespace from a module name by taking the prefix before the first hyphen.
+deriveNamespace :: ModuleName -> Text
+deriveNamespace (ModuleName name) =
+  let (prefix, _) = T.breakOn "-" name
+   in if prefix == name then "" else prefix
+
+-- | Convert a @Map Text Text@ (with text keys) to a @Map VarName Text@.
+toVarNameMap :: Map.Map Text Text -> Map.Map VarName Text
+toVarNameMap = Map.mapKeys VarName
 
 formatVarError :: VarError -> Text
 formatVarError (MissingRequiredVar (VarName n)) = "missing required variable: " <> n

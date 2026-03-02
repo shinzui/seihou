@@ -111,20 +111,25 @@ simplePatternMatch pat t
     isLowerAlpha c = c >= 'a' && c <= 'z'
     isDigit c = c >= '0' && c <= '9'
 
--- | Resolve all variables for a module given CLI overrides and environment variables.
+-- | Resolve all variables for a module given CLI overrides, environment variables,
+-- and three config file layers.
 --
 -- Precedence chain (highest to lowest):
--- 1. CLI overrides
+-- 1. CLI overrides (@--var@ flags)
 -- 2. Environment variables (@SEIHOU_VAR_@ prefix)
--- 3. Module defaults
---
--- Layers 3-5 (local config, namespace config, global config) will be added in M3.
+-- 3. Local project config (@.seihou\/config.dhall@)
+-- 4. Namespace config (@~\/.config\/seihou\/namespaces\/\<ns\>\/config.dhall@)
+-- 5. Global config (@~\/.config\/seihou\/config.dhall@)
+-- 6. Module defaults
 resolveVariables ::
   [VarDecl] ->
   Map VarName Text -> -- CLI overrides
   Map Text Text -> -- Environment variables
+  Map VarName Text -> -- Local config
+  Map VarName Text -> -- Namespace config
+  Map VarName Text -> -- Global config
   Either [VarError] (Map VarName ResolvedVar)
-resolveVariables decls cliOverrides envVars =
+resolveVariables decls cliOverrides envVars localConfig nsConfig globalConfig =
   case partitionResults (map resolveOne decls) of
     ([], resolved) -> Right (Map.fromList resolved)
     (errs, _) -> Left errs
@@ -137,12 +142,18 @@ resolveVariables decls cliOverrides envVars =
             Just result -> result >>= validateAndWrap decl
             Nothing -> case lookupEnv name ty of
               Just result -> result >>= validateAndWrap decl
-              Nothing -> case varDefault decl of
-                Just defVal ->
-                  validateAndWrap decl (defVal, FromDefault)
-                Nothing
-                  | varRequired decl -> Left (MissingRequiredVar name)
-                  | otherwise -> Left (MissingRequiredVar name)
+              Nothing -> case lookupConfig name ty localConfig FromLocalConfig of
+                Just result -> result >>= validateAndWrap decl
+                Nothing -> case lookupConfig name ty nsConfig (FromNamespaceConfig "") of
+                  Just result -> result >>= validateAndWrap decl
+                  Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
+                    Just result -> result >>= validateAndWrap decl
+                    Nothing -> case varDefault decl of
+                      Just defVal ->
+                        validateAndWrap decl (defVal, FromDefault)
+                      Nothing
+                        | varRequired decl -> Left (MissingRequiredVar name)
+                        | otherwise -> Left (MissingRequiredVar name)
 
     lookupCLI :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
     lookupCLI name ty =
@@ -162,6 +173,15 @@ resolveVariables decls cliOverrides envVars =
               Just $ case coerceValue name ty rawText of
                 Left err -> Left err
                 Right val -> Right (val, FromEnv envKey)
+
+    lookupConfig :: VarName -> VarType -> Map VarName Text -> VarSource -> Maybe (Either VarError (VarValue, VarSource))
+    lookupConfig name ty configMap source =
+      case Map.lookup name configMap of
+        Nothing -> Nothing
+        Just rawText ->
+          Just $ case coerceValue name ty rawText of
+            Left err -> Left err
+            Right val -> Right (val, source)
 
     validateAndWrap :: VarDecl -> (VarValue, VarSource) -> Either VarError (VarName, ResolvedVar)
     validateAndWrap decl (val, source) =

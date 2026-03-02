@@ -17,6 +17,8 @@ import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Module (defaultSearchPaths)
 import Seihou.Core.Types
+import Seihou.Effect.ConfigReader (ConfigReader, readGlobalConfig, readLocalConfig, readNamespaceConfig)
+import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
@@ -59,7 +61,15 @@ handleRun runOpts = do
   envPairs <- getEnvironment
   let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- runVars runOpts]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-  resolveResult <- runEff $ runConsole $ resolveWithPrompts modulesInOrder cliOverrides envVars
+      namespace = fromMaybe (deriveNamespace modName) (runNamespace runOpts)
+  resolveResult <- runEff $ runConfigReader $ runConsole $ do
+    localCfg <- readLocalConfig
+    namespaceCfg <- readNamespaceConfig namespace
+    globalCfg <- readGlobalConfig
+    let localMap = toVarNameMap localCfg
+        nsMap = toVarNameMap namespaceCfg
+        globalMap = toVarNameMap globalCfg
+    resolveWithPrompts modulesInOrder cliOverrides envVars localMap nsMap globalMap
   resolved <- case resolveResult of
     Left errs -> do
       TIO.putStrLn "Error resolving variables:"
@@ -200,6 +210,18 @@ varValueToText (VBool True) = "true"
 varValueToText (VBool False) = "false"
 varValueToText (VInt n) = T.pack (show n)
 varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
+
+-- | Derive the namespace from a module name by taking the prefix before the first hyphen.
+-- For example, @ModuleName "haskell-base"@ yields @"haskell"@.
+-- Modules without a hyphen yield an empty text (no namespace).
+deriveNamespace :: ModuleName -> Text
+deriveNamespace (ModuleName name) =
+  let (prefix, _) = T.breakOn "-" name
+   in if prefix == name then "" else prefix
+
+-- | Convert a @Map Text Text@ (with text keys like @"project.name"@) to a @Map VarName Text@.
+toVarNameMap :: Map.Map Text Text -> Map.Map VarName Text
+toVarNameMap = Map.mapKeys VarName
 
 -- | Update manifest's applied modules list with all composed modules.
 updateAllModules :: [AppliedModule] -> [(Module, FilePath)] -> UTCTime -> [AppliedModule]

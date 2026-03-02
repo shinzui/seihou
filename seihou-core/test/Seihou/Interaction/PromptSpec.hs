@@ -218,7 +218,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure ["my-app"] $
-            resolveWithPrompts modules Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
@@ -240,7 +240,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure [] $
-            resolveWithPrompts modules cliOverrides Map.empty
+            resolveWithPrompts modules cliOverrides Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
@@ -262,7 +262,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePureNonInteractive $
-            resolveWithPrompts modules Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> case errs of
           [MissingRequiredVar name] -> name `shouldBe` "project.name"
@@ -291,7 +291,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure ["my-app"] $
-            resolveWithPrompts modules Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do

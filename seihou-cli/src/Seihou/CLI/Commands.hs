@@ -34,14 +34,16 @@ data RunOpts = RunOpts
     runDryRun :: Bool,
     runDiff :: Bool,
     runForce :: Bool,
-    runNoCommands :: Bool
+    runNoCommands :: Bool,
+    runNamespace :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
 data VarsOpts = VarsOpts
   { varsModule :: ModuleName,
     varsExplain :: Bool,
-    varsVars :: [(Text, Text)]
+    varsVars :: [(Text, Text)],
+    varsNamespace :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -264,6 +266,7 @@ runParser =
       <*> switch (long "diff" <> help "Show diff against current disk state")
       <*> switch (long "force" <> help "Auto-resolve conflicts (accept new files)")
       <*> switch (long "no-commands" <> help "Skip shell command steps")
+      <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
 
 varsParser :: Parser Command
 varsParser =
@@ -276,6 +279,7 @@ varsParser =
             varPair
             (long "var" <> metavar "KEY=VALUE" <> help "Provide variable values for resolution (repeatable)")
         )
+      <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
 
 installParser :: Parser Command
 installParser =

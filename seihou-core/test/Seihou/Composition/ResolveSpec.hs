@@ -69,7 +69,7 @@ spec = do
     it "resolves a single module with no dependencies" $ do
       let m = mkModule "base" [] [mkTextVar "project.name" (Just (VText "default")) False] []
           modules = [(m, "/fake/base")]
-      case resolveComposedVariables modules Map.empty Map.empty of
+      case resolveComposedVariables modules Map.empty Map.empty Map.empty Map.empty Map.empty of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           Map.member "base" result `shouldBe` True
@@ -80,7 +80,7 @@ spec = do
       let base = mkModule "base" [] [mkTextVar "project.name" (Just (VText "my-app")) False] [mkExport "project.name"]
           app = mkModule "app" ["base"] [mkTextVar "project.name" Nothing True] []
           modules = [(base, "/fake/base"), (app, "/fake/app")]
-      case resolveComposedVariables modules Map.empty Map.empty of
+      case resolveComposedVariables modules Map.empty Map.empty Map.empty Map.empty Map.empty of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let appVars = result Map.! "app"
@@ -90,7 +90,7 @@ spec = do
       let base = mkModule "base" [] [mkTextVar "project.name" (Just (VText "from-base")) False] [mkExport "project.name"]
           app = mkModule "app" ["base"] [mkTextVar "project.name" (Just (VText "from-app")) False] []
           modules = [(base, "/fake/base"), (app, "/fake/app")]
-      case resolveComposedVariables modules Map.empty Map.empty of
+      case resolveComposedVariables modules Map.empty Map.empty Map.empty Map.empty Map.empty of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let appVars = result Map.! "app"
@@ -101,7 +101,7 @@ spec = do
           app = mkModule "app" ["base"] [mkTextVar "project.name" Nothing True] []
           modules = [(base, "/fake/base"), (app, "/fake/app")]
           cliOverrides = Map.singleton "project.name" "from-cli"
-      case resolveComposedVariables modules cliOverrides Map.empty of
+      case resolveComposedVariables modules cliOverrides Map.empty Map.empty Map.empty Map.empty of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let appVars = result Map.! "app"
@@ -112,7 +112,7 @@ spec = do
           -- app does NOT declare project.name but depends on base
           app = mkModule "app" ["base"] [mkTextVar "app.version" (Just (VText "1.0")) False] []
           modules = [(base, "/fake/base"), (app, "/fake/app")]
-      case resolveComposedVariables modules Map.empty Map.empty of
+      case resolveComposedVariables modules Map.empty Map.empty Map.empty Map.empty Map.empty of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let appVars = result Map.! "app"
@@ -125,7 +125,7 @@ spec = do
       let base = mkModule "base" [] [mkTextVar "project.name" (Just (VText "my-app")) False] [mkExportAs "project.name" "app.name"]
           app = mkModule "app" ["base"] [mkTextVar "app.name" Nothing True] []
           modules = [(base, "/fake/base"), (app, "/fake/app")]
-      case resolveComposedVariables modules Map.empty Map.empty of
+      case resolveComposedVariables modules Map.empty Map.empty Map.empty Map.empty Map.empty of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let appVars = result Map.! "app"
@@ -137,7 +137,7 @@ spec = do
           c = mkModule "c" ["d"] [mkTextVar "sys.arch" Nothing True] []
           a = mkModule "a" ["b", "c"] [mkTextVar "sys.arch" Nothing True] []
           modules = [(d, "/d"), (b, "/b"), (c, "/c"), (a, "/a")]
-      case resolveComposedVariables modules Map.empty Map.empty of
+      case resolveComposedVariables modules Map.empty Map.empty Map.empty Map.empty Map.empty of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           -- All modules should see sys.arch from d
@@ -145,3 +145,56 @@ spec = do
           resolvedValue ((result Map.! "b") Map.! "sys.arch") `shouldBe` VText "x86_64"
           resolvedValue ((result Map.! "c") Map.! "sys.arch") `shouldBe` VText "x86_64"
           resolvedValue ((result Map.! "a") Map.! "sys.arch") `shouldBe` VText "x86_64"
+
+  describe "resolveComposedVariables (with config layers)" $ do
+    it "resolves from global config when no other source provides value" $ do
+      let m = mkModule "base" [] [mkTextVar "license" Nothing True] []
+          modules = [(m, "/fake/base")]
+          globalCfg = Map.fromList [("license", "MIT")]
+      case resolveComposedVariables modules Map.empty Map.empty Map.empty Map.empty globalCfg of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let baseVars = result Map.! "base"
+          resolvedValue (baseVars Map.! "license") `shouldBe` VText "MIT"
+          resolvedSource (baseVars Map.! "license") `shouldBe` FromGlobalConfig
+
+    it "local config overrides global config in composed resolution" $ do
+      let m = mkModule "base" [] [mkTextVar "license" Nothing True] []
+          modules = [(m, "/fake/base")]
+          localCfg = Map.fromList [("license", "BSD3")]
+          globalCfg = Map.fromList [("license", "MIT")]
+      case resolveComposedVariables modules Map.empty Map.empty localCfg Map.empty globalCfg of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let baseVars = result Map.! "base"
+          resolvedValue (baseVars Map.! "license") `shouldBe` VText "BSD3"
+          resolvedSource (baseVars Map.! "license") `shouldBe` FromLocalConfig
+
+    it "CLI override beats config layers in composed resolution" $ do
+      let m = mkModule "base" [] [mkTextVar "license" Nothing True] []
+          modules = [(m, "/fake/base")]
+          cliOverrides = Map.singleton "license" "cli-license"
+          localCfg = Map.fromList [("license", "local-license")]
+          globalCfg = Map.fromList [("license", "global-license")]
+      case resolveComposedVariables modules cliOverrides Map.empty localCfg Map.empty globalCfg of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let baseVars = result Map.! "base"
+          resolvedValue (baseVars Map.! "license") `shouldBe` VText "cli-license"
+          resolvedSource (baseVars Map.! "license") `shouldBe` FromCLI
+
+    it "config layers flow through multi-module composition" $ do
+      let base = mkModule "base" [] [mkTextVar "license" Nothing True] [mkExport "license"]
+          app = mkModule "app" ["base"] [mkTextVar "license" Nothing True] []
+          modules = [(base, "/fake/base"), (app, "/fake/app")]
+          globalCfg = Map.fromList [("license", "MIT")]
+      case resolveComposedVariables modules Map.empty Map.empty Map.empty Map.empty globalCfg of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          -- base gets license from global config
+          let baseVars = result Map.! "base"
+          resolvedValue (baseVars Map.! "license") `shouldBe` VText "MIT"
+          resolvedSource (baseVars Map.! "license") `shouldBe` FromGlobalConfig
+          -- app also gets license from global config (it declares the var)
+          let appVars = result Map.! "app"
+          resolvedValue (appVars Map.! "license") `shouldBe` VText "MIT"
