@@ -28,6 +28,7 @@ module Seihou.Core.Types
     VarError (..),
     PlaceholderError (..),
     CompositionWarning (..),
+    ConfigError (..),
   )
 where
 
@@ -287,6 +288,12 @@ data ConflictResolution
   | KeepCurrent
   | Skip
   | Abort
+  deriving stock (Eq, Show, Generic)
+
+-- | Errors that can occur when reading config files.
+data ConfigError
+  = ConfigParseError FilePath Text
+  | InvalidNamespace Text Text
   deriving stock (Eq, Show, Generic)
 
 -- | Warnings emitted during multi-module composition.

@@ -13,11 +13,12 @@ import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
 import Effectful
 import Seihou.CLI.Commands (RunOpts (..))
+import Seihou.CLI.Shared (deriveNamespace, formatConfigError, formatVarError, toVarNameMap)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Module (defaultSearchPaths)
 import Seihou.Core.Types
-import Seihou.Effect.ConfigReader (ConfigReader, readGlobalConfig, readLocalConfig, readNamespaceConfig)
+import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
@@ -63,9 +64,9 @@ handleRun runOpts = do
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
       namespace = fromMaybe (deriveNamespace modName) (runNamespace runOpts)
   resolveResult <- runEff $ runConfigReader $ runConsole $ do
-    localCfg <- readLocalConfig
-    namespaceCfg <- readNamespaceConfig namespace
-    globalCfg <- readGlobalConfig
+    localCfg <- readLocalConfig >>= unwrapConfig
+    namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig
+    globalCfg <- readGlobalConfig >>= unwrapConfig
     let localMap = toVarNameMap localCfg
         nsMap = toVarNameMap namespaceCfg
         globalMap = toVarNameMap globalCfg
@@ -109,7 +110,12 @@ handleRun runOpts = do
         createDirectoryIfMissing True (takeDirectory manifestPath)
 
         -- Load existing manifest (or empty)
-        existing <- readManifest
+        existingResult <- readManifest
+        existing <- case existingResult of
+          Left err -> liftIO $ do
+            TIO.putStrLn $ "Error reading manifest: " <> err
+            exitFailure
+          Right m -> pure m
         let manifest = fromMaybe (emptyManifest now) existing
 
         -- Compute three-state diff
@@ -167,12 +173,6 @@ exitError msg = do
   TIO.putStrLn $ "Error: " <> msg
   exitFailure
 
-formatVarError :: VarError -> Text
-formatVarError (MissingRequiredVar (VarName n)) = "missing required variable: " <> n
-formatVarError (TypeMismatch (VarName n) _ _) = "type mismatch for variable: " <> n
-formatVarError (ValidationFailed (VarName n) msg) = "validation failed for " <> n <> ": " <> msg
-formatVarError (CoercionFailed (VarName n) _ raw) = "cannot coerce '" <> raw <> "' for variable: " <> n
-
 printWarning :: CompositionWarning -> IO ()
 printWarning (FileOverwritten path overwritten overwriter) =
   TIO.putStrLn $
@@ -211,17 +211,13 @@ varValueToText (VBool False) = "false"
 varValueToText (VInt n) = T.pack (show n)
 varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
 
--- | Derive the namespace from a module name by taking the prefix before the first hyphen.
--- For example, @ModuleName "haskell-base"@ yields @"haskell"@.
--- Modules without a hyphen yield an empty text (no namespace).
-deriveNamespace :: ModuleName -> Text
-deriveNamespace (ModuleName name) =
-  let (prefix, _) = T.breakOn "-" name
-   in if prefix == name then "" else prefix
-
--- | Convert a @Map Text Text@ (with text keys like @"project.name"@) to a @Map VarName Text@.
-toVarNameMap :: Map.Map Text Text -> Map.Map VarName Text
-toVarNameMap = Map.mapKeys VarName
+-- | Unwrap an 'Either ConfigError' in an effectful context, printing an error
+-- and exiting on 'Left'.
+unwrapConfig :: (IOE :> es) => Either ConfigError a -> Eff es a
+unwrapConfig (Right a) = pure a
+unwrapConfig (Left err) = liftIO $ do
+  TIO.putStrLn $ "Error reading config: " <> formatConfigError err
+  exitFailure
 
 -- | Update manifest's applied modules list with all composed modules.
 updateAllModules :: [AppliedModule] -> [(Module, FilePath)] -> UTCTime -> [AppliedModule]

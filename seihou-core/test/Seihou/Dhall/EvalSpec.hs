@@ -1,6 +1,7 @@
 module Seihou.Dhall.EvalSpec (tests) where
 
 import Data.Map.Strict qualified as Map
+import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalDhallExpr, evalModuleFromFile)
 import System.FilePath ((</>))
@@ -87,6 +88,22 @@ spec = do
         Left (DhallEvalError _ _) -> pure ()
         Left other -> expectationFailure ("Expected DhallEvalError, got: " <> show other)
         Right _ -> expectationFailure "Expected Left, got Right"
+
+    it "returns Left for unknown var type (not a crash)" $ do
+      result <- evalModuleFromFile (fixtureDir </> "bad-vartype" </> "module.dhall")
+      case result of
+        Left (DhallEvalError _ msg) ->
+          T.isInfixOf "strng" msg `shouldBe` True
+        Left other -> expectationFailure ("Expected DhallEvalError, got: " <> show other)
+        Right _ -> expectationFailure "Expected Left for bad var type"
+
+    it "returns Left for unknown strategy (not a crash)" $ do
+      result <- evalModuleFromFile (fixtureDir </> "bad-strategy" </> "module.dhall")
+      case result of
+        Left (DhallEvalError _ msg) ->
+          T.isInfixOf "coppy" msg `shouldBe` True
+        Left other -> expectationFailure ("Expected DhallEvalError, got: " <> show other)
+        Right _ -> expectationFailure "Expected Left for bad strategy"
 
     it "decodes prompts correctly" $ do
       result <- evalModuleFromFile (fixtureDir </> "haskell-base" </> "module.dhall")

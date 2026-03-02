@@ -109,4 +109,6 @@ spec = do
           modules = Map.fromList [("test/module.dhall", testModule)]
       result <- runEff $ runDhallEvalPure modules $ do
         evalModuleFile "test/module.dhall"
-      moduleName result `shouldBe` "test"
+      case result of
+        Left err -> expectationFailure ("Expected Right, got: " <> show err)
+        Right m -> moduleName m `shouldBe` "test"

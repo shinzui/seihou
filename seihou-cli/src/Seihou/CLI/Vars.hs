@@ -10,6 +10,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Effectful
 import Seihou.CLI.Commands (VarsOpts (..))
+import Seihou.CLI.Shared (deriveNamespace, formatConfigError, formatVarError, toVarNameMap)
 import Seihou.Core.Module (defaultSearchPaths, loadModule)
 import Seihou.Core.Types
 import Seihou.Core.Variable (formatExplain, resolveVariables)
@@ -85,9 +86,9 @@ explainMode modul vopts = do
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
       namespace = fromMaybe (deriveNamespace (varsModule vopts)) (varsNamespace vopts)
   result <- runEff $ runConfigReader $ do
-    localCfg <- readLocalConfig
-    namespaceCfg <- readNamespaceConfig namespace
-    globalCfg <- readGlobalConfig
+    localCfg <- readLocalConfig >>= unwrapConfig
+    namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig
+    globalCfg <- readGlobalConfig >>= unwrapConfig
     let localMap = toVarNameMap localCfg
         nsMap = toVarNameMap namespaceCfg
         globalMap = toVarNameMap globalCfg
@@ -102,18 +103,10 @@ explainMode modul vopts = do
       TIO.putStrLn ""
       TIO.putStr (formatExplain resolved)
 
--- | Derive the namespace from a module name by taking the prefix before the first hyphen.
-deriveNamespace :: ModuleName -> Text
-deriveNamespace (ModuleName name) =
-  let (prefix, _) = T.breakOn "-" name
-   in if prefix == name then "" else prefix
-
--- | Convert a @Map Text Text@ (with text keys) to a @Map VarName Text@.
-toVarNameMap :: Map.Map Text Text -> Map.Map VarName Text
-toVarNameMap = Map.mapKeys VarName
-
-formatVarError :: VarError -> Text
-formatVarError (MissingRequiredVar (VarName n)) = "missing required variable: " <> n
-formatVarError (TypeMismatch (VarName n) _ _) = "type mismatch for variable: " <> n
-formatVarError (ValidationFailed (VarName n) msg) = "validation failed for " <> n <> ": " <> msg
-formatVarError (CoercionFailed (VarName n) _ raw) = "cannot coerce '" <> raw <> "' for variable: " <> n
+-- | Unwrap an 'Either ConfigError' in an effectful context, printing an error
+-- and exiting on 'Left'.
+unwrapConfig :: (IOE :> es) => Either ConfigError a -> Eff es a
+unwrapConfig (Right a) = pure a
+unwrapConfig (Left err) = liftIO $ do
+  TIO.putStrLn $ "Error reading config: " <> formatConfigError err
+  exitFailure

@@ -11,7 +11,7 @@ module Seihou.Dhall.Eval
   )
 where
 
-import Control.Exception (SomeException, try)
+import Control.Exception (SomeException, evaluate, try)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -39,9 +39,21 @@ simpleRecordDecoder =
 
 -- | Evaluate a @module.dhall@ file and decode it into a 'Module' value.
 -- Returns 'Left' with a 'ModuleLoadError' if evaluation or decoding fails.
+--
+-- Note: Dhall 'Decoder' only supports 'Functor', so decoder helpers like
+-- 'parseVarType' use 'error' for invalid input. These 'error' calls produce
+-- lazy thunks inside the decoded 'Module'. We force evaluation of all
+-- potentially-failing fields inside the 'try' block so that exceptions
+-- are caught here rather than propagating as uncaught crashes later.
 evalModuleFromFile :: FilePath -> IO (Either ModuleLoadError Module)
 evalModuleFromFile path = do
-  result <- try (inputFile moduleDecoder path)
+  result <- try $ do
+    m <- inputFile moduleDecoder path
+    -- Force lazy decoder thunks that may contain 'error' calls
+    mapM_ (\v -> evaluate (varType v)) (moduleVars m)
+    mapM_ (\s -> evaluate (stepStrategy s) >> evaluate (stepWhen s)) (moduleSteps m)
+    mapM_ (\p -> evaluate (promptWhen p)) (modulePrompts m)
+    pure m
   case result of
     Left (e :: SomeException) ->
       let name = guessModuleName path
@@ -80,6 +92,11 @@ moduleNameDecoder = ModuleName <$> strictText
 -- Dhall does not support recursive types, so VarType is represented as a
 -- string: @"text"@, @"bool"@, @"int"@, @"list text"@, @"list bool"@,
 -- @"list int"@, @"choice"@.
+--
+-- Note: 'Decoder' only has a 'Functor' instance (no 'Monad'/'MonadFail'), so
+-- we cannot use @fail@ for error reporting. The 'error' call throws an
+-- 'ErrorCall' exception that is caught by @try@ in 'evalModuleFromFile' and
+-- wrapped as @Left (DhallEvalError ...)@.
 varTypeDecoder :: Decoder VarType
 varTypeDecoder = parseVarType <$> strictText
   where
@@ -93,9 +110,12 @@ varTypeDecoder = parseVarType <$> strictText
         | "list " `T.isPrefixOf` other ->
             VTList (parseVarType (T.drop 5 other))
         | otherwise ->
-            error ("Unknown VarType: " <> T.unpack other)
+            -- Caught by 'try' in 'evalModuleFromFile'
+            error ("Unknown var type \"" <> T.unpack other <> "\"; expected one of: text, bool, int, choice, list <type>")
 
 -- | Decoder for Strategy from a Dhall Text string.
+--
+-- See 'varTypeDecoder' note re: 'error' safety.
 strategyDecoder :: Decoder Strategy
 strategyDecoder = parseStrategy <$> strictText
   where
@@ -105,7 +125,8 @@ strategyDecoder = parseStrategy <$> strictText
       "template" -> Template
       "dhall-text" -> DhallText
       "structured" -> Structured
-      other -> error ("Unknown strategy: " <> T.unpack other)
+      -- Caught by 'try' in 'evalModuleFromFile'
+      other -> error ("Unknown strategy \"" <> T.unpack other <> "\"; expected one of: copy, template, dhall-text, structured")
 
 -- | Decoder for VarDecl from a Dhall record.
 varDeclDecoder :: Decoder VarDecl
@@ -178,9 +199,11 @@ stepDecoder =
 
 -- | Parse an optional @when@ expression text into an 'Expr'.
 -- Returns 'Nothing' for 'Nothing' input, 'Just expr' on success, or calls
--- 'error' on a malformed expression (indicating a bug in the module definition).
+-- 'error' on a malformed expression. The 'error' is caught by @try@ in
+-- 'evalModuleFromFile' (see 'varTypeDecoder' note).
 parseWhen :: Maybe Text -> Maybe Expr
 parseWhen Nothing = Nothing
 parseWhen (Just t) = case parseExpr t of
   Right expr -> Just expr
-  Left err -> error ("Invalid when expression: " <> T.unpack err <> " in: " <> T.unpack t)
+  -- Caught by 'try' in 'evalModuleFromFile'
+  Left err -> error ("Invalid when expression \"" <> T.unpack t <> "\": " <> T.unpack err)

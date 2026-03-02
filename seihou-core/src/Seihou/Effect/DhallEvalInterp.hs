@@ -15,11 +15,7 @@ import Seihou.Effect.DhallEval (DhallEval (..))
 -- | Real interpreter that evaluates Dhall files from disk.
 runDhallEval :: (IOE :> es) => Eff (DhallEval : es) a -> Eff es a
 runDhallEval = interpret $ \_ -> \case
-  EvalModuleFile path -> do
-    result <- liftIO (evalModuleFromFile path)
-    case result of
-      Right m -> pure m
-      Left err -> error ("DhallEval failed: " <> show err)
+  EvalModuleFile path -> liftIO (evalModuleFromFile path)
 
 -- | Pure test interpreter that looks up modules from an in-memory map.
 -- The map keys are file paths; if a path is not found, an error is raised.
@@ -27,5 +23,5 @@ runDhallEvalPure :: Map FilePath Module -> Eff (DhallEval : es) a -> Eff es a
 runDhallEvalPure modules = interpret $ \_ -> \case
   EvalModuleFile path ->
     case Map.lookup path modules of
-      Just m -> pure m
+      Just m -> pure (Right m)
       Nothing -> error ("runDhallEvalPure: no module at path: " <> path)

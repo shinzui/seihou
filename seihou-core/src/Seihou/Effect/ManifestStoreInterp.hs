@@ -25,13 +25,13 @@ runManifestStore manifestPath = interpret $ \_ -> \case
   ReadManifest -> do
     exists <- doesFileExist manifestPath
     if not exists
-      then pure Nothing
+      then pure (Right Nothing)
       else do
         content <- readFileText manifestPath
         let bs = LBS.fromStrict (TE.encodeUtf8 content)
         case manifestFromJSON bs of
-          Left err -> error ("ManifestStore: failed to parse manifest: " <> err)
-          Right manifest -> pure (Just manifest)
+          Left err -> pure (Left (T.pack err))
+          Right manifest -> pure (Right (Just manifest))
   WriteManifest manifest -> do
     let bs = manifestToJSON manifest
         content = TE.decodeUtf8 (LBS.toStrict bs)

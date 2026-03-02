@@ -1,12 +1,13 @@
 module Seihou.Effect.ManifestStoreSpec (tests) where
 
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
 import Effectful
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem (readFileText)
-import Seihou.Effect.FilesystemPure (emptyFS, runFilesystemPure)
+import Seihou.Effect.FilesystemPure (PureFS (..), emptyFS, runFilesystemPure)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.ManifestStorePure (runManifestStorePure)
@@ -39,15 +40,15 @@ sampleManifest =
 spec :: Spec
 spec = do
   describe "pure interpreter" $ do
-    it "returns Nothing when no manifest stored" $ do
+    it "returns Right Nothing when no manifest stored" $ do
       let (result, _) = runPureEff $ runManifestStorePure Nothing readManifest
-      result `shouldBe` Nothing
+      result `shouldBe` Right Nothing
 
-    it "returns Just manifest after write" $ do
+    it "returns Right (Just manifest) after write" $ do
       let (result, _) = runPureEff $ runManifestStorePure Nothing $ do
             writeManifest sampleManifest
             readManifest
-      result `shouldBe` Just sampleManifest
+      result `shouldBe` Right (Just sampleManifest)
 
     it "overwrites previous manifest" $ do
       let m2 = emptyManifest fixedTime
@@ -55,7 +56,7 @@ spec = do
             writeManifest sampleManifest
             writeManifest m2
             readManifest
-      result `shouldBe` Just m2
+      result `shouldBe` Right (Just m2)
 
     it "returns final state" $ do
       let (_, finalState) = runPureEff $ runManifestStorePure Nothing $ do
@@ -63,13 +64,13 @@ spec = do
       finalState `shouldBe` Just sampleManifest
 
   describe "real interpreter (via pure filesystem)" $ do
-    it "returns Nothing when manifest file does not exist" $ do
+    it "returns Right Nothing when manifest file does not exist" $ do
       let manifestPath = ".seihou/manifest.json"
           (result, _) =
             runPureEff $
               runFilesystemPure emptyFS $
                 runManifestStore manifestPath readManifest
-      result `shouldBe` Nothing
+      result `shouldBe` Right Nothing
 
     it "roundtrips a manifest through filesystem" $ do
       let manifestPath = ".seihou/manifest.json"
@@ -79,7 +80,7 @@ spec = do
                 runManifestStore manifestPath $ do
                   writeManifest sampleManifest
                   readManifest
-      result `shouldBe` Just sampleManifest
+      result `shouldBe` Right (Just sampleManifest)
 
     it "writes valid JSON to the filesystem" $ do
       let manifestPath = ".seihou/manifest.json"
@@ -92,3 +93,14 @@ spec = do
       T.isInfixOf "\"version\":1" content `shouldBe` True
       T.isInfixOf "haskell-base" content `shouldBe` True
       T.isInfixOf "my-app" content `shouldBe` True
+
+    it "returns Left for corrupt JSON" $ do
+      let manifestPath = ".seihou/manifest.json"
+          corruptFS = PureFS (Map.fromList [(manifestPath, "{ this is not json }")]) Set.empty
+          (result, _) =
+            runPureEff $
+              runFilesystemPure corruptFS $
+                runManifestStore manifestPath readManifest
+      case result of
+        Left _err -> pure () -- Any Left is correct for corrupt JSON
+        Right _ -> expectationFailure "Expected Left for corrupt JSON"

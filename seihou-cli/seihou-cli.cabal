@@ -15,6 +15,7 @@ executable seihou
     Seihou.CLI.Install
     Seihou.CLI.NewModule
     Seihou.CLI.Run
+    Seihou.CLI.Shared
     Seihou.CLI.Status
     Seihou.CLI.Validate
     Seihou.CLI.Vars

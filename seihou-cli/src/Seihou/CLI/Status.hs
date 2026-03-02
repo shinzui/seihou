@@ -11,6 +11,7 @@ import Seihou.Core.Types
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import System.Exit (exitFailure)
 import System.FilePath ((</>))
 
 handleStatus :: IO ()
@@ -20,9 +21,12 @@ handleStatus = do
   result <- runEff $ runFilesystem $ runManifestStore manifestPath readManifest
 
   case result of
-    Nothing ->
+    Left err -> do
+      TIO.putStrLn $ "Error reading manifest: " <> err
+      exitFailure
+    Right Nothing ->
       TIO.putStrLn "No manifest found. Run 'seihou run <module>' first."
-    Just manifest -> do
+    Right (Just manifest) -> do
       TIO.putStrLn $ "Seihou manifest (v" <> T.pack (show (manifestVersion manifest)) <> ")"
       TIO.putStrLn $ "Generated at: " <> T.pack (show (manifestGenAt manifest))
       TIO.putStrLn ""
