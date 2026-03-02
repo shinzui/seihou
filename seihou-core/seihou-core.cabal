@@ -22,6 +22,8 @@ library
     Seihou.Dhall.Eval
     Seihou.Effect.ConfigReader
     Seihou.Effect.Console
+    Seihou.Effect.ConsoleInterp
+    Seihou.Effect.ConsolePure
     Seihou.Effect.DhallEval
     Seihou.Effect.DhallEvalInterp
     Seihou.Effect.Filesystem
@@ -38,6 +40,7 @@ library
     Seihou.Engine.Execute
     Seihou.Engine.Plan
     Seihou.Engine.Template
+    Seihou.Interaction.Prompt
     Seihou.Manifest.Hash
     Seihou.Manifest.Types
 
@@ -81,6 +84,7 @@ test-suite seihou-core-test
     Seihou.Integration.ExecutionSpec
     Seihou.Integration.GenerationSpec
     Seihou.Integration.ModuleLoadSpec
+    Seihou.Interaction.PromptSpec
     Seihou.Manifest.TypesSpec
 
   build-depends:

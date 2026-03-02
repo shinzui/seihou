@@ -1,6 +1,7 @@
 module Seihou.Composition.Resolve
   ( loadComposition,
     resolveComposedVariables,
+    resolveWithPrompts,
     exportedVars,
   )
 where
@@ -10,11 +11,14 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
+import Effectful
 import Seihou.Composition.Graph (buildGraph, topoSort)
 import Seihou.Core.Module (discoverModule, validateModule)
 import Seihou.Core.Types
 import Seihou.Core.Variable (resolveVariables)
 import Seihou.Dhall.Eval (evalModuleFromFile)
+import Seihou.Effect.Console (Console, isInteractive)
+import Seihou.Interaction.Prompt (runPrompts)
 import System.FilePath ((</>))
 
 -- | Load all modules in a composition: primary + additional + transitive deps.
@@ -93,6 +97,116 @@ resolveComposedVariables modulesInOrder cliOverrides envVars =
         rest
         (Map.insert (moduleName m) fullResolved perModule)
         (Map.insert (moduleName m) myExports allExports)
+
+-- | Resolve variables for all modules with interactive prompt support.
+--
+-- Same as 'resolveComposedVariables' but when a module has unresolved required
+-- variables, prompts the user via the Console effect (if interactive).
+-- In non-interactive mode, missing required variables remain as errors.
+resolveWithPrompts ::
+  (Console :> es) =>
+  [(Module, FilePath)] ->
+  Map VarName Text ->
+  Map Text Text ->
+  Eff es (Either [VarError] (Map ModuleName (Map VarName ResolvedVar)))
+resolveWithPrompts modulesInOrder cliOverrides envVars = do
+  interactive <- isInteractive
+  goPrompt interactive modulesInOrder Map.empty Map.empty
+  where
+    goPrompt ::
+      (Console :> es) =>
+      Bool ->
+      [(Module, FilePath)] ->
+      Map ModuleName (Map VarName ResolvedVar) ->
+      Map ModuleName (Map VarName VarValue) ->
+      Eff es (Either [VarError] (Map ModuleName (Map VarName ResolvedVar)))
+    goPrompt _ [] perModule _ = pure (Right perModule)
+    goPrompt interactive ((m, _dir) : rest) perModule allExports = do
+      let deps = moduleDependencies m
+          visibleExports =
+            Map.unions [Map.findWithDefault Map.empty dep allExports | dep <- deps]
+          adjustedDecls = map (injectExportDefault visibleExports) (moduleVars m)
+      case resolveVariables adjustedDecls cliOverrides envVars of
+        Right resolved -> do
+          let declaredNames = Set.fromList (map varName (moduleVars m))
+              inherited =
+                Map.mapWithKey
+                  makeInheritedResolved
+                  (Map.filterWithKey (\k _ -> not (Set.member k declaredNames)) visibleExports)
+              fullResolved = resolved `Map.union` inherited
+              myExports = exportedVars m fullResolved
+          goPrompt
+            interactive
+            rest
+            (Map.insert (moduleName m) fullResolved perModule)
+            (Map.insert (moduleName m) myExports allExports)
+        Left errs -> do
+          -- Separate MissingRequiredVar from other errors
+          let (missing, fatal) = partitionErrors errs
+          if not (null fatal)
+            then pure (Left (fatal ++ missing))
+            else
+              if not interactive || null missing
+                then pure (Left errs)
+                else do
+                  -- Build the currently-resolved bindings for condition evaluation
+                  let currentBindings = Map.map resolvedValue (Map.unions (Map.elems perModule))
+                      missingDecls = [d | d <- adjustedDecls, varName d `elem` map getMissingName missing]
+                  -- Run prompts for unresolved variables
+                  prompted <- runPrompts (modulePrompts m) missingDecls currentBindings
+                  -- Check if all missing variables are now resolved
+                  let stillMissing = [e | e <- missing, not (Map.member (getMissingName e) prompted)]
+                  if not (null stillMissing)
+                    then pure (Left stillMissing)
+                    else do
+                      -- Re-resolve: merge prompted values as CLI overrides
+                      let promptedOverrides =
+                            Map.union cliOverrides $
+                              Map.map (varValueToText . resolvedValue) prompted
+                      case resolveVariables adjustedDecls promptedOverrides envVars of
+                        Left errs' -> pure (Left errs')
+                        Right resolved -> do
+                          -- Replace source for prompted vars with FromPrompt
+                          let resolvedWithPromptSource =
+                                Map.mapWithKey
+                                  ( \vn rv ->
+                                      case Map.lookup vn prompted of
+                                        Just pv -> pv
+                                        Nothing -> rv
+                                  )
+                                  resolved
+                              declaredNames = Set.fromList (map varName (moduleVars m))
+                              inherited =
+                                Map.mapWithKey
+                                  makeInheritedResolved
+                                  (Map.filterWithKey (\k _ -> not (Set.member k declaredNames)) visibleExports)
+                              fullResolved = resolvedWithPromptSource `Map.union` inherited
+                              myExports = exportedVars m fullResolved
+                          goPrompt
+                            interactive
+                            rest
+                            (Map.insert (moduleName m) fullResolved perModule)
+                            (Map.insert (moduleName m) myExports allExports)
+
+-- | Extract the variable name from a MissingRequiredVar error.
+getMissingName :: VarError -> VarName
+getMissingName (MissingRequiredVar n) = n
+getMissingName _ = VarName ""
+
+-- | Partition errors into MissingRequiredVar and other (fatal) errors.
+partitionErrors :: [VarError] -> ([VarError], [VarError])
+partitionErrors = foldr go ([], [])
+  where
+    go e@(MissingRequiredVar _) (missing, fatal) = (e : missing, fatal)
+    go e (missing, fatal) = (missing, e : fatal)
+
+-- | Convert a VarValue to its text representation for use as an override.
+varValueToText :: VarValue -> Text
+varValueToText (VText t) = t
+varValueToText (VBool True) = "true"
+varValueToText (VBool False) = "false"
+varValueToText (VInt n) = T.pack (show n)
+varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
 
 -- | Extract exported variables from a module's resolved values.
 -- Uses the alias name if provided, otherwise the original variable name.

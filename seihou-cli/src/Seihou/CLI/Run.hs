@@ -14,9 +14,10 @@ import Data.Time.Clock (getCurrentTime)
 import Effectful
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.Composition.Plan (compileComposedPlan)
-import Seihou.Composition.Resolve (loadComposition, resolveComposedVariables)
+import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Module (defaultSearchPaths)
 import Seihou.Core.Types
+import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
@@ -54,11 +55,12 @@ handleRun runOpts = do
     TIO.putStrLn $ "Composing " <> T.pack (show (length modulesInOrder)) <> " modules:"
     mapM_ (\(m, _) -> TIO.putStrLn $ "  " <> unModuleName (moduleName m)) modulesInOrder
 
-  -- 2. Resolve variables with export visibility
+  -- 2. Resolve variables with export visibility and interactive prompts
   envPairs <- getEnvironment
   let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- runVars runOpts]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-  resolved <- case resolveComposedVariables modulesInOrder cliOverrides envVars of
+  resolveResult <- runEff $ runConsole $ resolveWithPrompts modulesInOrder cliOverrides envVars
+  resolved <- case resolveResult of
     Left errs -> do
       TIO.putStrLn "Error resolving variables:"
       mapM_ (TIO.putStrLn . ("  " <>) . formatVarError) errs

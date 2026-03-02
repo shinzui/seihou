@@ -18,6 +18,7 @@ import Seihou.Integration.CompositionSpec qualified as CompositionSpec
 import Seihou.Integration.ExecutionSpec qualified as ExecutionSpec
 import Seihou.Integration.GenerationSpec qualified as GenerationSpec
 import Seihou.Integration.ModuleLoadSpec qualified as IntegrationSpec
+import Seihou.Interaction.PromptSpec qualified as PromptSpec
 import Seihou.Manifest.TypesSpec qualified as ManifestTypesSpec
 import Test.Tasty
 
@@ -42,4 +43,5 @@ main = do
   integrationTests <- IntegrationSpec.tests
   generationTests <- GenerationSpec.tests
   manifestTypesTests <- ManifestTypesSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, exprTests, moduleTests, variableTests, templateTests, planTests, dhallEvalTests, filesystemTests, manifestStoreTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests])
+  promptTests <- PromptSpec.tests
+  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, exprTests, moduleTests, variableTests, templateTests, planTests, dhallEvalTests, filesystemTests, manifestStoreTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])
