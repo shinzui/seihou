@@ -32,7 +32,7 @@ spec = do
           moduleDescription m `shouldBe` Just "A Haskell project template"
           length (moduleVars m) `shouldBe` 3
           length (modulePrompts m) `shouldBe` 1
-          length (moduleSteps m) `shouldBe` 4
+          length (moduleSteps m) `shouldBe` 5
           length (moduleExports m) `shouldBe` 1
           moduleDependencies m `shouldBe` []
 

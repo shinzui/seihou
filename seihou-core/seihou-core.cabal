@@ -15,6 +15,7 @@ library
     Seihou.Core.Expr
     Seihou.Core.Module
     Seihou.Core.Types
+    Seihou.Core.Variable
     Seihou.Dhall.Eval
     Seihou.Effect.ConfigReader
     Seihou.Effect.Console
@@ -24,6 +25,8 @@ library
     Seihou.Effect.Logger
     Seihou.Effect.ManifestStore
     Seihou.Effect.Process
+    Seihou.Engine.Plan
+    Seihou.Engine.Template
 
   build-depends:
     base >=4.18 && <5,
@@ -44,7 +47,11 @@ test-suite seihou-core-test
     Seihou.Core.ExprSpec
     Seihou.Core.ModuleSpec
     Seihou.Core.TypesSpec
+    Seihou.Core.VariableSpec
     Seihou.Dhall.EvalSpec
+    Seihou.Engine.PlanSpec
+    Seihou.Engine.TemplateSpec
+    Seihou.Integration.GenerationSpec
     Seihou.Integration.ModuleLoadSpec
 
   build-depends:

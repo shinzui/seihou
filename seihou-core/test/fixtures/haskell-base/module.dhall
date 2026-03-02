@@ -52,6 +52,11 @@
     , dest = "{{project.name}}.cabal"
     , when = None Text
     }
+  , { strategy = "dhall-text"
+    , src = "cabal.project.dhall"
+    , dest = "cabal.project"
+    , when = None Text
+    }
   ]
 , dependencies = [] : List Text
 }

@@ -1,0 +1,322 @@
+module Seihou.Core.VariableSpec (tests) where
+
+import Data.Map.Strict qualified as Map
+import Data.Text qualified as T
+import Seihou.Core.Types
+import Seihou.Core.Variable
+import Test.Hspec
+import Test.Tasty
+import Test.Tasty.Hspec (testSpec)
+
+tests :: IO TestTree
+tests = testSpec "Seihou.Core.Variable" spec
+
+-- | Helper to build a simple text var declaration.
+textVar :: VarName -> Bool -> Maybe VarValue -> Maybe Validation -> VarDecl
+textVar name req def val =
+  VarDecl
+    { varName = name,
+      varType = VTText,
+      varDefault = def,
+      varDescription = Nothing,
+      varRequired = req,
+      varValidation = val
+    }
+
+-- | Helper to build a bool var declaration.
+boolVar :: VarName -> Bool -> Maybe VarValue -> VarDecl
+boolVar name req def =
+  VarDecl
+    { varName = name,
+      varType = VTBool,
+      varDefault = def,
+      varDescription = Nothing,
+      varRequired = req,
+      varValidation = Nothing
+    }
+
+-- | Helper to build an int var declaration.
+intVar :: VarName -> Bool -> Maybe VarValue -> Maybe Validation -> VarDecl
+intVar name req def val =
+  VarDecl
+    { varName = name,
+      varType = VTInt,
+      varDefault = def,
+      varDescription = Nothing,
+      varRequired = req,
+      varValidation = val
+    }
+
+-- | Helper to build a choice var declaration.
+choiceVar :: VarName -> Bool -> [T.Text] -> Maybe VarValue -> VarDecl
+choiceVar name req options def =
+  VarDecl
+    { varName = name,
+      varType = VTChoice options,
+      varDefault = def,
+      varDescription = Nothing,
+      varRequired = req,
+      varValidation = Nothing
+    }
+
+spec :: Spec
+spec = do
+  describe "envVarName" $ do
+    it "converts project.name to SEIHOU_VAR_PROJECT_NAME" $ do
+      envVarName "project.name" `shouldBe` "SEIHOU_VAR_PROJECT_NAME"
+
+    it "converts license to SEIHOU_VAR_LICENSE" $ do
+      envVarName "license" `shouldBe` "SEIHOU_VAR_LICENSE"
+
+    it "converts project.version to SEIHOU_VAR_PROJECT_VERSION" $ do
+      envVarName "project.version" `shouldBe` "SEIHOU_VAR_PROJECT_VERSION"
+
+  describe "coerceValue" $ do
+    it "coerces text as-is" $ do
+      coerceValue "x" VTText "hello" `shouldBe` Right (VText "hello")
+
+    it "coerces true string to VBool True" $ do
+      coerceValue "x" VTBool "true" `shouldBe` Right (VBool True)
+
+    it "coerces yes string to VBool True" $ do
+      coerceValue "x" VTBool "yes" `shouldBe` Right (VBool True)
+
+    it "coerces 1 string to VBool True" $ do
+      coerceValue "x" VTBool "1" `shouldBe` Right (VBool True)
+
+    it "coerces false string to VBool False" $ do
+      coerceValue "x" VTBool "false" `shouldBe` Right (VBool False)
+
+    it "coerces no string to VBool False" $ do
+      coerceValue "x" VTBool "no" `shouldBe` Right (VBool False)
+
+    it "rejects invalid bool string" $ do
+      coerceValue "x" VTBool "maybe" `shouldBe` Left (CoercionFailed "x" VTBool "maybe")
+
+    it "coerces integer string" $ do
+      coerceValue "x" VTInt "42" `shouldBe` Right (VInt 42)
+
+    it "coerces negative integer" $ do
+      coerceValue "x" VTInt "-5" `shouldBe` Right (VInt (-5))
+
+    it "rejects non-integer string" $ do
+      coerceValue "x" VTInt "abc" `shouldBe` Left (CoercionFailed "x" VTInt "abc")
+
+    it "coerces comma-separated list" $ do
+      coerceValue "x" (VTList VTText) "a,b,c"
+        `shouldBe` Right (VList [VText "a", VText "b", VText "c"])
+
+    it "strips whitespace in list elements" $ do
+      coerceValue "x" (VTList VTText) "a , b , c"
+        `shouldBe` Right (VList [VText "a", VText "b", VText "c"])
+
+    it "coerces valid choice" $ do
+      coerceValue "x" (VTChoice ["MIT", "BSD3", "Apache"]) "MIT"
+        `shouldBe` Right (VText "MIT")
+
+    it "rejects invalid choice" $ do
+      coerceValue "x" (VTChoice ["MIT", "BSD3"]) "GPL"
+        `shouldBe` Left (CoercionFailed "x" (VTChoice ["MIT", "BSD3"]) "GPL")
+
+  describe "validateVarValue" $ do
+    it "passes when no validation is set" $ do
+      let decl = textVar "x" True Nothing Nothing
+      validateVarValue decl (VText "anything") `shouldBe` Right ()
+
+    it "passes pattern validation" $ do
+      let decl = textVar "x" True Nothing (Just (ValPattern "[a-z][a-z0-9-]*"))
+      validateVarValue decl (VText "my-app") `shouldBe` Right ()
+
+    it "rejects pattern validation" $ do
+      let decl = textVar "x" True Nothing (Just (ValPattern "[a-z][a-z0-9-]*"))
+      case validateVarValue decl (VText "MyApp") of
+        Left (ValidationFailed _ _) -> pure ()
+        other -> expectationFailure ("Expected ValidationFailed, got: " <> show other)
+
+    it "passes range validation" $ do
+      let decl = intVar "x" True Nothing (Just (ValRange 1 100))
+      validateVarValue decl (VInt 50) `shouldBe` Right ()
+
+    it "rejects out-of-range value" $ do
+      let decl = intVar "x" True Nothing (Just (ValRange 1 100))
+      case validateVarValue decl (VInt 200) of
+        Left (ValidationFailed _ _) -> pure ()
+        other -> expectationFailure ("Expected ValidationFailed, got: " <> show other)
+
+    it "passes min-length validation" $ do
+      let decl = textVar "x" True Nothing (Just (ValMinLength 3))
+      validateVarValue decl (VText "hello") `shouldBe` Right ()
+
+    it "rejects too-short value" $ do
+      let decl = textVar "x" True Nothing (Just (ValMinLength 3))
+      case validateVarValue decl (VText "ab") of
+        Left (ValidationFailed _ _) -> pure ()
+        other -> expectationFailure ("Expected ValidationFailed, got: " <> show other)
+
+    it "passes max-length validation" $ do
+      let decl = textVar "x" True Nothing (Just (ValMaxLength 5))
+      validateVarValue decl (VText "hello") `shouldBe` Right ()
+
+    it "rejects too-long value" $ do
+      let decl = textVar "x" True Nothing (Just (ValMaxLength 3))
+      case validateVarValue decl (VText "hello") of
+        Left (ValidationFailed _ _) -> pure ()
+        other -> expectationFailure ("Expected ValidationFailed, got: " <> show other)
+
+  describe "resolveVariables" $ do
+    it "resolves from CLI overrides" $ do
+      let decls = [textVar "project.name" True Nothing Nothing]
+          cli = Map.fromList [("project.name", "my-app")]
+          env = Map.empty
+      case resolveVariables decls cli env of
+        Right resolved -> do
+          let rv = resolved Map.! "project.name"
+          resolvedValue rv `shouldBe` VText "my-app"
+          resolvedSource rv `shouldBe` FromCLI
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "resolves from environment variables" $ do
+      let decls = [textVar "project.name" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.fromList [("SEIHOU_VAR_PROJECT_NAME", "env-app")]
+      case resolveVariables decls cli env of
+        Right resolved -> do
+          let rv = resolved Map.! "project.name"
+          resolvedValue rv `shouldBe` VText "env-app"
+          resolvedSource rv `shouldBe` FromEnv "SEIHOU_VAR_PROJECT_NAME"
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "resolves from module defaults" $ do
+      let decls = [textVar "project.version" False (Just (VText "0.1.0.0")) Nothing]
+          cli = Map.empty
+          env = Map.empty
+      case resolveVariables decls cli env of
+        Right resolved -> do
+          let rv = resolved Map.! "project.version"
+          resolvedValue rv `shouldBe` VText "0.1.0.0"
+          resolvedSource rv `shouldBe` FromDefault
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "rejects missing required variable" $ do
+      let decls = [textVar "project.name" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+      case resolveVariables decls cli env of
+        Left errs -> errs `shouldBe` [MissingRequiredVar "project.name"]
+        Right _ -> expectationFailure "Expected Left"
+
+    it "CLI override beats environment variable" $ do
+      let decls = [textVar "project.name" True Nothing Nothing]
+          cli = Map.fromList [("project.name", "cli-app")]
+          env = Map.fromList [("SEIHOU_VAR_PROJECT_NAME", "env-app")]
+      case resolveVariables decls cli env of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "project.name") `shouldBe` VText "cli-app"
+          resolvedSource (resolved Map.! "project.name") `shouldBe` FromCLI
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "environment variable beats module default" $ do
+      let decls = [textVar "project.name" True (Just (VText "default-app")) Nothing]
+          cli = Map.empty
+          env = Map.fromList [("SEIHOU_VAR_PROJECT_NAME", "env-app")]
+      case resolveVariables decls cli env of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "project.name") `shouldBe` VText "env-app"
+          resolvedSource (resolved Map.! "project.name") `shouldBe` FromEnv "SEIHOU_VAR_PROJECT_NAME"
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "CLI override beats module default" $ do
+      let decls = [textVar "project.name" True (Just (VText "default-app")) Nothing]
+          cli = Map.fromList [("project.name", "cli-app")]
+          env = Map.empty
+      case resolveVariables decls cli env of
+        Right resolved ->
+          resolvedValue (resolved Map.! "project.name") `shouldBe` VText "cli-app"
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "resolves multiple variables with mixed sources" $ do
+      let decls =
+            [ textVar "project.name" True Nothing Nothing,
+              textVar "project.version" False (Just (VText "0.1.0.0")) Nothing,
+              textVar "license" False (Just (VText "MIT")) Nothing
+            ]
+          cli = Map.fromList [("project.name", "my-app")]
+          env = Map.fromList [("SEIHOU_VAR_LICENSE", "BSD3")]
+      case resolveVariables decls cli env of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "project.name") `shouldBe` VText "my-app"
+          resolvedSource (resolved Map.! "project.name") `shouldBe` FromCLI
+          resolvedValue (resolved Map.! "project.version") `shouldBe` VText "0.1.0.0"
+          resolvedSource (resolved Map.! "project.version") `shouldBe` FromDefault
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "BSD3"
+          resolvedSource (resolved Map.! "license") `shouldBe` FromEnv "SEIHOU_VAR_LICENSE"
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "coerces CLI bool override" $ do
+      let decls = [boolVar "enable.tests" True Nothing]
+          cli = Map.fromList [("enable.tests", "true")]
+          env = Map.empty
+      case resolveVariables decls cli env of
+        Right resolved ->
+          resolvedValue (resolved Map.! "enable.tests") `shouldBe` VBool True
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "coerces env int override" $ do
+      let decls = [intVar "port" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.fromList [("SEIHOU_VAR_PORT", "8080")]
+      case resolveVariables decls cli env of
+        Right resolved ->
+          resolvedValue (resolved Map.! "port") `shouldBe` VInt 8080
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "returns coercion error for bad int" $ do
+      let decls = [intVar "port" True Nothing Nothing]
+          cli = Map.fromList [("port", "abc")]
+          env = Map.empty
+      case resolveVariables decls cli env of
+        Left errs -> errs `shouldBe` [CoercionFailed "port" VTInt "abc"]
+        Right _ -> expectationFailure "Expected Left"
+
+    it "validates after coercion" $ do
+      let decls = [textVar "project.name" True Nothing (Just (ValPattern "[a-z][a-z0-9-]*"))]
+          cli = Map.fromList [("project.name", "MyBad")]
+          env = Map.empty
+      case resolveVariables decls cli env of
+        Left (err : _) -> case err of
+          ValidationFailed _ _ -> pure ()
+          other -> expectationFailure ("Expected ValidationFailed, got: " <> show other)
+        Left [] -> expectationFailure "Expected non-empty error list"
+        Right _ -> expectationFailure "Expected Left"
+
+    it "resolves choice variable from CLI" $ do
+      let decls = [choiceVar "license" True ["MIT", "BSD3", "Apache"] Nothing]
+          cli = Map.fromList [("license", "MIT")]
+          env = Map.empty
+      case resolveVariables decls cli env of
+        Right resolved ->
+          resolvedValue (resolved Map.! "license") `shouldBe` VText "MIT"
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+  describe "formatExplain" $ do
+    it "formats a provenance report" $ do
+      let decl1 = textVar "project.name" True Nothing Nothing
+          decl2 = textVar "project.version" False (Just (VText "0.1.0.0")) Nothing
+          resolved =
+            Map.fromList
+              [ ("project.name", ResolvedVar (VText "my-app") FromCLI decl1),
+                ("project.version", ResolvedVar (VText "0.1.0.0") FromDefault decl2)
+              ]
+          output = formatExplain resolved
+      T.isInfixOf "project.name = \"my-app\"" output `shouldBe` True
+      T.isInfixOf "from --set flag" output `shouldBe` True
+      T.isInfixOf "project.version = \"0.1.0.0\"" output `shouldBe` True
+      T.isInfixOf "from module default" output `shouldBe` True
+
+    it "formats env source with env var name" $ do
+      let decl = textVar "license" True Nothing Nothing
+          resolved =
+            Map.fromList
+              [("license", ResolvedVar (VText "MIT") (FromEnv "SEIHOU_VAR_LICENSE") decl)]
+          output = formatExplain resolved
+      T.isInfixOf "from env SEIHOU_VAR_LICENSE" output `shouldBe` True

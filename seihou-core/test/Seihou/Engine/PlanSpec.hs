@@ -1,0 +1,324 @@
+module Seihou.Engine.PlanSpec (tests) where
+
+import Data.Map.Strict qualified as Map
+import Data.Text qualified as T
+import Seihou.Core.Module (loadModule)
+import Seihou.Core.Types
+import Seihou.Engine.Plan
+import System.Directory (createDirectoryIfMissing, getCurrentDirectory)
+import System.FilePath ((</>))
+import System.IO.Temp (withSystemTempDirectory)
+import Test.Hspec
+import Test.Tasty
+import Test.Tasty.Hspec (testSpec)
+
+tests :: IO TestTree
+tests = testSpec "Seihou.Engine.Plan" spec
+
+-- | Helper to create a temp fixture with files in a @files/@ subdirectory.
+withFixture :: [(FilePath, String)] -> (FilePath -> IO a) -> IO a
+withFixture files action = do
+  withSystemTempDirectory "seihou-plan-test" $ \tmpDir -> do
+    mapM_ (createFile tmpDir) files
+    action tmpDir
+  where
+    createFile base (path, content) = do
+      let full = base </> "files" </> path
+          dir = takeDir full
+      createDirectoryIfMissing True dir
+      writeFile full content
+
+    takeDir = reverse . dropWhile (/= '/') . reverse
+
+spec :: Spec
+spec = do
+  describe "parentDirs" $ do
+    it "returns empty for a file in the root" $ do
+      parentDirs "README.md" `shouldBe` []
+
+    it "returns one directory for a file one level deep" $ do
+      parentDirs "src/Lib.hs" `shouldBe` ["src"]
+
+    it "returns two directories for a file two levels deep" $ do
+      parentDirs "a/b/c.txt" `shouldBe` ["a", "a/b"]
+
+    it "returns three directories for a file three levels deep" $ do
+      parentDirs "a/b/c/d.txt" `shouldBe` ["a", "a/b", "a/b/c"]
+
+  describe "compilePlan" $ do
+    it "compiles a Copy step" $ do
+      withFixture [("data.txt", "raw content")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> ops `shouldBe` [WriteFileOp "data.txt" "raw content"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "compiles a Template step with rendering" $ do
+      withFixture [("hello.tpl", "Hello, {{name}}!")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.fromList [("name", VText "world")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> ops `shouldBe` [WriteFileOp "hello.txt" "Hello, world!"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "skips step when condition is false" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit False))],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> ops `shouldBe` []
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "includes step when condition is true" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit True))],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> ops `shouldBe` [WriteFileOp "data.txt" "content"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "evaluates IsSet condition correctly" $ do
+      withFixture [("LICENSE", "MIT License")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "LICENSE" "LICENSE" (Just (ExprIsSet "license"))],
+                  moduleDependencies = []
+                }
+        -- Variable IS set
+        let vars1 = Map.fromList [("license", VText "MIT")]
+        result1 <- compilePlan baseDir modul vars1
+        case result1 of
+          Right ops -> ops `shouldBe` [WriteFileOp "LICENSE" "MIT License"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+        -- Variable is NOT set
+        let vars2 = Map.empty
+        result2 <- compilePlan baseDir modul vars2
+        case result2 of
+          Right ops -> ops `shouldBe` []
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "expands destination path with placeholders" $ do
+      withFixture [("pkg.cabal.tpl", "name: {{name}}\n")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Template "pkg.cabal.tpl" "{{name}}.cabal" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.fromList [("name", VText "my-app")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> ops `shouldBe` [WriteFileOp "my-app.cabal" "name: my-app\n"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "creates parent directories" $ do
+      withFixture [("Lib.hs.tpl", "module Lib where\n")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Template "Lib.hs.tpl" "src/Lib.hs" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops ->
+            ops `shouldBe` [CreateDirOp "src", WriteFileOp "src/Lib.hs" "module Lib where\n"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "deduplicates parent directory operations" $ do
+      withFixture [("A.hs.tpl", "module A\n"), ("B.hs.tpl", "module B\n")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps =
+                    [ Step Template "A.hs.tpl" "src/A.hs" Nothing,
+                      Step Template "B.hs.tpl" "src/B.hs" Nothing
+                    ],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops ->
+            ops
+              `shouldBe` [ CreateDirOp "src",
+                           WriteFileOp "src/A.hs" "module A\n",
+                           WriteFileOp "src/B.hs" "module B\n"
+                         ]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "propagates template error for unresolved placeholder" $ do
+      withFixture [("hello.tpl", "Hello, {{missing}}!")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Left errs -> do
+            length errs `shouldBe` 1
+            T.isInfixOf "missing" (errs !! 0) `shouldBe` True
+          Right _ -> expectationFailure "Expected Left"
+
+    it "compiles a DhallText step" $ do
+      withFixture [("greeting.dhall", "\"Hello, {{name}}!\"")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step DhallText "greeting.dhall" "greeting.txt" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.fromList [("name", VText "world")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> ops `shouldBe` [WriteFileOp "greeting.txt" "Hello, world!"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "compiles a DhallText step with Dhall string interpolation" $ do
+      let dhallContent =
+            "let name = \"{{project.name}}\"\n\
+            \let version = \"{{project.version}}\"\n\
+            \in \"name: ${name}\\nversion: ${version}\\n\""
+      withFixture [("pkg.dhall", T.unpack dhallContent)] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step DhallText "pkg.dhall" "pkg.txt" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.fromList [("project.name", VText "my-app"), ("project.version", VText "0.1.0.0")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> ops `shouldBe` [WriteFileOp "pkg.txt" "name: my-app\nversion: 0.1.0.0\n"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "reports error for invalid Dhall in DhallText step" $ do
+      withFixture [("bad.dhall", "this is not valid dhall {")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step DhallText "bad.dhall" "out.txt" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Left errs -> do
+            length errs `shouldSatisfy` (>= 1)
+            T.isInfixOf "Dhall" (errs !! 0) `shouldBe` True
+          Right _ -> expectationFailure "Expected Left"
+
+    it "compiles haskell-base fixture end-to-end" $ do
+      cwd <- getCurrentDirectory
+      let fixtures = cwd </> "test" </> "fixtures"
+      result <- loadModule [fixtures] "haskell-base"
+      case result of
+        Left err -> expectationFailure ("Failed to load module: " <> show err)
+        Right modul -> do
+          let vars =
+                Map.fromList
+                  [ ("project.name", VText "my-app"),
+                    ("project.version", VText "0.1.0.0"),
+                    ("license", VText "MIT")
+                  ]
+          planResult <- compilePlan (fixtures </> "haskell-base") modul vars
+          case planResult of
+            Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+            Right ops -> do
+              -- Should have operations for README, src/Lib.hs, LICENSE, my-app.cabal, and cabal.project
+              let writeOps = [op | op@(WriteFileOp _ _) <- ops]
+                  dirOps = [op | op@(CreateDirOp _) <- ops]
+              length writeOps `shouldBe` 5
+              -- README.md with rendered content
+              opDest (writeOps !! 0) `shouldBe` "README.md"
+              T.isInfixOf "my-app" (opContent (writeOps !! 0)) `shouldBe` True
+              -- src/Lib.hs
+              opDest (writeOps !! 1) `shouldBe` "src/Lib.hs"
+              -- LICENSE (copy)
+              opDest (writeOps !! 2) `shouldBe` "LICENSE"
+              -- my-app.cabal (dest expanded from {{project.name}}.cabal)
+              opDest (writeOps !! 3) `shouldBe` "my-app.cabal"
+              T.isInfixOf "my-app" (opContent (writeOps !! 3)) `shouldBe` True
+              -- cabal.project (DhallText)
+              opDest (writeOps !! 4) `shouldBe` "cabal.project"
+              T.isInfixOf "my-app" (opContent (writeOps !! 4)) `shouldBe` True
+              -- Should have CreateDirOp for src/
+              dirOps `shouldSatisfy` any (\op -> opPath op == "src")

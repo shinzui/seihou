@@ -14,6 +14,10 @@ module Seihou.Core.Types
     Operation (..),
     ModuleLoadError (..),
     Manifest (..),
+    VarSource (..),
+    ResolvedVar (..),
+    VarError (..),
+    PlaceholderError (..),
   )
 where
 
@@ -151,6 +155,39 @@ data ModuleLoadError
   | ValidationError ModuleName [Text]
   | CircularDependency [ModuleName]
   | MissingSourceFile ModuleName FilePath
+  deriving stock (Eq, Show, Generic)
+
+-- | Tracks where a variable's value came from (for provenance / @--explain@).
+data VarSource
+  = FromCLI
+  | FromEnv Text
+  | FromLocalConfig
+  | FromNamespaceConfig Text
+  | FromGlobalConfig
+  | FromDefault
+  | FromPrompt
+  deriving stock (Eq, Show, Generic)
+
+-- | A variable that has been resolved to a concrete value with provenance.
+data ResolvedVar = ResolvedVar
+  { resolvedValue :: VarValue,
+    resolvedSource :: VarSource,
+    resolvedDecl :: VarDecl
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Errors that can occur during variable resolution.
+data VarError
+  = MissingRequiredVar VarName
+  | TypeMismatch VarName VarType VarValue
+  | ValidationFailed VarName Text
+  | CoercionFailed VarName VarType Text
+  deriving stock (Eq, Show, Generic)
+
+-- | Errors that can occur during template placeholder substitution.
+data PlaceholderError
+  = UnresolvedPlaceholder VarName Int
+  | MalformedPlaceholder Text Int
   deriving stock (Eq, Show, Generic)
 
 -- | Placeholder manifest type. Will be expanded in M5 with file records,
