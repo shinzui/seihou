@@ -40,9 +40,10 @@ This corresponds to M1 (Module Loading) from `docs/dev/roadmap/v1-milestones.md`
       `Seihou.Core.Expr`, covering the full grammar (Eq, And, Or, Not, IsSet, Literal,
       parentheses, operator precedence). Wired parseExpr into Dhall decoders for `when`
       fields. 56 tests passing. (2026-03-01)
-- [ ] Milestone 4: Module Discovery and Validation — implement module discovery across the
-      three search paths, implement the nine validation rules, add the `ModuleLoadError`
-      type, and wire everything together through the `DhallEval` effect's real interpreter.
+- [x] Milestone 4: Module Discovery and Validation — implement module discovery across the
+      three search paths, implement the nine validation rules, wire everything together
+      through the `DhallEval` effect's real and pure interpreters. 71 tests passing.
+      (2026-03-01)
 - [ ] Milestone 5: Integration Testing — create the `haskell-base` test fixture module,
       write integration tests that load it end-to-end, test error paths (invalid modules,
       missing files, bad expressions), and verify all exit criteria.

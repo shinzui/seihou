@@ -13,11 +13,13 @@ library
   hs-source-dirs: src
   exposed-modules:
     Seihou.Core.Expr
+    Seihou.Core.Module
     Seihou.Core.Types
     Seihou.Dhall.Eval
     Seihou.Effect.ConfigReader
     Seihou.Effect.Console
     Seihou.Effect.DhallEval
+    Seihou.Effect.DhallEvalInterp
     Seihou.Effect.Filesystem
     Seihou.Effect.Logger
     Seihou.Effect.ManifestStore
@@ -27,7 +29,9 @@ library
     base >=4.18 && <5,
     containers >=0.6 && <1,
     dhall >=1.42 && <2,
+    directory >=1.3 && <2,
     effectful-core >=2.4 && <3,
+    filepath >=1.4 && <2,
     text >=2.0 && <3,
 
 test-suite seihou-core-test
@@ -38,6 +42,7 @@ test-suite seihou-core-test
   main-is: Main.hs
   other-modules:
     Seihou.Core.ExprSpec
+    Seihou.Core.ModuleSpec
     Seihou.Core.TypesSpec
     Seihou.Dhall.EvalSpec
 
@@ -45,9 +50,11 @@ test-suite seihou-core-test
     base >=4.18 && <5,
     containers >=0.6 && <1,
     dhall >=1.42 && <2,
+    directory >=1.3 && <2,
     filepath >=1.4 && <2,
     hspec >=2.11 && <3,
     seihou-core,
     tasty >=1.4 && <2,
     tasty-hspec >=1.2 && <2,
+    temporary >=1.3 && <2,
     text >=2.0 && <3,
