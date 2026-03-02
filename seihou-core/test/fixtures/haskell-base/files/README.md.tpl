@@ -1,0 +1,3 @@
+# {{project.name}}
+
+Version: {{project.version}}

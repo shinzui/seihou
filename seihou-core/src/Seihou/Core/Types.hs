@@ -12,6 +12,7 @@ module Seihou.Core.Types
     Step (..),
     Module (..),
     Operation (..),
+    ModuleLoadError (..),
     Manifest (..),
   )
 where
@@ -83,14 +84,15 @@ data Prompt = Prompt
   deriving stock (Eq, Show, Generic)
 
 -- | Expression AST for conditional logic in @when@ clauses.
+-- Expressions are stored as strings in Dhall (e.g., @"IsSet license && Eq license MIT"@)
+-- and parsed into this AST by the expression parser in @Seihou.Core.Expr@.
 data Expr
-  = EVar VarName
-  | ELit VarValue
-  | ENot Expr
-  | EAnd Expr Expr
-  | EOr Expr Expr
-  | EEq Expr Expr
-  | ENeq Expr Expr
+  = ExprEq VarName VarValue
+  | ExprAnd Expr Expr
+  | ExprOr Expr Expr
+  | ExprNot Expr
+  | ExprIsSet VarName
+  | ExprLit Bool
   deriving stock (Eq, Show, Generic)
 
 -- | The four generation strategies.
@@ -139,6 +141,16 @@ data Operation
       { opCommand :: Text,
         opWorkDir :: Maybe FilePath
       }
+  deriving stock (Eq, Show, Generic)
+
+-- | Errors that can occur during module loading and validation.
+data ModuleLoadError
+  = ModuleNotFound ModuleName [FilePath]
+  | DhallEvalError ModuleName Text
+  | DhallDecodeError ModuleName Text
+  | ValidationError ModuleName [Text]
+  | CircularDependency [ModuleName]
+  | MissingSourceFile ModuleName FilePath
   deriving stock (Eq, Show, Generic)
 
 -- | Placeholder manifest type. Will be expanded in M5 with file records,

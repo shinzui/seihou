@@ -12,7 +12,9 @@ library
 
   hs-source-dirs: src
   exposed-modules:
+    Seihou.Core.Expr
     Seihou.Core.Types
+    Seihou.Dhall.Eval
     Seihou.Effect.ConfigReader
     Seihou.Effect.Console
     Seihou.Effect.DhallEval
@@ -24,6 +26,7 @@ library
   build-depends:
     base >=4.18 && <5,
     containers >=0.6 && <1,
+    dhall >=1.42 && <2,
     effectful-core >=2.4 && <3,
     text >=2.0 && <3,
 
@@ -33,9 +36,16 @@ test-suite seihou-core-test
   default-extensions: OverloadedStrings
   hs-source-dirs: test
   main-is: Main.hs
-  other-modules: Seihou.Core.TypesSpec
+  other-modules:
+    Seihou.Core.ExprSpec
+    Seihou.Core.TypesSpec
+    Seihou.Dhall.EvalSpec
+
   build-depends:
     base >=4.18 && <5,
+    containers >=0.6 && <1,
+    dhall >=1.42 && <2,
+    filepath >=1.4 && <2,
     hspec >=2.11 && <3,
     seihou-core,
     tasty >=1.4 && <2,

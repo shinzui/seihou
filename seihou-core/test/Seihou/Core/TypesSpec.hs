@@ -124,12 +124,15 @@ spec = do
       opCommand op `shouldBe` "git init"
 
   describe "Expr" $ do
-    it "supports variable references" $ do
-      EVar "x" `shouldBe` EVar "x"
+    it "supports ExprIsSet" $ do
+      ExprIsSet "x" `shouldBe` ExprIsSet "x"
 
     it "supports logical operations" $ do
-      let expr = EAnd (EVar "a") (ENot (ELit (VBool False)))
+      let expr = ExprAnd (ExprIsSet "a") (ExprNot (ExprLit False))
       expr `shouldBe` expr
+
+    it "supports ExprEq" $ do
+      ExprEq "x" (VText "hello") `shouldBe` ExprEq "x" (VText "hello")
 
   describe "Manifest" $ do
     it "placeholder type exists" $ do
