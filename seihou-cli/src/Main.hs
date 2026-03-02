@@ -1,42 +1,30 @@
 module Main (main) where
 
-import Data.Text qualified as T
 import Options.Applicative (execParser)
 import Seihou.CLI.Commands
+import Seihou.CLI.Init (handleInit)
+import Seihou.CLI.Install (handleInstall)
+import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.Run (handleRun)
 import Seihou.CLI.Status (handleStatus)
-import Seihou.Core.Types (ModuleName (..))
+import Seihou.CLI.Validate (handleValidateModule)
+import Seihou.CLI.Vars (handleVars)
 
 main :: IO ()
 main = do
   cmd <- execParser opts
   case cmd of
     Init ->
-      putStrLn "seihou init: not yet implemented"
+      handleInit
     Run runOpts ->
       handleRun runOpts
-    Vars varsOpts -> do
-      let modName = T.unpack (unModuleName (varsModule varsOpts))
-      putStrLn $
-        "seihou vars: not yet implemented (module: "
-          <> modName
-          <> ", explain: "
-          <> show (varsExplain varsOpts)
-          <> ")"
+    Vars varsOpts ->
+      handleVars varsOpts
     Install installOpts ->
-      putStrLn $
-        "seihou install: not yet implemented (source: "
-          <> T.unpack (installSource installOpts)
-          <> ")"
+      handleInstall installOpts
     Status ->
       handleStatus
     NewModule newModOpts ->
-      putStrLn $
-        "seihou new-module: not yet implemented (name: "
-          <> T.unpack (newModuleName newModOpts)
-          <> ")"
+      handleNewModule newModOpts
     ValidateModule validateOpts ->
-      putStrLn $
-        "seihou validate-module: not yet implemented (path: "
-          <> show (validatePath validateOpts)
-          <> ")"
+      handleValidateModule validateOpts
