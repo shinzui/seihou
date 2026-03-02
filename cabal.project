@@ -1,0 +1,5 @@
+packages:
+  seihou-core
+  seihou-cli
+
+write-ghc-environment-files: never

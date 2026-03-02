@@ -1,0 +1,43 @@
+cabal-version: 3.0
+name: seihou-core
+version: 0.1.0.0
+synopsis: Core library for Seihou project scaffolding
+build-type: Simple
+
+library
+  default-language: GHC2024
+  default-extensions:
+    OverloadedStrings
+    TypeFamilies
+
+  hs-source-dirs: src
+  exposed-modules:
+    Seihou.Core.Types
+    Seihou.Effect.ConfigReader
+    Seihou.Effect.Console
+    Seihou.Effect.DhallEval
+    Seihou.Effect.Filesystem
+    Seihou.Effect.Logger
+    Seihou.Effect.ManifestStore
+    Seihou.Effect.Process
+
+  build-depends:
+    base >=4.18 && <5,
+    containers >=0.6 && <1,
+    effectful-core >=2.4 && <3,
+    text >=2.0 && <3,
+
+test-suite seihou-core-test
+  type: exitcode-stdio-1.0
+  default-language: GHC2024
+  default-extensions: OverloadedStrings
+  hs-source-dirs: test
+  main-is: Main.hs
+  other-modules: Seihou.Core.TypesSpec
+  build-depends:
+    base >=4.18 && <5,
+    hspec >=2.11 && <3,
+    seihou-core,
+    tasty >=1.4 && <2,
+    tasty-hspec >=1.2 && <2,
+    text >=2.0 && <3,

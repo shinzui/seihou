@@ -1,0 +1,17 @@
+cabal-version: 3.0
+name: seihou-cli
+version: 0.1.0.0
+synopsis: CLI for Seihou project scaffolding
+build-type: Simple
+
+executable seihou
+  default-language: GHC2024
+  default-extensions: OverloadedStrings
+  hs-source-dirs: src
+  main-is: Main.hs
+  other-modules: Seihou.CLI.Commands
+  build-depends:
+    base >=4.18 && <5,
+    optparse-applicative >=0.18 && <1,
+    seihou-core,
+    text >=2.0 && <3,
