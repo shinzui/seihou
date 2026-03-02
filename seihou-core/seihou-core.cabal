@@ -12,6 +12,9 @@ library
 
   hs-source-dirs: src
   exposed-modules:
+    Seihou.Composition.Graph
+    Seihou.Composition.Plan
+    Seihou.Composition.Resolve
     Seihou.Core.Expr
     Seihou.Core.Module
     Seihou.Core.Types
@@ -60,6 +63,9 @@ test-suite seihou-core-test
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:
+    Seihou.Composition.GraphSpec
+    Seihou.Composition.PlanSpec
+    Seihou.Composition.ResolveSpec
     Seihou.Core.ExprSpec
     Seihou.Core.ModuleSpec
     Seihou.Core.TypesSpec
@@ -71,6 +77,7 @@ test-suite seihou-core-test
     Seihou.Engine.ExecuteSpec
     Seihou.Engine.PlanSpec
     Seihou.Engine.TemplateSpec
+    Seihou.Integration.CompositionSpec
     Seihou.Integration.ExecutionSpec
     Seihou.Integration.GenerationSpec
     Seihou.Integration.ModuleLoadSpec

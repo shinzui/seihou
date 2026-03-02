@@ -27,6 +27,7 @@ module Seihou.Core.Types
     ResolvedVar (..),
     VarError (..),
     PlaceholderError (..),
+    CompositionWarning (..),
   )
 where
 
@@ -286,4 +287,11 @@ data ConflictResolution
   | KeepCurrent
   | Skip
   | Abort
+  deriving stock (Eq, Show, Generic)
+
+-- | Warnings emitted during multi-module composition.
+-- 'FileOverwritten' records that a file produced by one module was
+-- overwritten by a later module in execution order (last-writer-wins).
+data CompositionWarning
+  = FileOverwritten FilePath ModuleName ModuleName
   deriving stock (Eq, Show, Generic)
