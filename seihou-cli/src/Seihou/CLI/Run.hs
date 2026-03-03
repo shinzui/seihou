@@ -25,6 +25,8 @@ import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
+import Seihou.Effect.Logger (Logger, logDebug, logError, logInfo, logWarn)
+import Seihou.Effect.LoggerInterp (runLoggerIO)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.Process (runProcess)
@@ -42,27 +44,31 @@ handleRun :: RunOpts -> IO ()
 handleRun runOpts = do
   let modName = runModule runOpts
       additional = runAdditional runOpts
+      level = if runVerbose runOpts then LogVerbose else LogNormal
 
   -- 1. Load all modules in the composition (primary + additional + transitive deps)
   searchPaths <- defaultSearchPaths
   compositionResult <- loadComposition searchPaths modName additional
   modulesInOrder <- case compositionResult of
     Left (ModuleNotFound name searched) -> do
-      TIO.putStrLn $ "Module '" <> unModuleName name <> "' not found."
-      TIO.putStrLn "Searched in:"
-      mapM_ (\p -> TIO.putStrLn $ "  " <> T.pack p) searched
+      logIO level $ do
+        logError $ "Module '" <> unModuleName name <> "' not found."
+        logError "Searched in:"
+        mapM_ (\p -> logError $ "  " <> T.pack p) searched
       exitFailure
     Left (CircularDependency names) -> do
-      TIO.putStrLn "Circular dependency detected:"
-      TIO.putStrLn $ "  " <> T.intercalate " -> " (map unModuleName names)
+      logIO level $ do
+        logError "Circular dependency detected:"
+        logError $ "  " <> T.intercalate " -> " (map unModuleName names)
       exitFailure
-    Left err -> exitError (T.pack (show err))
+    Left err -> exitError level (T.pack (show err))
     Right ms -> pure ms
 
   -- Report composition when multiple modules are involved
-  when (length modulesInOrder > 1) $ do
-    TIO.putStrLn $ "Composing " <> T.pack (show (length modulesInOrder)) <> " modules:"
-    mapM_ (\(m, _) -> TIO.putStrLn $ "  " <> unModuleName (moduleName m)) modulesInOrder
+  when (length modulesInOrder > 1) $
+    logIO level $ do
+      logInfo $ "Composing " <> T.pack (show (length modulesInOrder)) <> " modules:"
+      mapM_ (\(m, _) -> logInfo $ "  " <> unModuleName (moduleName m)) modulesInOrder
 
   -- 2. Resolve variables with export visibility and interactive prompts
   envPairs <- getEnvironment
@@ -70,17 +76,18 @@ handleRun runOpts = do
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
       namespace = fromMaybe (deriveNamespace modName) (runNamespace runOpts)
   resolveResult <- runEff $ runConfigReader $ runConsole $ do
-    localCfg <- readLocalConfig >>= unwrapConfig
-    namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig
-    globalCfg <- readGlobalConfig >>= unwrapConfig
+    localCfg <- readLocalConfig >>= unwrapConfig level
+    namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig level
+    globalCfg <- readGlobalConfig >>= unwrapConfig level
     let localMap = toVarNameMap localCfg
         nsMap = toVarNameMap namespaceCfg
         globalMap = toVarNameMap globalCfg
     resolveWithPrompts modulesInOrder cliOverrides envVars localMap nsMap globalMap
   resolved <- case resolveResult of
     Left errs -> do
-      TIO.putStrLn "Error resolving variables:"
-      mapM_ (TIO.putStrLn . ("  " <>) . formatVarError) errs
+      logIO level $ do
+        logError "Error resolving variables:"
+        mapM_ (logError . ("  " <>) . formatVarError) errs
       exitFailure
     Right r -> pure r
 
@@ -92,8 +99,9 @@ handleRun runOpts = do
   planResult <- compileComposedPlan triples
   (ops, warnings) <- case planResult of
     Left errs -> do
-      TIO.putStrLn "Errors compiling plan:"
-      mapM_ (TIO.putStrLn . ("  " <>)) errs
+      logIO level $ do
+        logError "Errors compiling plan:"
+        mapM_ (logError . ("  " <>)) errs
       exitFailure
     Right r -> pure r
 
@@ -104,7 +112,7 @@ handleRun runOpts = do
           else ops
 
   -- 5. Print composition warnings
-  mapM_ printWarning warnings
+  mapM_ (printWarning level) warnings
 
   -- 6. Compute diff (shared by dry-run, --diff, and execution paths)
   now <- getCurrentTime
@@ -121,7 +129,7 @@ handleRun runOpts = do
     existingResult <- readManifest
     existing <- case existingResult of
       Left err -> liftIO $ do
-        TIO.putStrLn $ "Error reading manifest: " <> err
+        logIO level (logError $ "Error reading manifest: " <> err)
         exitFailure
       Right m -> pure m
     let m = fromMaybe (emptyManifest now) existing
@@ -208,26 +216,26 @@ handleRun runOpts = do
 
               -- Execute commands after file generation
               let commandOps = [(cmd, wd) | RunCommandOp cmd wd <- opsForExec]
-              mapM_ (executeCommand colorEnabled) commandOps
+              mapM_ (executeCommand level) commandOps
 
 -- Helpers
 
-exitError :: Text -> IO a
-exitError msg = do
-  TIO.putStrLn $ "Error: " <> msg
+exitError :: LogLevel -> Text -> IO a
+exitError level msg = do
+  logIO level (logError $ "Error: " <> msg)
   exitFailure
 
-printWarning :: CompositionWarning -> IO ()
-printWarning (FileOverwritten path overwritten overwriter) =
-  TIO.putStrLn $
+printWarning :: LogLevel -> CompositionWarning -> IO ()
+printWarning level (FileOverwritten path overwritten overwriter) =
+  logIO level . logWarn $
     "Warning: "
       <> T.pack path
       <> " (from "
       <> unModuleName overwritten
       <> ") overwritten by "
       <> unModuleName overwriter
-printWarning (ContentMerged path base contributor) =
-  TIO.putStrLn $
+printWarning level (ContentMerged path base contributor) =
+  logIO level . logWarn $
     "Merged: "
       <> T.pack path
       <> " (base from "
@@ -266,12 +274,12 @@ varValueToText (VBool False) = "false"
 varValueToText (VInt n) = T.pack (show n)
 varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
 
--- | Unwrap an 'Either ConfigError' in an effectful context, printing an error
+-- | Unwrap an 'Either ConfigError' in an effectful context, logging an error
 -- and exiting on 'Left'.
-unwrapConfig :: (IOE :> es) => Either ConfigError a -> Eff es a
-unwrapConfig (Right a) = pure a
-unwrapConfig (Left err) = liftIO $ do
-  TIO.putStrLn $ "Error reading config: " <> formatConfigError err
+unwrapConfig :: (IOE :> es) => LogLevel -> Either ConfigError a -> Eff es a
+unwrapConfig _ (Right a) = pure a
+unwrapConfig level (Left err) = liftIO $ do
+  logIO level (logError $ "Error reading config: " <> formatConfigError err)
   exitFailure
 
 -- | Whether an operation is a command (RunCommandOp).
@@ -286,19 +294,21 @@ opTargetsPath paths (PatchFileOp dest _ _ _ _) = Set.member dest paths
 opTargetsPath _ _ = False
 
 -- | Execute a shell command via @sh -c@, printing output and halting on failure.
-executeCommand :: Bool -> (Text, Maybe FilePath) -> IO ()
-executeCommand colorEnabled (cmd, workDir) = do
-  TIO.putStrLn $ (if colorEnabled then dim else id) ("  run  " <> cmd)
-  (exitCode, stdout, stderr) <- runEff $ runProcessIO $ runProcess "sh" ["-c", cmd] workDir
-  when (not (T.null stdout)) $ TIO.putStr stdout
+executeCommand :: LogLevel -> (Text, Maybe FilePath) -> IO ()
+executeCommand level (cmd, workDir) = do
+  logIO level (logDebug $ "  run  " <> cmd)
+  (exitCode, cmdOut, cmdErr) <- runEff $ runProcessIO $ runProcess "sh" ["-c", cmd] workDir
+  when (not (T.null cmdOut)) $ TIO.putStr cmdOut
   case exitCode of
     ExitSuccess -> pure ()
     ExitFailure code -> do
-      when (not (T.null stderr)) $ TIO.putStr stderr
-      TIO.putStrLn $
-        (if colorEnabled then red else id)
-          ("Command failed (exit " <> T.pack (show code) <> "): " <> cmd)
+      when (not (T.null cmdErr)) $ TIO.putStr cmdErr
+      logIO level (logError $ "Command failed (exit " <> T.pack (show code) <> "): " <> cmd)
       exitFailure
+
+-- | Run a one-shot Logger action in plain IO, using the given verbosity level.
+logIO :: LogLevel -> Eff '[Logger, IOE] () -> IO ()
+logIO level action = runEff $ runLoggerIO level action
 
 -- | Update manifest's applied modules list with all composed modules.
 updateAllModules :: [AppliedModule] -> [(Module, FilePath)] -> UTCTime -> [AppliedModule]

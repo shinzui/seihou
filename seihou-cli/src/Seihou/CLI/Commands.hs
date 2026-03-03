@@ -35,7 +35,8 @@ data RunOpts = RunOpts
     runDiff :: Bool,
     runForce :: Bool,
     runNoCommands :: Bool,
-    runNamespace :: Maybe Text
+    runNamespace :: Maybe Text,
+    runVerbose :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -268,6 +269,7 @@ runParser =
       <*> switch (long "force" <> help "Auto-resolve conflicts (accept new files)")
       <*> switch (long "no-commands" <> help "Skip shell command steps")
       <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
+      <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
 
 varsParser :: Parser Command
 varsParser =
