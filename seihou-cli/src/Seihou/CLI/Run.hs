@@ -6,6 +6,7 @@ where
 import Control.Monad (when)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -28,6 +29,7 @@ import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.Process (runProcess)
 import Seihou.Effect.ProcessInterp (runProcessIO)
+import Seihou.Engine.Conflict (resolveConflicts)
 import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
 import Seihou.Engine.Preview (buildPreview)
@@ -138,49 +140,75 @@ handleRun runOpts = do
       if runDiff runOpts
         then TIO.putStr (formatDiff colorEnabled diff)
         else do
-          -- Check for conflicts
-          when (not (null (diffConflict diff)) && not (runForce runOpts)) $ do
-            TIO.putStrLn "Conflicts detected (use --force to overwrite):"
-            mapM_ (\c -> TIO.putStrLn $ "  ! " <> T.pack (conflictPath c)) (diffConflict diff)
-            exitFailure
+          -- Resolve conflicts interactively (or abort)
+          resolutions <-
+            runEff $
+              runConsole $
+                resolveConflicts (runForce runOpts) (diffConflict diff)
+          case resolutions of
+            Nothing -> do
+              TIO.putStrLn "Conflicts detected (use --force to overwrite):"
+              mapM_ (\c -> TIO.putStrLn $ "  ! " <> T.pack (conflictPath c)) (diffConflict diff)
+              exitFailure
+            Just conflictResolved -> do
+              -- Partition resolutions: accept (overwrite), keep (update manifest only), skip (ignore)
+              let keepRecords =
+                    Map.fromList
+                      [ ( conflictPath c,
+                          case Map.lookup (conflictPath c) (manifestFiles manifest) of
+                            Just existing ->
+                              existing {fileHash = conflictDisk c, fileGeneratedAt = now}
+                            Nothing ->
+                              FileRecord
+                                { fileHash = conflictDisk c,
+                                  fileModule = conflictModule c,
+                                  fileStrategy = Template,
+                                  fileGeneratedAt = now
+                                }
+                        )
+                      | (c, KeepCurrent) <- conflictResolved
+                      ]
+                  skipPaths = [conflictPath c | (c, Skip) <- conflictResolved]
+                  excludePaths = Set.fromList (Map.keys keepRecords ++ skipPaths)
+                  opsForExec = filter (not . opTargetsPath excludePaths) opsFiltered
 
-          -- Execute the plan
-          runEff $ runFilesystem $ runManifestStore manifestPath $ do
-            recs <- executePlan "" opsFiltered modName now
+              -- Execute the plan (excluding kept/skipped files)
+              runEff $ runFilesystem $ runManifestStore manifestPath $ do
+                recs <- executePlan "" opsForExec modName now
 
-            -- Build updated manifest with all composed modules
-            let orphanedPaths = map orphanedPath (diffOrphaned diff)
-                cleanedFiles = foldr Map.delete (manifestFiles manifest) orphanedPaths
-                allModuleEntries = updateAllModules (manifestModules manifest) modulesInOrder now
-                allResolvedVals =
-                  Map.unions
-                    [Map.map resolvedValue vs | vs <- Map.elems resolved]
-                newManifest =
-                  manifest
-                    { manifestGenAt = now,
-                      manifestModules = allModuleEntries,
-                      manifestVars = Map.map varValueToText allResolvedVals,
-                      manifestFiles = Map.union recs cleanedFiles
-                    }
+                -- Build updated manifest with all composed modules
+                let orphanedPaths = map orphanedPath (diffOrphaned diff)
+                    cleanedFiles = foldr Map.delete (manifestFiles manifest) orphanedPaths
+                    allModuleEntries = updateAllModules (manifestModules manifest) modulesInOrder now
+                    allResolvedVals =
+                      Map.unions
+                        [Map.map resolvedValue vs | vs <- Map.elems resolved]
+                    newManifest =
+                      manifest
+                        { manifestGenAt = now,
+                          manifestModules = allModuleEntries,
+                          manifestVars = Map.map varValueToText allResolvedVals,
+                          manifestFiles = Map.unions [recs, keepRecords, cleanedFiles]
+                        }
 
-            -- Save manifest
-            writeManifest newManifest
+                -- Save manifest
+                writeManifest newManifest
 
-          -- Report results
-          let nNew = length (diffNew diff)
-              nMod = length (diffModified diff)
-              nUnch = length (diffUnchanged diff)
-          TIO.putStrLn $
-            T.pack (show nNew)
-              <> " new, "
-              <> T.pack (show nMod)
-              <> " modified, "
-              <> T.pack (show nUnch)
-              <> " unchanged."
+              -- Report results
+              let nNew = length (diffNew diff)
+                  nMod = length (diffModified diff)
+                  nUnch = length (diffUnchanged diff)
+              TIO.putStrLn $
+                T.pack (show nNew)
+                  <> " new, "
+                  <> T.pack (show nMod)
+                  <> " modified, "
+                  <> T.pack (show nUnch)
+                  <> " unchanged."
 
-          -- Execute commands after file generation
-          let commandOps = [(cmd, wd) | RunCommandOp cmd wd <- opsFiltered]
-          mapM_ (executeCommand colorEnabled) commandOps
+              -- Execute commands after file generation
+              let commandOps = [(cmd, wd) | RunCommandOp cmd wd <- opsForExec]
+              mapM_ (executeCommand colorEnabled) commandOps
 
 -- Helpers
 
@@ -250,6 +278,12 @@ unwrapConfig (Left err) = liftIO $ do
 isCommandOp :: Operation -> Bool
 isCommandOp (RunCommandOp _ _) = True
 isCommandOp _ = False
+
+-- | Check whether an operation targets a file in the given path set.
+opTargetsPath :: Set.Set FilePath -> Operation -> Bool
+opTargetsPath paths (WriteFileOp dest _ _) = Set.member dest paths
+opTargetsPath paths (PatchFileOp dest _ _ _ _) = Set.member dest paths
+opTargetsPath _ _ = False
 
 -- | Execute a shell command via @sh -c@, printing output and halting on failure.
 executeCommand :: Bool -> (Text, Maybe FilePath) -> IO ()
