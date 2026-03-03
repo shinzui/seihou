@@ -36,26 +36,31 @@
     , src = "README.md.tpl"
     , dest = "README.md"
     , when = None Text
+    , patch = None Text
     }
   , { strategy = "template"
     , src = "src/Lib.hs.tpl"
     , dest = "src/Lib.hs"
     , when = None Text
+    , patch = None Text
     }
   , { strategy = "copy"
     , src = "LICENSE"
     , dest = "LICENSE"
     , when = Some "IsSet license"
+    , patch = None Text
     }
   , { strategy = "template"
     , src = "package.cabal.tpl"
     , dest = "{{project.name}}.cabal"
     , when = None Text
+    , patch = None Text
     }
   , { strategy = "dhall-text"
     , src = "cabal.project.dhall"
     , dest = "cabal.project"
     , when = None Text
+    , patch = None Text
     }
   ]
 , dependencies = [] : List Text

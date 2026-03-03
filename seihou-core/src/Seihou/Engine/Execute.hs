@@ -12,6 +12,7 @@ import Data.Time (UTCTime)
 import Effectful
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem
+import Seihou.Engine.Section (applyTextPatch)
 import Seihou.Manifest.Hash (hashContent)
 import System.FilePath ((</>))
 
@@ -67,6 +68,27 @@ executeOp targetDir moduleName now op = case op of
   RunCommandOp _ _ -> do
     -- Command execution is deferred to the CLI layer.
     pure Nothing
+  PatchFileOp dest newContent patchOp' strat modName -> do
+    let fullPath = targetDir </> dest
+    -- Read existing content if the file exists, otherwise start empty
+    exists <- doesFileExist fullPath
+    existing <-
+      if exists
+        then readFileText fullPath
+        else pure ""
+    -- Apply the patch with "#" as default comment prefix
+    case applyTextPatch patchOp' modName "#" existing newContent of
+      Left err -> error ("Patch failed: " <> T.unpack err)
+      Right merged -> do
+        writeFileText fullPath merged
+        let record =
+              FileRecord
+                { fileHash = hashContent merged,
+                  fileModule = moduleName,
+                  fileStrategy = strat,
+                  fileGeneratedAt = now
+                }
+        pure (Just (dest, record))
 
 -- | Format a human-readable description of the plan without executing anything.
 dryRunPlan :: [Operation] -> Text
@@ -80,3 +102,8 @@ dryRunPlan ops =
     formatOp (CreateDirOp path) = "  mkdir " <> T.pack path
     formatOp (CopyFileOp src dest) = "  copy  " <> T.pack src <> " -> " <> T.pack dest
     formatOp (RunCommandOp cmd _) = "  run   " <> cmd
+    formatOp (PatchFileOp dest _ patchOp' _ modName) =
+      "  patch " <> T.pack dest <> " (" <> formatPatchOp patchOp' <> " from " <> unModuleName modName <> ")"
+    formatPatchOp AppendFile = "append-file"
+    formatPatchOp PrependFile = "prepend-file"
+    formatPatchOp AppendSection = "append-section"

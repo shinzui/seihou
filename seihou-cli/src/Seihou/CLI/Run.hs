@@ -103,7 +103,9 @@ handleRun runOpts = do
       -- 6. Run the effectful pipeline
       now <- getCurrentTime
       let manifestPath = ".seihou" </> "manifest.json"
-          planned = [(dest, content, modName) | WriteFileOp dest content _ <- ops]
+          planned =
+            [(dest, content, modName) | WriteFileOp dest content _ <- ops]
+              ++ [(dest, content, mName) | PatchFileOp dest content _ _ mName <- ops]
 
       runEff $ runFilesystem $ runManifestStore manifestPath $ do
         -- Ensure .seihou/ directory exists

@@ -8,6 +8,7 @@ module Seihou.Dhall.Eval
     promptDecoder,
     stepDecoder,
     strategyDecoder,
+    patchOpDecoder,
   )
 where
 
@@ -51,7 +52,7 @@ evalModuleFromFile path = do
     m <- inputFile moduleDecoder path
     -- Force lazy decoder thunks that may contain 'error' calls
     mapM_ (\v -> evaluate (varType v)) (moduleVars m)
-    mapM_ (\s -> evaluate (stepStrategy s) >> evaluate (stepWhen s)) (moduleSteps m)
+    mapM_ (\s -> evaluate (stepStrategy s) >> evaluate (stepWhen s) >> mapM_ evaluate (stepPatch s)) (moduleSteps m)
     mapM_ (\p -> evaluate (promptWhen p)) (modulePrompts m)
     pure m
   case result of
@@ -177,8 +178,23 @@ promptDecoder =
           promptChoices = choices
         }
 
+-- | Decoder for PatchOp from a Dhall Text string.
+--
+-- See 'varTypeDecoder' note re: 'error' safety.
+patchOpDecoder :: Decoder PatchOp
+patchOpDecoder = parsePatchOp <$> strictText
+  where
+    parsePatchOp :: Text -> PatchOp
+    parsePatchOp t = case t of
+      "append-file" -> AppendFile
+      "prepend-file" -> PrependFile
+      "append-section" -> AppendSection
+      -- Caught by 'try' in 'evalModuleFromFile'
+      other -> error ("Unknown patch operation \"" <> T.unpack other <> "\"; expected one of: append-file, prepend-file, append-section")
+
 -- | Decoder for Step from a Dhall record.
 -- The @when@ field is parsed via 'parseExpr' into an 'Expr' AST.
+-- The @patch@ field is an optional patch operation string.
 stepDecoder :: Decoder Step
 stepDecoder =
   record
@@ -187,15 +203,21 @@ stepDecoder =
         <*> field "src" string
         <*> field "dest" strictText
         <*> field "when" (maybe strictText)
+        <*> field "patch" (maybe strictText)
     )
   where
-    mkStep strat src dest whenText =
+    mkStep strat src dest whenText patchText =
       Step
         { stepStrategy = strat,
           stepSrc = src,
           stepDest = dest,
-          stepWhen = parseWhen whenText
+          stepWhen = parseWhen whenText,
+          stepPatch = fmap parsePatchOp patchText
         }
+    parsePatchOp "append-file" = AppendFile
+    parsePatchOp "prepend-file" = PrependFile
+    parsePatchOp "append-section" = AppendSection
+    parsePatchOp other = error ("Unknown patch operation \"" <> T.unpack other <> "\"; expected one of: append-file, prepend-file, append-section")
 
 -- | Parse an optional @when@ expression text into an 'Expr'.
 -- Returns 'Nothing' for 'Nothing' input, 'Just expr' on success, or calls

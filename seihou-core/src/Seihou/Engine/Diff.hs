@@ -20,6 +20,7 @@ planToFileMap :: [Operation] -> Map FilePath Text
 planToFileMap = Map.fromList . concatMap extract
   where
     extract (WriteFileOp dest content _) = [(dest, content)]
+    extract (PatchFileOp dest content _ _ _) = [(dest, content)]
     extract _ = []
 
 -- | Compute a three-state diff: manifest vs plan vs disk.

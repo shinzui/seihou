@@ -23,6 +23,7 @@
     , src = "flake.nix.tpl"
     , dest = "flake.nix"
     , when = None Text
+    , patch = None Text
     }
   ]
 , dependencies = [ "nix-base" ]

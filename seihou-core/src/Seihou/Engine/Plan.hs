@@ -35,30 +35,36 @@ compilePlan ::
   Map VarName VarValue -> -- Resolved variable values
   IO (Either [Text] [Operation])
 compilePlan baseDir modul vars = do
-  results <- mapM (compileStep baseDir vars) (moduleSteps modul)
+  let modName = moduleName modul
+  results <- mapM (compileStep baseDir modName vars) (moduleSteps modul)
   let (allErrors, allOps) = partitionResults results
   if null allErrors
     then Right <$> pure (deduplicateDirs (concat allOps))
     else pure (Left (concat allErrors))
 
 -- | Compile a single step into operations (or skip it).
+-- If the step has a patch operation, it produces a 'PatchFileOp'; otherwise
+-- dispatches by strategy to produce a 'WriteFileOp'.
 compileStep ::
   FilePath ->
+  ModuleName ->
   Map VarName VarValue ->
   Step ->
   IO (Either [Text] [Operation])
-compileStep baseDir vars step = do
+compileStep baseDir modName vars step = do
   -- Evaluate the when condition
   let shouldRun = case stepWhen step of
         Nothing -> True
         Just expr -> evalExpr vars expr
   if not shouldRun
     then pure (Right [])
-    else case stepStrategy step of
-      Copy -> compileCopyStep baseDir vars step
-      Template -> compileTemplateStep baseDir vars step
-      DhallText -> compileDhallTextStep baseDir vars step
-      Structured -> compileStructuredStep baseDir vars step
+    else case stepPatch step of
+      Just _ -> compilePatchStep baseDir vars modName step
+      Nothing -> case stepStrategy step of
+        Copy -> compileCopyStep baseDir vars step
+        Template -> compileTemplateStep baseDir vars step
+        DhallText -> compileDhallTextStep baseDir vars step
+        Structured -> compileStructuredStep baseDir vars step
 
 -- | Compile a Copy step: read the source file and write it to the destination.
 compileCopyStep ::
@@ -166,6 +172,52 @@ compileStructuredStep baseDir vars step = do
                           let destStr = T.unpack dest
                               dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
                           pure (Right (dirOps ++ [WriteFileOp destStr serialized Structured]))
+
+-- | Compile a patch step: read source, render template, produce PatchFileOp.
+-- The content rendering follows the step's strategy (Template renders placeholders,
+-- Copy uses raw content, DhallText evaluates as Dhall).
+compilePatchStep ::
+  FilePath ->
+  Map VarName VarValue ->
+  ModuleName ->
+  Step ->
+  IO (Either [Text] [Operation])
+compilePatchStep baseDir vars modName step = do
+  let srcPath = baseDir </> "files" </> stepSrc step
+      patchOp' = case stepPatch step of
+        Just p -> p
+        Nothing -> error "compilePatchStep called without patch op"
+  result <- tryReadFile srcPath
+  case result of
+    Left err -> pure (Left [err])
+    Right rawContent -> do
+      -- Render content based on strategy
+      contentResult <- case stepStrategy step of
+        Copy -> pure (Right rawContent)
+        Template ->
+          pure $ case renderTemplate rawContent vars of
+            Left placeholderErrors -> Left (map formatPlaceholderError placeholderErrors)
+            Right rendered -> Right rendered
+        DhallText -> do
+          case renderTemplate rawContent vars of
+            Left placeholderErrors -> pure (Left (map formatPlaceholderError placeholderErrors))
+            Right substituted -> do
+              dhallResult <- renderDhallText substituted
+              case dhallResult of
+                Left err -> pure (Left [err])
+                Right evaluated -> pure (Right evaluated)
+        Structured ->
+          pure (Left ["Structured strategy cannot be used with patch operations"])
+      case contentResult of
+        Left errs -> pure (Left errs)
+        Right content ->
+          case renderDestPath (stepDest step) vars of
+            Left placeholderErrors ->
+              pure (Left (map formatPlaceholderError placeholderErrors))
+            Right dest -> do
+              let destStr = T.unpack dest
+                  dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
+              pure (Right (dirOps ++ [PatchFileOp destStr content patchOp' (stepStrategy step) modName]))
 
 -- | Evaluate a Dhall expression and return the normalized AST.
 evaluateDhallExpr :: Text -> IO (Either Text (DhallCore.Expr Src Void))

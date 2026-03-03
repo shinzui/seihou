@@ -9,6 +9,7 @@ module Seihou.Core.Types
     Prompt (..),
     Expr (..),
     Strategy (..),
+    PatchOp (..),
     Step (..),
     Module (..),
     Operation (..),
@@ -120,12 +121,22 @@ data Strategy
   | Structured
   deriving stock (Eq, Show, Generic)
 
+-- | Patch operations for modifying existing files during composition.
+-- A step with a 'PatchOp' contributes content to a file that another module
+-- creates, rather than overwriting it.
+data PatchOp
+  = AppendFile
+  | PrependFile
+  | AppendSection
+  deriving stock (Eq, Show, Generic)
+
 -- | A generation step within a module.
 data Step = Step
   { stepStrategy :: Strategy,
     stepSrc :: FilePath,
     stepDest :: Text,
-    stepWhen :: Maybe Expr
+    stepWhen :: Maybe Expr,
+    stepPatch :: Maybe PatchOp
   }
   deriving stock (Eq, Show, Generic)
 
@@ -158,6 +169,13 @@ data Operation
   | RunCommandOp
       { opCommand :: Text,
         opWorkDir :: Maybe FilePath
+      }
+  | PatchFileOp
+      { patchDest :: FilePath,
+        patchContent :: Text,
+        patchOp :: PatchOp,
+        patchStrategy :: Strategy,
+        patchModule :: ModuleName
       }
   deriving stock (Eq, Show, Generic)
 

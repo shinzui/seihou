@@ -58,6 +58,8 @@ mergeOperations moduleOps =
           handleFileOp name op dest rest fileOwner seenDirs opsAcc warningsAcc
         RunCommandOp {} ->
           go rest fileOwner seenDirs (op : opsAcc) warningsAcc
+        PatchFileOp dest _ _ _ _ ->
+          handleFileOp name op dest rest fileOwner seenDirs opsAcc warningsAcc
 
     handleFileOp name op dest rest fileOwner seenDirs opsAcc warningsAcc =
       case Map.lookup dest fileOwner of
@@ -81,6 +83,7 @@ mergeOperations moduleOps =
 destOfOp :: Operation -> Maybe FilePath
 destOfOp (WriteFileOp d _ _) = Just d
 destOfOp (CopyFileOp _ d) = Just d
+destOfOp (PatchFileOp d _ _ _ _) = Just d
 destOfOp _ = Nothing
 
 -- | Partition a list of Either into errors and successes.

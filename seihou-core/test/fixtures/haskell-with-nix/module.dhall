@@ -8,6 +8,7 @@
     , src = "Makefile.tpl"
     , dest = "Makefile"
     , when = None Text
+    , patch = None Text
     }
   ]
 , dependencies = [ "haskell-base", "nix-flake" ]

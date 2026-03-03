@@ -8,6 +8,7 @@
     , src = "README.md"
     , dest = "README.md"
     , when = None Text
+    , patch = None Text
     }
   ]
 , dependencies = [] : List Text

@@ -58,7 +58,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -76,7 +76,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing],
+                  moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "world")]
@@ -94,7 +94,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit False))],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit False)) Nothing],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -112,7 +112,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit True))],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit True)) Nothing],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -130,7 +130,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Copy "LICENSE" "LICENSE" (Just (ExprIsSet "license"))],
+                  moduleSteps = [Step Copy "LICENSE" "LICENSE" (Just (ExprIsSet "license")) Nothing],
                   moduleDependencies = []
                 }
         -- Variable IS set
@@ -155,7 +155,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Template "pkg.cabal.tpl" "{{name}}.cabal" Nothing],
+                  moduleSteps = [Step Template "pkg.cabal.tpl" "{{name}}.cabal" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
@@ -173,7 +173,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Template "Lib.hs.tpl" "src/Lib.hs" Nothing],
+                  moduleSteps = [Step Template "Lib.hs.tpl" "src/Lib.hs" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -193,8 +193,8 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps =
-                    [ Step Template "A.hs.tpl" "src/A.hs" Nothing,
-                      Step Template "B.hs.tpl" "src/B.hs" Nothing
+                    [ Step Template "A.hs.tpl" "src/A.hs" Nothing Nothing,
+                      Step Template "B.hs.tpl" "src/B.hs" Nothing Nothing
                     ],
                   moduleDependencies = []
                 }
@@ -218,7 +218,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing],
+                  moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -238,7 +238,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step DhallText "greeting.dhall" "greeting.txt" Nothing],
+                  moduleSteps = [Step DhallText "greeting.dhall" "greeting.txt" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "world")]
@@ -260,7 +260,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step DhallText "pkg.dhall" "pkg.txt" Nothing],
+                  moduleSteps = [Step DhallText "pkg.dhall" "pkg.txt" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("project.name", VText "my-app"), ("project.version", VText "0.1.0.0")]
@@ -278,7 +278,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step DhallText "bad.dhall" "out.txt" Nothing],
+                  moduleSteps = [Step DhallText "bad.dhall" "out.txt" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -298,7 +298,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Structured "data.json.gen" "data.json" Nothing],
+                  moduleSteps = [Step Structured "data.json.gen" "data.json" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
@@ -325,7 +325,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Structured "config.yaml.gen" "config.yaml" Nothing],
+                  moduleSteps = [Step Structured "config.yaml.gen" "config.yaml" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
@@ -353,7 +353,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Structured "bad.gen" "out.json" Nothing],
+                  moduleSteps = [Step Structured "bad.gen" "out.json" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -373,7 +373,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [],
                   modulePrompts = [],
-                  moduleSteps = [Step Structured "data.gen" "output.txt" Nothing],
+                  moduleSteps = [Step Structured "data.gen" "output.txt" Nothing Nothing],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -420,3 +420,80 @@ spec = do
               T.isInfixOf "my-app" (opContent (writeOps !! 4)) `shouldBe` True
               -- Should have CreateDirOp for src/
               dirOps `shouldSatisfy` any (\op -> opPath op == "src")
+
+    it "compiles a Template step with patch = AppendFile to PatchFileOp" $ do
+      withFixture [("section.tpl", "appended content")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "patch-mod",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Template "section.tpl" "README.md" Nothing (Just AppendFile)],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops ->
+            ops `shouldBe` [PatchFileOp "README.md" "appended content" AppendFile Template "patch-mod"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "compiles a Template step with patch = AppendSection to PatchFileOp" $ do
+      withFixture [("section.tpl", "section {{name}}")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "section-mod",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Template "section.tpl" "README.md" Nothing (Just AppendSection)],
+                  moduleDependencies = []
+                }
+            vars = Map.fromList [("name", VText "test")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops ->
+            ops `shouldBe` [PatchFileOp "README.md" "section test" AppendSection Template "section-mod"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "compiles a Copy step with patch = PrependFile to PatchFileOp" $ do
+      withFixture [("header.txt", "header line\n")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "header-mod",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "header.txt" "out.txt" Nothing (Just PrependFile)],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops ->
+            ops `shouldBe` [PatchFileOp "out.txt" "header line\n" PrependFile Copy "header-mod"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "rejects Structured strategy with patch operation" $ do
+      withFixture [("data.gen", "{ name = \"test\" }\n")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Structured "data.gen" "data.json" Nothing (Just AppendFile)],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Left errs -> do
+            length errs `shouldSatisfy` (>= 1)
+            T.isInfixOf "Structured" (errs !! 0) `shouldBe` True
+          Right _ -> expectationFailure "Expected Left"

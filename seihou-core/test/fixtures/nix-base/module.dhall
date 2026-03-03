@@ -16,6 +16,7 @@
     , src = "shell.nix.tpl"
     , dest = "shell.nix"
     , when = None Text
+    , patch = None Text
     }
   ]
 , dependencies = [] : List Text

@@ -29,6 +29,7 @@
     , src = "missing.tpl"
     , dest = "/absolute/path"
     , when = None Text
+    , patch = None Text
     }
   ]
 , dependencies = [] : List Text

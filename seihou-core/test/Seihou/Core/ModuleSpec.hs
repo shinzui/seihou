@@ -36,7 +36,8 @@ goodModule =
             { stepStrategy = Template,
               stepSrc = "README.md.tpl",
               stepDest = "README.md",
-              stepWhen = Nothing
+              stepWhen = Nothing,
+              stepPatch = Nothing
             }
         ],
       moduleDependencies = []
@@ -165,7 +166,7 @@ spec = do
         let bad =
               goodModule
                 { moduleSteps =
-                    [Step Template "README.md.tpl" "../etc/passwd" Nothing]
+                    [Step Template "README.md.tpl" "../etc/passwd" Nothing Nothing]
                 }
         result <- validateModule tmpDir bad
         case result of
@@ -181,7 +182,7 @@ spec = do
         let bad =
               goodModule
                 { moduleSteps =
-                    [Step Template "README.md.tpl" "/etc/passwd" Nothing]
+                    [Step Template "README.md.tpl" "/etc/passwd" Nothing Nothing]
                 }
         result <- validateModule tmpDir bad
         case result of
@@ -197,7 +198,7 @@ spec = do
         let bad =
               goodModule
                 { moduleSteps =
-                    [Step Template "README.md.tpl" "src/{{unknown}}/Main.hs" Nothing]
+                    [Step Template "README.md.tpl" "src/{{unknown}}/Main.hs" Nothing Nothing]
                 }
         result <- validateModule tmpDir bad
         case result of
@@ -215,7 +216,7 @@ spec = do
                   moduleVars = [],
                   moduleExports = [VarExport {exportVar = "missing", exportAs = Nothing}],
                   modulePrompts = [Prompt {promptVar = "missing", promptText = "?", promptWhen = Nothing, promptChoices = Nothing}],
-                  moduleSteps = [Step Template "nonexistent.tpl" "/bad/dest" Nothing],
+                  moduleSteps = [Step Template "nonexistent.tpl" "/bad/dest" Nothing Nothing],
                   moduleDependencies = []
                 }
         result <- validateModule tmpDir bad

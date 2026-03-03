@@ -87,4 +87,5 @@ isWriteOp _ = False
 destOfOp' :: Operation -> Maybe FilePath
 destOfOp' (WriteFileOp d _ _) = Just d
 destOfOp' (CopyFileOp _ d) = Just d
+destOfOp' (PatchFileOp d _ _ _ _) = Just d
 destOfOp' _ = Nothing

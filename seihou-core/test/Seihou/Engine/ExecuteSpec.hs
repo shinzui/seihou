@@ -123,6 +123,41 @@ spec = do
           record = records Map.! "test.json"
       fileStrategy record `shouldBe` Structured
 
+    it "executes PatchFileOp AppendFile on existing file" $ do
+      let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty
+          ops = [PatchFileOp "README.md" "extra line\n" AppendFile Template modName]
+          (records, fs) = runExecFS initial ops
+      Map.member "README.md" records `shouldBe` True
+      let content = pureFiles fs Map.! "/project/README.md"
+      T.isInfixOf "# Title" content `shouldBe` True
+      T.isInfixOf "extra line" content `shouldBe` True
+
+    it "executes PatchFileOp PrependFile on existing file" $ do
+      let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty
+          ops = [PatchFileOp "README.md" "header\n" PrependFile Template modName]
+          (records, fs) = runExecFS initial ops
+      Map.member "README.md" records `shouldBe` True
+      let content = pureFiles fs Map.! "/project/README.md"
+      T.isInfixOf "header" content `shouldBe` True
+      T.isInfixOf "# Title" content `shouldBe` True
+
+    it "executes PatchFileOp AppendSection with section markers" $ do
+      let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty
+          ops = [PatchFileOp "README.md" "section content\n" AppendSection Template modName]
+          (records, fs) = runExecFS initial ops
+      Map.member "README.md" records `shouldBe` True
+      let content = pureFiles fs Map.! "/project/README.md"
+      T.isInfixOf "# Title" content `shouldBe` True
+      T.isInfixOf "seihou:test-module" content `shouldBe` True
+      T.isInfixOf "section content" content `shouldBe` True
+
+    it "executes PatchFileOp on nonexistent file (creates from empty)" $ do
+      let ops = [PatchFileOp "new.txt" "new content\n" AppendFile Template modName]
+          (records, fs) = runExecFS emptyFS ops
+      Map.member "new.txt" records `shouldBe` True
+      let content = pureFiles fs Map.! "/project/new.txt"
+      T.isInfixOf "new content" content `shouldBe` True
+
   describe "dryRunPlan" $ do
     it "formats WriteFileOp" $ do
       let result = dryRunPlan [WriteFileOp "README.md" "content" Template]
@@ -145,6 +180,12 @@ spec = do
     it "returns message for empty plan" $ do
       let result = dryRunPlan []
       T.isInfixOf "No operations" result `shouldBe` True
+
+    it "formats PatchFileOp" $ do
+      let result = dryRunPlan [PatchFileOp "README.md" "content" AppendSection Template (ModuleName "nix-flake")]
+      T.isInfixOf "patch" result `shouldBe` True
+      T.isInfixOf "README.md" result `shouldBe` True
+      T.isInfixOf "nix-flake" result `shouldBe` True
 
     it "does not include file content" $ do
       let result = dryRunPlan [WriteFileOp "secret.txt" "super secret" Template]

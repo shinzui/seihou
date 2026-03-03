@@ -54,7 +54,9 @@ compileFixturePlan vars = do
 
 -- | Extract planned files from operations for computeDiff.
 extractPlanned :: ModuleName -> [Operation] -> [(FilePath, Text, ModuleName)]
-extractPlanned modName ops = [(dest, content, modName) | WriteFileOp dest content _ <- ops]
+extractPlanned modName' ops =
+  [(dest, content, modName') | WriteFileOp dest content _ <- ops]
+    ++ [(dest, content, mName) | PatchFileOp dest content _ _ mName <- ops]
 
 spec :: Spec
 spec = do

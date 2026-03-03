@@ -29,11 +29,13 @@
     , src = "data.json.gen"
     , dest = "data.json"
     , when = None Text
+    , patch = None Text
     }
   , { strategy = "structured"
     , src = "config.yaml.gen"
     , dest = "config.yaml"
     , when = None Text
+    , patch = None Text
     }
   ]
 , dependencies = [] : List Text
