@@ -11,6 +11,7 @@ import Seihou.Dhall.ConfigSpec qualified as ConfigSpec
 import Seihou.Dhall.EvalSpec qualified as DhallEvalSpec
 import Seihou.Effect.ConfigReaderSpec qualified as ConfigReaderSpec
 import Seihou.Effect.FilesystemSpec qualified as FilesystemSpec
+import Seihou.Effect.LoggerSpec qualified as LoggerSpec
 import Seihou.Effect.ManifestStoreSpec qualified as ManifestStoreSpec
 import Seihou.Engine.ConflictSpec qualified as ConflictSpec
 import Seihou.Engine.DiffSpec qualified as DiffSpec
@@ -46,6 +47,7 @@ main = do
   dhallEvalTests <- DhallEvalSpec.tests
   configReaderTests <- ConfigReaderSpec.tests
   filesystemTests <- FilesystemSpec.tests
+  loggerTests <- LoggerSpec.tests
   manifestStoreTests <- ManifestStoreSpec.tests
   conflictTests <- ConflictSpec.tests
   diffTests <- DiffSpec.tests
@@ -56,4 +58,4 @@ main = do
   generationTests <- GenerationSpec.tests
   manifestTypesTests <- ManifestTypesSpec.tests
   promptTests <- PromptSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, exprTests, moduleTests, variableTests, templateTests, planTests, previewTests, sectionTests, validateTests, configTests, dhallEvalTests, configReaderTests, filesystemTests, manifestStoreTests, conflictTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])
+  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, exprTests, moduleTests, variableTests, templateTests, planTests, previewTests, sectionTests, validateTests, configTests, dhallEvalTests, configReaderTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])

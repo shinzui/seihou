@@ -31,6 +31,7 @@ module Seihou.Core.Types
     PlaceholderError (..),
     CompositionWarning (..),
     ConfigError (..),
+    LogLevel (..),
   )
 where
 
@@ -324,6 +325,14 @@ data ConfigError
   = ConfigParseError FilePath Text
   | InvalidNamespace Text Text
   deriving stock (Eq, Show, Generic)
+
+-- | Controls the verbosity of diagnostic output.
+-- 'LogQuiet' shows only errors, 'LogNormal' shows warnings and errors,
+-- 'LogVerbose' shows all messages including info and debug.
+-- The derived 'Ord' instance gives @LogQuiet < LogNormal < LogVerbose@,
+-- which the Logger interpreters use for filtering.
+data LogLevel = LogQuiet | LogNormal | LogVerbose
+  deriving stock (Eq, Ord, Show, Generic)
 
 -- | Warnings emitted during multi-module composition.
 -- 'FileOverwritten' records that a file produced by one module was

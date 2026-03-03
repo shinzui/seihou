@@ -33,6 +33,8 @@ library
     Seihou.Effect.FilesystemInterp
     Seihou.Effect.FilesystemPure
     Seihou.Effect.Logger
+    Seihou.Effect.LoggerInterp
+    Seihou.Effect.LoggerPure
     Seihou.Effect.ManifestStore
     Seihou.Effect.ManifestStoreInterp
     Seihou.Effect.ManifestStorePure
@@ -87,6 +89,7 @@ test-suite seihou-core-test
     Seihou.Dhall.EvalSpec
     Seihou.Effect.ConfigReaderSpec
     Seihou.Effect.FilesystemSpec
+    Seihou.Effect.LoggerSpec
     Seihou.Effect.ManifestStoreSpec
     Seihou.Engine.ConflictSpec
     Seihou.Engine.DiffSpec
