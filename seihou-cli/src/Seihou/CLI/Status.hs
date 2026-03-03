@@ -7,8 +7,10 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Effectful
+import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Types
 import Seihou.Effect.FilesystemInterp (runFilesystem)
+import Seihou.Effect.Logger (logError)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import System.Exit (exitFailure)
@@ -22,7 +24,7 @@ handleStatus = do
 
   case result of
     Left err -> do
-      TIO.putStrLn $ "Error reading manifest: " <> err
+      logIO LogNormal (logError $ "Error reading manifest: " <> err)
       exitFailure
     Right Nothing ->
       TIO.putStrLn "No manifest found. Run 'seihou run <module>' first."

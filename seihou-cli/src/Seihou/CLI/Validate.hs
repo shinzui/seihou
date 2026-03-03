@@ -6,9 +6,11 @@ where
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (ValidateOpts (..))
+import Seihou.CLI.Shared (logIO)
 import Seihou.CLI.Style (renderReportColor, useColor)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
+import Seihou.Effect.Logger (logError)
 import Seihou.Engine.Validate (ValidateReport (..), buildReport, reportHasErrors)
 import System.Directory (doesFileExist, getCurrentDirectory)
 import System.Exit (exitFailure)
@@ -27,7 +29,7 @@ handleValidateModule vopts = do
   exists <- doesFileExist dhallFile
   if not exists
     then do
-      TIO.putStrLn $ "Error: " <> T.pack dhallFile <> " not found."
+      logIO LogNormal (logError $ T.pack dhallFile <> " not found.")
       exitFailure
     else pure ()
 

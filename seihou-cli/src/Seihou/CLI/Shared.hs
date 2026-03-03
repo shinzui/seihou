@@ -3,13 +3,19 @@ module Seihou.CLI.Shared
     formatConfigError,
     deriveNamespace,
     toVarNameMap,
+    logIO,
+    unwrapConfig,
   )
 where
 
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
+import Effectful
 import Seihou.Core.Types
+import Seihou.Effect.Logger (Logger, logError)
+import Seihou.Effect.LoggerInterp (runLoggerIO)
+import System.Exit (exitFailure)
 
 -- | Format a 'VarError' for display in CLI output.
 formatVarError :: VarError -> Text
@@ -34,3 +40,15 @@ deriveNamespace (ModuleName name) =
 -- | Convert a @Map Text Text@ (with text keys like @"project.name"@) to a @Map VarName Text@.
 toVarNameMap :: Map.Map Text Text -> Map.Map VarName Text
 toVarNameMap = Map.mapKeys VarName
+
+-- | Run a one-shot Logger action in plain IO, using the given verbosity level.
+logIO :: LogLevel -> Eff '[Logger, IOE] () -> IO ()
+logIO level action = runEff $ runLoggerIO level action
+
+-- | Unwrap an 'Either ConfigError' in an effectful context, logging an error
+-- and exiting on 'Left'.
+unwrapConfig :: (IOE :> es) => LogLevel -> Either ConfigError a -> Eff es a
+unwrapConfig _ (Right a) = pure a
+unwrapConfig level (Left err) = liftIO $ do
+  logIO level (logError $ "Error reading config: " <> formatConfigError err)
+  exitFailure

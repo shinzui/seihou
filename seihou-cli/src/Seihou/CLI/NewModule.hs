@@ -7,6 +7,9 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (NewModuleOpts (..))
+import Seihou.CLI.Shared (logIO)
+import Seihou.Core.Types (LogLevel (..))
+import Seihou.Effect.Logger (logError)
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
@@ -18,8 +21,9 @@ handleNewModule nopts = do
   -- Validate module name format
   if not (isValidModuleName name)
     then do
-      TIO.putStrLn $ "Error: invalid module name '" <> name <> "'."
-      TIO.putStrLn "Module names must match [a-z][a-z0-9-]*."
+      logIO LogNormal $ do
+        logError $ "invalid module name '" <> name <> "'."
+        logError "Module names must match [a-z][a-z0-9-]*."
       exitFailure
     else pure ()
 
@@ -32,7 +36,7 @@ handleNewModule nopts = do
   exists <- doesDirectoryExist outputDir
   if exists
     then do
-      TIO.putStrLn $ "Error: directory '" <> T.pack outputDir <> "' already exists."
+      logIO LogNormal (logError $ "directory '" <> T.pack outputDir <> "' already exists.")
       exitFailure
     else pure ()
 

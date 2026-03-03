@@ -10,12 +10,13 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Effectful
 import Seihou.CLI.Commands (VarsOpts (..))
-import Seihou.CLI.Shared (deriveNamespace, formatConfigError, formatVarError, toVarNameMap)
+import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.Core.Module (defaultSearchPaths, loadModule)
 import Seihou.Core.Types
 import Seihou.Core.Variable (formatExplain, resolveVariables)
 import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
+import Seihou.Effect.Logger (logError)
 import System.Environment (getEnvironment)
 import System.Exit (exitFailure)
 
@@ -28,12 +29,13 @@ handleVars vopts = do
   result <- loadModule searchPaths modName
   modul <- case result of
     Left (ModuleNotFound _ searched) -> do
-      TIO.putStrLn $ "Module '" <> unModuleName modName <> "' not found."
-      TIO.putStrLn "Searched in:"
-      mapM_ (\p -> TIO.putStrLn $ "  " <> T.pack p) searched
+      logIO LogNormal $ do
+        logError $ "Module '" <> unModuleName modName <> "' not found."
+        logError "Searched in:"
+        mapM_ (\p -> logError $ "  " <> T.pack p) searched
       exitFailure
     Left err -> do
-      TIO.putStrLn $ "Error: " <> T.pack (show err)
+      logIO LogNormal (logError $ T.pack (show err))
       exitFailure
     Right m -> pure m
 
@@ -86,27 +88,20 @@ explainMode modul vopts = do
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
       namespace = fromMaybe (deriveNamespace (varsModule vopts)) (varsNamespace vopts)
   result <- runEff $ runConfigReader $ do
-    localCfg <- readLocalConfig >>= unwrapConfig
-    namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig
-    globalCfg <- readGlobalConfig >>= unwrapConfig
+    localCfg <- readLocalConfig >>= unwrapConfig LogNormal
+    namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig LogNormal
+    globalCfg <- readGlobalConfig >>= unwrapConfig LogNormal
     let localMap = toVarNameMap localCfg
         nsMap = toVarNameMap namespaceCfg
         globalMap = toVarNameMap globalCfg
     pure $ resolveVariables (moduleVars modul) cliOverrides envVars localMap nsMap globalMap
   case result of
     Left errs -> do
-      TIO.putStrLn "Error resolving variables:"
-      mapM_ (TIO.putStrLn . ("  " <>) . formatVarError) errs
+      logIO LogNormal $ do
+        logError "Error resolving variables:"
+        mapM_ (logError . ("  " <>) . formatVarError) errs
       exitFailure
     Right resolved -> do
       TIO.putStrLn $ "Variable provenance for module '" <> unModuleName (moduleName modul) <> "':"
       TIO.putStrLn ""
       TIO.putStr (formatExplain resolved)
-
--- | Unwrap an 'Either ConfigError' in an effectful context, printing an error
--- and exiting on 'Left'.
-unwrapConfig :: (IOE :> es) => Either ConfigError a -> Eff es a
-unwrapConfig (Right a) = pure a
-unwrapConfig (Left err) = liftIO $ do
-  TIO.putStrLn $ "Error reading config: " <> formatConfigError err
-  exitFailure

@@ -14,7 +14,7 @@ import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
 import Effectful
 import Seihou.CLI.Commands (RunOpts (..))
-import Seihou.CLI.Shared (deriveNamespace, formatConfigError, formatVarError, toVarNameMap)
+import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, green, magenta, red, renderPreviewColor, useColor, yellow)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
@@ -25,8 +25,7 @@ import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
-import Seihou.Effect.Logger (Logger, logDebug, logError, logInfo, logWarn)
-import Seihou.Effect.LoggerInterp (runLoggerIO)
+import Seihou.Effect.Logger (logDebug, logError, logInfo, logWarn)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.Process (runProcess)
@@ -274,14 +273,6 @@ varValueToText (VBool False) = "false"
 varValueToText (VInt n) = T.pack (show n)
 varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
 
--- | Unwrap an 'Either ConfigError' in an effectful context, logging an error
--- and exiting on 'Left'.
-unwrapConfig :: (IOE :> es) => LogLevel -> Either ConfigError a -> Eff es a
-unwrapConfig _ (Right a) = pure a
-unwrapConfig level (Left err) = liftIO $ do
-  logIO level (logError $ "Error reading config: " <> formatConfigError err)
-  exitFailure
-
 -- | Whether an operation is a command (RunCommandOp).
 isCommandOp :: Operation -> Bool
 isCommandOp (RunCommandOp _ _) = True
@@ -305,10 +296,6 @@ executeCommand level (cmd, workDir) = do
       when (not (T.null cmdErr)) $ TIO.putStr cmdErr
       logIO level (logError $ "Command failed (exit " <> T.pack (show code) <> "): " <> cmd)
       exitFailure
-
--- | Run a one-shot Logger action in plain IO, using the given verbosity level.
-logIO :: LogLevel -> Eff '[Logger, IOE] () -> IO ()
-logIO level action = runEff $ runLoggerIO level action
 
 -- | Update manifest's applied modules list with all composed modules.
 updateAllModules :: [AppliedModule] -> [(Module, FilePath)] -> UTCTime -> [AppliedModule]
