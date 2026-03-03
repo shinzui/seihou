@@ -127,7 +127,7 @@ spec = do
                 Right (ops, warnings) -> do
                   -- Should have operations for shell.nix, flake.nix, README.md,
                   -- src/Lib.hs, LICENSE, *.cabal, cabal.project, Makefile (+ dirs)
-                  let writeOps = [d | WriteFileOp d _ <- ops]
+                  let writeOps = [d | WriteFileOp d _ _ <- ops]
                   elem "shell.nix" writeOps `shouldBe` True
                   elem "flake.nix" writeOps `shouldBe` True
                   elem "Makefile" writeOps `shouldBe` True

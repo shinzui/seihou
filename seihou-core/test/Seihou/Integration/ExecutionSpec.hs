@@ -54,7 +54,7 @@ compileFixturePlan vars = do
 
 -- | Extract planned files from operations for computeDiff.
 extractPlanned :: ModuleName -> [Operation] -> [(FilePath, Text, ModuleName)]
-extractPlanned modName ops = [(dest, content, modName) | WriteFileOp dest content <- ops]
+extractPlanned modName ops = [(dest, content, modName) | WriteFileOp dest content _ <- ops]
 
 spec :: Spec
 spec = do
@@ -168,3 +168,21 @@ spec = do
                 executePlan "" ops modName fixedTime
       -- Verify README.md was overwritten with plan content
       Map.lookup "README.md" (pureFiles fs3) `shouldBe` Just "# my-app\n\nVersion: 0.1.0.0\n"
+
+    it "records correct strategy per file in FileRecords" $ do
+      (modul, ops) <- compileFixturePlan [("project.name", "my-app")]
+      let modName = moduleName modul
+          (records, _) =
+            runPureEff $
+              runFilesystemPure emptyFS $
+                executePlan "" ops modName fixedTime
+      -- README.md → Template
+      fileStrategy (records Map.! "README.md") `shouldBe` Template
+      -- src/Lib.hs → Template
+      fileStrategy (records Map.! "src/Lib.hs") `shouldBe` Template
+      -- LICENSE → Copy
+      fileStrategy (records Map.! "LICENSE") `shouldBe` Copy
+      -- my-app.cabal → Template
+      fileStrategy (records Map.! "my-app.cabal") `shouldBe` Template
+      -- cabal.project → DhallText
+      fileStrategy (records Map.! "cabal.project") `shouldBe` DhallText

@@ -52,7 +52,7 @@ mergeOperations moduleOps =
         CreateDirOp p
           | Set.member p seenDirs -> go rest fileOwner seenDirs opsAcc warningsAcc
           | otherwise -> go rest fileOwner (Set.insert p seenDirs) (op : opsAcc) warningsAcc
-        WriteFileOp dest _ ->
+        WriteFileOp dest _ _ ->
           handleFileOp name op dest rest fileOwner seenDirs opsAcc warningsAcc
         CopyFileOp _ dest ->
           handleFileOp name op dest rest fileOwner seenDirs opsAcc warningsAcc
@@ -79,7 +79,7 @@ mergeOperations moduleOps =
 
 -- | Extract the destination path from a file-producing operation.
 destOfOp :: Operation -> Maybe FilePath
-destOfOp (WriteFileOp d _) = Just d
+destOfOp (WriteFileOp d _ _) = Just d
 destOfOp (CopyFileOp _ d) = Just d
 destOfOp _ = Nothing
 

@@ -145,7 +145,8 @@ data Module = Module
 data Operation
   = WriteFileOp
       { opDest :: FilePath,
-        opContent :: Text
+        opContent :: Text,
+        opStrategy :: Strategy
       }
   | CreateDirOp
       { opPath :: FilePath

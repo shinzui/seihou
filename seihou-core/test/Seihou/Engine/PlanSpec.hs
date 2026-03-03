@@ -1,7 +1,10 @@
 module Seihou.Engine.PlanSpec (tests) where
 
+import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as T
+import Data.Yaml qualified as Yaml
 import Seihou.Core.Module (loadModule)
 import Seihou.Core.Types
 import Seihou.Engine.Plan
@@ -61,7 +64,7 @@ spec = do
             vars = Map.empty
         result <- compilePlan baseDir modul vars
         case result of
-          Right ops -> ops `shouldBe` [WriteFileOp "data.txt" "raw content"]
+          Right ops -> ops `shouldBe` [WriteFileOp "data.txt" "raw content" Copy]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "compiles a Template step with rendering" $ do
@@ -79,7 +82,7 @@ spec = do
             vars = Map.fromList [("name", VText "world")]
         result <- compilePlan baseDir modul vars
         case result of
-          Right ops -> ops `shouldBe` [WriteFileOp "hello.txt" "Hello, world!"]
+          Right ops -> ops `shouldBe` [WriteFileOp "hello.txt" "Hello, world!" Template]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "skips step when condition is false" $ do
@@ -115,7 +118,7 @@ spec = do
             vars = Map.empty
         result <- compilePlan baseDir modul vars
         case result of
-          Right ops -> ops `shouldBe` [WriteFileOp "data.txt" "content"]
+          Right ops -> ops `shouldBe` [WriteFileOp "data.txt" "content" Copy]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "evaluates IsSet condition correctly" $ do
@@ -134,7 +137,7 @@ spec = do
         let vars1 = Map.fromList [("license", VText "MIT")]
         result1 <- compilePlan baseDir modul vars1
         case result1 of
-          Right ops -> ops `shouldBe` [WriteFileOp "LICENSE" "MIT License"]
+          Right ops -> ops `shouldBe` [WriteFileOp "LICENSE" "MIT License" Copy]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
         -- Variable is NOT set
         let vars2 = Map.empty
@@ -158,7 +161,7 @@ spec = do
             vars = Map.fromList [("name", VText "my-app")]
         result <- compilePlan baseDir modul vars
         case result of
-          Right ops -> ops `shouldBe` [WriteFileOp "my-app.cabal" "name: my-app\n"]
+          Right ops -> ops `shouldBe` [WriteFileOp "my-app.cabal" "name: my-app\n" Template]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "creates parent directories" $ do
@@ -177,7 +180,7 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops ->
-            ops `shouldBe` [CreateDirOp "src", WriteFileOp "src/Lib.hs" "module Lib where\n"]
+            ops `shouldBe` [CreateDirOp "src", WriteFileOp "src/Lib.hs" "module Lib where\n" Template]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "deduplicates parent directory operations" $ do
@@ -201,8 +204,8 @@ spec = do
           Right ops ->
             ops
               `shouldBe` [ CreateDirOp "src",
-                           WriteFileOp "src/A.hs" "module A\n",
-                           WriteFileOp "src/B.hs" "module B\n"
+                           WriteFileOp "src/A.hs" "module A\n" Template,
+                           WriteFileOp "src/B.hs" "module B\n" Template
                          ]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
@@ -241,7 +244,7 @@ spec = do
             vars = Map.fromList [("name", VText "world")]
         result <- compilePlan baseDir modul vars
         case result of
-          Right ops -> ops `shouldBe` [WriteFileOp "greeting.txt" "Hello, world!"]
+          Right ops -> ops `shouldBe` [WriteFileOp "greeting.txt" "Hello, world!" DhallText]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "compiles a DhallText step with Dhall string interpolation" $ do
@@ -263,7 +266,7 @@ spec = do
             vars = Map.fromList [("project.name", VText "my-app"), ("project.version", VText "0.1.0.0")]
         result <- compilePlan baseDir modul vars
         case result of
-          Right ops -> ops `shouldBe` [WriteFileOp "pkg.txt" "name: my-app\nversion: 0.1.0.0\n"]
+          Right ops -> ops `shouldBe` [WriteFileOp "pkg.txt" "name: my-app\nversion: 0.1.0.0\n" DhallText]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "reports error for invalid Dhall in DhallText step" $ do
@@ -286,6 +289,101 @@ spec = do
             T.isInfixOf "Dhall" (errs !! 0) `shouldBe` True
           Right _ -> expectationFailure "Expected Left"
 
+    it "compiles a Structured step to JSON" $ do
+      withFixture [("data.json.gen", "{ name = \"{{name}}\", version = \"1.0.0\" }\n")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Structured "data.json.gen" "data.json" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.fromList [("name", VText "my-app")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> do
+            length ops `shouldBe` 1
+            let (WriteFileOp dest content strat) = ops !! 0
+            dest `shouldBe` "data.json"
+            strat `shouldBe` Structured
+            -- Parse the JSON to verify it's valid
+            case Aeson.eitherDecodeStrict (T.encodeUtf8 content) of
+              Left err -> expectationFailure ("Invalid JSON: " <> err)
+              Right (val :: Aeson.Value) -> do
+                val `shouldBe` Aeson.object [("name", Aeson.String "my-app"), ("version", Aeson.String "1.0.0")]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "compiles a Structured step to YAML" $ do
+      withFixture [("config.yaml.gen", "{ name = \"{{name}}\", debug = False }\n")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Structured "config.yaml.gen" "config.yaml" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.fromList [("name", VText "my-app")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> do
+            length ops `shouldBe` 1
+            let (WriteFileOp dest content strat) = ops !! 0
+            dest `shouldBe` "config.yaml"
+            strat `shouldBe` Structured
+            -- Parse the YAML to verify it's valid
+            case Yaml.decodeEither' (T.encodeUtf8 content) of
+              Left err -> expectationFailure ("Invalid YAML: " <> show err)
+              Right (val :: Aeson.Value) -> do
+                val `shouldBe` Aeson.object [("debug", Aeson.Bool False), ("name", Aeson.String "my-app")]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "reports error for Structured step with unconvertible Dhall expression" $ do
+      -- A lambda cannot be converted to JSON
+      withFixture [("bad.gen", "\\(x : Text) -> x\n")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Structured "bad.gen" "out.json" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Left errs -> do
+            length errs `shouldSatisfy` (>= 1)
+            T.isInfixOf "Cannot convert" (errs !! 0) `shouldBe` True
+          Right _ -> expectationFailure "Expected Left"
+
+    it "reports error for unknown output format in Structured step" $ do
+      withFixture [("data.gen", "{ name = \"test\" }\n")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Structured "data.gen" "output.txt" Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Left errs -> do
+            length errs `shouldSatisfy` (>= 1)
+            T.isInfixOf "unsupported output format" (errs !! 0) `shouldBe` True
+          Right _ -> expectationFailure "Expected Left"
+
     it "compiles haskell-base fixture end-to-end" $ do
       cwd <- getCurrentDirectory
       let fixtures = cwd </> "test" </> "fixtures"
@@ -304,7 +402,7 @@ spec = do
             Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
             Right ops -> do
               -- Should have operations for README, src/Lib.hs, LICENSE, my-app.cabal, and cabal.project
-              let writeOps = [op | op@(WriteFileOp _ _) <- ops]
+              let writeOps = [op | op@(WriteFileOp _ _ _) <- ops]
                   dirOps = [op | op@(CreateDirOp _) <- ops]
               length writeOps `shouldBe` 5
               -- README.md with rendered content

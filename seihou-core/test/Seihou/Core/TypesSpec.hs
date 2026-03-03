@@ -108,7 +108,7 @@ spec = do
 
   describe "Operation" $ do
     it "supports WriteFileOp" $ do
-      let op = WriteFileOp {opDest = "README.md", opContent = "# Hello"}
+      let op = WriteFileOp {opDest = "README.md", opContent = "# Hello", opStrategy = Template}
       opDest op `shouldBe` "README.md"
 
     it "supports CreateDirOp" $ do

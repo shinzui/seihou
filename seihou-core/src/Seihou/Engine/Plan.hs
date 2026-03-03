@@ -5,16 +5,26 @@ module Seihou.Engine.Plan
 where
 
 import Control.Exception (IOException, SomeException, catch, try)
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Encode.Pretty qualified as AesonPretty
 import Data.Map.Strict (Map)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
+import Data.Text.Lazy qualified as TL
+import Data.Text.Lazy.Encoding qualified as TLE
+import Data.Void (Void)
+import Data.Yaml qualified as Yaml
 import Dhall qualified
+import Dhall.Core qualified as DhallCore
+import Dhall.Src (Src)
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Types
+import Seihou.Engine.DhallJSON (dhallExprToJSON)
 import Seihou.Engine.Template (renderDestPath, renderTemplate)
-import System.FilePath (takeDirectory, (</>))
+import System.FilePath (takeDirectory, takeExtension, (</>))
 
 -- | Compile a module's steps into a list of filesystem operations.
 -- Evaluates @when@ conditions, dispatches by strategy, reads source files,
@@ -48,7 +58,7 @@ compileStep baseDir vars step = do
       Copy -> compileCopyStep baseDir vars step
       Template -> compileTemplateStep baseDir vars step
       DhallText -> compileDhallTextStep baseDir vars step
-      Structured -> pure (Left ["Structured strategy not yet implemented"])
+      Structured -> compileStructuredStep baseDir vars step
 
 -- | Compile a Copy step: read the source file and write it to the destination.
 compileCopyStep ::
@@ -68,7 +78,7 @@ compileCopyStep baseDir vars step = do
         Right dest -> do
           let destStr = T.unpack dest
               dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-          pure (Right (dirOps ++ [WriteFileOp destStr content]))
+          pure (Right (dirOps ++ [WriteFileOp destStr content Copy]))
 
 -- | Compile a Template step: read, render placeholders, write.
 compileTemplateStep ::
@@ -92,7 +102,7 @@ compileTemplateStep baseDir vars step = do
             Right dest -> do
               let destStr = T.unpack dest
                   dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-              pure (Right (dirOps ++ [WriteFileOp destStr rendered]))
+              pure (Right (dirOps ++ [WriteFileOp destStr rendered Template]))
 
 -- | Compile a DhallText step: read source, substitute placeholders, evaluate as Dhall.
 compileDhallTextStep ::
@@ -120,7 +130,61 @@ compileDhallTextStep baseDir vars step = do
                 Right dest -> do
                   let destStr = T.unpack dest
                       dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-                  pure (Right (dirOps ++ [WriteFileOp destStr evaluated]))
+                  pure (Right (dirOps ++ [WriteFileOp destStr evaluated DhallText]))
+
+-- | Compile a Structured step: read source, substitute placeholders, evaluate as Dhall,
+-- then serialize to JSON or YAML based on the destination file extension.
+compileStructuredStep ::
+  FilePath ->
+  Map VarName VarValue ->
+  Step ->
+  IO (Either [Text] [Operation])
+compileStructuredStep baseDir vars step = do
+  let srcPath = baseDir </> "files" </> stepSrc step
+  result <- tryReadFile srcPath
+  case result of
+    Left err -> pure (Left [err])
+    Right content ->
+      case renderTemplate content vars of
+        Left placeholderErrors ->
+          pure (Left (map formatPlaceholderError placeholderErrors))
+        Right substituted -> do
+          dhallResult <- evaluateDhallExpr substituted
+          case dhallResult of
+            Left err -> pure (Left [err])
+            Right dhallExpr ->
+              case dhallExprToJSON dhallExpr of
+                Left err -> pure (Left [err])
+                Right jsonValue ->
+                  case renderDestPath (stepDest step) vars of
+                    Left placeholderErrors ->
+                      pure (Left (map formatPlaceholderError placeholderErrors))
+                    Right dest ->
+                      case serializeByExtension (T.unpack dest) jsonValue of
+                        Left err -> pure (Left [err])
+                        Right serialized -> do
+                          let destStr = T.unpack dest
+                              dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
+                          pure (Right (dirOps ++ [WriteFileOp destStr serialized Structured]))
+
+-- | Evaluate a Dhall expression and return the normalized AST.
+evaluateDhallExpr :: Text -> IO (Either Text (DhallCore.Expr Src Void))
+evaluateDhallExpr dhallSource = do
+  result <- try (Dhall.inputExpr dhallSource)
+  case result of
+    Left (e :: SomeException) ->
+      pure (Left ("Dhall evaluation failed: " <> T.pack (show e)))
+    Right expr -> pure (Right expr)
+
+-- | Serialize a JSON Value to Text based on the destination file extension.
+-- .json → pretty-printed JSON; .yaml or .yml → YAML; other → error.
+serializeByExtension :: FilePath -> Aeson.Value -> Either Text Text
+serializeByExtension dest value =
+  case takeExtension dest of
+    ".json" -> Right (TL.toStrict (TLE.decodeUtf8 (AesonPretty.encodePretty value)) <> "\n")
+    ".yaml" -> Right (TE.decodeUtf8 (Yaml.encode value))
+    ".yml" -> Right (TE.decodeUtf8 (Yaml.encode value))
+    ext -> Left ("Structured strategy: unsupported output format '" <> T.pack ext <> "' (expected .json, .yaml, or .yml)")
 
 -- | Evaluate a Dhall expression that produces Text.
 renderDhallText :: Text -> IO (Either Text Text)

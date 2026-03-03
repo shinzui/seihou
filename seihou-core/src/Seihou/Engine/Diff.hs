@@ -19,7 +19,7 @@ import Seihou.Manifest.Hash (hashContent)
 planToFileMap :: [Operation] -> Map FilePath Text
 planToFileMap = Map.fromList . concatMap extract
   where
-    extract (WriteFileOp dest content) = [(dest, content)]
+    extract (WriteFileOp dest content _) = [(dest, content)]
     extract _ = []
 
 -- | Compute a three-state diff: manifest vs plan vs disk.

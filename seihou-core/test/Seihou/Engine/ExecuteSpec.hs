@@ -42,7 +42,7 @@ spec :: Spec
 spec = do
   describe "executePlan" $ do
     it "writes a file via WriteFileOp" $ do
-      let ops = [WriteFileOp "hello.txt" "hello world"]
+      let ops = [WriteFileOp "hello.txt" "hello world" Template]
           (records, fs) = runExecFS emptyFS ops
       Map.member "hello.txt" records `shouldBe` True
       Map.lookup "/project/hello.txt" (pureFiles fs) `shouldBe` Just "hello world"
@@ -59,19 +59,19 @@ spec = do
 
     it "produces FileRecord with correct hash" $ do
       let content = "test content"
-          ops = [WriteFileOp "test.txt" content]
+          ops = [WriteFileOp "test.txt" content Template]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.txt"
       fileHash record `shouldBe` hashContent content
 
     it "produces FileRecord with correct module name" $ do
-      let ops = [WriteFileOp "test.txt" "data"]
+      let ops = [WriteFileOp "test.txt" "data" Template]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.txt"
       fileModule record `shouldBe` modName
 
     it "produces FileRecord with correct timestamp" $ do
-      let ops = [WriteFileOp "test.txt" "data"]
+      let ops = [WriteFileOp "test.txt" "data" Template]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.txt"
       fileGeneratedAt record `shouldBe` fixedTime
@@ -79,8 +79,8 @@ spec = do
     it "handles multiple operations" $ do
       let ops =
             [ CreateDirOp "src",
-              WriteFileOp "README.md" "# Hello",
-              WriteFileOp "src/Main.hs" "module Main where"
+              WriteFileOp "README.md" "# Hello" Template,
+              WriteFileOp "src/Main.hs" "module Main where" Template
             ]
           (records, fs) = runExecFS emptyFS ops
       Map.size records `shouldBe` 2
@@ -99,9 +99,33 @@ spec = do
       Map.member "dest.txt" records `shouldBe` True
       Map.lookup "/project/dest.txt" (pureFiles fs) `shouldBe` Just "copied content"
 
+    it "records Template strategy in FileRecord" $ do
+      let ops = [WriteFileOp "test.txt" "content" Template]
+          (records, _) = runExecFS emptyFS ops
+          record = records Map.! "test.txt"
+      fileStrategy record `shouldBe` Template
+
+    it "records Copy strategy in FileRecord" $ do
+      let ops = [WriteFileOp "test.txt" "content" Copy]
+          (records, _) = runExecFS emptyFS ops
+          record = records Map.! "test.txt"
+      fileStrategy record `shouldBe` Copy
+
+    it "records DhallText strategy in FileRecord" $ do
+      let ops = [WriteFileOp "test.txt" "content" DhallText]
+          (records, _) = runExecFS emptyFS ops
+          record = records Map.! "test.txt"
+      fileStrategy record `shouldBe` DhallText
+
+    it "records Structured strategy in FileRecord" $ do
+      let ops = [WriteFileOp "test.json" "{}" Structured]
+          (records, _) = runExecFS emptyFS ops
+          record = records Map.! "test.json"
+      fileStrategy record `shouldBe` Structured
+
   describe "dryRunPlan" $ do
     it "formats WriteFileOp" $ do
-      let result = dryRunPlan [WriteFileOp "README.md" "content"]
+      let result = dryRunPlan [WriteFileOp "README.md" "content" Template]
       T.isInfixOf "write" result `shouldBe` True
       T.isInfixOf "README.md" result `shouldBe` True
 
@@ -123,5 +147,5 @@ spec = do
       T.isInfixOf "No operations" result `shouldBe` True
 
     it "does not include file content" $ do
-      let result = dryRunPlan [WriteFileOp "secret.txt" "super secret"]
+      let result = dryRunPlan [WriteFileOp "secret.txt" "super secret" Template]
       T.isInfixOf "super secret" result `shouldBe` False

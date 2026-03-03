@@ -39,6 +39,7 @@ library
     Seihou.Effect.Process
     Seihou.Effect.ProcessInterp
     Seihou.Effect.ProcessPure
+    Seihou.Engine.DhallJSON
     Seihou.Engine.Diff
     Seihou.Engine.Execute
     Seihou.Engine.Plan
@@ -49,6 +50,7 @@ library
 
   build-depends:
     aeson >=2.1 && <3,
+    aeson-pretty >=0.8 && <1,
     base >=4.18 && <5,
     base16-bytestring >=1.0 && <2,
     bytestring >=0.11 && <1,
@@ -61,6 +63,7 @@ library
     process >=1.6 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
+    yaml >=0.11 && <1,
 
 test-suite seihou-core-test
   type: exitcode-stdio-1.0
@@ -93,6 +96,7 @@ test-suite seihou-core-test
     Seihou.Manifest.TypesSpec
 
   build-depends:
+    aeson >=2.1 && <3,
     base >=4.18 && <5,
     bytestring >=0.11 && <1,
     containers >=0.6 && <1,
@@ -107,3 +111,4 @@ test-suite seihou-core-test
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
+    yaml >=0.11 && <1,

@@ -42,9 +42,9 @@ spec = do
               case planResult of
                 Left errs -> expectationFailure ("Plan failed: " <> show errs)
                 Right ops -> do
-                  let readmeOps = [op | op@(WriteFileOp d _) <- ops, d == "README.md"]
+                  let readmeOps = [op | op@(WriteFileOp d _ _) <- ops, d == "README.md"]
                   length readmeOps `shouldBe` 1
-                  let (WriteFileOp _ content) = readmeOps !! 0
+                  let (WriteFileOp _ content _) = readmeOps !! 0
                   content `shouldBe` "# my-app\n\nVersion: 0.1.0.0\n"
 
     it "produces correct cabal file with expanded destination" $ do
@@ -62,9 +62,9 @@ spec = do
               case planResult of
                 Left errs -> expectationFailure ("Plan failed: " <> show errs)
                 Right ops -> do
-                  let cabalOps = [op | op@(WriteFileOp d _) <- ops, d == "my-app.cabal"]
+                  let cabalOps = [op | op@(WriteFileOp d _ _) <- ops, d == "my-app.cabal"]
                   length cabalOps `shouldBe` 1
-                  let (WriteFileOp _ content) = cabalOps !! 0
+                  let (WriteFileOp _ content _) = cabalOps !! 0
                   T.isInfixOf "name: my-app" content `shouldBe` True
                   T.isInfixOf "version: 0.1.0.0" content `shouldBe` True
                   T.isInfixOf "license: MIT" content `shouldBe` True
@@ -84,7 +84,7 @@ spec = do
               case planResult of
                 Left errs -> expectationFailure ("Plan failed: " <> show errs)
                 Right ops -> do
-                  let licenseOps = [op | op@(WriteFileOp d _) <- ops, d == "LICENSE"]
+                  let licenseOps = [op | op@(WriteFileOp d _ _) <- ops, d == "LICENSE"]
                   length licenseOps `shouldBe` 1
 
     it "excludes LICENSE step when license is not set" $ do
@@ -103,7 +103,7 @@ spec = do
           case planResult of
             Left errs -> expectationFailure ("Plan failed: " <> show errs)
             Right ops -> do
-              let licenseOps = [op | op@(WriteFileOp d _) <- ops, d == "LICENSE"]
+              let licenseOps = [op | op@(WriteFileOp d _ _) <- ops, d == "LICENSE"]
               length licenseOps `shouldBe` 0
 
     it "produces DhallText output for cabal.project" $ do
@@ -121,9 +121,9 @@ spec = do
               case planResult of
                 Left errs -> expectationFailure ("Plan failed: " <> show errs)
                 Right ops -> do
-                  let projectOps = [op | op@(WriteFileOp d _) <- ops, d == "cabal.project"]
+                  let projectOps = [op | op@(WriteFileOp d _ _) <- ops, d == "cabal.project"]
                   length projectOps `shouldBe` 1
-                  let (WriteFileOp _ content) = projectOps !! 0
+                  let (WriteFileOp _ content _) = projectOps !! 0
                   T.isInfixOf "my-app" content `shouldBe` True
 
     it "resolves variables from env and applies precedence" $ do

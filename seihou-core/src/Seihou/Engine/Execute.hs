@@ -37,14 +37,14 @@ executeOp ::
   Operation ->
   Eff es (Maybe (FilePath, FileRecord))
 executeOp targetDir moduleName now op = case op of
-  WriteFileOp dest content -> do
+  WriteFileOp dest content strat -> do
     let fullPath = targetDir </> dest
     writeFileText fullPath content
     let record =
           FileRecord
             { fileHash = hashContent content,
               fileModule = moduleName,
-              fileStrategy = Template,
+              fileStrategy = strat,
               fileGeneratedAt = now
             }
     pure (Just (dest, record))
@@ -76,7 +76,7 @@ dryRunPlan ops =
     else T.unlines (map formatOp ops)
   where
     formatOp :: Operation -> Text
-    formatOp (WriteFileOp dest _) = "  write " <> T.pack dest
+    formatOp (WriteFileOp dest _ _) = "  write " <> T.pack dest
     formatOp (CreateDirOp path) = "  mkdir " <> T.pack path
     formatOp (CopyFileOp src dest) = "  copy  " <> T.pack src <> " -> " <> T.pack dest
     formatOp (RunCommandOp cmd _) = "  run   " <> cmd
