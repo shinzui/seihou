@@ -43,6 +43,7 @@ library
     Seihou.Engine.Diff
     Seihou.Engine.Execute
     Seihou.Engine.Plan
+    Seihou.Engine.Preview
     Seihou.Engine.Section
     Seihou.Engine.Template
     Seihou.Interaction.Prompt
@@ -88,6 +89,7 @@ test-suite seihou-core-test
     Seihou.Engine.DiffSpec
     Seihou.Engine.ExecuteSpec
     Seihou.Engine.PlanSpec
+    Seihou.Engine.PreviewSpec
     Seihou.Engine.SectionSpec
     Seihou.Engine.TemplateSpec
     Seihou.Integration.CompositionSpec

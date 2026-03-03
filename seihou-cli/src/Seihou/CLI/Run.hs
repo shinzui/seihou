@@ -14,6 +14,7 @@ import Data.Time.Clock (getCurrentTime)
 import Effectful
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.Shared (deriveNamespace, formatConfigError, formatVarError, toVarNameMap)
+import Seihou.CLI.Style (bold, dim, green, magenta, red, renderPreviewColor, useColor, yellow)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Module (defaultSearchPaths)
@@ -26,7 +27,8 @@ import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Engine.Diff (computeDiff)
-import Seihou.Engine.Execute (dryRunPlan, executePlan)
+import Seihou.Engine.Execute (executePlan)
+import Seihou.Engine.Preview (buildPreview)
 import Seihou.Manifest.Types (emptyManifest)
 import System.Environment (getEnvironment)
 import System.Exit (exitFailure)
@@ -94,48 +96,49 @@ handleRun runOpts = do
   -- 4. Print composition warnings
   mapM_ printWarning warnings
 
-  -- 5. Handle --dry-run: print plan and exit
+  -- 5. Compute diff (shared by dry-run, --diff, and execution paths)
+  now <- getCurrentTime
+  let manifestPath = ".seihou" </> "manifest.json"
+      planned =
+        [(dest, content, modName) | WriteFileOp dest content _ <- ops]
+          ++ [(dest, content, mName) | PatchFileOp dest content _ _ mName <- ops]
+
+  (manifest, diff) <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
+    -- Ensure .seihou/ directory exists
+    createDirectoryIfMissing True (takeDirectory manifestPath)
+
+    -- Load existing manifest (or empty)
+    existingResult <- readManifest
+    existing <- case existingResult of
+      Left err -> liftIO $ do
+        TIO.putStrLn $ "Error reading manifest: " <> err
+        exitFailure
+      Right m -> pure m
+    let m = fromMaybe (emptyManifest now) existing
+    d <- computeDiff m planned
+    pure (m, d)
+
+  colorEnabled <- useColor
+
+  -- 6. Handle --dry-run: show preview and exit
   if runDryRun runOpts
     then do
-      TIO.putStrLn "Dry run — operations that would be performed:"
-      TIO.putStr (dryRunPlan ops)
-    else do
-      -- 6. Run the effectful pipeline
-      now <- getCurrentTime
-      let manifestPath = ".seihou" </> "manifest.json"
-          planned =
-            [(dest, content, modName) | WriteFileOp dest content _ <- ops]
-              ++ [(dest, content, mName) | PatchFileOp dest content _ _ mName <- ops]
-
-      runEff $ runFilesystem $ runManifestStore manifestPath $ do
-        -- Ensure .seihou/ directory exists
-        createDirectoryIfMissing True (takeDirectory manifestPath)
-
-        -- Load existing manifest (or empty)
-        existingResult <- readManifest
-        existing <- case existingResult of
-          Left err -> liftIO $ do
-            TIO.putStrLn $ "Error reading manifest: " <> err
+      TIO.putStrLn "Dry run — plan preview:"
+      let preview = buildPreview ops (Just diff)
+      TIO.putStr (renderPreviewColor colorEnabled preview)
+    else
+      if runDiff runOpts
+        then TIO.putStr (formatDiff colorEnabled diff)
+        else do
+          -- Check for conflicts
+          when (not (null (diffConflict diff)) && not (runForce runOpts)) $ do
+            TIO.putStrLn "Conflicts detected (use --force to overwrite):"
+            mapM_ (\c -> TIO.putStrLn $ "  ! " <> T.pack (conflictPath c)) (diffConflict diff)
             exitFailure
-          Right m -> pure m
-        let manifest = fromMaybe (emptyManifest now) existing
 
-        -- Compute three-state diff
-        diff <- computeDiff manifest planned
-
-        -- Handle --diff: show diff only
-        if runDiff runOpts
-          then liftIO $ TIO.putStr (formatDiff diff)
-          else do
-            -- Check for conflicts
-            when (not (null (diffConflict diff)) && not (runForce runOpts)) $
-              liftIO $ do
-                TIO.putStrLn "Conflicts detected (use --force to overwrite):"
-                mapM_ (\c -> TIO.putStrLn $ "  ! " <> T.pack (conflictPath c)) (diffConflict diff)
-                exitFailure
-
-            -- Execute the plan
-            records <- executePlan "" ops modName now
+          -- Execute the plan
+          runEff $ runFilesystem $ runManifestStore manifestPath $ do
+            recs <- executePlan "" ops modName now
 
             -- Build updated manifest with all composed modules
             let orphanedPaths = map orphanedPath (diffOrphaned diff)
@@ -149,24 +152,23 @@ handleRun runOpts = do
                     { manifestGenAt = now,
                       manifestModules = allModuleEntries,
                       manifestVars = Map.map varValueToText allResolvedVals,
-                      manifestFiles = Map.union records cleanedFiles
+                      manifestFiles = Map.union recs cleanedFiles
                     }
 
             -- Save manifest
             writeManifest newManifest
 
-            -- Report results
-            liftIO $ do
-              let nNew = length (diffNew diff)
-                  nMod = length (diffModified diff)
-                  nUnch = length (diffUnchanged diff)
-              TIO.putStrLn $
-                T.pack (show nNew)
-                  <> " new, "
-                  <> T.pack (show nMod)
-                  <> " modified, "
-                  <> T.pack (show nUnch)
-                  <> " unchanged."
+          -- Report results
+          let nNew = length (diffNew diff)
+              nMod = length (diffModified diff)
+              nUnch = length (diffUnchanged diff)
+          TIO.putStrLn $
+            T.pack (show nNew)
+              <> " new, "
+              <> T.pack (show nMod)
+              <> " modified, "
+              <> T.pack (show nUnch)
+              <> " unchanged."
 
 -- Helpers
 
@@ -194,26 +196,28 @@ printWarning (ContentMerged path base contributor) =
       <> unModuleName contributor
       <> ")"
 
-formatDiff :: DiffResult -> Text
-formatDiff diff =
+formatDiff :: Bool -> DiffResult -> Text
+formatDiff color diff =
   T.unlines $
     concat
       [ if null (diffNew diff)
           then []
-          else "New files:" : map (\f -> "  + " <> T.pack (plannedPath f)) (diffNew diff),
+          else "New files:" : map (\f -> "  + " <> colorWrap green (T.pack (plannedPath f))) (diffNew diff),
         if null (diffModified diff)
           then []
-          else "Modified files:" : map (\f -> "  ~ " <> T.pack (modifiedPath f)) (diffModified diff),
+          else "Modified files:" : map (\f -> "  ~ " <> colorWrap yellow (T.pack (modifiedPath f))) (diffModified diff),
         if null (diffUnchanged diff)
           then []
-          else "Unchanged files:" : map (\f -> "  = " <> T.pack f) (diffUnchanged diff),
+          else "Unchanged files:" : map (\f -> "  = " <> colorWrap dim (T.pack f)) (diffUnchanged diff),
         if null (diffConflict diff)
           then []
-          else "Conflicts:" : map (\f -> "  ! " <> T.pack (conflictPath f)) (diffConflict diff),
+          else "Conflicts:" : map (\f -> "  ! " <> colorWrap (bold . red) (T.pack (conflictPath f))) (diffConflict diff),
         if null (diffOrphaned diff)
           then []
-          else "Orphaned files:" : map (\f -> "  - " <> T.pack (orphanedPath f)) (diffOrphaned diff)
+          else "Orphaned files:" : map (\f -> "  - " <> colorWrap magenta (T.pack (orphanedPath f))) (diffOrphaned diff)
       ]
+  where
+    colorWrap fn t = if color then fn t else t
 
 varValueToText :: VarValue -> Text
 varValueToText (VText t) = t
