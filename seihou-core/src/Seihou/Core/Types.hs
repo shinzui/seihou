@@ -11,6 +11,7 @@ module Seihou.Core.Types
     Strategy (..),
     PatchOp (..),
     Step (..),
+    Command (..),
     Module (..),
     Operation (..),
     ModuleLoadError (..),
@@ -140,6 +141,14 @@ data Step = Step
   }
   deriving stock (Eq, Show, Generic)
 
+-- | A shell command to run after file generation.
+data Command = Command
+  { cmdRun :: Text,
+    cmdWorkDir :: Maybe Text,
+    cmdWhen :: Maybe Expr
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | A module definition: the fundamental unit of composition.
 data Module = Module
   { moduleName :: ModuleName,
@@ -148,6 +157,7 @@ data Module = Module
     moduleExports :: [VarExport],
     modulePrompts :: [Prompt],
     moduleSteps :: [Step],
+    moduleCommands :: [Command],
     moduleDependencies :: [ModuleName]
   }
   deriving stock (Eq, Show, Generic)

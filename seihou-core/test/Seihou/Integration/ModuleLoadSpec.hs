@@ -104,6 +104,7 @@ spec = do
                 moduleExports = [],
                 modulePrompts = [],
                 moduleSteps = [],
+                moduleCommands = [],
                 moduleDependencies = []
               }
           modules = Map.fromList [("test/module.dhall", testModule)]

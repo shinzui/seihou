@@ -13,7 +13,8 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Core.Module
-  ( checkDependencyNames,
+  ( checkCommandSafety,
+    checkDependencyNames,
     checkDestVarRefs,
     checkExportRefs,
     checkFileExistence,
@@ -61,7 +62,8 @@ buildReport lint baseDir m = do
           DiagCheck "Source file existence" DiagError fileErrors,
           DiagCheck "Dependency names" DiagError (checkDependencyNames m),
           DiagCheck "Safe step destinations" DiagError (checkSafeDestinations m),
-          DiagCheck "Destination variable references" DiagError (checkDestVarRefs m)
+          DiagCheck "Destination variable references" DiagError (checkDestVarRefs m),
+          DiagCheck "Command safety" DiagError (checkCommandSafety m)
         ]
       lintChecks =
         if lint

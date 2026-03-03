@@ -46,6 +46,7 @@ handleValidateModule vopts = do
                 moduleExports = [],
                 modulePrompts = [],
                 moduleSteps = [],
+                moduleCommands = [],
                 moduleDependencies = []
               }
           report =

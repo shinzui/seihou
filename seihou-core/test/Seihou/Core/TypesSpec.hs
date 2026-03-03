@@ -76,6 +76,7 @@ spec = do
                 moduleExports = [],
                 modulePrompts = [],
                 moduleSteps = [],
+                moduleCommands = [],
                 moduleDependencies = []
               }
       moduleName m `shouldBe` "haskell-base"
@@ -89,6 +90,7 @@ spec = do
                 moduleExports = [],
                 modulePrompts = [],
                 moduleSteps = [],
+                moduleCommands = [],
                 moduleDependencies = []
               }
       m `shouldBe` m
@@ -102,6 +104,7 @@ spec = do
                 moduleExports = [],
                 modulePrompts = [],
                 moduleSteps = [],
+                moduleCommands = [],
                 moduleDependencies = []
               }
       show m `shouldNotBe` ""

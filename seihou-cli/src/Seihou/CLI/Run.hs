@@ -26,12 +26,14 @@ import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import Seihou.Effect.Process (runProcess)
+import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
 import Seihou.Engine.Preview (buildPreview)
 import Seihou.Manifest.Types (emptyManifest)
 import System.Environment (getEnvironment)
-import System.Exit (exitFailure)
+import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath (takeDirectory, (</>))
 
 handleRun :: RunOpts -> IO ()
@@ -93,15 +95,21 @@ handleRun runOpts = do
       exitFailure
     Right r -> pure r
 
-  -- 4. Print composition warnings
+  -- 4. Filter out command ops if --no-commands
+  let opsFiltered =
+        if runNoCommands runOpts
+          then filter (not . isCommandOp) ops
+          else ops
+
+  -- 5. Print composition warnings
   mapM_ printWarning warnings
 
-  -- 5. Compute diff (shared by dry-run, --diff, and execution paths)
+  -- 6. Compute diff (shared by dry-run, --diff, and execution paths)
   now <- getCurrentTime
   let manifestPath = ".seihou" </> "manifest.json"
       planned =
-        [(dest, content, modName) | WriteFileOp dest content _ <- ops]
-          ++ [(dest, content, mName) | PatchFileOp dest content _ _ mName <- ops]
+        [(dest, content, modName) | WriteFileOp dest content _ <- opsFiltered]
+          ++ [(dest, content, mName) | PatchFileOp dest content _ _ mName <- opsFiltered]
 
   (manifest, diff) <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     -- Ensure .seihou/ directory exists
@@ -124,7 +132,7 @@ handleRun runOpts = do
   if runDryRun runOpts
     then do
       TIO.putStrLn "Dry run — plan preview:"
-      let preview = buildPreview ops (Just diff)
+      let preview = buildPreview opsFiltered (Just diff)
       TIO.putStr (renderPreviewColor colorEnabled preview)
     else
       if runDiff runOpts
@@ -138,7 +146,7 @@ handleRun runOpts = do
 
           -- Execute the plan
           runEff $ runFilesystem $ runManifestStore manifestPath $ do
-            recs <- executePlan "" ops modName now
+            recs <- executePlan "" opsFiltered modName now
 
             -- Build updated manifest with all composed modules
             let orphanedPaths = map orphanedPath (diffOrphaned diff)
@@ -169,6 +177,10 @@ handleRun runOpts = do
               <> " modified, "
               <> T.pack (show nUnch)
               <> " unchanged."
+
+          -- Execute commands after file generation
+          let commandOps = [(cmd, wd) | RunCommandOp cmd wd <- opsFiltered]
+          mapM_ (executeCommand colorEnabled) commandOps
 
 -- Helpers
 
@@ -233,6 +245,26 @@ unwrapConfig (Right a) = pure a
 unwrapConfig (Left err) = liftIO $ do
   TIO.putStrLn $ "Error reading config: " <> formatConfigError err
   exitFailure
+
+-- | Whether an operation is a command (RunCommandOp).
+isCommandOp :: Operation -> Bool
+isCommandOp (RunCommandOp _ _) = True
+isCommandOp _ = False
+
+-- | Execute a shell command via @sh -c@, printing output and halting on failure.
+executeCommand :: Bool -> (Text, Maybe FilePath) -> IO ()
+executeCommand colorEnabled (cmd, workDir) = do
+  TIO.putStrLn $ (if colorEnabled then dim else id) ("  run  " <> cmd)
+  (exitCode, stdout, stderr) <- runEff $ runProcessIO $ runProcess "sh" ["-c", cmd] workDir
+  when (not (T.null stdout)) $ TIO.putStr stdout
+  case exitCode of
+    ExitSuccess -> pure ()
+    ExitFailure code -> do
+      when (not (T.null stderr)) $ TIO.putStr stderr
+      TIO.putStrLn $
+        (if colorEnabled then red else id)
+          ("Command failed (exit " <> T.pack (show code) <> "): " <> cmd)
+      exitFailure
 
 -- | Update manifest's applied modules list with all composed modules.
 updateAllModules :: [AppliedModule] -> [(Module, FilePath)] -> UTCTime -> [AppliedModule]

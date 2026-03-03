@@ -13,6 +13,7 @@ module Seihou.Core.Module
     checkDependencyNames,
     checkSafeDestinations,
     checkDestVarRefs,
+    checkCommandSafety,
     isValidModuleName,
     extractPlaceholders,
   )
@@ -71,6 +72,7 @@ validateModule baseDir m = do
           <> checkDependencyNames m
           <> checkSafeDestinations m
           <> checkDestVarRefs m
+          <> checkCommandSafety m
       allErrors = pureErrors <> fileErrors
   pure $
     if null allErrors
@@ -186,6 +188,25 @@ checkDestVarRefs m =
                   refs
         )
         (moduleSteps m)
+
+-- Rule 9: Command text must be non-empty and workDir must be safe
+checkCommandSafety :: Module -> [Text]
+checkCommandSafety m =
+  concatMap
+    ( \c ->
+        let emptyRun =
+              if T.null (T.strip (cmdRun c))
+                then ["command text must not be empty"]
+                else []
+            unsafeWorkDir = case cmdWorkDir c of
+              Nothing -> []
+              Just wd
+                | T.isPrefixOf "/" wd -> ["command workDir must be relative: " <> wd]
+                | ".." `T.isInfixOf` wd -> ["command workDir must not contain '..': " <> wd]
+                | otherwise -> []
+         in emptyRun <> unsafeWorkDir
+    )
+    (moduleCommands m)
 
 -- | Extract placeholder variable references from a text like @"src/{{project.name}}/Main.hs"@.
 extractPlaceholders :: Text -> [Text]

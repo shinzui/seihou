@@ -11,5 +11,6 @@
     , patch = None Text
     }
   ]
+, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
 , dependencies = [ "haskell-base", "nix-flake" ]
 }

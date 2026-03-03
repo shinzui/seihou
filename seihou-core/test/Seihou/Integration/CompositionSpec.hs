@@ -204,6 +204,7 @@ spec = do
                 moduleExports = [],
                 modulePrompts = [],
                 moduleSteps = [],
+                moduleCommands = [],
                 moduleDependencies = deps
               }
           a = mkMod "a" ["b"]

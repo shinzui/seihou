@@ -63,5 +63,11 @@
     , patch = None Text
     }
   ]
+, commands =
+  [ { run = "echo 'Project generated'"
+    , workDir = None Text
+    , when = None Text
+    }
+  ]
 , dependencies = [] : List Text
 }

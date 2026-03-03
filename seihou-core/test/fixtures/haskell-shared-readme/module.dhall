@@ -11,5 +11,6 @@
     , patch = Some "append-section"
     }
   ]
+, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
 , dependencies = ["haskell-base"]
 }

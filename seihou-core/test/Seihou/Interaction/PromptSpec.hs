@@ -24,6 +24,7 @@ mkModule name deps vars exports prompts =
       moduleExports = exports,
       modulePrompts = prompts,
       moduleSteps = [],
+      moduleCommands = [],
       moduleDependencies = deps
     }
 

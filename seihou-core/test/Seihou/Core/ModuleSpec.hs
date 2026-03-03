@@ -40,6 +40,7 @@ goodModule =
               stepPatch = Nothing
             }
         ],
+      moduleCommands = [],
       moduleDependencies = []
     }
 
@@ -217,6 +218,7 @@ spec = do
                   moduleExports = [VarExport {exportVar = "missing", exportAs = Nothing}],
                   modulePrompts = [Prompt {promptVar = "missing", promptText = "?", promptWhen = Nothing, promptChoices = Nothing}],
                   moduleSteps = [Step Template "nonexistent.tpl" "/bad/dest" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
         result <- validateModule tmpDir bad

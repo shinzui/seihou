@@ -59,6 +59,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -77,6 +78,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "world")]
@@ -95,6 +97,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit False)) Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -113,6 +116,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit True)) Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -131,6 +135,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Copy "LICENSE" "LICENSE" (Just (ExprIsSet "license")) Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
         -- Variable IS set
@@ -156,6 +161,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Template "pkg.cabal.tpl" "{{name}}.cabal" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
@@ -174,6 +180,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Template "Lib.hs.tpl" "src/Lib.hs" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -196,6 +203,7 @@ spec = do
                     [ Step Template "A.hs.tpl" "src/A.hs" Nothing Nothing,
                       Step Template "B.hs.tpl" "src/B.hs" Nothing Nothing
                     ],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -219,6 +227,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -239,6 +248,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step DhallText "greeting.dhall" "greeting.txt" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "world")]
@@ -261,6 +271,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step DhallText "pkg.dhall" "pkg.txt" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("project.name", VText "my-app"), ("project.version", VText "0.1.0.0")]
@@ -279,6 +290,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step DhallText "bad.dhall" "out.txt" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -299,6 +311,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Structured "data.json.gen" "data.json" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
@@ -326,6 +339,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Structured "config.yaml.gen" "config.yaml" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
@@ -354,6 +368,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Structured "bad.gen" "out.json" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -374,6 +389,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Structured "data.gen" "output.txt" Nothing Nothing],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -420,6 +436,10 @@ spec = do
               T.isInfixOf "my-app" (opContent (writeOps !! 4)) `shouldBe` True
               -- Should have CreateDirOp for src/
               dirOps `shouldSatisfy` any (\op -> opPath op == "src")
+              -- Should have RunCommandOp for the command
+              let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+              length cmdOps `shouldBe` 1
+              opCommand (cmdOps !! 0) `shouldBe` "echo 'Project generated'"
 
     it "compiles a Template step with patch = AppendFile to PatchFileOp" $ do
       withFixture [("section.tpl", "appended content")] $ \baseDir -> do
@@ -431,6 +451,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Template "section.tpl" "README.md" Nothing (Just AppendFile)],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -450,6 +471,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Template "section.tpl" "README.md" Nothing (Just AppendSection)],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.fromList [("name", VText "test")]
@@ -469,6 +491,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Copy "header.txt" "out.txt" Nothing (Just PrependFile)],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -488,6 +511,7 @@ spec = do
                   moduleExports = [],
                   modulePrompts = [],
                   moduleSteps = [Step Structured "data.gen" "data.json" Nothing (Just AppendFile)],
+                  moduleCommands = [],
                   moduleDependencies = []
                 }
             vars = Map.empty
@@ -497,3 +521,120 @@ spec = do
             length errs `shouldSatisfy` (>= 1)
             T.isInfixOf "Structured" (errs !! 0) `shouldBe` True
           Right _ -> expectationFailure "Expected Left"
+
+    it "compiles unconditional command to RunCommandOp" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  moduleCommands = [Command "echo hello" Nothing Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> do
+            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            length cmdOps `shouldBe` 1
+            opCommand (cmdOps !! 0) `shouldBe` "echo hello"
+            opWorkDir (cmdOps !! 0) `shouldBe` Nothing
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "skips command when condition is false" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  moduleCommands = [Command "echo skip" Nothing (Just (ExprLit False))],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> do
+            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            length cmdOps `shouldBe` 0
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "includes command when condition is true" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  moduleCommands = [Command "echo yes" Nothing (Just (ExprIsSet "name"))],
+                  moduleDependencies = []
+                }
+            vars = Map.fromList [("name", VText "test")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> do
+            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            length cmdOps `shouldBe` 1
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "places commands after file operations in compiled plan" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  moduleCommands = [Command "echo post" Nothing Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> do
+            let isFileOp (WriteFileOp {}) = True
+                isFileOp (CreateDirOp {}) = True
+                isFileOp (CopyFileOp {}) = True
+                isFileOp (PatchFileOp {}) = True
+                isFileOp _ = False
+                isCmdOp (RunCommandOp {}) = True
+                isCmdOp _ = False
+                fileOps = filter isFileOp ops
+                cmdOps = filter isCmdOp ops
+            -- Commands should come after all file ops
+            ops `shouldBe` (fileOps ++ cmdOps)
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "compiles command with workDir" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { moduleName = "test",
+                  moduleDescription = Nothing,
+                  moduleVars = [],
+                  moduleExports = [],
+                  modulePrompts = [],
+                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  moduleCommands = [Command "npm install" (Just "subdir") Nothing],
+                  moduleDependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> do
+            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            length cmdOps `shouldBe` 1
+            opWorkDir (cmdOps !! 0) `shouldBe` Just "subdir"
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)

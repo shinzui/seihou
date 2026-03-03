@@ -151,6 +151,7 @@ spec = do
               \    , patch = Some \"append-section\"\n\
               \    }\n\
               \  ]\n\
+              \, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }\n\
               \, dependencies = [] : List Text\n\
               \}"
         writeFile (tmpDir </> "module.dhall") dhall
@@ -181,6 +182,7 @@ spec = do
               \    , patch = Some \"invalid-op\"\n\
               \    }\n\
               \  ]\n\
+              \, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }\n\
               \, dependencies = [] : List Text\n\
               \}"
         writeFile (tmpDir </> "module.dhall") dhall

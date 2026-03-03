@@ -20,6 +20,7 @@ mkModule name deps vars exports =
       moduleExports = exports,
       modulePrompts = [],
       moduleSteps = [],
+      moduleCommands = [],
       moduleDependencies = deps
     }
 

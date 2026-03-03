@@ -7,6 +7,7 @@ module Seihou.Dhall.Eval
     varExportDecoder,
     promptDecoder,
     stepDecoder,
+    commandDecoder,
     strategyDecoder,
     patchOpDecoder,
   )
@@ -53,6 +54,7 @@ evalModuleFromFile path = do
     -- Force lazy decoder thunks that may contain 'error' calls
     mapM_ (\v -> evaluate (varType v)) (moduleVars m)
     mapM_ (\s -> evaluate (stepStrategy s) >> evaluate (stepWhen s) >> mapM_ evaluate (stepPatch s)) (moduleSteps m)
+    mapM_ (\c -> mapM_ evaluate (cmdWhen c)) (moduleCommands m)
     mapM_ (\p -> evaluate (promptWhen p)) (modulePrompts m)
     pure m
   case result of
@@ -83,6 +85,7 @@ moduleDecoder =
         <*> field "exports" (list varExportDecoder)
         <*> field "prompts" (list promptDecoder)
         <*> field "steps" (list stepDecoder)
+        <*> field "commands" (list commandDecoder)
         <*> field "dependencies" (list moduleNameDecoder)
     )
 
@@ -218,6 +221,24 @@ stepDecoder =
     parsePatchOp "prepend-file" = PrependFile
     parsePatchOp "append-section" = AppendSection
     parsePatchOp other = error ("Unknown patch operation \"" <> T.unpack other <> "\"; expected one of: append-file, prepend-file, append-section")
+
+-- | Decoder for Command from a Dhall record.
+-- The @when@ field is parsed via 'parseExpr' into an 'Expr' AST.
+commandDecoder :: Decoder Command
+commandDecoder =
+  record
+    ( mkCommand
+        <$> field "run" strictText
+        <*> field "workDir" (maybe strictText)
+        <*> field "when" (maybe strictText)
+    )
+  where
+    mkCommand run workDir whenText =
+      Command
+        { cmdRun = run,
+          cmdWorkDir = workDir,
+          cmdWhen = parseWhen whenText
+        }
 
 -- | Parse an optional @when@ expression text into an 'Expr'.
 -- Returns 'Nothing' for 'Nothing' input, 'Just expr' on success, or calls

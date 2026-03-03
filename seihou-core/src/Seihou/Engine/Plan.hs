@@ -39,8 +39,21 @@ compilePlan baseDir modul vars = do
   results <- mapM (compileStep baseDir modName vars) (moduleSteps modul)
   let (allErrors, allOps) = partitionResults results
   if null allErrors
-    then Right <$> pure (deduplicateDirs (concat allOps))
+    then Right <$> pure (deduplicateDirs (concat allOps) ++ compileCommands vars (moduleCommands modul))
     else pure (Left (concat allErrors))
+
+-- | Compile commands into 'RunCommandOp' operations.
+-- Commands whose @when@ condition evaluates to False are skipped.
+compileCommands :: Map VarName VarValue -> [Command] -> [Operation]
+compileCommands vars = concatMap compileCommand
+  where
+    compileCommand cmd =
+      let shouldRun = case cmdWhen cmd of
+            Nothing -> True
+            Just expr -> evalExpr vars expr
+       in if shouldRun
+            then [RunCommandOp (cmdRun cmd) (fmap T.unpack (cmdWorkDir cmd))]
+            else []
 
 -- | Compile a single step into operations (or skip it).
 -- If the step has a patch operation, it produces a 'PatchFileOp'; otherwise

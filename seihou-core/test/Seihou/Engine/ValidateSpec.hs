@@ -40,6 +40,7 @@ goodModule =
               stepPatch = Nothing
             }
         ],
+      moduleCommands = [],
       moduleDependencies = []
     }
 
@@ -56,6 +57,7 @@ badModule =
       moduleExports = [VarExport {exportVar = "nonexistent", exportAs = Nothing}],
       modulePrompts = [Prompt {promptVar = "undeclared", promptText = "?", promptWhen = Nothing, promptChoices = Nothing}],
       moduleSteps = [Step Template "missing.tpl" "/absolute/path" Nothing Nothing],
+      moduleCommands = [],
       moduleDependencies = []
     }
 
@@ -321,3 +323,36 @@ spec = do
                 reportChecks = []
               }
       reportHasErrors report `shouldBe` True
+
+  describe "command safety" $ do
+    it "passes for valid commands" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let m = goodModule {moduleCommands = [Command "echo hello" Nothing Nothing]}
+        report <- buildReport False tmpDir m
+        hasPassedCheck "Command safety" (reportChecks report) `shouldBe` True
+
+    it "fails for empty command text" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let m = goodModule {moduleCommands = [Command "  " Nothing Nothing]}
+        report <- buildReport False tmpDir m
+        hasFailedCheck "Command safety" (reportChecks report) `shouldBe` True
+
+    it "fails for absolute workDir" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let m = goodModule {moduleCommands = [Command "echo hi" (Just "/usr/local") Nothing]}
+        report <- buildReport False tmpDir m
+        hasFailedCheck "Command safety" (reportChecks report) `shouldBe` True
+
+    it "fails for workDir containing .." $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let m = goodModule {moduleCommands = [Command "echo hi" (Just "../escape") Nothing]}
+        report <- buildReport False tmpDir m
+        hasFailedCheck "Command safety" (reportChecks report) `shouldBe` True

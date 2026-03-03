@@ -20,6 +20,7 @@ mkModule name deps =
       moduleExports = [],
       modulePrompts = [],
       moduleSteps = [],
+      moduleCommands = [],
       moduleDependencies = deps
     }
 
