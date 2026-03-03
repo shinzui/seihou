@@ -46,6 +46,7 @@ library
     Seihou.Engine.Preview
     Seihou.Engine.Section
     Seihou.Engine.Template
+    Seihou.Engine.Validate
     Seihou.Interaction.Prompt
     Seihou.Manifest.Hash
     Seihou.Manifest.Types
@@ -92,6 +93,7 @@ test-suite seihou-core-test
     Seihou.Engine.PreviewSpec
     Seihou.Engine.SectionSpec
     Seihou.Engine.TemplateSpec
+    Seihou.Engine.ValidateSpec
     Seihou.Integration.CompositionSpec
     Seihou.Integration.ExecutionSpec
     Seihou.Integration.GenerationSpec

@@ -60,7 +60,8 @@ data NewModuleOpts = NewModuleOpts
   deriving stock (Eq, Show, Generic)
 
 data ValidateOpts = ValidateOpts
-  { validatePath :: Maybe FilePath
+  { validatePath :: Maybe FilePath,
+    validateLint :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -300,6 +301,7 @@ validateParser =
   fmap ValidateModule $
     ValidateOpts
       <$> optional (argument str (metavar "PATH"))
+      <*> switch (long "lint" <> help "Include advisory lint warnings")
 
 -- Helpers
 

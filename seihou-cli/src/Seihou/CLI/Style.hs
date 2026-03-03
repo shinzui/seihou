@@ -8,13 +8,15 @@ module Seihou.CLI.Style
     bold,
     cyan,
     renderPreviewColor,
+    renderReportColor,
   )
 where
 
 import Data.Text (Text)
 import Data.Text qualified as T
-import Seihou.Core.Types (ModuleName (..))
+import Seihou.Core.Types (Module (..), ModuleName (..))
 import Seihou.Engine.Preview
+import Seihou.Engine.Validate
 import System.Console.ANSI
   ( Color (..),
     ColorIntensity (..),
@@ -113,3 +115,64 @@ summaryLine lines' =
     isConf _ = False
     isOrph (OrphanPreview {}) = True
     isOrph _ = False
+
+-- | Render a validation report with optional ANSI color.
+-- When the first argument is False, falls back to plain text.
+renderReportColor :: Bool -> ValidateReport -> Text
+renderReportColor False report = renderReportPlain report
+renderReportColor True report =
+  T.unlines $
+    [ "Validating module at " <> T.pack (reportPath report) <> "...",
+      ""
+    ]
+      ++ dhallLine'
+      ++ summaryLines'
+      ++ checkLines'
+      ++ [""]
+      ++ [resultLine']
+  where
+    m = reportModule report
+
+    dhallLine' =
+      if reportDhallOk report
+        then ["  " <> green "\x2713" <> " module.dhall evaluates successfully"]
+        else ["  " <> bold (red "\x2717") <> " module.dhall failed to evaluate"]
+
+    summaryLines' =
+      if reportDhallOk report
+        then
+          [ "  " <> green "\x2713" <> " Module name: " <> cyan (unModuleName (moduleName m)),
+            "  " <> green "\x2713" <> " " <> T.pack (show (length (moduleVars m))) <> " variables declared",
+            "  " <> green "\x2713" <> " " <> T.pack (show (length (modulePrompts m))) <> " prompts defined",
+            "  " <> green "\x2713" <> " " <> T.pack (show (length (moduleSteps m))) <> " steps defined"
+          ]
+        else []
+
+    checkLines' = concatMap renderCheckColor (reportChecks report)
+
+    renderCheckColor c
+      | null (diagDetails c) =
+          ["  " <> green "\x2713" <> " " <> diagLabel c]
+      | diagSeverity c == DiagWarning =
+          ("  " <> yellow "\x26A0" <> " " <> yellow (diagLabel c))
+            : map (\d -> "      " <> dim d) (diagDetails c)
+      | otherwise =
+          ("  " <> bold (red "\x2717") <> " " <> red (diagLabel c))
+            : map (\d -> "      " <> dim d) (diagDetails c)
+
+    errorCount =
+      length
+        [ ()
+        | c <- reportChecks report,
+          diagSeverity c == DiagError,
+          not (null (diagDetails c))
+        ]
+
+    dhallFailed = not (reportDhallOk report)
+    totalErrors = errorCount + (if dhallFailed then 1 else 0)
+
+    resultLine'
+      | totalErrors > 0 =
+          bold (red (T.pack (show totalErrors) <> " error(s) found.")) <> " Module is invalid."
+      | otherwise =
+          green ("Module '" <> unModuleName (moduleName m) <> "' is valid.")

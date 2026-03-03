@@ -18,6 +18,7 @@ import Seihou.Engine.PlanSpec qualified as PlanSpec
 import Seihou.Engine.PreviewSpec qualified as PreviewSpec
 import Seihou.Engine.SectionSpec qualified as SectionSpec
 import Seihou.Engine.TemplateSpec qualified as TemplateSpec
+import Seihou.Engine.ValidateSpec qualified as ValidateSpec
 import Seihou.Integration.CompositionSpec qualified as CompositionSpec
 import Seihou.Integration.ExecutionSpec qualified as ExecutionSpec
 import Seihou.Integration.GenerationSpec qualified as GenerationSpec
@@ -39,6 +40,7 @@ main = do
   planTests <- PlanSpec.tests
   previewTests <- PreviewSpec.tests
   sectionTests <- SectionSpec.tests
+  validateTests <- ValidateSpec.tests
   configTests <- ConfigSpec.tests
   dhallEvalTests <- DhallEvalSpec.tests
   configReaderTests <- ConfigReaderSpec.tests
@@ -52,4 +54,4 @@ main = do
   generationTests <- GenerationSpec.tests
   manifestTypesTests <- ManifestTypesSpec.tests
   promptTests <- PromptSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, exprTests, moduleTests, variableTests, templateTests, planTests, previewTests, sectionTests, configTests, dhallEvalTests, configReaderTests, filesystemTests, manifestStoreTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])
+  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, exprTests, moduleTests, variableTests, templateTests, planTests, previewTests, sectionTests, validateTests, configTests, dhallEvalTests, configReaderTests, filesystemTests, manifestStoreTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])

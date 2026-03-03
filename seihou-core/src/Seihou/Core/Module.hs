@@ -3,6 +3,18 @@ module Seihou.Core.Module
     defaultSearchPaths,
     validateModule,
     loadModule,
+
+    -- * Individual check functions (for structured reports)
+    checkNameFormat,
+    checkUniqueVars,
+    checkPromptRefs,
+    checkFileExistence,
+    checkExportRefs,
+    checkDependencyNames,
+    checkSafeDestinations,
+    checkDestVarRefs,
+    isValidModuleName,
+    extractPlaceholders,
   )
 where
 

@@ -6,9 +6,10 @@ where
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (ValidateOpts (..))
-import Seihou.Core.Module (validateModule)
+import Seihou.CLI.Style (renderReportColor, useColor)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
+import Seihou.Engine.Validate (ValidateReport (..), buildReport, reportHasErrors)
 import System.Directory (doesFileExist, getCurrentDirectory)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
@@ -32,27 +33,34 @@ handleValidateModule vopts = do
 
   -- Evaluate Dhall
   decoded <- evalModuleFromFile dhallFile
-  modul <- case decoded of
-    Left (DhallEvalError _ msg) -> do
-      TIO.putStrLn $ "Dhall evaluation error: " <> msg
-      exitFailure
-    Left (DhallDecodeError _ msg) -> do
-      TIO.putStrLn $ "Dhall decode error: " <> msg
-      exitFailure
-    Left err -> do
-      TIO.putStrLn $ "Error: " <> T.pack (show err)
-      exitFailure
-    Right m -> pure m
+  colorEnabled <- useColor
 
-  -- Validate
-  result <- validateModule moduleDir modul
-  case result of
-    Right _ ->
-      TIO.putStrLn $ "Module '" <> unModuleName (moduleName modul) <> "' is valid."
-    Left (ValidationError _ errors) -> do
-      TIO.putStrLn $ T.pack (show (length errors)) <> " error(s) found. Module is invalid."
-      mapM_ (\e -> TIO.putStrLn $ "  - " <> e) errors
+  case decoded of
+    Left _err -> do
+      -- Dhall failed: build a report with reportDhallOk = False
+      let dummyModule =
+            Module
+              { moduleName = ModuleName "<unknown>",
+                moduleDescription = Nothing,
+                moduleVars = [],
+                moduleExports = [],
+                modulePrompts = [],
+                moduleSteps = [],
+                moduleDependencies = []
+              }
+          report =
+            ValidateReport
+              { reportModule = dummyModule,
+                reportPath = moduleDir,
+                reportDhallOk = False,
+                reportChecks = []
+              }
+      TIO.putStr (renderReportColor colorEnabled report)
       exitFailure
-    Left err -> do
-      TIO.putStrLn $ "Error: " <> T.pack (show err)
-      exitFailure
+    Right modul -> do
+      -- Build the structured report
+      report <- buildReport (validateLint vopts) moduleDir modul
+      TIO.putStr (renderReportColor colorEnabled report)
+      if reportHasErrors report
+        then exitFailure
+        else pure ()
