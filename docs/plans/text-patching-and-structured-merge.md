@@ -58,11 +58,11 @@ correctly merged content instead of silent overwrites.
 - [x] M4-5: Add 6 composition tests for text patching merge (2026-03-02)
 - [x] M4-6: Add 6 composition tests for structured merge (2026-03-02)
 - [x] M4-7: Build and run all tests — 360 tests pass, `nix fmt` clean (2026-03-02)
-- [ ] M5-1: Create test fixture `haskell-shared-readme/` with patching steps
-- [ ] M5-2: Create test fixture `structured-merge/` with two modules contributing to same JSON
-- [ ] M5-3: Add integration tests exercising full pipeline with patching
-- [ ] M5-4: Add integration tests exercising full pipeline with structured merge
-- [ ] M5-5: Final build, all tests pass, `nix fmt` clean
+- [x] M5-1: Create test fixture `haskell-shared-readme/` with patching steps (2026-03-02)
+- [x] M5-2: Create test fixtures `structured-merge-a/` and `structured-merge-b/` for JSON merge (2026-03-02)
+- [x] M5-3: Add integration test for text patching (haskell-base + haskell-shared-readme) (2026-03-02)
+- [x] M5-4: Add integration test for structured merge (structured-merge-a + structured-merge-b) (2026-03-02)
+- [x] M5-5: Final build, all 362 tests pass, `nix fmt` clean (2026-03-02)
 
 
 ## Surprises & Discoveries
@@ -101,7 +101,20 @@ correctly merged content instead of silent overwrites.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All 5 milestones completed. 362 tests pass (up from 321 at start), `nix fmt` clean.
+
+**What was delivered:**
+- `PatchOp` type (`AppendFile | PrependFile | AppendSection`) and `stepPatch` field on `Step`
+- `Seihou.Engine.Section` module with section marker generation and `applyTextPatch`
+- `PatchFileOp` Operation constructor, `compilePatchStep`, execution in `executeOp`
+- Intelligent composition merge: `PatchFileOp` applies patches inline to existing `WriteFileOp` content with `ContentMerged` warnings
+- Structured merge: two Structured-strategy `WriteFileOp`s targeting the same JSON/YAML get deep-merged via `deepMergeJSON`
+- 3 new test fixtures (`haskell-shared-readme`, `structured-merge-a`, `structured-merge-b`)
+- 41 new tests across unit, composition, and integration layers
+
+**Key decision change:** Structured merge uses JSON-level deep merge (aeson `KeyMap.unionWith`) instead of Dhall AST re-evaluation. By the time `mergeOperations` sees operations, content is already serialized. JSON merge is pure, simple, and handles the common cases. Dhall-level merge could be added later if needed for more complex scenarios.
+
+**No regressions:** All 321 pre-existing tests continue to pass. The `patch = None Text` fixture addition is a no-op for existing behavior.
 
 
 ## Context and Orientation

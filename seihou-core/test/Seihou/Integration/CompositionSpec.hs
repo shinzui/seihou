@@ -2,6 +2,7 @@ module Seihou.Integration.CompositionSpec (tests) where
 
 import Data.Either (isLeft)
 import Data.Map.Strict qualified as Map
+import Data.Text qualified as T
 import Seihou.Composition.Graph (buildGraph, topoSort)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveComposedVariables)
@@ -133,6 +134,66 @@ spec = do
                   elem "Makefile" writeOps `shouldBe` True
                   elem "README.md" writeOps `shouldBe` True
 
+  describe "text patching integration" $ do
+    it "haskell-shared-readme appends section to haskell-base README" $ do
+      result <- loadComposition [fixtureDir] "haskell-shared-readme" []
+      case result of
+        Left err -> expectationFailure $ "Load failed: " ++ show err
+        Right modules -> do
+          let cliOverrides = Map.singleton "project.name" "my-app"
+          case resolveComposedVariables modules cliOverrides Map.empty Map.empty Map.empty Map.empty of
+            Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
+            Right resolved -> do
+              let triples =
+                    [ (m, dir, Map.map resolvedValue (resolved Map.! moduleName m))
+                    | (m, dir) <- modules
+                    ]
+              planResult <- compileComposedPlan triples
+              case planResult of
+                Left errs -> expectationFailure $ "Plan failed: " ++ show errs
+                Right (ops, warnings) -> do
+                  -- Find the merged README.md
+                  let readmeOps = [content | WriteFileOp dest content _ <- ops, dest == "README.md"]
+                  length readmeOps `shouldBe` 1
+                  let readmeContent = head readmeOps
+                  -- Should contain the base content from haskell-base
+                  T.isInfixOf "# my-app" readmeContent `shouldBe` True
+                  -- Should contain the patched section from haskell-shared-readme
+                  T.isInfixOf "Additional Section" readmeContent `shouldBe` True
+                  T.isInfixOf "seihou:haskell-shared-readme" readmeContent `shouldBe` True
+                  -- Should have a ContentMerged warning
+                  any isContentMerged warnings `shouldBe` True
+
+  describe "structured merge integration" $ do
+    it "two modules contributing to same JSON get deep-merged" $ do
+      result <- loadComposition [fixtureDir] "structured-merge-b" []
+      case result of
+        Left err -> expectationFailure $ "Load failed: " ++ show err
+        Right modules -> do
+          case resolveComposedVariables modules Map.empty Map.empty Map.empty Map.empty Map.empty of
+            Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
+            Right resolved -> do
+              let triples =
+                    [ (m, dir, Map.map resolvedValue (resolved Map.! moduleName m))
+                    | (m, dir) <- modules
+                    ]
+              planResult <- compileComposedPlan triples
+              case planResult of
+                Left errs -> expectationFailure $ "Plan failed: " ++ show errs
+                Right (ops, warnings) -> do
+                  -- Find the merged config.json
+                  let configOps = [content | WriteFileOp dest content _ <- ops, dest == "config.json"]
+                  length configOps `shouldBe` 1
+                  let configContent = head configOps
+                  -- Should contain keys from module A
+                  T.isInfixOf "name" configContent `shouldBe` True
+                  T.isInfixOf "my-project" configContent `shouldBe` True
+                  -- Should contain keys from module B
+                  T.isInfixOf "debug" configContent `shouldBe` True
+                  T.isInfixOf "logLevel" configContent `shouldBe` True
+                  -- Should have a ContentMerged warning
+                  any isContentMerged warnings `shouldBe` True
+
   describe "cycle detection" $ do
     it "detects a circular dependency" $ do
       let mkMod name deps =
@@ -150,3 +211,7 @@ spec = do
           c = mkMod "c" ["a"]
           graph = buildGraph [a, b, c]
       topoSort graph `shouldSatisfy` isLeft
+
+isContentMerged :: CompositionWarning -> Bool
+isContentMerged (ContentMerged {}) = True
+isContentMerged _ = False
