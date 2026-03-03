@@ -121,3 +121,47 @@ spec = do
           (result, _st) = runPureEff $ runConsolePure ["accept", "keep", "skip", "abort"] $ resolveConflictsInteractive conflicts
       -- abort on d.txt → Nothing
       result `shouldBe` Nothing
+
+  describe "resolveConflicts integration" $ do
+    it "dispatches to interactive prompts when interactive and not force" $ do
+      let conflicts = [mkConflict "config.yaml", mkConflict "Makefile"]
+          (result, st) = runPureEff $ runConsolePure ["k", "a"] $ resolveConflicts False conflicts
+      case result of
+        Just resolved -> do
+          map snd resolved `shouldBe` [KeepCurrent, AcceptNew]
+        Nothing -> expectationFailure "Expected Just, got Nothing"
+      -- Verify prompt output was produced
+      let outputs = T.unlines (consoleOutputs st)
+      T.isInfixOf "config.yaml" outputs `shouldBe` True
+      T.isInfixOf "Makefile" outputs `shouldBe` True
+
+    it "non-interactive mode produces no console output" $ do
+      let conflicts = [mkConflict "a.txt"]
+          (_result, st) = runPureEff $ runConsolePureNonInteractive $ resolveConflicts False conflicts
+      consoleOutputs st `shouldBe` []
+
+    it "force mode preserves conflict file references in resolution" $ do
+      let c = mkConflict "important.txt"
+          (result, _st) = runPureEff $ runConsolePure [] $ resolveConflicts True [c]
+      case result of
+        Just [(resolved_c, AcceptNew)] ->
+          conflictPath resolved_c `shouldBe` "important.txt"
+        _ -> expectationFailure "Expected Just with AcceptNew for important.txt"
+
+    it "interactive abort via resolveConflicts returns Nothing" $ do
+      let conflicts = [mkConflict "first.txt", mkConflict "second.txt"]
+          (result, st) = runPureEff $ runConsolePure ["A"] $ resolveConflicts False conflicts
+      result `shouldBe` Nothing
+      -- Only first.txt was prompted before abort
+      let outputs = T.unlines (consoleOutputs st)
+      T.isInfixOf "first.txt" outputs `shouldBe` True
+      T.isInfixOf "second.txt" outputs `shouldBe` False
+
+    it "choice prompt text includes all four options" $ do
+      let conflict = mkConflict "test.txt"
+          (_result, st) = runPureEff $ runConsolePure ["s"] $ resolveConflicts False [conflict]
+          outputs = T.unlines (consoleOutputs st)
+      T.isInfixOf "[a]ccept" outputs `shouldBe` True
+      T.isInfixOf "[k]eep" outputs `shouldBe` True
+      T.isInfixOf "[s]kip" outputs `shouldBe` True
+      T.isInfixOf "[A]bort" outputs `shouldBe` True
