@@ -184,6 +184,15 @@ printWarning (FileOverwritten path overwritten overwriter) =
       <> unModuleName overwritten
       <> ") overwritten by "
       <> unModuleName overwriter
+printWarning (ContentMerged path base contributor) =
+  TIO.putStrLn $
+    "Merged: "
+      <> T.pack path
+      <> " (base from "
+      <> unModuleName base
+      <> ", patched by "
+      <> unModuleName contributor
+      <> ")"
 
 formatDiff :: DiffResult -> Text
 formatDiff diff =

@@ -320,4 +320,5 @@ data ConfigError
 -- overwritten by a later module in execution order (last-writer-wins).
 data CompositionWarning
   = FileOverwritten FilePath ModuleName ModuleName
+  | ContentMerged FilePath ModuleName ModuleName
   deriving stock (Eq, Show, Generic)

@@ -51,13 +51,13 @@ correctly merged content instead of silent overwrites.
 - [x] M3-6: Update pattern matches across the codebase for new Operation constructor (2026-03-02)
 - [x] M3-7: Add unit tests for `compilePatchStep` and `PatchFileOp` execution (2026-03-02)
 - [x] M3-8: Build and run all tests — 348 tests pass, `nix fmt` clean (2026-03-02)
-- [ ] M4-1: Implement `mergeStructuredOps` in `Seihou.Composition.Plan`
-- [ ] M4-2: Update `mergeOperations` to dispatch to `mergeStructuredOps` for Structured-strategy WriteFileOps
-- [ ] M4-3: Add `ContentMerged` warning to `CompositionWarning`
-- [ ] M4-4: Update `mergeOperations` to apply `PatchFileOp` to existing `WriteFileOp` content
-- [ ] M4-5: Add composition tests for text patching merge
-- [ ] M4-6: Add composition tests for structured merge
-- [ ] M4-7: Build and run all tests
+- [x] M4-1: Implement `mergeStructuredContent` and `deepMergeJSON` in `Seihou.Composition.Plan` (2026-03-02)
+- [x] M4-2: Update `mergeOperations` to dispatch to `mergeStructuredContent` for Structured-strategy WriteFileOps (2026-03-02)
+- [x] M4-3: Add `ContentMerged` warning to `CompositionWarning` and `printWarning` in CLI (2026-03-02)
+- [x] M4-4: Update `mergeOperations` to apply `PatchFileOp` to existing `WriteFileOp` content (2026-03-02)
+- [x] M4-5: Add 6 composition tests for text patching merge (2026-03-02)
+- [x] M4-6: Add 6 composition tests for structured merge (2026-03-02)
+- [x] M4-7: Build and run all tests — 360 tests pass, `nix fmt` clean (2026-03-02)
 - [ ] M5-1: Create test fixture `haskell-shared-readme/` with patching steps
 - [ ] M5-2: Create test fixture `structured-merge/` with two modules contributing to same JSON
 - [ ] M5-3: Add integration tests exercising full pipeline with patching
@@ -92,6 +92,10 @@ correctly merged content instead of silent overwrites.
 
 - Decision: Defer `ReplaceSection` to a follow-up — implement `AppendFile`, `PrependFile`, and `AppendSection` first.
   Rationale: AppendFile/PrependFile are the most common use cases and don't require section marker parsing in the target file. AppendSection needs section marker generation but not replacement-in-place. ReplaceSection needs both parsing and replacement, adding complexity. Ship the simpler cases first.
+  Date: 2026-03-02
+
+- Decision: Structured merge uses JSON-level deep merge (aeson) instead of Dhall AST re-evaluation.
+  Rationale: By the time `mergeOperations` sees `WriteFileOp` content, the Dhall has already been evaluated and serialized to JSON/YAML. Re-evaluating Dhall would require storing the original source alongside the serialized output or making `mergeOperations` IO. JSON-level `deepMergeJSON` is pure, uses existing aeson/yaml dependencies, and handles the common cases (disjoint keys, nested object merge, right-biased scalars) correctly.
   Date: 2026-03-02
 
 
