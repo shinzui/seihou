@@ -299,7 +299,7 @@ spec = do
         Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
   describe "formatExplain" $ do
-    it "formats a provenance report" $ do
+    it "formats a provenance report with bracket notation" $ do
       let decl1 = textVar "project.name" True Nothing Nothing
           decl2 = textVar "project.version" False (Just (VText "0.1.0.0")) Nothing
           resolved =
@@ -308,42 +308,95 @@ spec = do
                 ("project.version", ResolvedVar (VText "0.1.0.0") FromDefault decl2)
               ]
           output = formatExplain resolved
-      T.isInfixOf "project.name = \"my-app\"" output `shouldBe` True
-      T.isInfixOf "from --set flag" output `shouldBe` True
-      T.isInfixOf "project.version = \"0.1.0.0\"" output `shouldBe` True
-      T.isInfixOf "from module default" output `shouldBe` True
+      T.isInfixOf "project.name" output `shouldBe` True
+      T.isInfixOf "\"my-app\"" output `shouldBe` True
+      T.isInfixOf "[--var]" output `shouldBe` True
+      T.isInfixOf "project.version" output `shouldBe` True
+      T.isInfixOf "\"0.1.0.0\"" output `shouldBe` True
+      T.isInfixOf "[default]" output `shouldBe` True
 
-    it "formats env source with env var name" $ do
+    it "formats env source with bracket notation" $ do
       let decl = textVar "license" True Nothing Nothing
           resolved =
             Map.fromList
               [("license", ResolvedVar (VText "MIT") (FromEnv "SEIHOU_VAR_LICENSE") decl)]
           output = formatExplain resolved
-      T.isInfixOf "from env SEIHOU_VAR_LICENSE" output `shouldBe` True
+      T.isInfixOf "[env SEIHOU_VAR_LICENSE]" output `shouldBe` True
 
-    it "formats local config source" $ do
+    it "formats local config source with bracket notation" $ do
       let decl = textVar "license" True Nothing Nothing
           resolved =
             Map.fromList
               [("license", ResolvedVar (VText "MIT") FromLocalConfig decl)]
           output = formatExplain resolved
-      T.isInfixOf "from local config" output `shouldBe` True
+      T.isInfixOf "[local config]" output `shouldBe` True
 
-    it "formats namespace config source" $ do
+    it "formats namespace config source with bracket notation" $ do
       let decl = textVar "haskell.ghc" True Nothing Nothing
           resolved =
             Map.fromList
               [("haskell.ghc", ResolvedVar (VText "9.12.2") (FromNamespaceConfig "haskell") decl)]
           output = formatExplain resolved
-      T.isInfixOf "from namespace haskell config" output `shouldBe` True
+      T.isInfixOf "[namespace: haskell]" output `shouldBe` True
 
-    it "formats global config source" $ do
+    it "formats global config source with bracket notation" $ do
       let decl = textVar "license" True Nothing Nothing
           resolved =
             Map.fromList
               [("license", ResolvedVar (VText "MIT") FromGlobalConfig decl)]
           output = formatExplain resolved
-      T.isInfixOf "from global config" output `shouldBe` True
+      T.isInfixOf "[global config]" output `shouldBe` True
+
+    it "uses 2-space indentation" $ do
+      let decl = textVar "license" True Nothing Nothing
+          resolved =
+            Map.fromList
+              [("license", ResolvedVar (VText "MIT") FromCLI decl)]
+          output = formatExplain resolved
+      T.isInfixOf "  license" output `shouldBe` True
+
+  describe "formatDeclarations" $ do
+    it "formats required variables without defaults" $ do
+      let decls = [VarDecl "project.name" VTText Nothing (Just "Name") True Nothing]
+          output = formatDeclarations decls
+      T.isInfixOf "project.name" output `shouldBe` True
+      T.isInfixOf "(required, no default)" output `shouldBe` True
+
+    it "formats variables with default values" $ do
+      let decls = [VarDecl "project.version" VTText (Just (VText "0.1.0.0")) Nothing False Nothing]
+          output = formatDeclarations decls
+      T.isInfixOf "\"0.1.0.0\"" output `shouldBe` True
+      T.isInfixOf "(required, no default)" output `shouldBe` False
+
+    it "formats variables with defaults using = sign" $ do
+      let decls =
+            [ VarDecl
+                { varName = "project.version",
+                  varType = VTText,
+                  varDefault = Just (VText "0.1.0.0"),
+                  varDescription = Nothing,
+                  varRequired = False,
+                  varValidation = Nothing
+                }
+            ]
+          output = formatDeclarations decls
+      T.isInfixOf "project.version" output `shouldBe` True
+      T.isInfixOf "= \"0.1.0.0\"" output `shouldBe` True
+
+    it "aligns columns for multiple variables" $ do
+      let decls =
+            [ VarDecl "project.name" VTText Nothing (Just "Name") True Nothing,
+              VarDecl "project.version" VTText (Just (VText "0.1.0.0")) Nothing False Nothing
+            ]
+          output = formatDeclarations decls
+          outputLines = T.lines output
+      -- Both lines should have the same position for "="
+      length (filter (T.isInfixOf "=") outputLines) `shouldBe` 2
+
+    it "uses 2-space indentation" $ do
+      let decls = [VarDecl "x" VTText Nothing Nothing True Nothing]
+          output = formatDeclarations decls
+      T.isInfixOf "  x" output `shouldBe` True
 
   describe "resolveVariables (six-layer precedence)" $ do
     it "resolves from local config" $ do

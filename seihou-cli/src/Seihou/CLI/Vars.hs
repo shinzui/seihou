@@ -13,7 +13,7 @@ import Seihou.CLI.Commands (VarsOpts (..))
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.Core.Module (defaultSearchPaths, loadModule)
 import Seihou.Core.Types
-import Seihou.Core.Variable (formatExplain, resolveVariables)
+import Seihou.Core.Variable (formatDeclarations, formatExplain, resolveVariables)
 import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.Logger (logError)
@@ -50,35 +50,9 @@ declarationMode modul = do
   if null vars
     then TIO.putStrLn "No variables declared."
     else do
-      TIO.putStrLn $ "Variables for module '" <> unModuleName (moduleName modul) <> "':"
+      TIO.putStrLn $ "Variables for " <> unModuleName (moduleName modul) <> ":"
       TIO.putStrLn ""
-      mapM_ printVarDecl vars
-
-printVarDecl :: VarDecl -> IO ()
-printVarDecl decl = do
-  let name = unVarName (varName decl)
-      ty = formatType (varType decl)
-      defStr = case varDefault decl of
-        Nothing -> "required"
-        Just v -> "default: " <> formatValue v
-      desc = case varDescription decl of
-        Nothing -> ""
-        Just d -> "  " <> d
-  TIO.putStrLn $ "  " <> name <> " (" <> ty <> ", " <> defStr <> ")" <> desc
-
-formatType :: VarType -> Text
-formatType VTText = "text"
-formatType VTBool = "bool"
-formatType VTInt = "int"
-formatType (VTList t) = "list[" <> formatType t <> "]"
-formatType (VTChoice opts) = "choice[" <> T.intercalate "|" opts <> "]"
-
-formatValue :: VarValue -> Text
-formatValue (VText t) = "\"" <> t <> "\""
-formatValue (VBool True) = "true"
-formatValue (VBool False) = "false"
-formatValue (VInt n) = T.pack (show n)
-formatValue (VList vs) = "[" <> T.intercalate ", " (map formatValue vs) <> "]"
+      TIO.putStr (formatDeclarations vars)
 
 -- | Explain mode: resolve variables and show provenance
 explainMode :: Module -> VarsOpts -> IO ()
@@ -102,6 +76,6 @@ explainMode modul vopts = do
         mapM_ (logError . ("  " <>) . formatVarError) errs
       exitFailure
     Right resolved -> do
-      TIO.putStrLn $ "Variable provenance for module '" <> unModuleName (moduleName modul) <> "':"
+      TIO.putStrLn $ "Variables for " <> unModuleName (moduleName modul) <> ":"
       TIO.putStrLn ""
       TIO.putStr (formatExplain resolved)

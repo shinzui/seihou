@@ -3,6 +3,7 @@ module Seihou.Core.Variable
     coerceValue,
     validateVarValue,
     formatExplain,
+    formatDeclarations,
     envVarName,
   )
 where
@@ -206,13 +207,23 @@ partitionResults = foldr go ([], [])
     go (Right a) (errs, oks) = (errs, a : oks)
 
 -- | Format a human-readable provenance report for @--explain@ output.
+-- Uses bracket notation for sources and column-aligned output with 2-space indent.
 formatExplain :: Map VarName ResolvedVar -> Text
 formatExplain resolved =
-  T.unlines (map formatOne (Map.toAscList resolved))
+  T.unlines (map formatOne entries)
   where
+    entries = Map.toAscList resolved
+
+    -- Calculate column widths for alignment
+    maxNameLen = maximum (0 : map (\(VarName n, _) -> T.length n) entries)
+    maxValueLen = maximum (0 : map (\(_, rv) -> T.length (showValue (resolvedValue rv))) entries)
+
     formatOne :: (VarName, ResolvedVar) -> Text
     formatOne (VarName name, rv) =
-      name <> " = " <> showValue (resolvedValue rv) <> "  (" <> showSource (resolvedSource rv) <> ")"
+      let valText = showValue (resolvedValue rv)
+          namePad = T.replicate (maxNameLen - T.length name) " "
+          valPad = T.replicate (maxValueLen - T.length valText) " "
+       in "  " <> name <> namePad <> " = " <> valText <> valPad <> "  " <> showSource (resolvedSource rv)
 
     showValue :: VarValue -> Text
     showValue (VText t) = "\"" <> t <> "\""
@@ -222,10 +233,34 @@ formatExplain resolved =
     showValue (VList vs) = "[" <> T.intercalate ", " (map showValue vs) <> "]"
 
     showSource :: VarSource -> Text
-    showSource FromCLI = "from --set flag"
-    showSource (FromEnv envKey) = "from env " <> envKey
-    showSource FromLocalConfig = "from local config"
-    showSource (FromNamespaceConfig ns) = "from namespace " <> ns <> " config"
-    showSource FromGlobalConfig = "from global config"
-    showSource FromDefault = "from module default"
-    showSource FromPrompt = "from interactive prompt"
+    showSource FromCLI = "[--var]"
+    showSource (FromEnv envKey) = "[env " <> envKey <> "]"
+    showSource FromLocalConfig = "[local config]"
+    showSource (FromNamespaceConfig ns) = "[namespace: " <> ns <> "]"
+    showSource FromGlobalConfig = "[global config]"
+    showSource FromDefault = "[default]"
+    showSource FromPrompt = "[prompt]"
+
+-- | Format variable declarations for default mode output.
+-- Produces aligned output with @=@ signs and 2-space indent.
+formatDeclarations :: [VarDecl] -> Text
+formatDeclarations decls =
+  T.unlines (map formatOne decls)
+  where
+    maxNameLen = maximum (0 : map (T.length . unVarName . varName) decls)
+
+    formatOne :: VarDecl -> Text
+    formatOne decl =
+      let VarName name = varName decl
+          namePad = T.replicate (maxNameLen - T.length name) " "
+          valText = case varDefault decl of
+            Nothing -> "(required, no default)"
+            Just v -> showDeclValue v
+       in "  " <> name <> namePad <> " = " <> valText
+
+    showDeclValue :: VarValue -> Text
+    showDeclValue (VText t) = "\"" <> t <> "\""
+    showDeclValue (VBool True) = "true"
+    showDeclValue (VBool False) = "false"
+    showDeclValue (VInt n) = T.pack (show n)
+    showDeclValue (VList vs) = "[" <> T.intercalate ", " (map showDeclValue vs) <> "]"
