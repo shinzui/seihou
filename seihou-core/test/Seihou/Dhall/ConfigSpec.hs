@@ -1,7 +1,9 @@
 module Seihou.Dhall.ConfigSpec (tests) where
 
 import Data.Map.Strict qualified as Map
-import Seihou.Dhall.Config (evalConfigFile, evalConfigFileIfExists)
+import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
+import Seihou.Dhall.Config (escapeDhallText, evalConfigFile, evalConfigFileIfExists, serializeConfig)
 import System.Directory (getCurrentDirectory)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -52,3 +54,57 @@ spec = do
         case result of
           Left _ -> pure ()
           Right _ -> expectationFailure "Expected Left for invalid Dhall"
+
+  describe "serializeConfig" $ do
+    it "serializes an empty map to {=}" $ do
+      serializeConfig Map.empty `shouldBe` "{=}\n"
+
+    it "serializes a single entry" $ do
+      let m = Map.fromList [("license", "MIT")]
+          result = serializeConfig m
+      result `shouldSatisfy` T.isInfixOf "`license`"
+      result `shouldSatisfy` T.isInfixOf "\"MIT\""
+
+    it "serializes multiple entries in sorted order" $ do
+      let m = Map.fromList [("z-key", "last"), ("a-key", "first")]
+          result = serializeConfig m
+          aPos = T.findIndex (== 'a') result
+          zPos = T.findIndex (== 'z') result
+      -- a-key should appear before z-key (sorted)
+      case (aPos, zPos) of
+        (Just a, Just z) -> a `shouldSatisfy` (< z)
+        _ -> expectationFailure "Expected both keys in output"
+
+    it "round-trips through evalConfigFile" $ do
+      withSystemTempDirectory "seihou-config-test" $ \tmpDir -> do
+        let original = Map.fromList [("project.name", "my-app"), ("license", "MIT")]
+            path = tmpDir </> "config.dhall"
+        TIO.writeFile path (serializeConfig original)
+        result <- evalConfigFile path
+        result `shouldBe` original
+
+    it "round-trips dotted keys" $ do
+      withSystemTempDirectory "seihou-config-test" $ \tmpDir -> do
+        let original = Map.fromList [("haskell.ghc", "9.12.2"), ("project.name", "test")]
+            path = tmpDir </> "config.dhall"
+        TIO.writeFile path (serializeConfig original)
+        result <- evalConfigFile path
+        result `shouldBe` original
+
+    it "round-trips values with special characters" $ do
+      withSystemTempDirectory "seihou-config-test" $ \tmpDir -> do
+        let original = Map.fromList [("path", "C:\\Users\\me"), ("quote", "say \"hello\"")]
+            path = tmpDir </> "config.dhall"
+        TIO.writeFile path (serializeConfig original)
+        result <- evalConfigFile path
+        result `shouldBe` original
+
+  describe "escapeDhallText" $ do
+    it "passes through plain text unchanged" $ do
+      escapeDhallText "hello world" `shouldBe` "hello world"
+
+    it "escapes backslashes" $ do
+      escapeDhallText "a\\b" `shouldBe` "a\\\\b"
+
+    it "escapes double-quotes" $ do
+      escapeDhallText "say \"hi\"" `shouldBe` "say \\\"hi\\\""
