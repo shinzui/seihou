@@ -33,6 +33,8 @@ module Seihou.Core.Types
     ConfigError (..),
     ConfigScope (..),
     LogLevel (..),
+    TrackedFileStatus (..),
+    TrackedFile (..),
   )
 where
 
@@ -348,4 +350,23 @@ data ConfigScope
 data CompositionWarning
   = FileOverwritten FilePath ModuleName ModuleName
   | ContentMerged FilePath ModuleName ModuleName
+  deriving stock (Eq, Show, Generic)
+
+-- | Status of a tracked file relative to its manifest hash.
+-- Used by 'seihou status' to classify files by comparing manifest vs disk.
+data TrackedFileStatus
+  = -- | Disk hash matches manifest hash
+    TfsUnchanged
+  | -- | Disk hash differs from manifest hash
+    TfsModified
+  | -- | File not present on disk
+    TfsDeleted
+  deriving stock (Eq, Show, Generic)
+
+-- | A tracked file with its path, originating module, and disk status.
+data TrackedFile = TrackedFile
+  { trackedPath :: FilePath,
+    trackedModule :: ModuleName,
+    trackedStatus :: TrackedFileStatus
+  }
   deriving stock (Eq, Show, Generic)
