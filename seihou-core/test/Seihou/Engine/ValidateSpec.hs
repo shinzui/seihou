@@ -266,6 +266,21 @@ spec = do
               { reportModule = goodModule,
                 reportPath = "/some/path",
                 reportDhallOk = False,
+                reportDhallError = Just "test error message",
+                reportChecks = []
+              }
+          rendered = renderReportPlain report
+      T.isInfixOf "\x2717 module.dhall failed to evaluate" rendered `shouldBe` True
+      T.isInfixOf "test error message" rendered `shouldBe` True
+      T.isInfixOf "1 error(s) found. Module is invalid." rendered `shouldBe` True
+
+    it "renders a Dhall-failure report without error details when absent" $ do
+      let report =
+            ValidateReport
+              { reportModule = goodModule,
+                reportPath = "/some/path",
+                reportDhallOk = False,
+                reportDhallError = Nothing,
                 reportChecks = []
               }
           rendered = renderReportPlain report
@@ -320,6 +335,7 @@ spec = do
               { reportModule = goodModule,
                 reportPath = "/some/path",
                 reportDhallOk = False,
+                reportDhallError = Just "some dhall error",
                 reportChecks = []
               }
       reportHasErrors report `shouldBe` True

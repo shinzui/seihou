@@ -136,7 +136,11 @@ renderReportColor True report =
     dhallLine' =
       if reportDhallOk report
         then ["  " <> green "\x2713" <> " module.dhall evaluates successfully"]
-        else ["  " <> bold (red "\x2717") <> " module.dhall failed to evaluate"]
+        else
+          ["  " <> bold (red "\x2717") <> " module.dhall failed to evaluate"]
+            ++ case reportDhallError report of
+              Just errText -> ["      " <> dim errText]
+              Nothing -> []
 
     summaryLines' =
       if reportDhallOk report

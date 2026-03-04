@@ -13,7 +13,7 @@ import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.Logger (logError)
 import Seihou.Engine.Validate (ValidateReport (..), buildReport, reportHasErrors)
 import System.Directory (doesFileExist, getCurrentDirectory)
-import System.Exit (exitFailure)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath ((</>))
 
 handleValidateModule :: ValidateOpts -> IO ()
@@ -30,7 +30,7 @@ handleValidateModule vopts = do
   if not exists
     then do
       logIO LogNormal (logError $ T.pack dhallFile <> " not found.")
-      exitFailure
+      exitWith (ExitFailure 4)
     else pure ()
 
   -- Evaluate Dhall
@@ -38,7 +38,7 @@ handleValidateModule vopts = do
   colorEnabled <- useColor
 
   case decoded of
-    Left _err -> do
+    Left err -> do
       -- Dhall failed: build a report with reportDhallOk = False
       let dummyModule =
             Module
@@ -56,6 +56,7 @@ handleValidateModule vopts = do
               { reportModule = dummyModule,
                 reportPath = moduleDir,
                 reportDhallOk = False,
+                reportDhallError = Just (T.pack (show err)),
                 reportChecks = []
               }
       TIO.putStr (renderReportColor colorEnabled report)

@@ -45,6 +45,7 @@ data ValidateReport = ValidateReport
   { reportModule :: Module,
     reportPath :: FilePath,
     reportDhallOk :: Bool,
+    reportDhallError :: Maybe Text,
     reportChecks :: [DiagCheck]
   }
   deriving stock (Eq, Show)
@@ -80,6 +81,7 @@ buildReport lint baseDir m = do
       { reportModule = m,
         reportPath = baseDir,
         reportDhallOk = True,
+        reportDhallError = Nothing,
         reportChecks = coreChecks ++ lintChecks
       }
 
@@ -107,7 +109,11 @@ renderReportPlain report =
     dhallLine =
       if reportDhallOk report
         then ["  \x2713 module.dhall evaluates successfully"]
-        else ["  \x2717 module.dhall failed to evaluate"]
+        else
+          ["  \x2717 module.dhall failed to evaluate"]
+            ++ case reportDhallError report of
+              Just errText -> ["      " <> errText]
+              Nothing -> []
 
     summaryLines =
       if reportDhallOk report
