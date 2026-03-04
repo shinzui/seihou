@@ -125,11 +125,12 @@ resolveVariables ::
   [VarDecl] ->
   Map VarName Text -> -- CLI overrides
   Map Text Text -> -- Environment variables
+  Text -> -- Namespace name (used in provenance tagging)
   Map VarName Text -> -- Local config
   Map VarName Text -> -- Namespace config
   Map VarName Text -> -- Global config
   Either [VarError] (Map VarName ResolvedVar)
-resolveVariables decls cliOverrides envVars localConfig nsConfig globalConfig =
+resolveVariables decls cliOverrides envVars namespace localConfig nsConfig globalConfig =
   case partitionResults (map resolveOne decls) of
     ([], resolved) -> Right (Map.fromList resolved)
     (errs, _) -> Left errs
@@ -144,7 +145,7 @@ resolveVariables decls cliOverrides envVars localConfig nsConfig globalConfig =
               Just result -> result >>= validateAndWrap decl
               Nothing -> case lookupConfig name ty localConfig FromLocalConfig of
                 Just result -> result >>= validateAndWrap decl
-                Nothing -> case lookupConfig name ty nsConfig (FromNamespaceConfig "") of
+                Nothing -> case lookupConfig name ty nsConfig (FromNamespaceConfig namespace) of
                   Just result -> result >>= validateAndWrap decl
                   Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
                     Just result -> result >>= validateAndWrap decl

@@ -94,7 +94,7 @@ explainMode modul vopts = do
     let localMap = toVarNameMap localCfg
         nsMap = toVarNameMap namespaceCfg
         globalMap = toVarNameMap globalCfg
-    pure $ resolveVariables (moduleVars modul) cliOverrides envVars localMap nsMap globalMap
+    pure $ resolveVariables (moduleVars modul) cliOverrides envVars namespace localMap nsMap globalMap
   case result of
     Left errs -> do
       logIO LogNormal $ do

@@ -81,7 +81,7 @@ handleRun runOpts = do
     let localMap = toVarNameMap localCfg
         nsMap = toVarNameMap namespaceCfg
         globalMap = toVarNameMap globalCfg
-    resolveWithPrompts modulesInOrder cliOverrides envVars localMap nsMap globalMap
+    resolveWithPrompts modulesInOrder cliOverrides envVars namespace localMap nsMap globalMap
   resolved <- case resolveResult of
     Left errs -> do
       logIO level $ do

@@ -44,7 +44,7 @@ compileFixturePlan vars = do
     Right modul -> do
       let cli = Map.fromList [(VarName k, v) | (k, v) <- vars]
           env = Map.empty
-      case resolveVariables (moduleVars modul) cli env Map.empty Map.empty Map.empty of
+      case resolveVariables (moduleVars modul) cli env "" Map.empty Map.empty Map.empty of
         Left errs -> error ("Failed to resolve: " <> show errs)
         Right resolved -> do
           planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
