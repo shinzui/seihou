@@ -11,6 +11,7 @@ executable seihou
   main-is: Main.hs
   other-modules:
     Seihou.CLI.Commands
+    Seihou.CLI.Config
     Seihou.CLI.Init
     Seihou.CLI.Install
     Seihou.CLI.NewModule

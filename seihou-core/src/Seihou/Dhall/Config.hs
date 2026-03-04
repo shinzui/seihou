@@ -28,13 +28,21 @@ import System.Directory (doesFileExist)
 evalConfigFile :: FilePath -> IO (Map Text Text)
 evalConfigFile path = do
   content <- TIO.readFile path
-  let trimmed = T.strip content
+  let stripped = stripDhallComments content
   -- An empty record {=} needs a type annotation for toMap.
-  if trimmed == "{=}" || trimmed == "{ = }" || T.null trimmed
+  if stripped == "{=}" || stripped == "{ = }" || T.null stripped
     then pure Map.empty
     else do
       let wrapped = "toMap (" <> content <> ")"
       input configMapDecoder wrapped
+
+-- | Strip single-line Dhall comments (lines starting with @--@) and
+-- whitespace, leaving only the meaningful Dhall expression.
+stripDhallComments :: Text -> Text
+stripDhallComments =
+  T.strip . T.unlines . filter (not . isComment) . T.lines
+  where
+    isComment line' = "--" `T.isPrefixOf` T.stripStart line'
 
 -- | Like 'evalConfigFile', but returns an empty map if the file does not exist.
 -- Dhall parse/evaluation errors still propagate as 'Left'.

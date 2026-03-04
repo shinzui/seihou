@@ -5,6 +5,8 @@ module Seihou.CLI.Commands
     InstallOpts (..),
     NewModuleOpts (..),
     ValidateOpts (..),
+    ConfigOpts (..),
+    ConfigAction (..),
     commandParser,
     opts,
   )
@@ -25,6 +27,7 @@ data Command
   | Status
   | NewModule NewModuleOpts
   | ValidateModule ValidateOpts
+  | Config ConfigOpts
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -66,6 +69,20 @@ data ValidateOpts = ValidateOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data ConfigAction
+  = ConfigSet Text Text
+  | ConfigGet Text
+  | ConfigUnset Text
+  | ConfigList
+  deriving stock (Eq, Show, Generic)
+
+data ConfigOpts = ConfigOpts
+  { configAction :: ConfigAction,
+    configGlobal :: Bool,
+    configNamespace :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
 opts :: ParserInfo Command
 opts =
   info
@@ -98,6 +115,7 @@ commandParser =
         <> command "status" statusInfo
         <> command "new-module" newModuleInfo
         <> command "validate-module" validateInfo
+        <> command "config" configInfo
     )
 
 -- Command info blocks
@@ -247,6 +265,33 @@ validateInfo =
           )
     )
 
+configInfo :: ParserInfo Command
+configInfo =
+  info
+    (configParser <**> helper)
+    ( fullDesc
+        <> progDesc "Read and write config values"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Manage config values across local, namespace, and global scopes." :: String),
+                  pretty ("Default scope is local (.seihou/config.dhall). Use --global or" :: String),
+                  pretty ("--namespace NS for other scopes." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou config set project.name my-app" :: String),
+                        pretty ("seihou config get project.name" :: String),
+                        pretty ("seihou config list" :: String),
+                        pretty ("seihou config set license MIT --global" :: String),
+                        pretty ("seihou config unset license --global" :: String),
+                        pretty ("seihou config list --namespace haskell" :: String)
+                      ]
+                ]
+          )
+    )
+
 -- Subparsers
 
 runParser :: Parser Command
@@ -304,6 +349,35 @@ validateParser =
     ValidateOpts
       <$> optional (argument str (metavar "PATH"))
       <*> switch (long "lint" <> help "Include advisory lint warnings")
+
+configParser :: Parser Command
+configParser =
+  fmap Config $
+    ConfigOpts
+      <$> configActionParser
+      <*> switch (long "global" <> short 'g' <> help "Use global scope (~/.config/seihou/config.dhall)")
+      <*> optional (option (T.pack <$> str) (long "namespace" <> short 'n' <> metavar "NS" <> help "Use namespace scope"))
+
+configActionParser :: Parser ConfigAction
+configActionParser =
+  subparser
+    ( command "set" (info configSetParser (progDesc "Set a config value"))
+        <> command "get" (info configGetParser (progDesc "Get a config value"))
+        <> command "unset" (info configUnsetParser (progDesc "Remove a config value"))
+        <> command "list" (info (pure ConfigList) (progDesc "List config values"))
+    )
+
+configSetParser :: Parser ConfigAction
+configSetParser =
+  ConfigSet
+    <$> argument (T.pack <$> str) (metavar "KEY")
+    <*> argument (T.pack <$> str) (metavar "VALUE")
+
+configGetParser :: Parser ConfigAction
+configGetParser = ConfigGet <$> argument (T.pack <$> str) (metavar "KEY")
+
+configUnsetParser :: Parser ConfigAction
+configUnsetParser = ConfigUnset <$> argument (T.pack <$> str) (metavar "KEY")
 
 -- Helpers
 

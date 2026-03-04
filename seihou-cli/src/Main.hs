@@ -2,6 +2,7 @@ module Main (main) where
 
 import Options.Applicative (execParser)
 import Seihou.CLI.Commands
+import Seihou.CLI.Config (handleConfig)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.NewModule (handleNewModule)
@@ -28,3 +29,5 @@ main = do
       handleNewModule newModOpts
     ValidateModule validateOpts ->
       handleValidateModule validateOpts
+    Config configOpts ->
+      handleConfig configOpts
