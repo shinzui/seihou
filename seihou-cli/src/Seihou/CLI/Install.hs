@@ -8,10 +8,11 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (InstallOpts (..))
 import Seihou.CLI.Shared (logIO)
+import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (validateModule)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
-import Seihou.Effect.Logger (logError)
+import Seihou.Effect.Logger (logError, logWarn)
 import System.Directory
   ( XdgDirectory (..),
     copyFile,
@@ -19,6 +20,7 @@ import System.Directory
     doesDirectoryExist,
     getXdgDirectory,
     listDirectory,
+    removeDirectoryRecursive,
   )
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath ((</>))
@@ -36,19 +38,18 @@ handleInstall iopts = do
   xdgConfig <- getXdgDirectory XdgConfig "seihou"
   let installDir = xdgConfig </> "installed" </> name
 
+  TIO.putStrLn $ "Installing module from " <> source <> "..."
+
   exists <- doesDirectoryExist installDir
   if exists
     then do
-      logIO LogNormal $ do
-        logError $ "module '" <> T.pack name <> "' is already installed at " <> T.pack installDir
-        logError "Remove the existing installation first to reinstall."
-      exitFailure
+      logIO LogNormal (logWarn $ "overwriting existing installation of '" <> T.pack name <> "'")
+      removeDirectoryRecursive installDir
     else pure ()
 
   -- Clone into a temporary directory
   withSystemTempDirectory "seihou-install" $ \tmpDir -> do
     let cloneDir = tmpDir </> name
-    TIO.putStrLn $ "Cloning " <> source <> " ..."
     (exitCode, _stdout, stderr) <- readProcessWithExitCode "git" ["clone", "--depth", "1", T.unpack source, cloneDir] ""
     case exitCode of
       ExitFailure _ -> do
@@ -57,6 +58,7 @@ handleInstall iopts = do
           logError $ "  " <> T.pack stderr
         exitFailure
       ExitSuccess -> pure ()
+    TIO.putStrLn "  Cloned repository"
 
     -- Validate the cloned module
     let dhallFile = cloneDir </> "module.dhall"
@@ -80,34 +82,30 @@ handleInstall iopts = do
         logIO LogNormal (logError $ T.pack (show err))
         exitFailure
       Right _ -> pure ()
+    TIO.putStrLn "  Validated module definition"
 
-    -- Copy the module to the install directory
+    -- Copy the module to the install directory (excluding .git)
     createDirectoryIfMissing True installDir
     copyDirectoryRecursive cloneDir installDir
-    TIO.putStrLn $ "Installed module '" <> unModuleName (moduleName modul) <> "' to " <> T.pack installDir
+    TIO.putStrLn $ "  Installed as: " <> T.pack name
 
--- | Parse a module name from a git URL by extracting the last path segment
--- and stripping a trailing .git extension.
-parseModuleName :: Text -> String
-parseModuleName url =
-  let stripped = T.stripSuffix ".git" url
-      base = maybe url id stripped
-      segments = T.splitOn "/" base
-      lastSeg = if null segments then base else last segments
-   in T.unpack lastSeg
+  TIO.putStrLn ""
+  TIO.putStrLn $ "Module available as: " <> T.pack name
 
--- | Recursively copy a directory tree.
+-- | Recursively copy a directory tree, excluding the @.git@ directory.
 copyDirectoryRecursive :: FilePath -> FilePath -> IO ()
 copyDirectoryRecursive src dst = do
   entries <- listDirectory src
   mapM_ (copyEntry src dst) entries
   where
-    copyEntry s d entry = do
-      let srcPath = s </> entry
-          dstPath = d </> entry
-      isDir <- doesDirectoryExist srcPath
-      if isDir
-        then do
-          createDirectoryIfMissing True dstPath
-          copyDirectoryRecursive srcPath dstPath
-        else copyFile srcPath dstPath
+    copyEntry s d entry
+      | entry == ".git" = pure ()
+      | otherwise = do
+          let srcPath = s </> entry
+              dstPath = d </> entry
+          isDir <- doesDirectoryExist srcPath
+          if isDir
+            then do
+              createDirectoryIfMissing True dstPath
+              copyDirectoryRecursive srcPath dstPath
+            else copyFile srcPath dstPath

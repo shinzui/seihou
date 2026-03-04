@@ -16,6 +16,7 @@ library
     Seihou.Composition.Plan
     Seihou.Composition.Resolve
     Seihou.Core.Expr
+    Seihou.Core.Install
     Seihou.Core.Module
     Seihou.Core.Scaffold
     Seihou.Core.Status
@@ -87,6 +88,7 @@ test-suite seihou-core-test
     Seihou.Composition.PlanSpec
     Seihou.Composition.ResolveSpec
     Seihou.Core.ExprSpec
+    Seihou.Core.InstallSpec
     Seihou.Core.ModuleSpec
     Seihou.Core.ScaffoldSpec
     Seihou.Core.StatusSpec
