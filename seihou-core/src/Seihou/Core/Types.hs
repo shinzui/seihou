@@ -31,6 +31,7 @@ module Seihou.Core.Types
     PlaceholderError (..),
     CompositionWarning (..),
     ConfigError (..),
+    ConfigScope (..),
     LogLevel (..),
   )
 where
@@ -333,6 +334,13 @@ data ConfigError
 -- which the Logger interpreters use for filtering.
 data LogLevel = LogQuiet | LogNormal | LogVerbose
   deriving stock (Eq, Ord, Show, Generic)
+
+-- | Which config scope to read from or write to.
+data ConfigScope
+  = ScopeLocal
+  | ScopeNamespace Text
+  | ScopeGlobal
+  deriving stock (Eq, Show, Generic)
 
 -- | Warnings emitted during multi-module composition.
 -- 'FileOverwritten' records that a file produced by one module was

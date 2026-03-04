@@ -24,6 +24,9 @@ library
     Seihou.Effect.ConfigReader
     Seihou.Effect.ConfigReaderInterp
     Seihou.Effect.ConfigReaderPure
+    Seihou.Effect.ConfigWriter
+    Seihou.Effect.ConfigWriterInterp
+    Seihou.Effect.ConfigWriterPure
     Seihou.Effect.Console
     Seihou.Effect.ConsoleInterp
     Seihou.Effect.ConsolePure
@@ -88,6 +91,7 @@ test-suite seihou-core-test
     Seihou.Dhall.ConfigSpec
     Seihou.Dhall.EvalSpec
     Seihou.Effect.ConfigReaderSpec
+    Seihou.Effect.ConfigWriterSpec
     Seihou.Effect.FilesystemSpec
     Seihou.Effect.LoggerSpec
     Seihou.Effect.ManifestStoreSpec
