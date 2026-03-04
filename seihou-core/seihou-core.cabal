@@ -17,6 +17,7 @@ library
     Seihou.Composition.Resolve
     Seihou.Core.Expr
     Seihou.Core.Module
+    Seihou.Core.Scaffold
     Seihou.Core.Types
     Seihou.Core.Variable
     Seihou.Dhall.Config
@@ -86,6 +87,7 @@ test-suite seihou-core-test
     Seihou.Composition.ResolveSpec
     Seihou.Core.ExprSpec
     Seihou.Core.ModuleSpec
+    Seihou.Core.ScaffoldSpec
     Seihou.Core.TypesSpec
     Seihou.Core.VariableSpec
     Seihou.Dhall.ConfigSpec
