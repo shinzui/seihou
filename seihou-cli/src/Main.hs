@@ -6,6 +6,7 @@ import Seihou.CLI.Config (handleConfig)
 import Seihou.CLI.Diff (handleDiff)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
+import Seihou.CLI.List (handleList)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.Run (handleRun)
 import Seihou.CLI.Status (handleStatus)
@@ -28,6 +29,8 @@ main = do
       handleStatus
     Diff ->
       handleDiff
+    List ->
+      handleList
     NewModule newModOpts ->
       handleNewModule newModOpts
     ValidateModule validateOpts ->

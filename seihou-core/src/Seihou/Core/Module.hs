@@ -3,6 +3,9 @@ module Seihou.Core.Module
     defaultSearchPaths,
     validateModule,
     loadModule,
+    discoverAllModules,
+    DiscoveredModule (..),
+    ModuleSource (..),
 
     -- * Individual check functions (for structured reports)
     checkNameFormat,
@@ -22,9 +25,10 @@ where
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
+import GHC.Generics (Generic)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
-import System.Directory (XdgDirectory (..), doesDirectoryExist, doesFileExist, getCurrentDirectory, getXdgDirectory)
+import System.Directory (XdgDirectory (..), doesDirectoryExist, doesFileExist, getCurrentDirectory, getXdgDirectory, listDirectory)
 import System.FilePath ((</>))
 
 -- | Search for a module by name in the given directories.
@@ -232,3 +236,58 @@ loadModule searchPaths name = do
       case decoded of
         Left err -> pure (Left err)
         Right m -> validateModule moduleDir m
+
+-- | Which search path category a module was found in.
+data ModuleSource = SourceProject | SourceUser | SourceInstalled
+  deriving stock (Eq, Show, Generic)
+
+-- | A module discovered during enumeration, with its load result and source.
+data DiscoveredModule = DiscoveredModule
+  { discoveredResult :: Either ModuleLoadError Module,
+    discoveredSource :: ModuleSource,
+    discoveredDir :: FilePath
+  }
+  deriving stock (Show)
+
+-- | Enumerate all modules across the given search paths.
+-- The search paths must be in the same order as 'defaultSearchPaths':
+-- project-local, user, installed. Each subdirectory containing a
+-- @module.dhall@ file is loaded; failures are captured in 'discoveredResult'.
+discoverAllModules :: [FilePath] -> IO [DiscoveredModule]
+discoverAllModules searchPaths = do
+  let tagged = zip searchPaths (sources ++ repeat SourceInstalled)
+  concat <$> mapM (uncurry scanPath) tagged
+  where
+    sources = [SourceProject, SourceUser, SourceInstalled]
+
+    scanPath :: FilePath -> ModuleSource -> IO [DiscoveredModule]
+    scanPath dir src = do
+      exists <- doesDirectoryExist dir
+      if not exists
+        then pure []
+        else do
+          entries <- listDirectory dir
+          candidates <- filterM (isModuleDir dir) entries
+          mapM (loadOne dir src) candidates
+
+    isModuleDir :: FilePath -> FilePath -> IO Bool
+    isModuleDir parent entry = do
+      let candidate = parent </> entry </> "module.dhall"
+      doesFileExist candidate
+
+    filterM :: (a -> IO Bool) -> [a] -> IO [a]
+    filterM _ [] = pure []
+    filterM p (x : xs) = do
+      keep <- p x
+      rest <- filterM p xs
+      pure (if keep then x : rest else rest)
+
+    loadOne :: FilePath -> ModuleSource -> FilePath -> IO DiscoveredModule
+    loadOne dir src entry = do
+      let moduleDir = dir </> entry
+          dhallFile = moduleDir </> "module.dhall"
+      decoded <- evalModuleFromFile dhallFile
+      result <- case decoded of
+        Left err -> pure (Left err)
+        Right m -> validateModule moduleDir m
+      pure DiscoveredModule {discoveredResult = result, discoveredSource = src, discoveredDir = moduleDir}

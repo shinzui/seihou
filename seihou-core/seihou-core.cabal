@@ -89,6 +89,7 @@ test-suite seihou-core-test
     Seihou.Composition.ResolveSpec
     Seihou.Core.ExprSpec
     Seihou.Core.InstallSpec
+    Seihou.Core.ListSpec
     Seihou.Core.ModuleSpec
     Seihou.Core.ScaffoldSpec
     Seihou.Core.StatusSpec

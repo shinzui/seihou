@@ -26,6 +26,7 @@ data Command
   | Install InstallOpts
   | Status
   | Diff
+  | List
   | NewModule NewModuleOpts
   | ValidateModule ValidateOpts
   | Config ConfigOpts
@@ -115,6 +116,7 @@ commandParser =
         <> command "install" installInfo
         <> command "status" statusInfo
         <> command "diff" diffInfo
+        <> command "list" listInfo
         <> command "new-module" newModuleInfo
         <> command "validate-module" validateInfo
         <> command "config" configInfo
@@ -235,6 +237,22 @@ diffInfo =
                 [ pretty ("Compares tracked files in .seihou/manifest.json against the current" :: String),
                   pretty ("disk state. Shows files that have been modified or deleted since the" :: String),
                   pretty ("last 'seihou run'. Does not load modules or resolve variables." :: String)
+                ]
+          )
+    )
+
+listInfo :: ParserInfo Command
+listInfo =
+  info
+    (pure List <**> helper)
+    ( fullDesc
+        <> progDesc "List available modules"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Scans all module search paths and lists every available module with" :: String),
+                  pretty ("its name, description, and source location (project, user, or installed)." :: String),
+                  pretty ("Modules that fail to load are shown with an error indicator." :: String)
                 ]
           )
     )
