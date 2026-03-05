@@ -25,6 +25,7 @@ data Command
   | Vars VarsOpts
   | Install InstallOpts
   | Status
+  | Diff
   | NewModule NewModuleOpts
   | ValidateModule ValidateOpts
   | Config ConfigOpts
@@ -113,6 +114,7 @@ commandParser =
         <> command "vars" varsInfo
         <> command "install" installInfo
         <> command "status" statusInfo
+        <> command "diff" diffInfo
         <> command "new-module" newModuleInfo
         <> command "validate-module" validateInfo
         <> command "config" configInfo
@@ -217,6 +219,22 @@ statusInfo =
                 [ pretty ("Reads .seihou/manifest.json in the current directory and displays" :: String),
                   pretty ("applied modules, tracked files, and resolved variable values." :: String),
                   pretty ("If no manifest exists, reports that and exits successfully." :: String)
+                ]
+          )
+    )
+
+diffInfo :: ParserInfo Command
+diffInfo =
+  info
+    (pure Diff <**> helper)
+    ( fullDesc
+        <> progDesc "Show changes since last generation"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Compares tracked files in .seihou/manifest.json against the current" :: String),
+                  pretty ("disk state. Shows files that have been modified or deleted since the" :: String),
+                  pretty ("last 'seihou run'. Does not load modules or resolve variables." :: String)
                 ]
           )
     )

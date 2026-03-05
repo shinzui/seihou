@@ -10,12 +10,15 @@ library seihou-cli-internal
   hs-source-dirs: src
   visibility: private
   exposed-modules:
+    Seihou.CLI.Diff
     Seihou.CLI.Init
 
   other-modules:
     Seihou.CLI.Shared
+    Seihou.CLI.Style
 
   build-depends:
+    ansi-terminal >=1.1 && <2,
     base >=4.18 && <5,
     containers >=0.6 && <1,
     directory >=1.3 && <2,
@@ -32,6 +35,7 @@ executable seihou
   other-modules:
     Seihou.CLI.Commands
     Seihou.CLI.Config
+    Seihou.CLI.Diff
     Seihou.CLI.Init
     Seihou.CLI.Install
     Seihou.CLI.NewModule
@@ -63,12 +67,14 @@ test-suite seihou-cli-test
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:
+    Seihou.CLI.DiffSpec
     Seihou.CLI.InitSpec
 
   build-depends:
     base >=4.18 && <5,
     hspec >=2.11 && <3,
     seihou-cli-internal,
+    seihou-core,
     tasty >=1.4 && <2,
     tasty-hspec >=1.2 && <2,
     text >=2.0 && <3,
