@@ -41,7 +41,7 @@ handleStatus = do
       logIO LogNormal (logError $ "Error reading manifest: " <> err)
       exitFailure
     Right Nothing ->
-      TIO.putStrLn "No manifest found. Run 'seihou run <module>' first."
+      TIO.putStrLn "No Seihou manifest found. Run 'seihou run <module>' to generate a project."
     Right (Just (manifest, tracked)) ->
       renderStatus colorEnabled manifest tracked
 
