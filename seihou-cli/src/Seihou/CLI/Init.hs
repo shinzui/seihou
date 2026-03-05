@@ -1,38 +1,68 @@
 module Seihou.CLI.Init
   ( handleInit,
+    formatInitOutput,
   )
 where
 
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import System.Directory (XdgDirectory (..), createDirectoryIfMissing, doesFileExist, getXdgDirectory)
+import Seihou.CLI.Shared (shortenHome)
+import System.Directory
+  ( XdgDirectory (..),
+    createDirectoryIfMissing,
+    doesDirectoryExist,
+    doesFileExist,
+    getXdgDirectory,
+  )
 import System.FilePath ((</>))
 
 handleInit :: IO ()
 handleInit = do
   base <- getXdgDirectory XdgConfig "seihou"
+  createDirectoryIfMissing True base
 
-  -- Create subdirectories
-  mapM_ (createSubdir base) ["modules", "installed", "namespaces"]
-
-  -- Write default config.dhall if it doesn't exist
+  -- config.dhall
   let configPath = base </> "config.dhall"
-  exists <- doesFileExist configPath
-  if exists
-    then TIO.putStrLn $ "Already exists: " <> showT configPath
-    else do
-      writeFile configPath defaultConfig
-      TIO.putStrLn $ "Created " <> showT configPath
+  configExists <- doesFileExist configPath
+  if configExists
+    then pure ()
+    else writeFile configPath defaultConfig
+  let configCreated = not configExists
 
-createSubdir :: FilePath -> FilePath -> IO ()
-createSubdir base name = do
-  let path = base </> name
-  createDirectoryIfMissing True path
-  TIO.putStrLn $ "Created " <> showT path
+  -- modules/
+  modulesExists <- doesDirectoryExist (base </> "modules")
+  createDirectoryIfMissing True (base </> "modules")
+  let modulesCreated = not modulesExists
 
-showT :: FilePath -> Text
-showT = T.pack
+  -- installed/
+  installedExists <- doesDirectoryExist (base </> "installed")
+  createDirectoryIfMissing True (base </> "installed")
+  let installedCreated = not installedExists
+
+  -- namespaces/ (internal, not reported)
+  createDirectoryIfMissing True (base </> "namespaces")
+
+  -- Output
+  basePath <- shortenHome base
+  let items =
+        [ ("config.dhall", "global defaults", configCreated),
+          ("modules/", "user modules", modulesCreated),
+          ("installed/", "git-installed modules", installedCreated)
+        ]
+  TIO.putStr (formatInitOutput basePath items)
+
+-- | Format the init command output. Takes the abbreviated base path and a list
+-- of @(item, description, wasCreated)@ triples.
+formatInitOutput :: Text -> [(Text, Text, Bool)] -> Text
+formatInitOutput basePath items =
+  T.unlines $
+    ("Initialized Seihou configuration at " <> basePath <> "/")
+      : map formatItem items
+  where
+    formatItem (item, desc, created) =
+      let label = if created then "Created:" else "Exists: "
+       in "  " <> label <> " " <> item <> " (" <> desc <> ")"
 
 defaultConfig :: String
 defaultConfig =

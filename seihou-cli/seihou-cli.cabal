@@ -4,6 +4,26 @@ version: 0.1.0.0
 synopsis: CLI for Seihou project scaffolding
 build-type: Simple
 
+library seihou-cli-internal
+  default-language: GHC2024
+  default-extensions: OverloadedStrings
+  hs-source-dirs: src
+  visibility: private
+  exposed-modules:
+    Seihou.CLI.Init
+
+  other-modules:
+    Seihou.CLI.Shared
+
+  build-depends:
+    base >=4.18 && <5,
+    containers >=0.6 && <1,
+    directory >=1.3 && <2,
+    effectful-core >=2.4 && <3,
+    filepath >=1.4 && <2,
+    seihou-core,
+    text >=2.0 && <3,
+
 executable seihou
   default-language: GHC2024
   default-extensions: OverloadedStrings
@@ -35,3 +55,20 @@ executable seihou
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
+
+test-suite seihou-cli-test
+  type: exitcode-stdio-1.0
+  default-language: GHC2024
+  default-extensions: OverloadedStrings
+  hs-source-dirs: test
+  main-is: Main.hs
+  other-modules:
+    Seihou.CLI.InitSpec
+
+  build-depends:
+    base >=4.18 && <5,
+    hspec >=2.11 && <3,
+    seihou-cli-internal,
+    tasty >=1.4 && <2,
+    tasty-hspec >=1.2 && <2,
+    text >=2.0 && <3,

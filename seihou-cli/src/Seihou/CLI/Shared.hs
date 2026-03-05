@@ -5,9 +5,11 @@ module Seihou.CLI.Shared
     toVarNameMap,
     logIO,
     unwrapConfig,
+    shortenHome,
   )
 where
 
+import Data.List (isPrefixOf)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -15,6 +17,7 @@ import Effectful
 import Seihou.Core.Types
 import Seihou.Effect.Logger (Logger, logError)
 import Seihou.Effect.LoggerInterp (runLoggerIO)
+import System.Directory (getHomeDirectory)
 import System.Exit (exitFailure)
 
 -- | Format a 'VarError' for display in CLI output.
@@ -44,6 +47,15 @@ toVarNameMap = Map.mapKeys VarName
 -- | Run a one-shot Logger action in plain IO, using the given verbosity level.
 logIO :: LogLevel -> Eff '[Logger, IOE] () -> IO ()
 logIO level action = runEff $ runLoggerIO level action
+
+-- | Abbreviate the user's home directory as @~\/@ for display.
+shortenHome :: FilePath -> IO Text
+shortenHome path = do
+  home <- getHomeDirectory
+  pure $
+    if home `isPrefixOf` path
+      then "~/" <> T.pack (drop (length home + 1) path)
+      else T.pack path
 
 -- | Unwrap an 'Either ConfigError' in an effectful context, logging an error
 -- and exiting on 'Left'.
