@@ -15,7 +15,7 @@ import Data.Time.Clock (getCurrentTime)
 import Effectful
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
-import Seihou.CLI.Style (bold, dim, green, magenta, red, renderPreviewColor, useColor, yellow)
+import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Module (defaultSearchPaths)
@@ -36,8 +36,9 @@ import Seihou.Engine.Execute (executePlan)
 import Seihou.Engine.Preview (buildPreview)
 import Seihou.Manifest.Types (emptyManifest)
 import System.Environment (getEnvironment)
-import System.Exit (ExitCode (..), exitFailure)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory, (</>))
+import System.IO (hFlush, hIsTerminalDevice, stdin, stdout)
 
 handleRun :: RunOpts -> IO ()
 handleRun runOpts = do
@@ -96,7 +97,7 @@ handleRun runOpts = do
         | (m, dir) <- modulesInOrder
         ]
   planResult <- compileComposedPlan triples
-  (ops, warnings) <- case planResult of
+  (ops, warnings, ownerMap) <- case planResult of
     Left errs -> do
       logIO level $ do
         logError "Errors compiling plan:"
@@ -137,16 +138,32 @@ handleRun runOpts = do
 
   colorEnabled <- useColor
 
-  -- 6. Handle --dry-run: show preview and exit
+  let moduleNames = map (moduleName . fst) modulesInOrder
+      allVarValues =
+        Map.unions
+          [Map.map resolvedValue vs | vs <- Map.elems resolved]
+      preview = buildPreview opsFiltered (Just diff) ownerMap
+
+  -- 6. Handle --dry-run: show plan view and exit
   if runDryRun runOpts
-    then do
-      TIO.putStrLn "Dry run — plan preview:"
-      let preview = buildPreview opsFiltered (Just diff)
-      TIO.putStr (renderPreviewColor colorEnabled preview)
+    then
+      TIO.putStr (formatPlanViewColor colorEnabled moduleNames allVarValues preview diff)
     else
       if runDiff runOpts
-        then TIO.putStr (formatDiff colorEnabled diff)
+        then TIO.putStr (formatDiff colorEnabled diff ownerMap)
         else do
+          -- Show plan view
+          TIO.putStr (formatPlanViewColor colorEnabled moduleNames allVarValues preview diff)
+
+          -- Prompt for confirmation (skip if --force or non-interactive)
+          interactive <- hIsTerminalDevice stdin
+          when (interactive && not (runForce runOpts)) $ do
+            TIO.putStr "\n  Proceed? [Y/n] "
+            hFlush stdout
+            response <- T.strip . T.pack <$> getLine
+            when (response /= "" && T.toLower response /= "y") $
+              exitWith (ExitFailure 3)
+
           -- Resolve conflicts interactively (or abort)
           resolutions <-
             runEff $
@@ -243,28 +260,31 @@ printWarning level (ContentMerged path base contributor) =
       <> unModuleName contributor
       <> ")"
 
-formatDiff :: Bool -> DiffResult -> Text
-formatDiff color diff =
+formatDiff :: Bool -> DiffResult -> Map.Map FilePath ModuleName -> Text
+formatDiff color diff ownerMap' =
   T.unlines $
     concat
       [ if null (diffNew diff)
           then []
-          else "New files:" : map (\f -> "  + " <> colorWrap green (T.pack (plannedPath f))) (diffNew diff),
+          else "New files:" : map (\f -> "  " <> colorWrap green "[new]" <> "  " <> colorWrap green (T.pack (plannedPath f)) <> modSuffix (plannedPath f)) (diffNew diff),
         if null (diffModified diff)
           then []
-          else "Modified files:" : map (\f -> "  ~ " <> colorWrap yellow (T.pack (modifiedPath f))) (diffModified diff),
+          else "Modified files:" : map (\f -> "  " <> colorWrap yellow "[modified]" <> "  " <> colorWrap yellow (T.pack (modifiedPath f)) <> modSuffix (modifiedPath f)) (diffModified diff),
         if null (diffUnchanged diff)
           then []
-          else "Unchanged files:" : map (\f -> "  = " <> colorWrap dim (T.pack f)) (diffUnchanged diff),
+          else "Unchanged files:" : map (\f -> "  " <> colorWrap dim "[unchanged]" <> "  " <> colorWrap dim (T.pack f)) (diffUnchanged diff),
         if null (diffConflict diff)
           then []
-          else "Conflicts:" : map (\f -> "  ! " <> colorWrap (bold . red) (T.pack (conflictPath f))) (diffConflict diff),
+          else "Conflicts:" : map (\f -> "  " <> colorWrap (bold . red) "[conflict]" <> "  " <> colorWrap (bold . red) (T.pack (conflictPath f)) <> modSuffix (conflictPath f)) (diffConflict diff),
         if null (diffOrphaned diff)
           then []
-          else "Orphaned files:" : map (\f -> "  - " <> colorWrap magenta (T.pack (orphanedPath f))) (diffOrphaned diff)
+          else "Orphaned files:" : map (\f -> "  " <> colorWrap magenta "[orphaned]" <> "  " <> colorWrap magenta (T.pack (orphanedPath f))) (diffOrphaned diff)
       ]
   where
     colorWrap fn t = if color then fn t else t
+    modSuffix path = case Map.lookup path ownerMap' of
+      Just mn -> "  " <> colorWrap dim ("(" <> unModuleName mn <> ")")
+      Nothing -> ""
 
 varValueToText :: VarValue -> Text
 varValueToText (VText t) = t

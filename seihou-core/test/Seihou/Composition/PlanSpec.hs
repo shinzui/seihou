@@ -16,14 +16,14 @@ spec = do
     it "preserves all operations when no files overlap" $ do
       let aOps = [CreateDirOp "src", WriteFileOp "src/A.hs" "module A" Template]
           bOps = [CreateDirOp "lib", WriteFileOp "lib/B.hs" "module B" Template]
-          (ops, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       length ops `shouldBe` 4
       warnings `shouldBe` []
 
     it "last-writer-wins when two modules write same file" $ do
       let aOps = [WriteFileOp "README.md" "from A" Template]
           bOps = [WriteFileOp "README.md" "from B" Template]
-          (ops, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       -- Only B's version should remain
       length (filter isWriteOp ops) `shouldBe` 1
       case filter isWriteOp ops of
@@ -41,21 +41,21 @@ spec = do
     it "deduplicates CreateDirOp silently" $ do
       let aOps = [CreateDirOp "src"]
           bOps = [CreateDirOp "src"]
-          (ops, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       length ops `shouldBe` 1
       warnings `shouldBe` []
 
     it "keeps all RunCommandOp operations" $ do
       let aOps = [RunCommandOp "echo hello" Nothing]
           bOps = [RunCommandOp "echo world" Nothing]
-          (ops, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       length ops `shouldBe` 2
       warnings `shouldBe` []
 
     it "handles CopyFileOp overlapping with WriteFileOp" $ do
       let aOps = [WriteFileOp "config.yaml" "generated" Template]
           bOps = [CopyFileOp "files/config.yaml" "config.yaml"]
-          (ops, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       length warnings `shouldBe` 1
       -- B's CopyFileOp should be the winner
       case filter (\op -> destOfOp' op == Just "config.yaml") ops of
@@ -66,7 +66,7 @@ spec = do
       let aOps = [WriteFileOp "README.md" "from A" Template]
           bOps = [WriteFileOp "README.md" "from B" Template]
           cOps = [WriteFileOp "README.md" "from C" Template]
-          (ops, warnings) = mergeOperations [("a", aOps), ("b", bOps), ("c", cOps)]
+          (ops, warnings, _) = mergeOperations [("a", aOps), ("b", bOps), ("c", cOps)]
       -- Only C's version should remain
       case filter isWriteOp ops of
         [WriteFileOp _ content _] -> content `shouldBe` "from C"
@@ -75,7 +75,7 @@ spec = do
       length warnings `shouldBe` 2
 
     it "handles empty module operations" $ do
-      let (ops, warnings) = mergeOperations [("a", []), ("b", [])]
+      let (ops, warnings, _) = mergeOperations [("a", []), ("b", [])]
       ops `shouldBe` []
       warnings `shouldBe` []
 
@@ -83,7 +83,7 @@ spec = do
     it "PatchFileOp AppendFile merges with existing WriteFileOp" $ do
       let aOps = [WriteFileOp "README.md" "# Title\n" Template]
           bOps = [PatchFileOp "README.md" "extra line\n" AppendFile Template "mod-b"]
-          (ops, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       -- Should be a single merged WriteFileOp
       case filter isWriteOp ops of
         [WriteFileOp _ content _] -> do
@@ -101,7 +101,7 @@ spec = do
     it "PatchFileOp AppendSection adds section markers and merges" $ do
       let aOps = [WriteFileOp "README.md" "# Title\n" Template]
           bOps = [PatchFileOp "README.md" "section content\n" AppendSection Template "mod-b"]
-          (ops, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, _, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       case filter isWriteOp ops of
         [WriteFileOp _ content _] -> do
           T.isInfixOf "# Title" content `shouldBe` True
@@ -112,7 +112,7 @@ spec = do
     it "PatchFileOp PrependFile prepends content" $ do
       let aOps = [WriteFileOp "README.md" "# Title\n" Template]
           bOps = [PatchFileOp "README.md" "header\n" PrependFile Template "mod-b"]
-          (ops, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, _, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       case filter isWriteOp ops of
         [WriteFileOp _ content _] -> do
           -- header should appear before Title
@@ -123,7 +123,7 @@ spec = do
 
     it "PatchFileOp targeting nonexistent file creates new file" $ do
       let bOps = [PatchFileOp "new.txt" "content\n" AppendFile Template "mod-b"]
-          (ops, _) = mergeOperations [("mod-b", bOps)]
+          (ops, _, _) = mergeOperations [("mod-b", bOps)]
       -- PatchFileOp with no existing target becomes a WriteFileOp
       length (filter isWriteOp ops) `shouldBe` 1
 
@@ -131,7 +131,7 @@ spec = do
       let aOps = [WriteFileOp "README.md" "# Title\n" Template]
           bOps = [PatchFileOp "README.md" "from B\n" AppendSection Template "mod-b"]
           cOps = [PatchFileOp "README.md" "from C\n" AppendSection Template "mod-c"]
-          (ops, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps), ("mod-c", cOps)]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps), ("mod-c", cOps)]
       case filter isWriteOp ops of
         [WriteFileOp _ content _] -> do
           T.isInfixOf "# Title" content `shouldBe` True
@@ -146,7 +146,7 @@ spec = do
     it "ContentMerged warning is generated for patch merge" $ do
       let aOps = [WriteFileOp "f.txt" "base\n" Template]
           bOps = [PatchFileOp "f.txt" "added\n" AppendFile Template "mod-b"]
-          (_, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (_, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       any isContentMerged warnings `shouldBe` True
       any isFileOverwritten warnings `shouldBe` False
 
@@ -154,7 +154,7 @@ spec = do
     it "two Structured WriteFileOps for same JSON dest get deep-merged" $ do
       let aOps = [WriteFileOp "config.json" "{\"name\": \"foo\"}\n" Structured]
           bOps = [WriteFileOp "config.json" "{\"extra\": true}\n" Structured]
-          (ops, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       case filter isWriteOp ops of
         [WriteFileOp _ content _] -> do
           T.isInfixOf "name" content `shouldBe` True
@@ -167,7 +167,7 @@ spec = do
     it "disjoint JSON keys are combined" $ do
       let aOps = [WriteFileOp "out.json" "{\"a\": 1}\n" Structured]
           bOps = [WriteFileOp "out.json" "{\"b\": 2}\n" Structured]
-          (ops, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, _, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       case filter isWriteOp ops of
         [WriteFileOp _ content _] -> do
           T.isInfixOf "\"a\"" content `shouldBe` True
@@ -177,7 +177,7 @@ spec = do
     it "overlapping scalar keys use right-biased merge" $ do
       let aOps = [WriteFileOp "out.json" "{\"x\": 1}\n" Structured]
           bOps = [WriteFileOp "out.json" "{\"x\": 2}\n" Structured]
-          (ops, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, _, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       case filter isWriteOp ops of
         [WriteFileOp _ content _] ->
           -- Right-biased: B's value wins
@@ -187,7 +187,7 @@ spec = do
     it "nested objects are merged recursively" $ do
       let aOps = [WriteFileOp "out.json" "{\"obj\": {\"a\": 1}}\n" Structured]
           bOps = [WriteFileOp "out.json" "{\"obj\": {\"b\": 2}}\n" Structured]
-          (ops, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, _, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       case filter isWriteOp ops of
         [WriteFileOp _ content _] -> do
           T.isInfixOf "\"a\"" content `shouldBe` True
@@ -197,14 +197,14 @@ spec = do
     it "non-Structured WriteFileOps still use last-writer-wins" $ do
       let aOps = [WriteFileOp "README.md" "from A" Template]
           bOps = [WriteFileOp "README.md" "from B" Template]
-          (_, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (_, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       any isFileOverwritten warnings `shouldBe` True
       any isContentMerged warnings `shouldBe` False
 
     it "YAML structured merge works" $ do
       let aOps = [WriteFileOp "config.yaml" "name: foo\n" Structured]
           bOps = [WriteFileOp "config.yaml" "extra: true\n" Structured]
-          (ops, warnings) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       case filter isWriteOp ops of
         [WriteFileOp _ content _] -> do
           T.isInfixOf "name" content `shouldBe` True

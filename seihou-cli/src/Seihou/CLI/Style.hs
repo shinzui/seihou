@@ -9,12 +9,15 @@ module Seihou.CLI.Style
     cyan,
     renderPreviewColor,
     renderReportColor,
+    formatPlanViewColor,
   )
 where
 
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
-import Seihou.Core.Types (Module (..), ModuleName (..))
+import Seihou.Core.Types (DiffResult (..), Module (..), ModuleName (..), VarName (..), VarValue (..))
 import Seihou.Engine.Preview
 import Seihou.Engine.Validate
 import System.Console.ANSI
@@ -63,58 +66,104 @@ cyan = withSGR [SetColor Foreground Dull Cyan]
 renderPreviewColor :: Bool -> [PreviewLine] -> Text
 renderPreviewColor False lines' = renderPreviewPlain lines'
 renderPreviewColor True lines' =
-  T.unlines (map renderColorLine lines' ++ [summaryLine lines'])
-
-renderColorLine :: PreviewLine -> Text
-renderColorLine (FilePreview status verb path annotation) =
-  let (prefix, colorFn) = statusStyle status
-      pathText = T.pack path
-   in "  " <> prefix <> " " <> verb <> "  " <> colorFn pathText <> "  " <> dim annotation
-renderColorLine (DirPreview path) =
-  "  " <> "  " <> " " <> cyan "mkdir" <> "  " <> cyan (T.pack path)
-renderColorLine (CommandPreview cmd) =
-  "  " <> "  " <> " " <> dim "run" <> "    " <> dim cmd
-renderColorLine (OrphanPreview path modName') =
-  "  " <> magenta "-" <> " " <> magenta (T.pack path) <> "  " <> dim ("(orphaned from " <> unModuleName modName' <> ")")
-
-statusStyle :: FileStatus -> (Text, Text -> Text)
-statusStyle FsNew = (green "+", green)
-statusStyle FsModified = (yellow "~", yellow)
-statusStyle FsUnchanged = (dim "=", dim)
-statusStyle FsConflict = (bold (red "!"), bold . red)
-statusStyle FsOrphaned = (magenta "-", magenta)
-statusStyle FsUnknown = (" ", id)
-
-summaryLine :: [PreviewLine] -> Text
-summaryLine lines' =
-  let nNew = count isNew lines'
-      nMod = count isMod lines'
-      nUnch = count isUnch lines'
-      nConf = count isConf lines'
-      nOrph = count isOrph lines'
-   in "\n"
-        <> green (T.pack (show nNew) <> " new")
-        <> ", "
-        <> yellow (T.pack (show nMod) <> " modified")
-        <> ", "
-        <> T.pack (show nUnch)
-        <> " unchanged"
-        <> ", "
-        <> (if nConf > 0 then bold (red (T.pack (show nConf) <> " conflicts")) else T.pack (show nConf) <> " conflicts")
-        <> ", "
-        <> (if nOrph > 0 then magenta (T.pack (show nOrph) <> " orphaned") else T.pack (show nOrph) <> " orphaned")
+  if null lines'
+    then "No operations to perform.\n"
+    else T.unlines (map (renderColorLine maxPathLen) fileLines ++ map renderNonFileColor nonFileLines)
   where
-    count f = length . filter f
-    isNew (FilePreview FsNew _ _ _) = True
-    isNew _ = False
-    isMod (FilePreview FsModified _ _ _) = True
-    isMod _ = False
-    isUnch (FilePreview FsUnchanged _ _ _) = True
-    isUnch _ = False
-    isConf (FilePreview FsConflict _ _ _) = True
-    isConf _ = False
-    isOrph (OrphanPreview {}) = True
-    isOrph _ = False
+    fileLines = [l | l@(FilePreview {}) <- lines']
+    nonFileLines = [l | l <- lines', not (isFilePreview' l)]
+    maxPathLen = maximum (0 : map (T.length . T.pack . previewPath) fileLines)
+
+renderColorLine :: Int -> PreviewLine -> Text
+renderColorLine maxPath (FilePreview status path annotation mMod) =
+  let (tag, colorFn) = statusStyleColor status
+      pathText = T.pack path
+      pathPad = T.replicate (maxPath - T.length pathText) " "
+      modSuffix = case mMod of
+        Just mn -> ", " <> unModuleName mn
+        Nothing -> ""
+   in "    " <> tag <> "  " <> colorFn pathText <> pathPad <> "  " <> dim ("(" <> annotation <> modSuffix <> ")")
+renderColorLine _ other = renderNonFileColor other
+
+renderNonFileColor :: PreviewLine -> Text
+renderNonFileColor (DirPreview path) =
+  "    " <> cyan "mkdir" <> "  " <> cyan (T.pack path)
+renderNonFileColor (CommandPreview cmd) =
+  "    " <> dim "run" <> "    " <> dim cmd
+renderNonFileColor (OrphanPreview path modName') =
+  "    " <> magenta "[orphaned]" <> "  " <> magenta (T.pack path) <> "  " <> dim ("(orphaned from " <> unModuleName modName' <> ")")
+renderNonFileColor _ = ""
+
+isFilePreview' :: PreviewLine -> Bool
+isFilePreview' (FilePreview {}) = True
+isFilePreview' _ = False
+
+statusStyleColor :: FileStatus -> (Text, Text -> Text)
+statusStyleColor FsNew = (green "[new]", green)
+statusStyleColor FsModified = (yellow "[modified]", yellow)
+statusStyleColor FsUnchanged = (dim "[unchanged]", dim)
+statusStyleColor FsConflict = (bold (red "[conflict]"), bold . red)
+statusStyleColor FsOrphaned = (magenta "[orphaned]", magenta)
+statusStyleColor FsUnknown = ("[unknown]", id)
+
+-- | Format a complete plan view with optional ANSI color.
+formatPlanViewColor :: Bool -> [ModuleName] -> Map VarName VarValue -> [PreviewLine] -> DiffResult -> Text
+formatPlanViewColor False moduleNames vars preview diff = formatPlanView moduleNames vars preview diff
+formatPlanViewColor True moduleNames vars preview diff =
+  T.unlines $
+    [header, ""]
+      ++ varsSection
+      ++ ["  Operations:"]
+      ++ map ("  " <>) (T.lines (renderPreviewColor True preview))
+      ++ [""]
+      ++ [summaryText']
+  where
+    header =
+      bold
+        ( "Generation Plan ("
+            <> T.intercalate " + " (map (cyan . unModuleName) moduleNames)
+            <> "):"
+        )
+
+    varsSection =
+      if Map.null vars
+        then []
+        else
+          "  Variables:"
+            : map formatVar' (Map.toAscList vars)
+            ++ [""]
+
+    maxVarLen = maximum (0 : map (\(VarName n, _) -> T.length n) (Map.toAscList vars))
+
+    formatVar' (VarName name, val) =
+      let namePad = T.replicate (maxVarLen - T.length name) " "
+       in "    " <> name <> namePad <> " = " <> showVarValueColor val
+
+    showVarValueColor (VText t) = cyan ("\"" <> t <> "\"")
+    showVarValueColor (VBool True) = cyan "true"
+    showVarValueColor (VBool False) = cyan "false"
+    showVarValueColor (VInt n) = cyan (T.pack (show n))
+    showVarValueColor (VList vs) = "[" <> T.intercalate ", " (map showVarValueColor vs) <> "]"
+
+    nFiles = countNew preview + countMod preview
+    nConflicts = countConf preview
+
+    summaryText'
+      | nConflicts > 0 =
+          "  "
+            <> T.pack (show nFiles)
+            <> " files to write, "
+            <> bold (red (T.pack (show nConflicts) <> " conflicts"))
+      | otherwise =
+          "  "
+            <> T.pack (show nFiles)
+            <> " files to write, "
+            <> T.pack (show nConflicts)
+            <> " conflicts"
+
+    countNew = length . filter (\l -> case l of FilePreview FsNew _ _ _ -> True; _ -> False)
+    countMod = length . filter (\l -> case l of FilePreview FsModified _ _ _ -> True; _ -> False)
+    countConf = length . filter (\l -> case l of FilePreview FsConflict _ _ _ -> True; _ -> False)
 
 -- | Render a validation report with optional ANSI color.
 -- When the first argument is False, falls back to plain text.

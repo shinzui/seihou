@@ -28,7 +28,7 @@ import System.FilePath (takeExtension)
 -- with 'CompositionWarning' entries for overwritten files.
 compileComposedPlan ::
   [(Module, FilePath, Map VarName VarValue)] ->
-  IO (Either [Text] ([Operation], [CompositionWarning]))
+  IO (Either [Text] ([Operation], [CompositionWarning], Map FilePath ModuleName))
 compileComposedPlan modules = do
   results <- mapM compileOne modules
   let (errs, opsPerModule) = partitionResults results
@@ -52,13 +52,13 @@ compileComposedPlan modules = do
 -- 'RunCommandOp' operations are always included.
 mergeOperations ::
   [(ModuleName, [Operation])] ->
-  ([Operation], [CompositionWarning])
+  ([Operation], [CompositionWarning], Map FilePath ModuleName)
 mergeOperations moduleOps =
   let tagged = [(name, op) | (name, ops) <- moduleOps, op <- ops]
-      (result, warnings) = go tagged Map.empty Set.empty [] []
-   in (reverse result, warnings)
+      (result, warnings, owners) = go tagged Map.empty Set.empty [] []
+   in (reverse result, warnings, owners)
   where
-    go [] _ _ opsAcc warningsAcc = (opsAcc, warningsAcc)
+    go [] fileOwner _ opsAcc warningsAcc = (opsAcc, warningsAcc, fileOwner)
     go ((name, op) : rest) fileOwner seenDirs opsAcc warningsAcc =
       case op of
         CreateDirOp p

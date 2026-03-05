@@ -125,7 +125,7 @@ spec = do
               planResult <- compileComposedPlan triples
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
-                Right (ops, warnings) -> do
+                Right (ops, warnings, _) -> do
                   -- Should have operations for shell.nix, flake.nix, README.md,
                   -- src/Lib.hs, LICENSE, *.cabal, cabal.project, Makefile (+ dirs)
                   let writeOps = [d | WriteFileOp d _ _ <- ops]
@@ -151,7 +151,7 @@ spec = do
               planResult <- compileComposedPlan triples
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
-                Right (ops, warnings) -> do
+                Right (ops, warnings, _) -> do
                   -- Find the merged README.md
                   let readmeOps = [content | WriteFileOp dest content _ <- ops, dest == "README.md"]
                   length readmeOps `shouldBe` 1
@@ -180,7 +180,7 @@ spec = do
               planResult <- compileComposedPlan triples
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
-                Right (ops, warnings) -> do
+                Right (ops, warnings, _) -> do
                   -- Find the merged config.json
                   let configOps = [content | WriteFileOp dest content _ <- ops, dest == "config.json"]
                   length configOps `shouldBe` 1

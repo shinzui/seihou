@@ -3,9 +3,12 @@ module Seihou.Engine.Preview
     PreviewLine (..),
     buildPreview,
     renderPreviewPlain,
+    formatPlanView,
   )
 where
 
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -25,9 +28,9 @@ data FileStatus
 data PreviewLine
   = FilePreview
       { previewStatus :: FileStatus,
-        previewVerb :: Text,
         previewPath :: FilePath,
-        previewAnnotation :: Text
+        previewAnnotation :: Text,
+        previewModule :: Maybe ModuleName
       }
   | DirPreview FilePath
   | CommandPreview Text
@@ -35,11 +38,12 @@ data PreviewLine
   deriving stock (Eq, Show)
 
 -- | Build a structured preview from operations and an optional diff result.
+-- The ownership map tracks which module produced each file path.
 -- When no DiffResult is provided (first run, no manifest), all file
 -- operations are treated as new.
-buildPreview :: [Operation] -> Maybe DiffResult -> [PreviewLine]
-buildPreview ops mDiff =
-  let opLines = map (opToPreview mDiff) ops
+buildPreview :: [Operation] -> Maybe DiffResult -> Map FilePath ModuleName -> [PreviewLine]
+buildPreview ops mDiff ownerMap =
+  let opLines = map (opToPreview mDiff ownerMap) ops
       orphanLines = case mDiff of
         Nothing -> []
         Just diff ->
@@ -52,29 +56,29 @@ buildPreview ops mDiff =
    in opLines ++ orphanLines
 
 -- | Convert a single operation to a preview line.
-opToPreview :: Maybe DiffResult -> Operation -> PreviewLine
-opToPreview mDiff (WriteFileOp dest _ strat) =
+opToPreview :: Maybe DiffResult -> Map FilePath ModuleName -> Operation -> PreviewLine
+opToPreview mDiff ownerMap (WriteFileOp dest _ strat) =
   FilePreview
     { previewStatus = lookupStatus dest mDiff,
-      previewVerb = "write",
       previewPath = dest,
-      previewAnnotation = "(" <> strategyName strat <> ")"
+      previewAnnotation = strategyName strat,
+      previewModule = Map.lookup dest ownerMap
     }
-opToPreview _ (CreateDirOp path) = DirPreview path
-opToPreview mDiff (CopyFileOp _ dest) =
+opToPreview _ _ (CreateDirOp path) = DirPreview path
+opToPreview mDiff ownerMap (CopyFileOp _ dest) =
   FilePreview
     { previewStatus = lookupStatus dest mDiff,
-      previewVerb = "copy",
       previewPath = dest,
-      previewAnnotation = "(copy)"
+      previewAnnotation = "copy",
+      previewModule = Map.lookup dest ownerMap
     }
-opToPreview _ (RunCommandOp cmd _) = CommandPreview cmd
-opToPreview mDiff (PatchFileOp dest _ patchOp' _ modName') =
+opToPreview _ _ (RunCommandOp cmd _) = CommandPreview cmd
+opToPreview mDiff ownerMap (PatchFileOp dest _ _patchOp' _ modName') =
   FilePreview
     { previewStatus = lookupStatus dest mDiff,
-      previewVerb = "patch",
       previewPath = dest,
-      previewAnnotation = "(" <> patchOpName patchOp' <> " from " <> unModuleName modName' <> ")"
+      previewAnnotation = "patch",
+      previewModule = Just modName'
     }
 
 -- | Look up a file's status in the diff result.
@@ -93,25 +97,42 @@ renderPreviewPlain :: [PreviewLine] -> Text
 renderPreviewPlain lines' =
   if null lines'
     then "No operations to perform.\n"
-    else T.unlines (map renderPlainLine lines')
+    else T.unlines (map (renderPlainLine maxPathLen) fileLines ++ map renderNonFileLine nonFileLines)
+  where
+    fileLines = [l | l@(FilePreview {}) <- lines']
+    nonFileLines = [l | l <- lines', not (isFileLine l)]
+    maxPathLen = maximum (0 : map (T.length . T.pack . previewPath) fileLines)
 
-renderPlainLine :: PreviewLine -> Text
-renderPlainLine (FilePreview status verb path annotation) =
-  "  " <> statusSymbol status <> " " <> verb <> "  " <> T.pack path <> "  " <> annotation
-renderPlainLine (DirPreview path) =
+renderPlainLine :: Int -> PreviewLine -> Text
+renderPlainLine maxPath (FilePreview status path annotation mMod) =
+  let pathText = T.pack path
+      pathPad = T.replicate (maxPath - T.length pathText) " "
+      modSuffix = case mMod of
+        Just mn -> ", " <> unModuleName mn
+        Nothing -> ""
+   in "    " <> statusTag status <> "  " <> pathText <> pathPad <> "  (" <> annotation <> modSuffix <> ")"
+renderPlainLine _ other = renderNonFileLine other
+
+renderNonFileLine :: PreviewLine -> Text
+renderNonFileLine (DirPreview path) =
   "    mkdir  " <> T.pack path
-renderPlainLine (CommandPreview cmd) =
+renderNonFileLine (CommandPreview cmd) =
   "    run    " <> cmd
-renderPlainLine (OrphanPreview path modName') =
-  "  - " <> T.pack path <> "  (orphaned from " <> unModuleName modName' <> ")"
+renderNonFileLine (OrphanPreview path modName') =
+  "    [orphaned]  " <> T.pack path <> "  (orphaned from " <> unModuleName modName' <> ")"
+renderNonFileLine _ = ""
 
-statusSymbol :: FileStatus -> Text
-statusSymbol FsNew = "+"
-statusSymbol FsModified = "~"
-statusSymbol FsUnchanged = "="
-statusSymbol FsConflict = "!"
-statusSymbol FsOrphaned = "-"
-statusSymbol FsUnknown = " "
+isFileLine :: PreviewLine -> Bool
+isFileLine (FilePreview {}) = True
+isFileLine _ = False
+
+statusTag :: FileStatus -> Text
+statusTag FsNew = "[new]"
+statusTag FsModified = "[modified]"
+statusTag FsUnchanged = "[unchanged]"
+statusTag FsConflict = "[conflict]"
+statusTag FsOrphaned = "[orphaned]"
+statusTag FsUnknown = "[unknown]"
 
 strategyName :: Strategy -> Text
 strategyName Copy = "copy"
@@ -119,10 +140,50 @@ strategyName Template = "template"
 strategyName DhallText = "dhall-text"
 strategyName Structured = "structured"
 
-patchOpName :: PatchOp -> Text
-patchOpName AppendFile = "append-file"
-patchOpName PrependFile = "prepend-file"
-patchOpName AppendSection = "append-section"
+-- | Format a complete plan view with header, variables, operations, and summary.
+formatPlanView :: [ModuleName] -> Map VarName VarValue -> [PreviewLine] -> DiffResult -> Text
+formatPlanView moduleNames vars preview diff =
+  T.unlines $
+    [header, ""]
+      ++ varsSection
+      ++ ["  Operations:"]
+      ++ map ("  " <>) (T.lines (renderPreviewPlain preview))
+      ++ [""]
+      ++ [summaryText]
+  where
+    header =
+      "Generation Plan ("
+        <> T.intercalate " + " (map unModuleName moduleNames)
+        <> "):"
+
+    varsSection =
+      if Map.null vars
+        then []
+        else
+          "  Variables:"
+            : map formatVar (Map.toAscList vars)
+            ++ [""]
+
+    maxVarLen = maximum (0 : map (\(VarName n, _) -> T.length n) (Map.toAscList vars))
+
+    formatVar (VarName name, val) =
+      let namePad = T.replicate (maxVarLen - T.length name) " "
+       in "    " <> name <> namePad <> " = " <> showVarValue val
+
+    showVarValue (VText t) = "\"" <> t <> "\""
+    showVarValue (VBool True) = "true"
+    showVarValue (VBool False) = "false"
+    showVarValue (VInt n) = T.pack (show n)
+    showVarValue (VList vs) = "[" <> T.intercalate ", " (map showVarValue vs) <> "]"
+
+    nFiles = length (diffNew diff) + length (diffModified diff)
+    nConflicts = length (diffConflict diff)
+    summaryText =
+      "  "
+        <> T.pack (show nFiles)
+        <> " files to write, "
+        <> T.pack (show nConflicts)
+        <> " conflicts"
 
 -- | Extract the destination path from a file-producing operation.
 destOfOp :: Operation -> Maybe FilePath
