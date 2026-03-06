@@ -94,9 +94,38 @@ seihou validate-module [PATH]
 
 Validates that a module directory is well-formed: `module.dhall` evaluates, variable names are unique, prompts reference declared variables, step source files exist, and exports reference declared variables. PATH defaults to the current directory.
 
+### `seihou diff`
+
+```
+seihou diff
+```
+
+Shows files that have changed since the last generation by comparing current content against the manifest.
+
+### `seihou list`
+
+```
+seihou list
+```
+
+Lists all available modules across the three search paths (project-local, user, installed).
+
+### `seihou config`
+
+```
+seihou config COMMAND [-g|--global] [-n|--namespace NS]
+```
+
+Manage configuration values. Subcommands: `set KEY VALUE`, `get KEY`, `unset KEY`, `list`. Default scope is local (`.seihou/config.dhall`). Use `--global` or `--namespace NS` for other scopes.
+
+## Documentation
+
+- [Getting Started Guide](docs/user/getting-started.md) — End-to-end walkthrough from initialization to project generation
+- [Module Authoring Reference](docs/user/module-authoring.md) — Complete module format, strategies, variables, composition
+
 ## Module Authoring
 
-A Seihou module is a directory containing a `module.dhall` file and a `files/` directory with templates. Modules declare variables, define generation steps (copy, template, dhall-text), and can depend on other modules.
+A Seihou module is a directory containing a `module.dhall` file and a `files/` directory with templates. Modules declare variables, define generation steps (copy, template, dhall-text, structured), and can depend on other modules.
 
 ```sh
 # Create a new module
@@ -109,7 +138,7 @@ seihou validate-module ./my-template
 seihou run my-template --dry-run --var project.name=test
 ```
 
-See `docs/dev/design/proposed/module-system.md` for the full module specification.
+See the [Module Authoring Reference](docs/user/module-authoring.md) for the complete specification.
 
 ## Building from Source
 
