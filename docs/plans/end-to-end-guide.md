@@ -20,7 +20,7 @@ The guide is user-facing prose, not developer documentation. It assumes no prior
 - [x] M1-3: Write `docs/user/module-authoring.md` — the module format reference (2026-03-06)
 - [x] M1-4: Update `README.md` to link to the new guides and add missing command docs (diff, list, config) (2026-03-06)
 - [x] M1-5: Review both guides for accuracy against actual CLI output — verified all help text, flags, command names, and module.dhall format against live CLI and source (2026-03-06)
-- [ ] M1-6: Commit
+- [x] M1-6: Commit — `8968c4a` (2026-03-06)
 
 
 ## Surprises & Discoveries
@@ -53,7 +53,15 @@ The guide is user-facing prose, not developer documentation. It assumes no prior
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Implementation complete. Two user-facing documentation files created:
+
+- **`docs/user/getting-started.md`** (~300 lines) — Narrative walkthrough covering the complete workflow: init, new-module, customize, validate, dry-run, run, status, diff, config, list, install, and composition. Uses a concrete Haskell project example.
+
+- **`docs/user/module-authoring.md`** (~350 lines) — Complete reference covering module structure, module.dhall format, all five variable types, prompts, all four generation strategies (copy, template, dhall-text, structured), variable exports, commands, dependencies and composition, configuration scopes, environment variable mapping, expression language, module search paths, validation, and best practices.
+
+- **`README.md`** updated with Documentation section linking both guides, plus added missing command documentation for `diff`, `list`, and `config`.
+
+All CLI flags, command names, and module.dhall format verified against live `seihou --help` output and source code. Both guides cross-reference each other. The getting-started guide is self-contained — a reader with no prior Seihou knowledge can follow it from start to finish.
 
 
 ## Context and Orientation
