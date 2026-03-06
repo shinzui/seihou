@@ -575,3 +575,37 @@ spec = do
         Right resolved ->
           resolvedValue (resolved Map.! "enable.tests") `shouldBe` VBool True
         Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+  describe "diagnoseResolution" $ do
+    it "reports unused config keys" $ do
+      let decl = textVar "project.name" True Nothing Nothing
+          resolved = Map.fromList [("project.name", ResolvedVar (VText "app") FromCLI decl)]
+          global = Map.fromList [("project.name", "app"), ("auther.name", "typo")]
+          (unused, _) = diagnoseResolution resolved [decl] Map.empty Map.empty global
+      unused `shouldBe` [VarName "auther.name"]
+
+    it "reports unresolved optional variables" $ do
+      let decls =
+            [ textVar "project.name" True Nothing Nothing,
+              textVar "optional.var" False Nothing Nothing
+            ]
+          resolved = Map.fromList [("project.name", ResolvedVar (VText "app") FromCLI (head decls))]
+          (_, unresolved) = diagnoseResolution resolved decls Map.empty Map.empty Map.empty
+      unresolved `shouldBe` [VarName "optional.var"]
+
+    it "returns empty lists when everything matches" $ do
+      let decl = textVar "license" True Nothing Nothing
+          resolved = Map.fromList [("license", ResolvedVar (VText "MIT") FromGlobalConfig decl)]
+          global = Map.fromList [("license", "MIT")]
+          (unused, unresolved) = diagnoseResolution resolved [decl] Map.empty Map.empty global
+      unused `shouldBe` []
+      unresolved `shouldBe` []
+
+    it "detects unused keys across all config layers" $ do
+      let decl = textVar "project.name" True Nothing Nothing
+          resolved = Map.fromList [("project.name", ResolvedVar (VText "app") FromCLI decl)]
+          local = Map.fromList [("local.extra", "x")]
+          nsCfg = Map.fromList [("ns.extra", "y")]
+          global = Map.fromList [("global.extra", "z")]
+          (unused, _) = diagnoseResolution resolved [decl] local nsCfg global
+      unused `shouldBe` [VarName "global.extra", VarName "local.extra", VarName "ns.extra"]

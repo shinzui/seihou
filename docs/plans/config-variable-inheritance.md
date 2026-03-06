@@ -42,7 +42,12 @@ This plan addresses all five gaps so that declared variables are automatically r
   - [x] Implemented `handleListEffective` with source-annotated merged output
   - [x] Merge order: local > namespace > global (matching resolution precedence)
   - [x] All 513 tests pass
-- [ ] Milestone 4: Add diagnostics for unused config values and unresolved variables
+- [x] Milestone 4: Add diagnostics for unused config values and unresolved variables (2026-03-06)
+  - [x] Added `diagnoseResolution` function to Variable.hs
+  - [x] Wired into Run.hs: warns about unused config keys at LogNormal level
+  - [x] Wired into Vars.hs: shows unused config keys and unresolved optional vars after provenance
+  - [x] Added 4 tests for diagnoseResolution: unused keys, unresolved optional, clean match, multi-layer
+  - [x] All 517 tests pass (497 core + 20 CLI)
 - [ ] Milestone 5: End-to-end validation of the automatic resolution flow
 
 

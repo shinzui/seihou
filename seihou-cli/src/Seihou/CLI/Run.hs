@@ -18,6 +18,7 @@ import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Module (defaultSearchPaths)
 import Seihou.Core.Types
+import Seihou.Core.Variable (diagnoseResolution)
 import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
@@ -74,14 +75,15 @@ handleRun runOpts = do
   let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- runVars runOpts]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
       namespace = fromMaybe (deriveNamespace modName) (runNamespace runOpts)
-  resolveResult <- runEff $ runConfigReader $ runConsole $ do
+  (resolveResult, localMap, nsMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
     localCfg <- readLocalConfig >>= unwrapConfig level
     namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig level
     globalCfg <- readGlobalConfig >>= unwrapConfig level
-    let localMap = toVarNameMap localCfg
-        nsMap = toVarNameMap namespaceCfg
-        globalMap = toVarNameMap globalCfg
-    resolveWithPrompts modulesInOrder cliOverrides envVars namespace localMap nsMap globalMap
+    let lm = toVarNameMap localCfg
+        nm = toVarNameMap namespaceCfg
+        gm = toVarNameMap globalCfg
+    r <- resolveWithPrompts modulesInOrder cliOverrides envVars namespace lm nm gm
+    pure (r, lm, nm, gm)
   resolved <- case resolveResult of
     Left errs -> do
       logIO level $ do
@@ -89,6 +91,16 @@ handleRun runOpts = do
         mapM_ (logError . ("  " <>) . formatVarError) errs
       exitFailure
     Right r -> pure r
+
+  -- 2b. Emit diagnostics for unused config keys
+  let allDecls = concatMap (moduleVars . fst) modulesInOrder
+      allResolved = Map.unions [vs | vs <- Map.elems resolved]
+      (unusedKeys, _) = diagnoseResolution allResolved allDecls localMap nsMap globalMap
+  when (not (null unusedKeys)) $
+    logIO level $
+      logWarn $
+        "Config keys not matching any declared variable: "
+          <> T.intercalate ", " (map unVarName unusedKeys)
 
   -- 3. Compile composed plan (all modules merged)
   let triples =

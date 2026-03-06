@@ -13,7 +13,7 @@ import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, 
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Module (defaultSearchPaths, loadModule)
 import Seihou.Core.Types
-import Seihou.Core.Variable (formatDeclarations, formatExplain)
+import Seihou.Core.Variable (diagnoseResolution, formatDeclarations, formatExplain)
 import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
@@ -92,14 +92,15 @@ explainMode modName vopts = do
   let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- varsVars vopts]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
       namespace = fromMaybe (deriveNamespace modName) (varsNamespace vopts)
-  resolveResult <- runEff $ runConfigReader $ runConsole $ do
+  (resolveResult, localMap, nsMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
     localCfg <- readLocalConfig >>= unwrapConfig LogNormal
     namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig LogNormal
     globalCfg <- readGlobalConfig >>= unwrapConfig LogNormal
-    let localMap = toVarNameMap localCfg
-        nsMap = toVarNameMap namespaceCfg
-        globalMap = toVarNameMap globalCfg
-    resolveWithPrompts modulesInOrder cliOverrides envVars namespace localMap nsMap globalMap
+    let lm = toVarNameMap localCfg
+        nm = toVarNameMap namespaceCfg
+        gm = toVarNameMap globalCfg
+    r <- resolveWithPrompts modulesInOrder cliOverrides envVars namespace lm nm gm
+    pure (r, lm, nm, gm)
   case resolveResult of
     Left errs -> do
       logIO LogNormal $ do
@@ -114,3 +115,16 @@ explainMode modName vopts = do
       if Map.null targetResolved
         then TIO.putStrLn "  (no variables resolved)"
         else TIO.putStr (formatExplain targetResolved)
+
+      -- Show diagnostics
+      let allDecls = concatMap (moduleVars . fst) modulesInOrder
+          allResolved = Map.unions [vs | vs <- Map.elems resolved]
+          (unusedKeys, unresolvedOpt) = diagnoseResolution allResolved allDecls localMap nsMap globalMap
+      when (not (null unusedKeys)) $ do
+        TIO.putStrLn ""
+        TIO.putStrLn "Unused config keys (not matching any declared variable):"
+        mapM_ (\(VarName n) -> TIO.putStrLn $ "  " <> n) unusedKeys
+      when (not (null unresolvedOpt)) $ do
+        TIO.putStrLn ""
+        TIO.putStrLn "Unresolved optional variables:"
+        mapM_ (\(VarName n) -> TIO.putStrLn $ "  " <> n) unresolvedOpt

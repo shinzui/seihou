@@ -5,12 +5,14 @@ module Seihou.Core.Variable
     formatExplain,
     formatDeclarations,
     envVarName,
+    diagnoseResolution,
   )
 where
 
 import Data.Char (toUpper)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Prelude
@@ -266,3 +268,33 @@ formatDeclarations decls =
     showDeclValue (VBool False) = "false"
     showDeclValue (VInt n) = T.pack (show n)
     showDeclValue (VList vs) = "[" <> T.intercalate ", " (map showDeclValue vs) <> "]"
+
+-- | Diagnose mismatches between config values and variable declarations.
+--
+-- Returns two lists:
+-- 1. Unused config keys: keys present in any config layer that don't match
+--    any declared variable name across the composition.
+-- 2. Unresolved optional variables: declared non-required variables that
+--    have no resolved value.
+diagnoseResolution ::
+  Map VarName ResolvedVar ->
+  [VarDecl] ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  ([VarName], [VarName])
+diagnoseResolution resolved decls localConfig nsConfig globalConfig =
+  (unusedConfigKeys, unresolvedOptional)
+  where
+    declaredNames = Set.fromList (map varName decls)
+    allConfigKeys =
+      Set.fromList $
+        Map.keys localConfig ++ Map.keys nsConfig ++ Map.keys globalConfig
+    unusedConfigKeys =
+      Set.toAscList (allConfigKeys `Set.difference` declaredNames)
+    unresolvedOptional =
+      [ varName d
+      | d <- decls,
+        not (varRequired d),
+        not (Map.member (varName d) resolved)
+      ]
