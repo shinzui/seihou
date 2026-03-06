@@ -48,12 +48,14 @@ This plan addresses all five gaps so that declared variables are automatically r
   - [x] Wired into Vars.hs: shows unused config keys and unresolved optional vars after provenance
   - [x] Added 4 tests for diagnoseResolution: unused keys, unresolved optional, clean match, multi-layer
   - [x] All 517 tests pass (497 core + 20 CLI)
-- [ ] Milestone 5: End-to-end validation of the automatic resolution flow
+- [x] Milestone 5: End-to-end validation of the automatic resolution flow (2026-03-06)
+  - [x] Added 4 end-to-end tests in ResolveSpec: full 4-layer resolution, optional omission, diagnostics, multi-module config flow
+  - [x] All 521 tests pass (501 core + 20 CLI)
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The non-required variable bug (Milestone 1) was trivial to fix but had no downstream test failures — all existing tests used either required variables or variables with defaults. This suggests the non-required-without-default path was never exercised before.
 
 
 ## Decision Log
@@ -77,7 +79,19 @@ This plan addresses all five gaps so that declared variables are automatically r
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All five milestones completed. The config hierarchy now fully supports automatic variable resolution:
+
+1. **Bug fix**: Non-required variables without defaults are silently omitted instead of causing false errors. This was the critical enabler — without it, modules with optional variables would fail unless every variable had a config entry.
+
+2. **Composition-aware vars**: `seihou vars --explain` now shows the same resolution result as `seihou run`, including variables inherited via dependency exports. Users can trust the explain output.
+
+3. **Effective config view**: `seihou config list --effective` shows the merged config with source annotations, making it easy to understand which values are in play and where they come from.
+
+4. **Diagnostics**: Unused config keys (likely typos) are warned, and unresolved optional variables are surfaced in explain mode. This closes the feedback loop — users can see what's working and what's not.
+
+5. **End-to-end tests**: Four comprehensive tests validate the full flow: multi-layer precedence, optional variable handling, diagnostic detection, and multi-module config propagation.
+
+Net changes: 8 new tests in VariableSpec, 4 in ResolveSpec. Total test count increased from 489 to 521. No regressions.
 
 
 ## Context and Orientation

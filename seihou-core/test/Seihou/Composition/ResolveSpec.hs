@@ -3,6 +3,7 @@ module Seihou.Composition.ResolveSpec (tests) where
 import Data.Map.Strict qualified as Map
 import Seihou.Composition.Resolve
 import Seihou.Core.Types
+import Seihou.Core.Variable (diagnoseResolution)
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -198,4 +199,97 @@ spec = do
           resolvedSource (baseVars Map.! "license") `shouldBe` FromGlobalConfig
           -- app also gets license from global config (it declares the var)
           let appVars = result Map.! "app"
+          resolvedValue (appVars Map.! "license") `shouldBe` VText "MIT"
+
+  describe "end-to-end config hierarchy auto-resolution" $ do
+    it "resolves all variables from different config layers with correct precedence" $ do
+      -- Scenario: A module with 4 variables, each resolved from a different layer
+      let decls =
+            [ mkTextVar "project.name" Nothing True,
+              mkTextVar "license" Nothing False,
+              mkTextVar "haskell.ghc" Nothing False,
+              mkTextVar "author.name" Nothing False
+            ]
+          m = mkModule "haskell-app" [] decls [mkExport "project.name"]
+          modules = [(m, "/fake/haskell-app")]
+          cliOverrides = Map.singleton "project.name" "my-app"
+          envVars = Map.singleton "SEIHOU_VAR_LICENSE" "Apache"
+          localCfg = Map.fromList [("haskell.ghc", "9.12.2")]
+          globalCfg = Map.fromList [("author.name", "Jane Doe"), ("license", "MIT")]
+      case resolveComposedVariables modules cliOverrides envVars "haskell" localCfg Map.empty globalCfg of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let vars = result Map.! "haskell-app"
+          -- CLI wins for project.name
+          resolvedValue (vars Map.! "project.name") `shouldBe` VText "my-app"
+          resolvedSource (vars Map.! "project.name") `shouldBe` FromCLI
+          -- Env wins over global config for license
+          resolvedValue (vars Map.! "license") `shouldBe` VText "Apache"
+          resolvedSource (vars Map.! "license") `shouldBe` FromEnv "SEIHOU_VAR_LICENSE"
+          -- Local config provides haskell.ghc
+          resolvedValue (vars Map.! "haskell.ghc") `shouldBe` VText "9.12.2"
+          resolvedSource (vars Map.! "haskell.ghc") `shouldBe` FromLocalConfig
+          -- Global config provides author.name
+          resolvedValue (vars Map.! "author.name") `shouldBe` VText "Jane Doe"
+          resolvedSource (vars Map.! "author.name") `shouldBe` FromGlobalConfig
+
+    it "optional variables without values are omitted, not errors" $ do
+      let decls =
+            [ mkTextVar "project.name" Nothing True,
+              mkTextVar "optional.missing" Nothing False
+            ]
+          m = mkModule "test" [] decls []
+          modules = [(m, "/fake/test")]
+          cliOverrides = Map.singleton "project.name" "app"
+      case resolveComposedVariables modules cliOverrides Map.empty "" Map.empty Map.empty Map.empty of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let vars = result Map.! "test"
+          resolvedValue (vars Map.! "project.name") `shouldBe` VText "app"
+          Map.member "optional.missing" vars `shouldBe` False
+
+    it "diagnostics detect unused config keys and unresolved optional vars" $ do
+      let decls =
+            [ mkTextVar "project.name" Nothing True,
+              mkTextVar "optional.unset" Nothing False
+            ]
+          m = mkModule "test" [] decls []
+          modules = [(m, "/fake/test")]
+          cliOverrides = Map.singleton "project.name" "app"
+          globalCfg = Map.fromList [("typo.key", "oops")]
+      case resolveComposedVariables modules cliOverrides Map.empty "" Map.empty Map.empty globalCfg of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let allResolved = Map.unions (Map.elems result)
+              allDecls = concatMap (moduleVars . fst) modules
+              (unusedKeys, unresolvedOpt) = diagnoseResolution allResolved allDecls Map.empty Map.empty globalCfg
+          unusedKeys `shouldBe` [VarName "typo.key"]
+          unresolvedOpt `shouldBe` [VarName "optional.unset"]
+
+    it "multi-module composition: config values flow through exports" $ do
+      let baseDecls =
+            [ mkTextVar "project.name" Nothing True,
+              mkTextVar "license" Nothing False
+            ]
+          base = mkModule "base" [] baseDecls [mkExport "project.name", mkExport "license"]
+          appDecls =
+            [ mkTextVar "project.name" Nothing True,
+              mkTextVar "license" Nothing False
+            ]
+          app = mkModule "app" ["base"] appDecls []
+          modules = [(base, "/fake/base"), (app, "/fake/app")]
+          globalCfg = Map.fromList [("project.name", "global-app"), ("license", "MIT")]
+          localCfg = Map.fromList [("project.name", "local-app")]
+      case resolveComposedVariables modules Map.empty Map.empty "" localCfg Map.empty globalCfg of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          -- base: local overrides global for project.name
+          let baseVars = result Map.! "base"
+          resolvedValue (baseVars Map.! "project.name") `shouldBe` VText "local-app"
+          resolvedSource (baseVars Map.! "project.name") `shouldBe` FromLocalConfig
+          resolvedValue (baseVars Map.! "license") `shouldBe` VText "MIT"
+          resolvedSource (baseVars Map.! "license") `shouldBe` FromGlobalConfig
+          -- app: same values, same precedence (declares its own vars, config wins)
+          let appVars = result Map.! "app"
+          resolvedValue (appVars Map.! "project.name") `shouldBe` VText "local-app"
           resolvedValue (appVars Map.! "license") `shouldBe` VText "MIT"
