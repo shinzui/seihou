@@ -14,7 +14,7 @@ import Seihou.Core.Module (discoverModule, validateModule)
 import Seihou.Core.Types
 import Seihou.Core.Variable (resolveVariables)
 import Seihou.Dhall.Eval (evalModuleFromFile)
-import Seihou.Effect.Console (Console, isInteractive)
+import Seihou.Effect.Console (Console, isInteractive, putText)
 import Seihou.Interaction.Prompt (runPrompts)
 import Seihou.Prelude
 
@@ -138,7 +138,25 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
                 Map.mapWithKey
                   makeInheritedResolved
                   (Map.filterWithKey (\k _ -> not (Set.member k declaredNames)) visibleExports)
-              fullResolved = resolved `Map.union` inherited
+              resolvedWithInherited = resolved `Map.union` inherited
+          -- Prompt for optional variables that have prompts but no value
+          let optionalDecls =
+                [ d
+                | d <- adjustedDecls,
+                  not d.required,
+                  not (Map.member d.name resolvedWithInherited),
+                  any (\p -> p.var == d.name) m.prompts
+                ]
+          optionalPrompted <-
+            if interactive && not (null optionalDecls)
+              then do
+                let currentBindings = Map.map (.value) (Map.unions (Map.elems perModule))
+                    allBindings = Map.union (Map.map (.value) resolvedWithInherited) currentBindings
+                putText ""
+                putText "Optional configuration:"
+                runPrompts m.prompts optionalDecls allBindings
+              else pure Map.empty
+          let fullResolved = resolvedWithInherited `Map.union` optionalPrompted
               myExports = exportedVars m fullResolved
           goPrompt
             interactive
@@ -185,7 +203,25 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
                                 Map.mapWithKey
                                   makeInheritedResolved
                                   (Map.filterWithKey (\k _ -> not (Set.member k declaredNames)) visibleExports)
-                              fullResolved = resolvedWithPromptSource `Map.union` inherited
+                              resolvedWithInherited' = resolvedWithPromptSource `Map.union` inherited
+                          -- Prompt for optional variables (same logic as success path)
+                          let optionalDecls' =
+                                [ d
+                                | d <- adjustedDecls,
+                                  not d.required,
+                                  not (Map.member d.name resolvedWithInherited'),
+                                  any (\p -> p.var == d.name) m.prompts
+                                ]
+                          optionalPrompted' <-
+                            if not (null optionalDecls')
+                              then do
+                                let cb = Map.map (.value) (Map.unions (Map.elems perModule))
+                                    ab = Map.union (Map.map (.value) resolvedWithInherited') cb
+                                putText ""
+                                putText "Optional configuration:"
+                                runPrompts m.prompts optionalDecls' ab
+                              else pure Map.empty
+                          let fullResolved = resolvedWithInherited' `Map.union` optionalPrompted'
                               myExports = exportedVars m fullResolved
                           goPrompt
                             interactive

@@ -27,13 +27,13 @@ Required prompts enforce non-empty input (as they do today). Optional prompts ac
 - [x] M1: Show default values in prompt text for required and optional variables (2026-03-06)
 - [x] M1: Allow empty input on required variables that have a default (accept the default) (2026-03-06)
 - [x] M1: Add new tests for default display behavior (4 tests: default accept, user override, skip hint, bool default) (2026-03-06)
-- [ ] M2: Collect optional unresolved variables after required resolution succeeds
-- [ ] M2: Run prompts for optional variables after required resolution
-- [ ] M2: Merge optional prompt results into the resolved variable map
-- [ ] M2: Add "Optional configuration:" separator in console output
-- [ ] M2: Accept empty input as "skip" for optional prompts
-- [ ] M2: Write pure tests for optional prompt flow in PromptSpec
-- [ ] M2: Write integration tests for resolveWithPrompts with optional variables
+- [x] M2: Collect optional unresolved variables after required resolution succeeds (2026-03-06)
+- [x] M2: Run prompts for optional variables after required resolution (2026-03-06)
+- [x] M2: Merge optional prompt results into the resolved variable map (2026-03-06)
+- [x] M2: Add "Optional configuration:" separator in console output (2026-03-06)
+- [x] M2: Accept empty input as "skip" for optional prompts (2026-03-06)
+- [x] M2: Write pure tests for optional prompt flow in PromptSpec (6 tests) (2026-03-06)
+- [x] M2: Write integration tests for resolveWithPrompts with optional variables (2026-03-06)
 - [ ] M3: Add test fixture module with optional prompted variables
 - [ ] M3: End-to-end validation with `seihou run --dry-run`
 - [ ] M3: Update user documentation
@@ -41,7 +41,7 @@ Required prompts enforce non-empty input (as they do today). Optional prompts ac
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The optional prompt logic needed to be added in **two** places in `resolveWithPrompts`: the initial success path (when `resolveVariables` returns `Right`) and the error-recovery path (when required prompts succeed and re-resolution returns `Right`). The plan only described the success path. Discovered when the "prompts for optional variables after required resolution" test failed with a Map.! key error — the error path re-resolved successfully but skipped optional prompts.
 
 
 ## Decision Log

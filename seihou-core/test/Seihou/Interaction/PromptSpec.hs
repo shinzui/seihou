@@ -324,6 +324,145 @@ spec = do
       -- No prompts should have been displayed
       st.consoleOutputs `shouldSatisfy` all (/= "What is the project name?")
 
+    it "prompts for optional variables after required resolution" $ do
+      let m =
+            mkModule
+              "base"
+              []
+              [ mkTextVar "project.name" Nothing True,
+                mkTextVar "license" Nothing False
+              ]
+              []
+              [ mkPrompt "project.name" "What is the project name?",
+                mkPrompt "license" "License"
+              ]
+          modules = [(m, "/fake/base")]
+      (result, st) <-
+        runEff $
+          runConsolePure ["my-app", "MIT"] $
+            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+      case result of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right resolved -> do
+          let baseVars = resolved Map.! "base"
+          (baseVars Map.! "project.name").value `shouldBe` VText "my-app"
+          (baseVars Map.! "project.name").source `shouldBe` FromPrompt
+          (baseVars Map.! "license").value `shouldBe` VText "MIT"
+          (baseVars Map.! "license").source `shouldBe` FromPrompt
+      st.consoleOutputs `shouldSatisfy` any (== "Optional configuration:")
+
+    it "skips optional variable when user presses Enter" $ do
+      let m =
+            mkModule
+              "base"
+              []
+              [ mkTextVar "project.name" Nothing True,
+                mkTextVar "license" Nothing False
+              ]
+              []
+              [ mkPrompt "project.name" "What is the project name?",
+                mkPrompt "license" "License"
+              ]
+          modules = [(m, "/fake/base")]
+      (result, _st) <-
+        runEff $
+          runConsolePure ["my-app", ""] $
+            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+      case result of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right resolved -> do
+          let baseVars = resolved Map.! "base"
+          Map.member "project.name" baseVars `shouldBe` True
+          Map.member "license" baseVars `shouldBe` False
+
+    it "shows Optional configuration separator for optional-only modules" $ do
+      let m =
+            mkModule
+              "base"
+              []
+              [mkTextVar "license" Nothing False]
+              []
+              [mkPrompt "license" "License"]
+          modules = [(m, "/fake/base")]
+      (result, st) <-
+        runEff $
+          runConsolePure ["MIT"] $
+            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+      case result of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right resolved -> do
+          let baseVars = resolved Map.! "base"
+          (baseVars Map.! "license").value `shouldBe` VText "MIT"
+      st.consoleOutputs `shouldSatisfy` any (== "Optional configuration:")
+
+    it "does not show optional prompts in non-interactive mode" $ do
+      let m =
+            mkModule
+              "base"
+              []
+              [mkTextVar "license" Nothing False]
+              []
+              [mkPrompt "license" "License"]
+          modules = [(m, "/fake/base")]
+      (result, st) <-
+        runEff $
+          runConsolePureNonInteractive $
+            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+      case result of
+        Left _ -> expectationFailure "Expected Right (no required vars)"
+        Right resolved -> do
+          let baseVars = resolved Map.! "base"
+          Map.member "license" baseVars `shouldBe` False
+      st.consoleOutputs `shouldSatisfy` all (/= "Optional configuration:")
+
+    it "respects when condition on optional prompts" $ do
+      let m =
+            mkModule
+              "base"
+              []
+              [ mkTextVar "project.name" Nothing True,
+                mkTextVar "extra" Nothing False
+              ]
+              []
+              [ mkPrompt "project.name" "Name?",
+                mkConditionalPrompt "extra" "Extra?" (ExprIsSet "nonexistent")
+              ]
+          modules = [(m, "/fake/base")]
+      (result, st) <-
+        runEff $
+          runConsolePure ["my-app"] $
+            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+      case result of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right resolved -> do
+          let baseVars = resolved Map.! "base"
+          Map.member "extra" baseVars `shouldBe` False
+      -- The condition was false so Optional configuration header should not appear
+      -- (no optional prompts actually fired)
+      st.consoleOutputs `shouldSatisfy` all (/= "Extra?")
+
+    it "does not prompt for optional variables already resolved via config" $ do
+      let m =
+            mkModule
+              "base"
+              []
+              [mkTextVar "license" Nothing False]
+              []
+              [mkPrompt "license" "License"]
+          modules = [(m, "/fake/base")]
+          globalConfig = Map.singleton "license" "MIT"
+      (result, st) <-
+        runEff $
+          runConsolePure [] $
+            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty globalConfig
+      case result of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right resolved -> do
+          let baseVars = resolved Map.! "base"
+          (baseVars Map.! "license").value `shouldBe` VText "MIT"
+          (baseVars Map.! "license").source `shouldBe` FromGlobalConfig
+      st.consoleOutputs `shouldSatisfy` all (/= "Optional configuration:")
+
     it "flows prompted value from first module to second via exports" $ do
       let base =
             mkModule
