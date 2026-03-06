@@ -7,6 +7,7 @@ module Seihou.CLI.Commands
     ValidateOpts (..),
     ConfigOpts (..),
     ConfigAction (..),
+    BrowseOpts (..),
     commandParser,
     opts,
   )
@@ -30,6 +31,7 @@ data Command
   | NewModule NewModuleOpts
   | ValidateModule ValidateOpts
   | Config ConfigOpts
+  | Browse BrowseOpts
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -88,6 +90,12 @@ data ConfigOpts = ConfigOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data BrowseOpts = BrowseOpts
+  { browseSource :: Text,
+    browseTag :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
 opts :: ParserInfo Command
 opts =
   info
@@ -123,6 +131,7 @@ commandParser =
         <> command "new-module" newModuleInfo
         <> command "validate-module" validateInfo
         <> command "config" configInfo
+        <> command "browse" browseInfo
     )
 
 -- Command info blocks
@@ -431,6 +440,37 @@ configGetParser = ConfigGet <$> argument (T.pack <$> str) (metavar "KEY")
 
 configUnsetParser :: Parser ConfigAction
 configUnsetParser = ConfigUnset <$> argument (T.pack <$> str) (metavar "KEY")
+
+browseInfo :: ParserInfo Command
+browseInfo =
+  info
+    (browseParser <**> helper)
+    ( fullDesc
+        <> progDesc "Browse modules in a git repository"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Clones the repository and shows available modules without" :: String),
+                  pretty ("installing anything. For multi-module repos with a" :: String),
+                  pretty ("seihou-registry.dhall, displays all modules with descriptions" :: String),
+                  pretty ("and tags. Use --tag to filter by tag." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou browse https://github.com/user/templates.git" :: String),
+                        pretty ("seihou browse https://github.com/user/templates.git --tag haskell" :: String)
+                      ]
+                ]
+          )
+    )
+
+browseParser :: Parser Command
+browseParser =
+  fmap Browse $
+    BrowseOpts
+      <$> argument (T.pack <$> str) (metavar "GIT-URL")
+      <*> optional (option (T.pack <$> str) (long "tag" <> metavar "TAG" <> help "Filter modules by tag"))
 
 -- Helpers
 

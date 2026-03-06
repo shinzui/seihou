@@ -37,7 +37,7 @@ Or, if the repo has no registry file, the current single-module behavior continu
 - [x] M3: Interactive module selection when registry exists and no flag given (2026-03-06)
 - [x] M3: Write `.seihou-origin.json` metadata on install (2026-03-06)
 - [ ] M3: Write integration test for multi-module install
-- [ ] M4: Implement `seihou browse <git-url>` command
+- [x] M4: Implement `seihou browse <git-url>` command with --tag filter (2026-03-06)
 - [ ] M4: Write integration test for browse command
 - [ ] M5: Update `seihou list` to show registry origin for installed modules
 - [ ] M5: Update documentation and help text

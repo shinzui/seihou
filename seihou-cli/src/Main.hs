@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Options.Applicative (execParser)
+import Seihou.CLI.Browse (handleBrowse)
 import Seihou.CLI.Commands
 import Seihou.CLI.Config (handleConfig)
 import Seihou.CLI.Diff (handleDiff)
@@ -37,3 +38,5 @@ main = do
       handleValidateModule validateOpts
     Config configOpts ->
       handleConfig configOpts
+    Browse browseOpts ->
+      handleBrowse browseOpts
