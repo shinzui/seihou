@@ -78,6 +78,10 @@ promptForVar prompt decl _bindings =
     Nothing -> promptFreeText prompt decl 3
 
 -- | Prompt with free text input. Retries up to @maxRetries@ times.
+--
+-- When the variable has a default value, it is shown in brackets after the
+-- prompt text (e.g., @Project version [0.1.0.0]:@). Empty input accepts the
+-- default. For optional variables without a default, empty input skips.
 promptFreeText ::
   (Console :> es) =>
   Prompt ->
@@ -85,15 +89,29 @@ promptFreeText ::
   Int ->
   Eff es (Either VarError ResolvedVar)
 promptFreeText prompt decl retriesLeft = do
-  putText prompt.text
+  putText (formatPromptText prompt decl)
   raw <- getLine
   if T.null (T.strip raw)
-    then
-      if retriesLeft > 1
-        then do
-          putText "Value cannot be empty. Please try again."
-          promptFreeText prompt decl (retriesLeft - 1)
-        else pure (Left (MissingRequiredVar decl.name))
+    then case decl.default_ of
+      Just defVal ->
+        -- Accept the default value
+        pure
+          ( Right
+              ResolvedVar
+                { value = defVal,
+                  source = FromPrompt,
+                  decl = decl
+                }
+          )
+      Nothing
+        | not decl.required ->
+            -- Optional variable with no default — skip
+            pure (Left (MissingRequiredVar decl.name))
+        | retriesLeft > 1 -> do
+            putText "Value cannot be empty. Please try again."
+            promptFreeText prompt decl (retriesLeft - 1)
+        | otherwise ->
+            pure (Left (MissingRequiredVar decl.name))
     else case coerceAndValidate decl raw of
       Left err ->
         if retriesLeft > 1
@@ -161,3 +179,22 @@ showType VTBool = "bool"
 showType VTInt = "int"
 showType (VTList _) = "list"
 showType (VTChoice _) = "choice"
+
+-- | Format the prompt text, appending a default value hint in brackets
+-- when the variable has one (e.g., @"Project version [0.1.0.0]:"@).
+-- For optional variables without a default, appends @[skip]@.
+formatPromptText :: Prompt -> VarDecl -> Text
+formatPromptText prompt decl =
+  case decl.default_ of
+    Just defVal -> prompt.text <> " [" <> showDefaultValue defVal <> "]:"
+    Nothing
+      | not decl.required -> prompt.text <> " [skip]:"
+      | otherwise -> prompt.text
+
+-- | Render a VarValue for display in a prompt's default hint.
+showDefaultValue :: VarValue -> Text
+showDefaultValue (VText t) = t
+showDefaultValue (VBool True) = "yes"
+showDefaultValue (VBool False) = "no"
+showDefaultValue (VInt n) = T.pack (show n)
+showDefaultValue (VList vs) = T.intercalate ", " (map showDefaultValue vs)

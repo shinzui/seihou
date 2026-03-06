@@ -154,6 +154,57 @@ spec = do
       Map.null result `shouldBe` True
       st.consoleOutputs `shouldSatisfy` all (/= "Other?")
 
+  describe "default value display" $ do
+    it "shows default value in prompt text and accepts Enter" $ do
+      let decl = mkTextVar "project.version" (Just (VText "0.1.0.0")) True
+          prompt = mkPrompt "project.version" "Project version"
+      (result, st) <-
+        runEff $
+          runConsolePure [""] $
+            promptForVar prompt decl Map.empty
+      case result of
+        Left err -> expectationFailure $ "Expected Right, got: " ++ show err
+        Right rv -> do
+          rv.value `shouldBe` VText "0.1.0.0"
+          rv.source `shouldBe` FromPrompt
+      -- Prompt text should include the default in brackets
+      st.consoleOutputs `shouldSatisfy` any (== "Project version [0.1.0.0]:")
+
+    it "accepts user input over default when provided" $ do
+      let decl = mkTextVar "project.version" (Just (VText "0.1.0.0")) True
+          prompt = mkPrompt "project.version" "Project version"
+      (result, st) <-
+        runEff $
+          runConsolePure ["1.0.0"] $
+            promptForVar prompt decl Map.empty
+      case result of
+        Left err -> expectationFailure $ "Expected Right, got: " ++ show err
+        Right rv ->
+          rv.value `shouldBe` VText "1.0.0"
+      st.consoleOutputs `shouldSatisfy` any (== "Project version [0.1.0.0]:")
+
+    it "shows [skip] for optional variable without default" $ do
+      let decl = mkTextVar "license" Nothing False
+          prompt = mkPrompt "license" "License"
+      (_result, st) <-
+        runEff $
+          runConsolePure [""] $
+            promptForVar prompt decl Map.empty
+      st.consoleOutputs `shouldSatisfy` any (== "License [skip]:")
+
+    it "shows bool default as yes/no" $ do
+      let decl = mkBoolVar "enable.ci" (Just (VBool True)) False
+          prompt = mkPrompt "enable.ci" "Enable CI?"
+      (result, st) <-
+        runEff $
+          runConsolePure [""] $
+            promptForVar prompt decl Map.empty
+      case result of
+        Left err -> expectationFailure $ "Expected Right, got: " ++ show err
+        Right rv ->
+          rv.value `shouldBe` VBool True
+      st.consoleOutputs `shouldSatisfy` any (== "Enable CI? [yes]:")
+
   describe "promptForVar" $ do
     it "coerces boolean input correctly" $ do
       let decl = mkBoolVar "use.ci" Nothing True
