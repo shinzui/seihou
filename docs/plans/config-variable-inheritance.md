@@ -29,7 +29,13 @@ This plan addresses all five gaps so that declared variables are automatically r
   - [x] Updated `formatDeclarations` to show `(optional, no default)` for non-required vars
   - [x] Added 4 new tests: omit optional, error on required, resolve optional with value, mixed scenario
   - [x] All 513 tests pass (493 core + 20 CLI)
-- [ ] Milestone 2: Make `seihou vars --explain` composition-aware
+- [x] Milestone 2: Make `seihou vars --explain` composition-aware (2026-03-06)
+  - [x] Rewrote `explainMode` to use `loadComposition` and `resolveWithPrompts`
+  - [x] `declarationMode` remains single-module (no change needed)
+  - [x] Added `Console` effect via `runConsole` for interactive prompt support
+  - [x] Target module's resolved vars (including inherited exports) shown with provenance
+  - [x] Composition info logged when multiple modules involved
+  - [x] All 513 tests pass
 - [ ] Milestone 3: Add `seihou config list --effective` merged view
 - [ ] Milestone 4: Add diagnostics for unused config values and unresolved variables
 - [ ] Milestone 5: End-to-end validation of the automatic resolution flow

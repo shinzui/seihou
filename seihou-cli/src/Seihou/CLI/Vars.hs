@@ -3,18 +3,21 @@ module Seihou.CLI.Vars
   )
 where
 
+import Control.Monad (when)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (VarsOpts (..))
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
+import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Module (defaultSearchPaths, loadModule)
 import Seihou.Core.Types
-import Seihou.Core.Variable (formatDeclarations, formatExplain, resolveVariables)
+import Seihou.Core.Variable (formatDeclarations, formatExplain)
 import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
-import Seihou.Effect.Logger (logError)
+import Seihou.Effect.ConsoleInterp (runConsole)
+import Seihou.Effect.Logger (logError, logInfo)
 import Seihou.Prelude
 import System.Environment (getEnvironment)
 import System.Exit (exitFailure)
@@ -23,24 +26,24 @@ handleVars :: VarsOpts -> IO ()
 handleVars vopts = do
   let modName = varsModule vopts
 
-  -- Load the module
-  searchPaths <- defaultSearchPaths
-  result <- loadModule searchPaths modName
-  modul <- case result of
-    Left (ModuleNotFound _ searched) -> do
-      logIO LogNormal $ do
-        logError $ "Module '" <> unModuleName modName <> "' not found."
-        logError "Searched in:"
-        mapM_ (\p -> logError $ "  " <> T.pack p) searched
-      exitFailure
-    Left err -> do
-      logIO LogNormal (logError $ T.pack (show err))
-      exitFailure
-    Right m -> pure m
-
   if varsExplain vopts
-    then explainMode modul vopts
-    else declarationMode modul
+    then explainMode modName vopts
+    else do
+      -- Declaration mode: load single module, show declarations
+      searchPaths <- defaultSearchPaths
+      result <- loadModule searchPaths modName
+      modul <- case result of
+        Left (ModuleNotFound _ searched) -> do
+          logIO LogNormal $ do
+            logError $ "Module '" <> unModuleName modName <> "' not found."
+            logError "Searched in:"
+            mapM_ (\p -> logError $ "  " <> T.pack p) searched
+          exitFailure
+        Left err -> do
+          logIO LogNormal (logError $ T.pack (show err))
+          exitFailure
+        Right m -> pure m
+      declarationMode modul
 
 -- | Default mode: show variable declarations
 declarationMode :: Module -> IO ()
@@ -53,28 +56,61 @@ declarationMode modul = do
       TIO.putStrLn ""
       TIO.putStr (formatDeclarations vars)
 
--- | Explain mode: resolve variables and show provenance
-explainMode :: Module -> VarsOpts -> IO ()
-explainMode modul vopts = do
+-- | Explain mode: load full composition, resolve variables with exports, show provenance
+explainMode :: ModuleName -> VarsOpts -> IO ()
+explainMode modName vopts = do
+  -- Load the full composition (target module + transitive dependencies)
+  searchPaths <- defaultSearchPaths
+  compositionResult <- loadComposition searchPaths modName []
+  modulesInOrder <- case compositionResult of
+    Left (ModuleNotFound name searched) -> do
+      logIO LogNormal $ do
+        logError $ "Module '" <> unModuleName name <> "' not found."
+        logError "Searched in:"
+        mapM_ (\p -> logError $ "  " <> T.pack p) searched
+      exitFailure
+    Left (CircularDependency names) -> do
+      logIO LogNormal $ do
+        logError "Circular dependency detected:"
+        logError $ "  " <> T.intercalate " -> " (map unModuleName names)
+      exitFailure
+    Left err -> do
+      logIO LogNormal (logError $ T.pack (show err))
+      exitFailure
+    Right ms -> pure ms
+
+  -- Report composition when multiple modules are involved
+  when (length modulesInOrder > 1) $
+    logIO LogNormal $
+      logInfo $
+        "Resolving with "
+          <> T.pack (show (length modulesInOrder))
+          <> " modules in composition"
+
+  -- Resolve variables with the full composition pipeline
   envPairs <- getEnvironment
   let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- varsVars vopts]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace (varsModule vopts)) (varsNamespace vopts)
-  result <- runEff $ runConfigReader $ do
+      namespace = fromMaybe (deriveNamespace modName) (varsNamespace vopts)
+  resolveResult <- runEff $ runConfigReader $ runConsole $ do
     localCfg <- readLocalConfig >>= unwrapConfig LogNormal
     namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig LogNormal
     globalCfg <- readGlobalConfig >>= unwrapConfig LogNormal
     let localMap = toVarNameMap localCfg
         nsMap = toVarNameMap namespaceCfg
         globalMap = toVarNameMap globalCfg
-    pure $ resolveVariables (moduleVars modul) cliOverrides envVars namespace localMap nsMap globalMap
-  case result of
+    resolveWithPrompts modulesInOrder cliOverrides envVars namespace localMap nsMap globalMap
+  case resolveResult of
     Left errs -> do
       logIO LogNormal $ do
         logError "Error resolving variables:"
         mapM_ (logError . ("  " <>) . formatVarError) errs
       exitFailure
     Right resolved -> do
-      TIO.putStrLn $ "Variables for " <> unModuleName (moduleName modul) <> ":"
+      -- Show only the target module's resolved variables
+      let targetResolved = Map.findWithDefault Map.empty modName resolved
+      TIO.putStrLn $ "Variables for " <> unModuleName modName <> ":"
       TIO.putStrLn ""
-      TIO.putStr (formatExplain resolved)
+      if Map.null targetResolved
+        then TIO.putStrLn "  (no variables resolved)"
+        else TIO.putStr (formatExplain targetResolved)
