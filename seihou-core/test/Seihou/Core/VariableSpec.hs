@@ -523,6 +523,49 @@ spec = do
           resolvedSource (resolved Map.! "haskell.ghc") `shouldBe` FromNamespaceConfig "haskell"
         Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
+    it "omits non-required variable with no value from any source" $ do
+      let decls = [textVar "optional.var" False Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+      case resolveVariables decls cli env "" Map.empty Map.empty Map.empty of
+        Right resolved -> Map.member "optional.var" resolved `shouldBe` False
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "still errors on missing required variable with no value" $ do
+      let decls = [textVar "required.var" True Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+      case resolveVariables decls cli env "" Map.empty Map.empty Map.empty of
+        Left errs -> errs `shouldBe` [MissingRequiredVar "required.var"]
+        Right _ -> expectationFailure "Expected Left"
+
+    it "resolves non-required variable when value is provided" $ do
+      let decls = [textVar "optional.var" False Nothing Nothing]
+          cli = Map.empty
+          env = Map.empty
+          global = Map.fromList [("optional.var", "from-global")]
+      case resolveVariables decls cli env "" Map.empty Map.empty global of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "optional.var") `shouldBe` VText "from-global"
+          resolvedSource (resolved Map.! "optional.var") `shouldBe` FromGlobalConfig
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "resolves mix of required, optional-with-value, and optional-without-value" $ do
+      let decls =
+            [ textVar "project.name" True Nothing Nothing,
+              textVar "optional.missing" False Nothing Nothing,
+              textVar "optional.present" False Nothing Nothing
+            ]
+          cli = Map.fromList [("project.name", "my-app")]
+          env = Map.empty
+          global = Map.fromList [("optional.present", "found")]
+      case resolveVariables decls cli env "" Map.empty Map.empty global of
+        Right resolved -> do
+          resolvedValue (resolved Map.! "project.name") `shouldBe` VText "my-app"
+          Map.member "optional.missing" resolved `shouldBe` False
+          resolvedValue (resolved Map.! "optional.present") `shouldBe` VText "found"
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
     it "coerces config values through type system" $ do
       let decls = [boolVar "enable.tests" True Nothing]
           cli = Map.empty

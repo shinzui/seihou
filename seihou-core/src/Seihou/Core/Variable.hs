@@ -10,6 +10,7 @@ where
 
 import Data.Char (toUpper)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (catMaybes)
 import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Prelude
@@ -132,29 +133,29 @@ resolveVariables ::
   Either [VarError] (Map VarName ResolvedVar)
 resolveVariables decls cliOverrides envVars namespace localConfig nsConfig globalConfig =
   case partitionResults (map resolveOne decls) of
-    ([], resolved) -> Right (Map.fromList resolved)
+    ([], resolved) -> Right (Map.fromList (catMaybes resolved))
     (errs, _) -> Left errs
   where
-    resolveOne :: VarDecl -> Either VarError (VarName, ResolvedVar)
+    resolveOne :: VarDecl -> Either VarError (Maybe (VarName, ResolvedVar))
     resolveOne decl =
       let name = varName decl
           ty = varType decl
        in case lookupCLI name ty of
-            Just result -> result >>= validateAndWrap decl
+            Just result -> fmap Just (result >>= validateAndWrap decl)
             Nothing -> case lookupEnv name ty of
-              Just result -> result >>= validateAndWrap decl
+              Just result -> fmap Just (result >>= validateAndWrap decl)
               Nothing -> case lookupConfig name ty localConfig FromLocalConfig of
-                Just result -> result >>= validateAndWrap decl
+                Just result -> fmap Just (result >>= validateAndWrap decl)
                 Nothing -> case lookupConfig name ty nsConfig (FromNamespaceConfig namespace) of
-                  Just result -> result >>= validateAndWrap decl
+                  Just result -> fmap Just (result >>= validateAndWrap decl)
                   Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
-                    Just result -> result >>= validateAndWrap decl
+                    Just result -> fmap Just (result >>= validateAndWrap decl)
                     Nothing -> case varDefault decl of
                       Just defVal ->
-                        validateAndWrap decl (defVal, FromDefault)
+                        fmap Just (validateAndWrap decl (defVal, FromDefault))
                       Nothing
                         | varRequired decl -> Left (MissingRequiredVar name)
-                        | otherwise -> Left (MissingRequiredVar name)
+                        | otherwise -> Right Nothing
 
     lookupCLI :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
     lookupCLI name ty =
@@ -253,7 +254,9 @@ formatDeclarations decls =
       let VarName name = varName decl
           namePad = T.replicate (maxNameLen - T.length name) " "
           valText = case varDefault decl of
-            Nothing -> "(required, no default)"
+            Nothing
+              | varRequired decl -> "(required, no default)"
+              | otherwise -> "(optional, no default)"
             Just v -> showDeclValue v
        in "  " <> name <> namePad <> " = " <> valText
 
