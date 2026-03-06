@@ -134,6 +134,46 @@ Prompts ask the user for variable values interactively when a value is not provi
 - Prompts only fire when the variable has no value from a higher-precedence source (CLI, environment, config).
 - In non-interactive mode (no TTY), prompts are skipped. Required variables without values cause an error.
 - Prompts appear in the order they are declared in the `prompts` list.
+- When a variable has a default value, the prompt shows it in brackets: `Project version [0.1.0.0]:`. Pressing Enter accepts the default.
+
+### Prompts for optional variables
+
+Prompts can target optional variables (`required = False`). Optional prompts appear **after** all required variables are resolved, under an "Optional configuration:" header. The user can press Enter to skip any optional prompt, leaving the variable unresolved — exactly as if it were never provided. Steps guarded by `IsSet` conditions will then be skipped as expected.
+
+```dhall
+{ name = "my-module"
+, vars =
+  [ { name = "project.name", type = "text", default = None Text
+    , description = Some "Project name", required = True, validation = None Text }
+  , { name = "license", type = "text", default = None Text
+    , description = Some "License type", required = False, validation = None Text }
+  ]
+, prompts =
+  [ { var = "project.name", text = "What is your project name?"
+    , when = None Text, choices = None (List Text) }
+  , { var = "license", text = "Include a license?"
+    , when = None Text, choices = Some [ "MIT", "Apache-2.0", "BSD-3-Clause" ] }
+  ]
+, ...
+}
+```
+
+When a user runs this module interactively:
+
+```
+What is your project name? my-app
+
+Optional configuration:
+  Include a license? [skip]:
+    1) MIT
+    2) Apache-2.0
+    3) BSD-3-Clause
+  Enter selection number: 1
+```
+
+If the user presses Enter without selecting, the `license` variable remains absent and any step with `when = Some "IsSet license"` is skipped.
+
+In non-interactive mode (CI, piped input), optional prompts are not shown and optional variables without defaults are simply absent.
 
 
 ## Steps and strategies

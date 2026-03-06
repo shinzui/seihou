@@ -34,9 +34,9 @@ Required prompts enforce non-empty input (as they do today). Optional prompts ac
 - [x] M2: Accept empty input as "skip" for optional prompts (2026-03-06)
 - [x] M2: Write pure tests for optional prompt flow in PromptSpec (6 tests) (2026-03-06)
 - [x] M2: Write integration tests for resolveWithPrompts with optional variables (2026-03-06)
-- [ ] M3: Add test fixture module with optional prompted variables
-- [ ] M3: End-to-end validation with `seihou run --dry-run`
-- [ ] M3: Update user documentation
+- [x] M3: Add test fixture module with optional prompted variables (2026-03-06)
+- [x] M3: End-to-end validation with `seihou validate-module` (2026-03-06)
+- [x] M3: Update user documentation (module-authoring.md prompts section) (2026-03-06)
 
 
 ## Surprises & Discoveries
@@ -65,7 +65,19 @@ Required prompts enforce non-empty input (as they do today). Optional prompts ac
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All three milestones completed on 2026-03-06.
+
+**What was delivered:**
+- Default values now display in bracket notation for all prompts (required and optional). Users can accept defaults by pressing Enter.
+- Optional variables with prompts are now presented after required resolution succeeds, under an "Optional configuration:" header. Empty input skips the variable.
+- Test fixture (`seihou-core/test/fixtures/prompted-optional/`) demonstrates a module with 1 required and 2 optional prompted variables.
+- User documentation updated in `docs/user/module-authoring.md`.
+
+**Key insight:** The `resolveWithPrompts` function has two distinct success paths — one when initial resolution succeeds and one when required prompts fill in missing values and re-resolution succeeds. Optional prompt logic was needed in both paths. The plan only described the first path; the second was discovered during testing.
+
+**No schema changes required.** The existing `Prompt` and `VarDecl` types already supported optional prompts — the gap was entirely in the resolution engine.
+
+**Test coverage:** 10 new pure tests (4 for default display in M1, 6 for optional prompt flow in M2) plus fixture validation in M3.
 
 
 ## Context and Orientation
