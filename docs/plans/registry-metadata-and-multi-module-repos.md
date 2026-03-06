@@ -78,7 +78,17 @@ Or, if the repo has no registry file, the current single-module behavior continu
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Milestones 1–5 are implemented. The core feature — multi-module repo support via `seihou-registry.dhall` — is fully functional:
+
+- **Registry types and decoders** (M1): `Registry`, `RegistryEntry`, `RepoContents` types in `seihou-core/src/Seihou/Core/Registry.hs`. Dhall decoders and `evalRegistryFromFile` in `Seihou.Dhall.Eval`. 5 unit tests.
+- **Discovery logic** (M2): `discoverRepoContents` (registry-first with fallback) and `validateRegistry`. 9 unit tests. Circular dependency resolved by parameterizing the eval function.
+- **Install command** (M3): `seihou install` now handles both single-module and multi-module repos. New `--module` and `--all` flags. Interactive selection prompt. `.seihou-origin.json` provenance metadata.
+- **Browse command** (M4): `seihou browse <url>` for read-only inspection with `--tag` filtering.
+- **List enhancement** (M5): `seihou list` reads `.seihou-origin.json` and shows `(installed: RepoName)` for registry-sourced modules.
+
+Remaining: integration tests for install and browse (M3/M4 test items), and end-to-end manual testing with a real multi-module git repo. These require setting up a test git repository, which is best done as a follow-up task.
+
+All 535 existing tests pass with no regressions.
 
 
 ## Context and Orientation
