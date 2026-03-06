@@ -94,6 +94,6 @@ spec = do
             writeConfigValue ScopeLocal "local.key" "l"
             writeConfigValue ScopeGlobal "global.key" "g"
             writeConfigValue (ScopeNamespace "ns") "ns.key" "n"
-      cwLocal finalState `shouldBe` Map.fromList [("local.key", "l")]
-      cwGlobal finalState `shouldBe` Map.fromList [("global.key", "g")]
-      Map.lookup "ns" (cwNamespaces finalState) `shouldBe` Just (Map.fromList [("ns.key", "n")])
+      finalState.cwLocal `shouldBe` Map.fromList [("local.key", "l")]
+      finalState.cwGlobal `shouldBe` Map.fromList [("global.key", "g")]
+      Map.lookup "ns" (finalState.cwNamespaces) `shouldBe` Just (Map.fromList [("ns.key", "n")])

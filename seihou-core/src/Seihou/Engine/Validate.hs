@@ -88,14 +88,14 @@ buildReport lint baseDir m = do
 -- | Whether the report contains any errors (DiagError with non-empty details).
 reportHasErrors :: ValidateReport -> Bool
 reportHasErrors report =
-  not (reportDhallOk report)
-    || any (\c -> diagSeverity c == DiagError && not (null (diagDetails c))) (reportChecks report)
+  not report.reportDhallOk
+    || any (\c -> c.diagSeverity == DiagError && not (null c.diagDetails)) report.reportChecks
 
 -- | Render the report as plain text (no ANSI codes).
 renderReportPlain :: ValidateReport -> Text
 renderReportPlain report =
   T.unlines $
-    [ "Validating module at " <> T.pack (reportPath report) <> "...",
+    [ "Validating module at " <> T.pack report.reportPath <> "...",
       ""
     ]
       ++ dhallLine
@@ -104,46 +104,46 @@ renderReportPlain report =
       ++ [""]
       ++ [resultLine]
   where
-    m = reportModule report
+    m = report.reportModule
 
     dhallLine =
-      if reportDhallOk report
+      if report.reportDhallOk
         then ["  \x2713 module.dhall evaluates successfully"]
         else
           ["  \x2717 module.dhall failed to evaluate"]
-            ++ case reportDhallError report of
+            ++ case report.reportDhallError of
               Just errText -> ["      " <> errText]
               Nothing -> []
 
     summaryLines =
-      if reportDhallOk report
+      if report.reportDhallOk
         then
-          [ "  \x2713 Module name: " <> unModuleName (moduleName m),
-            "  \x2713 " <> T.pack (show (length (moduleVars m))) <> " variables declared",
-            "  \x2713 " <> T.pack (show (length (modulePrompts m))) <> " prompts defined",
-            "  \x2713 " <> T.pack (show (length (moduleSteps m))) <> " steps defined"
+          [ "  \x2713 Module name: " <> m.name.unModuleName,
+            "  \x2713 " <> T.pack (show (length m.vars)) <> " variables declared",
+            "  \x2713 " <> T.pack (show (length m.prompts)) <> " prompts defined",
+            "  \x2713 " <> T.pack (show (length m.steps)) <> " steps defined"
           ]
         else []
 
-    checkLines = concatMap renderCheck (reportChecks report)
+    checkLines = concatMap renderCheck report.reportChecks
 
     renderCheck c
-      | null (diagDetails c) =
-          ["  \x2713 " <> diagLabel c]
-      | diagSeverity c == DiagWarning =
-          ("  \x26A0 " <> diagLabel c) : map (\d -> "      " <> d) (diagDetails c)
+      | null c.diagDetails =
+          ["  \x2713 " <> c.diagLabel]
+      | c.diagSeverity == DiagWarning =
+          ("  \x26A0 " <> c.diagLabel) : map (\d -> "      " <> d) c.diagDetails
       | otherwise =
-          ("  \x2717 " <> diagLabel c) : map (\d -> "      " <> d) (diagDetails c)
+          ("  \x2717 " <> c.diagLabel) : map (\d -> "      " <> d) c.diagDetails
 
     errorCount =
       length
         [ ()
-        | c <- reportChecks report,
-          diagSeverity c == DiagError,
-          not (null (diagDetails c))
+        | c <- report.reportChecks,
+          c.diagSeverity == DiagError,
+          not (null c.diagDetails)
         ]
 
-    dhallFailed = not (reportDhallOk report)
+    dhallFailed = not report.reportDhallOk
 
     totalErrors = errorCount + (if dhallFailed then 1 else 0)
 
@@ -151,7 +151,7 @@ renderReportPlain report =
       | totalErrors > 0 =
           T.pack (show totalErrors) <> " error(s) found. Module is invalid."
       | otherwise =
-          "Module '" <> unModuleName (moduleName m) <> "' is valid."
+          "Module '" <> m.name.unModuleName <> "' is valid."
 
 -- Lint checks
 
@@ -160,40 +160,40 @@ lintUnusedVars :: Module -> [Text]
 lintUnusedVars m =
   let destRefs =
         Set.fromList $
-          concatMap (extractPlaceholders . stepDest) (moduleSteps m)
+          concatMap (extractPlaceholders . (.dest)) m.steps
       exportRefs =
         Set.fromList $
-          map (unVarName . exportVar) (moduleExports m)
+          map (.var.unVarName) m.exports
       promptRefs =
         Set.fromList $
-          map (unVarName . promptVar) (modulePrompts m)
+          map (.var.unVarName) m.prompts
       allRefs = Set.unions [destRefs, exportRefs, promptRefs]
    in mapMaybe
         ( \v ->
-            let name = unVarName (varName v)
-             in if Set.member name allRefs
+            let name' = v.name.unVarName
+             in if Set.member name' allRefs
                   then Nothing
-                  else Just ("variable '" <> name <> "' is declared but never referenced")
+                  else Just ("variable '" <> name' <> "' is declared but never referenced")
         )
-        (moduleVars m)
+        m.vars
 
 -- | Required variables that have no corresponding prompt.
 lintRequiredWithoutPrompt :: Module -> [Text]
 lintRequiredWithoutPrompt m =
-  let promptedVars = Set.fromList $ map (unVarName . promptVar) (modulePrompts m)
+  let promptedVars = Set.fromList $ map (.var.unVarName) m.prompts
    in mapMaybe
         ( \v ->
-            let name = unVarName (varName v)
-             in if varRequired v && not (Set.member name promptedVars)
-                  then Just ("required variable '" <> name <> "' has no prompt")
+            let name' = v.name.unVarName
+             in if v.required && not (Set.member name' promptedVars)
+                  then Just ("required variable '" <> name' <> "' has no prompt")
                   else Nothing
         )
-        (moduleVars m)
+        m.vars
 
 -- | Steps that write to the same destination (excluding patch ops).
 lintDuplicateDestinations :: Module -> [Text]
 lintDuplicateDestinations m =
-  let nonPatchDests = [stepDest s | s <- moduleSteps m, isNothing (stepPatch s)]
+  let nonPatchDests = [s.dest | s <- m.steps, isNothing s.patch]
       dupes = findDuplicates Set.empty Set.empty nonPatchDests
    in map (\d -> "multiple steps write to '" <> d <> "'") dupes
 
@@ -208,19 +208,19 @@ findDuplicates seen reported (x : xs)
 lintEmptyChoices :: Module -> [Text]
 lintEmptyChoices m =
   mapMaybe
-    ( \v -> case varType v of
-        VTChoice [] -> Just ("variable '" <> unVarName (varName v) <> "' has an empty choice list")
+    ( \v -> case v.type_ of
+        VTChoice [] -> Just ("variable '" <> v.name.unVarName <> "' has an empty choice list")
         _ -> Nothing
     )
-    (moduleVars m)
+    m.vars
 
 -- | Variables without a description.
 lintMissingDescriptions :: Module -> [Text]
 lintMissingDescriptions m =
   mapMaybe
     ( \v ->
-        if isNothing (varDescription v)
-          then Just ("variable '" <> unVarName (varName v) <> "' has no description")
+        if isNothing v.description
+          then Just ("variable '" <> v.name.unVarName <> "' has no description")
           else Nothing
     )
-    (moduleVars m)
+    m.vars

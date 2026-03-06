@@ -30,21 +30,21 @@ runConsolePure inputs = reinterpret (runState (ConsoleState inputs [] [])) handl
   where
     handler :: (State ConsoleState :> es') => EffectHandler Console es'
     handler _ = \case
-      PutText msg -> modify (\s -> s {consoleOutputs = consoleOutputs s ++ [msg]})
-      PutError msg -> modify (\s -> s {consoleErrors = consoleErrors s ++ [msg]})
+      PutText msg -> modify @ConsoleState (\s -> s {consoleOutputs = s.consoleOutputs ++ [msg]})
+      PutError msg -> modify @ConsoleState (\s -> s {consoleErrors = s.consoleErrors ++ [msg]})
       GetLine -> do
-        s <- get
-        case consoleInputs s of
+        s <- get @ConsoleState
+        case s.consoleInputs of
           [] -> pure ""
           (x : xs) -> do
-            modify (\st -> st {consoleInputs = xs})
+            modify @ConsoleState (\st -> st {consoleInputs = xs})
             pure x
       Confirm _prompt -> do
-        s <- get
-        case consoleInputs s of
+        s <- get @ConsoleState
+        case s.consoleInputs of
           [] -> pure False
           (x : xs) -> do
-            modify (\st -> st {consoleInputs = xs})
+            modify @ConsoleState (\st -> st {consoleInputs = xs})
             pure (x `elem` ["y", "yes"])
       IsInteractive -> pure True
 
@@ -54,8 +54,8 @@ runConsolePureNonInteractive = reinterpret (runState emptyConsoleState) handler
   where
     handler :: (State ConsoleState :> es') => EffectHandler Console es'
     handler _ = \case
-      PutText msg -> modify (\s -> s {consoleOutputs = consoleOutputs s ++ [msg]})
-      PutError msg -> modify (\s -> s {consoleErrors = consoleErrors s ++ [msg]})
+      PutText msg -> modify @ConsoleState (\s -> s {consoleOutputs = s.consoleOutputs ++ [msg]})
+      PutError msg -> modify @ConsoleState (\s -> s {consoleErrors = s.consoleErrors ++ [msg]})
       GetLine -> pure ""
       Confirm _prompt -> pure False
       IsInteractive -> pure False

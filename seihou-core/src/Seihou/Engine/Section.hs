@@ -22,13 +22,13 @@ data SectionMarker = SectionMarker
 -- Result: @"# --- seihou:haskell-base ---\\n"@
 renderSectionOpen :: SectionMarker -> Text
 renderSectionOpen marker =
-  sectionPrefix marker <> " --- seihou:" <> unModuleName (sectionModule marker) <> " ---\n"
+  marker.sectionPrefix <> " --- seihou:" <> marker.sectionModule.unModuleName <> " ---\n"
 
 -- | Render a closing section marker line.
 -- Result: @"# --- /seihou:haskell-base ---\\n"@
 renderSectionClose :: SectionMarker -> Text
 renderSectionClose marker =
-  sectionPrefix marker <> " --- /seihou:" <> unModuleName (sectionModule marker) <> " ---\n"
+  marker.sectionPrefix <> " --- /seihou:" <> marker.sectionModule.unModuleName <> " ---\n"
 
 -- | Wrap content in section markers.
 wrapInSection :: SectionMarker -> Text -> Text

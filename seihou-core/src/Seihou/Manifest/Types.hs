@@ -14,7 +14,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Core.Types
-import Seihou.Prelude
+import Seihou.Prelude hiding ((.=))
 
 -- | Current manifest schema version.
 currentManifestVersion :: Int
@@ -24,11 +24,11 @@ currentManifestVersion = 1
 emptyManifest :: UTCTime -> Manifest
 emptyManifest now =
   Manifest
-    { manifestVersion = currentManifestVersion,
-      manifestGenAt = now,
-      manifestModules = [],
-      manifestVars = Map.empty,
-      manifestFiles = Map.empty
+    { version = currentManifestVersion,
+      genAt = now,
+      modules = [],
+      vars = Map.empty,
+      files = Map.empty
     }
 
 -- | Encode a manifest to JSON bytes.
@@ -44,11 +44,11 @@ manifestFromJSON = Aeson.eitherDecode
 instance ToJSON Manifest where
   toJSON m =
     Aeson.object
-      [ "version" .= manifestVersion m,
-        "generatedAt" .= manifestGenAt m,
-        "modules" .= manifestModules m,
-        "variables" .= varsToJSON (manifestVars m),
-        "files" .= filesToJSON (manifestFiles m)
+      [ "version" .= m.version,
+        "generatedAt" .= m.genAt,
+        "modules" .= m.modules,
+        "variables" .= varsToJSON m.vars,
+        "files" .= filesToJSON m.files
       ]
 
 instance FromJSON Manifest where
@@ -66,9 +66,9 @@ instance FromJSON Manifest where
 instance ToJSON AppliedModule where
   toJSON am =
     Aeson.object
-      [ "name" .= unModuleName (appliedName am),
-        "source" .= appliedSource am,
-        "appliedAt" .= appliedAt am
+      [ "name" .= am.name.unModuleName,
+        "source" .= am.source,
+        "appliedAt" .= am.appliedAt
       ]
 
 instance FromJSON AppliedModule where
@@ -81,10 +81,10 @@ instance FromJSON AppliedModule where
 instance ToJSON FileRecord where
   toJSON fr =
     Aeson.object
-      [ "hash" .= unSHA256 (fileHash fr),
-        "module" .= unModuleName (fileModule fr),
-        "strategy" .= strategyToText (fileStrategy fr),
-        "generatedAt" .= fileGeneratedAt fr
+      [ "hash" .= fr.hash.unSHA256,
+        "module" .= fr.moduleName.unModuleName,
+        "strategy" .= strategyToText fr.strategy,
+        "generatedAt" .= fr.generatedAt
       ]
 
 instance FromJSON FileRecord where
@@ -104,7 +104,7 @@ instance FromJSON SHA256 where
 -- Helpers for VarName-keyed maps
 
 varsToJSON :: Map VarName Text -> Aeson.Value
-varsToJSON = toJSON . Map.mapKeys unVarName
+varsToJSON = toJSON . Map.mapKeys (.unVarName)
 
 varsFromJSON :: Aeson.Value -> Aeson.Parser (Map VarName Text)
 varsFromJSON v = do

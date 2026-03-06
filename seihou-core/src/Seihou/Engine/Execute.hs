@@ -22,8 +22,8 @@ executePlan ::
   ModuleName ->
   UTCTime ->
   Eff es (Map FilePath FileRecord)
-executePlan targetDir ops moduleName now = do
-  records <- mapM (executeOp targetDir moduleName now) ops
+executePlan targetDir ops moduleName' now = do
+  records <- mapM (executeOp targetDir moduleName' now) ops
   pure (Map.fromList [(k, v) | Just (k, v) <- records])
 
 -- | Execute a single operation and return a FileRecord if a file was written.
@@ -34,16 +34,16 @@ executeOp ::
   UTCTime ->
   Operation ->
   Eff es (Maybe (FilePath, FileRecord))
-executeOp targetDir moduleName now op = case op of
+executeOp targetDir moduleName' now op = case op of
   WriteFileOp dest content strat -> do
     let fullPath = targetDir </> dest
     writeFileText fullPath content
     let record =
           FileRecord
-            { fileHash = hashContent content,
-              fileModule = moduleName,
-              fileStrategy = strat,
-              fileGeneratedAt = now
+            { hash = hashContent content,
+              moduleName = moduleName',
+              strategy = strat,
+              generatedAt = now
             }
     pure (Just (dest, record))
   CreateDirOp path -> do
@@ -56,10 +56,10 @@ executeOp targetDir moduleName now op = case op of
     writeFileText fullDest content
     let record =
           FileRecord
-            { fileHash = hashContent content,
-              fileModule = moduleName,
-              fileStrategy = Copy,
-              fileGeneratedAt = now
+            { hash = hashContent content,
+              moduleName = moduleName',
+              strategy = Copy,
+              generatedAt = now
             }
     pure (Just (dest, record))
   RunCommandOp _ _ -> do
@@ -80,10 +80,10 @@ executeOp targetDir moduleName now op = case op of
         writeFileText fullPath merged
         let record =
               FileRecord
-                { fileHash = hashContent merged,
-                  fileModule = moduleName,
-                  fileStrategy = strat,
-                  fileGeneratedAt = now
+                { hash = hashContent merged,
+                  moduleName = moduleName',
+                  strategy = strat,
+                  generatedAt = now
                 }
         pure (Just (dest, record))
 
@@ -100,7 +100,7 @@ dryRunPlan ops =
     formatOp (CopyFileOp src dest) = "  copy  " <> T.pack src <> " -> " <> T.pack dest
     formatOp (RunCommandOp cmd _) = "  run   " <> cmd
     formatOp (PatchFileOp dest _ patchOp' _ modName) =
-      "  patch " <> T.pack dest <> " (" <> formatPatchOp patchOp' <> " from " <> unModuleName modName <> ")"
+      "  patch " <> T.pack dest <> " (" <> formatPatchOp patchOp' <> " from " <> modName.unModuleName <> ")"
     formatPatchOp AppendFile = "append-file"
     formatPatchOp PrependFile = "prepend-file"
     formatPatchOp AppendSection = "append-section"

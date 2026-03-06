@@ -51,9 +51,9 @@ renderStatus color manifest tracked = do
 
   -- Applied modules
   TIO.putStrLn "Applied modules:"
-  if null (manifestModules manifest)
+  if null manifest.modules
     then TIO.putStrLn "  (none)"
-    else mapM_ (printModule color) (manifestModules manifest)
+    else mapM_ (printModule color) manifest.modules
   TIO.putStrLn ""
 
   -- Tracked files
@@ -62,13 +62,13 @@ renderStatus color manifest tracked = do
   if null tracked
     then TIO.putStrLn "  (none)"
     else do
-      let maxPathLen = maximum (map (length . trackedPath) tracked)
-          maxModLen = maximum (map (T.length . unModuleName . trackedModule) tracked)
+      let maxPathLen = maximum (map (length . (.path)) tracked)
+          maxModLen = maximum (map (T.length . (.unModuleName) . (.moduleName)) tracked)
       mapM_ (printTrackedFile color maxPathLen maxModLen) tracked
   TIO.putStrLn ""
 
   -- Variables
-  let varCount = Map.size (manifestVars manifest)
+  let varCount = Map.size manifest.vars
   TIO.putStrLn $ "Variables: " <> T.pack (show varCount) <> " resolved"
 
 -- | Print a single applied module line.
@@ -76,20 +76,20 @@ printModule :: Bool -> AppliedModule -> IO ()
 printModule _color am =
   TIO.putStrLn $
     "  "
-      <> unModuleName (appliedName am)
+      <> am.name.unModuleName
       <> "    (applied "
-      <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d" (appliedAt am))
+      <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d" am.appliedAt)
       <> ")"
 
 -- | Print a single tracked file line with status.
 printTrackedFile :: Bool -> Int -> Int -> TrackedFile -> IO ()
 printTrackedFile color maxPathLen maxModLen tf = do
-  let path = T.pack (trackedPath tf)
-      modName = unModuleName (trackedModule tf)
+  let path = T.pack tf.path
+      modName = tf.moduleName.unModuleName
       paddedPath = path <> T.replicate (maxPathLen - T.length path + 3) " "
       paddedMod = modName <> T.replicate (maxModLen - T.length modName + 3) " "
-      label = statusLabel (trackedStatus tf)
-      colorLabel = if color then statusColor (trackedStatus tf) label else label
+      label = statusLabel tf.status
+      colorLabel = if color then statusColor tf.status label else label
   TIO.putStrLn $ "  " <> paddedPath <> paddedMod <> colorLabel
 
 -- | Human-readable label for a file status.

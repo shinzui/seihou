@@ -50,9 +50,9 @@ coerceValue name (VTChoice options) t
 -- | Validate a resolved value against its declaration's validation constraint.
 validateVarValue :: VarDecl -> VarValue -> Either VarError ()
 validateVarValue decl val =
-  case varValidation decl of
+  case decl.validation of
     Nothing -> Right ()
-    Just v -> checkValidation (varName decl) v val
+    Just v -> checkValidation decl.name v val
 
 checkValidation :: VarName -> Validation -> VarValue -> Either VarError ()
 checkValidation name (ValPattern pat) (VText t) =
@@ -140,8 +140,8 @@ resolveVariables decls cliOverrides envVars namespace localConfig nsConfig globa
   where
     resolveOne :: VarDecl -> Either VarError (Maybe (VarName, ResolvedVar))
     resolveOne decl =
-      let name = varName decl
-          ty = varType decl
+      let name = decl.name
+          ty = decl.type_
        in case lookupCLI name ty of
             Just result -> fmap Just (result >>= validateAndWrap decl)
             Nothing -> case lookupEnv name ty of
@@ -152,11 +152,11 @@ resolveVariables decls cliOverrides envVars namespace localConfig nsConfig globa
                   Just result -> fmap Just (result >>= validateAndWrap decl)
                   Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
                     Just result -> fmap Just (result >>= validateAndWrap decl)
-                    Nothing -> case varDefault decl of
+                    Nothing -> case decl.default_ of
                       Just defVal ->
                         fmap Just (validateAndWrap decl (defVal, FromDefault))
                       Nothing
-                        | varRequired decl -> Left (MissingRequiredVar name)
+                        | decl.required -> Left (MissingRequiredVar name)
                         | otherwise -> Right Nothing
 
     lookupCLI :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
@@ -193,11 +193,11 @@ resolveVariables decls cliOverrides envVars namespace localConfig nsConfig globa
         Left err -> Left err
         Right () ->
           Right
-            ( varName decl,
+            ( decl.name,
               ResolvedVar
-                { resolvedValue = val,
-                  resolvedSource = source,
-                  resolvedDecl = decl
+                { value = val,
+                  source = source,
+                  decl = decl
                 }
             )
 
@@ -218,14 +218,14 @@ formatExplain resolved =
 
     -- Calculate column widths for alignment
     maxNameLen = maximum (0 : map (\(VarName n, _) -> T.length n) entries)
-    maxValueLen = maximum (0 : map (\(_, rv) -> T.length (showValue (resolvedValue rv))) entries)
+    maxValueLen = maximum (0 : map (\(_, rv) -> T.length (showValue rv.value)) entries)
 
     formatOne :: (VarName, ResolvedVar) -> Text
-    formatOne (VarName name, rv) =
-      let valText = showValue (resolvedValue rv)
-          namePad = T.replicate (maxNameLen - T.length name) " "
+    formatOne (VarName n, rv) =
+      let valText = showValue rv.value
+          namePad = T.replicate (maxNameLen - T.length n) " "
           valPad = T.replicate (maxValueLen - T.length valText) " "
-       in "  " <> name <> namePad <> " = " <> valText <> valPad <> "  " <> showSource (resolvedSource rv)
+       in "  " <> n <> namePad <> " = " <> valText <> valPad <> "  " <> showSource rv.source
 
     showValue :: VarValue -> Text
     showValue (VText t) = "\"" <> t <> "\""
@@ -249,18 +249,18 @@ formatDeclarations :: [VarDecl] -> Text
 formatDeclarations decls =
   T.unlines (map formatOne decls)
   where
-    maxNameLen = maximum (0 : map (T.length . unVarName . varName) decls)
+    maxNameLen = maximum (0 : map (\d -> T.length d.name.unVarName) decls)
 
     formatOne :: VarDecl -> Text
-    formatOne decl =
-      let VarName name = varName decl
-          namePad = T.replicate (maxNameLen - T.length name) " "
-          valText = case varDefault decl of
+    formatOne d =
+      let VarName n = d.name
+          namePad = T.replicate (maxNameLen - T.length n) " "
+          valText = case d.default_ of
             Nothing
-              | varRequired decl -> "(required, no default)"
+              | d.required -> "(required, no default)"
               | otherwise -> "(optional, no default)"
             Just v -> showDeclValue v
-       in "  " <> name <> namePad <> " = " <> valText
+       in "  " <> n <> namePad <> " = " <> valText
 
     showDeclValue :: VarValue -> Text
     showDeclValue (VText t) = "\"" <> t <> "\""
@@ -286,15 +286,15 @@ diagnoseResolution ::
 diagnoseResolution resolved decls localConfig nsConfig globalConfig =
   (unusedConfigKeys, unresolvedOptional)
   where
-    declaredNames = Set.fromList (map varName decls)
+    declaredNames = Set.fromList (map (.name) decls)
     allConfigKeys =
       Set.fromList $
         Map.keys localConfig ++ Map.keys nsConfig ++ Map.keys globalConfig
     unusedConfigKeys =
       Set.toAscList (allConfigKeys `Set.difference` declaredNames)
     unresolvedOptional =
-      [ varName d
+      [ d.name
       | d <- decls,
-        not (varRequired d),
-        not (Map.member (varName d) resolved)
+        not d.required,
+        not (Map.member d.name resolved)
       ]

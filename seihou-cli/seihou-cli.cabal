@@ -6,7 +6,13 @@ build-type: Simple
 
 library seihou-cli-internal
   default-language: GHC2024
-  default-extensions: OverloadedStrings
+  default-extensions:
+    DuplicateRecordFields
+    NoFieldSelectors
+    OverloadedLabels
+    OverloadedRecordDot
+    OverloadedStrings
+
   hs-source-dirs: src
   visibility: private
   exposed-modules:
@@ -30,7 +36,13 @@ library seihou-cli-internal
 
 executable seihou
   default-language: GHC2024
-  default-extensions: OverloadedStrings
+  default-extensions:
+    DuplicateRecordFields
+    NoFieldSelectors
+    OverloadedLabels
+    OverloadedRecordDot
+    OverloadedStrings
+
   hs-source-dirs: src
   main-is: Main.hs
   other-modules:
@@ -65,7 +77,13 @@ executable seihou
 test-suite seihou-cli-test
   type: exitcode-stdio-1.0
   default-language: GHC2024
-  default-extensions: OverloadedStrings
+  default-extensions:
+    DuplicateRecordFields
+    NoFieldSelectors
+    OverloadedLabels
+    OverloadedRecordDot
+    OverloadedStrings
+
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:

@@ -21,11 +21,11 @@ modName2 = ModuleName "other-module"
 emptyDiff :: DiffResult
 emptyDiff =
   DiffResult
-    { diffNew = [],
-      diffModified = [],
-      diffUnchanged = [],
-      diffConflict = [],
-      diffOrphaned = []
+    { new = [],
+      modified = [],
+      unchanged = [],
+      conflicts = [],
+      orphaned = []
     }
 
 spec :: Spec
@@ -39,55 +39,55 @@ spec = do
             ]
           result = buildPreview ops Nothing Map.empty
       length result `shouldBe` 3
-      previewStatus (result !! 0) `shouldBe` FsNew
-      previewStatus (result !! 1) `shouldBe` FsNew
-      previewStatus (result !! 2) `shouldBe` FsNew
+      (result !! 0).previewStatus `shouldBe` FsNew
+      (result !! 1).previewStatus `shouldBe` FsNew
+      (result !! 2).previewStatus `shouldBe` FsNew
 
     it "classifies a new file as FsNew" $ do
       let ops = [WriteFileOp "README.md" "# Hello" Template]
-          diff = emptyDiff {diffNew = [PlannedFile "README.md" modName "# Hello"]}
+          diff = emptyDiff {new = [PlannedFile "README.md" modName "# Hello"]}
           result = buildPreview ops (Just diff) Map.empty
       length result `shouldBe` 1
-      previewStatus (head result) `shouldBe` FsNew
+      (head result).previewStatus `shouldBe` FsNew
 
     it "classifies a modified file as FsModified" $ do
       let ops = [WriteFileOp "README.md" "# Updated" Template]
-          diff = emptyDiff {diffModified = [ModifiedFile "README.md" modName (SHA256 "old") "# Updated"]}
+          diff = emptyDiff {modified = [ModifiedFile "README.md" modName (SHA256 "old") "# Updated"]}
           result = buildPreview ops (Just diff) Map.empty
       length result `shouldBe` 1
-      previewStatus (head result) `shouldBe` FsModified
+      (head result).previewStatus `shouldBe` FsModified
 
     it "classifies an unchanged file as FsUnchanged" $ do
       let ops = [WriteFileOp "README.md" "# Same" Template]
-          diff = emptyDiff {diffUnchanged = ["README.md"]}
+          diff = emptyDiff {unchanged = ["README.md"]}
           result = buildPreview ops (Just diff) Map.empty
       length result `shouldBe` 1
-      previewStatus (head result) `shouldBe` FsUnchanged
+      (head result).previewStatus `shouldBe` FsUnchanged
 
     it "classifies a conflicting file as FsConflict" $ do
       let ops = [WriteFileOp "README.md" "# New" Template]
           diff =
             emptyDiff
-              { diffConflict =
+              { conflicts =
                   [ ConflictFile
-                      { conflictPath = "README.md",
-                        conflictModule = modName,
-                        conflictManifest = SHA256 "man",
-                        conflictDisk = SHA256 "disk",
-                        conflictPlan = "# New"
+                      { path = "README.md",
+                        moduleName = modName,
+                        manifestHash = SHA256 "man",
+                        diskHash = SHA256 "disk",
+                        planContent = "# New"
                       }
                   ]
               }
           result = buildPreview ops (Just diff) Map.empty
       length result `shouldBe` 1
-      previewStatus (head result) `shouldBe` FsConflict
+      (head result).previewStatus `shouldBe` FsConflict
 
     it "classifies an orphaned file as FsOrphaned" $ do
       let ops = [WriteFileOp "other.txt" "content" Template]
           diff =
             emptyDiff
-              { diffNew = [PlannedFile "other.txt" modName "content"],
-                diffOrphaned = [OrphanedFile "old.txt" modName]
+              { new = [PlannedFile "other.txt" modName "content"],
+                orphaned = [OrphanedFile "old.txt" modName]
               }
           result = buildPreview ops (Just diff) Map.empty
       -- One file preview + one orphan preview
@@ -103,8 +103,8 @@ spec = do
       let ops = [WriteFileOp "reused.txt" "content" Template]
           diff =
             emptyDiff
-              { diffNew = [PlannedFile "reused.txt" modName "content"],
-                diffOrphaned = [OrphanedFile "reused.txt" modName2]
+              { new = [PlannedFile "reused.txt" modName "content"],
+                orphaned = [OrphanedFile "reused.txt" modName2]
               }
           result = buildPreview ops (Just diff) Map.empty
       -- Only the file preview, orphan is suppressed because path matches an operation
@@ -159,7 +159,7 @@ spec = do
               WriteFileOp "d.txt" "" Structured
             ]
           result = buildPreview ops Nothing Map.empty
-      map previewAnnotation (filter isFilePreview result)
+      map (.previewAnnotation) (filter isFilePreview result)
         `shouldBe` ["copy", "template", "dhall-text", "structured"]
 
   describe "renderPreviewPlain" $ do
@@ -199,7 +199,7 @@ spec = do
   describe "formatPlanView" $ do
     it "includes header with module names" $ do
       let preview = [FilePreview FsNew "README.md" "template" (Just modName)]
-          diff = emptyDiff {diffNew = [PlannedFile "README.md" modName "# Hello"]}
+          diff = emptyDiff {new = [PlannedFile "README.md" modName "# Hello"]}
           rendered = formatPlanView [modName] Map.empty preview diff
       T.isInfixOf "Generation Plan (test-module):" rendered `shouldBe` True
 
@@ -225,8 +225,8 @@ spec = do
     it "includes summary with file and conflict counts" $ do
       let diff =
             emptyDiff
-              { diffNew = [PlannedFile "a.txt" modName ""],
-                diffModified = [ModifiedFile "b.txt" modName (SHA256 "old") "new"]
+              { new = [PlannedFile "a.txt" modName ""],
+                modified = [ModifiedFile "b.txt" modName (SHA256 "old") "new"]
               }
           rendered = formatPlanView [modName] Map.empty [] diff
       T.isInfixOf "2 files to write, 0 conflicts" rendered `shouldBe` True

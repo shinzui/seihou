@@ -76,7 +76,7 @@ spec = do
       let (_, fs) = runPure emptyFS $ do
             writeFileText "a.txt" "aaa"
             writeFileText "b.txt" "bbb"
-      Map.size (pureFiles fs) `shouldBe` 2
+      Map.size fs.files `shouldBe` 2
 
     it "getCurrentDirectory returns /pure-fs" $ do
       let (cwd, _) = runPure emptyFS getCurrentDirectory

@@ -17,61 +17,77 @@ tests = testSpec "Seihou.Engine.Validate" spec
 goodModule :: Module
 goodModule =
   Module
-    { moduleName = "test-module",
-      moduleDescription = Just "A test module",
-      moduleVars =
+    { name = "test-module",
+      description = Just "A test module",
+      vars =
         [ VarDecl
-            { varName = "project.name",
-              varType = VTText,
-              varDefault = Nothing,
-              varDescription = Just "Project name",
-              varRequired = True,
-              varValidation = Nothing
+            { name = "project.name",
+              type_ = VTText,
+              default_ = Nothing,
+              description = Just "Project name",
+              required = True,
+              validation = Nothing
             }
         ],
-      moduleExports = [VarExport {exportVar = "project.name", exportAs = Nothing}],
-      modulePrompts = [Prompt {promptVar = "project.name", promptText = "Name?", promptWhen = Nothing, promptChoices = Nothing}],
-      moduleSteps =
+      exports = [VarExport {var = "project.name", alias = Nothing}],
+      prompts = [Prompt {var = "project.name", text = "Name?", condition = Nothing, choices = Nothing}],
+      steps =
         [ Step
-            { stepStrategy = Template,
-              stepSrc = "README.md.tpl",
-              stepDest = "README.md",
-              stepWhen = Nothing,
-              stepPatch = Nothing
+            { strategy = Template,
+              src = "README.md.tpl",
+              dest = "README.md",
+              condition = Nothing,
+              patch = Nothing
             }
         ],
-      moduleCommands = [],
-      moduleDependencies = []
+      commands = [],
+      dependencies = []
     }
 
 -- | A module with multiple validation errors.
 badModule :: Module
 badModule =
   Module
-    { moduleName = "BadName",
-      moduleDescription = Nothing,
-      moduleVars =
+    { name = "BadName",
+      description = Nothing,
+      vars =
         [ VarDecl "x" VTText Nothing Nothing True Nothing,
           VarDecl "x" VTBool Nothing Nothing False Nothing
         ],
-      moduleExports = [VarExport {exportVar = "nonexistent", exportAs = Nothing}],
-      modulePrompts = [Prompt {promptVar = "undeclared", promptText = "?", promptWhen = Nothing, promptChoices = Nothing}],
-      moduleSteps = [Step Template "missing.tpl" "/absolute/path" Nothing Nothing],
-      moduleCommands = [],
-      moduleDependencies = []
+      exports = [VarExport {var = "nonexistent", alias = Nothing}],
+      prompts = [Prompt {var = "undeclared", text = "?", condition = Nothing, choices = Nothing}],
+      steps = [Step Template "missing.tpl" "/absolute/path" Nothing Nothing],
+      commands = [],
+      dependencies = []
     }
+
+-- | Helper to update Module fields without ambiguity.
+withVars :: [VarDecl] -> Module -> Module
+withVars v m = Module m.name m.description v m.exports m.prompts m.steps m.commands m.dependencies
+
+withSteps :: [Step] -> Module -> Module
+withSteps s m = Module m.name m.description m.vars m.exports m.prompts s m.commands m.dependencies
+
+withPrompts :: [Prompt] -> Module -> Module
+withPrompts p m = Module m.name m.description m.vars m.exports p m.steps m.commands m.dependencies
+
+withCommands :: [Command] -> Module -> Module
+withCommands c m = Module m.name m.description m.vars m.exports m.prompts m.steps c m.dependencies
+
+withVarsAndPrompts :: [VarDecl] -> [Prompt] -> Module -> Module
+withVarsAndPrompts v p m = Module m.name m.description v m.exports p m.steps m.commands m.dependencies
 
 -- | Helper: check if any DiagCheck has the given label and non-empty details.
 hasFailedCheck :: T.Text -> [DiagCheck] -> Bool
-hasFailedCheck label = any (\c -> diagLabel c == label && not (null (diagDetails c)))
+hasFailedCheck label = any (\c -> c.diagLabel == label && not (null (c.diagDetails)))
 
 -- | Helper: check if any DiagCheck has the given label and empty details (pass).
 hasPassedCheck :: T.Text -> [DiagCheck] -> Bool
-hasPassedCheck label = any (\c -> diagLabel c == label && null (diagDetails c))
+hasPassedCheck label = any (\c -> c.diagLabel == label && null (c.diagDetails))
 
 -- | Helper: count checks with non-empty details of a given severity.
 countFailures :: DiagSeverity -> [DiagCheck] -> Int
-countFailures sev = length . filter (\c -> diagSeverity c == sev && not (null (diagDetails c)))
+countFailures sev = length . filter (\c -> c.diagSeverity == sev && not (null (c.diagDetails)))
 
 spec :: Spec
 spec = do
@@ -81,52 +97,52 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport False tmpDir goodModule
-        reportDhallOk report `shouldBe` True
+        report.reportDhallOk `shouldBe` True
         reportHasErrors report `shouldBe` False
-        countFailures DiagError (reportChecks report) `shouldBe` 0
+        countFailures DiagError report.reportChecks `shouldBe` 0
 
     it "detects module name format errors" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Module name format" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Module name format" report.reportChecks `shouldBe` True
 
     it "detects duplicate variable names" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Unique variable names" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Unique variable names" report.reportChecks `shouldBe` True
 
     it "detects export referencing undeclared variable" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Export references" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Export references" report.reportChecks `shouldBe` True
 
     it "detects prompt referencing undeclared variable" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Prompt references" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Prompt references" report.reportChecks `shouldBe` True
 
     it "detects missing source files" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Source file existence" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Source file existence" report.reportChecks `shouldBe` True
 
     it "detects unsafe step destinations" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Safe step destinations" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Safe step destinations" report.reportChecks `shouldBe` True
 
     it "reports multiple errors at once" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
         reportHasErrors report `shouldBe` True
-        countFailures DiagError (reportChecks report) `shouldSatisfy` (>= 5)
+        countFailures DiagError report.reportChecks `shouldSatisfy` (>= 5)
 
     it "does not include lint checks when lint is False" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport False tmpDir goodModule
-        let hasWarning = any (\c -> diagSeverity c == DiagWarning) (reportChecks report)
+        let hasWarning = any (\c -> c.diagSeverity == DiagWarning) report.reportChecks
         hasWarning `shouldBe` False
 
     it "includes lint checks when lint is True" $ do
@@ -134,7 +150,7 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport True tmpDir goodModule
-        let hasWarning = any (\c -> diagSeverity c == DiagWarning) (reportChecks report)
+        let hasWarning = any (\c -> c.diagSeverity == DiagWarning) report.reportChecks
         hasWarning `shouldBe` True
 
   describe "lint checks" $ do
@@ -143,15 +159,14 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m =
-              goodModule
-                { moduleVars =
-                    [ VarDecl "project.name" VTText Nothing (Just "Name") True Nothing,
-                      VarDecl "unused.var" VTText Nothing (Just "Unused") False Nothing
-                    ]
-                }
+              withVars
+                [ VarDecl "project.name" VTText Nothing (Just "Name") True Nothing,
+                  VarDecl "unused.var" VTText Nothing (Just "Unused") False Nothing
+                ]
+                goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Unused variables" (reportChecks report) `shouldBe` True
-        let details = concatMap diagDetails $ filter (\c -> diagLabel c == "Unused variables") (reportChecks report)
+        hasFailedCheck "Unused variables" report.reportChecks `shouldBe` True
+        let details = concatMap (.diagDetails) $ filter (\c -> c.diagLabel == "Unused variables") report.reportChecks
         any (T.isInfixOf "unused.var") details `shouldBe` True
 
     it "does not flag used variables as unused" $ do
@@ -159,27 +174,26 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport True tmpDir goodModule
-        hasFailedCheck "Unused variables" (reportChecks report) `shouldBe` False
+        hasFailedCheck "Unused variables" report.reportChecks `shouldBe` False
 
     it "detects required variables without prompts" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m =
-              goodModule
-                { moduleVars =
-                    [VarDecl "project.name" VTText Nothing (Just "Name") True Nothing],
-                  modulePrompts = []
-                }
+              withVarsAndPrompts
+                [VarDecl "project.name" VTText Nothing (Just "Name") True Nothing]
+                []
+                goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Required variables without prompts" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Required variables without prompts" report.reportChecks `shouldBe` True
 
     it "does not flag required variables that have prompts" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport True tmpDir goodModule
-        hasFailedCheck "Required variables without prompts" (reportChecks report) `shouldBe` False
+        hasFailedCheck "Required variables without prompts" report.reportChecks `shouldBe` False
 
     it "detects duplicate step destinations" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -187,14 +201,13 @@ spec = do
         writeFile (tmpDir </> "files" </> "a.tpl") "stub"
         writeFile (tmpDir </> "files" </> "b.tpl") "stub"
         let m =
-              goodModule
-                { moduleSteps =
-                    [ Step Template "a.tpl" "out.txt" Nothing Nothing,
-                      Step Template "b.tpl" "out.txt" Nothing Nothing
-                    ]
-                }
+              withSteps
+                [ Step Template "a.tpl" "out.txt" Nothing Nothing,
+                  Step Template "b.tpl" "out.txt" Nothing Nothing
+                ]
+                goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Duplicate step destinations" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Duplicate step destinations" report.reportChecks `shouldBe` True
 
     it "does not flag patch ops as duplicate destinations" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -202,45 +215,42 @@ spec = do
         writeFile (tmpDir </> "files" </> "a.tpl") "stub"
         writeFile (tmpDir </> "files" </> "b.tpl") "stub"
         let m =
-              goodModule
-                { moduleSteps =
-                    [ Step Template "a.tpl" "out.txt" Nothing Nothing,
-                      Step Template "b.tpl" "out.txt" Nothing (Just AppendFile)
-                    ]
-                }
+              withSteps
+                [ Step Template "a.tpl" "out.txt" Nothing Nothing,
+                  Step Template "b.tpl" "out.txt" Nothing (Just AppendFile)
+                ]
+                goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Duplicate step destinations" (reportChecks report) `shouldBe` False
+        hasFailedCheck "Duplicate step destinations" report.reportChecks `shouldBe` False
 
     it "detects empty choice lists" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m =
-              goodModule
-                { moduleVars =
-                    [VarDecl "pick" (VTChoice []) Nothing (Just "Pick") True Nothing]
-                }
+              withVars
+                [VarDecl "pick" (VTChoice []) Nothing (Just "Pick") True Nothing]
+                goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Empty choice lists" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Empty choice lists" report.reportChecks `shouldBe` True
 
     it "detects missing variable descriptions" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m =
-              goodModule
-                { moduleVars =
-                    [VarDecl "project.name" VTText Nothing Nothing True Nothing]
-                }
+              withVars
+                [VarDecl "project.name" VTText Nothing Nothing True Nothing]
+                goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Missing variable descriptions" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Missing variable descriptions" report.reportChecks `shouldBe` True
 
     it "does not flag variables with descriptions" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport True tmpDir goodModule
-        hasFailedCheck "Missing variable descriptions" (reportChecks report) `shouldBe` False
+        hasFailedCheck "Missing variable descriptions" report.reportChecks `shouldBe` False
 
   describe "renderReportPlain" $ do
     it "renders a valid module report with check marks" $ do
@@ -292,12 +302,11 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m =
-              goodModule
-                { moduleVars =
-                    [ VarDecl "project.name" VTText Nothing (Just "Name") True Nothing,
-                      VarDecl "unused" VTText Nothing (Just "Unused") False Nothing
-                    ]
-                }
+              withVars
+                [ VarDecl "project.name" VTText Nothing (Just "Name") True Nothing,
+                  VarDecl "unused" VTText Nothing (Just "Unused") False Nothing
+                ]
+                goodModule
         report <- buildReport True tmpDir m
         let rendered = renderReportPlain report
         T.isInfixOf "\x26A0 Unused variables" rendered `shouldBe` True
@@ -320,12 +329,11 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m =
-              goodModule
-                { moduleVars =
-                    [ VarDecl "project.name" VTText Nothing (Just "Name") True Nothing,
-                      VarDecl "unused" VTText Nothing (Just "Unused") False Nothing
-                    ]
-                }
+              withVars
+                [ VarDecl "project.name" VTText Nothing (Just "Name") True Nothing,
+                  VarDecl "unused" VTText Nothing (Just "Unused") False Nothing
+                ]
+                goodModule
         report <- buildReport True tmpDir m
         reportHasErrors report `shouldBe` False
 
@@ -345,30 +353,30 @@ spec = do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
-        let m = goodModule {moduleCommands = [Command "echo hello" Nothing Nothing]}
+        let m = withCommands [Command "echo hello" Nothing Nothing] goodModule
         report <- buildReport False tmpDir m
-        hasPassedCheck "Command safety" (reportChecks report) `shouldBe` True
+        hasPassedCheck "Command safety" report.reportChecks `shouldBe` True
 
     it "fails for empty command text" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
-        let m = goodModule {moduleCommands = [Command "  " Nothing Nothing]}
+        let m = withCommands [Command "  " Nothing Nothing] goodModule
         report <- buildReport False tmpDir m
-        hasFailedCheck "Command safety" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Command safety" report.reportChecks `shouldBe` True
 
     it "fails for absolute workDir" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
-        let m = goodModule {moduleCommands = [Command "echo hi" (Just "/usr/local") Nothing]}
+        let m = withCommands [Command "echo hi" (Just "/usr/local") Nothing] goodModule
         report <- buildReport False tmpDir m
-        hasFailedCheck "Command safety" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Command safety" report.reportChecks `shouldBe` True
 
     it "fails for workDir containing .." $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
-        let m = goodModule {moduleCommands = [Command "echo hi" (Just "../escape") Nothing]}
+        let m = withCommands [Command "echo hi" (Just "../escape") Nothing] goodModule
         report <- buildReport False tmpDir m
-        hasFailedCheck "Command safety" (reportChecks report) `shouldBe` True
+        hasFailedCheck "Command safety" report.reportChecks `shouldBe` True

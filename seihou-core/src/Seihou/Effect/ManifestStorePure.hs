@@ -18,5 +18,5 @@ runManifestStorePure initial = reinterpret (runState initial) handler
   where
     handler :: (State (Maybe Manifest) :> es') => EffectHandler ManifestStore es'
     handler _ = \case
-      ReadManifest -> Right <$> get
+      ReadManifest -> Right <$> get @(Maybe Manifest)
       WriteManifest manifest -> put (Just manifest)

@@ -25,14 +25,14 @@ spec = do
   describe "emptyManifest" $ do
     it "creates a manifest with version 1" $ do
       let m = emptyManifest fixedTime
-      manifestVersion m `shouldBe` currentManifestVersion
-      manifestVersion m `shouldBe` 1
+      m.version `shouldBe` currentManifestVersion
+      m.version `shouldBe` 1
 
     it "creates a manifest with no modules, vars, or files" $ do
       let m = emptyManifest fixedTime
-      manifestModules m `shouldBe` []
-      manifestVars m `shouldBe` Map.empty
-      manifestFiles m `shouldBe` Map.empty
+      m.modules `shouldBe` []
+      m.vars `shouldBe` Map.empty
+      m.files `shouldBe` Map.empty
 
   describe "JSON roundtrip" $ do
     it "roundtrips an empty manifest" $ do
@@ -42,10 +42,10 @@ spec = do
     it "roundtrips a manifest with modules" $ do
       let m =
             (emptyManifest fixedTime)
-              { manifestModules =
+              { modules =
                   [ AppliedModule
-                      { appliedName = ModuleName "haskell-base",
-                        appliedSource = "/home/user/.config/seihou/modules/haskell-base",
+                      { name = ModuleName "haskell-base",
+                        source = "/home/user/.config/seihou/modules/haskell-base",
                         appliedAt = fixedTime
                       }
                   ]
@@ -53,35 +53,40 @@ spec = do
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
     it "roundtrips a manifest with variables" $ do
-      let m =
-            (emptyManifest fixedTime)
-              { manifestVars =
+      let base = emptyManifest fixedTime
+          m =
+            Manifest
+              { version = base.version,
+                genAt = base.genAt,
+                modules = base.modules,
+                vars =
                   Map.fromList
                     [ (VarName "project.name", "my-app"),
                       (VarName "license", "MIT")
-                    ]
+                    ],
+                files = base.files
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
     it "roundtrips a manifest with file records" $ do
       let m =
             (emptyManifest fixedTime)
-              { manifestFiles =
+              { files =
                   Map.fromList
                     [ ( "README.md",
                         FileRecord
-                          { fileHash = SHA256 "abc123",
-                            fileModule = ModuleName "haskell-base",
-                            fileStrategy = Template,
-                            fileGeneratedAt = fixedTime
+                          { hash = SHA256 "abc123",
+                            moduleName = ModuleName "haskell-base",
+                            strategy = Template,
+                            generatedAt = fixedTime
                           }
                       ),
                       ( "my-app.cabal",
                         FileRecord
-                          { fileHash = SHA256 "def456",
-                            fileModule = ModuleName "haskell-base",
-                            fileStrategy = DhallText,
-                            fileGeneratedAt = fixedTime
+                          { hash = SHA256 "def456",
+                            moduleName = ModuleName "haskell-base",
+                            strategy = DhallText,
+                            generatedAt = fixedTime
                           }
                       )
                     ]
@@ -91,18 +96,18 @@ spec = do
     it "roundtrips a full manifest" $ do
       let m =
             Manifest
-              { manifestVersion = 1,
-                manifestGenAt = fixedTime,
-                manifestModules =
+              { version = 1,
+                genAt = fixedTime,
+                modules =
                   [ AppliedModule (ModuleName "haskell-base") "/path/to/module" fixedTime,
                     AppliedModule (ModuleName "nix-flake") "/path/to/nix" fixedTime2
                   ],
-                manifestVars =
+                vars =
                   Map.fromList
                     [ (VarName "project.name", "my-app"),
                       (VarName "project.version", "0.1.0.0")
                     ],
-                manifestFiles =
+                files =
                   Map.fromList
                     [ ( "README.md",
                         FileRecord (SHA256 "aaa") (ModuleName "haskell-base") Template fixedTime
@@ -120,7 +125,7 @@ spec = do
             FileRecord (SHA256 "hash") (ModuleName "mod") s fixedTime
           m =
             (emptyManifest fixedTime)
-              { manifestFiles =
+              { files =
                   Map.fromList
                     (zipWith (\i s -> ("file" <> show i, makeRecord s)) [(1 :: Int) ..] strategies)
               }
@@ -128,7 +133,7 @@ spec = do
 
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
-      let m = (emptyManifest fixedTime) {manifestVersion = 99}
+      let m = (emptyManifest fixedTime) {version = 99}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"
@@ -138,7 +143,7 @@ spec = do
     it "produces a hex-encoded SHA256 digest" $ do
       let h = hashContent "hello world"
       -- SHA256 of "hello world" is a well-known value
-      unSHA256 h `shouldBe` "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+      h.unSHA256 `shouldBe` "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
 
     it "produces different hashes for different content" $ do
       let h1 = hashContent "hello"
@@ -157,4 +162,4 @@ spec = do
     it "handles empty content" $ do
       let h = hashContent ""
       -- SHA256 of empty string is a well-known value
-      unSHA256 h `shouldBe` "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      h.unSHA256 `shouldBe` "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

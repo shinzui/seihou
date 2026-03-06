@@ -13,8 +13,8 @@ import Seihou.Prelude
 
 -- | In-memory filesystem state for testing.
 data PureFS = PureFS
-  { pureFiles :: Map FilePath Text,
-    pureDirs :: Set FilePath
+  { files :: Map FilePath Text,
+    dirs :: Set FilePath
   }
   deriving stock (Eq, Show)
 
@@ -30,40 +30,40 @@ runFilesystemPure initial = reinterpret (runState initial) handler
     handler :: (State PureFS :> es') => EffectHandler Filesystem es'
     handler _ = \case
       ReadFileText path -> do
-        fs <- get
-        case Map.lookup path (pureFiles fs) of
+        fs <- get @PureFS
+        case Map.lookup path fs.files of
           Just content -> pure content
           Nothing -> error ("runFilesystemPure: file not found: " <> path)
       WriteFileText path content -> do
-        modify (\fs -> fs {pureFiles = Map.insert path content (pureFiles fs)})
+        modify @PureFS (\fs -> fs {files = Map.insert path content fs.files})
       CopyFile src dest -> do
-        fs <- get
-        case Map.lookup src (pureFiles fs) of
+        fs <- get @PureFS
+        case Map.lookup src fs.files of
           Just content ->
-            put fs {pureFiles = Map.insert dest content (pureFiles fs)}
+            put fs {files = Map.insert dest content fs.files}
           Nothing -> error ("runFilesystemPure: source file not found: " <> src)
       ListDirectory path -> do
-        fs <- get
+        fs <- get @PureFS
         let prefix = if null path then "" else path <> "/"
             filesInDir =
               [ drop (length prefix) fp
-              | fp <- Map.keys (pureFiles fs),
+              | fp <- Map.keys fs.files,
                 isDirectChild prefix fp
               ]
             dirsInDir =
               [ drop (length prefix) d
-              | d <- Set.toList (pureDirs fs),
+              | d <- Set.toList fs.dirs,
                 isDirectChild prefix d
               ]
         pure (filesInDir <> dirsInDir)
       CreateDirectoryIfMissing _parents path -> do
-        modify (\fs -> fs {pureDirs = Set.insert path (pureDirs fs)})
+        modify @PureFS (\fs -> fs {dirs = Set.insert path fs.dirs})
       DoesFileExist path -> do
-        fs <- get
-        pure (Map.member path (pureFiles fs))
+        fs <- get @PureFS
+        pure (Map.member path fs.files)
       DoesDirectoryExist path -> do
-        fs <- get
-        pure (Set.member path (pureDirs fs))
+        fs <- get @PureFS
+        pure (Set.member path fs.dirs)
       GetCurrentDirectory -> pure "/pure-fs"
 
 -- | Check if a path is a direct child of a prefix directory.

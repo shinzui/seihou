@@ -28,8 +28,8 @@ import System.Process (readProcessWithExitCode)
 
 handleInstall :: InstallOpts -> IO ()
 handleInstall iopts = do
-  let source = installSource iopts
-      name = case installName iopts of
+  let source = iopts.installSource
+      name = case iopts.installName of
         Just n -> T.unpack n
         Nothing -> parseModuleName source
 

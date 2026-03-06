@@ -45,7 +45,7 @@ spec = do
       let ops = [WriteFileOp "hello.txt" "hello world" Template]
           (records, fs) = runExecFS emptyFS ops
       Map.member "hello.txt" records `shouldBe` True
-      Map.lookup "/project/hello.txt" (pureFiles fs) `shouldBe` Just "hello world"
+      Map.lookup "/project/hello.txt" (fs.files) `shouldBe` Just "hello world"
 
     it "creates a directory via CreateDirOp" $ do
       let ops = [CreateDirOp "src"]
@@ -62,19 +62,19 @@ spec = do
           ops = [WriteFileOp "test.txt" content Template]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.txt"
-      fileHash record `shouldBe` hashContent content
+      record.hash `shouldBe` hashContent content
 
     it "produces FileRecord with correct module name" $ do
       let ops = [WriteFileOp "test.txt" "data" Template]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.txt"
-      fileModule record `shouldBe` modName
+      record.moduleName `shouldBe` modName
 
     it "produces FileRecord with correct timestamp" $ do
       let ops = [WriteFileOp "test.txt" "data" Template]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.txt"
-      fileGeneratedAt record `shouldBe` fixedTime
+      record.generatedAt `shouldBe` fixedTime
 
     it "handles multiple operations" $ do
       let ops =
@@ -84,8 +84,8 @@ spec = do
             ]
           (records, fs) = runExecFS emptyFS ops
       Map.size records `shouldBe` 2
-      Map.lookup "/project/README.md" (pureFiles fs) `shouldBe` Just "# Hello"
-      Map.lookup "/project/src/Main.hs" (pureFiles fs) `shouldBe` Just "module Main where"
+      Map.lookup "/project/README.md" (fs.files) `shouldBe` Just "# Hello"
+      Map.lookup "/project/src/Main.hs" (fs.files) `shouldBe` Just "module Main where"
 
     it "skips RunCommandOp" $ do
       let ops = [RunCommandOp "echo hello" Nothing]
@@ -97,38 +97,38 @@ spec = do
           ops = [CopyFileOp "/source/file.txt" "dest.txt"]
           (records, fs) = runExecFS initial ops
       Map.member "dest.txt" records `shouldBe` True
-      Map.lookup "/project/dest.txt" (pureFiles fs) `shouldBe` Just "copied content"
+      Map.lookup "/project/dest.txt" (fs.files) `shouldBe` Just "copied content"
 
     it "records Template strategy in FileRecord" $ do
       let ops = [WriteFileOp "test.txt" "content" Template]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.txt"
-      fileStrategy record `shouldBe` Template
+      record.strategy `shouldBe` Template
 
     it "records Copy strategy in FileRecord" $ do
       let ops = [WriteFileOp "test.txt" "content" Copy]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.txt"
-      fileStrategy record `shouldBe` Copy
+      record.strategy `shouldBe` Copy
 
     it "records DhallText strategy in FileRecord" $ do
       let ops = [WriteFileOp "test.txt" "content" DhallText]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.txt"
-      fileStrategy record `shouldBe` DhallText
+      record.strategy `shouldBe` DhallText
 
     it "records Structured strategy in FileRecord" $ do
       let ops = [WriteFileOp "test.json" "{}" Structured]
           (records, _) = runExecFS emptyFS ops
           record = records Map.! "test.json"
-      fileStrategy record `shouldBe` Structured
+      record.strategy `shouldBe` Structured
 
     it "executes PatchFileOp AppendFile on existing file" $ do
       let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty
           ops = [PatchFileOp "README.md" "extra line\n" AppendFile Template modName]
           (records, fs) = runExecFS initial ops
       Map.member "README.md" records `shouldBe` True
-      let content = pureFiles fs Map.! "/project/README.md"
+      let content = fs.files Map.! "/project/README.md"
       T.isInfixOf "# Title" content `shouldBe` True
       T.isInfixOf "extra line" content `shouldBe` True
 
@@ -137,7 +137,7 @@ spec = do
           ops = [PatchFileOp "README.md" "header\n" PrependFile Template modName]
           (records, fs) = runExecFS initial ops
       Map.member "README.md" records `shouldBe` True
-      let content = pureFiles fs Map.! "/project/README.md"
+      let content = fs.files Map.! "/project/README.md"
       T.isInfixOf "header" content `shouldBe` True
       T.isInfixOf "# Title" content `shouldBe` True
 
@@ -146,7 +146,7 @@ spec = do
           ops = [PatchFileOp "README.md" "section content\n" AppendSection Template modName]
           (records, fs) = runExecFS initial ops
       Map.member "README.md" records `shouldBe` True
-      let content = pureFiles fs Map.! "/project/README.md"
+      let content = fs.files Map.! "/project/README.md"
       T.isInfixOf "# Title" content `shouldBe` True
       T.isInfixOf "seihou:test-module" content `shouldBe` True
       T.isInfixOf "section content" content `shouldBe` True
@@ -155,7 +155,7 @@ spec = do
       let ops = [PatchFileOp "new.txt" "new content\n" AppendFile Template modName]
           (records, fs) = runExecFS emptyFS ops
       Map.member "new.txt" records `shouldBe` True
-      let content = pureFiles fs Map.! "/project/new.txt"
+      let content = fs.files Map.! "/project/new.txt"
       T.isInfixOf "new content" content `shouldBe` True
 
   describe "dryRunPlan" $ do

@@ -27,8 +27,8 @@ formatListOutput color modules searchPaths
         <> T.unlines (map ("  " <>) searchPaths)
   | otherwise =
       let entries = map toEntry modules
-          maxNameLen = maximum (map (T.length . entryName) entries)
-          maxDescLen = maximum (map (T.length . entryDesc) entries)
+          maxNameLen = maximum (map (T.length . (.entryName)) entries)
+          maxDescLen = maximum (map (T.length . (.entryDesc)) entries)
           header = "Available modules:\n"
           fileLines = map (formatEntry color maxNameLen maxDescLen) entries
           n = length modules
@@ -51,19 +51,19 @@ data Entry = Entry
   }
 
 toEntry :: DiscoveredModule -> Entry
-toEntry dm = case discoveredResult dm of
+toEntry dm = case dm.discoveredResult of
   Right m ->
     Entry
-      { entryName = unModuleName (moduleName m),
-        entryDesc = maybe "(no description)" id (moduleDescription m),
-        entrySource = sourceLabel (discoveredSource dm),
+      { entryName = m.name.unModuleName,
+        entryDesc = maybe "(no description)" id m.description,
+        entrySource = sourceLabel dm.discoveredSource,
         entryIsError = False
       }
   Left err ->
     Entry
-      { entryName = dirName (discoveredDir dm),
+      { entryName = dirName dm.discoveredDir,
         entryDesc = "[error: " <> briefError err <> "]",
-        entrySource = sourceLabel (discoveredSource dm),
+        entrySource = sourceLabel dm.discoveredSource,
         entryIsError = True
       }
 
@@ -87,13 +87,13 @@ briefError (CircularDependency _) = "circular dependency"
 
 formatEntry :: Bool -> Int -> Int -> Entry -> Text
 formatEntry color maxNameLen maxDescLen entry =
-  let name = entryName entry
-      desc = entryDesc entry
-      src = entrySource entry
+  let name = entry.entryName
+      desc = entry.entryDesc
+      src = entry.entrySource
       paddedName = name <> T.replicate (maxNameLen - T.length name + 3) " "
       paddedDesc = desc <> T.replicate (maxDescLen - T.length desc + 3) " "
       srcTag = "(" <> src <> ")"
-      colorDesc = if color && entryIsError entry then red desc else desc
+      colorDesc = if color && entry.entryIsError then red desc else desc
       colorSrc = if color then dim srcTag else srcTag
       colorPaddedDesc = colorDesc <> T.replicate (maxDescLen - T.length desc + 3) " "
-   in "  " <> paddedName <> (if color && entryIsError entry then colorPaddedDesc else paddedDesc) <> colorSrc
+   in "  " <> paddedName <> (if color && entry.entryIsError then colorPaddedDesc else paddedDesc) <> colorSrc

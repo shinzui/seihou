@@ -16,7 +16,7 @@ import System.Exit (exitFailure)
 
 handleNewModule :: NewModuleOpts -> IO ()
 handleNewModule nopts = do
-  let name = newModuleName nopts
+  let name = nopts.newModuleName
 
   -- Validate module name format
   if not (isValidModuleName name)
@@ -28,7 +28,7 @@ handleNewModule nopts = do
     else pure ()
 
   -- Determine output directory
-  let outputDir = case newModulePath nopts of
+  let outputDir = case nopts.newModulePath of
         Just p -> p
         Nothing -> T.unpack name
 

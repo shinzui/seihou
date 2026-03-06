@@ -30,12 +30,12 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
         Right m -> do
-          moduleName m `shouldBe` "haskell-base"
-          moduleDescription m `shouldBe` Just "A Haskell project template"
-          length (moduleVars m) `shouldBe` 3
-          length (moduleSteps m) `shouldBe` 5
-          length (modulePrompts m) `shouldBe` 1
-          moduleDependencies m `shouldBe` []
+          m.name `shouldBe` "haskell-base"
+          m.description `shouldBe` Just "A Haskell project template"
+          length (m.vars) `shouldBe` 3
+          length (m.steps) `shouldBe` 5
+          length (m.prompts) `shouldBe` 1
+          m.dependencies `shouldBe` []
 
     it "has correct variable declarations" $ do
       fixtures <- fixtureDir
@@ -43,17 +43,17 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
         Right m -> do
-          let vars = moduleVars m
-          let names = map (unVarName . varName) vars
+          let vars = m.vars
+          let names = map ((.unVarName) . (.name)) vars
           names `shouldBe` ["project.name", "project.version", "license"]
 
           let (projectName : projectVersion : license : _) = vars
-          varRequired projectName `shouldBe` True
-          varDefault projectName `shouldBe` Nothing
+          projectName.required `shouldBe` True
+          projectName.default_ `shouldBe` Nothing
 
-          varDefault projectVersion `shouldBe` Just (VText "0.1.0.0")
+          projectVersion.default_ `shouldBe` Just (VText "0.1.0.0")
 
-          varDefault license `shouldBe` Just (VText "MIT")
+          license.default_ `shouldBe` Just (VText "MIT")
 
     it "has a when expression on the LICENSE step" $ do
       fixtures <- fixtureDir
@@ -61,10 +61,10 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
         Right m -> do
-          let steps = moduleSteps m
+          let steps = m.steps
           let licenseStep = steps !! 2
-          stepStrategy licenseStep `shouldBe` Copy
-          stepWhen licenseStep `shouldBe` Just (ExprIsSet "license")
+          licenseStep.strategy `shouldBe` Copy
+          licenseStep.condition `shouldBe` Just (ExprIsSet "license")
 
     it "has a dest with placeholder variable" $ do
       fixtures <- fixtureDir
@@ -72,8 +72,8 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
         Right m -> do
-          let cabalStep = moduleSteps m !! 3
-          stepDest cabalStep `shouldBe` "{{project.name}}.cabal"
+          let cabalStep = m.steps !! 3
+          cabalStep.dest `shouldBe` "{{project.name}}.cabal"
 
   describe "invalid-module" $ do
     it "produces ValidationError with multiple violations" $ do
@@ -90,7 +90,7 @@ spec = do
       result <- loadModule ["/nonexistent"] "no-such-module"
       case result of
         Left (ModuleNotFound name _) ->
-          unModuleName name `shouldBe` "no-such-module"
+          name.unModuleName `shouldBe` "no-such-module"
         Left other -> expectationFailure ("Expected ModuleNotFound, got: " <> show other)
         Right _ -> expectationFailure "Expected Left"
 
@@ -98,18 +98,18 @@ spec = do
     it "returns modules from the in-memory map" $ do
       let testModule =
             Module
-              { moduleName = "test",
-                moduleDescription = Nothing,
-                moduleVars = [],
-                moduleExports = [],
-                modulePrompts = [],
-                moduleSteps = [],
-                moduleCommands = [],
-                moduleDependencies = []
+              { name = "test",
+                description = Nothing,
+                vars = [],
+                exports = [],
+                prompts = [],
+                steps = [],
+                commands = [],
+                dependencies = []
               }
           modules = Map.fromList [("test/module.dhall", testModule)]
       result <- runEff $ runDhallEvalPure modules $ do
         evalModuleFile "test/module.dhall"
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
-        Right m -> moduleName m `shouldBe` "test"
+        Right m -> m.name `shouldBe` "test"

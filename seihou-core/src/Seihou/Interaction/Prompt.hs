@@ -16,7 +16,7 @@ import Prelude hiding (getLine)
 -- | Run prompts for unresolved variables.
 --
 -- For each prompt whose variable is in the unresolved set:
--- 1. Evaluate the @promptWhen@ condition against current bindings.
+-- 1. Evaluate the prompt's @condition@ against current bindings.
 -- 2. If the condition is false, skip.
 -- 3. Display the prompt text and read input (or show choice menu).
 -- 4. Coerce and validate the input.
@@ -32,12 +32,12 @@ runPrompts ::
 runPrompts prompts unresolvedDecls currentBindings =
   go prompts Map.empty
   where
-    declMap = Map.fromList [(varName d, d) | d <- unresolvedDecls]
+    declMap = Map.fromList [(d.name, d) | d <- unresolvedDecls]
 
     go :: (Console :> es) => [Prompt] -> Map VarName ResolvedVar -> Eff es (Map VarName ResolvedVar)
     go [] acc = pure acc
     go (p : ps) acc = do
-      let vn = promptVar p
+      let vn = p.var
       -- Skip if variable is not in the unresolved set
       case Map.lookup vn declMap of
         Nothing -> go ps acc
@@ -47,7 +47,7 @@ runPrompts prompts unresolvedDecls currentBindings =
             then go ps acc
             else do
               -- Evaluate when condition
-              let allBindings = Map.union (Map.map resolvedValue acc) currentBindings
+              let allBindings = Map.union (Map.map (.value) acc) currentBindings
               if shouldPrompt p allBindings
                 then do
                   result <- promptForVar p decl allBindings
@@ -59,7 +59,7 @@ runPrompts prompts unresolvedDecls currentBindings =
 -- | Check if a prompt should be displayed based on its @when@ condition.
 shouldPrompt :: Prompt -> Map VarName VarValue -> Bool
 shouldPrompt p bindings =
-  case promptWhen p of
+  case p.condition of
     Nothing -> True
     Just expr -> evalExpr bindings expr
 
@@ -73,7 +73,7 @@ promptForVar ::
   Map VarName VarValue ->
   Eff es (Either VarError ResolvedVar)
 promptForVar prompt decl _bindings =
-  case promptChoices prompt of
+  case prompt.choices of
     Just choices -> promptWithChoices prompt decl choices
     Nothing -> promptFreeText prompt decl 3
 
@@ -85,7 +85,7 @@ promptFreeText ::
   Int ->
   Eff es (Either VarError ResolvedVar)
 promptFreeText prompt decl retriesLeft = do
-  putText (promptText prompt)
+  putText prompt.text
   raw <- getLine
   if T.null (T.strip raw)
     then
@@ -93,7 +93,7 @@ promptFreeText prompt decl retriesLeft = do
         then do
           putText "Value cannot be empty. Please try again."
           promptFreeText prompt decl (retriesLeft - 1)
-        else pure (Left (MissingRequiredVar (varName decl)))
+        else pure (Left (MissingRequiredVar decl.name))
     else case coerceAndValidate decl raw of
       Left err ->
         if retriesLeft > 1
@@ -111,7 +111,7 @@ promptWithChoices ::
   [Text] ->
   Eff es (Either VarError ResolvedVar)
 promptWithChoices prompt decl choices = do
-  putText (promptText prompt)
+  putText prompt.text
   mapM_ (\(i, c) -> putText ("  " <> T.pack (show i) <> ") " <> c)) (zip [1 :: Int ..] choices)
   putText "Enter selection number:"
   raw <- getLine
@@ -133,18 +133,18 @@ promptWithChoices prompt decl choices = do
                in case coerceAndValidate decl chosen of
                     Left err -> pure (Left err)
                     Right rv -> pure (Right rv)
-        _ -> pure (Left (MissingRequiredVar (varName decl)))
+        _ -> pure (Left (MissingRequiredVar decl.name))
 
 -- | Coerce raw text to the variable's type and validate.
 coerceAndValidate :: VarDecl -> Text -> Either VarError ResolvedVar
 coerceAndValidate decl raw = do
-  val <- coerceValue (varName decl) (varType decl) raw
+  val <- coerceValue decl.name decl.type_ raw
   validateVarValue decl val
   pure
     ResolvedVar
-      { resolvedValue = val,
-        resolvedSource = FromPrompt,
-        resolvedDecl = decl
+      { value = val,
+        source = FromPrompt,
+        decl = decl
       }
 
 -- | Format a VarError for display during retry prompts.

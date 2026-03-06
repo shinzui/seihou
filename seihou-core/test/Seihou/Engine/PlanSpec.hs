@@ -53,14 +53,14 @@ spec = do
       withFixture [("data.txt", "raw content")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -72,14 +72,14 @@ spec = do
       withFixture [("hello.tpl", "Hello, {{name}}!")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.fromList [("name", VText "world")]
         result <- compilePlan baseDir modul vars
@@ -91,14 +91,14 @@ spec = do
       withFixture [("data.txt", "content")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit False)) Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" (Just (ExprLit False)) Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -110,14 +110,14 @@ spec = do
       withFixture [("data.txt", "content")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" (Just (ExprLit True)) Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" (Just (ExprLit True)) Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -129,14 +129,14 @@ spec = do
       withFixture [("LICENSE", "MIT License")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "LICENSE" "LICENSE" (Just (ExprIsSet "license")) Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "LICENSE" "LICENSE" (Just (ExprIsSet "license")) Nothing],
+                  commands = [],
+                  dependencies = []
                 }
         -- Variable IS set
         let vars1 = Map.fromList [("license", VText "MIT")]
@@ -155,14 +155,14 @@ spec = do
       withFixture [("pkg.cabal.tpl", "name: {{name}}\n")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Template "pkg.cabal.tpl" "{{name}}.cabal" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "pkg.cabal.tpl" "{{name}}.cabal" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
         result <- compilePlan baseDir modul vars
@@ -174,14 +174,14 @@ spec = do
       withFixture [("Lib.hs.tpl", "module Lib where\n")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Template "Lib.hs.tpl" "src/Lib.hs" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "Lib.hs.tpl" "src/Lib.hs" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -194,17 +194,17 @@ spec = do
       withFixture [("A.hs.tpl", "module A\n"), ("B.hs.tpl", "module B\n")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps =
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps =
                     [ Step Template "A.hs.tpl" "src/A.hs" Nothing Nothing,
                       Step Template "B.hs.tpl" "src/B.hs" Nothing Nothing
                     ],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -221,14 +221,14 @@ spec = do
       withFixture [("hello.tpl", "Hello, {{missing}}!")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -242,14 +242,14 @@ spec = do
       withFixture [("greeting.dhall", "\"Hello, {{name}}!\"")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step DhallText "greeting.dhall" "greeting.txt" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step DhallText "greeting.dhall" "greeting.txt" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.fromList [("name", VText "world")]
         result <- compilePlan baseDir modul vars
@@ -265,14 +265,14 @@ spec = do
       withFixture [("pkg.dhall", T.unpack dhallContent)] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step DhallText "pkg.dhall" "pkg.txt" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step DhallText "pkg.dhall" "pkg.txt" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.fromList [("project.name", VText "my-app"), ("project.version", VText "0.1.0.0")]
         result <- compilePlan baseDir modul vars
@@ -284,14 +284,14 @@ spec = do
       withFixture [("bad.dhall", "this is not valid dhall {")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step DhallText "bad.dhall" "out.txt" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step DhallText "bad.dhall" "out.txt" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -305,14 +305,14 @@ spec = do
       withFixture [("data.json.gen", "{ name = \"{{name}}\", version = \"1.0.0\" }\n")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Structured "data.json.gen" "data.json" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Structured "data.json.gen" "data.json" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
         result <- compilePlan baseDir modul vars
@@ -333,14 +333,14 @@ spec = do
       withFixture [("config.yaml.gen", "{ name = \"{{name}}\", debug = False }\n")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Structured "config.yaml.gen" "config.yaml" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Structured "config.yaml.gen" "config.yaml" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
         result <- compilePlan baseDir modul vars
@@ -362,14 +362,14 @@ spec = do
       withFixture [("bad.gen", "\\(x : Text) -> x\n")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Structured "bad.gen" "out.json" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Structured "bad.gen" "out.json" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -383,14 +383,14 @@ spec = do
       withFixture [("data.gen", "{ name = \"test\" }\n")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Structured "data.gen" "output.txt" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Structured "data.gen" "output.txt" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -422,37 +422,37 @@ spec = do
                   dirOps = [op | op@(CreateDirOp _) <- ops]
               length writeOps `shouldBe` 5
               -- README.md with rendered content
-              opDest (writeOps !! 0) `shouldBe` "README.md"
-              T.isInfixOf "my-app" (opContent (writeOps !! 0)) `shouldBe` True
+              (writeOps !! 0).dest `shouldBe` "README.md"
+              T.isInfixOf "my-app" ((writeOps !! 0).content) `shouldBe` True
               -- src/Lib.hs
-              opDest (writeOps !! 1) `shouldBe` "src/Lib.hs"
+              (writeOps !! 1).dest `shouldBe` "src/Lib.hs"
               -- LICENSE (copy)
-              opDest (writeOps !! 2) `shouldBe` "LICENSE"
+              (writeOps !! 2).dest `shouldBe` "LICENSE"
               -- my-app.cabal (dest expanded from {{project.name}}.cabal)
-              opDest (writeOps !! 3) `shouldBe` "my-app.cabal"
-              T.isInfixOf "my-app" (opContent (writeOps !! 3)) `shouldBe` True
+              (writeOps !! 3).dest `shouldBe` "my-app.cabal"
+              T.isInfixOf "my-app" ((writeOps !! 3).content) `shouldBe` True
               -- cabal.project (DhallText)
-              opDest (writeOps !! 4) `shouldBe` "cabal.project"
-              T.isInfixOf "my-app" (opContent (writeOps !! 4)) `shouldBe` True
+              (writeOps !! 4).dest `shouldBe` "cabal.project"
+              T.isInfixOf "my-app" ((writeOps !! 4).content) `shouldBe` True
               -- Should have CreateDirOp for src/
-              dirOps `shouldSatisfy` any (\op -> opPath op == "src")
+              dirOps `shouldSatisfy` any (\op -> op.path == "src")
               -- Should have RunCommandOp for the command
               let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
               length cmdOps `shouldBe` 1
-              opCommand (cmdOps !! 0) `shouldBe` "echo 'Project generated'"
+              (cmdOps !! 0).command `shouldBe` "echo 'Project generated'"
 
     it "compiles a Template step with patch = AppendFile to PatchFileOp" $ do
       withFixture [("section.tpl", "appended content")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "patch-mod",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Template "section.tpl" "README.md" Nothing (Just AppendFile)],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "patch-mod",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "section.tpl" "README.md" Nothing (Just AppendFile)],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -465,14 +465,14 @@ spec = do
       withFixture [("section.tpl", "section {{name}}")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "section-mod",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Template "section.tpl" "README.md" Nothing (Just AppendSection)],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "section-mod",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "section.tpl" "README.md" Nothing (Just AppendSection)],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.fromList [("name", VText "test")]
         result <- compilePlan baseDir modul vars
@@ -485,14 +485,14 @@ spec = do
       withFixture [("header.txt", "header line\n")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "header-mod",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "header.txt" "out.txt" Nothing (Just PrependFile)],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "header-mod",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "header.txt" "out.txt" Nothing (Just PrependFile)],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -505,14 +505,14 @@ spec = do
       withFixture [("data.gen", "{ name = \"test\" }\n")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Structured "data.gen" "data.json" Nothing (Just AppendFile)],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Structured "data.gen" "data.json" Nothing (Just AppendFile)],
+                  commands = [],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -526,14 +526,14 @@ spec = do
       withFixture [("data.txt", "content")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
-                  moduleCommands = [Command "echo hello" Nothing Nothing],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  commands = [Command "echo hello" Nothing Nothing],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -541,22 +541,22 @@ spec = do
           Right ops -> do
             let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
             length cmdOps `shouldBe` 1
-            opCommand (cmdOps !! 0) `shouldBe` "echo hello"
-            opWorkDir (cmdOps !! 0) `shouldBe` Nothing
+            (cmdOps !! 0).command `shouldBe` "echo hello"
+            (cmdOps !! 0).workDir `shouldBe` Nothing
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "skips command when condition is false" $ do
       withFixture [("data.txt", "content")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
-                  moduleCommands = [Command "echo skip" Nothing (Just (ExprLit False))],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  commands = [Command "echo skip" Nothing (Just (ExprLit False))],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -570,14 +570,14 @@ spec = do
       withFixture [("data.txt", "content")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
-                  moduleCommands = [Command "echo yes" Nothing (Just (ExprIsSet "name"))],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  commands = [Command "echo yes" Nothing (Just (ExprIsSet "name"))],
+                  dependencies = []
                 }
             vars = Map.fromList [("name", VText "test")]
         result <- compilePlan baseDir modul vars
@@ -591,14 +591,14 @@ spec = do
       withFixture [("data.txt", "content")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
-                  moduleCommands = [Command "echo post" Nothing Nothing],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  commands = [Command "echo post" Nothing Nothing],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -621,14 +621,14 @@ spec = do
       withFixture [("data.txt", "content")] $ \baseDir -> do
         let modul =
               Module
-                { moduleName = "test",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [],
-                  modulePrompts = [],
-                  moduleSteps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
-                  moduleCommands = [Command "npm install" (Just "subdir") Nothing],
-                  moduleDependencies = []
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  commands = [Command "npm install" (Just "subdir") Nothing],
+                  dependencies = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -636,5 +636,5 @@ spec = do
           Right ops -> do
             let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
             length cmdOps `shouldBe` 1
-            opWorkDir (cmdOps !! 0) `shouldBe` Just "subdir"
+            (cmdOps !! 0).workDir `shouldBe` Just "subdir"
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)

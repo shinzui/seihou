@@ -23,8 +23,8 @@ data CompositionGraph = CompositionGraph
 buildGraph :: [Module] -> CompositionGraph
 buildGraph modules =
   CompositionGraph
-    { cgModules = Map.fromList [(moduleName m, m) | m <- modules],
-      cgEdges = Map.fromList [(moduleName m, moduleDependencies m) | m <- modules]
+    { cgModules = Map.fromList [(m.name, m) | m <- modules],
+      cgEdges = Map.fromList [(m.name, m.dependencies) | m <- modules]
     }
 
 -- | Topological sort using Kahn's algorithm.
@@ -34,7 +34,7 @@ topoSort :: CompositionGraph -> Either ModuleLoadError [ModuleName]
 topoSort graph = kahn initialReady initialInDegree [] allNodes
   where
     allNodes :: Set ModuleName
-    allNodes = Map.keysSet (cgEdges graph)
+    allNodes = Map.keysSet (graph.cgEdges)
 
     -- In-degree for the reversed graph: for each module, count how
     -- many of its declared dependencies are present in the graph.
@@ -44,7 +44,7 @@ topoSort graph = kahn initialReady initialInDegree [] allNodes
     initialInDegree :: Map ModuleName Int
     initialInDegree =
       Map.fromList
-        [ (n, length [d | d <- Map.findWithDefault [] n (cgEdges graph), Set.member d allNodes])
+        [ (n, length [d | d <- Map.findWithDefault [] n (graph.cgEdges), Set.member d allNodes])
         | n <- Set.toList allNodes
         ]
 
@@ -71,7 +71,7 @@ topoSort graph = kahn initialReady initialInDegree [] allNodes
 
     decrementDep :: ModuleName -> ([ModuleName], Map ModuleName Int) -> ModuleName -> ([ModuleName], Map ModuleName Int)
     decrementDep processed (ready, inDeg) candidate =
-      let deps = Map.findWithDefault [] candidate (cgEdges graph)
+      let deps = Map.findWithDefault [] candidate (graph.cgEdges)
        in if processed `elem` deps
             then
               let newDeg = Map.findWithDefault 0 candidate inDeg - 1

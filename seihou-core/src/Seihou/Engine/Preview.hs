@@ -48,9 +48,9 @@ buildPreview ops mDiff ownerMap =
         Just diff ->
           -- Only include orphans whose path is NOT produced by any operation
           let producedPaths = Set.fromList [p | op <- ops, Just p <- [destOfOp op]]
-           in [ OrphanPreview (orphanedPath o) (orphanedModule o)
-              | o <- diffOrphaned diff,
-                not (Set.member (orphanedPath o) producedPaths)
+           in [ OrphanPreview o.path o.moduleName
+              | o <- diff.orphaned,
+                not (Set.member o.path producedPaths)
               ]
    in opLines ++ orphanLines
 
@@ -84,11 +84,11 @@ opToPreview mDiff ownerMap (PatchFileOp dest _ _patchOp' _ modName') =
 lookupStatus :: FilePath -> Maybe DiffResult -> FileStatus
 lookupStatus _ Nothing = FsNew
 lookupStatus path (Just diff)
-  | any (\f -> plannedPath f == path) (diffNew diff) = FsNew
-  | any (\f -> modifiedPath f == path) (diffModified diff) = FsModified
-  | path `elem` diffUnchanged diff = FsUnchanged
-  | any (\f -> conflictPath f == path) (diffConflict diff) = FsConflict
-  | any (\f -> orphanedPath f == path) (diffOrphaned diff) = FsOrphaned
+  | any (\f -> f.path == path) diff.new = FsNew
+  | any (\f -> f.path == path) diff.modified = FsModified
+  | path `elem` diff.unchanged = FsUnchanged
+  | any (\f -> f.path == path) diff.conflicts = FsConflict
+  | any (\f -> f.path == path) diff.orphaned = FsOrphaned
   | otherwise = FsUnknown
 
 -- | Render preview lines as plain text (no ANSI codes).
@@ -100,14 +100,14 @@ renderPreviewPlain lines' =
   where
     fileLines = [l | l@(FilePreview {}) <- lines']
     nonFileLines = [l | l <- lines', not (isFileLine l)]
-    maxPathLen = maximum (0 : map (T.length . T.pack . previewPath) fileLines)
+    maxPathLen = maximum (0 : map (T.length . T.pack . (.previewPath)) fileLines)
 
 renderPlainLine :: Int -> PreviewLine -> Text
 renderPlainLine maxPath (FilePreview status path annotation mMod) =
   let pathText = T.pack path
       pathPad = T.replicate (maxPath - T.length pathText) " "
       modSuffix = case mMod of
-        Just mn -> ", " <> unModuleName mn
+        Just mn -> ", " <> mn.unModuleName
         Nothing -> ""
    in "    " <> statusTag status <> "  " <> pathText <> pathPad <> "  (" <> annotation <> modSuffix <> ")"
 renderPlainLine _ other = renderNonFileLine other
@@ -118,7 +118,7 @@ renderNonFileLine (DirPreview path) =
 renderNonFileLine (CommandPreview cmd) =
   "    run    " <> cmd
 renderNonFileLine (OrphanPreview path modName') =
-  "    [orphaned]  " <> T.pack path <> "  (orphaned from " <> unModuleName modName' <> ")"
+  "    [orphaned]  " <> T.pack path <> "  (orphaned from " <> modName'.unModuleName <> ")"
 renderNonFileLine _ = ""
 
 isFileLine :: PreviewLine -> Bool
@@ -152,7 +152,7 @@ formatPlanView moduleNames vars preview diff =
   where
     header =
       "Generation Plan ("
-        <> T.intercalate " + " (map unModuleName moduleNames)
+        <> T.intercalate " + " (map (.unModuleName) moduleNames)
         <> "):"
 
     varsSection =
@@ -175,8 +175,8 @@ formatPlanView moduleNames vars preview diff =
     showVarValue (VInt n) = T.pack (show n)
     showVarValue (VList vs) = "[" <> T.intercalate ", " (map showVarValue vs) <> "]"
 
-    nFiles = length (diffNew diff) + length (diffModified diff)
-    nConflicts = length (diffConflict diff)
+    nFiles = length diff.new + length diff.modified
+    nConflicts = length diff.conflicts
     summaryText =
       "  "
         <> T.pack (show nFiles)

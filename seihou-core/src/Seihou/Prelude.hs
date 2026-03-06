@@ -27,6 +27,19 @@ module Seihou.Prelude
     HasCallStack,
     EffectHandler,
 
+    -- * Lens
+    view,
+    over,
+    set,
+    (^.),
+    (.~),
+    (%~),
+    (&),
+    lens,
+    Lens',
+    Getting,
+    ASetter,
+
     -- * FilePath
     FilePath,
     (</>),
@@ -38,4 +51,6 @@ import "containers" Data.Set (Set)
 import "effectful-core" Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, MonadIO, liftIO, runEff, type (:>), type (:>>))
 import "effectful-core" Effectful.Dispatch.Dynamic (EffectHandler, HasCallStack, interpret, reinterpret, send)
 import "filepath" System.FilePath ((</>))
+import "generic-lens" Data.Generics.Labels ()
+import "lens" Control.Lens (ASetter, Getting, Lens', lens, over, set, view, (%~), (&), (.~), (^.))
 import "text" Data.Text (Text)

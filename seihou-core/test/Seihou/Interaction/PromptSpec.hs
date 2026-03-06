@@ -18,73 +18,73 @@ tests = testSpec "Seihou.Interaction.Prompt" spec
 mkModule :: ModuleName -> [ModuleName] -> [VarDecl] -> [VarExport] -> [Prompt] -> Module
 mkModule name deps vars exports prompts =
   Module
-    { moduleName = name,
-      moduleDescription = Nothing,
-      moduleVars = vars,
-      moduleExports = exports,
-      modulePrompts = prompts,
-      moduleSteps = [],
-      moduleCommands = [],
-      moduleDependencies = deps
+    { name = name,
+      description = Nothing,
+      vars = vars,
+      exports = exports,
+      prompts = prompts,
+      steps = [],
+      commands = [],
+      dependencies = deps
     }
 
 -- | Helper to create a text variable declaration.
 mkTextVar :: VarName -> Maybe VarValue -> Bool -> VarDecl
 mkTextVar name defVal required =
   VarDecl
-    { varName = name,
-      varType = VTText,
-      varDefault = defVal,
-      varDescription = Nothing,
-      varRequired = required,
-      varValidation = Nothing
+    { name = name,
+      type_ = VTText,
+      default_ = defVal,
+      description = Nothing,
+      required = required,
+      validation = Nothing
     }
 
 -- | Helper to create a bool variable declaration.
 mkBoolVar :: VarName -> Maybe VarValue -> Bool -> VarDecl
 mkBoolVar name defVal required =
   VarDecl
-    { varName = name,
-      varType = VTBool,
-      varDefault = defVal,
-      varDescription = Nothing,
-      varRequired = required,
-      varValidation = Nothing
+    { name = name,
+      type_ = VTBool,
+      default_ = defVal,
+      description = Nothing,
+      required = required,
+      validation = Nothing
     }
 
 -- | Helper to create a simple prompt for a variable.
 mkPrompt :: VarName -> Text -> Prompt
 mkPrompt var text =
   Prompt
-    { promptVar = var,
-      promptText = text,
-      promptWhen = Nothing,
-      promptChoices = Nothing
+    { var = var,
+      text = text,
+      condition = Nothing,
+      choices = Nothing
     }
 
 -- | Helper to create a prompt with choices.
 mkChoicePrompt :: VarName -> Text -> [Text] -> Prompt
 mkChoicePrompt var text choices =
   Prompt
-    { promptVar = var,
-      promptText = text,
-      promptWhen = Nothing,
-      promptChoices = Just choices
+    { var = var,
+      text = text,
+      condition = Nothing,
+      choices = Just choices
     }
 
 -- | Helper to create a prompt with a when condition.
 mkConditionalPrompt :: VarName -> Text -> Expr -> Prompt
 mkConditionalPrompt var text expr =
   Prompt
-    { promptVar = var,
-      promptText = text,
-      promptWhen = Just expr,
-      promptChoices = Nothing
+    { var = var,
+      text = text,
+      condition = Just expr,
+      choices = Nothing
     }
 
 -- | Helper to create an export without alias.
 mkExport :: VarName -> VarExport
-mkExport name = VarExport {exportVar = name, exportAs = Nothing}
+mkExport name = VarExport {var = name, alias = Nothing}
 
 spec :: Spec
 spec = do
@@ -99,10 +99,10 @@ spec = do
             runPrompts [prompt] [decl] bindings
       Map.member "project.name" result `shouldBe` True
       let rv = result Map.! "project.name"
-      resolvedValue rv `shouldBe` VText "my-app"
-      resolvedSource rv `shouldBe` FromPrompt
+      rv.value `shouldBe` VText "my-app"
+      rv.source `shouldBe` FromPrompt
       -- The prompt text should have been output
-      consoleOutputs st `shouldSatisfy` any (== "What is the project name?")
+      st.consoleOutputs `shouldSatisfy` any (== "What is the project name?")
 
     it "fills a prompt with choices via selection number" $ do
       let decl = mkTextVar "license" Nothing True
@@ -113,8 +113,8 @@ spec = do
           runConsolePure ["2"] $
             runPrompts [prompt] [decl] bindings
       Map.member "license" result `shouldBe` True
-      resolvedValue (result Map.! "license") `shouldBe` VText "Apache-2.0"
-      resolvedSource (result Map.! "license") `shouldBe` FromPrompt
+      (result Map.! "license").value `shouldBe` VText "Apache-2.0"
+      (result Map.! "license").source `shouldBe` FromPrompt
 
     it "skips a prompt whose when condition evaluates to False" $ do
       let decl = mkTextVar "extra.flag" Nothing True
@@ -128,7 +128,7 @@ spec = do
       -- Prompt was skipped, so the variable is not resolved
       Map.member "extra.flag" result `shouldBe` False
       -- No prompt text was output
-      consoleOutputs st `shouldSatisfy` all (/= "Extra flag?")
+      st.consoleOutputs `shouldSatisfy` all (/= "Extra flag?")
 
     it "shows a prompt whose when condition evaluates to True" $ do
       let decl = mkTextVar "extra.flag" Nothing True
@@ -140,7 +140,7 @@ spec = do
           runConsolePure ["some-value"] $
             runPrompts [prompt] [decl] bindings
       Map.member "extra.flag" result `shouldBe` True
-      resolvedValue (result Map.! "extra.flag") `shouldBe` VText "some-value"
+      (result Map.! "extra.flag").value `shouldBe` VText "some-value"
 
     it "skips a prompt for a variable not in the unresolved set" $ do
       let decl = mkTextVar "project.name" Nothing True
@@ -152,7 +152,7 @@ spec = do
           runConsolePure ["anything"] $
             runPrompts [prompt] [decl] bindings
       Map.null result `shouldBe` True
-      consoleOutputs st `shouldSatisfy` all (/= "Other?")
+      st.consoleOutputs `shouldSatisfy` all (/= "Other?")
 
   describe "promptForVar" $ do
     it "coerces boolean input correctly" $ do
@@ -165,8 +165,8 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right rv -> do
-          resolvedValue rv `shouldBe` VBool True
-          resolvedSource rv `shouldBe` FromPrompt
+          rv.value `shouldBe` VBool True
+          rv.source `shouldBe` FromPrompt
 
     it "coerces 'no' to False for boolean variable" $ do
       let decl = mkBoolVar "use.ci" Nothing True
@@ -178,7 +178,7 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right rv ->
-          resolvedValue rv `shouldBe` VBool False
+          rv.value `shouldBe` VBool False
 
     it "retries on empty input then succeeds" $ do
       let decl = mkTextVar "project.name" Nothing True
@@ -190,9 +190,9 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right rv ->
-          resolvedValue rv `shouldBe` VText "my-app"
+          rv.value `shouldBe` VText "my-app"
       -- Should have output a retry message
-      consoleOutputs st `shouldSatisfy` any (== "Value cannot be empty. Please try again.")
+      st.consoleOutputs `shouldSatisfy` any (== "Value cannot be empty. Please try again.")
 
     it "fails after exhausting retries on empty input" $ do
       let decl = mkTextVar "project.name" Nothing True
@@ -224,9 +224,9 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
           let baseVars = resolved Map.! "base"
-          resolvedValue (baseVars Map.! "project.name") `shouldBe` VText "my-app"
-          resolvedSource (baseVars Map.! "project.name") `shouldBe` FromPrompt
-      consoleOutputs st `shouldSatisfy` any (== "What is the project name?")
+          (baseVars Map.! "project.name").value `shouldBe` VText "my-app"
+          (baseVars Map.! "project.name").source `shouldBe` FromPrompt
+      st.consoleOutputs `shouldSatisfy` any (== "What is the project name?")
 
     it "does not prompt when all variables are provided via CLI" $ do
       let m =
@@ -246,10 +246,10 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
           let baseVars = resolved Map.! "base"
-          resolvedValue (baseVars Map.! "project.name") `shouldBe` VText "from-cli"
-          resolvedSource (baseVars Map.! "project.name") `shouldBe` FromCLI
+          (baseVars Map.! "project.name").value `shouldBe` VText "from-cli"
+          (baseVars Map.! "project.name").source `shouldBe` FromCLI
       -- No prompts should have been displayed
-      consoleOutputs st `shouldSatisfy` all (/= "What is the project name?")
+      st.consoleOutputs `shouldSatisfy` all (/= "What is the project name?")
 
     it "skips prompts and errors in non-interactive mode" $ do
       let m =
@@ -271,7 +271,7 @@ spec = do
           _ -> expectationFailure $ "Expected exactly 1 error, got: " ++ show (length errs)
         Right _ -> expectationFailure "Expected Left (errors), got Right"
       -- No prompts should have been displayed
-      consoleOutputs st `shouldSatisfy` all (/= "What is the project name?")
+      st.consoleOutputs `shouldSatisfy` all (/= "What is the project name?")
 
     it "flows prompted value from first module to second via exports" $ do
       let base =
@@ -298,11 +298,11 @@ spec = do
         Right resolved -> do
           -- Base module was prompted
           let baseVars = resolved Map.! "base"
-          resolvedValue (baseVars Map.! "project.name") `shouldBe` VText "my-app"
-          resolvedSource (baseVars Map.! "project.name") `shouldBe` FromPrompt
+          (baseVars Map.! "project.name").value `shouldBe` VText "my-app"
+          (baseVars Map.! "project.name").source `shouldBe` FromPrompt
           -- App module received the value via export (no additional prompt needed)
           let appVars = resolved Map.! "app"
-          resolvedValue (appVars Map.! "project.name") `shouldBe` VText "my-app"
+          (appVars Map.! "project.name").value `shouldBe` VText "my-app"
       -- Only one prompt should have fired (for base), not two
-      let promptOutputs = filter (== "What is the project name?") (consoleOutputs st)
+      let promptOutputs = filter (== "What is the project name?") (st.consoleOutputs)
       length promptOutputs `shouldBe` 1

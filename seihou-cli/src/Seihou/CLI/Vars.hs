@@ -24,9 +24,9 @@ import System.Exit (exitFailure)
 
 handleVars :: VarsOpts -> IO ()
 handleVars vopts = do
-  let modName = varsModule vopts
+  let modName = vopts.varsModule
 
-  if varsExplain vopts
+  if vopts.varsExplain
     then explainMode modName vopts
     else do
       -- Declaration mode: load single module, show declarations
@@ -35,7 +35,7 @@ handleVars vopts = do
       modul <- case result of
         Left (ModuleNotFound _ searched) -> do
           logIO LogNormal $ do
-            logError $ "Module '" <> unModuleName modName <> "' not found."
+            logError $ "Module '" <> modName.unModuleName <> "' not found."
             logError "Searched in:"
             mapM_ (\p -> logError $ "  " <> T.pack p) searched
           exitFailure
@@ -48,13 +48,13 @@ handleVars vopts = do
 -- | Default mode: show variable declarations
 declarationMode :: Module -> IO ()
 declarationMode modul = do
-  let vars = moduleVars modul
-  if null vars
+  let vs = modul.vars
+  if null vs
     then TIO.putStrLn "No variables declared."
     else do
-      TIO.putStrLn $ "Variables for " <> unModuleName (moduleName modul) <> ":"
+      TIO.putStrLn $ "Variables for " <> modul.name.unModuleName <> ":"
       TIO.putStrLn ""
-      TIO.putStr (formatDeclarations vars)
+      TIO.putStr (formatDeclarations vs)
 
 -- | Explain mode: load full composition, resolve variables with exports, show provenance
 explainMode :: ModuleName -> VarsOpts -> IO ()
@@ -65,14 +65,14 @@ explainMode modName vopts = do
   modulesInOrder <- case compositionResult of
     Left (ModuleNotFound name searched) -> do
       logIO LogNormal $ do
-        logError $ "Module '" <> unModuleName name <> "' not found."
+        logError $ "Module '" <> name.unModuleName <> "' not found."
         logError "Searched in:"
         mapM_ (\p -> logError $ "  " <> T.pack p) searched
       exitFailure
     Left (CircularDependency names) -> do
       logIO LogNormal $ do
         logError "Circular dependency detected:"
-        logError $ "  " <> T.intercalate " -> " (map unModuleName names)
+        logError $ "  " <> T.intercalate " -> " (map (.unModuleName) names)
       exitFailure
     Left err -> do
       logIO LogNormal (logError $ T.pack (show err))
@@ -89,9 +89,9 @@ explainMode modName vopts = do
 
   -- Resolve variables with the full composition pipeline
   envPairs <- getEnvironment
-  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- varsVars vopts]
+  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- vopts.varsVars]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace modName) (varsNamespace vopts)
+      namespace = fromMaybe (deriveNamespace modName) vopts.varsNamespace
   (resolveResult, localMap, nsMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
     localCfg <- readLocalConfig >>= unwrapConfig LogNormal
     namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig LogNormal
@@ -110,14 +110,14 @@ explainMode modName vopts = do
     Right resolved -> do
       -- Show only the target module's resolved variables
       let targetResolved = Map.findWithDefault Map.empty modName resolved
-      TIO.putStrLn $ "Variables for " <> unModuleName modName <> ":"
+      TIO.putStrLn $ "Variables for " <> modName.unModuleName <> ":"
       TIO.putStrLn ""
       if Map.null targetResolved
         then TIO.putStrLn "  (no variables resolved)"
         else TIO.putStr (formatExplain targetResolved)
 
       -- Show diagnostics
-      let allDecls = concatMap (moduleVars . fst) modulesInOrder
+      let allDecls = concatMap ((.vars) . fst) modulesInOrder
           allResolved = Map.unions [vs | vs <- Map.elems resolved]
           (unusedKeys, unresolvedOpt) = diagnoseResolution allResolved allDecls localMap nsMap globalMap
       when (not (null unusedKeys)) $ do

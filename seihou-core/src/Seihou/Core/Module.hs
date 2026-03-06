@@ -36,7 +36,7 @@ import System.Directory (XdgDirectory (..), doesDirectoryExist, doesFileExist, g
 discoverModule :: [FilePath] -> ModuleName -> IO (Either ModuleLoadError FilePath)
 discoverModule searchPaths name = go searchPaths
   where
-    nameStr = T.unpack (unModuleName name)
+    nameStr = T.unpack name.unModuleName
     go [] = pure $ Left (ModuleNotFound name searchPaths)
     go (dir : rest) = do
       let candidate = dir </> nameStr
@@ -80,14 +80,14 @@ validateModule baseDir m = do
   pure $
     if null allErrors
       then Right m
-      else Left (ValidationError (moduleName m) allErrors)
+      else Left (ValidationError m.name allErrors)
 
 -- Rule 1: Module name must be non-empty and match [a-z][a-z0-9-]*
 checkNameFormat :: Module -> [Text]
 checkNameFormat m =
-  let name = unModuleName (moduleName m)
-   in if T.null name || not (isValidModuleName name)
-        then ["module name must match [a-z][a-z0-9-]*, got: " <> name]
+  let n = m.name.unModuleName
+   in if T.null n || not (isValidModuleName n)
+        then ["module name must match [a-z][a-z0-9-]*, got: " <> n]
         else []
 
 isValidModuleName :: Text -> Bool
@@ -100,7 +100,7 @@ isValidModuleName t = case T.uncons t of
 -- Rule 2: All variable names must be unique
 checkUniqueVars :: Module -> [Text]
 checkUniqueVars m =
-  let names = map (unVarName . varName) (moduleVars m)
+  let names = map (\d -> d.name.unVarName) m.vars
    in map (\n -> "duplicate variable name: " <> n) (findDupes Set.empty Set.empty names)
 
 findDupes :: Set.Set Text -> Set.Set Text -> [Text] -> [Text]
@@ -112,14 +112,14 @@ findDupes seen reported (x : xs)
 -- Rule 3: Every prompt must reference a declared variable
 checkPromptRefs :: Module -> [Text]
 checkPromptRefs m =
-  let varNames = Set.fromList (map varName (moduleVars m))
+  let varNames = Set.fromList (map (.name) m.vars)
    in concatMap
         ( \p ->
-            if Set.member (promptVar p) varNames
+            if Set.member p.var varNames
               then []
-              else ["prompt references undeclared variable: " <> unVarName (promptVar p)]
+              else ["prompt references undeclared variable: " <> p.var.unVarName]
         )
-        (modulePrompts m)
+        m.prompts
 
 -- Rule 4: Every step source file must exist in the module's files/ directory
 checkFileExistence :: FilePath -> Module -> IO [Text]
@@ -127,61 +127,61 @@ checkFileExistence baseDir m =
   concat
     <$> mapM
       ( \s -> do
-          let path = baseDir </> "files" </> stepSrc s
-          exists <- doesFileExist path
+          let p = baseDir </> "files" </> s.src
+          exists <- doesFileExist p
           pure $
             if exists
               then []
-              else ["step source file not found: " <> T.pack (stepSrc s)]
+              else ["step source file not found: " <> T.pack s.src]
       )
-      (moduleSteps m)
+      m.steps
 
 -- Rule 5: Every export must reference a declared variable
 checkExportRefs :: Module -> [Text]
 checkExportRefs m =
-  let varNames = Set.fromList (map varName (moduleVars m))
+  let varNames = Set.fromList (map (.name) m.vars)
    in concatMap
         ( \e ->
-            if Set.member (exportVar e) varNames
+            if Set.member e.var varNames
               then []
-              else ["export references undeclared variable: " <> unVarName (exportVar e)]
+              else ["export references undeclared variable: " <> e.var.unVarName]
         )
-        (moduleExports m)
+        m.exports
 
 -- Rule 6: Every dependency name must be well-formed
 checkDependencyNames :: Module -> [Text]
 checkDependencyNames m =
   concatMap
     ( \dep ->
-        let name = unModuleName dep
-         in if isValidModuleName name
+        let n = dep.unModuleName
+         in if isValidModuleName n
               then []
-              else ["invalid dependency name: " <> name]
+              else ["invalid dependency name: " <> n]
     )
-    (moduleDependencies m)
+    m.dependencies
 
 -- Rule 7: Every step destination must be a safe relative path
 checkSafeDestinations :: Module -> [Text]
 checkSafeDestinations m =
   concatMap
     ( \s ->
-        let dest = stepDest s
-         in if T.isPrefixOf "/" dest
-              then ["step destination must be relative: " <> dest]
+        let d = s.dest
+         in if T.isPrefixOf "/" d
+              then ["step destination must be relative: " <> d]
               else
-                if ".." `T.isInfixOf` dest
-                  then ["step destination must not contain '..': " <> dest]
+                if ".." `T.isInfixOf` d
+                  then ["step destination must not contain '..': " <> d]
                   else []
     )
-    (moduleSteps m)
+    m.steps
 
 -- Rule 8: Variables referenced in step dest placeholders must be declared
 checkDestVarRefs :: Module -> [Text]
 checkDestVarRefs m =
-  let varNames = Set.fromList (map (unVarName . varName) (moduleVars m))
+  let varNames = Set.fromList (map (\d -> d.name.unVarName) m.vars)
    in concatMap
         ( \s ->
-            let refs = extractPlaceholders (stepDest s)
+            let refs = extractPlaceholders s.dest
              in concatMap
                   ( \ref ->
                       if Set.member ref varNames
@@ -190,7 +190,7 @@ checkDestVarRefs m =
                   )
                   refs
         )
-        (moduleSteps m)
+        m.steps
 
 -- Rule 9: Command text must be non-empty and workDir must be safe
 checkCommandSafety :: Module -> [Text]
@@ -198,10 +198,10 @@ checkCommandSafety m =
   concatMap
     ( \c ->
         let emptyRun =
-              if T.null (T.strip (cmdRun c))
+              if T.null (T.strip c.run)
                 then ["command text must not be empty"]
                 else []
-            unsafeWorkDir = case cmdWorkDir c of
+            unsafeWorkDir = case c.workDir of
               Nothing -> []
               Just wd
                 | T.isPrefixOf "/" wd -> ["command workDir must be relative: " <> wd]
@@ -209,7 +209,7 @@ checkCommandSafety m =
                 | otherwise -> []
          in emptyRun <> unsafeWorkDir
     )
-    (moduleCommands m)
+    m.commands
 
 -- | Extract placeholder variable references from a text like @"src/{{project.name}}/Main.hs"@.
 extractPlaceholders :: Text -> [Text]

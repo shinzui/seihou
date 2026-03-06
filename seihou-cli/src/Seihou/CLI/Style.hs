@@ -71,7 +71,7 @@ renderPreviewColor True lines' =
   where
     fileLines = [l | l@(FilePreview {}) <- lines']
     nonFileLines = [l | l <- lines', not (isFilePreview' l)]
-    maxPathLen = maximum (0 : map (T.length . T.pack . previewPath) fileLines)
+    maxPathLen = maximum (0 : map (T.length . T.pack . (.previewPath)) fileLines)
 
 renderColorLine :: Int -> PreviewLine -> Text
 renderColorLine maxPath (FilePreview status path annotation mMod) =
@@ -79,7 +79,7 @@ renderColorLine maxPath (FilePreview status path annotation mMod) =
       pathText = T.pack path
       pathPad = T.replicate (maxPath - T.length pathText) " "
       modSuffix = case mMod of
-        Just mn -> ", " <> unModuleName mn
+        Just mn -> ", " <> mn.unModuleName
         Nothing -> ""
    in "    " <> tag <> "  " <> colorFn pathText <> pathPad <> "  " <> dim ("(" <> annotation <> modSuffix <> ")")
 renderColorLine _ other = renderNonFileColor other
@@ -90,7 +90,7 @@ renderNonFileColor (DirPreview path) =
 renderNonFileColor (CommandPreview cmd) =
   "    " <> dim "run" <> "    " <> dim cmd
 renderNonFileColor (OrphanPreview path modName') =
-  "    " <> magenta "[orphaned]" <> "  " <> magenta (T.pack path) <> "  " <> dim ("(orphaned from " <> unModuleName modName' <> ")")
+  "    " <> magenta "[orphaned]" <> "  " <> magenta (T.pack path) <> "  " <> dim ("(orphaned from " <> modName'.unModuleName <> ")")
 renderNonFileColor _ = ""
 
 isFilePreview' :: PreviewLine -> Bool
@@ -107,8 +107,8 @@ statusStyleColor FsUnknown = ("[unknown]", id)
 
 -- | Format a complete plan view with optional ANSI color.
 formatPlanViewColor :: Bool -> [ModuleName] -> Map VarName VarValue -> [PreviewLine] -> DiffResult -> Text
-formatPlanViewColor False moduleNames vars preview diff = formatPlanView moduleNames vars preview diff
-formatPlanViewColor True moduleNames vars preview diff =
+formatPlanViewColor False modNames vars preview diff = formatPlanView modNames vars preview diff
+formatPlanViewColor True modNames vars preview diff =
   T.unlines $
     [header, ""]
       ++ varsSection
@@ -120,7 +120,7 @@ formatPlanViewColor True moduleNames vars preview diff =
     header =
       bold
         ( "Generation Plan ("
-            <> T.intercalate " + " (map (cyan . unModuleName) moduleNames)
+            <> T.intercalate " + " (map (cyan . (.unModuleName)) modNames)
             <> "):"
         )
 
@@ -170,7 +170,7 @@ renderReportColor :: Bool -> ValidateReport -> Text
 renderReportColor False report = renderReportPlain report
 renderReportColor True report =
   T.unlines $
-    [ "Validating module at " <> T.pack (reportPath report) <> "...",
+    [ "Validating module at " <> T.pack report.reportPath <> "...",
       ""
     ]
       ++ dhallLine'
@@ -179,52 +179,52 @@ renderReportColor True report =
       ++ [""]
       ++ [resultLine']
   where
-    m = reportModule report
+    m = report.reportModule
 
     dhallLine' =
-      if reportDhallOk report
+      if report.reportDhallOk
         then ["  " <> green "\x2713" <> " module.dhall evaluates successfully"]
         else
           ["  " <> bold (red "\x2717") <> " module.dhall failed to evaluate"]
-            ++ case reportDhallError report of
+            ++ case report.reportDhallError of
               Just errText -> ["      " <> dim errText]
               Nothing -> []
 
     summaryLines' =
-      if reportDhallOk report
+      if report.reportDhallOk
         then
-          [ "  " <> green "\x2713" <> " Module name: " <> cyan (unModuleName (moduleName m)),
-            "  " <> green "\x2713" <> " " <> T.pack (show (length (moduleVars m))) <> " variables declared",
-            "  " <> green "\x2713" <> " " <> T.pack (show (length (modulePrompts m))) <> " prompts defined",
-            "  " <> green "\x2713" <> " " <> T.pack (show (length (moduleSteps m))) <> " steps defined"
+          [ "  " <> green "\x2713" <> " Module name: " <> cyan m.name.unModuleName,
+            "  " <> green "\x2713" <> " " <> T.pack (show (length m.vars)) <> " variables declared",
+            "  " <> green "\x2713" <> " " <> T.pack (show (length m.prompts)) <> " prompts defined",
+            "  " <> green "\x2713" <> " " <> T.pack (show (length m.steps)) <> " steps defined"
           ]
         else []
 
-    checkLines' = concatMap renderCheckColor (reportChecks report)
+    checkLines' = concatMap renderCheckColor (report.reportChecks)
 
     renderCheckColor c
-      | null (diagDetails c) =
-          ["  " <> green "\x2713" <> " " <> diagLabel c]
-      | diagSeverity c == DiagWarning =
-          ("  " <> yellow "\x26A0" <> " " <> yellow (diagLabel c))
-            : map (\d -> "      " <> dim d) (diagDetails c)
+      | null (c.diagDetails) =
+          ["  " <> green "\x2713" <> " " <> c.diagLabel]
+      | c.diagSeverity == DiagWarning =
+          ("  " <> yellow "\x26A0" <> " " <> yellow (c.diagLabel))
+            : map (\d -> "      " <> dim d) (c.diagDetails)
       | otherwise =
-          ("  " <> bold (red "\x2717") <> " " <> red (diagLabel c))
-            : map (\d -> "      " <> dim d) (diagDetails c)
+          ("  " <> bold (red "\x2717") <> " " <> red (c.diagLabel))
+            : map (\d -> "      " <> dim d) (c.diagDetails)
 
     errorCount =
       length
         [ ()
-        | c <- reportChecks report,
-          diagSeverity c == DiagError,
-          not (null (diagDetails c))
+        | c <- report.reportChecks,
+          c.diagSeverity == DiagError,
+          not (null (c.diagDetails))
         ]
 
-    dhallFailed = not (reportDhallOk report)
+    dhallFailed = not (report.reportDhallOk)
     totalErrors = errorCount + (if dhallFailed then 1 else 0)
 
     resultLine'
       | totalErrors > 0 =
           bold (red (T.pack (show totalErrors) <> " error(s) found.")) <> " Module is invalid."
       | otherwise =
-          green ("Module '" <> unModuleName (moduleName m) <> "' is valid.")
+          green ("Module '" <> m.name.unModuleName <> "' is valid.")

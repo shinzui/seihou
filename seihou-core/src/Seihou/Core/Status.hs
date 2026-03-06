@@ -16,8 +16,8 @@ import Seihou.Prelude
 -- 'TfsDeleted' if the file no longer exists on disk.
 computeTrackedFileStatuses :: (Filesystem :> es) => Manifest -> Eff es [TrackedFile]
 computeTrackedFileStatuses manifest = do
-  results <- mapM classifyFile (Map.toAscList (manifestFiles manifest))
-  pure (sortOn trackedPath results)
+  results <- mapM classifyFile (Map.toAscList manifest.files)
+  pure (sortOn (.path) results)
   where
     classifyFile :: (Filesystem :> es') => (FilePath, FileRecord) -> Eff es' TrackedFile
     classifyFile (path, record) = do
@@ -29,13 +29,13 @@ computeTrackedFileStatuses manifest = do
             content <- readFileText path
             let diskHash = hashContent content
             pure
-              ( if diskHash == fileHash record
+              ( if diskHash == record.hash
                   then TfsUnchanged
                   else TfsModified
               )
       pure
         TrackedFile
-          { trackedPath = path,
-            trackedModule = fileModule record,
-            trackedStatus = status
+          { path = path,
+            moduleName = record.moduleName,
+            status = status
           }

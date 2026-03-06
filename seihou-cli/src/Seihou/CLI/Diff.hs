@@ -43,9 +43,9 @@ handleDiff = do
 
 formatDiffOutput :: Bool -> [TrackedFile] -> Text
 formatDiffOutput color tracked =
-  let modified = filter (\t -> trackedStatus t == TfsModified) tracked
-      deleted = filter (\t -> trackedStatus t == TfsDeleted) tracked
-      unchanged = filter (\t -> trackedStatus t == TfsUnchanged) tracked
+  let modified = filter (\t -> t.status == TfsModified) tracked
+      deleted = filter (\t -> t.status == TfsDeleted) tracked
+      unchanged = filter (\t -> t.status == TfsUnchanged) tracked
       nMod = length modified
       nDel = length deleted
       nUnch = length unchanged
@@ -53,7 +53,7 @@ formatDiffOutput color tracked =
    in if null changed
         then "No changes since last generation.\n"
         else
-          let maxPathLen = maximum (map (length . trackedPath) changed)
+          let maxPathLen = maximum (map (length . (.path)) changed)
               header = "Seihou Diff:\n"
               fileLines = map (formatLine color maxPathLen) changed
               summary =
@@ -68,12 +68,12 @@ formatDiffOutput color tracked =
 
 formatLine :: Bool -> Int -> TrackedFile -> Text
 formatLine color maxPathLen tf =
-  let (label, colorFn) = case trackedStatus tf of
+  let (label, colorFn) = case tf.status of
         TfsModified -> ("modified", yellow)
         TfsDeleted -> ("deleted ", red)
         TfsUnchanged -> ("unchanged", dim)
-      path = T.pack (trackedPath tf)
-      modName = unModuleName (trackedModule tf)
+      path = T.pack tf.path
+      modName = tf.moduleName.unModuleName
       paddedLabel = if color then colorFn label else label
       paddedPath = path <> T.replicate (maxPathLen - T.length path + 3) " "
       modAttr = if color then dim ("(" <> modName <> ")") else "(" <> modName <> ")"

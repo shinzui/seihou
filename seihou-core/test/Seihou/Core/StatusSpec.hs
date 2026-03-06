@@ -25,10 +25,10 @@ modName = ModuleName "test-module"
 mkRecord :: Text -> FileRecord
 mkRecord content =
   FileRecord
-    { fileHash = hashContent content,
-      fileModule = modName,
-      fileStrategy = Template,
-      fileGeneratedAt = fixedTime
+    { hash = hashContent content,
+      moduleName = modName,
+      strategy = Template,
+      generatedAt = fixedTime
     }
 
 runStatus :: PureFS -> Manifest -> [TrackedFile]
@@ -41,37 +41,37 @@ spec = do
     it "classifies a file matching its manifest hash as TfsUnchanged" $ do
       let content = "# Hello World"
           manifest =
-            (emptyManifest fixedTime)
-              { manifestFiles = Map.singleton "README.md" (mkRecord content)
+            (emptyManifest fixedTime :: Manifest)
+              { files = Map.singleton "README.md" (mkRecord content)
               }
           fs = PureFS (Map.singleton "README.md" content) mempty
           result = runStatus fs manifest
       length result `shouldBe` 1
-      trackedPath (head result) `shouldBe` "README.md"
-      trackedModule (head result) `shouldBe` modName
-      trackedStatus (head result) `shouldBe` TfsUnchanged
+      (head result).path `shouldBe` "README.md"
+      (head result).moduleName `shouldBe` modName
+      (head result).status `shouldBe` TfsUnchanged
 
     it "classifies a file with different disk content as TfsModified" $ do
       let originalContent = "# Hello"
           modifiedContent = "# Hello - edited"
           manifest =
-            (emptyManifest fixedTime)
-              { manifestFiles = Map.singleton "README.md" (mkRecord originalContent)
+            (emptyManifest fixedTime :: Manifest)
+              { files = Map.singleton "README.md" (mkRecord originalContent)
               }
           fs = PureFS (Map.singleton "README.md" modifiedContent) mempty
           result = runStatus fs manifest
       length result `shouldBe` 1
-      trackedStatus (head result) `shouldBe` TfsModified
+      (head result).status `shouldBe` TfsModified
 
     it "classifies a file missing from disk as TfsDeleted" $ do
       let content = "# Hello"
           manifest =
-            (emptyManifest fixedTime)
-              { manifestFiles = Map.singleton "README.md" (mkRecord content)
+            (emptyManifest fixedTime :: Manifest)
+              { files = Map.singleton "README.md" (mkRecord content)
               }
           result = runStatus emptyFS manifest
       length result `shouldBe` 1
-      trackedStatus (head result) `shouldBe` TfsDeleted
+      (head result).status `shouldBe` TfsDeleted
 
     it "handles mixed statuses across multiple files" $ do
       let unchangedContent = "unchanged"
@@ -79,8 +79,8 @@ spec = do
           modifiedCurrent = "edited"
           deletedContent = "deleted"
           manifest =
-            (emptyManifest fixedTime)
-              { manifestFiles =
+            (emptyManifest fixedTime :: Manifest)
+              { files =
                   Map.fromList
                     [ ("a.txt", mkRecord unchangedContent),
                       ("b.txt", mkRecord modifiedOriginal),
@@ -98,12 +98,12 @@ spec = do
           result = runStatus fs manifest
       length result `shouldBe` 3
       -- Results are sorted by path
-      trackedPath (result !! 0) `shouldBe` "a.txt"
-      trackedStatus (result !! 0) `shouldBe` TfsUnchanged
-      trackedPath (result !! 1) `shouldBe` "b.txt"
-      trackedStatus (result !! 1) `shouldBe` TfsModified
-      trackedPath (result !! 2) `shouldBe` "c.txt"
-      trackedStatus (result !! 2) `shouldBe` TfsDeleted
+      (result !! 0).path `shouldBe` "a.txt"
+      (result !! 0).status `shouldBe` TfsUnchanged
+      (result !! 1).path `shouldBe` "b.txt"
+      (result !! 1).status `shouldBe` TfsModified
+      (result !! 2).path `shouldBe` "c.txt"
+      (result !! 2).status `shouldBe` TfsDeleted
 
     it "returns empty list for empty manifest" $ do
       let manifest = emptyManifest fixedTime

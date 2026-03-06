@@ -34,11 +34,11 @@ compilePlan ::
   Map VarName VarValue -> -- Resolved variable values
   IO (Either [Text] [Operation])
 compilePlan baseDir modul vars = do
-  let modName = moduleName modul
-  results <- mapM (compileStep baseDir modName vars) (moduleSteps modul)
+  let modName = modul.name
+  results <- mapM (compileStep baseDir modName vars) modul.steps
   let (allErrors, allOps) = partitionResults results
   if null allErrors
-    then Right <$> pure (deduplicateDirs (concat allOps) ++ compileCommands vars (moduleCommands modul))
+    then Right <$> pure (deduplicateDirs (concat allOps) ++ compileCommands vars modul.commands)
     else pure (Left (concat allErrors))
 
 -- | Compile commands into 'RunCommandOp' operations.
@@ -47,11 +47,11 @@ compileCommands :: Map VarName VarValue -> [Command] -> [Operation]
 compileCommands vars = concatMap compileCommand
   where
     compileCommand cmd =
-      let shouldRun = case cmdWhen cmd of
+      let shouldRun = case cmd.condition of
             Nothing -> True
             Just expr -> evalExpr vars expr
        in if shouldRun
-            then [RunCommandOp (cmdRun cmd) (fmap T.unpack (cmdWorkDir cmd))]
+            then [RunCommandOp cmd.run (fmap T.unpack cmd.workDir)]
             else []
 
 -- | Compile a single step into operations (or skip it).
@@ -65,14 +65,14 @@ compileStep ::
   IO (Either [Text] [Operation])
 compileStep baseDir modName vars step = do
   -- Evaluate the when condition
-  let shouldRun = case stepWhen step of
+  let shouldRun = case step.condition of
         Nothing -> True
         Just expr -> evalExpr vars expr
   if not shouldRun
     then pure (Right [])
-    else case stepPatch step of
+    else case step.patch of
       Just _ -> compilePatchStep baseDir vars modName step
-      Nothing -> case stepStrategy step of
+      Nothing -> case step.strategy of
         Copy -> compileCopyStep baseDir vars step
         Template -> compileTemplateStep baseDir vars step
         DhallText -> compileDhallTextStep baseDir vars step
@@ -85,12 +85,12 @@ compileCopyStep ::
   Step ->
   IO (Either [Text] [Operation])
 compileCopyStep baseDir vars step = do
-  let srcPath = baseDir </> "files" </> stepSrc step
+  let srcPath = baseDir </> "files" </> step.src
   result <- tryReadFile srcPath
   case result of
     Left err -> pure (Left [err])
     Right content ->
-      case renderDestPath (stepDest step) vars of
+      case renderDestPath step.dest vars of
         Left placeholderErrors ->
           pure (Left (map formatPlaceholderError placeholderErrors))
         Right dest -> do
@@ -105,7 +105,7 @@ compileTemplateStep ::
   Step ->
   IO (Either [Text] [Operation])
 compileTemplateStep baseDir vars step = do
-  let srcPath = baseDir </> "files" </> stepSrc step
+  let srcPath = baseDir </> "files" </> step.src
   result <- tryReadFile srcPath
   case result of
     Left err -> pure (Left [err])
@@ -114,7 +114,7 @@ compileTemplateStep baseDir vars step = do
         Left placeholderErrors ->
           pure (Left (map formatPlaceholderError placeholderErrors))
         Right rendered ->
-          case renderDestPath (stepDest step) vars of
+          case renderDestPath step.dest vars of
             Left placeholderErrors ->
               pure (Left (map formatPlaceholderError placeholderErrors))
             Right dest -> do
@@ -129,7 +129,7 @@ compileDhallTextStep ::
   Step ->
   IO (Either [Text] [Operation])
 compileDhallTextStep baseDir vars step = do
-  let srcPath = baseDir </> "files" </> stepSrc step
+  let srcPath = baseDir </> "files" </> step.src
   result <- tryReadFile srcPath
   case result of
     Left err -> pure (Left [err])
@@ -142,7 +142,7 @@ compileDhallTextStep baseDir vars step = do
           case dhallResult of
             Left err -> pure (Left [err])
             Right evaluated ->
-              case renderDestPath (stepDest step) vars of
+              case renderDestPath step.dest vars of
                 Left placeholderErrors ->
                   pure (Left (map formatPlaceholderError placeholderErrors))
                 Right dest -> do
@@ -158,7 +158,7 @@ compileStructuredStep ::
   Step ->
   IO (Either [Text] [Operation])
 compileStructuredStep baseDir vars step = do
-  let srcPath = baseDir </> "files" </> stepSrc step
+  let srcPath = baseDir </> "files" </> step.src
   result <- tryReadFile srcPath
   case result of
     Left err -> pure (Left [err])
@@ -174,7 +174,7 @@ compileStructuredStep baseDir vars step = do
               case dhallExprToJSON dhallExpr of
                 Left err -> pure (Left [err])
                 Right jsonValue ->
-                  case renderDestPath (stepDest step) vars of
+                  case renderDestPath step.dest vars of
                     Left placeholderErrors ->
                       pure (Left (map formatPlaceholderError placeholderErrors))
                     Right dest ->
@@ -195,8 +195,8 @@ compilePatchStep ::
   Step ->
   IO (Either [Text] [Operation])
 compilePatchStep baseDir vars modName step = do
-  let srcPath = baseDir </> "files" </> stepSrc step
-      patchOp' = case stepPatch step of
+  let srcPath = baseDir </> "files" </> step.src
+      patchOp' = case step.patch of
         Just p -> p
         Nothing -> error "compilePatchStep called without patch op"
   result <- tryReadFile srcPath
@@ -204,7 +204,7 @@ compilePatchStep baseDir vars modName step = do
     Left err -> pure (Left [err])
     Right rawContent -> do
       -- Render content based on strategy
-      contentResult <- case stepStrategy step of
+      contentResult <- case step.strategy of
         Copy -> pure (Right rawContent)
         Template ->
           pure $ case renderTemplate rawContent vars of
@@ -223,13 +223,13 @@ compilePatchStep baseDir vars modName step = do
       case contentResult of
         Left errs -> pure (Left errs)
         Right content ->
-          case renderDestPath (stepDest step) vars of
+          case renderDestPath step.dest vars of
             Left placeholderErrors ->
               pure (Left (map formatPlaceholderError placeholderErrors))
             Right dest -> do
               let destStr = T.unpack dest
                   dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-              pure (Right (dirOps ++ [PatchFileOp destStr content patchOp' (stepStrategy step) modName]))
+              pure (Right (dirOps ++ [PatchFileOp destStr content patchOp' step.strategy modName]))
 
 -- | Evaluate a Dhall expression and return the normalized AST.
 evaluateDhallExpr :: Text -> IO (Either Text (DhallCore.Expr Src Void))

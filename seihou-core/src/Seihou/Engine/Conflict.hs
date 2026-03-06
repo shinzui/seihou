@@ -61,7 +61,7 @@ promptConflict ::
   ConflictFile ->
   Eff es ConflictResolution
 promptConflict c = do
-  putText $ "Conflict: " <> T.pack (conflictPath c) <> " (modified since last generation)"
+  putText $ "Conflict: " <> T.pack c.path <> " (modified since last generation)"
   promptChoice
   where
     promptChoice = do

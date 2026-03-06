@@ -17,32 +17,39 @@ tests = testSpec "Seihou.Core.Module" spec
 goodModule :: Module
 goodModule =
   Module
-    { moduleName = "test-module",
-      moduleDescription = Just "A test module",
-      moduleVars =
+    { name = "test-module",
+      description = Just "A test module",
+      vars =
         [ VarDecl
-            { varName = "project.name",
-              varType = VTText,
-              varDefault = Nothing,
-              varDescription = Just "Project name",
-              varRequired = True,
-              varValidation = Nothing
+            { name = "project.name",
+              type_ = VTText,
+              default_ = Nothing,
+              description = Just "Project name",
+              required = True,
+              validation = Nothing
             }
         ],
-      moduleExports = [VarExport {exportVar = "project.name", exportAs = Nothing}],
-      modulePrompts = [Prompt {promptVar = "project.name", promptText = "Name?", promptWhen = Nothing, promptChoices = Nothing}],
-      moduleSteps =
+      exports = [VarExport {var = "project.name", alias = Nothing}],
+      prompts = [Prompt {var = "project.name", text = "Name?", condition = Nothing, choices = Nothing}],
+      steps =
         [ Step
-            { stepStrategy = Template,
-              stepSrc = "README.md.tpl",
-              stepDest = "README.md",
-              stepWhen = Nothing,
-              stepPatch = Nothing
+            { strategy = Template,
+              src = "README.md.tpl",
+              dest = "README.md",
+              condition = Nothing,
+              patch = Nothing
             }
         ],
-      moduleCommands = [],
-      moduleDependencies = []
+      commands = [],
+      dependencies = []
     }
+
+-- | Helpers to update Module fields without ambiguous record updates.
+withModuleName :: ModuleName -> Module -> Module
+withModuleName n m = Module n m.description m.vars m.exports m.prompts m.steps m.commands m.dependencies
+
+withModuleVars :: [VarDecl] -> Module -> Module
+withModuleVars v m = Module m.name m.description v m.exports m.prompts m.steps m.commands m.dependencies
 
 hasError :: T.Text -> [T.Text] -> Bool
 hasError needle = any (T.isInfixOf needle)
@@ -62,7 +69,7 @@ spec = do
       result <- discoverModule ["/nonexistent/path"] "no-such-module"
       case result of
         Left (ModuleNotFound name paths) -> do
-          unModuleName name `shouldBe` "no-such-module"
+          name.unModuleName `shouldBe` "no-such-module"
           paths `shouldBe` ["/nonexistent/path"]
         Left other -> expectationFailure ("Expected ModuleNotFound, got: " <> show other)
         Right _ -> expectationFailure "Expected Left, got Right"
@@ -87,14 +94,14 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         result <- validateModule tmpDir goodModule
         case result of
-          Right m -> moduleName m `shouldBe` "test-module"
+          Right m -> m.name `shouldBe` "test-module"
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
     it "rejects a bad module name" $ do
       withSystemTempDirectory "seihou-test" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
-        let bad = goodModule {moduleName = "BadName"}
+        let bad = withModuleName "BadName" goodModule
         result <- validateModule tmpDir bad
         case result of
           Left (ValidationError _ errs) ->
@@ -107,12 +114,11 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let dup =
-              goodModule
-                { moduleVars =
-                    [ VarDecl "x" VTText Nothing Nothing True Nothing,
-                      VarDecl "x" VTBool Nothing Nothing False Nothing
-                    ]
-                }
+              withModuleVars
+                [ VarDecl "x" VTText Nothing Nothing True Nothing,
+                  VarDecl "x" VTBool Nothing Nothing False Nothing
+                ]
+                goodModule
         result <- validateModule tmpDir dup
         case result of
           Left (ValidationError _ errs) ->
@@ -126,8 +132,8 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
               goodModule
-                { modulePrompts =
-                    [Prompt {promptVar = "nonexistent", promptText = "?", promptWhen = Nothing, promptChoices = Nothing}]
+                { prompts =
+                    [Prompt {var = "nonexistent", text = "?", condition = Nothing, choices = Nothing}]
                 }
         result <- validateModule tmpDir bad
         case result of
@@ -151,7 +157,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
               goodModule
-                { moduleExports = [VarExport {exportVar = "nonexistent", exportAs = Nothing}]
+                { exports = [VarExport {var = "nonexistent", alias = Nothing}]
                 }
         result <- validateModule tmpDir bad
         case result of
@@ -166,7 +172,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
               goodModule
-                { moduleSteps =
+                { steps =
                     [Step Template "README.md.tpl" "../etc/passwd" Nothing Nothing]
                 }
         result <- validateModule tmpDir bad
@@ -182,7 +188,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
               goodModule
-                { moduleSteps =
+                { steps =
                     [Step Template "README.md.tpl" "/etc/passwd" Nothing Nothing]
                 }
         result <- validateModule tmpDir bad
@@ -198,7 +204,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
               goodModule
-                { moduleSteps =
+                { steps =
                     [Step Template "README.md.tpl" "src/{{unknown}}/Main.hs" Nothing Nothing]
                 }
         result <- validateModule tmpDir bad
@@ -212,14 +218,14 @@ spec = do
       withSystemTempDirectory "seihou-test" $ \tmpDir -> do
         let bad =
               Module
-                { moduleName = "BadName",
-                  moduleDescription = Nothing,
-                  moduleVars = [],
-                  moduleExports = [VarExport {exportVar = "missing", exportAs = Nothing}],
-                  modulePrompts = [Prompt {promptVar = "missing", promptText = "?", promptWhen = Nothing, promptChoices = Nothing}],
-                  moduleSteps = [Step Template "nonexistent.tpl" "/bad/dest" Nothing Nothing],
-                  moduleCommands = [],
-                  moduleDependencies = []
+                { name = "BadName",
+                  description = Nothing,
+                  vars = [],
+                  exports = [VarExport {var = "missing", alias = Nothing}],
+                  prompts = [Prompt {var = "missing", text = "?", condition = Nothing, choices = Nothing}],
+                  steps = [Step Template "nonexistent.tpl" "/bad/dest" Nothing Nothing],
+                  commands = [],
+                  dependencies = []
                 }
         result <- validateModule tmpDir bad
         case result of
@@ -235,9 +241,9 @@ spec = do
       result <- loadModule searchPaths "haskell-base"
       case result of
         Right m -> do
-          moduleName m `shouldBe` "haskell-base"
-          length (moduleVars m) `shouldBe` 3
-          length (moduleSteps m) `shouldBe` 5
+          m.name `shouldBe` "haskell-base"
+          length (m.vars) `shouldBe` 3
+          length (m.steps) `shouldBe` 5
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
 
     it "returns ModuleNotFound for nonexistent module" $ do

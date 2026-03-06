@@ -38,30 +38,30 @@ runConfigWriterPure initial = reinterpret (runState initial) handler
     handler :: (State ConfigWriterState :> es') => EffectHandler ConfigWriter es'
     handler _ = \case
       WriteConfigValue scope key val ->
-        modify (writeToScope scope key val)
+        modify @ConfigWriterState (writeToScope scope key val)
       DeleteConfigValue scope key ->
-        modify (deleteFromScope scope key)
+        modify @ConfigWriterState (deleteFromScope scope key)
       ListConfigValues scope -> do
-        st <- get
+        st <- get @ConfigWriterState
         pure (Right (readScope scope st))
 
 writeToScope :: ConfigScope -> Text -> Text -> ConfigWriterState -> ConfigWriterState
-writeToScope ScopeLocal key val st = st {cwLocal = Map.insert key val (cwLocal st)}
+writeToScope ScopeLocal key val st = st {cwLocal = Map.insert key val st.cwLocal}
 writeToScope (ScopeNamespace ns) key val st =
-  let nsMap = Map.findWithDefault Map.empty ns (cwNamespaces st)
+  let nsMap = Map.findWithDefault Map.empty ns st.cwNamespaces
       updated = Map.insert key val nsMap
-   in st {cwNamespaces = Map.insert ns updated (cwNamespaces st)}
-writeToScope ScopeGlobal key val st = st {cwGlobal = Map.insert key val (cwGlobal st)}
+   in st {cwNamespaces = Map.insert ns updated st.cwNamespaces}
+writeToScope ScopeGlobal key val st = st {cwGlobal = Map.insert key val st.cwGlobal}
 
 deleteFromScope :: ConfigScope -> Text -> ConfigWriterState -> ConfigWriterState
-deleteFromScope ScopeLocal key st = st {cwLocal = Map.delete key (cwLocal st)}
+deleteFromScope ScopeLocal key st = st {cwLocal = Map.delete key st.cwLocal}
 deleteFromScope (ScopeNamespace ns) key st =
-  let nsMap = Map.findWithDefault Map.empty ns (cwNamespaces st)
+  let nsMap = Map.findWithDefault Map.empty ns st.cwNamespaces
       updated = Map.delete key nsMap
-   in st {cwNamespaces = Map.insert ns updated (cwNamespaces st)}
-deleteFromScope ScopeGlobal key st = st {cwGlobal = Map.delete key (cwGlobal st)}
+   in st {cwNamespaces = Map.insert ns updated st.cwNamespaces}
+deleteFromScope ScopeGlobal key st = st {cwGlobal = Map.delete key st.cwGlobal}
 
 readScope :: ConfigScope -> ConfigWriterState -> Map Text Text
-readScope ScopeLocal st = cwLocal st
-readScope (ScopeNamespace ns) st = Map.findWithDefault Map.empty ns (cwNamespaces st)
-readScope ScopeGlobal st = cwGlobal st
+readScope ScopeLocal st = st.cwLocal
+readScope (ScopeNamespace ns) st = Map.findWithDefault Map.empty ns st.cwNamespaces
+readScope ScopeGlobal st = st.cwGlobal

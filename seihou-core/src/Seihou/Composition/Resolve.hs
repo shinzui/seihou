@@ -33,11 +33,11 @@ loadComposition searchPaths primary additional = do
     Left err -> pure (Left err)
     Right (primaryMod, primaryDir) -> do
       -- Add additional modules as implicit dependencies of the primary
-      let effectiveDeps = moduleDependencies primaryMod ++ additional
-          effectivePrimary = primaryMod {moduleDependencies = nubOrd effectiveDeps}
+      let effectiveDeps = primaryMod.dependencies ++ additional
+          effectivePrimary = primaryMod {dependencies = nubOrd effectiveDeps}
           loaded = Map.singleton primary (effectivePrimary, primaryDir)
       -- Recursively load all transitive dependencies
-      transResult <- loadTransitive searchPaths loaded (moduleDependencies effectivePrimary)
+      transResult <- loadTransitive searchPaths loaded effectivePrimary.dependencies
       case transResult of
         Left err -> pure (Left err)
         Right allModules -> do
@@ -77,16 +77,16 @@ resolveComposedVariables modulesInOrder cliOverrides envVars namespace localConf
       Either [VarError] (Map ModuleName (Map VarName ResolvedVar))
     go [] perModule _ = Right perModule
     go ((m, _dir) : rest) perModule allExports = do
-      let deps = moduleDependencies m
+      let deps = m.dependencies
           -- Collect exports from direct dependencies only
           visibleExports =
             Map.unions [Map.findWithDefault Map.empty dep allExports | dep <- deps]
           -- Inject exported values as defaults for declared variables
-          adjustedDecls = map (injectExportDefault visibleExports) (moduleVars m)
+          adjustedDecls = map (injectExportDefault visibleExports) m.vars
       -- Resolve this module's declared variables
       resolved <- resolveVariables adjustedDecls cliOverrides envVars namespace localConfig nsConfig globalConfig
       -- Add inherited (non-declared) exports to the resolved map
-      let declaredNames = Set.fromList (map varName (moduleVars m))
+      let declaredNames = Set.fromList (map (.name) m.vars)
           inherited =
             Map.mapWithKey
               makeInheritedResolved
@@ -96,8 +96,8 @@ resolveComposedVariables modulesInOrder cliOverrides envVars namespace localConf
       let myExports = exportedVars m fullResolved
       go
         rest
-        (Map.insert (moduleName m) fullResolved perModule)
-        (Map.insert (moduleName m) myExports allExports)
+        (Map.insert m.name fullResolved perModule)
+        (Map.insert m.name myExports allExports)
 
 -- | Resolve variables for all modules with interactive prompt support.
 --
@@ -127,13 +127,13 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
       Eff es (Either [VarError] (Map ModuleName (Map VarName ResolvedVar)))
     goPrompt _ [] perModule _ = pure (Right perModule)
     goPrompt interactive ((m, _dir) : rest) perModule allExports = do
-      let deps = moduleDependencies m
+      let deps = m.dependencies
           visibleExports =
             Map.unions [Map.findWithDefault Map.empty dep allExports | dep <- deps]
-          adjustedDecls = map (injectExportDefault visibleExports) (moduleVars m)
+          adjustedDecls = map (injectExportDefault visibleExports) m.vars
       case resolveVariables adjustedDecls cliOverrides envVars namespace localConfig nsConfig globalConfig of
         Right resolved -> do
-          let declaredNames = Set.fromList (map varName (moduleVars m))
+          let declaredNames = Set.fromList (map (.name) m.vars)
               inherited =
                 Map.mapWithKey
                   makeInheritedResolved
@@ -143,8 +143,8 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
           goPrompt
             interactive
             rest
-            (Map.insert (moduleName m) fullResolved perModule)
-            (Map.insert (moduleName m) myExports allExports)
+            (Map.insert m.name fullResolved perModule)
+            (Map.insert m.name myExports allExports)
         Left errs -> do
           -- Separate MissingRequiredVar from other errors
           let (missing, fatal) = partitionErrors errs
@@ -155,10 +155,10 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
                 then pure (Left errs)
                 else do
                   -- Build the currently-resolved bindings for condition evaluation
-                  let currentBindings = Map.map resolvedValue (Map.unions (Map.elems perModule))
-                      missingDecls = [d | d <- adjustedDecls, varName d `elem` map getMissingName missing]
+                  let currentBindings = Map.map (.value) (Map.unions (Map.elems perModule))
+                      missingDecls = [d | d <- adjustedDecls, d.name `elem` map getMissingName missing]
                   -- Run prompts for unresolved variables
-                  prompted <- runPrompts (modulePrompts m) missingDecls currentBindings
+                  prompted <- runPrompts m.prompts missingDecls currentBindings
                   -- Check if all missing variables are now resolved
                   let stillMissing = [e | e <- missing, not (Map.member (getMissingName e) prompted)]
                   if not (null stillMissing)
@@ -167,7 +167,7 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
                       -- Re-resolve: merge prompted values as CLI overrides
                       let promptedOverrides =
                             Map.union cliOverrides $
-                              Map.map (varValueToText . resolvedValue) prompted
+                              Map.map (varValueToText . (.value)) prompted
                       case resolveVariables adjustedDecls promptedOverrides envVars namespace localConfig nsConfig globalConfig of
                         Left errs' -> pure (Left errs')
                         Right resolved -> do
@@ -180,7 +180,7 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
                                         Nothing -> rv
                                   )
                                   resolved
-                              declaredNames = Set.fromList (map varName (moduleVars m))
+                              declaredNames = Set.fromList (map (.name) m.vars)
                               inherited =
                                 Map.mapWithKey
                                   makeInheritedResolved
@@ -190,8 +190,8 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
                           goPrompt
                             interactive
                             rest
-                            (Map.insert (moduleName m) fullResolved perModule)
-                            (Map.insert (moduleName m) myExports allExports)
+                            (Map.insert m.name fullResolved perModule)
+                            (Map.insert m.name myExports allExports)
 
 -- | Extract the variable name from a MissingRequiredVar error.
 getMissingName :: VarError -> VarName
@@ -218,14 +218,14 @@ varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
 exportedVars :: Module -> Map VarName ResolvedVar -> Map VarName VarValue
 exportedVars m resolved =
   Map.fromList
-    [ (exportName e, resolvedValue rv)
-    | e <- moduleExports m,
-      Just rv <- [Map.lookup (exportVar e) resolved]
+    [ (exportName e, rv.value)
+    | e <- m.exports,
+      Just rv <- [Map.lookup e.var resolved]
     ]
   where
-    exportName e = case exportAs e of
-      Just alias -> alias
-      Nothing -> exportVar e
+    exportName e = case e.alias of
+      Just a -> a
+      Nothing -> e.var
 
 -- Internal helpers
 
@@ -262,7 +262,7 @@ loadTransitive searchPaths loaded (name : rest)
         Left err -> pure (Left err)
         Right (m, dir) -> do
           let loaded' = Map.insert name (m, dir) loaded
-              newDeps = moduleDependencies m
+              newDeps = m.dependencies
           loadTransitive searchPaths loaded' (rest ++ newDeps)
 
 -- | Inject an exported value as the default for a variable declaration.
@@ -270,24 +270,24 @@ loadTransitive searchPaths loaded (name : rest)
 -- the module author's default while still being overridable by CLI/env.
 injectExportDefault :: Map VarName VarValue -> VarDecl -> VarDecl
 injectExportDefault exports decl =
-  case Map.lookup (varName decl) exports of
-    Just val -> decl {varDefault = Just val}
+  case Map.lookup decl.name exports of
+    Just val -> decl {default_ = Just val}
     Nothing -> decl
 
 -- | Create a ResolvedVar for an inherited (non-declared) export variable.
 makeInheritedResolved :: VarName -> VarValue -> ResolvedVar
-makeInheritedResolved name val =
+makeInheritedResolved n val =
   ResolvedVar
-    { resolvedValue = val,
-      resolvedSource = FromDefault,
-      resolvedDecl =
+    { value = val,
+      source = FromDefault,
+      decl =
         VarDecl
-          { varName = name,
-            varType = inferType val,
-            varDefault = Just val,
-            varDescription = Nothing,
-            varRequired = False,
-            varValidation = Nothing
+          { name = n,
+            type_ = inferType val,
+            default_ = Just val,
+            description = Nothing,
+            required = False,
+            validation = Nothing
           }
     }
 

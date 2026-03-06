@@ -13,7 +13,7 @@ spec = do
   describe "ModuleName" $ do
     it "supports OverloadedStrings" $ do
       let name = "my-module" :: ModuleName
-      unModuleName name `shouldBe` "my-module"
+      name.unModuleName `shouldBe` "my-module"
 
     it "supports Eq" $ do
       ("a" :: ModuleName) `shouldBe` ("a" :: ModuleName)
@@ -25,7 +25,7 @@ spec = do
   describe "VarName" $ do
     it "supports OverloadedStrings" $ do
       let name = "project.name" :: VarName
-      unVarName name `shouldBe` "project.name"
+      name.unVarName `shouldBe` "project.name"
 
   describe "VarType" $ do
     it "has five distinct constructors" $ do
@@ -51,14 +51,14 @@ spec = do
     it "can be constructed with all fields" $ do
       let decl =
             VarDecl
-              { varName = "project.name",
-                varType = VTText,
-                varDefault = Just (VText "my-app"),
-                varDescription = Just "Name of the project",
-                varRequired = True,
-                varValidation = Just (ValPattern "[a-z][a-z0-9-]*")
+              { name = "project.name",
+                type_ = VTText,
+                default_ = Just (VText "my-app"),
+                description = Just "Name of the project",
+                required = True,
+                validation = Just (ValPattern "[a-z][a-z0-9-]*")
               }
-      varRequired decl `shouldBe` True
+      decl.required `shouldBe` True
 
   describe "Strategy" $ do
     it "has four distinct constructors" $ do
@@ -70,61 +70,61 @@ spec = do
     it "can be constructed with all fields" $ do
       let m =
             Module
-              { moduleName = "haskell-base",
-                moduleDescription = Just "A Haskell project template",
-                moduleVars = [],
-                moduleExports = [],
-                modulePrompts = [],
-                moduleSteps = [],
-                moduleCommands = [],
-                moduleDependencies = []
+              { name = "haskell-base",
+                description = Just "A Haskell project template",
+                vars = [],
+                exports = [],
+                prompts = [],
+                steps = [],
+                commands = [],
+                dependencies = []
               }
-      moduleName m `shouldBe` "haskell-base"
+      m.name `shouldBe` "haskell-base"
 
     it "supports Eq for identical values" $ do
       let m =
             Module
-              { moduleName = "test",
-                moduleDescription = Nothing,
-                moduleVars = [],
-                moduleExports = [],
-                modulePrompts = [],
-                moduleSteps = [],
-                moduleCommands = [],
-                moduleDependencies = []
+              { name = "test",
+                description = Nothing,
+                vars = [],
+                exports = [],
+                prompts = [],
+                steps = [],
+                commands = [],
+                dependencies = []
               }
       m `shouldBe` m
 
     it "supports Show" $ do
       let m =
             Module
-              { moduleName = "test",
-                moduleDescription = Nothing,
-                moduleVars = [],
-                moduleExports = [],
-                modulePrompts = [],
-                moduleSteps = [],
-                moduleCommands = [],
-                moduleDependencies = []
+              { name = "test",
+                description = Nothing,
+                vars = [],
+                exports = [],
+                prompts = [],
+                steps = [],
+                commands = [],
+                dependencies = []
               }
       show m `shouldNotBe` ""
 
   describe "Operation" $ do
     it "supports WriteFileOp" $ do
-      let op = WriteFileOp {opDest = "README.md", opContent = "# Hello", opStrategy = Template}
-      opDest op `shouldBe` "README.md"
+      let op = WriteFileOp {dest = "README.md", content = "# Hello", strategy = Template}
+      op.dest `shouldBe` "README.md"
 
     it "supports CreateDirOp" $ do
-      let op = CreateDirOp {opPath = "src"}
-      opPath op `shouldBe` "src"
+      let op = CreateDirOp {path = "src"}
+      op.path `shouldBe` "src"
 
     it "supports CopyFileOp" $ do
-      let op = CopyFileOp {opSrc = "a.txt", opDest = "b.txt"}
-      opSrc op `shouldBe` "a.txt"
+      let op = CopyFileOp {src = "a.txt", dest = "b.txt"}
+      op.src `shouldBe` "a.txt"
 
     it "supports RunCommandOp" $ do
-      let op = RunCommandOp {opCommand = "git init", opWorkDir = Nothing}
-      opCommand op `shouldBe` "git init"
+      let op = RunCommandOp {command = "git init", workDir = Nothing}
+      op.command `shouldBe` "git init"
 
   describe "Expr" $ do
     it "supports ExprIsSet" $ do
@@ -141,4 +141,4 @@ spec = do
     it "has a version field" $ do
       -- Verify the Manifest type is a record with expected fields
       let hash = SHA256 "abc"
-      unSHA256 hash `shouldBe` "abc"
+      hash.unSHA256 `shouldBe` "abc"

@@ -39,7 +39,7 @@ compileComposedPlan modules = do
       result <- compilePlan dir m vars
       case result of
         Left errs -> pure (Left errs)
-        Right ops -> pure (Right (moduleName m, ops))
+        Right ops -> pure (Right (m.name, ops))
 
 -- | Merge operation lists from multiple modules, handling file conflicts.
 --

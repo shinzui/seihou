@@ -31,7 +31,7 @@ runLoggerPure = reinterpret (runState emptyLoggerState) handler
   where
     handler :: (State LoggerState :> es') => EffectHandler Logger es'
     handler _ = \case
-      LogDebug msg -> modify (\s -> s {logDebugMsgs = logDebugMsgs s ++ [msg]})
-      LogInfo msg -> modify (\s -> s {logInfoMsgs = logInfoMsgs s ++ [msg]})
-      LogWarn msg -> modify (\s -> s {logWarnMsgs = logWarnMsgs s ++ [msg]})
-      LogError msg -> modify (\s -> s {logErrorMsgs = logErrorMsgs s ++ [msg]})
+      LogDebug msg -> modify @LoggerState (\s -> s {logDebugMsgs = s.logDebugMsgs ++ [msg]})
+      LogInfo msg -> modify @LoggerState (\s -> s {logInfoMsgs = s.logInfoMsgs ++ [msg]})
+      LogWarn msg -> modify @LoggerState (\s -> s {logWarnMsgs = s.logWarnMsgs ++ [msg]})
+      LogError msg -> modify @LoggerState (\s -> s {logErrorMsgs = s.logErrorMsgs ++ [msg]})

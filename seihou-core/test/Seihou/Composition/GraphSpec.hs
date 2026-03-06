@@ -14,14 +14,14 @@ tests = testSpec "Seihou.Composition.Graph" spec
 mkModule :: ModuleName -> [ModuleName] -> Module
 mkModule name deps =
   Module
-    { moduleName = name,
-      moduleDescription = Nothing,
-      moduleVars = [],
-      moduleExports = [],
-      modulePrompts = [],
-      moduleSteps = [],
-      moduleCommands = [],
-      moduleDependencies = deps
+    { name = name,
+      description = Nothing,
+      vars = [],
+      exports = [],
+      prompts = [],
+      steps = [],
+      commands = [],
+      dependencies = deps
     }
 
 spec :: Spec
@@ -30,16 +30,16 @@ spec = do
     it "builds a graph from a single module with no dependencies" $ do
       let m = mkModule "base" []
           g = buildGraph [m]
-      length (cgModules g) `shouldBe` 1
-      length (cgEdges g) `shouldBe` 1
+      length (g.cgModules) `shouldBe` 1
+      length (g.cgEdges) `shouldBe` 1
 
     it "builds a graph preserving dependency edges" $ do
       let a = mkModule "a" ["b", "c"]
           b = mkModule "b" []
           c = mkModule "c" []
           g = buildGraph [a, b, c]
-      length (cgModules g) `shouldBe` 3
-      length (cgEdges g) `shouldBe` 3
+      length (g.cgModules) `shouldBe` 3
+      length (g.cgEdges) `shouldBe` 3
 
   describe "topoSort" $ do
     it "returns a single module with no dependencies" $ do

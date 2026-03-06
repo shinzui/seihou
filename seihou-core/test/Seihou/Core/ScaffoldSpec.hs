@@ -29,7 +29,7 @@ spec = do
         result <- evalModuleFromFile dhallFile
         case result of
           Left err -> expectationFailure $ "Failed to load generated module: " ++ show err
-          Right m -> moduleName m `shouldBe` "test-mod"
+          Right m -> m.name `shouldBe` "test-mod"
 
     it "generates a module that passes validateModule" $ do
       withSystemTempDirectory "seihou-scaffold-test" $ \tmpDir -> do
@@ -60,13 +60,13 @@ spec = do
         case result of
           Left err -> expectationFailure $ "Failed to load: " ++ show err
           Right m -> do
-            length (moduleVars m) `shouldBe` 1
-            varName (head (moduleVars m)) `shouldBe` "project.name"
-            length (moduleSteps m) `shouldBe` 1
-            length (modulePrompts m) `shouldBe` 1
-            length (moduleCommands m) `shouldBe` 0
-            length (moduleExports m) `shouldBe` 0
-            length (moduleDependencies m) `shouldBe` 0
+            length (m.vars) `shouldBe` 1
+            (head m.vars).name `shouldBe` "project.name"
+            length (m.steps) `shouldBe` 1
+            length (m.prompts) `shouldBe` 1
+            length (m.commands) `shouldBe` 0
+            length (m.exports) `shouldBe` 0
+            length (m.dependencies) `shouldBe` 0
 
   describe "readmeTemplate" $ do
     it "contains the project.name placeholder" $ do

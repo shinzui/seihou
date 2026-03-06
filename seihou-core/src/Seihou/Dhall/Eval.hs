@@ -51,10 +51,10 @@ evalModuleFromFile path = do
   result <- try $ do
     m <- inputFile moduleDecoder path
     -- Force lazy decoder thunks that may contain 'error' calls
-    mapM_ (\v -> evaluate (varType v)) (moduleVars m)
-    mapM_ (\s -> evaluate (stepStrategy s) >> evaluate (stepWhen s) >> mapM_ evaluate (stepPatch s)) (moduleSteps m)
-    mapM_ (\c -> mapM_ evaluate (cmdWhen c)) (moduleCommands m)
-    mapM_ (\p -> evaluate (promptWhen p)) (modulePrompts m)
+    mapM_ (\v -> evaluate v.type_) m.vars
+    mapM_ (\s -> evaluate s.strategy >> evaluate s.condition >> mapM_ evaluate s.patch) m.steps
+    mapM_ (\c -> mapM_ evaluate c.condition) m.commands
+    mapM_ (\p -> evaluate p.condition) m.prompts
     pure m
   case result of
     Left (e :: SomeException) ->
@@ -174,10 +174,10 @@ promptDecoder =
   where
     mkPrompt v t whenText choices =
       Prompt
-        { promptVar = v,
-          promptText = t,
-          promptWhen = parseWhen whenText,
-          promptChoices = choices
+        { var = v,
+          text = t,
+          condition = parseWhen whenText,
+          choices = choices
         }
 
 -- | Decoder for PatchOp from a Dhall Text string.
@@ -210,11 +210,11 @@ stepDecoder =
   where
     mkStep strat src dest whenText patchText =
       Step
-        { stepStrategy = strat,
-          stepSrc = src,
-          stepDest = dest,
-          stepWhen = parseWhen whenText,
-          stepPatch = fmap parsePatchOp patchText
+        { strategy = strat,
+          src = src,
+          dest = dest,
+          condition = parseWhen whenText,
+          patch = fmap parsePatchOp patchText
         }
     parsePatchOp "append-file" = AppendFile
     parsePatchOp "prepend-file" = PrependFile
@@ -234,9 +234,9 @@ commandDecoder =
   where
     mkCommand run workDir whenText =
       Command
-        { cmdRun = run,
-          cmdWorkDir = workDir,
-          cmdWhen = parseWhen whenText
+        { run = run,
+          workDir = workDir,
+          condition = parseWhen whenText
         }
 
 -- | Parse an optional @when@ expression text into an 'Expr'.

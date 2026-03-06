@@ -18,14 +18,14 @@ validModule name desc src =
     { discoveredResult =
         Right
           Module
-            { moduleName = ModuleName (T.pack name),
-              moduleDescription = Just (T.pack desc),
-              moduleVars = [],
-              moduleExports = [],
-              modulePrompts = [],
-              moduleSteps = [],
-              moduleCommands = [],
-              moduleDependencies = []
+            { name = ModuleName (T.pack name),
+              description = Just (T.pack desc),
+              vars = [],
+              exports = [],
+              prompts = [],
+              steps = [],
+              commands = [],
+              dependencies = []
             },
       discoveredSource = src,
       discoveredDir = "/fake/" ++ name

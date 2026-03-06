@@ -31,61 +31,61 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          moduleName m `shouldBe` ModuleName "haskell-base"
-          moduleDescription m `shouldBe` Just "A Haskell project template"
-          length (moduleVars m) `shouldBe` 3
-          length (modulePrompts m) `shouldBe` 1
-          length (moduleSteps m) `shouldBe` 5
-          length (moduleExports m) `shouldBe` 1
-          moduleDependencies m `shouldBe` []
+          m.name `shouldBe` ModuleName "haskell-base"
+          m.description `shouldBe` Just "A Haskell project template"
+          length (m.vars) `shouldBe` 3
+          length (m.prompts) `shouldBe` 1
+          length (m.steps) `shouldBe` 5
+          length (m.exports) `shouldBe` 1
+          m.dependencies `shouldBe` []
 
     it "decodes variable declarations correctly" $ do
       result <- evalModuleFromFile (fixtureDir </> "haskell-base" </> "module.dhall")
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          let (projectName : projectVersion : _) = moduleVars m
-          varName projectName `shouldBe` VarName "project.name"
-          varType projectName `shouldBe` VTText
-          varDefault projectName `shouldBe` Nothing
-          varRequired projectName `shouldBe` True
-          varValidation projectName `shouldBe` Just (ValPattern "[a-z][a-z0-9-]*")
+          let (projectName : projectVersion : _) = m.vars
+          projectName.name `shouldBe` VarName "project.name"
+          projectName.type_ `shouldBe` VTText
+          projectName.default_ `shouldBe` Nothing
+          projectName.required `shouldBe` True
+          projectName.validation `shouldBe` Just (ValPattern "[a-z][a-z0-9-]*")
 
-          varName projectVersion `shouldBe` VarName "project.version"
-          varDefault projectVersion `shouldBe` Just (VText "0.1.0.0")
-          varRequired projectVersion `shouldBe` False
+          projectVersion.name `shouldBe` VarName "project.version"
+          projectVersion.default_ `shouldBe` Just (VText "0.1.0.0")
+          projectVersion.required `shouldBe` False
 
     it "decodes steps with correct strategy" $ do
       result <- evalModuleFromFile (fixtureDir </> "haskell-base" </> "module.dhall")
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          let (readme : libStep : licenseStep : _) = moduleSteps m
-          stepStrategy readme `shouldBe` Template
-          stepSrc readme `shouldBe` "README.md.tpl"
-          stepDest readme `shouldBe` "README.md"
-          stepWhen readme `shouldBe` Nothing
-          stepPatch readme `shouldBe` Nothing
+          let (readme : libStep : licenseStep : _) = m.steps
+          readme.strategy `shouldBe` Template
+          readme.src `shouldBe` "README.md.tpl"
+          readme.dest `shouldBe` "README.md"
+          readme.condition `shouldBe` Nothing
+          readme.patch `shouldBe` Nothing
 
-          stepStrategy libStep `shouldBe` Template
-          stepSrc libStep `shouldBe` "src/Lib.hs.tpl"
-          stepDest libStep `shouldBe` "src/Lib.hs"
-          stepPatch libStep `shouldBe` Nothing
+          libStep.strategy `shouldBe` Template
+          libStep.src `shouldBe` "src/Lib.hs.tpl"
+          libStep.dest `shouldBe` "src/Lib.hs"
+          libStep.patch `shouldBe` Nothing
 
-          stepStrategy licenseStep `shouldBe` Copy
-          stepSrc licenseStep `shouldBe` "LICENSE"
-          stepDest licenseStep `shouldBe` "LICENSE"
-          stepWhen licenseStep `shouldBe` Just (ExprIsSet "license")
-          stepPatch licenseStep `shouldBe` Nothing
+          licenseStep.strategy `shouldBe` Copy
+          licenseStep.src `shouldBe` "LICENSE"
+          licenseStep.dest `shouldBe` "LICENSE"
+          licenseStep.condition `shouldBe` Just (ExprIsSet "license")
+          licenseStep.patch `shouldBe` Nothing
 
     it "decodes exports correctly" $ do
       result <- evalModuleFromFile (fixtureDir </> "haskell-base" </> "module.dhall")
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          let (export1 : _) = moduleExports m
-          exportVar export1 `shouldBe` VarName "project.name"
-          exportAs export1 `shouldBe` Nothing
+          let (export1 : _) = m.exports
+          export1.var `shouldBe` VarName "project.name"
+          export1.alias `shouldBe` Nothing
 
     it "returns DhallEvalError for nonexistent file" $ do
       result <- evalModuleFromFile "/nonexistent/path/module.dhall"
@@ -115,11 +115,11 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          let (prompt1 : _) = modulePrompts m
-          promptVar prompt1 `shouldBe` VarName "project.name"
-          promptText prompt1 `shouldBe` "What is the project name?"
-          promptWhen prompt1 `shouldBe` Nothing
-          promptChoices prompt1 `shouldBe` Nothing
+          let (prompt1 : _) = m.prompts
+          prompt1.var `shouldBe` VarName "project.name"
+          prompt1.text `shouldBe` "What is the project name?"
+          prompt1.condition `shouldBe` Nothing
+          prompt1.choices `shouldBe` Nothing
 
     it "decodes step with patch = Some \"append-file\"" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -159,10 +159,10 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right m -> do
-            let (s1 : s2 : s3 : _) = moduleSteps m
-            stepPatch s1 `shouldBe` Just AppendFile
-            stepPatch s2 `shouldBe` Just PrependFile
-            stepPatch s3 `shouldBe` Just AppendSection
+            let (s1 : s2 : s3 : _) = m.steps
+            s1.patch `shouldBe` Just AppendFile
+            s2.patch `shouldBe` Just PrependFile
+            s3.patch `shouldBe` Just AppendSection
 
     it "returns Left for unknown patch operation (not a crash)" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do

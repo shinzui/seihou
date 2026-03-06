@@ -25,5 +25,5 @@ runProcessPure mocks = interpret $ \_ -> \case
 findMock :: Text -> [Text] -> [ProcessMock] -> Maybe (ExitCode, Text, Text)
 findMock _ _ [] = Nothing
 findMock cmd args (m : ms)
-  | mockCommand m == cmd && mockArgs m == args = Just (mockResult m)
+  | m.mockCommand == cmd && m.mockArgs == args = Just m.mockResult
   | otherwise = findMock cmd args ms

@@ -26,7 +26,7 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right modules -> do
-          let names = map (moduleName . fst) modules
+          let names = map ((.name) . fst) modules
           length names `shouldBe` 4
           -- All four modules should be present
           elem "nix-base" names `shouldBe` True
@@ -39,7 +39,7 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right modules -> do
-          let names = map (moduleName . fst) modules
+          let names = map ((.name) . fst) modules
               indexOf n = case lookup n (zip names [0 :: Int ..]) of
                 Just i -> i
                 Nothing -> error $ "Module not found: " ++ show n
@@ -59,7 +59,7 @@ spec = do
         Right modules -> do
           length modules `shouldBe` 1
           case modules of
-            [(m, _)] -> moduleName m `shouldBe` "nix-base"
+            [(m, _)] -> m.name `shouldBe` "nix-base"
             _ -> expectationFailure "Expected exactly one module"
 
     it "handles additional modules via --module flag" $ do
@@ -67,7 +67,7 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right modules -> do
-          let names = map (moduleName . fst) modules
+          let names = map ((.name) . fst) modules
           length names `shouldBe` 2
           elem "haskell-base" names `shouldBe` True
           elem "nix-base" names `shouldBe` True
@@ -87,9 +87,9 @@ spec = do
             Right resolved -> do
               let flakeVars = resolved Map.! "nix-flake"
               -- nix-flake should see nix.system from nix-base's export
-              resolvedValue (flakeVars Map.! "nix.system") `shouldBe` VText "x86_64-linux"
+              (.value) (flakeVars Map.! "nix.system") `shouldBe` VText "x86_64-linux"
               -- nix-flake should also have its own variable
-              resolvedValue (flakeVars Map.! "nix.description") `shouldBe` VText "A Nix project"
+              (.value) (flakeVars Map.! "nix.description") `shouldBe` VText "A Nix project"
 
     it "flows exports through diamond dependency" $ do
       result <- loadComposition [fixtureDir] "haskell-with-nix" []
@@ -102,11 +102,11 @@ spec = do
             Right resolved -> do
               -- haskell-base should have project.name from CLI
               let baseVars = resolved Map.! "haskell-base"
-              resolvedValue (baseVars Map.! "project.name") `shouldBe` VText "my-app"
+              (.value) (baseVars Map.! "project.name") `shouldBe` VText "my-app"
               -- haskell-with-nix should inherit project.name via haskell-base's export
               let topVars = resolved Map.! "haskell-with-nix"
               Map.member "project.name" topVars `shouldBe` True
-              resolvedValue (topVars Map.! "project.name") `shouldBe` VText "my-app"
+              (.value) (topVars Map.! "project.name") `shouldBe` VText "my-app"
 
   describe "compileComposedPlan" $ do
     it "produces operations from all composed modules" $ do
@@ -119,7 +119,7 @@ spec = do
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
               let triples =
-                    [ (m, dir, Map.map resolvedValue (resolved Map.! moduleName m))
+                    [ (m, dir, Map.map (.value) (resolved Map.! m.name))
                     | (m, dir) <- modules
                     ]
               planResult <- compileComposedPlan triples
@@ -145,7 +145,7 @@ spec = do
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
               let triples =
-                    [ (m, dir, Map.map resolvedValue (resolved Map.! moduleName m))
+                    [ (m, dir, Map.map (.value) (resolved Map.! m.name))
                     | (m, dir) <- modules
                     ]
               planResult <- compileComposedPlan triples
@@ -174,7 +174,7 @@ spec = do
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
               let triples =
-                    [ (m, dir, Map.map resolvedValue (resolved Map.! moduleName m))
+                    [ (m, dir, Map.map (.value) (resolved Map.! m.name))
                     | (m, dir) <- modules
                     ]
               planResult <- compileComposedPlan triples
@@ -198,14 +198,14 @@ spec = do
     it "detects a circular dependency" $ do
       let mkMod name deps =
             Module
-              { moduleName = name,
-                moduleDescription = Nothing,
-                moduleVars = [],
-                moduleExports = [],
-                modulePrompts = [],
-                moduleSteps = [],
-                moduleCommands = [],
-                moduleDependencies = deps
+              { name = name,
+                description = Nothing,
+                vars = [],
+                exports = [],
+                prompts = [],
+                steps = [],
+                commands = [],
+                dependencies = deps
               }
           a = mkMod "a" ["b"]
           b = mkMod "b" ["c"]
