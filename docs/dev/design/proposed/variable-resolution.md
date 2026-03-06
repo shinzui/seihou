@@ -2,13 +2,14 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Implemented |
 | **Created** | 2026-03-01 |
+| **Updated** | 2026-03-06 |
 | **Subsystem** | Core — Variable Resolution |
 
 ## Overview
 
-Seihou resolves variables through a multi-layer precedence chain. Each variable retains provenance metadata indicating where its value came from, enabling the `--explain` feature and debugging. Variables are typed, validated, and scoped through the module export system.
+Seihou resolves variables through a multi-layer precedence chain. Each variable retains provenance metadata indicating where its value came from, enabling the `--explain` feature and debugging. Variables are typed, validated, and scoped through the module export system. Interactive prompts fill in missing values for both required and optional variables.
 
 ## Motivation
 
@@ -25,11 +26,13 @@ Seihou's variable resolution provides typed, validated, provenance-tracked, scop
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Resolution precedence | CLI → env → local → namespace → global → default | Most specific wins; standard layered config pattern |
+| Resolution precedence | CLI → env → local → namespace → global → default → prompt | Most specific wins; prompts are last resort for interactive use |
 | Type system | Text, Bool, Int, List, Choice | Covers scaffolding needs without over-engineering |
 | Scoping model | Shared namespace with explicit exports | Intentional cross-module sharing; private vars stay private |
 | Provenance tracking | Per-variable source annotation | Enables --explain; essential for debugging |
 | Expression language | Minimal: Eq, And, Or, Not, IsSet | Just enough for conditional prompts/steps |
+| Optional prompt ordering | After required variables | Clear "must answer" / "may answer" UX distinction |
+| Optional prompt skip | Empty input = skip (unresolved) | Least surprising; matches non-interactive behavior |
 
 ## Resolution Precedence
 
@@ -42,7 +45,8 @@ Variables are resolved in this order (first match wins):
 | 3 | Local project config | `.seihou/config.dhall` |
 | 4 | Namespace config | `~/.config/seihou/namespaces/<ns>/config.dhall` |
 | 5 | Global config | `~/.config/seihou/config.dhall` |
-| 6 (lowest) | Module defaults | `default = Some "my-value"` in module.dhall |
+| 6 | Module defaults | `default = Some "my-value"` in module.dhall |
+| 7 (lowest) | Interactive prompt | User enters value when prompted |
 
 ### Environment Variable Mapping
 
@@ -100,6 +104,55 @@ data VarError
   | ExportNotFound ModuleName VarName      -- Module exports undeclared var
   deriving stock (Eq, Show, Generic)
 ```
+
+## Interactive Prompts
+
+### Required Variable Prompts
+
+When running interactively, required variables that have no resolved value from any source (CLI, env, config, default) trigger an interactive prompt. If the variable has a prompt defined in the module's `prompts` list, that prompt text is shown. Default values are displayed in brackets:
+
+```text
+What is your project name? my-app
+Project version [0.1.0.0]:
+```
+
+- Entering a value uses it with `FromPrompt` provenance
+- Pressing Enter on a variable with a default accepts the default (still `FromPrompt`)
+- Required prompts enforce non-empty input (re-prompt on empty for variables without defaults)
+
+### Optional Variable Prompts
+
+After all required variables are resolved, optional variables (`required = False`) that have prompts defined but no resolved value are presented under an "Optional configuration:" header:
+
+```text
+Optional configuration:
+  Include a license? (MIT/Apache-2.0/BSD-3-Clause) [skip]:
+  Enable GitHub Actions CI? (yes/no) [skip]: yes
+```
+
+- `[skip]` is shown for optional variables without defaults
+- Pressing Enter skips the variable (it remains unresolved, as if never provided)
+- Choice variables show their options in parentheses
+- Bool variables show `(yes/no)` hint
+- Optional prompts only appear in interactive mode; in non-interactive mode, optional variables without values are silently omitted
+
+### Prompt Conditions
+
+Prompts can have a `when` expression that controls whether they are shown:
+
+```dhall
+{ var = "ci.provider"
+, text = "Which CI provider?"
+, when = Some "IsSet enable.ci"
+, choices = Some ["github-actions", "gitlab-ci"]
+}
+```
+
+The condition is evaluated against all currently-resolved variables. If the condition evaluates to `False`, the prompt is skipped.
+
+### Composition-Aware Prompting
+
+In a multi-module composition, prompts run per-module in topological order. Each module's prompts see the resolved variables from previously-prompted modules. Exported variables from dependencies are injected as defaults before prompting.
 
 ## Type System
 
@@ -229,9 +282,32 @@ varname  = [a-zA-Z][a-zA-Z0-9._-]*
 value    = quoted_string | bare_word
 ```
 
+## Diagnostics
+
+### Unused Config Keys
+
+When a config file contains a key that doesn't match any declared variable in the current module composition, Seihou emits a warning:
+
+```text
+warning: unused config key 'typo.name' in .seihou/config.dhall
+  (no module declares a variable with this name)
+```
+
+This helps catch typos and stale configuration from removed variables.
+
+### Unresolved Optional Variables
+
+When using `seihou vars --explain`, optional variables that have no value from any source are listed with a note:
+
+```text
+  license          (optional, unresolved — no value from any source)
+```
+
+This helps module users discover optional features they may want to configure.
+
 ## `--explain` Output
 
-The `seihou vars <module> --explain` command shows resolution provenance:
+The `seihou vars <module> --explain` command shows resolution provenance. It is composition-aware: it resolves the full module composition (including all transitive dependencies) and shows how each variable was resolved, including exported values from dependencies.
 
 ```text
 Variable Resolution for haskell-base:
@@ -246,6 +322,8 @@ Variable Resolution for haskell-base:
 
 - All variables used in templates or expressions must be declared in some module in the composition
 - Required variables with no resolved value trigger an interactive prompt (if available) or an error (in non-interactive mode)
+- Optional variables with no resolved value and a defined prompt are presented after required resolution (interactive only)
+- Optional variables skipped during prompting remain unresolved — steps guarded by `IsSet` conditions for that variable will not execute
 - Type coercion from strings is attempted only for CLI and environment sources
 - Dhall config files provide native-typed values (no coercion needed)
 - Variable names are case-sensitive
@@ -263,6 +341,9 @@ Variable Resolution for haskell-base:
 | Expression references undeclared variable | `IsSet` returns False; `Eq` returns False |
 | Circular variable reference | Not possible — variables are values, not expressions |
 | Module exports variable it doesn't declare | `ExportNotFound` error at validation time |
+| Optional prompt with `when` condition false | Prompt skipped, variable remains unresolved |
+| Optional prompt skipped (empty input) | Variable absent from resolved map |
+| Config key matches no declared variable | Warning: unused config key |
 
 ## Testing Plan
 
@@ -278,6 +359,11 @@ Variable Resolution for haskell-base:
 | `--explain` output | Unit | Provenance correctly reported for each source |
 | Cross-module resolution | Integration | Multi-module variable flow via exports |
 | Missing required variable | Integration | Error in non-interactive, prompt in interactive |
+| Default display in prompts | Unit | Defaults shown in brackets, accepted on Enter |
+| Optional variable prompts | Unit | Shown after required, skippable, separated header |
+| Prompt `when` conditions | Unit | Conditional prompts respect resolved bindings |
+| Unused config key detection | Unit | Warning for keys not matching any declaration |
+| Unresolved optional display | Unit | Listed in --explain output |
 
 ## Future Enhancements
 

@@ -2,8 +2,9 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Implemented |
 | **Created** | 2026-03-01 |
+| **Updated** | 2026-03-06 |
 | **Subsystem** | Core — Module Loading |
 
 ## Overview
@@ -141,6 +142,8 @@ data Prompt = Prompt
   deriving stock (Eq, Show, Generic)
 ```
 
+Prompts can target both required and optional variables. Required variable prompts appear first during interactive runs; optional variable prompts appear afterwards under an "Optional configuration:" header. Optional prompts show `[skip]` and accept empty input to leave the variable unresolved. Default values are shown in brackets for both required and optional prompts. See [Variable Resolution](variable-resolution.md) for full prompting behavior.
+
 ### Step
 
 ```haskell
@@ -207,6 +210,20 @@ let Module =
 
 in Module
 ```
+
+## Registries
+
+A repository can provide multiple modules via a **registry**. A registry is a `seihou-registry.dhall` file at the repository root that lists available modules:
+
+```dhall
+{ modules =
+  [ { name = "haskell-base", path = "./haskell-base", description = Some "Base Haskell project", tags = ["haskell", "base"] }
+  , { name = "nix-flake", path = "./nix-flake", description = Some "Nix flake integration", tags = ["nix"] }
+  ]
+}
+```
+
+Each entry points to a subdirectory containing a standard module (`module.dhall` + `files/`). Registries are used by `seihou browse` and `seihou install --module/--all`. See the [user guide on registries](../../user/registries-and-multi-module-repos.md) for details.
 
 ## Module Discovery and Loading
 
@@ -303,7 +320,6 @@ A module is well-formed when:
 ## Future Enhancements
 
 - Module versioning (semver constraints on dependencies)
-- Remote module registry with namespaced discovery
 - Module inheritance (extend an existing module with overrides)
 - Auto-generated documentation from module definitions
 

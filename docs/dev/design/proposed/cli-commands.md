@@ -2,21 +2,24 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Implemented |
 | **Created** | 2026-03-01 |
+| **Updated** | 2026-03-06 |
 | **Subsystem** | CLI |
 
 ## Overview
 
-Seihou exposes seven commands in v1, covering the core generation loop and module authoring experience. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
+Seihou exposes eleven commands in v1, covering the core generation loop, module authoring, configuration management, and module discovery. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
 
 ## Motivation
 
 The CLI is the primary interface to Seihou. It must support:
 
-- The generation workflow (init → run → status)
+- The generation workflow (init → run → status → diff)
 - Variable inspection and debugging (vars --explain)
-- Module acquisition (install) and authoring (new-module, validate-module)
+- Configuration management (config set/get/unset/list)
+- Module acquisition (install, browse) and authoring (new-module, validate-module)
+- Module discovery (list, browse)
 - Non-interactive usage for CI/scripting (--var flags, exit codes)
 
 ## Design Decisions
@@ -24,10 +27,11 @@ The CLI is the primary interface to Seihou. It must support:
 | Decision | Choice | Rationale |
 |---|---|---|
 | CLI framework | optparse-applicative | Standard Haskell, composable, auto-generated --help |
-| V1 commands | init, run, vars, install, status, new-module, validate-module | Core loop + authoring experience |
+| V1 commands | init, run, vars, install, status, diff, list, new-module, validate-module, config, browse | Core loop + authoring + config management + discovery |
 | Variable passing | `--var key=value` | Explicit, composable, scriptable |
 | Output format | Human-readable by default | Primary audience is interactive use |
 | Dry run | `--dry-run` flag on `run` | Safety net; shows plan without executing |
+| Config scopes | `--global`, `--namespace` flags on `config` | Matches the three-tier config hierarchy |
 
 ## Command ADT
 
@@ -38,8 +42,12 @@ data Command
   | Vars VarsOpts
   | Install InstallOpts
   | Status
+  | Diff
+  | List
   | NewModule NewModuleOpts
   | ValidateModule ValidateOpts
+  | Config ConfigOpts
+  | Browse BrowseOpts
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -50,19 +58,24 @@ data RunOpts = RunOpts
   , runDiff       :: Bool                -- Show diff against disk
   , runForce      :: Bool                -- Auto-resolve conflicts
   , runNoCommands :: Bool                -- Disable shell commands
+  , runNamespace  :: Maybe Text          -- Config namespace
+  , runVerbose    :: Bool                -- Verbose output
   }
   deriving stock (Eq, Show, Generic)
 
 data VarsOpts = VarsOpts
-  { varsModule  :: ModuleName
-  , varsExplain :: Bool                  -- Show provenance
-  , varsVars    :: [(Text, Text)]        -- Variable overrides (for explain context)
+  { varsModule    :: ModuleName
+  , varsExplain   :: Bool                -- Show provenance
+  , varsVars      :: [(Text, Text)]      -- Variable overrides (for explain context)
+  , varsNamespace :: Maybe Text          -- Config namespace
   }
   deriving stock (Eq, Show, Generic)
 
 data InstallOpts = InstallOpts
-  { installSource :: Text                -- Git URL
-  , installName   :: Maybe Text          -- Override module name
+  { installSource  :: Text               -- Git URL or local path
+  , installName    :: Maybe Text         -- Override module name
+  , installModules :: [Text]             -- Specific modules from a registry (--module)
+  , installAll     :: Bool               -- Install all modules from a registry (--all)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -74,6 +87,28 @@ data NewModuleOpts = NewModuleOpts
 
 data ValidateOpts = ValidateOpts
   { validatePath :: Maybe FilePath       -- Module path (default: current dir)
+  , validateLint :: Bool                 -- Enable lint checks
+  }
+  deriving stock (Eq, Show, Generic)
+
+data ConfigAction
+  = ConfigSet Text Text
+  | ConfigGet Text
+  | ConfigUnset Text
+  | ConfigList
+  deriving stock (Eq, Show, Generic)
+
+data ConfigOpts = ConfigOpts
+  { configAction    :: ConfigAction
+  , configGlobal    :: Bool              -- Target global config
+  , configNamespace :: Maybe Text        -- Target namespace config
+  , configEffective :: Bool              -- Show merged effective values
+  }
+  deriving stock (Eq, Show, Generic)
+
+data BrowseOpts = BrowseOpts
+  { browseSource :: Text                 -- Git URL, local path, or module path
+  , browseTag    :: Maybe Text           -- Filter by tag
   }
   deriving stock (Eq, Show, Generic)
 ```
@@ -120,7 +155,7 @@ Initialized Seihou configuration at ~/.config/seihou/
 Run one or more modules to generate or update a project.
 
 ```sh
-seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] [--diff] [--force] [--no-commands]
+seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] [--diff] [--force] [--no-commands] [--namespace <ns>] [--verbose]
 ```
 
 **Arguments**:
@@ -133,19 +168,37 @@ seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] 
 | `--diff` | No | Show diff against current disk state |
 | `--force` | No | Auto-resolve all conflicts (accept new) |
 | `--no-commands` | No | Skip RunCommand steps |
+| `--namespace <ns>` | No | Config namespace for variable resolution |
+| `--verbose` | No | Verbose output |
 
 **Execution flow**:
 1. Resolve module(s) via discovery
 2. Build composition graph, topological sort
-3. Resolve all variables (prompt for missing required vars)
-4. Compile generation plan
-5. If manifest exists: compute three-state diff
-6. If `--dry-run`: print plan and exit
-7. If `--diff`: print diff and exit
-8. Show plan to user, prompt for approval
-9. Resolve conflicts (or auto-resolve with `--force`)
-10. Execute approved operations
-11. Update/create manifest
+3. Resolve all variables (prompt for missing required vars interactively)
+4. Prompt for optional variables that have prompts defined (interactive only)
+5. Compile generation plan
+6. If manifest exists: compute three-state diff
+7. If `--dry-run`: print plan and exit
+8. If `--diff`: print diff and exit
+9. Show plan to user, prompt for approval
+10. Resolve conflicts (or auto-resolve with `--force`)
+11. Execute approved operations
+12. Update/create manifest
+
+**Interactive prompt behavior**:
+
+When running interactively, unresolved required variables with prompts are presented first. After all required variables are resolved, optional variables with prompts are presented under an "Optional configuration:" header. Users can skip optional prompts by pressing Enter. Default values are shown in brackets:
+
+```text
+What is your project name? my-app
+Project version [0.1.0.0]:
+
+Optional configuration:
+  Include a license? (MIT/Apache-2.0/BSD-3-Clause) [skip]:
+  Enable GitHub Actions CI? (yes/no) [skip]: yes
+```
+
+In non-interactive mode (piped input, no TTY), prompts are not shown and missing required variables produce errors.
 
 **Output (plan view)**:
 ```text
@@ -185,7 +238,7 @@ Generation Plan (haskell-base + nix-flake):
 Inspect resolved variable values for a module.
 
 ```sh
-seihou vars <module> [--explain] [--var key=value...]
+seihou vars <module> [--explain] [--var key=value...] [--namespace <ns>]
 ```
 
 **Arguments**:
@@ -194,6 +247,9 @@ seihou vars <module> [--explain] [--var key=value...]
 | `<module>` | Yes | Module name or path |
 | `--explain` | No | Show provenance for each value |
 | `--var key=value` | No | Provide values for resolution context |
+| `--namespace <ns>` | No | Config namespace for resolution |
+
+The `--explain` command is composition-aware: it resolves the full module composition (including all transitive dependencies) and shows how each variable was resolved, including exported values from dependencies.
 
 **Output (default)**:
 ```text
@@ -215,6 +271,8 @@ Variables for haskell-base:
   license          = "BSD-3-Clause"     [namespace: haskell/config.dhall]
 ```
 
+**Diagnostics**: When using `--explain`, optional variables that have no value from any source are listed with a note that they are unresolved. Config keys that don't match any declared variable produce warnings about unused configuration.
+
 **Exit codes**:
 | Code | Meaning |
 |---|---|
@@ -223,27 +281,31 @@ Variables for haskell-base:
 
 ---
 
-### `seihou install <git-url>`
+### `seihou install <source>`
 
-Install a module from a git repository.
+Install a module from a git repository or local path. Supports single-module repositories and multi-module registries.
 
 ```sh
-seihou install <git-url> [--name <name>]
+seihou install <source> [--name <name>] [--module <name>...] [--all]
 ```
 
 **Arguments**:
 | Argument | Required | Description |
 |---|---|---|
-| `<git-url>` | Yes | Git repository URL |
+| `<source>` | Yes | Git repository URL or local path |
 | `--name <name>` | No | Override the installed module name |
+| `--module <name>` | No | Install specific module(s) from a registry (repeatable) |
+| `--all` | No | Install all modules from a registry |
 
 **What it does**:
-1. Clone the git repository to a temporary directory
-2. Validate that it contains a valid `module.dhall`
-3. Copy to `~/.config/seihou/installed/<name>/`
-4. Name defaults to the repository name (last path segment without `.git`)
+1. Clone the git repository (or copy from local path) to a temporary directory
+2. Check for `seihou-registry.dhall` — if present, treat as a multi-module registry
+3. For single-module repos: validate `module.dhall`, copy to installed directory
+4. For registries: list available modules, install selected ones
+5. Name defaults to the repository name (last path segment without `.git`)
+6. Records origin metadata (`.seihou-origin.json`) for tracking
 
-**Output**:
+**Output (single module)**:
 ```text
 Installing module from https://github.com/user/haskell-nix-module.git...
   Cloned repository
@@ -251,6 +313,18 @@ Installing module from https://github.com/user/haskell-nix-module.git...
   Installed as: haskell-nix-module
 
 Module available as: haskell-nix-module
+```
+
+**Output (registry with --all)**:
+```text
+Installing from registry at https://github.com/user/haskell-modules.git...
+  Cloned repository
+  Found registry with 3 modules
+  Installed: haskell-base
+  Installed: nix-flake
+  Installed: github-ci
+
+3 modules installed.
 ```
 
 **Exit codes**:
@@ -304,6 +378,46 @@ No Seihou manifest found. Run 'seihou run <module>' to generate a project.
 |---|---|
 | 0 | Success (including "no manifest" case) |
 | 1 | Manifest corrupted or unreadable |
+
+---
+
+### `seihou diff`
+
+Show what would change if the current modules were re-run.
+
+```sh
+seihou diff
+```
+
+**What it does**:
+1. Read `.seihou/manifest.json` from current directory
+2. Compute three-state diff: manifest vs plan vs disk
+3. Display file-level differences
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | No manifest found or load error |
+
+---
+
+### `seihou list`
+
+List available modules from all discovery paths.
+
+```sh
+seihou list
+```
+
+**What it does**:
+1. Scan all module search paths (local, user, installed)
+2. Display each module with its source location and origin (if installed from git)
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
 
 ---
 
@@ -382,13 +496,14 @@ in Module::{
 Validate that a module directory is well-formed.
 
 ```sh
-seihou validate-module [<path>]
+seihou validate-module [<path>] [--lint]
 ```
 
 **Arguments**:
 | Argument | Required | Description |
 |---|---|---|
 | `<path>` | No | Path to module directory (default: current directory) |
+| `--lint` | No | Enable lint checks (additional warnings) |
 
 **Validation checks** (see [Module System](module-system.md) for full rules):
 1. `module.dhall` exists and evaluates successfully
@@ -434,48 +549,121 @@ Validating module at ./broken-module/...
 | 1 | Module is invalid (errors printed to stderr) |
 | 4 | Path doesn't exist or module.dhall missing |
 
+---
+
+### `seihou config <action>`
+
+Manage configuration values at different scopes.
+
+```sh
+seihou config set <key> <value> [--global] [--namespace <ns>]
+seihou config get <key> [--global] [--namespace <ns>]
+seihou config unset <key> [--global] [--namespace <ns>]
+seihou config list [--global] [--namespace <ns>] [--effective]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|---|---|---|
+| `set <key> <value>` | — | Set a config key to a value |
+| `get <key>` | — | Get the current value of a config key |
+| `unset <key>` | — | Remove a config key |
+| `list` | — | List all config values in the target scope |
+| `--global` | No | Target the global config (~/.config/seihou/config.dhall) |
+| `--namespace <ns>` | No | Target a namespace config (~/.config/seihou/namespaces/<ns>/config.dhall) |
+| `--effective` | No | Show merged effective values from all scopes (with `list`) |
+
+**Scope resolution**: Without `--global` or `--namespace`, targets the local project config (`.seihou/config.dhall`).
+
+**Output (list)**:
+```text
+Configuration (.seihou/config.dhall):
+
+  project.name    = "my-app"
+  project.version = "0.1.0.0"
+```
+
+**Output (list --effective)**:
+```text
+Effective configuration (merged):
+
+  project.name    = "my-app"           [local]
+  project.version = "0.1.0.0"         [global]
+  haskell.ghc     = "9.12.2"          [namespace: haskell]
+```
+
+**Diagnostics**: When listing config, keys that don't match any declared variable in the current project's modules are flagged as unused.
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Key not found (get), config file error |
+
+---
+
+### `seihou browse <source>`
+
+Preview modules available in a git repository or registry before installing.
+
+```sh
+seihou browse <source> [--tag <tag>]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|---|---|---|
+| `<source>` | Yes | Git URL, local path, or module path |
+| `--tag <tag>` | No | Filter modules by tag |
+
+**What it does**:
+1. Clone/read the source (or read a local module directory)
+2. Check for `seihou-registry.dhall` — if present, show all registered modules
+3. For single modules: show module name and description
+4. For registries: show all modules with descriptions and tags
+
+**Output (registry)**:
+```text
+Registry at https://github.com/user/haskell-modules.git
+
+  haskell-base    Base Haskell project scaffold      [haskell, base]
+  nix-flake       Nix flake integration              [nix, devops]
+  github-ci       GitHub Actions CI setup            [ci, github]
+
+3 modules available. Install with:
+  seihou install https://github.com/user/haskell-modules.git --module haskell-base
+  seihou install https://github.com/user/haskell-modules.git --all
+```
+
+**Output (single module)**:
+```text
+Module: haskell-base
+  Base Haskell project scaffold
+```
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Source not found or not a valid module/registry |
+
 ## optparse-applicative Parser Tree
 
 ```haskell
 commandParser :: Parser Command
 commandParser = subparser
-  ( command "init"
-      (info (pure Init) (progDesc "Initialize Seihou configuration"))
-  <> command "run"
-      (info runParser (progDesc "Run modules to generate a project"))
-  <> command "vars"
-      (info varsParser (progDesc "Inspect resolved variables"))
-  <> command "install"
-      (info installParser (progDesc "Install a module from git"))
-  <> command "status"
-      (info (pure Status) (progDesc "Show manifest state"))
-  <> command "new-module"
-      (info newModuleParser (progDesc "Scaffold a new module"))
-  <> command "validate-module"
-      (info validateParser (progDesc "Validate a module"))
+  ( command "init" initInfo
+  <> command "run" runInfo
+  <> command "vars" varsInfo
+  <> command "install" installInfo
+  <> command "status" statusInfo
+  <> command "diff" diffInfo
+  <> command "list" listInfo
+  <> command "new-module" newModuleInfo
+  <> command "validate-module" validateInfo
+  <> command "config" configInfo
+  <> command "browse" browseInfo
   )
-
-runParser :: Parser Command
-runParser = fmap Run $ RunOpts
-  <$> argument (ModuleName <$> str) (metavar "MODULE")
-  <*> many (option (ModuleName <$> str)
-        (long "module" <> short 'm' <> metavar "MODULE"
-         <> help "Additional module to compose"))
-  <*> many (option varPair
-        (long "var" <> metavar "KEY=VALUE"
-         <> help "Variable override"))
-  <*> switch (long "dry-run" <> help "Show plan without executing")
-  <*> switch (long "diff" <> help "Show diff against disk")
-  <*> switch (long "force" <> help "Auto-resolve conflicts")
-  <*> switch (long "no-commands" <> help "Skip shell command steps")
-
-varPair :: ReadM (Text, Text)
-varPair = eitherReader $ \s ->
-  case T.breakOn "=" (T.pack s) of
-    (k, v)
-      | T.null k       -> Left "variable name cannot be empty"
-      | T.null v       -> Left "expected KEY=VALUE format"
-      | otherwise      -> Right (k, T.drop 1 v)
 ```
 
 ## Exit Code Summary
@@ -500,10 +688,14 @@ varPair = eitherReader $ \s ->
 
 - All commands respect `--help` and `--version` (provided by optparse-applicative)
 - `run` is interactive by default; non-interactive when all required variables are provided via `--var` or config
+- `run` prompts for optional variables with defined prompts after required variables are resolved (interactive only)
 - `run` creates `.seihou/` directory if it doesn't exist
 - `status` does not modify any state
 - `validate-module` does not resolve dependencies (only validates the module itself)
 - `install` overwrites an existing module of the same name (with a warning)
+- `install` detects registries via `seihou-registry.dhall` and supports `--module` and `--all` for selective installation
+- `browse` works with both single-module repos and registries
+- `config` targets local project config by default; use `--global` or `--namespace` for other scopes
 
 ## Edge Cases
 
@@ -515,8 +707,11 @@ varPair = eitherReader $ \s ->
 | `seihou init` when already initialized | Skip existing, print "already initialized" |
 | `seihou status` outside a project | "No manifest found" message, exit 0 |
 | `seihou install` bad git URL | Error from git clone, exit 1 |
+| `seihou install` registry without `--module` or `--all` | Interactive module selection or error |
 | `seihou new-module` existing directory | Error: directory exists, exit 4 |
 | `seihou validate-module /empty/dir` | Error: module.dhall not found, exit 4 |
+| `seihou config list --effective` no modules | Shows raw config without variable matching |
+| `seihou browse` non-module, non-registry | Error: not a valid module or registry |
 | Ctrl+C during run | Clean exit, no partial writes (atomic operations) |
 | Piped input (non-TTY) | Skip prompts, error on unresolved required variables |
 
@@ -530,20 +725,28 @@ varPair = eitherReader $ \s ->
 | `run` dry-run | Integration | Plan displayed, no files written |
 | `run` end-to-end | Integration | Module generated correctly |
 | `run` incremental | Integration | Re-run with changed var, only affected files updated |
+| `run` interactive prompts | Integration | Required and optional prompts displayed correctly |
 | `vars` explain | Integration | Provenance correctly displayed |
+| `vars` diagnostics | Integration | Unused config keys and unresolved optionals reported |
 | `status` display | Integration | File states correctly classified |
+| `diff` display | Integration | Three-state diff shown correctly |
+| `list` discovery | Integration | Modules from all paths shown |
 | `new-module` scaffold | Integration | Generated module passes validate-module |
 | `validate-module` valid | Integration | Valid module reports no errors |
 | `validate-module` invalid | Integration | Invalid module reports all errors |
+| `config` set/get/unset | Integration | Config values persist across commands |
+| `config` list --effective | Integration | Merged view shows all scopes |
+| `browse` registry | Integration | Registry modules listed with tags |
+| `browse` single module | Integration | Module name and description shown |
+| `install` single module | Integration | Module cloned, validated, installed |
+| `install` from registry | Integration | Selected modules installed |
 | Exit codes | Integration | Each error condition returns correct exit code |
 | Non-interactive mode | Integration | All vars via --var, no prompts, correct behavior |
 
 ## Future Enhancements
 
-- `seihou diff <module>` — Show what would change without the full run flow
 - `seihou remove <module>` — Remove a module and its orphaned files
 - `seihou update <module>` — Update an installed module from git
-- `seihou list` — List available modules
 - JSON/machine-readable output mode (`--format json`)
 - Shell completions (bash, zsh, fish)
 
