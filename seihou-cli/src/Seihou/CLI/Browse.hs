@@ -8,7 +8,6 @@ import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (BrowseOpts (..))
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
-import Seihou.Core.Module (validateModule)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
