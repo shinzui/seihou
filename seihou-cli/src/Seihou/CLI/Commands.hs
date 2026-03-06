@@ -55,7 +55,9 @@ data VarsOpts = VarsOpts
 
 data InstallOpts = InstallOpts
   { installSource :: Text,
-    installName :: Maybe Text
+    installName :: Maybe Text,
+    installModules :: [Text],
+    installAll :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -195,17 +197,28 @@ installInfo =
   info
     (installParser <**> helper)
     ( fullDesc
-        <> progDesc "Install a module from git"
+        <> progDesc "Install module(s) from git"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Clones the git repository, validates that it contains a valid" :: String),
-                  pretty ("module.dhall, and copies it to ~/.config/seihou/installed/<name>/." :: String),
-                  pretty ("The module name defaults to the repository name (last path segment" :: String),
-                  pretty ("without .git). Use --name to override." :: String),
+                [ pretty ("Clones the git repository and installs modules to" :: String),
+                  pretty ("~/.config/seihou/installed/<name>/." :: String),
                   line,
-                  pretty ("Example:" :: String),
-                  indent 2 $ pretty ("seihou install https://github.com/user/haskell-nix-module.git" :: String)
+                  pretty ("If the repository contains a seihou-registry.dhall file, it is" :: String),
+                  pretty ("treated as a multi-module registry. Use --module to pick specific" :: String),
+                  pretty ("modules or --all to install everything. Without either flag, you" :: String),
+                  pretty ("will be prompted to choose interactively." :: String),
+                  line,
+                  pretty ("For single-module repositories (just a root module.dhall), the" :: String),
+                  pretty ("module name defaults to the repository name. Use --name to override." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou install https://github.com/user/haskell-module.git" :: String),
+                        pretty ("seihou install https://github.com/user/templates.git --all" :: String),
+                        pretty ("seihou install https://github.com/user/templates.git --module haskell-base" :: String)
+                      ]
                 ]
           )
     )
@@ -372,6 +385,8 @@ installParser =
     InstallOpts
       <$> argument (T.pack <$> str) (metavar "GIT-URL")
       <*> optional (option (T.pack <$> str) (long "name" <> metavar "NAME" <> help "Override installed module name"))
+      <*> many (option (T.pack <$> str) (long "module" <> metavar "MODULE" <> help "Install specific module from registry (repeatable)"))
+      <*> switch (long "all" <> help "Install all modules from registry")
 
 newModuleParser :: Parser Command
 newModuleParser =

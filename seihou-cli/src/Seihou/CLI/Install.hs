@@ -3,14 +3,21 @@ module Seihou.CLI.Install
   )
 where
 
+import Control.Monad (when)
+import Data.Aeson (ToJSON (..), object, (.=))
+import Data.Aeson.Encode.Pretty (encodePretty)
+import Data.ByteString.Lazy qualified as LBS
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Data.Time (getCurrentTime)
+import Data.Time.Format.ISO8601 (iso8601Show)
 import Seihou.CLI.Commands (InstallOpts (..))
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (validateModule)
+import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents, validateRegistry)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalModuleFromFile)
+import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Effect.Logger (logError, logWarn)
 import Seihou.Prelude
 import System.Directory
@@ -23,73 +30,232 @@ import System.Directory
     removeDirectoryRecursive,
   )
 import System.Exit (ExitCode (..), exitFailure)
+import System.IO (hFlush, stdout)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (readProcessWithExitCode)
 
 handleInstall :: InstallOpts -> IO ()
 handleInstall iopts = do
   let source = iopts.installSource
-      name = case iopts.installName of
-        Just n -> T.unpack n
-        Nothing -> parseModuleName source
 
-  -- Check if the module is already installed
-  xdgConfig <- getXdgDirectory XdgConfig "seihou"
-  let installDir = xdgConfig </> "installed" </> name
-
-  TIO.putStrLn $ "Installing module from " <> source <> "..."
-
-  exists <- doesDirectoryExist installDir
-  if exists
-    then do
-      logIO LogNormal (logWarn $ "overwriting existing installation of '" <> T.pack name <> "'")
-      removeDirectoryRecursive installDir
-    else pure ()
+  TIO.putStrLn $ "Installing from " <> source <> "..."
 
   -- Clone into a temporary directory
   withSystemTempDirectory "seihou-install" $ \tmpDir -> do
-    let cloneDir = tmpDir </> name
-    (exitCode, _stdout, stderr) <- readProcessWithExitCode "git" ["clone", "--depth", "1", T.unpack source, cloneDir] ""
-    case exitCode of
-      ExitFailure _ -> do
-        logIO LogNormal $ do
-          logError $ "git clone failed for '" <> source <> "'."
-          logError $ "  " <> T.pack stderr
-        exitFailure
-      ExitSuccess -> pure ()
-    TIO.putStrLn "  Cloned repository"
+    let repoName = parseModuleName source
+        cloneDir = tmpDir </> repoName
+    cloneRepo source cloneDir
 
-    -- Validate the cloned module
-    let dhallFile = cloneDir </> "module.dhall"
-    decoded <- evalModuleFromFile dhallFile
-    modul <- case decoded of
-      Left err -> do
-        logIO LogNormal $ do
-          logError "cloned repository is not a valid seihou module."
-          logError $ "  " <> T.pack (show err)
+    -- Determine what the repo contains
+    contents <- discoverRepoContents evalRegistryFromFile cloneDir
+    case contents of
+      EmptyRepo -> do
+        logIO LogNormal (logError "repository contains neither seihou-registry.dhall nor module.dhall.")
         exitFailure
-      Right m -> pure m
+      SingleModule rootDir -> do
+        when (not (null iopts.installModules) || iopts.installAll) $
+          logIO LogNormal (logWarn "--module and --all flags are ignored for single-module repositories.")
+        installSingleModule iopts rootDir source Nothing
+      MultiModule registry -> do
+        regErrors <- validateRegistry cloneDir registry
+        if not (null regErrors)
+          then do
+            logIO LogNormal $ do
+              logError "registry has validation errors:"
+              mapM_ (\e -> logError $ "  - " <> e) regErrors
+            exitFailure
+          else installFromRegistry iopts cloneDir registry source
 
-    result <- validateModule cloneDir modul
-    case result of
-      Left (ValidationError _ errors) -> do
-        logIO LogNormal $ do
-          logError "cloned module has validation errors:"
-          mapM_ (\e -> logError $ "  - " <> e) errors
-        exitFailure
-      Left err -> do
-        logIO LogNormal (logError $ T.pack (show err))
-        exitFailure
-      Right _ -> pure ()
-    TIO.putStrLn "  Validated module definition"
+-- | Clone a git repo shallowly into the target directory.
+cloneRepo :: Text -> FilePath -> IO ()
+cloneRepo source cloneDir = do
+  (exitCode, _stdout, stderr) <- readProcessWithExitCode "git" ["clone", "--depth", "1", T.unpack source, cloneDir] ""
+  case exitCode of
+    ExitFailure _ -> do
+      logIO LogNormal $ do
+        logError $ "git clone failed for '" <> source <> "'."
+        logError $ "  " <> T.pack stderr
+      exitFailure
+    ExitSuccess -> pure ()
+  TIO.putStrLn "  Cloned repository"
 
-    -- Copy the module to the install directory (excluding .git)
-    createDirectoryIfMissing True installDir
-    copyDirectoryRecursive cloneDir installDir
-    TIO.putStrLn $ "  Installed as: " <> T.pack name
+-- | Install a single-module repo (legacy behavior).
+installSingleModule :: InstallOpts -> FilePath -> Text -> Maybe Text -> IO ()
+installSingleModule iopts rootDir source registryName = do
+  let name = case iopts.installName of
+        Just n -> T.unpack n
+        Nothing -> parseModuleName source
 
+  let dhallFile = rootDir </> "module.dhall"
+  decoded <- evalModuleFromFile dhallFile
+  modul <- case decoded of
+    Left err -> do
+      logIO LogNormal $ do
+        logError "repository is not a valid seihou module."
+        logError $ "  " <> T.pack (show err)
+      exitFailure
+    Right m -> pure m
+
+  result <- validateModule rootDir modul
+  case result of
+    Left (ValidationError _ errors) -> do
+      logIO LogNormal $ do
+        logError "module has validation errors:"
+        mapM_ (\e -> logError $ "  - " <> e) errors
+      exitFailure
+    Left err -> do
+      logIO LogNormal (logError $ T.pack (show err))
+      exitFailure
+    Right _ -> pure ()
+  TIO.putStrLn "  Validated module definition"
+
+  installModuleDir rootDir name source registryName
   TIO.putStrLn ""
   TIO.putStrLn $ "Module available as: " <> T.pack name
+
+-- | Install from a multi-module registry.
+installFromRegistry :: InstallOpts -> FilePath -> Registry -> Text -> IO ()
+installFromRegistry iopts cloneDir registry source = do
+  selected <- selectModules iopts registry
+  if null selected
+    then TIO.putStrLn "No modules selected."
+    else do
+      results <- mapM (installRegistryEntry cloneDir source registry.repoName) selected
+      let succeeded = length (filter id results)
+          failed = length results - succeeded
+      TIO.putStrLn ""
+      TIO.putStrLn $
+        T.pack (show succeeded)
+          <> " module(s) installed"
+          <> (if failed > 0 then ", " <> T.pack (show failed) <> " failed" else "")
+          <> "."
+
+-- | Select which modules to install from a registry.
+selectModules :: InstallOpts -> Registry -> IO [RegistryEntry]
+selectModules iopts registry
+  | iopts.installAll = pure registry.modules
+  | not (null iopts.installModules) = do
+      let entries = registry.modules
+          findEntry name = filter (\e -> e.name.unModuleName == name) entries
+          (found, missing) =
+            foldr
+              ( \name (f, m) -> case findEntry name of
+                  (e : _) -> (e : f, m)
+                  [] -> (f, name : m)
+              )
+              ([], [])
+              iopts.installModules
+      if not (null missing)
+        then do
+          logIO LogNormal $ do
+            logError "the following modules were not found in the registry:"
+            mapM_ (\n -> logError $ "  - " <> n) missing
+          exitFailure
+        else pure found
+  | otherwise = promptModuleSelection registry
+
+-- | Interactive module selection.
+promptModuleSelection :: Registry -> IO [RegistryEntry]
+promptModuleSelection registry = do
+  TIO.putStrLn ""
+  TIO.putStrLn $ registry.repoName
+  case registry.repoDescription of
+    Just desc -> TIO.putStrLn $ "  " <> desc
+    Nothing -> pure ()
+  TIO.putStrLn ""
+  TIO.putStrLn "Available modules:"
+  let entries = zip [1 :: Int ..] registry.modules
+  mapM_
+    ( \(i, entry) ->
+        TIO.putStrLn $
+          "  "
+            <> T.pack (show i)
+            <> ") "
+            <> entry.name.unModuleName
+            <> maybe "" (\d -> " - " <> d) entry.description
+    )
+    entries
+  TIO.putStrLn ""
+  TIO.putStr "Select modules (comma-separated numbers, or 'all'): "
+  hFlush stdout
+  input <- TIO.getLine
+  let trimmed = T.strip input
+  if T.toLower trimmed == "all"
+    then pure registry.modules
+    else do
+      let nums = map (readMaybe . T.unpack . T.strip) (T.splitOn "," trimmed)
+      if any (== Nothing) nums
+        then do
+          TIO.putStrLn "Invalid input. Please enter numbers separated by commas."
+          pure []
+        else do
+          let indices = map (\(Just n) -> n) nums
+              maxIdx = length registry.modules
+              valid = all (\n -> n >= 1 && n <= maxIdx) indices
+          if not valid
+            then do
+              TIO.putStrLn $ "Invalid selection. Please enter numbers between 1 and " <> T.pack (show maxIdx) <> "."
+              pure []
+            else pure [registry.modules !! (n - 1) | n <- indices]
+
+-- | Install a single registry entry.
+installRegistryEntry :: FilePath -> Text -> Text -> RegistryEntry -> IO Bool
+installRegistryEntry cloneDir source repoName entry = do
+  let moduleDir = cloneDir </> entry.path
+      name = T.unpack entry.name.unModuleName
+  TIO.putStrLn $ "  Installing " <> entry.name.unModuleName <> "..."
+
+  let dhallFile = moduleDir </> "module.dhall"
+  decoded <- evalModuleFromFile dhallFile
+  case decoded of
+    Left err -> do
+      logIO LogNormal $ do
+        logError $ "  failed to load " <> entry.name.unModuleName <> ": " <> T.pack (show err)
+      pure False
+    Right modul -> do
+      result <- validateModule moduleDir modul
+      case result of
+        Left (ValidationError _ errors) -> do
+          logIO LogNormal $ do
+            logError $ "  " <> entry.name.unModuleName <> " has validation errors:"
+            mapM_ (\e -> logError $ "    - " <> e) errors
+          pure False
+        Left err -> do
+          logIO LogNormal (logError $ "  " <> T.pack (show err))
+          pure False
+        Right _ -> do
+          installModuleDir moduleDir name source (Just repoName)
+          TIO.putStrLn $ "    Installed as: " <> T.pack name
+          pure True
+
+-- | Copy a module directory to the install location and write origin metadata.
+installModuleDir :: FilePath -> String -> Text -> Maybe Text -> IO ()
+installModuleDir moduleDir name source registryName = do
+  xdgConfig <- getXdgDirectory XdgConfig "seihou"
+  let installDir = xdgConfig </> "installed" </> name
+
+  exists <- doesDirectoryExist installDir
+  when exists $ do
+    logIO LogNormal (logWarn $ "overwriting existing installation of '" <> T.pack name <> "'")
+    removeDirectoryRecursive installDir
+
+  createDirectoryIfMissing True installDir
+  copyDirectoryRecursive moduleDir installDir
+
+  -- Write origin metadata
+  now <- getCurrentTime
+  let origin = OriginMeta source registryName (T.pack (iso8601Show now))
+  LBS.writeFile (installDir </> ".seihou-origin.json") (encodePretty origin)
+
+-- | Origin metadata stored alongside installed modules.
+data OriginMeta = OriginMeta
+  { sourceUrl :: Text,
+    repoName :: Maybe Text,
+    installedAt :: Text
+  }
+
+instance ToJSON OriginMeta where
+  toJSON m = object ["sourceUrl" .= m.sourceUrl, "repoName" .= m.repoName, "installedAt" .= m.installedAt]
 
 -- | Recursively copy a directory tree, excluding the @.git@ directory.
 copyDirectoryRecursive :: FilePath -> FilePath -> IO ()
@@ -108,3 +274,8 @@ copyDirectoryRecursive src dst = do
               createDirectoryIfMissing True dstPath
               copyDirectoryRecursive srcPath dstPath
             else copyFile srcPath dstPath
+
+readMaybe :: String -> Maybe Int
+readMaybe s = case reads s of
+  [(n, "")] -> Just n
+  _ -> Nothing
