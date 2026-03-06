@@ -437,6 +437,8 @@ seihou install https://github.com/user/haskell-nix-module.git
 
 This clones the repository, validates its `module.dhall`, and copies it to `~/.config/seihou/installed/<name>/`. Use `--name` to override the installed module name.
 
+Repositories can also provide multiple modules via a **registry**. Use `seihou browse` to preview what's available, and `--module` or `--all` with `seihou install` to select which modules to install. See the [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) guide for details.
+
 
 ## Other commands
 
@@ -476,4 +478,5 @@ Conflicts are shown interactively, and you choose per-file whether to accept the
 ## Next steps
 
 - Read the [Module Authoring Reference](module-authoring.md) for the complete module format, all four generation strategies, variable types, the expression language, and composition patterns.
+- Read [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) to learn how to publish multiple modules from a single git repository.
 - Explore the test fixtures at `seihou-core/test/fixtures/` for working examples of multi-module composition (`haskell-with-nix`), structured output (`structured-basic`), and shell commands (`command-test`).
