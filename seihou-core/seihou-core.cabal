@@ -22,6 +22,7 @@ library
     Seihou.Core.Expr
     Seihou.Core.Install
     Seihou.Core.Module
+    Seihou.Core.Registry
     Seihou.Core.Scaffold
     Seihou.Core.Status
     Seihou.Core.Types
@@ -104,6 +105,7 @@ test-suite seihou-core-test
     Seihou.Core.InstallSpec
     Seihou.Core.ListSpec
     Seihou.Core.ModuleSpec
+    Seihou.Core.RegistrySpec
     Seihou.Core.ScaffoldSpec
     Seihou.Core.StatusSpec
     Seihou.Core.TypesSpec

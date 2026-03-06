@@ -84,6 +84,7 @@ briefError (ValidationError _ _) = "validation failed"
 briefError (ModuleNotFound _ _) = "not found"
 briefError (MissingSourceFile _ _) = "missing source file"
 briefError (CircularDependency _) = "circular dependency"
+briefError (RegistryEvalError _ _) = "registry eval failed"
 
 formatEntry :: Bool -> Int -> Int -> Entry -> Text
 formatEntry color maxNameLen maxDescLen entry =

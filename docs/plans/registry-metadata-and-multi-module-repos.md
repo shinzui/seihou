@@ -26,9 +26,9 @@ Or, if the repo has no registry file, the current single-module behavior continu
 
 ## Progress
 
-- [ ] M1: Define the `seihou-registry.dhall` schema and Haskell types
-- [ ] M1: Add Dhall decoder for `RegistryEntry` and `Registry`
-- [ ] M1: Write unit tests for registry decoding (valid, missing fields, empty list)
+- [x] M1: Define the `seihou-registry.dhall` schema and Haskell types (2026-03-06)
+- [x] M1: Add Dhall decoder for `RegistryEntry` and `Registry` (2026-03-06)
+- [x] M1: Write unit tests for registry decoding (valid, missing fields, empty list) (2026-03-06)
 - [ ] M2: Add `discoverRegistry` function to detect and parse registry in a cloned repo
 - [ ] M2: Add `discoverModulesInRepo` fallback for repos without registry
 - [ ] M2: Write unit tests for registry discovery (with registry, without registry, malformed)

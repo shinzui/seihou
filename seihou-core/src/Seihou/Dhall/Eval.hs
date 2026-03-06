@@ -1,7 +1,10 @@
 module Seihou.Dhall.Eval
   ( evalDhallExpr,
     evalModuleFromFile,
+    evalRegistryFromFile,
     moduleDecoder,
+    registryDecoder,
+    registryEntryDecoder,
     varTypeDecoder,
     varDeclDecoder,
     varExportDecoder,
@@ -19,6 +22,7 @@ import Data.Text qualified as T
 import Dhall (Decoder, input, inputFile, list, record, strictText)
 import Dhall.Marshal.Decode (bool, field, maybe, string)
 import Seihou.Core.Expr (parseExpr)
+import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
 import Seihou.Prelude
 import Prelude hiding (maybe)
@@ -249,3 +253,34 @@ parseWhen (Just t) = case parseExpr t of
   Right expr -> Just expr
   -- Caught by 'try' in 'evalModuleFromFile'
   Left err -> error ("Invalid when expression \"" <> T.unpack t <> "\": " <> T.unpack err)
+
+-- | Decoder for a single registry entry from a Dhall record.
+registryEntryDecoder :: Decoder RegistryEntry
+registryEntryDecoder =
+  record
+    ( RegistryEntry
+        <$> field "name" moduleNameDecoder
+        <*> field "path" string
+        <*> field "description" (maybe strictText)
+        <*> field "tags" (list strictText)
+    )
+
+-- | Decoder for a registry metadata file from Dhall.
+registryDecoder :: Decoder Registry
+registryDecoder =
+  record
+    ( Registry
+        <$> field "repoName" strictText
+        <*> field "repoDescription" (maybe strictText)
+        <*> field "modules" (list registryEntryDecoder)
+    )
+
+-- | Evaluate a @seihou-registry.dhall@ file and decode it into a 'Registry'.
+-- Returns 'Left' with a 'RegistryEvalError' if evaluation or decoding fails.
+evalRegistryFromFile :: FilePath -> IO (Either ModuleLoadError Registry)
+evalRegistryFromFile path = do
+  result <- try $ inputFile registryDecoder path
+  case result of
+    Left (e :: SomeException) ->
+      pure $ Left (RegistryEvalError (T.pack path) (T.pack (show e)))
+    Right r -> pure (Right r)

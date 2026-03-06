@@ -201,6 +201,7 @@ data ModuleLoadError
   | ValidationError ModuleName [Text]
   | CircularDependency [ModuleName]
   | MissingSourceFile ModuleName FilePath
+  | RegistryEvalError Text Text
   deriving stock (Eq, Show, Generic)
 
 -- | Tracks where a variable's value came from (for provenance / @--explain@).
