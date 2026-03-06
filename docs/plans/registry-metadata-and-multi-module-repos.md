@@ -29,9 +29,9 @@ Or, if the repo has no registry file, the current single-module behavior continu
 - [x] M1: Define the `seihou-registry.dhall` schema and Haskell types (2026-03-06)
 - [x] M1: Add Dhall decoder for `RegistryEntry` and `Registry` (2026-03-06)
 - [x] M1: Write unit tests for registry decoding (valid, missing fields, empty list) (2026-03-06)
-- [ ] M2: Add `discoverRegistry` function to detect and parse registry in a cloned repo
-- [ ] M2: Add `discoverModulesInRepo` fallback for repos without registry
-- [ ] M2: Write unit tests for registry discovery (with registry, without registry, malformed)
+- [x] M2: Add `discoverRepoContents` function to detect and parse registry in a cloned repo (2026-03-06)
+- [x] M2: Add `validateRegistry` and fallback for repos without registry (2026-03-06)
+- [x] M2: Write unit tests for registry discovery (with registry, without registry, malformed) — 9 tests (2026-03-06)
 - [ ] M3: Update `seihou install` to handle multi-module repos
 - [ ] M3: Add `--module` and `--all` flags to install command
 - [ ] M3: Interactive module selection when registry exists and no flag given
@@ -45,7 +45,7 @@ Or, if the repo has no registry file, the current single-module behavior continu
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Circular module dependency: `Eval -> Registry -> Module -> Eval`. Resolved by making `discoverRepoContents` take the eval function as a parameter instead of importing `Eval` directly, and inlining `isValidModuleName` in Registry.hs to avoid the `Module` import. This keeps `Registry.hs` free of any dependency on `Dhall.Eval`.
 
 
 ## Decision Log

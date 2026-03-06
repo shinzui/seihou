@@ -1,6 +1,7 @@
 module Seihou.Core.RegistrySpec (tests) where
 
-import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
+import Data.List (isInfixOf)
+import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents, validateRegistry)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalRegistryFromFile)
 import System.Directory (createDirectoryIfMissing)
@@ -108,3 +109,127 @@ spec = do
         Left (RegistryEvalError _ _) -> pure ()
         Left other -> expectationFailure ("Expected RegistryEvalError, got: " <> show other)
         Right _ -> expectationFailure "Expected Left for nonexistent file"
+
+  describe "discoverRepoContents" $ do
+    it "returns MultiModule when seihou-registry.dhall exists" $ do
+      withSystemTempDirectory "seihou-discover-test" $ \tmpDir -> do
+        writeRegistryFile tmpDir
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          MultiModule reg -> reg.repoName `shouldBe` "Test Registry"
+          other -> expectationFailure ("Expected MultiModule, got: " <> show other)
+
+    it "returns SingleModule when only module.dhall exists" $ do
+      withSystemTempDirectory "seihou-discover-test" $ \tmpDir -> do
+        writeMinimalModuleDhall (tmpDir </> "module.dhall")
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          SingleModule p -> p `shouldBe` tmpDir
+          other -> expectationFailure ("Expected SingleModule, got: " <> show other)
+
+    it "returns MultiModule when both registry and module.dhall exist" $ do
+      withSystemTempDirectory "seihou-discover-test" $ \tmpDir -> do
+        writeRegistryFile tmpDir
+        writeMinimalModuleDhall (tmpDir </> "module.dhall")
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          MultiModule reg -> reg.repoName `shouldBe` "Test Registry"
+          other -> expectationFailure ("Expected MultiModule (registry takes precedence), got: " <> show other)
+
+    it "returns EmptyRepo when neither file exists" $ do
+      withSystemTempDirectory "seihou-discover-test" $ \tmpDir -> do
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          EmptyRepo -> pure ()
+          other -> expectationFailure ("Expected EmptyRepo, got: " <> show other)
+
+    it "falls back to SingleModule when registry is malformed and module.dhall exists" $ do
+      withSystemTempDirectory "seihou-discover-test" $ \tmpDir -> do
+        writeFile (tmpDir </> "seihou-registry.dhall") "{ broken = True }"
+        writeMinimalModuleDhall (tmpDir </> "module.dhall")
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          SingleModule _ -> pure ()
+          other -> expectationFailure ("Expected SingleModule fallback, got: " <> show other)
+
+  describe "validateRegistry" $ do
+    it "returns no errors for a valid registry" $ do
+      withSystemTempDirectory "seihou-validate-reg" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "mod-a")
+        writeMinimalModuleDhall (tmpDir </> "mod-a" </> "module.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "mod-a") "mod-a" Nothing []]
+                }
+        errs <- validateRegistry tmpDir reg
+        errs `shouldBe` []
+
+    it "reports invalid module name" $ do
+      withSystemTempDirectory "seihou-validate-reg" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "Bad_Name")
+        writeMinimalModuleDhall (tmpDir </> "Bad_Name" </> "module.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "Bad_Name") "Bad_Name" Nothing []]
+                }
+        errs <- validateRegistry tmpDir reg
+        length errs `shouldSatisfy` (> 0)
+        any ("must match" `isInfixOf`) (map show errs) `shouldBe` True
+
+    it "reports missing module.dhall at entry path" $ do
+      withSystemTempDirectory "seihou-validate-reg" $ \tmpDir -> do
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "missing") "nonexistent" Nothing []]
+                }
+        errs <- validateRegistry tmpDir reg
+        length errs `shouldSatisfy` (> 0)
+        any ("missing module.dhall" `isInfixOf`) (map show errs) `shouldBe` True
+
+    it "reports unsafe path with .." $ do
+      withSystemTempDirectory "seihou-validate-reg" $ \tmpDir -> do
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "bad-path") "../escape" Nothing []]
+                }
+        errs <- validateRegistry tmpDir reg
+        any ("must not contain" `isInfixOf`) (map show errs) `shouldBe` True
+
+-- Helper: write a minimal valid seihou-registry.dhall
+writeRegistryFile :: FilePath -> IO ()
+writeRegistryFile dir = do
+  let dhall =
+        "{ repoName = \"Test Registry\"\n\
+        \, repoDescription = Some \"A test registry\"\n\
+        \, modules =\n\
+        \  [ { name = \"mod-a\"\n\
+        \    , path = \"mod-a\"\n\
+        \    , description = Some \"Module A\"\n\
+        \    , tags = [ \"test\" ]\n\
+        \    }\n\
+        \  ]\n\
+        \}"
+  writeFile (dir </> "seihou-registry.dhall") dhall
+
+-- Helper: write a minimal valid module.dhall
+writeMinimalModuleDhall :: FilePath -> IO ()
+writeMinimalModuleDhall path = do
+  let dhall =
+        "{ name = \"minimal\"\n\
+        \, description = None Text\n\
+        \, vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }\n\
+        \, exports = [] : List { var : Text, alias : Optional Text }\n\
+        \, prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }\n\
+        \, steps = [] : List { strategy : Text, src : Text, dest : Text, when : Optional Text, patch : Optional Text }\n\
+        \, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }\n\
+        \, dependencies = [] : List Text\n\
+        \}"
+  writeFile path dhall
