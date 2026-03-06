@@ -95,6 +95,7 @@ test-suite seihou-cli-test
   hs-source-dirs: test
   main-is: Main.hs
   other-modules:
+    Seihou.CLI.BrowseFormatSpec
     Seihou.CLI.DiffSpec
     Seihou.CLI.InitSpec
     Seihou.CLI.ListSpec
