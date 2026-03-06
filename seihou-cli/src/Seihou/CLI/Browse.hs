@@ -5,6 +5,7 @@ where
 
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleModule)
 import Seihou.CLI.Commands (BrowseOpts (..))
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
@@ -47,49 +48,10 @@ handleBrowse bopts = do
           Left err -> do
             logIO LogNormal (logError $ "failed to load module: " <> T.pack (show err))
             exitFailure
-          Right m -> do
-            TIO.putStrLn $ m.name.unModuleName
-            case m.description of
-              Just desc -> TIO.putStrLn $ "  " <> desc
-              Nothing -> pure ()
-            TIO.putStrLn ""
-            TIO.putStrLn "Single-module repository. Install with:"
-            TIO.putStrLn $ "  seihou install " <> source
+          Right m ->
+            TIO.putStr $ formatBrowseSingleModule source m.name.unModuleName m.description
       MultiModule registry -> do
         let filtered = case bopts.browseTag of
               Nothing -> registry.modules
-              Just tag -> filter (\e -> tag `elem` e.tags) registry.modules
-
-        TIO.putStrLn $ registry.repoName
-        case registry.repoDescription of
-          Just desc -> TIO.putStrLn desc
-          Nothing -> pure ()
-        TIO.putStrLn ""
-
-        if null filtered
-          then TIO.putStrLn $
-            case bopts.browseTag of
-              Just tag -> "No modules matching tag '" <> tag <> "'."
-              Nothing -> "No modules in registry."
-          else do
-            TIO.putStrLn "Available modules:"
-            TIO.putStrLn ""
-            let maxNameLen = maximum (map (T.length . (.name.unModuleName)) filtered)
-            mapM_ (printEntry maxNameLen) filtered
-            TIO.putStrLn ""
-            let n = length filtered
-                noun = if n == 1 then "module" else "modules"
-            TIO.putStrLn $ T.pack (show n) <> " " <> noun <> " available. Install with:"
-            TIO.putStrLn $ "  seihou install " <> source <> " --module <name>"
-            TIO.putStrLn $ "  seihou install " <> source <> " --all"
-
-printEntry :: Int -> RegistryEntry -> IO ()
-printEntry maxNameLen entry = do
-  let name = entry.name.unModuleName
-      padding = T.replicate (maxNameLen - T.length name + 3) " "
-      desc = maybe "" id entry.description
-      tagsText =
-        if null entry.tags
-          then ""
-          else "  [" <> T.intercalate ", " entry.tags <> "]"
-  TIO.putStrLn $ "  " <> name <> padding <> desc <> tagsText
+              Just tag -> filter (\e -> let ts = e.tags in tag `elem` ts) registry.modules
+        TIO.putStr $ formatBrowseRegistry source registry filtered bopts.browseTag

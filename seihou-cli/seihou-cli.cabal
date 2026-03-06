@@ -16,6 +16,7 @@ library seihou-cli-internal
   hs-source-dirs: src
   visibility: private
   exposed-modules:
+    Seihou.CLI.BrowseFormat
     Seihou.CLI.Diff
     Seihou.CLI.Init
     Seihou.CLI.List
@@ -49,6 +50,7 @@ executable seihou
   main-is: Main.hs
   other-modules:
     Seihou.CLI.Browse
+    Seihou.CLI.BrowseFormat
     Seihou.CLI.Commands
     Seihou.CLI.Config
     Seihou.CLI.Diff
