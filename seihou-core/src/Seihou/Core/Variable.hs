@@ -9,11 +9,10 @@ module Seihou.Core.Variable
 where
 
 import Data.Char (toUpper)
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Core.Types
+import Seihou.Prelude
 
 -- | Derive the environment variable name for a given variable.
 -- @VarName "project.name"@ becomes @"SEIHOU_VAR_PROJECT_NAME"@.

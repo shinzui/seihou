@@ -6,11 +6,11 @@ where
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Foldable (toList)
-import Data.Text (Text)
 import Data.Void (Void)
 import Dhall.Core qualified as Dhall
 import Dhall.Map qualified as DhallMap
 import Dhall.Src (Src)
+import Seihou.Prelude
 
 -- | Convert a normalized Dhall expression to an aeson Value.
 -- Supports records, text, naturals, integers, doubles, bools, lists, and optionals.

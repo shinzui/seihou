@@ -7,13 +7,12 @@ module Seihou.Dhall.Config
 where
 
 import Control.Exception (SomeException, try)
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Dhall (input, strictText)
 import Dhall.Marshal.Decode (Decoder, field, list, record)
+import Seihou.Prelude
 import System.Directory (doesFileExist)
 
 -- | Evaluate a Dhall config file to a @Map Text Text@.

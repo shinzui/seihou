@@ -4,14 +4,12 @@ module Seihou.Engine.Diff
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
-import Data.Text (Text)
-import Effectful
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText)
 import Seihou.Manifest.Hash (hashContent)
+import Seihou.Prelude
 
 -- | Extract a map of (path, content) from planned operations.
 -- Only WriteFileOp and CopyFileOp produce file entries; directories and

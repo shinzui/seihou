@@ -4,10 +4,10 @@ module Seihou.CLI.Init
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Shared (shortenHome)
+import Seihou.Prelude
 import System.Directory
   ( XdgDirectory (..),
     createDirectoryIfMissing,
@@ -15,7 +15,6 @@ import System.Directory
     doesFileExist,
     getXdgDirectory,
   )
-import System.FilePath ((</>))
 
 handleInit :: IO ()
 handleInit = do

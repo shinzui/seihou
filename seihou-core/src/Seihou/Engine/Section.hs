@@ -7,9 +7,9 @@ module Seihou.Engine.Section
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Core.Types
+import Seihou.Prelude
 
 -- | A section marker identifies content contributed by a module.
 data SectionMarker = SectionMarker

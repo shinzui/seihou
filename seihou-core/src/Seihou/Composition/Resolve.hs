@@ -6,12 +6,9 @@ module Seihou.Composition.Resolve
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
-import Data.Text (Text)
 import Data.Text qualified as T
-import Effectful
 import Seihou.Composition.Graph (buildGraph, topoSort)
 import Seihou.Core.Module (discoverModule, validateModule)
 import Seihou.Core.Types
@@ -19,7 +16,7 @@ import Seihou.Core.Variable (resolveVariables)
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.Console (Console, isInteractive)
 import Seihou.Interaction.Prompt (runPrompts)
-import System.FilePath ((</>))
+import Seihou.Prelude
 
 -- | Load all modules in a composition: primary + additional + transitive deps.
 -- Additional modules are treated as implicit dependencies of the primary module.

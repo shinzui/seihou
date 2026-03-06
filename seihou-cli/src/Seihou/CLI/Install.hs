@@ -3,7 +3,6 @@ module Seihou.CLI.Install
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (InstallOpts (..))
@@ -13,6 +12,7 @@ import Seihou.Core.Module (validateModule)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.Logger (logError, logWarn)
+import Seihou.Prelude
 import System.Directory
   ( XdgDirectory (..),
     copyFile,
@@ -23,7 +23,6 @@ import System.Directory
     removeDirectoryRecursive,
   )
 import System.Exit (ExitCode (..), exitFailure)
-import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (readProcessWithExitCode)
 

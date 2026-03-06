@@ -4,8 +4,8 @@ module Seihou.Core.Scaffold
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
+import Seihou.Prelude
 
 -- | Generate the module.dhall content for a new module.
 -- The output matches the Dhall schema expected by 'Seihou.Dhall.Eval.moduleDecoder'.

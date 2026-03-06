@@ -6,9 +6,9 @@ where
 import Crypto.Hash.SHA256 qualified as SHA256
 import Data.ByteString qualified as BS
 import Data.ByteString.Base16 qualified as Base16
-import Data.Text (Text)
 import Data.Text.Encoding qualified as TE
 import Seihou.Core.Types (SHA256 (..))
+import Seihou.Prelude
 
 -- | Compute the SHA256 hash of text content, returning a hex-encoded digest.
 -- The text is UTF-8 encoded before hashing.

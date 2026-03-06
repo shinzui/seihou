@@ -3,8 +3,8 @@ module Seihou.Core.Install
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
+import Seihou.Prelude
 
 -- | Parse a module name from a git URL by extracting the last path segment
 -- and stripping a trailing .git extension.

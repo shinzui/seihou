@@ -5,13 +5,11 @@ where
 
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Core.Types (ConfigError (..))
 import Seihou.Dhall.Config (evalConfigFileIfExists)
 import Seihou.Effect.ConfigReader (ConfigReader (..))
+import Seihou.Prelude
 import System.Directory (XdgDirectory (..), getCurrentDirectory, getXdgDirectory)
-import System.FilePath ((</>))
 
 -- | Real IO interpreter for the ConfigReader effect.
 --

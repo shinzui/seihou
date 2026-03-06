@@ -5,10 +5,10 @@ where
 
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
-import Effectful
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText)
 import Seihou.Manifest.Hash (hashContent)
+import Seihou.Prelude
 
 -- | Compare each file in the manifest against its current disk content.
 -- Returns a sorted list of tracked files with their status:

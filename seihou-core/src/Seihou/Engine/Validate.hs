@@ -10,7 +10,6 @@ where
 
 import Data.Maybe (isNothing, mapMaybe)
 import Data.Set qualified as Set
-import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Core.Module
   ( checkCommandSafety,
@@ -25,6 +24,7 @@ import Seihou.Core.Module
     extractPlaceholders,
   )
 import Seihou.Core.Types
+import Seihou.Prelude
 
 -- | Severity of a diagnostic check result.
 data DiagSeverity

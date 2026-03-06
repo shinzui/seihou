@@ -7,9 +7,7 @@ module Seihou.Effect.Logger
   )
 where
 
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
+import Seihou.Prelude
 
 data Logger :: Effect where
   LogDebug :: Text -> Logger m ()

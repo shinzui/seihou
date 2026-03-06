@@ -4,13 +4,13 @@ module Seihou.CLI.List
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Shared (shortenHome)
 import Seihou.CLI.Style (dim, red, useColor)
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
 import Seihou.Core.Types
+import Seihou.Prelude
 
 handleList :: IO ()
 handleList = do

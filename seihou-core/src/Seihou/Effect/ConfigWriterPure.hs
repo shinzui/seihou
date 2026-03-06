@@ -5,14 +5,11 @@ module Seihou.Effect.ConfigWriterPure
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Local (State, get, modify, runState)
 import Seihou.Core.Types (ConfigScope (..))
 import Seihou.Effect.ConfigWriter (ConfigWriter (..))
+import Seihou.Prelude
 
 -- | In-memory state for the pure ConfigWriter interpreter.
 data ConfigWriterState = ConfigWriterState

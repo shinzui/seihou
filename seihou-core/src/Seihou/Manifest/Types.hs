@@ -10,12 +10,11 @@ import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Core.Types
+import Seihou.Prelude
 
 -- | Current manifest schema version.
 currentManifestVersion :: Int

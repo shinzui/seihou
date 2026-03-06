@@ -3,7 +3,6 @@ module Seihou.CLI.NewModule
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (NewModuleOpts (..))
@@ -11,9 +10,9 @@ import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Scaffold (moduleDhall, readmeTemplate)
 import Seihou.Core.Types (LogLevel (..))
 import Seihou.Effect.Logger (logError)
+import Seihou.Prelude
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist)
 import System.Exit (exitFailure)
-import System.FilePath ((</>))
 
 handleNewModule :: NewModuleOpts -> IO ()
 handleNewModule nopts = do

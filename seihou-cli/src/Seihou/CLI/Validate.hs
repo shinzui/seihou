@@ -12,9 +12,9 @@ import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.Logger (logError)
 import Seihou.Engine.Validate (ValidateReport (..), buildReport, reportHasErrors)
+import Seihou.Prelude
 import System.Directory (doesFileExist, getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
-import System.FilePath ((</>))
 
 handleValidateModule :: ValidateOpts -> IO ()
 handleValidateModule vopts = do

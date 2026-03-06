@@ -13,13 +13,12 @@ module Seihou.CLI.Style
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Core.Types (DiffResult (..), Module (..), ModuleName (..), VarName (..), VarValue (..))
 import Seihou.Engine.Preview
 import Seihou.Engine.Validate
+import Seihou.Prelude
 import System.Console.ANSI
   ( Color (..),
     ColorIntensity (..),

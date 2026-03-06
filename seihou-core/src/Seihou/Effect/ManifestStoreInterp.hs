@@ -6,11 +6,10 @@ where
 import Data.ByteString.Lazy qualified as LBS
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText, writeFileText)
 import Seihou.Effect.ManifestStore (ManifestStore (..))
 import Seihou.Manifest.Types (manifestFromJSON, manifestToJSON)
+import Seihou.Prelude
 import System.FilePath (takeDirectory)
 
 -- | Real interpreter for the ManifestStore effect.

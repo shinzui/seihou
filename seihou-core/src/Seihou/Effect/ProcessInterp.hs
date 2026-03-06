@@ -3,11 +3,9 @@ module Seihou.Effect.ProcessInterp
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Effect.Process (Process (..))
+import Seihou.Prelude
 import System.Exit (ExitCode)
 import System.Process (CreateProcess (..), proc, readCreateProcessWithExitCode)
 

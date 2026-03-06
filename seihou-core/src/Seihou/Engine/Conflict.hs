@@ -5,9 +5,9 @@ module Seihou.Engine.Conflict
 where
 
 import Data.Text qualified as T
-import Effectful
 import Seihou.Core.Types (ConflictFile (..), ConflictResolution (..))
 import Seihou.Effect.Console (Console, getLine, isInteractive, putText)
+import Seihou.Prelude
 import Prelude hiding (getLine)
 
 -- | Resolve a list of conflicts, returning per-file resolutions.

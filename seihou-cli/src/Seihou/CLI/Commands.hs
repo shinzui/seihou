@@ -12,12 +12,12 @@ module Seihou.CLI.Commands
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
 import Seihou.Core.Types (ModuleName (..))
+import Seihou.Prelude
 
 data Command
   = Init

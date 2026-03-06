@@ -4,9 +4,7 @@ module Seihou.Effect.Process
   )
 where
 
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
+import Seihou.Prelude
 import System.Exit (ExitCode)
 
 data Process :: Effect where

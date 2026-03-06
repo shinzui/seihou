@@ -23,13 +23,12 @@ module Seihou.Core.Module
 where
 
 import Data.Set qualified as Set
-import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
+import Seihou.Prelude
 import System.Directory (XdgDirectory (..), doesDirectoryExist, doesFileExist, getCurrentDirectory, getXdgDirectory, listDirectory)
-import System.FilePath ((</>))
 
 -- | Search for a module by name in the given directories.
 -- Returns the path to the directory containing @module.dhall@, or

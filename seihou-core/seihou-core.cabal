@@ -59,6 +59,7 @@ library
     Seihou.Interaction.Prompt
     Seihou.Manifest.Hash
     Seihou.Manifest.Types
+    Seihou.Prelude
 
   build-depends:
     aeson >=2.1 && <3,

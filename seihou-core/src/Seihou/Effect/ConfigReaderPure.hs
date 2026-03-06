@@ -3,12 +3,9 @@ module Seihou.Effect.ConfigReaderPure
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Effect.ConfigReader (ConfigReader (..))
+import Seihou.Prelude
 
 -- | Pure interpreter for the ConfigReader effect.
 --

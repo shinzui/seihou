@@ -6,11 +6,8 @@ module Seihou.Effect.ConfigWriter
   )
 where
 
-import Data.Map.Strict (Map)
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Core.Types (ConfigError, ConfigScope)
+import Seihou.Prelude
 
 data ConfigWriter :: Effect where
   WriteConfigValue :: ConfigScope -> Text -> Text -> ConfigWriter m ()

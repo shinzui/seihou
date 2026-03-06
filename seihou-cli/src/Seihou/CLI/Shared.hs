@@ -11,12 +11,11 @@ where
 
 import Data.List (isPrefixOf)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
-import Effectful
 import Seihou.Core.Types
 import Seihou.Effect.Logger (Logger, logError)
 import Seihou.Effect.LoggerInterp (runLoggerIO)
+import Seihou.Prelude
 import System.Directory (getHomeDirectory)
 import System.Exit (exitFailure)
 

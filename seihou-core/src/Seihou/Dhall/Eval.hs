@@ -14,14 +14,13 @@ module Seihou.Dhall.Eval
 where
 
 import Control.Exception (SomeException, evaluate, try)
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
 import Dhall (Decoder, input, inputFile, list, record, strictText)
 import Dhall.Marshal.Decode (bool, field, maybe, string)
 import Seihou.Core.Expr (parseExpr)
 import Seihou.Core.Types
+import Seihou.Prelude
 import Prelude hiding (maybe)
 
 -- | Spike: evaluate a Dhall expression containing a record with @name@ and @version@

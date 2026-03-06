@@ -6,18 +6,17 @@ where
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Core.Types (ConfigError (..), ConfigScope (..))
 import Seihou.Dhall.Config (evalConfigFileIfExists, serializeConfig)
 import Seihou.Effect.ConfigWriter (ConfigWriter (..))
+import Seihou.Prelude
 import System.Directory
   ( XdgDirectory (..),
     createDirectoryIfMissing,
     getCurrentDirectory,
     getXdgDirectory,
   )
-import System.FilePath (takeDirectory, (</>))
+import System.FilePath (takeDirectory)
 
 -- | IO interpreter for the ConfigWriter effect.
 --

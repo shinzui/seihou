@@ -5,10 +5,8 @@ where
 
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Effectful
 import Seihou.CLI.Commands (VarsOpts (..))
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.Core.Module (defaultSearchPaths, loadModule)
@@ -17,6 +15,7 @@ import Seihou.Core.Variable (formatDeclarations, formatExplain, resolveVariables
 import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.Logger (logError)
+import Seihou.Prelude
 import System.Environment (getEnvironment)
 import System.Exit (exitFailure)
 

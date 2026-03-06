@@ -4,15 +4,13 @@ module Seihou.Interaction.Prompt
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
-import Effectful
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Types
 import Seihou.Core.Variable (coerceValue, validateVarValue)
 import Seihou.Effect.Console (Console, getLine, putText)
+import Seihou.Prelude
 import Prelude hiding (getLine)
 
 -- | Run prompts for unresolved variables.

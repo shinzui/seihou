@@ -5,15 +5,11 @@ module Seihou.Effect.FilesystemPure
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Set (Set)
 import Data.Set qualified as Set
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Local (State, get, modify, put, runState)
 import Seihou.Effect.Filesystem (Filesystem (..))
+import Seihou.Prelude
 
 -- | In-memory filesystem state for testing.
 data PureFS = PureFS

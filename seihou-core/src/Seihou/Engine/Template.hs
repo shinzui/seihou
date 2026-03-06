@@ -5,11 +5,10 @@ module Seihou.Engine.Template
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Core.Types
+import Seihou.Prelude
 
 -- | Convert a variable value to its text representation for template output.
 valueToText :: VarValue -> Text

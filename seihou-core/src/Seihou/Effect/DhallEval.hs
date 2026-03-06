@@ -4,9 +4,8 @@ module Seihou.Effect.DhallEval
   )
 where
 
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Core.Types (Module, ModuleLoadError)
+import Seihou.Prelude
 
 data DhallEval :: Effect where
   EvalModuleFile :: FilePath -> DhallEval m (Either ModuleLoadError Module)

@@ -9,10 +9,8 @@ where
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
 import Data.Aeson.KeyMap qualified as KM
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.Lazy qualified as TL
@@ -21,6 +19,7 @@ import Data.Yaml qualified as Yaml
 import Seihou.Core.Types
 import Seihou.Engine.Plan (compilePlan)
 import Seihou.Engine.Section (applyTextPatch)
+import Seihou.Prelude
 import System.FilePath (takeExtension)
 
 -- | Compile plans for all modules in execution order and merge into a

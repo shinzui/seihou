@@ -5,11 +5,10 @@ module Seihou.Composition.Graph
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Seihou.Core.Types
+import Seihou.Prelude
 
 -- | A directed acyclic graph of modules where edges point from a module
 -- to its dependencies.

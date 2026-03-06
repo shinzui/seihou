@@ -4,11 +4,10 @@ module Seihou.Core.Expr
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Core.Types
+import Seihou.Prelude
 
 -- | Parse an expression string into an 'Expr' AST.
 --

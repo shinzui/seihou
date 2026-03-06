@@ -7,9 +7,7 @@ where
 import Control.Exception (IOException, SomeException, catch, try)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
-import Data.Map.Strict (Map)
 import Data.Set qualified as Set
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
@@ -24,7 +22,8 @@ import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Types
 import Seihou.Engine.DhallJSON (dhallExprToJSON)
 import Seihou.Engine.Template (renderDestPath, renderTemplate)
-import System.FilePath (takeDirectory, takeExtension, (</>))
+import Seihou.Prelude
+import System.FilePath (takeDirectory, takeExtension)
 
 -- | Compile a module's steps into a list of filesystem operations.
 -- Evaluates @when@ conditions, dispatches by strategy, reads source files,

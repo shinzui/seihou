@@ -4,9 +4,8 @@ module Seihou.Effect.FilesystemInterp
 where
 
 import Data.Text.IO qualified as TIO
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Effect.Filesystem (Filesystem (..))
+import Seihou.Prelude
 import System.Directory qualified as Dir
 
 -- | Real IO interpreter for the Filesystem effect.

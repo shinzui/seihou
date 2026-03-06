@@ -7,12 +7,11 @@ module Seihou.Engine.Preview
   )
 where
 
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
-import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Core.Types
+import Seihou.Prelude
 
 -- | Status of a file relative to the manifest and disk.
 data FileStatus

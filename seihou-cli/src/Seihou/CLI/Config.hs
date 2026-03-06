@@ -4,10 +4,8 @@ module Seihou.CLI.Config
 where
 
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Effectful
 import Seihou.CLI.Commands (ConfigAction (..), ConfigOpts (..))
 import Seihou.CLI.Shared (formatConfigError, logIO)
 import Seihou.Core.Types (ConfigError, ConfigScope (..), LogLevel (..))
@@ -16,6 +14,7 @@ import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConfigWriter (deleteConfigValue, listConfigValues, writeConfigValue)
 import Seihou.Effect.ConfigWriterInterp (runConfigWriter)
 import Seihou.Effect.Logger (logError)
+import Seihou.Prelude
 import System.Exit (exitFailure)
 
 handleConfig :: ConfigOpts -> IO ()

@@ -4,10 +4,8 @@ module Seihou.Effect.ProcessPure
   )
 where
 
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Effect.Process (Process (..))
+import Seihou.Prelude
 import System.Exit (ExitCode (..))
 
 data ProcessMock = ProcessMock

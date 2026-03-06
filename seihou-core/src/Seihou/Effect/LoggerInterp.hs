@@ -6,10 +6,9 @@ where
 
 import Control.Monad (when)
 import Data.Text qualified as T
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Core.Types (LogLevel (..))
 import Seihou.Effect.Logger (Logger (..))
+import Seihou.Prelude
 import System.IO (hPutStrLn, stderr)
 
 -- | IO interpreter for the Logger effect.

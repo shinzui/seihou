@@ -3,11 +3,10 @@ module Seihou.Effect.ManifestStorePure
   )
 where
 
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Local (State, get, put, runState)
 import Seihou.Core.Types (Manifest)
 import Seihou.Effect.ManifestStore (ManifestStore (..))
+import Seihou.Prelude
 
 -- | Pure in-memory interpreter for the ManifestStore effect.
 -- Stores the manifest in effectful State.

@@ -4,10 +4,8 @@ module Seihou.CLI.Diff
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Effectful
 import Seihou.CLI.Shared (logIO)
 import Seihou.CLI.Style (dim, red, useColor, yellow)
 import Seihou.Core.Status (computeTrackedFileStatuses)
@@ -16,8 +14,8 @@ import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.Logger (logError)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import Seihou.Prelude
 import System.Exit (exitFailure)
-import System.FilePath ((</>))
 
 handleDiff :: IO ()
 handleDiff = do

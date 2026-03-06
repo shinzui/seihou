@@ -6,11 +6,8 @@ module Seihou.Effect.ConfigReader
   )
 where
 
-import Data.Map.Strict (Map)
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Core.Types (ConfigError)
+import Seihou.Prelude
 
 data ConfigReader :: Effect where
   ReadGlobalConfig :: ConfigReader m (Either ConfigError (Map Text Text))

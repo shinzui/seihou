@@ -5,10 +5,8 @@ module Seihou.Effect.ManifestStore
   )
 where
 
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Core.Types (Manifest)
+import Seihou.Prelude
 
 data ManifestStore :: Effect where
   ReadManifest :: ManifestStore m (Either Text (Maybe Manifest))

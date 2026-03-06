@@ -3,12 +3,10 @@ module Seihou.Effect.ConsoleInterp
   )
 where
 
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Seihou.Effect.Console (Console (..))
+import Seihou.Prelude
 import System.IO (hFlush, hIsTerminalDevice, hPutStrLn, stderr, stdin, stdout)
 import Prelude hiding (getLine)
 

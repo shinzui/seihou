@@ -7,12 +7,10 @@ import Control.Monad (when)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
-import Effectful
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
@@ -35,9 +33,10 @@ import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
 import Seihou.Engine.Preview (buildPreview)
 import Seihou.Manifest.Types (emptyManifest)
+import Seihou.Prelude
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
-import System.FilePath (takeDirectory, (</>))
+import System.FilePath (takeDirectory)
 import System.IO (hFlush, hIsTerminalDevice, stdin, stdout)
 
 handleRun :: RunOpts -> IO ()

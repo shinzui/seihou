@@ -8,9 +8,7 @@ module Seihou.Effect.Console
   )
 where
 
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
+import Seihou.Prelude
 import Prelude hiding (getLine)
 
 data Console :: Effect where

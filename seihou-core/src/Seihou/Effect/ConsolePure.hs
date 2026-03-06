@@ -6,11 +6,9 @@ module Seihou.Effect.ConsolePure
   )
 where
 
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Local (State, get, modify, runState)
 import Seihou.Effect.Console (Console (..))
+import Seihou.Prelude
 import Prelude hiding (getLine)
 
 -- | State for the pure Console interpreter.

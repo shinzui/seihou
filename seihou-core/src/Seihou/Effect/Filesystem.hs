@@ -11,9 +11,7 @@ module Seihou.Effect.Filesystem
   )
 where
 
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
+import Seihou.Prelude
 
 data Filesystem :: Effect where
   ReadFileText :: FilePath -> Filesystem m Text

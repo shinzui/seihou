@@ -4,11 +4,9 @@ module Seihou.CLI.Status
 where
 
 import Data.Map.Strict qualified as Map
-import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time.Format (defaultTimeLocale, formatTime)
-import Effectful
 import Seihou.CLI.Shared (logIO)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.Core.Status (computeTrackedFileStatuses)
@@ -17,8 +15,8 @@ import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.Logger (logError)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import Seihou.Prelude
 import System.Exit (exitFailure)
-import System.FilePath ((</>))
 
 handleStatus :: IO ()
 handleStatus = do

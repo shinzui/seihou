@@ -5,11 +5,9 @@ module Seihou.Effect.LoggerPure
   )
 where
 
-import Data.Text (Text)
-import Effectful
-import Effectful.Dispatch.Dynamic
 import Effectful.State.Static.Local (State, modify, runState)
 import Seihou.Effect.Logger (Logger (..))
+import Seihou.Prelude
 
 -- | State capturing all log messages by severity.
 -- Messages are appended in order within each field.
