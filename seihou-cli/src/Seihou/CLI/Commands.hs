@@ -81,7 +81,8 @@ data ConfigAction
 data ConfigOpts = ConfigOpts
   { configAction :: ConfigAction,
     configGlobal :: Bool,
-    configNamespace :: Maybe Text
+    configNamespace :: Maybe Text,
+    configEffective :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -393,6 +394,7 @@ configParser =
       <$> configActionParser
       <*> switch (long "global" <> short 'g' <> help "Use global scope (~/.config/seihou/config.dhall)")
       <*> optional (option (T.pack <$> str) (long "namespace" <> short 'n' <> metavar "NS" <> help "Use namespace scope"))
+      <*> switch (long "effective" <> short 'e' <> help "Show merged config across all scopes (with list)")
 
 configActionParser :: Parser ConfigAction
 configActionParser =

@@ -36,7 +36,12 @@ This plan addresses all five gaps so that declared variables are automatically r
   - [x] Target module's resolved vars (including inherited exports) shown with provenance
   - [x] Composition info logged when multiple modules involved
   - [x] All 513 tests pass
-- [ ] Milestone 3: Add `seihou config list --effective` merged view
+- [x] Milestone 3: Add `seihou config list --effective` merged view (2026-03-06)
+  - [x] Added `configEffective :: Bool` to `ConfigOpts` in Commands.hs
+  - [x] Added `--effective` / `-e` flag to config parser
+  - [x] Implemented `handleListEffective` with source-annotated merged output
+  - [x] Merge order: local > namespace > global (matching resolution precedence)
+  - [x] All 513 tests pass
 - [ ] Milestone 4: Add diagnostics for unused config values and unresolved variables
 - [ ] Milestone 5: End-to-end validation of the automatic resolution flow
 
