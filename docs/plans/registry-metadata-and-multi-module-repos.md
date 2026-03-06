@@ -39,8 +39,8 @@ Or, if the repo has no registry file, the current single-module behavior continu
 - [ ] M3: Write integration test for multi-module install
 - [x] M4: Implement `seihou browse <git-url>` command with --tag filter (2026-03-06)
 - [ ] M4: Write integration test for browse command
-- [ ] M5: Update `seihou list` to show registry origin for installed modules
-- [ ] M5: Update documentation and help text
+- [x] M5: Update `seihou list` to show registry origin for installed modules (2026-03-06)
+- [x] M5: Update documentation and help text (2026-03-06)
 - [ ] M5: End-to-end manual test with a real multi-module repo
 
 
