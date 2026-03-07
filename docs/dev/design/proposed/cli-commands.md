@@ -9,7 +9,7 @@
 
 ## Overview
 
-Seihou exposes eleven commands in v1, covering the core generation loop, module authoring, configuration management, and module discovery. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
+Seihou exposes twelve commands in v1, covering the core generation loop, module authoring, configuration management, context management, and module discovery. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
 
 ## Motivation
 
@@ -27,11 +27,12 @@ The CLI is the primary interface to Seihou. It must support:
 | Decision | Choice | Rationale |
 |---|---|---|
 | CLI framework | optparse-applicative | Standard Haskell, composable, auto-generated --help |
-| V1 commands | init, run, vars, install, status, diff, list, new-module, validate-module, config, browse | Core loop + authoring + config management + discovery |
+| V1 commands | init, run, vars, install, status, diff, list, new-module, validate-module, config, context, browse | Core loop + authoring + config management + context management + discovery |
 | Variable passing | `--var key=value` | Explicit, composable, scriptable |
 | Output format | Human-readable by default | Primary audience is interactive use |
 | Dry run | `--dry-run` flag on `run` | Safety net; shows plan without executing |
-| Config scopes | `--global`, `--namespace` flags on `config` | Matches the three-tier config hierarchy |
+| Config scopes | `--global`, `--namespace`, `--context` flags on `config` | Matches the multi-tier config hierarchy |
+| Context management | `seihou context` subcommand | UX for managing work/personal/team contexts |
 
 ## Command ADT
 
@@ -47,7 +48,9 @@ data Command
   | NewModule NewModuleOpts
   | ValidateModule ValidateOpts
   | Config ConfigOpts
+  | Context ContextAction
   | Browse BrowseOpts
+  | Agent AgentCommand
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -59,6 +62,7 @@ data RunOpts = RunOpts
   , runForce      :: Bool                -- Auto-resolve conflicts
   , runNoCommands :: Bool                -- Disable shell commands
   , runNamespace  :: Maybe Text          -- Config namespace
+  , runContext    :: Maybe Text          -- Context name (work, personal, etc.)
   , runVerbose    :: Bool                -- Verbose output
   }
   deriving stock (Eq, Show, Generic)
@@ -68,6 +72,7 @@ data VarsOpts = VarsOpts
   , varsExplain   :: Bool                -- Show provenance
   , varsVars      :: [(Text, Text)]      -- Variable overrides (for explain context)
   , varsNamespace :: Maybe Text          -- Config namespace
+  , varsContext   :: Maybe Text          -- Context name
   }
   deriving stock (Eq, Show, Generic)
 
@@ -102,8 +107,17 @@ data ConfigOpts = ConfigOpts
   { configAction    :: ConfigAction
   , configGlobal    :: Bool              -- Target global config
   , configNamespace :: Maybe Text        -- Target namespace config
+  , configContext   :: Maybe Text        -- Target context config
   , configEffective :: Bool              -- Show merged effective values
   }
+  deriving stock (Eq, Show, Generic)
+
+data ContextAction
+  = ContextShow
+  | ContextSet Text
+  | ContextDefault Text
+  | ContextClear
+  | ContextClearDefault
   deriving stock (Eq, Show, Generic)
 
 data BrowseOpts = BrowseOpts
@@ -155,7 +169,7 @@ Initialized Seihou configuration at ~/.config/seihou/
 Run one or more modules to generate or update a project.
 
 ```sh
-seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] [--diff] [--force] [--no-commands] [--namespace <ns>] [--verbose]
+seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] [--diff] [--force] [--no-commands] [--namespace <ns>] [--context <ctx>] [--verbose]
 ```
 
 **Arguments**:
@@ -169,6 +183,7 @@ seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] 
 | `--force` | No | Auto-resolve all conflicts (accept new) |
 | `--no-commands` | No | Skip RunCommand steps |
 | `--namespace <ns>` | No | Config namespace for variable resolution |
+| `--context <ctx>` | No | Context for variable resolution (e.g., work, personal) |
 | `--verbose` | No | Verbose output |
 
 **Execution flow**:
@@ -238,7 +253,7 @@ Generation Plan (haskell-base + nix-flake):
 Inspect resolved variable values for a module.
 
 ```sh
-seihou vars <module> [--explain] [--var key=value...] [--namespace <ns>]
+seihou vars <module> [--explain] [--var key=value...] [--namespace <ns>] [--context <ctx>]
 ```
 
 **Arguments**:
@@ -248,6 +263,7 @@ seihou vars <module> [--explain] [--var key=value...] [--namespace <ns>]
 | `--explain` | No | Show provenance for each value |
 | `--var key=value` | No | Provide values for resolution context |
 | `--namespace <ns>` | No | Config namespace for resolution |
+| `--context <ctx>` | No | Context for resolution (e.g., work, personal) |
 
 The `--explain` command is composition-aware: it resolves the full module composition (including all transitive dependencies) and shows how each variable was resolved, including exported values from dependencies.
 
@@ -556,10 +572,10 @@ Validating module at ./broken-module/...
 Manage configuration values at different scopes.
 
 ```sh
-seihou config set <key> <value> [--global] [--namespace <ns>]
-seihou config get <key> [--global] [--namespace <ns>]
-seihou config unset <key> [--global] [--namespace <ns>]
-seihou config list [--global] [--namespace <ns>] [--effective]
+seihou config set <key> <value> [--global] [--namespace <ns>] [--context <ctx>]
+seihou config get <key> [--global] [--namespace <ns>] [--context <ctx>]
+seihou config unset <key> [--global] [--namespace <ns>] [--context <ctx>]
+seihou config list [--global] [--namespace <ns>] [--context <ctx>] [--effective]
 ```
 
 **Arguments**:
@@ -571,9 +587,10 @@ seihou config list [--global] [--namespace <ns>] [--effective]
 | `list` | — | List all config values in the target scope |
 | `--global` | No | Target the global config (~/.config/seihou/config.dhall) |
 | `--namespace <ns>` | No | Target a namespace config (~/.config/seihou/namespaces/<ns>/config.dhall) |
+| `--context <ctx>` | No | Target a context config (~/.config/seihou/contexts/<ctx>/config.dhall) |
 | `--effective` | No | Show merged effective values from all scopes (with `list`) |
 
-**Scope resolution**: Without `--global` or `--namespace`, targets the local project config (`.seihou/config.dhall`).
+**Scope resolution**: Without `--global`, `--namespace`, or `--context`, targets the local project config (`.seihou/config.dhall`).
 
 **Output (list)**:
 ```text
@@ -590,6 +607,7 @@ Effective configuration (merged):
   project.name    = "my-app"           [local]
   project.version = "0.1.0.0"         [global]
   haskell.ghc     = "9.12.2"          [namespace: haskell]
+  author.email    = "jane@work.com"  [context: work]
 ```
 
 **Diagnostics**: When listing config, keys that don't match any declared variable in the current project's modules are flagged as unused.
@@ -599,6 +617,52 @@ Effective configuration (merged):
 |---|---|
 | 0 | Success |
 | 1 | Key not found (get), config file error |
+
+---
+
+### `seihou context`
+
+Manage the active context for variable resolution. Contexts let you maintain separate identities or settings (e.g., "work" vs "personal").
+
+```sh
+seihou context show
+seihou context set <name>
+seihou context default <name>
+seihou context clear
+seihou context clear-default
+```
+
+**Subcommands**:
+| Subcommand | Description |
+|---|---|
+| `show` | Show the active context and where it was resolved from |
+| `set <name>` | Set a project-level context (writes `.seihou/context`) |
+| `default <name>` | Set a global default context (writes `~/.config/seihou/default-context`) |
+| `clear` | Remove the project-level context file |
+| `clear-default` | Remove the global default context file |
+
+**Context resolution order** (first match wins):
+1. `--context` CLI flag (on `run`, `vars`, `config`)
+2. `SEIHOU_CONTEXT` environment variable
+3. `.seihou/context` file in the current project directory
+4. `~/.config/seihou/default-context` file
+
+**Output (show)**:
+```text
+Active context: work
+  Source: .seihou/context (project)
+```
+
+**Output (no context)**:
+```text
+No active context.
+```
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Invalid context name |
 
 ---
 
@@ -662,6 +726,7 @@ commandParser = subparser
   <> command "new-module" newModuleInfo
   <> command "validate-module" validateInfo
   <> command "config" configInfo
+  <> command "context" contextInfo
   <> command "browse" browseInfo
   )
 ```
@@ -695,7 +760,8 @@ commandParser = subparser
 - `install` overwrites an existing module of the same name (with a warning)
 - `install` detects registries via `seihou-registry.dhall` and supports `--module` and `--all` for selective installation
 - `browse` works with both single-module repos and registries
-- `config` targets local project config by default; use `--global` or `--namespace` for other scopes
+- `config` targets local project config by default; use `--global`, `--namespace`, or `--context` for other scopes
+- `context` validates context names (rejects empty, `..`, `/`)
 
 ## Edge Cases
 

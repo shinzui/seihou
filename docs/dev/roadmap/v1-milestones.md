@@ -82,7 +82,7 @@ V1 of Seihou delivers a complete, usable project scaffolding system: module load
 - [x] Generation strategies: Copy, Template, DhallText, Structured
 - [x] Placeholder engine: `{{var.name}}` syntax, escape handling, type coercion
 - [x] Variable resolution (`Seihou.Core.Variable`):
-  - Multi-layer precedence: CLI → env → local → namespace → global → default
+  - Multi-layer precedence: CLI → env → local → namespace → context → global → default
   - Provenance tracking per variable
   - Type checking and validation
 - [x] Plan execution (`Seihou.Engine.Execute`)

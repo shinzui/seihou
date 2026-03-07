@@ -373,6 +373,7 @@ Instead of passing `--var` flags every time, you can store default values in con
 |-------|------|------|
 | Local (project) | `.seihou/config.dhall` | *(default)* |
 | Namespace | `~/.config/seihou/namespaces/<ns>/config.dhall` | `--namespace NS` |
+| Context | `~/.config/seihou/contexts/<ctx>/config.dhall` | `--context CTX` |
 | Global | `~/.config/seihou/config.dhall` | `--global` |
 
 Set a global default:

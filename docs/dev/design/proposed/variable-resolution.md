@@ -26,7 +26,7 @@ Seihou's variable resolution provides typed, validated, provenance-tracked, scop
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Resolution precedence | CLI → env → local → namespace → global → default → prompt | Most specific wins; prompts are last resort for interactive use |
+| Resolution precedence | CLI → env → local → namespace → context → global → default → prompt | Most specific wins; context is cross-cutting identity; prompts are last resort |
 | Type system | Text, Bool, Int, List, Choice | Covers scaffolding needs without over-engineering |
 | Scoping model | Shared namespace with explicit exports | Intentional cross-module sharing; private vars stay private |
 | Provenance tracking | Per-variable source annotation | Enables --explain; essential for debugging |
@@ -44,9 +44,10 @@ Variables are resolved in this order (first match wins):
 | 2 | Environment variables | `SEIHOU_VAR_PROJECT_NAME=my-app` |
 | 3 | Local project config | `.seihou/config.dhall` |
 | 4 | Namespace config | `~/.config/seihou/namespaces/<ns>/config.dhall` |
-| 5 | Global config | `~/.config/seihou/config.dhall` |
-| 6 | Module defaults | `default = Some "my-value"` in module.dhall |
-| 7 (lowest) | Interactive prompt | User enters value when prompted |
+| 5 | Context config | `~/.config/seihou/contexts/<ctx>/config.dhall` |
+| 6 | Global config | `~/.config/seihou/config.dhall` |
+| 7 | Module defaults | `default = Some "my-value"` in module.dhall |
+| 8 (lowest) | Interactive prompt | User enters value when prompted |
 
 ### Environment Variable Mapping
 
@@ -74,6 +75,7 @@ data VarSource
   | FromEnv Text           -- Environment variable name
   | FromLocalConfig
   | FromNamespaceConfig Text  -- Namespace name
+  | FromContextConfig Text    -- Context name (e.g., "work", "personal")
   | FromGlobalConfig
   | FromDefault
   | FromPrompt             -- User entered interactively
@@ -315,6 +317,7 @@ Variable Resolution for haskell-base:
   project.name     = "my-app"          [CLI: --var project.name=my-app]
   project.version  = "0.1.0.0"         [default: module.dhall]
   license          = "BSD-3-Clause"     [namespace: haskell/config.dhall]
+  author.email     = "me@work.com"     [context: work]
   haskell.ghc      = "9.12.2"          [global: ~/.config/seihou/config.dhall]
 ```
 

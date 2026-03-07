@@ -398,8 +398,9 @@ Seihou resolves variables from multiple sources in this precedence order (first 
 2. **Environment variables** — `SEIHOU_VAR_PROJECT_NAME=my-app`
 3. **Local config** — `.seihou/config.dhall` in the current project
 4. **Namespace config** — `~/.config/seihou/namespaces/<ns>/config.dhall`
-5. **Global config** — `~/.config/seihou/config.dhall`
-6. **Module defaults** — `default = Some "value"` in `module.dhall`
+5. **Context config** — `~/.config/seihou/contexts/<ctx>/config.dhall`
+6. **Global config** — `~/.config/seihou/config.dhall`
+7. **Module defaults** — `default = Some "value"` in `module.dhall`
 
 ### Environment variable mapping
 
@@ -465,7 +466,7 @@ Use `seihou vars --explain` to see exactly where each variable value comes from:
 seihou vars my-module --explain --var project.name=demo
 ```
 
-Each variable shows its resolved value and source (CLI, environment, local config, namespace config, global config, or module default).
+Each variable shows its resolved value and source (CLI, environment, local config, namespace config, context config, global config, or module default).
 
 
 ## Expression language

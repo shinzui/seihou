@@ -7,7 +7,7 @@ For an introduction to modules and variables, see the [Getting Started Guide](ge
 
 ## The resolution hierarchy
 
-When a module declares a variable (e.g., `project.name`), Seihou looks for a value in six sources, in order. The first source that provides a value wins:
+When a module declares a variable (e.g., `project.name`), Seihou looks for a value in seven sources, in order. The first source that provides a value wins:
 
 | Priority | Source | How to set it |
 |----------|--------|---------------|
@@ -15,8 +15,9 @@ When a module declares a variable (e.g., `project.name`), Seihou looks for a val
 | 2 | Environment variables | `SEIHOU_VAR_PROJECT_NAME=my-app` |
 | 3 | Local project config | `.seihou/config.dhall` in the current directory |
 | 4 | Namespace config | `~/.config/seihou/namespaces/<ns>/config.dhall` |
-| 5 | Global config | `~/.config/seihou/config.dhall` |
-| 6 (lowest) | Module defaults | `default = Some "value"` in `module.dhall` |
+| 5 | Context config | `~/.config/seihou/contexts/<ctx>/config.dhall` |
+| 6 | Global config | `~/.config/seihou/config.dhall` |
+| 7 (lowest) | Module defaults | `default = Some "value"` in `module.dhall` |
 
 If no source provides a value:
 
@@ -64,6 +65,40 @@ These are stored in `~/.config/seihou/namespaces/haskell/config.dhall`. When you
 
 ```sh
 seihou run my-module --namespace haskell
+```
+
+### Context config
+
+Context config lets you maintain separate identities or settings for different environments — for example, "work" vs "personal". Context values sit between namespace and global in the resolution hierarchy.
+
+```sh
+seihou config set author.name "Jane Doe" --context personal
+seihou config set author.name "Jane Smith" --context work
+seihou config set author.email "jane@work.com" --context work
+```
+
+These are stored in `~/.config/seihou/contexts/<name>/config.dhall`. Seihou resolves the active context from four sources (first match wins):
+
+1. `--context` CLI flag on `run`, `vars`, or `config`
+2. `SEIHOU_CONTEXT` environment variable
+3. `.seihou/context` file in the current project directory
+4. `~/.config/seihou/default-context` file (global default)
+
+Manage contexts with the `seihou context` command:
+
+```sh
+seihou context show                  # show active context and its source
+seihou context set work              # set project-level context (.seihou/context)
+seihou context default personal      # set global default context
+seihou context clear                 # remove project-level context
+seihou context clear-default         # remove global default context
+```
+
+Or pass `--context` to any command that resolves variables:
+
+```sh
+seihou run my-module --var project.name=app --context work
+seihou vars my-module --explain --context work
 ```
 
 
@@ -145,15 +180,17 @@ Output:
 
 ```
 Effective config:
-  author.name  = Jane Doe  [global]
-  license      = MIT        [global]
-  project.name = my-app     [local]
+  author.name  = Jane Doe    [global]
+  author.email = jane@work.com [context: work]
+  license      = MIT          [global]
+  project.name = my-app       [local]
 ```
 
-Add `--namespace` to include namespace config values in the merge:
+Add `--namespace` or `--context` to include those scopes in the merge:
 
 ```sh
 seihou config list --effective --namespace haskell
+seihou config list --effective --context work
 ```
 
 ### Managing config values
@@ -171,6 +208,7 @@ seihou config unset license --global
 # List values in a scope
 seihou config list --global
 seihou config list --namespace haskell
+seihou config list --context work
 seihou config list              # shows local + global
 ```
 
@@ -249,6 +287,26 @@ seihou config set haskell.cabal-version 3.0 --namespace haskell
 # These apply automatically to haskell-* modules
 seihou run haskell-base --var project.name=my-app
 # haskell.ghc resolves to 9.12.2 from namespace config
+```
+
+### Example 5: Context config for work/personal
+
+```sh
+# Set up work and personal contexts
+seihou config set author.name "Jane Smith" --context work
+seihou config set author.email "jane@company.com" --context work
+seihou config set author.name "Jane Doe" --context personal
+seihou config set author.email "jane@home.dev" --context personal
+
+# Set a global default context
+seihou context default personal
+
+# Now author.name resolves to "Jane Doe" from the personal context
+seihou run my-module --var project.name=side-project
+
+# Override for a work project
+seihou run my-module --var project.name=work-app --context work
+# author.name resolves to "Jane Smith" from the work context
 ```
 
 

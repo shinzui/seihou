@@ -19,7 +19,7 @@ CLI input
   │
   ▼
 ┌─────────────────────┐
-│  Config Resolution   │  Merge: CLI → env → local → namespace → global → defaults
+│  Config Resolution   │  Merge: CLI → env → local → namespace → context → global → defaults
 └─────────┬───────────┘
           │
           ▼
@@ -60,7 +60,7 @@ CLI input
 
 ### Pipeline Stages in Detail
 
-**Config Resolution** merges configuration from six sources (CLI flags, environment variables, local project config, namespace config, global config, module defaults) into a single resolved configuration map. Each value retains provenance metadata for the `--explain` feature.
+**Config Resolution** merges configuration from seven sources (CLI flags, environment variables, local project config, namespace config, context config, global config, module defaults) into a single resolved configuration map. Each value retains provenance metadata for the `--explain` feature. The active context is resolved from `--context` flag, `SEIHOU_CONTEXT` env var, `.seihou/context` file, or `~/.config/seihou/default-context`.
 
 **Module Loading** evaluates Dhall module definitions into typed Haskell values. When multiple modules are composed, their dependency graph is resolved via topological sort to determine execution order.
 
