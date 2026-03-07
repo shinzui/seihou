@@ -492,10 +492,34 @@ browseParser =
       <$> argument (T.pack <$> str) (metavar "GIT-URL")
       <*> optional (option (T.pack <$> str) (long "tag" <> metavar "TAG" <> help "Filter modules by tag"))
 
-assistInfo :: ParserInfo Command
-assistInfo =
+agentInfo :: ParserInfo Command
+agentInfo =
   info
-    (assistParser <**> helper)
+    (agentParser <**> helper)
+    ( fullDesc
+        <> progDesc "AI-powered agent commands"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Agent subcommands provide AI-assisted workflows powered by" :: String),
+                  pretty ("Claude Code. Requires the 'claude' CLI to be installed." :: String),
+                  line,
+                  pretty ("Available subcommands:" :: String),
+                  indent 2 $ pretty ("assist    Interactive template authoring session" :: String)
+                ]
+          )
+    )
+
+agentParser :: Parser Command
+agentParser =
+  fmap Agent $
+    subparser
+      (command "assist" agentAssistInfo)
+
+agentAssistInfo :: ParserInfo AgentCommand
+agentAssistInfo =
+  info
+    (agentAssistParser <**> helper)
     ( fullDesc
         <> progDesc "Launch AI-assisted template authoring session"
         <> footerDoc
@@ -515,17 +539,17 @@ assistInfo =
                   pretty ("Examples:" :: String),
                   indent 2 $
                     vsep
-                      [ pretty ("seihou assist" :: String),
-                        pretty ("seihou assist \"create a rust project template\"" :: String),
-                        pretty ("seihou assist \"add a LICENSE step to my-module\"" :: String)
+                      [ pretty ("seihou agent assist" :: String),
+                        pretty ("seihou agent assist \"create a rust project template\"" :: String),
+                        pretty ("seihou agent assist \"add a LICENSE step to my-module\"" :: String)
                       ]
                 ]
           )
     )
 
-assistParser :: Parser Command
-assistParser =
-  fmap Assist $
+agentAssistParser :: Parser AgentCommand
+agentAssistParser =
+  fmap AgentAssist $
     AssistOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Initial prompt describing what you want to do"))
       <*> switch (long "debug" <> help "Print the resolved system prompt and exit")

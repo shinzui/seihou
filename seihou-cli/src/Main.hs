@@ -41,5 +41,6 @@ main = do
       handleConfig configOpts
     Browse browseOpts ->
       handleBrowse browseOpts
-    Assist assistOpts ->
-      handleAssist assistOpts
+    Agent agentCmd -> case agentCmd of
+      AgentAssist assistOpts ->
+        handleAssist assistOpts
