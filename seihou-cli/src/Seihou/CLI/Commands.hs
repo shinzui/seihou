@@ -99,7 +99,8 @@ data BrowseOpts = BrowseOpts
   deriving stock (Eq, Show, Generic)
 
 data AssistOpts = AssistOpts
-  { assistPrompt :: Maybe Text
+  { assistPrompt :: Maybe Text,
+    assistDebug :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -516,6 +517,7 @@ assistParser =
   fmap Assist $
     AssistOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Initial prompt describing what you want to do"))
+      <*> switch (long "debug" <> help "Print the resolved system prompt and exit")
 
 -- Helpers
 

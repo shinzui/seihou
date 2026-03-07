@@ -24,18 +24,21 @@ promptTemplate = TE.decodeUtf8 $(embedFile "data/assist-prompt.md")
 
 handleAssist :: AssistOpts -> IO ()
 handleAssist assistOpts = do
-  claudePath <- findExecutable "claude"
-  case claudePath of
-    Nothing -> do
-      TIO.putStrLn "Error: 'claude' CLI (Claude Code) not found on PATH."
-      TIO.putStrLn "Install it from: https://docs.anthropic.com/en/docs/claude-code"
-      exitFailure
-    Just _ -> do
-      context <- gatherContext
-      let systemPrompt = renderPrompt context
-          args = buildArgs systemPrompt assistOpts
-      exitCode <- rawSystem "claude" args
-      exitWith exitCode
+  context <- gatherContext
+  let systemPrompt = renderPrompt context
+  if assistOpts.assistDebug
+    then TIO.putStr systemPrompt
+    else do
+      claudePath <- findExecutable "claude"
+      case claudePath of
+        Nothing -> do
+          TIO.putStrLn "Error: 'claude' CLI (Claude Code) not found on PATH."
+          TIO.putStrLn "Install it from: https://docs.anthropic.com/en/docs/claude-code"
+          exitFailure
+        Just _ -> do
+          let args = buildArgs systemPrompt assistOpts
+          exitCode <- rawSystem "claude" args
+          exitWith exitCode
 
 -- | Dynamic context gathered from the current directory.
 data AssistContext = AssistContext
