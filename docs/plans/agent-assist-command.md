@@ -24,7 +24,14 @@ Observable outcome: a user runs `seihou assist` (optionally with a description l
 - [x] Wire up `Assist` case in `Main.hs` (2026-03-07)
 - [x] Register module in `seihou-cli.cabal` (2026-03-07)
 - [x] Build and test: `cabal build all` — all tests pass (2026-03-07)
-- [ ] Manual test: run `seihou assist` and verify context-aware greeting and template authoring workflow
+- [x] Restructure to `seihou agent assist` with shared `AgentOpts` and `--debug` flag (2026-03-07)
+- [x] Extract shared agent infrastructure into `AgentLaunch.hs` (context gathering, claude launching, substitution) (2026-03-07)
+- [x] Move system prompt to embedded Markdown template `data/assist-prompt.md` with `{{placeholder}}` substitution (2026-03-07)
+- [x] Add `seihou agent bootstrap` command with `--repo` flag for multi-module repos (2026-03-07)
+- [x] Create `data/bootstrap-prompt.md` with registry docs and `{{bootstrap_mode}}` placeholder (2026-03-07)
+- [x] Build, test, and verify all agent subcommands with `--debug` (2026-03-07)
+- [ ] Manual test: run `seihou agent assist` and verify context-aware greeting and template authoring workflow
+- [ ] Manual test: run `seihou agent bootstrap` and `seihou agent bootstrap --repo`
 
 
 ## Surprises & Discoveries

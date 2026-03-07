@@ -49,7 +49,9 @@ executable seihou
   hs-source-dirs: src
   main-is: Main.hs
   other-modules:
+    Seihou.CLI.AgentLaunch
     Seihou.CLI.Assist
+    Seihou.CLI.Bootstrap
     Seihou.CLI.Browse
     Seihou.CLI.BrowseFormat
     Seihou.CLI.Commands

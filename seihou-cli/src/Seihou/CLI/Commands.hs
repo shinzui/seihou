@@ -9,8 +9,10 @@ module Seihou.CLI.Commands
     ConfigAction (..),
     ContextAction (..),
     BrowseOpts (..),
+    AgentOpts (..),
     AgentCommand (..),
     AssistOpts (..),
+    BootstrapOpts (..),
     commandParser,
     opts,
   )
@@ -36,11 +38,18 @@ data Command
   | Config ConfigOpts
   | Context ContextAction
   | Browse BrowseOpts
-  | Agent AgentCommand
+  | Agent AgentOpts
+  deriving stock (Eq, Show, Generic)
+
+data AgentOpts = AgentOpts
+  { agentDebug :: Bool,
+    agentCommand :: AgentCommand
+  }
   deriving stock (Eq, Show, Generic)
 
 data AgentCommand
   = AgentAssist AssistOpts
+  | AgentBootstrap BootstrapOpts
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -117,8 +126,13 @@ data BrowseOpts = BrowseOpts
   deriving stock (Eq, Show, Generic)
 
 data AssistOpts = AssistOpts
-  { assistPrompt :: Maybe Text,
-    assistDebug :: Bool
+  { assistPrompt :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+data BootstrapOpts = BootstrapOpts
+  { bootstrapPrompt :: Maybe Text,
+    bootstrapRepo :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -553,8 +567,15 @@ agentInfo =
                 [ pretty ("Agent subcommands provide AI-assisted workflows powered by" :: String),
                   pretty ("Claude Code. Requires the 'claude' CLI to be installed." :: String),
                   line,
+                  pretty ("Use --debug with any subcommand to print the resolved system" :: String),
+                  pretty ("prompt instead of launching Claude." :: String),
+                  line,
                   pretty ("Available subcommands:" :: String),
-                  indent 2 $ pretty ("assist    Interactive template authoring session" :: String)
+                  indent 2 $
+                    vsep
+                      [ pretty ("assist      Interactive template authoring session" :: String),
+                        pretty ("bootstrap   Bootstrap a new module or multi-module repo" :: String)
+                      ]
                 ]
           )
     )
@@ -562,8 +583,16 @@ agentInfo =
 agentParser :: Parser Command
 agentParser =
   fmap Agent $
-    subparser
-      (command "assist" agentAssistInfo)
+    AgentOpts
+      <$> switch (long "debug" <> help "Print the resolved system prompt and exit")
+      <*> agentCommandParser
+
+agentCommandParser :: Parser AgentCommand
+agentCommandParser =
+  subparser
+    ( command "assist" agentAssistInfo
+        <> command "bootstrap" agentBootstrapInfo
+    )
 
 agentAssistInfo :: ParserInfo AgentCommand
 agentAssistInfo =
@@ -583,8 +612,6 @@ agentAssistInfo =
                   pretty ("The agent can run seihou commands (new-module, validate-module," :: String),
                   pretty ("run --dry-run, vars, list), git commands, and read/write files." :: String),
                   line,
-                  pretty ("Requires the 'claude' CLI (Claude Code) to be installed." :: String),
-                  line,
                   pretty ("Examples:" :: String),
                   indent 2 $
                     vsep
@@ -601,7 +628,41 @@ agentAssistParser =
   fmap AgentAssist $
     AssistOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Initial prompt describing what you want to do"))
-      <*> switch (long "debug" <> help "Print the resolved system prompt and exit")
+
+agentBootstrapInfo :: ParserInfo AgentCommand
+agentBootstrapInfo =
+  info
+    (agentBootstrapParser <**> helper)
+    ( fullDesc
+        <> progDesc "Bootstrap a new module or multi-module repository"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Launches an interactive Claude Code session that guides you through" :: String),
+                  pretty ("creating a complete Seihou module from scratch — defining variables," :: String),
+                  pretty ("writing templates, setting up prompts, and validating the result." :: String),
+                  line,
+                  pretty ("Use --repo to bootstrap a multi-module repository with a" :: String),
+                  pretty ("seihou-registry.dhall and multiple module directories." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou agent bootstrap" :: String),
+                        pretty ("seihou agent bootstrap \"a haskell project template\"" :: String),
+                        pretty ("seihou agent bootstrap --repo" :: String),
+                        pretty ("seihou agent bootstrap --repo \"team templates for rust projects\"" :: String)
+                      ]
+                ]
+          )
+    )
+
+agentBootstrapParser :: Parser AgentCommand
+agentBootstrapParser =
+  fmap AgentBootstrap $
+    BootstrapOpts
+      <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Description of what to bootstrap"))
+      <*> switch (long "repo" <> help "Bootstrap a multi-module repository with registry")
 
 -- Helpers
 

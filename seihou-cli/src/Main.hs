@@ -2,6 +2,7 @@ module Main (main) where
 
 import Options.Applicative (execParser)
 import Seihou.CLI.Assist (handleAssist)
+import Seihou.CLI.Bootstrap (handleBootstrap)
 import Seihou.CLI.Browse (handleBrowse)
 import Seihou.CLI.Commands
 import Seihou.CLI.Config (handleConfig)
@@ -44,6 +45,8 @@ main = do
       handleContext contextAction
     Browse browseOpts ->
       handleBrowse browseOpts
-    Agent agentCmd -> case agentCmd of
+    Agent agentOpts -> case agentOpts.agentCommand of
       AgentAssist assistOpts ->
-        handleAssist assistOpts
+        handleAssist agentOpts.agentDebug assistOpts
+      AgentBootstrap bootstrapOpts ->
+        handleBootstrap agentOpts.agentDebug bootstrapOpts
