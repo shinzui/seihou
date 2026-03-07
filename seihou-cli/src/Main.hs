@@ -5,6 +5,7 @@ import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Browse (handleBrowse)
 import Seihou.CLI.Commands
 import Seihou.CLI.Config (handleConfig)
+import Seihou.CLI.Context (handleContext)
 import Seihou.CLI.Diff (handleDiff)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
@@ -39,6 +40,8 @@ main = do
       handleValidateModule validateOpts
     Config configOpts ->
       handleConfig configOpts
+    Context contextAction ->
+      handleContext contextAction
     Browse browseOpts ->
       handleBrowse browseOpts
     Agent agentCmd -> case agentCmd of

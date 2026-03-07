@@ -7,6 +7,7 @@ module Seihou.CLI.Commands
     ValidateOpts (..),
     ConfigOpts (..),
     ConfigAction (..),
+    ContextAction (..),
     BrowseOpts (..),
     AgentCommand (..),
     AssistOpts (..),
@@ -33,6 +34,7 @@ data Command
   | NewModule NewModuleOpts
   | ValidateModule ValidateOpts
   | Config ConfigOpts
+  | Context ContextAction
   | Browse BrowseOpts
   | Agent AgentCommand
   deriving stock (Eq, Show, Generic)
@@ -100,6 +102,14 @@ data ConfigOpts = ConfigOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data ContextAction
+  = ContextSet Text
+  | ContextDefault Text
+  | ContextShow
+  | ContextClear
+  | ContextClearDefault
+  deriving stock (Eq, Show, Generic)
+
 data BrowseOpts = BrowseOpts
   { browseSource :: Text,
     browseTag :: Maybe Text
@@ -147,6 +157,7 @@ commandParser =
         <> command "new-module" newModuleInfo
         <> command "validate-module" validateInfo
         <> command "config" configInfo
+        <> command "context" contextInfo
         <> command "browse" browseInfo
         <> command "agent" agentInfo
     )
@@ -460,6 +471,44 @@ configGetParser = ConfigGet <$> argument (T.pack <$> str) (metavar "KEY")
 
 configUnsetParser :: Parser ConfigAction
 configUnsetParser = ConfigUnset <$> argument (T.pack <$> str) (metavar "KEY")
+
+contextInfo :: ParserInfo Command
+contextInfo =
+  info
+    (contextParser <**> helper)
+    ( fullDesc
+        <> progDesc "Manage the active context (work, personal, etc.)"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Contexts allow variables like user.email to resolve differently" :: String),
+                  pretty ("depending on whether you're working in a 'work' or 'personal'" :: String),
+                  pretty ("context. Context config files live at" :: String),
+                  pretty ("~/.config/seihou/contexts/<name>/config.dhall." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou context show                # show active context" :: String),
+                        pretty ("seihou context set work            # set project context" :: String),
+                        pretty ("seihou context default personal    # set global default" :: String),
+                        pretty ("seihou context clear               # remove project context" :: String),
+                        pretty ("seihou context clear-default       # remove global default" :: String)
+                      ]
+                ]
+          )
+    )
+
+contextParser :: Parser Command
+contextParser =
+  fmap Context $
+    subparser
+      ( command "show" (info (pure ContextShow) (progDesc "Show the active context and its source"))
+          <> command "set" (info (ContextSet <$> argument (T.pack <$> str) (metavar "NAME")) (progDesc "Set the project context (.seihou/context)"))
+          <> command "default" (info (ContextDefault <$> argument (T.pack <$> str) (metavar "NAME")) (progDesc "Set the global default context (~/.config/seihou/default-context)"))
+          <> command "clear" (info (pure ContextClear) (progDesc "Remove the project context file"))
+          <> command "clear-default" (info (pure ContextClearDefault) (progDesc "Remove the global default context"))
+      )
 
 browseInfo :: ParserInfo Command
 browseInfo =

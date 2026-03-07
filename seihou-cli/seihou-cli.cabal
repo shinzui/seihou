@@ -54,6 +54,7 @@ executable seihou
     Seihou.CLI.BrowseFormat
     Seihou.CLI.Commands
     Seihou.CLI.Config
+    Seihou.CLI.Context
     Seihou.CLI.Diff
     Seihou.CLI.Init
     Seihou.CLI.Install
