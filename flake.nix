@@ -6,12 +6,18 @@
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.treefmt-nix.url = "github:numtide/treefmt-nix";
 
+  # Shared Haskell patch management
+  inputs.haskell-nix.url = "github:shinzui/haskell-nix";
 
-  outputs = { self, nixpkgs, pre-commit-hooks, flake-utils, treefmt-nix }:
+
+  outputs = { self, nixpkgs, pre-commit-hooks, flake-utils, treefmt-nix, ... }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; };
-        ghcVersion = "ghc912";
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ inputs.haskell-nix.overlays.default ];
+        };
+        ghcVersion = "ghc9122";
         treefmtEval = treefmt-nix.lib.evalModule pkgs (import ./treefmt.nix { inherit pkgs ghcVersion; });
         formatter = treefmtEval.config.build.wrapper;
       in
@@ -28,7 +34,7 @@
             };
           };
         };
-        devShells.default = nixpkgs.legacyPackages.${system}.mkShell {
+        devShells.default = pkgs.mkShell {
           nativeBuildInputs = [
             pkgs.zlib
             pkgs.xz
