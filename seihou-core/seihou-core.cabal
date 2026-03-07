@@ -19,6 +19,7 @@ library
     Seihou.Composition.Graph
     Seihou.Composition.Plan
     Seihou.Composition.Resolve
+    Seihou.Core.Context
     Seihou.Core.Expr
     Seihou.Core.Install
     Seihou.Core.Module
@@ -101,6 +102,7 @@ test-suite seihou-core-test
     Seihou.Composition.GraphSpec
     Seihou.Composition.PlanSpec
     Seihou.Composition.ResolveSpec
+    Seihou.Core.ContextSpec
     Seihou.Core.ExprSpec
     Seihou.Core.InstallSpec
     Seihou.Core.ListSpec

@@ -115,25 +115,28 @@ simplePatternMatch pat t
     isDigit c = c >= '0' && c <= '9'
 
 -- | Resolve all variables for a module given CLI overrides, environment variables,
--- and three config file layers.
+-- and four config file layers.
 --
 -- Precedence chain (highest to lowest):
 -- 1. CLI overrides (@--var@ flags)
 -- 2. Environment variables (@SEIHOU_VAR_@ prefix)
 -- 3. Local project config (@.seihou\/config.dhall@)
 -- 4. Namespace config (@~\/.config\/seihou\/namespaces\/\<ns\>\/config.dhall@)
--- 5. Global config (@~\/.config\/seihou\/config.dhall@)
--- 6. Module defaults
+-- 5. Context config (@~\/.config\/seihou\/contexts\/\<ctx\>\/config.dhall@)
+-- 6. Global config (@~\/.config\/seihou\/config.dhall@)
+-- 7. Module defaults
 resolveVariables ::
   [VarDecl] ->
   Map VarName Text -> -- CLI overrides
   Map Text Text -> -- Environment variables
   Text -> -- Namespace name (used in provenance tagging)
+  Text -> -- Context name (used in provenance tagging)
   Map VarName Text -> -- Local config
   Map VarName Text -> -- Namespace config
+  Map VarName Text -> -- Context config
   Map VarName Text -> -- Global config
   Either [VarError] (Map VarName ResolvedVar)
-resolveVariables decls cliOverrides envVars namespace localConfig nsConfig globalConfig =
+resolveVariables decls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig =
   case partitionResults (map resolveOne decls) of
     ([], resolved) -> Right (Map.fromList (catMaybes resolved))
     (errs, _) -> Left errs
@@ -150,14 +153,16 @@ resolveVariables decls cliOverrides envVars namespace localConfig nsConfig globa
                 Just result -> fmap Just (result >>= validateAndWrap decl)
                 Nothing -> case lookupConfig name ty nsConfig (FromNamespaceConfig namespace) of
                   Just result -> fmap Just (result >>= validateAndWrap decl)
-                  Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
+                  Nothing -> case lookupConfig name ty ctxConfig (FromContextConfig context) of
                     Just result -> fmap Just (result >>= validateAndWrap decl)
-                    Nothing -> case decl.default_ of
-                      Just defVal ->
-                        fmap Just (validateAndWrap decl (defVal, FromDefault))
-                      Nothing
-                        | decl.required -> Left (MissingRequiredVar name)
-                        | otherwise -> Right Nothing
+                    Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
+                      Just result -> fmap Just (result >>= validateAndWrap decl)
+                      Nothing -> case decl.default_ of
+                        Just defVal ->
+                          fmap Just (validateAndWrap decl (defVal, FromDefault))
+                        Nothing
+                          | decl.required -> Left (MissingRequiredVar name)
+                          | otherwise -> Right Nothing
 
     lookupCLI :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
     lookupCLI name ty =
@@ -239,6 +244,7 @@ formatExplain resolved =
     showSource (FromEnv envKey) = "[env " <> envKey <> "]"
     showSource FromLocalConfig = "[local config]"
     showSource (FromNamespaceConfig ns) = "[namespace: " <> ns <> "]"
+    showSource (FromContextConfig ctx) = "[context: " <> ctx <> "]"
     showSource FromGlobalConfig = "[global config]"
     showSource FromDefault = "[default]"
     showSource FromPrompt = "[prompt]"
@@ -282,14 +288,15 @@ diagnoseResolution ::
   Map VarName Text ->
   Map VarName Text ->
   Map VarName Text ->
+  Map VarName Text ->
   ([VarName], [VarName])
-diagnoseResolution resolved decls localConfig nsConfig globalConfig =
+diagnoseResolution resolved decls localConfig nsConfig ctxConfig globalConfig =
   (unusedConfigKeys, unresolvedOptional)
   where
     declaredNames = Set.fromList (map (.name) decls)
     allConfigKeys =
       Set.fromList $
-        Map.keys localConfig ++ Map.keys nsConfig ++ Map.keys globalConfig
+        Map.keys localConfig ++ Map.keys nsConfig ++ Map.keys ctxConfig ++ Map.keys globalConfig
     unusedConfigKeys =
       Set.toAscList (allConfigKeys `Set.difference` declaredNames)
     unresolvedOptional =

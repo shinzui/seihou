@@ -82,7 +82,7 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Load failed: " ++ show err
         Right modules -> do
-          case resolveComposedVariables modules Map.empty Map.empty "" Map.empty Map.empty Map.empty of
+          case resolveComposedVariables modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
               let flakeVars = resolved Map.! "nix-flake"
@@ -97,7 +97,7 @@ spec = do
         Left err -> expectationFailure $ "Load failed: " ++ show err
         Right modules -> do
           let cliOverrides = Map.singleton "project.name" "my-app"
-          case resolveComposedVariables modules cliOverrides Map.empty "" Map.empty Map.empty Map.empty of
+          case resolveComposedVariables modules cliOverrides Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
               -- haskell-base should have project.name from CLI
@@ -115,7 +115,7 @@ spec = do
         Left err -> expectationFailure $ "Load failed: " ++ show err
         Right modules -> do
           let cliOverrides = Map.singleton "project.name" "my-app"
-          case resolveComposedVariables modules cliOverrides Map.empty "" Map.empty Map.empty Map.empty of
+          case resolveComposedVariables modules cliOverrides Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
               let triples =
@@ -141,7 +141,7 @@ spec = do
         Left err -> expectationFailure $ "Load failed: " ++ show err
         Right modules -> do
           let cliOverrides = Map.singleton "project.name" "my-app"
-          case resolveComposedVariables modules cliOverrides Map.empty "" Map.empty Map.empty Map.empty of
+          case resolveComposedVariables modules cliOverrides Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
               let triples =
@@ -170,7 +170,7 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Load failed: " ++ show err
         Right modules -> do
-          case resolveComposedVariables modules Map.empty Map.empty "" Map.empty Map.empty Map.empty of
+          case resolveComposedVariables modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
               let triples =

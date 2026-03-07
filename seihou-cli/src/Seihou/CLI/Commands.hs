@@ -8,6 +8,7 @@ module Seihou.CLI.Commands
     ConfigOpts (..),
     ConfigAction (..),
     BrowseOpts (..),
+    AgentCommand (..),
     AssistOpts (..),
     commandParser,
     opts,
@@ -33,7 +34,11 @@ data Command
   | ValidateModule ValidateOpts
   | Config ConfigOpts
   | Browse BrowseOpts
-  | Assist AssistOpts
+  | Agent AgentCommand
+  deriving stock (Eq, Show, Generic)
+
+data AgentCommand
+  = AgentAssist AssistOpts
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -45,6 +50,7 @@ data RunOpts = RunOpts
     runForce :: Bool,
     runNoCommands :: Bool,
     runNamespace :: Maybe Text,
+    runContext :: Maybe Text,
     runVerbose :: Bool
   }
   deriving stock (Eq, Show, Generic)
@@ -53,7 +59,8 @@ data VarsOpts = VarsOpts
   { varsModule :: ModuleName,
     varsExplain :: Bool,
     varsVars :: [(Text, Text)],
-    varsNamespace :: Maybe Text
+    varsNamespace :: Maybe Text,
+    varsContext :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -88,6 +95,7 @@ data ConfigOpts = ConfigOpts
   { configAction :: ConfigAction,
     configGlobal :: Bool,
     configNamespace :: Maybe Text,
+    configContext :: Maybe Text,
     configEffective :: Bool
   }
   deriving stock (Eq, Show, Generic)
@@ -140,7 +148,7 @@ commandParser =
         <> command "validate-module" validateInfo
         <> command "config" configInfo
         <> command "browse" browseInfo
-        <> command "assist" assistInfo
+        <> command "agent" agentInfo
     )
 
 -- Command info blocks
@@ -382,6 +390,7 @@ runParser =
       <*> switch (long "force" <> help "Auto-resolve conflicts (accept new files)")
       <*> switch (long "no-commands" <> help "Skip shell command steps")
       <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
+      <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
 
 varsParser :: Parser Command
@@ -396,6 +405,7 @@ varsParser =
             (long "var" <> metavar "KEY=VALUE" <> help "Provide variable values for resolution (repeatable)")
         )
       <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
+      <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
 
 installParser :: Parser Command
 installParser =
@@ -427,6 +437,7 @@ configParser =
       <$> configActionParser
       <*> switch (long "global" <> short 'g' <> help "Use global scope (~/.config/seihou/config.dhall)")
       <*> optional (option (T.pack <$> str) (long "namespace" <> short 'n' <> metavar "NS" <> help "Use namespace scope"))
+      <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Use context scope"))
       <*> switch (long "effective" <> short 'e' <> help "Show merged config across all scopes (with list)")
 
 configActionParser :: Parser ConfigAction

@@ -270,7 +270,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure ["my-app"] $
-            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
@@ -292,7 +292,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure [] $
-            resolveWithPrompts modules cliOverrides Map.empty "" Map.empty Map.empty Map.empty
+            resolveWithPrompts modules cliOverrides Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
@@ -314,7 +314,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePureNonInteractive $
-            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> case errs of
           [MissingRequiredVar name] -> name `shouldBe` "project.name"
@@ -340,7 +340,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure ["my-app", "MIT"] $
-            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
@@ -367,7 +367,7 @@ spec = do
       (result, _st) <-
         runEff $
           runConsolePure ["my-app", ""] $
-            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
@@ -387,7 +387,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure ["MIT"] $
-            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
@@ -407,7 +407,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePureNonInteractive $
-            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       case result of
         Left _ -> expectationFailure "Expected Right (no required vars)"
         Right resolved -> do
@@ -431,7 +431,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure ["my-app"] $
-            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
@@ -454,7 +454,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure [] $
-            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty globalConfig
+            resolveWithPrompts modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty globalConfig
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
@@ -482,7 +482,7 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure ["my-app"] $
-            resolveWithPrompts modules Map.empty Map.empty "" Map.empty Map.empty Map.empty
+            resolveWithPrompts modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do

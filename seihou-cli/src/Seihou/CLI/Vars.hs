@@ -11,10 +11,11 @@ import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (VarsOpts (..))
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
+import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Module (defaultSearchPaths, loadModule)
 import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution, formatDeclarations, formatExplain)
-import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
+import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Logger (logError, logInfo)
@@ -92,15 +93,19 @@ explainMode modName vopts = do
   let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- vopts.varsVars]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
       namespace = fromMaybe (deriveNamespace modName) vopts.varsNamespace
-  (resolveResult, localMap, nsMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
+  context <- resolveContext vopts.varsContext envVars
+  let contextName = fromMaybe "" context
+  (resolveResult, localMap, nsMap, ctxMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
     localCfg <- readLocalConfig >>= unwrapConfig LogNormal
     namespaceCfg <- readNamespaceConfig namespace >>= unwrapConfig LogNormal
+    contextCfg <- readContextConfig contextName >>= unwrapConfig LogNormal
     globalCfg <- readGlobalConfig >>= unwrapConfig LogNormal
     let lm = toVarNameMap localCfg
         nm = toVarNameMap namespaceCfg
+        cm = toVarNameMap contextCfg
         gm = toVarNameMap globalCfg
-    r <- resolveWithPrompts modulesInOrder cliOverrides envVars namespace lm nm gm
-    pure (r, lm, nm, gm)
+    r <- resolveWithPrompts modulesInOrder cliOverrides envVars namespace contextName lm nm cm gm
+    pure (r, lm, nm, cm, gm)
   case resolveResult of
     Left errs -> do
       logIO LogNormal $ do
@@ -119,7 +124,7 @@ explainMode modName vopts = do
       -- Show diagnostics
       let allDecls = concatMap ((.vars) . fst) modulesInOrder
           allResolved = Map.unions [vs | vs <- Map.elems resolved]
-          (unusedKeys, unresolvedOpt) = diagnoseResolution allResolved allDecls localMap nsMap globalMap
+          (unusedKeys, unresolvedOpt) = diagnoseResolution allResolved allDecls localMap nsMap ctxMap globalMap
       when (not (null unusedKeys)) $ do
         TIO.putStrLn ""
         TIO.putStrLn "Unused config keys (not matching any declared variable):"

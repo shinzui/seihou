@@ -18,6 +18,7 @@ import System.Directory (XdgDirectory (..), getCurrentDirectory, getXdgDirectory
 --   * Global: @~\/.config\/seihou\/config.dhall@
 --   * Local: @.seihou\/config.dhall@ (relative to current directory)
 --   * Namespace: @~\/.config\/seihou\/namespaces\/\<ns\>\/config.dhall@
+--   * Context: @~\/.config\/seihou\/contexts\/\<ctx\>\/config.dhall@
 --
 -- Missing files are silently treated as empty maps. Invalid Dhall
 -- is reported as @Left (ConfigParseError ...)@.
@@ -46,6 +47,19 @@ runConfigReader = interpret $ \_ -> \case
           else do
             base <- getXdgDirectory XdgConfig "seihou"
             let path = base </> "namespaces" </> T.unpack ns </> "config.dhall"
+            result <- evalConfigFileIfExists path
+            case result of
+              Left err -> pure (Left (ConfigParseError path err))
+              Right m -> pure (Right m)
+  ReadContextConfig ctx -> liftIO $ do
+    if T.null ctx
+      then pure (Right Map.empty)
+      else
+        if ".." `T.isInfixOf` ctx || "/" `T.isInfixOf` ctx
+          then pure (Left (InvalidNamespace ctx "context name must not contain '..' or '/'"))
+          else do
+            base <- getXdgDirectory XdgConfig "seihou"
+            let path = base </> "contexts" </> T.unpack ctx </> "config.dhall"
             result <- evalConfigFileIfExists path
             case result of
               Left err -> pure (Left (ConfigParseError path err))

@@ -3,6 +3,7 @@ module Seihou.Effect.ConfigReader
     readGlobalConfig,
     readLocalConfig,
     readNamespaceConfig,
+    readContextConfig,
   )
 where
 
@@ -13,6 +14,7 @@ data ConfigReader :: Effect where
   ReadGlobalConfig :: ConfigReader m (Either ConfigError (Map Text Text))
   ReadLocalConfig :: ConfigReader m (Either ConfigError (Map Text Text))
   ReadNamespaceConfig :: Text -> ConfigReader m (Either ConfigError (Map Text Text))
+  ReadContextConfig :: Text -> ConfigReader m (Either ConfigError (Map Text Text))
 
 type instance DispatchOf ConfigReader = Dynamic
 
@@ -24,3 +26,6 @@ readLocalConfig = send ReadLocalConfig
 
 readNamespaceConfig :: (ConfigReader :> es) => Text -> Eff es (Either ConfigError (Map Text Text))
 readNamespaceConfig ns = send (ReadNamespaceConfig ns)
+
+readContextConfig :: (ConfigReader :> es) => Text -> Eff es (Either ConfigError (Map Text Text))
+readContextConfig ctx = send (ReadContextConfig ctx)

@@ -25,6 +25,7 @@ import System.FilePath (takeDirectory)
 --
 --   * 'ScopeLocal': @.seihou\/config.dhall@ relative to cwd
 --   * 'ScopeNamespace' ns: @~\/.config\/seihou\/namespaces\/\<ns\>\/config.dhall@
+--   * 'ScopeContext' ctx: @~\/.config\/seihou\/contexts\/\<ctx\>\/config.dhall@
 --   * 'ScopeGlobal': @~\/.config\/seihou\/config.dhall@
 runConfigWriter :: (IOE :> es) => Eff (ConfigWriter : es) a -> Eff es a
 runConfigWriter = interpret $ \_ -> \case
@@ -55,6 +56,9 @@ resolvePath ScopeLocal = do
 resolvePath (ScopeNamespace ns) = do
   base <- getXdgDirectory XdgConfig "seihou"
   pure (base </> "namespaces" </> T.unpack ns </> "config.dhall")
+resolvePath (ScopeContext ctx) = do
+  base <- getXdgDirectory XdgConfig "seihou"
+  pure (base </> "contexts" </> T.unpack ctx </> "config.dhall")
 resolvePath ScopeGlobal = do
   base <- getXdgDirectory XdgConfig "seihou"
   pure (base </> "config.dhall")

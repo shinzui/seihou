@@ -9,7 +9,7 @@ import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (ConfigAction (..), ConfigOpts (..))
 import Seihou.CLI.Shared (formatConfigError, logIO)
 import Seihou.Core.Types (ConfigError, ConfigScope (..), LogLevel (..))
-import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
+import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConfigWriter (deleteConfigValue, listConfigValues, writeConfigValue)
 import Seihou.Effect.ConfigWriterInterp (runConfigWriter)
@@ -18,24 +18,26 @@ import Seihou.Prelude
 import System.Exit (exitFailure)
 
 handleConfig :: ConfigOpts -> IO ()
-handleConfig ConfigOpts {configAction, configGlobal, configNamespace, configEffective} = do
-  let scope = resolveScope configGlobal configNamespace
+handleConfig ConfigOpts {configAction, configGlobal, configNamespace, configContext, configEffective} = do
+  let scope = resolveScope configGlobal configNamespace configContext
   case configAction of
     ConfigSet key value -> handleSet scope key value
     ConfigGet key -> handleGet scope key
     ConfigUnset key -> handleUnset scope key
     ConfigList
-      | configEffective -> handleListEffective configNamespace
-      | otherwise -> handleList configGlobal configNamespace
+      | configEffective -> handleListEffective configNamespace configContext
+      | otherwise -> handleList configGlobal configNamespace configContext
 
-resolveScope :: Bool -> Maybe Text -> ConfigScope
-resolveScope True _ = ScopeGlobal
-resolveScope _ (Just ns) = ScopeNamespace ns
-resolveScope _ _ = ScopeLocal
+resolveScope :: Bool -> Maybe Text -> Maybe Text -> ConfigScope
+resolveScope True _ _ = ScopeGlobal
+resolveScope _ (Just ns) _ = ScopeNamespace ns
+resolveScope _ _ (Just ctx) = ScopeContext ctx
+resolveScope _ _ _ = ScopeLocal
 
 scopeLabel :: ConfigScope -> Text
 scopeLabel ScopeLocal = "local"
 scopeLabel (ScopeNamespace ns) = "namespace " <> ns
+scopeLabel (ScopeContext ctx) = "context " <> ctx
 scopeLabel ScopeGlobal = "global"
 
 handleSet :: ConfigScope -> Text -> Text -> IO ()
@@ -64,34 +66,40 @@ handleUnset scope key = do
           TIO.putStrLn $ "Removed " <> key <> " from " <> scopeLabel scope <> " config"
         else TIO.putStrLn $ key <> " is not set in " <> scopeLabel scope <> " config"
 
-handleList :: Bool -> Maybe Text -> IO ()
-handleList isGlobal mNamespace
+handleList :: Bool -> Maybe Text -> Maybe Text -> IO ()
+handleList isGlobal mNamespace mContext
   | isGlobal = listScope ScopeGlobal
   | Just ns <- mNamespace = listScope (ScopeNamespace ns)
+  | Just ctx <- mContext = listScope (ScopeContext ctx)
   | otherwise = listAllScopes
 
 -- | Show the merged effective config across all scopes.
 -- Precedence: local > namespace > global (matching variable resolution order).
-handleListEffective :: Maybe Text -> IO ()
-handleListEffective mNamespace = do
+handleListEffective :: Maybe Text -> Maybe Text -> IO ()
+handleListEffective mNamespace mContext = do
   results <- runEff $ runConfigReader $ do
     l <- readLocalConfig
     n <- case mNamespace of
       Just ns -> readNamespaceConfig ns
       Nothing -> pure (Right Map.empty)
+    c <- case mContext of
+      Just ctx -> readContextConfig ctx
+      Nothing -> pure (Right Map.empty)
     g <- readGlobalConfig
-    pure (l, n, g)
-  let (localResult, nsResult, globalResult) = results
-  case (globalResult, nsResult, localResult) of
-    (Left err, _, _) -> configError err
-    (_, Left err, _) -> configError err
-    (_, _, Left err) -> configError err
-    (Right globalMap, Right nsMap, Right localMap) -> do
-      -- Build merged map with source tracking: local overrides namespace overrides global
+    pure (l, n, c, g)
+  let (localResult, nsResult, ctxResult, globalResult) = results
+  case (globalResult, ctxResult, nsResult, localResult) of
+    (Left err, _, _, _) -> configError err
+    (_, Left err, _, _) -> configError err
+    (_, _, Left err, _) -> configError err
+    (_, _, _, Left err) -> configError err
+    (Right globalMap, Right ctxMap, Right nsMap, Right localMap) -> do
+      -- Build merged map with source tracking: local > namespace > context > global
       let taggedGlobal = Map.map (\v -> (v, "global" :: Text)) globalMap
+          taggedCtx = Map.map (\v -> (v, maybe "context" (\ctx -> "context: " <> ctx) mContext)) ctxMap
           taggedNs = Map.map (\v -> (v, maybe "namespace" (\ns -> "namespace: " <> ns) mNamespace)) nsMap
           taggedLocal = Map.map (\v -> (v, "local")) localMap
-          merged = taggedLocal `Map.union` taggedNs `Map.union` taggedGlobal
+          merged = taggedLocal `Map.union` taggedNs `Map.union` taggedCtx `Map.union` taggedGlobal
       if Map.null merged
         then TIO.putStrLn "No config values set in any scope."
         else do

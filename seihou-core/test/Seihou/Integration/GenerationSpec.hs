@@ -35,7 +35,7 @@ spec = do
         Right modul -> do
           let cli = Map.fromList [("project.name", "my-app")]
               env = Map.empty
-          case resolveVariables (modul.vars) cli env "" Map.empty Map.empty Map.empty of
+          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
               planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
@@ -55,7 +55,7 @@ spec = do
         Right modul -> do
           let cli = Map.fromList [("project.name", "my-app")]
               env = Map.empty
-          case resolveVariables (modul.vars) cli env "" Map.empty Map.empty Map.empty of
+          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
               planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
@@ -77,7 +77,7 @@ spec = do
         Right modul -> do
           let cli = Map.fromList [("project.name", "my-app")]
               env = Map.empty
-          case resolveVariables (modul.vars) cli env "" Map.empty Map.empty Map.empty of
+          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
               planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
@@ -114,7 +114,7 @@ spec = do
         Right modul -> do
           let cli = Map.fromList [("project.name", "my-app")]
               env = Map.empty
-          case resolveVariables (modul.vars) cli env "" Map.empty Map.empty Map.empty of
+          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
               planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
@@ -135,7 +135,7 @@ spec = do
           -- CLI overrides project.name, env overrides license
           let cli = Map.fromList [("project.name", "cli-app")]
               env = Map.fromList [("SEIHOU_VAR_LICENSE", "BSD3")]
-          case resolveVariables (modul.vars) cli env "" Map.empty Map.empty Map.empty of
+          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
               (.value) (resolved Map.! "project.name") `shouldBe` VText "cli-app"

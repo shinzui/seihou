@@ -210,6 +210,7 @@ data VarSource
   | FromEnv Text
   | FromLocalConfig
   | FromNamespaceConfig Text
+  | FromContextConfig Text
   | FromGlobalConfig
   | FromDefault
   | FromPrompt
@@ -342,6 +343,7 @@ data LogLevel = LogQuiet | LogNormal | LogVerbose
 data ConfigScope
   = ScopeLocal
   | ScopeNamespace Text
+  | ScopeContext Text
   | ScopeGlobal
   deriving stock (Eq, Show, Generic)
 

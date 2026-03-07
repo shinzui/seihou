@@ -63,11 +63,13 @@ resolveComposedVariables ::
   Map VarName Text ->
   Map Text Text ->
   Text ->
+  Text ->
+  Map VarName Text ->
   Map VarName Text ->
   Map VarName Text ->
   Map VarName Text ->
   Either [VarError] (Map ModuleName (Map VarName ResolvedVar))
-resolveComposedVariables modulesInOrder cliOverrides envVars namespace localConfig nsConfig globalConfig =
+resolveComposedVariables modulesInOrder cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig =
   go modulesInOrder Map.empty Map.empty
   where
     go ::
@@ -84,7 +86,7 @@ resolveComposedVariables modulesInOrder cliOverrides envVars namespace localConf
           -- Inject exported values as defaults for declared variables
           adjustedDecls = map (injectExportDefault visibleExports) m.vars
       -- Resolve this module's declared variables
-      resolved <- resolveVariables adjustedDecls cliOverrides envVars namespace localConfig nsConfig globalConfig
+      resolved <- resolveVariables adjustedDecls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig
       -- Add inherited (non-declared) exports to the resolved map
       let declaredNames = Set.fromList (map (.name) m.vars)
           inherited =
@@ -110,11 +112,13 @@ resolveWithPrompts ::
   Map VarName Text ->
   Map Text Text ->
   Text ->
+  Text ->
+  Map VarName Text ->
   Map VarName Text ->
   Map VarName Text ->
   Map VarName Text ->
   Eff es (Either [VarError] (Map ModuleName (Map VarName ResolvedVar)))
-resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsConfig globalConfig = do
+resolveWithPrompts modulesInOrder cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig = do
   interactive <- isInteractive
   goPrompt interactive modulesInOrder Map.empty Map.empty
   where
@@ -131,7 +135,7 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
           visibleExports =
             Map.unions [Map.findWithDefault Map.empty dep allExports | dep <- deps]
           adjustedDecls = map (injectExportDefault visibleExports) m.vars
-      case resolveVariables adjustedDecls cliOverrides envVars namespace localConfig nsConfig globalConfig of
+      case resolveVariables adjustedDecls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig of
         Right resolved -> do
           let declaredNames = Set.fromList (map (.name) m.vars)
               inherited =
@@ -186,7 +190,7 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace localConfig nsC
                       let promptedOverrides =
                             Map.union cliOverrides $
                               Map.map (varValueToText . (.value)) prompted
-                      case resolveVariables adjustedDecls promptedOverrides envVars namespace localConfig nsConfig globalConfig of
+                      case resolveVariables adjustedDecls promptedOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig of
                         Left errs' -> pure (Left errs')
                         Right resolved -> do
                           -- Replace source for prompted vars with FromPrompt

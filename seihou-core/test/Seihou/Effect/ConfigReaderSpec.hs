@@ -5,7 +5,7 @@ import Data.Text qualified as T
 import Effectful
 import Seihou.Core.Types (ConfigError (..))
 import Seihou.Dhall.Config (evalConfigFileIfExists)
-import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig, readNamespaceConfig)
+import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConfigReaderPure (runConfigReaderPure)
 import System.IO.Temp (withSystemTempDirectory)
@@ -21,35 +21,48 @@ spec = do
   describe "pure interpreter" $ do
     it "ReadGlobalConfig returns the scripted global map" $ do
       let globalCfg = Map.fromList [("license", "MIT"), ("author", "Test")]
-          result = runPureEff $ runConfigReaderPure Map.empty Map.empty globalCfg readGlobalConfig
+          result = runPureEff $ runConfigReaderPure Map.empty Map.empty Map.empty globalCfg readGlobalConfig
       result `shouldBe` Right globalCfg
 
     it "ReadLocalConfig returns the scripted local map" $ do
       let localCfg = Map.fromList [("project.name", "local-app")]
-          result = runPureEff $ runConfigReaderPure localCfg Map.empty Map.empty readLocalConfig
+          result = runPureEff $ runConfigReaderPure localCfg Map.empty Map.empty Map.empty readLocalConfig
       result `shouldBe` Right localCfg
 
     it "ReadNamespaceConfig returns the scripted namespace map" $ do
       let nsCfgs = Map.fromList [("haskell", Map.fromList [("haskell.ghc", "9.12.2")])]
-          result = runPureEff $ runConfigReaderPure Map.empty nsCfgs Map.empty (readNamespaceConfig "haskell")
+          result = runPureEff $ runConfigReaderPure Map.empty nsCfgs Map.empty Map.empty (readNamespaceConfig "haskell")
       result `shouldBe` Right (Map.fromList [("haskell.ghc", "9.12.2")])
 
     it "ReadNamespaceConfig returns empty for unknown namespace" $ do
       let nsCfgs = Map.fromList [("haskell", Map.fromList [("haskell.ghc", "9.12.2")])]
-          result = runPureEff $ runConfigReaderPure Map.empty nsCfgs Map.empty (readNamespaceConfig "nix")
+          result = runPureEff $ runConfigReaderPure Map.empty nsCfgs Map.empty Map.empty (readNamespaceConfig "nix")
+      result `shouldBe` Right Map.empty
+
+    it "ReadContextConfig returns the scripted context map" $ do
+      let ctxCfgs = Map.fromList [("work", Map.fromList [("user.email", "work@example.com")])]
+          result = runPureEff $ runConfigReaderPure Map.empty Map.empty ctxCfgs Map.empty (readContextConfig "work")
+      result `shouldBe` Right (Map.fromList [("user.email", "work@example.com")])
+
+    it "ReadContextConfig returns empty for unknown context" $ do
+      let ctxCfgs = Map.fromList [("work", Map.fromList [("user.email", "work@example.com")])]
+          result = runPureEff $ runConfigReaderPure Map.empty Map.empty ctxCfgs Map.empty (readContextConfig "personal")
       result `shouldBe` Right Map.empty
 
     it "returns independent values from each config layer" $ do
       let localCfg = Map.fromList [("project.name", "local-app")]
           nsCfgs = Map.fromList [("haskell", Map.fromList [("haskell.ghc", "9.12.2")])]
+          ctxCfgs = Map.fromList [("work", Map.fromList [("user.email", "work@example.com")])]
           globalCfg = Map.fromList [("license", "MIT")]
-          (local, ns, global) = runPureEff $ runConfigReaderPure localCfg nsCfgs globalCfg $ do
+          (local, ns, ctx, global) = runPureEff $ runConfigReaderPure localCfg nsCfgs ctxCfgs globalCfg $ do
             l <- readLocalConfig
             n <- readNamespaceConfig "haskell"
+            c <- readContextConfig "work"
             g <- readGlobalConfig
-            pure (l, n, g)
+            pure (l, n, c, g)
       local `shouldBe` Right localCfg
       ns `shouldBe` Right (Map.fromList [("haskell.ghc", "9.12.2")])
+      ctx `shouldBe` Right (Map.fromList [("user.email", "work@example.com")])
       global `shouldBe` Right globalCfg
 
   describe "namespace validation (IO interpreter)" $ do
@@ -74,6 +87,31 @@ spec = do
         _ -> pure () -- Right or ConfigParseError (missing file) are both OK
     it "returns Right empty for empty namespace" $ do
       result <- runEff $ runConfigReader $ readNamespaceConfig ""
+      result `shouldBe` Right Map.empty
+
+  describe "context validation (IO interpreter)" $ do
+    it "rejects context containing '..'" $ do
+      result <- runEff $ runConfigReader $ readContextConfig "../etc"
+      case result of
+        Left (InvalidNamespace ctx _) -> ctx `shouldBe` "../etc"
+        Left other -> expectationFailure ("Expected InvalidNamespace, got: " <> show other)
+        Right _ -> expectationFailure "Expected Left for path traversal context"
+
+    it "rejects context containing '/'" $ do
+      result <- runEff $ runConfigReader $ readContextConfig "foo/bar"
+      case result of
+        Left (InvalidNamespace ctx _) -> ctx `shouldBe` "foo/bar"
+        Left other -> expectationFailure ("Expected InvalidNamespace, got: " <> show other)
+        Right _ -> expectationFailure "Expected Left for context with slash"
+
+    it "accepts a normal context" $ do
+      result <- runEff $ runConfigReader $ readContextConfig "work"
+      case result of
+        Left (InvalidNamespace _ _) -> expectationFailure "Did not expect InvalidNamespace for 'work'"
+        _ -> pure ()
+
+    it "returns Right empty for empty context" $ do
+      result <- runEff $ runConfigReader $ readContextConfig ""
       result `shouldBe` Right Map.empty
 
   describe "config parse error propagation" $ do

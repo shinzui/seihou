@@ -42,6 +42,9 @@ handleInit = do
   -- namespaces/ (internal, not reported)
   createDirectoryIfMissing True (base </> "namespaces")
 
+  -- contexts/ (internal, not reported)
+  createDirectoryIfMissing True (base </> "contexts")
+
   -- Output
   basePath <- shortenHome base
   let items =
