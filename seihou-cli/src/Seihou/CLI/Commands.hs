@@ -22,6 +22,7 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
+import Seihou.CLI.Version (seihouVersionWithGit)
 import Seihou.Core.Types (ModuleName (..))
 import Seihou.Prelude
 
@@ -146,7 +147,7 @@ opts =
         <> footerDoc (Just topLevelFooter)
     )
   where
-    version = infoOption "seihou 0.1.0.0" (long "version" <> help "Show version")
+    version = infoOption (T.unpack seihouVersionWithGit) (long "version" <> help "Show version")
 
 topLevelFooter :: Doc
 topLevelFooter =

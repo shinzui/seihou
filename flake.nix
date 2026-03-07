@@ -20,9 +20,25 @@
         ghcVersion = "ghc9122";
         treefmtEval = treefmt-nix.lib.evalModule pkgs (import ./treefmt.nix { inherit pkgs ghcVersion; });
         formatter = treefmtEval.config.build.wrapper;
+
+        gitRev = self.shortRev or "dirty";
+
+        haskellPackages = pkgs.haskell.packages.${ghcVersion}.override {
+          overrides = pkgs.lib.composeExtensions
+            (inputs.haskell-nix.lib.haskellExtension pkgs.haskell.lib.compose pkgs)
+            (import ./nix/haskell-overlay.nix {
+              inherit pkgs gitRev;
+            });
+        };
       in
       {
         formatter = formatter;
+
+        packages = {
+          seihou = haskellPackages.seihou-cli;
+          default = haskellPackages.seihou-cli;
+        };
+
         checks = {
           formatting = treefmtEval.config.build.check self;
           pre-commit-check = pre-commit-hooks.lib.${system}.run {
