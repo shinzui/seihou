@@ -10,3 +10,5 @@ cabal-dev
 cabal.project.local
 
 .claude/
+
+result
