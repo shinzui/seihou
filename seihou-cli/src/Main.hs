@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Options.Applicative (execParser)
+import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Browse (handleBrowse)
 import Seihou.CLI.Commands
 import Seihou.CLI.Config (handleConfig)
@@ -40,3 +41,5 @@ main = do
       handleConfig configOpts
     Browse browseOpts ->
       handleBrowse browseOpts
+    Assist assistOpts ->
+      handleAssist assistOpts

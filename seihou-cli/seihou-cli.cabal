@@ -49,6 +49,7 @@ executable seihou
   hs-source-dirs: src
   main-is: Main.hs
   other-modules:
+    Seihou.CLI.Assist
     Seihou.CLI.Browse
     Seihou.CLI.BrowseFormat
     Seihou.CLI.Commands
@@ -74,6 +75,7 @@ executable seihou
     containers >=0.6 && <1,
     directory >=1.3 && <2,
     effectful-core >=2.4 && <3,
+    file-embed >=0.0.15 && <1,
     filepath >=1.4 && <2,
     optparse-applicative >=0.18 && <1,
     process >=1.6 && <2,

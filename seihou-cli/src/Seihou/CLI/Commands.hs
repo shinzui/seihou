@@ -8,6 +8,7 @@ module Seihou.CLI.Commands
     ConfigOpts (..),
     ConfigAction (..),
     BrowseOpts (..),
+    AssistOpts (..),
     commandParser,
     opts,
   )
@@ -32,6 +33,7 @@ data Command
   | ValidateModule ValidateOpts
   | Config ConfigOpts
   | Browse BrowseOpts
+  | Assist AssistOpts
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -96,6 +98,11 @@ data BrowseOpts = BrowseOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data AssistOpts = AssistOpts
+  { assistPrompt :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
 opts :: ParserInfo Command
 opts =
   info
@@ -132,6 +139,7 @@ commandParser =
         <> command "validate-module" validateInfo
         <> command "config" configInfo
         <> command "browse" browseInfo
+        <> command "assist" assistInfo
     )
 
 -- Command info blocks
@@ -471,6 +479,43 @@ browseParser =
     BrowseOpts
       <$> argument (T.pack <$> str) (metavar "GIT-URL")
       <*> optional (option (T.pack <$> str) (long "tag" <> metavar "TAG" <> help "Filter modules by tag"))
+
+assistInfo :: ParserInfo Command
+assistInfo =
+  info
+    (assistParser <**> helper)
+    ( fullDesc
+        <> progDesc "Launch AI-assisted template authoring session"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Launches an interactive Claude Code session pre-configured for" :: String),
+                  pretty ("creating and modifying Seihou modules. The agent gathers context" :: String),
+                  pretty ("about your current directory (existing modules, manifest state," :: String),
+                  pretty ("available modules) and starts with full knowledge of the Seihou" :: String),
+                  pretty ("module schema." :: String),
+                  line,
+                  pretty ("The agent can run seihou commands (new-module, validate-module," :: String),
+                  pretty ("run --dry-run, vars, list), git commands, and read/write files." :: String),
+                  line,
+                  pretty ("Requires the 'claude' CLI (Claude Code) to be installed." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou assist" :: String),
+                        pretty ("seihou assist \"create a rust project template\"" :: String),
+                        pretty ("seihou assist \"add a LICENSE step to my-module\"" :: String)
+                      ]
+                ]
+          )
+    )
+
+assistParser :: Parser Command
+assistParser =
+  fmap Assist $
+    AssistOpts
+      <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Initial prompt describing what you want to do"))
 
 -- Helpers
 
