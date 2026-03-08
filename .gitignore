@@ -12,3 +12,5 @@ cabal.project.local
 .claude/
 
 result
+
+.seihou/manifest.json.tmp
