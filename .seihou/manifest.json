@@ -1,0 +1,35 @@
+{
+  "files": {
+    "claude/skills/seihou-update-docs/SKILL.md": {
+      "generatedAt": "2026-03-08T00:23:35.359414Z",
+      "hash": "3ca742a381a861dde21c57c96d3bbbd16c22ed3452181bd7bc624da575a5791b",
+      "module": "update-docs",
+      "strategy": "template"
+    }
+  },
+  "generatedAt": "2026-03-08T00:23:35.359414Z",
+  "modules": [
+    {
+      "appliedAt": "2026-03-08T00:23:35.359414Z",
+      "name": "claude-skill-link",
+      "source": "/Users/shinzui/.config/seihou/installed/claude-skill-link"
+    },
+    {
+      "appliedAt": "2026-03-08T00:23:35.359414Z",
+      "name": "update-docs",
+      "source": "/Users/shinzui/.config/seihou/installed/update-docs"
+    }
+  ],
+  "variables": {
+    "changelog.path": "docs/user/CHANGELOG.md",
+    "cli.commands.dir": "seihou-cli/src/Seihou/CLI/",
+    "docs.dev.dir": "docs/dev",
+    "docs.user.dir": "docs/user",
+    "project.description": "Composable, type-safe project scaffolding system",
+    "project.name": "seihou",
+    "skill.name": "seihou-update-docs",
+    "skills.dir": "claude/skills",
+    "source.dirs": "seihou-core/src/, seihou-cli/src/"
+  },
+  "version": 1
+}
