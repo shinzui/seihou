@@ -104,6 +104,28 @@ spec = do
       let vars = Map.fromList [("name", VText "world")]
       renderTemplate "{{ name }}" vars `shouldBe` Right "world"
 
+  describe "renderCommand" $ do
+    it "substitutes variables in a command string" $ do
+      let vars = Map.fromList [("project.name", VText "my-app")]
+      renderCommand "echo {{project.name}}" vars
+        `shouldBe` Right "echo my-app"
+
+    it "substitutes multiple placeholders" $ do
+      let vars = Map.fromList [("name", VText "app"), ("ver", VText "1.0")]
+      renderCommand "echo {{name}}-{{ver}}" vars
+        `shouldBe` Right "echo app-1.0"
+
+    it "handles escape sequence" $ do
+      let vars = Map.empty
+      renderCommand "echo \\{{literal}}" vars
+        `shouldBe` Right "echo {{literal}}"
+
+    it "reports unresolved placeholder" $ do
+      let vars = Map.empty
+      case renderCommand "echo {{missing}}" vars of
+        Left errs -> length errs `shouldBe` 1
+        Right _ -> expectationFailure "Expected Left"
+
   describe "renderDestPath" $ do
     it "expands placeholder in destination path" $ do
       let vars = Map.fromList [("project.name", VText "my-app")]

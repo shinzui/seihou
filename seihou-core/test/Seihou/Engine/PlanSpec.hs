@@ -638,3 +638,68 @@ spec = do
             length cmdOps `shouldBe` 1
             (cmdOps !! 0).workDir `shouldBe` Just "subdir"
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "interpolates {{var}} in command run field" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  commands = [Command "echo {{name}}" Nothing Nothing],
+                  dependencies = []
+                }
+            vars = Map.fromList [("name", VText "my-app")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> do
+            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            length cmdOps `shouldBe` 1
+            (cmdOps !! 0).command `shouldBe` "echo my-app"
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "interpolates {{var}} in command workDir field" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  commands = [Command "cabal build" (Just "{{name}}") Nothing],
+                  dependencies = []
+                }
+            vars = Map.fromList [("name", VText "my-app")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> do
+            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            length cmdOps `shouldBe` 1
+            (cmdOps !! 0).workDir `shouldBe` Just "my-app"
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "fails compilation when command has unresolved placeholder" $ do
+      withFixture [("data.txt", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "test",
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
+                  commands = [Command "echo {{missing}}" Nothing Nothing],
+                  dependencies = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Left errs -> do
+            length errs `shouldSatisfy` (>= 1)
+            T.isInfixOf "missing" (errs !! 0) `shouldBe` True
+          Right _ -> expectationFailure "Expected Left"

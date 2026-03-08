@@ -2,6 +2,7 @@ module Seihou.Engine.Template
   ( renderTemplate,
     valueToText,
     renderDestPath,
+    renderCommand,
   )
 where
 
@@ -33,6 +34,11 @@ renderTemplate template vars =
 -- | Render destination path placeholders (same substitution logic).
 renderDestPath :: Text -> Map VarName VarValue -> Either [PlaceholderError] Text
 renderDestPath = renderTemplate
+
+-- | Render placeholders in a shell command string.
+-- Same substitution as 'renderTemplate' but named for clarity at call sites.
+renderCommand :: Text -> Map VarName VarValue -> Either [PlaceholderError] Text
+renderCommand = renderTemplate
 
 -- | Render a single line, returning errors or the rendered text.
 renderLine :: Map VarName VarValue -> Int -> Text -> Either [PlaceholderError] Text

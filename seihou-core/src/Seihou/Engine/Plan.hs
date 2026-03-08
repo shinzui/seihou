@@ -21,7 +21,7 @@ import Dhall.Src (Src)
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Types
 import Seihou.Engine.DhallJSON (dhallExprToJSON)
-import Seihou.Engine.Template (renderDestPath, renderTemplate)
+import Seihou.Engine.Template (renderCommand, renderDestPath, renderTemplate)
 import Seihou.Prelude
 import System.FilePath (takeDirectory, takeExtension)
 
@@ -38,21 +38,44 @@ compilePlan baseDir modul vars = do
   results <- mapM (compileStep baseDir modName vars) modul.steps
   let (allErrors, allOps) = partitionResults results
   if null allErrors
-    then Right <$> pure (deduplicateDirs (concat allOps) ++ compileCommands vars modul.commands)
+    then case compileCommands vars modul.commands of
+      Left cmdErrs -> pure (Left cmdErrs)
+      Right cmdOps -> pure (Right (deduplicateDirs (concat allOps) ++ cmdOps))
     else pure (Left (concat allErrors))
 
--- | Compile commands into 'RunCommandOp' operations.
+-- | Compile commands into 'RunCommandOp' operations, interpolating
+-- @{{var}}@ placeholders in the @run@ and @workDir@ fields.
 -- Commands whose @when@ condition evaluates to False are skipped.
-compileCommands :: Map VarName VarValue -> [Command] -> [Operation]
-compileCommands vars = concatMap compileCommand
+compileCommands :: Map VarName VarValue -> [Command] -> Either [Text] [Operation]
+compileCommands vars = foldl' go (Right [])
   where
-    compileCommand cmd =
+    go (Left errs) cmd = Left (errs ++ compileErrors cmd)
+    go (Right ops) cmd =
       let shouldRun = case cmd.condition of
             Nothing -> True
             Just expr -> evalExpr vars expr
        in if shouldRun
-            then [RunCommandOp cmd.run (fmap T.unpack cmd.workDir)]
-            else []
+            then case compileOneCommand vars cmd of
+              Left cmdErrs -> Left cmdErrs
+              Right op -> Right (ops ++ [op])
+            else Right ops
+
+    compileErrors cmd = case compileOneCommand vars cmd of
+      Left es -> es
+      Right _ -> []
+
+-- | Compile a single command, interpolating placeholders in @run@ and @workDir@.
+compileOneCommand :: Map VarName VarValue -> Command -> Either [Text] Operation
+compileOneCommand vars cmd =
+  let runResult = renderCommand cmd.run vars
+      wdResult = case cmd.workDir of
+        Nothing -> Right Nothing
+        Just wd -> Just <$> renderCommand wd vars
+   in case (runResult, wdResult) of
+        (Left e1, Left e2) -> Left (map formatPlaceholderError (e1 ++ e2))
+        (Left e1, _) -> Left (map formatPlaceholderError e1)
+        (_, Left e2) -> Left (map formatPlaceholderError e2)
+        (Right r, Right w) -> Right (RunCommandOp r (fmap T.unpack w))
 
 -- | Compile a single step into operations (or skip it).
 -- If the step has a patch operation, it produces a 'PatchFileOp'; otherwise

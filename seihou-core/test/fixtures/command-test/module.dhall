@@ -20,7 +20,7 @@
     }
   ]
 , commands =
-  [ { run = "echo hello"
+  [ { run = "echo {{project.name}}"
     , workDir = None Text
     , when = None Text
     }
