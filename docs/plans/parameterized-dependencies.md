@@ -60,7 +60,7 @@ To verify: running `seihou run exec-plan --dry-run` with the updated module no l
   - [x] Create test fixture pair: `param-dep-parent` and `param-dep-child`
   - [x] Update the `exec-plan` module in `agent-seihou` to use the new syntax
   - [x] Verify: both fixtures load correctly via `evalModuleFromFile`
-  - [ ] Verify: `seihou run exec-plan --dry-run` no longer prompts for `skill.name` (requires rebuilding and installing seihou)
+  - [x] Verify: `seihou run exec-plan --dry-run` no longer prompts for `skill.name` (2026-03-11)
 
 
 ## Surprises & Discoveries
