@@ -12,6 +12,9 @@ module Seihou.Core.Types
     PatchOp (..),
     Step (..),
     Command (..),
+    Dependency (..),
+    simpleDep,
+    depModuleNames,
     Module (..),
     Operation (..),
     ModuleLoadError (..),
@@ -153,6 +156,24 @@ data Command = Command
   }
   deriving stock (Eq, Show, Generic)
 
+-- | A dependency on another module, optionally supplying variable bindings.
+-- When @depVars@ is non-empty, the listed variables are pre-supplied to the
+-- dependency during resolution, sitting between global config and module
+-- defaults in the precedence chain.
+data Dependency = Dependency
+  { depModule :: ModuleName,
+    depVars :: Map VarName Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Create a bare dependency with no variable bindings.
+simpleDep :: ModuleName -> Dependency
+simpleDep name = Dependency {depModule = name, depVars = mempty}
+
+-- | Extract module names from a list of dependencies.
+depModuleNames :: [Dependency] -> [ModuleName]
+depModuleNames = map (.depModule)
+
 -- | A module definition: the fundamental unit of composition.
 data Module = Module
   { name :: ModuleName,
@@ -162,7 +183,7 @@ data Module = Module
     prompts :: [Prompt],
     steps :: [Step],
     commands :: [Command],
-    dependencies :: [ModuleName]
+    dependencies :: [Dependency]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -212,6 +233,7 @@ data VarSource
   | FromNamespaceConfig Text
   | FromContextConfig Text
   | FromGlobalConfig
+  | FromParent ModuleName
   | FromDefault
   | FromPrompt
   deriving stock (Eq, Show, Generic)

@@ -13,18 +13,26 @@ module Seihou.Dhall.Eval
     commandDecoder,
     strategyDecoder,
     patchOpDecoder,
+    dependencyDecoder,
   )
 where
 
-import Control.Exception (SomeException, evaluate, try)
+import Control.Exception (SomeException, evaluate, throwIO, try)
+import Data.Either.Validation (Validation (..))
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Dhall (Decoder, input, inputFile, list, record, strictText)
-import Dhall.Marshal.Decode (bool, field, maybe, string)
+import Data.Text.IO qualified as TIO
+import Data.Void (Void)
+import Dhall (defaultInputSettings, input, inputExprWithSettings, inputFile, list, record, rootDirectory, sourceName, strictText)
+import Dhall.Core (Chunks (..))
+import Dhall.Core qualified as Dhall (Expr (..))
+import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, field, maybe, string)
+import Dhall.Src (Src)
 import Seihou.Core.Expr (parseExpr)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
 import Seihou.Prelude
+import System.FilePath (takeDirectory)
 import Prelude hiding (maybe)
 
 -- | Spike: evaluate a Dhall expression containing a record with @name@ and @version@
@@ -45,6 +53,13 @@ simpleRecordDecoder =
 -- | Evaluate a @module.dhall@ file and decode it into a 'Module' value.
 -- Returns 'Left' with a 'ModuleLoadError' if evaluation or decoding fails.
 --
+-- Uses 'inputExprWithSettings' to parse, resolve imports, and normalize the
+-- Dhall expression, then extracts with 'moduleDecoder' directly. This
+-- bypasses Dhall's type-annotation check, allowing the @dependencies@ field
+-- to be either @List Text@ (bare strings) or
+-- @List { module : Text, vars : ... }@ (parameterized form) — the custom
+-- 'dependencyDecoder' handles both at the AST level.
+--
 -- Note: Dhall 'Decoder' only supports 'Functor', so decoder helpers like
 -- 'parseVarType' use 'error' for invalid input. These 'error' calls produce
 -- lazy thunks inside the decoded 'Module'. We force evaluation of all
@@ -53,13 +68,20 @@ simpleRecordDecoder =
 evalModuleFromFile :: FilePath -> IO (Either ModuleLoadError Module)
 evalModuleFromFile path = do
   result <- try $ do
-    m <- inputFile moduleDecoder path
-    -- Force lazy decoder thunks that may contain 'error' calls
-    mapM_ (\v -> evaluate v.type_) m.vars
-    mapM_ (\s -> evaluate s.strategy >> evaluate s.condition >> mapM_ evaluate s.patch) m.steps
-    mapM_ (\c -> mapM_ evaluate c.condition) m.commands
-    mapM_ (\p -> evaluate p.condition) m.prompts
-    pure m
+    text <- TIO.readFile path
+    let settings =
+          set rootDirectory (takeDirectory path) $
+            set sourceName path defaultInputSettings
+    expr <- inputExprWithSettings settings text
+    case extract moduleDecoder expr of
+      Success m -> do
+        -- Force lazy decoder thunks that may contain 'error' calls
+        mapM_ (\v -> evaluate v.type_) m.vars
+        mapM_ (\s -> evaluate s.strategy >> evaluate s.condition >> mapM_ evaluate s.patch) m.steps
+        mapM_ (\c -> mapM_ evaluate c.condition) m.commands
+        mapM_ (\p -> evaluate p.condition) m.prompts
+        pure m
+      Failure e -> throwIO e
   case result of
     Left (e :: SomeException) ->
       let name = guessModuleName path
@@ -89,11 +111,51 @@ moduleDecoder =
         <*> field "prompts" (list promptDecoder)
         <*> field "steps" (list stepDecoder)
         <*> field "commands" (list commandDecoder)
-        <*> field "dependencies" (list moduleNameDecoder)
+        <*> field "dependencies" (list dependencyDecoder)
     )
 
 moduleNameDecoder :: Decoder ModuleName
 moduleNameDecoder = ModuleName <$> strictText
+
+-- | Decoder for a dependency entry.
+-- Accepts two Dhall forms for backward compatibility:
+--
+-- 1. A bare text string: @"base"@ decodes as @Dependency "base" mempty@.
+-- 2. A record: @{ module = "base", vars = [ { name = "x", value = "y" } ] }@
+--    decodes as @Dependency "base" (fromList [("x", "y")])@.
+--
+-- This is implemented as a custom decoder that pattern-matches on the Dhall
+-- expression AST: 'TextLit' for bare strings, falling back to the record
+-- decoder for the parameterized form.
+dependencyDecoder :: Decoder Dependency
+dependencyDecoder = Decoder extractDep expectedDep
+  where
+    extractDep :: Dhall.Expr Src Void -> Extractor Src Void Dependency
+    extractDep (Dhall.TextLit (Chunks [] t)) =
+      pure (simpleDep (ModuleName t))
+    extractDep expr =
+      extract paramDepDecoder expr
+
+    expectedDep = expected strictText
+
+    paramDepDecoder :: Decoder Dependency
+    paramDepDecoder =
+      record
+        ( mkDep
+            <$> field "module" moduleNameDecoder
+            <*> field "vars" (list varBindingDecoder)
+        )
+
+    varBindingDecoder :: Decoder (VarName, Text)
+    varBindingDecoder =
+      record
+        ( (,)
+            <$> field "name" varNameDecoder
+            <*> field "value" strictText
+        )
+
+    mkDep :: ModuleName -> [(VarName, Text)] -> Dependency
+    mkDep name bindings = Dependency {depModule = name, depVars = Map.fromList bindings}
 
 -- | Decoder for VarType from a Dhall Text string.
 -- Dhall does not support recursive types, so VarType is represented as a

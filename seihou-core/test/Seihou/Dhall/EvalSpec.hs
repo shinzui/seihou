@@ -192,3 +192,65 @@ spec = do
             T.isInfixOf "invalid-op" msg `shouldBe` True
           Left other -> expectationFailure ("Expected DhallEvalError, got: " <> show other)
           Right _ -> expectationFailure "Expected Left for bad patch operation"
+
+  describe "dependencyDecoder" $ do
+    let emptyModuleWithDeps depsStr =
+          "{ name = \"test-mod\"\n\
+          \, description = None Text\n\
+          \, vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }\n\
+          \, exports = [] : List { var : Text, alias : Optional Text }\n\
+          \, prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }\n\
+          \, steps = [] : List { strategy : Text, src : Text, dest : Text, when : Optional Text, patch : Optional Text }\n\
+          \, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }\n\
+          \, dependencies = "
+            ++ depsStr
+            ++ "\n\
+               \}"
+
+    it "decodes a bare string dependency" $ do
+      withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
+        writeFile (tmpDir </> "module.dhall") (emptyModuleWithDeps "[\"base\"]")
+        result <- evalModuleFromFile (tmpDir </> "module.dhall")
+        case result of
+          Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
+          Right m -> do
+            length m.dependencies `shouldBe` 1
+            let dep = head m.dependencies
+            dep.depModule `shouldBe` ModuleName "base"
+            Map.null dep.depVars `shouldBe` True
+
+    it "decodes a parameterized record dependency" $ do
+      withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
+        writeFile (tmpDir </> "module.dhall") (emptyModuleWithDeps "[{ module = \"base\", vars = [{ name = \"x\", value = \"y\" }] }]")
+        result <- evalModuleFromFile (tmpDir </> "module.dhall")
+        case result of
+          Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
+          Right m -> do
+            length m.dependencies `shouldBe` 1
+            let dep = head m.dependencies
+            dep.depModule `shouldBe` ModuleName "base"
+            Map.lookup (VarName "x") dep.depVars `shouldBe` Just "y"
+
+    it "decodes a parameterized dependency with empty vars" $ do
+      withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
+        writeFile (tmpDir </> "module.dhall") (emptyModuleWithDeps "[{ module = \"base\", vars = [] : List { name : Text, value : Text } }]")
+        result <- evalModuleFromFile (tmpDir </> "module.dhall")
+        case result of
+          Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
+          Right m -> do
+            length m.dependencies `shouldBe` 1
+            let dep = head m.dependencies
+            dep.depModule `shouldBe` ModuleName "base"
+            Map.null dep.depVars `shouldBe` True
+
+    it "decodes a module.dhall with parameterized dependencies" $ do
+      withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
+        writeFile (tmpDir </> "module.dhall") (emptyModuleWithDeps "[{ module = \"child-mod\", vars = [{ name = \"skill.name\", value = \"exec-plan\" }] }]")
+        result <- evalModuleFromFile (tmpDir </> "module.dhall")
+        case result of
+          Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
+          Right m -> do
+            length m.dependencies `shouldBe` 1
+            let dep = head m.dependencies
+            dep.depModule `shouldBe` ModuleName "child-mod"
+            Map.lookup (VarName "skill.name") dep.depVars `shouldBe` Just "exec-plan"

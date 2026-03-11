@@ -22,6 +22,20 @@ mkModule name deps vars exports =
       prompts = [],
       steps = [],
       commands = [],
+      dependencies = map simpleDep deps
+    }
+
+-- | Helper to create a module with parameterized dependencies.
+mkModuleWithDeps :: ModuleName -> [Dependency] -> [VarDecl] -> [VarExport] -> Module
+mkModuleWithDeps name deps vars exports =
+  Module
+    { name = name,
+      description = Nothing,
+      vars = vars,
+      exports = exports,
+      prompts = [],
+      steps = [],
+      commands = [],
       dependencies = deps
     }
 
@@ -318,3 +332,50 @@ spec = do
           let appVars = result Map.! "app"
           (.value) (appVars Map.! "project.name") `shouldBe` VText "local-app"
           (.value) (appVars Map.! "license") `shouldBe` VText "MIT"
+
+  describe "resolveComposedVariables (parameterized dependencies)" $ do
+    it "parent-supplied var resolves in dependency" $ do
+      let child = mkModule "child" [] [mkTextVar "skill.name" Nothing True] []
+          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "exec-plan")] [] []
+          modules = [(child, "/fake/child"), (parent', "/fake/parent")]
+      case resolveComposedVariables modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let childVars = result Map.! "child"
+          (.value) (childVars Map.! "skill.name") `shouldBe` VText "exec-plan"
+          (.source) (childVars Map.! "skill.name") `shouldBe` FromParent "parent"
+
+    it "parent-supplied var overrides dependency's default" $ do
+      let child = mkModule "child" [] [mkTextVar "skill.name" (Just (VText "old")) False] []
+          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "new")] [] []
+          modules = [(child, "/fake/child"), (parent', "/fake/parent")]
+      case resolveComposedVariables modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let childVars = result Map.! "child"
+          (.value) (childVars Map.! "skill.name") `shouldBe` VText "new"
+          (.source) (childVars Map.! "skill.name") `shouldBe` FromParent "parent"
+
+    it "CLI override beats parent-supplied var" $ do
+      let child = mkModule "child" [] [mkTextVar "skill.name" Nothing True] []
+          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "from-parent")] [] []
+          modules = [(child, "/fake/child"), (parent', "/fake/parent")]
+          cliOverrides = Map.singleton "skill.name" "from-cli"
+      case resolveComposedVariables modules cliOverrides Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let childVars = result Map.! "child"
+          (.value) (childVars Map.! "skill.name") `shouldBe` VText "from-cli"
+          (.source) (childVars Map.! "skill.name") `shouldBe` FromCLI
+
+    it "config beats parent-supplied var" $ do
+      let child = mkModule "child" [] [mkTextVar "skill.name" (Just (VText "default")) False] []
+          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "parent-val")] [] []
+          modules = [(child, "/fake/child"), (parent', "/fake/parent")]
+          globalCfg = Map.fromList [("skill.name", "global-val")]
+      case resolveComposedVariables modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty globalCfg of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let childVars = result Map.! "child"
+          (.value) (childVars Map.! "skill.name") `shouldBe` VText "global-val"
+          (.source) (childVars Map.! "skill.name") `shouldBe` FromGlobalConfig

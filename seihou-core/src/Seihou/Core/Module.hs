@@ -14,6 +14,7 @@ module Seihou.Core.Module
     checkFileExistence,
     checkExportRefs,
     checkDependencyNames,
+    checkDependencyVarBindings,
     checkSafeDestinations,
     checkDestVarRefs,
     checkCommandSafety,
@@ -22,6 +23,7 @@ module Seihou.Core.Module
   )
 where
 
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import GHC.Generics (Generic)
@@ -73,6 +75,7 @@ validateModule baseDir m = do
           <> checkPromptRefs m
           <> checkExportRefs m
           <> checkDependencyNames m
+          <> checkDependencyVarBindings m
           <> checkSafeDestinations m
           <> checkDestVarRefs m
           <> checkCommandSafety m
@@ -153,10 +156,25 @@ checkDependencyNames :: Module -> [Text]
 checkDependencyNames m =
   concatMap
     ( \dep ->
-        let n = dep.unModuleName
+        let n = dep.depModule.unModuleName
          in if isValidModuleName n
               then []
               else ["invalid dependency name: " <> n]
+    )
+    m.dependencies
+
+-- Rule 6b: Dependency var binding names must be non-empty
+checkDependencyVarBindings :: Module -> [Text]
+checkDependencyVarBindings m =
+  concatMap
+    ( \dep ->
+        concatMap
+          ( \(VarName vn) ->
+              if T.null vn
+                then ["dependency '" <> dep.depModule.unModuleName <> "' has empty var binding name"]
+                else []
+          )
+          (Map.keys dep.depVars)
     )
     m.dependencies
 

@@ -24,7 +24,7 @@ buildGraph :: [Module] -> CompositionGraph
 buildGraph modules =
   CompositionGraph
     { cgModules = Map.fromList [(m.name, m) | m <- modules],
-      cgEdges = Map.fromList [(m.name, m.dependencies) | m <- modules]
+      cgEdges = Map.fromList [(m.name, depModuleNames m.dependencies) | m <- modules]
     }
 
 -- | Topological sort using Kahn's algorithm.

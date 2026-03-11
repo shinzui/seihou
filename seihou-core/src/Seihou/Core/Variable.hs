@@ -115,7 +115,7 @@ simplePatternMatch pat t
     isDigit c = c >= '0' && c <= '9'
 
 -- | Resolve all variables for a module given CLI overrides, environment variables,
--- and four config file layers.
+-- four config file layers, and parent-supplied variable bindings.
 --
 -- Precedence chain (highest to lowest):
 -- 1. CLI overrides (@--var@ flags)
@@ -124,7 +124,8 @@ simplePatternMatch pat t
 -- 4. Namespace config (@~\/.config\/seihou\/namespaces\/\<ns\>\/config.dhall@)
 -- 5. Context config (@~\/.config\/seihou\/contexts\/\<ctx\>\/config.dhall@)
 -- 6. Global config (@~\/.config\/seihou\/config.dhall@)
--- 7. Module defaults
+-- 7. Parent-supplied vars (from parameterized dependencies)
+-- 8. Module defaults
 resolveVariables ::
   [VarDecl] ->
   Map VarName Text -> -- CLI overrides
@@ -135,8 +136,9 @@ resolveVariables ::
   Map VarName Text -> -- Namespace config
   Map VarName Text -> -- Context config
   Map VarName Text -> -- Global config
+  Map VarName (Text, ModuleName) -> -- Parent-supplied vars
   Either [VarError] (Map VarName ResolvedVar)
-resolveVariables decls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig =
+resolveVariables decls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig parentVars =
   case partitionResults (map resolveOne decls) of
     ([], resolved) -> Right (Map.fromList (catMaybes resolved))
     (errs, _) -> Left errs
@@ -157,12 +159,23 @@ resolveVariables decls cliOverrides envVars namespace context localConfig nsConf
                     Just result -> fmap Just (result >>= validateAndWrap decl)
                     Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
                       Just result -> fmap Just (result >>= validateAndWrap decl)
-                      Nothing -> case decl.default_ of
-                        Just defVal ->
-                          fmap Just (validateAndWrap decl (defVal, FromDefault))
-                        Nothing
-                          | decl.required -> Left (MissingRequiredVar name)
-                          | otherwise -> Right Nothing
+                      Nothing -> case lookupParent name ty of
+                        Just result -> fmap Just (result >>= validateAndWrap decl)
+                        Nothing -> case decl.default_ of
+                          Just defVal ->
+                            fmap Just (validateAndWrap decl (defVal, FromDefault))
+                          Nothing
+                            | decl.required -> Left (MissingRequiredVar name)
+                            | otherwise -> Right Nothing
+
+    lookupParent :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
+    lookupParent name ty =
+      case Map.lookup name parentVars of
+        Nothing -> Nothing
+        Just (rawText, parentName) ->
+          Just $ case coerceValue name ty rawText of
+            Left err -> Left err
+            Right val -> Right (val, FromParent parentName)
 
     lookupCLI :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
     lookupCLI name ty =
@@ -246,6 +259,7 @@ formatExplain resolved =
     showSource (FromNamespaceConfig ns) = "[namespace: " <> ns <> "]"
     showSource (FromContextConfig ctx) = "[context: " <> ctx <> "]"
     showSource FromGlobalConfig = "[global config]"
+    showSource (FromParent mn) = "[parent: " <> mn.unModuleName <> "]"
     showSource FromDefault = "[default]"
     showSource FromPrompt = "[prompt]"
 

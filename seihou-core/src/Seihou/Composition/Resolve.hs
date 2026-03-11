@@ -3,6 +3,7 @@ module Seihou.Composition.Resolve
     resolveComposedVariables,
     resolveWithPrompts,
     exportedVars,
+    collectParentVars,
   )
 where
 
@@ -33,11 +34,11 @@ loadComposition searchPaths primary additional = do
     Left err -> pure (Left err)
     Right (primaryMod, primaryDir) -> do
       -- Add additional modules as implicit dependencies of the primary
-      let effectiveDeps = primaryMod.dependencies ++ additional
-          effectivePrimary = primaryMod {dependencies = nubOrd effectiveDeps}
+      let effectiveDeps = primaryMod.dependencies ++ map simpleDep additional
+          effectivePrimary = primaryMod {dependencies = nubOrdBy (.depModule) effectiveDeps}
           loaded = Map.singleton primary (effectivePrimary, primaryDir)
       -- Recursively load all transitive dependencies
-      transResult <- loadTransitive searchPaths loaded effectivePrimary.dependencies
+      transResult <- loadTransitive searchPaths loaded (depModuleNames effectivePrimary.dependencies)
       case transResult of
         Left err -> pure (Left err)
         Right allModules -> do
@@ -70,23 +71,27 @@ resolveComposedVariables ::
   Map VarName Text ->
   Either [VarError] (Map ModuleName (Map VarName ResolvedVar))
 resolveComposedVariables modulesInOrder cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig =
-  go modulesInOrder Map.empty Map.empty
+  let allParentVars = collectParentVars modulesInOrder
+   in go allParentVars modulesInOrder Map.empty Map.empty
   where
     go ::
+      Map ModuleName (Map VarName (Text, ModuleName)) ->
       [(Module, FilePath)] ->
       Map ModuleName (Map VarName ResolvedVar) ->
       Map ModuleName (Map VarName VarValue) ->
       Either [VarError] (Map ModuleName (Map VarName ResolvedVar))
-    go [] perModule _ = Right perModule
-    go ((m, _dir) : rest) perModule allExports = do
-      let deps = m.dependencies
+    go _ [] perModule _ = Right perModule
+    go parentVarsMap ((m, _dir) : rest) perModule allExports = do
+      let deps = depModuleNames m.dependencies
           -- Collect exports from direct dependencies only
           visibleExports =
             Map.unions [Map.findWithDefault Map.empty dep allExports | dep <- deps]
           -- Inject exported values as defaults for declared variables
           adjustedDecls = map (injectExportDefault visibleExports) m.vars
+          -- Parent-supplied vars for this module
+          myParentVars = Map.findWithDefault Map.empty m.name parentVarsMap
       -- Resolve this module's declared variables
-      resolved <- resolveVariables adjustedDecls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig
+      resolved <- resolveVariables adjustedDecls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars
       -- Add inherited (non-declared) exports to the resolved map
       let declaredNames = Set.fromList (map (.name) m.vars)
           inherited =
@@ -97,6 +102,7 @@ resolveComposedVariables modulesInOrder cliOverrides envVars namespace context l
       -- Compute this module's exports
       let myExports = exportedVars m fullResolved
       go
+        parentVarsMap
         rest
         (Map.insert m.name fullResolved perModule)
         (Map.insert m.name myExports allExports)
@@ -120,22 +126,25 @@ resolveWithPrompts ::
   Eff es (Either [VarError] (Map ModuleName (Map VarName ResolvedVar)))
 resolveWithPrompts modulesInOrder cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig = do
   interactive <- isInteractive
-  goPrompt interactive modulesInOrder Map.empty Map.empty
+  let allParentVars = collectParentVars modulesInOrder
+  goPrompt interactive allParentVars modulesInOrder Map.empty Map.empty
   where
     goPrompt ::
       (Console :> es) =>
       Bool ->
+      Map ModuleName (Map VarName (Text, ModuleName)) ->
       [(Module, FilePath)] ->
       Map ModuleName (Map VarName ResolvedVar) ->
       Map ModuleName (Map VarName VarValue) ->
       Eff es (Either [VarError] (Map ModuleName (Map VarName ResolvedVar)))
-    goPrompt _ [] perModule _ = pure (Right perModule)
-    goPrompt interactive ((m, _dir) : rest) perModule allExports = do
-      let deps = m.dependencies
+    goPrompt _ _ [] perModule _ = pure (Right perModule)
+    goPrompt interactive parentVarsMap ((m, _dir) : rest) perModule allExports = do
+      let deps = depModuleNames m.dependencies
           visibleExports =
             Map.unions [Map.findWithDefault Map.empty dep allExports | dep <- deps]
           adjustedDecls = map (injectExportDefault visibleExports) m.vars
-      case resolveVariables adjustedDecls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig of
+          myParentVars = Map.findWithDefault Map.empty m.name parentVarsMap
+      case resolveVariables adjustedDecls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
         Right resolved -> do
           let declaredNames = Set.fromList (map (.name) m.vars)
               inherited =
@@ -164,6 +173,7 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace context localCo
               myExports = exportedVars m fullResolved
           goPrompt
             interactive
+            parentVarsMap
             rest
             (Map.insert m.name fullResolved perModule)
             (Map.insert m.name myExports allExports)
@@ -190,7 +200,7 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace context localCo
                       let promptedOverrides =
                             Map.union cliOverrides $
                               Map.map (varValueToText . (.value)) prompted
-                      case resolveVariables adjustedDecls promptedOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig of
+                      case resolveVariables adjustedDecls promptedOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
                         Left errs' -> pure (Left errs')
                         Right resolved -> do
                           -- Replace source for prompted vars with FromPrompt
@@ -229,6 +239,7 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace context localCo
                               myExports = exportedVars m fullResolved
                           goPrompt
                             interactive
+                            parentVarsMap
                             rest
                             (Map.insert m.name fullResolved perModule)
                             (Map.insert m.name myExports allExports)
@@ -302,7 +313,7 @@ loadTransitive searchPaths loaded (name : rest)
         Left err -> pure (Left err)
         Right (m, dir) -> do
           let loaded' = Map.insert name (m, dir) loaded
-              newDeps = m.dependencies
+              newDeps = depModuleNames m.dependencies
           loadTransitive searchPaths loaded' (rest ++ newDeps)
 
 -- | Inject an exported value as the default for a variable declaration.
@@ -339,11 +350,25 @@ inferType (VInt _) = VTInt
 inferType (VList []) = VTList VTText
 inferType (VList (v : _)) = VTList (inferType v)
 
--- | Remove duplicates from a list while preserving order.
-nubOrd :: (Ord a) => [a] -> [a]
-nubOrd = go Set.empty
+-- | Collect all parent-supplied variable bindings across the composition.
+-- Returns a map from module name to the vars supplied to it by its dependents.
+-- Each value includes the raw text value and the name of the parent module
+-- that supplied it (for provenance tracking via 'FromParent').
+collectParentVars :: [(Module, FilePath)] -> Map ModuleName (Map VarName (Text, ModuleName))
+collectParentVars modules =
+  Map.fromListWith
+    Map.union
+    [ (dep.depModule, Map.map (,m.name) dep.depVars)
+    | (m, _) <- modules,
+      dep <- m.dependencies,
+      not (Map.null dep.depVars)
+    ]
+
+-- | Remove duplicates from a list while preserving order, using a key function.
+nubOrdBy :: (Ord k) => (a -> k) -> [a] -> [a]
+nubOrdBy f = go Set.empty
   where
     go _ [] = []
     go seen (x : xs)
-      | Set.member x seen = go seen xs
-      | otherwise = x : go (Set.insert x seen) xs
+      | Set.member (f x) seen = go seen xs
+      | otherwise = x : go (Set.insert (f x) seen) xs

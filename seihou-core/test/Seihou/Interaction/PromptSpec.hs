@@ -25,7 +25,7 @@ mkModule name deps vars exports prompts =
       prompts = prompts,
       steps = [],
       commands = [],
-      dependencies = deps
+      dependencies = map simpleDep deps
     }
 
 -- | Helper to create a text variable declaration.
