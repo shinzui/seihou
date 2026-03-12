@@ -18,14 +18,36 @@ import Seihou.Core.Variable (diagnoseResolution, formatDeclarations, formatExpla
 import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
+import Seihou.Effect.FzfInterp (runFzfIO)
 import Seihou.Effect.Logger (logError, logInfo)
+import Seihou.Fzf (FzfResult (..), detectFzfConfig, isFzfUsable)
+import Seihou.Fzf.Selector (selectModule)
 import Seihou.Prelude
 import System.Environment (getEnvironment)
-import System.Exit (exitFailure)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
 
 handleVars :: VarsOpts -> IO ()
 handleVars vopts = do
-  let modName = vopts.varsModule
+  -- Resolve module name (from argument or fzf picker)
+  modName <- case vopts.varsModule of
+    Just name -> pure name
+    Nothing -> do
+      fzfCfg <- detectFzfConfig
+      if isFzfUsable fzfCfg
+        then do
+          result <- runEff $ runFzfIO fzfCfg $ selectModule
+          case result of
+            FzfSelected name -> pure name
+            FzfCancelled -> exitWith ExitSuccess
+            FzfNoMatch -> do
+              logIO LogNormal (logError "No modules found.")
+              exitFailure
+            FzfError err -> do
+              logIO LogNormal (logError $ "fzf error: " <> err)
+              exitFailure
+        else do
+          logIO LogNormal (logError "MODULE argument is required when fzf is not available.")
+          exitFailure
 
   if vopts.varsExplain
     then explainMode modName vopts

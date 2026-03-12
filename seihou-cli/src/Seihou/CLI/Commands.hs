@@ -57,7 +57,7 @@ data AgentCommand
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
-  { runModule :: ModuleName,
+  { runModule :: Maybe ModuleName,
     runAdditional :: [ModuleName],
     runVars :: [(Text, Text)],
     runDryRun :: Bool,
@@ -71,7 +71,7 @@ data RunOpts = RunOpts
   deriving stock (Eq, Show, Generic)
 
 data VarsOpts = VarsOpts
-  { varsModule :: ModuleName,
+  { varsModule :: Maybe ModuleName,
     varsExplain :: Bool,
     varsVars :: [(Text, Text)],
     varsNamespace :: Maybe Text,
@@ -116,7 +116,7 @@ data ConfigOpts = ConfigOpts
   deriving stock (Eq, Show, Generic)
 
 data ContextAction
-  = ContextSet Text
+  = ContextSet (Maybe Text)
   | ContextDefault Text
   | ContextShow
   | ContextClear
@@ -404,7 +404,7 @@ runParser :: Parser Command
 runParser =
   fmap Run $
     RunOpts
-      <$> argument moduleNameReader (metavar "MODULE")
+      <$> optional (argument moduleNameReader (metavar "MODULE"))
       <*> many
         ( option
             moduleNameReader
@@ -427,7 +427,7 @@ varsParser :: Parser Command
 varsParser =
   fmap Vars $
     VarsOpts
-      <$> argument moduleNameReader (metavar "MODULE")
+      <$> optional (argument moduleNameReader (metavar "MODULE"))
       <*> switch (long "explain" <> help "Show resolved values with provenance")
       <*> many
         ( option
@@ -523,7 +523,7 @@ contextParser =
   fmap Context $
     subparser
       ( command "show" (info (pure ContextShow) (progDesc "Show the active context and its source"))
-          <> command "set" (info (ContextSet <$> argument (T.pack <$> str) (metavar "NAME")) (progDesc "Set the project context (.seihou/context)"))
+          <> command "set" (info (ContextSet <$> optional (argument (T.pack <$> str) (metavar "NAME"))) (progDesc "Set the project context (.seihou/context)"))
           <> command "default" (info (ContextDefault <$> argument (T.pack <$> str) (metavar "NAME")) (progDesc "Set the global default context (~/.config/seihou/default-context)"))
           <> command "clear" (info (pure ContextClear) (progDesc "Remove the project context file"))
           <> command "clear-default" (info (pure ContextClearDefault) (progDesc "Remove the global default context"))

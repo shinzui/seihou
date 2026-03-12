@@ -18,7 +18,11 @@ import Seihou.Core.Module (validateModule)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents, validateRegistry)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
+import Seihou.Effect.Fzf (selectOne)
+import Seihou.Effect.FzfInterp (runFzfIO)
 import Seihou.Effect.Logger (logError, logWarn)
+import Seihou.Fzf (Candidate (..), FzfResult (..), detectFzfConfig, isFzfUsable, withAnsi, withHeight, withNoSort, withPrompt)
+import Seihou.Fzf qualified
 import Seihou.Prelude
 import System.Directory
   ( XdgDirectory (..),
@@ -152,9 +156,37 @@ selectModules iopts registry
             mapM_ (\n -> logError $ "  - " <> n) missing
           exitFailure
         else pure found
-  | otherwise = promptModuleSelection registry
+  | otherwise = do
+      fzfCfg <- detectFzfConfig
+      if isFzfUsable fzfCfg
+        then fzfModuleSelection fzfCfg registry
+        else promptModuleSelection registry
 
--- | Interactive module selection.
+-- | Interactive module selection via fzf.
+fzfModuleSelection :: Seihou.Fzf.FzfConfig -> Registry -> IO [RegistryEntry]
+fzfModuleSelection fzfCfg registry = do
+  let entries = registry.modules
+      candidates =
+        [ Candidate
+            { candidateDisplay =
+                entry.name.unModuleName
+                  <> maybe "" (\d -> "  " <> d) entry.description
+                  <> if null entry.tags then "" else "  [" <> T.intercalate ", " entry.tags <> "]",
+              candidateValue = entry
+            }
+        | entry <- entries
+        ]
+      opts = withPrompt "module> " <> withHeight "40%" <> withAnsi <> withNoSort
+  result <- runEff $ runFzfIO fzfCfg $ selectOne opts candidates
+  case result of
+    FzfSelected entry -> pure [entry]
+    FzfCancelled -> pure []
+    FzfNoMatch -> pure []
+    FzfError err -> do
+      TIO.putStrLn $ "fzf error: " <> err
+      promptModuleSelection registry
+
+-- | Interactive module selection via numbered list.
 promptModuleSelection :: Registry -> IO [RegistryEntry]
 promptModuleSelection registry = do
   TIO.putStrLn ""

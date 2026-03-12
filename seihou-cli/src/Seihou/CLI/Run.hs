@@ -25,6 +25,7 @@ import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
+import Seihou.Effect.FzfInterp (runFzfIO)
 import Seihou.Effect.Logger (logDebug, logError, logInfo, logWarn)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
@@ -34,6 +35,8 @@ import Seihou.Engine.Conflict (resolveConflicts)
 import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
 import Seihou.Engine.Preview (buildPreview)
+import Seihou.Fzf (FzfResult (..), detectFzfConfig, isFzfUsable)
+import Seihou.Fzf.Selector (selectModule)
 import Seihou.Manifest.Types (emptyManifest)
 import Seihou.Prelude
 import System.Environment (getEnvironment)
@@ -43,9 +46,29 @@ import System.IO (hFlush, hIsTerminalDevice, stdin, stdout)
 
 handleRun :: RunOpts -> IO ()
 handleRun runOpts = do
-  let modName = runOpts.runModule
-      additional = runOpts.runAdditional
+  let additional = runOpts.runAdditional
       level = if runOpts.runVerbose then LogVerbose else LogNormal
+
+  -- 0. Resolve module name (from argument or fzf picker)
+  modName <- case runOpts.runModule of
+    Just name -> pure name
+    Nothing -> do
+      fzfCfg <- detectFzfConfig
+      if isFzfUsable fzfCfg
+        then do
+          result <- runEff $ runFzfIO fzfCfg $ selectModule
+          case result of
+            FzfSelected name -> pure name
+            FzfCancelled -> exitWith ExitSuccess
+            FzfNoMatch -> do
+              logIO level (logError "No modules found.")
+              exitFailure
+            FzfError err -> do
+              logIO level (logError $ "fzf error: " <> err)
+              exitFailure
+        else do
+          logIO level (logError "MODULE argument is required when fzf is not available.")
+          exitFailure
 
   -- 1. Load all modules in the composition (primary + additional + transitive deps)
   searchPaths <- defaultSearchPaths

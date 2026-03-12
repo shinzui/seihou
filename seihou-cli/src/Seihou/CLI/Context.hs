@@ -8,24 +8,71 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (ContextAction (..))
 import Seihou.Core.Context (resolveContext, validateContextName)
+import Seihou.Effect.Fzf (selectOne)
+import Seihou.Effect.FzfInterp (runFzfIO)
+import Seihou.Fzf (Candidate (..), FzfResult (..), detectFzfConfig, isFzfUsable, withAnsi, withHeight, withNoSort, withPrompt)
+import Seihou.Fzf qualified
 import Seihou.Prelude
 import System.Directory
   ( XdgDirectory (..),
     createDirectoryIfMissing,
+    doesDirectoryExist,
     doesFileExist,
     getCurrentDirectory,
     getXdgDirectory,
+    listDirectory,
     removeFile,
   )
 import System.Environment (getEnvironment)
-import System.Exit (exitFailure)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
 
 handleContext :: ContextAction -> IO ()
 handleContext ContextShow = showContext
-handleContext (ContextSet name) = setProjectContext name
+handleContext (ContextSet mName) = do
+  name <- case mName of
+    Just n -> pure n
+    Nothing -> do
+      fzfCfg <- detectFzfConfig
+      if isFzfUsable fzfCfg
+        then do
+          result <- selectContextFzf fzfCfg
+          case result of
+            FzfSelected n -> pure n
+            FzfCancelled -> exitWith ExitSuccess
+            FzfNoMatch -> do
+              TIO.putStrLn "No contexts found."
+              exitFailure
+            FzfError err -> do
+              TIO.putStrLn $ "fzf error: " <> err
+              exitFailure
+        else do
+          TIO.putStrLn "NAME argument is required when fzf is not available."
+          exitFailure
+  setProjectContext name
 handleContext (ContextDefault name) = setGlobalDefault name
 handleContext ContextClear = clearProjectContext
 handleContext ContextClearDefault = clearGlobalDefault
+
+-- | Select a context via fzf from available context directories.
+selectContextFzf :: Seihou.Fzf.FzfConfig -> IO (FzfResult Text)
+selectContextFzf fzfCfg = do
+  base <- getXdgDirectory XdgConfig "seihou"
+  let contextsDir = base </> "contexts"
+  exists <- doesDirectoryExist contextsDir
+  if not exists
+    then pure FzfNoMatch
+    else do
+      entries <- listDirectory contextsDir
+      dirs <- filterM (doesDirectoryExist . (contextsDir </>)) entries
+      let candidates = [Candidate {candidateDisplay = T.pack d, candidateValue = T.pack d} | d <- dirs]
+          opts = withPrompt "context> " <> withHeight "40%" <> withAnsi <> withNoSort
+      runEff $ runFzfIO fzfCfg $ selectOne opts candidates
+  where
+    filterM _ [] = pure []
+    filterM p (x : xs) = do
+      b <- p x
+      rest <- filterM p xs
+      if b then pure (x : rest) else pure rest
 
 showContext :: IO ()
 showContext = do
