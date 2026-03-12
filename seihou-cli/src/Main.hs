@@ -8,6 +8,7 @@ import Seihou.CLI.Commands
 import Seihou.CLI.Config (handleConfig)
 import Seihou.CLI.Context (handleContext)
 import Seihou.CLI.Diff (handleDiff)
+import Seihou.CLI.Help (handleHelpCommand)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.List (handleList)
@@ -50,3 +51,5 @@ main = do
         handleAssist agentOpts.agentDebug assistOpts
       AgentBootstrap bootstrapOpts ->
         handleBootstrap agentOpts.agentDebug bootstrapOpts
+    HelpCmd helpCmd ->
+      handleHelpCommand helpCmd

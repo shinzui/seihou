@@ -25,21 +25,21 @@ And `seihou help modules` will print the full topic content directly to the term
 
 ## Progress
 
-- [ ] Create the `seihou-cli/help/` directory with initial topic files
-- [ ] Create `seihou-cli/src/Seihou/CLI/Help.hs` with topic registry, parser, and handler
-- [ ] Add `HelpCmd` constructor to the `Command` ADT in `Commands.hs`
-- [ ] Add `HelpCommand` type and `helpCommandParser` to `Commands.hs` exports
-- [ ] Wire `help` subcommand into `commandParser` in `Commands.hs`
-- [ ] Add `Help` dispatch case in `Main.hs`
-- [ ] Register `Seihou.CLI.Help` in `seihou-cli.cabal` under `other-modules`
-- [ ] Build and verify `seihou help` lists topics
-- [ ] Build and verify `seihou help modules` prints topic content
-- [ ] Build and verify `seihou help unknown-topic` shows an error with available topics
+- [x] Create the `seihou-cli/help/` directory with initial topic files (2026-03-12)
+- [x] Create `seihou-cli/src/Seihou/CLI/Help.hs` with topic registry, parser, and handler (2026-03-12)
+- [x] Add `HelpCmd` constructor to the `Command` ADT in `Commands.hs` (2026-03-12)
+- [x] Add `HelpCommand` type and `helpCommandParser` to `Commands.hs` exports (2026-03-12)
+- [x] Wire `help` subcommand into `commandParser` in `Commands.hs` (2026-03-12)
+- [x] Add `HelpCmd` dispatch case in `Main.hs` (2026-03-12)
+- [x] Register `Seihou.CLI.Help` in `seihou-cli.cabal` under `other-modules` (2026-03-12)
+- [x] Build and verify `seihou help` lists topics (2026-03-12)
+- [x] Build and verify `seihou help modules` prints topic content (2026-03-12)
+- [x] Build and verify `seihou help unknown-topic` shows an error with available topics (2026-03-12)
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The `NoFieldSelectors` default extension means record field names like `topicName` cannot be used as standalone functions. The initial code from the cookbook pattern used `topicName t` style access. Fixed by using `t.topicName` (OverloadedRecordDot) and `(.topicName)` for `map`. Also needed an explicit `import Data.Foldable (forM_)` since `Seihou.Prelude` does not re-export it.
 
 
 ## Decision Log
@@ -63,7 +63,9 @@ And `seihou help modules` will print the full topic content directly to the term
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All acceptance criteria met. The `seihou help` command lists topics, `seihou help <topic>` prints embedded content, unknown topics show an error with available names, and `seihou help --help` shows optparse-applicative auto-generated help. The build is clean with no warnings from the new module.
+
+The cookbook pattern adapted cleanly to seihou's codebase. The only adjustments needed were for `NoFieldSelectors` (use `.field` syntax) and an explicit `forM_` import. The `embedStringFile` approach worked as expected with `OverloadedStrings` to produce `Text` directly.
 
 
 ## Context and Orientation

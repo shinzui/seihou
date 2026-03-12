@@ -60,6 +60,7 @@ executable seihou
     Seihou.CLI.Config
     Seihou.CLI.Context
     Seihou.CLI.Diff
+    Seihou.CLI.Help
     Seihou.CLI.Init
     Seihou.CLI.Install
     Seihou.CLI.List

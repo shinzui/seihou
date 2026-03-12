@@ -13,6 +13,7 @@ module Seihou.CLI.Commands
     AgentCommand (..),
     AssistOpts (..),
     BootstrapOpts (..),
+    HelpCommand (..),
     commandParser,
     opts,
   )
@@ -22,6 +23,7 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
+import Seihou.CLI.Help (HelpCommand, helpCommandParser)
 import Seihou.CLI.Version (seihouVersionWithGit)
 import Seihou.Core.Types (ModuleName (..))
 import Seihou.Prelude
@@ -40,6 +42,7 @@ data Command
   | Context ContextAction
   | Browse BrowseOpts
   | Agent AgentOpts
+  | HelpCmd HelpCommand
   deriving stock (Eq, Show, Generic)
 
 data AgentOpts = AgentOpts
@@ -175,6 +178,7 @@ commandParser =
         <> command "context" contextInfo
         <> command "browse" browseInfo
         <> command "agent" agentInfo
+        <> command "help" helpCmdInfo
     )
 
 -- Command info blocks
@@ -664,6 +668,14 @@ agentBootstrapParser =
     BootstrapOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Description of what to bootstrap"))
       <*> switch (long "repo" <> help "Bootstrap a multi-module repository with registry")
+
+helpCmdInfo :: ParserInfo Command
+helpCmdInfo =
+  info
+    (HelpCmd <$> helpCommandParser <**> helper)
+    ( fullDesc
+        <> progDesc "Show help for commands and topics"
+    )
 
 -- Helpers
 
