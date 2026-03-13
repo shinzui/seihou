@@ -30,7 +30,9 @@ helpTopics :: [HelpTopic]
 helpTopics =
   [ HelpTopic "modules" "How Seihou modules work" modulesContent,
     HelpTopic "variables" "Variable declaration, resolution, and overrides" variablesContent,
-    HelpTopic "contexts" "Using contexts for environment-specific config" contextsContent
+    HelpTopic "contexts" "Using contexts for environment-specific config" contextsContent,
+    HelpTopic "config" "Config scopes, reading, and writing values" configContent,
+    HelpTopic "git-repository" "Sharing and installing modules from git" gitRepositoryContent
   ]
 
 modulesContent :: Text
@@ -41,6 +43,12 @@ variablesContent = $(embedStringFile "help/variables.md")
 
 contextsContent :: Text
 contextsContent = $(embedStringFile "help/contexts.md")
+
+configContent :: Text
+configContent = $(embedStringFile "help/config.md")
+
+gitRepositoryContent :: Text
+gitRepositoryContent = $(embedStringFile "help/git-repository.md")
 
 helpCommandParser :: Parser HelpCommand
 helpCommandParser =
@@ -65,7 +73,7 @@ listTopics :: IO ()
 listTopics = do
   TIO.putStrLn "HELP TOPICS\n"
   forM_ helpTopics $ \t ->
-    TIO.putStrLn $ "  " <> padRight 13 t.topicName <> t.topicDescription
+    TIO.putStrLn $ "  " <> padRight 17 t.topicName <> t.topicDescription
   TIO.putStrLn "\nUse 'seihou help <topic>' for details."
 
 padRight :: Int -> Text -> Text
