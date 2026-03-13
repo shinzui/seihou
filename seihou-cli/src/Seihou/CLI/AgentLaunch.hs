@@ -73,7 +73,7 @@ launchAgent debug systemPrompt initialPrompt
           exitCode <- rawSystem "claude" args
           exitWith exitCode
   where
-    allowedTools = "Bash(seihou:*,git:*,ls:*,mkdir:*,cat:*,pwd:*) Read Write Edit Glob Grep"
+    allowedTools = "Bash(seihou:*,git:*,ls:*,mkdir:*,cat:*,pwd:*) Read Write Edit Glob Grep EnterWorktree ExitWorktree"
 
 -- | Simple {{key}} substitution. Replaces each {{key}} with the corresponding value.
 substitute :: [(Text, Text)] -> Text -> Text
