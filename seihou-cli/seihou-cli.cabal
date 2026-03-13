@@ -65,6 +65,10 @@ executable seihou
     Seihou.CLI.Browse
     Seihou.CLI.BrowseFormat
     Seihou.CLI.Commands
+    Seihou.CLI.Completions
+    Seihou.CLI.Completions.Bash
+    Seihou.CLI.Completions.Fish
+    Seihou.CLI.Completions.Zsh
     Seihou.CLI.Config
     Seihou.CLI.Context
     Seihou.CLI.Diff

@@ -13,6 +13,7 @@ module Seihou.CLI.Commands
     AgentCommand (..),
     AssistOpts (..),
     BootstrapOpts (..),
+    CompletionsCommand (..),
     HelpCommand (..),
     commandParser,
     opts,
@@ -43,6 +44,13 @@ data Command
   | Browse BrowseOpts
   | Agent AgentOpts
   | HelpCmd HelpCommand
+  | Completions CompletionsCommand
+  deriving stock (Eq, Show, Generic)
+
+data CompletionsCommand
+  = CompletionsBash
+  | CompletionsZsh
+  | CompletionsFish
   deriving stock (Eq, Show, Generic)
 
 data AgentOpts = AgentOpts
@@ -179,6 +187,7 @@ commandParser =
         <> command "browse" browseInfo
         <> command "agent" agentInfo
         <> command "help" helpCmdInfo
+        <> command "completions" completionsInfo
     )
 
 -- Command info blocks
@@ -676,6 +685,39 @@ helpCmdInfo =
     ( fullDesc
         <> progDesc "Show help for commands and topics"
     )
+
+completionsInfo :: ParserInfo Command
+completionsInfo =
+  info
+    (completionsParser <**> helper)
+    ( fullDesc
+        <> progDesc "Generate shell completion scripts"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Outputs a completion script for the specified shell. Source the" :: String),
+                  pretty ("script in your shell profile to enable Tab completion for all" :: String),
+                  pretty ("seihou commands, subcommands, and flags." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou completions bash > ~/.local/share/bash-completion/completions/seihou" :: String),
+                        pretty ("seihou completions zsh  > ~/.zfunc/_seihou" :: String),
+                        pretty ("seihou completions fish > ~/.config/fish/completions/seihou.fish" :: String)
+                      ]
+                ]
+          )
+    )
+
+completionsParser :: Parser Command
+completionsParser =
+  fmap Completions $
+    subparser
+      ( command "bash" (info (pure CompletionsBash) (progDesc "Generate Bash completion script"))
+          <> command "zsh" (info (pure CompletionsZsh) (progDesc "Generate Zsh completion script"))
+          <> command "fish" (info (pure CompletionsFish) (progDesc "Generate Fish completion script"))
+      )
 
 -- Helpers
 

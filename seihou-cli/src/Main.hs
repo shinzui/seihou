@@ -5,6 +5,7 @@ import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Bootstrap (handleBootstrap)
 import Seihou.CLI.Browse (handleBrowse)
 import Seihou.CLI.Commands
+import Seihou.CLI.Completions (handleCompletionsCommand)
 import Seihou.CLI.Config (handleConfig)
 import Seihou.CLI.Context (handleContext)
 import Seihou.CLI.Diff (handleDiff)
@@ -53,3 +54,5 @@ main = do
         handleBootstrap agentOpts.agentDebug bootstrapOpts
     HelpCmd helpCmd ->
       handleHelpCommand helpCmd
+    Completions completionsCmd ->
+      handleCompletionsCommand completionsCmd
