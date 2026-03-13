@@ -13,6 +13,7 @@ module Seihou.CLI.Commands
     AgentCommand (..),
     AssistOpts (..),
     BootstrapOpts (..),
+    SetupOpts (..),
     CompletionsCommand (..),
     HelpCommand (..),
     commandParser,
@@ -62,6 +63,7 @@ data AgentOpts = AgentOpts
 data AgentCommand
   = AgentAssist AssistOpts
   | AgentBootstrap BootstrapOpts
+  | AgentSetup SetupOpts
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -145,6 +147,11 @@ data AssistOpts = AssistOpts
 data BootstrapOpts = BootstrapOpts
   { bootstrapPrompt :: Maybe Text,
     bootstrapRepo :: Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
+data SetupOpts = SetupOpts
+  { setupPrompt :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -588,7 +595,8 @@ agentInfo =
                   indent 2 $
                     vsep
                       [ pretty ("assist      Interactive template authoring session" :: String),
-                        pretty ("bootstrap   Bootstrap a new module or multi-module repo" :: String)
+                        pretty ("bootstrap   Bootstrap a new module or multi-module repo" :: String),
+                        pretty ("setup       Guided project setup: configure, run, and commit" :: String)
                       ]
                 ]
           )
@@ -606,6 +614,7 @@ agentCommandParser =
   subparser
     ( command "assist" agentAssistInfo
         <> command "bootstrap" agentBootstrapInfo
+        <> command "setup" agentSetupInfo
     )
 
 agentAssistInfo :: ParserInfo AgentCommand
@@ -677,6 +686,40 @@ agentBootstrapParser =
     BootstrapOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Description of what to bootstrap"))
       <*> switch (long "repo" <> help "Bootstrap a multi-module repository with registry")
+
+agentSetupInfo :: ParserInfo AgentCommand
+agentSetupInfo =
+  info
+    (agentSetupParser <**> helper)
+    ( fullDesc
+        <> progDesc "Guided project setup: configure, run, and commit"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Launches an interactive Claude Code session that guides you through" :: String),
+                  pretty ("using a Seihou module: selecting a module, configuring variables and" :: String),
+                  pretty ("context, running the module to generate files, verifying the output," :: String),
+                  pretty ("and committing the changes to git." :: String),
+                  line,
+                  pretty ("The agent can run all seihou commands (run, config, context, vars," :: String),
+                  pretty ("status, diff, list, install), git commands, and read/write files." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou agent setup" :: String),
+                        pretty ("seihou agent setup \"set up a haskell project with nix\"" :: String),
+                        pretty ("seihou agent setup \"add nix-flake module to this project\"" :: String)
+                      ]
+                ]
+          )
+    )
+
+agentSetupParser :: Parser AgentCommand
+agentSetupParser =
+  fmap AgentSetup $
+    SetupOpts
+      <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Description of what you want to set up"))
 
 helpCmdInfo :: ParserInfo Command
 helpCmdInfo =

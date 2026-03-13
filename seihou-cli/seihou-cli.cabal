@@ -78,6 +78,7 @@ executable seihou
     Seihou.CLI.List
     Seihou.CLI.NewModule
     Seihou.CLI.Run
+    Seihou.CLI.Setup
     Seihou.CLI.Shared
     Seihou.CLI.Status
     Seihou.CLI.Style

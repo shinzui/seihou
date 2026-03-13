@@ -15,6 +15,7 @@ import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.List (handleList)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.Run (handleRun)
+import Seihou.CLI.Setup (handleSetup)
 import Seihou.CLI.Status (handleStatus)
 import Seihou.CLI.Validate (handleValidateModule)
 import Seihou.CLI.Vars (handleVars)
@@ -52,6 +53,8 @@ main = do
         handleAssist agentOpts.agentDebug assistOpts
       AgentBootstrap bootstrapOpts ->
         handleBootstrap agentOpts.agentDebug bootstrapOpts
+      AgentSetup setupOpts ->
+        handleSetup agentOpts.agentDebug setupOpts
     HelpCmd helpCmd ->
       handleHelpCommand helpCmd
     Completions completionsCmd ->
