@@ -19,7 +19,7 @@ handleSetup :: Bool -> SetupOpts -> IO ()
 handleSetup debug setupOpts = do
   ctx <- gatherAgentContext
   let systemPrompt = renderPrompt ctx
-  launchAgent debug systemPrompt setupOpts.setupPrompt
+  launchAgentWith setupAllowedTools debug systemPrompt setupOpts.setupPrompt
 
 renderPrompt :: AgentContext -> Text
 renderPrompt ctx =

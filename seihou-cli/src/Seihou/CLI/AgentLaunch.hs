@@ -2,6 +2,9 @@ module Seihou.CLI.AgentLaunch
   ( AgentContext (..),
     gatherAgentContext,
     launchAgent,
+    launchAgentWith,
+    defaultAllowedTools,
+    setupAllowedTools,
     substitute,
     formatSeihouProjectState,
     formatManifestState,
@@ -56,7 +59,11 @@ gatherAgentContext = do
 
 -- | Launch claude with a system prompt, or print it in debug mode.
 launchAgent :: Bool -> Text -> Maybe Text -> IO ()
-launchAgent debug systemPrompt initialPrompt
+launchAgent = launchAgentWith defaultAllowedTools
+
+-- | Launch claude with custom allowed tools.
+launchAgentWith :: [String] -> Bool -> Text -> Maybe Text -> IO ()
+launchAgentWith tools debug systemPrompt initialPrompt
   | debug = TIO.putStr systemPrompt
   | otherwise = do
       claudePath <- findExecutable "claude"
@@ -68,12 +75,49 @@ launchAgent debug systemPrompt initialPrompt
         Just _ -> do
           let args =
                 ["--system-prompt", T.unpack systemPrompt]
-                  <> ["--allowedTools", allowedTools]
+                  <> concatMap (\t -> ["--allowedTools", t]) tools
                   <> maybe [] (\p -> [T.unpack p]) initialPrompt
           exitCode <- rawSystem "claude" args
           exitWith exitCode
-  where
-    allowedTools = "Bash(seihou:*,git:*,ls:*,mkdir:*,cat:*,pwd:*) Read Write Edit Glob Grep EnterWorktree ExitWorktree"
+
+-- | Default allowed tools for agent commands (assist, bootstrap).
+defaultAllowedTools :: [String]
+defaultAllowedTools =
+  [ "Bash(seihou *)",
+    "Bash(git status *)",
+    "Bash(git log *)",
+    "Bash(git diff *)",
+    "Bash(ls *)",
+    "Bash(mkdir *)",
+    "Bash(cat *)",
+    "Bash(pwd)",
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "EnterWorktree",
+    "ExitWorktree"
+  ]
+
+-- | Allowed tools for the setup command — grants full git and seihou access
+-- since setup needs to init repos, stage files, commit, and run any seihou command.
+setupAllowedTools :: [String]
+setupAllowedTools =
+  [ "Bash(seihou *)",
+    "Bash(git *)",
+    "Bash(ls *)",
+    "Bash(mkdir *)",
+    "Bash(cat *)",
+    "Bash(pwd)",
+    "Read",
+    "Write",
+    "Edit",
+    "Glob",
+    "Grep",
+    "EnterWorktree",
+    "ExitWorktree"
+  ]
 
 -- | Simple {{key}} substitution. Replaces each {{key}} with the corresponding value.
 substitute :: [(Text, Text)] -> Text -> Text
