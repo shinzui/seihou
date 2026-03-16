@@ -1,4 +1,5 @@
 { name = "param-dep-parent"
+, version = None Text
 , description = Some "Parent module that supplies skill.name to its child"
 , vars =
   [ { name = "skill.name"

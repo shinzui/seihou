@@ -16,6 +16,7 @@ mkModule :: ModuleName -> [ModuleName] -> [VarDecl] -> [VarExport] -> Module
 mkModule name deps vars exports =
   Module
     { name = name,
+      version = Nothing,
       description = Nothing,
       vars = vars,
       exports = exports,
@@ -30,6 +31,7 @@ mkModuleWithDeps :: ModuleName -> [Dependency] -> [VarDecl] -> [VarExport] -> Mo
 mkModuleWithDeps name deps vars exports =
   Module
     { name = name,
+      version = Nothing,
       description = Nothing,
       vars = vars,
       exports = exports,

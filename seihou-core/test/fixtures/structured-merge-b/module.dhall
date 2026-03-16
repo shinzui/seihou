@@ -1,4 +1,5 @@
 { name = "structured-merge-b"
+, version = None Text
 , description = Some "Adds keys to the same config.json via Structured strategy"
 , vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }
 , exports = [] : List { var : Text, alias : Optional Text }

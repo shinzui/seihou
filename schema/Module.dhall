@@ -34,6 +34,7 @@ let Step =
 
 let Module =
       { name : Text
+      , version : Optional Text
       , description : Optional Text
       , vars : List VarDecl
       , exports : List VarExport

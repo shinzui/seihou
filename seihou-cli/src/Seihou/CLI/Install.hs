@@ -3,6 +3,7 @@ module Seihou.CLI.Install
   )
 where
 
+import Control.Applicative ((<|>))
 import Control.Monad (when)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson.Encode.Pretty (encodePretty)
@@ -113,7 +114,7 @@ installSingleModule iopts rootDir source registryName = do
     Right _ -> pure ()
   TIO.putStrLn "  Validated module definition"
 
-  installModuleDir rootDir name source registryName
+  installModuleDir rootDir name source registryName modul.version
   TIO.putStrLn ""
   TIO.putStrLn $ "Module available as: " <> T.pack name
 
@@ -256,13 +257,14 @@ installRegistryEntry cloneDir source repoName entry = do
           logIO LogNormal (logError $ "  " <> T.pack (show err))
           pure False
         Right _ -> do
-          installModuleDir moduleDir name source (Just repoName)
+          let ver = entry.version <|> modul.version
+          installModuleDir moduleDir name source (Just repoName) ver
           TIO.putStrLn $ "    Installed as: " <> T.pack name
           pure True
 
 -- | Copy a module directory to the install location and write origin metadata.
-installModuleDir :: FilePath -> String -> Text -> Maybe Text -> IO ()
-installModuleDir moduleDir name source registryName = do
+installModuleDir :: FilePath -> String -> Text -> Maybe Text -> Maybe Text -> IO ()
+installModuleDir moduleDir name source registryName moduleVersion = do
   xdgConfig <- getXdgDirectory XdgConfig "seihou"
   let installDir = xdgConfig </> "installed" </> name
 
@@ -276,18 +278,19 @@ installModuleDir moduleDir name source registryName = do
 
   -- Write origin metadata
   now <- getCurrentTime
-  let origin = OriginMeta source registryName (T.pack (iso8601Show now))
+  let origin = OriginMeta source registryName (T.pack (iso8601Show now)) moduleVersion
   LBS.writeFile (installDir </> ".seihou-origin.json") (encodePretty origin)
 
 -- | Origin metadata stored alongside installed modules.
 data OriginMeta = OriginMeta
   { sourceUrl :: Text,
     repoName :: Maybe Text,
-    installedAt :: Text
+    installedAt :: Text,
+    version :: Maybe Text
   }
 
 instance ToJSON OriginMeta where
-  toJSON m = object ["sourceUrl" .= m.sourceUrl, "repoName" .= m.repoName, "installedAt" .= m.installedAt]
+  toJSON m = object ["sourceUrl" .= m.sourceUrl, "repoName" .= m.repoName, "installedAt" .= m.installedAt, "version" .= m.version]
 
 -- | Recursively copy a directory tree, excluding the @.git@ directory.
 copyDirectoryRecursive :: FilePath -> FilePath -> IO ()

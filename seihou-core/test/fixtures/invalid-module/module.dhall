@@ -1,4 +1,5 @@
 { name = "Invalid_Module"
+, version = None Text
 , description = None Text
 , vars =
   [ { name = "x"

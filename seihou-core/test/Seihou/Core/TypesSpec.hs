@@ -71,6 +71,7 @@ spec = do
       let m =
             Module
               { name = "haskell-base",
+                version = Nothing,
                 description = Just "A Haskell project template",
                 vars = [],
                 exports = [],
@@ -85,6 +86,7 @@ spec = do
       let m =
             Module
               { name = "test",
+                version = Nothing,
                 description = Nothing,
                 vars = [],
                 exports = [],
@@ -99,6 +101,7 @@ spec = do
       let m =
             Module
               { name = "test",
+                version = Nothing,
                 description = Nothing,
                 vars = [],
                 exports = [],

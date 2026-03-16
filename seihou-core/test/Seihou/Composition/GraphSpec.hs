@@ -15,6 +15,7 @@ mkModule :: ModuleName -> [ModuleName] -> Module
 mkModule name deps =
   Module
     { name = name,
+      version = Nothing,
       description = Nothing,
       vars = [],
       exports = [],

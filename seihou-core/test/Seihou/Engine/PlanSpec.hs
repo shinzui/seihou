@@ -54,6 +54,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -73,6 +74,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -92,6 +94,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -111,6 +114,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -130,6 +134,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -156,6 +161,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -175,6 +181,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -195,6 +202,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -222,6 +230,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -243,6 +252,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -266,6 +276,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -285,6 +296,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -306,6 +318,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -334,6 +347,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -363,6 +377,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -384,6 +399,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -446,6 +462,7 @@ spec = do
         let modul =
               Module
                 { name = "patch-mod",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -466,6 +483,7 @@ spec = do
         let modul =
               Module
                 { name = "section-mod",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -486,6 +504,7 @@ spec = do
         let modul =
               Module
                 { name = "header-mod",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -506,6 +525,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -527,6 +547,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -550,6 +571,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -571,6 +593,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -592,6 +615,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -622,6 +646,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -644,6 +669,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -666,6 +692,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],
@@ -688,6 +715,7 @@ spec = do
         let modul =
               Module
                 { name = "test",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [],

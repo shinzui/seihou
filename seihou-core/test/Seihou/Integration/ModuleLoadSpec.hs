@@ -99,6 +99,7 @@ spec = do
       let testModule =
             Module
               { name = "test",
+                version = Nothing,
                 description = Nothing,
                 vars = [],
                 exports = [],

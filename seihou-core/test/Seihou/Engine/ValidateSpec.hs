@@ -18,6 +18,7 @@ goodModule :: Module
 goodModule =
   Module
     { name = "test-module",
+      version = Nothing,
       description = Just "A test module",
       vars =
         [ VarDecl
@@ -49,6 +50,7 @@ badModule :: Module
 badModule =
   Module
     { name = "BadName",
+      version = Nothing,
       description = Nothing,
       vars =
         [ VarDecl "x" VTText Nothing Nothing True Nothing,
@@ -63,19 +65,19 @@ badModule =
 
 -- | Helper to update Module fields without ambiguity.
 withVars :: [VarDecl] -> Module -> Module
-withVars v m = Module m.name m.description v m.exports m.prompts m.steps m.commands m.dependencies
+withVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies
 
 withSteps :: [Step] -> Module -> Module
-withSteps s m = Module m.name m.description m.vars m.exports m.prompts s m.commands m.dependencies
+withSteps s m = Module m.name m.version m.description m.vars m.exports m.prompts s m.commands m.dependencies
 
 withPrompts :: [Prompt] -> Module -> Module
-withPrompts p m = Module m.name m.description m.vars m.exports p m.steps m.commands m.dependencies
+withPrompts p m = Module m.name m.version m.description m.vars m.exports p m.steps m.commands m.dependencies
 
 withCommands :: [Command] -> Module -> Module
-withCommands c m = Module m.name m.description m.vars m.exports m.prompts m.steps c m.dependencies
+withCommands c m = Module m.name m.version m.description m.vars m.exports m.prompts m.steps c m.dependencies
 
 withVarsAndPrompts :: [VarDecl] -> [Prompt] -> Module -> Module
-withVarsAndPrompts v p m = Module m.name m.description v m.exports p m.steps m.commands m.dependencies
+withVarsAndPrompts v p m = Module m.name m.version m.description v m.exports p m.steps m.commands m.dependencies
 
 -- | Helper: check if any DiagCheck has the given label and non-empty details.
 hasFailedCheck :: T.Text -> [DiagCheck] -> Bool

@@ -133,7 +133,8 @@ spec = do
 
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
-      let m = (emptyManifest fixedTime) {version = 99}
+      let base = emptyManifest fixedTime
+          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"

@@ -1,4 +1,5 @@
 { name = "nix-base"
+, version = None Text
 , description = Some "Base Nix module"
 , vars =
   [ { name = "nix.system"

@@ -24,11 +24,13 @@ spec = do
               \, repoDescription = Some \"A collection of Haskell project templates\"\n\
               \, modules =\n\
               \  [ { name = \"haskell-base\"\n\
+              \    , version = None Text\n\
               \    , path = \"modules/haskell-base\"\n\
               \    , description = Some \"Minimal Haskell project with cabal\"\n\
               \    , tags = [ \"haskell\", \"starter\" ]\n\
               \    }\n\
               \  , { name = \"nix-flake\"\n\
+              \    , version = None Text\n\
               \    , path = \"modules/nix-flake\"\n\
               \    , description = Some \"Nix flake overlay\"\n\
               \    , tags = [ \"nix\" ]\n\
@@ -56,7 +58,7 @@ spec = do
         let dhall =
               "{ repoName = \"Empty Collection\"\n\
               \, repoDescription = None Text\n\
-              \, modules = [] : List { name : Text, path : Text, description : Optional Text, tags : List Text }\n\
+              \, modules = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }\n\
               \}"
         writeFile (tmpDir </> "seihou-registry.dhall") dhall
         result <- evalRegistryFromFile (tmpDir </> "seihou-registry.dhall")
@@ -74,6 +76,7 @@ spec = do
               \, repoDescription = None Text\n\
               \, modules =\n\
               \  [ { name = \"one\"\n\
+              \    , version = None Text\n\
               \    , path = \"one\"\n\
               \    , description = None Text\n\
               \    , tags = [] : List Text\n\
@@ -94,7 +97,7 @@ spec = do
       withSystemTempDirectory "seihou-registry-test" $ \tmpDir -> do
         let dhall =
               "{ repoName = \"Bad\"\n\
-              \, modules = [] : List { name : Text, path : Text, description : Optional Text, tags : List Text }\n\
+              \, modules = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }\n\
               \}"
         writeFile (tmpDir </> "seihou-registry.dhall") dhall
         result <- evalRegistryFromFile (tmpDir </> "seihou-registry.dhall")
@@ -161,7 +164,7 @@ spec = do
               Registry
                 { repoName = "Test",
                   repoDescription = Nothing,
-                  modules = [RegistryEntry (ModuleName "mod-a") "mod-a" Nothing []]
+                  modules = [RegistryEntry (ModuleName "mod-a") Nothing "mod-a" Nothing []]
                 }
         errs <- validateRegistry tmpDir reg
         errs `shouldBe` []
@@ -174,7 +177,7 @@ spec = do
               Registry
                 { repoName = "Test",
                   repoDescription = Nothing,
-                  modules = [RegistryEntry (ModuleName "Bad_Name") "Bad_Name" Nothing []]
+                  modules = [RegistryEntry (ModuleName "Bad_Name") Nothing "Bad_Name" Nothing []]
                 }
         errs <- validateRegistry tmpDir reg
         length errs `shouldSatisfy` (> 0)
@@ -186,7 +189,7 @@ spec = do
               Registry
                 { repoName = "Test",
                   repoDescription = Nothing,
-                  modules = [RegistryEntry (ModuleName "missing") "nonexistent" Nothing []]
+                  modules = [RegistryEntry (ModuleName "missing") Nothing "nonexistent" Nothing []]
                 }
         errs <- validateRegistry tmpDir reg
         length errs `shouldSatisfy` (> 0)
@@ -198,7 +201,7 @@ spec = do
               Registry
                 { repoName = "Test",
                   repoDescription = Nothing,
-                  modules = [RegistryEntry (ModuleName "bad-path") "../escape" Nothing []]
+                  modules = [RegistryEntry (ModuleName "bad-path") Nothing "../escape" Nothing []]
                 }
         errs <- validateRegistry tmpDir reg
         any ("must not contain" `isInfixOf`) (map show errs) `shouldBe` True
@@ -211,6 +214,7 @@ writeRegistryFile dir = do
         \, repoDescription = Some \"A test registry\"\n\
         \, modules =\n\
         \  [ { name = \"mod-a\"\n\
+        \    , version = None Text\n\
         \    , path = \"mod-a\"\n\
         \    , description = Some \"Module A\"\n\
         \    , tags = [ \"test\" ]\n\
@@ -224,6 +228,7 @@ writeMinimalModuleDhall :: FilePath -> IO ()
 writeMinimalModuleDhall path = do
   let dhall =
         "{ name = \"minimal\"\n\
+        \, version = None Text\n\
         \, description = None Text\n\
         \, vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }\n\
         \, exports = [] : List { var : Text, alias : Optional Text }\n\

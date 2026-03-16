@@ -177,6 +177,7 @@ depModuleNames = map (.depModule)
 -- | A module definition: the fundamental unit of composition.
 data Module = Module
   { name :: ModuleName,
+    version :: Maybe Text,
     description :: Maybe Text,
     vars :: [VarDecl],
     exports :: [VarExport],

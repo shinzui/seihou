@@ -15,6 +15,7 @@ mkEntry :: String -> String -> Maybe String -> [String] -> RegistryEntry
 mkEntry n p desc ts =
   RegistryEntry
     { name = ModuleName (pack n),
+      version = Nothing,
       path = p,
       description = fmap pack desc,
       tags = map pack ts

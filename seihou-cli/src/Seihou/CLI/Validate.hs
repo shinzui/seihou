@@ -43,6 +43,7 @@ handleValidateModule vopts = do
       let dummyModule =
             Module
               { name = ModuleName "<unknown>",
+                version = Nothing,
                 description = Nothing,
                 vars = [],
                 exports = [],

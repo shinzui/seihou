@@ -16,6 +16,7 @@ import System.Directory (doesFileExist)
 -- | A single module listing within a registry.
 data RegistryEntry = RegistryEntry
   { name :: ModuleName,
+    version :: Maybe Text,
     path :: FilePath,
     description :: Maybe Text,
     tags :: [Text]

@@ -13,6 +13,7 @@ moduleDhall :: Text -> Text
 moduleDhall name =
   T.unlines
     [ "{ name = \"" <> name <> "\"",
+      ", version = None Text",
       ", description = Some \"A new seihou module\"",
       ", vars =",
       "  [ { name = \"project.name\"",

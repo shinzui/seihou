@@ -18,6 +18,7 @@ goodModule :: Module
 goodModule =
   Module
     { name = "test-module",
+      version = Nothing,
       description = Just "A test module",
       vars =
         [ VarDecl
@@ -46,10 +47,10 @@ goodModule =
 
 -- | Helpers to update Module fields without ambiguous record updates.
 withModuleName :: ModuleName -> Module -> Module
-withModuleName n m = Module n m.description m.vars m.exports m.prompts m.steps m.commands m.dependencies
+withModuleName n m = Module n m.version m.description m.vars m.exports m.prompts m.steps m.commands m.dependencies
 
 withModuleVars :: [VarDecl] -> Module -> Module
-withModuleVars v m = Module m.name m.description v m.exports m.prompts m.steps m.commands m.dependencies
+withModuleVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies
 
 hasError :: T.Text -> [T.Text] -> Bool
 hasError needle = any (T.isInfixOf needle)
@@ -219,6 +220,7 @@ spec = do
         let bad =
               Module
                 { name = "BadName",
+                  version = Nothing,
                   description = Nothing,
                   vars = [],
                   exports = [VarExport {var = "missing", alias = Nothing}],

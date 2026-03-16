@@ -1,4 +1,5 @@
 { name = "bad-strategy"
+, version = None Text
 , description = None Text
 , vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }
 , exports = [] : List { var : Text, alias : Optional Text }

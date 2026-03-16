@@ -1,4 +1,5 @@
 { name = "haskell-base"
+, version = None Text
 , description = Some "A Haskell project template"
 , vars =
   [ { name = "project.name"

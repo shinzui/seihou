@@ -127,6 +127,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "section.tpl") "section content"
         let dhall =
               "{ name = \"patch-test\"\n\
+              \, version = None Text\n\
               \, description = None Text\n\
               \, vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }\n\
               \, exports = [] : List { var : Text, alias : Optional Text }\n\
@@ -170,6 +171,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "section.tpl") "content"
         let dhall =
               "{ name = \"bad-patch\"\n\
+              \, version = None Text\n\
               \, description = None Text\n\
               \, vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }\n\
               \, exports = [] : List { var : Text, alias : Optional Text }\n\
@@ -196,6 +198,7 @@ spec = do
   describe "dependencyDecoder" $ do
     let emptyModuleWithDeps depsStr =
           "{ name = \"test-mod\"\n\
+          \, version = None Text\n\
           \, description = None Text\n\
           \, vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }\n\
           \, exports = [] : List { var : Text, alias : Optional Text }\n\

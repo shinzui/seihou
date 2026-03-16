@@ -199,6 +199,7 @@ spec = do
       let mkMod name deps =
             Module
               { name = name,
+                version = Nothing,
                 description = Nothing,
                 vars = [],
                 exports = [],

@@ -19,6 +19,7 @@ mkModule :: ModuleName -> [ModuleName] -> [VarDecl] -> [VarExport] -> [Prompt] -
 mkModule name deps vars exports prompts =
   Module
     { name = name,
+      version = Nothing,
       description = Nothing,
       vars = vars,
       exports = exports,

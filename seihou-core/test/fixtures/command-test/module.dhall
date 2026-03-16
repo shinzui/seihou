@@ -1,4 +1,5 @@
 { name = "command-test"
+, version = None Text
 , description = Some "Test module with commands"
 , vars =
   [ { name = "project.name"

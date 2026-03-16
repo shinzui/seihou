@@ -1,4 +1,5 @@
 { name = "structured-basic"
+, version = None Text
 , description = Some "Test fixture for Structured strategy"
 , vars =
   [ { name = "project.name"

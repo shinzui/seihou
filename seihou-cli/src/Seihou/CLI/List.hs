@@ -19,12 +19,13 @@ import System.Directory (doesFileExist)
 
 -- | Origin metadata read from @.seihou-origin.json@.
 data OriginInfo = OriginInfo
-  { originRepoName :: Maybe Text
+  { originRepoName :: Maybe Text,
+    originVersion :: Maybe Text
   }
 
 instance FromJSON OriginInfo where
   parseJSON = withObject "OriginInfo" $ \v ->
-    OriginInfo <$> v .:? "repoName"
+    OriginInfo <$> v .:? "repoName" <*> v .:? "version"
 
 handleList :: IO ()
 handleList = do
@@ -90,10 +91,10 @@ toEntry = toEntryWithOrigin Map.empty
 
 toEntryWithOrigin :: Map FilePath (Maybe OriginInfo) -> DiscoveredModule -> Entry
 toEntryWithOrigin origins dm =
-  let origin = case Map.lookup dm.discoveredDir origins of
-        Just (Just info) -> info.originRepoName
-        _ -> Nothing
-      srcLabel = sourceLabelWithOrigin dm.discoveredSource origin
+  let (originName, originVer) = case Map.lookup dm.discoveredDir origins of
+        Just (Just info) -> (info.originRepoName, info.originVersion)
+        _ -> (Nothing, Nothing)
+      srcLabel = sourceLabelWithOrigin dm.discoveredSource originName originVer
    in case dm.discoveredResult of
         Right m ->
           Entry
@@ -110,11 +111,13 @@ toEntryWithOrigin origins dm =
               entryIsError = True
             }
 
-sourceLabelWithOrigin :: ModuleSource -> Maybe Text -> Text
-sourceLabelWithOrigin SourceProject _ = "project"
-sourceLabelWithOrigin SourceUser _ = "user"
-sourceLabelWithOrigin SourceInstalled Nothing = "installed"
-sourceLabelWithOrigin SourceInstalled (Just rn) = "installed: " <> rn
+sourceLabelWithOrigin :: ModuleSource -> Maybe Text -> Maybe Text -> Text
+sourceLabelWithOrigin SourceProject _ _ = "project"
+sourceLabelWithOrigin SourceUser _ _ = "user"
+sourceLabelWithOrigin SourceInstalled Nothing Nothing = "installed"
+sourceLabelWithOrigin SourceInstalled (Just rn) Nothing = "installed: " <> rn
+sourceLabelWithOrigin SourceInstalled (Just rn) (Just v) = "installed: " <> rn <> " v" <> v
+sourceLabelWithOrigin SourceInstalled Nothing (Just v) = "installed v" <> v
 
 dirName :: FilePath -> Text
 dirName path = case reverse (T.splitOn "/" (T.pack path)) of

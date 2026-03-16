@@ -105,6 +105,7 @@ moduleDecoder =
   record
     ( Module
         <$> field "name" moduleNameDecoder
+        <*> field "version" (maybe strictText)
         <*> field "description" (maybe strictText)
         <*> field "vars" (list varDeclDecoder)
         <*> field "exports" (list varExportDecoder)
@@ -322,6 +323,7 @@ registryEntryDecoder =
   record
     ( RegistryEntry
         <$> field "name" moduleNameDecoder
+        <*> field "version" (maybe strictText)
         <*> field "path" string
         <*> field "description" (maybe strictText)
         <*> field "tags" (list strictText)
