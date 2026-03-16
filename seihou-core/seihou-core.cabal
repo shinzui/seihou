@@ -28,6 +28,7 @@ library
     Seihou.Core.Status
     Seihou.Core.Types
     Seihou.Core.Variable
+    Seihou.Core.Version
     Seihou.Dhall.Config
     Seihou.Dhall.Eval
     Seihou.Effect.ConfigReader
@@ -113,6 +114,7 @@ test-suite seihou-core-test
     Seihou.Core.StatusSpec
     Seihou.Core.TypesSpec
     Seihou.Core.VariableSpec
+    Seihou.Core.VersionSpec
     Seihou.Dhall.ConfigSpec
     Seihou.Dhall.EvalSpec
     Seihou.Effect.ConfigReaderSpec

@@ -21,9 +21,9 @@ The user-visible behavior: running `seihou outdated` prints a table showing each
 - [x] M1: Update `seihou list` to display version for installed modules (2026-03-15)
 - [x] M1: Update existing tests for new optional fields (2026-03-15)
 - [x] M1: Verify build and tests pass (2026-03-15)
-- [ ] M2: Add `Version` type with parsing and `Ord` instance
-- [ ] M2: Add version comparison logic
-- [ ] M2: Unit tests for version parsing and comparison
+- [x] M2: Add `Version` type with parsing and `Ord` instance (2026-03-15)
+- [x] M2: Add version comparison logic (2026-03-15)
+- [x] M2: Unit tests for version parsing and comparison (2026-03-15)
 - [ ] M3: Add `Outdated` command variant and CLI parser
 - [ ] M3: Implement `handleOutdated` — clone, compare, render
 - [ ] M3: Wire into `Main.hs` dispatcher

@@ -13,6 +13,7 @@ import Seihou.Core.ScaffoldSpec qualified as ScaffoldSpec
 import Seihou.Core.StatusSpec qualified as StatusSpec
 import Seihou.Core.TypesSpec qualified as TypesSpec
 import Seihou.Core.VariableSpec qualified as VariableSpec
+import Seihou.Core.VersionSpec qualified as VersionSpec
 import Seihou.Dhall.ConfigSpec qualified as ConfigSpec
 import Seihou.Dhall.EvalSpec qualified as DhallEvalSpec
 import Seihou.Effect.ConfigReaderSpec qualified as ConfigReaderSpec
@@ -51,6 +52,7 @@ main = do
   scaffoldTests <- ScaffoldSpec.tests
   statusTests <- StatusSpec.tests
   variableTests <- VariableSpec.tests
+  versionTests <- VersionSpec.tests
   templateTests <- TemplateSpec.tests
   planTests <- PlanSpec.tests
   previewTests <- PreviewSpec.tests
@@ -72,4 +74,4 @@ main = do
   generationTests <- GenerationSpec.tests
   manifestTypesTests <- ManifestTypesSpec.tests
   promptTests <- PromptSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, moduleTests, registryTests, scaffoldTests, statusTests, variableTests, templateTests, planTests, previewTests, sectionTests, validateTests, configTests, dhallEvalTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])
+  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, moduleTests, registryTests, scaffoldTests, statusTests, variableTests, versionTests, templateTests, planTests, previewTests, sectionTests, validateTests, configTests, dhallEvalTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])
