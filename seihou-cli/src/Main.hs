@@ -18,6 +18,7 @@ import Seihou.CLI.Outdated (handleOutdated)
 import Seihou.CLI.Run (handleRun)
 import Seihou.CLI.Setup (handleSetup)
 import Seihou.CLI.Status (handleStatus)
+import Seihou.CLI.Upgrade (handleUpgrade)
 import Seihou.CLI.Validate (handleValidateModule)
 import Seihou.CLI.Vars (handleVars)
 
@@ -51,6 +52,8 @@ main = do
       handleBrowse browseOpts
     Outdated outdatedOpts ->
       handleOutdated outdatedOpts
+    Upgrade upgradeOpts ->
+      handleUpgrade upgradeOpts
     Agent agentOpts -> case agentOpts.agentCommand of
       AgentAssist assistOpts ->
         handleAssist agentOpts.agentDebug assistOpts

@@ -83,6 +83,7 @@ executable seihou
     Seihou.CLI.Shared
     Seihou.CLI.Status
     Seihou.CLI.Style
+    Seihou.CLI.Upgrade
     Seihou.CLI.Validate
     Seihou.CLI.Vars
     Seihou.CLI.Version

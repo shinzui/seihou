@@ -10,6 +10,7 @@ module Seihou.CLI.Commands
     ContextAction (..),
     BrowseOpts (..),
     OutdatedOpts (..),
+    UpgradeOpts (..),
     AgentOpts (..),
     AgentCommand (..),
     AssistOpts (..),
@@ -45,6 +46,7 @@ data Command
   | Context ContextAction
   | Browse BrowseOpts
   | Outdated OutdatedOpts
+  | Upgrade UpgradeOpts
   | Agent AgentOpts
   | HelpCmd HelpCommand
   | Completions CompletionsCommand
@@ -146,6 +148,13 @@ data OutdatedOpts = OutdatedOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data UpgradeOpts = UpgradeOpts
+  { upgradeModules :: [Text],
+    upgradeDryRun :: Bool,
+    upgradeJson :: Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
 data AssistOpts = AssistOpts
   { assistPrompt :: Maybe Text
   }
@@ -200,6 +209,7 @@ commandParser =
         <> command "context" contextInfo
         <> command "browse" browseInfo
         <> command "outdated" outdatedInfo
+        <> command "upgrade" upgradeInfo
         <> command "agent" agentInfo
         <> command "help" helpCmdInfo
         <> command "completions" completionsInfo
@@ -608,6 +618,42 @@ outdatedParser =
   fmap Outdated $
     OutdatedOpts
       <$> switch (long "json" <> help "Output as JSON")
+
+upgradeInfo :: ParserInfo Command
+upgradeInfo =
+  info
+    (upgradeParser <**> helper)
+    ( fullDesc
+        <> progDesc "Upgrade installed modules to latest versions"
+        <> footerDoc (Just upgradeFooter)
+    )
+
+upgradeParser :: Parser Command
+upgradeParser =
+  fmap Upgrade $
+    UpgradeOpts
+      <$> many (argument (T.pack <$> str) (metavar "MODULE" <> help "Module(s) to upgrade (default: all)"))
+      <*> switch (long "dry-run" <> help "Show what would be upgraded without making changes")
+      <*> switch (long "json" <> help "Output as JSON")
+
+upgradeFooter :: Doc
+upgradeFooter =
+  vsep
+    [ pretty ("Upgrades installed modules to the latest version available from their" :: String),
+      pretty ("source repository. Only modules installed via 'seihou install' are checked." :: String),
+      pretty ("Modules without version information are skipped." :: String),
+      line,
+      pretty ("With no arguments, checks all installed modules. Pass module names to" :: String),
+      pretty ("upgrade specific modules only." :: String),
+      line,
+      pretty ("Examples:" :: String),
+      indent 2 $
+        vsep
+          [ pretty ("seihou upgrade                   # upgrade all installed modules" :: String),
+            pretty ("seihou upgrade haskell-base       # upgrade a specific module" :: String),
+            pretty ("seihou upgrade --dry-run          # preview without changes" :: String)
+          ]
+    ]
 
 agentInfo :: ParserInfo Command
 agentInfo =

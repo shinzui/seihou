@@ -1,5 +1,8 @@
 module Seihou.CLI.Install
   ( handleInstall,
+    installModuleDir,
+    cloneRepo,
+    copyDirectoryRecursive,
   )
 where
 
