@@ -25,9 +25,9 @@ This plan builds on the version tracking infrastructure from `docs/plans/module-
 - [x] M1: Create `seihou-cli/src/Seihou/CLI/Upgrade.hs` with `handleUpgrade` (2026-03-15)
 - [x] M1: Register `Seihou.CLI.Upgrade` in `seihou-cli/seihou-cli.cabal` (2026-03-15)
 - [x] M1: Build and verify `seihou upgrade --help` works (2026-03-15)
-- [ ] M2: Implement full upgrade logic in `handleUpgrade`
-- [ ] M2: Build and run `cabal test all`
-- [ ] M2: Manual end-to-end test with a local git repo
+- [x] M2: Implement full upgrade logic in `handleUpgrade` (2026-03-15)
+- [x] M2: Build and run `cabal test all` — all 586 tests pass (2026-03-15)
+- [x] M2: Manual end-to-end test with installed modules — unversioned modules correctly skipped, --dry-run/--json/nonexistent-module all work (2026-03-15)
 
 
 ## Surprises & Discoveries
@@ -64,7 +64,7 @@ This plan builds on the version tracking infrastructure from `docs/plans/module-
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Both milestones completed successfully on 2026-03-15. The upgrade command follows the same clone-discover-compare pattern as `seihou outdated` and reuses `installModuleDir` from Install.hs for the actual replacement. All 586 existing tests pass. Manual testing confirmed: unversioned modules are skipped, `--dry-run` previews without changes, `--json` produces valid JSON, and nonexistent module names exit with failure.
 
 
 ## Context and Orientation
