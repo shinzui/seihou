@@ -14,6 +14,7 @@ import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.List (handleList)
 import Seihou.CLI.NewModule (handleNewModule)
+import Seihou.CLI.Outdated (handleOutdated)
 import Seihou.CLI.Run (handleRun)
 import Seihou.CLI.Setup (handleSetup)
 import Seihou.CLI.Status (handleStatus)
@@ -48,6 +49,8 @@ main = do
       handleContext contextAction
     Browse browseOpts ->
       handleBrowse browseOpts
+    Outdated outdatedOpts ->
+      handleOutdated outdatedOpts
     Agent agentOpts -> case agentOpts.agentCommand of
       AgentAssist assistOpts ->
         handleAssist agentOpts.agentDebug assistOpts

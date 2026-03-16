@@ -24,11 +24,11 @@ The user-visible behavior: running `seihou outdated` prints a table showing each
 - [x] M2: Add `Version` type with parsing and `Ord` instance (2026-03-15)
 - [x] M2: Add version comparison logic (2026-03-15)
 - [x] M2: Unit tests for version parsing and comparison (2026-03-15)
-- [ ] M3: Add `Outdated` command variant and CLI parser
-- [ ] M3: Implement `handleOutdated` — clone, compare, render
-- [ ] M3: Wire into `Main.hs` dispatcher
-- [ ] M3: Add CLI help text
-- [ ] M3: End-to-end validation with test fixtures
+- [x] M3: Add `Outdated` command variant and CLI parser (2026-03-15)
+- [x] M3: Implement `handleOutdated` — clone, compare, render (2026-03-15)
+- [x] M3: Wire into `Main.hs` dispatcher (2026-03-15)
+- [x] M3: Add CLI help text (2026-03-15)
+- [x] M3: End-to-end validation with live installed modules (2026-03-15)
 
 
 ## Surprises & Discoveries
@@ -64,7 +64,13 @@ The user-visible behavior: running `seihou outdated` prints a table showing each
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All three milestones completed in a single session:
+
+- M1: Added optional `version :: Maybe Text` to Module, RegistryEntry, OriginMeta/OriginInfo. Updated Dhall schema, decoders, scaffold, install handler, list handler, and all 39 affected files. All 568+48 tests pass.
+- M2: Created `Seihou.Core.Version` with `Version` newtype, custom `Eq`/`Ord` (trailing-zero padding), `parseVersion`, `renderVersion`. 18 new tests, all pass.
+- M3: Added `seihou outdated` command with `OutdatedOpts`, `handleOutdated`, CLI parser, and help text. Handles single-module and multi-module registries, unreachable sources, JSON output, and color-coded table rendering. Verified live against 3 installed modules.
+
+The implementation followed the plan closely. No new dependencies required. The `version` field is backward compatible — existing modules without it continue to work unchanged.
 
 
 ## Context and Orientation

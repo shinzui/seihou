@@ -9,6 +9,7 @@ module Seihou.CLI.Commands
     ConfigAction (..),
     ContextAction (..),
     BrowseOpts (..),
+    OutdatedOpts (..),
     AgentOpts (..),
     AgentCommand (..),
     AssistOpts (..),
@@ -43,6 +44,7 @@ data Command
   | Config ConfigOpts
   | Context ContextAction
   | Browse BrowseOpts
+  | Outdated OutdatedOpts
   | Agent AgentOpts
   | HelpCmd HelpCommand
   | Completions CompletionsCommand
@@ -139,6 +141,11 @@ data BrowseOpts = BrowseOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data OutdatedOpts = OutdatedOpts
+  { outdatedJson :: Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
 data AssistOpts = AssistOpts
   { assistPrompt :: Maybe Text
   }
@@ -192,6 +199,7 @@ commandParser =
         <> command "config" configInfo
         <> command "context" contextInfo
         <> command "browse" browseInfo
+        <> command "outdated" outdatedInfo
         <> command "agent" agentInfo
         <> command "help" helpCmdInfo
         <> command "completions" completionsInfo
@@ -575,6 +583,31 @@ browseParser =
     BrowseOpts
       <$> argument (T.pack <$> str) (metavar "GIT-URL")
       <*> optional (option (T.pack <$> str) (long "tag" <> metavar "TAG" <> help "Filter modules by tag"))
+
+outdatedInfo :: ParserInfo Command
+outdatedInfo =
+  info
+    (outdatedParser <**> helper)
+    ( fullDesc
+        <> progDesc "Check installed modules for newer versions"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Checks each installed module's source registry for a newer version." :: String),
+                  pretty ("Modules without version information are shown as 'unversioned'." :: String),
+                  pretty ("Only modules installed via 'seihou install' are checked." :: String),
+                  line,
+                  pretty ("Example:" :: String),
+                  indent 2 $ pretty ("seihou outdated" :: String)
+                ]
+          )
+    )
+
+outdatedParser :: Parser Command
+outdatedParser =
+  fmap Outdated $
+    OutdatedOpts
+      <$> switch (long "json" <> help "Output as JSON")
 
 agentInfo :: ParserInfo Command
 agentInfo =
