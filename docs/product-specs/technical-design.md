@@ -1,5 +1,7 @@
 # Seihou (製法) — Technical Design
 
+> **Note**: This is the original design spec from before implementation. The actual implementation diverges in several areas documented in Appendix A. For current architecture, see [docs/dev/architecture/overview.md](../dev/architecture/overview.md). For current types, see the design docs in [docs/dev/design/proposed/](../dev/design/proposed/).
+
 ## 1. Overview
 
 This document describes the architecture and design of a language‑agnostic project bootstrap system named **Seihou (製法)**. The goal is to create a deterministic, type‑safe, extensible generator capable of bootstrapping any repository (Haskell, TypeScript, frontend, backend, GraphQL, etc.).

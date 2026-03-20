@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Implemented |
+| **Updated** | 2026-03-20 |
 | **Created** | 2026-03-01 |
 | **Subsystem** | Core — Composition |
 
@@ -109,11 +110,9 @@ Text files support declarative patch operations:
 
 ```haskell
 data PatchOp
-  = AppendSection Text Text    -- section marker, content to append
-  | PrependSection Text Text   -- section marker, content to prepend
-  | ReplaceSection Text Text   -- section marker, replacement content
-  | AppendFile Text            -- content to append at end of file
-  | PrependFile Text           -- content to prepend at start of file
+  = AppendFile                 -- Append content at end of file
+  | PrependFile                -- Prepend content at start of file
+  | AppendSection              -- Wrap in section markers, append
   deriving stock (Eq, Show, Generic)
 ```
 
@@ -174,7 +173,7 @@ data GeneratedFile = GeneratedFile
 
 data CompositionWarning
   = FileOverwritten FilePath ModuleName ModuleName  -- path, old writer, new writer
-  | UnusedExport ModuleName VarName                 -- Module exports var nobody imports
+  | ContentMerged FilePath ModuleName ModuleName    -- path, base writer, patch writer
   deriving stock (Eq, Show, Generic)
 ```
 

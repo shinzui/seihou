@@ -4,12 +4,12 @@
 |---|---|
 | **Status** | Implemented |
 | **Created** | 2026-03-01 |
-| **Updated** | 2026-03-06 |
+| **Updated** | 2026-03-20 |
 | **Subsystem** | CLI |
 
 ## Overview
 
-Seihou exposes twelve commands in v1, covering the core generation loop, module authoring, configuration management, context management, and module discovery. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
+Seihou exposes seventeen commands in v1, covering the core generation loop, module authoring, configuration management, context management, module discovery, version management, agent-assisted workflows, help, and shell completions. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
 
 ## Motivation
 
@@ -27,7 +27,7 @@ The CLI is the primary interface to Seihou. It must support:
 | Decision | Choice | Rationale |
 |---|---|---|
 | CLI framework | optparse-applicative | Standard Haskell, composable, auto-generated --help |
-| V1 commands | init, run, vars, install, status, diff, list, new-module, validate-module, config, context, browse | Core loop + authoring + config management + context management + discovery |
+| V1 commands | init, run, vars, install, status, diff, list, new-module, validate-module, config, context, browse, outdated, upgrade, agent, help, completions | Core loop + authoring + config + context + discovery + version management + agent + help + completions |
 | Variable passing | `--var key=value` | Explicit, composable, scriptable |
 | Output format | Human-readable by default | Primary audience is interactive use |
 | Dry run | `--dry-run` flag on `run` | Safety net; shows plan without executing |
@@ -50,7 +50,46 @@ data Command
   | Config ConfigOpts
   | Context ContextAction
   | Browse BrowseOpts
-  | Agent AgentCommand
+  | Outdated OutdatedOpts
+  | Upgrade UpgradeOpts
+  | Agent AgentOpts
+  | HelpCmd HelpCommand
+  | Completions CompletionsCommand
+  deriving stock (Eq, Show, Generic)
+
+data OutdatedOpts = OutdatedOpts
+  { outdatedJson :: Bool                -- JSON output format
+  }
+  deriving stock (Eq, Show, Generic)
+
+data UpgradeOpts = UpgradeOpts
+  { upgradeModules :: [Text]            -- Specific modules to upgrade (empty = all)
+  , upgradeDryRun  :: Bool              -- Show what would be upgraded
+  , upgradeJson    :: Bool              -- JSON output format
+  }
+  deriving stock (Eq, Show, Generic)
+
+data AgentOpts = AgentOpts
+  { agentDebug   :: Bool                -- Show resolved system prompt
+  , agentCommand :: AgentCommand
+  }
+  deriving stock (Eq, Show, Generic)
+
+data AgentCommand
+  = AgentAssist AssistOpts
+  | AgentBootstrap BootstrapOpts
+  | AgentSetup SetupOpts
+  deriving stock (Eq, Show, Generic)
+
+data HelpCommand
+  = ListTopics                          -- List all available help topics
+  | ShowTopic Text                      -- Show a specific topic
+  deriving stock (Eq, Show, Generic)
+
+data CompletionsCommand
+  = CompletionsBash
+  | CompletionsZsh
+  | CompletionsFish
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -711,6 +750,155 @@ Module: haskell-base
 | 0 | Success |
 | 1 | Source not found or not a valid module/registry |
 
+### `seihou outdated`
+
+Check installed modules for newer versions available in their source repositories.
+
+```sh
+seihou outdated [--json]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|---|---|---|
+| `--json` | No | Output results as JSON |
+
+**What it does**:
+1. Scan `~/.config/seihou/installed/` for installed modules
+2. Read `.seihou-origin.json` for each module to find the source URL
+3. Clone the remote repository and compare versions
+4. Display version comparison table
+
+**Output**:
+```text
+Module           Installed   Available   Status
+haskell-base     1.0.0       1.2.0       outdated
+nix-flake        2.1.0       2.1.0       up to date
+my-module        —           —           unversioned
+```
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Error reading installed modules or cloning remote |
+
+---
+
+### `seihou upgrade [<module>...]`
+
+Upgrade installed modules to their latest versions from source repositories.
+
+```sh
+seihou upgrade [<module>...] [--dry-run] [--json]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|---|---|---|
+| `<module>...` | No | Specific modules to upgrade (default: all installed) |
+| `--dry-run` | No | Show what would be upgraded without making changes |
+| `--json` | No | Output results as JSON |
+
+**What it does**:
+1. For each target module, read `.seihou-origin.json` for source URL
+2. Clone the remote repository
+3. Validate the remote module
+4. Compare versions; if newer, copy the updated module to the installed directory
+5. Report status per module
+
+**Output**:
+```text
+Upgrading installed modules...
+
+  haskell-base    1.0.0 → 1.2.0    upgraded
+  nix-flake       2.1.0 → 2.1.0    already up to date
+  broken-module   —                 source unreachable
+
+2 checked, 1 upgraded, 1 up to date, 0 failed
+```
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success (including partial failures) |
+| 1 | Fatal error |
+
+---
+
+### `seihou agent <subcommand>`
+
+Agent-assisted commands for module authoring and project setup, powered by Claude Code.
+
+```sh
+seihou agent assist [--prompt <text>] [--debug]
+seihou agent bootstrap [--debug]
+seihou agent setup [--debug]
+```
+
+**Subcommands**:
+| Subcommand | Description |
+|---|---|
+| `assist` | Interactive template authoring assistance |
+| `bootstrap` | Bootstrap a new module or repository |
+| `setup` | Guided project consumption setup |
+
+**Flags**:
+| Flag | Description |
+|---|---|
+| `--debug` | Show the resolved system prompt |
+| `--prompt <text>` | Initial prompt for assist mode |
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Agent error |
+
+---
+
+### `seihou help [<topic>]`
+
+Display help topics with detailed guidance on specific features.
+
+```sh
+seihou help              # list available topics
+seihou help <topic>      # show a specific topic
+```
+
+**Available topics**: modules, variables, contexts, config, git
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Unknown topic |
+
+---
+
+### `seihou completions <shell>`
+
+Generate shell completion scripts.
+
+```sh
+seihou completions bash
+seihou completions zsh
+seihou completions fish
+```
+
+Output the completion script to stdout. Pipe to a file or source directly:
+
+```sh
+seihou completions bash > ~/.local/share/bash-completion/completions/seihou
+seihou completions zsh > ~/.zsh/completions/_seihou
+seihou completions fish > ~/.config/fish/completions/seihou.fish
+```
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+
 ## optparse-applicative Parser Tree
 
 ```haskell
@@ -728,6 +916,11 @@ commandParser = subparser
   <> command "config" configInfo
   <> command "context" contextInfo
   <> command "browse" browseInfo
+  <> command "outdated" outdatedInfo
+  <> command "upgrade" upgradeInfo
+  <> command "agent" agentInfo
+  <> command "help" helpInfo
+  <> command "completions" completionsInfo
   )
 ```
 
@@ -812,9 +1005,7 @@ commandParser = subparser
 ## Future Enhancements
 
 - `seihou remove <module>` — Remove a module and its orphaned files
-- `seihou update <module>` — Update an installed module from git
-- JSON/machine-readable output mode (`--format json`)
-- Shell completions (bash, zsh, fish)
+- JSON/machine-readable output mode (`--format json`) for all commands
 
 ## Cross-References
 

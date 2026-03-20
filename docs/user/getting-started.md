@@ -476,6 +476,54 @@ When you run `seihou run` again in a project that already has a manifest, Seihou
 Conflicts are shown interactively, and you choose per-file whether to accept the new version, keep your changes, or skip the file. Use `--force` to auto-accept all new versions.
 
 
+### Check for updates
+
+See if any installed modules have newer versions available:
+
+```sh
+seihou outdated
+```
+
+This compares installed module versions against their source repositories. Use `--json` for machine-readable output.
+
+### Upgrade installed modules
+
+Upgrade all installed modules to the latest versions:
+
+```sh
+seihou upgrade
+```
+
+Or upgrade specific modules:
+
+```sh
+seihou upgrade haskell-base nix-flake
+```
+
+Use `--dry-run` to preview what would change without making modifications.
+
+### Shell completions
+
+Generate shell completions for your preferred shell:
+
+```sh
+seihou completions bash > ~/.local/share/bash-completion/completions/seihou
+seihou completions zsh > ~/.zsh/completions/_seihou
+seihou completions fish > ~/.config/fish/completions/seihou.fish
+```
+
+### Help topics
+
+Get detailed guidance on specific features:
+
+```sh
+seihou help              # list available topics
+seihou help modules      # learn about module authoring
+seihou help variables    # learn about variable resolution
+seihou help contexts     # learn about context-based config
+```
+
+
 ## Next steps
 
 - Read the [Module Authoring Reference](module-authoring.md) for the complete module format, all four generation strategies, variable types, the expression language, and composition patterns.

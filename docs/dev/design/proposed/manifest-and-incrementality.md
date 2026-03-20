@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Implemented |
+| **Updated** | 2026-03-20 |
 | **Created** | 2026-03-01 |
 | **Subsystem** | Core — Manifest |
 

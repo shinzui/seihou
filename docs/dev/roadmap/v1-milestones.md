@@ -2,9 +2,9 @@
 
 | Field | Value |
 |---|---|
-| **Status** | In Progress |
+| **Status** | Done |
 | **Created** | 2026-03-01 |
-| **Updated** | 2026-03-06 |
+| **Updated** | 2026-03-20 |
 
 ## Overview
 
@@ -24,6 +24,11 @@ V1 of Seihou delivers a complete, usable project scaffolding system: module load
 | M7 | Config & Diagnostics | Done | config commands, --effective, unused key warnings |
 | M8 | Discovery & Registry | Done | list, browse, registries, multi-module repos |
 | M9 | Interactive Prompts | Done | Optional variable prompting, default display |
+| M10 | Parameterized Dependencies | Done | Parent-to-child variable passing via depVars |
+| M11 | Help & Completions | Done | help topics, shell completions (bash/zsh/fish) |
+| M12 | Fzf Integration | Done | Interactive module, registry, and context selection via fzf |
+| M13 | Agent Commands | Done | agent assist, agent bootstrap, agent setup |
+| M14 | Version & Upgrades | Done | Version type, outdated command, upgrade command |
 
 ## M0 — Project Bootstrap
 
@@ -221,11 +226,87 @@ V1 of Seihou delivers a complete, usable project scaffolding system: module load
 
 ---
 
+## M10 — Parameterized Dependencies
+
+**Goal**: Allow parent modules to pre-supply variable values to their dependencies.
+
+**Status**: Done
+
+### Deliverables
+
+- [x] `Dependency` type extended with `depVars :: Map VarName Text` for variable bindings
+- [x] Dhall decoder supports both bare string and parameterized `{ module, vars }` dependency forms
+- [x] `FromParent ModuleName` added to `VarSource` for provenance tracking
+- [x] Parent-supplied vars injected during composition resolution
+- [x] Tests for parameterized dependency flow
+
+---
+
+## M11 — Help & Completions
+
+**Goal**: Built-in help topics and shell completion generation.
+
+**Status**: Done
+
+### Deliverables
+
+- [x] `seihou help` command with embedded topic content (modules, variables, contexts, config, git)
+- [x] `seihou completions` command generating scripts for bash, zsh, fish
+- [x] `HelpCmd HelpCommand` and `Completions CompletionsCommand` added to Command ADT
+
+---
+
+## M12 — Fzf Integration
+
+**Goal**: Interactive selection via fzf for modules, registries, and contexts.
+
+**Status**: Done
+
+### Deliverables
+
+- [x] `Fzf` effect with `SelectOne` operation and interpreters
+- [x] Module selector: fzf-powered module selection when module argument is omitted
+- [x] Registry module selection during `seihou install` (when no `--module` or `--all`)
+- [x] Fzf detection and graceful fallback when fzf is not installed
+
+---
+
+## M13 — Agent Commands
+
+**Goal**: Claude Code-assisted module authoring and project setup.
+
+**Status**: Done
+
+### Deliverables
+
+- [x] `seihou agent assist` — interactive template authoring
+- [x] `seihou agent bootstrap` — bootstrap new module or repository
+- [x] `seihou agent setup` — guided project consumption with full git and seihou permissions
+- [x] `--debug` flag for viewing resolved system prompts
+
+---
+
+## M14 — Version & Upgrades
+
+**Goal**: Module versioning, outdated detection, and upgrade workflow.
+
+**Status**: Done
+
+### Deliverables
+
+- [x] `Version` type with parsing, comparison, and rendering (`Seihou.Core.Version`)
+- [x] Optional `version :: Maybe Text` field on `Module`, `RegistryEntry`, and `OriginMeta`
+- [x] `seihou outdated` command: checks installed modules against remote versions
+- [x] `seihou upgrade` command: upgrades installed modules with dry-run and JSON output support
+- [x] Status tracking: Upgraded, AlreadyUpToDate, Skipped, UpgradeFailed, SourceUnreachable
+
+---
+
 ## Definition of Done (V1)
 
 V1 is complete when:
 
-1. All milestones M0–M9 exit criteria are met
+1. All milestones M0–M14 exit criteria are met
 2. The haskell-template example from the product spec works end-to-end:
    - `seihou run haskell-base --var project.name=my-app` generates the expected project
    - `seihou status` shows correct state

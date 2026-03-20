@@ -1,5 +1,7 @@
 # Seihou (製法) — Example Usage: Haskell Project Template Module
 
+> **Note**: This is an early design example from before implementation. Some details (e.g., the `cabal` strategy) were deferred to post-v1. V1 uses `dhall-text` for .cabal generation. For the current module format, see [docs/user/module-authoring.md](../user/module-authoring.md).
+
 This document demonstrates a complete example of a Haskell project template authored in Dhall and executed by the generator.
 
 ---

@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Implemented |
+| **Updated** | 2026-03-20 |
 | **Created** | 2026-03-01 |
 | **Subsystem** | Core — Generation Engine |
 
@@ -52,12 +53,7 @@ data Strategy
   = Copy
   | Template
   | DhallText
-  | Structured StructuredFormat
-  deriving stock (Eq, Show, Generic)
-
-data StructuredFormat
-  = JSON
-  | YAML
+  | Structured
   deriving stock (Eq, Show, Generic)
 
 -- | A file produced by the generation engine

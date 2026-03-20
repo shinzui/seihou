@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Implemented |
 | **Created** | 2026-03-01 |
-| **Updated** | 2026-03-06 |
+| **Updated** | 2026-03-20 |
 | **Subsystem** | Core — Variable Resolution |
 
 ## Overview
@@ -26,7 +26,7 @@ Seihou's variable resolution provides typed, validated, provenance-tracked, scop
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Resolution precedence | CLI → env → local → namespace → context → global → default → prompt | Most specific wins; context is cross-cutting identity; prompts are last resort |
+| Resolution precedence | CLI → env → local → namespace → context → global → parent → default → prompt | Most specific wins; parent bindings from parameterized deps; prompts are last resort |
 | Type system | Text, Bool, Int, List, Choice | Covers scaffolding needs without over-engineering |
 | Scoping model | Shared namespace with explicit exports | Intentional cross-module sharing; private vars stay private |
 | Provenance tracking | Per-variable source annotation | Enables --explain; essential for debugging |
@@ -46,8 +46,9 @@ Variables are resolved in this order (first match wins):
 | 4 | Namespace config | `~/.config/seihou/namespaces/<ns>/config.dhall` |
 | 5 | Context config | `~/.config/seihou/contexts/<ctx>/config.dhall` |
 | 6 | Global config | `~/.config/seihou/config.dhall` |
-| 7 | Module defaults | `default = Some "my-value"` in module.dhall |
-| 8 (lowest) | Interactive prompt | User enters value when prompted |
+| 7 | Parent bindings | Parameterized dependency `depVars` from parent module |
+| 8 | Module defaults | `default = Some "my-value"` in module.dhall |
+| 9 (lowest) | Interactive prompt | User enters value when prompted |
 
 ### Environment Variable Mapping
 
@@ -72,13 +73,14 @@ data ResolvedVar = ResolvedVar
 
 data VarSource
   = FromCLI
-  | FromEnv Text           -- Environment variable name
+  | FromEnv Text              -- Environment variable name
   | FromLocalConfig
   | FromNamespaceConfig Text  -- Namespace name
   | FromContextConfig Text    -- Context name (e.g., "work", "personal")
   | FromGlobalConfig
+  | FromParent ModuleName     -- Parameterized dependency binding from parent module
   | FromDefault
-  | FromPrompt             -- User entered interactively
+  | FromPrompt               -- User entered interactively
   deriving stock (Eq, Show, Generic)
 
 newtype ResolvedVars = ResolvedVars

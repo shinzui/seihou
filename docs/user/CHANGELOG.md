@@ -3,12 +3,57 @@
 ## Last Reviewed Commit
 
 ```
-b6baa4f Add {{var}} placeholder interpolation to command strings
+378dafc Add CLI command reference docs (one markdown file per command)
 ```
 
 ---
 
 ## Changelog
+
+### 2026-03-20
+
+**Reviewed commits:** `fe1819a` through `378dafc`
+
+- Full documentation audit: all dev docs, user docs, and product specs reviewed against codebase
+- Updated status on 4 design docs from "Proposed" to "Implemented" (architecture, composition, generation-strategies, manifest)
+- Updated roadmap status from "In Progress" to "Done"; added milestones M10–M14
+- Updated CLI commands doc with 5 new commands: outdated, upgrade, help, completions, agent
+- Fixed Command ADT to match actual code (17 constructors)
+- Added `version` field to Module type in module-system.md and module-authoring.md
+- Added `FromParent` to variable resolution precedence chain (9 tiers, not 8)
+- Fixed PatchOp type in composition doc (3 constructors, not 5)
+- Fixed CompositionWarning type to match code (ContentMerged, not UnusedExport)
+- Fixed Strategy type in generation-strategies doc (no StructuredFormat parameter)
+- Added RegistryEvalError to ModuleLoadError
+- Updated architecture overview project layout tree with all current files
+- Added parameterized dependency documentation to module-authoring.md and variable-resolution.md
+- Added outdated/upgrade/completions/help sections to getting-started.md
+- Added parent bindings to config-and-variables.md resolution hierarchy
+- Updated parser tree in cli-commands.md
+
+**Documentation status:**
+- `docs/user/getting-started.md`: Updated with outdated, upgrade, completions, help commands
+- `docs/user/module-authoring.md`: Updated with version field, parameterized dependencies, FromParent
+- `docs/user/config-and-variables.md`: Updated with 9-tier resolution hierarchy including parent bindings
+- `docs/user/registries-and-multi-module-repos.md`: Up to date (no changes needed)
+- `docs/dev/architecture/overview.md`: Updated status, project layout tree
+- `docs/dev/design/proposed/cli-commands.md`: Updated with all 17 commands
+- `docs/dev/design/proposed/module-system.md`: Updated Module type, Dependency type, Dhall schema
+- `docs/dev/design/proposed/variable-resolution.md`: Updated with FromParent source
+- `docs/dev/design/proposed/composition-and-layering.md`: Updated PatchOp, CompositionWarning
+- `docs/dev/design/proposed/generation-strategies.md`: Updated Strategy type
+- `docs/dev/design/proposed/manifest-and-incrementality.md`: Status updated
+- `docs/dev/roadmap/v1-milestones.md`: Updated status, added M10–M14
+- `docs/dev/versioning.md`: Up to date (no changes needed)
+
+**No documentation needed:**
+- `0f532a9` Add .seihou/manifest.json.tmp to gitignore (internal)
+- `afb9678` Add seihou-update-docs skill (tooling)
+- `fe1819a` Add documentation changelog (meta)
+- `18148c6` Add ExecPlan for help topics (plan doc)
+- `721d46d` Mark parameterized dependencies plan as complete (plan doc)
+- `8d3527c` Add git worktree tools to agent allowed tools (tooling)
+- `6b27cf1` Grant agent setup full git and seihou permissions (tooling)
 
 ### 2026-03-07
 

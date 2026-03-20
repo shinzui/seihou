@@ -7,7 +7,7 @@ For an introduction to modules and variables, see the [Getting Started Guide](ge
 
 ## The resolution hierarchy
 
-When a module declares a variable (e.g., `project.name`), Seihou looks for a value in seven sources, in order. The first source that provides a value wins:
+When a module declares a variable (e.g., `project.name`), Seihou looks for a value in nine sources, in order. The first source that provides a value wins:
 
 | Priority | Source | How to set it |
 |----------|--------|---------------|
@@ -17,7 +17,9 @@ When a module declares a variable (e.g., `project.name`), Seihou looks for a val
 | 4 | Namespace config | `~/.config/seihou/namespaces/<ns>/config.dhall` |
 | 5 | Context config | `~/.config/seihou/contexts/<ctx>/config.dhall` |
 | 6 | Global config | `~/.config/seihou/config.dhall` |
-| 7 (lowest) | Module defaults | `default = Some "value"` in `module.dhall` |
+| 7 | Parent bindings | Parameterized dependency `depVars` from parent module |
+| 8 | Module defaults | `default = Some "value"` in `module.dhall` |
+| 9 (lowest) | Interactive prompt | User enters value when prompted |
 
 If no source provides a value:
 

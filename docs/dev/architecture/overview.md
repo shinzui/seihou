@@ -2,7 +2,8 @@
 
 | Field | Value |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Implemented |
+| **Updated** | 2026-03-20 |
 | **Created** | 2026-03-01 |
 | **Subsystem** | Core |
 
@@ -120,54 +121,78 @@ seihou/
 │       └── Seihou/
 │           ├── Core/
 │           │   ├── Types.hs       # Module, VarDecl, Step, Operation, etc.
-│           │   ├── Variable.hs    # Resolution, validation, expression eval
-│           │   ├── Module.hs      # Loading, validation, dependency resolution
-│           │   └── Expr.hs        # Expression language AST and evaluator
+│           │   ├── Variable.hs    # Resolution, validation, coercion
+│           │   ├── Module.hs      # Loading, validation, discovery
+│           │   ├── Expr.hs        # Expression language AST and evaluator
+│           │   ├── Registry.hs    # Multi-module repository support
+│           │   ├── Version.hs     # Semantic version parsing and comparison
+│           │   ├── Install.hs     # Module name parsing from URLs
+│           │   ├── Status.hs      # Tracked file status computation
+│           │   └── Context.hs     # Execution context
 │           ├── Engine/
-│           │   ├── Plan.hs        # Plan compilation from modules
-│           │   ├── Strategy/
-│           │   │   ├── Copy.hs
-│           │   │   ├── Template.hs
-│           │   │   ├── DhallText.hs
-│           │   │   └── Structured.hs
+│           │   ├── Plan.hs        # Single-module plan compilation
+│           │   ├── Template.hs    # Placeholder engine
+│           │   ├── Execute.hs     # Plan execution
 │           │   ├── Diff.hs        # Three-state diff engine
-│           │   └── Execute.hs     # Plan execution
+│           │   ├── Conflict.hs    # Conflict resolution
+│           │   ├── Preview.hs     # Diff visualization
+│           │   ├── Section.hs     # Text patching (append/prepend section)
+│           │   ├── Validate.hs    # Post-generation validation
+│           │   └── DhallJSON.hs   # Dhall-to-JSON bridge
 │           ├── Composition/
 │           │   ├── Graph.hs       # Dependency graph, topological sort
-│           │   ├── Layering.hs    # Patch operations, merge strategies
-│           │   └── Conflict.hs    # Conflict detection and reporting
+│           │   ├── Resolve.hs     # Module loading, variable resolution
+│           │   └── Plan.hs        # Multi-module plan merging
 │           ├── Manifest/
-│           │   ├── Types.hs       # Manifest, FileRecord
-│           │   ├── Read.hs
-│           │   └── Write.hs
-│           ├── Config/
-│           │   ├── Resolution.hs  # Multi-layer config merging
-│           │   └── Types.hs
+│           │   ├── Types.hs       # Manifest, FileRecord, JSON serialization
+│           │   └── Hash.hs        # SHA256 content hashing
+│           ├── Interaction/
+│           │   └── Prompt.hs      # Interactive variable prompts
 │           ├── Dhall/
 │           │   ├── Eval.hs        # Dhall evaluation bridge
-│           │   └── Schema.hs      # Module schema definitions
-│           └── Effect/
+│           │   └── Config.hs      # Config file parsing
+│           └── Effect/            # 8 effects, each with IO + Pure interpreters
 │               ├── Filesystem.hs
 │               ├── Console.hs
 │               ├── DhallEval.hs
 │               ├── ConfigReader.hs
+│               ├── ConfigWriter.hs
 │               ├── ManifestStore.hs
 │               ├── Process.hs
 │               └── Logger.hs
 ├── seihou-cli/                    # Executable: CLI parsing, command dispatch
 │   ├── seihou-cli.cabal
 │   └── src/
+│       ├── Main.hs                # Entry point + command dispatcher
 │       └── Seihou/
-│           └── CLI/
-│               ├── Main.hs        # Entry point
-│               ├── Commands.hs    # Command ADT + optparse-applicative
-│               ├── Run.hs         # seihou run handler
-│               ├── Init.hs        # seihou init handler
-│               ├── Vars.hs        # seihou vars handler
-│               ├── Install.hs     # seihou install handler
-│               ├── Status.hs      # seihou status handler
-│               ├── NewModule.hs   # seihou new-module handler
-│               └── Validate.hs    # seihou validate-module handler
+│           ├── CLI/
+│           │   ├── Commands.hs    # Command ADT + optparse-applicative
+│           │   ├── Run.hs         # seihou run handler
+│           │   ├── Init.hs        # seihou init handler
+│           │   ├── Vars.hs        # seihou vars handler
+│           │   ├── Install.hs     # seihou install handler
+│           │   ├── Status.hs      # seihou status handler
+│           │   ├── Diff.hs        # seihou diff handler
+│           │   ├── List.hs        # seihou list handler
+│           │   ├── NewModule.hs   # seihou new-module handler
+│           │   ├── Validate.hs    # seihou validate-module handler
+│           │   ├── Config.hs      # seihou config handler
+│           │   ├── Context.hs     # seihou context handler
+│           │   ├── Browse.hs      # seihou browse handler
+│           │   ├── Outdated.hs    # seihou outdated handler
+│           │   ├── Upgrade.hs     # seihou upgrade handler
+│           │   ├── Help.hs        # seihou help handler
+│           │   ├── Completions.hs # seihou completions handler
+│           │   ├── Assist.hs      # agent assist handler
+│           │   ├── Bootstrap.hs   # agent bootstrap handler
+│           │   ├── Setup.hs       # agent setup handler
+│           │   ├── Shared.hs      # Common CLI utilities
+│           │   ├── Style.hs       # Color/formatting
+│           │   └── BrowseFormat.hs # Module browsing output formatter
+│           ├── Effect/
+│           │   └── Fzf.hs         # Fzf effect + interpreter
+│           └── Fzf/
+│               └── Selector.hs    # Interactive module selection via fzf
 └── docs/                          # Documentation (this directory)
 ```
 

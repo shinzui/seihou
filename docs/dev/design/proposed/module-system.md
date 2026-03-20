@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Implemented |
 | **Created** | 2026-03-01 |
-| **Updated** | 2026-03-06 |
+| **Updated** | 2026-03-20 |
 | **Subsystem** | Core — Module Loading |
 
 ## Overview
@@ -63,13 +63,21 @@ A module is a directory with this layout:
 
 ```haskell
 data Module = Module
-  { moduleName    :: ModuleName
-  , description   :: Maybe Text
-  , vars          :: [VarDecl]
-  , exports       :: [VarExport]
-  , prompts       :: [Prompt]
-  , steps         :: [Step]
-  , dependencies  :: [ModuleName]
+  { name         :: ModuleName
+  , version      :: Maybe Text
+  , description  :: Maybe Text
+  , vars         :: [VarDecl]
+  , exports      :: [VarExport]
+  , prompts      :: [Prompt]
+  , steps        :: [Step]
+  , commands     :: [Command]
+  , dependencies :: [Dependency]
+  }
+  deriving stock (Eq, Show, Generic)
+
+data Dependency = Dependency
+  { depModule :: ModuleName
+  , depVars   :: Map VarName Text    -- Variable bindings from parent
   }
   deriving stock (Eq, Show, Generic)
 
@@ -200,12 +208,14 @@ let Step =
 
 let Module =
   { name : Text
+  , version : Optional Text
   , description : Optional Text
   , vars : List VarDecl
   , exports : List VarExport
   , prompts : List Prompt
   , steps : List Step
-  , dependencies : List Text
+  , commands : List { run : Text, workDir : Optional Text, when : Optional Text }
+  , dependencies : List < Bare : Text | Parameterized : { module : Text, vars : {} } >
   }
 
 in Module
@@ -268,6 +278,7 @@ data ModuleLoadError
   | ValidationError ModuleName [Text]      -- Semantic validation failures
   | CircularDependency [ModuleName]        -- Cycle in dependency graph
   | MissingSourceFile ModuleName FilePath  -- Referenced file doesn't exist
+  | RegistryEvalError Text Text            -- Registry file evaluation error
   deriving stock (Eq, Show, Generic)
 ```
 
@@ -319,7 +330,7 @@ A module is well-formed when:
 
 ## Future Enhancements
 
-- Module versioning (semver constraints on dependencies)
+- Semver constraints on dependencies (e.g., `haskell-base >= 1.0`)
 - Module inheritance (extend an existing module with overrides)
 - Auto-generated documentation from module definitions
 

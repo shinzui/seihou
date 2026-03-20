@@ -30,6 +30,7 @@ The module definition is a Dhall record with these fields:
 
 ```dhall
 { name = "my-module"
+, version = Some "1.0.0"
 , description = Some "What this module does"
 , vars = [ ... ]
 , exports = [ ... ]
@@ -43,6 +44,8 @@ The module definition is a Dhall record with these fields:
 ### Field reference
 
 **name** (Text, required): The module identifier. Must match `[a-z][a-z0-9-]*`.
+
+**version** (Optional Text): Semantic version string (e.g., `"1.0.0"`). Used by `seihou outdated` and `seihou upgrade` to compare installed vs available versions. Use `Some "1.0.0"` or `None Text`.
 
 **description** (Optional Text): Human-readable description shown by `seihou list` and in validation output. Use `Some "description"` or `None Text`.
 
@@ -337,11 +340,14 @@ Commands execute in declaration order, after all steps. Use the `--no-commands` 
 
 ## Dependencies and composition
 
-Modules can depend on other modules:
+Modules can depend on other modules. Dependencies can be bare module names or parameterized with variable bindings:
 
 ```dhall
 { name = "haskell-with-nix"
-, dependencies = [ "haskell-base", "nix-flake" ]
+, dependencies =
+  [ "haskell-base"                                      -- bare dependency
+  , { module = "nix-flake", vars.nix-system = "x86" }  -- parameterized dependency
+  ]
 , ...
 }
 ```
@@ -352,6 +358,17 @@ Modules can depend on other modules:
 2. The graph is topologically sorted so dependencies run before dependents.
 3. Circular dependencies are rejected with an error.
 4. Diamond dependencies (A depends on B and C, both depend on D) are resolved correctly — D runs once.
+
+### Parameterized dependencies
+
+When using the parameterized form, the parent module can pre-supply variable values to the child. These values have `FromParent` provenance — higher priority than module defaults but lower than config files:
+
+```dhall
+dependencies =
+  [ { module = "nix-flake", vars.nix-system = "x86_64-linux" } ]
+```
+
+This sets `nix-system` to `"x86_64-linux"` in the `nix-flake` module unless overridden by a CLI flag, environment variable, or config.
 
 ### Composing modules at the command line
 
@@ -400,7 +417,8 @@ Seihou resolves variables from multiple sources in this precedence order (first 
 4. **Namespace config** — `~/.config/seihou/namespaces/<ns>/config.dhall`
 5. **Context config** — `~/.config/seihou/contexts/<ctx>/config.dhall`
 6. **Global config** — `~/.config/seihou/config.dhall`
-7. **Module defaults** — `default = Some "value"` in `module.dhall`
+7. **Parent bindings** — Parameterized dependency `depVars` from parent module
+8. **Module defaults** — `default = Some "value"` in `module.dhall`
 
 ### Environment variable mapping
 

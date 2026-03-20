@@ -1,5 +1,7 @@
 # Seihou (製法) — End-User Overview
 
+> **Note**: This is the original product overview written before implementation. For the current user-facing documentation, see [docs/user/getting-started.md](../user/getting-started.md).
+
 Seihou (製法) is a composable, type-safe project scaffolding system designed to bootstrap repositories in a deterministic and structured way.
 
 From the end-user perspective, Seihou is a tool for generating production-ready projects by composing reusable modules.
