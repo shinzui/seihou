@@ -256,21 +256,22 @@ spanDepsRegion (l : rest)
 
 -- | Extract bare string names from a deps value text.
 -- Handles both single-line @[ "foo", "bar" ]@ and multi-line formats.
+-- A bare string dep is a quoted string that is NOT preceded by @module =@
+-- (which would make it a record field value rather than a bare dep).
 extractBareStrings :: Text -> [Text]
 extractBareStrings t =
-  let -- Find all quoted strings that are not inside a { module = ... } record
-      -- Simple approach: split by quotes and extract names
-      pieces = T.splitOn "\"" t
-   in -- pieces alternates between non-quoted and quoted segments
-      -- Index 1, 3, 5, ... are quoted content
-      extractOddElements pieces
+  let pieces = T.splitOn "\"" t
+   in extractOddElements pieces
   where
-    extractOddElements (_ : name : rest)
+    extractOddElements (context : name : rest)
       -- Skip if the name contains '=' which would mean it's part of a record field value
       | "=" `T.isInfixOf` name = extractOddElements rest
       -- Skip if it looks like a type annotation (contains ':')
       | ":" `T.isInfixOf` name = extractOddElements rest
       | T.null name = extractOddElements rest
+      -- Skip if preceded by 'module =' — this is a record-form dependency value
+      | "module =" `T.isInfixOf` context = extractOddElements rest
+      | "module=" `T.isInfixOf` context = extractOddElements rest
       | otherwise = name : extractOddElements rest
     extractOddElements _ = []
 
