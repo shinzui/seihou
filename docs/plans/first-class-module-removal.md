@@ -22,7 +22,7 @@ After implementation, a user can:
 - [x] Milestone 1: Design the removal schema in Dhall and Haskell types (2026-03-21)
 - [x] Milestone 2: Implement Dhall decoders and manifest storage for removal data (2026-03-21)
 - [x] Milestone 3: Implement removal operations in the engine (remove-file, remove-section, rewrite-file) (2026-03-21)
-- [ ] Milestone 4: Rewrite the Remove CLI handler to use declared removal steps
+- [x] Milestone 4: Rewrite the Remove CLI handler to use declared removal steps (2026-03-21)
 - [ ] Milestone 5: Tests for the new removal engine
 - [ ] Milestone 6: Update all documentation and agent prompts
 - [ ] Milestone 7: End-to-end validation

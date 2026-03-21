@@ -9,7 +9,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.Commands (RemoveOpts (..))
-import Seihou.CLI.Style (bold, dim, green, red, useColor, yellow)
+import Seihou.CLI.Style (bold, dim, green, useColor, yellow)
 import Seihou.Core.Types
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
@@ -35,85 +35,138 @@ handleRemove opts = do
       exitFailure
     Right (Just m) -> pure m
 
-  -- Compute removal plan
-  planResult <- runEff $ runFilesystem $ computeRemovalPlan manifest modName
-  plan <- case planResult of
-    Left (ModuleNotApplied name) -> do
-      TIO.putStrLn $ "Module '" <> name.unModuleName <> "' is not applied in this project."
+  -- Find the module's removal spec
+  let mApplied = findAppliedModule manifest modName
+  case mApplied of
+    Nothing -> do
+      TIO.putStrLn $ "Module '" <> modName.unModuleName <> "' is not applied in this project."
       exitFailure
-    Left (ModuleNotRemovable name) -> do
-      TIO.putStrLn $
-        "Module '"
-          <> name.unModuleName
-          <> "' has no removal spec. Add a 'removal' section to its module.dhall to make it removable."
-      exitFailure
-    Right p -> pure p
-
-  colorEnabled <- useColor
-
-  -- Display plan
-  let safeFiles = [p | RemovalSafe p <- plan.files]
-      conflictFiles = [p | RemovalConflict p <- plan.files]
-      goneFiles = [p | RemovalGone p <- plan.files]
-
-  TIO.putStrLn $ "Removal plan for " <> modName.unModuleName <> ":"
-
-  when (not (null safeFiles)) $ do
-    mapM_ (\p -> TIO.putStrLn $ "  " <> applyColor colorEnabled green "Delete" <> " " <> T.pack p <> applyColor colorEnabled dim " (unchanged)") safeFiles
-
-  when (not (null conflictFiles)) $ do
-    mapM_ (\p -> TIO.putStrLn $ "  " <> applyColor colorEnabled yellow "Delete" <> " " <> T.pack p <> applyColor colorEnabled yellow " (modified by user)") conflictFiles
-
-  when (not (null goneFiles)) $ do
-    mapM_ (\p -> TIO.putStrLn $ "  " <> applyColor colorEnabled dim "Skip" <> "   " <> T.pack p <> applyColor colorEnabled dim " (already deleted)") goneFiles
-
-  when (null safeFiles && null conflictFiles && null goneFiles) $ do
-    TIO.putStrLn "  (no files to remove)"
-
-  -- Dry run exits here
-  when opts.removeDryRun $ exitWith ExitSuccess
-
-  -- Resolve conflicts
-  keepSet <-
-    if null conflictFiles || opts.removeForce
-      then pure Set.empty
-      else do
-        isInteractive <- hIsTerminalDevice stdin
-        if not isInteractive
-          then do
-            TIO.putStrLn "Conflicted files found. Use --force to delete them non-interactively."
+    Just am -> case am.removal of
+      Nothing -> do
+        TIO.putStrLn $
+          "Module '"
+            <> modName.unModuleName
+            <> "' has no removal spec. Add a 'removal' section to its module.dhall to make it removable."
+        exitFailure
+      Just removal -> do
+        -- Build removal plan from declared steps
+        planResult <- runEff $ runFilesystem $ buildRemovalOps manifest modName removal
+        plan <- case planResult of
+          Left (ModuleNotApplied name) -> do
+            TIO.putStrLn $ "Module '" <> name.unModuleName <> "' is not applied in this project."
             exitFailure
-          else resolveConflictsInteractively conflictFiles
+          Left (ModuleNotRemovable name) -> do
+            TIO.putStrLn $
+              "Module '"
+                <> name.unModuleName
+                <> "' has no removal spec."
+            exitFailure
+          Right p -> pure p
 
-  -- Prompt for confirmation
-  when (not (null safeFiles) || (not (null conflictFiles) && (opts.removeForce || Set.size keepSet < length conflictFiles))) $ do
-    TIO.putStr "\n  Proceed? [y/N] "
-    hFlush stdout
-    response <- T.strip . T.pack <$> getLine
-    when (T.toLower response /= "y") $
-      exitWith (ExitFailure 3)
+        colorEnabled <- useColor
 
-  -- Execute removal
-  now <- getCurrentTime
-  updatedManifest <- runEff $ runFilesystem $ executeRemoval manifest plan keepSet now
+        -- Display plan
+        TIO.putStrLn $ "Removal plan for " <> modName.unModuleName <> ":"
 
-  -- Write updated manifest
-  runEff $ runFilesystem $ runManifestStore manifestPath $ writeManifest updatedManifest
+        if null plan.ops
+          then TIO.putStrLn "  (no removal operations)"
+          else mapM_ (displayOp colorEnabled) plan.ops
 
-  -- Report
-  let deleted = length safeFiles + length conflictFiles - Set.size keepSet
-  TIO.putStrLn $
-    applyColor colorEnabled green "✓"
-      <> " Removed module "
-      <> applyColor colorEnabled bold modName.unModuleName
-      <> ". Deleted "
-      <> T.pack (show deleted)
-      <> " file"
-      <> (if deleted /= 1 then "s" else "")
-      <> "."
+        -- Dry run exits here
+        when opts.removeDryRun $ do
+          TIO.putStrLn ""
+          TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
+          exitWith ExitSuccess
+
+        -- Collect conflict files for interactive resolution
+        let conflictFiles = [p | DeleteFileOp p RFConflict <- plan.ops]
+
+        -- Resolve conflicts
+        keepSet <-
+          if null conflictFiles || opts.removeForce
+            then pure Set.empty
+            else do
+              isInteractive <- hIsTerminalDevice stdin
+              if not isInteractive
+                then do
+                  TIO.putStrLn "Conflicted files found. Use --force to delete them non-interactively."
+                  exitFailure
+                else resolveConflictsInteractively conflictFiles
+
+        -- Prompt for confirmation (if there are any actionable ops)
+        let actionableOps = [() | op <- plan.ops, isActionable op]
+        when (not (null actionableOps)) $ do
+          TIO.putStr "\n  Proceed? [y/N] "
+          hFlush stdout
+          response <- T.strip . T.pack <$> getLine
+          when (T.toLower response /= "y") $
+            exitWith (ExitFailure 3)
+
+        -- Execute removal
+        now <- getCurrentTime
+        updatedManifest <- runEff $ runFilesystem $ executeRemovalOps manifest plan keepSet now
+
+        -- Write updated manifest
+        runEff $ runFilesystem $ runManifestStore manifestPath $ writeManifest updatedManifest
+
+        -- Report
+        let deleted = length [() | DeleteFileOp _ s <- plan.ops, s /= RFGone, not (Set.member "" keepSet)]
+            stripped = length [() | StripSectionOp _ <- plan.ops]
+            commands = length [() | RemovalCommandOp _ _ <- plan.ops]
+        TIO.putStrLn $
+          applyColor colorEnabled green "✓"
+            <> " Removed module "
+            <> applyColor colorEnabled bold modName.unModuleName
+            <> "."
+            <> formatCounts deleted stripped commands
+
+-- | Display a single removal operation.
+displayOp :: Bool -> RemovalOp -> IO ()
+displayOp c (DeleteFileOp path RFSafe) =
+  TIO.putStrLn $ "  " <> applyColor c green "Delete" <> " " <> T.pack path <> applyColor c dim " (unchanged)"
+displayOp c (DeleteFileOp path RFConflict) =
+  TIO.putStrLn $ "  " <> applyColor c yellow "Delete" <> " " <> T.pack path <> applyColor c yellow " (modified by user)"
+displayOp c (DeleteFileOp path RFGone) =
+  TIO.putStrLn $ "  " <> applyColor c dim "Skip" <> "   " <> T.pack path <> applyColor c dim " (already deleted)"
+displayOp c (StripSectionOp path) =
+  TIO.putStrLn $ "  " <> applyColor c green "Strip" <> "  " <> T.pack path <> applyColor c dim " (remove section)"
+displayOp c (RewriteOp path _) =
+  TIO.putStrLn $ "  " <> applyColor c green "Rewrite" <> " " <> T.pack path
+displayOp c (RemovalCommandOp cmd _) =
+  TIO.putStrLn $ "  " <> applyColor c green "Run" <> "    " <> cmd
+
+-- | Check if a removal op does something (not just skip).
+isActionable :: RemovalOp -> Bool
+isActionable (DeleteFileOp _ RFGone) = False
+isActionable _ = True
+
+-- | Format a summary of counts.
+formatCounts :: Int -> Int -> Int -> Text
+formatCounts 0 0 0 = ""
+formatCounts d s c =
+  " "
+    <> T.intercalate
+      ", "
+      ( filter
+          (not . T.null)
+          [ if d > 0 then T.pack (show d) <> " file" <> plural d <> " deleted" else "",
+            if s > 0 then T.pack (show s) <> " section" <> plural s <> " stripped" else "",
+            if c > 0 then T.pack (show c) <> " command" <> plural c <> " run" else ""
+          ]
+      )
+    <> "."
+  where
+    plural n = if n /= 1 then "s" else ""
+
+-- | Find an applied module by name in the manifest.
+findAppliedModule :: Manifest -> ModuleName -> Maybe AppliedModule
+findAppliedModule manifest modName =
+  case filter (\am -> am.name == modName) manifest.modules of
+    (am : _) -> Just am
+    [] -> Nothing
 
 -- | Ask the user about each conflicted file interactively.
-resolveConflictsInteractively :: [FilePath] -> IO (Set FilePath)
+resolveConflictsInteractively :: [FilePath] -> IO (Set.Set FilePath)
 resolveConflictsInteractively paths = do
   TIO.putStrLn "\nThe following files have been modified since generation:"
   foldM askOne Set.empty paths
