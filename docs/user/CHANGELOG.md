@@ -3,7 +3,7 @@
 ## Last Reviewed Commit
 
 ```
-(to be updated after M6 commit)
+02f9b85 Update documentation and agent prompts for schema URL imports
 ```
 
 ---
