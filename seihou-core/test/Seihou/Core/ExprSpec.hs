@@ -33,6 +33,14 @@ spec = do
       parseExpr "Eq license MIT"
         `shouldBe` Right (ExprEq "license" (VText "MIT"))
 
+    it "parses Eq with bare word true as VBool" $ do
+      parseExpr "Eq enabled true"
+        `shouldBe` Right (ExprEq "enabled" (VBool True))
+
+    it "parses Eq with bare word false as VBool" $ do
+      parseExpr "Eq enabled false"
+        `shouldBe` Right (ExprEq "enabled" (VBool False))
+
     it "parses && expression" $ do
       parseExpr "IsSet a && IsSet b"
         `shouldBe` Right (ExprAnd (ExprIsSet "a") (ExprIsSet "b"))
@@ -105,6 +113,12 @@ spec = do
 
     it "evaluates ExprEq when values differ" $ do
       evalExpr vars (ExprEq "license" (VText "BSD")) `shouldBe` False
+
+    it "evaluates ExprEq with VBool True" $ do
+      evalExpr vars (ExprEq "enabled" (VBool True)) `shouldBe` True
+
+    it "evaluates ExprEq with VBool False against VBool True" $ do
+      evalExpr vars (ExprEq "enabled" (VBool False)) `shouldBe` False
 
     it "evaluates ExprNot" $ do
       evalExpr vars (ExprNot (ExprLit True)) `shouldBe` False

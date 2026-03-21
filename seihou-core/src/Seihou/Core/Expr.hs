@@ -165,4 +165,8 @@ parseBareWord input =
   let (word, rest) = T.break (\c -> c == ' ' || c == ')' || c == '&' || c == '|') input
    in if T.null word
         then Left "expected value"
-        else Right (VText word, rest)
+        else Right (classifyBareWord word, rest)
+  where
+    classifyBareWord "true" = VBool True
+    classifyBareWord "false" = VBool False
+    classifyBareWord w = VText w
