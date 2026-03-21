@@ -53,16 +53,36 @@ Module names must match `[a-z][a-z0-9-]*`.
     }
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [] : List Text
+, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
 }
 ```
+
+### Dependencies
+
+Dependencies use the record form `{ module, vars }`. For simple deps without variable bindings:
+  dependencies = [ { module = "nix-base", vars = [] : List { name : Text, value : Text } } ]
+
+For parameterized deps that supply values to the child module:
+  dependencies = [ { module = "nix-flake", vars = [ { name = "nix.system", value = "x86_64-linux" } ] } ]
+
+### Schema package and record completion
+
+Seihou provides a Dhall schema package that supports record completion (`::`) for concise authoring:
+```dhall
+let S = ./schema/package.dhall
+in S.Module::{ name = "my-module"
+             , steps = [ S.Step::{ strategy = "template", src = "foo.tpl", dest = "foo" } ]
+             , dependencies = [ S.Dependency::{ module = "nix-base" } ]
+             }
+```
+Available types: S.Module, S.Step, S.VarDecl, S.VarExport, S.Prompt, S.Command, S.Dependency.
 
 ### Empty list type annotations
 
 Dhall requires type annotations on empty lists. Common patterns:
   exports = [] : List { var : Text, alias : Optional Text }
   commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-  dependencies = [] : List Text
+  dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
 
 ### Variable types
 
@@ -111,6 +131,7 @@ Use these commands via the Bash tool:
 - `seihou status` — show manifest state
 - `seihou diff` — compare manifest vs disk
 - `seihou config set|get|unset|list KEY [VALUE] [--global]` — manage config
+- `seihou schema-upgrade [PATH] [--dry-run] [--all]` — upgrade module.dhall to current schema
 
 
 ## Workflow

@@ -91,6 +91,7 @@ Use these commands via the Bash tool:
 - `seihou status` — show manifest state (applied modules, tracked files, variables)
 - `seihou diff` — compare tracked files against disk (modified, deleted, orphaned)
 - `seihou validate-module [PATH]` — validate a module definition
+- `seihou schema-upgrade [PATH] [--dry-run] [--all]` — upgrade module.dhall to current schema
 
 ### Project initialization
 - `seihou init` — initialize ~/.config/seihou/ (run once per machine)
@@ -98,7 +99,7 @@ Use these commands via the Bash tool:
 
 ## Variable Resolution
 
-Variables resolve through an 8-level precedence chain (highest to lowest):
+Variables resolve through a 9-level precedence chain (highest to lowest):
 
 1. CLI flags (`--var key=value`)
 2. Environment variables (`SEIHOU_VAR_*`)
@@ -151,9 +152,14 @@ A Seihou module is a directory containing a `module.dhall` file and a `files/` s
     }
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [] : List Text
+, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
 }
 ```
+
+### Dependencies
+
+Dependencies use the record form `{ module, vars }`:
+  dependencies = [ { module = "nix-base", vars = [] : List { name : Text, value : Text } } ]
 
 ### Variable types
 - text: String value
