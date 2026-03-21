@@ -25,7 +25,7 @@ After implementation, a user can:
 - [x] Milestone 4: Rewrite the Remove CLI handler to use declared removal steps (2026-03-21)
 - [x] Milestone 5: Tests for the new removal engine (2026-03-21)
 - [x] Milestone 6: Update all documentation and agent prompts (2026-03-21)
-- [ ] Milestone 7: End-to-end validation (manual — requires creating a test module with removal spec)
+- [x] Milestone 7: End-to-end validation (2026-03-21)
 
 
 ## Surprises & Discoveries
@@ -67,7 +67,14 @@ After implementation, a user can:
 - Documentation: All 8 doc files and 3 agent prompts updated.
 - Surprise: Local `schema/` directory is a git submodule pointing to `seihou-schema` — required parallel updates.
 
-**Remaining:** Milestone 7 (manual end-to-end validation) requires creating a real module with a `removal` section and testing `seihou run` → `seihou remove` round-trip.
+**Milestone 7 validated (2026-03-21):** Created a test module in `/tmp` with two `remove-file` steps and one `remove-section` step. All 7 validation checks passed:
+1. `seihou run removable-test` — files created, `.gitignore` section markers present
+2. `seihou remove --dry-run` — shows Delete/Delete/Strip operations
+3. `seihou remove` — files deleted, section stripped from `.gitignore`, manifest updated
+4. `seihou status` — module no longer listed
+5. `seihou remove base` (no removal spec) — error: "has no removal spec"
+6. Modified file detected as conflict ("modified by user")
+7. `--force` deletes conflicted files
 
 
 ## Context and Orientation
