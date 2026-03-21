@@ -65,6 +65,16 @@ runFilesystemPure initial = reinterpret (runState initial) handler
         fs <- get @PureFS
         pure (Set.member path fs.dirs)
       GetCurrentDirectory -> pure "/pure-fs"
+      RemoveFile path -> do
+        modify @PureFS (\fs -> fs {files = Map.delete path fs.files})
+      RemoveDirectoryIfEmpty path -> do
+        fs <- get @PureFS
+        let hasChildren =
+              any (\fp -> (path <> "/") `isPrefixOfPath` fp) (Map.keys fs.files)
+                || any (\d -> (path <> "/") `isPrefixOfPath` d) (Set.toList fs.dirs)
+        if hasChildren
+          then pure ()
+          else modify @PureFS (\fs' -> fs' {dirs = Set.delete path fs'.dirs})
 
 -- | Check if a path is a direct child of a prefix directory.
 isDirectChild :: String -> String -> Bool

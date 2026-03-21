@@ -71,4 +71,5 @@
     }
   ]
 , dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
+, removable = False
 }

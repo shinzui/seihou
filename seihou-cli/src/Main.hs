@@ -15,6 +15,7 @@ import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.List (handleList)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.Outdated (handleOutdated)
+import Seihou.CLI.Remove (handleRemove)
 import Seihou.CLI.Run (handleRun)
 import Seihou.CLI.SchemaUpgrade (handleSchemaUpgrade)
 import Seihou.CLI.Setup (handleSetup)
@@ -31,6 +32,8 @@ main = do
       handleInit
     Run runOpts ->
       handleRun runOpts
+    Remove removeOpts ->
+      handleRemove removeOpts
     Vars varsOpts ->
       handleVars varsOpts
     Install installOpts ->

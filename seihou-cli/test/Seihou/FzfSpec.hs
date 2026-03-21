@@ -150,13 +150,15 @@ validModule name desc src =
         Right
           Module
             { name = ModuleName (T.pack name),
+              version = Nothing,
               description = Just (T.pack desc),
               vars = [],
               exports = [],
               prompts = [],
               steps = [],
               commands = [],
-              dependencies = []
+              dependencies = [],
+              removable = False
             },
       discoveredSource = src,
       discoveredDir = "/tmp/" ++ name

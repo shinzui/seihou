@@ -78,7 +78,8 @@ spec = do
                 prompts = [],
                 steps = [],
                 commands = [],
-                dependencies = []
+                dependencies = [],
+                removable = False
               }
       m.name `shouldBe` "haskell-base"
 
@@ -93,7 +94,8 @@ spec = do
                 prompts = [],
                 steps = [],
                 commands = [],
-                dependencies = []
+                dependencies = [],
+                removable = False
               }
       m `shouldBe` m
 
@@ -108,7 +110,8 @@ spec = do
                 prompts = [],
                 steps = [],
                 commands = [],
-                dependencies = []
+                dependencies = [],
+                removable = False
               }
       show m `shouldNotBe` ""
 

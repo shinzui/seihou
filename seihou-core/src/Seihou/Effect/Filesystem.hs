@@ -8,6 +8,8 @@ module Seihou.Effect.Filesystem
     doesFileExist,
     doesDirectoryExist,
     getCurrentDirectory,
+    removeFile,
+    removeDirectoryIfEmpty,
   )
 where
 
@@ -22,6 +24,8 @@ data Filesystem :: Effect where
   DoesFileExist :: FilePath -> Filesystem m Bool
   DoesDirectoryExist :: FilePath -> Filesystem m Bool
   GetCurrentDirectory :: Filesystem m FilePath
+  RemoveFile :: FilePath -> Filesystem m ()
+  RemoveDirectoryIfEmpty :: FilePath -> Filesystem m ()
 
 type instance DispatchOf Filesystem = Dynamic
 
@@ -48,3 +52,9 @@ doesDirectoryExist path = send (DoesDirectoryExist path)
 
 getCurrentDirectory :: (Filesystem :> es) => Eff es FilePath
 getCurrentDirectory = send GetCurrentDirectory
+
+removeFile :: (Filesystem :> es) => FilePath -> Eff es ()
+removeFile path = send (RemoveFile path)
+
+removeDirectoryIfEmpty :: (Filesystem :> es) => FilePath -> Eff es ()
+removeDirectoryIfEmpty path = send (RemoveDirectoryIfEmpty path)

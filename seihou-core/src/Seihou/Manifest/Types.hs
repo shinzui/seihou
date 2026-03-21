@@ -68,7 +68,8 @@ instance ToJSON AppliedModule where
     Aeson.object
       [ "name" .= am.name.unModuleName,
         "source" .= am.source,
-        "appliedAt" .= am.appliedAt
+        "appliedAt" .= am.appliedAt,
+        "removable" .= am.removable
       ]
 
 instance FromJSON AppliedModule where
@@ -77,6 +78,7 @@ instance FromJSON AppliedModule where
       <$> (ModuleName <$> o .: "name")
       <*> o .: "source"
       <*> o .: "appliedAt"
+      <*> o Aeson..:? "removable" Aeson..!= False
 
 instance ToJSON FileRecord where
   toJSON fr =

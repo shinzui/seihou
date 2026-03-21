@@ -52,4 +52,5 @@
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
 , dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
+, removable = False
 }

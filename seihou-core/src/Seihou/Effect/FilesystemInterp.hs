@@ -3,6 +3,7 @@ module Seihou.Effect.FilesystemInterp
   )
 where
 
+import Control.Monad (when)
 import Data.Text.IO qualified as TIO
 import Seihou.Effect.Filesystem (Filesystem (..))
 import Seihou.Prelude
@@ -21,3 +22,7 @@ runFilesystem = interpret $ \_ -> \case
   DoesFileExist path -> liftIO (Dir.doesFileExist path)
   DoesDirectoryExist path -> liftIO (Dir.doesDirectoryExist path)
   GetCurrentDirectory -> liftIO Dir.getCurrentDirectory
+  RemoveFile path -> liftIO (Dir.removeFile path)
+  RemoveDirectoryIfEmpty path -> liftIO $ do
+    entries <- Dir.listDirectory path
+    when (null entries) (Dir.removeDirectory path)

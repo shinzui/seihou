@@ -61,6 +61,7 @@ library
     Seihou.Engine.Execute
     Seihou.Engine.Plan
     Seihou.Engine.Preview
+    Seihou.Engine.Remove
     Seihou.Engine.Section
     Seihou.Engine.Template
     Seihou.Engine.Validate
@@ -130,6 +131,7 @@ test-suite seihou-core-test
     Seihou.Engine.ExecuteSpec
     Seihou.Engine.PlanSpec
     Seihou.Engine.PreviewSpec
+    Seihou.Engine.RemoveSpec
     Seihou.Engine.SectionSpec
     Seihou.Engine.TemplateSpec
     Seihou.Engine.ValidateSpec

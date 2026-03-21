@@ -113,6 +113,7 @@ moduleDecoder =
         <*> field "steps" (list stepDecoder)
         <*> field "commands" (list commandDecoder)
         <*> field "dependencies" (list dependencyDecoder)
+        <*> field "removable" bool
     )
 
 moduleNameDecoder :: Decoder ModuleName

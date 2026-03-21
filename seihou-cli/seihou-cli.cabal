@@ -78,6 +78,7 @@ executable seihou
     Seihou.CLI.List
     Seihou.CLI.NewModule
     Seihou.CLI.Outdated
+    Seihou.CLI.Remove
     Seihou.CLI.Run
     Seihou.CLI.SchemaUpgrade
     Seihou.CLI.SchemaVersion

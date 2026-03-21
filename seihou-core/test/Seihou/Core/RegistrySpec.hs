@@ -236,5 +236,6 @@ writeMinimalModuleDhall path = do
         \, steps = [] : List { strategy : Text, src : Text, dest : Text, when : Optional Text, patch : Optional Text }\n\
         \, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }\n\
         \, dependencies = [] : List Text\n\
+        \, removable = False\n\
         \}"
   writeFile path dhall

@@ -42,15 +42,16 @@ goodModule =
             }
         ],
       commands = [],
-      dependencies = []
+      dependencies = [],
+      removable = False
     }
 
 -- | Helpers to update Module fields without ambiguous record updates.
 withModuleName :: ModuleName -> Module -> Module
-withModuleName n m = Module n m.version m.description m.vars m.exports m.prompts m.steps m.commands m.dependencies
+withModuleName n m = Module n m.version m.description m.vars m.exports m.prompts m.steps m.commands m.dependencies m.removable
 
 withModuleVars :: [VarDecl] -> Module -> Module
-withModuleVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies
+withModuleVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies m.removable
 
 hasError :: T.Text -> [T.Text] -> Bool
 hasError needle = any (T.isInfixOf needle)
@@ -227,7 +228,8 @@ spec = do
                   prompts = [Prompt {var = "missing", text = "?", condition = Nothing, choices = Nothing}],
                   steps = [Step Template "nonexistent.tpl" "/bad/dest" Nothing Nothing],
                   commands = [],
-                  dependencies = []
+                  dependencies = [],
+                  removable = False
                 }
         result <- validateModule tmpDir bad
         case result of

@@ -27,6 +27,7 @@ import Seihou.Engine.DiffSpec qualified as DiffSpec
 import Seihou.Engine.ExecuteSpec qualified as ExecuteSpec
 import Seihou.Engine.PlanSpec qualified as PlanSpec
 import Seihou.Engine.PreviewSpec qualified as PreviewSpec
+import Seihou.Engine.RemoveSpec qualified as RemoveSpec
 import Seihou.Engine.SectionSpec qualified as SectionSpec
 import Seihou.Engine.TemplateSpec qualified as TemplateSpec
 import Seihou.Engine.ValidateSpec qualified as ValidateSpec
@@ -70,10 +71,11 @@ main = do
   conflictTests <- ConflictSpec.tests
   diffTests <- DiffSpec.tests
   executeTests <- ExecuteSpec.tests
+  removeTests <- RemoveSpec.tests
   compositionTests <- CompositionSpec.tests
   executionTests <- ExecutionSpec.tests
   integrationTests <- IntegrationSpec.tests
   generationTests <- GenerationSpec.tests
   manifestTypesTests <- ManifestTypesSpec.tests
   promptTests <- PromptSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, moduleTests, registryTests, scaffoldTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, planTests, previewTests, sectionTests, validateTests, configTests, dhallEvalTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])
+  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, moduleTests, registryTests, scaffoldTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, planTests, previewTests, sectionTests, validateTests, configTests, dhallEvalTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, removeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])

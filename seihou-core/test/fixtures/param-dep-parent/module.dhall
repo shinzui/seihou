@@ -21,4 +21,5 @@
     , vars = [ { name = "skill.name", value = "my-skill" } ]
     }
   ]
+, removable = False
 }

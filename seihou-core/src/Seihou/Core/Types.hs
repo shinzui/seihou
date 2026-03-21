@@ -184,7 +184,8 @@ data Module = Module
     prompts :: [Prompt],
     steps :: [Step],
     commands :: [Command],
-    dependencies :: [Dependency]
+    dependencies :: [Dependency],
+    removable :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -276,7 +277,8 @@ data Manifest = Manifest
 data AppliedModule = AppliedModule
   { name :: ModuleName,
     source :: FilePath,
-    appliedAt :: UTCTime
+    appliedAt :: UTCTime,
+    removable :: Bool
   }
   deriving stock (Eq, Show, Generic)
 

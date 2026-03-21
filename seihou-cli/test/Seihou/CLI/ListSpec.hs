@@ -26,7 +26,8 @@ validModule name desc src =
               prompts = [],
               steps = [],
               commands = [],
-              dependencies = []
+              dependencies = [],
+              removable = False
             },
       discoveredSource = src,
       discoveredDir = "/fake/" ++ name

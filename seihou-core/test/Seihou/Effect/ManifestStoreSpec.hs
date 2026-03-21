@@ -26,7 +26,7 @@ sampleManifest :: Manifest
 sampleManifest =
   (emptyManifest fixedTime)
     { modules =
-        [ AppliedModule (ModuleName "haskell-base") "/path/to/mod" fixedTime
+        [ AppliedModule (ModuleName "haskell-base") "/path/to/mod" fixedTime False
         ],
       vars = Map.fromList [(VarName "project.name", "my-app")],
       files =

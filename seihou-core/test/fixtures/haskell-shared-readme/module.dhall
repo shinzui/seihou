@@ -14,4 +14,5 @@
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
 , dependencies = [ { module = "haskell-base", vars = [] : List { name : Text, value : Text } } ]
+, removable = False
 }

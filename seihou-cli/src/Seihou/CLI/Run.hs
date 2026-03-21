@@ -365,7 +365,8 @@ updateAllModules existing modulesInOrder now =
         [ AppliedModule
             { name = m.name,
               source = dir,
-              appliedAt = now
+              appliedAt = now,
+              removable = m.removable
             }
         | (m, dir) <- modulesInOrder
         ]

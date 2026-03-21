@@ -17,4 +17,5 @@
   [ { module = "haskell-base", vars = [] : List { name : Text, value : Text } }
   , { module = "nix-flake", vars = [] : List { name : Text, value : Text } }
   ]
+, removable = False
 }

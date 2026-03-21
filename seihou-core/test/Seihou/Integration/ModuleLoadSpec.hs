@@ -106,7 +106,8 @@ spec = do
                 prompts = [],
                 steps = [],
                 commands = [],
-                dependencies = []
+                dependencies = [],
+                removable = False
               }
           modules = Map.fromList [("test/module.dhall", testModule)]
       result <- runEff $ runDhallEvalPure modules $ do

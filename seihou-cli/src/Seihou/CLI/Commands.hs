@@ -1,6 +1,7 @@
 module Seihou.CLI.Commands
   ( Command (..),
     RunOpts (..),
+    RemoveOpts (..),
     VarsOpts (..),
     InstallOpts (..),
     NewModuleOpts (..),
@@ -36,6 +37,7 @@ import Seihou.Prelude
 data Command
   = Init
   | Run RunOpts
+  | Remove RemoveOpts
   | Vars VarsOpts
   | Install InstallOpts
   | Status
@@ -83,6 +85,14 @@ data RunOpts = RunOpts
     runNamespace :: Maybe Text,
     runContext :: Maybe Text,
     runVerbose :: Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
+data RemoveOpts = RemoveOpts
+  { removeModule :: ModuleName,
+    removeDryRun :: Bool,
+    removeForce :: Bool,
+    removeVerbose :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -207,6 +217,7 @@ commandParser =
   subparser
     ( command "init" initInfo
         <> command "run" runInfo
+        <> command "remove" removeInfo
         <> command "vars" varsInfo
         <> command "install" installInfo
         <> command "status" statusInfo
@@ -269,6 +280,43 @@ runInfo =
                 ]
           )
     )
+
+removeInfo :: ParserInfo Command
+removeInfo =
+  info
+    (removeParser <**> helper)
+    ( fullDesc
+        <> progDesc "Remove an applied module and delete its generated files"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Removes a module that was previously applied via 'seihou run' and" :: String),
+                  pretty ("deletes the files it generated. Only modules declared as removable" :: String),
+                  pretty ("in their module.dhall (removable = True) can be removed." :: String),
+                  line,
+                  pretty ("Files that have been modified since generation are treated as" :: String),
+                  pretty ("conflicts. Use --force to delete them without prompting, or" :: String),
+                  pretty ("respond interactively to keep or delete each one." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou remove haskell-base" :: String),
+                        pretty ("seihou remove haskell-base --dry-run" :: String),
+                        pretty ("seihou remove haskell-base --force" :: String)
+                      ]
+                ]
+          )
+    )
+
+removeParser :: Parser Command
+removeParser =
+  fmap Remove $
+    RemoveOpts
+      <$> argument moduleNameReader (metavar "MODULE" <> help "Module to remove")
+      <*> switch (long "dry-run" <> help "Show removal plan without executing")
+      <*> switch (long "force" <> help "Delete conflicted files without prompting")
+      <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
 
 varsInfo :: ParserInfo Command
 varsInfo =
