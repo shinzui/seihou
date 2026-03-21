@@ -80,6 +80,7 @@ executable seihou
     Seihou.CLI.Outdated
     Seihou.CLI.Run
     Seihou.CLI.SchemaUpgrade
+    Seihou.CLI.SchemaVersion
     Seihou.CLI.Setup
     Seihou.CLI.Shared
     Seihou.CLI.Status
