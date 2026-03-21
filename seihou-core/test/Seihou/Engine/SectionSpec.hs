@@ -1,5 +1,6 @@
 module Seihou.Engine.SectionSpec (tests) where
 
+import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Engine.Section
 import Test.Hspec
@@ -88,3 +89,56 @@ spec = do
     it "PrependFile with empty existing content" $ do
       let result = applyTextPatch PrependFile modName "#" "" "new content\n"
       result `shouldBe` Right "new content\n"
+
+  describe "removeSection" $ do
+    it "removes a section between markers" $ do
+      let content = "before\n# --- seihou:nix-flake ---\nmodule content\n# --- /seihou:nix-flake ---\nafter\n"
+          result = removeSection modName "#" content
+      result `shouldBe` "before\nafter\n"
+
+    it "leaves content outside markers intact" $ do
+      let content = "line1\nline2\n# --- seihou:nix-flake ---\nstuff\n# --- /seihou:nix-flake ---\nline3\nline4\n"
+          result = removeSection modName "#" content
+      result `shouldBe` "line1\nline2\nline3\nline4\n"
+
+    it "returns content unchanged when no markers found" $ do
+      let content = "no markers here\njust text\n"
+          result = removeSection modName "#" content
+      result `shouldBe` content
+
+    it "only removes the target module's section" $ do
+      let otherMod' = ModuleName "other-module"
+          content =
+            "start\n"
+              <> "# --- seihou:nix-flake ---\nflake stuff\n# --- /seihou:nix-flake ---\n"
+              <> "# --- seihou:other-module ---\nother stuff\n# --- /seihou:other-module ---\n"
+              <> "end\n"
+      -- Remove nix-flake: should keep other-module
+      let result = removeSection modName "#" content
+      T.isInfixOf "seihou:nix-flake" result `shouldBe` False
+      T.isInfixOf "seihou:other-module" result `shouldBe` True
+      -- Remove other-module: should keep nix-flake
+      let result2 = removeSection otherMod' "#" content
+      T.isInfixOf "seihou:nix-flake" result2 `shouldBe` True
+      T.isInfixOf "seihou:other-module" result2 `shouldBe` False
+
+    it "cleans up double blank lines after removal" $ do
+      let content = "before\n\n# --- seihou:nix-flake ---\nstuff\n# --- /seihou:nix-flake ---\n\nafter\n"
+          result = removeSection modName "#" content
+      -- Should not have triple+ blank lines
+      T.isInfixOf "\n\n\n" result `shouldBe` False
+
+    it "handles section at beginning of file" $ do
+      let content = "# --- seihou:nix-flake ---\nstuff\n# --- /seihou:nix-flake ---\nafter\n"
+          result = removeSection modName "#" content
+      result `shouldBe` "after\n"
+
+    it "handles section at end of file" $ do
+      let content = "before\n# --- seihou:nix-flake ---\nstuff\n# --- /seihou:nix-flake ---\n"
+          result = removeSection modName "#" content
+      result `shouldBe` "before\n"
+
+    it "works with -- comment prefix" $ do
+      let content = "before\n-- --- seihou:nix-flake ---\nstuff\n-- --- /seihou:nix-flake ---\nafter\n"
+          result = removeSection modName "--" content
+      result `shouldBe` "before\nafter\n"

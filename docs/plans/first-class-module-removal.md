@@ -23,7 +23,7 @@ After implementation, a user can:
 - [x] Milestone 2: Implement Dhall decoders and manifest storage for removal data (2026-03-21)
 - [x] Milestone 3: Implement removal operations in the engine (remove-file, remove-section, rewrite-file) (2026-03-21)
 - [x] Milestone 4: Rewrite the Remove CLI handler to use declared removal steps (2026-03-21)
-- [ ] Milestone 5: Tests for the new removal engine
+- [x] Milestone 5: Tests for the new removal engine (2026-03-21)
 - [ ] Milestone 6: Update all documentation and agent prompts
 - [ ] Milestone 7: End-to-end validation
 
