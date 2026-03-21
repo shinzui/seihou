@@ -15,16 +15,29 @@ import Test.Tasty.Hspec (testSpec)
 tests :: IO TestTree
 tests = testSpec "Seihou.Core.Scaffold" spec
 
+-- Test schema URL and hash — uses the local schema path for offline testing
+testSchemaUrl :: T.Text
+testSchemaUrl = "https://raw.githubusercontent.com/shinzui/seihou-schema/6df1496a7ce06a693d8b63bd4cf2c5d4a136670c/package.dhall"
+
+testSchemaHash :: T.Text
+testSchemaHash = "sha256:4946704e8c2dd295179003832428b82273fb0a0cff8eae9282b64ae7e18b89f4"
+
 spec :: Spec
 spec = do
   describe "moduleDhall" $ do
+    it "generates Dhall that includes schema import" $ do
+      let content = moduleDhall "test-mod" testSchemaUrl testSchemaHash
+      T.isInfixOf "let S =" content `shouldBe` True
+      T.isInfixOf "seihou-schema" content `shouldBe` True
+      T.isInfixOf "S.Module::" content `shouldBe` True
+
     it "generates Dhall that loads via evalModuleFromFile" $ do
       withSystemTempDirectory "seihou-scaffold-test" $ \tmpDir -> do
         let modDir = tmpDir </> "test-mod"
             dhallFile = modDir </> "module.dhall"
             filesDir = modDir </> "files"
         createDirectoryIfMissing True filesDir
-        writeFile dhallFile (T.unpack (moduleDhall "test-mod"))
+        writeFile dhallFile (T.unpack (moduleDhall "test-mod" testSchemaUrl testSchemaHash))
         writeFile (filesDir </> "README.md.tpl") (T.unpack readmeTemplate)
         result <- evalModuleFromFile dhallFile
         case result of
@@ -37,7 +50,7 @@ spec = do
             dhallFile = modDir </> "module.dhall"
             filesDir = modDir </> "files"
         createDirectoryIfMissing True filesDir
-        writeFile dhallFile (T.unpack (moduleDhall "test-mod"))
+        writeFile dhallFile (T.unpack (moduleDhall "test-mod" testSchemaUrl testSchemaHash))
         writeFile (filesDir </> "README.md.tpl") (T.unpack readmeTemplate)
         result <- evalModuleFromFile dhallFile
         case result of
@@ -54,7 +67,7 @@ spec = do
             dhallFile = modDir </> "module.dhall"
             filesDir = modDir </> "files"
         createDirectoryIfMissing True filesDir
-        writeFile dhallFile (T.unpack (moduleDhall "test-mod"))
+        writeFile dhallFile (T.unpack (moduleDhall "test-mod" testSchemaUrl testSchemaHash))
         writeFile (filesDir </> "README.md.tpl") (T.unpack readmeTemplate)
         result <- evalModuleFromFile dhallFile
         case result of

@@ -8,41 +8,39 @@ import Data.Text qualified as T
 import Seihou.Prelude
 
 -- | Generate the module.dhall content for a new module.
--- The output matches the Dhall schema expected by 'Seihou.Dhall.Eval.moduleDecoder'.
-moduleDhall :: Text -> Text
-moduleDhall name =
+-- The output imports the schema via URL and uses record completion (::).
+moduleDhall :: Text -> Text -> Text -> Text
+moduleDhall name url hash =
   T.unlines
-    [ "{ name = \"" <> name <> "\"",
-      ", version = None Text",
-      ", description = Some \"A new seihou module\"",
-      ", vars =",
-      "  [ { name = \"project.name\"",
-      "    , type = \"text\"",
-      "    , default = None Text",
-      "    , description = Some \"The name of the project\"",
-      "    , required = True",
-      "    , validation = None Text",
-      "    }",
-      "  ]",
-      ", exports = [] : List { var : Text, alias : Optional Text }",
-      ", prompts =",
-      "  [ { var = \"project.name\"",
-      "    , text = \"What is your project name?\"",
-      "    , when = None Text",
-      "    , choices = None (List Text)",
-      "    }",
-      "  ]",
-      ", steps =",
-      "  [ { strategy = \"template\"",
-      "    , src = \"README.md.tpl\"",
-      "    , dest = \"README.md\"",
-      "    , when = None Text",
-      "    , patch = None Text",
-      "    }",
-      "  ]",
-      ", commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }",
-      ", dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }",
-      "}"
+    [ "let S =",
+      "      " <> url,
+      "        " <> hash,
+      "",
+      "in  S.Module::{",
+      "    , name = \"" <> name <> "\"",
+      "    , description = Some \"A new seihou module\"",
+      "    , vars =",
+      "      [ S.VarDecl::{",
+      "        , name = \"project.name\"",
+      "        , type = \"text\"",
+      "        , description = Some \"The name of the project\"",
+      "        , required = True",
+      "        }",
+      "      ]",
+      "    , prompts =",
+      "      [ S.Prompt::{",
+      "        , var = \"project.name\"",
+      "        , text = \"What is your project name?\"",
+      "        }",
+      "      ]",
+      "    , steps =",
+      "      [ S.Step::{",
+      "        , strategy = \"template\"",
+      "        , src = \"README.md.tpl\"",
+      "        , dest = \"README.md\"",
+      "        }",
+      "      ]",
+      "    }"
     ]
 
 -- | Generate the README.md.tpl template content.

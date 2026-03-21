@@ -6,6 +6,7 @@ where
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (NewModuleOpts (..))
+import Seihou.CLI.SchemaVersion (schemaHash, schemaUrl)
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Scaffold (moduleDhall, readmeTemplate)
 import Seihou.Core.Types (LogLevel (..))
@@ -44,7 +45,7 @@ handleNewModule nopts = do
   createDirectoryIfMissing True (outputDir </> "files")
 
   -- Write module.dhall
-  let dhallContent = moduleDhall name
+  let dhallContent = moduleDhall name schemaUrl schemaHash
   writeFile (outputDir </> "module.dhall") (T.unpack dhallContent)
   TIO.putStrLn $ "Created " <> T.pack (outputDir </> "module.dhall")
 
