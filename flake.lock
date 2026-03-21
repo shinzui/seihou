@@ -163,7 +163,25 @@
         "haskell-nix": "haskell-nix",
         "nixpkgs": "nixpkgs_2",
         "pre-commit-hooks": "pre-commit-hooks",
+        "seihou-schema-src": "seihou-schema-src",
         "treefmt-nix": "treefmt-nix"
+      }
+    },
+    "seihou-schema-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1774097576,
+        "narHash": "sha256-IUGJjpcnPuJvEr0kahpR9FyqgCIONJXWH27zTwtWxUM=",
+        "owner": "shinzui",
+        "repo": "seihou-schema",
+        "rev": "6df1496a7ce06a693d8b63bd4cf2c5d4a136670c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "seihou-schema",
+        "rev": "6df1496a7ce06a693d8b63bd4cf2c5d4a136670c",
+        "type": "github"
       }
     },
     "systems": {

@@ -9,6 +9,12 @@
   # Shared Haskell patch management
   inputs.haskell-nix.url = "github:shinzui/haskell-nix";
 
+  # Dhall schema package (non-flake, pinned to commit)
+  inputs.seihou-schema-src = {
+    url = "github:shinzui/seihou-schema/6df1496a7ce06a693d8b63bd4cf2c5d4a136670c";
+    flake = false;
+  };
+
 
   outputs = { self, nixpkgs, pre-commit-hooks, flake-utils, treefmt-nix, ... }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
@@ -28,6 +34,7 @@
             (inputs.haskell-nix.lib.haskellExtension pkgs.haskell.lib.compose pkgs)
             (import ./nix/haskell-overlay.nix {
               inherit pkgs gitRev;
+              seihou-schema-src = inputs.seihou-schema-src;
             });
         };
       in
