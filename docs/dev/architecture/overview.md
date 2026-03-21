@@ -98,7 +98,7 @@ type AppEffects =
 
 | Effect | Responsibility | Test Strategy |
 |---|---|---|
-| `Filesystem` | File I/O, directory operations, path resolution | In-memory filesystem |
+| `Filesystem` | File I/O, directory operations, path resolution, file/directory removal | In-memory filesystem |
 | `Console` | Interactive prompts, terminal output, progress bars | Scripted input/captured output |
 | `DhallEval` | Evaluate Dhall expressions to Haskell values | Pre-evaluated fixtures |
 | `ConfigReader` | Resolve config from all layers with provenance | Pure config maps |
@@ -137,6 +137,7 @@ seihou/
 │           │   ├── Conflict.hs    # Conflict resolution
 │           │   ├── Preview.hs     # Diff visualization
 │           │   ├── Section.hs     # Text patching (append/prepend section)
+│           │   ├── Remove.hs      # Module removal engine
 │           │   ├── Validate.hs    # Post-generation validation
 │           │   └── DhallJSON.hs   # Dhall-to-JSON bridge
 │           ├── Composition/
@@ -180,6 +181,7 @@ seihou/
 │           │   ├── Context.hs     # seihou context handler
 │           │   ├── Browse.hs      # seihou browse handler
 │           │   ├── Outdated.hs    # seihou outdated handler
+│           │   ├── Remove.hs      # seihou remove handler
 │           │   ├── Upgrade.hs     # seihou upgrade handler
 │           │   ├── Help.hs        # seihou help handler
 │           │   ├── Completions.hs # seihou completions handler

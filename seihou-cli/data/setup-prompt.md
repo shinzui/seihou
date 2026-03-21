@@ -86,6 +86,10 @@ Use these commands via the Bash tool:
   - `--namespace NS`: override namespace for config lookup
   - `-c CTX`: override context for config lookup
   - `--no-commands`: skip shell command steps
+- `seihou remove MODULE [--dry-run] [--force]` — remove an applied module and its files
+  - Only works for modules with `removable = True`
+  - `--dry-run`: preview the removal plan
+  - `--force`: delete conflicted files without prompting
 
 ### Status and diagnostics
 - `seihou status` — show manifest state (applied modules, tracked files, variables)

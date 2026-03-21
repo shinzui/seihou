@@ -3,12 +3,31 @@
 ## Last Reviewed Commit
 
 ```
-a184a71 Finalize publish-schema-repo plan: all milestones complete
+f115d6b Add seihou remove command for reversible module removal
 ```
 
 ---
 
 ## Changelog
+
+### 2026-03-21 (remove command)
+
+**Reviewed commits:** `cf7aeac` through `f115d6b`
+
+- Added `docs/cli/remove.md` — CLI reference for the new `seihou remove` command
+- Updated `docs/user/module-authoring.md` — added `removable` field to module.dhall format reference, added "Removing modules" section with reversibility guidance
+- Updated `docs/user/getting-started.md` — added "Removing a module" to the Other commands section
+- Updated `docs/dev/design/proposed/cli-commands.md` — added `seihou remove` command spec, moved from future enhancements to documented, updated command count to eighteen
+- Updated `docs/dev/architecture/overview.md` — added `Remove.hs` to project tree (engine + CLI), updated Filesystem effect description
+
+**Features documented:**
+- `seihou remove <module> [--dry-run] [--force] [--verbose]` command for reversible module removal
+- `removable : Bool` field in module.dhall (default `False`) — opt-in for module removal
+- `RemoveFile` and `RemoveDirectoryIfEmpty` Filesystem effect operations
+- Removal plan classification: safe (unchanged), conflict (modified), gone (deleted)
+
+**No documentation needed:**
+- `cf7aeac` Fix bool value comparison in conditional expressions (bug fix, no user-facing doc impact)
 
 ### 2026-03-21 (schema URL imports)
 

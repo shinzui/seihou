@@ -55,8 +55,13 @@ Module names must match `[a-z][a-z0-9-]*`.
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
 , dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
+, removable = False
 }
 ```
+
+### Removable modules
+
+Set `removable = True` when a module's effects are safely reversible (Copy, Template, or DhallText strategies only, no patch operations, no destructive commands). Users can then run `seihou remove <module>` to delete generated files.
 
 ### Dependencies
 

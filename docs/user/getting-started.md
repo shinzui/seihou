@@ -476,6 +476,20 @@ When you run `seihou run` again in a project that already has a manifest, Seihou
 Conflicts are shown interactively, and you choose per-file whether to accept the new version, keep your changes, or skip the file. Use `--force` to auto-accept all new versions.
 
 
+### Removing a module
+
+If a module was declared as removable (`removable = True` in its `module.dhall`), you can undo its effects:
+
+```sh
+# Preview what would be removed
+seihou remove haskell-base --dry-run
+
+# Remove and delete generated files
+seihou remove haskell-base
+```
+
+Files that have been modified since generation are treated as conflicts — you'll be prompted to keep or delete each one. Use `--force` to delete everything without prompting. See the [Module Authoring Reference](module-authoring.md#removing-modules) for details on making modules removable.
+
 ### Check for updates
 
 See if any installed modules have newer versions available:

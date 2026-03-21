@@ -4,12 +4,12 @@
 |---|---|
 | **Status** | Implemented |
 | **Created** | 2026-03-01 |
-| **Updated** | 2026-03-20 |
+| **Updated** | 2026-03-21 |
 | **Subsystem** | CLI |
 
 ## Overview
 
-Seihou exposes seventeen commands in v1, covering the core generation loop, module authoring, configuration management, context management, module discovery, version management, agent-assisted workflows, help, and shell completions. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
+Seihou exposes eighteen commands, covering the core generation loop (including module removal), module authoring, configuration management, context management, module discovery, version management, agent-assisted workflows, help, and shell completions. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
 
 ## Motivation
 
@@ -27,7 +27,7 @@ The CLI is the primary interface to Seihou. It must support:
 | Decision | Choice | Rationale |
 |---|---|---|
 | CLI framework | optparse-applicative | Standard Haskell, composable, auto-generated --help |
-| V1 commands | init, run, vars, install, status, diff, list, new-module, validate-module, config, context, browse, outdated, upgrade, agent, help, completions | Core loop + authoring + config + context + discovery + version management + agent + help + completions |
+| V1 commands | init, run, remove, vars, install, status, diff, list, new-module, validate-module, config, context, browse, outdated, upgrade, agent, help, completions | Core loop + removal + authoring + config + context + discovery + version management + agent + help + completions |
 | Variable passing | `--var key=value` | Explicit, composable, scriptable |
 | Output format | Human-readable by default | Primary audience is interactive use |
 | Dry run | `--dry-run` flag on `run` | Safety net; shows plan without executing |
@@ -284,6 +284,58 @@ Generation Plan (haskell-base + nix-flake):
 | 2 | Unresolved required variables (non-interactive mode) |
 | 3 | User aborted |
 | 4 | Filesystem write error |
+
+---
+
+### `seihou remove <module>`
+
+Remove an applied module and delete its generated files.
+
+```sh
+seihou remove <module> [--dry-run] [--force] [--verbose]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|---|---|---|
+| `<module>` | Yes | Module name to remove |
+| `--dry-run` | No | Show removal plan without executing |
+| `--force` | No | Delete conflicted files without prompting |
+| `--verbose` | No | Verbose output |
+
+**Preconditions**:
+- A manifest (`.seihou/manifest.json`) must exist.
+- The module must appear in the manifest's applied modules list.
+- The module must have been declared with `removable = True` in its `module.dhall`.
+
+**Execution flow**:
+1. Read manifest
+2. Verify module is applied and removable
+3. Classify each file owned by the module: unchanged (safe), modified (conflict), or deleted (gone)
+4. Display removal plan
+5. If `--dry-run`: print plan and exit
+6. If conflicts exist and not `--force`: prompt user per-file (keep/delete)
+7. Delete files, clean up empty parent directories
+8. Update manifest (remove module and its file records)
+
+**Output (removal plan)**:
+```text
+Removal plan for haskell-base:
+  Delete README.md (unchanged)
+  Delete src/Lib.hs (unchanged)
+  Delete my-app.cabal (modified by user)
+  Skip   LICENSE (already deleted)
+
+  Proceed? [y/N] y
+✓ Removed module haskell-base. Deleted 3 files.
+```
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Module not applied, not removable, no manifest found |
+| 3 | User aborted |
 
 ---
 
@@ -1004,7 +1056,6 @@ commandParser = subparser
 
 ## Future Enhancements
 
-- `seihou remove <module>` — Remove a module and its orphaned files
 - JSON/machine-readable output mode (`--format json`) for all commands
 
 ## Cross-References
