@@ -5,7 +5,7 @@ import Seihou.Core.Module (validateModule)
 import Seihou.Core.Scaffold (moduleDhall, readmeTemplate)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
-import System.Directory (createDirectoryIfMissing)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, makeAbsolute)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
@@ -15,29 +15,37 @@ import Test.Tasty.Hspec (testSpec)
 tests :: IO TestTree
 tests = testSpec "Seihou.Core.Scaffold" spec
 
--- Test schema URL and hash — uses the local schema path for offline testing
-testSchemaUrl :: T.Text
-testSchemaUrl = "https://raw.githubusercontent.com/shinzui/seihou-schema/6df1496a7ce06a693d8b63bd4cf2c5d4a136670c/package.dhall"
-
-testSchemaHash :: T.Text
-testSchemaHash = "sha256:4946704e8c2dd295179003832428b82273fb0a0cff8eae9282b64ae7e18b89f4"
+-- | Resolve the local schema path for tests, trying both package-relative and
+-- project root-relative locations (like mori's fixturePath pattern).
+-- Uses an absolute path since generated Dhall is written to a temp directory.
+resolveSchemaPath :: IO T.Text
+resolveSchemaPath = do
+  let pkgRelative = "../schema/package.dhall"
+      rootRelative = "schema/package.dhall"
+  pkgExists <- doesDirectoryExist "../schema"
+  path <-
+    if pkgExists
+      then makeAbsolute pkgRelative
+      else makeAbsolute rootRelative
+  pure (T.pack path)
 
 spec :: Spec
 spec = do
   describe "moduleDhall" $ do
     it "generates Dhall that includes schema import" $ do
-      let content = moduleDhall "test-mod" testSchemaUrl testSchemaHash
+      schemaPath <- resolveSchemaPath
+      let content = moduleDhall "test-mod" schemaPath ""
       T.isInfixOf "let S =" content `shouldBe` True
-      T.isInfixOf "seihou-schema" content `shouldBe` True
       T.isInfixOf "S.Module::" content `shouldBe` True
 
     it "generates Dhall that loads via evalModuleFromFile" $ do
+      schemaPath <- resolveSchemaPath
       withSystemTempDirectory "seihou-scaffold-test" $ \tmpDir -> do
         let modDir = tmpDir </> "test-mod"
             dhallFile = modDir </> "module.dhall"
             filesDir = modDir </> "files"
         createDirectoryIfMissing True filesDir
-        writeFile dhallFile (T.unpack (moduleDhall "test-mod" testSchemaUrl testSchemaHash))
+        writeFile dhallFile (T.unpack (moduleDhall "test-mod" schemaPath ""))
         writeFile (filesDir </> "README.md.tpl") (T.unpack readmeTemplate)
         result <- evalModuleFromFile dhallFile
         case result of
@@ -45,12 +53,13 @@ spec = do
           Right m -> m.name `shouldBe` "test-mod"
 
     it "generates a module that passes validateModule" $ do
+      schemaPath <- resolveSchemaPath
       withSystemTempDirectory "seihou-scaffold-test" $ \tmpDir -> do
         let modDir = tmpDir </> "test-mod"
             dhallFile = modDir </> "module.dhall"
             filesDir = modDir </> "files"
         createDirectoryIfMissing True filesDir
-        writeFile dhallFile (T.unpack (moduleDhall "test-mod" testSchemaUrl testSchemaHash))
+        writeFile dhallFile (T.unpack (moduleDhall "test-mod" schemaPath ""))
         writeFile (filesDir </> "README.md.tpl") (T.unpack readmeTemplate)
         result <- evalModuleFromFile dhallFile
         case result of
@@ -62,12 +71,13 @@ spec = do
               Right _ -> pure ()
 
     it "generates expected module structure" $ do
+      schemaPath <- resolveSchemaPath
       withSystemTempDirectory "seihou-scaffold-test" $ \tmpDir -> do
         let modDir = tmpDir </> "test-mod"
             dhallFile = modDir </> "module.dhall"
             filesDir = modDir </> "files"
         createDirectoryIfMissing True filesDir
-        writeFile dhallFile (T.unpack (moduleDhall "test-mod" testSchemaUrl testSchemaHash))
+        writeFile dhallFile (T.unpack (moduleDhall "test-mod" schemaPath ""))
         writeFile (filesDir </> "README.md.tpl") (T.unpack readmeTemplate)
         result <- evalModuleFromFile dhallFile
         case result of

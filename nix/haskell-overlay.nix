@@ -6,7 +6,17 @@ let
   inherit (pkgs.haskell.lib.compose) doJailbreak;
 in
 final: prev: {
-  seihou-core = doJailbreak (final.callCabal2nix "seihou-core" ../seihou-core { });
+  seihou-core = pkgs.haskell.lib.compose.overrideCabal
+    (drv: {
+      # callCabal2nix only copies seihou-core/, so make the schema submodule
+      # available at ../schema during the build for test Dhall imports.
+      prePatch = (drv.prePatch or "") + (
+        if seihou-schema-src != null then ''
+          cp -r ${seihou-schema-src} ../schema
+        '' else ""
+      );
+    })
+    (doJailbreak (final.callCabal2nix "seihou-core" ../seihou-core { }));
 
   seihou-cli = pkgs.haskell.lib.compose.overrideCabal
     (drv: {
