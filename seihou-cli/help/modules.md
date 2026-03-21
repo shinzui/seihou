@@ -39,10 +39,34 @@ GENERATION STRATEGIES
 
 DEPENDENCIES
 
-  Modules can declare dependencies on other modules. When you run a module,
-  Seihou loads its dependencies first (topological sort) and resolves
-  variables across the full dependency graph. Dependencies can export
-  variables for downstream modules to consume.
+  Modules can declare dependencies on other modules using the record form:
+
+    dependencies =
+      [ { module = "nix-base", vars = [] : List { name : Text, value : Text } }
+      ]
+
+  When you run a module, Seihou loads its dependencies first (topological
+  sort) and resolves variables across the full dependency graph. Dependencies
+  can export variables for downstream modules to consume.
+
+  Dependencies can also supply variable bindings to child modules:
+
+    { module = "nix-flake"
+    , vars = [ { name = "nix.system", value = "x86_64-linux" } ]
+    }
+
+SCHEMA PACKAGE
+
+  Seihou provides a Dhall schema package (schema/package.dhall) that
+  supports record completion (::) for concise module authoring:
+
+    let S = ./schema/package.dhall
+    in S.Module::{ name = "my-module"
+                 , steps = [ S.Step::{ strategy = "template"
+                                     , src = "foo.tpl", dest = "foo" } ]
+                 }
+
+  Record completion fills in defaults for optional fields automatically.
 
 COMMON COMMANDS
 
@@ -51,3 +75,4 @@ COMMON COMMANDS
   seihou validate-module ./my-module   Check a module is well-formed
   seihou install <git-url>             Install modules from git
   seihou run <module> --var k=v        Run a module to generate files
+  seihou schema-upgrade ./my-module    Upgrade module.dhall to current schema

@@ -3,12 +3,30 @@
 ## Last Reviewed Commit
 
 ```
-378dafc Add CLI command reference docs (one markdown file per command)
+8daa78c Add seihou schema-upgrade command and Dhall schema package
 ```
 
 ---
 
 ## Changelog
+
+### 2026-03-21
+
+**Reviewed commits:** `378dafc` through `8daa78c`
+
+- Added `docs/cli/schema-upgrade.md` — CLI reference for the new `seihou schema-upgrade` command
+- Updated `docs/user/module-authoring.md` — standardized dependency format to record form, added schema package and record completion section, added schema-upgrade section
+- Updated `docs/user/getting-started.md` — updated scaffold boilerplate to use record-form deps, added schema-upgrade to "Other commands"
+- Updated `seihou-cli/help/modules.md` — added dependency record form examples, schema package section, schema-upgrade to common commands
+
+**Features documented:**
+- `seihou schema-upgrade [PATH] [--dry-run] [--all]` command for upgrading module.dhall files to current schema
+- Dhall schema package (`schema/package.dhall`) with record completion (`::`) support
+- Standardized dependency format: `{ module : Text, vars : List { name : Text, value : Text } }`
+
+**No documentation needed:**
+- `da7591a` Audit and update all docs to reflect current codebase state (meta — already captured in 2026-03-20 entry)
+- `d849d19` Show help when seihou is invoked without a command (UX improvement, no doc change needed)
 
 ### 2026-03-20
 

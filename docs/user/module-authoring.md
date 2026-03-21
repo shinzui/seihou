@@ -59,7 +59,7 @@ The module definition is a Dhall record with these fields:
 
 **commands** (List): Shell commands to run after generation. See [Commands](#commands).
 
-**dependencies** (List Text): Module names this module depends on. See [Dependencies and composition](#dependencies-and-composition).
+**dependencies** (List): Modules this module depends on, in record form. See [Dependencies and composition](#dependencies-and-composition).
 
 
 ## Variables
@@ -340,17 +340,21 @@ Commands execute in declaration order, after all steps. Use the `--no-commands` 
 
 ## Dependencies and composition
 
-Modules can depend on other modules. Dependencies can be bare module names or parameterized with variable bindings:
+Modules can depend on other modules. Dependencies use the record form `{ module, vars }`:
 
 ```dhall
 { name = "haskell-with-nix"
 , dependencies =
-  [ "haskell-base"                                      -- bare dependency
-  , { module = "nix-flake", vars.nix-system = "x86" }  -- parameterized dependency
+  [ { module = "haskell-base", vars = [] : List { name : Text, value : Text } }
+  , { module = "nix-flake", vars = [ { name = "nix.system", value = "x86_64-linux" } ] }
   ]
 , ...
 }
 ```
+
+For simple dependencies without variable bindings, `vars` is an empty list.
+
+> **Note:** Older modules may use bare string dependencies (`["haskell-base"]`). Run `seihou schema-upgrade` to convert them to the current record format.
 
 ### How dependencies work
 
@@ -361,14 +365,17 @@ Modules can depend on other modules. Dependencies can be bare module names or pa
 
 ### Parameterized dependencies
 
-When using the parameterized form, the parent module can pre-supply variable values to the child. These values have `FromParent` provenance — higher priority than module defaults but lower than config files:
+Dependencies can pre-supply variable values to the child module. These values have `FromParent` provenance — higher priority than module defaults but lower than config files:
 
 ```dhall
 dependencies =
-  [ { module = "nix-flake", vars.nix-system = "x86_64-linux" } ]
+  [ { module = "nix-flake"
+    , vars = [ { name = "nix.system", value = "x86_64-linux" } ]
+    }
+  ]
 ```
 
-This sets `nix-system` to `"x86_64-linux"` in the `nix-flake` module unless overridden by a CLI flag, environment variable, or config.
+This sets `nix.system` to `"x86_64-linux"` in the `nix-flake` module unless overridden by a CLI flag, environment variable, or config.
 
 ### Composing modules at the command line
 
@@ -552,6 +559,45 @@ Validation checks:
 6. Exports reference declared variables
 
 Add `--lint` for advisory warnings about best practices.
+
+
+## Schema package and record completion
+
+Seihou provides a Dhall schema package at `schema/package.dhall` that supports Dhall's record completion operator (`::`) for ergonomic module authoring. Instead of spelling out all optional fields, you can use defaults:
+
+```dhall
+let S = ./schema/package.dhall
+
+in S.Module::{
+  name = "my-module",
+  steps = [
+    S.Step::{ strategy = "template", src = "README.md.tpl", dest = "README.md" }
+  ],
+  dependencies = [
+    S.Dependency::{ module = "nix-base" }
+  ]
+}
+```
+
+Record completion fills in defaults for optional fields (`version = None Text`, `when = None Text`, `patch = None Text`, etc.), so you only specify what matters. Available types: `S.Module`, `S.Step`, `S.VarDecl`, `S.VarExport`, `S.Prompt`, `S.Command`, `S.Dependency`.
+
+
+## Upgrading modules to the current schema
+
+If you have modules written for an older version of Seihou, use `seihou schema-upgrade` to bring them up to date:
+
+```sh
+# Preview what would change
+seihou schema-upgrade ./my-module --dry-run
+
+# Upgrade a specific module
+seihou schema-upgrade ./my-module
+
+# Upgrade all discovered modules
+seihou schema-upgrade --all
+```
+
+This adds missing fields (`version`, `patch`, `commands`) and converts bare string dependencies to the record form. The command is idempotent.
 
 
 ## Best practices

@@ -95,7 +95,7 @@ Open `my-haskell/module.dhall` to see the boilerplate:
     }
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [] : List Text
+, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
 }
 ```
 
@@ -182,7 +182,7 @@ Let's make this module more useful. Replace the contents of `my-haskell/module.d
     }
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [] : List Text
+, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
 }
 ```
 
@@ -501,6 +501,16 @@ seihou upgrade haskell-base nix-flake
 ```
 
 Use `--dry-run` to preview what would change without making modifications.
+
+### Upgrade module schemas
+
+If you have modules written for an older version of Seihou, upgrade them to the current schema:
+
+```sh
+seihou schema-upgrade ./my-module
+```
+
+Use `--dry-run` to preview changes, or `--all` to upgrade all discovered modules at once. See the [Module Authoring Reference](module-authoring.md#upgrading-modules-to-the-current-schema) for details.
 
 ### Shell completions
 
