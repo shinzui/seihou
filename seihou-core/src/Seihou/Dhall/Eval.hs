@@ -22,13 +22,15 @@ where
 
 import Control.Exception (SomeException, evaluate, throwIO, try)
 import Data.Either.Validation (Validation (..))
+import Data.List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Void (Void)
 import Dhall (defaultInputSettings, input, inputExprWithSettings, inputFile, list, record, rootDirectory, sourceName, strictText)
-import Dhall.Core (Chunks (..))
+import Dhall.Core (Chunks (..), makeRecordField)
 import Dhall.Core qualified as Dhall (Expr (..))
+import Dhall.Map qualified as DhallMap
 import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, field, maybe, string)
 import Dhall.Src (Src)
 import Seihou.Core.Expr (parseExpr)
@@ -102,22 +104,46 @@ guessModuleName path =
           let parentDir = parts !! (length parts - 2)
            in ModuleName parentDir
 
+-- | Wrap a decoder to inject default values for missing record fields.
+-- For each @(key, defaultExpr)@, if the key is absent from a 'RecordLit',
+-- it is added with the given Dhall expression before extraction.
+-- This allows decoders to handle schema evolution gracefully.
+withDefaults :: [(Text, Dhall.Expr Src Void)] -> Decoder a -> Decoder a
+withDefaults defaults (Decoder ext exp_) = Decoder ext' exp_
+  where
+    ext' expr@(Dhall.RecordLit fields) =
+      let fields' = foldl' addDefault fields defaults
+       in ext (Dhall.RecordLit fields')
+    ext' expr = ext expr
+
+    addDefault fs (k, v) =
+      case DhallMap.lookup k fs of
+        Just _ -> fs
+        Nothing -> DhallMap.insert k (makeRecordField v) fs
+
+-- | A Dhall expression representing @None Text@.
+-- Used as a placeholder default for missing @Optional@-typed fields.
+noneText :: Dhall.Expr Src Void
+noneText = Dhall.App Dhall.None Dhall.Text
+
 -- | Decoder for the top-level Module type from Dhall.
+-- Uses 'withDefaults' to handle modules that predate the @removal@ field.
 moduleDecoder :: Decoder Module
 moduleDecoder =
-  record
-    ( Module
-        <$> field "name" moduleNameDecoder
-        <*> field "version" (maybe strictText)
-        <*> field "description" (maybe strictText)
-        <*> field "vars" (list varDeclDecoder)
-        <*> field "exports" (list varExportDecoder)
-        <*> field "prompts" (list promptDecoder)
-        <*> field "steps" (list stepDecoder)
-        <*> field "commands" (list commandDecoder)
-        <*> field "dependencies" (list dependencyDecoder)
-        <*> field "removal" (maybe removalDecoder)
-    )
+  withDefaults [("removal", noneText)] $
+    record
+      ( Module
+          <$> field "name" moduleNameDecoder
+          <*> field "version" (maybe strictText)
+          <*> field "description" (maybe strictText)
+          <*> field "vars" (list varDeclDecoder)
+          <*> field "exports" (list varExportDecoder)
+          <*> field "prompts" (list promptDecoder)
+          <*> field "steps" (list stepDecoder)
+          <*> field "commands" (list commandDecoder)
+          <*> field "dependencies" (list dependencyDecoder)
+          <*> field "removal" (maybe removalDecoder)
+      )
 
 -- | Decoder for Removal from a Dhall record.
 removalDecoder :: Decoder Removal
@@ -355,16 +381,18 @@ parseWhen (Just t) = case parseExpr t of
   Left err -> error ("Invalid when expression \"" <> T.unpack t <> "\": " <> T.unpack err)
 
 -- | Decoder for a single registry entry from a Dhall record.
+-- Uses 'withDefaults' to handle registries that omit the @version@ field.
 registryEntryDecoder :: Decoder RegistryEntry
 registryEntryDecoder =
-  record
-    ( RegistryEntry
-        <$> field "name" moduleNameDecoder
-        <*> field "version" (maybe strictText)
-        <*> field "path" string
-        <*> field "description" (maybe strictText)
-        <*> field "tags" (list strictText)
-    )
+  withDefaults [("version", noneText)] $
+    record
+      ( RegistryEntry
+          <$> field "name" moduleNameDecoder
+          <*> field "version" (maybe strictText)
+          <*> field "path" string
+          <*> field "description" (maybe strictText)
+          <*> field "tags" (list strictText)
+      )
 
 -- | Decoder for a registry metadata file from Dhall.
 registryDecoder :: Decoder Registry
@@ -378,9 +406,23 @@ registryDecoder =
 
 -- | Evaluate a @seihou-registry.dhall@ file and decode it into a 'Registry'.
 -- Returns 'Left' with a 'RegistryEvalError' if evaluation or decoding fails.
+--
+-- Uses 'inputExprWithSettings' to parse, resolve imports, and normalize the
+-- Dhall expression, then extracts with 'registryDecoder' directly. This
+-- bypasses Dhall's type-annotation check, allowing registry entries to omit
+-- optional fields like @version@ — the custom 'registryEntryDecoder' handles
+-- missing fields at the AST level.
 evalRegistryFromFile :: FilePath -> IO (Either ModuleLoadError Registry)
 evalRegistryFromFile path = do
-  result <- try $ inputFile registryDecoder path
+  result <- try $ do
+    text <- TIO.readFile path
+    let settings =
+          set rootDirectory (takeDirectory path) $
+            set sourceName path defaultInputSettings
+    expr <- inputExprWithSettings settings text
+    case extract registryDecoder expr of
+      Success r -> pure r
+      Failure e -> throwIO e
   case result of
     Left (e :: SomeException) ->
       pure $ Left (RegistryEvalError (T.pack path) (T.pack (show e)))
