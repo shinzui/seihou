@@ -3,7 +3,7 @@
 ## Last Reviewed Commit
 
 ```
-02f9b85 Update documentation and agent prompts for schema URL imports
+a184a71 Finalize publish-schema-repo plan: all milestones complete
 ```
 
 ---
@@ -12,7 +12,7 @@
 
 ### 2026-03-21 (schema URL imports)
 
-**Reviewed commits:** `87ab9c9` through current
+**Reviewed commits:** `87ab9c9` through `a184a71`
 
 - Updated `docs/user/module-authoring.md` — schema package section now shows URL-based imports from `seihou-schema` GitHub repo; schema-upgrade section documents `MissingSchemaImport` detection
 - Updated `docs/cli/schema-upgrade.md` — added missing schema import to the list of handled transformations
@@ -25,6 +25,13 @@
 - `seihou new-module` generates modules with schema URL imports and record completion (`S.Module::`)
 - `seihou schema-upgrade` detects and injects missing schema imports (`MissingSchemaImport`)
 - `update-seihou-schema` Claude Code skill for bumping the schema pin
+
+**No documentation needed:**
+- `a184a71` Finalize publish-schema-repo plan (plan doc)
+- `1ffde57` Fix update-seihou-schema skill location (tooling)
+- `8bd9e04` Create update-seihou-schema skill (tooling)
+- `c4b9bc3` Update Nix build to handle schema submodule (infrastructure)
+- `e65cc51` Remove schema/ from tracking (internal git change)
 
 ### 2026-03-21
 
