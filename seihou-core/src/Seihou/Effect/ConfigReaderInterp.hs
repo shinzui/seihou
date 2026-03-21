@@ -3,6 +3,7 @@ module Seihou.Effect.ConfigReaderInterp
   )
 where
 
+import Data.Bifunctor (first)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Types (ConfigError (..))
@@ -27,40 +28,22 @@ runConfigReader = interpret $ \_ -> \case
   ReadGlobalConfig -> liftIO $ do
     base <- getXdgDirectory XdgConfig "seihou"
     let path = base </> "config.dhall"
-    result <- evalConfigFileIfExists path
-    case result of
-      Left err -> pure (Left (ConfigParseError path err))
-      Right m -> pure (Right m)
+    first (ConfigParseError path) <$> evalConfigFileIfExists path
   ReadLocalConfig -> liftIO $ do
     cwd <- getCurrentDirectory
     let path = cwd </> ".seihou" </> "config.dhall"
-    result <- evalConfigFileIfExists path
-    case result of
-      Left err -> pure (Left (ConfigParseError path err))
-      Right m -> pure (Right m)
-  ReadNamespaceConfig ns -> liftIO $ do
-    if T.null ns
-      then pure (Right Map.empty)
-      else
-        if ".." `T.isInfixOf` ns || "/" `T.isInfixOf` ns
-          then pure (Left (InvalidNamespace ns "namespace must not contain '..' or '/'"))
-          else do
-            base <- getXdgDirectory XdgConfig "seihou"
-            let path = base </> "namespaces" </> T.unpack ns </> "config.dhall"
-            result <- evalConfigFileIfExists path
-            case result of
-              Left err -> pure (Left (ConfigParseError path err))
-              Right m -> pure (Right m)
-  ReadContextConfig ctx -> liftIO $ do
-    if T.null ctx
-      then pure (Right Map.empty)
-      else
-        if ".." `T.isInfixOf` ctx || "/" `T.isInfixOf` ctx
-          then pure (Left (InvalidNamespace ctx "context name must not contain '..' or '/'"))
-          else do
-            base <- getXdgDirectory XdgConfig "seihou"
-            let path = base </> "contexts" </> T.unpack ctx </> "config.dhall"
-            result <- evalConfigFileIfExists path
-            case result of
-              Left err -> pure (Left (ConfigParseError path err))
-              Right m -> pure (Right m)
+    first (ConfigParseError path) <$> evalConfigFileIfExists path
+  ReadNamespaceConfig ns -> liftIO $ loadNamespacedConfig "namespaces" ns "namespace must not contain '..' or '/'"
+  ReadContextConfig ctx -> liftIO $ loadNamespacedConfig "contexts" ctx "context name must not contain '..' or '/'"
+
+-- | Load config from a named subdirectory under XDG config, with path-traversal validation.
+loadNamespacedConfig :: String -> Text -> Text -> IO (Either ConfigError (Map Text Text))
+loadNamespacedConfig subdir name errMsg
+  | T.null name = pure (Right Map.empty)
+  | hasPathTraversal name = pure (Left (InvalidNamespace name errMsg))
+  | otherwise = do
+      base <- getXdgDirectory XdgConfig "seihou"
+      let path = base </> subdir </> T.unpack name </> "config.dhall"
+      first (ConfigParseError path) <$> evalConfigFileIfExists path
+  where
+    hasPathTraversal t = ".." `T.isInfixOf` t || "/" `T.isInfixOf` t
