@@ -157,8 +157,8 @@ handleRun runOpts = do
   now <- getCurrentTime
   let manifestPath = ".seihou" </> "manifest.json"
       planned =
-        [(dest, content, modName) | WriteFileOp dest content _ <- opsFiltered]
-          ++ [(dest, content, mName) | PatchFileOp dest content _ _ mName <- opsFiltered]
+        [(dest, content, modName, Nothing) | WriteFileOp dest content _ <- opsFiltered]
+          ++ [(dest, content, mName, Just pOp) | PatchFileOp dest content pOp _ mName <- opsFiltered]
 
   (manifest, diff) <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     -- Ensure .seihou/ directory exists

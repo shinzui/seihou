@@ -65,10 +65,10 @@ manifestWithFiles t recs =
         }
 
 -- | Extract planned files from operations for computeDiff.
-extractPlanned :: ModuleName -> [Operation] -> [(FilePath, Text, ModuleName)]
+extractPlanned :: ModuleName -> [Operation] -> [(FilePath, Text, ModuleName, Maybe PatchOp)]
 extractPlanned modName' ops =
-  [(dest, content, modName') | WriteFileOp dest content _ <- ops]
-    ++ [(dest, content, mName) | PatchFileOp dest content _ _ mName <- ops]
+  [(dest, content, modName', Nothing) | WriteFileOp dest content _ <- ops]
+    ++ [(dest, content, mName, Just pOp) | PatchFileOp dest content pOp _ mName <- ops]
 
 spec :: Spec
 spec = do
