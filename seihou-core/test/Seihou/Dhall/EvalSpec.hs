@@ -154,7 +154,7 @@ spec = do
               \  ]\n\
               \, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }\n\
               \, dependencies = [] : List Text\n\
-              \, removable = False\n\
+              \, removal = None { steps : List { action : Text, dest : Text, src : Optional Text }, commands : List { run : Text, workDir : Optional Text, when : Optional Text } }\n\
               \}"
         writeFile (tmpDir </> "module.dhall") dhall
         result <- evalModuleFromFile (tmpDir </> "module.dhall")
@@ -187,7 +187,7 @@ spec = do
               \  ]\n\
               \, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }\n\
               \, dependencies = [] : List Text\n\
-              \, removable = False\n\
+              \, removal = None { steps : List { action : Text, dest : Text, src : Optional Text }, commands : List { run : Text, workDir : Optional Text, when : Optional Text } }\n\
               \}"
         writeFile (tmpDir </> "module.dhall") dhall
         result <- evalModuleFromFile (tmpDir </> "module.dhall")
@@ -210,7 +210,7 @@ spec = do
           \, dependencies = "
             ++ depsStr
             ++ "\n\
-               \, removable = False\n\
+               \, removal = None { steps : List { action : Text, dest : Text, src : Optional Text }, commands : List { run : Text, workDir : Optional Text, when : Optional Text } }\n\
                \}"
 
     it "decodes a bare string dependency" $ do

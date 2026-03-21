@@ -15,6 +15,9 @@ module Seihou.Core.Types
     Dependency (..),
     simpleDep,
     depModuleNames,
+    RemovalAction (..),
+    RemovalStep (..),
+    Removal (..),
     Module (..),
     Operation (..),
     ModuleLoadError (..),
@@ -174,6 +177,31 @@ simpleDep name = Dependency {depModule = name, depVars = mempty}
 depModuleNames :: [Dependency] -> [ModuleName]
 depModuleNames = map (.depModule)
 
+-- | The type of removal action for a removal step.
+data RemovalAction
+  = -- | Delete the file entirely.
+    RemoveFileAction
+  | -- | Strip this module's section markers from the file.
+    RemoveSectionAction
+  | -- | Apply a Dhall text function to transform the file.
+    RewriteFileAction
+  deriving stock (Eq, Show, Generic)
+
+-- | A single removal step describing how to reverse one effect of a module.
+data RemovalStep = RemovalStep
+  { action :: RemovalAction,
+    dest :: Text,
+    src :: Maybe FilePath
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Removal specification for a module.
+data Removal = Removal
+  { removalSteps :: [RemovalStep],
+    removalCommands :: [Command]
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | A module definition: the fundamental unit of composition.
 data Module = Module
   { name :: ModuleName,
@@ -185,7 +213,7 @@ data Module = Module
     steps :: [Step],
     commands :: [Command],
     dependencies :: [Dependency],
-    removable :: Bool
+    removal :: Maybe Removal
   }
   deriving stock (Eq, Show, Generic)
 
@@ -278,7 +306,7 @@ data AppliedModule = AppliedModule
   { name :: ModuleName,
     source :: FilePath,
     appliedAt :: UTCTime,
-    removable :: Bool
+    removal :: Maybe Removal
   }
   deriving stock (Eq, Show, Generic)
 

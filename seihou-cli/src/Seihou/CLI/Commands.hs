@@ -291,8 +291,8 @@ removeInfo =
           ( Just $
               vsep
                 [ pretty ("Removes a module that was previously applied via 'seihou run' and" :: String),
-                  pretty ("deletes the files it generated. Only modules declared as removable" :: String),
-                  pretty ("in their module.dhall (removable = True) can be removed." :: String),
+                  pretty ("reverses its effects. Only modules with a 'removal' section" :: String),
+                  pretty ("in their module.dhall can be removed." :: String),
                   line,
                   pretty ("Files that have been modified since generation are treated as" :: String),
                   pretty ("conflicts. Use --force to delete them without prompting, or" :: String),

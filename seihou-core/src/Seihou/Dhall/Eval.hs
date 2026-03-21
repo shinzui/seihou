@@ -14,6 +14,9 @@ module Seihou.Dhall.Eval
     strategyDecoder,
     patchOpDecoder,
     dependencyDecoder,
+    removalDecoder,
+    removalStepDecoder,
+    removalActionDecoder,
   )
 where
 
@@ -113,8 +116,41 @@ moduleDecoder =
         <*> field "steps" (list stepDecoder)
         <*> field "commands" (list commandDecoder)
         <*> field "dependencies" (list dependencyDecoder)
-        <*> field "removable" bool
+        <*> field "removal" (maybe removalDecoder)
     )
+
+-- | Decoder for Removal from a Dhall record.
+removalDecoder :: Decoder Removal
+removalDecoder =
+  record
+    ( Removal
+        <$> field "steps" (list removalStepDecoder)
+        <*> field "commands" (list commandDecoder)
+    )
+
+-- | Decoder for RemovalStep from a Dhall record.
+removalStepDecoder :: Decoder RemovalStep
+removalStepDecoder =
+  record
+    ( RemovalStep
+        <$> field "action" removalActionDecoder
+        <*> field "dest" strictText
+        <*> field "src" (maybe string)
+    )
+
+-- | Decoder for RemovalAction from a Dhall Text string.
+--
+-- See 'varTypeDecoder' note re: 'error' safety.
+removalActionDecoder :: Decoder RemovalAction
+removalActionDecoder = parseRemovalAction <$> strictText
+  where
+    parseRemovalAction :: Text -> RemovalAction
+    parseRemovalAction t = case t of
+      "remove-file" -> RemoveFileAction
+      "remove-section" -> RemoveSectionAction
+      "rewrite-file" -> RewriteFileAction
+      -- Caught by 'try' in 'evalModuleFromFile'
+      other -> error ("Unknown removal action \"" <> T.unpack other <> "\"; expected one of: remove-file, remove-section, rewrite-file")
 
 moduleNameDecoder :: Decoder ModuleName
 moduleNameDecoder = ModuleName <$> strictText

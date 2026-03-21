@@ -23,7 +23,8 @@ mkModule name deps vars exports =
       prompts = [],
       steps = [],
       commands = [],
-      dependencies = map simpleDep deps
+      dependencies = map simpleDep deps,
+      removal = Nothing
     }
 
 -- | Helper to create a module with parameterized dependencies.
@@ -38,7 +39,8 @@ mkModuleWithDeps name deps vars exports =
       prompts = [],
       steps = [],
       commands = [],
-      dependencies = deps
+      dependencies = deps,
+      removal = Nothing
     }
 
 -- | Helper to create a text variable declaration.

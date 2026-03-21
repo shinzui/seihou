@@ -206,7 +206,8 @@ spec = do
                 prompts = [],
                 steps = [],
                 commands = [],
-                dependencies = map simpleDep deps
+                dependencies = map simpleDep deps,
+                removal = Nothing
               }
           a = mkMod "a" ["b"]
           b = mkMod "b" ["c"]

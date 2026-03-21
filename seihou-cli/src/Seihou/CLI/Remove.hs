@@ -45,7 +45,7 @@ handleRemove opts = do
       TIO.putStrLn $
         "Module '"
           <> name.unModuleName
-          <> "' is not removable. Only modules with 'removable = True' in their module.dhall can be removed."
+          <> "' has no removal spec. Add a 'removal' section to its module.dhall to make it removable."
       exitFailure
     Right p -> pure p
 

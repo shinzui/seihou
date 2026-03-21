@@ -56,7 +56,7 @@ computeRemovalPlan manifest modName = do
   case findApplied manifest modName of
     Nothing -> pure (Left (ModuleNotApplied modName))
     Just am
-      | not am.removable -> pure (Left (ModuleNotRemovable modName))
+      | Nothing <- am.removal -> pure (Left (ModuleNotRemovable modName))
       | otherwise -> do
           let ownedFiles = moduleFiles manifest modName
           classified <- mapM classifyForRemoval ownedFiles

@@ -65,20 +65,83 @@ instance FromJSON Manifest where
 
 instance ToJSON AppliedModule where
   toJSON am =
-    Aeson.object
+    Aeson.object $
       [ "name" .= am.name.unModuleName,
         "source" .= am.source,
-        "appliedAt" .= am.appliedAt,
-        "removable" .= am.removable
+        "appliedAt" .= am.appliedAt
       ]
+        ++ maybe [] (\r -> ["removal" .= removalToJSON r]) am.removal
 
 instance FromJSON AppliedModule where
-  parseJSON = Aeson.withObject "AppliedModule" $ \o ->
+  parseJSON = Aeson.withObject "AppliedModule" $ \o -> do
+    -- Backwards compatibility: old manifests have "removable" :: Bool.
+    -- "removable": true -> Just (Removal [] [])
+    -- "removable": false or absent, and no "removal" -> Nothing
+    mRemoval <- o Aeson..:? "removal"
+    removal <- case mRemoval of
+      Just v -> Just <$> parseRemovalJSON v
+      Nothing -> do
+        oldRemovable <- o Aeson..:? "removable" Aeson..!= False
+        pure (if oldRemovable then Just (Removal [] []) else Nothing)
     AppliedModule
       <$> (ModuleName <$> o .: "name")
       <*> o .: "source"
       <*> o .: "appliedAt"
-      <*> o Aeson..:? "removable" Aeson..!= False
+      <*> pure removal
+
+-- | Encode a Removal to JSON.
+removalToJSON :: Removal -> Aeson.Value
+removalToJSON r =
+  Aeson.object
+    [ "steps" .= map removalStepToJSON r.removalSteps,
+      "commands" .= map removalCommandToJSON r.removalCommands
+    ]
+
+removalStepToJSON :: RemovalStep -> Aeson.Value
+removalStepToJSON s =
+  Aeson.object $
+    [ "action" .= removalActionToText s.action,
+      "dest" .= s.dest
+    ]
+      ++ maybe [] (\p -> ["src" .= p]) s.src
+
+removalActionToText :: RemovalAction -> Text
+removalActionToText RemoveFileAction = "remove-file"
+removalActionToText RemoveSectionAction = "remove-section"
+removalActionToText RewriteFileAction = "rewrite-file"
+
+removalCommandToJSON :: Command -> Aeson.Value
+removalCommandToJSON c =
+  Aeson.object $
+    ["run" .= c.run]
+      ++ maybe [] (\w -> ["workDir" .= w]) c.workDir
+
+-- | Parse a Removal from JSON.
+parseRemovalJSON :: Aeson.Value -> Aeson.Parser Removal
+parseRemovalJSON = Aeson.withObject "Removal" $ \o ->
+  Removal
+    <$> (o Aeson..:? "steps" Aeson..!= [] >>= mapM parseRemovalStepJSON)
+    <*> (o Aeson..:? "commands" Aeson..!= [] >>= mapM parseRemovalCommandJSON)
+
+parseRemovalStepJSON :: Aeson.Value -> Aeson.Parser RemovalStep
+parseRemovalStepJSON = Aeson.withObject "RemovalStep" $ \o ->
+  RemovalStep
+    <$> (parseRemovalActionText =<< o .: "action")
+    <*> o .: "dest"
+    <*> o Aeson..:? "src"
+
+parseRemovalActionText :: Text -> Aeson.Parser RemovalAction
+parseRemovalActionText "remove-file" = pure RemoveFileAction
+parseRemovalActionText "remove-section" = pure RemoveSectionAction
+parseRemovalActionText "rewrite-file" = pure RewriteFileAction
+parseRemovalActionText other = fail ("unknown removal action: " <> T.unpack other)
+
+parseRemovalCommandJSON :: Aeson.Value -> Aeson.Parser Command
+parseRemovalCommandJSON = Aeson.withObject "RemovalCommand" $ \o ->
+  Command
+    <$> o .: "run"
+    <*> o Aeson..:? "workDir"
+    <*> pure Nothing
 
 instance ToJSON FileRecord where
   toJSON fr =

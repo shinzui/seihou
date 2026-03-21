@@ -31,14 +31,14 @@ otherMod = ModuleName "other-module"
 
 -- | Helper: create a manifest with one applied module and some files.
 mkManifest :: Bool -> [(FilePath, Text)] -> Manifest
-mkManifest removable fileContents =
+mkManifest isRemovable fileContents =
   (emptyManifest fixedTime)
     { modules =
         [ AppliedModule
             { name = modName,
               source = "/path/to/test-module",
               appliedAt = fixedTime,
-              removable = removable
+              removal = if isRemovable then Just (Removal [] []) else Nothing
             }
         ],
       files =

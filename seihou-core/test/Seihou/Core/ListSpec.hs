@@ -24,7 +24,7 @@ writeMinimalModule baseDir name desc = do
         ++ name
         ++ "\", version = None Text, description = Some \""
         ++ desc
-        ++ "\", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }, exports = [] : List { var : Text, as : Optional Text }, prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }, steps = [] : List { strategy : Text, src : Text, dest : Text, when : Optional Text, patch : Optional Text }, commands = [] : List { run : Text, workDir : Optional Text }, dependencies = [] : List Text, removable = False }"
+        ++ "\", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }, exports = [] : List { var : Text, as : Optional Text }, prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }, steps = [] : List { strategy : Text, src : Text, dest : Text, when : Optional Text, patch : Optional Text }, commands = [] : List { run : Text, workDir : Optional Text }, dependencies = [] : List Text, removal = None { steps : List { action : Text, dest : Text, src : Optional Text }, commands : List { run : Text, workDir : Optional Text, when : Optional Text } } }"
     )
 
 spec :: Spec

@@ -47,7 +47,7 @@ spec = do
                       { name = ModuleName "haskell-base",
                         source = "/home/user/.config/seihou/modules/haskell-base",
                         appliedAt = fixedTime,
-                        removable = False
+                        removal = Nothing
                       }
                   ]
               }
@@ -100,8 +100,8 @@ spec = do
               { version = 1,
                 genAt = fixedTime,
                 modules =
-                  [ AppliedModule (ModuleName "haskell-base") "/path/to/module" fixedTime False,
-                    AppliedModule (ModuleName "nix-flake") "/path/to/nix" fixedTime2 False
+                  [ AppliedModule (ModuleName "haskell-base") "/path/to/module" fixedTime Nothing,
+                    AppliedModule (ModuleName "nix-flake") "/path/to/nix" fixedTime2 Nothing
                   ],
                 vars =
                   Map.fromList

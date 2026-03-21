@@ -22,7 +22,8 @@ mkModule name deps =
       prompts = [],
       steps = [],
       commands = [],
-      dependencies = map simpleDep deps
+      dependencies = map simpleDep deps,
+      removal = Nothing
     }
 
 spec :: Spec
