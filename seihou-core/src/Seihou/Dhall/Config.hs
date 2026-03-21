@@ -28,12 +28,13 @@ evalConfigFile :: FilePath -> IO (Map Text Text)
 evalConfigFile path = do
   content <- TIO.readFile path
   let stripped = stripDhallComments content
-  -- An empty record {=} needs a type annotation for toMap.
-  if stripped == "{=}" || stripped == "{ = }" || T.null stripped
+  if isEmptyConfig stripped
     then pure Map.empty
-    else do
-      let wrapped = "toMap (" <> content <> ")"
-      input configMapDecoder wrapped
+    else input configMapDecoder ("toMap (" <> content <> ")")
+
+-- | Check whether a stripped Dhall config expression is empty.
+isEmptyConfig :: Text -> Bool
+isEmptyConfig s = s `elem` ["{=}", "{ = }"] || T.null s
 
 -- | Strip single-line Dhall comments (lines starting with @--@) and
 -- whitespace, leaving only the meaningful Dhall expression.
@@ -49,13 +50,11 @@ evalConfigFileIfExists :: FilePath -> IO (Either Text (Map Text Text))
 evalConfigFileIfExists path = do
   exists <- doesFileExist path
   if exists
-    then do
-      result <- try (evalConfigFile path)
-      case result of
-        Left (e :: SomeException) ->
-          pure (Left ("Error reading config " <> T.pack path <> ": " <> T.pack (show e)))
-        Right m -> pure (Right m)
+    then first formatError <$> try (evalConfigFile path)
     else pure (Right Map.empty)
+  where
+    formatError :: SomeException -> Text
+    formatError e = "Error reading config " <> T.pack path <> ": " <> T.pack (show e)
 
 -- | Serialize a @Map Text Text@ to valid Dhall source text.
 --

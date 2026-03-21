@@ -32,21 +32,18 @@ runConsolePure inputs = reinterpret (runState (ConsoleState inputs [] [])) handl
     handler _ = \case
       PutText msg -> modify @ConsoleState (\s -> s {consoleOutputs = s.consoleOutputs ++ [msg]})
       PutError msg -> modify @ConsoleState (\s -> s {consoleErrors = s.consoleErrors ++ [msg]})
-      GetLine -> do
-        s <- get @ConsoleState
-        case s.consoleInputs of
-          [] -> pure ""
-          (x : xs) -> do
-            modify @ConsoleState (\st -> st {consoleInputs = xs})
-            pure x
-      Confirm _prompt -> do
-        s <- get @ConsoleState
-        case s.consoleInputs of
-          [] -> pure False
-          (x : xs) -> do
-            modify @ConsoleState (\st -> st {consoleInputs = xs})
-            pure (x `elem` ["y", "yes"])
+      GetLine -> popInput
+      Confirm _prompt -> (`elem` ["y", "yes"]) <$> popInput
       IsInteractive -> pure True
+
+    popInput :: (State ConsoleState :> es') => Eff es' Text
+    popInput = do
+      s <- get @ConsoleState
+      case s.consoleInputs of
+        [] -> pure ""
+        (x : xs) -> do
+          modify @ConsoleState (\st -> st {consoleInputs = xs})
+          pure x
 
 -- | Pure interpreter for non-interactive mode. IsInteractive returns False.
 runConsolePureNonInteractive :: Eff (Console : es) a -> Eff es (a, ConsoleState)

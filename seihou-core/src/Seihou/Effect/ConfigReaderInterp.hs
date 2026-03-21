@@ -3,7 +3,6 @@ module Seihou.Effect.ConfigReaderInterp
   )
 where
 
-import Data.Bifunctor (first)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Types (ConfigError (..))

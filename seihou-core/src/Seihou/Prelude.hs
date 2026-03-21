@@ -40,12 +40,16 @@ module Seihou.Prelude
     Getting,
     ASetter,
 
+    -- * Bifunctor
+    first,
+
     -- * FilePath
     FilePath,
     (</>),
   )
 where
 
+import "base" Data.Bifunctor (first)
 import "containers" Data.Map.Strict (Map)
 import "containers" Data.Set (Set)
 import "effectful-core" Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, MonadIO, liftIO, runEff, type (:>), type (:>>))

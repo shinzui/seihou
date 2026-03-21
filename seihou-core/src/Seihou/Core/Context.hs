@@ -4,6 +4,7 @@ module Seihou.Core.Context
   )
 where
 
+import Control.Applicative ((<|>))
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -23,18 +24,16 @@ resolveContext ::
   Map Text Text ->
   IO (Maybe Text)
 resolveContext cliFlag envVars =
-  case cliFlag of
-    Just ctx
-      | not (T.null (T.strip ctx)) -> pure (Just (T.strip ctx))
-    _ ->
-      case Map.lookup "SEIHOU_CONTEXT" envVars of
-        Just ctx
-          | not (T.null (T.strip ctx)) -> pure (Just (T.strip ctx))
-        _ -> do
-          projectCtx <- readProjectContext
-          case projectCtx of
-            Just ctx -> pure (Just ctx)
-            Nothing -> readGlobalDefaultContext
+  case nonEmpty cliFlag <|> nonEmpty (Map.lookup "SEIHOU_CONTEXT" envVars) of
+    Just ctx -> pure (Just ctx)
+    Nothing -> do
+      projectCtx <- readProjectContext
+      case projectCtx of
+        Just ctx -> pure (Just ctx)
+        Nothing -> readGlobalDefaultContext
+  where
+    nonEmpty (Just t) | not (T.null (T.strip t)) = Just (T.strip t)
+    nonEmpty _ = Nothing
 
 -- | Validate a context name. Returns 'Nothing' if valid, 'Just errorMsg' if invalid.
 validateContextName :: Text -> Maybe Text
@@ -46,30 +45,21 @@ validateContextName ctx
 
 -- Internal helpers
 
-readProjectContext :: IO (Maybe Text)
-readProjectContext = do
-  cwd <- getCurrentDirectory
-  let path = cwd </> ".seihou" </> "context"
+readTextFileMaybe :: FilePath -> IO (Maybe Text)
+readTextFileMaybe path = do
   exists <- doesFileExist path
   if exists
     then do
       content <- T.strip <$> TIO.readFile path
-      pure $
-        if T.null content
-          then Nothing
-          else Just content
+      pure $ if T.null content then Nothing else Just content
     else pure Nothing
+
+readProjectContext :: IO (Maybe Text)
+readProjectContext = do
+  cwd <- getCurrentDirectory
+  readTextFileMaybe (cwd </> ".seihou" </> "context")
 
 readGlobalDefaultContext :: IO (Maybe Text)
 readGlobalDefaultContext = do
   base <- getXdgDirectory XdgConfig "seihou"
-  let path = base </> "default-context"
-  exists <- doesFileExist path
-  if exists
-    then do
-      content <- T.strip <$> TIO.readFile path
-      pure $
-        if T.null content
-          then Nothing
-          else Just content
-    else pure Nothing
+  readTextFileMaybe (base </> "default-context")

@@ -180,54 +180,40 @@ checkDependencyVarBindings m =
 
 -- Rule 7: Every step destination must be a safe relative path
 checkSafeDestinations :: Module -> [Text]
-checkSafeDestinations m =
-  concatMap
-    ( \s ->
-        let d = s.dest
-         in if T.isPrefixOf "/" d
-              then ["step destination must be relative: " <> d]
-              else
-                if ".." `T.isInfixOf` d
-                  then ["step destination must not contain '..': " <> d]
-                  else []
-    )
-    m.steps
+checkSafeDestinations m = concatMap checkDest m.steps
+  where
+    checkDest s
+      | T.isPrefixOf "/" s.dest = ["step destination must be relative: " <> s.dest]
+      | ".." `T.isInfixOf` s.dest = ["step destination must not contain '..': " <> s.dest]
+      | otherwise = []
 
 -- Rule 8: Variables referenced in step dest placeholders must be declared
 checkDestVarRefs :: Module -> [Text]
 checkDestVarRefs m =
   let varNames = Set.fromList (map (\d -> d.name.unVarName) m.vars)
-   in concatMap
-        ( \s ->
-            let refs = extractPlaceholders s.dest
-             in concatMap
-                  ( \ref ->
-                      if Set.member ref varNames
-                        then []
-                        else ["step destination references undeclared variable: " <> ref]
-                  )
-                  refs
-        )
-        m.steps
+   in concatMap (checkStep varNames) m.steps
+  where
+    checkStep varNames s =
+      [ "step destination references undeclared variable: " <> ref
+      | ref <- extractPlaceholders s.dest,
+        not (Set.member ref varNames)
+      ]
 
 -- Rule 9: Command text must be non-empty and workDir must be safe
 checkCommandSafety :: Module -> [Text]
-checkCommandSafety m =
-  concatMap
-    ( \c ->
-        let emptyRun =
-              if T.null (T.strip c.run)
-                then ["command text must not be empty"]
-                else []
-            unsafeWorkDir = case c.workDir of
-              Nothing -> []
-              Just wd
-                | T.isPrefixOf "/" wd -> ["command workDir must be relative: " <> wd]
-                | ".." `T.isInfixOf` wd -> ["command workDir must not contain '..': " <> wd]
-                | otherwise -> []
-         in emptyRun <> unsafeWorkDir
-    )
-    m.commands
+checkCommandSafety m = concatMap checkCmd m.commands
+  where
+    checkCmd c = checkEmptyRun c <> checkWorkDir c.workDir
+
+    checkEmptyRun c
+      | T.null (T.strip c.run) = ["command text must not be empty"]
+      | otherwise = []
+
+    checkWorkDir Nothing = []
+    checkWorkDir (Just wd)
+      | T.isPrefixOf "/" wd = ["command workDir must be relative: " <> wd]
+      | ".." `T.isInfixOf` wd = ["command workDir must not contain '..': " <> wd]
+      | otherwise = []
 
 -- | Extract placeholder variable references from a text like @"src/{{project.name}}/Main.hs"@.
 extractPlaceholders :: Text -> [Text]

@@ -7,6 +7,7 @@ module Seihou.Composition.Resolve
   )
 where
 
+import Control.Monad.Trans.Except (ExceptT (..), runExceptT)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -27,27 +28,15 @@ loadComposition ::
   ModuleName ->
   [ModuleName] ->
   IO (Either ModuleLoadError [(Module, FilePath)])
-loadComposition searchPaths primary additional = do
-  -- Load the primary module
-  primaryResult <- loadModuleWithDir searchPaths primary
-  case primaryResult of
-    Left err -> pure (Left err)
-    Right (primaryMod, primaryDir) -> do
-      -- Add additional modules as implicit dependencies of the primary
-      let effectiveDeps = primaryMod.dependencies ++ map simpleDep additional
-          effectivePrimary = primaryMod {dependencies = nubOrdBy (.depModule) effectiveDeps}
-          loaded = Map.singleton primary (effectivePrimary, primaryDir)
-      -- Recursively load all transitive dependencies
-      transResult <- loadTransitive searchPaths loaded (depModuleNames effectivePrimary.dependencies)
-      case transResult of
-        Left err -> pure (Left err)
-        Right allModules -> do
-          -- Build graph and topological sort
-          let graph = buildGraph (map fst (Map.elems allModules))
-          case topoSort graph of
-            Left err -> pure (Left err)
-            Right order ->
-              pure $ Right [(m, d) | name <- order, Just (m, d) <- [Map.lookup name allModules]]
+loadComposition searchPaths primary additional = runExceptT $ do
+  (primaryMod, primaryDir) <- ExceptT $ loadModuleWithDir searchPaths primary
+  let effectiveDeps = primaryMod.dependencies ++ map simpleDep additional
+      effectivePrimary = primaryMod {dependencies = nubOrdBy (.depModule) effectiveDeps}
+      loaded = Map.singleton primary (effectivePrimary, primaryDir)
+  allModules <- ExceptT $ loadTransitive searchPaths loaded (depModuleNames effectivePrimary.dependencies)
+  let graph = buildGraph (map fst (Map.elems allModules))
+  order <- ExceptT . pure $ topoSort graph
+  pure [(m, d) | name <- order, Just (m, d) <- [Map.lookup name allModules]]
 
 -- | Resolve variables for all modules in a composition with export visibility.
 --

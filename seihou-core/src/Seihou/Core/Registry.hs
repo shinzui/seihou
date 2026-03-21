@@ -81,14 +81,9 @@ validateRegistry repoRoot reg = do
 validateEntry :: FilePath -> RegistryEntry -> IO [Text]
 validateEntry repoRoot entry = do
   let nameText = entry.name.unModuleName
-      nameErrors =
-        if validModuleName nameText
-          then []
-          else ["registry entry name must match [a-z][a-z0-9-]*, got: " <> nameText]
+      nameErrors = checkName nameText
       pathText = T.pack entry.path
-      pathErrors =
-        (if T.isPrefixOf "/" pathText then ["registry entry path must be relative: " <> pathText] else [])
-          <> (if ".." `T.isInfixOf` pathText then ["registry entry path must not contain '..': " <> pathText] else [])
+      pathErrors = checkPath pathText
   let moduleDhall = repoRoot </> entry.path </> "module.dhall"
   fileExists <- doesFileExist moduleDhall
   let fileErrors =
@@ -96,6 +91,15 @@ validateEntry repoRoot entry = do
           then []
           else ["registry entry '" <> nameText <> "' points to missing module.dhall at " <> pathText]
   pure (nameErrors <> pathErrors <> fileErrors)
+  where
+    checkName name
+      | validModuleName name = []
+      | otherwise = ["registry entry name must match [a-z][a-z0-9-]*, got: " <> name]
+
+    checkPath path
+      | T.isPrefixOf "/" path = ["registry entry path must be relative: " <> path]
+      | ".." `T.isInfixOf` path = ["registry entry path must not contain '..': " <> path]
+      | otherwise = []
 
 -- | Check that a text matches @[a-z][a-z0-9-]*@.
 -- Duplicated from @Seihou.Core.Module.isValidModuleName@ to avoid
