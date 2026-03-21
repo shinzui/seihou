@@ -25,6 +25,7 @@ library
     Seihou.Core.Module
     Seihou.Core.Registry
     Seihou.Core.Scaffold
+    Seihou.Core.SchemaUpgrade
     Seihou.Core.Status
     Seihou.Core.Types
     Seihou.Core.Variable
@@ -111,6 +112,7 @@ test-suite seihou-core-test
     Seihou.Core.ModuleSpec
     Seihou.Core.RegistrySpec
     Seihou.Core.ScaffoldSpec
+    Seihou.Core.SchemaUpgradeSpec
     Seihou.Core.StatusSpec
     Seihou.Core.TypesSpec
     Seihou.Core.VariableSpec

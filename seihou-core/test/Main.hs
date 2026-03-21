@@ -10,6 +10,7 @@ import Seihou.Core.ListSpec qualified as ListSpec
 import Seihou.Core.ModuleSpec qualified as ModuleSpec
 import Seihou.Core.RegistrySpec qualified as RegistrySpec
 import Seihou.Core.ScaffoldSpec qualified as ScaffoldSpec
+import Seihou.Core.SchemaUpgradeSpec qualified as SchemaUpgradeSpec
 import Seihou.Core.StatusSpec qualified as StatusSpec
 import Seihou.Core.TypesSpec qualified as TypesSpec
 import Seihou.Core.VariableSpec qualified as VariableSpec
@@ -50,6 +51,7 @@ main = do
   moduleTests <- ModuleSpec.tests
   registryTests <- RegistrySpec.tests
   scaffoldTests <- ScaffoldSpec.tests
+  schemaUpgradeTests <- SchemaUpgradeSpec.tests
   statusTests <- StatusSpec.tests
   variableTests <- VariableSpec.tests
   versionTests <- VersionSpec.tests
@@ -74,4 +76,4 @@ main = do
   generationTests <- GenerationSpec.tests
   manifestTypesTests <- ManifestTypesSpec.tests
   promptTests <- PromptSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, moduleTests, registryTests, scaffoldTests, statusTests, variableTests, versionTests, templateTests, planTests, previewTests, sectionTests, validateTests, configTests, dhallEvalTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])
+  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, moduleTests, registryTests, scaffoldTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, planTests, previewTests, sectionTests, validateTests, configTests, dhallEvalTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests])

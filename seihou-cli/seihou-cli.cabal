@@ -79,6 +79,7 @@ executable seihou
     Seihou.CLI.NewModule
     Seihou.CLI.Outdated
     Seihou.CLI.Run
+    Seihou.CLI.SchemaUpgrade
     Seihou.CLI.Setup
     Seihou.CLI.Shared
     Seihou.CLI.Status

@@ -30,5 +30,5 @@
     , when = Some "IsSet project.name"
     }
   ]
-, dependencies = [] : List Text
+, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
 }

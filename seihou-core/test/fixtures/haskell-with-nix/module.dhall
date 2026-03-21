@@ -13,5 +13,8 @@
     }
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [ "haskell-base", "nix-flake" ]
+, dependencies =
+  [ { module = "haskell-base", vars = [] : List { name : Text, value : Text } }
+  , { module = "nix-flake", vars = [] : List { name : Text, value : Text } }
+  ]
 }

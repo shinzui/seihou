@@ -16,6 +16,7 @@ import Seihou.CLI.List (handleList)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.Outdated (handleOutdated)
 import Seihou.CLI.Run (handleRun)
+import Seihou.CLI.SchemaUpgrade (handleSchemaUpgrade)
 import Seihou.CLI.Setup (handleSetup)
 import Seihou.CLI.Status (handleStatus)
 import Seihou.CLI.Upgrade (handleUpgrade)
@@ -54,6 +55,8 @@ main = do
       handleOutdated outdatedOpts
     Upgrade upgradeOpts ->
       handleUpgrade upgradeOpts
+    SchemaUpgrade schemaUpgradeOpts ->
+      handleSchemaUpgrade schemaUpgradeOpts
     Agent agentOpts -> case agentOpts.agentCommand of
       AgentAssist assistOpts ->
         handleAssist agentOpts.agentDebug assistOpts

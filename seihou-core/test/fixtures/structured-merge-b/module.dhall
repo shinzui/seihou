@@ -13,5 +13,5 @@
     }
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = ["structured-merge-a"]
+, dependencies = [ { module = "structured-merge-a", vars = [] : List { name : Text, value : Text } } ]
 }

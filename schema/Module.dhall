@@ -6,41 +6,41 @@
 --
 -- Valid type strings: "text", "bool", "int", "list text", "list bool",
 -- "list int", "choice"
+--
+-- Required fields (no default): name
+-- Usage: let S = ./package.dhall in S.Module::{ name = "my-module", steps = [ ... ] }
 
-let VarDecl =
-      { name : Text
-      , type : Text
-      , default : Optional Text
-      , description : Optional Text
-      , required : Bool
-      , validation : Optional Text
-      }
+let VarDecl = ./VarDecl.dhall
 
-let VarExport = { var : Text, alias : Optional Text }
+let VarExport = ./VarExport.dhall
 
-let Prompt =
-      { var : Text
-      , text : Text
-      , when : Optional Text
-      , choices : Optional (List Text)
-      }
+let Prompt = ./Prompt.dhall
 
-let Step =
-      { strategy : Text
-      , src : Text
-      , dest : Text
-      , when : Optional Text
-      }
+let Step = ./Step.dhall
 
-let Module =
-      { name : Text
-      , version : Optional Text
-      , description : Optional Text
-      , vars : List VarDecl
-      , exports : List VarExport
-      , prompts : List Prompt
-      , steps : List Step
-      , dependencies : List Text
-      }
+let Command = ./Command.dhall
 
-in  { VarDecl, VarExport, Prompt, Step, Module }
+let Dependency = ./Dependency.dhall
+
+in  { Type =
+        { name : Text
+        , version : Optional Text
+        , description : Optional Text
+        , vars : List VarDecl.Type
+        , exports : List VarExport.Type
+        , prompts : List Prompt.Type
+        , steps : List Step.Type
+        , commands : List Command.Type
+        , dependencies : List Dependency.Type
+        }
+    , default =
+        { version = None Text
+        , description = None Text
+        , vars = [] : List VarDecl.Type
+        , exports = [] : List VarExport.Type
+        , prompts = [] : List Prompt.Type
+        , steps = [] : List Step.Type
+        , commands = [] : List Command.Type
+        , dependencies = [] : List Dependency.Type
+        }
+    }

@@ -28,5 +28,5 @@
     }
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [ "nix-base" ]
+, dependencies = [ { module = "nix-base", vars = [] : List { name : Text, value : Text } } ]
 }

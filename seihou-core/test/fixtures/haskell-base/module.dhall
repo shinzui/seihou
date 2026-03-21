@@ -70,5 +70,5 @@
     , when = None Text
     }
   ]
-, dependencies = [] : List Text
+, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
 }

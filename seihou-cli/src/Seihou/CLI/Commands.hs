@@ -11,6 +11,7 @@ module Seihou.CLI.Commands
     BrowseOpts (..),
     OutdatedOpts (..),
     UpgradeOpts (..),
+    SchemaUpgradeOpts (..),
     AgentOpts (..),
     AgentCommand (..),
     AssistOpts (..),
@@ -47,6 +48,7 @@ data Command
   | Browse BrowseOpts
   | Outdated OutdatedOpts
   | Upgrade UpgradeOpts
+  | SchemaUpgrade SchemaUpgradeOpts
   | Agent AgentOpts
   | HelpCmd HelpCommand
   | Completions CompletionsCommand
@@ -155,6 +157,13 @@ data UpgradeOpts = UpgradeOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data SchemaUpgradeOpts = SchemaUpgradeOpts
+  { schemaUpgradePath :: Maybe FilePath,
+    schemaUpgradeDryRun :: Bool,
+    schemaUpgradeAll :: Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
 data AssistOpts = AssistOpts
   { assistPrompt :: Maybe Text
   }
@@ -210,6 +219,7 @@ commandParser =
         <> command "browse" browseInfo
         <> command "outdated" outdatedInfo
         <> command "upgrade" upgradeInfo
+        <> command "schema-upgrade" schemaUpgradeInfo
         <> command "agent" agentInfo
         <> command "help" helpCmdInfo
         <> command "completions" completionsInfo
@@ -652,6 +662,48 @@ upgradeFooter =
           [ pretty ("seihou upgrade                   # upgrade all installed modules" :: String),
             pretty ("seihou upgrade haskell-base       # upgrade a specific module" :: String),
             pretty ("seihou upgrade --dry-run          # preview without changes" :: String)
+          ]
+    ]
+
+schemaUpgradeInfo :: ParserInfo Command
+schemaUpgradeInfo =
+  info
+    (schemaUpgradeParser <**> helper)
+    ( fullDesc
+        <> progDesc "Upgrade module.dhall files to the current schema"
+        <> footerDoc (Just schemaUpgradeFooter)
+    )
+
+schemaUpgradeParser :: Parser Command
+schemaUpgradeParser =
+  fmap SchemaUpgrade $
+    SchemaUpgradeOpts
+      <$> optional (argument str (metavar "PATH" <> help "Module directory (default: current directory)"))
+      <*> switch (long "dry-run" <> help "Show what would change without modifying files")
+      <*> switch (long "all" <> help "Upgrade all discovered modules")
+
+schemaUpgradeFooter :: Doc
+schemaUpgradeFooter =
+  vsep
+    [ pretty ("Detects missing or outdated fields in module.dhall files and" :: String),
+      pretty ("rewrites them to match the current schema. Handles:" :: String),
+      line,
+      indent 2 $
+        vsep
+          [ pretty ("- Missing 'version' field" :: String),
+            pretty ("- Missing 'patch' field on steps" :: String),
+            pretty ("- Missing 'commands' field" :: String),
+            pretty ("- Bare string dependencies (converts to record form)" :: String),
+            pretty ("- 'List Text' dependency type annotation" :: String)
+          ],
+      line,
+      pretty ("Examples:" :: String),
+      indent 2 $
+        vsep
+          [ pretty ("seihou schema-upgrade                  # upgrade ./module.dhall" :: String),
+            pretty ("seihou schema-upgrade ./my-module       # upgrade specific module" :: String),
+            pretty ("seihou schema-upgrade --dry-run         # preview changes" :: String),
+            pretty ("seihou schema-upgrade --all             # upgrade all modules" :: String)
           ]
     ]
 
