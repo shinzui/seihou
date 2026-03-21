@@ -55,13 +55,24 @@ Module names must match `[a-z][a-z0-9-]*`.
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
 , dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
-, removable = False
+, removal = None Removal.Type
 }
 ```
 
-### Removable modules
+### Module removal
 
-Set `removable = True` when a module's effects are safely reversible (Copy, Template, or DhallText strategies only, no patch operations, no destructive commands). Users can then run `seihou remove <module>` to delete generated files.
+Declare a `removal` section to make a module removable via `seihou remove <module>`. The removal section lists steps that reverse the module's effects:
+
+```dhall
+, removal = Some
+    { steps =
+      [ { action = "remove-file", path = "README.md", content = None Text }
+      , { action = "remove-section", path = ".gitignore", content = None Text }
+      ]
+    }
+```
+
+Actions: `remove-file` (delete a file), `remove-section` (strip tagged section markers), `rewrite-file` (transform file content). If `removal = None Removal.Type`, the module cannot be removed.
 
 ### Dependencies
 

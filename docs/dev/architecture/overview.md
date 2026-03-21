@@ -120,7 +120,7 @@ seihou/
 │   └── src/
 │       └── Seihou/
 │           ├── Core/
-│           │   ├── Types.hs       # Module, VarDecl, Step, Operation, etc.
+│           │   ├── Types.hs       # Module, VarDecl, Step, Operation, Removal, RemovalStep, etc.
 │           │   ├── Variable.hs    # Resolution, validation, coercion
 │           │   ├── Module.hs      # Loading, validation, discovery
 │           │   ├── Expr.hs        # Expression language AST and evaluator

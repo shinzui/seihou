@@ -1,6 +1,6 @@
 # seihou remove
 
-Remove an applied module and delete its generated files.
+Remove an applied module by executing its declared removal steps.
 
 ## Usage
 
@@ -24,24 +24,24 @@ seihou remove MODULE [OPTIONS]
 
 ## Description
 
-Removes a module that was previously applied via `seihou run` and deletes the files it generated. Only modules declared as removable in their `module.dhall` (`removable = True`) can be removed.
+Removes a module that was previously applied via `seihou run` by executing the removal steps declared in its `module.dhall`. Only modules that declare a `removal` section (`removal = Some { steps = [...] }`) can be removed. Modules with `removal = None` cannot be removed.
 
-The command reads the manifest (`.seihou/manifest.json`) to determine which files the module generated. Each file is classified as:
+The command reads the module's `removal` field to determine which operations to perform. Each removal step is one of:
 
-- **Unchanged** — disk hash matches the manifest hash. Safe to delete.
-- **Modified** — the user has edited the file since generation. Treated as a conflict.
-- **Already deleted** — the file no longer exists on disk. Skipped.
+- **remove-file** — Delete a file from disk. Output: `Delete path/to/file`.
+- **remove-section** — Strip a tagged section from a file (e.g., lines between `# --- seihou:module ---` markers). Output: `Strip section from path/to/file`.
+- **rewrite-file** — Rewrite a file's content using a Dhall expression or template transformation. Output: `Rewrite path/to/file`.
 
-When conflicts are found, the user is prompted to keep or delete each conflicted file. Use `--force` to delete all files without prompting.
+After all removal steps execute, the manifest is updated: the module is removed from the applied modules list and its file records are deleted. Empty parent directories are cleaned up automatically.
 
-After removal, the manifest is updated: the module is removed from the applied modules list and its file records are deleted. Empty parent directories are cleaned up automatically.
+When `--force` is used, all operations proceed without confirmation prompts.
 
 ## Exit Codes
 
 | Code | Meaning |
 |------|---------|
 | 0 | Success |
-| 1 | Error (module not applied, not removable, no manifest) |
+| 1 | Error (module not applied, no removal section, no manifest) |
 | 3 | User aborted |
 
 ## Examples

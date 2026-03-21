@@ -478,17 +478,17 @@ Conflicts are shown interactively, and you choose per-file whether to accept the
 
 ### Removing a module
 
-If a module was declared as removable (`removable = True` in its `module.dhall`), you can undo its effects:
+If a module declares a `removal` section in its `module.dhall`, you can undo its effects:
 
 ```sh
-# Preview what would be removed
+# Preview the removal plan
 seihou remove haskell-base --dry-run
 
-# Remove and delete generated files
+# Execute the declared removal steps
 seihou remove haskell-base
 ```
 
-Files that have been modified since generation are treated as conflicts — you'll be prompted to keep or delete each one. Use `--force` to delete everything without prompting. See the [Module Authoring Reference](module-authoring.md#removing-modules) for details on making modules removable.
+The output shows each operation (Delete, Strip, Rewrite, Run) as it executes. Use `--force` to skip confirmation prompts. Modules without a `removal` section cannot be removed. See the [Module Authoring Reference](module-authoring.md#removing-modules) for details on declaring removal steps.
 
 ### Check for updates
 

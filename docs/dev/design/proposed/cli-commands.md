@@ -289,7 +289,7 @@ Generation Plan (haskell-base + nix-flake):
 
 ### `seihou remove <module>`
 
-Remove an applied module and delete its generated files.
+Remove an applied module by executing its declared removal steps.
 
 ```sh
 seihou remove <module> [--dry-run] [--force] [--verbose]
@@ -300,41 +300,42 @@ seihou remove <module> [--dry-run] [--force] [--verbose]
 |---|---|---|
 | `<module>` | Yes | Module name to remove |
 | `--dry-run` | No | Show removal plan without executing |
-| `--force` | No | Delete conflicted files without prompting |
+| `--force` | No | Skip confirmation prompts |
 | `--verbose` | No | Verbose output |
 
 **Preconditions**:
 - A manifest (`.seihou/manifest.json`) must exist.
 - The module must appear in the manifest's applied modules list.
-- The module must have been declared with `removable = True` in its `module.dhall`.
+- The module must declare a `removal` section (`removal = Some { steps = [...] }`) in its `module.dhall`. Modules with `removal = None` cannot be removed.
 
 **Execution flow**:
 1. Read manifest
-2. Verify module is applied and removable
-3. Classify each file owned by the module: unchanged (safe), modified (conflict), or deleted (gone)
-4. Display removal plan
+2. Verify module is applied and has a removal section
+3. Build removal plan from the module's declared removal steps
+4. Display removal plan showing each operation (Delete, Strip, Rewrite, Run)
 5. If `--dry-run`: print plan and exit
-6. If conflicts exist and not `--force`: prompt user per-file (keep/delete)
-7. Delete files, clean up empty parent directories
+6. Prompt for confirmation (unless `--force`)
+7. Execute removal steps in order
 8. Update manifest (remove module and its file records)
+9. Clean up empty parent directories
 
 **Output (removal plan)**:
 ```text
 Removal plan for haskell-base:
-  Delete README.md (unchanged)
-  Delete src/Lib.hs (unchanged)
-  Delete my-app.cabal (modified by user)
-  Skip   LICENSE (already deleted)
+  Delete README.md
+  Delete src/Lib.hs
+  Delete my-app.cabal
+  Strip  section from .gitignore
 
   Proceed? [y/N] y
-✓ Removed module haskell-base. Deleted 3 files.
+✓ Removed module haskell-base (3 deleted, 1 stripped).
 ```
 
 **Exit codes**:
 | Code | Meaning |
 |---|---|
 | 0 | Success |
-| 1 | Module not applied, not removable, no manifest found |
+| 1 | Module not applied, no removal section, no manifest found |
 | 3 | User aborted |
 
 ---
