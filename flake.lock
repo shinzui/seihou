@@ -170,17 +170,17 @@
     "seihou-schema-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1774097576,
-        "narHash": "sha256-IUGJjpcnPuJvEr0kahpR9FyqgCIONJXWH27zTwtWxUM=",
+        "lastModified": 1774107025,
+        "narHash": "sha256-qD9Fs2tWAOp4uGuB57wP5ZCJwRN2JTjeoT52PSMichA=",
         "owner": "shinzui",
         "repo": "seihou-schema",
-        "rev": "6df1496a7ce06a693d8b63bd4cf2c5d4a136670c",
+        "rev": "2b4035b7e720a9b30642a8a27551592175732ee5",
         "type": "github"
       },
       "original": {
         "owner": "shinzui",
         "repo": "seihou-schema",
-        "rev": "6df1496a7ce06a693d8b63bd4cf2c5d4a136670c",
+        "rev": "2b4035b7e720a9b30642a8a27551592175732ee5",
         "type": "github"
       }
     },

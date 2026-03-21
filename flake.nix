@@ -11,7 +11,7 @@
 
   # Dhall schema package (non-flake, pinned to commit)
   inputs.seihou-schema-src = {
-    url = "github:shinzui/seihou-schema/6df1496a7ce06a693d8b63bd4cf2c5d4a136670c";
+    url = "github:shinzui/seihou-schema/2b4035b7e720a9b30642a8a27551592175732ee5";
     flake = false;
   };
 
