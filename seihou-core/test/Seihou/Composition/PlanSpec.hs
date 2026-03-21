@@ -121,11 +121,13 @@ spec = do
           (headerIdx < titleIdx) `shouldBe` True
         other -> expectationFailure $ "Expected one WriteFileOp, got: " ++ show other
 
-    it "PatchFileOp targeting nonexistent file creates new file" $ do
+    it "PatchFileOp targeting nonexistent file is preserved as PatchFileOp" $ do
       let bOps = [PatchFileOp "new.txt" "content\n" AppendFile Template "mod-b"]
           (ops, _, _) = mergeOperations [("mod-b", bOps)]
-      -- PatchFileOp with no existing target becomes a WriteFileOp
-      length (filter isWriteOp ops) `shouldBe` 1
+      -- PatchFileOp with no existing target is preserved so the execution
+      -- engine can merge with the on-disk file and the diff engine avoids
+      -- false conflict classification.
+      length (filter isPatchOp ops) `shouldBe` 1
 
     it "multiple patches from different modules accumulate" $ do
       let aOps = [WriteFileOp "README.md" "# Title\n" Template]
@@ -217,6 +219,10 @@ spec = do
 isWriteOp :: Operation -> Bool
 isWriteOp (WriteFileOp {}) = True
 isWriteOp _ = False
+
+isPatchOp :: Operation -> Bool
+isPatchOp (PatchFileOp {}) = True
+isPatchOp _ = False
 
 destOfOp' :: Operation -> Maybe FilePath
 destOfOp' (WriteFileOp d _ _) = Just d

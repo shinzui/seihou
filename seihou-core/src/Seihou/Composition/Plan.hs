@@ -95,8 +95,16 @@ mergeOperations moduleOps =
                     (updatedOp : otherOps)
                     (ContentMerged dest baseName name : warningsAcc)
         _ ->
-          -- No existing file op for this dest; treat as a new file op
-          handleFileOp name (WriteFileOp dest newContent Template) dest rest fileOwner seenDirs opsAcc warningsAcc
+          -- No existing file op for this dest; preserve as PatchFileOp so the
+          -- execution engine can merge with the on-disk file and the diff engine
+          -- can avoid false conflict classification.
+          let patchOp = PatchFileOp dest newContent patchOp' Template patchModName
+           in go
+                rest
+                (Map.insert dest name fileOwner)
+                seenDirs
+                (patchOp : opsAcc)
+                warningsAcc
 
     handleFileOp name op dest rest fileOwner seenDirs opsAcc warningsAcc =
       case Map.lookup dest fileOwner of
