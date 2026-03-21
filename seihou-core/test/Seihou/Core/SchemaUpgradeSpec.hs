@@ -6,6 +6,13 @@ import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
 
+-- Test schema URL and hash for upgrade tests
+testUrl :: T.Text
+testUrl = "https://raw.githubusercontent.com/shinzui/seihou-schema/abc123/package.dhall"
+
+testHash :: T.Text
+testHash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
 tests :: IO TestTree
 tests = testSpec "Seihou.Core.SchemaUpgrade" spec
 
@@ -45,27 +52,32 @@ bareStringDepsText =
       "}"
     ]
 
--- | A fully current module.
+-- | A fully current module (with schema import).
 currentModuleText :: T.Text
 currentModuleText =
   T.unlines
-    [ "{ name = \"current-module\"",
-      ", version = None Text",
-      ", description = Some \"Fully current module\"",
-      ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
-      ", exports = [] : List { var : Text, alias : Optional Text }",
-      ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
-      ", steps =",
-      "  [ { strategy = \"template\"",
-      "    , src = \"foo.tpl\"",
-      "    , dest = \"foo\"",
-      "    , when = None Text",
-      "    , patch = None Text",
-      "    }",
-      "  ]",
-      ", commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }",
-      ", dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }",
-      "}"
+    [ "let S =",
+      "      https://raw.githubusercontent.com/shinzui/seihou-schema/abc123/package.dhall",
+      "        sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "",
+      "in  S.Module::{",
+      "    , name = \"current-module\"",
+      "    , version = None Text",
+      "    , description = Some \"Fully current module\"",
+      "    , vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+      "    , exports = [] : List { var : Text, alias : Optional Text }",
+      "    , prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+      "    , steps =",
+      "      [ { strategy = \"template\"",
+      "        , src = \"foo.tpl\"",
+      "        , dest = \"foo\"",
+      "        , when = None Text",
+      "        , patch = None Text",
+      "        }",
+      "      ]",
+      "    , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }",
+      "    , dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }",
+      "    }"
     ]
 
 -- | A module missing only version (has patch and commands).
@@ -120,35 +132,36 @@ spec :: Spec
 spec = do
   describe "detectIssues" $ do
     it "detects all issues in an old module" $ do
-      let issues = detectIssues oldModuleText
+      let issues = detectIssues testUrl oldModuleText
       issues `shouldContain` [MissingVersion]
       issues `shouldContain` [MissingCommands]
       issues `shouldContain` [MissingStepPatch 0]
       issues `shouldContain` [BareStringDepTypeAnnotation]
+      issues `shouldContain` [MissingSchemaImport]
 
     it "returns empty list for a current module" $ do
-      detectIssues currentModuleText `shouldBe` []
+      detectIssues testUrl currentModuleText `shouldBe` []
 
-    it "detects only missing version when other fields present" $ do
-      detectIssues missingVersionOnlyText `shouldBe` [MissingVersion]
+    it "detects missing version and schema import when other fields present" $ do
+      detectIssues testUrl missingVersionOnlyText `shouldBe` [MissingVersion, MissingSchemaImport]
 
     it "detects bare string dependencies" $ do
-      let issues = detectIssues bareStringDepsText
+      let issues = detectIssues testUrl bareStringDepsText
       issues `shouldContain` [BareStringDep "haskell-base"]
       issues `shouldContain` [BareStringDep "nix-flake"]
 
     it "detects missing patch only on steps that lack it" $ do
-      let issues = detectIssues multiStepText
+      let issues = detectIssues testUrl multiStepText
       issues `shouldContain` [MissingStepPatch 0]
       issues `shouldContain` [MissingStepPatch 2]
       issues `shouldNotContain` [MissingStepPatch 1]
 
   describe "upgradeModuleText" $ do
     it "returns AlreadyCurrent for a current module" $ do
-      upgradeModuleText currentModuleText `shouldBe` AlreadyCurrent
+      upgradeModuleText testUrl testHash currentModuleText `shouldBe` AlreadyCurrent
 
     it "inserts version field after name" $ do
-      case upgradeModuleText missingVersionOnlyText of
+      case upgradeModuleText testUrl testHash missingVersionOnlyText of
         Upgraded text _ -> do
           T.isInfixOf ", version = None Text" text `shouldBe` True
           -- version should appear after name and before description
@@ -164,13 +177,13 @@ spec = do
         AlreadyCurrent -> expectationFailure "expected Upgraded"
 
     it "inserts commands field" $ do
-      case upgradeModuleText oldModuleText of
+      case upgradeModuleText testUrl testHash oldModuleText of
         Upgraded text _ ->
           T.isInfixOf ", commands =" text `shouldBe` True
         AlreadyCurrent -> expectationFailure "expected Upgraded"
 
     it "inserts patch in steps that lack it" $ do
-      case upgradeModuleText multiStepText of
+      case upgradeModuleText testUrl testHash multiStepText of
         Upgraded text _ -> do
           -- Should have 3 occurrences of patch now (step 1 already had it)
           let patchCount = length (filter (T.isInfixOf ", patch =") (T.lines text))
@@ -178,7 +191,7 @@ spec = do
         AlreadyCurrent -> expectationFailure "expected Upgraded"
 
     it "converts bare string deps to record form" $ do
-      case upgradeModuleText bareStringDepsText of
+      case upgradeModuleText testUrl testHash bareStringDepsText of
         Upgraded text _ -> do
           T.isInfixOf "{ module = \"haskell-base\"" text `shouldBe` True
           T.isInfixOf "{ module = \"nix-flake\"" text `shouldBe` True
@@ -187,7 +200,7 @@ spec = do
         AlreadyCurrent -> expectationFailure "expected Upgraded"
 
     it "converts List Text annotation to record type" $ do
-      case upgradeModuleText oldModuleText of
+      case upgradeModuleText testUrl testHash oldModuleText of
         Upgraded text _ -> do
           -- The dependencies line should no longer use "[] : List Text"
           T.isInfixOf "[] : List Text" text `shouldBe` False
@@ -196,10 +209,18 @@ spec = do
         AlreadyCurrent -> expectationFailure "expected Upgraded"
 
     it "is idempotent" $ do
-      case upgradeModuleText oldModuleText of
+      case upgradeModuleText testUrl testHash oldModuleText of
         Upgraded text _ ->
-          upgradeModuleText text `shouldBe` AlreadyCurrent
+          upgradeModuleText testUrl testHash text `shouldBe` AlreadyCurrent
         AlreadyCurrent -> expectationFailure "expected first upgrade to produce changes"
+
+    it "injects schema import into legacy module" $ do
+      case upgradeModuleText testUrl testHash oldModuleText of
+        Upgraded text _ -> do
+          T.isInfixOf "let S =" text `shouldBe` True
+          T.isInfixOf "seihou-schema" text `shouldBe` True
+          T.isInfixOf "S.Module::" text `shouldBe` True
+        AlreadyCurrent -> expectationFailure "expected Upgraded"
 
   describe "issueMessage" $ do
     it "produces human-readable messages" $ do

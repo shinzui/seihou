@@ -23,6 +23,8 @@ data UpgradeIssue
     BareStringDep Text
   | -- | The empty dependency list uses @List Text@ rather than the record type.
     BareStringDepTypeAnnotation
+  | -- | The module is missing the @let S = \<url\>@ schema import.
+    MissingSchemaImport
   deriving stock (Eq, Show)
 
 -- | Result of attempting to upgrade a module.dhall text.
@@ -40,22 +42,26 @@ issueMessage (MissingStepPatch n) = "missing field: patch (in step " <> T.pack (
 issueMessage MissingCommands = "missing field: commands"
 issueMessage (BareStringDep name) = "bare string dependency: " <> name
 issueMessage BareStringDepTypeAnnotation = "dependency list uses List Text type annotation"
+issueMessage MissingSchemaImport = "missing schema import (let S = ...)"
 
 -- | Detect all schema issues in a module.dhall text without modifying it.
-detectIssues :: Text -> [UpgradeIssue]
-detectIssues content =
+-- The schema URL is used to check whether the schema import is present.
+detectIssues :: Text -> Text -> [UpgradeIssue]
+detectIssues schemaUrl content =
   let ls = T.lines content
    in detectMissingVersion ls
         <> detectMissingStepPatch ls
         <> detectMissingCommands ls
         <> detectBareStringDeps ls
         <> detectDepTypeAnnotation ls
+        <> detectMissingSchemaImport schemaUrl ls
 
 -- | Upgrade a module.dhall text to the current canonical schema.
 -- Returns 'AlreadyCurrent' if no changes are needed.
-upgradeModuleText :: Text -> UpgradeResult
-upgradeModuleText content =
-  let issues = detectIssues content
+-- The schema URL and hash are used to inject the schema import if missing.
+upgradeModuleText :: Text -> Text -> Text -> UpgradeResult
+upgradeModuleText schemaUrl schemaHash content =
+  let issues = detectIssues schemaUrl content
    in if null issues
         then AlreadyCurrent
         else
@@ -66,6 +72,7 @@ upgradeModuleText content =
                   & applyIf (MissingCommands `elem` issues) insertCommands
                   & applyIf (any isBareStringDepIssue issues) convertBareStringDeps
                   & applyIf (BareStringDepTypeAnnotation `elem` issues) convertDepTypeAnnotation
+                  & applyIf (MissingSchemaImport `elem` issues) (injectSchemaImport schemaUrl schemaHash)
            in Upgraded upgraded issues
   where
     applyIf True f x = f x
@@ -109,6 +116,16 @@ detectDepTypeAnnotation ls
   | any (\l -> "List Text" `T.isInfixOf` l && matchesField "dependencies" l) ls =
       [BareStringDepTypeAnnotation]
   | otherwise = []
+
+detectMissingSchemaImport :: Text -> [Text] -> [UpgradeIssue]
+detectMissingSchemaImport schemaUrl ls
+  | any (\l -> "let S =" `T.isInfixOf` l || "let Schema =" `T.isInfixOf` l) ls,
+    any (T.isInfixOf "seihou-schema") ls =
+      []
+  | -- Also accept if the schema URL itself appears (e.g. different binding name)
+    any (T.isInfixOf schemaUrl) ls =
+      []
+  | otherwise = [MissingSchemaImport]
 
 -- ---------------------------------------------------------------------------
 -- Rewriting
@@ -162,6 +179,28 @@ convertBareStringDeps content =
           let (depsLines, after) = spanDepsRegion rest
               converted = convertDepsLines depsLines
            in T.unlines (before <> converted <> after)
+
+-- | Inject a schema import line and wrap the existing record in @S.Module::@.
+-- Prepends @let S = \<url\> \<hash\>@ and replaces the opening @{@ with @in  S.Module::{@.
+injectSchemaImport :: Text -> Text -> Text -> Text
+injectSchemaImport url hash content =
+  let header =
+        T.unlines
+          [ "let S =",
+            "      " <> url,
+            "        " <> hash,
+            ""
+          ]
+      ls = T.lines content
+      -- Find the first line that starts with '{' (the module record)
+      (before, recordLines) = break (T.isPrefixOf "{" . T.stripStart) ls
+   in case recordLines of
+        [] -> header <> content
+        (firstLine : rest) ->
+          let -- Replace the leading '{' with 'in  S.Module::{'
+              stripped = T.stripStart firstLine
+              replaced = "in  S.Module::" <> stripped
+           in header <> T.unlines (before <> (replaced : rest))
 
 -- | Convert @[] : List Text@ to the record type annotation.
 convertDepTypeAnnotation :: Text -> Text

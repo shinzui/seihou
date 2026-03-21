@@ -6,6 +6,7 @@ where
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (SchemaUpgradeOpts (..))
+import Seihou.CLI.SchemaVersion (schemaHash, schemaUrl)
 import Seihou.CLI.Style (dim, green, yellow)
 import Seihou.Core.Module (DiscoveredModule (..), defaultSearchPaths, discoverAllModules)
 import Seihou.Core.SchemaUpgrade
@@ -48,7 +49,7 @@ processModule dryRun path = do
     then pure (ProcessError path "file not found")
     else do
       content <- TIO.readFile path
-      case upgradeModuleText content of
+      case upgradeModuleText schemaUrl schemaHash content of
         AlreadyCurrent -> pure (UpToDate path)
         Upgraded newContent issues
           | dryRun -> do
