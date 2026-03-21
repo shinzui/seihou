@@ -21,6 +21,7 @@ library seihou-cli-internal
     Seihou.CLI.Diff
     Seihou.CLI.Init
     Seihou.CLI.List
+    Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
     Seihou.Effect.FzfInterp
     Seihou.Fzf
@@ -90,6 +91,7 @@ executable seihou
     Seihou.CLI.Validate
     Seihou.CLI.Vars
     Seihou.CLI.Version
+    Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
     Seihou.Effect.FzfInterp
     Seihou.Fzf
@@ -135,6 +137,7 @@ test-suite seihou-cli-test
     Seihou.CLI.DiffSpec
     Seihou.CLI.InitSpec
     Seihou.CLI.ListSpec
+    Seihou.CLI.UpgradeSpec
     Seihou.FzfSpec
 
   build-depends:

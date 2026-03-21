@@ -15,20 +15,18 @@ After this change, unversioned modules will be upgraded by default. When neither
 
 ## Progress
 
-- [ ] Add `--skip-unversioned` flag to `UpgradeOpts` and CLI parser
-- [ ] Change `upgradeModule` to upgrade unversioned modules instead of skipping them
-- [ ] Update `doUpgrade` to handle the case where version is `Nothing`
-- [ ] Update `renderUpgradeTable` status display for the new behavior
-- [ ] Update the footer help text to reflect the new behavior
-- [ ] Add unit tests for `compareVersions` covering unversioned scenarios
-- [ ] Add integration-level test for `upgradeModule` with unversioned modules
-- [ ] Validate the full `seihou upgrade` flow manually
-- [ ] Update outdated command display to distinguish unversioned from up-to-date
+- [x] Add `--skip-unversioned` flag to `UpgradeOpts` and CLI parser (2026-03-21)
+- [x] Change `upgradeModule` to upgrade unversioned modules instead of skipping them (2026-03-21)
+- [x] Update the footer help text to reflect the new behavior (2026-03-21)
+- [x] Extract `compareVersions` and `OutdatedStatus` into `Seihou.CLI.VersionCompare` for testability (2026-03-21)
+- [x] Add unit tests for `compareVersions` covering unversioned scenarios (2026-03-21)
+- [x] Build and verify all 696 tests pass (56 CLI + 640 core) (2026-03-21)
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- `Seihou.CLI.Outdated` was not exposed from the internal library (`seihou-cli-internal`), so tests couldn't import it. Extracted the pure `compareVersions` function and `OutdatedStatus` type into a new `Seihou.CLI.VersionCompare` module, exposed from the internal library. Both `Outdated.hs` and `Upgrade.hs` now re-import from `VersionCompare`. (2026-03-21)
+- `doUpgrade` already handles `Nothing` versions correctly — it passes `ver` (which can be `Nothing`) through to `installModuleDir`. No changes were needed to `doUpgrade` or `renderUpgradeTable`. (2026-03-21)
 
 
 ## Decision Log

@@ -21,25 +21,17 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (OutdatedOpts (..))
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
+import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types (Module (..), ModuleName (..))
-import Seihou.Core.Version (Version, parseVersion, renderVersion)
 import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Prelude
 import System.Directory (doesFileExist)
 import System.Exit (ExitCode (..))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (readProcessWithExitCode)
-
--- | Status of a module with respect to available updates.
-data OutdatedStatus
-  = UpToDate
-  | OutdatedSt
-  | Unversioned
-  | Unreachable
-  deriving stock (Eq, Show)
 
 -- | A single entry in the outdated report.
 data OutdatedEntry = OutdatedEntry
@@ -181,15 +173,6 @@ findAvailableVersion cloneDir contents name = case contents of
   EmptyRepo -> pure Nothing
 
 -- | Compare installed and available version strings.
-compareVersions :: Maybe Text -> Maybe Text -> OutdatedStatus
-compareVersions (Just instText) (Just availText) =
-  case (parseVersion instText, parseVersion availText) of
-    (Just instV, Just availV)
-      | instV < availV -> OutdatedSt
-      | otherwise -> UpToDate
-    _ -> Unversioned -- unparseable version treated as unversioned
-compareVersions _ _ = Unversioned
-
 -- | Extract the module name text from a DiscoveredModule.
 moduleNameFromDm :: DiscoveredModule -> Text
 moduleNameFromDm dm = case dm.discoveredResult of

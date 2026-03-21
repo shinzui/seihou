@@ -14,8 +14,9 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (UpgradeOpts (..))
 import Seihou.CLI.Install (installModuleDir)
-import Seihou.CLI.Outdated (OriginInfo (..), OutdatedStatus (..), compareVersions, findAvailableVersion, moduleNameFromDm, readOriginWithModule)
+import Seihou.CLI.Outdated (OriginInfo (..), findAvailableVersion, moduleNameFromDm, readOriginWithModule)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
+import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules, validateModule)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
@@ -142,8 +143,13 @@ upgradeModule uopts cloneDir contents sourceUrl (dm, origin) = do
           doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer
     UpToDate ->
       pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = AlreadyUpToDate}
-    Unversioned ->
-      pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Skipped}
+    Unversioned
+      | uopts.upgradeSkipUnversioned ->
+          pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Skipped}
+      | uopts.upgradeDryRun ->
+          pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
+      | otherwise ->
+          doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer
     Unreachable ->
       pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = Nothing, upgradeStatus = SourceUnreachable}
 

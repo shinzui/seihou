@@ -163,7 +163,8 @@ data OutdatedOpts = OutdatedOpts
 data UpgradeOpts = UpgradeOpts
   { upgradeModules :: [Text],
     upgradeDryRun :: Bool,
-    upgradeJson :: Bool
+    upgradeJson :: Bool,
+    upgradeSkipUnversioned :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -693,13 +694,15 @@ upgradeParser =
       <$> many (argument (T.pack <$> str) (metavar "MODULE" <> help "Module(s) to upgrade (default: all)"))
       <*> switch (long "dry-run" <> help "Show what would be upgraded without making changes")
       <*> switch (long "json" <> help "Output as JSON")
+      <*> switch (long "skip-unversioned" <> help "Skip modules without version information")
 
 upgradeFooter :: Doc
 upgradeFooter =
   vsep
     [ pretty ("Upgrades installed modules to the latest version available from their" :: String),
       pretty ("source repository. Only modules installed via 'seihou install' are checked." :: String),
-      pretty ("Modules without version information are skipped." :: String),
+      pretty ("Modules without version information are upgraded by default." :: String),
+      pretty ("Use --skip-unversioned to skip them." :: String),
       line,
       pretty ("With no arguments, checks all installed modules. Pass module names to" :: String),
       pretty ("upgrade specific modules only." :: String),
@@ -707,9 +710,10 @@ upgradeFooter =
       pretty ("Examples:" :: String),
       indent 2 $
         vsep
-          [ pretty ("seihou upgrade                   # upgrade all installed modules" :: String),
-            pretty ("seihou upgrade haskell-base       # upgrade a specific module" :: String),
-            pretty ("seihou upgrade --dry-run          # preview without changes" :: String)
+          [ pretty ("seihou upgrade                       # upgrade all installed modules" :: String),
+            pretty ("seihou upgrade haskell-base           # upgrade a specific module" :: String),
+            pretty ("seihou upgrade --dry-run              # preview without changes" :: String),
+            pretty ("seihou upgrade --skip-unversioned     # skip unversioned modules" :: String)
           ]
     ]
 
