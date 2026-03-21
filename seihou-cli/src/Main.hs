@@ -1,6 +1,6 @@
 module Main (main) where
 
-import Options.Applicative (execParser)
+import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
 import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Bootstrap (handleBootstrap)
 import Seihou.CLI.Browse (handleBrowse)
@@ -24,7 +24,7 @@ import Seihou.CLI.Vars (handleVars)
 
 main :: IO ()
 main = do
-  cmd <- execParser opts
+  cmd <- customExecParser (prefs showHelpOnEmpty) opts
   case cmd of
     Init ->
       handleInit
