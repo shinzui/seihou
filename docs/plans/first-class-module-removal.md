@@ -25,7 +25,7 @@ After implementation, a user can:
 - [x] Milestone 4: Rewrite the Remove CLI handler to use declared removal steps (2026-03-21)
 - [x] Milestone 5: Tests for the new removal engine (2026-03-21)
 - [x] Milestone 6: Update all documentation and agent prompts (2026-03-21)
-- [ ] Milestone 7: End-to-end validation
+- [ ] Milestone 7: End-to-end validation (manual — requires creating a test module with removal spec)
 
 
 ## Surprises & Discoveries
@@ -58,7 +58,16 @@ After implementation, a user can:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**Milestones 1-6 completed on 2026-03-21.**
+
+- Schema: `removable :: Bool` replaced with `removal :: Optional Removal.Type` in both Dhall and Haskell. Three removal actions: `remove-file`, `remove-section`, `rewrite-file`. Backwards-compatible manifest decoding (`"removable": true` → `Just (Removal [] [])`).
+- Engine: New step-based removal engine (`buildRemovalOps`, `executeRemovalOps`) alongside legacy `computeRemovalPlan`/`executeRemoval`. `removeSection` function strips section markers from files.
+- CLI: Handler rewrites plan display to show Delete/Strip/Rewrite/Run operations.
+- Tests: 22 new tests (618 → 640 total). Covers removal ops, section removal, and full round-trips.
+- Documentation: All 8 doc files and 3 agent prompts updated.
+- Surprise: Local `schema/` directory is a git submodule pointing to `seihou-schema` — required parallel updates.
+
+**Remaining:** Milestone 7 (manual end-to-end validation) requires creating a real module with a `removal` section and testing `seihou run` → `seihou remove` round-trip.
 
 
 ## Context and Orientation
