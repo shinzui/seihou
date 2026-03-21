@@ -57,15 +57,20 @@ DEPENDENCIES
 
 SCHEMA PACKAGE
 
-  Seihou provides a Dhall schema package (schema/package.dhall) that
-  supports record completion (::) for concise module authoring:
+  Seihou publishes its Dhall schema at github.com/shinzui/seihou-schema.
+  Modules import it via a pinned HTTPS URL with an integrity hash and
+  use record completion (::) for concise authoring:
 
-    let S = ./schema/package.dhall
-    in S.Module::{ name = "my-module"
-                 , steps = [ S.Step::{ strategy = "template"
-                                     , src = "foo.tpl", dest = "foo" } ]
-                 }
+    let S =
+          https://raw.githubusercontent.com/shinzui/seihou-schema/<commit>/package.dhall
+            sha256:<hash>
 
+    in  S.Module::{ name = "my-module"
+                  , steps = [ S.Step::{ strategy = "template"
+                                      , src = "foo.tpl", dest = "foo" } ]
+                  }
+
+  Running `seihou new-module` generates modules in this format.
   Record completion fills in defaults for optional fields automatically.
 
 COMMON COMMANDS

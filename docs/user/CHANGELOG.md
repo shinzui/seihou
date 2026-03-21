@@ -3,12 +3,28 @@
 ## Last Reviewed Commit
 
 ```
-8daa78c Add seihou schema-upgrade command and Dhall schema package
+(to be updated after M6 commit)
 ```
 
 ---
 
 ## Changelog
+
+### 2026-03-21 (schema URL imports)
+
+**Reviewed commits:** `87ab9c9` through current
+
+- Updated `docs/user/module-authoring.md` — schema package section now shows URL-based imports from `seihou-schema` GitHub repo; schema-upgrade section documents `MissingSchemaImport` detection
+- Updated `docs/cli/schema-upgrade.md` — added missing schema import to the list of handled transformations
+- Updated `seihou-cli/help/modules.md` — schema package section updated to show URL import pattern
+- Updated `seihou-cli/data/assist-prompt.md` — schema package example uses URL import
+- Updated `seihou-cli/data/bootstrap-prompt.md` — schema package example uses URL import
+
+**Features documented:**
+- Schema is now published at `github.com/shinzui/seihou-schema` and imported via pinned HTTPS URL with integrity hash
+- `seihou new-module` generates modules with schema URL imports and record completion (`S.Module::`)
+- `seihou schema-upgrade` detects and injects missing schema imports (`MissingSchemaImport`)
+- `update-seihou-schema` Claude Code skill for bumping the schema pin
 
 ### 2026-03-21
 

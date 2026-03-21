@@ -32,6 +32,7 @@ The command handles:
 - **Missing `commands` field** — Adds an empty `commands` list before `dependencies`.
 - **Bare string dependencies** — Converts `["module-name"]` to the record form `[{ module = "module-name", vars = [] : List { name : Text, value : Text } }]`.
 - **`List Text` dependency annotation** — Converts `[] : List Text` to the record type annotation.
+- **Missing schema import** — Injects `let S = <url> <hash> in S.Module::{...}` wrapping the module record, importing the schema from the pinned GitHub URL.
 
 The command is idempotent — running it on an already-current module reports "up to date" and makes no changes.
 

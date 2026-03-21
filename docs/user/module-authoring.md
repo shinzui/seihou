@@ -563,23 +563,25 @@ Add `--lint` for advisory warnings about best practices.
 
 ## Schema package and record completion
 
-Seihou provides a Dhall schema package at `schema/package.dhall` that supports Dhall's record completion operator (`::`) for ergonomic module authoring. Instead of spelling out all optional fields, you can use defaults:
+Seihou publishes its Dhall schema as a separate package at [`seihou-schema`](https://github.com/shinzui/seihou-schema). Modules import it via a pinned HTTPS URL with an integrity hash, and use Dhall's record completion operator (`::`) for ergonomic authoring. Instead of spelling out all optional fields, you can use defaults:
 
 ```dhall
-let S = ./schema/package.dhall
+let S =
+      https://raw.githubusercontent.com/shinzui/seihou-schema/<commit>/package.dhall
+        sha256:<hash>
 
-in S.Module::{
-  name = "my-module",
-  steps = [
-    S.Step::{ strategy = "template", src = "README.md.tpl", dest = "README.md" }
-  ],
-  dependencies = [
-    S.Dependency::{ module = "nix-base" }
-  ]
-}
+in  S.Module::{
+    , name = "my-module"
+    , steps =
+      [ S.Step::{ strategy = "template", src = "README.md.tpl", dest = "README.md" }
+      ]
+    , dependencies =
+      [ S.Dependency::{ module = "nix-base" }
+      ]
+    }
 ```
 
-Record completion fills in defaults for optional fields (`version = None Text`, `when = None Text`, `patch = None Text`, etc.), so you only specify what matters. Available types: `S.Module`, `S.Step`, `S.VarDecl`, `S.VarExport`, `S.Prompt`, `S.Command`, `S.Dependency`.
+Running `seihou new-module` generates modules in this format automatically. Record completion fills in defaults for optional fields (`version = None Text`, `when = None Text`, `patch = None Text`, etc.), so you only specify what matters. Available types: `S.Module`, `S.Step`, `S.VarDecl`, `S.VarExport`, `S.Prompt`, `S.Command`, `S.Dependency`.
 
 
 ## Upgrading modules to the current schema
@@ -597,7 +599,7 @@ seihou schema-upgrade ./my-module
 seihou schema-upgrade --all
 ```
 
-This adds missing fields (`version`, `patch`, `commands`) and converts bare string dependencies to the record form. The command is idempotent.
+This adds missing fields (`version`, `patch`, `commands`), converts bare string dependencies to the record form, and injects the schema import (`let S = ...`) for modules that lack it. The command is idempotent.
 
 
 ## Best practices

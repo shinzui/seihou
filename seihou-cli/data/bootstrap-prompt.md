@@ -68,14 +68,19 @@ For parameterized deps that supply values to the child module:
 
 ### Schema package and record completion
 
-Seihou provides a Dhall schema package that supports record completion (`::`) for concise authoring:
+Seihou publishes its Dhall schema at `github.com/shinzui/seihou-schema`. Modules import it via a pinned HTTPS URL with an integrity hash and use record completion (`::`) for concise authoring:
 ```dhall
-let S = ./schema/package.dhall
-in S.Module::{ name = "my-module"
-             , steps = [ S.Step::{ strategy = "template", src = "foo.tpl", dest = "foo" } ]
-             , dependencies = [ S.Dependency::{ module = "nix-base" } ]
-             }
+let S =
+      https://raw.githubusercontent.com/shinzui/seihou-schema/<commit>/package.dhall
+        sha256:<hash>
+
+in  S.Module::{
+    , name = "my-module"
+    , steps = [ S.Step::{ strategy = "template", src = "foo.tpl", dest = "foo" } ]
+    , dependencies = [ S.Dependency::{ module = "nix-base" } ]
+    }
 ```
+Running `seihou new-module` generates modules in this format automatically.
 Available types: S.Module, S.Step, S.VarDecl, S.VarExport, S.Prompt, S.Command, S.Dependency.
 
 ### Empty list type annotations
