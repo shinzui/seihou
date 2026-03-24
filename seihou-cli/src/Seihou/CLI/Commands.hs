@@ -215,27 +215,47 @@ topLevelFooter =
 
 commandParser :: Parser Command
 commandParser =
-  subparser
+  hsubparser
     ( command "init" initInfo
         <> command "run" runInfo
         <> command "remove" removeInfo
-        <> command "vars" varsInfo
-        <> command "install" installInfo
         <> command "status" statusInfo
         <> command "diff" diffInfo
-        <> command "list" listInfo
-        <> command "new-module" newModuleInfo
-        <> command "validate-module" validateInfo
-        <> command "config" configInfo
-        <> command "context" contextInfo
-        <> command "browse" browseInfo
-        <> command "outdated" outdatedInfo
-        <> command "upgrade" upgradeInfo
-        <> command "schema-upgrade" schemaUpgradeInfo
-        <> command "agent" agentInfo
-        <> command "help" helpCmdInfo
-        <> command "completions" completionsInfo
     )
+    <|> hsubparser
+      ( command "list" listInfo
+          <> command "install" installInfo
+          <> command "browse" browseInfo
+          <> command "outdated" outdatedInfo
+          <> command "upgrade" upgradeInfo
+          <> commandGroup "Module management:"
+          <> hidden
+      )
+    <|> hsubparser
+      ( command "new-module" newModuleInfo
+          <> command "validate-module" validateInfo
+          <> command "vars" varsInfo
+          <> command "schema-upgrade" schemaUpgradeInfo
+          <> commandGroup "Authoring:"
+          <> hidden
+      )
+    <|> hsubparser
+      ( command "config" configInfo
+          <> command "context" contextInfo
+          <> commandGroup "Configuration:"
+          <> hidden
+      )
+    <|> hsubparser
+      ( command "agent" agentInfo
+          <> commandGroup "AI agent:"
+          <> hidden
+      )
+    <|> hsubparser
+      ( command "help" helpCmdInfo
+          <> command "completions" completionsInfo
+          <> commandGroup "Help & shell integration:"
+          <> hidden
+      )
 
 -- Command info blocks
 
