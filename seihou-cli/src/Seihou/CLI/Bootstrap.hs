@@ -20,7 +20,7 @@ handleBootstrap :: Bool -> BootstrapOpts -> IO ()
 handleBootstrap debug bootstrapOpts = do
   ctx <- gatherAgentContext
   let systemPrompt = renderPrompt ctx bootstrapOpts
-  launchAgent debug systemPrompt bootstrapOpts.bootstrapPrompt
+  launchAgentWith bootstrapAllowedTools debug systemPrompt bootstrapOpts.bootstrapPrompt
 
 renderPrompt :: AgentContext -> BootstrapOpts -> Text
 renderPrompt ctx bootstrapOpts =
