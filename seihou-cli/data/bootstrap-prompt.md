@@ -50,7 +50,7 @@ Module names must match `[a-z][a-z0-9-]*`.
     , src = "README.md.tpl"  -- relative to files/
     , dest = "README.md"     -- output path, supports \{{var}} in path
     , when = None Text
-    , patch = None Text  -- append-file | prepend-file | append-section | replace-section
+    , patch = None Text  -- append-file | prepend-file | append-section | append-line-if-absent | replace-section
     }
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
@@ -174,6 +174,7 @@ my-templates/
 - `replace-section` — replaces content between existing section markers
 - `append-file` — appends to end without markers
 - `prepend-file` — prepends to beginning
+- `append-line-if-absent` — appends only lines not already present (idempotent, no markers)
 
 
 ## Seihou CLI Commands

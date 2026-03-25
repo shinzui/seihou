@@ -205,7 +205,7 @@ Steps define the file generation operations. Each step produces one output file:
 
 **when** (Optional Text): Conditional expression. If present and evaluates to false, the step is skipped. See [Expression language](#expression-language).
 
-**patch** (Optional Text): Patching mode for when multiple modules write to the same file. Values: `"append-file"`, `"prepend-file"`, `"append-section"`, `"replace-section"`. See [Composition patching](#composition-patching).
+**patch** (Optional Text): Patching mode for when multiple modules write to the same file. Values: `"append-file"`, `"prepend-file"`, `"append-section"`, `"append-line-if-absent"`, `"replace-section"`. See [Composition patching](#composition-patching).
 
 ### Strategy: copy
 
@@ -413,6 +413,8 @@ When multiple modules target the same destination file, the `patch` field contro
 - `patch = Some "append-file"` — Appends content to the end of the file without section markers.
 
 - `patch = Some "prepend-file"` — Prepends content to the beginning of the file.
+
+- `patch = Some "append-line-if-absent"` — Appends only lines not already present in the file. Idempotent on re-runs — no duplicates, no markers. Ideal for line-oriented config files like `.gitignore` or `.dockerignore`.
 
 **Structured files** (JSON/YAML via the `structured` strategy) use Dhall's deep record merge. Records from multiple modules are merged so that nested keys are combined rather than overwritten.
 

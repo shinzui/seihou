@@ -67,7 +67,7 @@ CLI input
 
 **Variable Resolution** walks each module's variable declarations and resolves values from the merged config. Type checking and validation (required, pattern, range) happen here. Cross-module variable references are resolved through explicit exports.
 
-**Plan Compilation** dispatches each module step to its generation strategy (Copy, Template, DhallText, Structured) and produces a list of filesystem operations. Composition patches (append-section, record merge, etc.) are applied during this phase.
+**Plan Compilation** dispatches each module step to its generation strategy (Copy, Template, DhallText, Structured) and produces a list of filesystem operations. Composition patches (append-section, append-line-if-absent, record merge, etc.) are applied during this phase.
 
 **Three-State Diff** compares the compiled plan against both the manifest (what was last generated) and disk (what currently exists). This produces a classified diff: new files, modified files, conflicting files (user edited a generated file), and deleted files.
 
@@ -136,7 +136,7 @@ seihou/
 │           │   ├── Diff.hs        # Three-state diff engine
 │           │   ├── Conflict.hs    # Conflict resolution
 │           │   ├── Preview.hs     # Diff visualization
-│           │   ├── Section.hs     # Text patching (append/prepend section)
+│           │   ├── Section.hs     # Text patching (append/prepend/line-dedup)
 │           │   ├── Remove.hs      # Module removal engine
 │           │   ├── Validate.hs    # Post-generation validation
 │           │   └── DhallJSON.hs   # Dhall-to-JSON bridge

@@ -113,6 +113,7 @@ data PatchOp
   = AppendFile                 -- Append content at end of file
   | PrependFile                -- Prepend content at start of file
   | AppendSection              -- Wrap in section markers, append
+  | AppendLineIfAbsent         -- Append only lines not already present
   deriving stock (Eq, Show, Generic)
 ```
 

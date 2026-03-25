@@ -3,12 +3,32 @@
 ## Last Reviewed Commit
 
 ```
-f115d6b Add seihou remove command for reversible module removal
+88b6060 Add AppendLineIfAbsent PatchOp for idempotent line-level patching
 ```
 
 ---
 
 ## Changelog
+
+### 2026-03-25 (append-line-if-absent patch op)
+
+**Reviewed commits:** `0585b67` through `88b6060`
+
+- Updated `docs/user/module-authoring.md` — added `"append-line-if-absent"` to patch field values and composition patching section
+- Updated `docs/dev/design/proposed/composition-and-layering.md` — added `AppendLineIfAbsent` to `PatchOp` type definition
+- Updated `docs/dev/architecture/overview.md` — updated Section.hs description and plan compilation mention
+- Updated `seihou-cli/data/bootstrap-prompt.md` — added `append-line-if-absent` to patch field comment and composition patching reference
+- Updated `seihou-cli/data/assist-prompt.md` — added `append-line-if-absent` to patch field comment and composition patching reference
+
+**Features documented:**
+- `patch = Some "append-line-if-absent"` — new idempotent patch operation that appends only lines not already present in the target file. Designed for line-oriented config files like `.gitignore` and `.dockerignore`. Re-runs produce no duplicates and no section markers.
+
+**No documentation needed:**
+- `0585b67` Expand bootstrap agent permissions to reduce user prompts (tooling)
+- `0f91ff6` Group --help output into coherent command categories (already documented)
+- `240a9f7` Preserve PatchFileOp in composed plan when no base file exists (bug fix)
+- `ada7b9f` Fix patch operations incorrectly classified as conflicts (bug fix)
+- `913a06a` Sync SchemaVersion.hs with latest seihou-schema pin (infrastructure)
 
 ### 2026-03-21 (remove command)
 
