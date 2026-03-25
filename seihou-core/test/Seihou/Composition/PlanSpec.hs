@@ -152,6 +152,16 @@ spec = do
       any isContentMerged warnings `shouldBe` True
       any isFileOverwritten warnings `shouldBe` False
 
+    it "PatchFileOp AppendLineIfAbsent deduplicates lines during merge" $ do
+      let aOps = [WriteFileOp ".gitignore" "node_modules/\n.env\n" Template]
+          bOps = [PatchFileOp ".gitignore" ".env\n.claude/\n" AppendLineIfAbsent Template "mod-b"]
+          (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
+      case filter isWriteOp ops of
+        [WriteFileOp _ content _] -> do
+          content `shouldBe` "node_modules/\n.env\n.claude/\n"
+        other -> expectationFailure $ "Expected one WriteFileOp, got: " ++ show other
+      any isContentMerged warnings `shouldBe` True
+
   describe "mergeOperations (structured merge)" $ do
     it "two Structured WriteFileOps for same JSON dest get deep-merged" $ do
       let aOps = [WriteFileOp "config.json" "{\"name\": \"foo\"}\n" Structured]

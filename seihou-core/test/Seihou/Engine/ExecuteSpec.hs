@@ -158,6 +158,22 @@ spec = do
       let content = fs.files Map.! "/project/new.txt"
       T.isInfixOf "new content" content `shouldBe` True
 
+    it "executes PatchFileOp AppendLineIfAbsent, skipping existing lines" $ do
+      let initial = PureFS (Map.singleton "/project/.gitignore" "node_modules/\n.env\n") mempty
+          ops = [PatchFileOp ".gitignore" ".env\n.claude/\n" AppendLineIfAbsent Template modName]
+          (records, fs) = runExecFS initial ops
+      Map.member ".gitignore" records `shouldBe` True
+      let content = fs.files Map.! "/project/.gitignore"
+      content `shouldBe` "node_modules/\n.env\n.claude/\n"
+
+    it "executes PatchFileOp AppendLineIfAbsent idempotently" $ do
+      let initial = PureFS (Map.singleton "/project/.gitignore" "node_modules/\n.claude/\n") mempty
+          ops = [PatchFileOp ".gitignore" ".claude/\n" AppendLineIfAbsent Template modName]
+          (records, fs) = runExecFS initial ops
+      Map.member ".gitignore" records `shouldBe` True
+      let content = fs.files Map.! "/project/.gitignore"
+      content `shouldBe` "node_modules/\n.claude/\n"
+
   describe "dryRunPlan" $ do
     it "formats WriteFileOp" $ do
       let result = dryRunPlan [WriteFileOp "README.md" "content" Template]

@@ -90,6 +90,33 @@ spec = do
       let result = applyTextPatch PrependFile modName "#" "" "new content\n"
       result `shouldBe` Right "new content\n"
 
+    it "AppendLineIfAbsent appends only missing lines" $ do
+      let result = applyTextPatch AppendLineIfAbsent modName "#" "line1\nline2\n" "line2\nline3\n"
+      result `shouldBe` Right "line1\nline2\nline3\n"
+
+    it "AppendLineIfAbsent is idempotent when all lines present" $ do
+      let existing = ".claude/\nnode_modules/\n"
+          result = applyTextPatch AppendLineIfAbsent modName "#" existing ".claude/\n"
+      result `shouldBe` Right existing
+
+    it "AppendLineIfAbsent with empty existing content" $ do
+      let result = applyTextPatch AppendLineIfAbsent modName "#" "" ".claude/\n"
+      result `shouldBe` Right ".claude/\n"
+
+    it "AppendLineIfAbsent ignores trailing whitespace differences" $ do
+      let result = applyTextPatch AppendLineIfAbsent modName "#" "line1  \n" "line1\n"
+      result `shouldBe` Right "line1  \n"
+
+    it "AppendLineIfAbsent handles multiple new lines, some present" $ do
+      let result =
+            applyTextPatch
+              AppendLineIfAbsent
+              modName
+              "#"
+              "*.log\n.env\n"
+              "*.log\n.claude/\n.env\ndist/\n"
+      result `shouldBe` Right "*.log\n.env\n.claude/\ndist/\n"
+
   describe "removeSection" $ do
     it "removes a section between markers" $ do
       let content = "before\n# --- seihou:nix-flake ---\nmodule content\n# --- /seihou:nix-flake ---\nafter\n"

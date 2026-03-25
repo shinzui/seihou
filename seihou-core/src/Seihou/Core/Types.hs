@@ -139,6 +139,7 @@ data PatchOp
   = AppendFile
   | PrependFile
   | AppendSection
+  | AppendLineIfAbsent
   deriving stock (Eq, Show, Generic)
 
 -- | A generation step within a module.

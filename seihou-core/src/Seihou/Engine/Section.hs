@@ -87,6 +87,13 @@ applyTextPatch PrependFile _ _ existing new =
 applyTextPatch AppendSection modName prefix existing new =
   let marker = SectionMarker {sectionPrefix = prefix, sectionModule = modName}
    in Right (ensureTrailingNewline existing <> wrapInSection marker new)
+applyTextPatch AppendLineIfAbsent _ _ existing new =
+  let existingLines = map T.stripEnd (T.lines existing)
+      newLines = filter (not . T.null . T.strip) (T.lines (T.stripEnd new))
+      missing = filter (\l -> T.stripEnd l `notElem` existingLines) newLines
+   in if null missing
+        then Right existing
+        else Right (ensureTrailingNewline existing <> T.unlines missing)
 
 -- | Ensure text ends with a newline. Returns the text unchanged if it already
 -- ends with one, or with an appended newline if not. Returns empty text unchanged.

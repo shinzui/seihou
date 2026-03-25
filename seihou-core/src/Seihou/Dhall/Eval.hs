@@ -321,8 +321,9 @@ patchOpDecoder = parsePatchOp <$> strictText
       "append-file" -> AppendFile
       "prepend-file" -> PrependFile
       "append-section" -> AppendSection
+      "append-line-if-absent" -> AppendLineIfAbsent
       -- Caught by 'try' in 'evalModuleFromFile'
-      other -> error ("Unknown patch operation \"" <> T.unpack other <> "\"; expected one of: append-file, prepend-file, append-section")
+      other -> error ("Unknown patch operation \"" <> T.unpack other <> "\"; expected one of: append-file, prepend-file, append-section, append-line-if-absent")
 
 -- | Decoder for Step from a Dhall record.
 -- The @when@ field is parsed via 'parseExpr' into an 'Expr' AST.
@@ -349,7 +350,8 @@ stepDecoder =
     parsePatchOp "append-file" = AppendFile
     parsePatchOp "prepend-file" = PrependFile
     parsePatchOp "append-section" = AppendSection
-    parsePatchOp other = error ("Unknown patch operation \"" <> T.unpack other <> "\"; expected one of: append-file, prepend-file, append-section")
+    parsePatchOp "append-line-if-absent" = AppendLineIfAbsent
+    parsePatchOp other = error ("Unknown patch operation \"" <> T.unpack other <> "\"; expected one of: append-file, prepend-file, append-section, append-line-if-absent")
 
 -- | Decoder for Command from a Dhall record.
 -- The @when@ field is parsed via 'parseExpr' into an 'Expr' AST.

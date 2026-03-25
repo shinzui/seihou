@@ -104,3 +104,4 @@ dryRunPlan ops =
     formatPatchOp AppendFile = "append-file"
     formatPatchOp PrependFile = "prepend-file"
     formatPatchOp AppendSection = "append-section"
+    formatPatchOp AppendLineIfAbsent = "append-line-if-absent"
