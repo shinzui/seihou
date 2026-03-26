@@ -14,3 +14,4 @@ cabal.project.local
 result
 
 .seihou/manifest.json.tmp
+CLAUDE.local.md
