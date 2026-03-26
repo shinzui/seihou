@@ -46,6 +46,7 @@ spec = do
                   [ AppliedModule
                       { name = ModuleName "haskell-base",
                         source = "/home/user/.config/seihou/modules/haskell-base",
+                        moduleVersion = Nothing,
                         appliedAt = fixedTime,
                         removal = Nothing
                       }
@@ -100,8 +101,8 @@ spec = do
               { version = 1,
                 genAt = fixedTime,
                 modules =
-                  [ AppliedModule (ModuleName "haskell-base") "/path/to/module" fixedTime Nothing,
-                    AppliedModule (ModuleName "nix-flake") "/path/to/nix" fixedTime2 Nothing
+                  [ AppliedModule (ModuleName "haskell-base") "/path/to/module" Nothing fixedTime Nothing,
+                    AppliedModule (ModuleName "nix-flake") "/path/to/nix" Nothing fixedTime2 Nothing
                   ],
                 vars =
                   Map.fromList
@@ -131,6 +132,43 @@ spec = do
                     (zipWith (\i s -> ("file" <> show i, makeRecord s)) [(1 :: Int) ..] strategies)
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
+
+    it "roundtrips a manifest with versioned modules" $ do
+      let m =
+            (emptyManifest fixedTime)
+              { modules =
+                  [ AppliedModule
+                      { name = ModuleName "haskell-base",
+                        source = "/path/to/module",
+                        moduleVersion = Just "1.0.0",
+                        appliedAt = fixedTime,
+                        removal = Nothing
+                      }
+                  ]
+              }
+      manifestFromJSON (manifestToJSON m) `shouldBe` Right m
+
+    it "roundtrips a manifest with unversioned modules" $ do
+      let m =
+            (emptyManifest fixedTime)
+              { modules =
+                  [ AppliedModule
+                      { name = ModuleName "simple-mod",
+                        source = "/path/to/mod",
+                        moduleVersion = Nothing,
+                        appliedAt = fixedTime,
+                        removal = Nothing
+                      }
+                  ]
+              }
+      manifestFromJSON (manifestToJSON m) `shouldBe` Right m
+
+    it "parses old manifest without version key as Nothing" $ do
+      let json = "{\"version\":1,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[{\"name\":\"old-mod\",\"source\":\"/path\",\"appliedAt\":\"2026-03-01T10:30:00Z\"}],\"variables\":{},\"files\":{}}"
+          result = manifestFromJSON json
+      case result of
+        Right manifest -> (head manifest.modules).moduleVersion `shouldBe` Nothing
+        Left err -> expectationFailure ("failed to parse: " <> err)
 
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do

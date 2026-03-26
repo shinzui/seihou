@@ -37,6 +37,7 @@ mkManifest isRemovable fileContents =
         [ AppliedModule
             { name = modName,
               source = "/path/to/test-module",
+              moduleVersion = Nothing,
               appliedAt = fixedTime,
               removal = if isRemovable then Just (Removal [] []) else Nothing
             }
@@ -63,6 +64,7 @@ mkManifestWithRemoval removal fileContents =
         [ AppliedModule
             { name = modName,
               source = "/path/to/test-module",
+              moduleVersion = Nothing,
               appliedAt = fixedTime,
               removal = Just removal
             }

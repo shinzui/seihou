@@ -70,6 +70,7 @@ instance ToJSON AppliedModule where
         "source" .= am.source,
         "appliedAt" .= am.appliedAt
       ]
+        ++ maybe [] (\v -> ["version" .= v]) am.moduleVersion
         ++ maybe [] (\r -> ["removal" .= removalToJSON r]) am.removal
 
 instance FromJSON AppliedModule where
@@ -86,6 +87,7 @@ instance FromJSON AppliedModule where
     AppliedModule
       <$> (ModuleName <$> o .: "name")
       <*> o .: "source"
+      <*> o Aeson..:? "version"
       <*> o .: "appliedAt"
       <*> pure removal
 

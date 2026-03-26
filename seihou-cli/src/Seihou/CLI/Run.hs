@@ -375,6 +375,7 @@ updateAllModules existing modulesInOrder now =
         [ AppliedModule
             { name = m.name,
               source = dir,
+              moduleVersion = m.version,
               appliedAt = now,
               removal = m.removal
             }

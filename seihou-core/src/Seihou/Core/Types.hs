@@ -306,6 +306,7 @@ data Manifest = Manifest
 data AppliedModule = AppliedModule
   { name :: ModuleName,
     source :: FilePath,
+    moduleVersion :: Maybe Text,
     appliedAt :: UTCTime,
     removal :: Maybe Removal
   }

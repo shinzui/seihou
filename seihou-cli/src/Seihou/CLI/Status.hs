@@ -73,13 +73,17 @@ renderStatus color manifest tracked = do
 
 -- | Print a single applied module line.
 printModule :: Bool -> AppliedModule -> IO ()
-printModule _color am =
-  TIO.putStrLn $
-    "  "
-      <> am.name.unModuleName
-      <> "    (applied "
-      <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d" am.appliedAt)
-      <> ")"
+printModule color am =
+  let verText = case am.moduleVersion of
+        Just v -> "  " <> (if color then green ("v" <> v) else "v" <> v)
+        Nothing -> ""
+   in TIO.putStrLn $
+        "  "
+          <> am.name.unModuleName
+          <> verText
+          <> "    (applied "
+          <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d" am.appliedAt)
+          <> ")"
 
 -- | Print a single tracked file line with status.
 printTrackedFile :: Bool -> Int -> Int -> TrackedFile -> IO ()
