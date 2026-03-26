@@ -178,12 +178,12 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
             Left err ->
               pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = UpgradeFailed (T.pack (show err))}
             Right _ -> do
-              let ver = case contents of
+              let (ver, entryTags) = case contents of
                     MultiModule registry -> case filter (\e -> e.name.unModuleName == name) registry.modules of
-                      (entry : _) -> entry.version <|> modul.version
-                      [] -> modul.version
-                    _ -> modul.version
-              installModuleDir moduleDir (T.unpack name) sourceUrl registryName ver
+                      (entry : _) -> (entry.version <|> modul.version, entry.tags)
+                      [] -> (modul.version, [])
+                    _ -> (modul.version, [])
+              installModuleDir moduleDir (T.unpack name) sourceUrl registryName ver entryTags
               TIO.putStrLn $ "    Upgraded " <> name
               pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
 

@@ -1,6 +1,9 @@
 module Seihou.CLI.List
   ( handleList,
     formatListOutput,
+    applyFilters,
+    ListFilter (..),
+    Entry (..),
   )
 where
 
@@ -8,6 +11,7 @@ import Data.Aeson (FromJSON (..), withObject, (.:?))
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Shared (shortenHome)
@@ -20,15 +24,28 @@ import System.Directory (doesFileExist)
 -- | Origin metadata read from @.seihou-origin.json@.
 data OriginInfo = OriginInfo
   { originRepoName :: Maybe Text,
-    originVersion :: Maybe Text
+    originVersion :: Maybe Text,
+    originTags :: [Text]
   }
 
 instance FromJSON OriginInfo where
   parseJSON = withObject "OriginInfo" $ \v ->
-    OriginInfo <$> v .:? "repoName" <*> v .:? "version"
+    OriginInfo <$> v .:? "repoName" <*> v .:? "version" <*> (fromMaybe [] <$> v .:? "tags")
 
-handleList :: IO ()
-handleList = do
+-- | Filter criteria for the list command.  Defined here (rather than
+-- imported from Commands) so the internal library does not depend on
+-- optparse-applicative.
+data ListFilter = ListFilter
+  { filterRepo :: Maybe Text,
+    filterTag :: Maybe Text
+  }
+  deriving stock (Eq, Show)
+
+noFilter :: ListFilter
+noFilter = ListFilter Nothing Nothing
+
+handleList :: ListFilter -> IO ()
+handleList listOpts = do
   searchPaths <- defaultSearchPaths
   modules <- discoverAllModules searchPaths
   colorEnabled <- useColor
@@ -36,7 +53,8 @@ handleList = do
   -- Read origin metadata for installed modules
   origins <- Map.fromList <$> mapM readOrigin modules
   let entries = map (toEntryWithOrigin origins) modules
-  TIO.putStr (formatListOutputEntries colorEnabled entries shortenedPaths)
+      filtered = applyFilters listOpts entries
+  TIO.putStr (formatListOutputEntries colorEnabled filtered shortenedPaths listOpts)
 
 readOrigin :: DiscoveredModule -> IO (FilePath, Maybe OriginInfo)
 readOrigin dm = do
@@ -55,12 +73,14 @@ readOrigin dm = do
 formatListOutput :: Bool -> [DiscoveredModule] -> [Text] -> Text
 formatListOutput color modules searchPaths =
   let entries = map toEntry modules
-   in formatListOutputEntries color entries searchPaths
+   in formatListOutputEntries color entries searchPaths noFilter
 
-formatListOutputEntries :: Bool -> [Entry] -> [Text] -> Text
-formatListOutputEntries color entries searchPaths
+formatListOutputEntries :: Bool -> [Entry] -> [Text] -> ListFilter -> Text
+formatListOutputEntries color entries searchPaths listOpts
   | null entries =
-      "No modules found.\n\nSearched:\n"
+      "No modules found."
+        <> filterSuffix
+        <> "\n\nSearched:\n"
         <> T.unlines (map ("  " <>) searchPaths)
   | otherwise =
       let maxNameLen = maximum (map (T.length . (.entryName)) entries)
@@ -76,24 +96,56 @@ formatListOutputEntries color entries searchPaths
               <> noun
               <> " found ("
               <> T.pack (show nSources)
-              <> " sources searched)\n"
+              <> " sources searched)"
+              <> filterSuffix
+              <> "\n"
        in header <> "\n" <> T.unlines fileLines <> "\n" <> summary
+  where
+    filterSuffix = formatFilterSuffix listOpts
+
+-- | Build a display suffix describing the active filters, e.g.
+-- @" [filtered: repo=foo, tag=bar]"@.  Returns empty text when no filters
+-- are active.
+formatFilterSuffix :: ListFilter -> Text
+formatFilterSuffix opts =
+  let parts =
+        maybe [] (\r -> ["repo=" <> r]) opts.filterRepo
+          <> maybe [] (\t -> ["tag=" <> t]) opts.filterTag
+   in if null parts
+        then ""
+        else " [filtered: " <> T.intercalate ", " parts <> "]"
+
+-- | Apply repo and tag filters to a list of entries.  Both filters combine
+-- with AND: an entry must match all active filters to be included.
+applyFilters :: ListFilter -> [Entry] -> [Entry]
+applyFilters opts = filter match
+  where
+    match entry = repoMatch entry && tagMatch entry
+    repoMatch entry = case opts.filterRepo of
+      Nothing -> True
+      Just r -> entry.entryRepoName == Just r
+    tagMatch entry = case opts.filterTag of
+      Nothing -> True
+      Just t -> t `elem` entry.entryTags
 
 data Entry = Entry
   { entryName :: Text,
     entryDesc :: Text,
     entrySource :: Text,
-    entryIsError :: Bool
+    entryIsError :: Bool,
+    entryRepoName :: Maybe Text,
+    entryTags :: [Text]
   }
+  deriving stock (Eq, Show)
 
 toEntry :: DiscoveredModule -> Entry
 toEntry = toEntryWithOrigin Map.empty
 
 toEntryWithOrigin :: Map FilePath (Maybe OriginInfo) -> DiscoveredModule -> Entry
 toEntryWithOrigin origins dm =
-  let (originName, originVer) = case Map.lookup dm.discoveredDir origins of
-        Just (Just info) -> (info.originRepoName, info.originVersion)
-        _ -> (Nothing, Nothing)
+  let (originName, originVer, originTags) = case Map.lookup dm.discoveredDir origins of
+        Just (Just info) -> (info.originRepoName, info.originVersion, info.originTags)
+        _ -> (Nothing, Nothing, [])
       srcLabel = sourceLabelWithOrigin dm.discoveredSource originName originVer
    in case dm.discoveredResult of
         Right m ->
@@ -101,14 +153,18 @@ toEntryWithOrigin origins dm =
             { entryName = m.name.unModuleName,
               entryDesc = maybe "(no description)" id m.description,
               entrySource = srcLabel,
-              entryIsError = False
+              entryIsError = False,
+              entryRepoName = originName,
+              entryTags = originTags
             }
         Left err ->
           Entry
             { entryName = dirName dm.discoveredDir,
               entryDesc = "[error: " <> briefError err <> "]",
               entrySource = srcLabel,
-              entryIsError = True
+              entryIsError = True,
+              entryRepoName = originName,
+              entryTags = originTags
             }
 
 sourceLabelWithOrigin :: ModuleSource -> Maybe Text -> Maybe Text -> Text

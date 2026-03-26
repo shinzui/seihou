@@ -1,7 +1,7 @@
 module Seihou.CLI.ListSpec (tests) where
 
 import Data.Text qualified as T
-import Seihou.CLI.List (formatListOutput)
+import Seihou.CLI.List (Entry (..), ListFilter (..), applyFilters, formatListOutput)
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..))
 import Seihou.Core.Types
 import Test.Hspec
@@ -41,6 +41,21 @@ brokenModule name src =
       discoveredSource = src,
       discoveredDir = "/fake/" ++ name
     }
+
+-- | Helper to build an Entry for filter tests.
+mkEntry :: T.Text -> Maybe T.Text -> [T.Text] -> Entry
+mkEntry name repo tags =
+  Entry
+    { entryName = name,
+      entryDesc = "desc",
+      entrySource = "installed",
+      entryIsError = False,
+      entryRepoName = repo,
+      entryTags = tags
+    }
+
+noFilter :: ListFilter
+noFilter = ListFilter Nothing Nothing
 
 spec :: Spec
 spec = do
@@ -86,3 +101,48 @@ spec = do
       let mods = [validModule "only-one" "desc" SourceUser]
           result = formatListOutput False mods ["p1"]
       T.isInfixOf "1 module found" result `shouldBe` True
+
+  describe "applyFilters" $ do
+    let entries =
+          [ mkEntry "mod-a" (Just "repo-x") ["haskell", "cli"],
+            mkEntry "mod-b" (Just "repo-x") ["python"],
+            mkEntry "mod-c" (Just "repo-y") ["haskell"],
+            mkEntry "mod-d" Nothing []
+          ]
+
+    it "returns all entries with no filters" $ do
+      let result = applyFilters noFilter entries
+      length result `shouldBe` 4
+
+    it "filters by repo name" $ do
+      let opts = ListFilter (Just "repo-x") Nothing
+          result = applyFilters opts entries
+      length result `shouldBe` 2
+      map (.entryName) result `shouldBe` ["mod-a", "mod-b"]
+
+    it "filters by tag" $ do
+      let opts = ListFilter Nothing (Just "haskell")
+          result = applyFilters opts entries
+      length result `shouldBe` 2
+      map (.entryName) result `shouldBe` ["mod-a", "mod-c"]
+
+    it "combines repo and tag filters with AND" $ do
+      let opts = ListFilter (Just "repo-x") (Just "haskell")
+          result = applyFilters opts entries
+      length result `shouldBe` 1
+      map (.entryName) result `shouldBe` ["mod-a"]
+
+    it "returns empty list when repo filter matches nothing" $ do
+      let opts = ListFilter (Just "nonexistent") Nothing
+          result = applyFilters opts entries
+      result `shouldBe` []
+
+    it "returns empty list when tag filter matches nothing" $ do
+      let opts = ListFilter Nothing (Just "ruby")
+          result = applyFilters opts entries
+      result `shouldBe` []
+
+    it "excludes modules without origin metadata when repo filter is active" $ do
+      let opts = ListFilter (Just "repo-x") Nothing
+          result = applyFilters opts entries
+      all (\e -> e.entryRepoName == Just "repo-x") result `shouldBe` True

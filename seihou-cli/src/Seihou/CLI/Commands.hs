@@ -9,6 +9,7 @@ module Seihou.CLI.Commands
     ConfigOpts (..),
     ConfigAction (..),
     ContextAction (..),
+    ListOpts (..),
     BrowseOpts (..),
     OutdatedOpts (..),
     UpgradeOpts (..),
@@ -42,7 +43,7 @@ data Command
   | Install InstallOpts
   | Status
   | Diff
-  | List
+  | List ListOpts
   | NewModule NewModuleOpts
   | ValidateModule ValidateOpts
   | Config ConfigOpts
@@ -147,6 +148,12 @@ data ContextAction
   | ContextShow
   | ContextClear
   | ContextClearDefault
+  deriving stock (Eq, Show, Generic)
+
+data ListOpts = ListOpts
+  { listRepo :: Maybe Text,
+    listTag :: Maybe Text
+  }
   deriving stock (Eq, Show, Generic)
 
 data BrowseOpts = BrowseOpts
@@ -427,7 +434,7 @@ diffInfo =
 listInfo :: ParserInfo Command
 listInfo =
   info
-    (pure List <**> helper)
+    (listParser <**> helper)
     ( fullDesc
         <> progDesc "List available modules"
         <> footerDoc
@@ -435,10 +442,19 @@ listInfo =
               vsep
                 [ pretty ("Scans all module search paths and lists every available module with" :: String),
                   pretty ("its name, description, and source location (project, user, or installed)." :: String),
-                  pretty ("Modules that fail to load are shown with an error indicator." :: String)
+                  pretty ("Modules that fail to load are shown with an error indicator." :: String),
+                  line,
+                  pretty ("Use --repo and --tag to filter the output." :: String)
                 ]
           )
     )
+
+listParser :: Parser Command
+listParser =
+  fmap List $
+    ListOpts
+      <$> optional (option (T.pack <$> str) (long "repo" <> metavar "REPO" <> help "Filter by repository name"))
+      <*> optional (option (T.pack <$> str) (long "tag" <> metavar "TAG" <> help "Filter by tag"))
 
 newModuleInfo :: ParserInfo Command
 newModuleInfo =

@@ -12,7 +12,7 @@ import Seihou.CLI.Diff (handleDiff)
 import Seihou.CLI.Help (handleHelpCommand)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
-import Seihou.CLI.List (handleList)
+import Seihou.CLI.List (ListFilter (..), handleList)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.Outdated (handleOutdated)
 import Seihou.CLI.Remove (handleRemove)
@@ -42,8 +42,8 @@ main = do
       handleStatus
     Diff ->
       handleDiff
-    List ->
-      handleList
+    List listOpts ->
+      handleList (ListFilter listOpts.listRepo listOpts.listTag)
     NewModule newModOpts ->
       handleNewModule newModOpts
     ValidateModule validateOpts ->
