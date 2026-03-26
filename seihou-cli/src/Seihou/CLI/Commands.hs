@@ -85,7 +85,8 @@ data RunOpts = RunOpts
     runNoCommands :: Bool,
     runNamespace :: Maybe Text,
     runContext :: Maybe Text,
-    runVerbose :: Bool
+    runVerbose :: Bool,
+    runSavePrompted :: Maybe Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -551,6 +552,10 @@ runParser =
       <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
+      <*> optional
+        ( flag' True (long "save-prompted" <> help "Save prompted values to local config without asking")
+            <|> flag' False (long "no-save-prompted" <> help "Do not offer to save prompted values")
+        )
 
 varsParser :: Parser Command
 varsParser =

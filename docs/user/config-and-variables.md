@@ -326,3 +326,60 @@ When another module depends on `haskell-base` and declares its own `project.name
 Variables exported from a dependency are also visible in `seihou vars --explain` for the dependent module, since explain mode resolves the full composition.
 
 For the complete export mechanism, including aliasing and visibility rules, see the [Module Authoring Reference](module-authoring.md).
+
+
+## Saving prompted values
+
+When you run a module interactively and answer prompts for variable values, Seihou offers to save those answers to the local project config (`.seihou/config.dhall`) so you don't have to re-enter them on subsequent runs.
+
+After a successful run, if any variables were resolved via interactive prompts, you'll see:
+
+```
+Save prompted values to .seihou/config.dhall?
+
+  project.name = "my-app"
+  license      = "MIT"
+
+Save? [Y/n]
+```
+
+If you confirm, the values are written to `.seihou/config.dhall`. On the next run, they'll be picked up automatically at priority 3 (local config) and the prompts won't appear.
+
+Values already present in local config with the same value are not shown — only new or changed values are offered for saving. If a prompted value would overwrite an existing config value, the display shows what it would replace:
+
+```
+  project.name = "new-app"  (overwrites current: "old-app")
+```
+
+### Controlling save behavior with flags
+
+You can control this behavior with CLI flags:
+
+- `--save-prompted` — Save prompted values automatically without asking. Useful for scripted workflows.
+- `--no-save-prompted` — Suppress the save offer entirely. The run proceeds normally but prompted values are not persisted.
+
+```sh
+# Auto-save without confirmation
+seihou run my-module --save-prompted
+
+# Never offer to save
+seihou run my-module --no-save-prompted
+```
+
+When neither flag is given, Seihou asks interactively (the default). In non-interactive mode (no TTY), the save offer is silently skipped.
+
+### Inspecting and removing saved values
+
+Saved values are regular local config entries. You can manage them with the `seihou config` command:
+
+```sh
+# View what's saved
+seihou config list
+
+# Remove a saved value (next run will prompt again)
+seihou config unset project.name
+
+# Verify provenance
+seihou vars my-module --explain
+# Shows [local config] for saved values instead of [prompt]
+```

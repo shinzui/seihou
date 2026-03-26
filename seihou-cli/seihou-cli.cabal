@@ -21,6 +21,7 @@ library seihou-cli-internal
     Seihou.CLI.Diff
     Seihou.CLI.Init
     Seihou.CLI.List
+    Seihou.CLI.SavePrompted
     Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
     Seihou.Effect.FzfInterp
@@ -81,6 +82,7 @@ executable seihou
     Seihou.CLI.Outdated
     Seihou.CLI.Remove
     Seihou.CLI.Run
+    Seihou.CLI.SavePrompted
     Seihou.CLI.SchemaUpgrade
     Seihou.CLI.SchemaVersion
     Seihou.CLI.Setup
@@ -137,11 +139,13 @@ test-suite seihou-cli-test
     Seihou.CLI.DiffSpec
     Seihou.CLI.InitSpec
     Seihou.CLI.ListSpec
+    Seihou.CLI.SavePromptedSpec
     Seihou.CLI.UpgradeSpec
     Seihou.FzfSpec
 
   build-depends:
     base >=4.18 && <5,
+    containers >=0.6 && <1,
     effectful-core >=2.4 && <3,
     hspec >=2.11 && <3,
     seihou-cli-internal,

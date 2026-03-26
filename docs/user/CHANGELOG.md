@@ -10,6 +10,17 @@
 
 ## Changelog
 
+### 2026-03-26 (save prompted values to local config)
+
+- Updated `docs/user/config-and-variables.md` — added "Saving prompted values" section describing automatic save-to-config after interactive prompts
+- New CLI flags: `--save-prompted` (auto-save without asking) and `--no-save-prompted` (suppress the offer)
+- New module: `Seihou.CLI.SavePrompted` — pure logic for collecting and persisting prompted values
+
+**Features documented:**
+- After running a module interactively, Seihou offers to save prompted variable values to `.seihou/config.dhall` so they are reused on subsequent runs without re-prompting. Values are shown for confirmation before saving. Existing config values are not silently overwritten.
+
+---
+
 ### 2026-03-25 (append-line-if-absent patch op)
 
 **Reviewed commits:** `0585b67` through `88b6060`

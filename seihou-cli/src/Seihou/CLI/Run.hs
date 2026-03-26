@@ -12,6 +12,7 @@ import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.Commands (RunOpts (..))
+import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
 import Seihou.Composition.Plan (compileComposedPlan)
@@ -22,6 +23,7 @@ import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution)
 import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
+import Seihou.Effect.ConfigWriterInterp (runConfigWriter)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
@@ -272,6 +274,14 @@ handleRun runOpts = do
               -- Execute commands after file generation
               let commandOps = [(cmd, wd) | RunCommandOp cmd wd <- opsForExec]
               mapM_ (executeCommand level) commandOps
+
+              -- Offer to save prompted values to local config
+              let prompted = collectPromptedValues resolved localMap
+              when (not (null prompted)) $
+                runEff $
+                  runConfigWriter $
+                    runConsole $
+                      offerSavePrompted runOpts.runSavePrompted interactive prompted
 
 -- Helpers
 
