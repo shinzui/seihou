@@ -85,9 +85,7 @@ launchAgentWith tools debug systemPrompt initialPrompt
 defaultAllowedTools :: [String]
 defaultAllowedTools =
   [ "Bash(seihou *)",
-    "Bash(git status *)",
-    "Bash(git log *)",
-    "Bash(git diff *)",
+    "Bash(git *)",
     "Bash(ls *)",
     "Bash(mkdir *)",
     "Bash(cat *)",
