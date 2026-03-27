@@ -21,6 +21,7 @@ import Seihou.Core.Module
     checkPromptRefs,
     checkSafeDestinations,
     checkUniqueVars,
+    checkVersionPresent,
     extractPlaceholders,
   )
 import Seihou.Core.Types
@@ -57,6 +58,7 @@ buildReport lint baseDir m = do
   fileErrors <- checkFileExistence baseDir m
   let coreChecks =
         [ DiagCheck "Module name format" DiagError (checkNameFormat m),
+          DiagCheck "Module version declared" DiagError (checkVersionPresent m),
           DiagCheck "Unique variable names" DiagError (checkUniqueVars m),
           DiagCheck "Prompt references" DiagError (checkPromptRefs m),
           DiagCheck "Export references" DiagError (checkExportRefs m),

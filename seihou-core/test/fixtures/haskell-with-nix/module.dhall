@@ -1,5 +1,5 @@
 { name = "haskell-with-nix"
-, version = None Text
+, version = Some "1.0.0"
 , description = Some "Haskell project with Nix integration"
 , vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }
 , exports = [] : List { var : Text, alias : Optional Text }

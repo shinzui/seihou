@@ -18,7 +18,7 @@ goodModule :: Module
 goodModule =
   Module
     { name = "test-module",
-      version = Nothing,
+      version = Just "1.0.0",
       description = Just "A test module",
       vars =
         [ VarDecl
@@ -134,6 +134,18 @@ spec = do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
         hasFailedCheck "Safe step destinations" report.reportChecks `shouldBe` True
+
+    it "detects missing module version" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        report <- buildReport False tmpDir badModule
+        hasFailedCheck "Module version declared" report.reportChecks `shouldBe` True
+
+    it "passes when module has a version" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        report <- buildReport False tmpDir goodModule
+        hasPassedCheck "Module version declared" report.reportChecks `shouldBe` True
 
     it "reports multiple errors at once" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do

@@ -18,7 +18,7 @@ goodModule :: Module
 goodModule =
   Module
     { name = "test-module",
-      version = Nothing,
+      version = Just "1.0.0",
       description = Just "A test module",
       vars =
         [ VarDecl

@@ -1,5 +1,5 @@
 { name = "bad-vartype"
-, version = None Text
+, version = Some "1.0.0"
 , description = None Text
 , vars =
   [ { name = "project.name"

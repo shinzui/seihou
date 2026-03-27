@@ -1,5 +1,5 @@
 { name = "prompted-optional"
-, version = None Text
+, version = Some "1.0.0"
 , description = Some "Demonstrates required and optional prompted variables"
 , vars =
   [ { name = "project.name"

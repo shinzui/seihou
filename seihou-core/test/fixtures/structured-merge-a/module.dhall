@@ -1,5 +1,5 @@
 { name = "structured-merge-a"
-, version = None Text
+, version = Some "1.0.0"
 , description = Some "Creates a base config.json"
 , vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }
 , exports = [] : List { var : Text, alias : Optional Text }

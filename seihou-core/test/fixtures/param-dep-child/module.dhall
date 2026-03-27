@@ -1,5 +1,5 @@
 { name = "param-dep-child"
-, version = None Text
+, version = Some "1.0.0"
 , description = Some "Child module that requires skill.name from its parent"
 , vars =
   [ { name = "skill.name"

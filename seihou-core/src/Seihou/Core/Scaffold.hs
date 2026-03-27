@@ -18,6 +18,7 @@ moduleDhall name url hash =
       "",
       "in  S.Module::{",
       "    , name = \"" <> name <> "\"",
+      "    , version = Some \"0.1.0\"",
       "    , description = Some \"A new seihou module\"",
       "    , vars =",
       "      [ S.VarDecl::{",

@@ -1,5 +1,5 @@
 { name = "nix-flake"
-, version = None Text
+, version = Some "1.0.0"
 , description = Some "Nix flake module"
 , vars =
   [ { name = "nix.description"

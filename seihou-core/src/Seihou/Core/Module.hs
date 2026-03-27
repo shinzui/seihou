@@ -9,6 +9,7 @@ module Seihou.Core.Module
 
     -- * Individual check functions (for structured reports)
     checkNameFormat,
+    checkVersionPresent,
     checkUniqueVars,
     checkPromptRefs,
     checkFileExistence,
@@ -71,6 +72,7 @@ validateModule baseDir m = do
   fileErrors <- checkFileExistence baseDir m
   let pureErrors =
         checkNameFormat m
+          <> checkVersionPresent m
           <> checkUniqueVars m
           <> checkPromptRefs m
           <> checkExportRefs m
@@ -99,6 +101,14 @@ isValidModuleName t = case T.uncons t of
   Just (c, rest) ->
     (c >= 'a' && c <= 'z')
       && T.all (\ch -> (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-') rest
+
+-- Rule 1b: Module must declare a version
+checkVersionPresent :: Module -> [Text]
+checkVersionPresent m = case m.version of
+  Nothing -> ["module must declare a version"]
+  Just v
+    | T.null (T.strip v) -> ["module must declare a version"]
+    | otherwise -> []
 
 -- Rule 2: All variable names must be unique
 checkUniqueVars :: Module -> [Text]
