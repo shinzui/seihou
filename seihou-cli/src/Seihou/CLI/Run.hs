@@ -5,13 +5,15 @@ where
 
 import Control.Monad (when)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.Commands (RunOpts (..))
+import Seihou.CLI.CommitMessage (generateCommitMessage)
+import Seihou.CLI.Git (gitAdd, gitCommit, gitDiffCached, isGitRepo)
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
@@ -270,6 +272,31 @@ handleRun runOpts = do
                   <> " modified, "
                   <> T.pack (show nUnch)
                   <> " unchanged."
+
+              -- Commit generated files if --commit or --commit-message
+              when (runOpts.runCommit || isJust runOpts.runCommitMessage) $ do
+                let filesToStage =
+                      map (.path) diff.new
+                        ++ map (.path) diff.modified
+                        ++ [manifestPath]
+                inGit <- runEff $ runProcessIO $ isGitRepo
+                if inGit
+                  then do
+                    (addExit, _, addErr) <- runEff $ runProcessIO $ gitAdd filesToStage
+                    case addExit of
+                      ExitFailure _ -> logIO level (logWarn $ "git add failed: " <> addErr)
+                      ExitSuccess -> do
+                        commitMsg <- case runOpts.runCommitMessage of
+                          Just msg -> pure msg
+                          Nothing -> do
+                            diffText <- runEff $ runProcessIO $ gitDiffCached
+                            generateCommitMessage modNames diffText
+                        (commitExit, _, commitErr) <- runEff $ runProcessIO $ gitCommit commitMsg
+                        case commitExit of
+                          ExitSuccess -> logIO level (logInfo "Committed generated files to git.")
+                          ExitFailure _ -> logIO level (logWarn $ "git commit failed: " <> commitErr)
+                  else
+                    logIO level (logDebug "--commit: not inside a git repository, skipping.")
 
               -- Execute commands after file generation
               let commandOps = [(cmd, wd) | RunCommandOp cmd wd <- opsForExec]

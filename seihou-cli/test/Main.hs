@@ -1,7 +1,9 @@
 module Main (main) where
 
 import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
+import Seihou.CLI.CommitMessageSpec qualified as CommitMessageSpec
 import Seihou.CLI.DiffSpec qualified as DiffSpec
+import Seihou.CLI.GitSpec qualified as GitSpec
 import Seihou.CLI.InitSpec qualified as InitSpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.SavePromptedSpec qualified as SavePromptedSpec
@@ -14,7 +16,9 @@ main = do
   tests <-
     sequence
       [ BrowseFormatSpec.tests,
+        CommitMessageSpec.tests,
         DiffSpec.tests,
+        GitSpec.tests,
         InitSpec.tests,
         ListSpec.tests,
         SavePromptedSpec.tests,

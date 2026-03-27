@@ -86,7 +86,9 @@ data RunOpts = RunOpts
     runNamespace :: Maybe Text,
     runContext :: Maybe Text,
     runVerbose :: Bool,
-    runSavePrompted :: Maybe Bool
+    runSavePrompted :: Maybe Bool,
+    runCommit :: Bool,
+    runCommitMessage :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -556,6 +558,8 @@ runParser =
         ( flag' True (long "save-prompted" <> help "Save prompted values to local config without asking")
             <|> flag' False (long "no-save-prompted" <> help "Do not offer to save prompted values")
         )
+      <*> switch (long "commit" <> help "Commit generated files to git after execution (uses AI-generated message)")
+      <*> optional (option (T.pack <$> str) (long "commit-message" <> metavar "MSG" <> help "Custom commit message (implies --commit)"))
 
 varsParser :: Parser Command
 varsParser =

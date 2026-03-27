@@ -18,7 +18,9 @@ library seihou-cli-internal
   visibility: private
   exposed-modules:
     Seihou.CLI.BrowseFormat
+    Seihou.CLI.CommitMessage
     Seihou.CLI.Diff
+    Seihou.CLI.Git
     Seihou.CLI.Init
     Seihou.CLI.List
     Seihou.CLI.SavePrompted
@@ -67,6 +69,7 @@ executable seihou
     Seihou.CLI.Browse
     Seihou.CLI.BrowseFormat
     Seihou.CLI.Commands
+    Seihou.CLI.CommitMessage
     Seihou.CLI.Completions
     Seihou.CLI.Completions.Bash
     Seihou.CLI.Completions.Fish
@@ -74,6 +77,7 @@ executable seihou
     Seihou.CLI.Config
     Seihou.CLI.Context
     Seihou.CLI.Diff
+    Seihou.CLI.Git
     Seihou.CLI.Help
     Seihou.CLI.Init
     Seihou.CLI.Install
@@ -136,7 +140,9 @@ test-suite seihou-cli-test
 
   other-modules:
     Seihou.CLI.BrowseFormatSpec
+    Seihou.CLI.CommitMessageSpec
     Seihou.CLI.DiffSpec
+    Seihou.CLI.GitSpec
     Seihou.CLI.InitSpec
     Seihou.CLI.ListSpec
     Seihou.CLI.SavePromptedSpec
