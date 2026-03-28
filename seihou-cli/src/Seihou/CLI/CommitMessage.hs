@@ -1,5 +1,6 @@
 module Seihou.CLI.CommitMessage
   ( generateCommitMessage,
+    stripCodeFence,
   )
 where
 
@@ -26,7 +27,7 @@ generateCommitMessage modNames diffText = do
         Nothing -> pure (fallbackMessage modNames)
         Just msg
           | T.null (T.strip msg) -> pure (fallbackMessage modNames)
-          | otherwise -> pure (T.strip msg)
+          | otherwise -> pure (stripCodeFence (T.strip msg))
 
 callClaude :: [ModuleName] -> T.Text -> IO (Maybe T.Text)
 callClaude modNames diffText = do
@@ -64,10 +65,27 @@ buildPrompt modNames diffText =
       "- Use conventional commit style (e.g., \"feat: ...\", \"chore: ...\")",
       "- Keep the subject line under 72 characters",
       "- Mention which seihou module(s) were applied",
-      "- Output ONLY the commit message, nothing else"
+      "- Output ONLY the commit message, nothing else",
+      "- Do not wrap the output in backticks or code fences"
     ]
   where
     moduleList = T.intercalate ", " (map (.unModuleName) modNames)
+
+-- | Strip markdown code-fence wrapping (``` ... ```) from text.
+-- Handles optional language tags (e.g., ```text).
+stripCodeFence :: T.Text -> T.Text
+stripCodeFence txt =
+  let ls = T.lines txt
+      nonEmpty = filter (not . T.null . T.strip) ls
+   in case nonEmpty of
+        (first : rest)
+          | "```" `T.isPrefixOf` first,
+            not (null rest),
+            T.strip (last rest) == "```" ->
+              let -- Drop the opening fence line and closing fence line
+                  body = drop 1 (take (length ls - 1) ls)
+               in T.strip (T.unlines body)
+        _ -> txt
 
 fallbackMessage :: [ModuleName] -> T.Text
 fallbackMessage [] = "seihou: apply modules"
