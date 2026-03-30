@@ -176,7 +176,8 @@ handleRun runOpts = do
         exitFailure
       Right m -> pure m
     let m = fromMaybe (emptyManifest now) existing
-    d <- computeDiff m planned
+    let composedNames = Set.fromList (map ((.name) . fst) modulesInOrder)
+    d <- computeDiff m composedNames planned
     pure (m, d)
 
   colorEnabled <- useColor
@@ -254,7 +255,7 @@ handleRun runOpts = do
                       manifest
                         { genAt = now,
                           modules = allModuleEntries,
-                          vars = Map.map varValueToText allResolvedVals,
+                          vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
                           files = Map.unions [recs, keepRecords, cleanedFiles]
                         }
 

@@ -1,6 +1,7 @@
 module Seihou.Integration.ExecutionSpec (tests) where
 
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
@@ -108,7 +109,7 @@ spec = do
           (diff, _) =
             runPureEff $
               runFilesystemPure fs $
-                computeDiff manifest planned
+                computeDiff manifest (Set.singleton modName) planned
       -- All files should be unchanged
       length (diff.new) `shouldBe` 0
       length (diff.modified) `shouldBe` 0
@@ -131,7 +132,7 @@ spec = do
           (diff, _) =
             runPureEff $
               runFilesystemPure fs $
-                computeDiff manifest planned2
+                computeDiff manifest (Set.singleton modName) planned2
       -- README.md and cabal.project have different content → Modified
       length (diff.modified) `shouldBe` 2
       -- src/Lib.hs and LICENSE have same content → Unchanged
@@ -168,7 +169,7 @@ spec = do
           (diff, _) =
             runPureEff $
               runFilesystemPure fs2 $
-                computeDiff manifest planned
+                computeDiff manifest (Set.singleton modName) planned
       -- README.md is a conflict (user edited, plan unchanged)
       length (diff.conflicts) `shouldBe` 1
       (head diff.conflicts).path `shouldBe` "README.md"

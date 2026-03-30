@@ -5,6 +5,7 @@ module Seihou.Engine.Diff
 where
 
 import Data.Map.Strict qualified as Map
+import Data.Set (Set)
 import Data.Set qualified as Set
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText)
@@ -25,21 +26,29 @@ planToFileMap = Map.fromList . concatMap extract
 -- Classifies each file into one of: New, Modified, Unchanged, Conflict, Orphaned.
 -- Patch operations (append-section, append-file, prepend-file) are never
 -- classified as conflicts because they are designed to merge with existing files.
+--
+-- The @activeModules@ parameter scopes orphan detection: only manifest files
+-- owned by a module in this set can be classified as Orphaned. Files from
+-- other modules are invisible to the diff, preserving them across independent
+-- module runs.
 computeDiff ::
   (Filesystem :> es) =>
   Manifest ->
+  Set ModuleName ->
   [(FilePath, Text, ModuleName, Maybe PatchOp)] ->
   Eff es DiffResult
-computeDiff manifest planned = do
+computeDiff manifest activeModules planned = do
   let manifestFiles' = manifest.files
+      activeManifestFiles =
+        Map.filter (\r -> r.moduleName `Set.member` activeModules) manifestFiles'
       planMap = Map.fromList [(p, (content, modName, patchOp)) | (p, content, modName, patchOp) <- planned]
       allPaths =
         Set.toList $
           Set.union
-            (Map.keysSet manifestFiles')
+            (Map.keysSet activeManifestFiles)
             (Map.keysSet planMap)
 
-  results <- mapM (classifyFile manifestFiles' planMap) allPaths
+  results <- mapM (classifyFile activeManifestFiles planMap) allPaths
 
   let newFiles = [f | ClassNew f <- results]
       modifiedFiles = [f | ClassModified f <- results]
