@@ -13,7 +13,7 @@ import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
-import Seihou.CLI.Git (gitAdd, gitCommit, gitDiffCached, isGitRepo)
+import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
@@ -283,19 +283,24 @@ handleRun runOpts = do
                 inGit <- runEff $ runProcessIO $ isGitRepo
                 if inGit
                   then do
-                    (addExit, _, addErr) <- runEff $ runProcessIO $ gitAdd filesToStage
-                    case addExit of
-                      ExitFailure _ -> logIO level (logWarn $ "git add failed: " <> addErr)
-                      ExitSuccess -> do
-                        commitMsg <- case runOpts.runCommitMessage of
-                          Just msg -> pure msg
-                          Nothing -> do
-                            diffText <- runEff $ runProcessIO $ gitDiffCached
-                            generateCommitMessage modNames diffText
-                        (commitExit, _, commitErr) <- runEff $ runProcessIO $ gitCommit commitMsg
-                        case commitExit of
-                          ExitSuccess -> logIO level (logInfo "Committed generated files to git.")
-                          ExitFailure _ -> logIO level (logWarn $ "git commit failed: " <> commitErr)
+                    ignored <- runEff $ runProcessIO $ gitCheckIgnore filesToStage
+                    let filteredFiles = filter (`notElem` ignored) filesToStage
+                    if null filteredFiles
+                      then logIO level (logDebug "--commit: all generated files are git-ignored, skipping commit.")
+                      else do
+                        (addExit, _, addErr) <- runEff $ runProcessIO $ gitAdd filteredFiles
+                        case addExit of
+                          ExitFailure _ -> logIO level (logWarn $ "git add failed: " <> addErr)
+                          ExitSuccess -> do
+                            commitMsg <- case runOpts.runCommitMessage of
+                              Just msg -> pure msg
+                              Nothing -> do
+                                diffText <- runEff $ runProcessIO $ gitDiffCached
+                                generateCommitMessage modNames diffText
+                            (commitExit, _, commitErr) <- runEff $ runProcessIO $ gitCommit commitMsg
+                            case commitExit of
+                              ExitSuccess -> logIO level (logInfo "Committed generated files to git.")
+                              ExitFailure _ -> logIO level (logWarn $ "git commit failed: " <> commitErr)
                   else
                     logIO level (logDebug "--commit: not inside a git repository, skipping.")
 

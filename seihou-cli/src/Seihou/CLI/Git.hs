@@ -3,6 +3,7 @@ module Seihou.CLI.Git
     gitAdd,
     gitCommit,
     gitDiffCached,
+    gitCheckIgnore,
   )
 where
 
@@ -26,6 +27,16 @@ gitAdd paths =
 gitCommit :: (Process :> es) => Text -> Eff es (ExitCode, Text, Text)
 gitCommit msg =
   runProcess "git" ["commit", "-m", msg] Nothing
+
+-- | Check which files are ignored by git. Returns the subset of input paths
+-- that are covered by .gitignore rules.
+gitCheckIgnore :: (Process :> es) => [FilePath] -> Eff es [FilePath]
+gitCheckIgnore [] = pure []
+gitCheckIgnore paths = do
+  (exitCode, stdout', _) <- runProcess "git" ("check-ignore" : map T.pack paths) Nothing
+  case exitCode of
+    ExitSuccess -> pure (map T.unpack $ filter (not . T.null) $ T.lines stdout')
+    _ -> pure [] -- exit 1 = no matches, exit 128 = error; both → empty
 
 -- | Get the diff of staged changes for feeding to the commit message generator.
 -- Returns a stat summary followed by the full diff (truncated to ~4000 chars).

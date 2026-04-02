@@ -1,6 +1,6 @@
 module Seihou.CLI.GitSpec (tests) where
 
-import Seihou.CLI.Git (gitAdd, gitCommit, gitDiffCached, isGitRepo)
+import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
 import Seihou.Effect.ProcessPure (ProcessMock (..), runProcessPure)
 import Seihou.Prelude
 import System.Exit (ExitCode (..))
@@ -80,6 +80,41 @@ spec = do
       (exitCode, _, stderr) <- runEff $ runProcessPure mocks $ gitCommit "empty"
       exitCode `shouldBe` ExitFailure 1
       stderr `shouldBe` "nothing to commit, working tree clean\n"
+
+  describe "gitCheckIgnore" $ do
+    it "returns ignored files when git check-ignore succeeds" $ do
+      let mocks =
+            [ ProcessMock
+                "git"
+                ["check-ignore", "README.md", "dist/bundle.js", ".env"]
+                (ExitSuccess, "dist/bundle.js\n.env\n", "")
+            ]
+      result <- runEff $ runProcessPure mocks $ gitCheckIgnore ["README.md", "dist/bundle.js", ".env"]
+      result `shouldBe` ["dist/bundle.js", ".env"]
+
+    it "returns empty list when no files are ignored (exit 1)" $ do
+      let mocks =
+            [ ProcessMock
+                "git"
+                ["check-ignore", "README.md", "src/Lib.hs"]
+                (ExitFailure 1, "", "")
+            ]
+      result <- runEff $ runProcessPure mocks $ gitCheckIgnore ["README.md", "src/Lib.hs"]
+      result `shouldBe` []
+
+    it "returns empty list on error (exit 128)" $ do
+      let mocks =
+            [ ProcessMock
+                "git"
+                ["check-ignore", "README.md"]
+                (ExitFailure 128, "", "fatal: not a git repository\n")
+            ]
+      result <- runEff $ runProcessPure mocks $ gitCheckIgnore ["README.md"]
+      result `shouldBe` []
+
+    it "returns empty list for empty input" $ do
+      result <- runEff $ runProcessPure [] $ gitCheckIgnore []
+      result `shouldBe` []
 
   describe "gitDiffCached" $ do
     it "returns stat and diff combined" $ do
