@@ -18,8 +18,9 @@ promptTemplate = TE.decodeUtf8 $(embedFile "data/setup-prompt.md")
 handleSetup :: Bool -> SetupOpts -> IO ()
 handleSetup debug setupOpts = do
   ctx <- gatherAgentContext
+  addDirs <- agentDirsForSession
   let systemPrompt = renderPrompt ctx
-  launchAgentWith setupAllowedTools debug systemPrompt setupOpts.setupPrompt
+  launchAgentWith addDirs setupAllowedTools debug systemPrompt setupOpts.setupPrompt
 
 renderPrompt :: AgentContext -> Text
 renderPrompt ctx =

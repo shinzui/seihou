@@ -1,6 +1,7 @@
 module Seihou.CLI.AgentLaunch
   ( AgentContext (..),
     gatherAgentContext,
+    agentDirsForSession,
     launchAgent,
     launchAgentWith,
     defaultAllowedTools,
@@ -15,12 +16,13 @@ module Seihou.CLI.AgentLaunch
   )
 where
 
+import Control.Monad (filterM)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
 import Seihou.Core.Types
 import Seihou.Prelude
-import System.Directory (doesDirectoryExist, doesFileExist, findExecutable, getCurrentDirectory)
+import System.Directory (doesDirectoryExist, doesFileExist, findExecutable, getCurrentDirectory, getHomeDirectory)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.Process (rawSystem)
 
@@ -58,13 +60,25 @@ gatherAgentContext = do
         availableModules = available
       }
 
+-- | Discover agent directories for kit content (both user and project scope).
+-- Returns only directories that exist on disk.
+agentDirsForSession :: IO [FilePath]
+agentDirsForSession = do
+  home <- getHomeDirectory
+  cwd <- getCurrentDirectory
+  let userAgentDir = home </> ".config" </> "seihou" </> "agents"
+      projectAgentDir = cwd </> ".seihou" </> "agents"
+  filterM doesDirectoryExist [userAgentDir, projectAgentDir]
+
 -- | Launch claude with a system prompt, or print it in debug mode.
 launchAgent :: Bool -> Text -> Maybe Text -> IO ()
-launchAgent = launchAgentWith defaultAllowedTools
+launchAgent debug systemPrompt initialPrompt = do
+  addDirs <- agentDirsForSession
+  launchAgentWith addDirs defaultAllowedTools debug systemPrompt initialPrompt
 
--- | Launch claude with custom allowed tools.
-launchAgentWith :: [String] -> Bool -> Text -> Maybe Text -> IO ()
-launchAgentWith tools debug systemPrompt initialPrompt
+-- | Launch claude with custom add-dirs and allowed tools.
+launchAgentWith :: [FilePath] -> [String] -> Bool -> Text -> Maybe Text -> IO ()
+launchAgentWith addDirs tools debug systemPrompt initialPrompt
   | debug = TIO.putStr systemPrompt
   | otherwise = do
       claudePath <- findExecutable "claude"
@@ -76,6 +90,7 @@ launchAgentWith tools debug systemPrompt initialPrompt
         Just _ -> do
           let args =
                 ["--system-prompt", T.unpack systemPrompt]
+                  <> concatMap (\d -> ["--add-dir", d]) addDirs
                   <> concatMap (\t -> ["--allowedTools", t]) tools
                   <> maybe [] (\p -> [T.unpack p]) initialPrompt
           exitCode <- rawSystem "claude" args

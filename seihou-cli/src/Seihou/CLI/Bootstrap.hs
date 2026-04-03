@@ -19,8 +19,9 @@ promptTemplate = TE.decodeUtf8 $(embedFile "data/bootstrap-prompt.md")
 handleBootstrap :: Bool -> BootstrapOpts -> IO ()
 handleBootstrap debug bootstrapOpts = do
   ctx <- gatherAgentContext
+  addDirs <- agentDirsForSession
   let systemPrompt = renderPrompt ctx bootstrapOpts
-  launchAgentWith bootstrapAllowedTools debug systemPrompt bootstrapOpts.bootstrapPrompt
+  launchAgentWith addDirs bootstrapAllowedTools debug systemPrompt bootstrapOpts.bootstrapPrompt
 
 renderPrompt :: AgentContext -> BootstrapOpts -> Text
 renderPrompt ctx bootstrapOpts =

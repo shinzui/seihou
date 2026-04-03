@@ -21,6 +21,7 @@ module Seihou.CLI.Commands
     SetupOpts (..),
     CompletionsCommand (..),
     HelpCommand (..),
+    KitCommand (..),
     commandParser,
     opts,
   )
@@ -31,6 +32,7 @@ import GHC.Generics (Generic)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
 import Seihou.CLI.Help (HelpCommand, helpCommandParser)
+import Seihou.CLI.Kit (KitCommand, kitCommandParser)
 import Seihou.CLI.Version (seihouVersionWithGit)
 import Seihou.Core.Types (ModuleName (..))
 import Seihou.Prelude
@@ -52,6 +54,7 @@ data Command
   | Outdated OutdatedOpts
   | Upgrade UpgradeOpts
   | SchemaUpgrade SchemaUpgradeOpts
+  | Kit KitCommand
   | Agent AgentOpts
   | HelpCmd HelpCommand
   | Completions CompletionsCommand
@@ -257,6 +260,7 @@ commandParser =
       )
     <|> hsubparser
       ( command "agent" agentInfo
+          <> command "kit" kitInfo
           <> commandGroup "AI agent:"
           <> hidden
       )
@@ -803,6 +807,14 @@ schemaUpgradeFooter =
             pretty ("seihou schema-upgrade --all             # upgrade all modules" :: String)
           ]
     ]
+
+kitInfo :: ParserInfo Command
+kitInfo =
+  info
+    (Kit <$> kitCommandParser <**> helper)
+    ( fullDesc
+        <> progDesc "Manage Claude Code skills and subagents"
+    )
 
 agentInfo :: ParserInfo Command
 agentInfo =

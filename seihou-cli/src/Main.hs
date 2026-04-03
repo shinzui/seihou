@@ -12,6 +12,7 @@ import Seihou.CLI.Diff (handleDiff)
 import Seihou.CLI.Help (handleHelpCommand)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
+import Seihou.CLI.Kit (runKit)
 import Seihou.CLI.List (ListFilter (..), handleList)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.Outdated (handleOutdated)
@@ -60,6 +61,8 @@ main = do
       handleUpgrade upgradeOpts
     SchemaUpgrade schemaUpgradeOpts ->
       handleSchemaUpgrade schemaUpgradeOpts
+    Kit kitCmd ->
+      runKit kitCmd
     Agent agentOpts -> case agentOpts.agentCommand of
       AgentAssist assistOpts ->
         handleAssist agentOpts.agentDebug assistOpts

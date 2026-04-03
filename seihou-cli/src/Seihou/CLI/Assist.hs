@@ -18,8 +18,9 @@ promptTemplate = TE.decodeUtf8 $(embedFile "data/assist-prompt.md")
 handleAssist :: Bool -> AssistOpts -> IO ()
 handleAssist debug assistOpts = do
   ctx <- gatherAgentContext
+  addDirs <- agentDirsForSession
   let systemPrompt = renderPrompt ctx
-  launchAgent debug systemPrompt assistOpts.assistPrompt
+  launchAgentWith addDirs defaultAllowedTools debug systemPrompt assistOpts.assistPrompt
 
 renderPrompt :: AgentContext -> Text
 renderPrompt ctx =
