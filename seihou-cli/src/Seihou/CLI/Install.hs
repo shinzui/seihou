@@ -16,6 +16,7 @@ import Data.Text.IO qualified as TIO
 import Data.Time (getCurrentTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import Seihou.CLI.Commands (InstallOpts (..))
+import Seihou.CLI.InstallHistory (HistoryEntry (..), InstallHistory (..), readHistory, recordUrl)
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (validateModule)
@@ -25,7 +26,7 @@ import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Effect.Fzf (selectOne)
 import Seihou.Effect.FzfInterp (runFzfIO)
 import Seihou.Effect.Logger (logError, logWarn)
-import Seihou.Fzf (Candidate (..), FzfResult (..), detectFzfConfig, isFzfUsable, withAnsi, withHeight, withNoSort, withPrompt)
+import Seihou.Fzf (Candidate (..), FzfConfig, FzfResult (..), detectFzfConfig, isFzfUsable, withAnsi, withHeader, withHeight, withNoSort, withPrompt)
 import Seihou.Fzf qualified
 import Seihou.Prelude
 import System.Directory
@@ -44,7 +45,7 @@ import System.Process (readProcessWithExitCode)
 
 handleInstall :: InstallOpts -> IO ()
 handleInstall iopts = do
-  let source = iopts.installSource
+  source <- resolveSource iopts.installSource
 
   TIO.putStrLn $ "Installing from " <> source <> "..."
 
@@ -73,6 +74,70 @@ handleInstall iopts = do
               mapM_ (\e -> logError $ "  - " <> e) regErrors
             exitFailure
           else installFromRegistry iopts cloneDir registry source
+
+  -- Record URL in history for future recall (only reached on success)
+  recordUrl source
+
+-- | Resolve the install source: use the explicit URL if given, otherwise pick from history.
+resolveSource :: Maybe Text -> IO Text
+resolveSource (Just url) = pure url
+resolveSource Nothing = do
+  history <- readHistory
+  case history.entries of
+    [] -> do
+      TIO.putStrLn "No URL specified and no install history found."
+      TIO.putStrLn "Usage: seihou install <git-url>"
+      exitFailure
+    entries -> do
+      fzfCfg <- detectFzfConfig
+      if isFzfUsable fzfCfg
+        then fzfUrlSelection fzfCfg entries
+        else promptUrlSelection entries
+
+-- | FZF selection of a URL from history.
+fzfUrlSelection :: FzfConfig -> [HistoryEntry] -> IO Text
+fzfUrlSelection fzfCfg entries = do
+  let candidates =
+        [ Candidate
+            { candidateDisplay = entry.url,
+              candidateValue = entry.url
+            }
+        | entry <- entries
+        ]
+      opts = withPrompt "install> " <> withHeader "Select a previously used source:" <> withHeight "40%" <> withAnsi <> withNoSort
+  result <- runEff $ runFzfIO fzfCfg $ selectOne opts candidates
+  case result of
+    FzfSelected url -> pure url
+    FzfCancelled -> do
+      TIO.putStrLn "Cancelled."
+      exitFailure
+    FzfNoMatch -> do
+      TIO.putStrLn "No match."
+      exitFailure
+    FzfError err -> do
+      TIO.putStrLn $ "fzf error: " <> err <> ", falling back to prompt"
+      promptUrlSelection entries
+
+-- | Numbered prompt fallback for URL selection.
+promptUrlSelection :: [HistoryEntry] -> IO Text
+promptUrlSelection entries = do
+  TIO.putStrLn ""
+  TIO.putStrLn "Previously used sources:"
+  let numbered = zip [1 :: Int ..] entries
+  mapM_
+    (\(i, entry) -> TIO.putStrLn $ "  " <> T.pack (show i) <> ") " <> entry.url)
+    numbered
+  TIO.putStrLn ""
+  TIO.putStr "Select a source (number): "
+  hFlush stdout
+  input <- TIO.getLine
+  case readMaybe (T.unpack (T.strip input)) of
+    Just n
+      | n >= 1 && n <= length entries ->
+          pure (entries !! (n - 1)).url
+    _ -> do
+      TIO.putStrLn "Invalid selection."
+      exitFailure
 
 -- | Clone a git repo shallowly into the target directory.
 cloneRepo :: Text -> FilePath -> IO ()

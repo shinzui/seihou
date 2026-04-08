@@ -22,6 +22,7 @@ library seihou-cli-internal
     Seihou.CLI.Diff
     Seihou.CLI.Git
     Seihou.CLI.Init
+    Seihou.CLI.InstallHistory
     Seihou.CLI.List
     Seihou.CLI.SavePrompted
     Seihou.CLI.VersionCompare
@@ -37,6 +38,7 @@ library seihou-cli-internal
 
   build-depends:
     aeson >=2.1 && <3,
+    aeson-pretty >=0.8 && <1,
     ansi-terminal >=1.1 && <2,
     base >=4.18 && <5,
     bytestring >=0.11 && <1,
@@ -47,6 +49,7 @@ library seihou-cli-internal
     process >=1.6 && <2,
     seihou-core,
     text >=2.0 && <3,
+    time >=1.12 && <2,
 
 executable seihou
   default-language: GHC2024
@@ -81,6 +84,7 @@ executable seihou
     Seihou.CLI.Help
     Seihou.CLI.Init
     Seihou.CLI.Install
+    Seihou.CLI.InstallHistory
     Seihou.CLI.Kit
     Seihou.CLI.List
     Seihou.CLI.NewModule
@@ -145,18 +149,23 @@ test-suite seihou-cli-test
     Seihou.CLI.DiffSpec
     Seihou.CLI.GitSpec
     Seihou.CLI.InitSpec
+    Seihou.CLI.InstallHistorySpec
     Seihou.CLI.ListSpec
     Seihou.CLI.SavePromptedSpec
     Seihou.CLI.UpgradeSpec
     Seihou.FzfSpec
 
   build-depends:
+    aeson >=2.1 && <3,
     base >=4.18 && <5,
     containers >=0.6 && <1,
+    directory >=1.3 && <2,
     effectful-core >=2.4 && <3,
+    filepath >=1.4 && <2,
     hspec >=2.11 && <3,
     seihou-cli-internal,
     seihou-core,
     tasty >=1.4 && <2,
     tasty-hspec >=1.2 && <2,
+    temporary >=1.3 && <2,
     text >=2.0 && <3,

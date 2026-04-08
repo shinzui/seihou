@@ -5,6 +5,7 @@ import Seihou.CLI.CommitMessageSpec qualified as CommitMessageSpec
 import Seihou.CLI.DiffSpec qualified as DiffSpec
 import Seihou.CLI.GitSpec qualified as GitSpec
 import Seihou.CLI.InitSpec qualified as InitSpec
+import Seihou.CLI.InstallHistorySpec qualified as InstallHistorySpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.SavePromptedSpec qualified as SavePromptedSpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
@@ -20,6 +21,7 @@ main = do
         DiffSpec.tests,
         GitSpec.tests,
         InitSpec.tests,
+        InstallHistorySpec.tests,
         ListSpec.tests,
         SavePromptedSpec.tests,
         UpgradeSpec.tests,

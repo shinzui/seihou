@@ -113,7 +113,7 @@ data VarsOpts = VarsOpts
   deriving stock (Eq, Show, Generic)
 
 data InstallOpts = InstallOpts
-  { installSource :: Text,
+  { installSource :: Maybe Text,
     installName :: Maybe Text,
     installModules :: [Text],
     installAll :: Bool
@@ -583,7 +583,7 @@ installParser :: Parser Command
 installParser =
   fmap Install $
     InstallOpts
-      <$> argument (T.pack <$> str) (metavar "GIT-URL")
+      <$> optional (argument (T.pack <$> str) (metavar "GIT-URL"))
       <*> optional (option (T.pack <$> str) (long "name" <> metavar "NAME" <> help "Override installed module name"))
       <*> many (option (T.pack <$> str) (long "module" <> metavar "MODULE" <> help "Install specific module from registry (repeatable)"))
       <*> switch (long "all" <> help "Install all modules from registry")
