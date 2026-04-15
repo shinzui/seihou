@@ -143,6 +143,13 @@ readOriginWithModule dm = do
     else pure (dm, Nothing)
 
 -- | Check a single source URL for updates. Clones the repo and compares versions.
+--
+-- The comparison must happen inside 'withSystemTempDirectory' because
+-- 'findAvailableVersion' reads @module.dhall@ off disk for multi-module
+-- registries whose entries do not carry a @version@ field. If we returned
+-- the clone path to the caller, the temp directory would already be gone
+-- by the time the Dhall read ran, and every module would resolve to
+-- @Nothing@ (appearing as \"unversioned\").
 checkSource :: (Text, [(DiscoveredModule, OriginInfo)]) -> IO [OutdatedEntry]
 checkSource (sourceUrl, modulesWithOrigins) = do
   let repoName = parseModuleName sourceUrl
@@ -155,15 +162,14 @@ checkSource (sourceUrl, modulesWithOrigins) = do
       ExitFailure _ -> pure Nothing
       ExitSuccess -> do
         contents <- discoverRepoContents evalRegistryFromFile cloneDir
-        pure (Just (cloneDir, contents))
+        Just <$> mapM (compareModule cloneDir contents) modulesWithOrigins
 
   case result of
     Left (_ :: SomeException) ->
       pure [mkUnreachable dm origin | (dm, origin) <- modulesWithOrigins]
     Right Nothing ->
       pure [mkUnreachable dm origin | (dm, origin) <- modulesWithOrigins]
-    Right (Just (cloneDir, contents)) ->
-      mapM (compareModule cloneDir contents) modulesWithOrigins
+    Right (Just entries) -> pure entries
 
 -- | Compare a single installed module against the remote contents.
 compareModule :: FilePath -> RepoContents -> (DiscoveredModule, OriginInfo) -> IO OutdatedEntry

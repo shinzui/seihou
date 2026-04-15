@@ -75,18 +75,66 @@ before the change.
 
 ## Surprises & Discoveries
 
+- **Pre-existing use-after-free bug in `checkSource`.** Initial end-to-end
+  testing showed every installed module resolving to `unversioned`, even
+  though `exec-plan`, `master-plan`, and the rest of the registry-side
+  modules declare real versions in their `module.dhall`. Root cause: the
+  original `checkSource` was structured as
+
+        result <- try $ withSystemTempDirectory "seihou-outdated" $ \tmpDir -> do
+          let cloneDir = tmpDir </> repoName
+          ... git clone ...
+          contents <- discoverRepoContents evalRegistryFromFile cloneDir
+          pure (Just (cloneDir, contents))
+
+        case result of
+          Right (Just (cloneDir, contents)) ->
+            mapM (compareModule cloneDir contents) modulesWithOrigins
+
+  `withSystemTempDirectory` deletes `tmpDir` as soon as its action returns,
+  so by the time `compareModule` ran, the clone was already gone. For
+  multi-module registries whose `seihou-registry.dhall` entries omit the
+  `version` field (the common case — see
+  `seihou-core/src/Seihou/Dhall/Eval.hs` line 387, the decoder uses
+  `withDefaults` to fill in `Nothing`), `findAvailableVersion` falls back
+  to reading `<cloneDir>/<path>/module.dhall` directly. That `TIO.readFile`
+  raised `does not exist`, `evalModuleFromFile` caught it as `Left _`, and
+  every result came back as `Nothing` → `Unversioned`.
+
+  Fix: move the `compareModule` step *inside* the
+  `withSystemTempDirectory` block so the clone is still on disk when the
+  Dhall read happens. After the fix, `seihou outdated` now correctly
+  reports all six modules as `up to date` with their installed versions
+  matched against the remote:
+
+        Module             Installed  Available  Status
+        claude-skill-link  0.1.0      0.1.0      up to date
+        update-docs        0.1.0      0.1.0      up to date
+        exec-plan          0.1.3      0.1.3      up to date
+        claude-gitignore   0.2.0      0.2.0      up to date
+        master-plan        0.1.0      0.1.0      up to date
+        nix-haskell-flake  0.3.0      0.3.0      up to date
+
+        6 module(s) checked, 0 outdated.
+
+  This bug had been silently degrading `seihou outdated` for every
+  registry that relies on the `module.dhall` fallback. It was exposed
+  here only because end-to-end testing for `seihou status
+  --check-updates` made the results feel obviously wrong — the user knew
+  that `exec-plan` and `master-plan` had versions declared and pushed
+  back on the `unversioned` output, which is exactly the failure mode
+  the plan's Validation section said to watch for. Lesson: the M1
+  "byte-identical diff against baseline" check proves we did not *change*
+  behaviour, but it cannot surface pre-existing bugs — only exercising
+  the real pipeline does.
+
 - `seihou outdated --json` is not clean JSON: the pre-existing code prints
   `Checking installed modules for updates...` and per-source `Cloning ...`
   lines to stdout before the JSON document. The refactor in Milestone 1
   preserves this behaviour bit-for-bit (diffed against a baseline). Fixing
   it is out of scope for this plan but worth a follow-up — a caller piping
   `seihou outdated --json` into `jq` will fail today.
-- Every module in the working tree Seihou is installed into currently comes
-  back as `unversioned`, because the upstream registry-side modules
-  (`agent-seihou`, `seihou-modules`) don't declare a `version` on their
-  `module.dhall`. This is a latent data-quality issue in the upstream
-  modules, not a bug in this feature — the check correctly reports what
-  it finds. The annotated status output still proves the pipeline works.
+
 - `AskUserQuestion` header has a 12-char cap that I hit on the intention
   prompt; not relevant to the code but worth noting for future prompts in
   this skill.
@@ -141,7 +189,8 @@ status. Running the tree's own test suite (`cabal test all`) reports
 `All 106 tests passed` with no regressions.
 
 End-to-end transcript, captured in the Seihou project's own working
-tree on 2026-04-15:
+tree on 2026-04-15 after fixing the `checkSource` temp-dir bug
+documented in Surprises & Discoveries:
 
     $ cabal run -v0 seihou -- status --check-updates
     Checking installed modules for updates...
@@ -151,11 +200,11 @@ tree on 2026-04-15:
     Seihou Status:
 
     Applied modules:
-      update-docs    (applied 2026-03-08)  unversioned
-      claude-gitignore  v0.2.0    (applied 2026-04-15)  unversioned
-      claude-skill-link  v0.1.0    (applied 2026-04-15)  unversioned
-      exec-plan  v0.1.3    (applied 2026-04-15)  unversioned
-      master-plan  v0.1.0    (applied 2026-04-15)  unversioned
+      update-docs    (applied 2026-03-08)  up to date
+      claude-gitignore  v0.2.0    (applied 2026-04-15)  up to date
+      claude-skill-link  v0.1.0    (applied 2026-04-15)  up to date
+      exec-plan  v0.1.3    (applied 2026-04-15)  up to date
+      master-plan  v0.1.0    (applied 2026-04-15)  up to date
 
     Tracked files: 5
       .gitignore                                master-plan   unchanged
@@ -168,14 +217,13 @@ tree on 2026-04-15:
 
     6 module(s) checked, 0 outdated.
 
-No module in this checkout resolved to `outdated` because every upstream
-module on its registry side is missing a declared `version` — the
-compare step correctly reports `unversioned` for each. The "6 module(s)
-checked" total includes one module (`nix-haskell-flake`) that is
-installed in the user's search path but not applied in this tree; this
-matches the pre-existing behaviour of `seihou outdated`, which checks
-every installed module regardless of whether the current project
-references it.
+Every applied module now resolves against its real remote version. The
+"6 module(s) checked" total includes one module (`nix-haskell-flake`)
+that is installed in the user's search path but not applied in this
+tree; that matches the pre-existing behaviour of `seihou outdated`,
+which walks every installed module regardless of whether the current
+project references it. A possible follow-up is to scope the check to
+only modules that actually appear in the manifest.
 
 Gaps / follow-ups:
 
