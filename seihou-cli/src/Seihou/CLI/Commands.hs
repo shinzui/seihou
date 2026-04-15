@@ -10,6 +10,7 @@ module Seihou.CLI.Commands
     ConfigAction (..),
     ContextAction (..),
     ListOpts (..),
+    StatusOpts (..),
     BrowseOpts (..),
     OutdatedOpts (..),
     UpgradeOpts (..),
@@ -43,7 +44,7 @@ data Command
   | Remove RemoveOpts
   | Vars VarsOpts
   | Install InstallOpts
-  | Status
+  | Status StatusOpts
   | Diff
   | List ListOpts
   | NewModule NewModuleOpts
@@ -165,6 +166,11 @@ data ListOpts = ListOpts
 data BrowseOpts = BrowseOpts
   { browseSource :: Text,
     browseTag :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+data StatusOpts = StatusOpts
+  { statusCheckUpdates :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -409,7 +415,7 @@ installInfo =
 statusInfo :: ParserInfo Command
 statusInfo =
   info
-    (pure Status <**> helper)
+    (statusParser <**> helper)
     ( fullDesc
         <> progDesc "Show manifest state"
         <> footerDoc
@@ -417,10 +423,24 @@ statusInfo =
               vsep
                 [ pretty ("Reads .seihou/manifest.json in the current directory and displays" :: String),
                   pretty ("applied modules, tracked files, and resolved variable values." :: String),
-                  pretty ("If no manifest exists, reports that and exits successfully." :: String)
+                  pretty ("If no manifest exists, reports that and exits successfully." :: String),
+                  line,
+                  pretty ("Use --check-updates to also report which applied modules have newer" :: String),
+                  pretty ("versions available from their source repository. This requires network" :: String),
+                  pretty ("access and will clone each source repo shallowly." :: String)
                 ]
           )
     )
+
+statusParser :: Parser Command
+statusParser =
+  fmap Status $
+    StatusOpts
+      <$> switch
+        ( long "check-updates"
+            <> short 'u'
+            <> help "Check installed modules for available updates (requires network)"
+        )
 
 diffInfo :: ParserInfo Command
 diffInfo =

@@ -39,8 +39,8 @@ main = do
       handleVars varsOpts
     Install installOpts ->
       handleInstall installOpts
-    Status ->
-      handleStatus
+    Status statusOpts ->
+      handleStatus statusOpts
     Diff ->
       handleDiff
     List listOpts ->

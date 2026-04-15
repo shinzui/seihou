@@ -7,6 +7,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time.Format (defaultTimeLocale, formatTime)
+import Seihou.CLI.Commands (StatusOpts (..))
 import Seihou.CLI.Shared (logIO)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.Core.Status (computeTrackedFileStatuses)
@@ -18,8 +19,8 @@ import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Prelude
 import System.Exit (exitFailure)
 
-handleStatus :: IO ()
-handleStatus = do
+handleStatus :: StatusOpts -> IO ()
+handleStatus _opts = do
   let manifestPath = ".seihou" </> "manifest.json"
 
   -- Run both manifest read and file status computation in the same effect block.
