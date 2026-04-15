@@ -1,8 +1,8 @@
 let Schema =
-      https://raw.githubusercontent.com/shinzui/mori-schema/8415b4b8a746a84eecf982f0f1d7194368bf7b54/package.dhall
-        sha256:d19ae156d6c357d982a1aea0f1b6ba1f01d76d2d848545b150db75ed4c39a8a9
+      https://raw.githubusercontent.com/shinzui/mori-schema/ad9960dd3dd3b33eadd45f17bcf430b0e1ec13bc/package.dhall
+        sha256:83aa1432e98db5da81afde4ab2057dcab7ce4b2e883d0bc7f16c7d25b917dd0c
 
-in  { project =
+in  Schema.Project::{ project =
       { name = "seihou"
       , namespace = "shinzui"
       , type = Schema.PackageType.Application
@@ -33,9 +33,9 @@ in  { project =
         , runtime = { deployable = False, exposesApi = False }
         , runtimeEnvironment = None Schema.RuntimeEnvironment
         , dependencies = [] : List Schema.Dependency
-        , docs = [] : List Schema.DocRef
-        , config = [] : List Schema.ConfigItem
-        , apiSource = None Schema.ApiSource
+        , docs = [] : List Schema.DocRef.Type
+        , config = [] : List Schema.ConfigItem.Type
+        , apiSource = None Schema.ApiSource.Type
         }
       , { name = "seihou-cli"
         , type = Schema.PackageType.Application
@@ -48,9 +48,9 @@ in  { project =
         , runtimeEnvironment = None Schema.RuntimeEnvironment
         , dependencies =
           [ Schema.Dependency.ByName "shinzui/seihou:seihou-core" ]
-        , docs = [] : List Schema.DocRef
-        , config = [] : List Schema.ConfigItem
-        , apiSource = None Schema.ApiSource
+        , docs = [] : List Schema.DocRef.Type
+        , config = [] : List Schema.ConfigItem.Type
+        , apiSource = None Schema.ApiSource.Type
         }
       , { name = "seihou-core-test"
         , type = Schema.PackageType.Other "TestSuite"
@@ -63,9 +63,9 @@ in  { project =
         , runtimeEnvironment = None Schema.RuntimeEnvironment
         , dependencies =
           [ Schema.Dependency.ByName "shinzui/seihou:seihou-core" ]
-        , docs = [] : List Schema.DocRef
-        , config = [] : List Schema.ConfigItem
-        , apiSource = None Schema.ApiSource
+        , docs = [] : List Schema.DocRef.Type
+        , config = [] : List Schema.ConfigItem.Type
+        , apiSource = None Schema.ApiSource.Type
         }
       , { name = "seihou-cli-test"
         , type = Schema.PackageType.Other "TestSuite"
@@ -80,24 +80,24 @@ in  { project =
           [ Schema.Dependency.ByName "shinzui/seihou:seihou-core"
           , Schema.Dependency.ByName "shinzui/seihou:seihou-cli"
           ]
-        , docs = [] : List Schema.DocRef
-        , config = [] : List Schema.ConfigItem
-        , apiSource = None Schema.ApiSource
+        , docs = [] : List Schema.DocRef.Type
+        , config = [] : List Schema.ConfigItem.Type
+        , apiSource = None Schema.ApiSource.Type
         }
       ]
-    , bundles = [] : List Schema.PackageBundle
+    , bundles = [] : List Schema.PackageBundle.Type
     , dependencies =
       [ "effectful/effectful"
       , "pcapriotti/optparse-applicative"
       , "shinzui/seihou-schema"
       ]
-    , apis = [] : List Schema.Api
-    , agents = [] : List Schema.AgentHint
+    , apis = [] : List Schema.Api.Type
+    , agents = [] : List Schema.AgentHint.Type
     , skills =
       [ { name = "update-seihou-schema"
         , description = "Update Seihou Schema"
         , path = Some "claude/skills/update-seihou-schema"
-        , tools = [] : List Schema.SkillTool
+        , tools = [] : List Schema.SkillTool.Type
         , compatibility = None Text
         , metadata = [] : List { mapKey : Text, mapValue : Text }
         }
@@ -105,12 +105,12 @@ in  { project =
         , description =
             "Update seihou documentation after code changes"
         , path = Some "claude/skills/seihou-update-docs"
-        , tools = [] : List Schema.SkillTool
+        , tools = [] : List Schema.SkillTool.Type
         , compatibility = None Text
         , metadata = [] : List { mapKey : Text, mapValue : Text }
         }
       ]
-    , subagents = [] : List Schema.Subagent
+    , subagents = [] : List Schema.Subagent.Type
     , standards = [] : List Text
     , docs =
       [ { key = "architecture"
@@ -130,4 +130,5 @@ in  { project =
             Schema.DocLocation.LocalFile "docs/dev/roadmap/v1-milestones.md"
         }
       ]
+    , templates = [] : List Schema.SeihouTemplate.Type
     }
