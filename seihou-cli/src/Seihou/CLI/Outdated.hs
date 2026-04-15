@@ -3,6 +3,8 @@ module Seihou.CLI.Outdated
     OriginInfo (..),
     OutdatedStatus (..),
     OutdatedEntry (..),
+    CheckStats (..),
+    checkInstalledModulesForUpdates,
     readOriginWithModule,
     moduleNameFromDm,
     compareVersions,
@@ -56,6 +58,13 @@ instance ToJSON OutdatedEntry where
       statusText Unversioned = "unversioned"
       statusText Unreachable = "unreachable"
 
+-- | Summary statistics for an update check.
+data CheckStats = CheckStats
+  { checkedCount :: Int,
+    skippedNoOrigin :: Int
+  }
+  deriving stock (Eq, Show)
+
 -- | Origin metadata read from @.seihou-origin.json@.
 data OriginInfo = OriginInfo
   { sourceUrl :: Text,
@@ -71,29 +80,54 @@ handleOutdated :: OutdatedOpts -> IO ()
 handleOutdated oopts = do
   searchPaths <- defaultSearchPaths
   modules <- discoverAllModules searchPaths
-
-  -- Filter to installed modules only
   let installed = filter (\dm -> dm.discoveredSource == SourceInstalled) modules
 
   if null installed
     then TIO.putStrLn "No installed modules found."
     else do
-      -- Read origin metadata for each installed module
-      originsWithModules <- mapM readOriginWithModule installed
-      let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
-
-      if null withOrigins
+      (entries, _stats) <- checkInstalledModulesForUpdates installed
+      if null entries
         then TIO.putStrLn "No installed modules with origin metadata found."
-        else do
-          -- Group by source URL
-          let grouped = Map.toList $ Map.fromListWith (++) [(origin.sourceUrl, [(dm, origin)]) | (dm, origin) <- withOrigins]
-
-          TIO.putStrLn "Checking installed modules for updates..."
-          entries <- concat <$> mapM checkSource grouped
-
+        else
           if oopts.outdatedJson
             then LBS.putStr (encodePretty entries)
             else renderTable entries
+
+-- | Check a list of already-discovered modules for updates.
+--
+-- Filters to @SourceInstalled@ modules internally, reads @.seihou-origin.json@
+-- for each, groups by source URL, clones each source shallowly, and compares
+-- installed versions against what the remote registry advertises.
+--
+-- Prints progress lines to stdout via 'checkSource'. Returns the flat list
+-- of outdated entries plus stats describing how many modules were actually
+-- checked versus skipped for lack of origin metadata.
+checkInstalledModulesForUpdates ::
+  [DiscoveredModule] ->
+  IO ([OutdatedEntry], CheckStats)
+checkInstalledModulesForUpdates modules = do
+  let installed = filter (\dm -> dm.discoveredSource == SourceInstalled) modules
+  originsWithModules <- mapM readOriginWithModule installed
+  let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
+      skipped = length installed - length withOrigins
+  if null withOrigins
+    then
+      pure
+        ( [],
+          CheckStats {checkedCount = 0, skippedNoOrigin = skipped}
+        )
+    else do
+      let grouped =
+            Map.toList $
+              Map.fromListWith
+                (++)
+                [(origin.sourceUrl, [(dm, origin)]) | (dm, origin) <- withOrigins]
+      TIO.putStrLn "Checking installed modules for updates..."
+      entries <- concat <$> mapM checkSource grouped
+      pure
+        ( entries,
+          CheckStats {checkedCount = length entries, skippedNoOrigin = skipped}
+        )
 
 -- | Read origin info from a discovered module's directory.
 readOriginWithModule :: DiscoveredModule -> IO (DiscoveredModule, Maybe OriginInfo)
