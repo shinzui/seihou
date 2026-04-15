@@ -46,7 +46,7 @@ The module definition is a Dhall record with these fields:
 
 **name** (Text, required): The module identifier. Must match `[a-z][a-z0-9-]*`.
 
-**version** (Optional Text): Semantic version string (e.g., `"1.0.0"`). Used by `seihou outdated` and `seihou upgrade` to compare installed vs available versions. Use `Some "1.0.0"` or `None Text`.
+**version** (Optional Text, **required at validation**): Semantic version string (e.g., `"1.0.0"`). Used by `seihou outdated` and `seihou upgrade` to compare installed vs available versions. Although the Dhall type is `Optional Text` for backwards compatibility with older module schemas, `seihou validate-module` rejects modules where `version` is `None` or an empty string. Always use `Some "1.0.0"`. `seihou schema-upgrade` can add a placeholder version to unversioned modules.
 
 **description** (Optional Text): Human-readable description shown by `seihou list` and in validation output. Use `Some "description"` or `None Text`.
 

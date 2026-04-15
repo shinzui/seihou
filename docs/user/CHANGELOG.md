@@ -3,12 +3,61 @@
 ## Last Reviewed Commit
 
 ```
-88b6060 Add AppendLineIfAbsent PatchOp for idempotent line-level patching
+ee892a4 Add mori repo-id
 ```
 
 ---
 
 ## Changelog
+
+### 2026-04-15 (kit, install history, list filters, run --commit, version required, status versions)
+
+**Reviewed commits:** `c771d60` through `ee892a4`
+
+- Added `docs/cli/kit.md` — CLI reference for the new `seihou kit` command (list/install/update/uninstall/status for Claude Code skills and subagents)
+- Updated `docs/cli/install.md` — documented optional `GIT-URL` argument, install history (`~/.config/seihou/install-history.json`), fzf picker fallback
+- Updated `docs/cli/list.md` — documented `--repo` and `--tag` filters with origin metadata semantics
+- Updated `docs/cli/run.md` — documented `--save-prompted`/`--no-save-prompted`, `--commit`, `--commit-message` flags and the AI-generated commit message integration
+- Updated `docs/cli/validate-module.md` — added module version as a required validation check and listed the full set of core checks
+- Updated `docs/cli/status.md` — documented module versions in applied-modules output and tracked-file status labels
+- Updated `docs/user/module-authoring.md` — clarified that `version` is required at validation despite being `Optional Text` in the Dhall schema
+- Updated `docs/dev/architecture/overview.md` — added `Kit.hs`, `InstallHistory.hs`, `CommitMessage.hs`, `Git.hs`, `SavePrompted.hs`, `AgentLaunch.hs` to the project layout tree; bumped "Updated" to 2026-04-15
+- Updated `docs/dev/design/proposed/cli-commands.md`:
+  - Command ADT now includes `Remove RemoveOpts`, `List ListOpts`, `Kit KitCommand`
+  - Added `RemoveOpts`, `ListOpts`, `KitCommand` type definitions
+  - `RunOpts` now shows `runModule :: Maybe ModuleName`, `runSavePrompted`, `runCommit`, `runCommitMessage`
+  - `InstallOpts.installSource` is now `Maybe Text`
+  - Command count bumped from eighteen to nineteen (adds `kit`)
+  - Added `seihou kit <subcommand>` section
+  - Updated `seihou run`, `seihou install`, `seihou list`, `seihou validate-module` sections
+  - Updated optparse-applicative parser tree to include `remove` and `kit`
+- Updated `docs/dev/design/proposed/module-system.md` — annotated the `version` field with a note that validation rejects `None`/empty
+
+**Features documented:**
+- `seihou kit {list,install,update,uninstall,status}` — manage Claude Code skills and subagents from the `seihou-kit` repository with user and project scopes
+- `seihou install` without a source — fzf picker over install history at `~/.config/seihou/install-history.json`
+- `seihou list --repo`/`--tag` — filter modules by registry name and tags recorded in `.seihou-origin.json`
+- `seihou run --commit` / `--commit-message` — AI-generated or fixed commit message after successful generation, skipping gitignored files and stripping markdown code fences
+- `seihou run` now accepts no module argument and opens an fzf picker
+- Module `version` is required at validation (rejects `None` and empty string)
+- `seihou status` shows module versions alongside applied modules and tracked-file status labels (`unchanged`/`modified by user`/`deleted by user`)
+
+**No documentation needed:**
+- `ee892a4` Add mori repo-id (tooling/meta)
+- `30e44e7`, `ab22e47` Migrate mori.dhall to latest schema (tooling)
+- `82df8ae` Release v0.1.0.0 (release meta)
+- `0ae766c` Add seihou-release skill (tooling)
+- `ce859c7` Fix --commit failing when generated files match .gitignore (bug fix)
+- `a1f3c4c`, `bf9c27c` Regenerate seihou scaffolding (internal)
+- `542ed58` Update manifest design doc (already a doc commit)
+- `0b11612` Fix manifest losing files and variables from independent module runs (bug fix)
+- `5816d08` Fix --commit stripping markdown code fences (bug fix; behavior is documented)
+- `06870d5` Grant full git access to assist agent command (tooling)
+- `0485b26` Add save-prompted feature (already documented in 2026-03-26 entry)
+- `f4f70b1` Apply exec-plan module (internal)
+- `c771d60` Document append-line-if-absent patch op (already a doc commit)
+
+---
 
 ### 2026-03-26 (save prompted values to local config)
 

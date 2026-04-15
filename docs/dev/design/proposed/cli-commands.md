@@ -4,12 +4,12 @@
 |---|---|
 | **Status** | Implemented |
 | **Created** | 2026-03-01 |
-| **Updated** | 2026-03-21 |
+| **Updated** | 2026-04-15 |
 | **Subsystem** | CLI |
 
 ## Overview
 
-Seihou exposes eighteen commands, covering the core generation loop (including module removal), module authoring, configuration management, context management, module discovery, version management, agent-assisted workflows, help, and shell completions. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
+Seihou exposes nineteen commands, covering the core generation loop (including module removal), module authoring, configuration management, context management, module discovery, version management, agent-assisted workflows, Claude Code skill/subagent management (`kit`), help, and shell completions. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
 
 ## Motivation
 
@@ -27,7 +27,7 @@ The CLI is the primary interface to Seihou. It must support:
 | Decision | Choice | Rationale |
 |---|---|---|
 | CLI framework | optparse-applicative | Standard Haskell, composable, auto-generated --help |
-| V1 commands | init, run, remove, vars, install, status, diff, list, new-module, validate-module, config, context, browse, outdated, upgrade, agent, help, completions | Core loop + removal + authoring + config + context + discovery + version management + agent + help + completions |
+| V1 commands | init, run, remove, vars, install, status, diff, list, new-module, validate-module, config, context, browse, outdated, upgrade, agent, kit, help, completions | Core loop + removal + authoring + config + context + discovery + version management + agent + kit + help + completions |
 | Variable passing | `--var key=value` | Explicit, composable, scriptable |
 | Output format | Human-readable by default | Primary audience is interactive use |
 | Dry run | `--dry-run` flag on `run` | Safety net; shows plan without executing |
@@ -40,11 +40,12 @@ The CLI is the primary interface to Seihou. It must support:
 data Command
   = Init
   | Run RunOpts
+  | Remove RemoveOpts
   | Vars VarsOpts
   | Install InstallOpts
   | Status
   | Diff
-  | List
+  | List ListOpts
   | NewModule NewModuleOpts
   | ValidateModule ValidateOpts
   | Config ConfigOpts
@@ -53,6 +54,7 @@ data Command
   | Outdated OutdatedOpts
   | Upgrade UpgradeOpts
   | Agent AgentOpts
+  | Kit KitCommand
   | HelpCmd HelpCommand
   | Completions CompletionsCommand
   deriving stock (Eq, Show, Generic)
@@ -93,17 +95,42 @@ data CompletionsCommand
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
-  { runModule     :: ModuleName          -- Primary module
-  , runAdditional :: [ModuleName]        -- Additional modules (--module)
-  , runVars       :: [(Text, Text)]      -- Variable overrides (--var)
-  , runDryRun     :: Bool                -- Show plan only
-  , runDiff       :: Bool                -- Show diff against disk
-  , runForce      :: Bool                -- Auto-resolve conflicts
-  , runNoCommands :: Bool                -- Disable shell commands
-  , runNamespace  :: Maybe Text          -- Config namespace
-  , runContext    :: Maybe Text          -- Context name (work, personal, etc.)
-  , runVerbose    :: Bool                -- Verbose output
+  { runModule        :: Maybe ModuleName  -- Primary module (fzf picker if Nothing)
+  , runAdditional    :: [ModuleName]      -- Additional modules (--module)
+  , runVars          :: [(Text, Text)]    -- Variable overrides (--var)
+  , runDryRun        :: Bool              -- Show plan only
+  , runDiff          :: Bool              -- Show diff against disk
+  , runForce         :: Bool              -- Auto-resolve conflicts
+  , runNoCommands    :: Bool              -- Disable shell commands
+  , runNamespace     :: Maybe Text        -- Config namespace
+  , runContext       :: Maybe Text        -- Context name (work, personal, etc.)
+  , runVerbose       :: Bool              -- Verbose output
+  , runSavePrompted  :: Maybe Bool        -- --save-prompted / --no-save-prompted
+  , runCommit        :: Bool              -- Commit generated files after execution
+  , runCommitMessage :: Maybe Text        -- Custom message (implies runCommit)
   }
+  deriving stock (Eq, Show, Generic)
+
+data RemoveOpts = RemoveOpts
+  { removeModule  :: ModuleName
+  , removeDryRun  :: Bool
+  , removeForce   :: Bool
+  , removeVerbose :: Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
+data ListOpts = ListOpts
+  { listFilterRepo :: Maybe Text          -- --repo
+  , listFilterTag  :: Maybe Text          -- --tag
+  }
+  deriving stock (Eq, Show, Generic)
+
+data KitCommand
+  = KitList
+  | KitInstall KitInstallOpts
+  | KitUpdate KitUpdateOpts
+  | KitUninstall KitUninstallOpts
+  | KitStatus
   deriving stock (Eq, Show, Generic)
 
 data VarsOpts = VarsOpts
@@ -116,7 +143,7 @@ data VarsOpts = VarsOpts
   deriving stock (Eq, Show, Generic)
 
 data InstallOpts = InstallOpts
-  { installSource  :: Text               -- Git URL or local path
+  { installSource  :: Maybe Text         -- Git URL (if Nothing, pick from install history)
   , installName    :: Maybe Text         -- Override module name
   , installModules :: [Text]             -- Specific modules from a registry (--module)
   , installAll     :: Bool               -- Install all modules from a registry (--all)
@@ -208,13 +235,13 @@ Initialized Seihou configuration at ~/.config/seihou/
 Run one or more modules to generate or update a project.
 
 ```sh
-seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] [--diff] [--force] [--no-commands] [--namespace <ns>] [--context <ctx>] [--verbose]
+seihou run [<module>] [--module <additional>...] [--var key=value...] [--dry-run] [--diff] [--force] [--no-commands] [--namespace <ns>] [--context <ctx>] [--verbose] [--save-prompted | --no-save-prompted] [--commit] [--commit-message <msg>]
 ```
 
 **Arguments**:
 | Argument | Required | Description |
 |---|---|---|
-| `<module>` | Yes | Primary module name or path |
+| `<module>` | No | Primary module name or path. If omitted, an fzf picker opens. |
 | `--module <name>` | No | Additional modules to compose (repeatable) |
 | `--var key=value` | No | Variable override (repeatable) |
 | `--dry-run` | No | Show plan without executing |
@@ -224,6 +251,20 @@ seihou run <module> [--module <additional>...] [--var key=value...] [--dry-run] 
 | `--namespace <ns>` | No | Config namespace for variable resolution |
 | `--context <ctx>` | No | Context for variable resolution (e.g., work, personal) |
 | `--verbose` | No | Verbose output |
+| `--save-prompted` | No | Save prompted values to local config without asking |
+| `--no-save-prompted` | No | Do not offer to save prompted values |
+| `--commit` | No | After successful execution, stage generated files and create a git commit with an AI-generated message |
+| `--commit-message <msg>` | No | Use `<msg>` verbatim as the commit message (implies `--commit`) |
+
+**Commit integration**:
+
+With `--commit`, Seihou stages the files it generated (skipping anything
+matched by `.gitignore`) and creates a single git commit. The commit
+message is generated by invoking the `claude` CLI with the list of applied
+modules and the staged diff; markdown code fences in the response are
+stripped. If `claude` is unavailable or returns an empty message, Seihou
+falls back to a deterministic message naming the applied modules. Outside
+a git repository, `--commit` emits a warning and does nothing.
 
 **Execution flow**:
 1. Resolve module(s) via discovery
@@ -394,16 +435,22 @@ Variables for haskell-base:
 Install a module from a git repository or local path. Supports single-module repositories and multi-module registries.
 
 ```sh
-seihou install <source> [--name <name>] [--module <name>...] [--all]
+seihou install [<source>] [--name <name>] [--module <name>...] [--all]
 ```
 
 **Arguments**:
 | Argument | Required | Description |
 |---|---|---|
-| `<source>` | Yes | Git repository URL or local path |
+| `<source>` | No | Git repository URL or local path. If omitted, Seihou opens an fzf picker (or numbered prompt) over `~/.config/seihou/install-history.json`. |
 | `--name <name>` | No | Override the installed module name |
 | `--module <name>` | No | Install specific module(s) from a registry (repeatable) |
 | `--all` | No | Install all modules from a registry |
+
+**Install history**: Every successful install appends its source URL to
+`~/.config/seihou/install-history.json` (capped at 50 entries,
+deduplicated, most-recent first). Running `seihou install` without a
+source reads this file and presents a picker so frequently-used sources
+can be reinstalled with a keystroke.
 
 **What it does**:
 1. Clone the git repository (or copy from local path) to a temporary directory
@@ -515,12 +562,22 @@ seihou diff
 List available modules from all discovery paths.
 
 ```sh
-seihou list
+seihou list [--repo <name>] [--tag <tag>]
 ```
+
+**Flags**:
+| Flag | Description |
+|---|---|
+| `--repo <name>` | Only show modules installed from the given registry repository |
+| `--tag <tag>` | Only show modules whose origin metadata contains this tag |
 
 **What it does**:
 1. Scan all module search paths (local, user, installed)
 2. Display each module with its source location and origin (if installed from git)
+3. When `--repo` or `--tag` is supplied, filter the output and show a `[filtered: …]` suffix in the summary
+
+**Filtering** reads `.seihou-origin.json` (written by `seihou install`), so
+project and user-scope modules are excluded whenever a filter is active.
 
 **Exit codes**:
 | Code | Meaning |
@@ -616,12 +673,14 @@ seihou validate-module [<path>] [--lint]
 **Validation checks** (see [Module System](module-system.md) for full rules):
 1. `module.dhall` exists and evaluates successfully
 2. Module name is valid (`[a-z][a-z0-9-]*`)
-3. All variable names are unique
-4. All prompt references point to declared variables
-5. All step source files exist in `files/`
-6. All exports reference declared variables
-7. Step destinations are valid relative paths
-8. `when` expressions parse successfully
+3. **Module declares a version** (`version = Some "X.Y.Z"`, non-empty — required)
+4. All variable names are unique
+5. All prompt references point to declared variables
+6. All step source files exist in `files/`
+7. All dependency names are valid
+8. Step destinations are safe and reference declared variables
+9. Commands are well-formed and safe
+10. All exports reference declared variables
 
 **Output (valid)**:
 ```text
@@ -910,6 +969,57 @@ seihou agent setup [--debug]
 
 ---
 
+### `seihou kit <subcommand>`
+
+Install, update, and remove Claude Code skills and subagents from the
+`seihou-kit` repository (`https://github.com/shinzui/seihou-kit`).
+
+```sh
+seihou kit                           # == seihou kit list
+seihou kit list
+seihou kit install <name> [--project]
+seihou kit update [<name>]
+seihou kit uninstall <name> [--project]
+seihou kit status
+```
+
+**Subcommands**:
+| Subcommand | Description |
+|---|---|
+| `list` (default) | List skills and agents declared in the kit manifest |
+| `install <name>` | Install a skill or subagent |
+| `update [<name>]` | Pull latest and reinstall (all installed items by default) |
+| `uninstall <name>` | Remove an installed skill or subagent |
+| `status` | Show installed items and their scope |
+
+**Flags**:
+| Flag | Description |
+|---|---|
+| `--project` | Operate on project scope (`.seihou/agents/`) instead of user scope |
+
+**How it works**:
+1. On first use, shallow-clone `seihou-kit` to `~/.cache/seihou/kit/`; on
+   subsequent use, `git pull --ff-only` to refresh.
+2. Parse `kit.json` from the repo root, which enumerates available
+   `skills` (directories) and `agents` (markdown files).
+3. Install copies files into `.claude/skills/<name>/` or
+   `.claude/agents/<name>.md` under the chosen scope base:
+   - **User scope**: `~/.config/seihou/agents/`
+   - **Project scope**: `./.seihou/agents/`
+4. `seihou agent assist`, `bootstrap`, and `setup` pass the scope bases to
+   Claude Code via `--add-dir` so installed content is auto-discovered.
+
+If the network is unavailable but the cache exists, Seihou falls back to
+the cached clone and prints a warning.
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Clone/pull failed with no cache, manifest parse failed, or item not found |
+
+---
+
 ### `seihou help [<topic>]`
 
 Display help topics with detailed guidance on specific features.
@@ -959,6 +1069,7 @@ commandParser :: Parser Command
 commandParser = subparser
   ( command "init" initInfo
   <> command "run" runInfo
+  <> command "remove" removeInfo
   <> command "vars" varsInfo
   <> command "install" installInfo
   <> command "status" statusInfo
@@ -972,6 +1083,7 @@ commandParser = subparser
   <> command "outdated" outdatedInfo
   <> command "upgrade" upgradeInfo
   <> command "agent" agentInfo
+  <> command "kit" kitInfo
   <> command "help" helpInfo
   <> command "completions" completionsInfo
   )

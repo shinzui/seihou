@@ -208,7 +208,8 @@ let Step =
 
 let Module =
   { name : Text
-  , version : Optional Text
+  , version : Optional Text  -- Dhall type is Optional for schema compat, but
+                             -- validation rejects None / empty string.
   , description : Optional Text
   , vars : List VarDecl
   , exports : List VarExport

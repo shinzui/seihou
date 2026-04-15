@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Status** | Implemented |
-| **Updated** | 2026-03-20 |
+| **Updated** | 2026-04-15 |
 | **Created** | 2026-03-01 |
 | **Subsystem** | Core |
 
@@ -185,6 +185,12 @@ seihou/
 │           │   ├── Upgrade.hs     # seihou upgrade handler
 │           │   ├── Help.hs        # seihou help handler
 │           │   ├── Completions.hs # seihou completions handler
+│           │   ├── Kit.hs         # seihou kit handler (skills/subagents)
+│           │   ├── InstallHistory.hs # Install URL history (XDG config)
+│           │   ├── CommitMessage.hs  # AI-generated commit messages (claude CLI)
+│           │   ├── Git.hs         # Git porcelain helpers for --commit
+│           │   ├── SavePrompted.hs   # Persist prompted values to local config
+│           │   ├── AgentLaunch.hs    # Shared Claude Code launcher
 │           │   ├── Assist.hs      # agent assist handler
 │           │   ├── Bootstrap.hs   # agent bootstrap handler
 │           │   ├── Setup.hs       # agent setup handler
