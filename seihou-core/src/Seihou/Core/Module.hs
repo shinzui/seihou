@@ -5,7 +5,10 @@ module Seihou.Core.Module
     validateModule,
     loadModule,
     discoverAllModules,
+    discoverAllRunnables,
     DiscoveredModule (..),
+    DiscoveredRunnable (..),
+    RunnableKind (..),
     ModuleSource (..),
 
     -- * Individual check functions (for structured reports)
@@ -335,3 +338,108 @@ discoverAllModules searchPaths = do
         Left err -> pure (Left err)
         Right m -> validateModule moduleDir m
       pure DiscoveredModule {discoveredResult = result, discoveredSource = src, discoveredDir = moduleDir}
+
+-- | Whether a discovered item is a module or a recipe.
+data RunnableKind = KindModule | KindRecipe
+  deriving stock (Eq, Show, Generic)
+
+-- | A module or recipe discovered during enumeration, with its load result, kind, and source.
+data DiscoveredRunnable = DiscoveredRunnable
+  { drName :: Text,
+    drDescription :: Maybe Text,
+    drKind :: RunnableKind,
+    drSource :: ModuleSource,
+    drDir :: FilePath,
+    drIsError :: Bool,
+    drError :: Maybe Text
+  }
+  deriving stock (Show)
+
+-- | Enumerate all modules and recipes across the given search paths.
+-- Returns a unified list of discovered items, each tagged with its kind.
+discoverAllRunnables :: [FilePath] -> IO [DiscoveredRunnable]
+discoverAllRunnables searchPaths = do
+  let tagged = zip searchPaths (sources ++ repeat SourceInstalled)
+  concat <$> mapM (uncurry scanRunnablePath) tagged
+  where
+    sources = [SourceProject, SourceUser, SourceInstalled]
+
+    scanRunnablePath :: FilePath -> ModuleSource -> IO [DiscoveredRunnable]
+    scanRunnablePath dir src = do
+      exists <- doesDirectoryExist dir
+      if not exists
+        then pure []
+        else do
+          entries <- listDirectory dir
+          concat <$> mapM (loadRunnable dir src) entries
+
+    loadRunnable :: FilePath -> ModuleSource -> FilePath -> IO [DiscoveredRunnable]
+    loadRunnable dir src entry = do
+      let entryDir = dir </> entry
+          moduleDhall = entryDir </> "module.dhall"
+          recipeDhall = entryDir </> "recipe.dhall"
+      isModule <- doesFileExist moduleDhall
+      isRecipe <- doesFileExist recipeDhall
+      if isModule
+        then do
+          decoded <- evalModuleFromFile moduleDhall
+          pure
+            [ case decoded of
+                Left err ->
+                  DiscoveredRunnable
+                    { drName = T.pack entry,
+                      drDescription = Nothing,
+                      drKind = KindModule,
+                      drSource = src,
+                      drDir = entryDir,
+                      drIsError = True,
+                      drError = Just (briefLoadError err)
+                    }
+                Right m ->
+                  DiscoveredRunnable
+                    { drName = m.name.unModuleName,
+                      drDescription = m.description,
+                      drKind = KindModule,
+                      drSource = src,
+                      drDir = entryDir,
+                      drIsError = False,
+                      drError = Nothing
+                    }
+            ]
+        else
+          if isRecipe
+            then do
+              decoded <- evalRecipeFromFile recipeDhall
+              pure
+                [ case decoded of
+                    Left err ->
+                      DiscoveredRunnable
+                        { drName = T.pack entry,
+                          drDescription = Nothing,
+                          drKind = KindRecipe,
+                          drSource = src,
+                          drDir = entryDir,
+                          drIsError = True,
+                          drError = Just (briefLoadError err)
+                        }
+                    Right r ->
+                      DiscoveredRunnable
+                        { drName = r.name.unRecipeName,
+                          drDescription = r.description,
+                          drKind = KindRecipe,
+                          drSource = src,
+                          drDir = entryDir,
+                          drIsError = False,
+                          drError = Nothing
+                        }
+                ]
+            else pure []
+
+    briefLoadError :: ModuleLoadError -> Text
+    briefLoadError (DhallEvalError _ _) = "Dhall evaluation failed"
+    briefLoadError (DhallDecodeError _ _) = "Dhall decode failed"
+    briefLoadError (ValidationError _ _) = "validation failed"
+    briefLoadError (ModuleNotFound _ _) = "not found"
+    briefLoadError (MissingSourceFile _ _) = "missing source file"
+    briefLoadError (CircularDependency _) = "circular dependency"
+    briefLoadError (RegistryEvalError _ _) = "registry eval failed"

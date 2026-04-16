@@ -16,7 +16,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Shared (shortenHome)
 import Seihou.CLI.Style (dim, red, useColor)
-import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
+import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..), defaultSearchPaths, discoverAllModules, discoverAllRunnables)
 import Seihou.Core.Types
 import Seihou.Prelude
 import System.Directory (doesFileExist)
@@ -47,12 +47,12 @@ noFilter = ListFilter Nothing Nothing
 handleList :: ListFilter -> IO ()
 handleList listOpts = do
   searchPaths <- defaultSearchPaths
-  modules <- discoverAllModules searchPaths
+  runnables <- discoverAllRunnables searchPaths
   colorEnabled <- useColor
   shortenedPaths <- mapM shortenHome searchPaths
-  -- Read origin metadata for installed modules
-  origins <- Map.fromList <$> mapM readOrigin modules
-  let entries = map (toEntryWithOrigin origins) modules
+  -- Read origin metadata for installed items
+  origins <- Map.fromList <$> mapM readRunnableOrigin runnables
+  let entries = map (runnableToEntryWithOrigin origins) runnables
       filtered = applyFilters listOpts entries
   TIO.putStr (formatListOutputEntries colorEnabled filtered shortenedPaths listOpts)
 
@@ -67,6 +67,47 @@ readOrigin dm = do
         Just info -> pure (dm.discoveredDir, Just info)
         Nothing -> pure (dm.discoveredDir, Nothing)
     else pure (dm.discoveredDir, Nothing)
+
+readRunnableOrigin :: DiscoveredRunnable -> IO (FilePath, Maybe OriginInfo)
+readRunnableOrigin dr = do
+  let originFile = dr.drDir </> ".seihou-origin.json"
+  exists <- doesFileExist originFile
+  if exists
+    then do
+      bs <- LBS.readFile originFile
+      case Aeson.decode bs of
+        Just info -> pure (dr.drDir, Just info)
+        Nothing -> pure (dr.drDir, Nothing)
+    else pure (dr.drDir, Nothing)
+
+runnableToEntryWithOrigin :: Map FilePath (Maybe OriginInfo) -> DiscoveredRunnable -> Entry
+runnableToEntryWithOrigin origins dr =
+  let (originName, originVer, originTags) = case Map.lookup dr.drDir origins of
+        Just (Just info) -> (info.originRepoName, info.originVersion, info.originTags)
+        _ -> (Nothing, Nothing, [])
+      srcLabel = sourceLabelWithOrigin dr.drSource originName originVer
+      kindSuffix = case dr.drKind of
+        KindModule -> ""
+        KindRecipe -> " [recipe]"
+   in if dr.drIsError
+        then
+          Entry
+            { entryName = dr.drName,
+              entryDesc = "[error: " <> fromMaybe "unknown" dr.drError <> "]",
+              entrySource = srcLabel <> kindSuffix,
+              entryIsError = True,
+              entryRepoName = originName,
+              entryTags = originTags
+            }
+        else
+          Entry
+            { entryName = dr.drName,
+              entryDesc = fromMaybe "(no description)" dr.drDescription,
+              entrySource = srcLabel <> kindSuffix,
+              entryIsError = False,
+              entryRepoName = originName,
+              entryTags = originTags
+            }
 
 -- | Format list output — backward-compatible version without origin info.
 -- Used by tests that construct DiscoveredModule values directly.
@@ -85,7 +126,7 @@ formatListOutputEntries color entries searchPaths listOpts
   | otherwise =
       let maxNameLen = maximum (map (T.length . (.entryName)) entries)
           maxDescLen = maximum (map (T.length . (.entryDesc)) entries)
-          header = "Available modules:\n"
+          header = "Available modules and recipes:\n"
           fileLines = map (formatEntry color maxNameLen maxDescLen) entries
           n = length entries
           nSources = length searchPaths

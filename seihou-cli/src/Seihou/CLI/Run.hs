@@ -18,9 +18,10 @@ import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
 import Seihou.Composition.Plan (compileComposedPlan)
+import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Context (resolveContext)
-import Seihou.Core.Module (defaultSearchPaths)
+import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution)
 import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
@@ -74,9 +75,25 @@ handleRun runOpts = do
           logIO level (logError "MODULE argument is required when fzf is not available.")
           exitFailure
 
-  -- 1. Load all modules in the composition (primary + additional + transitive deps)
+  -- 0b. Recipe detection: check if the name resolves to a recipe or a module
   searchPaths <- defaultSearchPaths
-  compositionResult <- loadComposition searchPaths modName additional
+  (primaryName, allAdditional, recipeOverrides) <- do
+    runnableResult <- discoverRunnable searchPaths modName
+    case runnableResult of
+      Right (RunnableRecipe recipe _recipeDir) -> do
+        let (primary, recipeAdditional, overrides, _recipeVars, _recipePrompts) = expandRecipe recipe
+        logIO level $
+          logInfo $
+            "Recipe '" <> recipe.name.unRecipeName <> "' expanding to " <> T.pack (show (length recipe.modules)) <> " modules"
+        pure (primary, recipeAdditional ++ additional, overrides)
+      Right (RunnableModule _ _) ->
+        pure (modName, additional, Map.empty)
+      Left _ ->
+        -- Discovery failed — let loadComposition handle the error with its detailed message
+        pure (modName, additional, Map.empty)
+
+  -- 1. Load all modules in the composition (primary + additional + transitive deps)
+  compositionResult <- loadComposition searchPaths primaryName allAdditional
   modulesInOrder <- case compositionResult of
     Left (ModuleNotFound name searched) -> do
       logIO level $ do
@@ -100,9 +117,10 @@ handleRun runOpts = do
 
   -- 2. Resolve variables with export visibility and interactive prompts
   envPairs <- getEnvironment
-  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- runOpts.runVars]
+  -- Merge recipe overrides with CLI overrides (CLI wins on conflict)
+  let cliOverrides = Map.union (Map.fromList [(VarName k, v) | (k, v) <- runOpts.runVars]) recipeOverrides
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace modName) runOpts.runNamespace
+      namespace = fromMaybe (deriveNamespace primaryName) runOpts.runNamespace
   context <- resolveContext runOpts.runContext envVars
   let contextName = fromMaybe "" context
   (resolveResult, localMap, nsMap, ctxMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do

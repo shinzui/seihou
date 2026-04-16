@@ -30,10 +30,10 @@ The name "recipe" is thematically aligned with seihou (製法, "method of produc
 - [x] Milestone 2: Recipe expansion into composition inputs (2026-04-15)
 - [x] Milestone 2: Recipe validation (validateRecipe) (2026-04-15)
 - [x] Milestone 2: Unit tests for discovery, expansion, and validation (2026-04-15)
-- [ ] Milestone 3: Wire recipe path through handleRun in CLI
-- [ ] Milestone 3: Update fzf selector to show recipes with [recipe] tag
-- [ ] Milestone 3: Update seihou list to show recipes
-- [ ] Milestone 3: Integration test: recipe-based run end-to-end
+- [x] Milestone 3: Wire recipe path through handleRun in CLI (2026-04-15)
+- [x] Milestone 3: Update fzf selector to show recipes with [recipe] tag (2026-04-15)
+- [x] Milestone 3: Update seihou list to show recipes (2026-04-15)
+- [ ] Milestone 3: Integration test: recipe-based run end-to-end (deferred to Milestone 5)
 - [ ] Milestone 4: Add `recipes` field to Registry type and Dhall decoder (with backwards-compatible default)
 - [ ] Milestone 4: Extend registry validation to validate recipe entries and detect name collisions
 - [ ] Milestone 4: Add SingleRecipe constructor to RepoContents discovery

@@ -69,7 +69,7 @@ spec = do
     it "shows available modules header" $ do
       let mods = [validModule "test-mod" "A test module" SourceUser]
           result = formatListOutput False mods ["p1", "p2", "p3"]
-      T.isInfixOf "Available modules:" result `shouldBe` True
+      T.isInfixOf "Available modules and recipes:" result `shouldBe` True
 
     it "shows module name and description" $ do
       let mods = [validModule "haskell-base" "Haskell boilerplate" SourceUser]
