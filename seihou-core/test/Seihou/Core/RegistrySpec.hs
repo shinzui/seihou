@@ -164,7 +164,8 @@ spec = do
               Registry
                 { repoName = "Test",
                   repoDescription = Nothing,
-                  modules = [RegistryEntry (ModuleName "mod-a") Nothing "mod-a" Nothing []]
+                  modules = [RegistryEntry (ModuleName "mod-a") Nothing "mod-a" Nothing []],
+                  recipes = []
                 }
         errs <- validateRegistry tmpDir reg
         errs `shouldBe` []
@@ -177,7 +178,8 @@ spec = do
               Registry
                 { repoName = "Test",
                   repoDescription = Nothing,
-                  modules = [RegistryEntry (ModuleName "Bad_Name") Nothing "Bad_Name" Nothing []]
+                  modules = [RegistryEntry (ModuleName "Bad_Name") Nothing "Bad_Name" Nothing []],
+                  recipes = []
                 }
         errs <- validateRegistry tmpDir reg
         length errs `shouldSatisfy` (> 0)
@@ -189,7 +191,8 @@ spec = do
               Registry
                 { repoName = "Test",
                   repoDescription = Nothing,
-                  modules = [RegistryEntry (ModuleName "missing") Nothing "nonexistent" Nothing []]
+                  modules = [RegistryEntry (ModuleName "missing") Nothing "nonexistent" Nothing []],
+                  recipes = []
                 }
         errs <- validateRegistry tmpDir reg
         length errs `shouldSatisfy` (> 0)
@@ -201,7 +204,8 @@ spec = do
               Registry
                 { repoName = "Test",
                   repoDescription = Nothing,
-                  modules = [RegistryEntry (ModuleName "bad-path") Nothing "../escape" Nothing []]
+                  modules = [RegistryEntry (ModuleName "bad-path") Nothing "../escape" Nothing []],
+                  recipes = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("must not contain" `isInfixOf`) (map show errs) `shouldBe` True

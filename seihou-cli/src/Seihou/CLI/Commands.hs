@@ -5,6 +5,7 @@ module Seihou.CLI.Commands
     VarsOpts (..),
     InstallOpts (..),
     NewModuleOpts (..),
+    NewRecipeOpts (..),
     ValidateOpts (..),
     ConfigOpts (..),
     ConfigAction (..),
@@ -48,6 +49,7 @@ data Command
   | Diff
   | List ListOpts
   | NewModule NewModuleOpts
+  | NewRecipe NewRecipeOpts
   | ValidateModule ValidateOpts
   | Config ConfigOpts
   | Context ContextAction
@@ -124,6 +126,13 @@ data InstallOpts = InstallOpts
 data NewModuleOpts = NewModuleOpts
   { newModuleName :: Text,
     newModulePath :: Maybe FilePath
+  }
+  deriving stock (Eq, Show, Generic)
+
+data NewRecipeOpts = NewRecipeOpts
+  { newRecipeName :: Text,
+    newRecipeModules :: [Text],
+    newRecipePath :: Maybe FilePath
   }
   deriving stock (Eq, Show, Generic)
 
@@ -252,6 +261,7 @@ commandParser =
       )
     <|> hsubparser
       ( command "new-module" newModuleInfo
+          <> command "new-recipe" newRecipeInfo
           <> command "validate-module" validateInfo
           <> command "vars" varsInfo
           <> command "schema-upgrade" schemaUpgradeInfo
@@ -613,6 +623,35 @@ newModuleParser =
   fmap NewModule $
     NewModuleOpts
       <$> argument (T.pack <$> str) (metavar "NAME")
+      <*> optional (option str (long "path" <> metavar "DIR" <> help "Output directory (default: ./<name>/)"))
+
+newRecipeInfo :: ParserInfo Command
+newRecipeInfo =
+  info
+    (newRecipeParser <**> helper)
+    ( fullDesc
+        <> progDesc "Scaffold a new recipe"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Creates a new recipe directory with a boilerplate recipe.dhall." :: String),
+                  pretty ("The output directory defaults to ./<name>/ in the current directory." :: String),
+                  line,
+                  pretty ("Recipe names must match [a-z][a-z0-9-]* (lowercase, hyphens allowed," :: String),
+                  pretty ("must start with a letter)." :: String),
+                  line,
+                  pretty ("Example:" :: String),
+                  indent 2 $ pretty ("seihou new-recipe haskell-library --module nix-flake --module cabal-ghc" :: String)
+                ]
+          )
+    )
+
+newRecipeParser :: Parser Command
+newRecipeParser =
+  fmap NewRecipe $
+    NewRecipeOpts
+      <$> argument (T.pack <$> str) (metavar "NAME")
+      <*> many (option (T.pack <$> str) (long "module" <> short 'm' <> metavar "MODULE" <> help "Module to include in the recipe"))
       <*> optional (option str (long "path" <> metavar "DIR" <> help "Output directory (default: ./<name>/)"))
 
 validateParser :: Parser Command

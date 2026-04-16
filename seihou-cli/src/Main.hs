@@ -15,6 +15,7 @@ import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.Kit (runKit)
 import Seihou.CLI.List (ListFilter (..), handleList)
 import Seihou.CLI.NewModule (handleNewModule)
+import Seihou.CLI.NewRecipe (handleNewRecipe)
 import Seihou.CLI.Outdated (handleOutdated)
 import Seihou.CLI.Remove (handleRemove)
 import Seihou.CLI.Run (handleRun)
@@ -47,6 +48,8 @@ main = do
       handleList (ListFilter listOpts.listRepo listOpts.listTag)
     NewModule newModOpts ->
       handleNewModule newModOpts
+    NewRecipe newRecOpts ->
+      handleNewRecipe newRecOpts
     ValidateModule validateOpts ->
       handleValidateModule validateOpts
     Config configOpts ->

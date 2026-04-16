@@ -34,13 +34,13 @@ The name "recipe" is thematically aligned with seihou (製法, "method of produc
 - [x] Milestone 3: Update fzf selector to show recipes with [recipe] tag (2026-04-15)
 - [x] Milestone 3: Update seihou list to show recipes (2026-04-15)
 - [ ] Milestone 3: Integration test: recipe-based run end-to-end (deferred to Milestone 5)
-- [ ] Milestone 4: Add `recipes` field to Registry type and Dhall decoder (with backwards-compatible default)
-- [ ] Milestone 4: Extend registry validation to validate recipe entries and detect name collisions
-- [ ] Milestone 4: Add SingleRecipe constructor to RepoContents discovery
-- [ ] Milestone 4: Update seihou install to present and install recipe entries
-- [ ] Milestone 4: Update seihou browse to show recipe entries from registries
-- [ ] Milestone 4: Add seihou new-recipe scaffolding command
-- [ ] Milestone 4: Recipe validation rules (validate-module extended or new validate-recipe)
+- [x] Milestone 4: Add `recipes` field to Registry type and Dhall decoder (with backwards-compatible default) (2026-04-15)
+- [x] Milestone 4: Extend registry validation to validate recipe entries and detect name collisions (2026-04-15)
+- [x] Milestone 4: Add SingleRecipe constructor to RepoContents discovery (2026-04-15)
+- [x] Milestone 4: Update seihou install to present and install recipe entries (2026-04-15)
+- [x] Milestone 4: Update seihou browse to show recipe entries from registries (2026-04-15)
+- [x] Milestone 4: Add seihou new-recipe scaffolding command (2026-04-15)
+- [ ] Milestone 4: Recipe validation rules (validate-module extended or new validate-recipe) (deferred — validateRecipe exists in core, CLI wiring deferred)
 - [ ] Milestone 5: Manifest records recipe provenance
 - [ ] Milestone 5: seihou status shows recipe info
 - [ ] Milestone 5: Recipe test fixtures and comprehensive test coverage

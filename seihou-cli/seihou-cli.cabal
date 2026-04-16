@@ -88,6 +88,7 @@ executable seihou
     Seihou.CLI.Kit
     Seihou.CLI.List
     Seihou.CLI.NewModule
+    Seihou.CLI.NewRecipe
     Seihou.CLI.Outdated
     Seihou.CLI.Remove
     Seihou.CLI.Run

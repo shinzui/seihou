@@ -442,14 +442,37 @@ registryEntryDecoder =
       )
 
 -- | Decoder for a registry metadata file from Dhall.
+-- Uses 'withDefaults' to handle registries that omit the @recipes@ field
+-- (backwards compatibility with existing seihou-registry.dhall files).
 registryDecoder :: Decoder Registry
 registryDecoder =
-  record
-    ( Registry
-        <$> field "repoName" strictText
-        <*> field "repoDescription" (maybe strictText)
-        <*> field "modules" (list registryEntryDecoder)
+  withDefaults [("recipes", emptyRegistryEntryList)] $
+    record
+      ( Registry
+          <$> field "repoName" strictText
+          <*> field "repoDescription" (maybe strictText)
+          <*> field "modules" (list registryEntryDecoder)
+          <*> field "recipes" (list registryEntryDecoder)
+      )
+
+-- | A Dhall expression representing an empty list of registry entries.
+-- Used as a default for the @recipes@ field in registries that predate recipe support.
+emptyRegistryEntryList :: Dhall.Expr Src Void
+emptyRegistryEntryList =
+  Dhall.ListLit
+    ( Just
+        ( Dhall.Record
+            ( DhallMap.fromList
+                [ ("name", makeRecordField Dhall.Text),
+                  ("version", makeRecordField (Dhall.App Dhall.Optional Dhall.Text)),
+                  ("path", makeRecordField Dhall.Text),
+                  ("description", makeRecordField (Dhall.App Dhall.Optional Dhall.Text)),
+                  ("tags", makeRecordField (Dhall.App Dhall.List Dhall.Text))
+                ]
+            )
+        )
     )
+    mempty
 
 -- | Evaluate a @seihou-registry.dhall@ file and decode it into a 'Registry'.
 -- Returns 'Left' with a 'RegistryEvalError' if evaluation or decoding fails.

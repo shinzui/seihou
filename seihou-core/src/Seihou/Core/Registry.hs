@@ -28,7 +28,8 @@ data RegistryEntry = RegistryEntry
 data Registry = Registry
   { repoName :: Text,
     repoDescription :: Maybe Text,
-    modules :: [RegistryEntry]
+    modules :: [RegistryEntry],
+    recipes :: [RegistryEntry]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -36,6 +37,8 @@ data Registry = Registry
 data RepoContents
   = -- | Repo root has @module.dhall@ (single module)
     SingleModule FilePath
+  | -- | Repo root has @recipe.dhall@ (single recipe)
+    SingleRecipe FilePath
   | -- | Repo root has @seihou-registry.dhall@
     MultiModule Registry
   | -- | Neither found
@@ -52,6 +55,7 @@ discoverRepoContents ::
 discoverRepoContents evalRegistry repoRoot = do
   let registryFile = repoRoot </> "seihou-registry.dhall"
       moduleFile = repoRoot </> "module.dhall"
+      recipeFile = repoRoot </> "recipe.dhall"
   hasRegistry <- doesFileExist registryFile
   if hasRegistry
     then do
@@ -63,23 +67,34 @@ discoverRepoContents evalRegistry repoRoot = do
           hasModule <- doesFileExist moduleFile
           if hasModule
             then pure (SingleModule repoRoot)
-            else pure EmptyRepo
+            else do
+              hasRecipe <- doesFileExist recipeFile
+              if hasRecipe
+                then pure (SingleRecipe repoRoot)
+                else pure EmptyRepo
     else do
       hasModule <- doesFileExist moduleFile
       if hasModule
         then pure (SingleModule repoRoot)
-        else pure EmptyRepo
+        else do
+          hasRecipe <- doesFileExist recipeFile
+          if hasRecipe
+            then pure (SingleRecipe repoRoot)
+            else pure EmptyRepo
 
 -- | Validate a registry's entries against the filesystem.
 -- Returns a list of error messages (empty means valid).
--- Checks: module name format, path safety, and that each entry's
--- directory exists and contains @module.dhall@.
+-- Checks: module name format, path safety, entry file existence,
+-- and no name collisions between modules and recipes.
 validateRegistry :: FilePath -> Registry -> IO [Text]
 validateRegistry repoRoot reg = do
-  concat <$> mapM (validateEntry repoRoot) reg.modules
+  modErrs <- concat <$> mapM (validateModuleEntry repoRoot) reg.modules
+  recErrs <- concat <$> mapM (validateRecipeEntry repoRoot) reg.recipes
+  let collisionErrs = checkNameCollisions reg.modules reg.recipes
+  pure (modErrs <> recErrs <> collisionErrs)
 
-validateEntry :: FilePath -> RegistryEntry -> IO [Text]
-validateEntry repoRoot entry = do
+validateModuleEntry :: FilePath -> RegistryEntry -> IO [Text]
+validateModuleEntry repoRoot entry = do
   let nameText = entry.name.unModuleName
       nameErrors = checkName nameText
       pathText = T.pack entry.path
@@ -100,6 +115,37 @@ validateEntry repoRoot entry = do
       | T.isPrefixOf "/" path = ["registry entry path must be relative: " <> path]
       | ".." `T.isInfixOf` path = ["registry entry path must not contain '..': " <> path]
       | otherwise = []
+
+validateRecipeEntry :: FilePath -> RegistryEntry -> IO [Text]
+validateRecipeEntry repoRoot entry = do
+  let nameText = entry.name.unModuleName
+      nameErrors = checkRecipeName nameText
+      pathText = T.pack entry.path
+      pathErrors = checkRecipePath pathText
+  let recipeDhall = repoRoot </> entry.path </> "recipe.dhall"
+  fileExists <- doesFileExist recipeDhall
+  let fileErrors =
+        if fileExists
+          then []
+          else ["registry recipe entry '" <> nameText <> "' points to missing recipe.dhall at " <> pathText]
+  pure (nameErrors <> pathErrors <> fileErrors)
+  where
+    checkRecipeName name
+      | validModuleName name = []
+      | otherwise = ["registry recipe name must match [a-z][a-z0-9-]*, got: " <> name]
+
+    checkRecipePath path
+      | T.isPrefixOf "/" path = ["registry recipe path must be relative: " <> path]
+      | ".." `T.isInfixOf` path = ["registry recipe path must not contain '..': " <> path]
+      | otherwise = []
+
+-- | Detect name collisions between module and recipe entries.
+checkNameCollisions :: [RegistryEntry] -> [RegistryEntry] -> [Text]
+checkNameCollisions mods recs =
+  let modNames = map (\e -> e.name.unModuleName) mods
+      recNames = map (\e -> e.name.unModuleName) recs
+      collisions = filter (`elem` recNames) modNames
+   in map (\n -> "name collision: '" <> n <> "' appears as both a module and a recipe") collisions
 
 -- | Check that a text matches @[a-z][a-z0-9-]*@.
 -- Duplicated from @Seihou.Core.Module.isValidModuleName@ to avoid

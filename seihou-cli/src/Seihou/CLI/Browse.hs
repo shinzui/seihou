@@ -11,7 +11,7 @@ import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
+import Seihou.Dhall.Eval (evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile)
 import Seihou.Effect.Logger (logError)
 import Seihou.Prelude
 import System.Exit (ExitCode (..), exitFailure)
@@ -50,8 +50,20 @@ handleBrowse bopts = do
             exitFailure
           Right m ->
             TIO.putStr $ formatBrowseSingleModule source m.name.unModuleName m.description
+      SingleRecipe rootDir -> do
+        let dhallFile = rootDir </> "recipe.dhall"
+        decoded <- evalRecipeFromFile dhallFile
+        case decoded of
+          Left err -> do
+            logIO LogNormal (logError $ "failed to load recipe: " <> T.pack (show err))
+            exitFailure
+          Right r ->
+            TIO.putStr $ formatBrowseSingleModule source r.name.unRecipeName r.description
       MultiModule registry -> do
-        let filtered = case bopts.browseTag of
+        let filteredMods = case bopts.browseTag of
               Nothing -> registry.modules
-              Just tag -> filter (\e -> let ts = e.tags in tag `elem` ts) registry.modules
-        TIO.putStr $ formatBrowseRegistry source registry filtered bopts.browseTag
+              Just tag -> filter (\e -> tag `elem` e.tags) registry.modules
+            filteredRecs = case bopts.browseTag of
+              Nothing -> registry.recipes
+              Just tag -> filter (\e -> tag `elem` e.tags) registry.recipes
+        TIO.putStr $ formatBrowseRegistry source registry (filteredMods ++ filteredRecs) bopts.browseTag
