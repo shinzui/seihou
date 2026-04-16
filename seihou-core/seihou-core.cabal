@@ -18,11 +18,13 @@ library
   exposed-modules:
     Seihou.Composition.Graph
     Seihou.Composition.Plan
+    Seihou.Composition.Recipe
     Seihou.Composition.Resolve
     Seihou.Core.Context
     Seihou.Core.Expr
     Seihou.Core.Install
     Seihou.Core.Module
+    Seihou.Core.Recipe
     Seihou.Core.Registry
     Seihou.Core.Scaffold
     Seihou.Core.SchemaUpgrade
@@ -106,12 +108,14 @@ test-suite seihou-core-test
   other-modules:
     Seihou.Composition.GraphSpec
     Seihou.Composition.PlanSpec
+    Seihou.Composition.RecipeSpec
     Seihou.Composition.ResolveSpec
     Seihou.Core.ContextSpec
     Seihou.Core.ExprSpec
     Seihou.Core.InstallSpec
     Seihou.Core.ListSpec
     Seihou.Core.ModuleSpec
+    Seihou.Core.RecipeSpec
     Seihou.Core.RegistrySpec
     Seihou.Core.ScaffoldSpec
     Seihou.Core.SchemaUpgradeSpec

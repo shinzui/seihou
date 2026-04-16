@@ -1,5 +1,6 @@
 module Seihou.Core.Module
   ( discoverModule,
+    discoverRunnable,
     defaultSearchPaths,
     validateModule,
     loadModule,
@@ -29,7 +30,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalModuleFromFile)
+import Seihou.Dhall.Eval (evalModuleFromFile, evalRecipeFromFile)
 import Seihou.Prelude
 import System.Directory (XdgDirectory (..), doesDirectoryExist, doesFileExist, getCurrentDirectory, getXdgDirectory, listDirectory)
 
@@ -48,6 +49,36 @@ discoverModule searchPaths name = go searchPaths
       if exists
         then pure (Right candidate)
         else go rest
+
+-- | Search for a runnable (module or recipe) by name in the given directories.
+-- For each search path, checks @module.dhall@ first (returning 'RunnableModule'),
+-- then @recipe.dhall@ (returning 'RunnableRecipe'). Returns 'ModuleNotFound'
+-- if neither is found in any search path.
+discoverRunnable :: [FilePath] -> ModuleName -> IO (Either ModuleLoadError Runnable)
+discoverRunnable searchPaths name = go searchPaths
+  where
+    nameStr = T.unpack name.unModuleName
+    go [] = pure $ Left (ModuleNotFound name searchPaths)
+    go (dir : rest) = do
+      let candidate = dir </> nameStr
+      let moduleDhall = candidate </> "module.dhall"
+      let recipeDhall = candidate </> "recipe.dhall"
+      isModule <- doesFileExist moduleDhall
+      if isModule
+        then do
+          result <- evalModuleFromFile moduleDhall
+          case result of
+            Left err -> pure (Left err)
+            Right m -> pure (Right (RunnableModule m candidate))
+        else do
+          isRecipe <- doesFileExist recipeDhall
+          if isRecipe
+            then do
+              result <- evalRecipeFromFile recipeDhall
+              case result of
+                Left err -> pure (Left err)
+                Right r -> pure (Right (RunnableRecipe r candidate))
+            else go rest
 
 -- | The three standard module search paths, in priority order:
 -- 1. @.seihou/modules/@ relative to the current directory

@@ -25,10 +25,11 @@ The name "recipe" is thematically aligned with seihou (製法, "method of produc
 - [x] Milestone 1: Haskell types for Recipe in seihou-core (Types.hs) (2026-04-15)
 - [x] Milestone 1: Dhall decoder for recipe files (Dhall/Eval.hs) (2026-04-15)
 - [x] Milestone 1: Unit tests for recipe decoding (2026-04-15)
-- [ ] Milestone 2: Runnable union type (Module or Recipe discovery)
-- [ ] Milestone 2: Update discoverModule to discoverRunnable with recipe.dhall fallback
-- [ ] Milestone 2: Recipe expansion into composition inputs
-- [ ] Milestone 2: Unit tests for discovery and expansion
+- [x] Milestone 2: Runnable union type (Module or Recipe discovery) (2026-04-15)
+- [x] Milestone 2: Update discoverModule to discoverRunnable with recipe.dhall fallback (2026-04-15)
+- [x] Milestone 2: Recipe expansion into composition inputs (2026-04-15)
+- [x] Milestone 2: Recipe validation (validateRecipe) (2026-04-15)
+- [x] Milestone 2: Unit tests for discovery, expansion, and validation (2026-04-15)
 - [ ] Milestone 3: Wire recipe path through handleRun in CLI
 - [ ] Milestone 3: Update fzf selector to show recipes with [recipe] tag
 - [ ] Milestone 3: Update seihou list to show recipes
