@@ -1,6 +1,6 @@
 # Registries and Multi-Module Repositories
 
-A Seihou **registry** lets a single git repository provide multiple modules. Instead of one `module.dhall` at the root, you create a `seihou-registry.dhall` file that lists every module in the repository with its name, path, description, and tags. Users can then browse, filter, and install individual modules — or all of them at once.
+A Seihou **registry** lets a single git repository provide multiple modules and recipes. Instead of one `module.dhall` at the root, you create a `seihou-registry.dhall` file that lists every module and recipe in the repository with its name, path, description, and tags. Users can then browse, filter, and install individual items — or all of them at once.
 
 This guide covers the registry format, how to create a multi-module repository, and how users interact with it via the CLI. For single-module repositories, see the [Getting Started Guide](getting-started.md).
 
@@ -36,6 +36,9 @@ my-templates/
 │       ├── module.dhall
 │       └── files/
 │           └── ...
+└── recipes/
+    └── haskell-library/
+        └── recipe.dhall       # Recipe composing modules above
 ```
 
 Each module is a standard Seihou module directory (containing `module.dhall` and `files/`). The `seihou-registry.dhall` file at the root tells Seihou where to find them.
@@ -65,6 +68,13 @@ Module directories can be organized however you like — flat, nested under `mod
     , tags = [ "ci", "github" ]
     }
   ]
+, recipes =
+  [ { name = "haskell-library"
+    , path = "recipes/haskell-library"
+    , description = Some "Haskell library with Nix + Cabal"
+    , tags = [ "haskell", "nix" ]
+    }
+  ]
 }
 ```
 
@@ -82,6 +92,8 @@ Module directories can be organized however you like — flat, nested under `mod
 | `path` | Text | Relative path from the repository root to the module directory. Must not start with `/` or contain `..`. |
 | `description` | Optional Text | Human-readable description shown in browse output. |
 | `tags` | List Text | Tags for filtering. Users can filter with `--tag` when browsing. |
+
+**recipes** (List, optional): Recipe entries, using the same format as module entries. Each entry points to a directory containing `recipe.dhall` instead of `module.dhall`. The `recipes` field defaults to an empty list, so existing registry files without it continue to work. Module and recipe names share a namespace — no name may appear in both lists.
 
 
 ## Browsing a repository
@@ -130,7 +142,7 @@ Available modules:
   seihou install https://github.com/user/my-templates.git --all
 ```
 
-### Single-module repositories
+### Single-module and single-recipe repositories
 
 If the repository has no `seihou-registry.dhall` but has a `module.dhall` at the root, browse shows a simpler output:
 
@@ -141,6 +153,8 @@ haskell-base
 Single-module repository. Install with:
   seihou install https://github.com/user/haskell-base.git
 ```
+
+Similarly, repositories containing a `recipe.dhall` (but no `module.dhall` or registry) are detected as single-recipe repositories.
 
 
 ## Installing from a registry
@@ -259,7 +273,8 @@ When Seihou loads a `seihou-registry.dhall`, it validates each entry:
 
 - **Name format**: Must match `[a-z][a-z0-9-]*`.
 - **Path safety**: Must be a relative path (no leading `/`) and must not contain `..`.
-- **Module existence**: The path must contain a `module.dhall` file.
+- **Module existence**: Module entries must contain `module.dhall`; recipe entries must contain `recipe.dhall`.
+- **No name collisions**: No name may appear in both `modules` and `recipes` lists (they share a namespace).
 
 If the registry file exists but fails to parse, Seihou falls back to checking for a root `module.dhall`. If neither is found, the repository is reported as empty.
 
@@ -270,7 +285,8 @@ When Seihou examines a cloned repository, it checks in this order:
 
 1. **seihou-registry.dhall** — If present and valid, the repo is treated as a multi-module registry.
 2. **module.dhall** (at root) — If present, the repo is treated as a single-module repository.
-3. **Neither** — The repo is empty and Seihou reports an error.
+3. **recipe.dhall** (at root) — If present, the repo is treated as a single-recipe repository.
+4. **None of the above** — The repo is empty and Seihou reports an error.
 
 The registry file always takes precedence. If both `seihou-registry.dhall` and a root `module.dhall` exist, only the registry is used. If the registry file exists but fails to parse, Seihou falls back to the root `module.dhall`.
 

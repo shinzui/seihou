@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Status** | Implemented |
-| **Updated** | 2026-04-15 |
+| **Updated** | 2026-04-16 |
 | **Created** | 2026-03-01 |
 | **Subsystem** | Core |
 
@@ -63,7 +63,7 @@ CLI input
 
 **Config Resolution** merges configuration from seven sources (CLI flags, environment variables, local project config, namespace config, context config, global config, module defaults) into a single resolved configuration map. Each value retains provenance metadata for the `--explain` feature. The active context is resolved from `--context` flag, `SEIHOU_CONTEXT` env var, `.seihou/context` file, or `~/.config/seihou/default-context`.
 
-**Module Loading** evaluates Dhall module definitions into typed Haskell values. When multiple modules are composed, their dependency graph is resolved via topological sort to determine execution order.
+**Module Loading** evaluates Dhall module definitions into typed Haskell values. When multiple modules are composed, their dependency graph is resolved via topological sort to determine execution order. If the name resolves to a recipe (`recipe.dhall`), it is expanded into its constituent modules before entering the composition pipeline.
 
 **Variable Resolution** walks each module's variable declarations and resolves values from the merged config. Type checking and validation (required, pattern, range) happen here. Cross-module variable references are resolved through explicit exports.
 
@@ -120,11 +120,12 @@ seihou/
 │   └── src/
 │       └── Seihou/
 │           ├── Core/
-│           │   ├── Types.hs       # Module, VarDecl, Step, Operation, Removal, RemovalStep, etc.
+│           │   ├── Types.hs       # Module, Recipe, VarDecl, Step, Operation, Removal, etc.
 │           │   ├── Variable.hs    # Resolution, validation, coercion
-│           │   ├── Module.hs      # Loading, validation, discovery
+│           │   ├── Module.hs      # Loading, validation, discovery (discoverRunnable)
+│           │   ├── Recipe.hs      # Recipe validation (validateRecipe)
 │           │   ├── Expr.hs        # Expression language AST and evaluator
-│           │   ├── Registry.hs    # Multi-module repository support
+│           │   ├── Registry.hs    # Multi-module repository support (modules + recipes)
 │           │   ├── Version.hs     # Semantic version parsing and comparison
 │           │   ├── Install.hs     # Module name parsing from URLs
 │           │   ├── Status.hs      # Tracked file status computation
@@ -143,7 +144,8 @@ seihou/
 │           ├── Composition/
 │           │   ├── Graph.hs       # Dependency graph, topological sort
 │           │   ├── Resolve.hs     # Module loading, variable resolution
-│           │   └── Plan.hs        # Multi-module plan merging
+│           │   ├── Plan.hs        # Multi-module plan merging
+│           │   └── Recipe.hs      # Recipe expansion (expandRecipe)
 │           ├── Manifest/
 │           │   ├── Types.hs       # Manifest, FileRecord, JSON serialization
 │           │   └── Hash.hs        # SHA256 content hashing
@@ -176,6 +178,7 @@ seihou/
 │           │   ├── Diff.hs        # seihou diff handler
 │           │   ├── List.hs        # seihou list handler
 │           │   ├── NewModule.hs   # seihou new-module handler
+│           │   ├── NewRecipe.hs  # seihou new-recipe handler
 │           │   ├── Validate.hs    # seihou validate-module handler
 │           │   ├── Config.hs      # seihou config handler
 │           │   ├── Context.hs     # seihou context handler

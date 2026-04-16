@@ -1,6 +1,6 @@
 # Getting Started with Seihou
 
-Seihou (製法) is a composable, type-safe project scaffolding system. You define reusable **modules** — directories containing a Dhall definition and template files — then run `seihou run <module>` to generate projects. Seihou resolves variables from multiple sources, compiles a generation plan, and writes files to disk, tracking everything in a manifest for incremental updates.
+Seihou (製法) is a composable, type-safe project scaffolding system. You define reusable **modules** — directories containing a Dhall definition and template files — then run `seihou run <module>` to generate projects. You can also define **recipes** — named compositions of modules that bundle multiple modules into a single runnable name. Seihou resolves variables from multiple sources, compiles a generation plan, and writes files to disk, tracking everything in a manifest for incremental updates.
 
 This guide walks you through the complete workflow: initializing Seihou, creating a module from scratch, generating a project, and inspecting the results. By the end, you will have used every major CLI command.
 
@@ -397,9 +397,9 @@ seihou vars my-haskell --explain --var project.name=demo-app
 The `--explain` flag shows the provenance of each resolved variable — whether it came from a CLI flag, environment variable, config file, or module default. This is invaluable for debugging variable resolution in complex setups.
 
 
-## Step 10: List available modules
+## Step 10: List available modules and recipes
 
-To see all modules Seihou can find across its search paths:
+To see all modules and recipes Seihou can find across its search paths:
 
 ```sh
 seihou list
@@ -411,14 +411,15 @@ Seihou searches three locations in order:
 2. **User modules**: `~/.config/seihou/modules/`
 3. **Installed modules**: `~/.config/seihou/installed/`
 
-Output shows each module with its name, description, and source:
+Output shows each item with its name, description, and source. Recipes are distinguished with a `[recipe]` tag:
 
 ```
-Available modules:
+Available modules and recipes:
 
-  my-haskell   A Haskell project template   (user)
+  my-haskell        A Haskell project template   (user)
+  haskell-library   Haskell with Nix + Cabal     (installed: my-templates v1.0.0 [recipe])
 
-1 module found (3 sources searched)
+2 modules found (3 sources searched)
 ```
 
 To make your module available everywhere, move it to `~/.config/seihou/modules/`:
@@ -438,10 +439,24 @@ seihou install https://github.com/user/haskell-nix-module.git
 
 This clones the repository, validates its `module.dhall`, and copies it to `~/.config/seihou/installed/<name>/`. Use `--name` to override the installed module name.
 
-Repositories can also provide multiple modules via a **registry**. Use `seihou browse` to preview what's available, and `--module` or `--all` with `seihou install` to select which modules to install. See the [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) guide for details.
+Repositories can also provide multiple modules and recipes via a **registry**. Use `seihou browse` to preview what's available, and `--module` or `--all` with `seihou install` to select which modules to install. Single-recipe repos (containing `recipe.dhall` at the root) are also supported. See the [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) guide for details.
 
 
 ## Other commands
+
+### Recipes: named module compositions
+
+Instead of remembering `-m` flags, you can create a **recipe** — a `recipe.dhall` file that names a set of modules:
+
+```sh
+# Scaffold a recipe
+seihou new-recipe haskell-library --module haskell-base --module nix-flake
+
+# Run it — automatically expands to its constituent modules
+seihou run haskell-library
+```
+
+Recipes are first-class: they appear in `seihou list` (with a `[recipe]` tag), are installable from git repos, and are selectable from the fzf picker. See the [Module Authoring Reference](module-authoring.md#recipes) for the full recipe format.
 
 ### `seihou run` with composition
 
@@ -550,6 +565,6 @@ seihou help contexts     # learn about context-based config
 
 ## Next steps
 
-- Read the [Module Authoring Reference](module-authoring.md) for the complete module format, all four generation strategies, variable types, the expression language, and composition patterns.
-- Read [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) to learn how to publish multiple modules from a single git repository.
-- Explore the test fixtures at `seihou-core/test/fixtures/` for working examples of multi-module composition (`haskell-with-nix`), structured output (`structured-basic`), and shell commands (`command-test`).
+- Read the [Module Authoring Reference](module-authoring.md) for the complete module format, all four generation strategies, variable types, the expression language, composition patterns, and recipes.
+- Read [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) to learn how to publish multiple modules and recipes from a single git repository.
+- Explore the test fixtures at `seihou-core/test/fixtures/` for working examples of multi-module composition (`haskell-with-nix`), structured output (`structured-basic`), shell commands (`command-test`), and recipes (`haskell-with-nix-recipe`).

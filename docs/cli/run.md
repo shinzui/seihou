@@ -34,9 +34,11 @@ seihou run [MODULE] [OPTIONS]
 
 ## Description
 
-Loads the specified module and its dependencies, resolves all variables, compiles a generation plan, and executes it in the current directory.
+Loads the specified module (or recipe) and its dependencies, resolves all variables, compiles a generation plan, and executes it in the current directory.
 
-Handles multiple module composition with explicit layering. Manages manifest state (`.seihou/manifest.json`) for incrementality, tracking new, modified, unchanged, and conflicting files.
+If the given name resolves to a **recipe** (a directory containing `recipe.dhall`), Seihou transparently expands it into its constituent modules. The first module in the recipe becomes the primary module, the rest become additional modules, and any variable bindings declared in the recipe are merged with CLI `--var` overrides (CLI wins on conflict). The log shows `Recipe '<name>' expanding to N modules`.
+
+Handles multiple module composition with explicit layering. Manages manifest state (`.seihou/manifest.json`) for incrementality, tracking new, modified, unchanged, and conflicting files. When a recipe is used, recipe provenance (name and version) is recorded in the manifest.
 
 ### Commit integration
 
@@ -73,4 +75,7 @@ seihou run haskell-project --commit
 
 # Run and commit with a fixed message
 seihou run haskell-project --commit-message "scaffold initial project"
+
+# Run a recipe (transparently expands to its modules)
+seihou run haskell-library
 ```

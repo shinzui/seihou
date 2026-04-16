@@ -3,12 +3,51 @@
 ## Last Reviewed Commit
 
 ```
-ee892a4 Add mori repo-id
+0d79a1c Add recipe provenance to manifest and status output (Milestone 5)
 ```
 
 ---
 
 ## Changelog
+
+### 2026-04-16 (recipes, status --check-updates)
+
+**Reviewed commits:** `ee892a4` through `0d79a1c`
+
+- Added `docs/cli/new-recipe.md` — CLI reference for the new `seihou new-recipe` command
+- Updated `docs/cli/run.md` — documented transparent recipe detection, expansion, and manifest provenance
+- Updated `docs/cli/list.md` — documented `[recipe]` tag on recipe entries in output
+- Updated `docs/cli/install.md` — documented single-recipe repo detection and registry recipe entries
+- Updated `docs/cli/browse.md` — documented recipe entries from registries and single-recipe repos
+- Updated `docs/cli/status.md` — documented recipe provenance display, `--check-updates` flag with update annotations
+- Updated `docs/user/getting-started.md` — added recipes overview, `seihou new-recipe` in "Other commands", recipe in fzf/list output examples
+- Updated `docs/user/module-authoring.md` — added full "Recipes" section with recipe.dhall format, fields, creation, running, validation, and comparison table; updated module search paths to cover recipes
+- Updated `docs/user/registries-and-multi-module-repos.md` — added `recipes` field to registry format, single-recipe repos in discovery order, name collision validation
+- Updated `docs/dev/architecture/overview.md` — added `Recipe.hs`, `Recipe.hs` (Composition), `NewRecipe.hs` to project tree; noted recipe expansion in pipeline
+- Updated `docs/dev/design/proposed/cli-commands.md`:
+  - Command ADT now includes `NewRecipe NewRecipeOpts`, `Status StatusOpts`, `SchemaUpgrade SchemaUpgradeOpts`
+  - Added `NewRecipeOpts`, `StatusOpts` type definitions
+  - Added `seihou new-recipe` command specification section
+  - Updated `seihou run` with recipe support note
+  - Updated parser tree to include `new-recipe`
+  - Command count bumped from nineteen to twenty
+- Updated `docs/dev/design/proposed/manifest-and-incrementality.md` — added `AppliedRecipe` type, `recipe` field to manifest schema JSON example
+- Updated `docs/dev/design/proposed/module-system.md` — added `Runnable` type and `discoverRunnable` to discovery section
+- Updated `docs/dev/roadmap/v1-milestones.md` — added M15 (Status Update Checks) and M16 (Recipes)
+
+**Features documented:**
+- **Recipes** — Named, reusable module compositions declared in `recipe.dhall` files. Transparent expansion via `seihou run`, first-class in `list`, `install`, `browse`, `status`, and fzf. Authored with `seihou new-recipe`. Registry support via `recipes` field in `seihou-registry.dhall`. Manifest tracks recipe provenance (`AppliedRecipe`).
+- **`seihou status --check-updates`** — Annotates each applied module with its update status (up to date, outdated, unversioned, unreachable) by checking source registries over the network.
+
+**No documentation needed:**
+- `562f460` Upgrade mori.dhall to use schema record completion defaults (tooling/meta)
+- `60e792d` Fix use-after-free in checkSource temp-dir lifetime (bug fix)
+- `6510055` Record ExecPlan #5 outcomes for status --check-updates (plan doc)
+- `468a07c` Extract checkInstalledModulesForUpdates from handleOutdated (internal refactoring)
+- `ee9da40` Add master-plan seihou module with skill and spec (tooling)
+- `d5bc82c` Sync docs with kit, install history, list filters, run --commit, and version-required features (already a doc commit)
+
+---
 
 ### 2026-04-15 (kit, install history, list filters, run --commit, version required, status versions)
 

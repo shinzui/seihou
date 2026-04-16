@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Implemented |
 | **Created** | 2026-03-01 |
-| **Updated** | 2026-03-20 |
+| **Updated** | 2026-04-16 |
 | **Subsystem** | Core — Module Loading |
 
 ## Overview
@@ -240,13 +240,21 @@ Each entry points to a subdirectory containing a standard module (`module.dhall`
 
 ### Discovery
 
-Modules are located via a search path:
+Modules and recipes are located via a search path:
 
 1. **Local project modules**: `.seihou/modules/` in the current project
 2. **User modules**: `~/.config/seihou/modules/`
 3. **Installed modules**: `~/.config/seihou/installed/<name>/` (from `seihou install`)
 
 The first match wins. Explicit paths (`seihou run ./path/to/module`) bypass discovery.
+
+For each search path, `discoverRunnable` checks in order: `module.dhall` (returns `RunnableModule`), then `recipe.dhall` (returns `RunnableRecipe`). Modules always take priority over recipes in the same directory. The existing `discoverModule` function is retained for internal use by `loadComposition` (dependencies are always modules, not recipes).
+
+```haskell
+data Runnable
+  = RunnableModule Module FilePath
+  | RunnableRecipe Recipe FilePath
+```
 
 ### Loading Pipeline
 

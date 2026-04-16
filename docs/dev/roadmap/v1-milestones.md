@@ -4,7 +4,7 @@
 |---|---|
 | **Status** | Done |
 | **Created** | 2026-03-01 |
-| **Updated** | 2026-03-20 |
+| **Updated** | 2026-04-16 |
 
 ## Overview
 
@@ -29,6 +29,8 @@ V1 of Seihou delivers a complete, usable project scaffolding system: module load
 | M12 | Fzf Integration | Done | Interactive module, registry, and context selection via fzf |
 | M13 | Agent Commands | Done | agent assist, agent bootstrap, agent setup |
 | M14 | Version & Upgrades | Done | Version type, outdated command, upgrade command |
+| M15 | Status Update Checks | Done | `--check-updates` flag on status command |
+| M16 | Recipes | Done | Named module compositions, recipe.dhall, new-recipe, registry recipes, manifest provenance |
 
 ## M0 — Project Bootstrap
 

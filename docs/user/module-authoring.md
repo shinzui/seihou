@@ -535,15 +535,86 @@ when = Some "Eq project.description \"My Project\""
 Variable names in expressions use the pattern `[a-zA-Z][a-zA-Z0-9._-]*`. Values can be bare words or quoted strings.
 
 
+## Recipes
+
+A **recipe** is a named, reusable composition of modules. Instead of composing modules with `-m` flags every time, you declare the combination once in a `recipe.dhall` file and run `seihou run <recipe-name>`.
+
+The name "recipe" aligns with seihou (製法, "method of production / recipe"): modules are ingredients, recipes describe how to combine them.
+
+### The recipe.dhall format
+
+```dhall
+{ name = "haskell-library"
+, version = Some "1.0.0"
+, description = Some "Haskell library with Nix integration"
+, modules =
+  [ { module = "haskell-base", vars = [] : List { name : Text, value : Text } }
+  , { module = "nix-flake", vars = [ { name = "nix.system", value = "aarch64-darwin" } ] }
+  ]
+, vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }
+, prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }
+}
+```
+
+### Recipe fields
+
+**name** (Text, required): The recipe identifier. Must match `[a-z][a-z0-9-]*`. Shares a namespace with modules — `seihou run foo` auto-detects whether `foo` is a module or recipe.
+
+**version** (Optional Text): Semantic version string.
+
+**description** (Optional Text): Human-readable description shown by `seihou list`.
+
+**modules** (List, required): The modules to compose, using the same `{ module, vars }` record format as module dependencies. The first module becomes the "primary" for namespace derivation. Variable bindings in `vars` are pre-configured values that act like CLI `--var` overrides.
+
+**vars** (List): Recipe-level variable declarations injected into variable resolution.
+
+**prompts** (List): Recipe-level interactive prompts.
+
+### Creating a recipe
+
+Use `seihou new-recipe` to scaffold a recipe:
+
+```sh
+seihou new-recipe haskell-library --module haskell-base --module nix-flake
+```
+
+This creates `haskell-library/recipe.dhall` with the listed modules pre-populated.
+
+### Running a recipe
+
+```sh
+seihou run haskell-library
+```
+
+Seihou detects that `haskell-library` is a recipe (directory contains `recipe.dhall`), expands it into its constituent modules, and runs the existing composition pipeline. Recipe variable bindings are merged with any CLI `--var` overrides (CLI wins on conflict).
+
+### Recipes vs dependencies vs -m flags
+
+| Approach | When to use |
+|----------|-------------|
+| `dependencies` in module.dhall | Module B always needs module A |
+| `-m` flags | Ad-hoc composition for a single run |
+| Recipe | Reusable, shareable named composition |
+
+### Recipe validation
+
+Recipes are validated with these rules:
+
+1. Name matches `[a-z][a-z0-9-]*`
+2. At least one module listed
+3. No duplicate module names
+4. Variable binding names match `[a-z][a-z0-9.-]*`
+
+
 ## Module search paths
 
-Seihou discovers modules from three directories, searched in order:
+Seihou discovers modules and recipes from three directories, searched in order:
 
 1. **Project-local**: `.seihou/modules/` relative to the current working directory
 2. **User modules**: `~/.config/seihou/modules/`
 3. **Installed modules**: `~/.config/seihou/installed/`
 
-A directory is recognized as a module if it contains a `module.dhall` file. Use `seihou list` to see all discovered modules and their sources.
+A directory is recognized as a module if it contains a `module.dhall` file, or as a recipe if it contains a `recipe.dhall` file. Modules take priority: if both exist, the `module.dhall` is used. Use `seihou list` to see all discovered modules and recipes and their sources.
 
 
 ## Validation

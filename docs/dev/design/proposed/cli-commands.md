@@ -4,12 +4,12 @@
 |---|---|
 | **Status** | Implemented |
 | **Created** | 2026-03-01 |
-| **Updated** | 2026-04-15 |
+| **Updated** | 2026-04-16 |
 | **Subsystem** | CLI |
 
 ## Overview
 
-Seihou exposes nineteen commands, covering the core generation loop (including module removal), module authoring, configuration management, context management, module discovery, version management, agent-assisted workflows, Claude Code skill/subagent management (`kit`), help, and shell completions. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
+Seihou exposes twenty commands, covering the core generation loop (including module removal), module and recipe authoring, configuration management, context management, module discovery, version management, agent-assisted workflows, Claude Code skill/subagent management (`kit`), help, and shell completions. The CLI is built with `optparse-applicative` and follows standard Unix conventions for exit codes, error output, and flag parsing.
 
 ## Motivation
 
@@ -27,7 +27,7 @@ The CLI is the primary interface to Seihou. It must support:
 | Decision | Choice | Rationale |
 |---|---|---|
 | CLI framework | optparse-applicative | Standard Haskell, composable, auto-generated --help |
-| V1 commands | init, run, remove, vars, install, status, diff, list, new-module, validate-module, config, context, browse, outdated, upgrade, agent, kit, help, completions | Core loop + removal + authoring + config + context + discovery + version management + agent + kit + help + completions |
+| V1 commands | init, run, remove, vars, install, status, diff, list, new-module, new-recipe, validate-module, config, context, browse, outdated, upgrade, agent, kit, help, completions | Core loop + removal + authoring (modules + recipes) + config + context + discovery + version management + agent + kit + help + completions |
 | Variable passing | `--var key=value` | Explicit, composable, scriptable |
 | Output format | Human-readable by default | Primary audience is interactive use |
 | Dry run | `--dry-run` flag on `run` | Safety net; shows plan without executing |
@@ -43,18 +43,20 @@ data Command
   | Remove RemoveOpts
   | Vars VarsOpts
   | Install InstallOpts
-  | Status
+  | Status StatusOpts
   | Diff
   | List ListOpts
   | NewModule NewModuleOpts
+  | NewRecipe NewRecipeOpts
   | ValidateModule ValidateOpts
   | Config ConfigOpts
   | Context ContextAction
   | Browse BrowseOpts
   | Outdated OutdatedOpts
   | Upgrade UpgradeOpts
-  | Agent AgentOpts
+  | SchemaUpgrade SchemaUpgradeOpts
   | Kit KitCommand
+  | Agent AgentOpts
   | HelpCmd HelpCommand
   | Completions CompletionsCommand
   deriving stock (Eq, Show, Generic)
@@ -153,6 +155,18 @@ data InstallOpts = InstallOpts
 data NewModuleOpts = NewModuleOpts
   { newModuleName :: Text
   , newModulePath :: Maybe FilePath      -- Output directory (default: current dir)
+  }
+  deriving stock (Eq, Show, Generic)
+
+data NewRecipeOpts = NewRecipeOpts
+  { newRecipeName    :: Text
+  , newRecipeModules :: [Text]           -- Modules to include (--module)
+  , newRecipePath    :: Maybe FilePath   -- Output directory (default: current dir)
+  }
+  deriving stock (Eq, Show, Generic)
+
+data StatusOpts = StatusOpts
+  { statusCheckUpdates :: Bool           -- --check-updates / -u
   }
   deriving stock (Eq, Show, Generic)
 
@@ -266,8 +280,12 @@ stripped. If `claude` is unavailable or returns an empty message, Seihou
 falls back to a deterministic message naming the applied modules. Outside
 a git repository, `--commit` emits a warning and does nothing.
 
+**Recipe support**:
+
+If the resolved name is a recipe (`recipe.dhall` found instead of `module.dhall`), `handleRun` calls `expandRecipe` to produce primary module, additional modules, and variable overrides. These are merged into the existing run options before entering the composition pipeline. Recipe provenance is recorded in the manifest via `AppliedRecipe`.
+
 **Execution flow**:
-1. Resolve module(s) via discovery
+1. Resolve module(s) via discovery (including recipe detection via `discoverRunnable`)
 2. Build composition graph, topological sort
 3. Resolve all variables (prompt for missing required vars interactively)
 4. Prompt for optional variables that have prompts defined (interactive only)
@@ -652,6 +670,36 @@ in Module::{
 |---|---|
 | 0 | Success |
 | 1 | Invalid module name |
+| 4 | Directory already exists or filesystem error |
+
+---
+
+### `seihou new-recipe <name>`
+
+Scaffold a new recipe directory with boilerplate.
+
+```sh
+seihou new-recipe <name> [--module <mod>...] [--path <directory>]
+```
+
+**Arguments**:
+| Argument | Required | Description |
+|---|---|---|
+| `<name>` | Yes | Recipe name |
+| `--module <mod>` | No | Module to include (repeatable) |
+| `--path <dir>` | No | Output directory (default: `./<name>/`) |
+
+**What it generates**:
+```text
+<name>/
+└── recipe.dhall          # Boilerplate recipe definition
+```
+
+**Exit codes**:
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Invalid recipe name |
 | 4 | Directory already exists or filesystem error |
 
 ---
@@ -1076,6 +1124,7 @@ commandParser = subparser
   <> command "diff" diffInfo
   <> command "list" listInfo
   <> command "new-module" newModuleInfo
+  <> command "new-recipe" newRecipeInfo
   <> command "validate-module" validateInfo
   <> command "config" configInfo
   <> command "context" contextInfo

@@ -1,6 +1,6 @@
 # seihou install
 
-Install modules from a git repository.
+Install modules and recipes from a git repository.
 
 ## Usage
 
@@ -24,12 +24,18 @@ seihou install [GIT-URL] [OPTIONS]
 
 ## Description
 
-Clones the git repository and installs modules to
+Clones the git repository and installs modules and recipes to
 `~/.config/seihou/installed/<name>/`.
 
-Handles both single-module repos (containing `module.dhall`) and multi-module
-registries (containing `seihou-registry.dhall`). If neither `--module` nor
-`--all` is specified for a registry, an interactive picker is shown.
+Handles three repository types:
+
+- **Single-module** repos (containing `module.dhall` at the root)
+- **Single-recipe** repos (containing `recipe.dhall` at the root)
+- **Multi-module registries** (containing `seihou-registry.dhall`)
+
+For registries, both module and recipe entries are presented for selection.
+If neither `--module` nor `--all` is specified, an interactive picker is shown.
+The `--all` flag installs all modules and recipes from the registry.
 
 ### Install history
 

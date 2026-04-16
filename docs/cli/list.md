@@ -1,6 +1,6 @@
 # seihou list
 
-List available modules.
+List available modules and recipes.
 
 ## Usage
 
@@ -17,17 +17,20 @@ seihou list [OPTIONS]
 
 ## Description
 
-Scans all module search paths and lists every available module with:
+Scans all module search paths and lists every available module and recipe with:
 
-- Module name
+- Name
 - Description
 - Source location (project, user, or installed)
 
-Installed modules show their origin repository and version when that
-information is recorded in `.seihou-origin.json`, e.g.
-`(installed: seihou-haskell v1.2.0)`.
+Recipes are shown with a `[recipe]` suffix on their source label to
+distinguish them from modules.
 
-Modules that fail to load are shown with an error indicator.
+Installed modules and recipes show their origin repository and version when
+that information is recorded in `.seihou-origin.json`, e.g.
+`(installed: seihou-haskell v1.2.0 [recipe])`.
+
+Items that fail to load are shown with an error indicator.
 
 ### Filters
 

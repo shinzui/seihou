@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Status** | Implemented |
-| **Updated** | 2026-03-20 |
+| **Updated** | 2026-04-16 |
 | **Created** | 2026-03-01 |
 | **Subsystem** | Core — Manifest |
 
@@ -85,6 +85,11 @@ Without state tracking, a scaffolding tool can only do one-shot generation. Re-r
       "strategy": "dhall-text",
       "generatedAt": "2026-03-01T10:30:00Z"
     }
+  },
+  "recipe": {
+    "name": "haskell-library",
+    "recipeVersion": "1.0.0",
+    "appliedAt": "2026-03-01T10:30:00Z"
   }
 }
 ```
@@ -98,6 +103,14 @@ data Manifest = Manifest
   , manifestModules   :: [AppliedModule]
   , manifestVars      :: Map VarName Text    -- Serialized variable values
   , manifestFiles     :: Map FilePath FileRecord
+  , manifestRecipe    :: Maybe AppliedRecipe -- Recipe provenance (Nothing for bare module runs)
+  }
+  deriving stock (Eq, Show, Generic)
+
+data AppliedRecipe = AppliedRecipe
+  { name          :: RecipeName
+  , recipeVersion :: Maybe Text
+  , appliedAt     :: UTCTime
   }
   deriving stock (Eq, Show, Generic)
 
