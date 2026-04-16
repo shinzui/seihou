@@ -27,6 +27,7 @@ module Seihou.Core.Types
     ModuleLoadError (..),
     Manifest (..),
     AppliedModule (..),
+    AppliedRecipe (..),
     FileRecord (..),
     SHA256 (..),
     DiffResult (..),
@@ -330,7 +331,16 @@ data Manifest = Manifest
     genAt :: UTCTime,
     modules :: [AppliedModule],
     vars :: Map VarName Text,
-    files :: Map FilePath FileRecord
+    files :: Map FilePath FileRecord,
+    recipe :: Maybe AppliedRecipe
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Recipe provenance recorded in the manifest when a recipe is used.
+data AppliedRecipe = AppliedRecipe
+  { name :: RecipeName,
+    recipeVersion :: Maybe Text,
+    appliedAt :: UTCTime
   }
   deriving stock (Eq, Show, Generic)
 

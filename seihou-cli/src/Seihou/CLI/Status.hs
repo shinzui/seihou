@@ -80,6 +80,16 @@ renderStatus color manifest tracked mEntries = do
         Just es -> Map.fromList [(e.moduleName, e) | e <- es]
         Nothing -> Map.empty
 
+  -- Recipe provenance
+  case manifest.recipe of
+    Just ar -> do
+      TIO.putStrLn $
+        "Recipe: "
+          <> ar.name.unRecipeName
+          <> maybe "" (\v -> " v" <> v) ar.recipeVersion
+      TIO.putStrLn ""
+    Nothing -> pure ()
+
   -- Applied modules
   TIO.putStrLn "Applied modules:"
   if null manifest.modules

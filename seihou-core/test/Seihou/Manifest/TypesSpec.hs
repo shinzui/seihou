@@ -22,7 +22,7 @@ fixedTime2 = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-
 
 -- | Helper to set modules on a Manifest without ambiguous record update.
 withManifestModules :: [AppliedModule] -> Manifest -> Manifest
-withManifestModules mods m = Manifest m.version m.genAt mods m.vars m.files
+withManifestModules mods m = Manifest m.version m.genAt mods m.vars m.files m.recipe
 
 spec :: Spec
 spec = do
@@ -69,7 +69,8 @@ spec = do
                     [ (VarName "project.name", "my-app"),
                       (VarName "license", "MIT")
                     ],
-                files = base.files
+                files = base.files,
+                recipe = Nothing
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -120,7 +121,8 @@ spec = do
                       ( "LICENSE",
                         FileRecord (SHA256 "bbb") (ModuleName "haskell-base") Copy fixedTime
                       )
-                    ]
+                    ],
+                recipe = Nothing
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -174,7 +176,7 @@ spec = do
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
       let base = emptyManifest fixedTime
-          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files}
+          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files, recipe = Nothing}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"

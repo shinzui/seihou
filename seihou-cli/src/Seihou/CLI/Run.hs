@@ -77,7 +77,7 @@ handleRun runOpts = do
 
   -- 0b. Recipe detection: check if the name resolves to a recipe or a module
   searchPaths <- defaultSearchPaths
-  (primaryName, allAdditional, recipeOverrides) <- do
+  (primaryName, allAdditional, recipeOverrides, recipeInfo) <- do
     runnableResult <- discoverRunnable searchPaths modName
     case runnableResult of
       Right (RunnableRecipe recipe _recipeDir) -> do
@@ -85,12 +85,12 @@ handleRun runOpts = do
         logIO level $
           logInfo $
             "Recipe '" <> recipe.name.unRecipeName <> "' expanding to " <> T.pack (show (length recipe.modules)) <> " modules"
-        pure (primary, recipeAdditional ++ additional, overrides)
+        pure (primary, recipeAdditional ++ additional, overrides, Just (recipe.name, recipe.version))
       Right (RunnableModule _ _) ->
-        pure (modName, additional, Map.empty)
+        pure (modName, additional, Map.empty, Nothing)
       Left _ ->
         -- Discovery failed — let loadComposition handle the error with its detailed message
-        pure (modName, additional, Map.empty)
+        pure (modName, additional, Map.empty, Nothing)
 
   -- 1. Load all modules in the composition (primary + additional + transitive deps)
   compositionResult <- loadComposition searchPaths primaryName allAdditional
@@ -269,12 +269,18 @@ handleRun runOpts = do
                     allResolvedVals =
                       Map.unions
                         [Map.map (.value) vs | vs <- Map.elems resolved]
+                    appliedRecipe = case recipeInfo of
+                      Just (rName, rVersion) ->
+                        Just AppliedRecipe {name = rName, recipeVersion = rVersion, appliedAt = now}
+                      Nothing -> manifest.recipe
                     newManifest =
-                      manifest
-                        { genAt = now,
+                      Manifest
+                        { version = manifest.version,
+                          genAt = now,
                           modules = allModuleEntries,
                           vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
-                          files = Map.unions [recs, keepRecords, cleanedFiles]
+                          files = Map.unions [recs, keepRecords, cleanedFiles],
+                          recipe = appliedRecipe
                         }
 
                 -- Save manifest

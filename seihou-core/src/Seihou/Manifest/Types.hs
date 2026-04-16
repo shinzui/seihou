@@ -28,7 +28,8 @@ emptyManifest now =
       genAt = now,
       modules = [],
       vars = Map.empty,
-      files = Map.empty
+      files = Map.empty,
+      recipe = Nothing
     }
 
 -- | Encode a manifest to JSON bytes.
@@ -43,13 +44,14 @@ manifestFromJSON = Aeson.eitherDecode
 
 instance ToJSON Manifest where
   toJSON m =
-    Aeson.object
+    Aeson.object $
       [ "version" .= m.version,
         "generatedAt" .= m.genAt,
         "modules" .= m.modules,
         "variables" .= varsToJSON m.vars,
         "files" .= filesToJSON m.files
       ]
+        ++ maybe [] (\r -> ["recipe" .= r]) m.recipe
 
 instance FromJSON Manifest where
   parseJSON = Aeson.withObject "Manifest" $ \o -> do
@@ -62,6 +64,22 @@ instance FromJSON Manifest where
           <*> o .: "modules"
           <*> (varsFromJSON =<< o .: "variables")
           <*> (filesFromJSON =<< o .: "files")
+          <*> o Aeson..:? "recipe"
+
+instance ToJSON AppliedRecipe where
+  toJSON ar =
+    Aeson.object $
+      [ "name" .= ar.name.unRecipeName,
+        "appliedAt" .= ar.appliedAt
+      ]
+        ++ maybe [] (\v -> ["version" .= v]) ar.recipeVersion
+
+instance FromJSON AppliedRecipe where
+  parseJSON = Aeson.withObject "AppliedRecipe" $ \o ->
+    AppliedRecipe
+      <$> (RecipeName <$> o .: "name")
+      <*> o Aeson..:? "version"
+      <*> o .: "appliedAt"
 
 instance ToJSON AppliedModule where
   toJSON am =
