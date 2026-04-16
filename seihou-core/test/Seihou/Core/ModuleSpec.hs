@@ -53,6 +53,9 @@ withModuleName n m = Module n m.version m.description m.vars m.exports m.prompts
 withModuleVars :: [VarDecl] -> Module -> Module
 withModuleVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies m.removal
 
+withModulePrompts :: [Prompt] -> Module -> Module
+withModulePrompts p m = Module m.name m.version m.description m.vars m.exports p m.steps m.commands m.dependencies m.removal
+
 hasError :: T.Text -> [T.Text] -> Bool
 hasError needle = any (T.isInfixOf needle)
 
@@ -133,10 +136,9 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
-              goodModule
-                { prompts =
-                    [Prompt {var = "nonexistent", text = "?", condition = Nothing, choices = Nothing}]
-                }
+              withModulePrompts
+                [Prompt {var = "nonexistent", text = "?", condition = Nothing, choices = Nothing}]
+                goodModule
         result <- validateModule tmpDir bad
         case result of
           Left (ValidationError _ errs) ->

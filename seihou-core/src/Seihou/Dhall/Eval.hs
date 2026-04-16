@@ -1,8 +1,10 @@
 module Seihou.Dhall.Eval
   ( evalDhallExpr,
     evalModuleFromFile,
+    evalRecipeFromFile,
     evalRegistryFromFile,
     moduleDecoder,
+    recipeDecoder,
     registryDecoder,
     registryEntryDecoder,
     varTypeDecoder,
@@ -93,6 +95,33 @@ evalModuleFromFile path = do
        in pure $ Left (DhallEvalError name (T.pack (show e)))
     Right m -> pure (Right m)
 
+-- | Evaluate a @recipe.dhall@ file and decode it into a 'Recipe' value.
+-- Returns 'Left' with a 'ModuleLoadError' if evaluation or decoding fails.
+--
+-- Follows the same pattern as 'evalModuleFromFile': uses
+-- 'inputExprWithSettings' to parse and normalize, then extracts with
+-- 'recipeDecoder'. The recipe's @modules@ field reuses 'dependencyDecoder'.
+evalRecipeFromFile :: FilePath -> IO (Either ModuleLoadError Recipe)
+evalRecipeFromFile path = do
+  result <- try $ do
+    text <- TIO.readFile path
+    let settings =
+          set rootDirectory (takeDirectory path) $
+            set sourceName path defaultInputSettings
+    expr <- inputExprWithSettings settings text
+    case extract recipeDecoder expr of
+      Success r -> do
+        -- Force lazy decoder thunks that may contain 'error' calls
+        mapM_ (\v -> evaluate v.type_) r.vars
+        mapM_ (\p -> evaluate p.condition) r.prompts
+        pure r
+      Failure e -> throwIO e
+  case result of
+    Left (e :: SomeException) ->
+      let name = guessModuleName path
+       in pure $ Left (DhallEvalError name (T.pack (show e)))
+    Right r -> pure (Right r)
+
 -- | Guess a module name from its file path by taking the parent directory name.
 guessModuleName :: FilePath -> ModuleName
 guessModuleName path =
@@ -144,6 +173,22 @@ moduleDecoder =
           <*> field "dependencies" (list dependencyDecoder)
           <*> field "removal" (maybe removalDecoder)
       )
+
+-- | Decoder for the top-level Recipe type from Dhall.
+recipeDecoder :: Decoder Recipe
+recipeDecoder =
+  record
+    ( Recipe
+        <$> field "name" recipeNameDecoder
+        <*> field "version" (maybe strictText)
+        <*> field "description" (maybe strictText)
+        <*> field "modules" (list dependencyDecoder)
+        <*> field "vars" (list varDeclDecoder)
+        <*> field "prompts" (list promptDecoder)
+    )
+
+recipeNameDecoder :: Decoder RecipeName
+recipeNameDecoder = RecipeName <$> strictText
 
 -- | Decoder for Removal from a Dhall record.
 removalDecoder :: Decoder Removal

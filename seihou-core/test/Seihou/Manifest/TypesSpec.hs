@@ -20,6 +20,10 @@ fixedTime = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-0
 fixedTime2 :: UTCTime
 fixedTime2 = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-03-01T11:00:00Z"
 
+-- | Helper to set modules on a Manifest without ambiguous record update.
+withManifestModules :: [AppliedModule] -> Manifest -> Manifest
+withManifestModules mods m = Manifest m.version m.genAt mods m.vars m.files
+
 spec :: Spec
 spec = do
   describe "emptyManifest" $ do
@@ -41,17 +45,16 @@ spec = do
 
     it "roundtrips a manifest with modules" $ do
       let m =
-            (emptyManifest fixedTime)
-              { modules =
-                  [ AppliedModule
-                      { name = ModuleName "haskell-base",
-                        source = "/home/user/.config/seihou/modules/haskell-base",
-                        moduleVersion = Nothing,
-                        appliedAt = fixedTime,
-                        removal = Nothing
-                      }
-                  ]
-              }
+            withManifestModules
+              [ AppliedModule
+                  { name = ModuleName "haskell-base",
+                    source = "/home/user/.config/seihou/modules/haskell-base",
+                    moduleVersion = Nothing,
+                    appliedAt = fixedTime,
+                    removal = Nothing
+                  }
+              ]
+              (emptyManifest fixedTime)
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
     it "roundtrips a manifest with variables" $ do
@@ -135,32 +138,30 @@ spec = do
 
     it "roundtrips a manifest with versioned modules" $ do
       let m =
-            (emptyManifest fixedTime)
-              { modules =
-                  [ AppliedModule
-                      { name = ModuleName "haskell-base",
-                        source = "/path/to/module",
-                        moduleVersion = Just "1.0.0",
-                        appliedAt = fixedTime,
-                        removal = Nothing
-                      }
-                  ]
-              }
+            withManifestModules
+              [ AppliedModule
+                  { name = ModuleName "haskell-base",
+                    source = "/path/to/module",
+                    moduleVersion = Just "1.0.0",
+                    appliedAt = fixedTime,
+                    removal = Nothing
+                  }
+              ]
+              (emptyManifest fixedTime)
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
     it "roundtrips a manifest with unversioned modules" $ do
       let m =
-            (emptyManifest fixedTime)
-              { modules =
-                  [ AppliedModule
-                      { name = ModuleName "simple-mod",
-                        source = "/path/to/mod",
-                        moduleVersion = Nothing,
-                        appliedAt = fixedTime,
-                        removal = Nothing
-                      }
-                  ]
-              }
+            withManifestModules
+              [ AppliedModule
+                  { name = ModuleName "simple-mod",
+                    source = "/path/to/mod",
+                    moduleVersion = Nothing,
+                    appliedAt = fixedTime,
+                    removal = Nothing
+                  }
+              ]
+              (emptyManifest fixedTime)
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
     it "parses old manifest without version key as Nothing" $ do

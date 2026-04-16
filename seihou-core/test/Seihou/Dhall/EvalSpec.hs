@@ -3,7 +3,7 @@ module Seihou.Dhall.EvalSpec (tests) where
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalDhallExpr, evalModuleFromFile)
+import Seihou.Dhall.Eval (evalDhallExpr, evalModuleFromFile, evalRecipeFromFile)
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -260,3 +260,83 @@ spec = do
             let dep = head m.dependencies
             dep.depModule `shouldBe` ModuleName "child-mod"
             Map.lookup (VarName "skill.name") dep.depVars `shouldBe` Just "exec-plan"
+
+  describe "evalRecipeFromFile" $ do
+    it "decodes the haskell-with-nix-recipe fixture" $ do
+      result <- evalRecipeFromFile (fixtureDir </> "haskell-with-nix-recipe" </> "recipe.dhall")
+      case result of
+        Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
+        Right r -> do
+          r.name `shouldBe` RecipeName "haskell-with-nix"
+          r.version `shouldBe` Just "1.0.0"
+          r.description `shouldBe` Just "Haskell project with Nix integration"
+          length r.modules `shouldBe` 2
+          let (m1 : m2 : _) = r.modules
+          m1.depModule `shouldBe` ModuleName "haskell-base"
+          Map.null m1.depVars `shouldBe` True
+          m2.depModule `shouldBe` ModuleName "nix-flake"
+          Map.null m2.depVars `shouldBe` True
+          r.vars `shouldBe` []
+          r.prompts `shouldBe` []
+
+    it "decodes the haskell-pinned-recipe fixture with variable bindings" $ do
+      result <- evalRecipeFromFile (fixtureDir </> "haskell-pinned-recipe" </> "recipe.dhall")
+      case result of
+        Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
+        Right r -> do
+          r.name `shouldBe` RecipeName "haskell-pinned"
+          length r.modules `shouldBe` 2
+          let (m1 : m2 : _) = r.modules
+          m1.depModule `shouldBe` ModuleName "haskell-base"
+          Map.null m1.depVars `shouldBe` True
+          m2.depModule `shouldBe` ModuleName "nix-flake"
+          Map.lookup (VarName "nix.system") m2.depVars `shouldBe` Just "aarch64-darwin"
+
+    it "returns DhallEvalError for nonexistent recipe file" $ do
+      result <- evalRecipeFromFile "/nonexistent/path/recipe.dhall"
+      case result of
+        Left (DhallEvalError _ _) -> pure ()
+        Left other -> expectationFailure ("Expected DhallEvalError, got: " <> show other)
+        Right _ -> expectationFailure "Expected Left, got Right"
+
+    it "decodes a recipe with recipe-level vars and prompts" $ do
+      withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
+        let dhall =
+              "{ name = \"prompted-recipe\"\n\
+              \, version = Some \"1.0.0\"\n\
+              \, description = Some \"Recipe with prompts\"\n\
+              \, modules =\n\
+              \  [ { module = \"base\", vars = [] : List { name : Text, value : Text } }\n\
+              \  ]\n\
+              \, vars =\n\
+              \  [ { name = \"project.name\"\n\
+              \    , type = \"text\"\n\
+              \    , default = None Text\n\
+              \    , description = Some \"Project name\"\n\
+              \    , required = True\n\
+              \    , validation = None Text\n\
+              \    }\n\
+              \  ]\n\
+              \, prompts =\n\
+              \  [ { var = \"project.name\"\n\
+              \    , text = \"What is the project name?\"\n\
+              \    , when = None Text\n\
+              \    , choices = None (List Text)\n\
+              \    }\n\
+              \  ]\n\
+              \}"
+        writeFile (tmpDir </> "recipe.dhall") dhall
+        result <- evalRecipeFromFile (tmpDir </> "recipe.dhall")
+        case result of
+          Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
+          Right r -> do
+            r.name `shouldBe` RecipeName "prompted-recipe"
+            length r.vars `shouldBe` 1
+            let v = head r.vars
+            v.name `shouldBe` VarName "project.name"
+            v.type_ `shouldBe` VTText
+            v.required `shouldBe` True
+            length r.prompts `shouldBe` 1
+            let p = head r.prompts
+            p.var `shouldBe` VarName "project.name"
+            p.text `shouldBe` "What is the project name?"

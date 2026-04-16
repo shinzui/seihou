@@ -19,6 +19,10 @@ module Seihou.Core.Types
     RemovalStep (..),
     Removal (..),
     Module (..),
+    RecipeName (..),
+    Recipe (..),
+    Runnable (..),
+    recipeNameToModuleName,
     Operation (..),
     ModuleLoadError (..),
     Manifest (..),
@@ -217,6 +221,34 @@ data Module = Module
     removal :: Maybe Removal
   }
   deriving stock (Eq, Show, Generic)
+
+-- | A recipe identifier such as @"haskell-library"@.
+-- Shares the same @[a-z][a-z0-9-]*@ namespace as 'ModuleName'.
+newtype RecipeName = RecipeName {unRecipeName :: Text}
+  deriving stock (Eq, Ord, Show, Generic)
+  deriving newtype (IsString)
+
+-- | A recipe: a named, reusable composition of modules with optional
+-- pre-configured variable bindings.
+data Recipe = Recipe
+  { name :: RecipeName,
+    version :: Maybe Text,
+    description :: Maybe Text,
+    modules :: [Dependency],
+    vars :: [VarDecl],
+    prompts :: [Prompt]
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | The result of name-based discovery: either a module or a recipe.
+data Runnable
+  = RunnableModule Module FilePath
+  | RunnableRecipe Recipe FilePath
+  deriving stock (Show)
+
+-- | Convert a 'RecipeName' to a 'ModuleName' (they share a namespace).
+recipeNameToModuleName :: RecipeName -> ModuleName
+recipeNameToModuleName (RecipeName t) = ModuleName t
 
 -- | Filesystem operations produced by the generation engine.
 data Operation
