@@ -123,21 +123,23 @@ a follow-up ExecPlan once the user has chosen a direction.
 - [x] M4: Rewrite the split flake as a single `.tpl` using Prototype C and
       assert byte-for-byte equivalence to both original outputs.
       (Done 2026-04-18; `Seihou.Evaluation.ConditionalTemplateSpec` 4/4 pass.)
-- [ ] M5: Comparative evaluation. Write
+- [x] M5: Comparative evaluation. Write
       `docs/dev/design/proposed/dhall-as-templating-evaluation.md` that
       presents the pain point, the three prototypes, and a criteria-based
       comparison (ergonomics, type-safety-in-practice vs. in-claim, error
       locality, composition, novice onboarding, `${}` collision, tooling
       support). Include short code excerpts from each prototype and a
-      pros/cons list per alternative.
-- [ ] M5: Include a "Critical feedback on the user-supplied pattern document"
+      pros/cons list per alternative. (Done 2026-04-18.)
+- [x] M5: Include a "Critical feedback on the user-supplied pattern document"
       section that honestly engages with each claim (templates-as-functions,
       typed inputs, composition, defaults/overrides, imports, and the
       "Template as Data + Interpreter" pattern) and says where it holds up
-      and where it does not, given Seihou's actual needs.
-- [ ] M6: Recommendation. In the final section of the evaluation doc, pick a
+      and where it does not, given Seihou's actual needs. (Done 2026-04-18.)
+- [x] M6: Recommendation. In the final section of the evaluation doc, pick a
       direction and justify it with the prototype evidence. Enumerate the
       concrete follow-up work (which is **not** done in this plan).
+      (Done 2026-04-18; recommendation: adopt Prototype C, inline
+      conditionals in the `Template` strategy.)
 - [ ] M6: Summarize outcomes in the Outcomes & Retrospective section of this
       plan and link to the evaluation doc.
 
