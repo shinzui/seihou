@@ -97,17 +97,20 @@ a follow-up ExecPlan once the user has chosen a direction.
       is byte-for-byte identical to the non-postgres and postgres variants
       when `nix.postgresql` flips. (Done 2026-04-18;
       `Seihou.Evaluation.DhallTextFlakeSpec` 2/2 pass.)
-- [ ] M3: Prototype B — typed-function `dhall-text`. Add an experimental
+- [x] M3: Prototype B — typed-function `dhall-text`. Add an experimental
       helper (not wired into the dispatcher) in
       `seihou-core/src/Seihou/Engine/Template.hs` or a sibling module that
       evaluates a Dhall source expected to be a `\(vars : <record type>) -> Text`
       function, then applies a record of resolved variables built from
       `Map VarName VarValue`. Write a test that shows the same flake output
-      without any `{{var}}` substitution in the source.
-- [ ] M3: Document the record-type construction: how types flow from
+      without any `{{var}}` substitution in the source. (Done 2026-04-18;
+      helper lives in `seihou-core/src/Seihou/Engine/TypedDhallText.hs`;
+      `Seihou.Evaluation.TypedDhallTextSpec` 5/5 pass.)
+- [x] M3: Document the record-type construction: how types flow from
       `VarDecl.type` (`text`, `bool`, `int`, `list text`, `choice`) to Dhall
       (`Text`, `Bool`, `Integer`, `List Text`, …). Note any types that do not
-      round-trip cleanly.
+      round-trip cleanly. (Done 2026-04-18; see the M3 notes in
+      Surprises & Discoveries.)
 - [ ] M4: Prototype C — inline conditionals in `template`. Extend the
       placeholder parser in `Seihou.Engine.Template` with
       `{{#if <expr>}}`, `{{#else}}`, `{{/if}}` blocks, reusing
@@ -196,6 +199,54 @@ Despite the friction, the prototype does solve the duplication: one
 ~100-line source replaces two ~55-line and ~68-line templates, and the
 output is byte-identical to both baselines under
 `cabal test seihou-core-test -p DhallTextFlake`.
+
+### M3 Prototype B — typed-function renderer
+
+Notes from writing
+`seihou-core/src/Seihou/Engine/TypedDhallText.hs` and its fixture at
+`seihou-core/test/fixtures/evaluation/typed-dhall-text-flake/`:
+
+- **`{{var}}` friction disappears.** The source file is a real Dhall
+  function; it is never fed through `renderTemplate`. Authors can use
+  literal `{{…}}` in comments or strings without special handling.
+  The lowercase/capital Bool problem also goes away because `True`
+  and `False` are constructed directly by the record builder, not by
+  stringifying `VarValue`.
+
+- **Field-name mapping is deterministic but surprising.** `fieldNameFor`
+  replaces `.` and `-` with `_`, so the author's lambda must refer to
+  `vars.nix_process_compose`, not `vars.nix.process-compose`. This
+  mapping is not visible to the author of the source file unless it
+  is documented in the evaluation doc. Using Dhall's backtick-quoted
+  field names (``vars.`nix.process-compose` ``) would preserve the
+  original names, at the cost of heavier syntax.
+
+- **Type errors name the offending field.** The seeded typo test in
+  `TypedDhallTextSpec` confirms that a mismatch between the lambda's
+  record type and the supplied record produces a Dhall error whose
+  text contains the offending field name. Locality is better than
+  under Prototype A because the error is against the user's *typed*
+  source rather than a string-substituted copy.
+
+- **`VarValue` → Dhall type mapping.**
+
+  | VarValue  | Dhall        | Notes                                   |
+  |-----------|--------------|-----------------------------------------|
+  | `VText`   | `Text`       | Backslash, quote, `$` escaped.          |
+  | `VBool`   | `Bool`       | Direct.                                 |
+  | `VInt`    | `Integer`    | Sign prefix (`+n` / `-n`) emitted.      |
+  | `VList a` | `List <T>`   | `<T>` inferred from first element.      |
+  | `VChoice` | `Text`       | Seihou stores Choice as a validated    |
+  |           |              | Text, so the record sees `Text`.        |
+
+  Nested lists (`VList (VList …)`) fall back to `List Text` and are a
+  known prototype limitation.
+
+- **Nix/Dhall escaping friction is identical to Prototype A.**
+  `${…}` collisions with Nix, `''…''` vs `'''…'''` for Nix multi-line
+  delimiters, and common-leading-whitespace stripping still apply,
+  because those are artifacts of Dhall's multi-line syntax — not of
+  the placeholder pipeline.
 
 
 ## Decision Log
