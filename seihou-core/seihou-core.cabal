@@ -140,6 +140,7 @@ test-suite seihou-core-test
     Seihou.Engine.SectionSpec
     Seihou.Engine.TemplateSpec
     Seihou.Engine.ValidateSpec
+    Seihou.Evaluation.DhallTextFlakeSpec
     Seihou.Evaluation.SplitFlakeSpec
     Seihou.Integration.CompositionSpec
     Seihou.Integration.ExecutionSpec

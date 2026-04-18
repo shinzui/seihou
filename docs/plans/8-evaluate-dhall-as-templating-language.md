@@ -86,15 +86,17 @@ a follow-up ExecPlan once the user has chosen a direction.
       `flake.nix.tpl` and `flake-with-postgres.nix.tpl` saved as
       `docs/dev/design/proposed/dhall-as-templating-evaluation.diff` so the
       evaluation doc can cite it verbatim. (Done 2026-04-18.)
-- [ ] M2: Prototype A — rewrite the split as a single `.dhall` source using
+- [x] M2: Prototype A — rewrite the split as a single `.dhall` source using
       the existing `dhall-text` strategy. Land it under
       `seihou-core/test/fixtures/evaluation/dhall-text-flake/`. Capture exact
       authoring friction: `${}` escaping required for Nix interpolation,
       `{{var}}` quoting rules inside Dhall source, error-message behavior when
-      a Dhall type error is introduced.
-- [ ] M2: Run the fixture through `compileDhallTextStep` and assert the output
+      a Dhall type error is introduced. (Done 2026-04-18; friction notes in
+      Surprises & Discoveries below.)
+- [x] M2: Run the fixture through `compileDhallTextStep` and assert the output
       is byte-for-byte identical to the non-postgres and postgres variants
-      when `nix.postgresql` flips.
+      when `nix.postgresql` flips. (Done 2026-04-18;
+      `Seihou.Evaluation.DhallTextFlakeSpec` 2/2 pass.)
 - [ ] M3: Prototype B — typed-function `dhall-text`. Add an experimental
       helper (not wired into the dispatcher) in
       `seihou-core/src/Seihou/Engine/Template.hs` or a sibling module that
@@ -136,7 +138,64 @@ a follow-up ExecPlan once the user has chosen a direction.
 
 ## Surprises & Discoveries
 
-(None yet.)
+### M2 Prototype A — authoring friction against real flake
+
+Working notes captured while writing
+`seihou-core/test/fixtures/evaluation/dhall-text-flake/files/flake.nix.dhall`:
+
+- **`{{…}}` in comments also substitutes.** `renderTemplate` runs line-by-line
+  across the entire Dhall source, including `--` comments. The first draft
+  mentioned `{{var}}` in a docstring and the test failed with
+  `unresolved placeholder '{{var}}' at line 6`. The Dhall source can't
+  contain the literal four-character sequence `{{…}}` anywhere — not in
+  comments, not in strings — unless a matching variable is in scope. You
+  can escape with `\{{` per `Seihou.Engine.Template`, but the rule is
+  non-obvious for a new author.
+
+- **Seihou renders `Bool` in lowercase; Dhall Bool literals are capitalised.**
+  `Seihou.Engine.Template.valueToText` converts `VBool True` to the text
+  `"true"`. After substitution `let nixPostgresql = {{nix.postgresql}}`
+  becomes `let nixPostgresql = true`, which Dhall rejects with
+  `Unbound variable: true`. The workaround is a pair of shim bindings
+  `let true = True let false = False` at the top of the file. No error in
+  `Seihou.Engine.Plan.compileDhallTextStep` warns the author about this.
+
+- **Every Nix `${…}` interpolation must be escaped.** Nix uses `${…}` the
+  same way Dhall does, and the flake has two: `pre-commit-hooks.lib.${system}`
+  and `${self.checks.${system}.pre-commit-check.shellHook}`. Both had to be
+  written as `''${…}` inside the outer Dhall `''…''` multi-line. One missed
+  escape during the first draft produced
+  `Unbound variable: system` at an unrelated line, because Dhall tried to
+  evaluate `system` as if it were a Dhall identifier.
+
+- **Nix multi-line delimiters `''…''` must be written as `'''…'''` in
+  Dhall.** The flake's `shellHook = '' … ''` becomes
+  `shellHook = ''' … ''';` in the source. The triple-quote escape is a
+  known Dhall feature but reads poorly when an outer `''…''` already
+  delimits the whole file and an inner `'''…'''` sits inside it.
+
+- **Dhall multi-line strings strip common leading whitespace.** The
+  postgres-specific shell-hook block needs 12 spaces of absolute
+  indentation preserved on every line. Using a Dhall multi-line for that
+  block made all 12 the common prefix, and Dhall stripped them. Falling
+  back to regular `"…"` strings concatenated with `++` and explicit `\n`
+  bypassed the rule but replaced a readable multi-line literal with a
+  concatenation of 12 one-line strings. This is the largest structural
+  penalty of the prototype.
+
+- **Error locality lands in the post-substitution text, not the source.**
+  A seeded type error (`let nixPostgresql : Text = True`) reports
+  `(input):4:28` — the input being the text handed to `Dhall.input`,
+  which is the `.dhall` source after `renderTemplate` has already
+  substituted placeholders. For a source where placeholder values happen
+  to differ in length from their names, the reported column drifts from
+  the source column. A user trying to jump to the reported location in
+  their editor will miss.
+
+Despite the friction, the prototype does solve the duplication: one
+~100-line source replaces two ~55-line and ~68-line templates, and the
+output is byte-identical to both baselines under
+`cabal test seihou-core-test -p DhallTextFlake`.
 
 
 ## Decision Log
