@@ -144,6 +144,7 @@ test-suite seihou-core-test
     Seihou.Integration.ExecutionSpec
     Seihou.Integration.GenerationSpec
     Seihou.Integration.ModuleLoadSpec
+    Seihou.Interaction.ConfirmSpec
     Seihou.Interaction.PromptSpec
     Seihou.Manifest.TypesSpec
 

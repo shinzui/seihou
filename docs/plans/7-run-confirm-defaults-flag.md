@@ -53,9 +53,9 @@ prompt flows for required and optional variables remain exactly as they are toda
 - [x] M1: Implement `confirmDefaults` in a new module under `seihou-core/src/Seihou/Interaction/`. (2026-04-18)
 - [x] M1: Wire `confirmDefaults` into `handleRun` after `resolveWithPrompts` succeeds, gated on the flag and interactivity. (2026-04-18)
 - [x] M1: Mark confirmed-but-changed values with `FromPrompt` source so the existing "save prompted values" flow picks them up. (2026-04-18 — `promptForVar` already returns `FromPrompt`)
-- [ ] M2: Add pure tests in a new `seihou-core/test/Seihou/Interaction/ConfirmSpec.hs` using `runConsolePure`.
-- [ ] M2: Cover accept-default, override-default, invalid-input-retry, skipped-optional-absent, non-interactive-no-op.
-- [ ] M2: Confirm the "save prompted values?" offer surfaces the overridden value end-to-end.
+- [x] M2: Add pure tests in a new `seihou-core/test/Seihou/Interaction/ConfirmSpec.hs` using `runConsolePure`. (2026-04-18)
+- [x] M2: Cover accept-default, override-default, invalid-input-retry, skipped-optional-absent, non-interactive-no-op. (2026-04-18 — 7 cases, covering no-ops, accept-default, override, retry-failure, FromParent, non-interactive, and authored-prompt text)
+- [ ] M2: Confirm the "save prompted values?" offer surfaces the overridden value end-to-end. (skipped — see Decision Log)
 - [ ] M3: Update `docs/user/getting-started.md` with a short example of `--confirm-defaults`.
 - [ ] M3: Update `docs/user/config-and-variables.md` to describe the flag alongside the precedence chain.
 - [ ] M3: Add a help-text example in `seihou-cli/src/Seihou/CLI/Commands.hs` under the `run` command's footer.
@@ -92,6 +92,14 @@ prompt flows for required and optional variables remain exactly as they are toda
 
 - Decision: If a variable already has a `Prompt` record attached in `module.dhall`, the prompt's `text` and `choices` fields are honored. Otherwise, a synthetic prompt is built from the variable name.
   Rationale: Reusing the existing `promptForVar` machinery gives us choice menus, validation, and coercion for free. A synthetic prompt with text = variable name (e.g., `"project.name"`) is a clear fallback.
+  Date: 2026-04-18
+
+- Decision: Skip the end-to-end "save prompted values surfaces overridden value" test and rely on the unit test that asserts `source = FromPrompt` after an override.
+  Rationale: `collectPromptedValues` in `seihou-cli/src/Seihou/CLI/SavePrompted.hs` filters resolved vars purely by `source == FromPrompt`. Once `confirmDefaults` tags the changed value as `FromPrompt`, nothing else is needed for the save flow to pick it up — this is exercised by the "replaces the value and marks source as FromPrompt" test. Adding a CLI integration test would duplicate coverage without verifying anything that isn't already verified by the composition of unit-level guarantees.
+  Date: 2026-04-18
+
+- Decision: Skip a seihou-cli integration test for the flag.
+  Rationale: `seihou-cli` has a test harness (`seihou-cli-test`) but no existing end-to-end test that drives the full `handleRun` pipeline with scripted stdin. Building one just for this flag is out of scope; the pure `ConfirmSpec` covers the behaviors that can break, and the manual smoke test described in Concrete Steps covers the rest.
   Date: 2026-04-18
 
 
