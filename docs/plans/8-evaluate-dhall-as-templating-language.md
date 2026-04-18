@@ -140,8 +140,8 @@ a follow-up ExecPlan once the user has chosen a direction.
       concrete follow-up work (which is **not** done in this plan).
       (Done 2026-04-18; recommendation: adopt Prototype C, inline
       conditionals in the `Template` strategy.)
-- [ ] M6: Summarize outcomes in the Outcomes & Retrospective section of this
-      plan and link to the evaluation doc.
+- [x] M6: Summarize outcomes in the Outcomes & Retrospective section of this
+      plan and link to the evaluation doc. (Done 2026-04-18.)
 
 
 ## Surprises & Discoveries
@@ -337,7 +337,70 @@ at `seihou-core/test/fixtures/evaluation/conditional-template-flake/`:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+### What was delivered
+
+- Three prototype fixtures under
+  `seihou-core/test/fixtures/evaluation/` (split-flake, dhall-text-flake,
+  typed-dhall-text-flake, conditional-template-flake) reproducing the
+  pain point and exercising each alternative.
+- Two experimental modules: `Seihou.Engine.TypedDhallText` and
+  `Seihou.Engine.TemplatePrototype`, both reachable only from tests.
+- Four new spec modules under `seihou-core/test/Seihou/Evaluation/`
+  contributing 13 passing specs. Full suite: 695/695 pass.
+- Ground-truth diff at
+  `docs/dev/design/proposed/dhall-as-templating-evaluation.diff`.
+- Evaluation document at
+  `docs/dev/design/proposed/dhall-as-templating-evaluation.md` with the
+  pain point, three prototypes, critical engagement with the seven
+  claims in the user's pattern document, a criteria-based comparison
+  table, and a single recommendation.
+
+### Recommendation
+
+**Adopt Prototype C — inline `{{#if}}`/`{{/if}}`/`{{#else}}` in the
+`Template` strategy.** Keep `DhallText` and `Structured` as they
+stand. The reported pain is duplicated text with one toggle; the
+closest fix is a minimal extension to the placeholder engine the
+user is already writing. Prototype B's type-safety story is
+genuinely better than production `DhallText`, but its Nix-escaping
+tax doesn't disappear and it is the wrong answer for
+"duplicate-text-with-a-toggle."
+
+### Followup ExecPlans (not done here)
+
+- Promote `Seihou.Engine.TemplatePrototype` to
+  `Seihou.Engine.Template`, lifting the 1-level nesting cap.
+- Extend `docs/dev/design/proposed/generation-strategies.md` with a
+  "Conditional blocks" subsection and a worked split-avoidance
+  example.
+- Migrate the sibling `nix-haskell-flake` module to a single
+  conditional template, and investigate the
+  `Eq nix.postgresql false || Eq nix.postgresql "false"` double-guard
+  as a separate bug report against the expression comparator.
+
+### Lessons
+
+- **Placeholder substitution before Dhall evaluation is a
+  type-safety leak.** Authors can write sources that look typed
+  but whose real input is string-substituted text. Prototype A's
+  `true`/`True` shim and quoted-var trap are symptoms of this.
+- **Nix/Dhall `${}` and `''…''` collision is a permanent cost** of
+  any Dhall-based text strategy when the output is a `.nix` file.
+  Neither Prototype A nor B eliminates it; Prototype C avoids it
+  entirely by not involving Dhall.
+- **The pain point drives the answer.** Framing the user's
+  question as "should we extend Dhall?" would have pushed toward
+  B. Framing as "how do we stop duplicating text with a toggle?"
+  makes C obvious. Including C in the evaluation — even though
+  the user asked only about Dhall — was the most consequential
+  decision in this plan.
+
+### Links
+
+- Evaluation doc:
+  `docs/dev/design/proposed/dhall-as-templating-evaluation.md`
+- Diff file:
+  `docs/dev/design/proposed/dhall-as-templating-evaluation.diff`
 
 
 ## Context and Orientation
