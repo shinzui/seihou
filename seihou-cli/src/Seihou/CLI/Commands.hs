@@ -328,7 +328,13 @@ runInfo =
                   pretty ("reported and block execution unless --force is used." :: String),
                   line,
                   pretty ("Examples:" :: String),
-                  indent 2 $ vsep [pretty ("seihou run haskell-base --var project.name=my-app" :: String), pretty ("seihou run haskell-base -m nix-flake --dry-run" :: String), pretty ("seihou run my-module --diff" :: String)]
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou run haskell-base --var project.name=my-app" :: String),
+                        pretty ("seihou run haskell-base -m nix-flake --dry-run" :: String),
+                        pretty ("seihou run my-module --diff" :: String),
+                        pretty ("seihou run haskell-base --confirm-defaults   # review and override default values" :: String)
+                      ]
                 ]
           )
     )

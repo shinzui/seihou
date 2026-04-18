@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `--confirm-defaults` flag on `seihou run`. Steps through each variable
+  resolved from its default or from a parent module's export and lets the
+  user accept or override it interactively. Overridden values are tagged as
+  prompted input so they flow into the "save prompted values?" offer.
+
 ## [0.1.0.0] - 2026-04-15
 
 Initial public release of seihou — a composable, type-safe project scaffolding

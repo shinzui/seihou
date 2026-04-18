@@ -285,6 +285,21 @@ If you omit `--var project.name=demo-app`, Seihou will prompt you interactively:
 What is your project name? demo-app
 ```
 
+To step through each default value and confirm or override it, pass `--confirm-defaults`. Pressing Enter accepts the default; typing a value replaces it:
+
+```
+$ seihou run my-haskell --confirm-defaults --var project.name=demo-app
+
+Confirm default values:
+  project.version [0.1.0.0]:
+  license [MIT]: Apache-2.0
+
+[plan view...]
+Proceed? [Y/n]
+```
+
+Overridden values flow into the "save prompted values?" offer at the end of the run, so you can persist them to local config with one keypress.
+
 After generation, you should see the created files:
 
 ```
@@ -476,6 +491,7 @@ Seihou resolves dependencies automatically via topological sort. If `nix-flake` 
 | `--diff` | Show diff against current disk state |
 | `--force` | Auto-resolve conflicts (accept new files) |
 | `--no-commands` | Skip shell command steps |
+| `--confirm-defaults` | Step through each default value and confirm or override it |
 | `--namespace NS` | Override namespace for config lookup |
 | `-v, --verbose` | Show detailed progress messages |
 

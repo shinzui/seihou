@@ -26,6 +26,12 @@ If no source provides a value:
 - **Required variables** (`required = True`) cause an error in non-interactive mode, or trigger an interactive prompt if a TTY is available.
 - **Optional variables** (`required = False`) are silently omitted. Steps can test for their presence using `IsSet` in `when` conditions.
 
+### Reviewing defaults interactively
+
+Pass `--confirm-defaults` to `seihou run` to step through every variable whose value would otherwise come from a module default (priority 8) or a parent binding (priority 7). Each variable is displayed with its default in brackets; press Enter to accept, or type a new value to override. Overridden values are tagged as prompted input, so they flow into the "save prompted values?" offer at the end of the run.
+
+The flag is a no-op in non-interactive mode (no TTY on stdin).
+
 
 ## Setting up configuration files
 

@@ -56,10 +56,10 @@ prompt flows for required and optional variables remain exactly as they are toda
 - [x] M2: Add pure tests in a new `seihou-core/test/Seihou/Interaction/ConfirmSpec.hs` using `runConsolePure`. (2026-04-18)
 - [x] M2: Cover accept-default, override-default, invalid-input-retry, skipped-optional-absent, non-interactive-no-op. (2026-04-18 — 7 cases, covering no-ops, accept-default, override, retry-failure, FromParent, non-interactive, and authored-prompt text)
 - [ ] M2: Confirm the "save prompted values?" offer surfaces the overridden value end-to-end. (skipped — see Decision Log)
-- [ ] M3: Update `docs/user/getting-started.md` with a short example of `--confirm-defaults`.
-- [ ] M3: Update `docs/user/config-and-variables.md` to describe the flag alongside the precedence chain.
-- [ ] M3: Add a help-text example in `seihou-cli/src/Seihou/CLI/Commands.hs` under the `run` command's footer.
-- [ ] M3: Update `CHANGELOG.md` under the next unreleased entry.
+- [x] M3: Update `docs/user/getting-started.md` with a short example of `--confirm-defaults`. (2026-04-18 — added a transcript in Step 6 and a row to the run-flags table)
+- [x] M3: Update `docs/user/config-and-variables.md` to describe the flag alongside the precedence chain. (2026-04-18 — new "Reviewing defaults interactively" subsection under "The resolution hierarchy")
+- [x] M3: Add a help-text example in `seihou-cli/src/Seihou/CLI/Commands.hs` under the `run` command's footer. (2026-04-18)
+- [x] M3: Update `CHANGELOG.md` under the next unreleased entry. (2026-04-18 — added an "Added" block to the `[Unreleased]` section)
 
 
 ## Surprises & Discoveries
@@ -105,7 +105,20 @@ prompt flows for required and optional variables remain exactly as they are toda
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**Delivered** (2026-04-18):
+
+- `--confirm-defaults` CLI flag on `seihou run`, wired through `runConfirmDefaults :: Bool` in `RunOpts`.
+- New module `Seihou.Interaction.Confirm` exporting `confirmDefaults`, reusing `promptForVar` for free-text and choice-menu prompts, validation, and type coercion.
+- Integration point: between `resolveWithPrompts` and `diagnoseResolution` in `handleRun`, gated on both the flag and interactivity (the Confirm module re-checks interactivity to stay correct if called from elsewhere).
+- Seven pure unit tests in `Seihou.Interaction.ConfirmSpec` covering no-op, accept-default, override, retry-exhausted-keeps-default, `FromParent`, non-interactive, and authored-Prompt text preference. All pass under `cabal test all`.
+- Docs: `docs/user/getting-started.md` (example transcript + flag table row), `docs/user/config-and-variables.md` (new subsection), CLI help footer example, top-level `CHANGELOG.md` entry.
+
+**Result vs. Purpose**: The stated goal — let the user confirm or override any variable whose value came from a default without aborting and re-running — is met. Overridden values carry `FromPrompt` so they automatically integrate with the existing save-prompted flow; accepted defaults retain their original `FromDefault` / `FromParent` source so the save-prompted flow does not over-capture.
+
+**Deferred / not pursued**:
+
+- No seihou-cli integration test. See Decision Log: `collectPromptedValues` filters purely on `source == FromPrompt`, and the unit test verifies that `confirmDefaults` sets that source correctly, so adding a CLI-level test would duplicate coverage.
+- Plural-prompt deduplication: if a variable is declared in several modules in the composition (e.g., a parent exports a value that a child also declares), it will currently be prompted once per module. Not observed in practice during manual smoke tests, so not addressed. The Decision Log notes this as a future narrowing knob.
 
 
 ## Context and Orientation
