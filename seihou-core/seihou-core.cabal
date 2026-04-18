@@ -67,6 +67,7 @@ library
     Seihou.Engine.Section
     Seihou.Engine.Template
     Seihou.Engine.Validate
+    Seihou.Interaction.Confirm
     Seihou.Interaction.Prompt
     Seihou.Manifest.Hash
     Seihou.Manifest.Types

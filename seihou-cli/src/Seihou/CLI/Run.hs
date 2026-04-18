@@ -42,6 +42,7 @@ import Seihou.Engine.Execute (executePlan)
 import Seihou.Engine.Preview (buildPreview)
 import Seihou.Fzf (FzfResult (..), detectFzfConfig, isFzfUsable)
 import Seihou.Fzf.Selector (selectModule)
+import Seihou.Interaction.Confirm (confirmDefaults)
 import Seihou.Manifest.Types (emptyManifest)
 import Seihou.Prelude
 import System.Environment (getEnvironment)
@@ -134,13 +135,19 @@ handleRun runOpts = do
         gm = toVarNameMap globalCfg
     r <- resolveWithPrompts modulesInOrder cliOverrides envVars namespace contextName lm nm cm gm
     pure (r, lm, nm, cm, gm)
-  resolved <- case resolveResult of
+  resolvedInitial <- case resolveResult of
     Left errs -> do
       logIO level $ do
         logError "Error resolving variables:"
         mapM_ (logError . ("  " <>) . formatVarError) errs
       exitFailure
     Right r -> pure r
+
+  -- 2a. Optionally confirm default-sourced values.
+  resolved <-
+    if runOpts.runConfirmDefaults
+      then runEff $ runConsole $ confirmDefaults modulesInOrder resolvedInitial
+      else pure resolvedInitial
 
   -- 2b. Emit diagnostics for unused config keys
   let allDecls = concatMap ((.vars) . fst) modulesInOrder
