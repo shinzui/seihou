@@ -111,15 +111,18 @@ a follow-up ExecPlan once the user has chosen a direction.
       (`Text`, `Bool`, `Integer`, `List Text`, …). Note any types that do not
       round-trip cleanly. (Done 2026-04-18; see the M3 notes in
       Surprises & Discoveries.)
-- [ ] M4: Prototype C — inline conditionals in `template`. Extend the
+- [x] M4: Prototype C — inline conditionals in `template`. Extend the
       placeholder parser in `Seihou.Engine.Template` with
       `{{#if <expr>}}`, `{{#else}}`, `{{/if}}` blocks, reusing
       `Seihou.Core.Expr` for the expression grammar (already supports
       `IsSet`, `Eq`, `And`, `Or`, `Not`). Keep it a *prototype*: do not wire
       it into `Strategy`, do not change Dhall schemas. Land the prototype as
-      `Seihou.Engine.TemplatePrototype` alongside tests.
-- [ ] M4: Rewrite the split flake as a single `.tpl` using Prototype C and
+      `Seihou.Engine.TemplatePrototype` alongside tests. (Done 2026-04-18;
+      `renderTemplatePrototype` takes the source text and resolved vars,
+      returns either `[PrototypeError]` or the expanded text.)
+- [x] M4: Rewrite the split flake as a single `.tpl` using Prototype C and
       assert byte-for-byte equivalence to both original outputs.
+      (Done 2026-04-18; `Seihou.Evaluation.ConditionalTemplateSpec` 4/4 pass.)
 - [ ] M5: Comparative evaluation. Write
       `docs/dev/design/proposed/dhall-as-templating-evaluation.md` that
       presents the pain point, the three prototypes, and a criteria-based
@@ -247,6 +250,43 @@ Notes from writing
   delimiters, and common-leading-whitespace stripping still apply,
   because those are artifacts of Dhall's multi-line syntax — not of
   the placeholder pipeline.
+
+### M4 Prototype C — inline conditionals in `template`
+
+Notes from writing
+`seihou-core/src/Seihou/Engine/TemplatePrototype.hs` and the fixture
+at `seihou-core/test/fixtures/evaluation/conditional-template-flake/`:
+
+- **The fixture reads almost identically to the original template.**
+  The single source is the non-postgres flake with two
+  `{{#if Eq nix.postgresql true}}…{{/if}}` blocks — one around the
+  lone `pkgs.postgresql` line, one around the 11-line shell-hook
+  addendum. No Dhall, no escaping, no indentation stripping, no
+  `${…}` collisions. The diff against the original `.tpl` is exactly
+  the two block pairs plus the lines they gate.
+
+- **Grammar reuse was free.** `{{#if <expr>}}` feeds straight into
+  `Seihou.Core.Expr.parseExpr`, which already supports `IsSet`, `Eq`,
+  `&&`, `||`, `!`, `true`/`false`, and parentheses. No new parser or
+  AST needed — the test showing `IsSet maybe` returns `False` for an
+  unset variable works without additional code.
+
+- **One-level nesting cap is a real limitation but didn't hurt this
+  fixture.** The block structure in the flake is two flat
+  `{{#if …}}…{{/if}}` regions, neither nested inside the other. A
+  promotion to first-class would likely need unbounded nesting, which
+  the prototype's depth-1 rejection would make invasive to lift.
+
+- **Line-number accuracy is acceptable.** The seeded
+  `UnterminatedIf` test reports line 3 for a `{{#if}}` on line 3 of
+  the source. No string-substitute-then-parse dance pollutes the
+  line numbers, so unlike Prototype A an editor can jump directly to
+  the offender.
+
+- **Scope of the prototype is tiny.** ~180 lines of code in one new
+  module, one fixture, one spec module. It does not touch
+  `Seihou.Engine.Template`, `Seihou.Engine.Plan`, or the `Strategy`
+  enum; discarding it costs nothing.
 
 
 ## Decision Log

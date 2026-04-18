@@ -66,6 +66,7 @@ library
     Seihou.Engine.Remove
     Seihou.Engine.Section
     Seihou.Engine.Template
+    Seihou.Engine.TemplatePrototype
     Seihou.Engine.TypedDhallText
     Seihou.Engine.Validate
     Seihou.Interaction.Confirm
@@ -141,6 +142,7 @@ test-suite seihou-core-test
     Seihou.Engine.SectionSpec
     Seihou.Engine.TemplateSpec
     Seihou.Engine.ValidateSpec
+    Seihou.Evaluation.ConditionalTemplateSpec
     Seihou.Evaluation.DhallTextFlakeSpec
     Seihou.Evaluation.SplitFlakeSpec
     Seihou.Evaluation.TypedDhallTextSpec
