@@ -3,12 +3,24 @@
 ## Last Reviewed Commit
 
 ```
-154b330 Broaden renderTemplateText test coverage
+HEAD  Add standalone-block whitespace trim to the template engine
 ```
 
 ---
 
 ## Changelog
+
+### 2026-04-19 (standalone-block whitespace trim)
+
+**Reviewed commits:** the standalone-block addition (following the
+2026-04-19 doc-sync entry below).
+
+- Updated `docs/user/module-authoring.md` — expanded the "Conditional blocks" paragraph with a "Standalone block lines" section explaining when a tag is absorbed (only non-whitespace on its line → surrounding indent + one trailing newline consumed), and rewrote the worked example in the new readable multi-line style.
+- Updated `docs/dev/design/proposed/generation-strategies.md` — added a "Standalone-block whitespace trim" bullet to the Conditional blocks semantics list, citing Mustache/Handlebars as the reference for the behavior.
+- Updated `docs/plans/9-inline-conditionals-in-template-strategy.md` — Revisions entry and a Decision Log entry recording the choice to add standalone trim rather than adopt an external templating engine (Ginger/Mustache/etc.).
+
+**Features documented:**
+- **Standalone-block whitespace trim** — When a `{{#if}}`, `{{#else}}`, or `{{/if}}` tag is the only non-whitespace on its line, the tag absorbs the surrounding indent and the single trailing newline, so multi-line readable templates no longer emit blank-line cruft. Exactly one newline is consumed per trim side, preserving deliberate blank-line spacing inside blocks.
 
 ### 2026-04-19 (doc sync: --confirm-defaults, Dhall-as-templating evaluation, ExecPlan 9 M5)
 

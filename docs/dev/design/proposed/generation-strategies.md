@@ -201,6 +201,14 @@ Semantics:
   expansion, so they may drift from source positions when blocks are
   consumed; this is accepted as a trade-off against threading a
   line-map through the expander.
+- **Standalone-block whitespace trim.** When a block tag
+  (`{{#if}}`, `{{#else}}`, `{{/if}}`) is the only non-whitespace
+  content on its line, the surrounding indentation and the line's
+  trailing newline are absorbed by the tag — matching Mustache and
+  Handlebars "standalone block" semantics. Exactly one newline is
+  consumed per trim side, so deliberate blank lines inside a block
+  body survive. Tags that share a line with other template content
+  are left alone.
 - Conditionals apply to the `Template` strategy's body path only. The
   `DhallText` and `Structured` strategies express conditionals through
   Dhall's native `if`/`then`/`else` after pre-substitution. Destination

@@ -245,16 +245,20 @@ Template bodies can branch on resolved variables using `{{#if}}`, `{{#else}}`, a
 
 `<expr>` uses the same grammar as a step's `when` clause (see [Expression language](#expression-language) — `IsSet`, `Eq`, `&&`, `||`, `!`, `true`, `false`, parentheses). Blocks may nest to arbitrary depth; untaken branches are discarded, so unresolved `{{placeholder}}` references inside them do not surface as errors.
 
-Worked example — toggle an optional `pkgs.postgresql` line in a Nix flake:
+**Standalone block lines.** When a block tag is the only non-whitespace content on its line, the surrounding indentation and the line's trailing newline are absorbed by the tag (Mustache/Handlebars convention). This lets you write conditionals as separate, indented lines without the expanded output accumulating blank lines. A tag that shares a line with other template content retains its surrounding whitespace verbatim.
+
+Worked example — toggle an optional `pkgs.postgresql` line in a Nix flake, written in the standalone style:
 
 ```
 nativeBuildInputs = [
   pkgs.cabal-install
-{{#if Eq nix.postgresql true}}  pkgs.postgresql
-{{/if}}];
+  {{#if Eq nix.postgresql true}}
+  pkgs.postgresql
+  {{/if}}
+];
 ```
 
-With `nix.postgresql = True`, the rendered output includes `pkgs.postgresql`; with `False`, the line disappears entirely.
+With `nix.postgresql = True`, the rendered output includes `pkgs.postgresql`; with `False`, the entire block (including its own two lines of template) disappears and the `]` follows directly after `pkgs.cabal-install`. Note that a blank line inside the block is preserved: only *one* newline is absorbed on each side of a standalone tag, so deliberate spacing survives.
 
 Conditional blocks apply to **template bodies only**. Destination paths (`dest`) and shell commands (`run`, `workDir`) accept only `{{placeholder}}` substitution — `{{#if}}` in those positions is not recognised.
 

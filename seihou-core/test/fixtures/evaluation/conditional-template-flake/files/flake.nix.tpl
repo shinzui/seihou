@@ -38,8 +38,10 @@
             pkgs.just
             pkgs.cabal-install
             pkgs.pkg-config
-{{#if Eq nix.postgresql true}}            pkgs.postgresql
-{{/if}}            (haskellPackages.ghcWithPackages (ps: [
+            {{#if Eq nix.postgresql true}}
+            pkgs.postgresql
+            {{/if}}
+            (haskellPackages.ghcWithPackages (ps: [
               ps.haskell-language-server
             ]))
           ]
@@ -48,7 +50,8 @@
           shellHook = ''
             ${self.checks.${system}.pre-commit-check.shellHook}
             export LANG=en_US.UTF-8
-{{#if Eq nix.postgresql true}}
+            {{#if Eq nix.postgresql true}}
+
             export PGHOST="$PWD/db"
             export PGDATA="$PGHOST/db"
             export PGLOG=$PGHOST/postgres.log
@@ -61,7 +64,8 @@
             if [ ! -d $PGDATA ]; then
               initdb --auth=trust --no-locale --encoding=UTF8
             fi
-{{/if}}          '';
+            {{/if}}
+          '';
         };
       }
     );

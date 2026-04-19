@@ -139,23 +139,33 @@ expandConditionals vars = expandAtTopLevel vars 1
 -- @{{#else}}@ (which at top level are orphans). Only the selected
 -- branch is expanded; the untaken branch is discarded, so errors
 -- inside it do not surface.
+--
+-- When a block tag is the only non-whitespace on its line (a
+-- \"standalone block\" in the Mustache/Handlebars sense), the
+-- surrounding indentation and the line\'s terminating newline are
+-- consumed as part of the tag so the expanded text does not leave a
+-- blank line behind. This is what lets module authors format a
+-- template with tags on their own lines and still get clean output.
 expandAtTopLevel :: Map VarName VarValue -> Int -> Text -> Either [PlaceholderError] Text
 expandAtTopLevel vars startLine input =
   case splitNextBlock input of
     NoBlockLeft -> Right input
-    FoundIf before afterBlockOpen exprText ->
-      let beforeLines = T.count "\n" before
+    FoundIf before0 afterBlockOpen0 exprText ->
+      let beforeLines = T.count "\n" before0
           openAt = startLine + beforeLines
+          (before, afterBlockOpen, openerSkipped) =
+            trimStandaloneAround before0 afterBlockOpen0
+          bodyStart = openAt + openerSkipped
        in case parseExpr exprText of
             Left parseErr ->
               Left [MalformedIfExpression exprText openAt parseErr]
             Right expr -> do
-              (thenText, elseText, afterBlock, consumedLines) <-
+              (thenText, elseText, afterBlock, consumedLines, closerSkipped) <-
                 splitBranches openAt afterBlockOpen
               let selectedRaw =
                     if evalExpr vars expr then thenText else elseText
-              selectedExpanded <- expandAtTopLevel vars openAt selectedRaw
-              let afterLine = openAt + consumedLines
+              selectedExpanded <- expandAtTopLevel vars bodyStart selectedRaw
+              let afterLine = openAt + openerSkipped + consumedLines + closerSkipped
               rest <- expandAtTopLevel vars afterLine afterBlock
               pure (before <> selectedExpanded <> rest)
     FoundOrphan tok beforeLines ->
@@ -214,32 +224,53 @@ splitNextBlock input = scan 0 input
 -- matching @{{\/if}}@ (honouring nested @{{#if}}@\/@{{\/if}}@ pairs) and
 -- split the body at a top-level @{{#else}}@ if one is present.
 --
--- Returns @(thenBranch, elseBranch, afterCloseBlock, linesConsumedUpToAndIncludingClose)@.
+-- Returns @(thenBranch, elseBranch, afterCloseBlock, linesConsumedUpToAndIncludingClose, closerSkipped)@.
 -- The @openLine@ parameter is the absolute source-line number of the
 -- opener, used only when reporting 'UnterminatedIf'.
+--
+-- Standalone-block trim is applied to the top-level @{{#else}}@ (if
+-- present) and to the matching @{{\/if}}@. @closerSkipped@ is 1 when
+-- the closer\'s trailing newline was absorbed by standalone trim and
+-- 0 otherwise; callers add it to their own post-block line counter
+-- so chained blocks at the same level report accurate line numbers.
 splitBranches ::
   Int ->
   Text ->
-  Either [PlaceholderError] (Text, Text, Text, Int)
+  Either [PlaceholderError] (Text, Text, Text, Int, Int)
 splitBranches openLine bodyPlusTail = go 0 0 Nothing bodyPlusTail
   where
     -- depth: how many extra {{#if}} openers we've seen since the outer opener.
     -- accLen: how much of @bodyPlusTail@ we've consumed (character count).
     -- mElseAt: @Just accLen@ at the first top-level {{#else}}, if any.
-    go :: Int -> Int -> Maybe Int -> Text -> Either [PlaceholderError] (Text, Text, Text, Int)
+    go :: Int -> Int -> Maybe Int -> Text -> Either [PlaceholderError] (Text, Text, Text, Int, Int)
     go _ _ _ t
       | T.null t = Left [UnterminatedIf openLine]
     go depth accLen mElseAt t
       | "{{/if}}" `T.isPrefixOf` t && depth == 0 =
-          let (thenText, elseText) = case mElseAt of
+          let (thenText0, elseText0) = case mElseAt of
                 Nothing -> (T.take accLen bodyPlusTail, "")
                 Just elseAt ->
                   ( T.take elseAt bodyPlusTail,
                     T.take (accLen - elseAt - elseTokenLen) (T.drop (elseAt + elseTokenLen) bodyPlusTail)
                   )
-              afterClose = T.drop (accLen + ifCloseLen) bodyPlusTail
+              afterClose0 = T.drop (accLen + ifCloseLen) bodyPlusTail
               consumedLines = lineOffset (T.take (accLen + ifCloseLen) bodyPlusTail)
-           in Right (thenText, elseText, afterClose, consumedLines)
+              -- Trim standalone closer: the line's whitespace-before
+              -- lives at the tail of whichever branch ended at it
+              -- (elseText0 if present, otherwise thenText0), and the
+              -- whitespace+newline-after lives at the head of afterClose0.
+              (thenText, elseText, afterClose, closerSkipped) =
+                case mElseAt of
+                  Nothing ->
+                    let (tt, ac, n) = trimStandaloneAround thenText0 afterClose0
+                     in (tt, "", ac, n)
+                  Just _ ->
+                    -- First try to trim standalone {{#else}} between
+                    -- thenText and elseText, then trim the closer.
+                    let (tt, et0, _elseSkipped) = trimStandaloneAround thenText0 elseText0
+                        (et, ac, n) = trimStandaloneAround et0 afterClose0
+                     in (tt, et, ac, n)
+           in Right (thenText, elseText, afterClose, consumedLines, closerSkipped)
       | "{{/if}}" `T.isPrefixOf` t =
           advance (depth - 1) accLen mElseAt t ifCloseLen
       | "{{#if " `T.isPrefixOf` t =
@@ -260,7 +291,7 @@ splitBranches openLine bodyPlusTail = go 0 0 Nothing bodyPlusTail
       Maybe Int ->
       Text ->
       Int ->
-      Either [PlaceholderError] (Text, Text, Text, Int)
+      Either [PlaceholderError] (Text, Text, Text, Int, Int)
     advance depth accLen mElseAt t n =
       let step = T.take n t
           rest = T.drop n t
@@ -274,3 +305,51 @@ splitBranches openLine bodyPlusTail = go 0 0 Nothing bodyPlusTail
 -- byte positions.
 lineOffset :: Text -> Int
 lineOffset = T.count "\n"
+
+-- | Standalone-block trim: if the tag sitting between @before@ and
+-- @after@ is the only non-whitespace content on its line, strip the
+-- surrounding indentation and the trailing newline. Returns the
+-- trimmed pair and the number of newlines the trim absorbed (0 or 1)
+-- so the caller can keep source-line tracking accurate.
+--
+-- A tag qualifies as standalone iff:
+--
+-- * the tail of @before@ since the last newline (or since the start
+--   of @before@ when there is no prior newline) consists only of
+--   spaces and tabs, AND
+-- * the head of @after@ up to and including the next newline consists
+--   only of spaces and tabs followed by a newline — OR @after@ ends
+--   before any newline appears and contains only spaces and tabs
+--   (i.e. EOF with trailing whitespace).
+trimStandaloneAround :: Text -> Text -> (Text, Text, Int)
+trimStandaloneAround before after =
+  case (stripTailWhitespace before, stripHeadWhitespaceNewline after) of
+    (Just b', Just (a', consumed)) -> (b', a', consumed)
+    _ -> (before, after, 0)
+
+-- | Strip trailing spaces and tabs at the end of @t@ if the suffix
+-- since the last newline (or from the start of @t@) contains only
+-- whitespace. Returns 'Nothing' otherwise, so the caller can fall
+-- back to the untrimmed text.
+stripTailWhitespace :: Text -> Maybe Text
+stripTailWhitespace t =
+  let (beforeLastLine, lastLine) = T.breakOnEnd "\n" t
+   in if T.all isSpaceOrTab lastLine
+        then Just beforeLastLine
+        else Nothing
+
+-- | Strip leading spaces and tabs at the start of @t@ followed by a
+-- single newline. Returns the remainder paired with the number of
+-- newlines consumed (always 0 or 1). EOF after trailing whitespace
+-- counts as a standalone match with 0 newlines consumed.
+stripHeadWhitespaceNewline :: Text -> Maybe (Text, Int)
+stripHeadWhitespaceNewline t =
+  let (_ws, rest) = T.span isSpaceOrTab t
+   in if T.null rest
+        then Just ("", 0)
+        else case T.uncons rest of
+          Just ('\n', after) -> Just (after, 1)
+          _ -> Nothing
+
+isSpaceOrTab :: Char -> Bool
+isSpaceOrTab c = c == ' ' || c == '\t'

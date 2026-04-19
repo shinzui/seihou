@@ -198,6 +198,23 @@ its recommendation: Prototype C.
   preserves the prototype's role as a written record.
   Date: 2026-04-18
 
+- Decision: Add Mustache-style standalone-block whitespace trim to
+  `Seihou.Engine.Template.expandConditionals` instead of adopting
+  an external templating engine (Ginger, Mustache proper, etc.).
+  Rationale: Adopting Ginger would break `{{...}}` syntax
+  compatibility with every existing template, require two expression
+  grammars in the codebase (Ginger's own grammar alongside
+  `Seihou.Core.Expr` used by step-level `when`), and pull in loops,
+  filters, includes, and inheritance — features that directly
+  contradict the "Templates Stay Dumb" architectural decision. The
+  `DhallText` strategy already serves as the escape hatch for
+  anything beyond boolean gating. The single missing feature that
+  actually motivated the "switch engines?" discussion was whitespace
+  control, which is ~30 LOC of bounded trim logic. Doing the small
+  thing preserves the engine's scope; the "no loops, no filters,
+  no inheritance" boundary is reaffirmed rather than reopened.
+  Date: 2026-04-19
+
 - Decision: Migrate the sibling `nix-haskell-flake` module as part
   of this plan rather than defer it.
   Rationale: The split-flake pain in that module is the reason
@@ -851,4 +868,19 @@ unchanged. The sibling-repo module's schema pin is unchanged.
 
 ## Revisions
 
-(None yet.)
+- 2026-04-19: Standalone-block whitespace trim addendum. After M5
+  landed, authoring the first real multi-variable flake template in
+  the sibling repo revealed that the engine's lack of whitespace
+  control made readable multi-line templates impractical — tags on
+  their own lines left blank-line cruft in the output, pushing
+  authors back toward dense single-line forms. Rather than adopt a
+  full external templating engine (Ginger, Mustache, etc.), added
+  Mustache-style "standalone block" semantics to
+  `Seihou.Engine.Template.expandConditionals`: when a block tag is
+  the only non-whitespace on its line, the surrounding indentation
+  and the line's terminating newline are absorbed as part of the
+  tag. Exactly one newline per side is consumed, so deliberate
+  blank-line spacing survives. Decision Log entry below.
+  The `conditional-template-flake` fixture is restructured in the
+  new readable style; byte-identical output to both split-flake
+  baselines is preserved.

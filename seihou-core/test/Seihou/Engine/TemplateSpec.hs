@@ -338,3 +338,82 @@ spec = do
         "pre {{name}} {{#if Eq flag true}}mid-{{name}}-mid{{/if}} post"
         vars
         `shouldBe` Right "pre world mid-world-mid post"
+
+    describe "standalone-block whitespace trim" $ do
+      it "absorbs surrounding indentation and the trailing newline when opener is on its own line" $ do
+        let vars = Map.fromList [("flag", VBool True)]
+            tpl = "prev\n  {{#if Eq flag true}}\n  body\n  {{/if}}\nnext\n"
+        renderTemplateText tpl vars `shouldBe` Right "prev\n  body\nnext\n"
+
+      it "absorbs the whole block's lines when the condition is false" $ do
+        let vars = Map.fromList [("flag", VBool False)]
+            tpl = "prev\n  {{#if Eq flag true}}\n  body\n  {{/if}}\nnext\n"
+        renderTemplateText tpl vars `shouldBe` Right "prev\nnext\n"
+
+      it "leaves a compact tag surrounded by content untouched" $ do
+        -- Opener and closer are not standalone: both share a line
+        -- with template content. No trim should apply.
+        let vars = Map.fromList [("x", VBool True)]
+        renderTemplateText "a{{#if Eq x true}}b{{/if}}c" vars
+          `shouldBe` Right "abc"
+
+      it "treats a tag with leading/trailing whitespace on its line as standalone" $ do
+        let vars = Map.fromList [("flag", VBool True)]
+            -- Tab + {{#if}} + trailing spaces + newline, all standalone.
+            tpl = "prev\n\t{{#if Eq flag true}}   \nbody\n\t{{/if}}   \nnext"
+        renderTemplateText tpl vars `shouldBe` Right "prev\nbody\nnext"
+
+      it "handles standalone if/else with mixed branches" $ do
+        let tpl =
+              "outer\n\
+              \{{#if Eq x true}}\n\
+              \then-branch\n\
+              \{{#else}}\n\
+              \else-branch\n\
+              \{{/if}}\n\
+              \tail\n"
+        renderTemplateText tpl (Map.fromList [("x", VBool True)])
+          `shouldBe` Right "outer\nthen-branch\ntail\n"
+        renderTemplateText tpl (Map.fromList [("x", VBool False)])
+          `shouldBe` Right "outer\nelse-branch\ntail\n"
+
+      it "preserves indentation of body lines when tags are standalone" $ do
+        let vars = Map.fromList [("flag", VBool True)]
+            tpl =
+              "foo = [\n\
+              \  a\n\
+              \  {{#if Eq flag true}}\n\
+              \  b\n\
+              \  {{/if}}\n\
+              \  c\n\
+              \];\n"
+        renderTemplateText tpl vars
+          `shouldBe` Right "foo = [\n  a\n  b\n  c\n];\n"
+
+      it "treats a standalone tag at end of template (no trailing newline) as standalone" $ do
+        let vars = Map.fromList [("flag", VBool True)]
+            tpl = "prev\n  {{#if Eq flag true}}\n  body\n  {{/if}}"
+        renderTemplateText tpl vars `shouldBe` Right "prev\n  body\n"
+
+      it "preserves an explicit blank line inside a standalone block" $ do
+        -- A blank line immediately after {{#if}} is NOT consumed by
+        -- the opener's trim (only ONE newline is absorbed). This lets
+        -- template authors emit an intentional blank separator.
+        let vars = Map.fromList [("x", VBool True)]
+            tpl = "alpha\n{{#if Eq x true}}\n\nbeta\n{{/if}}\ngamma\n"
+        renderTemplateText tpl vars `shouldBe` Right "alpha\n\nbeta\ngamma\n"
+
+      it "handles nested standalone blocks" $ do
+        let vars = Map.fromList [("a", VBool True), ("b", VBool True)]
+            tpl =
+              "head\n\
+              \{{#if Eq a true}}\n\
+              \outer\n\
+              \{{#if Eq b true}}\n\
+              \inner\n\
+              \{{/if}}\n\
+              \outer-tail\n\
+              \{{/if}}\n\
+              \tail\n"
+        renderTemplateText tpl vars
+          `shouldBe` Right "head\nouter\ninner\nouter-tail\ntail\n"
