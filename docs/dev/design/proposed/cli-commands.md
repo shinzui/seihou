@@ -108,6 +108,7 @@ data RunOpts = RunOpts
   , runContext       :: Maybe Text        -- Context name (work, personal, etc.)
   , runVerbose       :: Bool              -- Verbose output
   , runSavePrompted  :: Maybe Bool        -- --save-prompted / --no-save-prompted
+  , runConfirmDefaults :: Bool            -- --confirm-defaults: step through default/parent values
   , runCommit        :: Bool              -- Commit generated files after execution
   , runCommitMessage :: Maybe Text        -- Custom message (implies runCommit)
   }
@@ -249,7 +250,7 @@ Initialized Seihou configuration at ~/.config/seihou/
 Run one or more modules to generate or update a project.
 
 ```sh
-seihou run [<module>] [--module <additional>...] [--var key=value...] [--dry-run] [--diff] [--force] [--no-commands] [--namespace <ns>] [--context <ctx>] [--verbose] [--save-prompted | --no-save-prompted] [--commit] [--commit-message <msg>]
+seihou run [<module>] [--module <additional>...] [--var key=value...] [--dry-run] [--diff] [--force] [--no-commands] [--namespace <ns>] [--context <ctx>] [--verbose] [--save-prompted | --no-save-prompted] [--confirm-defaults] [--commit] [--commit-message <msg>]
 ```
 
 **Arguments**:
@@ -267,6 +268,7 @@ seihou run [<module>] [--module <additional>...] [--var key=value...] [--dry-run
 | `--verbose` | No | Verbose output |
 | `--save-prompted` | No | Save prompted values to local config without asking |
 | `--no-save-prompted` | No | Do not offer to save prompted values |
+| `--confirm-defaults` | No | Step through every variable resolved from its module default or a parent-binding export and confirm or override it before plan compilation |
 | `--commit` | No | After successful execution, stage generated files and create a git commit with an AI-generated message |
 | `--commit-message <msg>` | No | Use `<msg>` verbatim as the commit message (implies `--commit`) |
 

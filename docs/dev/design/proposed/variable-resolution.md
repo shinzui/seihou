@@ -140,6 +140,37 @@ Optional configuration:
 - Bool variables show `(yes/no)` hint
 - Optional prompts only appear in interactive mode; in non-interactive mode, optional variables without values are silently omitted
 
+### Reviewing default and parent values
+
+When the user passes `--confirm-defaults` to `seihou run`, the engine
+pauses after resolution and before plan compilation. Every variable
+whose resolved `Source` is `FromDefault` (priority 8) or
+`FromParent <module>` (priority 7) is re-prompted in declaration order.
+The current value is displayed in brackets; Enter keeps it, any other
+input replaces it and retags the source as `FromPrompt`, so the new
+value flows through the existing "save prompted values?" offer at the
+end of the run.
+
+Semantics:
+
+- The pass is driven by `Seihou.Interaction.Confirm.confirmDefaults`,
+  which operates on the already-resolved `[Variable]` list and edits
+  only those entries whose `Source` matches.
+- If an author-declared `Prompt` exists for the variable, its `text` is
+  used; otherwise a generic prompt is synthesised from the variable's
+  `description` or falls back to the variable name.
+- Choice prompts still present the authored choice list and reject
+  off-list input; Bool prompts still accept `yes`/`y`/`true` and their
+  negatives with the same case-insensitive semantics as the initial
+  prompt pass.
+- The flag is a no-op when `runConfirmDefaults = False`, in
+  non-interactive mode, and when no resolved variable has
+  `FromDefault`/`FromParent` source.
+
+Subsequent `save-prompted` logic sees the `FromPrompt`-retagged entries
+as if the user had entered them via the initial prompt pass, so local
+config persistence works uniformly for both kinds of prompted input.
+
 ### Prompt Conditions
 
 Prompts can have a `when` expression that controls whether they are shown:

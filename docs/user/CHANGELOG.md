@@ -3,12 +3,38 @@
 ## Last Reviewed Commit
 
 ```
-0d79a1c Add recipe provenance to manifest and status output (Milestone 5)
+154b330 Broaden renderTemplateText test coverage
 ```
 
 ---
 
 ## Changelog
+
+### 2026-04-19 (doc sync: --confirm-defaults, Dhall-as-templating evaluation, ExecPlan 9 M5)
+
+**Reviewed commits:** `0d79a1c` through `154b330`. Supplements the
+2026-04-16 and 2026-04-18 entries which advanced CHANGELOG content but
+did not advance the "Last Reviewed Commit" pointer.
+
+- Updated `docs/cli/run.md` — added `--confirm-defaults` to the Options table and a "Reviewing defaults interactively" subsection, plus an example. This closes the doc gap from ExecPlan 7 (2026-04-18 work landed the flag and user-guide text but not the CLI reference).
+- Updated `docs/dev/design/proposed/cli-commands.md` — added `runConfirmDefaults :: Bool` to the `RunOpts` record, the flag to the usage line, and a row to the options table.
+- Updated `docs/dev/design/proposed/variable-resolution.md` — added a "Reviewing default and parent values" subsection under "Interactive Prompts" describing the `confirmDefaults` pass, its `FromDefault`/`FromParent` source filter, the `FromPrompt` retagging, and the conditions under which the flag is a no-op.
+- Updated `docs/dev/architecture/overview.md` — revised the "Templates Stay Dumb" decision to reflect inline `{{#if}}` conditional blocks; updated the project-tree comment for `Template.hs`. Template bodies now support boolean gating via `{{#if}}/{{#else}}/{{/if}}`; anything richer still requires `DhallText`.
+- ExecPlan 9 M5 (sibling `nix-haskell-flake` migration, `seihou-modules` commit `b6ccd2a`) and the follow-up test-coverage broadening (`154b330`) are covered by this entry; no in-repo user docs changed for those.
+- ExecPlan 8 (Dhall-as-templating evaluation: `492c5ac` through `af1c372`) landed a design-only doc at `docs/dev/design/proposed/dhall-as-templating-evaluation.md` plus test-only prototypes (`Seihou.Engine.TypedDhallText`, the now-retired `TemplatePrototype`, and the `split-flake` / `dhall-text-flake` / `typed-dhall-text-flake` / `conditional-template-flake` fixtures). No user docs needed.
+
+**Features documented:**
+- **`seihou run --confirm-defaults`** — Interactive flag that pauses between variable resolution and plan compilation, re-prompting every variable whose value came from a module default (priority 8) or a parent-binding export (priority 7). Overrides flow through `FromPrompt` retagging into the existing save-prompted offer. No-op in non-interactive mode and when nothing is default- or parent-sourced.
+
+**No documentation needed:**
+- `492c5ac` Reproduce split-flake pain point in-tree (fixture-only)
+- `e02cafc` Prototype A (dhall-text single-source flake; fixture + evaluation prototype)
+- `cd8f8b1` Prototype B (typed-function dhall-text renderer; experimental module, test-only)
+- `c4f9cdd` Prototype C (inline `{{#if}}` prototype; superseded and deleted in ExecPlan 9 M3)
+- `59623d9` / `af1c372` Evaluation doc (dev-only design record)
+- `154b330` Broaden `renderTemplateText` test coverage (test-only)
+- `5ddfab7` Record ExecPlan 9 outcomes and sibling-repo migration (plan doc + cross-repo commit)
+- `ab29a2a` / `9faa2c2` / `69e7de4` ExecPlan 7 source + test + initial doc commits — superseded here by the `docs/cli/run.md` and `docs/dev/design/proposed/` updates above
 
 ### 2026-04-18 (inline conditional blocks in template strategy)
 

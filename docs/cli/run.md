@@ -29,6 +29,7 @@ seihou run [MODULE] [OPTIONS]
 | `-v, --verbose` | Show detailed progress messages |
 | `--save-prompted` | Save prompted values to local config without asking |
 | `--no-save-prompted` | Do not offer to save prompted values |
+| `--confirm-defaults` | Step through default/parent-sourced variables and confirm or override each one |
 | `--commit` | Commit generated files to git after execution (uses AI-generated message) |
 | `--commit-message MSG` | Use a custom commit message instead of the AI-generated one (implies `--commit`) |
 
@@ -78,4 +79,18 @@ seihou run haskell-project --commit-message "scaffold initial project"
 
 # Run a recipe (transparently expands to its modules)
 seihou run haskell-library
+
+# Step through defaults and override any before the plan runs
+seihou run haskell-project --confirm-defaults
 ```
+
+### Reviewing defaults interactively
+
+With `--confirm-defaults`, Seihou pauses after variable resolution and
+before plan compilation, displaying every variable whose value came from
+a module default (priority 8) or a parent-binding export (priority 7).
+Each prompt shows the current value in brackets; press Enter to keep it,
+or type a new value to override. Overridden values are tagged as
+prompted input, so they flow into the "save prompted values?" offer at
+the end of the run. The flag is a no-op in non-interactive mode and when
+no variable is default- or parent-sourced.

@@ -132,7 +132,7 @@ seihou/
 │           │   └── Context.hs     # Execution context
 │           ├── Engine/
 │           │   ├── Plan.hs        # Single-module plan compilation
-│           │   ├── Template.hs    # Placeholder engine
+│           │   ├── Template.hs    # Placeholder engine + {{#if}} conditional blocks
 │           │   ├── Execute.hs     # Plan execution
 │           │   ├── Diff.hs        # Three-state diff engine
 │           │   ├── Conflict.hs    # Conflict resolution
@@ -223,9 +223,25 @@ seihou/
 
 ## Key Architectural Decisions
 
-### Templates Stay Dumb; Dhall Computes
+### Templates Stay Mostly Dumb; Dhall Computes
 
-Templates perform only placeholder substitution (`{{var.name}}`). When conditional logic or loops are needed, a Dhall function assembles the final text before it reaches the placeholder engine. This preserves P1 (no template logic) while providing an escape hatch for complex files via the `DhallText` strategy.
+Templates perform placeholder substitution (`{{var.name}}`) and a single
+kind of branching construct: inline `{{#if <expr>}}…{{/if}}` blocks
+(optionally with `{{#else}}`) that gate body text on the same expression
+grammar used by a step's `when` clause. The block form exists so that a
+module author can keep a single `.tpl` file instead of shipping two
+near-duplicate templates with mutually exclusive `when` guards; it is
+deliberately limited to the Template strategy's body path — destination
+paths and shell commands stay placeholder-only.
+
+For anything richer than boolean gating — loops, arithmetic, string
+assembly, structured records — a Dhall function computes the final text
+and the engine passes it through without further logic. This preserves
+P1 (templates do not grow a full expression sub-language) while keeping
+the "same file for two configurations" ergonomics cheap. See
+[Generation Strategies: Conditional blocks](../design/proposed/generation-strategies.md#conditional-blocks-template-only)
+and [ExecPlan 9](../../plans/9-inline-conditionals-in-template-strategy.md)
+for the full design.
 
 ### Explicit Composition via Declared Dependencies
 
