@@ -234,3 +234,107 @@ spec = do
       let vars = Map.fromList [("gate", VBool False)]
       renderTemplateText "before {{#if Eq gate true}}hello {{missing}}{{/if}}after" vars
         `shouldBe` Right "before after"
+
+    it "evaluates && combinator: both true takes the branch" $ do
+      let vars = Map.fromList [("a", VBool True), ("b", VBool True)]
+      renderTemplateText "{{#if Eq a true && Eq b true}}Y{{#else}}N{{/if}}" vars
+        `shouldBe` Right "Y"
+
+    it "evaluates && combinator: one false drops the branch" $ do
+      let vars = Map.fromList [("a", VBool True), ("b", VBool False)]
+      renderTemplateText "{{#if Eq a true && Eq b true}}Y{{#else}}N{{/if}}" vars
+        `shouldBe` Right "N"
+
+    it "evaluates || combinator: either true takes the branch" $ do
+      let vars = Map.fromList [("a", VBool False), ("b", VBool True)]
+      renderTemplateText "{{#if Eq a true || Eq b true}}Y{{#else}}N{{/if}}" vars
+        `shouldBe` Right "Y"
+
+    it "evaluates ! combinator: negation flips the branch" $ do
+      let vars = Map.fromList [("a", VBool False)]
+      renderTemplateText "{{#if !Eq a true}}Y{{#else}}N{{/if}}" vars
+        `shouldBe` Right "Y"
+
+    it "evaluates a parenthesised expression honouring precedence" $ do
+      -- (A || B) && !C — with A=false, B=true, C=false → (true) && true = true
+      let vars =
+            Map.fromList
+              [ ("a", VBool False),
+                ("b", VBool True),
+                ("c", VBool False)
+              ]
+      renderTemplateText
+        "{{#if (Eq a true || Eq b true) && !Eq c true}}Y{{#else}}N{{/if}}"
+        vars
+        `shouldBe` Right "Y"
+
+    it "matches outer {{#else}} past a nested {{#else}} inside the then-branch" $ do
+      -- The outer if's else is "e"; the inner if (B) has its own else "b2".
+      -- splitBranches must skip the inner {{#else}} (it's at depth 1) and
+      -- only mark the outer {{#else}} (at depth 0).
+      let mkVars a b =
+            Map.fromList [("a", VBool a), ("b", VBool b)]
+      renderTemplateText
+        "{{#if Eq a true}}a1{{#if Eq b true}}b1{{#else}}b2{{/if}}a2{{#else}}e{{/if}}"
+        (mkVars True True)
+        `shouldBe` Right "a1b1a2"
+      renderTemplateText
+        "{{#if Eq a true}}a1{{#if Eq b true}}b1{{#else}}b2{{/if}}a2{{#else}}e{{/if}}"
+        (mkVars True False)
+        `shouldBe` Right "a1b2a2"
+      renderTemplateText
+        "{{#if Eq a true}}a1{{#if Eq b true}}b1{{#else}}b2{{/if}}a2{{#else}}e{{/if}}"
+        (mkVars False True)
+        `shouldBe` Right "e"
+
+    it "surfaces an UnterminatedIf from a nested block inside the taken branch" $ do
+      -- Outer if takes the then-branch; the inner {{#if B}} has no closing
+      -- token before the outer {{/if}}, so splitBranches consumes the outer
+      -- {{/if}} as the inner's match and reports the outer opener as
+      -- unterminated. The precise error is UnterminatedIf; line is the
+      -- opener that actually ran out of closers.
+      let vars = Map.fromList [("a", VBool True), ("b", VBool True)]
+          tpl = "{{#if Eq a true}}outer{{#if Eq b true}}inner{{/if}}"
+      case renderTemplateText tpl vars of
+        Right r -> expectationFailure ("expected UnterminatedIf, got " <> show r)
+        Left [UnterminatedIf _] -> pure ()
+        Left other ->
+          expectationFailure ("expected [UnterminatedIf _], got " <> show other)
+
+    it "reports UnterminatedIf on the opener line for a long preamble" $ do
+      -- Preamble of ten lines; opener on line 11; no {{/if}} at all.
+      let preamble = mconcat (replicate 10 "line\n")
+          tpl = preamble <> "{{#if Eq x true}}body\nmore body\n"
+          vars = Map.fromList [("x", VBool True)]
+      case renderTemplateText tpl vars of
+        Right _ -> expectationFailure "expected UnterminatedIf"
+        Left [UnterminatedIf lineNum] -> lineNum `shouldBe` 11
+        Left other -> expectationFailure ("expected [UnterminatedIf 11], got " <> show other)
+
+    it "handles an empty then-branch" $ do
+      let vars = Map.fromList [("x", VBool True)]
+      renderTemplateText "a{{#if Eq x true}}{{/if}}b" vars
+        `shouldBe` Right "ab"
+
+    it "handles an if/else with both branches empty" $ do
+      let vars = Map.fromList [("x", VBool False)]
+      renderTemplateText "a{{#if Eq x true}}{{#else}}{{/if}}b" vars
+        `shouldBe` Right "ab"
+
+    it "handles multiple top-level blocks back-to-back" $ do
+      let vars = Map.fromList [("a", VBool True), ("b", VBool False)]
+      renderTemplateText
+        "{{#if Eq a true}}A{{/if}}-{{#if Eq b true}}B{{/if}}-{{#if Eq a true}}A2{{/if}}"
+        vars
+        `shouldBe` Right "A--A2"
+
+    it "interleaves {{var}} and {{#if}} on the same line" $ do
+      let vars =
+            Map.fromList
+              [ ("flag", VBool True),
+                ("name", VText "world")
+              ]
+      renderTemplateText
+        "pre {{name}} {{#if Eq flag true}}mid-{{name}}-mid{{/if}} post"
+        vars
+        `shouldBe` Right "pre world mid-world-mid post"
