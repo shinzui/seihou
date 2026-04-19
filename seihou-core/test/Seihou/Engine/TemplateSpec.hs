@@ -140,3 +140,97 @@ spec = do
     it "passes through path with no placeholders" $ do
       let vars = Map.empty
       renderDestPath "src/Lib.hs" vars `shouldBe` Right "src/Lib.hs"
+
+  describe "renderTemplateText" $ do
+    it "behaves like renderTemplate on templates with no blocks" $ do
+      let vars = Map.fromList [("project.name", VText "my-app")]
+          tpl = "# {{project.name}}\nVersion: 0.1.0.0\n"
+      renderTemplateText tpl vars
+        `shouldBe` renderTemplate tpl vars
+
+    it "selects the then-branch when the if expression is true" $ do
+      let vars = Map.fromList [("x", VBool True)]
+      renderTemplateText "{{#if Eq x true}}A{{/if}}" vars
+        `shouldBe` Right "A"
+
+    it "excludes the then-branch when the if expression is false" $ do
+      let vars = Map.fromList [("x", VBool False)]
+      renderTemplateText "{{#if Eq x true}}A{{/if}}" vars
+        `shouldBe` Right ""
+
+    it "selects the then-branch of an if/else when the variable is set" $ do
+      let vars = Map.fromList [("foo", VText "bar")]
+      renderTemplateText "{{#if IsSet foo}}yes{{#else}}no{{/if}}" vars
+        `shouldBe` Right "yes"
+
+    it "selects the else-branch of an if/else when the variable is unset" $ do
+      let vars = Map.empty
+      renderTemplateText "{{#if IsSet foo}}yes{{#else}}no{{/if}}" vars
+        `shouldBe` Right "no"
+
+    it "handles two-level nesting with both branches taken" $ do
+      let vars = Map.fromList [("a", VBool True), ("b", VBool True)]
+      renderTemplateText
+        "{{#if Eq a true}}outer{{#if Eq b true}}inner{{/if}}outer2{{/if}}"
+        vars
+        `shouldBe` Right "outerinnerouter2"
+
+    it "handles three-level nesting" $ do
+      let vars = Map.fromList [("a", VBool True), ("b", VBool True), ("c", VBool True)]
+      renderTemplateText
+        "{{#if Eq a true}}{{#if Eq b true}}{{#if Eq c true}}deep{{/if}}{{/if}}{{/if}}"
+        vars
+        `shouldBe` Right "deep"
+
+    it "reports UnterminatedIf with the opener's source line" $ do
+      let tpl = "line one\nline two\n{{#if Eq x true}}never closed\nline four\n"
+          vars = Map.fromList [("x", VBool True)]
+      case renderTemplateText tpl vars of
+        Right _ -> expectationFailure "expected UnterminatedIf"
+        Left [UnterminatedIf lineNum] -> lineNum `shouldBe` 3
+        Left other -> expectationFailure ("expected [UnterminatedIf 3], got " <> show other)
+
+    it "reports orphan {{/if}} at top level" $ do
+      let tpl = "a\nb\n{{/if}}\n"
+          vars = Map.empty
+      case renderTemplateText tpl vars of
+        Right _ -> expectationFailure "expected OrphanBlockToken"
+        Left [OrphanBlockToken tok lineNum] -> do
+          tok `shouldBe` "{{/if}}"
+          lineNum `shouldBe` 3
+        Left other ->
+          expectationFailure ("expected [OrphanBlockToken \"{{/if}}\" 3], got " <> show other)
+
+    it "reports orphan {{#else}} at top level" $ do
+      let tpl = "a\n{{#else}}\n"
+          vars = Map.empty
+      case renderTemplateText tpl vars of
+        Right _ -> expectationFailure "expected OrphanBlockToken"
+        Left [OrphanBlockToken tok lineNum] -> do
+          tok `shouldBe` "{{#else}}"
+          lineNum `shouldBe` 2
+        Left other ->
+          expectationFailure ("expected [OrphanBlockToken \"{{#else}}\" 2], got " <> show other)
+
+    it "reports MalformedIfExpression with the opener line and parser error" $ do
+      let tpl = "ok\n{{#if &&garbage}}body{{/if}}"
+          vars = Map.empty
+      case renderTemplateText tpl vars of
+        Right _ -> expectationFailure "expected MalformedIfExpression"
+        Left [MalformedIfExpression rawExpr lineNum _parserErr] -> do
+          rawExpr `shouldBe` "&&garbage"
+          lineNum `shouldBe` 2
+        Left other ->
+          expectationFailure ("expected [MalformedIfExpression …], got " <> show other)
+
+    it "substitutes {{var}} inside the taken branch and surfaces unresolved errors" $ do
+      let vars = Map.fromList [("gate", VBool True)]
+      case renderTemplateText "{{#if Eq gate true}}hello {{name}}{{/if}}" vars of
+        Right _ -> expectationFailure "expected UnresolvedPlaceholder in taken branch"
+        Left [UnresolvedPlaceholder (VarName nm) _] -> nm `shouldBe` "name"
+        Left other -> expectationFailure ("unexpected errors: " <> show other)
+
+    it "discards untaken branches so their {{var}} errors do not surface" $ do
+      let vars = Map.fromList [("gate", VBool False)]
+      renderTemplateText "before {{#if Eq gate true}}hello {{missing}}{{/if}}after" vars
+        `shouldBe` Right "before after"

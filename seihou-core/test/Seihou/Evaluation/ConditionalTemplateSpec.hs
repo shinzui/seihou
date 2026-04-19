@@ -5,7 +5,8 @@ import Data.Text (Text)
 import Data.Text.IO qualified as TIO
 import Seihou.Core.Types
 import Seihou.Engine.Template (renderTemplate)
-import Seihou.Engine.TemplatePrototype (PrototypeError (..), renderTemplatePrototype)
+import Seihou.Engine.TemplatePrototype (renderTemplatePrototype)
+import Seihou.Engine.TemplatePrototype qualified as Proto
 import System.Directory (getCurrentDirectory)
 import System.FilePath ((</>))
 import Test.Hspec
@@ -80,7 +81,7 @@ spec = do
           vars = Map.fromList [("x", VBool True)]
       case renderTemplatePrototype tpl vars of
         Right _ -> expectationFailure "expected UnterminatedIf"
-        Left [UnterminatedIf lineNum] -> lineNum `shouldBe` 3
+        Left [Proto.UnterminatedIf lineNum] -> lineNum `shouldBe` 3
         Left other -> expectationFailure ("expected UnterminatedIf 3, got " <> show other)
 
     it "evaluates IsSet against an unset variable as False and excludes the block" $ do

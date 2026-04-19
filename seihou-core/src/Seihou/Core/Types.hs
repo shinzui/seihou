@@ -318,10 +318,18 @@ data VarError
   | CoercionFailed VarName VarType Text
   deriving stock (Eq, Show, Generic)
 
--- | Errors that can occur during template placeholder substitution.
+-- | Errors that can occur during template placeholder substitution
+-- and conditional-block expansion.
 data PlaceholderError
   = UnresolvedPlaceholder VarName Int
   | MalformedPlaceholder Text Int
+  | -- | @{{#if …}}@ with no matching @{{/if}}@; line is the opener.
+    UnterminatedIf Int
+  | -- | @{{/if}}@ or @{{#else}}@ encountered outside any @{{#if}}@.
+    OrphanBlockToken Text Int
+  | -- | The expression inside a @{{#if …}}@ failed to parse;
+    --   fields are the raw expression, the opener's line, and the parser error.
+    MalformedIfExpression Text Int Text
   deriving stock (Eq, Show, Generic)
 
 -- | Tracks the state of generated files for incremental re-generation

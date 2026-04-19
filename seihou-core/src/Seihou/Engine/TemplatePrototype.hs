@@ -29,7 +29,7 @@ where
 
 import Data.Text qualified as T
 import Seihou.Core.Expr (evalExpr, parseExpr)
-import Seihou.Core.Types
+import Seihou.Core.Types hiding (MalformedIfExpression, OrphanBlockToken, UnterminatedIf)
 import Seihou.Engine.Template (renderTemplate)
 import Seihou.Prelude
 
