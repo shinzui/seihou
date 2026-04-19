@@ -3,12 +3,25 @@
 ## Last Reviewed Commit
 
 ```
-HEAD  Consolidate template docs into docs/user/templating.md and fix design-doc errors
+HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 10)
 ```
 
 ---
 
 ## Changelog
+
+### 2026-04-19 (parameterized dependency multi-instantiation)
+
+**Reviewed commits:** the eight-commit ExecPlan 10 series culminating in
+the multi-instance diamond fixtures.
+
+**Features documented:**
+- **Multi-instantiation of parameterized dependencies** — Two dependency edges pointing at the same child module with different `vars` now produce two independent invocations of that child. Two edges with identical `vars` dedupe to a single invocation. Before this change the second invocation was silently dropped; the real-world symptom was that `master-plan` compositions produced only one `.claude/skills/` symlink instead of two.
+- **Manifest schema v2** — `.seihou/manifest.json` is now version 2. Each `AppliedModule` entry gains an optional `parentVars` field recording the parent-supplied bindings that produced the invocation. Version-1 manifests load unchanged (missing `parentVars` decodes to an empty map).
+- **`seihou status` disambiguation** — When two invocations of the same module appear, the status line appends the bindings inline (`claude-skill-link [skill.name=exec-plan]`) so the two are distinguishable.
+
+**Updates:**
+- `docs/user/module-authoring.md` — added a "Multi-instantiation" subsection under "Composition and dependencies" with a worked `claude-skill-link` example showing two invocations producing two symlinks, and an explanation that identity is the edge's `vars`, not any downstream override. No new authoring syntax is required.
 
 ### 2026-04-19 (consolidated template reference; design-doc fixes)
 

@@ -54,21 +54,42 @@ pointing into `claude/skills/<skill>/`.
 
 ## Progress
 
-- [ ] M1: Introduce a composition-instance type keyed on
+- [x] M1: Introduce a composition-instance type keyed on
       `(ModuleName, ParentVars)` and refactor `loadComposition` to materialise
-      one instance per distinct edge decoration.
-- [ ] M2: Update `collectParentVars` to preserve per-instance bindings (drop
+      one instance per distinct edge decoration.  **Done 2026-04-19** — added
+      `ParentVars` (Core.Types) and `ModuleInstance` /
+      `qualifiedName` / `stableHash` (Composition.Instance) and
+      refactored `loadTransitive` to dedupe by
+      `(ModuleName, ParentVars)`.
+- [x] M2: Update `collectParentVars` to preserve per-instance bindings (drop
       the `Map.fromListWith Map.union` collapse at
       `seihou-core/src/Seihou/Composition/Resolve.hs:348`) and adjust
       `resolveComposedVariables` / `resolveWithPrompts` to return results keyed
-      by instance.
-- [ ] M3: Update `buildGraph` / `topoSort` in
+      by instance.  **Done 2026-04-19** — replaced `fromListWith Map.union`
+      with `fromList`, changed both resolvers to return
+      `Map ModuleInstance (Map VarName ResolvedVar)`, and rewrote
+      the visible-exports fold to resolve each dependency edge to
+      its exact child instance.
+- [x] M3: Update `buildGraph` / `topoSort` in
       `seihou-core/src/Seihou/Composition/Graph.hs` to operate on
       instance keys, so the topo sort produces one entry per instance.
-- [ ] M4: Update `compileComposedPlan` in
+      **Done 2026-04-19** — `CompositionGraph` rekeyed on
+      `ModuleInstance`, `buildGraph` dedupes repeated edges so
+      identical parent entries count once for in-degree, and
+      `topoSort` returns `[ModuleInstance]`.
+- [x] M4: Update `compileComposedPlan` in
       `seihou-core/src/Seihou/Composition/Plan.hs` and the call-sites in
       `seihou-cli/src/Seihou/CLI/Run.hs` and `seihou-cli/src/Seihou/CLI/Vars.hs`
       to carry instance identity from resolution through execution.
+      **Done 2026-04-19** — `compileComposedPlan` accepts
+      `[(ModuleInstance, Module, FilePath, Map VarName VarValue)]`
+      and passes `qualifiedName` to `compilePlan` for the
+      `ModuleName` slot. CLI `Run.hs` threads instances through
+      resolution, planning, and manifest update, and the new
+      `executePlan` ownership-map parameter means `FileRecord`s
+      attribute correctly per instance. `Vars.hs` merges resolved
+      maps for all instances of the target module (a followup can
+      add per-instance explain output).
 - [x] M5: Extend the manifest schema in
       `seihou-core/src/Seihou/Core/Types.hs` (`AppliedModule`, `Manifest`) to
       record instance identity, and add a migration path so existing
@@ -77,16 +98,38 @@ pointing into `claude/skills/<skill>/`.
       `currentManifestVersion` 1→2, taught the decoder to default missing
       `parentVars` to `ParentVars mempty`, and added round-trip + v1
       back-compat specs in `Seihou.Manifest.TypesSpec`.
-- [ ] M6: Expand the `param-dep-parent` / `param-dep-child` fixtures under
+- [x] M6: Expand the `param-dep-parent` / `param-dep-child` fixtures under
       `seihou-core/test/fixtures/` into a diamond that exercises two distinct
       bindings of the same child, and add specs in
       `seihou-core/test/Seihou/Composition/{Graph,Resolve,Plan}Spec.hs` that
-      assert two instances appear in the plan.
-- [ ] M7: Regression-verify against the agent-seihou master-plan composition
+      assert two instances appear in the plan.  **Done 2026-04-19** — added
+      `multi-instance-helper`, `multi-instance-leaf`, and
+      `multi-instance-diamond` fixtures; added instance-aware
+      assertions in `GraphSpec`, `ResolveSpec`, `InstanceSpec`, and
+      an end-to-end diamond case in
+      `Integration.CompositionSpec`. 851 tests total, all green.
+- [x] M7: Regression-verify against the agent-seihou master-plan composition
       (the real-world reproduction) and update any plan-view / status
       formatting that needs to disambiguate instances of the same module.
-- [ ] M8: Documentation: describe multi-instantiation semantics in
+      **Done 2026-04-19** — dry-run and live run both produce
+      two `ln -sfn` commands and both symlinks under
+      `.claude/skills/`. Manifest records two
+      `claude-skill-link` entries with distinct `parentVars`;
+      `seihou status` appends bindings inline so the two
+      invocations are distinguishable. `executePlan` gained an
+      ownership-map parameter so `FileRecord.moduleName` is
+      attributed to the producing instance instead of collapsing
+      under the primary module.
+- [x] M8: Documentation: describe multi-instantiation semantics in
       `docs/user/module-authoring.md` and add a CHANGELOG entry.
+      **Done 2026-04-19** — added a "Multi-instantiation"
+      subsection to `module-authoring.md` with the
+      `claude-skill-link` worked example; added a CHANGELOG entry
+      noting the manifest schema bump and the disambiguated
+      status output; added a design note at
+      `docs/dev/design/proposed/module-instance-identity.md`
+      covering the model, pipeline flow, business rules, and
+      edge cases.
 
 
 ## Surprises & Discoveries
@@ -234,7 +277,66 @@ pointing into `claude/skills/<skill>/`.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**Bug reproduction (before): 2026-04-19** — `seihou run master-plan
+--dry-run` in a fresh scratch directory emitted one `ln -sfn
+../../claude/skills/master-plan .claude/skills/master-plan` and no
+`exec-plan` symlink. Only a single `claude-skill-link` invocation
+reached the plan.
+
+**Regression verification (after): 2026-04-19** — the same command,
+run against a freshly-built `seihou` binary, produces both
+`ln -sfn ../../claude/skills/master-plan .claude/skills/master-plan`
+**and** `ln -sfn ../../claude/skills/exec-plan
+.claude/skills/exec-plan`. `ls -la .claude/skills/` after a live run
+lists both symlinks and each resolves into `claude/skills/<skill>/`
+containing the expected `SKILL.md`. A re-run reports `5 unchanged`,
+confirming idempotence.
+
+**Acceptance criteria** (from Validation and Acceptance):
+1. `cabal test all` passes. **851 tests** total (up from 846
+   pre-implementation), including the new `InstanceSpec`,
+   multi-instantiation cases in `GraphSpec` / `ResolveSpec`, the
+   two-instance round-trip + version-1 back-compat in
+   `Manifest.TypesSpec`, and the fixture-driven diamond in
+   `Integration.CompositionSpec`.
+2. Dry-run shows two `ln -sfn` commands with distinct destinations.
+   Verified.
+3. Live run leaves both symlinks in `.claude/skills/`. Verified.
+4. `seihou status` renders cleanly and disambiguates the two
+   `claude-skill-link` invocations via inline
+   `[skill.name=…]` annotations. Verified.
+5. A regression `haskell-base`-style composition runs unchanged
+   because `emptyParentVars` is the only instance of each module
+   and `qualifiedName` returns the bare name. The
+   `Integration.CompositionSpec` suite covers this path.
+6. Manifest back-compat: the `Seihou.Manifest.TypesSpec "decodes a
+   version-1 manifest with parentVars defaulting to empty"` case
+   exercises a v1 JSON document and asserts it decodes into an
+   in-memory `Manifest` whose `AppliedModule.parentVars` is
+   empty.
+
+**Notable refinements discovered during implementation:**
+
+- `executePlan` originally attributed every `FileRecord` to a single
+  `ModuleName` passed at call time. With two invocations of the same
+  helper producing files under different prefixes, that was wrong. M7
+  added an ownership-map parameter (defaulting to `Map.empty` so
+  single-module callers are unaffected) that `CompileComposedPlan`
+  already builds as its merge result. This was not explicit in the
+  original M4 scope but falls out naturally once the pipeline carries
+  per-instance identity.
+- `seihou status` tracked-file rendering would have leaked the
+  internal `#<hash>` qualified-name suffix into user-visible output.
+  Added a small `displayModuleName` helper that strips it, consistent
+  with the Decision Log's "`qualifiedName` is internal" principle.
+- `buildGraph` needed to dedupe its edge list: a parent that lists
+  `(depModule, depVars)` twice (semantically the same edge) would
+  otherwise inflate the in-degree count and mask the child as
+  circularly dependent. A `GraphSpec` regression test now covers this.
+
+**Schema change surfaced in the filesystem:** new manifests are
+version 2. Old projects continue to load at version 1 and rewrite to
+2 on the next run.
 
 
 ## Pre-implementation Validation (2026-04-19)

@@ -386,6 +386,32 @@ dependencies =
 
 This sets `nix.system` to `"x86_64-linux"` in the `nix-flake` module unless overridden by a CLI flag, environment variable, or config.
 
+### Multi-instantiation
+
+Two dependency edges pointing at the same child module with **different** `vars` produce two independent invocations of that child. Two edges with **identical** `vars` dedupe to a single invocation. This is what makes a helper like `claude-skill-link` reusable along multiple edges in the same composition.
+
+Worked example — picture a registry with three modules:
+
+- `claude-skill-link` — a helper that declares one variable, `skill.name`, and runs `ln -sfn ../../claude/skills/{{skill.name}} .claude/skills/{{skill.name}}`.
+- `exec-plan` — depends on `claude-skill-link` with `skill.name = "exec-plan"`.
+- `master-plan` — depends on `exec-plan` **and** directly on `claude-skill-link` with `skill.name = "master-plan"`.
+
+Running `seihou run master-plan` evaluates the composition and produces **two** distinct `claude-skill-link` invocations — one for each set of parent-supplied bindings. Both symlinks get created; neither invocation is silently dropped.
+
+In the generated `.seihou/manifest.json`, each invocation appears as its own `AppliedModule` entry with a `parentVars` field recording the bindings. `seihou status` prints the bindings inline so you can tell the two apart:
+
+```
+Applied modules:
+  claude-skill-link [skill.name=exec-plan]    v0.1.0    (applied 2026-04-19)
+  claude-skill-link [skill.name=master-plan]  v0.1.0    (applied 2026-04-19)
+  exec-plan [skill.name=exec-plan]            v0.1.3    (applied 2026-04-19)
+  master-plan                                 v0.1.0    (applied 2026-04-19)
+```
+
+Identity is the set of parent-supplied `vars`, not any downstream override. Two invocations stay distinct even if CLI overrides later collapse their resolved variables to the same value, because the "which invocation is this" question is fixed at authoring time by the edge's `vars` field.
+
+No new authoring syntax is required — the existing `dependencies = [ … ]` list already expresses this. If you want one child invocation to be shared by two parents, both parents supply the same bindings; if you want two independent invocations, supply different bindings.
+
 ### Composing modules at the command line
 
 Use `-m` to compose modules without declaring dependencies:
