@@ -27,7 +27,7 @@ runExec :: [Operation] -> ((Map.Map FilePath FileRecord, PureFS), PureFS)
 runExec ops =
   runPureEff $
     runFilesystemPure emptyFS $ do
-      records <- executePlan "/project" ops modName fixedTime
+      records <- executePlan "/project" ops Map.empty modName fixedTime
       fs <- pure () -- just to get the final state via the tuple
       pure (records, emptyFS) -- placeholder; actual FS state is in the outer tuple
 
@@ -36,7 +36,7 @@ runExecFS :: PureFS -> [Operation] -> (Map.Map FilePath FileRecord, PureFS)
 runExecFS initial ops =
   runPureEff $
     runFilesystemPure initial $
-      executePlan "/project" ops modName fixedTime
+      executePlan "/project" ops Map.empty modName fixedTime
 
 spec :: Spec
 spec = do
@@ -52,7 +52,7 @@ spec = do
           ((exists, _), _) =
             runPureEff $
               runFilesystemPure emptyFS $ do
-                _ <- executePlan "/project" ops modName fixedTime
+                _ <- executePlan "/project" ops Map.empty modName fixedTime
                 e <- doesDirectoryExist "/project/src"
                 pure (e, ())
       exists `shouldBe` True

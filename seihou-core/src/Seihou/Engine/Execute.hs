@@ -15,33 +15,40 @@ import Seihou.Prelude
 
 -- | Execute a list of operations against the filesystem.
 -- Returns a map of file paths to FileRecord entries for the manifest.
+--
+-- The @ownerMap@ attributes each generated file to the module instance
+-- (by its qualified name) that produced it. Paths not present in the
+-- map fall back to the default @moduleName'@ — this preserves single-
+-- module call-sites and test usage that do not build an ownership map.
 executePlan ::
   (Filesystem :> es) =>
   FilePath ->
   [Operation] ->
+  Map FilePath ModuleName ->
   ModuleName ->
   UTCTime ->
   Eff es (Map FilePath FileRecord)
-executePlan targetDir ops moduleName' now = do
-  records <- mapM (executeOp targetDir moduleName' now) ops
+executePlan targetDir ops ownerMap moduleName' now = do
+  let ownerFor dest = Map.findWithDefault moduleName' dest ownerMap
+  records <- mapM (executeOp targetDir ownerFor now) ops
   pure (Map.fromList [(k, v) | Just (k, v) <- records])
 
 -- | Execute a single operation and return a FileRecord if a file was written.
 executeOp ::
   (Filesystem :> es) =>
   FilePath ->
-  ModuleName ->
+  (FilePath -> ModuleName) ->
   UTCTime ->
   Operation ->
   Eff es (Maybe (FilePath, FileRecord))
-executeOp targetDir moduleName' now op = case op of
+executeOp targetDir ownerFor now op = case op of
   WriteFileOp dest content strat -> do
     let fullPath = targetDir </> dest
     writeFileText fullPath content
     let record =
           FileRecord
             { hash = hashContent content,
-              moduleName = moduleName',
+              moduleName = ownerFor dest,
               strategy = strat,
               generatedAt = now
             }
@@ -57,7 +64,7 @@ executeOp targetDir moduleName' now op = case op of
     let record =
           FileRecord
             { hash = hashContent content,
-              moduleName = moduleName',
+              moduleName = ownerFor dest,
               strategy = Copy,
               generatedAt = now
             }
@@ -81,7 +88,7 @@ executeOp targetDir moduleName' now op = case op of
         let record =
               FileRecord
                 { hash = hashContent merged,
-                  moduleName = moduleName',
+                  moduleName = ownerFor dest,
                   strategy = strat,
                   generatedAt = now
                 }

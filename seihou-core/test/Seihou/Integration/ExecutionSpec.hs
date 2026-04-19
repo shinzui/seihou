@@ -80,7 +80,7 @@ spec = do
           (records, fs) =
             runPureEff $
               runFilesystemPure emptyFS $
-                executePlan "" ops modName fixedTime
+                executePlan "" ops Map.empty modName fixedTime
       -- Verify files were created in the filesystem
       Map.member "README.md" (fs.files) `shouldBe` True
       Map.member "my-app.cabal" (fs.files) `shouldBe` True
@@ -102,7 +102,7 @@ spec = do
           (records, fs) =
             runPureEff $
               runFilesystemPure emptyFS $
-                executePlan "" ops modName fixedTime
+                executePlan "" ops Map.empty modName fixedTime
           -- Build manifest from first run
           manifest = manifestWithFiles fixedTime records
           -- Re-run: compute diff against same plan and same FS
@@ -124,7 +124,7 @@ spec = do
           (records, fs) =
             runPureEff $
               runFilesystemPure emptyFS $
-                executePlan "" ops1 modName fixedTime
+                executePlan "" ops1 Map.empty modName fixedTime
           manifest = manifestWithFiles fixedTime records
       -- Compile with changed variable
       (_, ops2) <- compileFixturePlan [("project.name", "other-app")]
@@ -161,7 +161,7 @@ spec = do
           (records, fs1) =
             runPureEff $
               runFilesystemPure emptyFS $
-                executePlan "" ops modName fixedTime
+                executePlan "" ops Map.empty modName fixedTime
           manifest = manifestWithFiles fixedTime records
           -- Simulate user editing README.md
           fs2 = PureFS (Map.insert "README.md" "user edit" fs1.files) fs1.dirs
@@ -177,7 +177,7 @@ spec = do
       let (_, fs3) =
             runPureEff $
               runFilesystemPure fs2 $
-                executePlan "" ops modName fixedTime
+                executePlan "" ops Map.empty modName fixedTime
       -- Verify README.md was overwritten with plan content
       Map.lookup "README.md" fs3.files `shouldBe` Just "# my-app\n\nVersion: 0.1.0.0\n"
 
@@ -187,7 +187,7 @@ spec = do
           (records, _) =
             runPureEff $
               runFilesystemPure emptyFS $
-                executePlan "" ops modName fixedTime
+                executePlan "" ops Map.empty modName fixedTime
       -- README.md → Template
       (records Map.! "README.md").strategy `shouldBe` Template
       -- src/Lib.hs → Template

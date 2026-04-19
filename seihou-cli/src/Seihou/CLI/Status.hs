@@ -112,7 +112,7 @@ renderStatus color manifest tracked mEntries = do
     then TIO.putStrLn "  (none)"
     else do
       let maxPathLen = maximum (map (length . (.path)) tracked)
-          maxModLen = maximum (map (T.length . (.unModuleName) . (.moduleName)) tracked)
+          maxModLen = maximum (map (T.length . displayModuleName . (.moduleName)) tracked)
       mapM_ (printTrackedFile color maxPathLen maxModLen) tracked
   TIO.putStrLn ""
 
@@ -154,6 +154,9 @@ lookupEntry (Just _) m am =
     Nothing -> NoOrigin
 
 -- | Print a single applied module line, optionally with an update annotation.
+-- When the applied module carries non-empty parent bindings, append them
+-- inline so two invocations of the same module are distinguishable to a
+-- reader of `seihou status`.
 printModule :: Bool -> UpdateAnnotation -> AppliedModule -> IO ()
 printModule color annotation am =
   let verText = case am.moduleVersion of
@@ -163,6 +166,19 @@ printModule color annotation am =
         "    (applied "
           <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d" am.appliedAt)
           <> ")"
+      parentVarsText =
+        let m = am.parentVars.unParentVars
+         in if Map.null m
+              then ""
+              else
+                let pairs =
+                      T.intercalate
+                        ", "
+                        [ vn.unVarName <> "=" <> v
+                        | (vn, v) <- Map.toAscList m
+                        ]
+                    rendered = " [" <> pairs <> "]"
+                 in if color then dim rendered else rendered
       updateText = case annotation of
         NoCheck -> ""
         NoOrigin -> "  " <> (if color then dim "(no origin)" else "(no origin)")
@@ -170,6 +186,7 @@ printModule color annotation am =
    in TIO.putStrLn $
         "  "
           <> am.name.unModuleName
+          <> parentVarsText
           <> verText
           <> appliedText
           <> updateText
@@ -189,15 +206,25 @@ renderEntry color e = case e.status of
     if color then yellow "unreachable" else "unreachable"
 
 -- | Print a single tracked file line with status.
+--
+-- File-record module names may carry a @#<hash>@ disambiguator when the
+-- owning instance has parent bindings (see 'qualifiedName'). That suffix
+-- is an internal key, not something a reader should see; strip it for
+-- display so tracked files show the bare module name.
 printTrackedFile :: Bool -> Int -> Int -> TrackedFile -> IO ()
 printTrackedFile color maxPathLen maxModLen tf = do
   let path = T.pack tf.path
-      modName = tf.moduleName.unModuleName
+      modName = displayModuleName tf.moduleName
       paddedPath = path <> T.replicate (maxPathLen - T.length path + 3) " "
       paddedMod = modName <> T.replicate (maxModLen - T.length modName + 3) " "
       label = statusLabel tf.status
       colorLabel = if color then statusColor tf.status label else label
   TIO.putStrLn $ "  " <> paddedPath <> paddedMod <> colorLabel
+
+-- | Strip the internal @#<hash>@ disambiguator from a module name for
+-- display in user-facing surfaces.
+displayModuleName :: ModuleName -> Text
+displayModuleName (ModuleName n) = T.takeWhile (/= '#') n
 
 -- | Human-readable label for a file status.
 statusLabel :: TrackedFileStatus -> Text

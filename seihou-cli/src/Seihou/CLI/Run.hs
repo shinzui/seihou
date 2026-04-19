@@ -273,7 +273,7 @@ handleRun runOpts = do
 
               -- Execute the plan (excluding kept/skipped files)
               runEff $ runFilesystem $ runManifestStore manifestPath $ do
-                recs <- executePlan "" opsForExec modName now
+                recs <- executePlan "" opsForExec ownerMap modName now
 
                 -- Build updated manifest with all composed modules
                 let orphanedPaths = map (.path) diff.orphaned
