@@ -132,8 +132,11 @@ This is a literal \{{ not a placeholder }}.
 
 ```haskell
 data PlaceholderError
-  = UnresolvedPlaceholder Text Int  -- Variable name, line number
-  | MalformedPlaceholder Text Int   -- Raw text, line number
+  = UnresolvedPlaceholder VarName Int    -- Variable name, line number
+  | MalformedPlaceholder Text Int        -- Raw text, line number
+  | UnterminatedIf Int                   -- Line of the {{#if}} opener
+  | OrphanBlockToken Text Int            -- Stray {{/if}} or {{#else}}
+  | MalformedIfExpression Text Int Text  -- Expression, opener line, parser error
   deriving stock (Eq, Show, Generic)
 
 -- | Substitute all placeholders in a template
@@ -161,6 +164,50 @@ parseTemplate :: Text -> Either [PlaceholderError] [Segment]
 3. Placeholders in destination paths (`stepDest`) follow the same syntax and rules.
 4. `\{{` produces a literal `{{` in the output.
 5. Nested placeholders (`{{{{var}}}}`) are not supported.
+
+### Conditional blocks (Template only)
+
+Template bodies (not `dest` paths or command strings) may contain conditional
+blocks that branch on resolved variables:
+
+```
+{{#if <expr>}}...{{/if}}
+{{#if <expr>}}...{{#else}}...{{/if}}
+```
+
+`<expr>` is the same grammar the engine uses for a step's `when` field
+(see `Seihou.Core.Expr`): `IsSet`, `Eq`, `&&`, `||`, `!`, `true`, `false`,
+parentheses. Blocks nest to arbitrary depth.
+
+Example:
+
+```
+nativeBuildInputs = [
+  pkgs.cabal-install
+{{#if Eq nix.postgresql true}}  pkgs.postgresql
+{{/if}}];
+```
+
+Semantics:
+
+- Expansion runs as a first pass over the template body; the resulting
+  text is then fed through the ordinary `{{placeholder}}` engine.
+- Only the selected branch is expanded recursively. The untaken branch
+  is discarded, so any `{{placeholder}}` references or nested block
+  errors inside it do not surface.
+- Block-level errors — unterminated `{{#if}}`, stray `{{/if}}` or
+  `{{#else}}`, malformed `<expr>` — report the opener's source line.
+  Inner `{{var}}` error line numbers reflect positions after block
+  expansion, so they may drift from source positions when blocks are
+  consumed; this is accepted as a trade-off against threading a
+  line-map through the expander.
+- Conditionals apply to the `Template` strategy's body path only. The
+  `DhallText` and `Structured` strategies express conditionals through
+  Dhall's native `if`/`then`/`else` after pre-substitution. Destination
+  paths and shell commands accept only `{{placeholder}}` substitution.
+
+Provenance: this facility was added by
+[docs/plans/9-inline-conditionals-in-template-strategy.md](../../../plans/9-inline-conditionals-in-template-strategy.md).
 
 ## DhallText Strategy
 

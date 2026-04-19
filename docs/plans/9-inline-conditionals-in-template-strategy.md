@@ -77,7 +77,7 @@ its recommendation: Prototype C.
       `compilePlan` and preserves both byte-for-byte equivalence
       assertions against the split-flake baselines; total tests 709
       = 711 − 4 prototype-specific + 2 compilePlan)
-- [ ] M4: Update documentation. Extend the
+- [x] M4: Update documentation. Extend the
       `Strategy: template` subsection of
       `docs/user/module-authoring.md` with the conditional-block
       syntax and a worked example. Add a "Conditional blocks"
@@ -85,6 +85,7 @@ its recommendation: Prototype C.
       `docs/dev/design/proposed/generation-strategies.md` with the
       same example and a short rationale citing this plan.
       Add a CHANGELOG entry in `docs/user/CHANGELOG.md`.
+      (done 2026-04-18)
 - [ ] M5: Migrate the sibling `nix-haskell-flake` module (separate
       git repository at
       `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou-modules`).

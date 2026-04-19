@@ -234,6 +234,30 @@ Placeholders work in both the file content and the destination path:
 dest = "{{project.name}}.cabal"   -- becomes "my-app.cabal"
 ```
 
+**Conditional blocks:**
+
+Template bodies can branch on resolved variables using `{{#if}}`, `{{#else}}`, and `{{/if}}` tokens:
+
+```
+{{#if <expr>}}...{{/if}}
+{{#if <expr>}}...{{#else}}...{{/if}}
+```
+
+`<expr>` uses the same grammar as a step's `when` clause (see [Expression language](#expression-language) — `IsSet`, `Eq`, `&&`, `||`, `!`, `true`, `false`, parentheses). Blocks may nest to arbitrary depth; untaken branches are discarded, so unresolved `{{placeholder}}` references inside them do not surface as errors.
+
+Worked example — toggle an optional `pkgs.postgresql` line in a Nix flake:
+
+```
+nativeBuildInputs = [
+  pkgs.cabal-install
+{{#if Eq nix.postgresql true}}  pkgs.postgresql
+{{/if}}];
+```
+
+With `nix.postgresql = True`, the rendered output includes `pkgs.postgresql`; with `False`, the line disappears entirely.
+
+Conditional blocks apply to **template bodies only**. Destination paths (`dest`) and shell commands (`run`, `workDir`) accept only `{{placeholder}}` substitution — `{{#if}}` in those positions is not recognised.
+
 ### Strategy: dhall-text
 
 ```dhall

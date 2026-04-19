@@ -10,6 +10,16 @@
 
 ## Changelog
 
+### 2026-04-18 (inline conditional blocks in template strategy)
+
+**Reviewed commits:** ExecPlan 9 milestones M1–M4
+
+- Updated `docs/user/module-authoring.md` — added a "Conditional blocks" subsection under "Strategy: template" documenting `{{#if}}`, `{{#else}}`, and `{{/if}}` syntax, the shared `when`-expression grammar, unbounded nesting, an optional-postgres worked example, and the restriction that blocks apply to bodies only (not dest paths or shell commands).
+- Updated `docs/dev/design/proposed/generation-strategies.md` — added "Conditional blocks (Template only)" under "Strategy Dispatch" with the same syntax, semantics, and a pointer to `docs/plans/9-inline-conditionals-in-template-strategy.md`. Synced the `PlaceholderError` sketch with the three new block-level variants.
+
+**Features documented:**
+- **Inline `{{#if}}` conditional blocks in the Template strategy** — A single `.tpl` can branch on resolved variables instead of shipping two near-duplicate templates gated by mutually exclusive `when` conditions. Supports `{{#if}}…{{/if}}`, `{{#if}}…{{#else}}…{{/if}}`, arbitrary nesting, and the same expression grammar as step-level `when`. Template bodies only — `renderDestPath` and `renderCommand` remain placeholder-only.
+
 ### 2026-04-16 (recipes, status --check-updates)
 
 **Reviewed commits:** `ee892a4` through `0d79a1c`
