@@ -39,7 +39,7 @@ succeeds, shown in the Concrete Steps section below.
 - [x] Verify `seihou help` now includes a `templating` line in the index. (2026-04-19)
 - [x] Verify `seihou help templating` prints the embedded content verbatim. (2026-04-19)
 - [x] Verify `seihou help --help` advertises `templating` in its TOPIC argument help text. (2026-04-19)
-- [ ] Commit with an `ExecPlan: docs/plans/11-add-templating-help-topic.md` trailer.
+- [x] Commit with an `ExecPlan: docs/plans/11-add-templating-help-topic.md` trailer. (2026-04-19, commit e4ab869)
 
 
 ## Surprises & Discoveries
