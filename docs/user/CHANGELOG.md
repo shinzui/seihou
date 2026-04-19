@@ -3,12 +3,25 @@
 ## Last Reviewed Commit
 
 ```
-HEAD  Add standalone-block whitespace trim to the template engine
+HEAD  Consolidate template docs into docs/user/templating.md and fix design-doc errors
 ```
 
 ---
 
 ## Changelog
+
+### 2026-04-19 (consolidated template reference; design-doc fixes)
+
+**Reviewed commits:** this entry tracks the consolidation and cleanup
+pass that follows the standalone-block trim work below.
+
+- Added `docs/user/templating.md` — a single authoritative user-facing Template reference covering placeholder substitution (syntax, coercion rules, escape), conditional blocks (syntax, full expression grammar, nesting, untaken-branch semantics), standalone-block whitespace trim (qualification rules, what is absorbed, blank-line preservation, indentation/tabs), the five-variant error taxonomy with line-number semantics, authoring patterns (optional line, feature gate, if/else-with-default, multi-feature matrix, version-gated content), and guidance on when to escalate to DhallText or Structured.
+- Trimmed `docs/user/module-authoring.md §Strategy: template` to a brief summary with a pointer to `templating.md`, removing the duplicated placeholder-syntax and conditional-blocks detail that had grown in place.
+- Updated `docs/user/getting-started.md` — the Step 3 "Going further" teaser now links to `templating.md` rather than back into `module-authoring.md`.
+- Fixed `docs/dev/design/proposed/generation-strategies.md §Placeholder Engine` — replaced three fictional signatures (`substitutePlaceholders`, `parseTemplate`, and the `Segment` ADT) with the actual public entry points in `Seihou.Engine.Template` (`renderTemplate`, `renderTemplateText`, `renderDestPath`, `renderCommand`, `valueToText`, `expandConditionals`). Corrected a typo in the coercion rule (`VTText` → `VText`). Added a note pointing to `docs/user/templating.md` for the authoring-level reference.
+
+**No documentation needed:**
+- Preserved the earlier 2026-04-19 standalone-trim entry as-is; this pass is a consolidation on top of it, not a replacement.
 
 ### 2026-04-19 (standalone-block whitespace trim)
 

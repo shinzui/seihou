@@ -103,11 +103,22 @@ generateCopy = id
 
 ## Template Strategy
 
-Placeholder substitution with no logic. The engine scans for `{{var.name}}` patterns and replaces them with resolved variable values.
+Placeholder substitution plus inline conditional blocks. The engine
+scans for `{{var.name}}` patterns and replaces them with resolved
+variable values, and recognises `{{#if …}}{{/if}}` blocks in template
+bodies for boolean gating of regions.
 
-**Input**: Text file with `.tpl` extension containing `{{placeholders}}`
-**Output**: Text with all placeholders resolved
+**Input**: Text file with `.tpl` extension containing `{{placeholders}}` and optionally `{{#if}}` blocks
+**Output**: Text with all placeholders resolved and selected branches retained
 **Composition**: Declarative patch operations (append-section, replace-section, prepend)
+
+> **User-facing reference:** the full template authoring guide —
+> placeholder syntax, coercion rules, escape sequence, conditional
+> blocks, expression grammar, standalone-block whitespace trim,
+> error taxonomy, and authoring patterns — lives at
+> [`docs/user/templating.md`](../../../user/templating.md). This
+> section covers the engine at the design level; for how to
+> actually write a `.tpl`, start there.
 
 ### Placeholder Syntax
 
@@ -130,6 +141,8 @@ This is a literal \{{ not a placeholder }}.
 
 ### Placeholder Engine
 
+Error taxonomy produced by the engine:
+
 ```haskell
 data PlaceholderError
   = UnresolvedPlaceholder VarName Int    -- Variable name, line number
@@ -138,32 +151,52 @@ data PlaceholderError
   | OrphanBlockToken Text Int            -- Stray {{/if}} or {{#else}}
   | MalformedIfExpression Text Int Text  -- Expression, opener line, parser error
   deriving stock (Eq, Show, Generic)
+```
 
--- | Substitute all placeholders in a template
-substitutePlaceholders
-  :: ResolvedVars
-  -> Text              -- Template content
+Public entry points in `Seihou.Engine.Template`:
+
+```haskell
+-- | Substitute {{placeholder}} occurrences only. Used for destination
+-- paths and shell commands.
+renderTemplate
+  :: Text
+  -> Map VarName VarValue
   -> Either [PlaceholderError] Text
 
--- | Parse a template into segments
-data Segment
-  = Literal Text
-  | Placeholder VarName
-  deriving stock (Eq, Show, Generic)
+-- | Render a template body: expand {{#if}}/{{#else}}/{{/if}} blocks
+-- (with Mustache-style standalone-block trim), then run
+-- 'renderTemplate' over the result. Used for the Template strategy's
+-- body path and the Template branch of the patch pipeline.
+renderTemplateText
+  :: Text
+  -> Map VarName VarValue
+  -> Either [PlaceholderError] Text
 
-parseTemplate :: Text -> Either [PlaceholderError] [Segment]
+-- | Aliases for 'renderTemplate', named for clarity at call sites.
+renderDestPath :: Text -> Map VarName VarValue -> Either [PlaceholderError] Text
+renderCommand  :: Text -> Map VarName VarValue -> Either [PlaceholderError] Text
+
+-- | Coerce a resolved 'VarValue' to its rendered text representation.
+valueToText :: VarValue -> Text
+
+-- | First-pass conditional expander, exported for test access.
+expandConditionals
+  :: Map VarName VarValue
+  -> Text
+  -> Either [PlaceholderError] Text
 ```
 
 ### Placeholder Rules
 
 1. All placeholders must resolve to a value. Unresolved placeholders are errors (not silently left in output).
-2. Only `VTText` values can be substituted directly. Other types are converted:
+2. `VText` values are substituted directly. Other types are converted by `valueToText`:
    - `VBool True` → `"true"`, `VBool False` → `"false"`
    - `VInt n` → decimal text representation
-   - `VList vs` → comma-separated values
-3. Placeholders in destination paths (`stepDest`) follow the same syntax and rules.
-4. `\{{` produces a literal `{{` in the output.
+   - `VList vs` → comma-separated values (recursively)
+3. Placeholders in destination paths (`stepDest`) and command strings follow the same syntax and rules, but are routed through `renderTemplate` / `renderDestPath` / `renderCommand` — they do not accept conditional blocks.
+4. `\{{` produces a literal `{{` in the output; there is no corresponding `\}}` escape.
 5. Nested placeholders (`{{{{var}}}}`) are not supported.
+6. Surrounding whitespace inside the braces is ignored: `{{ foo }}` is equivalent to `{{foo}}`.
 
 ### Conditional blocks (Template only)
 

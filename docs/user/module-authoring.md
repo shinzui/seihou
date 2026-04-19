@@ -221,12 +221,14 @@ Copies the source file verbatim to the destination. No processing is applied. Us
 { strategy = "template", src = "README.md.tpl", dest = "README.md", when = None Text, patch = None Text }
 ```
 
-Replaces `{{variable.name}}` placeholders with resolved variable values. This is the most common strategy.
+Replaces `{{variable.name}}` placeholders with resolved variable values, and supports inline `{{#if}}` / `{{#else}}` / `{{/if}}` conditional blocks in template bodies for gating regions on boolean expressions. This is the most common strategy.
 
-**Placeholder syntax:**
+Quick syntax summary:
 
-- `{{project.name}}` — replaced with the value of `project.name`
-- `\{{not.replaced}}` — the backslash escapes the placeholder, producing the literal text `{{not.replaced}}`
+- `{{project.name}}` — substitute the value of `project.name`.
+- `\{{literal}}` — escape; emit a literal `{{literal}}` in output.
+- `{{ project.name }}` — surrounding whitespace inside the braces is ignored.
+- `{{#if <expr>}}…{{/if}}` and `{{#if <expr>}}…{{#else}}…{{/if}}` — gate a region of the body. `<expr>` uses the same grammar as a step's `when` clause (see [Expression language](#expression-language)).
 
 Placeholders work in both the file content and the destination path:
 
@@ -234,33 +236,9 @@ Placeholders work in both the file content and the destination path:
 dest = "{{project.name}}.cabal"   -- becomes "my-app.cabal"
 ```
 
-**Conditional blocks:**
+Conditional blocks apply to **template bodies only** — destination paths (`dest`) and shell commands (`run`, `workDir`) accept only `{{placeholder}}` substitution.
 
-Template bodies can branch on resolved variables using `{{#if}}`, `{{#else}}`, and `{{/if}}` tokens:
-
-```
-{{#if <expr>}}...{{/if}}
-{{#if <expr>}}...{{#else}}...{{/if}}
-```
-
-`<expr>` uses the same grammar as a step's `when` clause (see [Expression language](#expression-language) — `IsSet`, `Eq`, `&&`, `||`, `!`, `true`, `false`, parentheses). Blocks may nest to arbitrary depth; untaken branches are discarded, so unresolved `{{placeholder}}` references inside them do not surface as errors.
-
-**Standalone block lines.** When a block tag is the only non-whitespace content on its line, the surrounding indentation and the line's trailing newline are absorbed by the tag (Mustache/Handlebars convention). This lets you write conditionals as separate, indented lines without the expanded output accumulating blank lines. A tag that shares a line with other template content retains its surrounding whitespace verbatim.
-
-Worked example — toggle an optional `pkgs.postgresql` line in a Nix flake, written in the standalone style:
-
-```
-nativeBuildInputs = [
-  pkgs.cabal-install
-  {{#if Eq nix.postgresql true}}
-  pkgs.postgresql
-  {{/if}}
-];
-```
-
-With `nix.postgresql = True`, the rendered output includes `pkgs.postgresql`; with `False`, the entire block (including its own two lines of template) disappears and the `]` follows directly after `pkgs.cabal-install`. Note that a blank line inside the block is preserved: only *one* newline is absorbed on each side of a standalone tag, so deliberate spacing survives.
-
-Conditional blocks apply to **template bodies only**. Destination paths (`dest`) and shell commands (`run`, `workDir`) accept only `{{placeholder}}` substitution — `{{#if}}` in those positions is not recognised.
+> **Full reference:** [Template reference](templating.md) — coercion rules for non-text values, escape semantics, full expression grammar, nesting, standalone-block whitespace trim, error taxonomy, and authoring patterns.
 
 ### Strategy: dhall-text
 
