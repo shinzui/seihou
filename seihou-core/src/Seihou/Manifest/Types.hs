@@ -17,8 +17,13 @@ import Seihou.Core.Types
 import Seihou.Prelude hiding ((.=))
 
 -- | Current manifest schema version.
+--
+-- Bumped from 1 to 2 when 'AppliedModule' gained the @parentVars@ field
+-- (see docs/plans/10-parameterized-dep-multi-instantiation.md). Version-1
+-- manifests remain readable because the decoder treats a missing
+-- @parentVars@ key as 'emptyParentVars'.
 currentManifestVersion :: Int
-currentManifestVersion = 1
+currentManifestVersion = 2
 
 -- | Create an empty manifest with the given timestamp.
 emptyManifest :: UTCTime -> Manifest
@@ -88,8 +93,13 @@ instance ToJSON AppliedModule where
         "source" .= am.source,
         "appliedAt" .= am.appliedAt
       ]
+        ++ parentVarsField am.parentVars
         ++ maybe [] (\v -> ["version" .= v]) am.moduleVersion
         ++ maybe [] (\r -> ["removal" .= removalToJSON r]) am.removal
+    where
+      parentVarsField (ParentVars m)
+        | Map.null m = []
+        | otherwise = ["parentVars" .= parentVarsMapToJSON m]
 
 instance FromJSON AppliedModule where
   parseJSON = Aeson.withObject "AppliedModule" $ \o -> do
@@ -102,12 +112,26 @@ instance FromJSON AppliedModule where
       Nothing -> do
         oldRemovable <- o Aeson..:? "removable" Aeson..!= False
         pure (if oldRemovable then Just (Removal [] []) else Nothing)
+    -- Schema v1 manifests omit parentVars entirely; decode those as empty.
+    mParentVars <- o Aeson..:? "parentVars"
+    pv <- case mParentVars of
+      Nothing -> pure emptyParentVars
+      Just v -> ParentVars <$> parentVarsMapFromJSON v
     AppliedModule
       <$> (ModuleName <$> o .: "name")
+      <*> pure pv
       <*> o .: "source"
       <*> o Aeson..:? "version"
       <*> o .: "appliedAt"
       <*> pure removal
+
+parentVarsMapToJSON :: Map VarName Text -> Aeson.Value
+parentVarsMapToJSON = toJSON . Map.mapKeys (.unVarName)
+
+parentVarsMapFromJSON :: Aeson.Value -> Aeson.Parser (Map VarName Text)
+parentVarsMapFromJSON v = do
+  m <- parseJSON v :: Aeson.Parser (Map Text Text)
+  pure (Map.mapKeys VarName m)
 
 -- | Encode a Removal to JSON.
 removalToJSON :: Removal -> Aeson.Value

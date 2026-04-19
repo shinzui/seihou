@@ -26,7 +26,7 @@ sampleManifest :: Manifest
 sampleManifest =
   (emptyManifest fixedTime)
     { modules =
-        [ AppliedModule (ModuleName "haskell-base") "/path/to/mod" Nothing fixedTime Nothing
+        [ AppliedModule (ModuleName "haskell-base") emptyParentVars "/path/to/mod" Nothing fixedTime Nothing
         ],
       vars = Map.fromList [(VarName "project.name", "my-app")],
       files =
@@ -90,7 +90,7 @@ spec = do
                 runManifestStore manifestPath (writeManifest sampleManifest)
                 c <- readFileText manifestPath
                 pure ((), c)
-      T.isInfixOf "\"version\":1" content `shouldBe` True
+      T.isInfixOf "\"version\":2" content `shouldBe` True
       T.isInfixOf "haskell-base" content `shouldBe` True
       T.isInfixOf "my-app" content `shouldBe` True
 

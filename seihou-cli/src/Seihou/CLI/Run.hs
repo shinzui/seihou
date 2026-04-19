@@ -438,6 +438,7 @@ updateAllModules existing modulesInOrder now =
       new =
         [ AppliedModule
             { name = m.name,
+              parentVars = emptyParentVars,
               source = dir,
               moduleVersion = m.version,
               appliedAt = now,

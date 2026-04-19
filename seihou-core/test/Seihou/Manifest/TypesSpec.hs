@@ -27,10 +27,10 @@ withManifestModules mods m = Manifest m.version m.genAt mods m.vars m.files m.re
 spec :: Spec
 spec = do
   describe "emptyManifest" $ do
-    it "creates a manifest with version 1" $ do
+    it "creates a manifest with the current version" $ do
       let m = emptyManifest fixedTime
       m.version `shouldBe` currentManifestVersion
-      m.version `shouldBe` 1
+      m.version `shouldBe` 2
 
     it "creates a manifest with no modules, vars, or files" $ do
       let m = emptyManifest fixedTime
@@ -48,6 +48,7 @@ spec = do
             withManifestModules
               [ AppliedModule
                   { name = ModuleName "haskell-base",
+                    parentVars = emptyParentVars,
                     source = "/home/user/.config/seihou/modules/haskell-base",
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
@@ -102,11 +103,11 @@ spec = do
     it "roundtrips a full manifest" $ do
       let m =
             Manifest
-              { version = 1,
+              { version = currentManifestVersion,
                 genAt = fixedTime,
                 modules =
-                  [ AppliedModule (ModuleName "haskell-base") "/path/to/module" Nothing fixedTime Nothing,
-                    AppliedModule (ModuleName "nix-flake") "/path/to/nix" Nothing fixedTime2 Nothing
+                  [ AppliedModule (ModuleName "haskell-base") emptyParentVars "/path/to/module" Nothing fixedTime Nothing,
+                    AppliedModule (ModuleName "nix-flake") emptyParentVars "/path/to/nix" Nothing fixedTime2 Nothing
                   ],
                 vars =
                   Map.fromList
@@ -143,6 +144,7 @@ spec = do
             withManifestModules
               [ AppliedModule
                   { name = ModuleName "haskell-base",
+                    parentVars = emptyParentVars,
                     source = "/path/to/module",
                     moduleVersion = Just "1.0.0",
                     appliedAt = fixedTime,
@@ -157,6 +159,7 @@ spec = do
             withManifestModules
               [ AppliedModule
                   { name = ModuleName "simple-mod",
+                    parentVars = emptyParentVars,
                     source = "/path/to/mod",
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
@@ -165,6 +168,40 @@ spec = do
               ]
               (emptyManifest fixedTime)
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
+
+    it "roundtrips a manifest with two instances of the same module" $ do
+      let pv1 = ParentVars (Map.singleton (VarName "skill.name") "exec-plan")
+          pv2 = ParentVars (Map.singleton (VarName "skill.name") "master-plan")
+          m =
+            withManifestModules
+              [ AppliedModule
+                  { name = ModuleName "claude-skill-link",
+                    parentVars = pv1,
+                    source = "/modules/claude-skill-link",
+                    moduleVersion = Nothing,
+                    appliedAt = fixedTime,
+                    removal = Nothing
+                  },
+                AppliedModule
+                  { name = ModuleName "claude-skill-link",
+                    parentVars = pv2,
+                    source = "/modules/claude-skill-link",
+                    moduleVersion = Nothing,
+                    appliedAt = fixedTime,
+                    removal = Nothing
+                  }
+              ]
+              (emptyManifest fixedTime)
+      manifestFromJSON (manifestToJSON m) `shouldBe` Right m
+
+  describe "schema back-compat (version 1)" $ do
+    it "decodes a version-1 manifest with parentVars defaulting to empty" $ do
+      let json = "{\"version\":1,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[{\"name\":\"haskell-base\",\"source\":\"/path\",\"appliedAt\":\"2026-03-01T10:30:00Z\"}],\"variables\":{},\"files\":{}}"
+      case manifestFromJSON json of
+        Right manifest -> do
+          length manifest.modules `shouldBe` 1
+          (head manifest.modules).parentVars `shouldBe` emptyParentVars
+        Left err -> expectationFailure ("failed to parse: " <> err)
 
     it "parses old manifest without version key as Nothing" $ do
       let json = "{\"version\":1,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[{\"name\":\"old-mod\",\"source\":\"/path\",\"appliedAt\":\"2026-03-01T10:30:00Z\"}],\"variables\":{},\"files\":{}}"

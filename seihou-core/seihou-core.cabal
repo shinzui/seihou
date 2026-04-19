@@ -17,6 +17,7 @@ library
   hs-source-dirs: src
   exposed-modules:
     Seihou.Composition.Graph
+    Seihou.Composition.Instance
     Seihou.Composition.Plan
     Seihou.Composition.Recipe
     Seihou.Composition.Resolve
@@ -109,6 +110,7 @@ test-suite seihou-core-test
   main-is: Main.hs
   other-modules:
     Seihou.Composition.GraphSpec
+    Seihou.Composition.InstanceSpec
     Seihou.Composition.PlanSpec
     Seihou.Composition.RecipeSpec
     Seihou.Composition.ResolveSpec

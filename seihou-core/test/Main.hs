@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Seihou.Composition.GraphSpec qualified as GraphSpec
+import Seihou.Composition.InstanceSpec qualified as InstanceSpec
 import Seihou.Composition.PlanSpec qualified as CompositionPlanSpec
 import Seihou.Composition.RecipeSpec qualified as CompositionRecipeSpec
 import Seihou.Composition.ResolveSpec qualified as ResolveSpec
@@ -49,6 +50,7 @@ import Test.Tasty
 main :: IO ()
 main = do
   graphTests <- GraphSpec.tests
+  instanceTests <- InstanceSpec.tests
   compositionPlanTests <- CompositionPlanSpec.tests
   compositionRecipeTests <- CompositionRecipeSpec.tests
   resolveTests <- ResolveSpec.tests
@@ -92,4 +94,4 @@ main = do
   manifestTypesTests <- ManifestTypesSpec.tests
   promptTests <- PromptSpec.tests
   confirmTests <- ConfirmSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, compositionPlanTests, compositionRecipeTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, moduleTests, recipeTests, registryTests, scaffoldTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, planTests, previewTests, sectionTests, validateTests, splitFlakeTests, dhallTextFlakeTests, typedDhallTextTests, conditionalTemplateTests, configTests, dhallEvalTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, removeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests, confirmTests])
+  defaultMain (testGroup "seihou-core" [graphTests, instanceTests, compositionPlanTests, compositionRecipeTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, moduleTests, recipeTests, registryTests, scaffoldTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, planTests, previewTests, sectionTests, validateTests, splitFlakeTests, dhallTextFlakeTests, typedDhallTextTests, conditionalTemplateTests, configTests, dhallEvalTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, removeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests, confirmTests])

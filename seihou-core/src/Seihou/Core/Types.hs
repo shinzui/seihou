@@ -15,6 +15,9 @@ module Seihou.Core.Types
     Dependency (..),
     simpleDep,
     depModuleNames,
+    ParentVars (..),
+    emptyParentVars,
+    parentVarsFromDep,
     RemovalAction (..),
     RemovalStep (..),
     Removal (..),
@@ -182,6 +185,27 @@ simpleDep name = Dependency {depModule = name, depVars = mempty}
 -- | Extract module names from a list of dependencies.
 depModuleNames :: [Dependency] -> [ModuleName]
 depModuleNames = map (.depModule)
+
+-- | The variable bindings supplied by a dependent module along a specific
+-- dependency edge. This is the "edge decoration" — the identity of a
+-- 'ModuleInstance' is determined by the @depVars@ the parent supplied,
+-- not by anything resolved downstream.
+--
+-- The underlying 'Data.Map.Strict' @Ord@ instance gives structural equality:
+-- two 'ParentVars' values are equal iff they contain the same name/value
+-- pairs regardless of construction order.
+newtype ParentVars = ParentVars {unParentVars :: Map VarName Text}
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | The identity used when a module is invoked with no parent-supplied
+-- bindings (the CLI primary module, recipe-expanded additionals, or any
+-- dependency declared with @vars = []@).
+emptyParentVars :: ParentVars
+emptyParentVars = ParentVars mempty
+
+-- | Build 'ParentVars' from a 'Dependency' record's @depVars@ field.
+parentVarsFromDep :: Dependency -> ParentVars
+parentVarsFromDep dep = ParentVars dep.depVars
 
 -- | The type of removal action for a removal step.
 data RemovalAction
@@ -353,8 +377,15 @@ data AppliedRecipe = AppliedRecipe
   deriving stock (Eq, Show, Generic)
 
 -- | A module that has been applied to generate files.
+--
+-- The @parentVars@ field disambiguates multiple invocations of the same
+-- module within a single composition: two 'AppliedModule' entries with
+-- the same @name@ and different @parentVars@ represent two legitimate
+-- instances. Manifests produced before schema version 2 decode with
+-- @parentVars = 'emptyParentVars'@.
 data AppliedModule = AppliedModule
   { name :: ModuleName,
+    parentVars :: ParentVars,
     source :: FilePath,
     moduleVersion :: Maybe Text,
     appliedAt :: UTCTime,

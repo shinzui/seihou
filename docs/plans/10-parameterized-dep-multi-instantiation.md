@@ -69,10 +69,14 @@ pointing into `claude/skills/<skill>/`.
       `seihou-core/src/Seihou/Composition/Plan.hs` and the call-sites in
       `seihou-cli/src/Seihou/CLI/Run.hs` and `seihou-cli/src/Seihou/CLI/Vars.hs`
       to carry instance identity from resolution through execution.
-- [ ] M5: Extend the manifest schema in
+- [x] M5: Extend the manifest schema in
       `seihou-core/src/Seihou/Core/Types.hs` (`AppliedModule`, `Manifest`) to
       record instance identity, and add a migration path so existing
-      single-instance manifests still load.
+      single-instance manifests still load.  **Done 2026-04-19** — added
+      `parentVars :: ParentVars` to `AppliedModule`, bumped
+      `currentManifestVersion` 1→2, taught the decoder to default missing
+      `parentVars` to `ParentVars mempty`, and added round-trip + v1
+      back-compat specs in `Seihou.Manifest.TypesSpec`.
 - [ ] M6: Expand the `param-dep-parent` / `param-dep-child` fixtures under
       `seihou-core/test/fixtures/` into a diamond that exercises two distinct
       bindings of the same child, and add specs in

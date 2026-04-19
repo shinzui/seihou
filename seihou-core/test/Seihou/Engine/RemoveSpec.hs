@@ -36,6 +36,7 @@ mkManifest isRemovable fileContents =
     { modules =
         [ AppliedModule
             { name = modName,
+              parentVars = emptyParentVars,
               source = "/path/to/test-module",
               moduleVersion = Nothing,
               appliedAt = fixedTime,
