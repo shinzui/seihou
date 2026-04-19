@@ -10,6 +10,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (VarsOpts (..))
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
+import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Module (defaultSearchPaths, loadModule)
@@ -135,8 +136,16 @@ explainMode modName vopts = do
         mapM_ (logError . ("  " <>) . formatVarError) errs
       exitFailure
     Right resolved -> do
-      -- Show only the target module's resolved variables
-      let targetResolved = Map.findWithDefault Map.empty modName resolved
+      -- Show only the target module's resolved variables. `seihou vars` is
+      -- scoped to a module name, so if multiple instances exist we merge
+      -- their resolved maps (last wins on overlap — matches how a user
+      -- reads "the variables of module X" before any disambiguation UI).
+      let targetResolved =
+            Map.unions
+              [ vs
+              | (inst, vs) <- Map.toList resolved,
+                inst.instanceModule == modName
+              ]
       TIO.putStrLn $ "Variables for " <> modName.unModuleName <> ":"
       TIO.putStrLn ""
       if Map.null targetResolved
@@ -144,7 +153,7 @@ explainMode modName vopts = do
         else TIO.putStr (formatExplain targetResolved)
 
       -- Show diagnostics
-      let allDecls = concatMap ((.vars) . fst) modulesInOrder
+      let allDecls = concatMap (\(_, m, _) -> m.vars) modulesInOrder
           allResolved = Map.unions [vs | vs <- Map.elems resolved]
           (unusedKeys, unresolvedOpt) = diagnoseResolution allResolved allDecls localMap nsMap ctxMap globalMap
       when (not (null unusedKeys)) $ do

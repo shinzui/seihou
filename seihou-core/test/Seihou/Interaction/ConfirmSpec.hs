@@ -2,6 +2,7 @@ module Seihou.Interaction.ConfirmSpec (tests) where
 
 import Data.Map.Strict qualified as Map
 import Effectful
+import Seihou.Composition.Instance (primaryInstance)
 import Seihou.Core.Types
 import Seihou.Effect.ConsolePure
 import Seihou.Interaction.Confirm (confirmDefaults)
@@ -61,12 +62,12 @@ spec = do
           m = mkModule "base" [decl] []
           resolved =
             Map.singleton
-              "base"
+              (primaryInstance "base")
               (Map.singleton "project.name" (mkResolved decl (VText "my-app") FromCLI))
       (result, st) <-
         runEff $
           runConsolePure [] $
-            confirmDefaults [(m, "/fake/base")] resolved
+            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
       result `shouldBe` resolved
       st.consoleOutputs `shouldSatisfy` all (/= "Confirm default values:")
 
@@ -75,13 +76,13 @@ spec = do
           m = mkModule "base" [decl] []
           resolved =
             Map.singleton
-              "base"
+              (primaryInstance "base")
               (Map.singleton "project.version" (mkResolved decl (VText "0.1.0.0") FromDefault))
       (result, st) <-
         runEff $
           runConsolePure [""] $
-            confirmDefaults [(m, "/fake/base")] resolved
-      let rv = (result Map.! "base") Map.! "project.version"
+            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
+      let rv = (result Map.! primaryInstance "base") Map.! "project.version"
       rv.value `shouldBe` VText "0.1.0.0"
       rv.source `shouldBe` FromDefault
       st.consoleOutputs `shouldSatisfy` any (== "Confirm default values:")
@@ -92,13 +93,13 @@ spec = do
           m = mkModule "base" [decl] []
           resolved =
             Map.singleton
-              "base"
+              (primaryInstance "base")
               (Map.singleton "project.version" (mkResolved decl (VText "0.1.0.0") FromDefault))
       (result, _st) <-
         runEff $
           runConsolePure ["1.0.0"] $
-            confirmDefaults [(m, "/fake/base")] resolved
-      let rv = (result Map.! "base") Map.! "project.version"
+            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
+      let rv = (result Map.! primaryInstance "base") Map.! "project.version"
       rv.value `shouldBe` VText "1.0.0"
       rv.source `shouldBe` FromPrompt
 
@@ -107,13 +108,13 @@ spec = do
           m = mkModule "base" [decl] []
           resolved =
             Map.singleton
-              "base"
+              (primaryInstance "base")
               (Map.singleton "retry.count" (mkResolved decl (VInt 42) FromDefault))
       (result, _st) <-
         runEff $
           runConsolePure ["not-an-int", "still-bad", "nope"] $
-            confirmDefaults [(m, "/fake/base")] resolved
-      let rv = (result Map.! "base") Map.! "retry.count"
+            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
+      let rv = (result Map.! primaryInstance "base") Map.! "retry.count"
       rv.value `shouldBe` VInt 42
       rv.source `shouldBe` FromDefault
 
@@ -122,7 +123,7 @@ spec = do
           m = mkModule "child" [decl] []
           resolved =
             Map.singleton
-              "child"
+              (primaryInstance "child")
               ( Map.singleton
                   "skill.name"
                   (mkResolved decl (VText "exec-plan") (FromParent "parent"))
@@ -130,8 +131,8 @@ spec = do
       (result, _st) <-
         runEff $
           runConsolePure ["override"] $
-            confirmDefaults [(m, "/fake/child")] resolved
-      let rv = (result Map.! "child") Map.! "skill.name"
+            confirmDefaults [(primaryInstance m.name, m, "/fake/child")] resolved
+      let rv = (result Map.! primaryInstance "child") Map.! "skill.name"
       rv.value `shouldBe` VText "override"
       rv.source `shouldBe` FromPrompt
 
@@ -140,12 +141,12 @@ spec = do
           m = mkModule "base" [decl] []
           resolved =
             Map.singleton
-              "base"
+              (primaryInstance "base")
               (Map.singleton "project.version" (mkResolved decl (VText "0.1.0.0") FromDefault))
       (result, st) <-
         runEff $
           runConsolePureNonInteractive $
-            confirmDefaults [(m, "/fake/base")] resolved
+            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
       result `shouldBe` resolved
       st.consoleOutputs `shouldBe` []
 
@@ -161,10 +162,10 @@ spec = do
           m = mkModule "base" [decl] [prompt]
           resolved =
             Map.singleton
-              "base"
+              (primaryInstance "base")
               (Map.singleton "license" (mkResolved decl (VText "MIT") FromDefault))
       (_result, st) <-
         runEff $
           runConsolePure [""] $
-            confirmDefaults [(m, "/fake/base")] resolved
+            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
       st.consoleOutputs `shouldSatisfy` any (== "Choose a license [MIT]:")

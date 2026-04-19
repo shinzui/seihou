@@ -16,6 +16,7 @@ import Data.Text.Encoding qualified as TE
 import Data.Text.Lazy qualified as TL
 import Data.Text.Lazy.Encoding qualified as TLE
 import Data.Yaml qualified as Yaml
+import Seihou.Composition.Instance (ModuleInstance, qualifiedName)
 import Seihou.Core.Types
 import Seihou.Engine.Plan (compilePlan)
 import Seihou.Engine.Section (applyTextPatch)
@@ -25,8 +26,14 @@ import System.FilePath (takeExtension)
 -- | Compile plans for all modules in execution order and merge into a
 -- single operation list. File conflicts are resolved by last-writer-wins
 -- with 'CompositionWarning' entries for overwritten files.
+--
+-- Each triple is a distinct 'ModuleInstance' invocation. The instance's
+-- 'qualifiedName' is passed to 'compilePlan' for any field that must be
+-- unique within the composition ('FileRecord.moduleName',
+-- 'PatchFileOp.moduleName'), so two instances of the same module do not
+-- collide on file ownership.
 compileComposedPlan ::
-  [(Module, FilePath, Map VarName VarValue)] ->
+  [(ModuleInstance, Module, FilePath, Map VarName VarValue)] ->
   IO (Either [Text] ([Operation], [CompositionWarning], Map FilePath ModuleName))
 compileComposedPlan modules = do
   results <- mapM compileOne modules
@@ -35,11 +42,25 @@ compileComposedPlan modules = do
     then pure (Right (mergeOperations opsPerModule))
     else pure (Left (concat errs))
   where
-    compileOne (m, dir, vars) = do
-      result <- compilePlan dir m vars
+    compileOne (inst, m, dir, vars) = do
+      let qn = qualifiedName inst
+          instancedModule =
+            Module
+              { name = qn,
+                version = m.version,
+                description = m.description,
+                vars = m.vars,
+                exports = m.exports,
+                prompts = m.prompts,
+                steps = m.steps,
+                commands = m.commands,
+                dependencies = m.dependencies,
+                removal = m.removal
+              }
+      result <- compilePlan dir instancedModule vars
       case result of
         Left errs -> pure (Left errs)
-        Right ops -> pure (Right (m.name, ops))
+        Right ops -> pure (Right (qn, ops))
 
 -- | Merge operation lists from multiple modules, handling file conflicts.
 --

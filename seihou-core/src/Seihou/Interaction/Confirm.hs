@@ -5,6 +5,7 @@ where
 
 import Control.Monad (foldM)
 import Data.Map.Strict qualified as Map
+import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Core.Types
 import Seihou.Effect.Console (Console, isInteractive, putText)
 import Seihou.Interaction.Prompt (promptForVar)
@@ -20,11 +21,15 @@ import Seihou.Prelude
 --
 -- A no-op in non-interactive mode, and a no-op when no variable is
 -- resolved from a default.
+--
+-- Operates per 'ModuleInstance': two invocations of the same module
+-- are confirmed independently, so the user can approve different
+-- defaults for each.
 confirmDefaults ::
   (Console :> es) =>
-  [(Module, FilePath)] ->
-  Map ModuleName (Map VarName ResolvedVar) ->
-  Eff es (Map ModuleName (Map VarName ResolvedVar))
+  [(ModuleInstance, Module, FilePath)] ->
+  Map ModuleInstance (Map VarName ResolvedVar) ->
+  Eff es (Map ModuleInstance (Map VarName ResolvedVar))
 confirmDefaults modulesInOrder resolved = do
   interactive <- isInteractive
   if not interactive || not (anyNeedsConfirm resolved)
@@ -32,11 +37,9 @@ confirmDefaults modulesInOrder resolved = do
     else do
       putText ""
       putText "Confirm default values:"
-      foldM processModule resolved modulesInOrder
+      foldM processInstance resolved modulesInOrder
 
--- | Whether any variable in any module is resolved from 'FromDefault'
--- or 'FromParent'.
-anyNeedsConfirm :: Map ModuleName (Map VarName ResolvedVar) -> Bool
+anyNeedsConfirm :: Map ModuleInstance (Map VarName ResolvedVar) -> Bool
 anyNeedsConfirm = any (any isDefaultOrParent) . Map.elems
 
 isDefaultOrParent :: ResolvedVar -> Bool
@@ -45,20 +48,20 @@ isDefaultOrParent rv = case rv.source of
   FromParent _ -> True
   _ -> False
 
-processModule ::
+processInstance ::
   (Console :> es) =>
-  Map ModuleName (Map VarName ResolvedVar) ->
-  (Module, FilePath) ->
-  Eff es (Map ModuleName (Map VarName ResolvedVar))
-processModule acc (m, _dir) = do
-  let modResolved = Map.findWithDefault Map.empty m.name acc
+  Map ModuleInstance (Map VarName ResolvedVar) ->
+  (ModuleInstance, Module, FilePath) ->
+  Eff es (Map ModuleInstance (Map VarName ResolvedVar))
+processInstance acc (inst, m, _dir) = do
+  let modResolved = Map.findWithDefault Map.empty inst acc
   newModResolved <- foldM (processVar m acc) modResolved m.vars
-  pure (Map.insert m.name newModResolved acc)
+  pure (Map.insert inst newModResolved acc)
 
 processVar ::
   (Console :> es) =>
   Module ->
-  Map ModuleName (Map VarName ResolvedVar) ->
+  Map ModuleInstance (Map VarName ResolvedVar) ->
   Map VarName ResolvedVar ->
   VarDecl ->
   Eff es (Map VarName ResolvedVar)

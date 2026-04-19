@@ -4,6 +4,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
+import Seihou.Composition.Instance (primaryInstance)
 import Seihou.Core.Types
 import Seihou.Effect.ConfigWriterPure (ConfigWriterState (..), emptyConfigWriterState, runConfigWriterPure)
 import Seihou.Effect.ConsolePure (ConsoleState (..), runConsolePure)
@@ -40,7 +41,7 @@ spec = do
     it "extracts variables with FromPrompt source" $ do
       let decl = mkDecl "project.name"
           resolved =
-            Map.singleton (ModuleName "mod1") $
+            Map.singleton (primaryInstance (ModuleName "mod1")) $
               Map.singleton (VarName "project.name") (mkResolved FromPrompt "my-app" decl)
           result = collectPromptedValues resolved Map.empty
       result `shouldBe` [(VarName "project.name", "my-app", Nothing)]
@@ -48,7 +49,7 @@ spec = do
     it "ignores variables from non-prompt sources" $ do
       let decl = mkDecl "license"
           resolved =
-            Map.singleton (ModuleName "mod1") $
+            Map.singleton (primaryInstance (ModuleName "mod1")) $
               Map.fromList
                 [ (VarName "license", mkResolved FromGlobalConfig "MIT" decl),
                   (VarName "project.name", mkResolved FromCLI "foo" (mkDecl "project.name"))
@@ -59,7 +60,7 @@ spec = do
     it "skips values already in local config with the same value" $ do
       let decl = mkDecl "project.name"
           resolved =
-            Map.singleton (ModuleName "mod1") $
+            Map.singleton (primaryInstance (ModuleName "mod1")) $
               Map.singleton (VarName "project.name") (mkResolved FromPrompt "my-app" decl)
           localConfig = Map.singleton (VarName "project.name") "my-app"
           result = collectPromptedValues resolved localConfig
@@ -68,7 +69,7 @@ spec = do
     it "includes values that differ from local config with existing value" $ do
       let decl = mkDecl "project.name"
           resolved =
-            Map.singleton (ModuleName "mod1") $
+            Map.singleton (primaryInstance (ModuleName "mod1")) $
               Map.singleton (VarName "project.name") (mkResolved FromPrompt "new-app" decl)
           localConfig = Map.singleton (VarName "project.name") "old-app"
           result = collectPromptedValues resolved localConfig
@@ -78,10 +79,10 @@ spec = do
       let decl = mkDecl "project.name"
           resolved =
             Map.fromList
-              [ ( ModuleName "mod1",
+              [ ( primaryInstance (ModuleName "mod1"),
                   Map.singleton (VarName "project.name") (mkResolved FromPrompt "app1" decl)
                 ),
-                ( ModuleName "mod2",
+                ( primaryInstance (ModuleName "mod2"),
                   Map.singleton (VarName "project.name") (mkResolved FromPrompt "app2" decl)
                 )
               ]
@@ -90,7 +91,7 @@ spec = do
 
     it "handles multiple prompted variables" $ do
       let resolved =
-            Map.singleton (ModuleName "mod1") $
+            Map.singleton (primaryInstance (ModuleName "mod1")) $
               Map.fromList
                 [ (VarName "license", mkResolved FromPrompt "MIT" (mkDecl "license")),
                   (VarName "project.name", mkResolved FromPrompt "my-app" (mkDecl "project.name"))
@@ -100,7 +101,7 @@ spec = do
 
     it "returns empty list when no prompted values exist" $ do
       let resolved =
-            Map.singleton (ModuleName "mod1") $
+            Map.singleton (primaryInstance (ModuleName "mod1")) $
               Map.singleton (VarName "x") (mkResolved FromDefault "val" (mkDecl "x"))
           result = collectPromptedValues resolved Map.empty
       result `shouldBe` []

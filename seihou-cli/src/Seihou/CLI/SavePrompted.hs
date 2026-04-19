@@ -7,6 +7,7 @@ where
 import Control.Monad (when)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
+import Seihou.Composition.Instance (ModuleInstance)
 import Seihou.Core.Types
 import Seihou.Effect.ConfigWriter (ConfigWriter, writeConfigValue)
 import Seihou.Effect.Console (Console, confirm, putText)
@@ -16,7 +17,7 @@ import Seihou.Prelude
 -- in local config with the same value. Returns triples of (variable name,
 -- prompted text value, Just existingValue if overwriting).
 collectPromptedValues ::
-  Map ModuleName (Map VarName ResolvedVar) ->
+  Map ModuleInstance (Map VarName ResolvedVar) ->
   Map VarName Text ->
   [(VarName, Text, Maybe Text)]
 collectPromptedValues resolved localConfig =

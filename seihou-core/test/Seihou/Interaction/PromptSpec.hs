@@ -3,6 +3,7 @@ module Seihou.Interaction.PromptSpec (tests) where
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Effectful
+import Seihou.Composition.Instance (primaryInstance)
 import Seihou.Composition.Resolve (resolveWithPrompts)
 import Seihou.Core.Types
 import Seihou.Effect.ConsolePure
@@ -268,7 +269,7 @@ spec = do
               [mkTextVar "project.name" Nothing True]
               []
               [mkPrompt "project.name" "What is the project name?"]
-          modules = [(m, "/fake/base")]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
       (result, st) <-
         runEff $
           runConsolePure ["my-app"] $
@@ -276,7 +277,7 @@ spec = do
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
-          let baseVars = resolved Map.! "base"
+          let baseVars = resolved Map.! primaryInstance "base"
           (baseVars Map.! "project.name").value `shouldBe` VText "my-app"
           (baseVars Map.! "project.name").source `shouldBe` FromPrompt
       st.consoleOutputs `shouldSatisfy` any (== "What is the project name?")
@@ -289,7 +290,7 @@ spec = do
               [mkTextVar "project.name" Nothing True]
               []
               [mkPrompt "project.name" "What is the project name?"]
-          modules = [(m, "/fake/base")]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
           cliOverrides = Map.singleton "project.name" "from-cli"
       (result, st) <-
         runEff $
@@ -298,7 +299,7 @@ spec = do
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
-          let baseVars = resolved Map.! "base"
+          let baseVars = resolved Map.! primaryInstance "base"
           (baseVars Map.! "project.name").value `shouldBe` VText "from-cli"
           (baseVars Map.! "project.name").source `shouldBe` FromCLI
       -- No prompts should have been displayed
@@ -312,7 +313,7 @@ spec = do
               [mkTextVar "project.name" Nothing True]
               []
               [mkPrompt "project.name" "What is the project name?"]
-          modules = [(m, "/fake/base")]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
       (result, st) <-
         runEff $
           runConsolePureNonInteractive $
@@ -338,7 +339,7 @@ spec = do
               [ mkPrompt "project.name" "What is the project name?",
                 mkPrompt "license" "License"
               ]
-          modules = [(m, "/fake/base")]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
       (result, st) <-
         runEff $
           runConsolePure ["my-app", "MIT"] $
@@ -346,7 +347,7 @@ spec = do
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
-          let baseVars = resolved Map.! "base"
+          let baseVars = resolved Map.! primaryInstance "base"
           (baseVars Map.! "project.name").value `shouldBe` VText "my-app"
           (baseVars Map.! "project.name").source `shouldBe` FromPrompt
           (baseVars Map.! "license").value `shouldBe` VText "MIT"
@@ -365,7 +366,7 @@ spec = do
               [ mkPrompt "project.name" "What is the project name?",
                 mkPrompt "license" "License"
               ]
-          modules = [(m, "/fake/base")]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
       (result, _st) <-
         runEff $
           runConsolePure ["my-app", ""] $
@@ -373,7 +374,7 @@ spec = do
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
-          let baseVars = resolved Map.! "base"
+          let baseVars = resolved Map.! primaryInstance "base"
           Map.member "project.name" baseVars `shouldBe` True
           Map.member "license" baseVars `shouldBe` False
 
@@ -385,7 +386,7 @@ spec = do
               [mkTextVar "license" Nothing False]
               []
               [mkPrompt "license" "License"]
-          modules = [(m, "/fake/base")]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
       (result, st) <-
         runEff $
           runConsolePure ["MIT"] $
@@ -393,7 +394,7 @@ spec = do
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
-          let baseVars = resolved Map.! "base"
+          let baseVars = resolved Map.! primaryInstance "base"
           (baseVars Map.! "license").value `shouldBe` VText "MIT"
       st.consoleOutputs `shouldSatisfy` any (== "Optional configuration:")
 
@@ -405,7 +406,7 @@ spec = do
               [mkTextVar "license" Nothing False]
               []
               [mkPrompt "license" "License"]
-          modules = [(m, "/fake/base")]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
       (result, st) <-
         runEff $
           runConsolePureNonInteractive $
@@ -413,7 +414,7 @@ spec = do
       case result of
         Left _ -> expectationFailure "Expected Right (no required vars)"
         Right resolved -> do
-          let baseVars = resolved Map.! "base"
+          let baseVars = resolved Map.! primaryInstance "base"
           Map.member "license" baseVars `shouldBe` False
       st.consoleOutputs `shouldSatisfy` all (/= "Optional configuration:")
 
@@ -429,7 +430,7 @@ spec = do
               [ mkPrompt "project.name" "Name?",
                 mkConditionalPrompt "extra" "Extra?" (ExprIsSet "nonexistent")
               ]
-          modules = [(m, "/fake/base")]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
       (result, st) <-
         runEff $
           runConsolePure ["my-app"] $
@@ -437,7 +438,7 @@ spec = do
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
-          let baseVars = resolved Map.! "base"
+          let baseVars = resolved Map.! primaryInstance "base"
           Map.member "extra" baseVars `shouldBe` False
       -- The condition was false so Optional configuration header should not appear
       -- (no optional prompts actually fired)
@@ -451,7 +452,7 @@ spec = do
               [mkTextVar "license" Nothing False]
               []
               [mkPrompt "license" "License"]
-          modules = [(m, "/fake/base")]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
           globalConfig = Map.singleton "license" "MIT"
       (result, st) <-
         runEff $
@@ -460,7 +461,7 @@ spec = do
       case result of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
-          let baseVars = resolved Map.! "base"
+          let baseVars = resolved Map.! primaryInstance "base"
           (baseVars Map.! "license").value `shouldBe` VText "MIT"
           (baseVars Map.! "license").source `shouldBe` FromGlobalConfig
       st.consoleOutputs `shouldSatisfy` all (/= "Optional configuration:")
@@ -480,7 +481,7 @@ spec = do
               [mkTextVar "project.name" Nothing True]
               []
               []
-          modules = [(base, "/fake/base"), (app, "/fake/app")]
+          modules = [(primaryInstance base.name, base, "/fake/base"), (primaryInstance app.name, app, "/fake/app")]
       (result, st) <-
         runEff $
           runConsolePure ["my-app"] $
@@ -489,11 +490,11 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right resolved -> do
           -- Base module was prompted
-          let baseVars = resolved Map.! "base"
+          let baseVars = resolved Map.! primaryInstance "base"
           (baseVars Map.! "project.name").value `shouldBe` VText "my-app"
           (baseVars Map.! "project.name").source `shouldBe` FromPrompt
           -- App module received the value via export (no additional prompt needed)
-          let appVars = resolved Map.! "app"
+          let appVars = resolved Map.! primaryInstance "app"
           (appVars Map.! "project.name").value `shouldBe` VText "my-app"
       -- Only one prompt should have fired (for base), not two
       let promptOutputs = filter (== "What is the project name?") (st.consoleOutputs)

@@ -17,6 +17,7 @@ import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRe
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
+import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
@@ -43,7 +44,7 @@ import Seihou.Engine.Preview (buildPreview)
 import Seihou.Fzf (FzfResult (..), detectFzfConfig, isFzfUsable)
 import Seihou.Fzf.Selector (selectModule)
 import Seihou.Interaction.Confirm (confirmDefaults)
-import Seihou.Manifest.Types (emptyManifest)
+import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import Seihou.Prelude
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
@@ -114,7 +115,7 @@ handleRun runOpts = do
   when (length modulesInOrder > 1) $
     logIO level $ do
       logInfo $ "Composing " <> T.pack (show (length modulesInOrder)) <> " modules:"
-      mapM_ (\(m, _) -> logInfo $ "  " <> m.name.unModuleName) modulesInOrder
+      mapM_ (\(_, m, _) -> logInfo $ "  " <> m.name.unModuleName) modulesInOrder
 
   -- 2. Resolve variables with export visibility and interactive prompts
   envPairs <- getEnvironment
@@ -150,7 +151,7 @@ handleRun runOpts = do
       else pure resolvedInitial
 
   -- 2b. Emit diagnostics for unused config keys
-  let allDecls = concatMap ((.vars) . fst) modulesInOrder
+  let allDecls = concatMap (\(_, m, _) -> m.vars) modulesInOrder
       allResolved = Map.unions [vs | vs <- Map.elems resolved]
       (unusedKeys, _) = diagnoseResolution allResolved allDecls localMap nsMap ctxMap globalMap
   when (not (null unusedKeys)) $
@@ -160,11 +161,11 @@ handleRun runOpts = do
           <> T.intercalate ", " (map (.unVarName) unusedKeys)
 
   -- 3. Compile composed plan (all modules merged)
-  let triples =
-        [ (m, dir, Map.map (.value) (resolved Map.! m.name))
-        | (m, dir) <- modulesInOrder
+  let quads =
+        [ (inst, m, dir, Map.map (.value) (resolved Map.! inst))
+        | (inst, m, dir) <- modulesInOrder
         ]
-  planResult <- compileComposedPlan triples
+  planResult <- compileComposedPlan quads
   (ops, warnings, ownerMap) <- case planResult of
     Left errs -> do
       logIO level $ do
@@ -201,13 +202,18 @@ handleRun runOpts = do
         exitFailure
       Right m -> pure m
     let m = fromMaybe (emptyManifest now) existing
-    let composedNames = Set.fromList (map ((.name) . fst) modulesInOrder)
+    -- Diff needs every name that could own a manifest file. Each
+    -- instance owns its qualified name; the bare module name is still
+    -- matched to cover manifest entries written before the schema bump.
+    let composedNames =
+          Set.fromList $
+            concatMap (\(inst, _, _) -> [inst.instanceModule, qualifiedName inst]) modulesInOrder
     d <- computeDiff m composedNames planned
     pure (m, d)
 
   colorEnabled <- useColor
 
-  let modNames = map ((.name) . fst) modulesInOrder
+  let modNames = map (\(_, m, _) -> m.name) modulesInOrder
       allVarValues =
         Map.unions
           [Map.map (.value) vs | vs <- Map.elems resolved]
@@ -282,7 +288,7 @@ handleRun runOpts = do
                       Nothing -> manifest.recipe
                     newManifest =
                       Manifest
-                        { version = manifest.version,
+                        { version = currentManifestVersion,
                           genAt = now,
                           modules = allModuleEntries,
                           vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
@@ -431,19 +437,35 @@ executeCommand level (cmd, workDir) = do
       exitFailure
 
 -- | Update manifest's applied modules list with all composed modules.
-updateAllModules :: [AppliedModule] -> [(Module, FilePath)] -> UTCTime -> [AppliedModule]
+-- | Merge the freshly-composed module instances into the manifest's
+-- applied-modules list.
+--
+-- Each entry keeps its bare 'ModuleName' plus the edge decoration that
+-- produced it, so two instances of the same module with different
+-- 'ParentVars' coexist in the manifest. Matching against existing
+-- entries uses the @(name, parentVars)@ pair, so regenerating only
+-- refreshes the matching instance and leaves siblings unchanged.
+updateAllModules ::
+  [AppliedModule] ->
+  [(ModuleInstance, Module, FilePath)] ->
+  UTCTime ->
+  [AppliedModule]
 updateAllModules existing modulesInOrder now =
-  let composedNames = map ((.name) . fst) modulesInOrder
-      filtered = filter (\am -> am.name `notElem` composedNames) existing
+  let composedKeys =
+        Set.fromList
+          [ (inst.instanceModule, inst.instanceParentVars)
+          | (inst, _, _) <- modulesInOrder
+          ]
+      filtered = filter (\am -> not (Set.member (am.name, am.parentVars) composedKeys)) existing
       new =
         [ AppliedModule
-            { name = m.name,
-              parentVars = emptyParentVars,
+            { name = inst.instanceModule,
+              parentVars = inst.instanceParentVars,
               source = dir,
               moduleVersion = m.version,
               appliedAt = now,
               removal = m.removal
             }
-        | (m, dir) <- modulesInOrder
+        | (inst, m, dir) <- modulesInOrder
         ]
    in filtered ++ new

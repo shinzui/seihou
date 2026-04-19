@@ -4,6 +4,7 @@ import Data.Either (isLeft)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Composition.Graph (buildGraph, topoSort)
+import Seihou.Composition.Instance (ModuleInstance (..), primaryInstance)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveComposedVariables)
 import Seihou.Core.Types
@@ -26,7 +27,7 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right modules -> do
-          let names = map ((.name) . fst) modules
+          let names = map (\(_, m, _) -> m.name) modules
           length names `shouldBe` 4
           -- All four modules should be present
           elem "nix-base" names `shouldBe` True
@@ -39,7 +40,7 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right modules -> do
-          let names = map ((.name) . fst) modules
+          let names = map (\(_, m, _) -> m.name) modules
               indexOf n = case lookup n (zip names [0 :: Int ..]) of
                 Just i -> i
                 Nothing -> error $ "Module not found: " ++ show n
@@ -59,7 +60,7 @@ spec = do
         Right modules -> do
           length modules `shouldBe` 1
           case modules of
-            [(m, _)] -> m.name `shouldBe` "nix-base"
+            [(_, m, _)] -> m.name `shouldBe` "nix-base"
             _ -> expectationFailure "Expected exactly one module"
 
     it "handles additional modules via --module flag" $ do
@@ -67,7 +68,7 @@ spec = do
       case result of
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right modules -> do
-          let names = map ((.name) . fst) modules
+          let names = map (\(_, m, _) -> m.name) modules
           length names `shouldBe` 2
           elem "haskell-base" names `shouldBe` True
           elem "nix-base" names `shouldBe` True
@@ -85,7 +86,7 @@ spec = do
           case resolveComposedVariables modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
-              let flakeVars = resolved Map.! "nix-flake"
+              let flakeVars = resolved Map.! primaryInstance "nix-flake"
               -- nix-flake should see nix.system from nix-base's export
               (.value) (flakeVars Map.! "nix.system") `shouldBe` VText "x86_64-linux"
               -- nix-flake should also have its own variable
@@ -101,10 +102,10 @@ spec = do
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
               -- haskell-base should have project.name from CLI
-              let baseVars = resolved Map.! "haskell-base"
+              let baseVars = resolved Map.! primaryInstance "haskell-base"
               (.value) (baseVars Map.! "project.name") `shouldBe` VText "my-app"
               -- haskell-with-nix should inherit project.name via haskell-base's export
-              let topVars = resolved Map.! "haskell-with-nix"
+              let topVars = resolved Map.! primaryInstance "haskell-with-nix"
               Map.member "project.name" topVars `shouldBe` True
               (.value) (topVars Map.! "project.name") `shouldBe` VText "my-app"
 
@@ -118,11 +119,11 @@ spec = do
           case resolveComposedVariables modules cliOverrides Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
-              let triples =
-                    [ (m, dir, Map.map (.value) (resolved Map.! m.name))
-                    | (m, dir) <- modules
+              let quads =
+                    [ (inst, m, dir, Map.map (.value) (resolved Map.! inst))
+                    | (inst, m, dir) <- modules
                     ]
-              planResult <- compileComposedPlan triples
+              planResult <- compileComposedPlan quads
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
                 Right (ops, warnings, _) -> do
@@ -144,11 +145,11 @@ spec = do
           case resolveComposedVariables modules cliOverrides Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
-              let triples =
-                    [ (m, dir, Map.map (.value) (resolved Map.! m.name))
-                    | (m, dir) <- modules
+              let quads =
+                    [ (inst, m, dir, Map.map (.value) (resolved Map.! inst))
+                    | (inst, m, dir) <- modules
                     ]
-              planResult <- compileComposedPlan triples
+              planResult <- compileComposedPlan quads
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
                 Right (ops, warnings, _) -> do
@@ -173,11 +174,11 @@ spec = do
           case resolveComposedVariables modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
             Right resolved -> do
-              let triples =
-                    [ (m, dir, Map.map (.value) (resolved Map.! m.name))
-                    | (m, dir) <- modules
+              let quads =
+                    [ (inst, m, dir, Map.map (.value) (resolved Map.! inst))
+                    | (inst, m, dir) <- modules
                     ]
-              planResult <- compileComposedPlan triples
+              planResult <- compileComposedPlan quads
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
                 Right (ops, warnings, _) -> do
@@ -212,7 +213,7 @@ spec = do
           a = mkMod "a" ["b"]
           b = mkMod "b" ["c"]
           c = mkMod "c" ["a"]
-          graph = buildGraph [a, b, c]
+          graph = buildGraph [(primaryInstance m.name, m) | m <- [a, b, c]]
       topoSort graph `shouldSatisfy` isLeft
 
 isContentMerged :: CompositionWarning -> Bool
