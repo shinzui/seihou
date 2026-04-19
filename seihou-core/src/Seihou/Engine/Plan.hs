@@ -21,7 +21,7 @@ import Dhall.Src (Src)
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Types
 import Seihou.Engine.DhallJSON (dhallExprToJSON)
-import Seihou.Engine.Template (renderCommand, renderDestPath, renderTemplate)
+import Seihou.Engine.Template (renderCommand, renderDestPath, renderTemplate, renderTemplateText)
 import Seihou.Prelude
 import System.FilePath (takeDirectory, takeExtension)
 
@@ -133,7 +133,7 @@ compileTemplateStep baseDir vars step = do
   case result of
     Left err -> pure (Left [err])
     Right content ->
-      case renderTemplate content vars of
+      case renderTemplateText content vars of
         Left placeholderErrors ->
           pure (Left (map formatPlaceholderError placeholderErrors))
         Right rendered ->
@@ -230,7 +230,7 @@ compilePatchStep baseDir vars modName step = do
       contentResult <- case step.strategy of
         Copy -> pure (Right rawContent)
         Template ->
-          pure $ case renderTemplate rawContent vars of
+          pure $ case renderTemplateText rawContent vars of
             Left placeholderErrors -> Left (map formatPlaceholderError placeholderErrors)
             Right rendered -> Right rendered
         DhallText -> do
@@ -315,6 +315,12 @@ formatPlaceholderError (UnresolvedPlaceholder (VarName name) lineNum) =
   "unresolved placeholder '{{" <> name <> "}}' at line " <> T.pack (show lineNum)
 formatPlaceholderError (MalformedPlaceholder raw lineNum) =
   "malformed placeholder '" <> raw <> "' at line " <> T.pack (show lineNum)
+formatPlaceholderError (UnterminatedIf lineNum) =
+  "unterminated {{#if}} opened at line " <> T.pack (show lineNum)
+formatPlaceholderError (OrphanBlockToken tok lineNum) =
+  "stray " <> tok <> " at line " <> T.pack (show lineNum)
+formatPlaceholderError (MalformedIfExpression expr lineNum parseErr) =
+  "malformed {{#if}} expression '" <> expr <> "' at line " <> T.pack (show lineNum) <> ": " <> parseErr
 
 -- | Deduplicate CreateDirOp operations while preserving order.
 deduplicateDirs :: [Operation] -> [Operation]

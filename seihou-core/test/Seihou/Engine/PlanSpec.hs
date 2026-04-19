@@ -517,6 +517,76 @@ spec = do
             ops `shouldBe` [PatchFileOp "README.md" "section test" AppendSection Template "section-mod"]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
+    it "compiles a Template step containing {{#if}} and selects the then-branch" $ do
+      let tpl = "prefix\n{{#if Eq flag true}}hot\n{{/if}}suffix\n"
+      withFixture [("conditional.tpl", tpl)] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "cond-mod",
+                  version = Nothing,
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "conditional.tpl" "out.txt" Nothing Nothing],
+                  commands = [],
+                  dependencies = [],
+                  removal = Nothing
+                }
+            vars = Map.fromList [("flag", VBool True)]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops ->
+            ops `shouldBe` [WriteFileOp "out.txt" "prefix\nhot\nsuffix\n" Template]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "compiles a Template step containing {{#if}} and drops the untaken branch" $ do
+      let tpl = "prefix\n{{#if Eq flag true}}hot\n{{/if}}suffix\n"
+      withFixture [("conditional.tpl", tpl)] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "cond-mod",
+                  version = Nothing,
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "conditional.tpl" "out.txt" Nothing Nothing],
+                  commands = [],
+                  dependencies = [],
+                  removal = Nothing
+                }
+            vars = Map.fromList [("flag", VBool False)]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops ->
+            ops `shouldBe` [WriteFileOp "out.txt" "prefix\nsuffix\n" Template]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "compiles a Template patch step whose body uses {{#if}}" $ do
+      let tpl = "base{{#if Eq flag true}} extra{{/if}}\n"
+      withFixture [("patch.tpl", tpl)] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "patch-cond-mod",
+                  version = Nothing,
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "patch.tpl" "README.md" Nothing (Just AppendFile)],
+                  commands = [],
+                  dependencies = [],
+                  removal = Nothing
+                }
+            vars = Map.fromList [("flag", VBool True)]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops ->
+            ops
+              `shouldBe` [PatchFileOp "README.md" "base extra\n" AppendFile Template "patch-cond-mod"]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
     it "compiles a Copy step with patch = PrependFile to PatchFileOp" $ do
       withFixture [("header.txt", "header line\n")] $ \baseDir -> do
         let modul =

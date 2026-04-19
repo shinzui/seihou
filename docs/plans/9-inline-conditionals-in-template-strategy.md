@@ -59,11 +59,12 @@ its recommendation: Prototype C.
       variants. Add specs under `Seihou.Engine.TemplateSpec` covering
       if/else, nesting, unterminated blocks, orphaned tokens, and
       malformed expressions. (done 2026-04-18: 13 new cases pass, 708 total)
-- [ ] M2: Wire the new function into `Seihou.Engine.Plan.compileStep`
+- [x] M2: Wire the new function into `Seihou.Engine.Plan.compileStep`
       for the `Template` strategy and the `Template` branch of
       `compilePatchStep`. Leave `renderDestPath` and `renderCommand`
       routed through the existing placeholder-only `renderTemplate`.
       Update `formatPlaceholderError` to handle the new variants.
+      (done 2026-04-18: 3 new PlanSpec cases pass, 711 total)
 - [ ] M3: Decommission `Seihou.Engine.TemplatePrototype` and
       `Seihou.Evaluation.ConditionalTemplateSpec`. Migrate the
       `conditional-template-flake` fixture to a canonical test under
