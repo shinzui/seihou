@@ -2,6 +2,7 @@ module Seihou.Integration.CompositionSpec (tests) where
 
 import Data.Either (isLeft)
 import Data.Map.Strict qualified as Map
+import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Composition.Graph (buildGraph, topoSort)
 import Seihou.Composition.Instance (ModuleInstance (..), primaryInstance)
@@ -194,6 +195,58 @@ spec = do
                   T.isInfixOf "logLevel" configContent `shouldBe` True
                   -- Should have a ContentMerged warning
                   any isContentMerged warnings `shouldBe` True
+
+  describe "multi-instantiation diamond" $ do
+    -- These three fixtures (multi-instance-helper/leaf/diamond) model the
+    -- agent-seihou master-plan pattern: a parent depends on a leaf that
+    -- binds the helper one way, and also directly on the helper bound
+    -- the other way. Before ExecPlan 10, only one invocation survived.
+    it "loadComposition produces two helper instances with different bindings" $ do
+      result <- loadComposition [fixtureDir] "multi-instance-diamond" []
+      case result of
+        Left err -> expectationFailure $ "Load failed: " ++ show err
+        Right modules -> do
+          -- Expect: helper (skill.name=diamond), helper (skill.name=leaf),
+          --         leaf, diamond — four entries total.
+          length modules `shouldBe` 4
+          let helperInstances =
+                [ inst
+                | (inst, m, _) <- modules,
+                  m.name == "multi-instance-helper"
+                ]
+          length helperInstances `shouldBe` 2
+          let bindings =
+                Map.fromList
+                  [ ("diamond" :: Text, True),
+                    ("leaf", True)
+                  ]
+              haveSkill vn =
+                any
+                  ( \inst ->
+                      Map.lookup "skill.name" inst.instanceParentVars.unParentVars == Just vn
+                  )
+                  helperInstances
+          all haveSkill (Map.keys bindings) `shouldBe` True
+
+    it "compileComposedPlan produces two helper output files with distinct names" $ do
+      result <- loadComposition [fixtureDir] "multi-instance-diamond" []
+      case result of
+        Left err -> expectationFailure $ "Load failed: " ++ show err
+        Right modules -> do
+          case resolveComposedVariables modules Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
+            Left errs -> expectationFailure $ "Resolve failed: " ++ show errs
+            Right resolved -> do
+              let quads =
+                    [ (inst, m, dir, Map.map (.value) (resolved Map.! inst))
+                    | (inst, m, dir) <- modules
+                    ]
+              planResult <- compileComposedPlan quads
+              case planResult of
+                Left errs -> expectationFailure $ "Plan failed: " ++ show errs
+                Right (ops, _, _) -> do
+                  let writeDests = [d | WriteFileOp d _ _ <- ops]
+                  elem "out/leaf.txt" writeDests `shouldBe` True
+                  elem "out/diamond.txt" writeDests `shouldBe` True
 
   describe "cycle detection" $ do
     it "detects a circular dependency" $ do
