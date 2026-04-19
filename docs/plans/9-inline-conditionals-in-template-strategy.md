@@ -86,9 +86,9 @@ its recommendation: Prototype C.
       same example and a short rationale citing this plan.
       Add a CHANGELOG entry in `docs/user/CHANGELOG.md`.
       (done 2026-04-18)
-- [ ] M5: Migrate the sibling `nix-haskell-flake` module (separate
+- [x] M5: Migrate the sibling `nix-haskell-flake` module (separate
       git repository at
-      `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou-modules`).
+      `/Users/shinzui/Keikaku/bokuno/seihou-modules`).
       Replace the two `flake.nix.tpl` / `flake-with-postgres.nix.tpl`
       files with one that uses `{{#if}}`. Drop the duplicate
       `Eq nix.postgresql false || Eq nix.postgresql "false"` double-guard
@@ -96,6 +96,9 @@ its recommendation: Prototype C.
       `ExecPlan:` trailer pointing at **this** plan's path. Verify by
       running `seihou run` against a scratch target directory for
       both `nix.postgresql = true` and `false`.
+      (done 2026-04-18 as seihou-modules commit `b6ccd2a`: version
+      bumped 0.4.0→0.5.0, both scratch-dir diffs against the
+      split-flake baselines empty)
 
 
 ## Surprises & Discoveries
@@ -108,6 +111,21 @@ its recommendation: Prototype C.
   and qualifying the one pattern match in the prototype's spec. The
   hack is self-cleaning — M3 deletes the prototype module and the
   spec that matches on `PrototypeError`.
+- M5: The sibling `seihou-modules` repo is checked out at
+  `/Users/shinzui/Keikaku/bokuno/seihou-modules/`, not the
+  `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou-modules/`
+  path the plan's Context and Orientation and Plan of Work claim.
+  The older path does not exist; the repo lives one level above the
+  `seihou-project/` directory. All M5 commands have been executed
+  against the real path.
+- M5: The module's existing steps list contains more than the two
+  mutually-exclusive flake.nix steps the plan described — there are
+  also Copy, Template-with-patch, and conditional Template steps for
+  `flake.lock`, `treefmt.nix`, `process-compose.yaml`, `.envrc`, and
+  `.gitignore` entries. The M5 edit is narrower than the plan's
+  "replace with a single unconditional step": only the two
+  mutually-exclusive flake.nix steps are collapsed into one; the
+  remaining steps are untouched.
 - M3: The `git grep TemplatePrototype` / `git grep renderTemplatePrototype`
   acceptance checks in Validation and Acceptance still return hits
   against `docs/dev/design/proposed/dhall-as-templating-evaluation.md`,
@@ -192,7 +210,55 @@ its recommendation: Prototype C.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Delivered 2026-04-18. All five milestones complete.
+
+Observable outcomes matched the plan:
+
+- `cabal test seihou-core-test` → 709 tests pass. Net change is
+  +3 relative to the pre-plan baseline (708): 13 new
+  `renderTemplateText` specs added in M1, 3 new `compilePlan` cases
+  added in M2, 4 prototype-only specs removed in M3, 2 new
+  compilePlan-driven fixture cases added in M3.
+- `git grep TemplatePrototype` / `git grep renderTemplatePrototype`
+  source-tree-only are clean; doc references remain, intentionally,
+  as the written record cited by the Decision Log.
+- `git grep 'renderTemplateText'` in `seihou-core/src/` shows one
+  definition site in `Seihou.Engine.Template` and two call sites in
+  `Seihou.Engine.Plan` (`compileTemplateStep` and the `Template`
+  branch of `compilePatchStep`), as specified.
+- User and design docs describe the syntax with a worked example.
+- The sibling `nix-haskell-flake` module now has exactly one
+  `dest = "flake.nix"` step (grep returns one hit); version bumped
+  to 0.5.0; `flake-with-postgres.nix.tpl` deleted. Scratch-dir
+  `seihou run` produced byte-identical output to the split-flake
+  baselines for both `nix.postgresql = true` and `false`.
+- Every commit carries both `ExecPlan:` and `Intention:` trailers,
+  including the single commit in the sibling repo
+  (`b6ccd2a`).
+
+Lessons:
+
+- The small-scale "shadowed-constructor" pain in M1 (see Surprises)
+  was a direct consequence of the plan's choice to reuse
+  `PlaceholderError` rather than mint a sibling error type. That
+  choice still paid off — one `formatPlaceholderError` function,
+  no threaded `Either` — and the shadowing was self-cleaning when
+  the prototype module was deleted in M3. Worth remembering that
+  constructor-level namespace clashes during an in-flight promotion
+  are cheap to mitigate with `hiding`.
+- The plan's Context and Orientation had two path inaccuracies:
+  the sibling repo was documented at `seihou-project/seihou-modules`
+  but actually lives at `seihou-modules/` (one level up), and its
+  `steps` list was said to need collapsing to "a single
+  unconditional step" when in fact six non-flake steps are
+  present and must stay untouched. Both were caught and recorded
+  in Surprises; the deliverable is unaffected. Future ExecPlans
+  describing cross-repo work should probably pull the live
+  `module.dhall` into the plan narrative rather than summarize it.
+- The two-pass split (expand conditionals, then `renderTemplate`)
+  made "untaken branches are discarded" a free consequence — the
+  untaken branch never reaches the placeholder engine. This kept
+  the specs simple and matches user intent.
 
 
 ## Context and Orientation
