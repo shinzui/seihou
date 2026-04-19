@@ -33,7 +33,8 @@ helpTopics =
     HelpTopic "contexts" "Using contexts for environment-specific config" contextsContent,
     HelpTopic "config" "Config scopes, reading, and writing values" configContent,
     HelpTopic "git-repository" "Sharing and installing modules from git" gitRepositoryContent,
-    HelpTopic "kit" "Manage Claude Code skills and subagents" kitContent
+    HelpTopic "kit" "Manage Claude Code skills and subagents" kitContent,
+    HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent
   ]
 
 modulesContent :: Text
@@ -53,6 +54,9 @@ gitRepositoryContent = $(embedStringFile "help/git-repository.md")
 
 kitContent :: Text
 kitContent = $(embedStringFile "help/kit.md")
+
+templatingContent :: Text
+templatingContent = $(embedStringFile "help/templating.md")
 
 helpCommandParser :: Parser HelpCommand
 helpCommandParser =
