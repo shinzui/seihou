@@ -65,13 +65,18 @@ its recommendation: Prototype C.
       routed through the existing placeholder-only `renderTemplate`.
       Update `formatPlaceholderError` to handle the new variants.
       (done 2026-04-18: 3 new PlanSpec cases pass, 711 total)
-- [ ] M3: Decommission `Seihou.Engine.TemplatePrototype` and
+- [x] M3: Decommission `Seihou.Engine.TemplatePrototype` and
       `Seihou.Evaluation.ConditionalTemplateSpec`. Migrate the
       `conditional-template-flake` fixture to a canonical test under
       `Seihou.Engine.PlanSpec` (or a sibling spec) that goes through
       `compilePlan` against `strategy = "template"`. Remove the
       experimental module from `seihou-core.cabal` and the test-suite
-      `other-modules` list.
+      `other-modules` list. (done 2026-04-18: prototype module and
+      exposed-modules entry removed; ConditionalTemplateSpec kept as
+      a dedicated module with a rewritten body that drives through
+      `compilePlan` and preserves both byte-for-byte equivalence
+      assertions against the split-flake baselines; total tests 709
+      = 711 − 4 prototype-specific + 2 compilePlan)
 - [ ] M4: Update documentation. Extend the
       `Strategy: template` subsection of
       `docs/user/module-authoring.md` with the conditional-block
@@ -102,6 +107,14 @@ its recommendation: Prototype C.
   and qualifying the one pattern match in the prototype's spec. The
   hack is self-cleaning — M3 deletes the prototype module and the
   spec that matches on `PrototypeError`.
+- M3: The `git grep TemplatePrototype` / `git grep renderTemplatePrototype`
+  acceptance checks in Validation and Acceptance still return hits
+  against `docs/dev/design/proposed/dhall-as-templating-evaluation.md`,
+  `docs/plans/8-…`, and this plan file itself. These are the
+  preserved written record of the prototype (per the Decision Log
+  entry "Retire …") plus the plan's own narrative, so they are
+  intentional survivors, not leftover code. Source trees are clean:
+  `grep --include='*.hs' --include='*.cabal'` returns nothing.
 
 
 ## Decision Log
