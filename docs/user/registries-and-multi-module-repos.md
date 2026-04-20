@@ -53,16 +53,19 @@ Module directories can be organized however you like — flat, nested under `mod
 , repoDescription = Some "A collection of project templates"
 , modules =
   [ { name = "haskell-base"
+    , version = Some "1.0.0"
     , path = "modules/haskell-base"
     , description = Some "Base Haskell project with cabal"
     , tags = [ "haskell", "cabal" ]
     }
   , { name = "nix-flake"
+    , version = Some "0.4.0"
     , path = "modules/nix-flake"
     , description = Some "Nix flake with devShell"
     , tags = [ "nix", "devops" ]
     }
   , { name = "github-ci"
+    , version = Some "0.2.0"
     , path = "modules/github-ci"
     , description = Some "GitHub Actions CI workflow"
     , tags = [ "ci", "github" ]
@@ -70,6 +73,7 @@ Module directories can be organized however you like — flat, nested under `mod
   ]
 , recipes =
   [ { name = "haskell-library"
+    , version = Some "0.1.0"
     , path = "recipes/haskell-library"
     , description = Some "Haskell library with Nix + Cabal"
     , tags = [ "haskell", "nix" ]
@@ -77,6 +81,9 @@ Module directories can be organized however you like — flat, nested under `mod
   ]
 }
 ```
+
+Keep entry `version` fields in sync with each module's `module.dhall` /
+`recipe.dhall` by running [`seihou registry sync-versions`](../cli/registry.md).
 
 ### Fields
 
@@ -89,6 +96,7 @@ Module directories can be organized however you like — flat, nested under `mod
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | Text | Module identifier. Must match `[a-z][a-z0-9-]*`. |
+| `version` | Optional Text | Declared version of the entry, copied from the module's `module.dhall` / `recipe.dhall`. Populated by `seihou registry sync-versions`. Optional but recommended — tooling reads this instead of evaluating each module. |
 | `path` | Text | Relative path from the repository root to the module directory. Must not start with `/` or contain `..`. |
 | `description` | Optional Text | Human-readable description shown in browse output. |
 | `tags` | List Text | Tags for filtering. Users can filter with `--tag` when browsing. |

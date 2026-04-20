@@ -124,6 +124,7 @@ A `seihou-registry.dhall` at the repository root lists all modules:
 , repoDescription = Some "A collection of project templates"
 , modules =
   [ { name = "module-name"
+    , version = Some "0.1.0"
     , path = "modules/module-name"
     , description = Some "What this module does"
     , tags = [ "tag1", "tag2" ]
@@ -135,7 +136,9 @@ A `seihou-registry.dhall` at the repository root lists all modules:
 ### Registry fields
 - **repoName** (Text): Display name for the repository
 - **repoDescription** (Optional Text): One-line description
-- **modules**: List of entries with name, path, description, tags
+- **modules**: List of entries with name, version, path, description, tags.
+  Keep `version` in sync with each module's `module.dhall` using
+  `seihou registry sync-versions`.
 
 ### Repository layout
 ```

@@ -120,6 +120,7 @@ test-suite seihou-core-test
     Seihou.Core.ListSpec
     Seihou.Core.ModuleSpec
     Seihou.Core.RecipeSpec
+    Seihou.Core.RegistryEmitSpec
     Seihou.Core.RegistrySpec
     Seihou.Core.ScaffoldSpec
     Seihou.Core.SchemaUpgradeSpec

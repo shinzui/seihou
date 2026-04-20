@@ -4,6 +4,7 @@ module Seihou.Core.Registry
     RepoContents (..),
     discoverRepoContents,
     validateRegistry,
+    renderRegistryDhall,
   )
 where
 
@@ -156,3 +157,62 @@ validModuleName t = case T.uncons t of
   Just (c, rest) ->
     (c >= 'a' && c <= 'z')
       && T.all (\ch -> (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-') rest
+
+-- | Serialize a 'Registry' as a Dhall record literal compatible with
+-- 'Seihou.Dhall.Eval.registryDecoder'. Rewrites lose hand-written comments
+-- and formatting; see @docs/plans/12-sync-registry-versions.md@ for rationale.
+renderRegistryDhall :: Registry -> Text
+renderRegistryDhall reg =
+  T.unlines
+    [ "{ repoName = " <> renderString reg.repoName,
+      ", repoDescription = " <> renderOptionalText reg.repoDescription,
+      ", modules =",
+      renderEntryList reg.modules,
+      ", recipes =",
+      renderEntryList reg.recipes,
+      "}"
+    ]
+
+renderEntryList :: [RegistryEntry] -> Text
+renderEntryList [] =
+  "  [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }"
+renderEntryList entries =
+  T.intercalate
+    "\n"
+    (zipWith renderEntry (True : repeat False) entries <> ["  ]"])
+
+renderEntry :: Bool -> RegistryEntry -> Text
+renderEntry isFirst entry =
+  T.intercalate
+    "\n"
+    [ "  " <> opener <> " { name = " <> renderString entry.name.unModuleName,
+      "    , version = " <> renderOptionalText entry.version,
+      "    , path = " <> renderString (T.pack entry.path),
+      "    , description = " <> renderOptionalText entry.description,
+      "    , tags = " <> renderTextList entry.tags,
+      "    }"
+    ]
+  where
+    opener = if isFirst then "[" else ","
+
+renderOptionalText :: Maybe Text -> Text
+renderOptionalText Nothing = "None Text"
+renderOptionalText (Just v) = "Some " <> renderString v
+
+renderTextList :: [Text] -> Text
+renderTextList [] = "[] : List Text"
+renderTextList xs = "[ " <> T.intercalate ", " (map renderString xs) <> " ]"
+
+-- | Render a Dhall double-quoted string literal.
+-- Escapes backslashes, double quotes, dollar signs (for interpolation),
+-- and common control characters per the Dhall spec.
+renderString :: Text -> Text
+renderString t = "\"" <> T.concatMap escape t <> "\""
+  where
+    escape '\\' = "\\\\"
+    escape '"' = "\\\""
+    escape '$' = "\\$"
+    escape '\n' = "\\n"
+    escape '\r' = "\\r"
+    escape '\t' = "\\t"
+    escape c = T.singleton c
