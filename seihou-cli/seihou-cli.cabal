@@ -24,6 +24,8 @@ library seihou-cli-internal
     Seihou.CLI.Init
     Seihou.CLI.InstallHistory
     Seihou.CLI.List
+    Seihou.CLI.Registry
+    Seihou.CLI.Registry.Sync
     Seihou.CLI.SavePrompted
     Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
@@ -90,6 +92,8 @@ executable seihou
     Seihou.CLI.NewModule
     Seihou.CLI.NewRecipe
     Seihou.CLI.Outdated
+    Seihou.CLI.Registry
+    Seihou.CLI.Registry.Sync
     Seihou.CLI.Remove
     Seihou.CLI.Run
     Seihou.CLI.SavePrompted
@@ -152,6 +156,7 @@ test-suite seihou-cli-test
     Seihou.CLI.InitSpec
     Seihou.CLI.InstallHistorySpec
     Seihou.CLI.ListSpec
+    Seihou.CLI.Registry.SyncSpec
     Seihou.CLI.SavePromptedSpec
     Seihou.CLI.UpgradeSpec
     Seihou.FzfSpec

@@ -17,6 +17,7 @@ import Seihou.CLI.List (ListFilter (..), handleList)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.NewRecipe (handleNewRecipe)
 import Seihou.CLI.Outdated (handleOutdated)
+import Seihou.CLI.Registry (handleRegistry)
 import Seihou.CLI.Remove (handleRemove)
 import Seihou.CLI.Run (handleRun)
 import Seihou.CLI.SchemaUpgrade (handleSchemaUpgrade)
@@ -64,6 +65,8 @@ main = do
       handleUpgrade upgradeOpts
     SchemaUpgrade schemaUpgradeOpts ->
       handleSchemaUpgrade schemaUpgradeOpts
+    Registry registryCmd ->
+      handleRegistry registryCmd
     Kit kitCmd ->
       runKit kitCmd
     Agent agentOpts -> case agentOpts.agentCommand of

@@ -82,22 +82,22 @@ and see output like:
       (2026-04-20)
 - [x] M2: Write unit tests for `computeRegistrySync` covering all four classifications
       plus the empty-registry case. (2026-04-20)
-- [ ] M3: Add `RegistryCommand` sum with constructor `RegistrySyncVersions
+- [x] M3: Add `RegistryCommand` sum with constructor `RegistrySyncVersions
       SyncVersionsOpts` and a `Registry RegistryCommand` top-level constructor
       on `Command` in `Seihou.CLI.Commands`. Wire a `registry` subparser under
       the "Authoring:" group whose only nested command (for now) is
       `sync-versions`, with flags `--dir PATH`, `--dry-run`, `--check`.
-- [ ] M3: Implement `Seihou.CLI.Registry.Sync.handleSyncVersions` that
+      (2026-04-20)
+- [x] M3: Implement `Seihou.CLI.Registry.Sync.handleSyncVersions` that
       resolves each entry's version from disk, calls `computeRegistrySync`,
       prints the diff table, and writes the updated file (unless `--dry-run`
-      or `--check`).
-- [ ] M3: Dispatch the `Registry` branch (and its nested `RegistrySyncVersions`
-      case) in `seihou-cli/src/Seihou/CLI/Main.hs` (or the command dispatch
-      site — confirm file during implementation).
-- [ ] M3: Integration test: build a fixture registry repo under a temp dir with
-      two module dirs and one recipe dir, run `handleSyncVersions` in-process,
-      verify the rewritten `seihou-registry.dhall` parses back to a `Registry`
-      with the expected versions.
+      or `--check`). Split a pure `runSync` core for testability. (2026-04-20)
+- [x] M3: Dispatch the `Registry` branch (and its nested `RegistrySyncVersions`
+      case) in `seihou-cli/src/Main.hs`. (2026-04-20)
+- [x] M3: Integration test: build a fixture registry repo under a temp dir with
+      two module dirs, run `runSync` in-process, verify the rewritten
+      `seihou-registry.dhall` parses back to a `Registry` with the expected
+      versions. Plus dry-run / check / missing-registry cases. (2026-04-20)
 - [ ] M4: Extend `validateRegistry` in `seihou-core/src/Seihou/Core/Registry.hs`
       with a soft-warning classifier that reports version drift without
       failing validation; surface the warnings through `seihou browse` so users
@@ -127,6 +127,11 @@ and see output like:
   distinguish \"entry absent from lookup list → SyncOrphan\" from \"entry
   present with version = None → SyncInSync with unversioned module.dhall\".
   (2026-04-20)
+- `module.version` / `recipe.version` record-dot access fails in
+  `Seihou.CLI.Registry.Sync` under `NoFieldSelectors` + `DuplicateRecordFields`
+  — the module already uses `RegistryEntry.version`, so GHC cannot infer a
+  `HasField` instance at `m.version`. Worked around by pattern-matching
+  accessor helpers (`moduleVersion`, `recipeVersion`). (2026-04-20)
 
 
 ## Decision Log

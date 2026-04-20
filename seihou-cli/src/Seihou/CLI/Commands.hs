@@ -24,6 +24,8 @@ module Seihou.CLI.Commands
     CompletionsCommand (..),
     HelpCommand (..),
     KitCommand (..),
+    RegistryCommand (..),
+    SyncVersionsOpts (..),
     commandParser,
     opts,
   )
@@ -35,6 +37,8 @@ import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
 import Seihou.CLI.Help (HelpCommand, helpCommandParser)
 import Seihou.CLI.Kit (KitCommand, kitCommandParser)
+import Seihou.CLI.Registry (RegistryCommand (..))
+import Seihou.CLI.Registry.Sync (SyncVersionsOpts (..))
 import Seihou.CLI.Version (seihouVersionWithGit)
 import Seihou.Core.Types (ModuleName (..))
 import Seihou.Prelude
@@ -57,6 +61,7 @@ data Command
   | Outdated OutdatedOpts
   | Upgrade UpgradeOpts
   | SchemaUpgrade SchemaUpgradeOpts
+  | Registry RegistryCommand
   | Kit KitCommand
   | Agent AgentOpts
   | HelpCmd HelpCommand
@@ -266,6 +271,7 @@ commandParser =
           <> command "validate-module" validateInfo
           <> command "vars" varsInfo
           <> command "schema-upgrade" schemaUpgradeInfo
+          <> command "registry" registryInfo
           <> commandGroup "Authoring:"
           <> hidden
       )
@@ -882,6 +888,74 @@ kitInfo =
     ( fullDesc
         <> progDesc "Manage Claude Code skills and subagents"
     )
+
+registryInfo :: ParserInfo Command
+registryInfo =
+  info
+    (Registry <$> registryCommandParser <**> helper)
+    ( fullDesc
+        <> progDesc "Manage seihou-registry.dhall files"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Authoring-time operations on a multi-module repository's" :: String),
+                  pretty ("seihou-registry.dhall. Run against a writable checkout." :: String),
+                  line,
+                  pretty ("Current subcommands:" :: String),
+                  indent 2 $
+                    pretty
+                      ("sync-versions   Copy each module's declared version into the registry" :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou registry sync-versions" :: String),
+                        pretty ("seihou registry sync-versions --dry-run" :: String),
+                        pretty ("seihou registry sync-versions --check" :: String)
+                      ]
+                ]
+          )
+    )
+
+registryCommandParser :: Parser RegistryCommand
+registryCommandParser =
+  hsubparser
+    (command "sync-versions" syncVersionsInfo)
+
+syncVersionsInfo :: ParserInfo RegistryCommand
+syncVersionsInfo =
+  info
+    (syncVersionsParser <**> helper)
+    ( fullDesc
+        <> progDesc "Populate registry entry versions from each module/recipe"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Reads every entry's module.dhall or recipe.dhall, copies the" :: String),
+                  pretty ("declared version into the registry, and rewrites" :: String),
+                  pretty ("seihou-registry.dhall. Hand-written comments and formatting are lost." :: String),
+                  line,
+                  pretty ("With --dry-run the diff is printed but the file is left untouched." :: String),
+                  pretty ("With --check the command exits 1 if any entry is out of sync — suitable" :: String),
+                  pretty ("for CI. --check takes precedence over --dry-run if both are given." :: String)
+                ]
+          )
+    )
+
+syncVersionsParser :: Parser RegistryCommand
+syncVersionsParser =
+  fmap RegistrySyncVersions $
+    SyncVersionsOpts
+      <$> optional
+        ( option
+            str
+            ( long "dir"
+                <> metavar "PATH"
+                <> help "Registry repo root (default: current directory)"
+            )
+        )
+      <*> switch (long "dry-run" <> help "Show diff without writing the registry file")
+      <*> switch (long "check" <> help "Exit 1 if any entry is out of sync; do not write")
 
 agentInfo :: ParserInfo Command
 agentInfo =

@@ -7,6 +7,7 @@ import Seihou.CLI.GitSpec qualified as GitSpec
 import Seihou.CLI.InitSpec qualified as InitSpec
 import Seihou.CLI.InstallHistorySpec qualified as InstallHistorySpec
 import Seihou.CLI.ListSpec qualified as ListSpec
+import Seihou.CLI.Registry.SyncSpec qualified as RegistrySyncSpec
 import Seihou.CLI.SavePromptedSpec qualified as SavePromptedSpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
 import Seihou.FzfSpec qualified as FzfSpec
@@ -23,6 +24,7 @@ main = do
         InitSpec.tests,
         InstallHistorySpec.tests,
         ListSpec.tests,
+        RegistrySyncSpec.tests,
         SavePromptedSpec.tests,
         UpgradeSpec.tests,
         FzfSpec.tests
