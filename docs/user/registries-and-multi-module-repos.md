@@ -275,6 +275,28 @@ seihou browse https://github.com/your-org/my-templates.git
 Verify the output shows all your modules with correct descriptions and tags.
 
 
+## Keeping versions in sync
+
+Every registry entry has an optional `version` field that should match the
+version declared in the module's `module.dhall` or recipe's `recipe.dhall`.
+Tooling (`seihou browse`, `seihou outdated`) reads the registry `version`
+when present and falls back to evaluating each module only when it isn't —
+so a populated registry saves N Dhall evaluations per repo.
+
+Maintain the field with `seihou registry sync-versions`:
+
+```sh
+cd my-templates
+seihou registry sync-versions --dry-run
+seihou registry sync-versions
+```
+
+See [`docs/cli/registry.md`](../cli/registry.md) for flags and CI usage.
+`seihou browse` and `seihou install` print a warning line per out-of-sync
+entry when they detect drift — they don't block, but the warning is a hint
+to run `registry sync-versions` before your next push.
+
+
 ## Registry validation
 
 When Seihou loads a `seihou-registry.dhall`, it validates each entry:

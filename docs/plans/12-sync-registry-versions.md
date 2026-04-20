@@ -104,15 +104,16 @@ and see output like:
       is imported by `Seihou.Dhall.Eval`). Surface warnings via `logWarn`
       through `seihou browse` and `seihou install` when a MultiModule
       registry has drift. (2026-04-20)
-- [ ] M5: Add a `docs/cli/registry.md` page (covering the `registry` group and
+- [x] M5: Add a `docs/cli/registry.md` page (covering the `registry` group and
       the `sync-versions` subcommand) and a `CHANGELOG.md` entry under
       Unreleased. Update `docs/user/registries-and-multi-module-repos.md` with
       a "Keeping versions in sync" section pointing at the new command.
-- [ ] M5: Manual end-to-end: inside the working tree's fixture
-      `seihou-core/test/fixtures/` (or a throwaway tmp repo) create a registry,
-      run `cabal run seihou -- registry sync-versions --dir <path> --dry-run`,
-      confirm output, then run without `--dry-run` and verify the file is
-      rewritten.
+      (2026-04-20)
+- [x] M5: Manual end-to-end: in a throwaway tmp repo, create two modules with
+      `new-module`, hand-write a drifted registry, run
+      `registry sync-versions --dry-run`, then without `--dry-run`, then
+      `--check`. Confirmed the file is rewritten with `Some "0.1.0"` on both
+      entries and the check pass exits 0. (2026-04-20)
 
 
 ## Surprises & Discoveries
@@ -194,7 +195,56 @@ and see output like:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Delivered (2026-04-20):
+
+- Pure core in `Seihou.Core.Registry`: `renderRegistryDhall`, `EntryKind`,
+  `SyncStatus`, `SyncDiff`, `SyncReport`, `computeRegistrySync`,
+  `formatDriftWarning`. Round-trip tests (5) and classification tests (8 +
+  3 drift) cover the pure surface end-to-end.
+- CLI layer in `Seihou.CLI.Registry` + `Seihou.CLI.Registry.Sync`:
+  `SyncVersionsOpts`, `runSync` (testable core), `handleSyncVersions`
+  (IO wrapper), `renderSyncReport`, `checkRegistryVersionDrift`.
+  Integration tests (4) cover write, dry-run, check-drift, and
+  missing-registry paths.
+- CLI surface: `seihou registry sync-versions [--dir PATH] [--dry-run]
+  [--check]`, grouped under Authoring alongside `validate-module`.
+- Soft warnings: `seihou browse` and `seihou install` now print one
+  stderr line per drifted entry in a multi-module registry.
+- Docs: `docs/cli/registry.md`, a new "Keeping versions in sync" section
+  in `docs/user/registries-and-multi-module-repos.md`, updated bootstrap
+  prompt, and a CHANGELOG entry under `[Unreleased]`.
+
+Tests: 761 core + 110 CLI = 871 tests passing. Manual E2E confirmed the
+diff table, file rewrite, and `--check` exit-code behavior all match the
+Validation section of this plan.
+
+Variance from the original plan:
+
+- `computeRegistrySync`'s lookup argument uses a 3-tuple `(EntryKind,
+  ModuleName, Maybe Text)` instead of the Progress section's 4-tuple,
+  since the old version is already reachable through the `Registry`
+  argument. This matches the signature in Milestone 2's body and the
+  Interfaces section.
+- `checkRegistryVersionDrift` lives in the CLI layer, not
+  `Seihou.Core.Registry` as originally noted — `evalModuleFromFile` is in
+  `Seihou.Dhall.Eval` which imports `Core.Registry`, so adding the drift
+  check there would create a cycle. Kept a pure `formatDriftWarning` in
+  Core and the IO shell in CLI.
+- Needed pattern-matching accessors (`moduleVersion`, `recipeVersion`) in
+  `Seihou.CLI.Registry.Sync` because `RegistryEntry`, `Module`, and
+  `Recipe` all have a `version` field and `NoFieldSelectors` +
+  `DuplicateRecordFields` leave GHC unable to infer `HasField` via
+  record-dot in a module that already uses `RegistryEntry.version`.
+
+What future work would benefit from:
+
+- `--help` for subcommand groups shows a double `-h,--help` line (one
+  from `registryCommandParser`, one from the outer `info`). Cosmetic; a
+  future pass can drop the inner one.
+- The unused imports (`Registry (..)`, `SyncReport (..)`) in
+  `Seihou.CLI.Registry.SyncSpec` draw warnings on some hlint setups.
+  Left in place to ease the next test author's navigation; consider a
+  `unused-imports` override if warnings become noisy.
 
 
 ## Context and Orientation

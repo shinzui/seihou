@@ -10,6 +10,16 @@ All notable changes to this project will be documented in this file.
   resolved from its default or from a parent module's export and lets the
   user accept or override it interactively. Overridden values are tagged as
   prompted input so they flow into the "save prompted values?" offer.
+- `seihou registry` authoring command group with an initial `sync-versions`
+  subcommand. Reads each registry entry's `module.dhall` / `recipe.dhall`,
+  compares against the registry, and rewrites `seihou-registry.dhall` with
+  current versions. Supports `--dry-run` and a CI-friendly `--check` flag
+  that exits 1 on drift.
+- Documented `version` field on registry entries in
+  `docs/user/registries-and-multi-module-repos.md` and the bootstrap prompt.
+- `seihou browse` and `seihou install` emit a per-entry warning to stderr
+  when a multi-module registry has versions out of sync with the underlying
+  modules — without blocking the operation.
 
 ## [0.1.0.0] - 2026-04-15
 
