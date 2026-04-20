@@ -5,6 +5,11 @@ module Seihou.Core.Registry
     discoverRepoContents,
     validateRegistry,
     renderRegistryDhall,
+    EntryKind (..),
+    SyncStatus (..),
+    SyncDiff (..),
+    SyncReport (..),
+    computeRegistrySync,
   )
 where
 
@@ -157,6 +162,105 @@ validModuleName t = case T.uncons t of
   Just (c, rest) ->
     (c >= 'a' && c <= 'z')
       && T.all (\ch -> (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-') rest
+
+-- | What a registry entry points at on disk.
+data EntryKind = ModuleEntry | RecipeEntry
+  deriving stock (Eq, Show, Generic)
+
+-- | Classification of a single registry entry relative to the on-disk
+-- @module.dhall@/@recipe.dhall@ version.
+data SyncStatus
+  = -- | Registry @version@ is 'Nothing', on-disk version is @Just _@.
+    SyncMissing
+  | -- | Registry @version@ and on-disk version both @Just@ but differ;
+    --   carries the new on-disk version.
+    SyncStale Text
+  | -- | Registry and on-disk versions match (both 'Just' equal or both 'Nothing').
+    SyncInSync
+  | -- | On-disk @module.dhall@/@recipe.dhall@ absent or unreadable.
+    SyncOrphan
+  deriving stock (Eq, Show, Generic)
+
+-- | One row of a sync diff, preserving registry order.
+data SyncDiff = SyncDiff
+  { diffKind :: EntryKind,
+    diffName :: ModuleName,
+    diffOld :: Maybe Text,
+    diffNew :: Maybe Text,
+    diffStatus :: SyncStatus
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Output of 'computeRegistrySync': the classifications in registry order,
+-- and a 'Registry' with each entry's @version@ field updated to the on-disk
+-- value (except 'SyncOrphan' entries, which are preserved as-is).
+data SyncReport = SyncReport
+  { syncDiffs :: [SyncDiff],
+    syncUpdated :: Registry
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Pure core of the version-sync flow. The caller resolves each entry's
+-- on-disk version ('Just v', or 'Nothing' for orphaned/unreadable entries)
+-- and passes them in; this function classifies and rewrites the registry
+-- without performing any IO.
+--
+-- The lookup list is keyed by @(kind, name)@; entries absent from the list
+-- are classified as 'SyncOrphan'.
+computeRegistrySync ::
+  Registry ->
+  [(EntryKind, ModuleName, Maybe Text)] ->
+  SyncReport
+computeRegistrySync reg lookups =
+  SyncReport
+    { syncDiffs = moduleDiffs <> recipeDiffs,
+      syncUpdated =
+        reg
+          { modules = zipWith applyDiff moduleDiffs reg.modules,
+            recipes = zipWith applyDiff recipeDiffs reg.recipes
+          }
+    }
+  where
+    moduleDiffs = map (classify ModuleEntry) reg.modules
+    recipeDiffs = map (classify RecipeEntry) reg.recipes
+
+    classify :: EntryKind -> RegistryEntry -> SyncDiff
+    classify kind entry =
+      let onDisk = lookupOnDisk kind entry.name
+          status = case (entry.version, onDisk) of
+            (_, OnDiskMissing) -> SyncOrphan
+            (Nothing, OnDiskValue Nothing) -> SyncInSync
+            (Nothing, OnDiskValue (Just _)) -> SyncMissing
+            (Just _, OnDiskValue Nothing) -> SyncInSync
+            (Just old, OnDiskValue (Just new))
+              | old == new -> SyncInSync
+              | otherwise -> SyncStale new
+          newVersion = case onDisk of
+            OnDiskMissing -> entry.version
+            OnDiskValue v -> v
+       in SyncDiff
+            { diffKind = kind,
+              diffName = entry.name,
+              diffOld = entry.version,
+              diffNew = newVersion,
+              diffStatus = status
+            }
+
+    applyDiff :: SyncDiff -> RegistryEntry -> RegistryEntry
+    applyDiff diff entry = case diff.diffStatus of
+      SyncOrphan -> entry
+      _ -> entry {version = diff.diffNew}
+
+    lookupOnDisk :: EntryKind -> ModuleName -> OnDiskVersion
+    lookupOnDisk kind name =
+      case [v | (k, n, v) <- lookups, k == kind, n == name] of
+        [] -> OnDiskMissing
+        (v : _) -> OnDiskValue v
+
+-- | Three-way state used internally by 'computeRegistrySync' to distinguish
+-- \"entry absent from the lookup list\" (orphan) from \"entry present, version
+-- field is @Nothing@\" (in-sync with an unversioned module.dhall).
+data OnDiskVersion = OnDiskMissing | OnDiskValue (Maybe Text)
 
 -- | Serialize a 'Registry' as a Dhall record literal compatible with
 -- 'Seihou.Dhall.Eval.registryDecoder'. Rewrites lose hand-written comments

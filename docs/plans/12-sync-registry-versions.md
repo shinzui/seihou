@@ -76,11 +76,12 @@ and see output like:
       `seihou-registry.dhall`-compatible file from a `Registry` value; unit
       tests cover round-trip (`renderRegistryDhall` ∘ `evalRegistryFromFile`
       is an identity up to whitespace). (2026-04-20)
-- [ ] M2: Add `Seihou.Core.Registry.SyncReport` and a pure function
-      `computeRegistrySync :: Registry -> [(EntryKind, ModuleName, Maybe Text, Maybe Text)] -> SyncReport`
+- [x] M2: Add `Seihou.Core.Registry.SyncReport` and a pure function
+      `computeRegistrySync :: Registry -> [(EntryKind, ModuleName, Maybe Text)] -> SyncReport`
       that classifies each registry entry as `Missing | Stale | InSync | Orphan`.
-- [ ] M2: Write unit tests for `computeRegistrySync` covering all four classifications
-      plus the empty-registry case.
+      (2026-04-20)
+- [x] M2: Write unit tests for `computeRegistrySync` covering all four classifications
+      plus the empty-registry case. (2026-04-20)
 - [ ] M3: Add `RegistryCommand` sum with constructor `RegistrySyncVersions
       SyncVersionsOpts` and a `Registry RegistryCommand` top-level constructor
       on `Command` in `Seihou.CLI.Commands`. Wire a `registry` subparser under
@@ -114,7 +115,18 @@ and see output like:
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The Progress skeleton listed `computeRegistrySync` with a 4-tuple
+  `(EntryKind, ModuleName, Maybe Text, Maybe Text)` lookup entry, but the
+  old version is already reachable through the `Registry` argument, so the
+  lookup only needs to carry the on-disk version: `(EntryKind, ModuleName,
+  Maybe Text)`. That matches the signature in Milestone 2's body text and
+  the Interfaces section. Implementation followed the simpler signature.
+  (2026-04-20)
+- Needed a 3-state helper `OnDiskVersion = OnDiskMissing | OnDiskValue
+  (Maybe Text)` internally, because a lookup returning `Nothing` has to
+  distinguish \"entry absent from lookup list → SyncOrphan\" from \"entry
+  present with version = None → SyncInSync with unversioned module.dhall\".
+  (2026-04-20)
 
 
 ## Decision Log
