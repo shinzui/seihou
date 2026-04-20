@@ -1,5 +1,6 @@
 module Seihou.Core.RegistrySyncSpec (tests) where
 
+import Data.Maybe (isJust, mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Core.Registry
@@ -10,6 +11,7 @@ import Seihou.Core.Registry
     SyncReport (..),
     SyncStatus (..),
     computeRegistrySync,
+    formatDriftWarning,
   )
 import Seihou.Core.Types (ModuleName (..))
 import Test.Hspec
@@ -105,6 +107,28 @@ spec = describe "computeRegistrySync" $ do
           ]
         report = computeRegistrySync reg lookups
     map (.diffNew) report.syncDiffs `shouldBe` [Just "1.0.0", Just "2.0.0"]
+
+  describe "formatDriftWarning" $ do
+    it "produces a warning for a stale entry" $ do
+      let reg = mkReg [mkEntry "alpha" (Just "0.1.0")] []
+          lookups = [(ModuleEntry, ModuleName "alpha", Just "1.0.0")]
+          report = computeRegistrySync reg lookups
+          warnings = mapMaybe formatDriftWarning report.syncDiffs
+      length warnings `shouldBe` 1
+      isJust (formatDriftWarning (head report.syncDiffs)) `shouldBe` True
+
+    it "produces no warnings when all entries are in sync" $ do
+      let reg = mkReg [mkEntry "alpha" (Just "1.0.0")] []
+          lookups = [(ModuleEntry, ModuleName "alpha", Just "1.0.0")]
+          report = computeRegistrySync reg lookups
+          warnings = mapMaybe formatDriftWarning report.syncDiffs
+      warnings `shouldBe` []
+
+    it "produces no warnings for orphan entries (handled by validateRegistry)" $ do
+      let reg = mkReg [mkEntry "alpha" (Just "1.0.0")] []
+          report = computeRegistrySync reg []
+          warnings = mapMaybe formatDriftWarning report.syncDiffs
+      warnings `shouldBe` []
 
 mkEntry :: Text -> Maybe Text -> RegistryEntry
 mkEntry n v =

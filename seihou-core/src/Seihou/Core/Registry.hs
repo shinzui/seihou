@@ -10,6 +10,7 @@ module Seihou.Core.Registry
     SyncDiff (..),
     SyncReport (..),
     computeRegistrySync,
+    formatDriftWarning,
   )
 where
 
@@ -261,6 +262,43 @@ computeRegistrySync reg lookups =
 -- \"entry absent from the lookup list\" (orphan) from \"entry present, version
 -- field is @Nothing@\" (in-sync with an unversioned module.dhall).
 data OnDiskVersion = OnDiskMissing | OnDiskValue (Maybe Text)
+
+-- | Format a single 'SyncDiff' as a human-readable drift warning, or
+-- 'Nothing' if the entry is already in sync. Used by @seihou browse@ and
+-- @seihou install@ to surface stale registry versions without blocking.
+formatDriftWarning :: SyncDiff -> Maybe Text
+formatDriftWarning diff = case diff.diffStatus of
+  SyncInSync -> Nothing
+  SyncOrphan -> Nothing
+  SyncMissing ->
+    Just $
+      kindWord diff.diffKind
+        <> " '"
+        <> diff.diffName.unModuleName
+        <> "' registry version is missing; "
+        <> entryFile diff.diffKind
+        <> " declares "
+        <> renderVersion diff.diffNew
+        <> " — run `seihou registry sync-versions`"
+  SyncStale newVer ->
+    Just $
+      kindWord diff.diffKind
+        <> " '"
+        <> diff.diffName.unModuleName
+        <> "' registry version "
+        <> renderVersion diff.diffOld
+        <> " differs from "
+        <> entryFile diff.diffKind
+        <> " version "
+        <> newVer
+        <> " — run `seihou registry sync-versions`"
+  where
+    renderVersion Nothing = "(none)"
+    renderVersion (Just v) = v
+    kindWord ModuleEntry = "module"
+    kindWord RecipeEntry = "recipe"
+    entryFile ModuleEntry = "module.dhall"
+    entryFile RecipeEntry = "recipe.dhall"
 
 -- | Serialize a 'Registry' as a Dhall record literal compatible with
 -- 'Seihou.Dhall.Eval.registryDecoder'. Rewrites lose hand-written comments

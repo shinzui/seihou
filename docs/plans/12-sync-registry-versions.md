@@ -98,10 +98,12 @@ and see output like:
       two module dirs, run `runSync` in-process, verify the rewritten
       `seihou-registry.dhall` parses back to a `Registry` with the expected
       versions. Plus dry-run / check / missing-registry cases. (2026-04-20)
-- [ ] M4: Extend `validateRegistry` in `seihou-core/src/Seihou/Core/Registry.hs`
-      with a soft-warning classifier that reports version drift without
-      failing validation; surface the warnings through `seihou browse` so users
-      see "registry version out of sync" during installs.
+- [x] M4: Add `formatDriftWarning` (pure) in `Seihou.Core.Registry` and
+      `checkRegistryVersionDrift` (IO) in `Seihou.CLI.Registry.Sync` (the CLI
+      layer, since drift-check requires Dhall evaluation and `Core.Registry`
+      is imported by `Seihou.Dhall.Eval`). Surface warnings via `logWarn`
+      through `seihou browse` and `seihou install` when a MultiModule
+      registry has drift. (2026-04-20)
 - [ ] M5: Add a `docs/cli/registry.md` page (covering the `registry` group and
       the `sync-versions` subcommand) and a `CHANGELOG.md` entry under
       Unreleased. Update `docs/user/registries-and-multi-module-repos.md` with
@@ -132,6 +134,12 @@ and see output like:
   — the module already uses `RegistryEntry.version`, so GHC cannot infer a
   `HasField` instance at `m.version`. Worked around by pattern-matching
   accessor helpers (`moduleVersion`, `recipeVersion`). (2026-04-20)
+- `checkRegistryVersionDrift` cannot live in `Seihou.Core.Registry` as the
+  plan originally suggested — it needs `evalModuleFromFile` /
+  `evalRecipeFromFile` from `Seihou.Dhall.Eval`, which itself imports
+  `Seihou.Core.Registry`. Moved the drift-check helper up one layer into
+  `Seihou.CLI.Registry.Sync` and kept only a pure formatter
+  (`formatDriftWarning :: SyncDiff -> Maybe Text`) in Core. (2026-04-20)
 
 
 ## Decision Log

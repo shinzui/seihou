@@ -17,6 +17,7 @@ import Data.Time (getCurrentTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import Seihou.CLI.Commands (InstallOpts (..))
 import Seihou.CLI.InstallHistory (HistoryEntry (..), InstallHistory (..), readHistory, recordUrl)
+import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (validateModule)
@@ -78,7 +79,10 @@ handleInstall iopts = do
               logError "registry has validation errors:"
               mapM_ (\e -> logError $ "  - " <> e) regErrors
             exitFailure
-          else installFromRegistry iopts cloneDir registry source
+          else do
+            driftWarnings <- checkRegistryVersionDrift cloneDir registry
+            logIO LogNormal (mapM_ logWarn driftWarnings)
+            installFromRegistry iopts cloneDir registry source
 
   -- Record URL in history for future recall (only reached on success)
   recordUrl source

@@ -7,12 +7,13 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleModule)
 import Seihou.CLI.Commands (BrowseOpts (..))
+import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile)
-import Seihou.Effect.Logger (logError)
+import Seihou.Effect.Logger (logError, logWarn)
 import Seihou.Prelude
 import System.Exit (ExitCode (..), exitFailure)
 import System.IO.Temp (withSystemTempDirectory)
@@ -60,6 +61,8 @@ handleBrowse bopts = do
           Right r ->
             TIO.putStr $ formatBrowseSingleModule source r.name.unRecipeName r.description
       MultiModule registry -> do
+        driftWarnings <- checkRegistryVersionDrift cloneDir registry
+        logIO LogNormal (mapM_ logWarn driftWarnings)
         let filteredMods = case bopts.browseTag of
               Nothing -> registry.modules
               Just tag -> filter (\e -> tag `elem` e.tags) registry.modules

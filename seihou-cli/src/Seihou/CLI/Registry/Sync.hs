@@ -5,9 +5,11 @@ module Seihou.CLI.Registry.Sync
     runSync,
     handleSyncVersions,
     renderSyncReport,
+    checkRegistryVersionDrift,
   )
 where
 
+import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import GHC.Generics (Generic)
@@ -21,6 +23,7 @@ import Seihou.Core.Registry
     SyncStatus (..),
     computeRegistrySync,
     discoverRepoContents,
+    formatDriftWarning,
     renderRegistryDhall,
   )
 import Seihou.Core.Types (Module, ModuleName (..), Recipe)
@@ -233,3 +236,17 @@ anyDrift report =
         _ -> True
     )
     report.syncDiffs
+
+-- | Soft-warning pass: compare each registry entry's 'version' with the
+-- on-disk module.dhall / recipe.dhall and return one warning per out-of-sync
+-- entry. Entries whose file is missing or unparseable are treated as orphan
+-- and excluded here, matching 'formatDriftWarning' (they are already flagged
+-- by 'validateRegistry').
+--
+-- Intended to be called after 'discoverRepoContents' yields 'MultiModule' —
+-- the caller has already decoded the registry and knows the repo root.
+checkRegistryVersionDrift :: FilePath -> Registry -> IO [Text]
+checkRegistryVersionDrift repoRoot reg = do
+  lookups <- resolveOnDiskVersions repoRoot reg
+  let report = computeRegistrySync reg lookups
+  pure (mapMaybe formatDriftWarning report.syncDiffs)
