@@ -10,6 +10,8 @@ module Seihou.Effect.Filesystem
     getCurrentDirectory,
     removeFile,
     removeDirectoryIfEmpty,
+    renamePath,
+    removeDirectoryRecursive,
   )
 where
 
@@ -26,6 +28,13 @@ data Filesystem :: Effect where
   GetCurrentDirectory :: Filesystem m FilePath
   RemoveFile :: FilePath -> Filesystem m ()
   RemoveDirectoryIfEmpty :: FilePath -> Filesystem m ()
+  -- | Rename a file or directory atomically (within a filesystem).
+  -- Backed by 'System.Directory.renamePath' in IO.
+  RenamePath :: FilePath -> FilePath -> Filesystem m ()
+  -- | Recursively delete a directory and all its contents. Backed by
+  -- 'System.Directory.removeDirectoryRecursive' in IO. The pure
+  -- interpreter drops every map entry under the prefix.
+  RemoveDirectoryRecursive :: FilePath -> Filesystem m ()
 
 type instance DispatchOf Filesystem = Dynamic
 
@@ -58,3 +67,9 @@ removeFile path = send (RemoveFile path)
 
 removeDirectoryIfEmpty :: (Filesystem :> es) => FilePath -> Eff es ()
 removeDirectoryIfEmpty path = send (RemoveDirectoryIfEmpty path)
+
+renamePath :: (Filesystem :> es) => FilePath -> FilePath -> Eff es ()
+renamePath src dest = send (RenamePath src dest)
+
+removeDirectoryRecursive :: (Filesystem :> es) => FilePath -> Eff es ()
+removeDirectoryRecursive path = send (RemoveDirectoryRecursive path)

@@ -63,6 +63,7 @@ library
     Seihou.Engine.DhallJSON
     Seihou.Engine.Diff
     Seihou.Engine.Execute
+    Seihou.Engine.Migrate
     Seihou.Engine.Plan
     Seihou.Engine.Preview
     Seihou.Engine.Remove
@@ -142,6 +143,7 @@ test-suite seihou-core-test
     Seihou.Engine.ConflictSpec
     Seihou.Engine.DiffSpec
     Seihou.Engine.ExecuteSpec
+    Seihou.Engine.MigrateSpec
     Seihou.Engine.PlanSpec
     Seihou.Engine.PreviewSpec
     Seihou.Engine.RemoveSpec

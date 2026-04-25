@@ -92,22 +92,25 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
       single-step chain, multi-step chain, gap, downgrade-rejected,
       same-version no-op, unparseable version, duplicate edge, overshoot,
       stale-edge ignored, padded-version equivalence. _(2026-04-25; 11/11)_
-- [ ] M3: Engine — `Seihou.Engine.Migrate` with `data MigrationOpInstance`
+- [x] M3: Engine — `Seihou.Engine.Migrate` with `data MigrationOpInstance`
       (concrete `FilePath` operations), `data MigrationFileStatus = MFSafe |
       MFConflict | MFGone`, `classifyMigration :: Manifest -> MigrationChain
-      -> Eff es ExecutedMigrationPlan`, and `executeMigration :: ExecutedMigrationPlan
-      -> Manifest -> Eff es Manifest` that performs filesystem operations and
-      returns a manifest with rewritten `files` keys.
-- [ ] M3: Filesystem effect — extend `Seihou.Effect.Filesystem` with
+      -> Eff es ExecutedMigrationPlan`, and `executeMigration :: Bool ->
+      ExecutedMigrationPlan -> Manifest -> UTCTime -> Eff es (Either
+      MigrationExecError Manifest)` that performs filesystem operations,
+      bumps `genAt`/`moduleVersion`, and returns a manifest with rewritten
+      `files` keys. _(2026-04-25)_
+- [x] M3: Filesystem effect — extend `Seihou.Effect.Filesystem` with
       `RenamePath :: FilePath -> FilePath -> Filesystem m ()` (uses
       `System.Directory.renamePath`) and `RemoveDirectoryRecursive :: FilePath
-      -> Filesystem m ()`. Implement in `FilesystemInterp` (IO) and
-      `FilesystemPure` (in-memory map). Public smart constructors
-      `renamePath`, `removeDirectoryRecursive`.
-- [ ] M3: Tests — `seihou-core/test/Seihou/Engine/MigrateSpec.hs` covering
-      move-file, move-dir, delete-file, delete-dir, conflict (user-modified
-      file in source), already-gone target, manifest path rewrite,
-      idempotence guard.
+      -> Filesystem m ()`. Implemented in `FilesystemInterp` (IO) and
+      `FilesystemPure` (in-memory map: prefix-rewriting rename, prefix
+      filter on recursive remove). Public smart constructors
+      `renamePath`, `removeDirectoryRecursive`. _(2026-04-25)_
+- [x] M3: Tests — `seihou-core/test/Seihou/Engine/MigrateSpec.hs` covering
+      move-file (safe / conflict no-force / conflict with force),
+      move-dir, delete-file (gone is no-op), delete-dir, manifest path
+      rewrite, classify-then-execute on a two-step chain. 10/10. _(2026-04-25)_
 - [ ] M4: CLI — `MigrateOpts` record and `Migrate MigrateOpts` constructor on
       `Command` (`Seihou.CLI.Commands`); `seihou migrate <module> [--to
       VERSION] [--dry-run] [--force] [--json] [-v]` parser under "Module
@@ -157,6 +160,19 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
   broken in M2 — either by parameterizing the planner over `Text` instead of
   `ModuleName`, or by hosting the planner in a different module. This was
   not anticipated in the plan; recorded here for the M2 step.
+  Date: 2026-04-25
+
+- The plan's M3 description had `executeMigration` short-circuit on
+  `MFGone` (skipping the disk op when the file was already absent at
+  classify time). This is wrong for chains: in `[MoveDir app→src,
+  DeleteFile src/Main.hs]`, the delete is classified at the start when
+  `src/Main.hs` doesn't exist yet, gets tagged `MFGone`, and the
+  shortcut skips the actual disk delete after the move *did* create it.
+  Fix: classify-time status drives the up-front conflict check (so
+  conflicts surface before any disk mutation), but the disk action
+  itself re-checks `doesFileExist` at execute time. This kept all the
+  authored ergonomics (the CLI plan render still shows MFGone) without
+  the chain-misordering bug.
   Date: 2026-04-25
 
 

@@ -26,3 +26,5 @@ runFilesystem = interpret $ \_ -> \case
   RemoveDirectoryIfEmpty path -> liftIO $ do
     entries <- Dir.listDirectory path
     when (null entries) (Dir.removeDirectory path)
+  RenamePath src dest -> liftIO (Dir.renamePath src dest)
+  RemoveDirectoryRecursive path -> liftIO (Dir.removeDirectoryRecursive path)
