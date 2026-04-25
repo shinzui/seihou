@@ -348,6 +348,24 @@ Modules in a registry can declare dependencies on each other, just like any othe
 When a user installs `haskell-with-nix`, they should also install its dependencies. Seihou resolves the dependency graph at run time from the user's installed modules.
 
 
+## Migrations in registries
+
+Migrations are declared on each module's own `module.dhall`, not on
+the registry. The version field that drives chain selection comes
+from the **module** (i.e. `RegistryEntry.version` is used by
+`seihou outdated` and `seihou upgrade` to decide *whether* to upgrade,
+but the chain itself is computed from the per-module
+`migrations` list once the upgraded module is on disk).
+
+In practice, this means a module author who ships migrations does so
+the same way whether they live alone in a single-module repo or
+alongside siblings in a registry. Consumers run
+`seihou migrate <module>` regardless of where the module came from.
+
+See [migrations.md](migrations.md) for the full reference, or run
+`seihou help migrations` for the in-binary version.
+
+
 ## Next steps
 
 - Read the [Module Authoring Reference](module-authoring.md) for the complete module format and all generation strategies.

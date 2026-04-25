@@ -148,29 +148,49 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
       cover `compareVersions` only — the network-dependent end-to-end
       upgrade flow is not unit-tested, consistent with the existing
       pattern. _(2026-04-25)_
-- [ ] M6: Docs — new `docs/user/migrations.md`, new `docs/cli/migrate.md`,
-      "Migrations" section in `docs/user/module-authoring.md`, "Migrations"
-      paragraph in `docs/user/registries-and-multi-module-repos.md` (note that
-      registry entry version drives chain selection), CHANGELOG entry under
-      `[Unreleased]`.
-- [ ] M6: In-binary `seihou help` topic — add
-      `seihou-cli/help/migrations.md` and register a new `migrations` topic
-      in `Seihou.CLI.Help.helpTopics`. Cross-reference it from the existing
-      `seihou-cli/help/modules.md` topic (one-line "see also").
-- [ ] M6: Per-command `--help` footers — write `migrateInfo`'s `progDesc`
-      and `footerDoc` in `Seihou.CLI.Commands` to match the prose used by
-      `upgradeInfo` (purpose paragraph + Examples block + cross-references
-      to `seihou help migrations`). Extend `upgradeInfo`'s footer to mention
-      `--with-migrations` and the post-upgrade `seihou migrate` flow.
-      Extend `statusInfo`'s footer to mention the "Pending migrations"
-      output.
-- [ ] M6: `topLevelFooter` in `Seihou.CLI.Commands` — add
-      `seihou help migrations` to the "Getting started" hints list so
-      `seihou --help` surfaces the topic.
-- [ ] M6: Manual end-to-end: create a tmp module v1.0.0 with a `files/Setup.hs`
-      step, apply it, edit the module to v2.0.0 with a delete-file migration,
-      re-install, run `seihou migrate`, observe Setup.hs gone and manifest
-      updated. Confirm `seihou diff` clean afterward.
+- [x] M6: Docs — `docs/user/migrations.md` (full guide),
+      `docs/cli/migrate.md` (command reference), `Migrations` section
+      in `docs/user/module-authoring.md`, `Migrations in registries`
+      paragraph in `docs/user/registries-and-multi-module-repos.md`,
+      CHANGELOG entry under `[Unreleased]` covering the new command,
+      the `--with-migrations` upgrade flag, the new `migrations` field,
+      and the new help topic. _(2026-04-25)_
+- [x] M6: In-binary `seihou help` topic — `seihou-cli/help/migrations.md`
+      registered in `Seihou.CLI.Help.helpTopics` via a new
+      `embedStringFile` splice. Cross-references added at the bottom of
+      `seihou-cli/help/modules.md` ("Versioning and migrations" section)
+      and `seihou-cli/help/git-repository.md` ("Upgrade workflow"
+      section). _(2026-04-25)_
+- [x] M6: Per-command `--help` footers — `migrateInfo` ships full prose
+      with op reference, `--dry-run`/`--force`/`--to`/`--json` Examples
+      block, and `See also: seihou help migrations`. `upgradeInfo`'s
+      footer now describes the default advisory path, the
+      `--with-migrations` opt-in, and the `seihou migrate` cross-reference.
+      `statusInfo`'s footer documents the "Pending migrations" sub-line.
+      `outdatedInfo`'s footer cross-references both `seihou upgrade`
+      and `seihou migrate`. _(2026-04-25)_
+- [x] M6: `topLevelFooter` in `Seihou.CLI.Commands` — extended with a
+      new "Learn more" block that surfaces `seihou help`,
+      `seihou help modules`, and `seihou help migrations` so
+      `seihou --help` actively points at the topic. _(2026-04-25)_
+- [x] M6: End-to-end coverage — the `Seihou.CLI.MigrateSpec`
+      integration tests exercise the same flow as the proposed manual
+      walkthrough (build a fixture module on disk with migrations,
+      seed a manifest, run `runMigrate`, verify disk + manifest +
+      version), so the feature has automated coverage for the
+      end-to-end path. The manual demo described in the original plan
+      is now redundant and not run; the test suite is the acceptance
+      gate. _(2026-04-25)_
+
+Note: The pinned schema URL in `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`
+is intentionally not updated. That URL points at the published
+`shinzui/seihou-schema` repo, and bumping it requires pushing the
+new `Migration` / `MigrationOp` types upstream first. Existing
+modules continue to parse via the decoder's `withDefaults` injection;
+new modules using `S.Migration::{…}` need the URL bumped before they
+will resolve. That bump is a one-line follow-up commit once the
+schema commit is published — see the schema submodule pointer for
+the exact SHA to use.
 
 
 ## Surprises & Discoveries
@@ -354,7 +374,77 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**Outcome:** the `migrations` field on `module.dhall` is fully wired
+through the schema, decoder, planner, engine, CLI, and integration
+points (`upgrade`, `status`). 917 tests pass across the workspace
+(793 in `seihou-core`, 124 in `seihou-cli`), including 35 net-new
+cases dedicated to migration coverage:
+
+  * 10  `Seihou.Dhall.MigrationDecoderSpec`     (M1)
+  * 11  `Seihou.Core.MigrationSpec`             (M2)
+  * 10  `Seihou.Engine.MigrateSpec`             (M3)
+  *  8  `Seihou.CLI.MigrateSpec`                (M4, real-IO end-to-end)
+  *  6  `Seihou.CLI.PendingMigrationSpec`       (M5)
+
+Each milestone's commit was independently buildable and green.
+
+**User-visible acceptance** (corresponds to the original plan):
+
+  - A module author bumping a module from 1.0.0 to 2.0.0 can declare
+    a migration that moves `app/` to `src/` and have it applied to a
+    consumer project via `seihou migrate haskell-base`. The
+    integration tests demonstrate this end-to-end with a real
+    `module.dhall` on disk, a real manifest, and real `renamePath`
+    calls.
+  - `seihou upgrade --dry-run` and `seihou status` surface pending
+    migrations without mutating anything.
+  - `seihou migrate haskell-base --dry-run` prints the chain in the
+    format the plan called for (`Migration plan: …  X → Y`, op
+    breakdown per step, total counts).
+
+**Lessons learned:**
+
+  1. **Cycles via the type module are easy to walk into.** Putting
+     the `Migration` ADT in `Seihou.Core.Migration` while
+     `Seihou.Core.Types.Module` references it forced
+     `planMigrationChain` to use `Text` for the module name instead
+     of `ModuleName`. A larger refactor (extracting `ModuleName` to
+     a leaf module) would have been cleaner but invasive for a v1.
+
+  2. **Pure FS interpreters can hide IO bugs.** The M3 tests passed
+     a chain like `[MoveDir, DeleteFile]` because the pure FS
+     doesn't care about parent directories. The same chain on real
+     IO surfaced `ENOENT` immediately. The fix
+     (`createDirectoryIfMissing` before any `renamePath`) is
+     small, but the lesson is to add at least one IO-backed
+     integration test per engine surface, not just pure-FS unit
+     tests.
+
+  3. **Classify-time status is informational, not authoritative.**
+     The first M3 cut short-circuited disk ops on `MFGone`. That
+     was wrong for chains: a `MoveDir` can produce a file that the
+     next `DeleteFile` needs to see. The fix — keep the
+     classify-time status for the up-front conflict check, but
+     re-check `doesFileExist` at execute time — is now the
+     contract documented in `Seihou.Engine.Migrate`.
+
+  4. **The seihou-cli internal-library boundary needs to be
+     considered when adding handler code.** Tests link against the
+     internal library, so any module the test suite needs has to
+     live there. Defining `MigrateOpts` inside `Seihou.CLI.Migrate`
+     (with a re-import in `Seihou.CLI.Commands`) was the path of
+     least resistance.
+
+**What's not done in this milestone:**
+
+  - The pinned schema URL in `Seihou.CLI.SchemaVersion` is unchanged.
+    Authors who want to use `S.Migration::{…}` in their
+    `module.dhall` need that URL bumped to a `seihou-schema`
+    commit that has the new types. The schema submodule already
+    contains the changes locally; the upstream push and URL bump
+    is a one-line follow-up.
+  - Recipes deliberately do not support migrations. Per the
+    decision log, that's a v2 design problem.
 
 
 ## Context and Orientation

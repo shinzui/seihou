@@ -6,6 +6,25 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **Module migrations**: a new `migrations` field on `module.dhall` lets
+  authors declare file-system operations (`MoveFile`, `MoveDir`,
+  `DeleteFile`, `DeleteDir`, `RunCommand`) that move a project's
+  working tree from one module version to another. New `seihou migrate
+  <module>` command applies the chain to the current project, rewrites
+  the manifest's `files` map to reflect new paths, and bumps the
+  applied module's recorded version. Supports `--dry-run`, `--force`
+  (mirroring `seihou remove` conflict semantics), `--to VERSION`, and
+  `--json`. New `seihou help migrations` topic embeds the full
+  reference in the binary; new `docs/user/migrations.md` and
+  `docs/cli/migrate.md` cover authoring and CLI usage. Schema-upgrade
+  detects and adds the `migrations` field on legacy modules.
+- `seihou upgrade --with-migrations` runs migrations against the
+  current project for each successfully-upgraded module. Without the
+  flag, `seihou upgrade` prints a one-line advisory pointing at
+  `seihou migrate <module>` when migrations are pending.
+- `seihou status` reports `Pending migrations: N migration(s) pending:
+  a → b` under any applied module whose installed copy has advanced
+  past the manifest's recorded version with a covering chain.
 - `--confirm-defaults` flag on `seihou run`. Steps through each variable
   resolved from its default or from a parent module's export and lets the
   user accept or override it interactively. Overridden values are tagged as

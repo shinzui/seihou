@@ -253,6 +253,15 @@ topLevelFooter =
       mempty,
       indent 2 $ vsep [pretty ("seihou init" :: String), pretty ("seihou run <module> --var project.name=my-app" :: String), pretty ("seihou status" :: String)],
       mempty,
+      pretty ("Learn more:" :: String),
+      mempty,
+      indent 2 $
+        vsep
+          [ pretty ("seihou help          # list all help topics" :: String),
+            pretty ("seihou help modules  # how modules work" :: String),
+            pretty ("seihou help migrations  # apply author-declared migrations between versions" :: String)
+          ],
+      mempty,
       pretty ("Run 'seihou COMMAND --help' for details on a specific command." :: String)
     ]
 

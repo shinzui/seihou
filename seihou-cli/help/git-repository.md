@@ -68,3 +68,11 @@ BOOTSTRAPPING A NEW REPOSITORY
 
     seihou agent bootstrap                    # single module
     seihou agent bootstrap --repo             # multi-module with registry
+
+UPGRADE WORKFLOW
+
+  Once installed, modules can be upgraded with `seihou upgrade`. If a
+  newer version ships migrations (for renames, deletions, etc.), the
+  upgrade command surfaces them via an advisory; running
+  `seihou migrate <module>` is the post-upgrade step that applies them
+  to the current project. See `seihou help migrations`.

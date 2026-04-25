@@ -82,3 +82,11 @@ COMMON COMMANDS
   seihou run <module> --var k=v        Run a module to generate files
   seihou remove <module>               Remove an applied module and its files
   seihou schema-upgrade ./my-module    Upgrade module.dhall to current schema
+
+VERSIONING AND MIGRATIONS
+
+  Modules carry a `version` field that follows dotted-version semantics
+  (1.0.0, 1.2.3, etc.). When an author bumps a module's version and
+  changes its file layout, they can ship migrations alongside the new
+  version that move existing project files into the new shape. Run
+  `seihou help migrations` for the full reference.

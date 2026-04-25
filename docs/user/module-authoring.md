@@ -793,6 +793,44 @@ When a user runs `seihou remove my-module`:
 Use `--dry-run` to preview the removal plan without making changes, and `--force` to skip confirmation prompts.
 
 
+## Migrations
+
+When a module's `version` advances and the change shifts the **layout**
+of the files it generates (a directory rename, a file removal, a path
+shift), authors can declare migrations on `module.dhall` so consumers
+don't have to do the moves by hand.
+
+```dhall
+let S = ./package.dhall
+
+in S.Module::{
+  , name = "haskell-base"
+  , version = Some "2.0.0"
+  , steps = [ … ]
+  , migrations =
+      [ S.Migration::{
+          from = "1.0.0",
+          to = "2.0.0",
+          ops =
+            [ S.MigrationOp.MoveDir { src = "app", dest = "src" }
+            , S.MigrationOp.DeleteFile { path = "Setup.hs" }
+            ]
+        }
+      ]
+  }
+```
+
+Each migration declares a `from` version, a `to` version, and a list
+of operations applied in order. The five operations are `MoveFile`,
+`MoveDir`, `DeleteFile`, `DeleteDir`, and `RunCommand`. Consumers run
+`seihou migrate <module>` to apply them.
+
+For the full guide — chain semantics, conflict handling, the
+`--with-migrations` upgrade flag, and the manifest path-rewrite
+guarantee — see [migrations.md](migrations.md) or run
+`seihou help migrations`.
+
+
 ## Best practices
 
 **Keep modules focused.** Each module should do one thing well. Use composition to combine small modules rather than building monolithic ones.
