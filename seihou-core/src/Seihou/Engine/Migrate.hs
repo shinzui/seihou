@@ -31,6 +31,7 @@ import Seihou.Core.Types
 import Seihou.Core.Version (renderVersion)
 import Seihou.Effect.Filesystem
   ( Filesystem,
+    createDirectoryIfMissing,
     doesFileExist,
     readFileText,
     removeDirectoryIfEmpty,
@@ -226,10 +227,12 @@ runOps (op : rest) manifest acc = case op of
     exists <- doesFileExist src
     if exists
       then do
+        ensureParentDir dest
         renamePath src dest
         runOps rest (renameInManifest src dest manifest) (src : acc)
       else runOps rest (renameInManifest src dest manifest) acc
   MoveDirInst src dest -> do
+    ensureParentDir dest
     renamePath src dest
     runOps rest (renameDirInManifest src dest manifest) (src : acc)
   DeleteFileInst p _status -> do
@@ -314,6 +317,19 @@ allParents p = go (takeDirectory p)
     go "" = []
     go "/" = []
     go d = d : go (takeDirectory d)
+
+-- | Ensure the parent directory of a destination path exists. Used
+-- before 'renamePath' so callers don't have to author moves that
+-- happen to land where the engine has already created an intermediate
+-- directory. Skips the call when the parent is the project root
+-- itself (@.@) — 'createDirectoryIfMissing' on @.@ is a no-op anyway.
+ensureParentDir :: (Filesystem :> es) => FilePath -> Eff es ()
+ensureParentDir dest =
+  let parent = takeDirectory dest
+   in case parent of
+        "" -> pure ()
+        "." -> pure ()
+        d -> createDirectoryIfMissing True d
 
 -- | Local copy of the prefix predicate used in 'Seihou.Effect.FilesystemPure'.
 isPrefixOfPath :: String -> String -> Bool

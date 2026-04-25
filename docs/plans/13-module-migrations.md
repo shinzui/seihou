@@ -111,15 +111,22 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
       move-file (safe / conflict no-force / conflict with force),
       move-dir, delete-file (gone is no-op), delete-dir, manifest path
       rewrite, classify-then-execute on a two-step chain. 10/10. _(2026-04-25)_
-- [ ] M4: CLI — `MigrateOpts` record and `Migrate MigrateOpts` constructor on
-      `Command` (`Seihou.CLI.Commands`); `seihou migrate <module> [--to
-      VERSION] [--dry-run] [--force] [--json] [-v]` parser under "Module
-      management:". Handler in new `Seihou.CLI.Migrate.handleMigrate`.
-- [ ] M4: Wire into `seihou-cli/src/Main.hs`.
-- [ ] M4: Tests — `seihou-cli/test/Seihou/CLI/MigrateSpec.hs` integration tests
-      that build a temp project, write a manifest, install a fixture module
-      with migrations, run `runMigrate` in-process, and verify disk + manifest
-      changes.
+- [x] M4: CLI — `MigrateOpts` record (now defined in `Seihou.CLI.Migrate`,
+      re-imported into `Seihou.CLI.Commands` for the parser) and a
+      `Migrate MigrateOpts` constructor on `Command`; `seihou migrate
+      <module> [--to VERSION] [--dry-run] [--force] [--json] [-v]` parser
+      under "Module management:". Handler `handleMigrate` (IO shell) and
+      `runMigrate` (testable core returning `Either MigrateError
+      MigrateResult`) live in `Seihou.CLI.Migrate`. _(2026-04-25)_
+- [x] M4: Wire into `seihou-cli/src/Main.hs`. _(2026-04-25)_
+- [x] M4: Tests — `seihou-cli/test/Seihou/CLI/MigrateSpec.hs` integration
+      tests that build a temp project (via `withSystemTempDirectory` +
+      `withCurrentDirectory`), write a manifest, write a fixture
+      `module.dhall` with migrations, and run `runMigrate` in-process.
+      Covers: module-not-applied, no-recorded-version, no-op,
+      dry-run-no-disk-touch, full execution + manifest rewrite,
+      conflict-without-force, conflict-with-force, --to override. 8/8.
+      _(2026-04-25)_
 - [ ] M5: Upgrade integration — `seihou upgrade` runs migrations *in any
       project that has the module applied* before swapping the installed
       copy, gated behind `--with-migrations` (default off, prints a one-line
@@ -173,6 +180,28 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
   itself re-checks `doesFileExist` at execute time. This kept all the
   authored ergonomics (the CLI plan render still shows MFGone) without
   the chain-misordering bug.
+  Date: 2026-04-25
+
+- M3 originally called `renamePath src dest` directly. In the pure
+  filesystem this works (it's a key rename in a `Map`), but real IO
+  errors with `does not exist (No such file or directory)` if the
+  destination's parent directory doesn't yet exist. Surfaced by the M4
+  CLI integration tests: the move `app/Main.hs → src/Main.hs` failed
+  because `src/` hadn't been created. Fix: every move op now calls
+  `createDirectoryIfMissing True` on the destination's parent before
+  the rename. The pure FS interpreter is unaffected (the key rename
+  doesn't care about parents).
+  Date: 2026-04-25
+
+- The seihou-cli tests live in a separate test target that links only
+  against the `seihou-cli-internal` library. The `Seihou.CLI.Commands`
+  module — where the plan said `MigrateOpts` should live — is in the
+  executable's `other-modules`, not in the internal library, so tests
+  can't import from it. Resolution: define `MigrateOpts` inside
+  `Seihou.CLI.Migrate` (which IS in the internal library), and
+  re-import it into `Seihou.CLI.Commands` for parser construction.
+  This matches the existing pattern (e.g. `Seihou.CLI.Diff`,
+  `Seihou.CLI.Init` are full IO handlers in the internal library).
   Date: 2026-04-25
 
 

@@ -14,6 +14,7 @@ import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.Kit (runKit)
 import Seihou.CLI.List (ListFilter (..), handleList)
+import Seihou.CLI.Migrate (handleMigrate)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.NewRecipe (handleNewRecipe)
 import Seihou.CLI.Outdated (handleOutdated)
@@ -63,6 +64,8 @@ main = do
       handleOutdated outdatedOpts
     Upgrade upgradeOpts ->
       handleUpgrade upgradeOpts
+    Migrate migrateOpts ->
+      handleMigrate migrateOpts
     SchemaUpgrade schemaUpgradeOpts ->
       handleSchemaUpgrade schemaUpgradeOpts
     Registry registryCmd ->

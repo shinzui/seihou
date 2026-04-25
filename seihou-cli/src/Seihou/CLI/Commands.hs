@@ -15,6 +15,7 @@ module Seihou.CLI.Commands
     BrowseOpts (..),
     OutdatedOpts (..),
     UpgradeOpts (..),
+    MigrateOpts (..),
     SchemaUpgradeOpts (..),
     AgentOpts (..),
     AgentCommand (..),
@@ -37,6 +38,7 @@ import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
 import Seihou.CLI.Help (HelpCommand, helpCommandParser)
 import Seihou.CLI.Kit (KitCommand, kitCommandParser)
+import Seihou.CLI.Migrate (MigrateOpts (..))
 import Seihou.CLI.Registry (RegistryCommand (..))
 import Seihou.CLI.Registry.Sync (SyncVersionsOpts (..))
 import Seihou.CLI.Version (seihouVersionWithGit)
@@ -60,6 +62,7 @@ data Command
   | Browse BrowseOpts
   | Outdated OutdatedOpts
   | Upgrade UpgradeOpts
+  | Migrate MigrateOpts
   | SchemaUpgrade SchemaUpgradeOpts
   | Registry RegistryCommand
   | Kit KitCommand
@@ -262,6 +265,7 @@ commandParser =
           <> command "browse" browseInfo
           <> command "outdated" outdatedInfo
           <> command "upgrade" upgradeInfo
+          <> command "migrate" migrateInfo
           <> commandGroup "Module management:"
           <> hidden
       )
@@ -837,6 +841,69 @@ upgradeFooter =
             pretty ("seihou upgrade --dry-run              # preview without changes" :: String),
             pretty ("seihou upgrade --skip-unversioned     # skip unversioned modules" :: String)
           ]
+    ]
+
+migrateInfo :: ParserInfo Command
+migrateInfo =
+  info
+    (migrateParser <**> helper)
+    ( fullDesc
+        <> progDesc "Apply module-declared migrations to the current project"
+        <> footerDoc (Just migrateFooter)
+    )
+
+migrateParser :: Parser Command
+migrateParser =
+  fmap Migrate $
+    MigrateOpts
+      <$> argument (ModuleName . T.pack <$> str) (metavar "MODULE" <> help "The applied module to migrate")
+      <*> optional
+        ( option
+            (T.pack <$> str)
+            ( long "to"
+                <> metavar "VERSION"
+                <> help "Target version (default: installed module's current version)"
+            )
+        )
+      <*> switch (long "dry-run" <> help "Show the migration plan without modifying any files")
+      <*> switch (long "force" <> help "Proceed even when files have been edited since generation")
+      <*> switch (long "json" <> help "Emit the plan as JSON instead of human-readable text")
+      <*> switch (long "verbose" <> short 'v' <> help "Print extra detail about each operation")
+
+migrateFooter :: Doc
+migrateFooter =
+  vsep
+    [ pretty ("Applies the migrations declared on a module's module.dhall file to the" :: String),
+      pretty ("current project's working tree and manifest at .seihou/manifest.json." :: String),
+      pretty ("The chain that runs is determined by the manifest's recorded version" :: String),
+      pretty ("of the applied module (the 'from') and either the installed copy's" :: String),
+      pretty ("current version or a --to override (the 'to')." :: String),
+      line,
+      pretty ("Available migration operations:" :: String),
+      indent 2 $
+        vsep
+          [ pretty ("MoveFile    rename a single tracked file" :: String),
+            pretty ("MoveDir     rename a directory; rewrites every contained manifest entry" :: String),
+            pretty ("DeleteFile  remove a tracked file" :: String),
+            pretty ("DeleteDir   recursively remove a directory" :: String),
+            pretty ("RunCommand  run a shell command (escape hatch; manifest is not auto-updated)" :: String)
+          ],
+      line,
+      pretty ("Conflict semantics mirror 'seihou remove': files whose disk hash differs" :: String),
+      pretty ("from the manifest are flagged. Without --force the engine refuses to" :: String),
+      pretty ("overwrite them and exits non-zero. With --force, the migration proceeds." :: String),
+      line,
+      pretty ("Examples:" :: String),
+      indent 2 $
+        vsep
+          [ pretty ("seihou migrate haskell-base                # plan + apply" :: String),
+            pretty ("seihou migrate haskell-base --dry-run      # preview only" :: String),
+            pretty ("seihou migrate haskell-base --to 1.5.0     # stop at intermediate version" :: String),
+            pretty ("seihou migrate haskell-base --force        # overwrite conflicted files" :: String),
+            pretty ("seihou migrate haskell-base --json         # machine-readable plan" :: String)
+          ],
+      line,
+      pretty ("See also: seihou help migrations" :: String)
     ]
 
 schemaUpgradeInfo :: ParserInfo Command
