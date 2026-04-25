@@ -208,15 +208,15 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
       stayed green: 917/917 (793 core + 124 cli).
       _(2026-04-25)_
 
-Note: The pinned schema URL in `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`
-is intentionally not updated. That URL points at the published
-`shinzui/seihou-schema` repo, and bumping it requires pushing the
-new `Migration` / `MigrationOp` types upstream first. Existing
-modules continue to parse via the decoder's `withDefaults` injection;
-new modules using `S.Migration::{…}` need the URL bumped before they
-will resolve. That bump is a one-line follow-up commit once the
-schema commit is published — see the schema submodule pointer for
-the exact SHA to use.
+- [x] M6 follow-up: schema URL bump. Pushed the Migration /
+      MigrationOp commit upstream as `b83079d` on
+      `shinzui/seihou-schema` (after rebasing past a duplicate Recipe
+      commit in the local submodule that didn't match the published
+      `d88cd99`). Updated `Seihou.CLI.SchemaVersion.schemaUrl` and
+      `schemaHash` to point at the new commit, with the new hash
+      verified via `dhall hash`. New modules using `S.Migration::{…}`
+      and `S.MigrationOp.MoveDir { … }` now resolve against the
+      canonical schema. _(2026-04-25)_
 
 
 ## Surprises & Discoveries
@@ -507,14 +507,17 @@ Each milestone's commit was independently buildable and green.
 
 **What's not done in this milestone:**
 
-  - The pinned schema URL in `Seihou.CLI.SchemaVersion` is unchanged.
-    Authors who want to use `S.Migration::{…}` in their
-    `module.dhall` need that URL bumped to a `seihou-schema`
-    commit that has the new types. The schema submodule already
-    contains the changes locally; the upstream push and URL bump
-    is a one-line follow-up.
-  - Recipes deliberately do not support migrations. Per the
-    decision log, that's a v2 design problem.
+  - Recipes deliberately do not support migrations. Per the decision
+    log, that's a v2 design problem.
+
+**Post-merge follow-ups completed:**
+
+  - Schema submodule bumped to `b83079d` on
+    `shinzui/seihou-schema` (the upstream-published Migration commit,
+    rebased past a stale duplicate of "Recipe schema" that lived only
+    in the local clone). `Seihou.CLI.SchemaVersion` now points at
+    that SHA with the matching `sha256:1d4669…` hash. New module
+    fixtures that need to write `S.Migration::{…}` resolve correctly.
 
 **M7 update (2026-04-25):** The three embedded agent prompts
 under `seihou-cli/data/` (`assist-prompt.md`,
