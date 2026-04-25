@@ -119,6 +119,7 @@ test-suite seihou-core-test
     Seihou.Core.ExprSpec
     Seihou.Core.InstallSpec
     Seihou.Core.ListSpec
+    Seihou.Core.MigrationSpec
     Seihou.Core.ModuleSpec
     Seihou.Core.RecipeSpec
     Seihou.Core.RegistryEmitSpec

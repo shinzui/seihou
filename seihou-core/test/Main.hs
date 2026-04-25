@@ -9,6 +9,7 @@ import Seihou.Core.ContextSpec qualified as ContextSpec
 import Seihou.Core.ExprSpec qualified as ExprSpec
 import Seihou.Core.InstallSpec qualified as InstallSpec
 import Seihou.Core.ListSpec qualified as ListSpec
+import Seihou.Core.MigrationSpec qualified as MigrationSpec
 import Seihou.Core.ModuleSpec qualified as ModuleSpec
 import Seihou.Core.RecipeSpec qualified as RecipeSpec
 import Seihou.Core.RegistryEmitSpec qualified as RegistryEmitSpec
@@ -62,6 +63,7 @@ main = do
   exprTests <- ExprSpec.tests
   installTests <- InstallSpec.tests
   listTests <- ListSpec.tests
+  migrationTests <- MigrationSpec.tests
   moduleTests <- ModuleSpec.tests
   recipeTests <- RecipeSpec.tests
   registryTests <- RegistrySpec.tests
@@ -100,4 +102,4 @@ main = do
   manifestTypesTests <- ManifestTypesSpec.tests
   promptTests <- PromptSpec.tests
   confirmTests <- ConfirmSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, instanceTests, compositionPlanTests, compositionRecipeTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, moduleTests, recipeTests, registryTests, registryEmitTests, registrySyncTests, scaffoldTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, planTests, previewTests, sectionTests, validateTests, splitFlakeTests, dhallTextFlakeTests, typedDhallTextTests, conditionalTemplateTests, configTests, dhallEvalTests, migrationDecoderTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, removeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests, confirmTests])
+  defaultMain (testGroup "seihou-core" [graphTests, instanceTests, compositionPlanTests, compositionRecipeTests, resolveTests, typesTests, contextTests, exprTests, installTests, listTests, migrationTests, moduleTests, recipeTests, registryTests, registryEmitTests, registrySyncTests, scaffoldTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, planTests, previewTests, sectionTests, validateTests, splitFlakeTests, dhallTextFlakeTests, typedDhallTextTests, conditionalTemplateTests, configTests, dhallEvalTests, migrationDecoderTests, configReaderTests, configWriterTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, diffTests, executeTests, removeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, promptTests, confirmTests])

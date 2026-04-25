@@ -83,12 +83,15 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
 - [x] M1: Tests — round-trip Dhall encode/decode tests for `MigrationOp` and
       `Migration` in `seihou-core/test/Seihou/Dhall/MigrationDecoderSpec.hs`.
       _(2026-04-25; 10 cases passing, full seihou-core 772/772 green)_
-- [ ] M2: Pure planner — in `Seihou.Core.Migration`, define `MigrationChain`
-      and `planMigrationChain :: [Migration] -> Version -> Version -> Either MigrationPlanError MigrationChain`.
-      Cover gap detection, ordering, no-op cases.
-- [ ] M2: Tests — `seihou-core/test/Seihou/Core/MigrationSpec.hs` covering
+- [x] M2: Pure planner — in `Seihou.Core.Migration`, define `MigrationChain`
+      and `planMigrationChain :: Text -> [Migration] -> Version -> Version -> Either MigrationPlanError (Maybe MigrationChain)`.
+      Cover gap detection, ordering, no-op cases. Module name passed as
+      `Text` to keep `Seihou.Core.Migration` independent of
+      `Seihou.Core.Types` (avoids the cycle noted in M1's surprises). _(2026-04-25)_
+- [x] M2: Tests — `seihou-core/test/Seihou/Core/MigrationSpec.hs` covering
       single-step chain, multi-step chain, gap, downgrade-rejected,
-      same-version no-op, unparseable version.
+      same-version no-op, unparseable version, duplicate edge, overshoot,
+      stale-edge ignored, padded-version equivalence. _(2026-04-25; 11/11)_
 - [ ] M3: Engine — `Seihou.Engine.Migrate` with `data MigrationOpInstance`
       (concrete `FilePath` operations), `data MigrationFileStatus = MFSafe |
       MFConflict | MFGone`, `classifyMigration :: Manifest -> MigrationChain
@@ -252,6 +255,40 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
   `MigrationOp` simultaneously can import each set qualified or not at
   all). The Dhall side is unchanged — `S.MigrationOp.MoveFile { ... }` is
   what authors write.
+  Date: 2026-04-25
+
+- Decision (M2): `planMigrationChain` takes the module name as `Text`,
+  not as `Seihou.Core.Types.ModuleName`.
+  Rationale: `Seihou.Core.Types.Module` already imports `Migration` from
+  `Seihou.Core.Migration` for its `migrations :: [Migration]` field. If
+  the planner — which lives in the same module — also took
+  `ModuleName`, `Seihou.Core.Migration` would have to import `Types`,
+  creating a circular module dependency. The alternatives (an `hs-boot`
+  file, a third helper module that holds only `ModuleName`, or moving
+  the planner to a separate module) were each more invasive than just
+  carrying the rendered name as `Text`. The CLI handler in M4 unwraps
+  `ModuleName.unModuleName` before calling. The planner uses the name
+  only for the `MigrationChain.migrationModule` field — i.e. for
+  human-readable output — so a stringly-typed name is fine.
+  Date: 2026-04-25
+
+- Decision (M2): The planner returns
+  `Either MigrationPlanError (Maybe MigrationChain)` rather than the
+  flatter `Either MigrationPlanError MigrationChain` originally drafted.
+  Rationale: a same-version request is a perfectly valid input that does
+  no work. Modeling it as `Right Nothing` lets callers handle "nothing
+  to do" without a sentinel error variant, and matches the M4 CLI flow
+  ("Already at version X; nothing to do.") cleanly.
+  Date: 2026-04-25
+
+- Decision (M2): `MigrationOvershoot` is a separate error from
+  `MigrationGap`. The plan's algorithm description folded "to > target"
+  into "MigrationGap"; splitting them lets the CLI render distinct,
+  actionable messages: an overshoot means the author shipped a
+  too-large jump (fix: ship intermediate migrations or migrate to a
+  later version), whereas a gap means there's literally no edge from
+  the stuck-at version (fix: ship the missing migration or downgrade
+  the request).
   Date: 2026-04-25
 
 
