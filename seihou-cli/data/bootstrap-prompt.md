@@ -55,6 +55,7 @@ Module names must match `[a-z][a-z0-9-]*`.
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
 , dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
+, migrations = [] : List Migration.Type
 , removal = None Removal.Type
 }
 ```
@@ -73,6 +74,26 @@ Declare a `removal` section to make a module removable via `seihou remove <modul
 ```
 
 Actions: `remove-file` (delete a file), `remove-section` (strip tagged section markers), `rewrite-file` (transform file content). If `removal = None Removal.Type`, the module cannot be removed.
+
+### Migrations
+
+Declare `migrations` to move a consumer's project between module versions. Each entry has `from`, `to`, and an ordered `ops` list. The planner picks a contiguous chain (no graph search, no skipping); duplicate `from` edges or jumps past the target are rejected.
+
+```dhall
+, migrations =
+    [ S.Migration::{ from = "1.0.0"
+                   , to = "2.0.0"
+                   , ops =
+                       [ S.MigrationOp.MoveDir { src = "app", dest = "src" }
+                       , S.MigrationOp.DeleteFile { path = "Setup.hs" }
+                       ]
+                   }
+    ]
+```
+
+Operations: `MoveFile { src, dest }`, `MoveDir { src, dest }`, `DeleteFile { path }`, `DeleteDir { path }`, `RunCommand { run, workDir : Optional Text }`. Moves rewrite the manifest's `files` map keys. Conflicts mirror `seihou remove` — Safe / Conflict / Gone — and `--force` is required to overwrite user-edited files.
+
+A bootstrap-time module typically starts at v1 with `migrations = [] : List Migration.Type`. Add entries only when bumping `version` in a way that changes file *layout* (renames, deletions). Content-only changes don't need migrations. See `seihou help migrations` for full detail.
 
 ### Dependencies
 
@@ -97,7 +118,7 @@ in  S.Module::{
     }
 ```
 Running `seihou new-module` generates modules in this format automatically.
-Available types: S.Module, S.Step, S.VarDecl, S.VarExport, S.Prompt, S.Command, S.Dependency.
+Available types: S.Module, S.Step, S.VarDecl, S.VarExport, S.Prompt, S.Command, S.Dependency, S.Migration, S.MigrationOp.
 
 ### Empty list type annotations
 
@@ -194,6 +215,7 @@ Use these commands via the Bash tool:
 - `seihou diff` — compare manifest vs disk
 - `seihou config set|get|unset|list KEY [VALUE] [--global]` — manage config
 - `seihou schema-upgrade [PATH] [--dry-run] [--all]` — upgrade module.dhall to current schema
+- `seihou migrate MODULE [--dry-run] [--force] [--to VERSION] [--json]` — apply author-declared migrations to a consumer project (see `seihou help migrations`)
 
 
 ## Bootstrap Workflow
@@ -215,14 +237,23 @@ Use these commands via the Bash tool:
 5. **Add conditional steps**: Use `when` expressions for optional features
    (e.g., `when = Some "IsSet license"` for an optional LICENSE file).
 
-6. **Validate**: Run `seihou validate-module ./MODULE` and fix any issues.
+6. **Plan for versioning**: Ask whether the user expects to ship breaking
+   layout changes later (file renames, removed files). If so, leave the
+   `migrations = [] : List Migration.Type` skeleton in place — when a
+   future v2 renames `app/` to `src/`, the author appends an
+   `S.Migration::{ from = "1.0.0", to = "2.0.0", ops = … }` entry so
+   consumers can run `seihou migrate <module>` instead of
+   reconciling by hand. Set an explicit initial `version` (e.g.
+   `Some "1.0.0"`) so the chain has a starting point.
 
-7. **Test**: Run `seihou run MODULE --dry-run --var key=value` to preview the
+7. **Validate**: Run `seihou validate-module ./MODULE` and fix any issues.
+
+8. **Test**: Run `seihou run MODULE --dry-run --var key=value` to preview the
    generated output. Show results to the user.
 
-8. **Iterate**: Refine based on user feedback until the module is complete.
+9. **Iterate**: Refine based on user feedback until the module is complete.
 
-For multi-module repos, repeat steps 2-7 for each module, then create the
+For multi-module repos, repeat steps 2-8 for each module, then create the
 seihou-registry.dhall at the root.
 
 

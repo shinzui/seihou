@@ -54,6 +54,7 @@ Module names must match `[a-z][a-z0-9-]*`.
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
 , dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
+, migrations = [] : List Migration.Type
 , removal = None Removal.Type
 }
 ```
@@ -72,6 +73,26 @@ Declare a `removal` section to make a module removable via `seihou remove <modul
 ```
 
 Actions: `remove-file` (delete a file), `remove-section` (strip tagged section markers), `rewrite-file` (transform file content). If `removal = None Removal.Type`, the module cannot be removed.
+
+### Migrations
+
+Declare `migrations` to move a consumer's project files between module versions. Each entry has a `from` version, a `to` version, and an ordered `ops` list. The planner picks a contiguous chain (no graph search, no skipping); duplicate `from` edges or jumps past the target are rejected.
+
+```dhall
+, migrations =
+    [ S.Migration::{ from = "1.0.0"
+                   , to = "2.0.0"
+                   , ops =
+                       [ S.MigrationOp.MoveDir { src = "app", dest = "src" }
+                       , S.MigrationOp.DeleteFile { path = "Setup.hs" }
+                       ]
+                   }
+    ]
+```
+
+Operations: `MoveFile { src, dest }`, `MoveDir { src, dest }`, `DeleteFile { path }`, `DeleteDir { path }`, `RunCommand { run, workDir : Optional Text }`. Moves rewrite the manifest's `files` map keys. Conflicts mirror `seihou remove` — Safe / Conflict / Gone — and `--force` is required to overwrite user-edited files.
+
+Add migrations only when a new module version changes file *layout* (renames, deletions). Content-only changes don't need migrations; re-running `seihou run` already updates content. See `seihou help migrations` for full detail.
 
 ### Dependencies
 
@@ -96,7 +117,7 @@ in  S.Module::{
     }
 ```
 Running `seihou new-module` generates modules in this format automatically.
-Available types: S.Module, S.Step, S.VarDecl, S.VarExport, S.Prompt, S.Command, S.Dependency.
+Available types: S.Module, S.Step, S.VarDecl, S.VarExport, S.Prompt, S.Command, S.Dependency, S.Migration, S.MigrationOp.
 
 ### Empty list type annotations
 
@@ -154,6 +175,7 @@ Use these commands via the Bash tool:
 - `seihou diff` — compare manifest vs disk
 - `seihou config set|get|unset|list KEY [VALUE] [--global]` — manage config
 - `seihou schema-upgrade [PATH] [--dry-run] [--all]` — upgrade module.dhall to current schema
+- `seihou migrate MODULE [--dry-run] [--force] [--to VERSION] [--json]` — apply author-declared migrations to move a project between module versions (see `seihou help migrations`)
 
 
 ## Workflow

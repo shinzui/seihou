@@ -181,6 +181,32 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
       end-to-end path. The manual demo described in the original plan
       is now redundant and not run; the test suite is the acceptance
       gate. _(2026-04-25)_
+- [x] M7: Agent prompt context — extended all three embedded
+      prompts shipped to `seihou agent assist`, `seihou agent
+      bootstrap`, and `seihou agent setup`. Authoring prompts
+      (`assist-prompt.md`, `bootstrap-prompt.md`) gained the
+      `migrations` field on the schema example, a "Migrations"
+      subsection covering the five `MigrationOp` variants, chain
+      semantics, and conflict semantics (cross-referenced to
+      `seihou help migrations`), and a `seihou migrate` entry in
+      the CLI command catalogue. `bootstrap-prompt.md` also gained
+      a new "Plan for versioning" workflow step after "Add
+      conditional steps". Consumption prompt (`setup-prompt.md`)
+      gained a new `### Upgrade and migration` block covering
+      `seihou outdated`, `seihou upgrade [--with-migrations]`, and
+      `seihou migrate`; a "Pending migrations" sub-line note on
+      `seihou status`; and a new step 8 ("Stay current") in the
+      consumption workflow. `Available types` lines in both
+      authoring prompts now list `S.Migration` and
+      `S.MigrationOp`. Migration mention counts: assist=10,
+      bootstrap=13, setup=20 (thresholds were 3/3/4).
+      `cabal build seihou-cli` re-embedded all three prompts
+      (`Seihou.CLI.{Assist,Bootstrap,Setup}` recompiled because
+      `data/*-prompt.md` changed); `strings $(cabal list-bin
+      seihou) | grep -ci 'seihou migrate\|S\.MigrationOp\|Pending
+      migrations\|with-migrations'` returned 49. Full test suite
+      stayed green: 917/917 (793 core + 124 cli).
+      _(2026-04-25)_
 
 Note: The pinned schema URL in `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`
 is intentionally not updated. That URL points at the published
@@ -237,6 +263,20 @@ the exact SHA to use.
   re-import it into `Seihou.CLI.Commands` for parser construction.
   This matches the existing pattern (e.g. `Seihou.CLI.Diff`,
   `Seihou.CLI.Init` are full IO handlers in the internal library).
+  Date: 2026-04-25
+
+- M6 was marked complete, but the `seihou agent` prompt files at
+  `seihou-cli/data/{assist,bootstrap,setup}-prompt.md` were not
+  touched by the M6 commit (bd0ac0b). The original M6 description
+  named `bootstrap-prompt.md` and "the `agent assist` prompt"
+  as in-scope items, but the commit only updated repo `docs/`,
+  in-binary `seihou-cli/help/` topics, and `--help` footers in
+  `Seihou.CLI.Commands`. A grep for `migrat` against the three
+  prompt files returns zero hits, so all three LLM-driven
+  agent personas (authoring, bootstrap, consumption) are
+  currently unaware that migrations exist as a module-author
+  concept or a `seihou migrate` command. Tracked as M7 in this
+  revision.
   Date: 2026-04-25
 
 
@@ -371,6 +411,36 @@ the exact SHA to use.
   the request).
   Date: 2026-04-25
 
+- Decision (M7): Update all three embedded agent prompts
+  (`assist-prompt.md`, `bootstrap-prompt.md`, `setup-prompt.md`),
+  not just the two named in the original M6 wording.
+  Rationale: each prompt powers a different agent persona with a
+  distinct mental model — `assist` is the in-flight authoring
+  helper, `bootstrap` walks an author through creating a module
+  from scratch, and `setup` is the *consumer-side* helper that
+  drives `seihou run`/`upgrade`/`status` against an existing
+  project. Migrations affect all three: authors need to know how
+  to declare them (`assist`, `bootstrap`), consumers need to know
+  how to run them and how the new flags surface in the commands
+  they're already using (`setup`). Leaving `setup-prompt.md`
+  untouched would make migrations invisible to the agent that's
+  most likely to encounter a project mid-upgrade.
+  Date: 2026-04-25
+
+- Decision (M7): Mirror the in-binary `seihou help migrations`
+  topic shape rather than introducing prompt-only prose.
+  Rationale: the prompts already embed `module.dhall` schema
+  reference blocks that mirror `docs/user/module-authoring.md`,
+  and the CLI command lists mirror `seihou --help`. Keeping the
+  migration content aligned with `seihou help migrations` (op
+  catalogue, chain semantics, conflict semantics) means the
+  prompt stays accurate when the help topic is updated, and
+  authors who switch between agent sessions and reading the
+  in-binary help see consistent terminology. Avoid duplicating
+  the full guide; lean on cross-references to `seihou help
+  migrations` for detail.
+  Date: 2026-04-25
+
 
 ## Outcomes & Retrospective
 
@@ -445,6 +515,21 @@ Each milestone's commit was independently buildable and green.
     is a one-line follow-up.
   - Recipes deliberately do not support migrations. Per the
     decision log, that's a v2 design problem.
+
+**M7 update (2026-04-25):** The three embedded agent prompts
+under `seihou-cli/data/` (`assist-prompt.md`,
+`bootstrap-prompt.md`, `setup-prompt.md`) — flagged as
+remaining work after M6 — have now been updated. Authoring
+prompts gained schema-reference and CLI-catalogue entries for
+the `migrations` field and the `seihou migrate` command;
+`bootstrap-prompt.md` also gained a "Plan for versioning"
+workflow step. The consumption prompt (`setup-prompt.md`)
+gained a new "Upgrade and migration" CLI block, a "Pending
+migrations" note on `seihou status`, and a "Stay current"
+workflow step covering `seihou upgrade [--with-migrations]` →
+`seihou migrate`. The rebuilt binary embeds the new content
+(`strings | grep -ci` returned 49 hits across the four target
+phrases); the full test suite stayed green at 917/917.
 
 
 ## Context and Orientation
@@ -1018,6 +1103,115 @@ Acceptance: the walkthrough behaves exactly as written, the manifest's
 and `seihou status` reports `demo-mod 2.0.0` (the upgraded version).
 
 
+### Milestone 7 — Agent prompt context
+
+Scope: Update the three embedded markdown prompts shipped to the
+LLM-driven `seihou agent` subcommands so that authoring and
+consumption sessions are aware of migrations. No Haskell code
+changes — the prompts are pulled in via
+`Data.FileEmbed.embedFile` at compile time.
+
+What will exist at the end:
+
+- **`seihou-cli/data/assist-prompt.md`** (the `seihou agent assist`
+  authoring assistant) gains:
+  - In the `module.dhall format` Dhall block: a `migrations` field on
+    the example record, with the same `[] : List Migration`
+    placeholder shown elsewhere for empty-list defaults.
+  - A new short subsection **"Migrations"** under
+    `## Module Schema Reference` (sibling to "Module removal"),
+    documenting the five `MigrationOp` variants (`MoveFile`,
+    `MoveDir`, `DeleteFile`, `DeleteDir`, `RunCommand`), the
+    `from`/`to` chain semantics (strict contiguous, ordered by
+    parsed `Version`), and the conflict model (Safe / Conflict /
+    Gone, mirroring `seihou remove`). Sized like the existing
+    "Module removal" subsection (~10 lines).
+  - In `## Seihou CLI Commands`: add
+    `seihou migrate MODULE [--dry-run] [--force] [--to VERSION] [--json]`
+    with a one-line description.
+  - One-line cross-reference at the end of the schema section
+    pointing the agent at `seihou help migrations` for detail.
+- **`seihou-cli/data/bootstrap-prompt.md`** (the `seihou agent
+  bootstrap` module-creation assistant) gains:
+  - The same `migrations` field on the schema example block.
+  - A new **"Migrations"** subsection with the same op catalogue
+    and chain semantics as `assist-prompt.md`, plus an explicit
+    note that bootstrap-time modules typically start at v1 with
+    `migrations = [] : List Migration`, and that authors add
+    migrations when bumping the version.
+  - In `## Seihou CLI Commands`: add the `seihou migrate` line.
+  - In the `## Bootstrap Workflow` numbered list: a new step
+    after step 4 ("Add conditional steps") titled "Plan for
+    versioning" that instructs the agent to ask the user
+    whether they expect to ship breaking changes later, and if
+    so, to leave the `migrations = []` skeleton in place so the
+    author can append entries when bumping `version`.
+- **`seihou-cli/data/setup-prompt.md`** (the `seihou agent
+  setup` consumption assistant) gains:
+  - In `## Seihou CLI Commands` → `### Generation` block: add
+    `seihou migrate MODULE [--dry-run] [--force] [--to VERSION] [--json]`
+    with a one-line description that emphasises this is the
+    post-upgrade step.
+  - In the same block: extend the `seihou run` line group with a
+    note that `seihou upgrade` accepts `--with-migrations`, and
+    update the `seihou upgrade` entry (currently absent — add
+    it under "### Module discovery and inspection" or a new
+    "### Upgrade and migration" subsection) to surface the
+    flag.
+  - In `## Consumption Workflow`: a new step **8. Stay current**
+    after the existing "Commit" step, documenting the upgrade →
+    migrate sequence: run `seihou upgrade --dry-run` to see
+    advisory lines, run `seihou status` to see "Pending
+    migrations" lines per applied module, run
+    `seihou migrate MODULE` (or `seihou upgrade --with-migrations`
+    for both in one shot) to apply them.
+  - The `seihou status` description in the same file gets a one-line
+    note that it surfaces a "Pending migrations: N migration(s)
+    pending: X → Y" sub-line when an applied module's installed
+    copy has advanced past the manifest's recorded version.
+  - The `## Module Schema Reference` block's `module.dhall format`
+    example gets the `migrations` field added (consumers benefit
+    from being able to read it even though they don't author
+    it).
+
+Files to edit:
+
+- `seihou-cli/data/assist-prompt.md`
+- `seihou-cli/data/bootstrap-prompt.md`
+- `seihou-cli/data/setup-prompt.md`
+
+No Haskell modules change. The cabal file does not need editing —
+`Data.FileEmbed.embedFile` reads the markdown at compile time, so
+rebuilding `seihou-cli` after editing the markdown is sufficient.
+
+Validation:
+
+    cabal build seihou-cli
+    cabal run seihou -- agent assist --print-prompt    # if such a flag exists; otherwise grep
+    grep -n -i 'migrat' seihou-cli/data/*.md           # confirms migration content is embedded
+    cabal test                                         # the existing suite stays green; no new tests are required for prompt-only changes
+
+Acceptance:
+
+  - `grep -ic migrat seihou-cli/data/assist-prompt.md` returns ≥ 3
+    (schema field, op subsection, CLI line).
+  - `grep -ic migrat seihou-cli/data/bootstrap-prompt.md` returns
+    ≥ 3 (same shape).
+  - `grep -ic migrat seihou-cli/data/setup-prompt.md` returns ≥ 4
+    (CLI line, upgrade flag, status sub-line, workflow step).
+  - A re-built `seihou` binary, when launched via `seihou agent
+    assist` (or `bootstrap`/`setup`), embeds the new content —
+    inspectable by `strings $(which seihou) | grep -i migrat`
+    or by reading the Haskell test that snapshots the prompt
+    template if one is added; the lower-effort confirmation is
+    `cabal build seihou-cli` succeeding and the markdown files
+    containing the expected text on disk.
+  - No new tests are introduced; the prompts are content, not
+    behaviour, and the existing `MigrateSpec` /
+    `PendingMigrationSpec` suites already gate the migration
+    feature itself.
+
+
 ## Concrete Steps
 
 > All commands run from `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`
@@ -1072,6 +1266,24 @@ exits non-zero with a clear "module not applied" message.
     cabal run seihou -- --help                  # top-level footer references migrations
     # then run the manual end-to-end from the milestone description above
 
+### M7 commands
+
+    # confirm starting state: zero migration references in the agent prompts
+    grep -ic migrat seihou-cli/data/assist-prompt.md         # expect 0 before edits
+    grep -ic migrat seihou-cli/data/bootstrap-prompt.md      # expect 0 before edits
+    grep -ic migrat seihou-cli/data/setup-prompt.md          # expect 0 before edits
+
+    # after edits
+    grep -in 'migrat\|seihou migrate' seihou-cli/data/assist-prompt.md
+    grep -in 'migrat\|seihou migrate' seihou-cli/data/bootstrap-prompt.md
+    grep -in 'migrat\|with-migrations\|Pending migrations' seihou-cli/data/setup-prompt.md
+
+    cabal build seihou-cli                                    # re-embed prompts
+    cabal test                                                # nothing should regress
+
+Expected: each grep returns the lines added by M7; rebuild
+succeeds; full test suite stays green.
+
 
 ## Validation and Acceptance
 
@@ -1099,6 +1311,18 @@ After all milestones:
    `seihou status --help` each include the migration-related text
    prescribed in M6.
 9. The end-to-end manual walkthrough in M6 succeeds verbatim.
+10. The three embedded agent prompts under `seihou-cli/data/`
+    (`assist-prompt.md`, `bootstrap-prompt.md`,
+    `setup-prompt.md`) all reference the `migrations` field and
+    the `seihou migrate` command. Specifically:
+      - The authoring prompts (`assist`, `bootstrap`) document
+        the `MigrationOp` variants and the chain semantics.
+      - The consumption prompt (`setup`) documents
+        `seihou migrate`, `seihou upgrade --with-migrations`,
+        and the "Pending migrations" status sub-line.
+      - A rebuilt `seihou-cli` embeds the updated text
+        (verifiable via `strings $(cabal list-bin seihou) |
+        grep -i migrat`).
 
 A user-visible acceptance behaviour: a module author bumps a module from
 `1.0.0` to `2.0.0`, declares one migration that moves `app/` to `src/`,
@@ -1240,3 +1464,26 @@ The plan creates no new effects or interpreters beyond the two
   (`seihou-cli/src/Seihou/CLI/Completions/`) deliberately not listed:
   they delegate to optparse-applicative's runtime introspection and
   pick up the new subcommand and flags automatically.
+
+- 2026-04-25: Added Milestone 7 — Agent prompt context. M6's
+  description listed `seihou-cli/data/bootstrap-prompt.md` and the
+  `agent assist` prompt, but the actual M6 commit (bd0ac0b) only
+  touched repo `docs/`, in-binary help, and `--help` footers; the
+  three prompt files under `seihou-cli/data/` still contain zero
+  references to `migrat`. M7 prescribes precise edits for
+  `assist-prompt.md`, `bootstrap-prompt.md`, and
+  `setup-prompt.md`: schema-reference additions for the
+  `migrations` field, op-catalogue subsections for the authoring
+  prompts, CLI-command-list entries for `seihou migrate` in all
+  three, and consumption-flow guidance for `setup-prompt.md`
+  covering `seihou upgrade --with-migrations` and the new
+  "Pending migrations" `seihou status` sub-line. New sections:
+  Progress checkbox for M7, the M7 Plan-of-Work milestone block,
+  M7 entries in Concrete Steps, acceptance item 10, two new
+  Decision-Log entries (scope across all three prompts; align
+  content with `seihou help migrations`), one new
+  Surprises-and-Discoveries entry documenting the M6 gap, and
+  this revision note. The "What's not done" subsection in
+  Outcomes & Retrospective now flags the prompt files as
+  remaining work rather than implying the feature is fully
+  delivered.

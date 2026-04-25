@@ -50,6 +50,23 @@ Adapt to the user's situation, but the general flow is:
 7. **Commit**: Stage and commit the generated files to git. See the Git Workflow
    section below for details.
 
+8. **Stay current**: When a module's source repository ships a new version, the
+   user has two surfaces that surface migrations:
+   - `seihou outdated` lists installed modules whose source has advanced.
+   - `seihou upgrade` (or `seihou upgrade <module>`) replaces the central
+     installed copy. If the new version declares `migrations` covering the
+     project's applied version, the upgrade output ends with an advisory:
+     `note: <module> has N migration(s) pending; run 'seihou migrate <module>'`.
+   - `seihou status` then shows a `Pending migrations: …` sub-line under that
+     module until the migrations are applied.
+   - `seihou migrate <module> --dry-run` previews the plan; `seihou migrate
+     <module>` applies it (rewrites files, updates the manifest, bumps
+     `moduleVersion`). If the user wants both upgrade and migrate in one shot,
+     pass `--with-migrations` to `seihou upgrade`.
+   - When a migration's classifier reports `Conflict` for a file (the user has
+     edited it since generation), `seihou migrate` refuses without `--force`.
+     Confirm with the user before passing `--force`.
+
 Skip steps that don't apply. If the user already knows which module and variables
 they want, go directly to preview and execution.
 
@@ -91,8 +108,22 @@ Use these commands via the Bash tool:
   - `--dry-run`: preview the removal plan (Delete, Strip, Rewrite, Run operations)
   - `--force`: skip confirmation prompts
 
+### Upgrade and migration
+- `seihou outdated` — show installed modules whose source repos have newer versions
+- `seihou upgrade [MODULE] [--dry-run] [--with-migrations]` — replace the central installed copy of a module with the latest from its source
+  - Operates on `~/.config/seihou/installed/`, not on any project's working tree
+  - When the new version ships migrations covering an applied module, prints a one-line advisory: `note: <module> has N migration(s) pending; run 'seihou migrate <module>'`
+  - `--with-migrations`: after each upgrade, also run `seihou migrate` against the current project for any applied module that has pending migrations
+- `seihou migrate MODULE [--dry-run] [--force] [--to VERSION] [--json]` — apply author-declared migrations to the current project
+  - Reads `migrations` from the installed module.dhall, plans a contiguous chain from the manifest's recorded version up to the installed version (or `--to`), classifies files (Safe / Conflict / Gone — mirrors `seihou remove`), and executes
+  - `--dry-run`: preview the plan (per-step op breakdown, total counts)
+  - `--force`: proceed even when files have user edits
+  - `--to VERSION`: stop at an intermediate version
+  - `--json`: machine-readable plan
+  - See `seihou help migrations`
+
 ### Status and diagnostics
-- `seihou status` — show manifest state (applied modules, tracked files, variables)
+- `seihou status` — show manifest state (applied modules, tracked files, variables); also surfaces a `Pending migrations: N migration(s) pending: X → Y` sub-line under any applied module whose installed copy has advanced past the manifest's recorded version with a covering chain
 - `seihou diff` — compare tracked files against disk (modified, deleted, orphaned)
 - `seihou validate-module [PATH]` — validate a module definition
 - `seihou schema-upgrade [PATH] [--dry-run] [--all]` — upgrade module.dhall to current schema
@@ -157,8 +188,11 @@ A Seihou module is a directory containing a `module.dhall` file and a `files/` s
   ]
 , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
 , dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
+, migrations = [] : List Migration.Type
 }
 ```
+
+Modules may declare `migrations` — author-supplied steps that move a project's existing files between module versions. Consumers apply them with `seihou migrate <module>`. Run `seihou help migrations` for detail.
 
 ### Dependencies
 
