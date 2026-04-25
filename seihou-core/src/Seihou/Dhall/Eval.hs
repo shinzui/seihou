@@ -19,6 +19,8 @@ module Seihou.Dhall.Eval
     removalDecoder,
     removalStepDecoder,
     removalActionDecoder,
+    migrationDecoder,
+    migrationOpDecoder,
   )
 where
 
@@ -33,9 +35,10 @@ import Dhall (defaultInputSettings, input, inputExprWithSettings, inputFile, lis
 import Dhall.Core (Chunks (..), makeRecordField)
 import Dhall.Core qualified as Dhall (Expr (..))
 import Dhall.Map qualified as DhallMap
-import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, field, maybe, string)
+import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, field, maybe, string, union)
 import Dhall.Src (Src)
 import Seihou.Core.Expr (parseExpr)
+import Seihou.Core.Migration (Migration (..), MigrationOp (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
 import Seihou.Prelude
@@ -156,11 +159,15 @@ noneText :: Dhall.Expr Src Void
 noneText = Dhall.App Dhall.None Dhall.Text
 
 -- | Decoder for the top-level Module type from Dhall.
--- Uses 'withDefaults' to handle modules that predate the @removal@ field.
+-- Uses 'withDefaults' to handle modules that predate the @removal@ and
+-- @migrations@ fields.
 moduleDecoder :: Decoder Module
 moduleDecoder =
-  withDefaults [("removal", noneText)] $
-    record
+  withDefaults
+    [ ("removal", noneText),
+      ("migrations", emptyMigrationList)
+    ]
+    $ record
       ( Module
           <$> field "name" moduleNameDecoder
           <*> field "version" (maybe strictText)
@@ -172,7 +179,54 @@ moduleDecoder =
           <*> field "commands" (list commandDecoder)
           <*> field "dependencies" (list dependencyDecoder)
           <*> field "removal" (maybe removalDecoder)
+          <*> field "migrations" (list migrationDecoder)
       )
+
+-- | A Dhall expression representing an empty list of Migration records.
+-- The list element type annotation is unused by the list extractor (which
+-- ignores the annotation and reads element values), so we use a placeholder
+-- type to keep the synthesized expression compact.
+emptyMigrationList :: Dhall.Expr Src Void
+emptyMigrationList = Dhall.ListLit (Just Dhall.Text) mempty
+
+-- | Decoder for a single 'Migration' record.
+migrationDecoder :: Decoder Migration
+migrationDecoder =
+  record
+    ( Migration
+        <$> field "from" strictText
+        <*> field "to" strictText
+        <*> field "ops" (list migrationOpDecoder)
+    )
+
+-- | Decoder for a 'MigrationOp' from a Dhall union value.
+-- The union variants must match @schema/MigrationOp.dhall@.
+migrationOpDecoder :: Decoder MigrationOp
+migrationOpDecoder =
+  union
+    ( (mkMoveFile <$> constructor "MoveFile" srcDestRecord)
+        <> (mkMoveDir <$> constructor "MoveDir" srcDestRecord)
+        <> (mkDeleteFile <$> constructor "DeleteFile" pathRecord)
+        <> (mkDeleteDir <$> constructor "DeleteDir" pathRecord)
+        <> (mkRunCommand <$> constructor "RunCommand" runCommandRecord)
+    )
+  where
+    srcDestRecord :: Decoder (FilePath, FilePath)
+    srcDestRecord =
+      record ((,) <$> field "src" string <*> field "dest" string)
+
+    pathRecord :: Decoder FilePath
+    pathRecord = record (field "path" string)
+
+    runCommandRecord :: Decoder (Text, Maybe FilePath)
+    runCommandRecord =
+      record ((,) <$> field "run" strictText <*> field "workDir" (maybe string))
+
+    mkMoveFile (s, d) = MoveFile {src = s, dest = d}
+    mkMoveDir (s, d) = MoveDir {src = s, dest = d}
+    mkDeleteFile p = DeleteFile {path = p}
+    mkDeleteDir p = DeleteDir {path = p}
+    mkRunCommand (r, wd) = RunCommand {run = r, workDir = wd}
 
 -- | Decoder for the top-level Recipe type from Dhall.
 recipeDecoder :: Decoder Recipe

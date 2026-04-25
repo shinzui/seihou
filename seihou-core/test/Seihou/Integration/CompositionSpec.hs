@@ -261,7 +261,8 @@ spec = do
                 steps = [],
                 commands = [],
                 dependencies = map simpleDep deps,
-                removal = Nothing
+                removal = Nothing,
+                migrations = []
               }
           a = mkMod "a" ["b"]
           b = mkMod "b" ["c"]

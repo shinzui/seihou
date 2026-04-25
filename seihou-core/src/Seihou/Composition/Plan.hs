@@ -55,7 +55,8 @@ compileComposedPlan modules = do
                 steps = m.steps,
                 commands = m.commands,
                 dependencies = m.dependencies,
-                removal = m.removal
+                removal = m.removal,
+                migrations = m.migrations
               }
       result <- compilePlan dir instancedModule vars
       case result of

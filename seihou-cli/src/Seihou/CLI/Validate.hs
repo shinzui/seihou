@@ -51,7 +51,8 @@ handleValidateModule vopts = do
                 steps = [],
                 commands = [],
                 dependencies = [],
-                removal = Nothing
+                removal = Nothing,
+                migrations = []
               }
           report =
             ValidateReport

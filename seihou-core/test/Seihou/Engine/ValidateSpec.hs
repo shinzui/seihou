@@ -43,7 +43,8 @@ goodModule =
         ],
       commands = [],
       dependencies = [],
-      removal = Nothing
+      removal = Nothing,
+      migrations = []
     }
 
 -- | A module with multiple validation errors.
@@ -62,24 +63,25 @@ badModule =
       steps = [Step Template "missing.tpl" "/absolute/path" Nothing Nothing],
       commands = [],
       dependencies = [],
-      removal = Nothing
+      removal = Nothing,
+      migrations = []
     }
 
 -- | Helper to update Module fields without ambiguity.
 withVars :: [VarDecl] -> Module -> Module
-withVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies m.removal
+withVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies m.removal m.migrations
 
 withSteps :: [Step] -> Module -> Module
-withSteps s m = Module m.name m.version m.description m.vars m.exports m.prompts s m.commands m.dependencies m.removal
+withSteps s m = Module m.name m.version m.description m.vars m.exports m.prompts s m.commands m.dependencies m.removal m.migrations
 
 withPrompts :: [Prompt] -> Module -> Module
-withPrompts p m = Module m.name m.version m.description m.vars m.exports p m.steps m.commands m.dependencies m.removal
+withPrompts p m = Module m.name m.version m.description m.vars m.exports p m.steps m.commands m.dependencies m.removal m.migrations
 
 withCommands :: [Command] -> Module -> Module
-withCommands c m = Module m.name m.version m.description m.vars m.exports m.prompts m.steps c m.dependencies m.removal
+withCommands c m = Module m.name m.version m.description m.vars m.exports m.prompts m.steps c m.dependencies m.removal m.migrations
 
 withVarsAndPrompts :: [VarDecl] -> [Prompt] -> Module -> Module
-withVarsAndPrompts v p m = Module m.name m.version m.description v m.exports p m.steps m.commands m.dependencies m.removal
+withVarsAndPrompts v p m = Module m.name m.version m.description v m.exports p m.steps m.commands m.dependencies m.removal m.migrations
 
 -- | Helper: check if any DiagCheck has the given label and non-empty details.
 hasFailedCheck :: T.Text -> [DiagCheck] -> Bool

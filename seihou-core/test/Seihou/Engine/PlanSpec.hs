@@ -62,7 +62,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -83,7 +84,8 @@ spec = do
                   steps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("name", VText "world")]
         result <- compilePlan baseDir modul vars
@@ -104,7 +106,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" (Just (ExprLit False)) Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -125,7 +128,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" (Just (ExprLit True)) Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -146,7 +150,8 @@ spec = do
                   steps = [Step Copy "LICENSE" "LICENSE" (Just (ExprIsSet "license")) Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
         -- Variable IS set
         let vars1 = Map.fromList [("license", VText "MIT")]
@@ -174,7 +179,8 @@ spec = do
                   steps = [Step Template "pkg.cabal.tpl" "{{name}}.cabal" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
         result <- compilePlan baseDir modul vars
@@ -195,7 +201,8 @@ spec = do
                   steps = [Step Template "Lib.hs.tpl" "src/Lib.hs" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -220,7 +227,8 @@ spec = do
                     ],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -246,7 +254,8 @@ spec = do
                   steps = [Step Template "hello.tpl" "hello.txt" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -269,7 +278,8 @@ spec = do
                   steps = [Step DhallText "greeting.dhall" "greeting.txt" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("name", VText "world")]
         result <- compilePlan baseDir modul vars
@@ -294,7 +304,8 @@ spec = do
                   steps = [Step DhallText "pkg.dhall" "pkg.txt" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("project.name", VText "my-app"), ("project.version", VText "0.1.0.0")]
         result <- compilePlan baseDir modul vars
@@ -315,7 +326,8 @@ spec = do
                   steps = [Step DhallText "bad.dhall" "out.txt" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -338,7 +350,8 @@ spec = do
                   steps = [Step Structured "data.json.gen" "data.json" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
         result <- compilePlan baseDir modul vars
@@ -368,7 +381,8 @@ spec = do
                   steps = [Step Structured "config.yaml.gen" "config.yaml" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
         result <- compilePlan baseDir modul vars
@@ -399,7 +413,8 @@ spec = do
                   steps = [Step Structured "bad.gen" "out.json" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -422,7 +437,8 @@ spec = do
                   steps = [Step Structured "data.gen" "output.txt" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -486,7 +502,8 @@ spec = do
                   steps = [Step Template "section.tpl" "README.md" Nothing (Just AppendFile)],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -508,7 +525,8 @@ spec = do
                   steps = [Step Template "section.tpl" "README.md" Nothing (Just AppendSection)],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("name", VText "test")]
         result <- compilePlan baseDir modul vars
@@ -531,7 +549,8 @@ spec = do
                   steps = [Step Template "conditional.tpl" "out.txt" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("flag", VBool True)]
         result <- compilePlan baseDir modul vars
@@ -554,7 +573,8 @@ spec = do
                   steps = [Step Template "conditional.tpl" "out.txt" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("flag", VBool False)]
         result <- compilePlan baseDir modul vars
@@ -577,7 +597,8 @@ spec = do
                   steps = [Step Template "patch.tpl" "README.md" Nothing (Just AppendFile)],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("flag", VBool True)]
         result <- compilePlan baseDir modul vars
@@ -600,7 +621,8 @@ spec = do
                   steps = [Step Copy "header.txt" "out.txt" Nothing (Just PrependFile)],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -622,7 +644,8 @@ spec = do
                   steps = [Step Structured "data.gen" "data.json" Nothing (Just AppendFile)],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -645,7 +668,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   commands = [Command "echo hello" Nothing Nothing],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -670,7 +694,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   commands = [Command "echo skip" Nothing (Just (ExprLit False))],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -693,7 +718,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   commands = [Command "echo yes" Nothing (Just (ExprIsSet "name"))],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("name", VText "test")]
         result <- compilePlan baseDir modul vars
@@ -716,7 +742,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   commands = [Command "echo post" Nothing Nothing],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -748,7 +775,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   commands = [Command "npm install" (Just "subdir") Nothing],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars
@@ -772,7 +800,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   commands = [Command "echo {{name}}" Nothing Nothing],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
         result <- compilePlan baseDir modul vars
@@ -796,7 +825,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   commands = [Command "cabal build" (Just "{{name}}") Nothing],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.fromList [("name", VText "my-app")]
         result <- compilePlan baseDir modul vars
@@ -820,7 +850,8 @@ spec = do
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing],
                   commands = [Command "echo {{missing}}" Nothing Nothing],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
             vars = Map.empty
         result <- compilePlan baseDir modul vars

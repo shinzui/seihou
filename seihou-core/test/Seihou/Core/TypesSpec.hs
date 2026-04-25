@@ -79,7 +79,8 @@ spec = do
                 steps = [],
                 commands = [],
                 dependencies = [],
-                removal = Nothing
+                removal = Nothing,
+                migrations = []
               }
       m.name `shouldBe` "haskell-base"
 
@@ -95,7 +96,8 @@ spec = do
                 steps = [],
                 commands = [],
                 dependencies = [],
-                removal = Nothing
+                removal = Nothing,
+                migrations = []
               }
       m `shouldBe` m
 
@@ -111,7 +113,8 @@ spec = do
                 steps = [],
                 commands = [],
                 dependencies = [],
-                removal = Nothing
+                removal = Nothing,
+                migrations = []
               }
       show m `shouldNotBe` ""
 

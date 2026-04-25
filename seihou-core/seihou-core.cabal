@@ -24,6 +24,7 @@ library
     Seihou.Core.Context
     Seihou.Core.Expr
     Seihou.Core.Install
+    Seihou.Core.Migration
     Seihou.Core.Module
     Seihou.Core.Recipe
     Seihou.Core.Registry
@@ -131,6 +132,7 @@ test-suite seihou-core-test
     Seihou.Core.VersionSpec
     Seihou.Dhall.ConfigSpec
     Seihou.Dhall.EvalSpec
+    Seihou.Dhall.MigrationDecoderSpec
     Seihou.Effect.ConfigReaderSpec
     Seihou.Effect.ConfigWriterSpec
     Seihou.Effect.FilesystemSpec

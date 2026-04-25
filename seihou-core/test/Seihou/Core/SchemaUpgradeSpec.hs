@@ -77,6 +77,7 @@ currentModuleText =
       "      ]",
       "    , commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }",
       "    , dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }",
+      "    , migrations = [] : List S.Migration.Type",
       "    }"
     ]
 
@@ -138,12 +139,14 @@ spec = do
       issues `shouldContain` [MissingStepPatch 0]
       issues `shouldContain` [BareStringDepTypeAnnotation]
       issues `shouldContain` [MissingSchemaImport]
+      issues `shouldContain` [MissingMigrations]
 
     it "returns empty list for a current module" $ do
       detectIssues testUrl currentModuleText `shouldBe` []
 
-    it "detects missing version and schema import when other fields present" $ do
-      detectIssues testUrl missingVersionOnlyText `shouldBe` [MissingVersion, MissingSchemaImport]
+    it "detects missing version, schema import, and migrations when other fields present" $ do
+      detectIssues testUrl missingVersionOnlyText
+        `shouldBe` [MissingVersion, MissingSchemaImport, MissingMigrations]
 
     it "detects bare string dependencies" $ do
       let issues = detectIssues testUrl bareStringDepsText
@@ -222,12 +225,19 @@ spec = do
           T.isInfixOf "S.Module::" text `shouldBe` True
         AlreadyCurrent -> expectationFailure "expected Upgraded"
 
+    it "inserts migrations field" $ do
+      case upgradeModuleText testUrl testHash missingVersionOnlyText of
+        Upgraded text _ ->
+          T.isInfixOf ", migrations =" text `shouldBe` True
+        AlreadyCurrent -> expectationFailure "expected Upgraded"
+
   describe "issueMessage" $ do
     it "produces human-readable messages" $ do
       issueMessage MissingVersion `shouldBe` "missing field: version"
       issueMessage (MissingStepPatch 0) `shouldBe` "missing field: patch (in step 1)"
       issueMessage MissingCommands `shouldBe` "missing field: commands"
       issueMessage (BareStringDep "foo") `shouldBe` "bare string dependency: foo"
+      issueMessage MissingMigrations `shouldBe` "missing field: migrations"
   where
     findIndex p xs = go 0 xs
       where

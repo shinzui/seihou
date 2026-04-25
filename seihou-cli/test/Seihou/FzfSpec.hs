@@ -158,7 +158,8 @@ validModule name desc src =
               steps = [],
               commands = [],
               dependencies = [],
-              removal = Nothing
+              removal = Nothing,
+              migrations = []
             },
       discoveredSource = src,
       discoveredDir = "/tmp/" ++ name

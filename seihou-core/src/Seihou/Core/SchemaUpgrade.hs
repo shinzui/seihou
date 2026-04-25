@@ -25,6 +25,8 @@ data UpgradeIssue
     BareStringDepTypeAnnotation
   | -- | The module is missing the @let S = \<url\>@ schema import.
     MissingSchemaImport
+  | -- | The module record is missing the @migrations@ field.
+    MissingMigrations
   deriving stock (Eq, Show)
 
 -- | Result of attempting to upgrade a module.dhall text.
@@ -43,6 +45,7 @@ issueMessage MissingCommands = "missing field: commands"
 issueMessage (BareStringDep name) = "bare string dependency: " <> name
 issueMessage BareStringDepTypeAnnotation = "dependency list uses List Text type annotation"
 issueMessage MissingSchemaImport = "missing schema import (let S = ...)"
+issueMessage MissingMigrations = "missing field: migrations"
 
 -- | Detect all schema issues in a module.dhall text without modifying it.
 -- The schema URL is used to check whether the schema import is present.
@@ -55,6 +58,7 @@ detectIssues schemaUrl content =
         <> detectBareStringDeps ls
         <> detectDepTypeAnnotation ls
         <> detectMissingSchemaImport schemaUrl ls
+        <> detectMissingMigrations ls
 
 -- | Upgrade a module.dhall text to the current canonical schema.
 -- Returns 'AlreadyCurrent' if no changes are needed.
@@ -73,6 +77,7 @@ upgradeModuleText schemaUrl schemaHash content =
                   & applyIf (any isBareStringDepIssue issues) convertBareStringDeps
                   & applyIf (BareStringDepTypeAnnotation `elem` issues) convertDepTypeAnnotation
                   & applyIf (MissingSchemaImport `elem` issues) (injectSchemaImport schemaUrl schemaHash)
+                  & applyIf (MissingMigrations `elem` issues) insertMigrations
            in Upgraded upgraded issues
   where
     applyIf True f x = f x
@@ -126,6 +131,11 @@ detectMissingSchemaImport schemaUrl ls
     any (T.isInfixOf schemaUrl) ls =
       []
   | otherwise = [MissingSchemaImport]
+
+detectMissingMigrations :: [Text] -> [UpgradeIssue]
+detectMissingMigrations ls
+  | any (matchesField "migrations") ls = []
+  | otherwise = [MissingMigrations]
 
 -- ---------------------------------------------------------------------------
 -- Rewriting
@@ -208,6 +218,47 @@ convertDepTypeAnnotation =
   T.replace
     "[] : List Text"
     "[] : List { module : Text, vars : List { name : Text, value : Text } }"
+
+-- | Insert @, migrations = [] : List S.Migration.Type@ before the closing
+-- brace of the module record. Inserts after the @removal = ...@ line if
+-- present (it always is on a current schema), otherwise before the closing
+-- brace as a fallback.
+insertMigrations :: Text -> Text
+insertMigrations content =
+  let ls = T.lines content
+      -- For modules using the schema package, S.Migration.Type is the right
+      -- type. For legacy modules without the schema import we still emit the
+      -- same line — it will be a forward reference fixed up by adding the
+      -- schema import (MissingSchemaImport handler runs separately).
+      migrationsLine = "    , migrations = [] : List S.Migration.Type"
+      legacyMigrationsLine = ", migrations = [] : List { from : Text, to : Text, ops : List < MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } > }"
+      hasSchemaImport =
+        any (\l -> "let S =" `T.isInfixOf` l || "let Schema =" `T.isInfixOf` l) ls
+      lineToInsert = if hasSchemaImport then migrationsLine else legacyMigrationsLine
+   in T.unlines (insertBeforeClose lineToInsert ls)
+  where
+    -- Insert the new line just before the line that closes the module
+    -- record. The closing line is the last line that is exactly @}@ or
+    -- @  }@ (the schema-completion-syntax close). We look for the last
+    -- such line so we insert into the outermost record, not nested ones.
+    insertBeforeClose newLine xs =
+      case findLastClosing xs of
+        Just idx ->
+          take idx xs ++ [newLine] ++ drop idx xs
+        Nothing -> xs ++ [newLine]
+
+    findLastClosing :: [Text] -> Maybe Int
+    findLastClosing xs =
+      let indexed = zip [0 ..] xs
+          closes = [i | (i, l) <- indexed, isClosingBrace l]
+       in case closes of
+            [] -> Nothing
+            _ -> Just (last closes)
+
+    isClosingBrace :: Text -> Bool
+    isClosingBrace l =
+      let s = T.strip l
+       in s == "}" || s == "} : T"
 
 -- ---------------------------------------------------------------------------
 -- Text utilities

@@ -28,7 +28,8 @@ mkModule name deps vars exports prompts =
       steps = [],
       commands = [],
       dependencies = map simpleDep deps,
-      removal = Nothing
+      removal = Nothing,
+      migrations = []
     }
 
 -- | Helper to create a text variable declaration.

@@ -57,6 +57,7 @@ import Data.String (IsString)
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
+import Seihou.Core.Migration (Migration)
 
 -- | A module identifier such as @"haskell-base"@.
 newtype ModuleName = ModuleName {unModuleName :: Text}
@@ -243,7 +244,8 @@ data Module = Module
     steps :: [Step],
     commands :: [Command],
     dependencies :: [Dependency],
-    removal :: Maybe Removal
+    removal :: Maybe Removal,
+    migrations :: [Migration]
   }
   deriving stock (Eq, Show, Generic)
 

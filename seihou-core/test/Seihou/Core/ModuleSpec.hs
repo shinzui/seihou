@@ -43,18 +43,19 @@ goodModule =
         ],
       commands = [],
       dependencies = [],
-      removal = Nothing
+      removal = Nothing,
+      migrations = []
     }
 
 -- | Helpers to update Module fields without ambiguous record updates.
 withModuleName :: ModuleName -> Module -> Module
-withModuleName n m = Module n m.version m.description m.vars m.exports m.prompts m.steps m.commands m.dependencies m.removal
+withModuleName n m = Module n m.version m.description m.vars m.exports m.prompts m.steps m.commands m.dependencies m.removal m.migrations
 
 withModuleVars :: [VarDecl] -> Module -> Module
-withModuleVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies m.removal
+withModuleVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies m.removal m.migrations
 
 withModulePrompts :: [Prompt] -> Module -> Module
-withModulePrompts p m = Module m.name m.version m.description m.vars m.exports p m.steps m.commands m.dependencies m.removal
+withModulePrompts p m = Module m.name m.version m.description m.vars m.exports p m.steps m.commands m.dependencies m.removal m.migrations
 
 hasError :: T.Text -> [T.Text] -> Bool
 hasError needle = any (T.isInfixOf needle)
@@ -231,7 +232,8 @@ spec = do
                   steps = [Step Template "nonexistent.tpl" "/bad/dest" Nothing Nothing],
                   commands = [],
                   dependencies = [],
-                  removal = Nothing
+                  removal = Nothing,
+                  migrations = []
                 }
         result <- validateModule tmpDir bad
         case result of

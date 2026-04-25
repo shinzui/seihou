@@ -25,7 +25,8 @@ mkModule name deps =
       steps = [],
       commands = [],
       dependencies = map simpleDep deps,
-      removal = Nothing
+      removal = Nothing,
+      migrations = []
     }
 
 -- | Helper to build a graph from a list of modules, wrapping each in a
@@ -141,7 +142,8 @@ spec = do
                   [ Dependency "helper" (Map.singleton "skill.name" "exec-plan"),
                     Dependency "helper" (Map.singleton "skill.name" "master-plan")
                   ],
-                removal = Nothing
+                removal = Nothing,
+                migrations = []
               }
           parentInst = primaryInstance "parent"
           helperA = mkInstance "helper" (ParentVars (Map.singleton "skill.name" "exec-plan"))
@@ -175,7 +177,8 @@ spec = do
                   [ Dependency "child" (Map.singleton "x" "1"),
                     Dependency "child" (Map.singleton "x" "1")
                   ],
-                removal = Nothing
+                removal = Nothing,
+                migrations = []
               }
           parentInst = primaryInstance "parent"
           childInst = mkInstance "child" (ParentVars (Map.singleton "x" "1"))

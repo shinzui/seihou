@@ -25,7 +25,8 @@ mkModule name vars prompts =
       steps = [],
       commands = [],
       dependencies = [],
-      removal = Nothing
+      removal = Nothing,
+      migrations = []
     }
 
 mkTextVar :: VarName -> Maybe VarValue -> VarDecl
