@@ -127,12 +127,27 @@ Then, without `--dry-run`, the moves and deletes are performed, the manifest's
       dry-run-no-disk-touch, full execution + manifest rewrite,
       conflict-without-force, conflict-with-force, --to override. 8/8.
       _(2026-04-25)_
-- [ ] M5: Upgrade integration — `seihou upgrade` runs migrations *in any
-      project that has the module applied* before swapping the installed
-      copy, gated behind `--with-migrations` (default off, prints a one-line
-      hint when off and migrations are pending). Reuses `Seihou.Engine.Migrate`.
-- [ ] M5: `seihou status` line per applied module with pending migrations
-      ("haskell-base: 2 migration(s) pending: 1.0.0 → 2.0.0").
+- [x] M5: Upgrade integration — `seihou upgrade` learned a
+      `--with-migrations` flag (default off). After the upgrade table
+      renders, the post-upgrade pass walks each successfully-upgraded
+      module: if the *current project* has it applied and the manifest
+      version trails the now-installed version with a covering chain,
+      either run `runMigrate` (with-migrations) or print a single
+      advisory line per module. The `upgradeFooter` documents both
+      paths. _(2026-04-25)_
+- [x] M5: `seihou status` line per applied module with pending
+      migrations. The detector evaluates each applied module's
+      installed `module.dhall`, computes the chain via the new
+      `Seihou.CLI.Migrate.pendingChainFor`, and renders
+      `Pending migrations: N migration(s) pending: 1.0.0 → 2.0.0`
+      under the affected module's line. The `statusInfo` footer
+      documents this. _(2026-04-25)_
+- [x] M5: Tests — added `Seihou.CLI.PendingMigrationSpec` (6 cases
+      covering both Nothing branches of `pendingChainFor` plus the
+      happy path). The existing `Seihou.CLI.UpgradeSpec` continues to
+      cover `compareVersions` only — the network-dependent end-to-end
+      upgrade flow is not unit-tested, consistent with the existing
+      pattern. _(2026-04-25)_
 - [ ] M6: Docs — new `docs/user/migrations.md`, new `docs/cli/migrate.md`,
       "Migrations" section in `docs/user/module-authoring.md`, "Migrations"
       paragraph in `docs/user/registries-and-multi-module-repos.md` (note that

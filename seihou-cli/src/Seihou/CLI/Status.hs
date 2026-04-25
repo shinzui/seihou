@@ -9,6 +9,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time.Format (defaultTimeLocale, formatTime)
 import Seihou.CLI.Commands (StatusOpts (..))
+import Seihou.CLI.Migrate (pendingChainFor)
 import Seihou.CLI.Outdated
   ( OutdatedEntry (..),
     checkInstalledModulesForUpdates,
@@ -16,14 +17,18 @@ import Seihou.CLI.Outdated
 import Seihou.CLI.Shared (logIO)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.VersionCompare (OutdatedStatus (..))
+import Seihou.Core.Migration (MigrationChain (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverAllModules)
 import Seihou.Core.Status (computeTrackedFileStatuses)
 import Seihou.Core.Types
+import Seihou.Core.Version (renderVersion)
+import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.Logger (logError)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Prelude
+import System.Directory (doesFileExist)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 
@@ -54,7 +59,8 @@ handleStatus opts = do
         if opts.statusCheckUpdates && not (null manifest.modules)
           then fetchUpdateEntries
           else pure Nothing
-      renderStatus colorEnabled manifest tracked mEntries
+      pendings <- detectPendingMigrations manifest
+      renderStatus colorEnabled manifest tracked mEntries pendings
 
 -- | Run the update check, catching any IO failure so status still renders.
 fetchUpdateEntries :: IO (Maybe [OutdatedEntry])
@@ -70,15 +76,47 @@ fetchUpdateEntries = do
       pure Nothing
     Right (entries, _stats) -> pure (Just entries)
 
+-- | Detect pending migrations across all applied modules. Each entry
+-- carries the module name and the chain length / target version so the
+-- renderer can produce a one-line summary. IO failures (missing
+-- module.dhall, eval errors) are silently skipped — pending-migration
+-- reporting is best-effort.
+detectPendingMigrations :: Manifest -> IO [(ModuleName, MigrationChain)]
+detectPendingMigrations manifest =
+  fmap
+    (\xs -> [(name, c) | (name, Just c) <- xs])
+    (mapM check manifest.modules)
+  where
+    check am = do
+      let dhallFile = am.source </> "module.dhall"
+      exists <- doesFileExist dhallFile
+      if not exists
+        then pure (am.name, Nothing)
+        else do
+          r <- evalModuleFromFile dhallFile
+          case r of
+            Left _ -> pure (am.name, Nothing)
+            Right installed -> pure (am.name, pendingChainFor am installed)
+
 -- | Render the full status output.
-renderStatus :: Bool -> Manifest -> [TrackedFile] -> Maybe [OutdatedEntry] -> IO ()
-renderStatus color manifest tracked mEntries = do
+renderStatus ::
+  Bool ->
+  Manifest ->
+  [TrackedFile] ->
+  Maybe [OutdatedEntry] ->
+  [(ModuleName, MigrationChain)] ->
+  IO ()
+renderStatus color manifest tracked mEntries pendings = do
   TIO.putStrLn "Seihou Status:"
   TIO.putStrLn ""
 
   let entryMap = case mEntries of
         Just es -> Map.fromList [(e.moduleName, e) | e <- es]
         Nothing -> Map.empty
+      pendingMap =
+        Map.fromList
+          [ (name.unModuleName, chain) | (name, chain) <- pendings
+          ]
 
   -- Recipe provenance
   case manifest.recipe of
@@ -96,11 +134,14 @@ renderStatus color manifest tracked mEntries = do
     then TIO.putStrLn "  (none)"
     else
       mapM_
-        ( \am ->
+        ( \am -> do
             printModule
               color
               (lookupEntry mEntries entryMap am)
               am
+            case Map.lookup am.name.unModuleName pendingMap of
+              Just chain -> printPendingMigration color am chain
+              Nothing -> pure ()
         )
         manifest.modules
   TIO.putStrLn ""
@@ -190,6 +231,22 @@ printModule color annotation am =
           <> verText
           <> appliedText
           <> updateText
+
+-- | Print the "Pending migrations" sub-line under a module that has a
+-- chain available. Indented two spaces past the module line so it
+-- visually nests.
+printPendingMigration :: Bool -> AppliedModule -> MigrationChain -> IO ()
+printPendingMigration color _am chain = do
+  let n = length chain.chainSteps
+      label =
+        T.pack (show n)
+          <> " migration(s) pending: "
+          <> renderVersion chain.chainFrom
+          <> " → "
+          <> renderVersion chain.chainTo
+  TIO.putStrLn $
+    "    "
+      <> (if color then yellow ("Pending migrations: " <> label) else "Pending migrations: " <> label)
 
 -- | Render the status portion of an OutdatedEntry as a colored segment.
 renderEntry :: Bool -> OutdatedEntry -> Text

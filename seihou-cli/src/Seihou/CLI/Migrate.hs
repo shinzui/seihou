@@ -7,6 +7,9 @@ module Seihou.CLI.Migrate
     runMigrate,
     MigrateError (..),
     MigrateResult (..),
+
+    -- * Helpers for upgrade/status integration
+    pendingChainFor,
   )
 where
 
@@ -280,6 +283,43 @@ runMigrate opts manifest installedDir = do
                                 Left err -> pure (Left (MigrateExecFailed err))
                                 Right manifest' ->
                                   pure (Right (MigrateApplied plan manifest'))
+
+-- ----------------------------------------------------------------------------
+-- Pending-migration detection (used by status / upgrade)
+-- ----------------------------------------------------------------------------
+
+-- | Detect whether the manifest's recorded version of an applied module
+-- has fallen behind the installed copy in a way that pending migrations
+-- would close. Returns:
+--
+--   * @Nothing@ — no pending chain (versions equal, manifest version
+--     unrecorded, installed-module version unrecorded, parse failure
+--     anywhere in the chain, the planner reported any error, or no
+--     migrations are declared).
+--   * @Just chain@ — a contiguous chain that would advance the
+--     project's recorded version up to (some prefix of) the installed
+--     copy's version.
+--
+-- Parse failures and planner errors are treated as "no pending
+-- migration" rather than surfaced — this is the soft-warning path for
+-- @seihou status@. Hard errors land on the user when they actually
+-- run @seihou migrate@.
+pendingChainFor ::
+  AppliedModule ->
+  Module ->
+  Maybe MigrationChain
+pendingChainFor applied installed = do
+  fromText <- applied.moduleVersion
+  fromV <- parseVersion fromText
+  toText <- installed.version
+  toV <- parseVersion toText
+  case planMigrationChain
+    applied.name.unModuleName
+    installed.migrations
+    fromV
+    toV of
+    Right (Just chain) -> Just chain
+    _ -> Nothing
 
 -- ----------------------------------------------------------------------------
 -- Helpers

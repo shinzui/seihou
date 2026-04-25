@@ -201,7 +201,13 @@ data UpgradeOpts = UpgradeOpts
   { upgradeModules :: [Text],
     upgradeDryRun :: Bool,
     upgradeJson :: Bool,
-    upgradeSkipUnversioned :: Bool
+    upgradeSkipUnversioned :: Bool,
+    -- | If 'True', after each successful per-module upgrade, also run
+    -- 'Seihou.CLI.Migrate.runMigrate' against the *current project*
+    -- (cwd), if and only if that module is applied locally. Default
+    -- 'False'; the unset path emits a one-line advisory pointing the
+    -- user at @seihou migrate@ when migrations would be pending.
+    upgradeWithMigrations :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -454,7 +460,11 @@ statusInfo =
                   line,
                   pretty ("Use --check-updates to also report which applied modules have newer" :: String),
                   pretty ("versions available from their source repository. This requires network" :: String),
-                  pretty ("access and will clone each source repo shallowly." :: String)
+                  pretty ("access and will clone each source repo shallowly." :: String),
+                  line,
+                  pretty ("When an applied module's installed copy has advanced past the manifest's" :: String),
+                  pretty ("recorded version, status reports the pending migration count under that" :: String),
+                  pretty ("module's line; run 'seihou migrate <module>' to apply them." :: String)
                 ]
           )
     )
@@ -793,7 +803,12 @@ outdatedInfo =
                   pretty ("Only modules installed via 'seihou install' are checked." :: String),
                   line,
                   pretty ("Example:" :: String),
-                  indent 2 $ pretty ("seihou outdated" :: String)
+                  indent 2 $ pretty ("seihou outdated" :: String),
+                  line,
+                  pretty ("Run 'seihou upgrade' to apply available updates. If a module ships" :: String),
+                  pretty ("migrations, 'seihou upgrade' will surface them via an advisory; run" :: String),
+                  pretty ("'seihou migrate <module>' (or 'seihou upgrade --with-migrations')" :: String),
+                  pretty ("to apply them to the current project." :: String)
                 ]
           )
     )
@@ -821,6 +836,10 @@ upgradeParser =
       <*> switch (long "dry-run" <> help "Show what would be upgraded without making changes")
       <*> switch (long "json" <> help "Output as JSON")
       <*> switch (long "skip-unversioned" <> help "Skip modules without version information")
+      <*> switch
+        ( long "with-migrations"
+            <> help "After each upgrade, also run 'seihou migrate' against the current project for that module"
+        )
 
 upgradeFooter :: Doc
 upgradeFooter =
@@ -839,7 +858,17 @@ upgradeFooter =
           [ pretty ("seihou upgrade                       # upgrade all installed modules" :: String),
             pretty ("seihou upgrade haskell-base           # upgrade a specific module" :: String),
             pretty ("seihou upgrade --dry-run              # preview without changes" :: String),
-            pretty ("seihou upgrade --skip-unversioned     # skip unversioned modules" :: String)
+            pretty ("seihou upgrade --skip-unversioned     # skip unversioned modules" :: String),
+            pretty ("seihou upgrade --with-migrations      # also run 'seihou migrate' for each upgrade" :: String)
+          ],
+      line,
+      pretty ("Migrations:" :: String),
+      indent 2 $
+        vsep
+          [ pretty ("Newer module versions may declare migrations that move project files" :: String),
+            pretty ("when applied. By default 'seihou upgrade' does not run them — it only" :: String),
+            pretty ("prints an advisory pointing at 'seihou migrate <module>'. Pass" :: String),
+            pretty ("--with-migrations to run them as part of the upgrade." :: String)
           ]
     ]
 
