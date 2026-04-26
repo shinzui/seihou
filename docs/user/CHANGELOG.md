@@ -10,6 +10,51 @@ HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 
 
 ## Changelog
 
+### 2026-04-26 (`seihou status` surfaces staleness and pending migrations)
+
+**Reviewed commits:** EP-4 of MasterPlan
+`docs/masterplans/1-migrations-dx.md` — the rewrite of `seihou status`
+to surface outdated modules and pending migrations with copy-pasteable
+remediation commands.
+
+**Behavior change:**
+- The "Applied modules" block now prints a remediation hint under any
+  row that needs action. A row with a pending migration prints
+  `Pending migration: X.Y.Z -> A.B.C (N operation(s)). Run: seihou
+  migrate <name>`. A row that is merely outdated (no chain declared
+  between the manifest's version and the remote) prints `Run: seihou
+  upgrade <name>`. When both apply, the migration hint wins because
+  `seihou migrate` (after EP-2) is self-contained.
+- A new "Recommended actions:" tail block lists the exact commands to
+  fix every flagged row. The block is omitted when no row needs
+  action.
+- The outdated annotation now reads `outdated: X.Y.Z available`
+  (matching the masterplan example) instead of the older
+  `outdated -> vX.Y.Z`.
+- Pending-migration detection now runs on every `seihou status`
+  invocation, not only with `--check-updates`. It is purely local
+  (manifest + locally installed `module.dhall`), so this adds no
+  network IO. `--check-updates` still controls the remote
+  outdated-vs-installed check that requires shallow clones.
+
+**Limitations carried over from EP-3:**
+- A planner gap (the migrations list does not reach the installed
+  version exactly) silences the pending-migration row, the same way it
+  silences `seihou run`'s pre-flight. The planner's
+  longest-reachable-prefix mode is still future work.
+- The "outdated" annotation reflects the locally installed copy versus
+  the remote, not the manifest's recorded version versus the remote.
+  A user who has refreshed the install (via an earlier `seihou
+  upgrade`) without migrating will see "up to date" on the row even
+  though their project's manifest is behind. The pending-migration row
+  bridges this gap when the planner can form a chain.
+
+**Docs:**
+- `docs/cli/status.md` — rewrote the "Update checking" section to
+  cover the new remediation hint, the per-row format, and the
+  Recommended actions block. Added a new "Pending migrations"
+  section.
+
 ### 2026-04-26 (`seihou run` is migration-aware)
 
 **Reviewed commits:** EP-3 of MasterPlan

@@ -29,18 +29,84 @@ You can see this working by running `seihou status --check-updates` from `/Users
 
 ## Progress
 
-- [ ] Confirm the corrected outdated detection from EP-1 flows through `seihou status --check-updates`.
-- [ ] Update the pending-migration detection in `Status.hs` to use the shared `detectPendingMigrations` helper (factored by EP-3) and run on every status invocation, not only with `--check-updates`.
-- [ ] Add a remediation hint per outdated/pending row.
-- [ ] Add a tail summary showing the recommended remediation commands.
-- [ ] Tests: golden output for the four cases (no issues / outdated only / pending migration only / both).
-- [ ] End-to-end demonstration on the seihou-project working tree.
-- [ ] Update `docs/cli/status.md` and `docs/user/CHANGELOG.md`.
+- [x] Confirm the corrected outdated detection from EP-1 flows through `seihou status --check-updates`.
+- [x] Update the pending-migration detection in `Status.hs` to use the shared `detectPendingMigrations` helper (factored by EP-3) and run on every status invocation, not only with `--check-updates`.
+- [x] Add a remediation hint per outdated/pending row.
+- [x] Add a tail summary showing the recommended remediation commands.
+- [x] Tests: golden output for the four cases (no issues / outdated only / pending migration only / both).
+- [x] End-to-end demonstration on the seihou-project working tree.
+- [x] Update `docs/cli/status.md` and `docs/user/CHANGELOG.md`.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **Status.hs already used the EP-3 shared detector.** The plan
+  expected EP-4 to migrate `Status.hs` from a local
+  `detectPendingMigrations` to the EP-3 `Seihou.CLI.PendingMigrations`
+  module, and to lift the call out of the `--check-updates`
+  conditional. EP-3 already did both — by the time EP-4 started,
+  `Status.hs` imported `detectPendingMigrations` and called it
+  unconditionally outside the `if opts.statusCheckUpdates` block. The
+  EP-4 work was therefore purely renderer-side.
+
+- **`OutdatedEntry` had to migrate from the executable to the
+  library.** Per the EP-1 surprise on `Seihou.CLI.Outdated` living in
+  the executable target, the data type that the new `StatusRender`
+  module needs (a library module so tests can call it without IO) was
+  not reachable. EP-4 moved `OutdatedEntry`, `CheckStats`, and the
+  `ToJSON OutdatedEntry` instance from `Outdated.hs` into
+  `Seihou.CLI.VersionCompare`, which was already library-exposed.
+  `Outdated.hs` re-exports the same names so existing call sites
+  (`Upgrade.hs`, `Status.hs`) compile unchanged. EP-2/EP-3's hints
+  about preferring the library variant of helpers carry forward: any
+  future module that needs to *consume* outdated entries should
+  import from `VersionCompare`.
+
+- **Status rendering moved out of `Status.hs` entirely.** The new
+  `Seihou.CLI.StatusRender` (library) holds `formatStatus :: Bool ->
+  Manifest -> [TrackedFile] -> Maybe [OutdatedEntry] -> [(ModuleName,
+  MigrationChain)] -> Text`. `Status.hs` shrank to a thin IO shell
+  (load manifest, optionally fetch updates, detect pending, format,
+  print). Tests construct fixtures and call `formatStatus` directly,
+  no XDG-redirected fake installed dirs or fake project trees needed.
+  Future status surfaces (e.g. a structured JSON output) should add a
+  parallel formatter in `StatusRender` rather than re-implementing the
+  walk over `manifest.modules`.
+
+- **The "outdated" annotation reflects installed-vs-remote, not
+  manifest-vs-remote.** Live demo on the seihou-project working tree
+  showed `master-plan v0.1.0 ... up to date` even though the
+  manifest is at 0.1.0 and the remote is at 0.3.0. The reason: the
+  user had already refreshed `~/.config/seihou/installed/master-plan`
+  to 0.3.0 (so `installed == remote`), but never migrated the project.
+  This is consistent with `seihou outdated` semantics. The
+  pending-migration row would normally bridge this gap (and surface a
+  `Pending migration: ... Run: seihou migrate master-plan` hint), but
+  see the next bullet.
+
+- **The planner gap silences master-plan's pending row in the live
+  demo.** master-plan ships only a `0.1.0 -> 0.2.0` migration in its
+  declared chain, but the installed copy is at 0.3.0. The planner
+  returns `MigrationGap` and `pendingChainFor` returns `Nothing`, so
+  the row prints no hint. This is the exact carry-over that EP-3
+  surfaced; EP-4 inherits the same silence and documents it in
+  `docs/cli/status.md`. A "longest-reachable-prefix" planner mode
+  would let `seihou status` surface a partial advisory ("a
+  `0.1.0 -> 0.2.0` step is available; `0.2.0 -> 0.3.0` is uncovered")
+  but is out of scope here. End-to-end demo on the seihou-project tree
+  showed `exec-plan` correctly flagged outdated with a
+  `Run: seihou upgrade exec-plan` hint and a Recommended actions
+  block; master-plan was silent for the reason above.
+
+- **The summary line `N module(s) checked, M outdated.` counts every
+  installed module, not only applied ones.** A user can see "7
+  module(s) checked, 2 outdated" but only 1 outdated row in the
+  per-row list because the second outdated module is installed
+  globally but not applied to this project. The Recommended actions
+  block is correctly scoped to the applied modules (it walks
+  `manifest.modules`), so the listed commands match the visible rows.
+  No fix needed; documented in `docs/cli/status.md` so the
+  count/visible-row discrepancy is not a surprise.
 
 
 ## Decision Log
@@ -56,7 +122,49 @@ You can see this working by running `seihou status --check-updates` from `/Users
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-4 finalized the migrations-DX initiative with a renderer-only
+change. After EP-3 had already factored `detectPendingMigrations` into
+a shared module and lifted it out of the `--check-updates`
+conditional, the work that remained was per-row remediation hints, a
+`Recommended actions:` tail block, and the new `outdated: X.Y.Z
+available` annotation form.
+
+What landed:
+
+- A new `Seihou.CLI.StatusRender` library module containing a pure
+  `formatStatus :: Bool -> Manifest -> [TrackedFile] -> Maybe
+  [OutdatedEntry] -> [(ModuleName, MigrationChain)] -> Text`. The
+  module also exposes `ModuleAdvice` and `moduleAdvice` so callers can
+  reason about per-row precedence (a pending migration always wins
+  over a bare upgrade hint).
+- `Status.hs` shrank to a thin IO shell that loads the manifest,
+  optionally fetches outdated entries, calls
+  `detectPendingMigrations`, and prints `formatStatus`'s output.
+- `OutdatedEntry`, `CheckStats`, and the `ToJSON` instance moved from
+  `Outdated.hs` (executable-only) into `VersionCompare.hs`
+  (library-exposed) to make the renderer testable. `Outdated.hs`
+  re-exports the names so existing call sites compile unchanged.
+- Four `StatusSpec` tests cover the four behavioral cases (clean,
+  outdated only, pending migration only, both). All 143 tests in the
+  suite pass.
+- Live demo on the seihou-project tree showed the expected per-row
+  hint and Recommended actions block for `exec-plan` (outdated with
+  no chain → upgrade hint).
+
+What did not land (deliberate):
+
+- An "incomplete migration coverage" advisory for the planner-gap
+  case. master-plan's row is silent on the live tree because the
+  planner returns `MigrationGap` rather than a partial chain; the
+  planner needs a longest-reachable-prefix mode before `seihou status`
+  can surface this. Documented as a carry-over in `docs/cli/status.md`
+  and flagged in the masterplan's Surprises section.
+
+The masterplan's vision — "seihou status truthfully reports both
+outdated installed modules and pending migrations, and emits a
+copy-pasteable next command for each" — is met for every case the
+detector currently sees. The planner-gap carve-out is the only
+remaining blind spot, and it is out of scope for this masterplan.
 
 
 ## Context and Orientation
