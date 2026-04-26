@@ -29,15 +29,15 @@ You can see this working by running `seihou migrate master-plan` from `/Users/sh
 
 ## Progress
 
-- [ ] Reproduce the "migrate says nothing to do despite a public update" bug.
-- [ ] Read the current `handleMigrate` implementation; document the points where the installed-copy version is read.
-- [ ] Introduce a `migrate --no-fetch` flag that preserves today's behavior for explicit local-only operation.
-- [ ] Make the default `migrate <module>` path fetch the remote and refresh the installed copy when newer.
-- [ ] Plan and apply the chain against the refreshed installed copy.
-- [ ] Update the manifest's `moduleVersion` field after a successful chain.
-- [ ] Add regression tests covering both the remote-fetch path and the `--no-fetch` path.
-- [ ] End-to-end demonstration on the seihou-project working tree.
-- [ ] Update `docs/cli/migrate.md` and `docs/user/migrations.md` and `docs/user/CHANGELOG.md`.
+- [x] Reproduce the "migrate says nothing to do despite a public update" bug.
+- [x] Read the current `handleMigrate` implementation; document the points where the installed-copy version is read.
+- [x] Introduce a `migrate --no-fetch` flag that preserves today's behavior for explicit local-only operation.
+- [x] Make the default `migrate <module>` path fetch the remote and refresh the installed copy when newer.
+- [x] Plan and apply the chain against the refreshed installed copy.
+- [x] Update the manifest's `moduleVersion` field after a successful chain. (`executeMigration` already does this via `bumpVersion`.)
+- [x] Add regression tests covering both the remote-fetch path and the `--no-fetch` path.
+- [x] End-to-end demonstration on the seihou-project working tree.
+- [x] Update `docs/cli/migrate.md` and `docs/user/migrations.md` and `docs/user/CHANGELOG.md`.
 
 
 ## Surprises & Discoveries
@@ -96,7 +96,74 @@ You can see this working by running `seihou migrate master-plan` from `/Users/sh
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**What shipped (2026-04-26).**
+
+- `runMigrate` is the single source of truth for the migrate command:
+  it dispatches to `runMigrateLocal` (legacy local-only behavior) or
+  `runMigrateWithFetch` (clone, find module dir, plan + execute,
+  refresh installed copy) based on `migrateNoFetch`.
+- `handleMigrate` is now a thin shell that loads the manifest, calls
+  `runMigrate`, and renders the result. The pre-EP-2 inline
+  plan-and-execute duplication was removed.
+- A new `--no-fetch` flag preserves the legacy behavior for hermetic
+  workflows. `seihou upgrade --with-migrations` opts in via
+  `migrateNoFetch = True` because upgrade has already refreshed the
+  installed copy.
+- Three regression tests exercise the fetch path against a local git
+  fixture (with `XDG_CONFIG_HOME` redirected and
+  `GIT_ALLOW_PROTOCOL=file` set so newer git versions accept
+  `file://` URLs).
+- E2E demonstration on the seihou-project working tree passed: with
+  the manifest at master-plan 0.1.0 and the public `agent-seihou` repo
+  at 0.3.0, `seihou migrate master-plan --to 0.2.0 --dry-run` (no
+  prior `seihou upgrade`) printed the 6-operation chain (the
+  `claude/skills/master-plan/` → `agents/skills/master-plan/` move
+  plus the symlink fixup commands). `--no-fetch` against the same
+  working tree reverted to the legacy "nothing to do" output, proving
+  the flag plumbing is wired end-to-end.
+
+**Refactor surface that came along for free.**
+
+- `installModuleDir`, `cloneRepo`, and `copyDirectoryRecursive` were
+  extracted from `Seihou.CLI.Install` (executable-only) into a new
+  library-exposed module `Seihou.CLI.InstallShared`. `OriginInfo` and
+  its `FromJSON` instance moved with them so `Seihou.CLI.Migrate`
+  (library) and `Seihou.CLI.Outdated` (executable) share a single
+  read-side definition.
+- `cloneRepo` was changed from `IO ()` (with `exitFailure` on failure)
+  to `IO (Either Text ())` so the migrate fetch path can recover and
+  fall back to local-only behavior on unreachable remotes. `Install.hs`
+  was updated to handle the `Left` case explicitly.
+
+**What's queued for downstream EPs.**
+
+- EP-3 (`docs/plans/16-make-run-migration-aware.md`) — the integration
+  contract was tentatively `refreshInstalledFromRemote :: AppliedModule -> IO (Either RefreshError InstalledModulePath)`.
+  In practice EP-2 inlined the equivalent dance in
+  `runMigrateWithFetch` (private to `Seihou.CLI.Migrate`) because the
+  caller needs the cloned moduleDir alive for the chain execution, not
+  just an "installed path". When EP-3 lands, it should either lift the
+  helper out (e.g. into `Seihou.CLI.InstallShared` as
+  `withFetchedModuleDir :: AppliedModule -> (FilePath -> IO a) -> IO (Either FetchError a)`)
+  or call `runMigrate` directly with a synthetic `MigrateOpts` if all
+  it needs is the fetch-and-refresh side effect.
+- The `installModuleDir` destination is XDG-derived. The refresh code
+  passes `takeFileName installedDir` as the install name, so
+  refresh writes to the same path the user already had — provided
+  `applied.source` is under the XDG dir. Project-local "applied"
+  modules (where `applied.source` is not under XDG) silently fall
+  through to the local-only path because they have no
+  `.seihou-origin.json`.
+
+**Known gaps.**
+
+- `runMigrate`'s fetch chatter is printed via `TIO.putStrLn` with a
+  `unless opts.migrateJson` guard. There is no `--quiet` flag yet;
+  scripts that invoke `migrate` without `--json` will see one or two
+  extra lines. This was judged not worth a new flag for EP-2.
+- The test fixture relies on a real `git` binary in `$PATH`. If a CI
+  environment ever runs without git, the three fetch-path tests would
+  fail. There is no skip predicate.
 
 
 ## Context and Orientation

@@ -18,21 +18,50 @@ seihou migrate <MODULE> [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--to VERSION` | Override the target version. Defaults to the installed module's current version. |
-| `--dry-run` | Print the migration plan and exit without modifying anything. |
+| `--to VERSION` | Override the target version. Defaults to the installed module's current version (after fetch, this is the remote's version). |
+| `--dry-run` | Print the migration plan and exit without modifying anything. The remote is still fetched so the planned chain reflects what would actually run. |
 | `--force` | Proceed even when files have been edited since they were generated. |
 | `--json` | Emit the plan as JSON instead of human-readable text. |
+| `--no-fetch` | Skip the remote fetch; plan against the locally installed copy only. Useful for offline / hermetic workflows. |
 | `-v`, `--verbose` | Print extra detail about each operation. |
+
+## Default behavior: fetch first
+
+By default, `seihou migrate` is **self-contained** — it does not require
+a separate `seihou upgrade` first. The flow:
+
+1. Read `.seihou-origin.json` from the locally installed copy
+   (`~/.config/seihou/installed/<name>/`) to discover the source URL.
+2. Clone the source repository shallowly into a temp dir.
+3. Locate the module within the clone (single-module or multi-module
+   registry) and use its `module.dhall` as the source of truth — this
+   is what supplies the migrations list and the target version.
+4. Plan the chain from the manifest's recorded version to the remote's
+   version.
+5. On a successful non-dry-run apply, refresh the on-disk installed
+   copy from the clone (the same step `seihou upgrade` performs).
+
+If any of those steps fails softly (no `.seihou-origin.json`, clone
+failure, module not present in the remote), the command emits a
+one-line note and falls back to the local-only path: planning against
+whatever the locally installed copy currently declares.
+
+Pass `--no-fetch` to skip the fetch entirely. In that mode, `migrate`
+performs no network IO and behaves like the pre-EP-2 implementation:
+it consults only `~/.config/seihou/installed/<name>/module.dhall`. Use
+this for offline workflows or when you have already refreshed the
+installed copy by hand.
 
 ## Description
 
 `seihou migrate` reads `.seihou/manifest.json` for the current project,
 finds the named applied module, and walks the migration chain that
-covers `manifest.moduleVersion → installed module's version` (or the
-target you pass with `--to`). It then performs each declared
-operation — file/directory rename, file/directory deletion, or shell
-command — and rewrites the manifest's `files` map to reflect the new
-paths.
+covers `manifest.moduleVersion → target_version`. By default
+`target_version` is whatever the **remote**'s `module.dhall` declares
+(after the fetch step described above); pass `--to` to stop earlier.
+The command then performs each declared operation — file/directory
+rename, file/directory deletion, or shell command — and rewrites the
+manifest's `files` map to reflect the new paths.
 
 Migrations are declared on the module's `module.dhall`. See
 [module-authoring](../user/module-authoring.md#migrations) for how to
@@ -56,20 +85,27 @@ user-edited bytes ride along (a `MoveFile` preserves content; a
 ## Examples
 
 ```sh
-# Plan and apply the chain to the latest version of the installed copy
+# Fetch the remote, refresh the installed copy, and apply the chain in
+# one shot (the new default)
 seihou migrate haskell-base
 
-# Preview only
+# Same, but preview only — still fetches the remote so the plan is
+# accurate
 seihou migrate haskell-base --dry-run
 
 # Stop at an intermediate version (the chain ends at 1.5.0 even if
-# the installed copy is at 2.0.0)
+# the remote is at 2.0.0)
 seihou migrate haskell-base --to 1.5.0
 
 # Overwrite files the user has edited since generation
 seihou migrate haskell-base --force
 
-# Machine-readable plan for tooling
+# Skip the remote fetch — plan against whatever the locally installed
+# copy currently declares (offline / hermetic mode)
+seihou migrate haskell-base --no-fetch
+
+# Machine-readable plan for tooling (suppresses the fetch chatter on
+# stdout so the JSON stays parseable)
 seihou migrate haskell-base --json
 ```
 

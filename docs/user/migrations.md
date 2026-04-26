@@ -115,6 +115,20 @@ prints the plan and exits without touching disk. Use this on any
 non-trivial migration before the real run. For a JSON form (suitable
 for piping into other tooling), pass `--json`.
 
+## Self-contained `seihou migrate`
+
+`seihou migrate <module>` is self-contained: by default it fetches the
+module's source repository, refreshes the locally installed copy, and
+applies the chain in a single command. You do **not** need to run
+`seihou upgrade` first.
+
+The fetch step uses the source URL recorded in
+`~/.config/seihou/installed/<name>/.seihou-origin.json` (written by
+`seihou install`) and clones shallowly into a temp dir. If you have no
+network or want to plan against only what's installed locally, pass
+`--no-fetch`. See [`docs/cli/migrate.md`](../cli/migrate.md) for the
+full flag list.
+
 ## Integration with `seihou upgrade`
 
 `seihou upgrade` updates the central installed copy under
@@ -134,7 +148,10 @@ seihou upgrade --with-migrations
 ```
 
 This still operates on the **current project only** — `seihou upgrade`
-does not touch other projects on disk.
+does not touch other projects on disk. (Internally,
+`--with-migrations` invokes `runMigrate` with `--no-fetch` because the
+upgrade step has already refreshed the installed copy; there is no
+need to clone again.)
 
 ## Integration with `seihou status`
 

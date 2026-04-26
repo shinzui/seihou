@@ -10,6 +10,38 @@ HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 
 
 ## Changelog
 
+### 2026-04-26 (`seihou migrate` is self-contained)
+
+**Reviewed commits:** EP-2 of MasterPlan
+`docs/masterplans/1-migrations-dx.md` — the
+`runMigrate`-fetches-the-remote refactor and the new `--no-fetch` flag.
+
+**Behavior change:**
+- `seihou migrate <module>` no longer requires `seihou upgrade` to be
+  run first. By default it now reads the source URL from
+  `~/.config/seihou/installed/<name>/.seihou-origin.json`, clones the
+  source repository shallowly, plans the chain against the remote's
+  `module.dhall`, applies it, and refreshes the on-disk installed copy
+  on success. The chatty progress lines (`Fetching …`) are suppressed
+  with `--json`.
+- A new `--no-fetch` flag preserves the legacy behavior for offline /
+  hermetic workflows: in that mode `seihou migrate` performs no
+  network IO and consults only the locally installed copy.
+- Soft failures in the fetch path (no `.seihou-origin.json`, clone
+  failure, module not present in the remote) emit a one-line note and
+  silently fall back to the local-only path. JSON mode stays silent.
+- `seihou upgrade --with-migrations` invokes the migration with
+  `--no-fetch` internally, since the upgrade step has already
+  refreshed the installed copy.
+
+**Docs:**
+- `docs/cli/migrate.md` — added a "Default behavior: fetch first"
+  section, documented `--no-fetch`, and reframed the examples around
+  the new default.
+- `docs/user/migrations.md` — added a "Self-contained `seihou
+  migrate`" subsection and updated the `seihou upgrade` integration
+  note to reflect the internal `--no-fetch` reuse.
+
 ### 2026-04-26 (`outdated`/`upgrade` read true module.dhall version)
 
 **Reviewed commits:** EP-1 of MasterPlan

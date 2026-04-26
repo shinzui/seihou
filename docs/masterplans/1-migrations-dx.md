@@ -50,7 +50,7 @@ Alternatives considered:
 | #   | Title                                                        | Path                                                | Hard Deps | Soft Deps | Status      |
 |-----|--------------------------------------------------------------|-----------------------------------------------------|-----------|-----------|-------------|
 | 1   | Fix `outdated` and `upgrade` to detect true module versions  | docs/plans/14-fix-outdated-version-detection.md     | None      | None      | Complete    |
-| 2   | Make `seihou migrate` self-contained (no manual upgrade)     | docs/plans/15-make-migrate-self-contained.md        | EP-1      | None      | In Progress |
+| 2   | Make `seihou migrate` self-contained (no manual upgrade)     | docs/plans/15-make-migrate-self-contained.md        | EP-1      | None      | Complete    |
 | 3   | Make `seihou run` migration-aware                            | docs/plans/16-make-run-migration-aware.md           | EP-2      | EP-1      | Not Started |
 | 4   | Make `seihou status` surface staleness and pending migrations | docs/plans/17-improve-status-migration-visibility.md | EP-1      | EP-2      | Not Started |
 
@@ -117,9 +117,9 @@ Track milestone-level progress across all child plans. Each entry names the chil
 - [x] EP-1: Reproduce the wrong-version-detection bug with a regression test.
 - [x] EP-1: Introduce the true-version fetch primitive and switch `outdated`/`upgrade` to use it.
 - [x] EP-1: End-to-end demonstration: stale-registry repo correctly reports outdated modules.
-- [ ] EP-2: Reproduce the "migrate says nothing to do" bug in a test.
-- [ ] EP-2: Make `seihou migrate <module>` fetch the remote, plan the chain, apply it without requiring a prior `seihou upgrade`.
-- [ ] EP-2: End-to-end demonstration: a project at module v0.1.0 can run a single `seihou migrate <module>` and end up at the latest published version with files moved.
+- [x] EP-2: Reproduce the "migrate says nothing to do" bug in a test.
+- [x] EP-2: Make `seihou migrate <module>` fetch the remote, plan the chain, apply it without requiring a prior `seihou upgrade`.
+- [x] EP-2: End-to-end demonstration: a project at module v0.1.0 can run a single `seihou migrate <module>` and end up at the latest published version with files moved.
 - [ ] EP-3: Reproduce the "`seihou run` overwrites files a migration would have moved" bug.
 - [ ] EP-3: Add pending-migration pre-flight to `seihou run`; implement default refusal and `--with-migrations` opt-in.
 - [ ] EP-3: End-to-end demonstration: `seihou run` against a project with a pending migration refuses with a clear message; `seihou run --with-migrations` applies the chain then writes the new template state.
@@ -155,6 +155,12 @@ Captured during research before implementation:
 - **`upgrade`'s post-install version recording shared the registry-bias bug** and was fixed in EP-1 alongside the comparison itself. Before this change, after a successful `seihou upgrade`, the manifest would record the registry's stale `version` instead of the truthful `module.dhall` value. EP-2 should not need to re-fix this, but EP-2's self-contained `seihou migrate <module>` does need to refresh `AppliedModule.moduleVersion` after applying a chain — that bookkeeping is independent of the EP-1 fix.
 
 - **`Seihou.CLI.Outdated` is in the executable target, not the `seihou-cli-internal` library.** EP-1 placed the new primitive in `Seihou.CLI.RemoteVersion` (library-exposed) so the test suite can exercise it without the executable. Future EPs that need to call `checkInstalledModulesForUpdates` from a test should be aware that the function lives in the executable; the easier path is to call `fetchTrueModuleVersion` directly (as RemoteVersionSpec does).
+
+- **Install helpers were also executable-only and had to be moved.** During EP-2, `installModuleDir`, `cloneRepo`, `copyDirectoryRecursive`, and `OriginInfo` were extracted from `Seihou.CLI.Install` (executable target) into a new library module `Seihou.CLI.InstallShared` so `Seihou.CLI.Migrate` (library) could call them. EP-3 (run migration-aware) and EP-4 (status) should import from `Seihou.CLI.InstallShared` rather than from `Install.hs` directly. As part of the move, `cloneRepo` was changed from `IO ()` (calling `exitFailure` on failure) to `IO (Either Text ())` so callers can recover and fall back gracefully — this is the reason the migrate fetch path silently degrades to local-only on a clone failure.
+
+- **Integration Point #2's `refreshInstalledFromRemote` was inlined into `runMigrateWithFetch` rather than extracted as a separate helper.** Reason: the migrate path needs the cloned `moduleDir` alive during chain execution (to read `module.dhall`'s migrations list), not just a finalized "installed path". A free-standing `refreshInstalledFromRemote :: AppliedModule -> IO (Either RefreshError InstalledModulePath)` would have to clone, refresh the on-disk install dir, then return the path, leaving the chain logic to re-read the freshly-installed copy — which is structurally fine but does an extra disk write under `--dry-run` (the dry-run path currently writes nothing). When EP-3 lands, the cleanest factoring is probably `withFetchedModuleDir :: AppliedModule -> (FilePath -> IO a) -> IO (Either FetchError a)` exposed from `Seihou.CLI.InstallShared`, with `runMigrateWithFetch` and EP-3's `--with-migrations` path both calling it. EP-4 (status display) can use the simpler `fetchTrueModuleVersion` since it just needs the remote's version, not the migrations list.
+
+- **EP-2's `migrateNoFetch` flag is also the right knob for `seihou upgrade --with-migrations`.** Because `seihou upgrade` already refreshes the installed copy before invoking the post-upgrade migration hook, passing `migrateNoFetch = True` avoids a redundant clone. EP-3 should follow the same pattern when it needs to invoke `runMigrate` from inside `seihou run --with-migrations`: if EP-3 has already done its own fetch, pass `migrateNoFetch = True`; if it relies on `runMigrate` to do the fetch, pass `migrateNoFetch = False` and let the existing logic handle clone+refresh.
 
 
 ## Decision Log
