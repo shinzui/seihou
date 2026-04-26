@@ -174,11 +174,13 @@ test-suite seihou-cli-test
   build-depends:
     aeson >=2.1 && <3,
     base >=4.18 && <5,
+    bytestring >=0.11 && <1,
     containers >=0.6 && <1,
     directory >=1.3 && <2,
     effectful-core >=2.4 && <3,
     filepath >=1.4 && <2,
     hspec >=2.11 && <3,
+    process >=1.6 && <2,
     seihou-cli-internal,
     seihou-core,
     tasty >=1.4 && <2,
