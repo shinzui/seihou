@@ -10,6 +10,47 @@ HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 
 
 ## Changelog
 
+### 2026-04-26 (`seihou run` is migration-aware)
+
+**Reviewed commits:** EP-3 of MasterPlan
+`docs/masterplans/1-migrations-dx.md` — the addition of a pre-flight
+pending-migration check to `seihou run` and the new `--with-migrations`
+flag.
+
+**Behavior change:**
+- `seihou run` now refuses by default when at least one module in the
+  current composition has a pending migration chain (the manifest's
+  recorded version trails the locally installed copy and the
+  intervening migrations resolve to a complete chain). The previous
+  behavior — silently writing new template content into paths a
+  migration would have moved, orphaning user edits at the old paths
+  and skipping the migration's `RunCommand` ops — is no longer
+  reachable. The refusal lists the pending range per module and points
+  at the next command (`seihou migrate <module>` or
+  `seihou run --with-migrations`).
+- A new `--with-migrations` flag opts into in-band migration
+  application. Each pending chain runs first (via the same code path
+  as `seihou migrate <module> --no-fetch`); the run plan's diff is
+  computed against the post-migration tree.
+- `--dry-run --with-migrations` shows the chain summary plus the run
+  plan computed against the *current* (pre-migration) disk, with a
+  one-line note. Computing a real post-migration dry-run would
+  require staging file moves to disk, which `--dry-run` declines to
+  do.
+- Detection is scoped to the composition: a pending chain on an
+  applied module that is not part of the current run does not block.
+- Detection is best-effort: planner gaps (the migrations list does
+  not reach the installed version exactly) silently fall back to "no
+  pending chain", so the new pre-flight is a no-op in that case and
+  the older behavior is preserved.
+
+**Docs:**
+- `docs/cli/run.md` — added a "Migration awareness" subsection, the
+  `--with-migrations` row in the options table, and two new examples.
+- `docs/user/migrations.md` — added an "Integration with `seihou
+  run`" subsection alongside the existing `upgrade` and `status`
+  integrations.
+
 ### 2026-04-26 (`seihou migrate` is self-contained)
 
 **Reviewed commits:** EP-2 of MasterPlan

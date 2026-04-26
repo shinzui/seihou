@@ -217,6 +217,31 @@ spec = do
         result <- detectPendingMigrations manifest Nothing
         result `shouldBe` []
 
+    -- This test mirrors the EP-3 milestone-5 expectation: a pending
+    -- migration on a module that is *not* part of the current run
+    -- composition must not block the run. We model that by setting
+    -- the filter to the no-chain module's name only; the with-chain
+    -- module's pending entry is ignored.
+    it "with a filter selecting only no-chain modules, returns empty" $
+      withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
+        let withChain = dir </> "with-chain"
+            noChain = dir </> "no-chain"
+        writeInstalledModule withChain "with-chain" "2.0.0" moveOldToNewLit
+        writeInstalledModule noChain "no-chain" "1.0.0" emptyMigrationsLit
+        let manifest =
+              (emptyManifest fixedTime)
+                { modules =
+                    [ mkAppliedAt "with-chain" withChain (Just "1.0.0"),
+                      mkAppliedAt "no-chain" noChain (Just "1.0.0")
+                    ],
+                  files = Map.empty
+                }
+        result <-
+          detectPendingMigrations
+            manifest
+            (Just (Set.singleton (ModuleName "no-chain")))
+        result `shouldBe` []
+
   describe "formatRefusalMessage" $ do
     it "lists each module's chain summary and the actionable next step" $ do
       let chain =

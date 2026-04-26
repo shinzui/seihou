@@ -160,6 +160,48 @@ sub-line under any applied module whose manifest version trails the
 installed copy with a covering chain. The line is informational; run
 `seihou migrate <module>` to apply.
 
+## Integration with `seihou run`
+
+`seihou run` will not silently overwrite files that a pending migration
+would have moved. Before computing its diff, `seihou run` checks every
+module in the current composition for a pending chain. If at least one
+is pending, the command refuses with an actionable message:
+
+```text
+Pending migrations detected:
+  haskell-base: 1.0.0 -> 2.0.0 (3 step(s))
+
+Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run.
+```
+
+This guards the previous failure mode where re-running `seihou run`
+would write fresh template content into old paths, orphaning user edits
+at the old layout and skipping the migration's `RunCommand` ops.
+
+Pass `--with-migrations` to apply pending chains in-band. The migration
+runs first; the run plan's diff is then computed against the
+post-migration tree:
+
+```sh
+seihou run haskell-base --with-migrations
+```
+
+A pending chain on an applied module that is *not* part of the current
+composition (e.g. `haskell-base` is pending but you run `seihou run
+nix-flake`) does **not** block — detection is scoped to the modules in
+the run.
+
+`--with-migrations` invokes the same code path as `seihou migrate
+<module> --no-fetch`: the local installed copy was already inspected
+during detection, so there is no need to clone the source repo a second
+time. Migration conflicts (a tracked file the user has edited since
+generation) abort the run; `seihou run --force` handles diff conflicts,
+not migration conflicts. Run `seihou migrate <module> --force` first if
+you want to overwrite user edits during the migration.
+
+See [`docs/cli/run.md`](../cli/run.md#migration-awareness) for the full
+behavior table.
+
 ## What happens to the manifest
 
 After a successful (non-dry-run) migration:

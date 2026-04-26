@@ -32,6 +32,7 @@ seihou run [MODULE] [OPTIONS]
 | `--confirm-defaults` | Step through default/parent-sourced variables and confirm or override each one |
 | `--commit` | Commit generated files to git after execution (uses AI-generated message) |
 | `--commit-message MSG` | Use a custom commit message instead of the AI-generated one (implies `--commit`) |
+| `--with-migrations` | Apply any pending module migrations before computing the run plan; without this flag, `seihou run` refuses when a composed module has a pending migration chain |
 
 ## Description
 
@@ -55,6 +56,57 @@ and build artifacts never end up in the commit. Passing
 `--commit-message MSG` implies `--commit` and uses `MSG` verbatim as the
 commit message, bypassing the AI call entirely. `--commit` is a no-op
 outside of a git repository (a warning is emitted).
+
+### Migration awareness
+
+Before computing the diff, `seihou run` checks every module in the current
+composition (the primary module plus the `-m/--module` additionals plus
+any transitive dependencies) for a *pending migration chain* — that is,
+a manifest-recorded version that is older than the locally installed
+copy and a `migrations` list that bridges the gap. When at least one
+composed module has a pending chain:
+
+- **Default behavior**: `seihou run` refuses with an actionable message
+  listing each module's pending range and exits non-zero. This prevents
+  the failure mode where new template content is written into paths a
+  migration would have moved (orphaning user edits at the old paths and
+  silently losing the migration's `RunCommand` ops). The user has two
+  paths forward: run `seihou migrate <module>` for each pending module,
+  or pass `--with-migrations`.
+
+- **`--with-migrations`**: For each pending chain, `seihou run` calls the
+  same code path as `seihou migrate <module> --no-fetch` (the local copy
+  was already inspected during detection — there is no need to clone the
+  source repo a second time). The migration is applied to the working
+  tree and manifest *before* the run plan's diff is computed, so the
+  diff reflects the post-migration layout rather than the pre-migration
+  layout. After the chain, the run plan executes normally.
+
+  Migration conflicts (a tracked file the user has edited since
+  generation) propagate as a hard failure here. `seihou run --force`
+  governs the run plan's conflict policy, not the migration's; to
+  proceed through a migration conflict, run `seihou migrate <module>
+  --force` first.
+
+- **`--dry-run` + `--with-migrations`**: Shows a chain summary for each
+  pending migration, then runs the dry-run output against the *current*
+  (pre-migration) disk state with a one-line note. Computing a real
+  post-migration dry-run would require staging the migration's file
+  moves to disk, which `--dry-run` deliberately does not do; re-run
+  without `--dry-run` to see the post-migration plan.
+
+Detection is **scoped to the composition**: a pending chain on an
+applied module that is not part of the current run cannot block. For
+example, if `master-plan` has a pending chain but `seihou run
+nix-flake` is invoked, `nix-flake`'s run proceeds unimpeded.
+
+Detection is **best-effort**: parse failures, eval errors, and
+planner gaps (a migrations list that does not reach the installed
+version) all fall back to "no pending chain", so a chain that the
+planner cannot fully resolve will not surface here. In that case
+`seihou run` proceeds with its older behavior. Use `seihou status` and
+`seihou migrate <module> --to <intermediate>` to make progress
+manually.
 
 ## Examples
 
@@ -82,6 +134,12 @@ seihou run haskell-library
 
 # Step through defaults and override any before the plan runs
 seihou run haskell-project --confirm-defaults
+
+# Apply pending migrations in-band before the run plan
+seihou run haskell-project --with-migrations
+
+# Preview both the migration chain and the run plan together
+seihou run haskell-project --dry-run --with-migrations
 ```
 
 ### Reviewing defaults interactively

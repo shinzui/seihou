@@ -28,8 +28,8 @@ You can see this working by running `seihou run master-plan --dry-run` from `/Us
 - [x] M1+M2: Extracted `Seihou.CLI.PendingMigrations` (filter-aware `detectPendingMigrations` + `formatRefusalMessage`); refactored `Seihou.CLI.Status` to use it.
 - [x] M1+M2: Tests for the new helpers in `Seihou.CLI.PendingMigrationSpec` (filter, missing module.dhall, no-chain, message formatting).
 - [x] M3+M4: Added `runWithMigrations :: Bool` to `RunOpts`; threaded `--with-migrations` through `Commands.hs`; inserted pre-flight check in `Seihou.CLI.Run.handleRun` between manifest read and diff compute. Refusal path prints `formatRefusalMessage` and exits 1; opt-in path calls `runMigrate` per pending module with `migrateNoFetch=True`, persists the post-migration manifest, and continues; dry-run + opt-in prints a chain summary and proceeds with a pre-migration-state caveat.
-- [ ] M5: Additional tests covering the in-band apply path and unrelated-module non-blocking.
-- [ ] M6: End-to-end demonstration on the seihou-project working tree.
+- [x] M5: Added the "filter selecting only no-chain modules → empty" test that explicitly covers "an unrelated module's pending chain does not block this run". Apply-path coverage relies on the existing `MigrateSpec.runMigrate` tests since `handlePendingMigrations` is thin glue around `runMigrate`.
+- [x] M6: End-to-end demonstration on a synthetic temp fixture (see Surprises & Discoveries below for the reason a synthetic fixture was needed).
 - [ ] M7: Update `docs/cli/run.md` and `docs/user/CHANGELOG.md`.
 
 
@@ -38,6 +38,12 @@ You can see this working by running `seihou run master-plan --dry-run` from `/Us
 - **No `runRun` testable core exists, and the existing pattern doesn't grow one.** EP-3's original plan (Milestone 1) imagined a "`runRun` testable core, equivalent to `handleRun` minus IO setup". The codebase has no such factoring for `handleRun`, `handleUpgrade`, or `handleStatus`; `MigrateSpec` tests `runMigrate` (a small core inside Migrate.hs), `UpgradeSpec` tests `compareVersions` only, and `handleRun` ties together environment lookup, config reading via effectful, manifest IO, recipe expansion, and several Dhall evaluations. Extracting a deterministic core would be a large refactor that this plan does not need to deliver migration awareness. Adopted approach: test the extractable helpers (`detectPendingMigrations`, `formatRefusalMessage`) at unit level and rely on the M6 manual demonstration plus existing `runMigrate` coverage for the auto-apply path.
 
 - **`detectPendingMigrations` previously lived privately inside `Status.hs`.** EP-3 promotes it to `Seihou.CLI.PendingMigrations` (library-exposed) and adds an optional `Maybe (Set ModuleName)` filter so `seihou run` can scope detection to only the modules being run. `Status.hs` calls it with `Nothing` (all applied modules). EP-4 (improve-status-migration-visibility) should import from this module.
+
+- **The pre-flight runs *after* `loadComposition`.** A user whose project is at module v1 but whose installed copy is at v3 (with a v3-only dependency) will hit `loadComposition`'s "module not found" error before the migration check ever fires. The first symptom they see is a missing dep, not a pending migration. Encountered live: `seihou run master-plan --dry-run` failed with `Module 'link-skill' not found` because master-plan v0.3.0 added `link-skill` as a dependency that was not installed. EP-3 deliberately keeps the order (composition → pre-flight) because the pre-flight needs the composed list to scope detection; users who want to migrate without installing new deps should run `seihou migrate <module>` directly.
+
+- **`pendingChainFor` returns `Nothing` whenever `planMigrationChain` cannot reach the installed-copy version exactly.** On the live `seihou-project` working tree, master-plan is at manifest=0.1.0 / installed=0.3.0 / migrations=[0.1.0→0.2.0]. The planner refuses to compute a partial chain when 0.2.0→0.3.0 is missing (it returns `MigrationGap`), so detection silently reports "no pending chain" and the new pre-flight is a no-op. The fix lives in EP-2's planner (or a dedicated follow-up) — EP-3 inherits the planner contract as is. For M6, a synthetic temp fixture with a complete 1.0.0→2.0.0 migration was used to demonstrate refusal, dry-run-with-migrations, and the actual apply path. The fixture is preserved at `/tmp/seihou-ep3-demo/` for reproduction.
+
+- **The schema URL pin in test fixtures must match the binary's expected schema.** The first cut of the M6 fixture used the `2b4035b...` schema commit (taken from an exec-plan installed dhall) which predates `Migration`/`MigrationOp`; the migrate path needed `b83079d...` (the post-migrations schema bump). When constructing migration fixtures by hand, copy the schema header from a known-good module that already declares migrations (e.g. `~/.config/seihou/installed/master-plan/module.dhall`) rather than from an arbitrary installed copy. EP-4's tests, if they need a hand-rolled fixture, should follow the same rule.
 
 
 ## Decision Log
@@ -61,7 +67,56 @@ You can see this working by running `seihou run master-plan --dry-run` from `/Us
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**What shipped.** A pre-flight pending-migration check now runs between manifest read and diff compute in `Seihou.CLI.Run.handleRun`. Detection is scoped to the modules in the current composition via `Maybe (Set ModuleName)` filter and reuses the `pendingChainFor` semantics shared with `seihou status`. A new `--with-migrations` flag, threaded through `Seihou.CLI.Commands.RunOpts`, opts the user into in-band migration application via `runMigrate` with `migrateNoFetch=True`. The refusal path prints `formatRefusalMessage` and exits non-zero. Documentation in `docs/cli/run.md`, `docs/user/migrations.md`, the `seihou run --help` footer, and `docs/user/CHANGELOG.md` describes the new behavior.
+
+**What was demonstrably broken before** (live evidence captured 2026-04-26 from a synthetic temp fixture at `/tmp/seihou-ep3-demo/`):
+
+    $ seihou run demo --dry-run
+    Generation Plan (demo):
+      Operations:
+        [new]  new/new.txt  (copy, demo)
+        [orphaned]  old/old.txt  (orphaned from demo)
+      1 files to write, 0 conflicts
+    exit: 0
+
+The old `old/old.txt` (whose content the migration would have moved to `new/old.txt`) was simply marked orphaned — it would have been deleted by a subsequent real run, with the migration's intent (preserve the file at the new path) entirely lost.
+
+**What works now** (same fixture, after EP-3):
+
+    $ seihou run demo --dry-run
+    Pending migrations detected:
+      demo: 1.0.0 -> 2.0.0 (1 step(s))
+
+    Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run.
+    exit: 1
+
+    $ seihou run demo --dry-run --with-migrations
+    Pending migrations would be applied (--with-migrations + --dry-run):
+      demo: 1.0.0 -> 2.0.0 (1 step(s))
+    Note: the run plan below is computed against the current (pre-migration)
+    disk state. Re-run without --dry-run to apply migrations and regenerate.
+    Generation Plan (demo): …
+    exit: 0
+
+    $ seihou run demo --with-migrations
+      Migrated demo
+    Generation Plan (demo): …
+    1 new, 0 modified, 0 unchanged.
+
+After the third invocation: `old/old.txt` no longer exists; `new/old.txt` is in place (carrying the user's prior content); `new/new.txt` is the freshly-rendered template; the manifest now records `demo` at v2.0.0.
+
+**Tests.** 139 cabal tests pass. The new spec entries in `Seihou.CLI.PendingMigrationSpec` cover: (a) Nothing-filter surfacing every applied module's chain, (b) Just-filter restricting to a subset, (c) skipping modules with no `module.dhall`, (d) skipping modules already at the installed version, (e) Just-filter selecting only no-chain modules returns empty, and (f) `formatRefusalMessage`'s output shape. The apply path itself relies on `MigrateSpec.runMigrate` coverage, since `handlePendingMigrations` is thin glue (`foldM` over `runMigrate` + `writeManifest`).
+
+**Gaps and follow-ups.**
+
+- *Composition-time dependency failures preempt the pre-flight.* When a module's installed copy adds a new dependency that the user has not yet installed, `loadComposition` fails before the migration check runs. The first symptom the user sees is "module 'X' not found" rather than a pending-migration message. Reproduced live during M6 with master-plan v0.3.0's `link-skill` dependency. The remediation is independent of EP-3: the user should run `seihou install` to add the dep, then `seihou run` will reach the migration check. EP-4 (status) may consider surfacing dependency-install advisories alongside pending-migration ones.
+- *Planner-gap silence.* `pendingChainFor` returns `Nothing` whenever `planMigrationChain` cannot reach the installed version exactly (e.g. migrations list `[1.0.0→2.0.0]` and installed=3.0.0). Detection is silent in that case, so the pre-flight is a no-op and the previous behavior is preserved. A future improvement (likely sitting on `planMigrationChain` itself, not on `pendingChainFor`) would be a "longest-reachable-prefix" mode that reports a partial chain so users can make incremental progress. For now, document the limitation and steer users to `seihou migrate <module> --to <intermediate>`.
+- *No `runRun` testable core.* As recorded in the Decision Log, the original M1 imagined extracting a deterministic `runRun` core from `handleRun`. The codebase has no such factoring for any command and creating one was out of scope. The compromise — unit-test the helpers, manual-demo the integration — leaves a coverage gap for the integration of `handlePendingMigrations` with the wider `handleRun` IO shell. If a future regression slips through, the right response is to extract a small `runRunCore :: ResolvedRun -> IO ()` with explicit IO seams and write integration tests against it.
+
+**Lessons.**
+
+- The masterplan's Integration Point #2 anticipated extracting a `withFetchedModuleDir` helper for EP-3's apply path; in practice EP-3 did not need that helper because the local-only `migrateNoFetch=True` path is sufficient (detection has already confirmed the local copy is the right reference). The Surprises section of the masterplan should be read in conjunction with this finding when EP-4 evaluates similar reuse.
+- Hand-rolled test fixtures of `module.dhall` must pin the schema URL to a version that includes the fields they need (`Migration` / `MigrationOp` arrived at commit `b83079d…`). Copying a header from an arbitrary installed module is risky if that module predates the migrations schema bump.
 
 
 ## Context and Orientation
