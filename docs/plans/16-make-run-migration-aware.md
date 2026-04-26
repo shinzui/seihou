@@ -25,18 +25,20 @@ You can see this working by running `seihou run master-plan --dry-run` from `/Us
 
 ## Progress
 
-- [ ] Reproduce the "run silently overwrites a file the migration would have moved" bug.
-- [ ] Add a pre-flight pending-migration check to `seihou run`.
-- [ ] Implement the default refusal path with the actionable error message.
-- [ ] Add `--with-migrations` flag; on opt-in, apply the chain before executing the plan.
-- [ ] Tests: refusal path, opt-in path, no-pending-migration path.
-- [ ] End-to-end demonstration on the seihou-project working tree.
-- [ ] Update `docs/cli/run.md` and `docs/user/CHANGELOG.md`.
+- [x] M1+M2: Extracted `Seihou.CLI.PendingMigrations` (filter-aware `detectPendingMigrations` + `formatRefusalMessage`); refactored `Seihou.CLI.Status` to use it.
+- [x] M1+M2: Tests for the new helpers in `Seihou.CLI.PendingMigrationSpec` (filter, missing module.dhall, no-chain, message formatting).
+- [ ] M3: Wire pre-flight + refusal path into `Seihou.CLI.Run.handleRun`.
+- [ ] M4: Add `--with-migrations` flag; on opt-in, apply the chain before executing the plan.
+- [ ] M5: Tests: refusal path, opt-in path, no-pending-migration path, unrelated-module path.
+- [ ] M6: End-to-end demonstration on the seihou-project working tree.
+- [ ] M7: Update `docs/cli/run.md` and `docs/user/CHANGELOG.md`.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **No `runRun` testable core exists, and the existing pattern doesn't grow one.** EP-3's original plan (Milestone 1) imagined a "`runRun` testable core, equivalent to `handleRun` minus IO setup". The codebase has no such factoring for `handleRun`, `handleUpgrade`, or `handleStatus`; `MigrateSpec` tests `runMigrate` (a small core inside Migrate.hs), `UpgradeSpec` tests `compareVersions` only, and `handleRun` ties together environment lookup, config reading via effectful, manifest IO, recipe expansion, and several Dhall evaluations. Extracting a deterministic core would be a large refactor that this plan does not need to deliver migration awareness. Adopted approach: test the extractable helpers (`detectPendingMigrations`, `formatRefusalMessage`) at unit level and rely on the M6 manual demonstration plus existing `runMigrate` coverage for the auto-apply path.
+
+- **`detectPendingMigrations` previously lived privately inside `Status.hs`.** EP-3 promotes it to `Seihou.CLI.PendingMigrations` (library-exposed) and adds an optional `Maybe (Set ModuleName)` filter so `seihou run` can scope detection to only the modules being run. `Status.hs` calls it with `Nothing` (all applied modules). EP-4 (improve-status-migration-visibility) should import from this module.
 
 
 ## Decision Log
@@ -47,6 +49,14 @@ You can see this working by running `seihou run master-plan --dry-run` from `/Us
 
 - Decision: When `--with-migrations` is passed, apply the chain before computing the run plan, not after.
   Rationale: The run plan's diff is computed against the on-disk state. Applying the migration first means the diff reflects "old layout migrated to new layout, now compared against new templates", which is what the user wants. Applying after would compute a diff against the pre-migration layout and write into the wrong paths.
+  Date: 2026-04-26.
+
+- Decision: Skip the "extract a `runRun` testable core" step. Test extractable helpers at unit level; defer end-to-end verification to the M6 manual demo and the existing `runMigrate` coverage in `MigrateSpec`.
+  Rationale: `handleRun` has no analogous core today, and creating one is a larger refactor that exceeds the scope of "make run migration-aware". The behaviour we need to cover (detection, message formatting, chain application) is reachable through smaller pure/IO functions.
+  Date: 2026-04-26.
+
+- Decision: `detectPendingMigrations` takes `Maybe (Set ModuleName)`; `Nothing` means all modules, `Just names` filters to those names.
+  Rationale: `seihou status` reports pending chains for every applied module, while `seihou run X` should only block when `X` (or its composed deps) has a pending chain. A single function with an optional filter avoids duplicating the IO logic and keeps Status's call site short (`detectPendingMigrations manifest Nothing`).
   Date: 2026-04-26.
 
 

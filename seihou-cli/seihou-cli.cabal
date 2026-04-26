@@ -26,6 +26,7 @@ library seihou-cli-internal
     Seihou.CLI.InstallShared
     Seihou.CLI.List
     Seihou.CLI.Migrate
+    Seihou.CLI.PendingMigrations
     Seihou.CLI.Registry
     Seihou.CLI.Registry.Sync
     Seihou.CLI.RemoteVersion
@@ -98,6 +99,7 @@ executable seihou
     Seihou.CLI.NewModule
     Seihou.CLI.NewRecipe
     Seihou.CLI.Outdated
+    Seihou.CLI.PendingMigrations
     Seihou.CLI.Registry
     Seihou.CLI.Registry.Sync
     Seihou.CLI.RemoteVersion
