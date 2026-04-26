@@ -21,7 +21,8 @@ import Seihou.CLI.Migrate
     pendingChainFor,
     runMigrate,
   )
-import Seihou.CLI.Outdated (OriginInfo (..), findAvailableVersion, moduleNameFromDm, readOriginWithModule)
+import Seihou.CLI.Outdated (OriginInfo (..), moduleNameFromDm, readOriginWithModule)
+import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
 import Seihou.Core.Install (parseModuleName)
@@ -151,7 +152,7 @@ upgradeModule :: UpgradeOpts -> FilePath -> RepoContents -> Text -> (DiscoveredM
 upgradeModule uopts cloneDir contents sourceUrl (dm, origin) = do
   let name = moduleNameFromDm dm
       installedVer = origin.version
-  availableVer <- findAvailableVersion cloneDir contents name
+  availableVer <- fetchAvailable cloneDir (ModuleName name)
   let status = compareVersions installedVer availableVer
 
   case status of
@@ -197,9 +198,14 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
             Left err ->
               pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = UpgradeFailed (T.pack (show err))}
             Right _ -> do
+              -- Trust the module.dhall version over the registry's static
+              -- entry.version: the registry can be stale (the bug fixed in
+              -- docs/plans/14-fix-outdated-version-detection.md). Tags are
+              -- still sourced from the registry entry since module.dhall
+              -- has no equivalent field.
               let (ver, entryTags) = case contents of
                     MultiModule registry -> case filter (\e -> e.name.unModuleName == name) registry.modules of
-                      (entry : _) -> (entry.version <|> modul.version, entry.tags)
+                      (entry : _) -> (modul.version <|> entry.version, entry.tags)
                       [] -> (modul.version, [])
                     _ -> (modul.version, [])
               installModuleDir moduleDir (T.unpack name) sourceUrl registryName ver entryTags
@@ -370,3 +376,15 @@ renderMigrateError err = case err of
 unless :: Bool -> IO () -> IO ()
 unless True _ = pure ()
 unless False action = action
+
+-- | Look up the available version of a module in a cloned repo by reading
+-- its @module.dhall@. Fetch errors collapse to @Nothing@; downstream
+-- 'compareVersions' treats that as "unversioned" and 'doUpgrade' will
+-- still attempt the install (the registry's static @version@ is no longer
+-- consulted for the comparison — see EP-1).
+fetchAvailable :: FilePath -> ModuleName -> IO (Maybe Text)
+fetchAvailable cloneDir name = do
+  result <- fetchTrueModuleVersion cloneDir name
+  case result of
+    Right v -> pure v
+    Left _ -> pure Nothing

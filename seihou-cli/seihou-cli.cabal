@@ -27,6 +27,7 @@ library seihou-cli-internal
     Seihou.CLI.Migrate
     Seihou.CLI.Registry
     Seihou.CLI.Registry.Sync
+    Seihou.CLI.RemoteVersion
     Seihou.CLI.SavePrompted
     Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
@@ -96,6 +97,7 @@ executable seihou
     Seihou.CLI.Outdated
     Seihou.CLI.Registry
     Seihou.CLI.Registry.Sync
+    Seihou.CLI.RemoteVersion
     Seihou.CLI.Remove
     Seihou.CLI.Run
     Seihou.CLI.SavePrompted
@@ -161,6 +163,7 @@ test-suite seihou-cli-test
     Seihou.CLI.MigrateSpec
     Seihou.CLI.PendingMigrationSpec
     Seihou.CLI.Registry.SyncSpec
+    Seihou.CLI.RemoteVersionSpec
     Seihou.CLI.SavePromptedSpec
     Seihou.CLI.UpgradeSpec
     Seihou.FzfSpec

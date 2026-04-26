@@ -10,6 +10,7 @@ import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.MigrateSpec qualified as MigrateSpec
 import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
 import Seihou.CLI.Registry.SyncSpec qualified as RegistrySyncSpec
+import Seihou.CLI.RemoteVersionSpec qualified as RemoteVersionSpec
 import Seihou.CLI.SavePromptedSpec qualified as SavePromptedSpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
 import Seihou.FzfSpec qualified as FzfSpec
@@ -29,6 +30,7 @@ main = do
         MigrateSpec.tests,
         PendingMigrationSpec.tests,
         RegistrySyncSpec.tests,
+        RemoteVersionSpec.tests,
         SavePromptedSpec.tests,
         UpgradeSpec.tests,
         FzfSpec.tests

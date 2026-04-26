@@ -10,6 +10,28 @@ HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 
 
 ## Changelog
 
+### 2026-04-26 (`outdated`/`upgrade` read true module.dhall version)
+
+**Reviewed commits:** EP-1 of MasterPlan
+`docs/masterplans/1-migrations-dx.md` — the introduction of
+`Seihou.CLI.RemoteVersion.fetchTrueModuleVersion` and the rewrite of
+`outdated`/`upgrade` to call it.
+
+**Bug fix:**
+- `seihou outdated` and `seihou upgrade` now report a module as outdated as
+  soon as the upstream `module.dhall` declares a higher `version`, even when
+  the upstream `seihou-registry.dhall` has not been re-synced. Previously, a
+  registry that listed a stale `version = Some "0.1.0"` would mask a
+  `modules/<name>/module.dhall` that already declared `0.3.0`, and both
+  commands reported "up to date". The comparison now reads the truthful
+  version from the cloned `module.dhall` and ignores the registry's static
+  metadata.
+
+**Docs:**
+- `docs/cli/outdated.md` and `docs/cli/upgrade.md` each gained a section
+  explaining how the "available" version is determined and why the registry
+  index is intentionally bypassed.
+
 ### 2026-04-19 (parameterized dependency multi-instantiation)
 
 **Reviewed commits:** the eight-commit ExecPlan 10 series culminating in

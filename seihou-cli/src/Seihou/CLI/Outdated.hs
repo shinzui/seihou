@@ -8,7 +8,6 @@ module Seihou.CLI.Outdated
     readOriginWithModule,
     moduleNameFromDm,
     compareVersions,
-    findAvailableVersion,
     checkSource,
   )
 where
@@ -22,13 +21,12 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (OutdatedOpts (..))
+import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
-import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types (Module (..), ModuleName (..))
-import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Prelude
 import System.Directory (doesFileExist)
 import System.Exit (ExitCode (..))
@@ -145,8 +143,7 @@ readOriginWithModule dm = do
 -- | Check a single source URL for updates. Clones the repo and compares versions.
 --
 -- The comparison must happen inside 'withSystemTempDirectory' because
--- 'findAvailableVersion' reads @module.dhall@ off disk for multi-module
--- registries whose entries do not carry a @version@ field. If we returned
+-- 'fetchTrueModuleVersion' reads @module.dhall@ off disk. If we returned
 -- the clone path to the caller, the temp directory would already be gone
 -- by the time the Dhall read ran, and every module would resolve to
 -- @Nothing@ (appearing as \"unversioned\").
@@ -160,9 +157,8 @@ checkSource (sourceUrl, modulesWithOrigins) = do
     (exitCode, _stdout, _stderr) <- readProcessWithExitCode "git" ["clone", "--depth", "1", T.unpack sourceUrl, cloneDir] ""
     case exitCode of
       ExitFailure _ -> pure Nothing
-      ExitSuccess -> do
-        contents <- discoverRepoContents evalRegistryFromFile cloneDir
-        Just <$> mapM (compareModule cloneDir contents) modulesWithOrigins
+      ExitSuccess ->
+        Just <$> mapM (compareModule cloneDir) modulesWithOrigins
 
   case result of
     Left (_ :: SomeException) ->
@@ -172,11 +168,11 @@ checkSource (sourceUrl, modulesWithOrigins) = do
     Right (Just entries) -> pure entries
 
 -- | Compare a single installed module against the remote contents.
-compareModule :: FilePath -> RepoContents -> (DiscoveredModule, OriginInfo) -> IO OutdatedEntry
-compareModule cloneDir contents (dm, origin) = do
+compareModule :: FilePath -> (DiscoveredModule, OriginInfo) -> IO OutdatedEntry
+compareModule cloneDir (dm, origin) = do
   let name = moduleNameFromDm dm
       installedVer = origin.version
-  availableVer <- findAvailableVersion cloneDir contents name
+  availableVer <- fetchAvailable cloneDir (ModuleName name)
   let status = compareVersions installedVer availableVer
   pure
     OutdatedEntry
@@ -186,31 +182,16 @@ compareModule cloneDir contents (dm, origin) = do
         status = status
       }
 
--- | Find the available version for a module name in the remote repo contents.
-findAvailableVersion :: FilePath -> RepoContents -> Text -> IO (Maybe Text)
-findAvailableVersion cloneDir contents name = case contents of
-  SingleModule rootDir -> do
-    let dhallFile = rootDir </> "module.dhall"
-    decoded <- evalModuleFromFile dhallFile
-    case decoded of
-      Right m -> pure m.version
-      Left _ -> pure Nothing
-  MultiModule registry -> do
-    -- Find the matching entry by name
-    let matchingEntries = filter (\e -> e.name.unModuleName == name) registry.modules
-    case matchingEntries of
-      (entry : _) -> do
-        -- Try registry entry version first, then module.dhall version
-        case entry.version of
-          Just v -> pure (Just v)
-          Nothing -> do
-            let dhallFile = cloneDir </> entry.path </> "module.dhall"
-            decoded <- evalModuleFromFile dhallFile
-            case decoded of
-              Right m -> pure m.version
-              Left _ -> pure Nothing
-      [] -> pure Nothing
-  EmptyRepo -> pure Nothing
+-- | Look up the available version of a module in a cloned repo. Wraps
+-- 'fetchTrueModuleVersion' so that fetch errors collapse to @Nothing@ for
+-- the consumer-facing comparison; downstream renderers display this as
+-- "unversioned".
+fetchAvailable :: FilePath -> ModuleName -> IO (Maybe Text)
+fetchAvailable cloneDir name = do
+  result <- fetchTrueModuleVersion cloneDir name
+  case result of
+    Right v -> pure v
+    Left _ -> pure Nothing
 
 -- | Compare installed and available version strings.
 -- | Extract the module name text from a DiscoveredModule.
