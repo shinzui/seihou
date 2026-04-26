@@ -13,7 +13,6 @@ module Seihou.CLI.Outdated
 where
 
 import Control.Exception (SomeException, try)
-import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy qualified as LBS
@@ -24,7 +23,12 @@ import Seihou.CLI.Commands (OutdatedOpts (..))
 import Seihou.CLI.InstallShared (OriginInfo (..))
 import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
-import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
+import Seihou.CLI.VersionCompare
+  ( CheckStats (..),
+    OutdatedEntry (..),
+    OutdatedStatus (..),
+    compareVersions,
+  )
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
 import Seihou.Core.Types (Module (..), ModuleName (..))
@@ -33,36 +37,6 @@ import System.Directory (doesFileExist)
 import System.Exit (ExitCode (..))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (readProcessWithExitCode)
-
--- | A single entry in the outdated report.
-data OutdatedEntry = OutdatedEntry
-  { moduleName :: Text,
-    installedVersion :: Maybe Text,
-    availableVersion :: Maybe Text,
-    status :: OutdatedStatus
-  }
-  deriving stock (Eq, Show)
-
-instance ToJSON OutdatedEntry where
-  toJSON e =
-    object
-      [ "module" .= e.moduleName,
-        "installed" .= e.installedVersion,
-        "available" .= e.availableVersion,
-        "status" .= statusText e.status
-      ]
-    where
-      statusText UpToDate = "up to date" :: Text
-      statusText OutdatedSt = "outdated"
-      statusText Unversioned = "unversioned"
-      statusText Unreachable = "unreachable"
-
--- | Summary statistics for an update check.
-data CheckStats = CheckStats
-  { checkedCount :: Int,
-    skippedNoOrigin :: Int
-  }
-  deriving stock (Eq, Show)
 
 handleOutdated :: OutdatedOpts -> IO ()
 handleOutdated oopts = do
