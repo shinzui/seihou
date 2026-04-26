@@ -52,7 +52,7 @@ Alternatives considered:
 | 1   | Fix `outdated` and `upgrade` to detect true module versions  | docs/plans/14-fix-outdated-version-detection.md     | None      | None      | Complete    |
 | 2   | Make `seihou migrate` self-contained (no manual upgrade)     | docs/plans/15-make-migrate-self-contained.md        | EP-1      | None      | Complete    |
 | 3   | Make `seihou run` migration-aware                            | docs/plans/16-make-run-migration-aware.md           | EP-2      | EP-1      | Complete    |
-| 4   | Make `seihou status` surface staleness and pending migrations | docs/plans/17-improve-status-migration-visibility.md | EP-1      | EP-2      | Not Started |
+| 4   | Make `seihou status` surface staleness and pending migrations | docs/plans/17-improve-status-migration-visibility.md | EP-1      | EP-2      | Complete    |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -123,9 +123,9 @@ Track milestone-level progress across all child plans. Each entry names the chil
 - [x] EP-3: Reproduce the "`seihou run` overwrites files a migration would have moved" bug (synthetic temp fixture; live `seihou-project` tree was non-reproducing because the planner refuses partial chains).
 - [x] EP-3: Add pending-migration pre-flight to `seihou run`; implement default refusal and `--with-migrations` opt-in.
 - [x] EP-3: End-to-end demonstration: `seihou run` against a project with a pending migration refuses with a clear message; `seihou run --with-migrations` applies the chain then writes the new template state.
-- [ ] EP-4: Update `seihou status` to surface true outdated state.
-- [ ] EP-4: Update `seihou status` to surface pending migrations with a copy-pasteable next command.
-- [ ] EP-4: End-to-end demonstration: `seihou status --check-updates` against a stale-registry project lists outdated modules and pending migrations and the exact remediation command for each.
+- [x] EP-4: Update `seihou status` to surface true outdated state.
+- [x] EP-4: Update `seihou status` to surface pending migrations with a copy-pasteable next command.
+- [x] EP-4: End-to-end demonstration: `seihou status --check-updates` against a stale-registry project lists outdated modules and pending migrations and the exact remediation command for each.
 
 
 ## Surprises & Discoveries
@@ -170,6 +170,12 @@ Captured during research before implementation:
 
 - **`pendingChainFor` is silent on planner gaps.** When the migrations list does not reach the installed version exactly (e.g. only `1.0.0 → 2.0.0` declared but installed is 3.0.0), `planMigrationChain` returns `MigrationGap` and `pendingChainFor` returns `Nothing`. Detection is therefore a no-op in that case and `seihou run` falls back to its older behaviour (which is the failure mode EP-3 was meant to fix). This is a real gap on the live `seihou-project` working tree: master-plan has manifest=0.1.0, installed=0.3.0, migrations=[0.1.0→0.2.0]. Fixing it requires changing the planner contract (likely a "longest-reachable-prefix" mode), which is out of EP-3's scope. EP-4's status display will inherit the same silence — flag this as a design tension and decide whether to surface "incomplete migration coverage" advisories during the EP-4 work.
 
+- **EP-4 inherited the planner-gap silence rather than adding an "incomplete migration coverage" advisory.** The decision was deliberate: surfacing partial chains requires a new planner mode (longest-reachable-prefix) plus a new return shape from `planMigrationChain`, and that change cuts across the migration engine in ways the masterplan's vision does not require. EP-4 instead documents the limitation in `docs/cli/status.md` and the EP-4 retrospective so future work can pick it up. Anyone exploring a planner-mode change should also revisit `seihou run`'s pre-flight: both call sites would benefit from the same partial-coverage signal.
+
+- **`OutdatedEntry` migrated to the library in EP-4.** EP-1 had left `OutdatedEntry`, `CheckStats`, and the `ToJSON OutdatedEntry` instance in the executable-only `Seihou.CLI.Outdated`. EP-4 needed them in a library module so the new `Seihou.CLI.StatusRender` (and its tests) could reference the data type without IO. The fix moved the types into `Seihou.CLI.VersionCompare` (already library-exposed) and made `Outdated.hs` re-export them. Future modules that consume outdated entries (e.g. an alternate JSON status formatter, or a planned `seihou audit` command) should import from `VersionCompare` rather than `Outdated`.
+
+- **Status rendering now lives in a library module (`Seihou.CLI.StatusRender`), not in `Status.hs`.** EP-4 extracted the entire renderer into a pure `formatStatus :: Bool -> Manifest -> [TrackedFile] -> Maybe [OutdatedEntry] -> [(ModuleName, MigrationChain)] -> Text` so the test suite could exercise it against fixtures (no XDG-redirected fake installed dirs needed — much cheaper than the EP-1/EP-2 fixture style). `Status.hs` shrank to a thin IO shell. Subsequent surfaces that want to render status — JSON output, an HTML report, an embedded view in another command — should add a parallel formatter in `StatusRender` rather than re-walking `manifest.modules`.
+
 
 ## Decision Log
 
@@ -192,4 +198,90 @@ Captured during research before implementation:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The four child plans landed in the order the dependency graph
+predicted (EP-1 → EP-2 → EP-3 → EP-4) and left the upgrade-and-migrate
+workflow demonstrably trustworthy on the live `seihou-project` tree.
+
+What the user sees now, end to end:
+
+1. `seihou outdated` and `seihou upgrade` correctly flag a module as
+   outdated as soon as the upstream `module.dhall` declares a higher
+   version, even when the registry's static `version` field is stale
+   (EP-1).
+2. `seihou migrate <module>` works without a prior `seihou upgrade`:
+   it fetches the source repo, plans the chain against the remote's
+   `module.dhall`, applies it, and refreshes the on-disk installed
+   copy. `--no-fetch` preserves the legacy local-only behavior for
+   offline use and for callers that have already refreshed (EP-2).
+3. `seihou run` no longer silently writes the new template into paths
+   a pending migration would have moved. By default it refuses with a
+   clear message naming the next command; `--with-migrations`
+   applies the chain in-band before the run plan executes (EP-3).
+4. `seihou status` truthfully reports both outdated installed modules
+   and pending migrations, and emits a copy-pasteable next command
+   under each problem row plus a Recommended actions tail block. The
+   pending-migration check is unconditional (no `--check-updates`
+   needed) because it is purely local (EP-4).
+
+What stayed out of scope — deliberately:
+
+- A "longest-reachable-prefix" planner mode. Both `seihou run`'s
+  pre-flight (EP-3) and `seihou status`'s pending-migration display
+  (EP-4) silently fall back to "no chain" when the migrations list
+  does not reach the installed version exactly. On the live tree this
+  shows up for master-plan: manifest=0.1.0, installed=0.3.0,
+  migrations=[0.1.0 → 0.2.0]. Both surfaces document the silence and
+  defer the planner change to future work.
+- Recipe migrations (still v1+ deferred per
+  `docs/plans/13-module-migrations.md`).
+- A new manifest schema version. The existing
+  `AppliedModule.moduleVersion` field plus careful refresh-on-apply
+  bookkeeping (EP-1's post-install fix and EP-2's
+  `runMigrate`-refreshes-manifest behavior) covered every case.
+
+Cross-plan coordination held up. The integration points the
+masterplan called out — `fetchTrueModuleVersion` (EP-1 definer; EP-2,
+EP-3, EP-4 consumers), `detectPendingMigrations` (EP-3 definer; EP-4
+consumer), `installModuleDir` and friends in
+`Seihou.CLI.InstallShared` (EP-2 extractor; EP-3 consumer) — all
+ended up in library-exposed modules so the test suite could reach
+them without spinning up the executable. The recurring "Outdated /
+Status / Migrate are in the executable target, push the shared bits
+down to the library" pattern is worth recording as a project-wide
+convention for future CLI work.
+
+Implementation arc per plan:
+
+- EP-1 took the longest because the bug was non-obvious (registry
+  metadata vs. module.dhall divergence) and required adding a new
+  primitive plus rewiring two commands. The post-fix manifest
+  recording bug surfaced during implementation and was fixed in the
+  same plan.
+- EP-2 was the largest behavioral change (self-contained fetch path,
+  refresh-on-apply, soft-fallback semantics) and surfaced the need to
+  move several install helpers from executable to library.
+- EP-3 was structurally smaller but found two unanticipated wrinkles:
+  composition-time dependency failures preempt the pre-flight, and
+  the planner-gap silence affects real projects. The first is a UX
+  concern for EP-4; the second is a planner contract change deferred
+  to future work.
+- EP-4 was almost entirely a renderer change once EP-1, EP-2, and
+  EP-3 were in. The data-type-locality cleanup (moving
+  `OutdatedEntry` to `VersionCompare`) was the only cross-cutting
+  edit, and it preserved every existing call site.
+
+Lessons for future masterplans:
+
+- Decomposing by user-visible command paid off. Each child plan
+  closed with a concrete `seihou <command>` invocation against the
+  live tree as its acceptance criterion, which made "is this done?"
+  unambiguous.
+- The Surprises & Discoveries section earned its keep. EP-3's
+  planner-gap discovery directly shaped EP-4's documentation
+  decisions. Future masterplans should keep encouraging contributors
+  to write into Surprises eagerly.
+- Pushing helpers from executable-only to library-exposed is a
+  recurring move in this codebase. A repo-wide convention ("CLI
+  helpers default to the library; executable target is for the IO
+  shell only") would have saved ~3 hours of small refactors across
+  EP-1, EP-2, and EP-4.
