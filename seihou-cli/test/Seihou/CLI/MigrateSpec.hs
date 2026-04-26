@@ -126,7 +126,10 @@ defaultOpts =
       migrateDryRun = False,
       migrateForce = False,
       migrateJson = False,
-      migrateVerbose = False
+      migrateVerbose = False,
+      -- Existing local-only tests pass an installed dir directly; they
+      -- do not need (and must not perform) network IO.
+      migrateNoFetch = True
     }
 
 -- ----------------------------------------------------------------------------

@@ -907,6 +907,7 @@ migrateParser =
       <*> switch (long "force" <> help "Proceed even when files have been edited since generation")
       <*> switch (long "json" <> help "Emit the plan as JSON instead of human-readable text")
       <*> switch (long "verbose" <> short 'v' <> help "Print extra detail about each operation")
+      <*> switch (long "no-fetch" <> help "Skip the remote fetch; use only the locally installed copy")
 
 migrateFooter :: Doc
 migrateFooter =

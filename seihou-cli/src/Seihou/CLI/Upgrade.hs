@@ -343,7 +343,11 @@ runOnePostUpgradeMigration installedDir name = do
                 migrateDryRun = False,
                 migrateForce = False,
                 migrateJson = False,
-                migrateVerbose = False
+                migrateVerbose = False,
+                -- The post-upgrade hook has already refreshed the
+                -- installed copy via 'seihou upgrade'; skip the
+                -- redundant fetch in 'runMigrate'.
+                migrateNoFetch = True
               }
       result <- runMigrate opts manifest installedDir
       case result of

@@ -22,6 +22,12 @@ import Data.Text.IO qualified as TIO
 import Data.Time.Clock (getCurrentTime)
 import Effectful (runEff)
 import GHC.Generics (Generic)
+import Seihou.CLI.InstallShared
+  ( OriginInfo (..),
+    cloneRepo,
+    installModuleDir,
+    readOriginInfo,
+  )
 import Seihou.CLI.Style (bold, dim, green, red, useColor, yellow)
 import Seihou.Core.Migration
   ( Migration (..),
@@ -30,6 +36,12 @@ import Seihou.Core.Migration
     MigrationPlanError (..),
     planMigrationChain,
   )
+import Seihou.Core.Registry
+  ( Registry (..),
+    RegistryEntry (..),
+    RepoContents (..),
+    discoverRepoContents,
+  )
 import Seihou.Core.Types
   ( AppliedModule (..),
     Manifest (..),
@@ -37,7 +49,7 @@ import Seihou.Core.Types
     ModuleName (..),
   )
 import Seihou.Core.Version (Version, parseVersion, renderVersion)
-import Seihou.Dhall.Eval (evalModuleFromFile)
+import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
@@ -53,7 +65,8 @@ import Seihou.Engine.Migrate
 import Seihou.Prelude
 import System.Directory (doesFileExist)
 import System.Exit (exitFailure, exitSuccess)
-import System.FilePath ((</>))
+import System.FilePath (takeFileName, (</>))
+import System.IO.Temp (withSystemTempDirectory)
 
 -- ----------------------------------------------------------------------------
 -- Options
@@ -72,7 +85,14 @@ data MigrateOpts = MigrateOpts
     -- since they were generated. Mirrors @seihou remove --force@.
     migrateForce :: Bool,
     migrateJson :: Bool,
-    migrateVerbose :: Bool
+    migrateVerbose :: Bool,
+    -- | Skip the default fetch-and-refresh step that clones the module's
+    -- source repo and refreshes @~/.config/seihou/installed/<name>/@
+    -- before planning the chain. When 'True', the command performs no
+    -- network IO and uses only the locally installed copy as the source
+    -- of truth. Default: 'False' (fetch is the new default after EP-2;
+    -- before EP-2 the only behavior was local-only).
+    migrateNoFetch :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -110,7 +130,10 @@ data MigrateResult
 -- IO shell
 -- ----------------------------------------------------------------------------
 
--- | The IO entry point dispatched from @main@.
+-- | The IO entry point dispatched from @main@. Loads the manifest,
+-- delegates planning + execution to 'runMigrate' (which handles the
+-- fetch-and-refresh dance unless @--no-fetch@ was passed), and renders
+-- the result.
 handleMigrate :: MigrateOpts -> IO ()
 handleMigrate opts = do
   let manifestPath = ".seihou" </> "manifest.json"
@@ -126,42 +149,18 @@ handleMigrate opts = do
     Nothing -> die (MigrateModuleNotApplied modName)
     Just am -> pure am
 
-  fromText <- case applied.moduleVersion of
+  fromV <- case applied.moduleVersion >>= parseVersion of
     Just v -> pure v
-    Nothing -> die (MigrateNoRecordedVersion modName)
-  fromV <- case parseVersion fromText of
-    Just v -> pure v
-    Nothing -> die (MigrateUnparseableManifestVersion fromText)
+    Nothing -> case applied.moduleVersion of
+      Nothing -> die (MigrateNoRecordedVersion modName)
+      Just t -> die (MigrateUnparseableManifestVersion t)
 
-  -- Evaluate the installed module's module.dhall to get the migrations
-  -- list and the current installed version.
-  let installedDhall = applied.source </> "module.dhall"
-  exists <- doesFileExist installedDhall
-  installedModule <- case exists of
-    False -> die (MigrateInstalledModuleEvalFailed installedDhall "module.dhall not found at recorded source")
-    True -> do
-      r <- evalModuleFromFile installedDhall
-      case r of
-        Right m -> pure m
-        Left err -> die (MigrateInstalledModuleEvalFailed installedDhall (T.pack (show err)))
+  result <- runMigrate opts manifest applied.source
 
-  -- Resolve target version: --to override, else installed module's version.
-  toText <- case opts.migrateTo of
-    Just t -> pure t
-    Nothing -> case installedModule.version of
-      Just v -> pure v
-      Nothing -> die (MigrateInstalledModuleHasNoVersion modName installedDhall)
-  toV <- case parseVersion toText of
-    Just v -> pure v
-    Nothing -> case opts.migrateTo of
-      Just _ -> die (MigrateUnparseableTargetVersion toText)
-      Nothing -> die (MigrateUnparseableInstalledVersion toText)
-
-  -- Plan and act.
-  case planMigrationChain modName.unModuleName installedModule.migrations fromV toV of
-    Left e -> die (MigratePlanFailed e)
-    Right Nothing -> do
-      colorEnabled <- useColor
+  colorEnabled <- useColor
+  case result of
+    Left err -> die err
+    Right (MigrateNoOp toV) -> do
       TIO.putStrLn $
         applyColor colorEnabled green "✓"
           <> " "
@@ -170,51 +169,51 @@ handleMigrate opts = do
           <> renderVersion toV
           <> "; nothing to do."
       exitSuccess
-    Right (Just chain) -> do
-      plan <-
-        runEff $
-          runFilesystem $
-            classifyMigration manifest chain
-
-      colorEnabled <- useColor
+    Right (MigrateDryRunOK plan) -> do
+      if opts.migrateJson
+        then LBS.putStr (encodePretty (planToJson plan))
+        else do
+          renderPlan colorEnabled plan
+          TIO.putStrLn ""
+          TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
+      exitSuccess
+    Right (MigrateApplied plan manifest') -> do
       if opts.migrateJson
         then LBS.putStr (encodePretty (planToJson plan))
         else renderPlan colorEnabled plan
-
-      if opts.migrateDryRun
-        then do
-          unless opts.migrateJson $ do
-            TIO.putStrLn ""
-            TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
-          exitSuccess
-        else do
-          now <- getCurrentTime
-          execRes <-
-            runEff $
-              runFilesystem $
-                runProcessIO $
-                  executeMigration opts.migrateForce plan manifest now
-          case execRes of
-            Left err -> die (MigrateExecFailed err)
-            Right manifest' -> do
-              runEff $
-                runFilesystem $
-                  runManifestStore manifestPath $
-                    writeManifest manifest'
-              TIO.putStrLn ""
-              TIO.putStrLn $
-                applyColor colorEnabled green "✓"
-                  <> " Migrated "
-                  <> applyColor colorEnabled bold modName.unModuleName
-                  <> " "
-                  <> renderVersion fromV
-                  <> " → "
-                  <> renderVersion toV
-                  <> "."
+      runEff $
+        runFilesystem $
+          runManifestStore manifestPath $
+            writeManifest manifest'
+      let toV = plan.planChain.chainTo
+      unless opts.migrateJson $ do
+        TIO.putStrLn ""
+        TIO.putStrLn $
+          applyColor colorEnabled green "✓"
+            <> " Migrated "
+            <> applyColor colorEnabled bold modName.unModuleName
+            <> " "
+            <> renderVersion fromV
+            <> " → "
+            <> renderVersion toV
+            <> "."
 
 -- | The non-IO core of the handler. Useful as a building block for
 -- other CLI surfaces (e.g. @seihou upgrade --with-migrations@) that
 -- already have a manifest and an installed-module dir in hand.
+--
+-- Behavior depends on @opts.migrateNoFetch@:
+--
+--   * @True@ — operate purely on the supplied @installedDir@. This is
+--     the legacy behavior used by @seihou upgrade --with-migrations@,
+--     which has already refreshed the installed copy.
+--   * @False@ (default) — read @<installedDir>\/.seihou-origin.json@,
+--     clone the source repository shallowly, use the clone's module
+--     dir as the source of truth for planning the chain, and on a
+--     successful non-dry-run application refresh @installedDir@ from
+--     the clone via 'installModuleDir'. Failures (missing origin file,
+--     clone failure, module not present in remote) silently fall back
+--     to the local-only path.
 runMigrate ::
   -- | Options
   MigrateOpts ->
@@ -223,7 +222,21 @@ runMigrate ::
   -- | Installed-module directory, the path that holds @module.dhall@
   FilePath ->
   IO (Either MigrateError MigrateResult)
-runMigrate opts manifest installedDir = do
+runMigrate opts manifest installedDir
+  | opts.migrateNoFetch = runMigrateLocal opts manifest installedDir
+  | otherwise = runMigrateWithFetch opts manifest installedDir
+
+-- | Plan and (optionally) execute a migration chain using @sourceDir@
+-- as the source of truth for the module's @module.dhall@ and migrations
+-- list. Performs no network IO.
+runMigrateLocal ::
+  MigrateOpts ->
+  Manifest ->
+  -- | Directory holding the module's @module.dhall@ — either the
+  -- locally installed copy or a freshly cloned moduleDir.
+  FilePath ->
+  IO (Either MigrateError MigrateResult)
+runMigrateLocal opts manifest sourceDir = do
   let modName = opts.migrateModule
   case findApplied manifest modName of
     Nothing -> pure (Left (MigrateModuleNotApplied modName))
@@ -233,34 +246,34 @@ runMigrate opts manifest installedDir = do
         case parseVersion fromText of
           Nothing -> pure (Left (MigrateUnparseableManifestVersion fromText))
           Just fromV -> do
-            let installedDhall = installedDir </> "module.dhall"
-            exists <- doesFileExist installedDhall
+            let sourceDhall = sourceDir </> "module.dhall"
+            exists <- doesFileExist sourceDhall
             if not exists
               then
                 pure
                   ( Left
                       ( MigrateInstalledModuleEvalFailed
-                          installedDhall
+                          sourceDhall
                           "module.dhall not found at installed dir"
                       )
                   )
               else do
-                r <- evalModuleFromFile installedDhall
+                r <- evalModuleFromFile sourceDhall
                 case r of
                   Left err ->
                     pure
                       ( Left
                           ( MigrateInstalledModuleEvalFailed
-                              installedDhall
+                              sourceDhall
                               (T.pack (show err))
                           )
                       )
-                  Right installedModule -> case resolveTarget opts installedModule modName installedDhall of
+                  Right sourceModule -> case resolveTarget opts sourceModule modName sourceDhall of
                     Left e -> pure (Left e)
                     Right toV ->
                       case planMigrationChain
                         modName.unModuleName
-                        installedModule.migrations
+                        sourceModule.migrations
                         fromV
                         toV of
                         Left e -> pure (Left (MigratePlanFailed e))
@@ -283,6 +296,113 @@ runMigrate opts manifest installedDir = do
                                 Left err -> pure (Left (MigrateExecFailed err))
                                 Right manifest' ->
                                   pure (Right (MigrateApplied plan manifest'))
+
+-- | The fetch-and-refresh wrapper. Reads @<installedDir>\/.seihou-origin.json@,
+-- clones the source repo to a temp dir, locates the module within the
+-- clone, and dispatches to 'runMigrateLocal' with the cloned module
+-- dir. On a successful non-dry-run apply, refreshes @installedDir@
+-- from the clone so the next @seihou status@/@migrate@ call sees the
+-- new version locally.
+--
+-- Any soft failure in the fetch path (missing origin metadata, clone
+-- failure, module not in remote) emits a one-line note (unless JSON
+-- output is requested, in which case the path stays silent so JSON
+-- consumers aren't disturbed) and falls back to 'runMigrateLocal'
+-- against the original 'installedDir'.
+runMigrateWithFetch ::
+  MigrateOpts ->
+  Manifest ->
+  FilePath ->
+  IO (Either MigrateError MigrateResult)
+runMigrateWithFetch opts manifest installedDir = do
+  origin <- readOriginInfo installedDir
+  case origin of
+    Nothing -> do
+      note opts $
+        "  no origin metadata at "
+          <> T.pack (installedDir </> ".seihou-origin.json")
+          <> "; using locally installed copy."
+      runMigrateLocal opts manifest installedDir
+    Just o -> withSystemTempDirectory "seihou-migrate-fetch" $ \tmp -> do
+      let cloneDir = tmp </> "clone"
+      note opts ("  Fetching " <> o.sourceUrl <> "...")
+      cloneRes <- cloneRepo o.sourceUrl cloneDir
+      case cloneRes of
+        Left err -> do
+          note opts ("  fetch failed: " <> err <> "; using locally installed copy.")
+          runMigrateLocal opts manifest installedDir
+        Right () -> do
+          contents <- discoverRepoContents evalRegistryFromFile cloneDir
+          case findRemoteModuleDir cloneDir contents opts.migrateModule of
+            Nothing -> do
+              note opts $
+                "  module '"
+                  <> opts.migrateModule.unModuleName
+                  <> "' not present in remote; using locally installed copy."
+              runMigrateLocal opts manifest installedDir
+            Just (moduleDir, tags) -> do
+              -- Plan and execute against the clone's module dir. The
+              -- chain operates on the project's working tree; the
+              -- moduleDir only supplies the migrations list and the
+              -- target version.
+              result <- runMigrateLocal opts manifest moduleDir
+              -- Refresh the installed copy on the disk so future
+              -- commands see the new version locally.
+              case result of
+                Right (MigrateApplied _ _)
+                  | not opts.migrateDryRun ->
+                      refreshInstalledFromClone moduleDir installedDir o tags
+                _ -> pure ()
+              pure result
+
+-- | Print a one-line note unless JSON output is requested. Using JSON
+-- output requires a clean, parseable stdout.
+note :: MigrateOpts -> Text -> IO ()
+note opts msg = unless opts.migrateJson (TIO.putStrLn msg)
+
+-- | Locate the module's directory inside a cloned repo and return any
+-- registry-declared tags. Returns 'Nothing' for empty repos or
+-- recipe-only repos, or for multi-module repos that do not list the
+-- requested module.
+findRemoteModuleDir ::
+  FilePath ->
+  RepoContents ->
+  ModuleName ->
+  Maybe (FilePath, [Text])
+findRemoteModuleDir cloneDir contents modName = case contents of
+  SingleModule rootDir -> Just (rootDir, [])
+  MultiModule registry ->
+    case filter (\e -> e.name == modName) registry.modules of
+      (entry : _) -> Just (cloneDir </> entry.path, entry.tags)
+      [] -> Nothing
+  SingleRecipe _ -> Nothing
+  EmptyRepo -> Nothing
+
+-- | Refresh the on-disk installed module directory from a cloned
+-- module dir. Reads the clone's @module.dhall@ for its declared
+-- version, then calls 'installModuleDir' with the same name as the
+-- existing installation (basename of @installedDir@) so the XDG-derived
+-- destination matches the original install path.
+refreshInstalledFromClone ::
+  FilePath ->
+  FilePath ->
+  OriginInfo ->
+  [Text] ->
+  IO ()
+refreshInstalledFromClone moduleDir installedDir origin tags = do
+  let dhallFile = moduleDir </> "module.dhall"
+  modulRes <- evalModuleFromFile dhallFile
+  case modulRes of
+    Left _ -> pure ()
+    Right modul -> do
+      let installedName = takeFileName installedDir
+      installModuleDir
+        moduleDir
+        installedName
+        origin.sourceUrl
+        origin.repoName
+        modul.version
+        tags
 
 -- ----------------------------------------------------------------------------
 -- Pending-migration detection (used by status / upgrade)
