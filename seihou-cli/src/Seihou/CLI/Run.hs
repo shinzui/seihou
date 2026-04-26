@@ -3,7 +3,7 @@ module Seihou.CLI.Run
   )
 where
 
-import Control.Monad (when)
+import Control.Monad (foldM, when)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Set qualified as Set
@@ -14,6 +14,13 @@ import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
+import Seihou.CLI.Migrate
+  ( MigrateError (..),
+    MigrateOpts (..),
+    MigrateResult (..),
+    runMigrate,
+  )
+import Seihou.CLI.PendingMigrations (detectPendingMigrations, formatRefusalMessage)
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
@@ -22,9 +29,11 @@ import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Context (resolveContext)
+import Seihou.Core.Migration (MigrationChain (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution)
+import Seihou.Core.Version (renderVersion)
 import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConfigWriterInterp (runConfigWriter)
@@ -190,26 +199,37 @@ handleRun runOpts = do
         [(dest, content, modName, Nothing) | WriteFileOp dest content _ <- opsFiltered]
           ++ [(dest, content, mName, Just pOp) | PatchFileOp dest content pOp _ mName <- opsFiltered]
 
-  (manifest, diff) <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
-    -- Ensure .seihou/ directory exists
+  -- 6a. Read the manifest before computing the diff so the pre-flight
+  -- migration check can run against it (and, with --with-migrations, so
+  -- 'runMigrate' can rewrite it before the diff is taken).
+  existingRes <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     createDirectoryIfMissing True (takeDirectory manifestPath)
+    readManifest
+  initialManifest <- case existingRes of
+    Left err -> do
+      logIO level (logError $ "Error reading manifest: " <> err)
+      exitFailure
+    Right m -> pure (fromMaybe (emptyManifest now) m)
 
-    -- Load existing manifest (or empty)
-    existingResult <- readManifest
-    existing <- case existingResult of
-      Left err -> liftIO $ do
-        logIO level (logError $ "Error reading manifest: " <> err)
-        exitFailure
-      Right m -> pure m
-    let m = fromMaybe (emptyManifest now) existing
+  -- 6b. Pre-flight pending-migration check. We only consider modules in
+  -- the current composition: a pending chain on an unrelated module
+  -- must not block this run.
+  let composedModuleNames =
+        Set.fromList [m.name | (_, m, _) <- modulesInOrder]
+  pendings <-
+    detectPendingMigrations initialManifest (Just composedModuleNames)
+  manifest <-
+    handlePendingMigrations level runOpts manifestPath initialManifest pendings
+
+  -- 6c. Compute the diff against the (possibly post-migration) manifest.
+  diff <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     -- Diff needs every name that could own a manifest file. Each
     -- instance owns its qualified name; the bare module name is still
     -- matched to cover manifest entries written before the schema bump.
     let composedNames =
           Set.fromList $
             concatMap (\(inst, _, _) -> [inst.instanceModule, qualifiedName inst]) modulesInOrder
-    d <- computeDiff m composedNames planned
-    pure (m, d)
+    computeDiff manifest composedNames planned
 
   colorEnabled <- useColor
 
@@ -435,6 +455,122 @@ executeCommand level (cmd, workDir) = do
       when (not (T.null cmdErr)) $ TIO.putStr cmdErr
       logIO level (logError $ "Command failed (exit " <> T.pack (show code) <> "): " <> cmd)
       exitFailure
+
+-- | Apply the pending-migration policy: refuse without
+-- @--with-migrations@, show a chain summary in dry-run mode, or apply
+-- chains in-band before the run plan is computed.
+--
+-- Returns the manifest the run flow should continue with — either the
+-- one that was passed in (refusal aborts before this returns; dry-run
+-- with-migrations leaves disk and manifest untouched) or the
+-- post-migration manifest (non-dry-run with-migrations).
+handlePendingMigrations ::
+  LogLevel ->
+  RunOpts ->
+  FilePath ->
+  Manifest ->
+  [(ModuleName, MigrationChain)] ->
+  IO Manifest
+handlePendingMigrations _ _ _ manifest [] = pure manifest
+handlePendingMigrations level runOpts manifestPath manifest pendings
+  | not runOpts.runWithMigrations = do
+      TIO.putStr (formatRefusalMessage pendings)
+      exitFailure
+  | runOpts.runDryRun = do
+      TIO.putStrLn "Pending migrations would be applied (--with-migrations + --dry-run):"
+      mapM_ (TIO.putStrLn . renderPendingSummary) pendings
+      TIO.putStrLn ""
+      TIO.putStrLn "Note: the run plan below is computed against the current (pre-migration)"
+      TIO.putStrLn "disk state. Re-run without --dry-run to apply migrations and regenerate."
+      pure manifest
+  | otherwise = do
+      logIO level (logInfo "Applying pending migrations before run plan...")
+      manifest' <- foldM (applyOneMigration level) manifest pendings
+      runEff $
+        runFilesystem $
+          runManifestStore manifestPath $
+            writeManifest manifest'
+      pure manifest'
+
+renderPendingSummary :: (ModuleName, MigrationChain) -> Text
+renderPendingSummary (name, chain) =
+  "  "
+    <> name.unModuleName
+    <> ": "
+    <> renderVersion chain.chainFrom
+    <> " -> "
+    <> renderVersion chain.chainTo
+    <> " ("
+    <> T.pack (show (length chain.chainSteps))
+    <> " step(s))"
+
+-- | Apply one pending chain in-band. Reuses 'runMigrate' with
+-- @migrateNoFetch=True@ since 'detectPendingMigrations' already
+-- compared against the locally installed copy: there is no need to
+-- clone the source repo a second time. Migration conflicts (a tracked
+-- file the user has edited since generation) propagate as a hard
+-- failure here; @seihou run --force@ governs the run plan's diff
+-- conflicts, not migration conflicts. The fix is to run @seihou
+-- migrate <module> --force@ first.
+applyOneMigration ::
+  LogLevel ->
+  Manifest ->
+  (ModuleName, MigrationChain) ->
+  IO Manifest
+applyOneMigration level manifest (modName, _chain) =
+  case findAppliedByName manifest modName of
+    Nothing -> do
+      logIO level $
+        logError $
+          "internal error: applied module '"
+            <> modName.unModuleName
+            <> "' missing while applying its migration"
+      exitFailure
+    Just am -> do
+      let opts =
+            MigrateOpts
+              { migrateModule = modName,
+                migrateTo = Nothing,
+                migrateDryRun = False,
+                migrateForce = False,
+                migrateJson = False,
+                migrateVerbose = False,
+                migrateNoFetch = True
+              }
+      result <- runMigrate opts manifest am.source
+      case result of
+        Right (MigrateApplied _ manifest') -> do
+          TIO.putStrLn $ "  Migrated " <> modName.unModuleName
+          pure manifest'
+        Right (MigrateNoOp _) -> pure manifest
+        Right (MigrateDryRunOK _) -> pure manifest
+        Left err -> do
+          logIO level $
+            logError $
+              "Migration failed for "
+                <> modName.unModuleName
+                <> ": "
+                <> renderMigrateError err
+          exitFailure
+
+renderMigrateError :: MigrateError -> Text
+renderMigrateError err = case err of
+  MigrateModuleNotApplied n -> "module " <> n.unModuleName <> " not applied"
+  MigrateNoRecordedVersion n -> "no version recorded for " <> n.unModuleName
+  MigrateInstalledModuleEvalFailed _ msg -> msg
+  MigrateInstalledModuleHasNoVersion n _ -> "no version on installed " <> n.unModuleName
+  MigrateUnparseableInstalledVersion v -> "bad version " <> v
+  MigrateUnparseableTargetVersion v -> "bad target version " <> v
+  MigrateUnparseableManifestVersion v -> "bad manifest version " <> v
+  MigratePlanFailed _ -> "plan failed"
+  MigrateExecFailed _ -> "execution failed; revert your edits or run 'seihou migrate <module> --force' first"
+  MigrateNoManifest _ -> "no manifest in current dir"
+
+findAppliedByName :: Manifest -> ModuleName -> Maybe AppliedModule
+findAppliedByName manifest name =
+  case filter (\am -> am.name == name) manifest.modules of
+    (am : _) -> Just am
+    [] -> Nothing
 
 -- | Update manifest's applied modules list with all composed modules.
 -- | Merge the freshly-composed module instances into the manifest's

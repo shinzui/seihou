@@ -27,9 +27,8 @@ You can see this working by running `seihou run master-plan --dry-run` from `/Us
 
 - [x] M1+M2: Extracted `Seihou.CLI.PendingMigrations` (filter-aware `detectPendingMigrations` + `formatRefusalMessage`); refactored `Seihou.CLI.Status` to use it.
 - [x] M1+M2: Tests for the new helpers in `Seihou.CLI.PendingMigrationSpec` (filter, missing module.dhall, no-chain, message formatting).
-- [ ] M3: Wire pre-flight + refusal path into `Seihou.CLI.Run.handleRun`.
-- [ ] M4: Add `--with-migrations` flag; on opt-in, apply the chain before executing the plan.
-- [ ] M5: Tests: refusal path, opt-in path, no-pending-migration path, unrelated-module path.
+- [x] M3+M4: Added `runWithMigrations :: Bool` to `RunOpts`; threaded `--with-migrations` through `Commands.hs`; inserted pre-flight check in `Seihou.CLI.Run.handleRun` between manifest read and diff compute. Refusal path prints `formatRefusalMessage` and exits 1; opt-in path calls `runMigrate` per pending module with `migrateNoFetch=True`, persists the post-migration manifest, and continues; dry-run + opt-in prints a chain summary and proceeds with a pre-migration-state caveat.
+- [ ] M5: Additional tests covering the in-band apply path and unrelated-module non-blocking.
 - [ ] M6: End-to-end demonstration on the seihou-project working tree.
 - [ ] M7: Update `docs/cli/run.md` and `docs/user/CHANGELOG.md`.
 

@@ -103,7 +103,15 @@ data RunOpts = RunOpts
     runSavePrompted :: Maybe Bool,
     runConfirmDefaults :: Bool,
     runCommit :: Bool,
-    runCommitMessage :: Maybe Text
+    runCommitMessage :: Maybe Text,
+    -- | When 'True', a pre-flight pending-migration check that finds
+    -- any chain for one of the composed modules will apply that chain
+    -- to the project (and the manifest) before the run plan is
+    -- computed. When 'False' (the default), pending chains cause
+    -- 'seihou run' to refuse with an actionable message and a
+    -- non-zero exit, so a user never silently writes new templates
+    -- into paths a migration would have moved.
+    runWithMigrations :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -352,13 +360,20 @@ runInfo =
                   pretty ("new, modified, unchanged, and conflicting files. Conflicts are" :: String),
                   pretty ("reported and block execution unless --force is used." :: String),
                   line,
+                  pretty ("If an applied module's installed copy has advanced past the manifest's" :: String),
+                  pretty ("recorded version and ships migrations that move project files," :: String),
+                  pretty ("'seihou run' refuses to proceed (so it never writes new templates into" :: String),
+                  pretty ("paths a migration would have moved). Run 'seihou migrate <module>'" :: String),
+                  pretty ("first, or pass --with-migrations to apply pending chains in-band." :: String),
+                  line,
                   pretty ("Examples:" :: String),
                   indent 2 $
                     vsep
                       [ pretty ("seihou run haskell-base --var project.name=my-app" :: String),
                         pretty ("seihou run haskell-base -m nix-flake --dry-run" :: String),
                         pretty ("seihou run my-module --diff" :: String),
-                        pretty ("seihou run haskell-base --confirm-defaults   # review and override default values" :: String)
+                        pretty ("seihou run haskell-base --confirm-defaults   # review and override default values" :: String),
+                        pretty ("seihou run haskell-base --with-migrations    # apply pending migrations before regenerating" :: String)
                       ]
                 ]
           )
@@ -631,6 +646,10 @@ runParser =
       <*> switch (long "confirm-defaults" <> help "Step through default values and confirm or override each one")
       <*> switch (long "commit" <> help "Commit generated files to git after execution (uses AI-generated message)")
       <*> optional (option (T.pack <$> str) (long "commit-message" <> metavar "MSG" <> help "Custom commit message (implies --commit)"))
+      <*> switch
+        ( long "with-migrations"
+            <> help "Apply any pending module migrations before the run plan; without this, 'seihou run' refuses when migrations are pending"
+        )
 
 varsParser :: Parser Command
 varsParser =
