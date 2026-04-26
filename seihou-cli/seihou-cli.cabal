@@ -31,6 +31,7 @@ library seihou-cli-internal
     Seihou.CLI.Registry.Sync
     Seihou.CLI.RemoteVersion
     Seihou.CLI.SavePrompted
+    Seihou.CLI.StatusRender
     Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
     Seihou.Effect.FzfInterp
@@ -111,6 +112,7 @@ executable seihou
     Seihou.CLI.Setup
     Seihou.CLI.Shared
     Seihou.CLI.Status
+    Seihou.CLI.StatusRender
     Seihou.CLI.Style
     Seihou.CLI.Upgrade
     Seihou.CLI.Validate
@@ -170,6 +172,7 @@ test-suite seihou-cli-test
     Seihou.CLI.Registry.SyncSpec
     Seihou.CLI.RemoteVersionSpec
     Seihou.CLI.SavePromptedSpec
+    Seihou.CLI.StatusSpec
     Seihou.CLI.UpgradeSpec
     Seihou.FzfSpec
 
