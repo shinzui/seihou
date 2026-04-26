@@ -42,7 +42,45 @@ You can see this working by running `seihou migrate master-plan` from `/Users/sh
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **Read points in `Migrate.hs` that the fetch path replaces.** In `handleMigrate`,
+  the installed `module.dhall` path is computed from `applied.source` at line 138:
+
+      let installedDhall = applied.source </> "module.dhall"
+
+  and parsed at lines 142–146. The "nothing to do" branch is the
+  `Right Nothing` arm of `planMigrationChain` at lines 163–172:
+
+      Right Nothing -> do
+        ...
+        TIO.putStrLn $
+          applyColor colorEnabled green "✓"
+            <> " "
+            <> modName.unModuleName
+            <> " is already at version "
+            <> renderVersion toV
+            <> "; nothing to do."
+        exitSuccess
+
+  In `runMigrate`, the analogous reads are at lines 236–248 (computing
+  `installedDhall` from the `installedDir` parameter) and the `Right Nothing`
+  arm at line 267 returns `MigrateNoOp toV` instead of printing.
+
+  After this plan, the fetch path cleanly replaces the source dir for both
+  reads: when fetch is enabled, `runMigrate` is called with the cloned
+  module dir as `installedDir` instead of `applied.source`, so the same
+  read sites end up looking at the remote's `module.dhall` and `migrations`.
+
+- **Install helpers were executable-only.** `installModuleDir`, `cloneRepo`,
+  and `copyDirectoryRecursive` lived in `Seihou.CLI.Install` (executable
+  target only). To call them from `Seihou.CLI.Migrate` (library), they were
+  extracted into a new library-exposed module
+  `seihou-cli/src/Seihou/CLI/InstallShared.hs`. `OriginInfo` (read side of
+  `.seihou-origin.json`) was moved there too so `Outdated.hs`,
+  `Upgrade.hs`, and the new `Migrate.hs` fetch path all share a single
+  definition. `cloneRepo` was changed from `IO ()` (with `exitFailure` on
+  failure) to `IO (Either Text ())` so callers — especially the migrate
+  fetch path — can recover and fall back to local-only behavior on
+  unreachable remotes.
 
 
 ## Decision Log

@@ -23,6 +23,7 @@ library seihou-cli-internal
     Seihou.CLI.Git
     Seihou.CLI.Init
     Seihou.CLI.InstallHistory
+    Seihou.CLI.InstallShared
     Seihou.CLI.List
     Seihou.CLI.Migrate
     Seihou.CLI.Registry
@@ -89,6 +90,7 @@ executable seihou
     Seihou.CLI.Init
     Seihou.CLI.Install
     Seihou.CLI.InstallHistory
+    Seihou.CLI.InstallShared
     Seihou.CLI.Kit
     Seihou.CLI.List
     Seihou.CLI.Migrate

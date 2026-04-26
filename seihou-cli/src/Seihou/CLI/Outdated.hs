@@ -13,7 +13,7 @@ module Seihou.CLI.Outdated
 where
 
 import Control.Exception (SomeException, try)
-import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.:?), (.=))
+import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy qualified as LBS
@@ -21,6 +21,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (OutdatedOpts (..))
+import Seihou.CLI.InstallShared (OriginInfo (..))
 import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
@@ -62,17 +63,6 @@ data CheckStats = CheckStats
     skippedNoOrigin :: Int
   }
   deriving stock (Eq, Show)
-
--- | Origin metadata read from @.seihou-origin.json@.
-data OriginInfo = OriginInfo
-  { sourceUrl :: Text,
-    repoName :: Maybe Text,
-    version :: Maybe Text
-  }
-
-instance FromJSON OriginInfo where
-  parseJSON = withObject "OriginInfo" $ \v ->
-    OriginInfo <$> v .: "sourceUrl" <*> v .:? "repoName" <*> v .:? "version"
 
 handleOutdated :: OutdatedOpts -> IO ()
 handleOutdated oopts = do

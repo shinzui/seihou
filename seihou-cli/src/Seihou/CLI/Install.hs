@@ -8,15 +8,11 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Monad (when)
-import Data.Aeson (ToJSON (..), object, (.=))
-import Data.Aeson.Encode.Pretty (encodePretty)
-import Data.ByteString.Lazy qualified as LBS
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Data.Time (getCurrentTime)
-import Data.Time.Format.ISO8601 (iso8601Show)
 import Seihou.CLI.Commands (InstallOpts (..))
 import Seihou.CLI.InstallHistory (HistoryEntry (..), InstallHistory (..), readHistory, recordUrl)
+import Seihou.CLI.InstallShared (cloneRepo, copyDirectoryRecursive, installModuleDir)
 import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
@@ -30,20 +26,10 @@ import Seihou.Effect.Logger (logError, logWarn)
 import Seihou.Fzf (Candidate (..), FzfConfig, FzfResult (..), detectFzfConfig, isFzfUsable, withAnsi, withHeader, withHeight, withNoSort, withPrompt)
 import Seihou.Fzf qualified
 import Seihou.Prelude
-import System.Directory
-  ( XdgDirectory (..),
-    copyFile,
-    createDirectoryIfMissing,
-    doesDirectoryExist,
-    doesFileExist,
-    getXdgDirectory,
-    listDirectory,
-    removeDirectoryRecursive,
-  )
-import System.Exit (ExitCode (..), exitFailure)
+import System.Directory (doesFileExist)
+import System.Exit (exitFailure)
 import System.IO (hFlush, stdout)
 import System.IO.Temp (withSystemTempDirectory)
-import System.Process (readProcessWithExitCode)
 
 handleInstall :: InstallOpts -> IO ()
 handleInstall iopts = do
@@ -55,7 +41,13 @@ handleInstall iopts = do
   withSystemTempDirectory "seihou-install" $ \tmpDir -> do
     let repoName = parseModuleName source
         cloneDir = tmpDir </> repoName
-    cloneRepo source cloneDir
+    cloneRes <- cloneRepo source cloneDir
+    case cloneRes of
+      Left err -> do
+        logIO LogNormal $ do
+          logError err
+        exitFailure
+      Right () -> TIO.putStrLn "  Cloned repository"
 
     -- Determine what the repo contains
     contents <- discoverRepoContents evalRegistryFromFile cloneDir
@@ -147,19 +139,6 @@ promptUrlSelection entries = do
     _ -> do
       TIO.putStrLn "Invalid selection."
       exitFailure
-
--- | Clone a git repo shallowly into the target directory.
-cloneRepo :: Text -> FilePath -> IO ()
-cloneRepo source cloneDir = do
-  (exitCode, _stdout, stderr) <- readProcessWithExitCode "git" ["clone", "--depth", "1", T.unpack source, cloneDir] ""
-  case exitCode of
-    ExitFailure _ -> do
-      logIO LogNormal $ do
-        logError $ "git clone failed for '" <> source <> "'."
-        logError $ "  " <> T.pack stderr
-      exitFailure
-    ExitSuccess -> pure ()
-  TIO.putStrLn "  Cloned repository"
 
 -- | Install a single-module repo (legacy behavior).
 installSingleModule :: InstallOpts -> FilePath -> Text -> Maybe Text -> IO ()
@@ -368,55 +347,6 @@ installRegistryEntry cloneDir source repoName entry = do
           logIO LogNormal $ do
             logError $ "  entry '" <> entry.name.unModuleName <> "' has neither module.dhall nor recipe.dhall at " <> T.pack entry.path
           pure False
-
--- | Copy a module directory to the install location and write origin metadata.
-installModuleDir :: FilePath -> String -> Text -> Maybe Text -> Maybe Text -> [Text] -> IO ()
-installModuleDir moduleDir name source registryName moduleVersion moduleTags = do
-  xdgConfig <- getXdgDirectory XdgConfig "seihou"
-  let installDir = xdgConfig </> "installed" </> name
-
-  exists <- doesDirectoryExist installDir
-  when exists $ do
-    logIO LogNormal (logWarn $ "overwriting existing installation of '" <> T.pack name <> "'")
-    removeDirectoryRecursive installDir
-
-  createDirectoryIfMissing True installDir
-  copyDirectoryRecursive moduleDir installDir
-
-  -- Write origin metadata
-  now <- getCurrentTime
-  let origin = OriginMeta source registryName (T.pack (iso8601Show now)) moduleVersion moduleTags
-  LBS.writeFile (installDir </> ".seihou-origin.json") (encodePretty origin)
-
--- | Origin metadata stored alongside installed modules.
-data OriginMeta = OriginMeta
-  { sourceUrl :: Text,
-    repoName :: Maybe Text,
-    installedAt :: Text,
-    version :: Maybe Text,
-    tags :: [Text]
-  }
-
-instance ToJSON OriginMeta where
-  toJSON m = object ["sourceUrl" .= m.sourceUrl, "repoName" .= m.repoName, "installedAt" .= m.installedAt, "version" .= m.version, "tags" .= m.tags]
-
--- | Recursively copy a directory tree, excluding the @.git@ directory.
-copyDirectoryRecursive :: FilePath -> FilePath -> IO ()
-copyDirectoryRecursive src dst = do
-  entries <- listDirectory src
-  mapM_ (copyEntry src dst) entries
-  where
-    copyEntry s d entry
-      | entry == ".git" = pure ()
-      | otherwise = do
-          let srcPath = s </> entry
-              dstPath = d </> entry
-          isDir <- doesDirectoryExist srcPath
-          if isDir
-            then do
-              createDirectoryIfMissing True dstPath
-              copyDirectoryRecursive srcPath dstPath
-            else copyFile srcPath dstPath
 
 readMaybe :: String -> Maybe Int
 readMaybe s = case reads s of

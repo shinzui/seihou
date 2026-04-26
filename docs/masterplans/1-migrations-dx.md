@@ -50,7 +50,7 @@ Alternatives considered:
 | #   | Title                                                        | Path                                                | Hard Deps | Soft Deps | Status      |
 |-----|--------------------------------------------------------------|-----------------------------------------------------|-----------|-----------|-------------|
 | 1   | Fix `outdated` and `upgrade` to detect true module versions  | docs/plans/14-fix-outdated-version-detection.md     | None      | None      | Complete    |
-| 2   | Make `seihou migrate` self-contained (no manual upgrade)     | docs/plans/15-make-migrate-self-contained.md        | EP-1      | None      | Not Started |
+| 2   | Make `seihou migrate` self-contained (no manual upgrade)     | docs/plans/15-make-migrate-self-contained.md        | EP-1      | None      | In Progress |
 | 3   | Make `seihou run` migration-aware                            | docs/plans/16-make-run-migration-aware.md           | EP-2      | EP-1      | Not Started |
 | 4   | Make `seihou status` surface staleness and pending migrations | docs/plans/17-improve-status-migration-visibility.md | EP-1      | EP-2      | Not Started |
 
