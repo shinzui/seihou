@@ -112,15 +112,16 @@ point. Add timestamps in `YYYY-MM-DD` form.
         Recorded under Decision Log.
   - [x] Update `seihou-cli/test/Seihou/CLI/MigrateSpec.hs::defaultOpts`
         as noted under M1 (already done in M1).
-- [ ] M4 — documentation
-  - [ ] Update `docs/cli/migrate.md` to add `--commit` and
+- [x] M4 — documentation (2026-04-27)
+  - [x] Update `docs/cli/migrate.md` to add `--commit` and
         `--commit-message` rows to the **Options** table, an
         `## Auto-commit` section that mirrors the wording in
         `docs/cli/run.md`, and at least one new example.
-  - [ ] Cross-link from `docs/cli/run.md` if the run-side commit section
+  - [x] Cross-link from `docs/cli/run.md` if the run-side commit section
         already names migrate as a sibling; otherwise leave run.md
-        alone.
-  - [ ] Add an entry to `docs/user/CHANGELOG.md` under the next
+        alone. (run.md's commit-integration section did not name
+        migrate; left untouched per plan.)
+  - [x] Add an entry to `docs/user/CHANGELOG.md` under the next
         unreleased heading describing the new flag pair.
 - [ ] M5 — end-to-end verification
   - [ ] In a scratch git repo with a manifest at version `1.0.0` and an
