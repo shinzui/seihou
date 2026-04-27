@@ -386,7 +386,9 @@ runOnePostUpgradeMigration installedDir name = do
                 -- installed copy via 'seihou upgrade'; skip the
                 -- redundant fetch in 'runMigrate'.
                 migrateNoFetch = True,
-                migrateBumpOnly = False
+                migrateBumpOnly = False,
+                migrateCommit = False,
+                migrateCommitMessage = Nothing
               }
       result <- runMigrate opts manifest installedDir
       case result of

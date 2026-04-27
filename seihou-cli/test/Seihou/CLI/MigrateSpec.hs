@@ -152,7 +152,9 @@ defaultOpts =
       -- Existing local-only tests pass an installed dir directly; they
       -- do not need (and must not perform) network IO.
       migrateNoFetch = True,
-      migrateBumpOnly = False
+      migrateBumpOnly = False,
+      migrateCommit = False,
+      migrateCommitMessage = Nothing
     }
 
 -- ----------------------------------------------------------------------------

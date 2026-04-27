@@ -947,6 +947,8 @@ migrateParser =
         ( long "bump-only"
             <> help "Refresh the manifest version to match the installed copy without running migration ops (mutually exclusive with --to)"
         )
+      <*> switch (long "commit" <> help "Commit migrated files to git after execution (uses AI-generated message)")
+      <*> optional (option (T.pack <$> str) (long "commit-message" <> metavar "MSG" <> help "Custom commit message (implies --commit)"))
 
 migrateFooter :: Doc
 migrateFooter =
@@ -978,7 +980,8 @@ migrateFooter =
             pretty ("seihou migrate haskell-base --dry-run      # preview only" :: String),
             pretty ("seihou migrate haskell-base --to 1.5.0     # stop at intermediate version" :: String),
             pretty ("seihou migrate haskell-base --force        # overwrite conflicted files" :: String),
-            pretty ("seihou migrate haskell-base --json         # machine-readable plan" :: String)
+            pretty ("seihou migrate haskell-base --json         # machine-readable plan" :: String),
+            pretty ("seihou migrate haskell-base --commit       # auto-commit after migrate" :: String)
           ],
       line,
       pretty ("See also: seihou help migrations" :: String)

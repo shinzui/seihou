@@ -655,7 +655,9 @@ applyOneMigration level manifest (modName, plan) =
                     migrateJson = False,
                     migrateVerbose = False,
                     migrateNoFetch = True,
-                    migrateBumpOnly = False
+                    migrateBumpOnly = False,
+                    migrateCommit = False,
+                    migrateCommitMessage = Nothing
                   }
           result <- runMigrate opts manifest am.source
           case result of
@@ -729,7 +731,9 @@ bumpOneBlocked level manifest (modName, plan) =
                 migrateJson = False,
                 migrateVerbose = False,
                 migrateNoFetch = True,
-                migrateBumpOnly = True
+                migrateBumpOnly = True,
+                migrateCommit = False,
+                migrateCommitMessage = Nothing
               }
           (fromV, toV) = bumpRange plan
       result <- runMigrate opts manifest am.source
