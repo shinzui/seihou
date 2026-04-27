@@ -12,6 +12,7 @@ import Seihou.Core.Migration
   ( Migration (..),
     MigrationChain (..),
     MigrationOp (..),
+    MigrationPlan (..),
   )
 import Seihou.Core.Types
   ( AppliedModule (..),
@@ -138,43 +139,57 @@ spec = do
           installed = mkInstalled (Just "1.0.0") []
       pendingChainFor am installed `shouldBe` Nothing
 
-    it "returns Just chain when manifest is behind installed" $ do
+    it "returns Just plan with full chain when manifest is behind installed" $ do
       let mig = Migration "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]
           am = mkApplied (Just "1.0.0")
           installed = mkInstalled (Just "2.0.0") [mig]
       case pendingChainFor am installed of
-        Just chain -> chain.chainSteps `shouldBe` [mig]
-        Nothing -> expectationFailure "expected Just chain"
-
-    it "returns Nothing when no migration covers the gap" $ do
-      let am = mkApplied (Just "1.0.0")
-          installed = mkInstalled (Just "2.0.0") []
-      pendingChainFor am installed `shouldBe` Nothing
+        Just plan -> do
+          plan.planUnreachable `shouldBe` Nothing
+          plan.planChain.chainSteps `shouldBe` [mig]
+        Nothing -> expectationFailure "expected Just plan"
 
     it "returns Nothing for downgrade (manifest > installed)" $ do
       let am = mkApplied (Just "2.0.0")
           installed = mkInstalled (Just "1.0.0") []
       pendingChainFor am installed `shouldBe` Nothing
 
-    -- Pin the current partial-chain silence (mirrors live-tree
-    -- master-plan: manifest=0.1.0, installed=0.3.0, edges=[0.1.0→0.2.0]).
-    -- EP-5 will flip this to a Just plan with reachable prefix +
-    -- unreachable tail.
-    it "currently returns Nothing for a partial chain (pinned for EP-5)" $ do
+    -- EP-5: partial chain returns a plan with the unreachable tail
+    -- in-band rather than collapsing to Nothing. This is the master-plan
+    -- live-tree fixture (manifest=0.1.0, installed=0.3.0,
+    -- edges=[0.1.0 -> 0.2.0]).
+    it "returns a partial plan when the chain reaches some intermediate version" $ do
       let am = mkApplied (Just "0.1.0")
-          installed =
-            mkInstalled (Just "0.3.0") [Migration "0.1.0" "0.2.0" []]
-      pendingChainFor am installed `shouldBe` Nothing
+          mig = Migration "0.1.0" "0.2.0" [DeleteFile "x"]
+          installed = mkInstalled (Just "0.3.0") [mig]
+      case pendingChainFor am installed of
+        Just plan -> do
+          plan.planChain.chainSteps `shouldBe` [mig]
+          plan.planUnreachable `shouldSatisfy` \mt -> case mt of
+            Just (s, t) ->
+              Seihou.Core.Version.renderVersion s == "0.2.0"
+                && Seihou.Core.Version.renderVersion t == "0.3.0"
+            Nothing -> False
+        Nothing -> expectationFailure "expected Just plan with partial chain"
 
-    -- Pin the current no-chain-at-all silence (mirrors live-tree
-    -- exec-plan: manifest=0.1.3, installed=0.3.0, no migrations).
-    it "currently returns Nothing when no edge starts at the manifest version (pinned for EP-5)" $ do
+    -- EP-5: blocked plan returns an empty chain plus the unreachable
+    -- tail covering the full span. Live-tree exec-plan fixture
+    -- (manifest=0.1.3, installed=0.3.0, no migrations declared).
+    it "returns a blocked plan when no edge starts at the manifest version" $ do
       let am = mkApplied (Just "0.1.3")
           installed = mkInstalled (Just "0.3.0") []
-      pendingChainFor am installed `shouldBe` Nothing
+      case pendingChainFor am installed of
+        Just plan -> do
+          plan.planChain.chainSteps `shouldBe` []
+          plan.planUnreachable `shouldSatisfy` \mt -> case mt of
+            Just (s, t) ->
+              Seihou.Core.Version.renderVersion s == "0.1.3"
+                && Seihou.Core.Version.renderVersion t == "0.3.0"
+            Nothing -> False
+        Nothing -> expectationFailure "expected Just plan with blocked chain"
 
   describe "detectPendingMigrations" $ do
-    it "with Nothing filter, surfaces every applied module's pending chain" $
+    it "with Nothing filter, surfaces every applied module's pending plan" $
       withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
         let aDir = dir </> "demo-a"
             bDir = dir </> "demo-b"
@@ -261,19 +276,61 @@ spec = do
 
   describe "formatRefusalMessage" $ do
     it "lists each module's chain summary and the actionable next step" $ do
-      let chain =
-            MigrationChain
-              { migrationModule = "demo",
-                chainFrom = parseV "1.0.0",
-                chainTo = parseV "2.0.0",
-                chainSteps =
-                  [Migration "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]]
+      let plan =
+            MigrationPlan
+              { planChain =
+                  MigrationChain
+                    { migrationModule = "demo",
+                      chainFrom = parseV "1.0.0",
+                      chainTo = parseV "2.0.0",
+                      chainSteps =
+                        [Migration "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]]
+                    },
+                planUnreachable = Nothing
               }
-          msg = formatRefusalMessage [(ModuleName "demo", chain)]
+          msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "Pending migrations detected:"
       msg `shouldSatisfy` T.isInfixOf "demo: 1.0.0 -> 2.0.0 (1 step(s))"
       msg `shouldSatisfy` T.isInfixOf "--with-migrations"
       msg `shouldSatisfy` T.isInfixOf "seihou migrate <module>"
+
+    -- EP-5: partial-chain rows include the unreachable-tail advisory
+    -- so the user knows the chain doesn't reach the latest remote
+    -- version even after they apply it.
+    it "annotates a partial-chain entry with the unreachable tail" $ do
+      let plan =
+            MigrationPlan
+              { planChain =
+                  MigrationChain
+                    { migrationModule = "demo",
+                      chainFrom = parseV "0.1.0",
+                      chainTo = parseV "0.2.0",
+                      chainSteps = [Migration "0.1.0" "0.2.0" []]
+                    },
+                planUnreachable = Just (parseV "0.2.0", parseV "0.3.0")
+              }
+          msg = formatRefusalMessage [(ModuleName "demo", plan)]
+      msg `shouldSatisfy` T.isInfixOf "demo: 0.1.0 -> 0.2.0"
+      msg `shouldSatisfy` T.isInfixOf "no migration declared from 0.2.0"
+      msg `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
+
+    -- EP-5: blocked rows print a Blocked: prefix and skip the chain
+    -- summary (there are no steps to summarize).
+    it "prints a Blocked entry when the plan has no reachable steps" $ do
+      let plan =
+            MigrationPlan
+              { planChain =
+                  MigrationChain
+                    { migrationModule = "demo",
+                      chainFrom = parseV "0.1.3",
+                      chainTo = parseV "0.1.3",
+                      chainSteps = []
+                    },
+                planUnreachable = Just (parseV "0.1.3", parseV "0.3.0")
+              }
+          msg = formatRefusalMessage [(ModuleName "demo", plan)]
+      msg `shouldSatisfy` T.isInfixOf "demo: Blocked: no migration declared from 0.1.3"
+      msg `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
 
 parseV :: Text -> Seihou.Core.Version.Version
 parseV t = case Seihou.Core.Version.parseVersion t of

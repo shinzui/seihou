@@ -13,6 +13,7 @@ import Seihou.Core.Migration
   ( Migration (..),
     MigrationChain (..),
     MigrationOp (..),
+    MigrationPlan (..),
   )
 import Seihou.Core.Types
   ( AppliedModule (..),
@@ -64,6 +65,10 @@ mkChain modName from to nSteps =
       chainSteps = replicate nSteps (Migration from to [DeleteFile "x"])
     }
 
+-- | Wrap a fully-reachable chain into a 'MigrationPlan' for formatStatus.
+fullPlan :: MigrationChain -> MigrationPlan
+fullPlan chain = MigrationPlan {planChain = chain, planUnreachable = Nothing}
+
 parseV :: Text -> Seihou.Core.Version.Version
 parseV t = case Seihou.Core.Version.parseVersion t of
   Just v -> v
@@ -106,7 +111,7 @@ spec = describe "formatStatus" $ do
     let am = mkApplied "demo" (Just "1.0.0")
         manifest = mkManifest [am]
         chain = mkChain "demo" "1.0.0" "2.0.0" 1
-        out = formatStatus False manifest [] Nothing [(ModuleName "demo", chain)]
+        out = formatStatus False manifest [] Nothing [(ModuleName "demo", fullPlan chain)]
     out `shouldSatisfy` T.isInfixOf "Pending migration: 1.0.0 -> 2.0.0 (1 operation(s))"
     out `shouldSatisfy` T.isInfixOf "Run: seihou migrate demo"
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
@@ -118,7 +123,7 @@ spec = describe "formatStatus" $ do
         manifest = mkManifest [am]
         chain = mkChain "demo" "0.1.0" "0.2.0" 6
         entries = Just [mkEntry "demo" (Just "0.1.0") (Just "0.3.0") OutdatedSt]
-        out = formatStatus False manifest [] entries [(ModuleName "demo", chain)]
+        out = formatStatus False manifest [] entries [(ModuleName "demo", fullPlan chain)]
     out `shouldSatisfy` T.isInfixOf "outdated: 0.3.0 available"
     out `shouldSatisfy` T.isInfixOf "Pending migration: 0.1.0 -> 0.2.0 (6 operation(s))"
     out `shouldSatisfy` T.isInfixOf "Run: seihou migrate demo"

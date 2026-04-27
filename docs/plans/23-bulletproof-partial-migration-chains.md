@@ -100,17 +100,17 @@ declared (no-chain-at-all). After this plan:
 - [x] Repro the live-tree failure with regression tests against fixtures
       that mirror master-plan (partial chain) and exec-plan (no chain) and
       assert the current planner returns `MigrationGap` on both.
-- [ ] Change the planner contract in `seihou-core/src/Seihou/Core/Migration.hs`:
+- [x] Change the planner contract in `seihou-core/src/Seihou/Core/Migration.hs`:
       introduce a richer success type that returns a (possibly empty)
       reachable chain plus an optional unreachable tail; keep
       `MigrationGap` only as a hard error for the explicit `--to TARGET`
       case where the target cannot be reached.
-- [ ] Update every existing planner test in
+- [x] Update every existing planner test in
       `seihou-core/test/Seihou/Core/MigrationSpec.hs` to the new shape.
-- [ ] Update `pendingChainFor` in `seihou-cli/src/Seihou/CLI/Migrate.hs` to
+- [x] Update `pendingChainFor` in `seihou-cli/src/Seihou/CLI/Migrate.hs` to
       return the new shape; update its callers in `Status.hs` (via
       `PendingMigrations.hs`), `Upgrade.hs`, and `Run.hs`.
-- [ ] Update `seihou migrate <module>` to apply the longest reachable
+- [x] Update `seihou migrate <module>` to apply the longest reachable
       prefix, refresh the manifest's `moduleVersion`, and print the
       unreachable-tail advisory when one exists. Preserve the
       `--to TARGET` semantics (hard error on partial reach).

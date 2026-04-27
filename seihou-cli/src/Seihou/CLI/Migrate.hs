@@ -117,14 +117,44 @@ data MigrateError
   | MigrateExecFailed MigrationExecError
   deriving stock (Eq, Show, Generic)
 
--- | Outcome of a successful, non-dry-run @runMigrate@ call.
+-- | Outcome of a successful @runMigrate@ call.
+--
+-- The variant tells the renderer what to print and the caller (run,
+-- upgrade) which manifest to write back. Partial and blocked outcomes
+-- exist because EP-5 softened the planner contract: when the declared
+-- migration list does not reach the target exactly, the planner returns
+-- a partial plan plus an unreachable tail rather than failing. The
+-- migrate command then either applies the longest reachable prefix
+-- (without @--to@) or surfaces the gap as a hard error (with @--to@).
 data MigrateResult
   = -- | Manifest was already at the target version; nothing to do.
     MigrateNoOp Version
-  | -- | A plan was computed but not executed (dry-run).
+  | -- | A full-chain plan was computed but not executed (dry-run).
     MigrateDryRunOK ExecutedMigrationPlan
-  | -- | The plan was applied; the post-execution manifest is returned.
+  | -- | A partial-chain plan was computed but not executed (dry-run).
+    -- The two 'Version's are @(stuckAt, target)@ — the highest version
+    -- the chain reaches and the target it could not get to.
+    MigrateDryRunOKPartial ExecutedMigrationPlan Version Version
+  | -- | The full-chain plan was applied; the post-execution manifest is
+    -- returned.
     MigrateApplied ExecutedMigrationPlan Manifest
+  | -- | A partial-chain plan was applied (longest reachable prefix).
+    -- The two 'Version's are @(stuckAt, target)@: the highest version
+    -- the chain landed on (== @manifest.moduleVersion@ after the apply,
+    -- == @plan.planChain.chainTo@) and the target the chain still cannot
+    -- reach. The renderer prints both the chain summary and a "no
+    -- migration declared from <stuckAt>; remote is at <target>"
+    -- advisory.
+    MigrateAppliedPartial ExecutedMigrationPlan Manifest Version Version
+  | -- | No migration starts at the manifest's current version, so no
+    -- step can be applied. The two 'Version's are @(stuckAt, target)@
+    -- — i.e. the manifest's current version and the target. Distinct
+    -- from 'MigratePlanFailed' because @seihou migrate@ (without
+    -- @--to@) treats this as a non-fatal outcome the renderer surfaces
+    -- as an actionable advisory; with @--to TARGET@, the same situation
+    -- is converted to 'MigratePlanFailed' (MigrationGap …) for the
+    -- strict-target contract.
+    MigrateBlocked Version Version
   deriving stock (Eq, Show, Generic)
 
 -- ----------------------------------------------------------------------------
@@ -178,6 +208,21 @@ handleMigrate opts = do
           TIO.putStrLn ""
           TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
       exitSuccess
+    Right (MigrateDryRunOKPartial plan stuck target) -> do
+      if opts.migrateJson
+        then LBS.putStr (encodePretty (planToJsonWithTail plan (Just (stuck, target))))
+        else do
+          renderPlan colorEnabled plan
+          TIO.putStrLn ""
+          TIO.putStrLn $
+            applyColor colorEnabled yellow $
+              "Note: no migration declared from "
+                <> renderVersion stuck
+                <> "; remote is at "
+                <> renderVersion target
+                <> "."
+          TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
+      exitSuccess
     Right (MigrateApplied plan manifest') -> do
       if opts.migrateJson
         then LBS.putStr (encodePretty (planToJson plan))
@@ -198,6 +243,55 @@ handleMigrate opts = do
             <> " → "
             <> renderVersion toV
             <> "."
+    Right (MigrateAppliedPartial plan manifest' stuck target) -> do
+      if opts.migrateJson
+        then LBS.putStr (encodePretty (planToJsonWithTail plan (Just (stuck, target))))
+        else renderPlan colorEnabled plan
+      runEff $
+        runFilesystem $
+          runManifestStore manifestPath $
+            writeManifest manifest'
+      let toV = plan.planChain.chainTo
+      unless opts.migrateJson $ do
+        TIO.putStrLn ""
+        TIO.putStrLn $
+          applyColor colorEnabled green "✓"
+            <> " Migrated "
+            <> applyColor colorEnabled bold modName.unModuleName
+            <> " "
+            <> renderVersion fromV
+            <> " → "
+            <> renderVersion toV
+            <> "."
+        TIO.putStrLn $
+          applyColor colorEnabled yellow $
+            "Note: no migration declared from "
+              <> renderVersion stuck
+              <> "; remote is at "
+              <> renderVersion target
+              <> "."
+    Right (MigrateBlocked stuck target) -> do
+      if opts.migrateJson
+        then
+          LBS.putStr
+            ( encodePretty
+                ( object
+                    [ "module" .= modName.unModuleName,
+                      "blocked" .= True,
+                      "stuckAt" .= renderVersion stuck,
+                      "target" .= renderVersion target
+                    ]
+                )
+            )
+        else
+          TIO.putStrLn $
+            applyColor colorEnabled yellow $
+              "Blocked: no migration declared from "
+                <> renderVersion stuck
+                <> "; remote is at "
+                <> renderVersion target
+                <> ". The module author must ship one before this project can move forward."
+      exitSuccess
 
 -- | The non-IO core of the handler. Useful as a building block for
 -- other CLI surfaces (e.g. @seihou upgrade --with-migrations@) that
@@ -279,33 +373,8 @@ runMigrateLocal opts manifest sourceDir = do
                         toV of
                         Left e -> pure (Left (MigratePlanFailed e))
                         Right Nothing -> pure (Right (MigrateNoOp toV))
-                        Right (Just plan)
-                          -- Until M3 enriches this path, treat any
-                          -- partial/blocked plan as the legacy
-                          -- MigrationGap hard error so the user-facing
-                          -- behavior of `seihou migrate` is unchanged
-                          -- across the M2 commit boundary.
-                          | Just (stuck, target) <- plan.planUnreachable ->
-                              pure (Left (MigratePlanFailed (MigrationGap stuck target)))
-                          | otherwise -> do
-                              let chain = plan.planChain
-                              executedPlan <-
-                                runEff $
-                                  runFilesystem $
-                                    classifyMigration manifest chain
-                              if opts.migrateDryRun
-                                then pure (Right (MigrateDryRunOK executedPlan))
-                                else do
-                                  now <- getCurrentTime
-                                  execRes <-
-                                    runEff $
-                                      runFilesystem $
-                                        runProcessIO $
-                                          executeMigration opts.migrateForce executedPlan manifest now
-                                  case execRes of
-                                    Left err -> pure (Left (MigrateExecFailed err))
-                                    Right manifest' ->
-                                      pure (Right (MigrateApplied executedPlan manifest'))
+                        Right (Just plan) ->
+                          dispatchPlan opts manifest plan
 
 -- | The fetch-and-refresh wrapper. Reads @<installedDir>\/.seihou-origin.json@,
 -- clones the source repo to a temp dir, locates the module within the
@@ -357,9 +426,14 @@ runMigrateWithFetch opts manifest installedDir = do
               -- target version.
               result <- runMigrateLocal opts manifest moduleDir
               -- Refresh the installed copy on the disk so future
-              -- commands see the new version locally.
+              -- commands see the new version locally. Both full and
+              -- partial applies update the disk; blocked / dry-run /
+              -- no-op outcomes leave the disk untouched.
               case result of
                 Right (MigrateApplied _ _)
+                  | not opts.migrateDryRun ->
+                      refreshInstalledFromClone moduleDir installedDir o tags
+                Right (MigrateAppliedPartial _ _ _ _)
                   | not opts.migrateDryRun ->
                       refreshInstalledFromClone moduleDir installedDir o tags
                 _ -> pure ()
@@ -437,7 +511,7 @@ refreshInstalledFromClone moduleDir installedDir origin tags = do
 pendingChainFor ::
   AppliedModule ->
   Module ->
-  Maybe MigrationChain
+  Maybe MigrationPlan
 pendingChainFor applied installed = do
   fromText <- applied.moduleVersion
   fromV <- parseVersion fromText
@@ -448,19 +522,105 @@ pendingChainFor applied installed = do
     installed.migrations
     fromV
     toV of
-    -- Until M3 widens this signature to MigrationPlan, only surface a
-    -- chain when the planner reaches the target exactly. Partial and
-    -- blocked plans stay invisible to status/run, preserving pre-EP-5
-    -- behavior across the M2 commit boundary.
-    Right (Just plan)
-      | Nothing <- plan.planUnreachable,
-        not (null plan.planChain.chainSteps) ->
-          Just plan.planChain
+    -- Surface every divergence: full, partial, and blocked. The
+    -- 'MigrationPlan' value tells consumers which shape they're
+    -- looking at. Hard planner errors (downgrade, overshoot, duplicate
+    -- edge, unparseable version) and Right Nothing (already at
+    -- target) collapse to Nothing — there is no actionable pending
+    -- chain to report.
+    Right (Just plan) -> Just plan
     _ -> Nothing
 
 -- ----------------------------------------------------------------------------
 -- Helpers
 -- ----------------------------------------------------------------------------
+
+-- | Decide what to do with a non-trivial 'MigrationPlan' returned by
+-- the planner. Pure-IO: classifies the chain, optionally executes it,
+-- and packs the outcome into a 'MigrateResult' variant the renderer
+-- knows how to print.
+--
+-- The four cases:
+--
+--   * Full chain (@chainSteps@ non-empty, no unreachable tail) —
+--     existing behavior: 'MigrateDryRunOK' or 'MigrateApplied'.
+--   * Partial chain with @--to TARGET@ — strict-target contract
+--     refuses the partial fulfillment, surfaced as
+--     'MigratePlanFailed' ('MigrationGap' …).
+--   * Partial chain without @--to@ — apply the longest reachable
+--     prefix and emit 'MigrateDryRunOKPartial' or
+--     'MigrateAppliedPartial' so the renderer can print both the
+--     chain summary and the unreachable-tail advisory.
+--   * Blocked (@chainSteps@ empty) with @--to TARGET@ — strict-target
+--     refusal as above.
+--   * Blocked without @--to@ — 'MigrateBlocked'; nothing to apply.
+dispatchPlan ::
+  MigrateOpts ->
+  Manifest ->
+  MigrationPlan ->
+  IO (Either MigrateError MigrateResult)
+dispatchPlan opts manifest plan
+  -- Blocked case: no edge starts at the manifest version.
+  | null plan.planChain.chainSteps = case plan.planUnreachable of
+      Just (stuck, target)
+        | hasExplicitTo opts ->
+            pure (Left (MigratePlanFailed (MigrationGap stuck target)))
+        | otherwise ->
+            pure (Right (MigrateBlocked stuck target))
+      Nothing ->
+        -- Defensive: planner shouldn't return an empty chain with no
+        -- unreachable tail, but if it ever does, that means installed
+        -- == target and walk produced nothing — treat as no-op.
+        pure (Right (MigrateNoOp plan.planChain.chainTo))
+  -- Partial chain: chain has steps but doesn't reach target.
+  | Just (stuck, target) <- plan.planUnreachable =
+      if hasExplicitTo opts
+        then pure (Left (MigratePlanFailed (MigrationGap stuck target)))
+        else applyChain opts manifest plan.planChain (Just (stuck, target))
+  -- Full chain: chain reaches target exactly.
+  | otherwise = applyChain opts manifest plan.planChain Nothing
+
+-- | Whether the user passed @--to TARGET@ explicitly. The strict-target
+-- contract requires every consumer of a partial/blocked plan to refuse
+-- when the user named a specific version they did not get.
+hasExplicitTo :: MigrateOpts -> Bool
+hasExplicitTo opts = case opts.migrateTo of
+  Just _ -> True
+  Nothing -> False
+
+-- | Classify the chain, optionally execute it, and return the
+-- appropriate 'MigrateResult' variant. The @mUnreachable@ argument
+-- distinguishes full-chain from partial-chain outcomes.
+applyChain ::
+  MigrateOpts ->
+  Manifest ->
+  MigrationChain ->
+  -- | 'Nothing' for full chains; @Just (stuck, target)@ for partial.
+  Maybe (Version, Version) ->
+  IO (Either MigrateError MigrateResult)
+applyChain opts manifest chain mUnreachable = do
+  executedPlan <-
+    runEff $
+      runFilesystem $
+        classifyMigration manifest chain
+  if opts.migrateDryRun
+    then case mUnreachable of
+      Nothing -> pure (Right (MigrateDryRunOK executedPlan))
+      Just (stuck, target) ->
+        pure (Right (MigrateDryRunOKPartial executedPlan stuck target))
+    else do
+      now <- getCurrentTime
+      execRes <-
+        runEff $
+          runFilesystem $
+            runProcessIO $
+              executeMigration opts.migrateForce executedPlan manifest now
+      case execRes of
+        Left err -> pure (Left (MigrateExecFailed err))
+        Right manifest' -> case mUnreachable of
+          Nothing -> pure (Right (MigrateApplied executedPlan manifest'))
+          Just (stuck, target) ->
+            pure (Right (MigrateAppliedPartial executedPlan manifest' stuck target))
 
 resolveTarget ::
   MigrateOpts -> Module -> ModuleName -> FilePath -> Either MigrateError Version
@@ -541,8 +701,14 @@ renderOp c op = case op of
 -- ----------------------------------------------------------------------------
 
 planToJson :: ExecutedMigrationPlan -> Aeson.Value
-planToJson plan =
-  object
+planToJson plan = planToJsonWithTail plan Nothing
+
+-- | JSON encoding of an executed plan, with an optional unreachable
+-- tail describing the partial-chain advisory.
+planToJsonWithTail ::
+  ExecutedMigrationPlan -> Maybe (Version, Version) -> Aeson.Value
+planToJsonWithTail plan mTail =
+  object $
     [ "module" .= plan.planModule.unModuleName,
       "from" .= renderVersion plan.planChain.chainFrom,
       "to" .= renderVersion plan.planChain.chainTo,
@@ -556,6 +722,15 @@ planToJson plan =
            ],
       "operations" .= map instToJson plan.planOps
     ]
+      ++ case mTail of
+        Just (stuck, target) ->
+          [ "unreachable"
+              .= object
+                [ "stuckAt" .= renderVersion stuck,
+                  "target" .= renderVersion target
+                ]
+          ]
+        Nothing -> []
 
 opToJson :: MigrationOp -> Aeson.Value
 opToJson op = case op of

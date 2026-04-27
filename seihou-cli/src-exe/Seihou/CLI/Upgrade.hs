@@ -27,7 +27,7 @@ import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
 import Seihou.Core.Install (parseModuleName)
-import Seihou.Core.Migration (MigrationChain (..))
+import Seihou.Core.Migration (MigrationChain (..), MigrationPlan (..))
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules, validateModule)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types (AppliedModule (..), Manifest (..), Module (..), ModuleName (..))
@@ -301,9 +301,9 @@ handleOneModule uopts manifest name =
         Right installed ->
           case pendingChainFor am installed of
             Nothing -> pure ()
-            Just chain
+            Just plan
               | uopts.upgradeWithMigrations -> runOnePostUpgradeMigration am.source name
-              | otherwise -> printAdvisory name chain
+              | otherwise -> printAdvisory name plan
 
 findAppliedByName :: Manifest -> Text -> Maybe AppliedModule
 findAppliedByName manifest name =
@@ -311,21 +311,41 @@ findAppliedByName manifest name =
     (am : _) -> Just am
     [] -> Nothing
 
-printAdvisory :: Text -> MigrationChain -> IO ()
-printAdvisory name chain = do
+printAdvisory :: Text -> MigrationPlan -> IO ()
+printAdvisory name plan = do
   colorEnabled <- useColor
-  let msg =
-        "note: "
-          <> name
-          <> " has "
-          <> T.pack (show (length chain.chainSteps))
-          <> " migration(s) pending ("
-          <> renderVersion chain.chainFrom
-          <> " → "
-          <> renderVersion chain.chainTo
-          <> "); run 'seihou migrate "
-          <> name
-          <> "'"
+  let msg
+        | null plan.planChain.chainSteps,
+          Just (stuck, target) <- plan.planUnreachable =
+            "note: "
+              <> name
+              <> " is blocked: no migration declared from "
+              <> renderVersion stuck
+              <> "; remote is at "
+              <> renderVersion target
+        | otherwise =
+            let chain = plan.planChain
+                base =
+                  "note: "
+                    <> name
+                    <> " has "
+                    <> T.pack (show (length chain.chainSteps))
+                    <> " migration(s) pending ("
+                    <> renderVersion chain.chainFrom
+                    <> " → "
+                    <> renderVersion chain.chainTo
+                    <> "); run 'seihou migrate "
+                    <> name
+                    <> "'"
+                tail_ = case plan.planUnreachable of
+                  Nothing -> ""
+                  Just (stuck, target) ->
+                    " (note: no migration declared from "
+                      <> renderVersion stuck
+                      <> "; remote is at "
+                      <> renderVersion target
+                      <> ")"
+             in base <> tail_
   TIO.putStrLn $ if colorEnabled then yellow msg else msg
 
 -- | Run a migration for a single module. Reads the manifest fresh so
@@ -356,8 +376,30 @@ runOnePostUpgradeMigration installedDir name = do
           colorEnabled <- useColor
           let msg = "    " <> "Migrated " <> name
           TIO.putStrLn $ if colorEnabled then green msg else msg
+        Right (MigrateAppliedPartial _ _ stuck target) -> do
+          colorEnabled <- useColor
+          let msg =
+                "    Migrated "
+                  <> name
+                  <> " (partial; no migration declared from "
+                  <> renderVersion stuck
+                  <> ", remote is at "
+                  <> renderVersion target
+                  <> ")"
+          TIO.putStrLn $ if colorEnabled then yellow msg else msg
+        Right (MigrateBlocked stuck target) -> do
+          colorEnabled <- useColor
+          let msg =
+                "    Migration blocked for "
+                  <> name
+                  <> ": no migration declared from "
+                  <> renderVersion stuck
+                  <> "; remote is at "
+                  <> renderVersion target
+          TIO.putStrLn $ if colorEnabled then yellow msg else msg
         Right (MigrateNoOp _) -> pure ()
         Right (MigrateDryRunOK _) -> pure ()
+        Right (MigrateDryRunOKPartial _ _ _) -> pure ()
         Left err -> do
           colorEnabled <- useColor
           let msg = "    Migration failed for " <> name <> ": " <> renderMigrateError err

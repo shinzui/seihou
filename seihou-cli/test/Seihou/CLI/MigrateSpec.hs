@@ -522,3 +522,109 @@ spec = do
             doesFileExist (dir </> "b.txt") `shouldReturn` True
             doesFileExist (dir </> "c.txt") `shouldReturn` False
           other -> expectationFailure ("expected MigrateApplied, got: " <> show other)
+
+    -- ------------------------------------------------------------------
+    -- EP-5: partial / blocked planner outcomes
+    -- ------------------------------------------------------------------
+
+    it "applies the longest reachable prefix and surfaces the unreachable tail" $
+      -- Master-plan live-tree shape: installed declares one edge
+      -- 1.0.0 -> 2.0.0 but is itself at 3.0.0. Manifest at 1.0.0
+      -- targets 3.0.0 implicitly. Without --to, we should apply the
+      -- prefix and report the unreachable (2.0.0, 3.0.0) tail.
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "3.0.0" moveAppToSrcLit
+        createDirectoryIfMissing True (dir </> "app")
+        TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
+        let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
+        result <-
+          withCurrentDirectory dir $
+            runMigrate defaultOpts manifest installed
+        case result of
+          Right (MigrateAppliedPartial _ manifest' _stuck _target) -> do
+            -- Manifest bumped to the highest reached version, not the
+            -- unreachable target.
+            (head manifest'.modules).moduleVersion `shouldBe` Just "2.0.0"
+            -- File moved as the prefix specified.
+            Map.member "src/Main.hs" manifest'.files `shouldBe` True
+            Map.member "app/Main.hs" manifest'.files `shouldBe` False
+            doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` True
+            doesFileExist (dir </> "app" </> "Main.hs") `shouldReturn` False
+          other ->
+            expectationFailure
+              ("expected MigrateAppliedPartial, got: " <> show other)
+
+    it "errors with MigrationGap when --to TARGET cannot be reached (partial)" $
+      -- Same fixture as above, but the user explicitly asked for
+      -- 3.0.0. The strict-target contract refuses partial fulfillment.
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "3.0.0" moveAppToSrcLit
+        createDirectoryIfMissing True (dir </> "app")
+        TIO.writeFile (dir </> "app" </> "Main.hs") "x"
+        let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "x")]
+            opts = defaultOpts {migrateTo = Just "3.0.0"}
+        result <-
+          withCurrentDirectory dir $
+            runMigrate opts manifest installed
+        case result of
+          Left (MigratePlanFailed _) ->
+            -- Disk untouched: prefix should not have been applied.
+            doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` False
+          other ->
+            expectationFailure
+              ("expected MigratePlanFailed (MigrationGap …), got: " <> show other)
+
+    it "returns MigrateBlocked when no migration starts at the manifest version" $
+      -- Exec-plan live-tree shape: installed at 0.3.0 declares no
+      -- migrations at all; manifest is at 0.1.3. Without --to, the
+      -- planner reports a blocked plan that the migrate command
+      -- surfaces as MigrateBlocked rather than a hard error.
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "0.3.0" emptyMigrationsLit
+        let manifest = mkManifest "0.1.3" installed []
+        result <-
+          withCurrentDirectory dir $
+            runMigrate defaultOpts manifest installed
+        case result of
+          Right (MigrateBlocked _stuck _target) -> pure ()
+          other ->
+            expectationFailure
+              ("expected MigrateBlocked, got: " <> show other)
+
+    it "returns MigratePlanFailed when --to TARGET asks for a blocked target" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "0.3.0" emptyMigrationsLit
+        let manifest = mkManifest "0.1.3" installed []
+            opts = defaultOpts {migrateTo = Just "0.3.0"}
+        result <-
+          withCurrentDirectory dir $
+            runMigrate opts manifest installed
+        case result of
+          Left (MigratePlanFailed _) -> pure ()
+          other ->
+            expectationFailure
+              ("expected MigratePlanFailed, got: " <> show other)
+
+    it "dry-run on a partial chain returns MigrateDryRunOKPartial without writing disk" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "3.0.0" moveAppToSrcLit
+        createDirectoryIfMissing True (dir </> "app")
+        TIO.writeFile (dir </> "app" </> "Main.hs") "x"
+        let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "x")]
+            opts = defaultOpts {migrateDryRun = True}
+        result <-
+          withCurrentDirectory dir $
+            runMigrate opts manifest installed
+        case result of
+          Right (MigrateDryRunOKPartial _ _stuck _target) -> do
+            -- Disk untouched.
+            doesFileExist (dir </> "app" </> "Main.hs") `shouldReturn` True
+            doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` False
+          other ->
+            expectationFailure
+              ("expected MigrateDryRunOKPartial, got: " <> show other)

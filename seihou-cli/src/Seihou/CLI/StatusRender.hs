@@ -16,7 +16,7 @@ import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
     OutdatedStatus (..),
   )
-import Seihou.Core.Migration (MigrationChain (..))
+import Seihou.Core.Migration (MigrationChain (..), MigrationPlan (..))
 import Seihou.Core.Types
   ( AppliedModule (..),
     AppliedRecipe (..),
@@ -52,15 +52,24 @@ data ModuleAdvice
   deriving stock (Eq, Show)
 
 -- | Decide which advice to emit for a single applied module.
+--
+-- M3 widens the signature from 'Maybe MigrationChain' to 'Maybe
+-- MigrationPlan' so partial and blocked plans flow through. The
+-- renderer still treats partial/blocked plans the same as full chains
+-- here (printing the chain summary and a migrate hint); M4 will split
+-- them into dedicated advice variants with the unreachable-tail
+-- advisory.
 moduleAdvice ::
   AppliedModule ->
   Maybe OutdatedStatus ->
-  Maybe MigrationChain ->
+  Maybe MigrationPlan ->
   ModuleAdvice
-moduleAdvice am mStatus mChain =
-  case mChain of
-    Just chain -> AdvicePendingMigration am.name.unModuleName chain
-    Nothing -> case mStatus of
+moduleAdvice am mStatus mPlan =
+  case mPlan of
+    Just plan
+      | not (null plan.planChain.chainSteps) ->
+          AdvicePendingMigration am.name.unModuleName plan.planChain
+    _ -> case mStatus of
       Just OutdatedSt -> AdviceUpgradeOnly am.name.unModuleName
       _ -> AdviceNone
 
@@ -73,7 +82,7 @@ formatStatus ::
   Manifest ->
   [TrackedFile] ->
   Maybe [OutdatedEntry] ->
-  [(ModuleName, MigrationChain)] ->
+  [(ModuleName, MigrationPlan)] ->
   Text
 formatStatus color manifest tracked mEntries pendings =
   T.unlines $
@@ -89,20 +98,20 @@ formatStatus color manifest tracked mEntries pendings =
       Just es -> Map.fromList [(e.moduleName, e) | e <- es]
       Nothing -> Map.empty
     pendingMap =
-      Map.fromList [(name.unModuleName, chain) | (name, chain) <- pendings]
+      Map.fromList [(name.unModuleName, plan) | (name, plan) <- pendings]
     adviceList = map (rowAdvice entryMap pendingMap) manifest.modules
 
 -- | Build a 'ModuleAdvice' for one applied module from the lookup maps.
 rowAdvice ::
   Map Text OutdatedEntry ->
-  Map Text MigrationChain ->
+  Map Text MigrationPlan ->
   AppliedModule ->
   ModuleAdvice
 rowAdvice entryMap pendingMap am =
   let name = am.name.unModuleName
       mStatus = (.status) <$> Map.lookup name entryMap
-      mChain = Map.lookup name pendingMap
-   in moduleAdvice am mStatus mChain
+      mPlan = Map.lookup name pendingMap
+   in moduleAdvice am mStatus mPlan
 
 -- ---------------------------------------------------------------------------
 -- Section renderers
@@ -122,7 +131,7 @@ appliedSection ::
   Bool ->
   Manifest ->
   Maybe [OutdatedEntry] ->
-  [(ModuleName, MigrationChain)] ->
+  [(ModuleName, MigrationPlan)] ->
   [Text]
 appliedSection color manifest mEntries pendings =
   "Applied modules:"
@@ -133,7 +142,7 @@ appliedSection color manifest mEntries pendings =
       Just es -> Map.fromList [(e.moduleName, e) | e <- es]
       Nothing -> Map.empty
     pendingMap =
-      Map.fromList [(name.unModuleName, chain) | (name, chain) <- pendings]
+      Map.fromList [(name.unModuleName, plan) | (name, plan) <- pendings]
     moduleLines
       | null manifest.modules = ["  (none)"]
       | otherwise =

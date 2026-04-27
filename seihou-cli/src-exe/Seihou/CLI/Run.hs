@@ -29,7 +29,7 @@ import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Context (resolveContext)
-import Seihou.Core.Migration (MigrationChain (..))
+import Seihou.Core.Migration (MigrationChain (..), MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution)
@@ -469,7 +469,7 @@ handlePendingMigrations ::
   RunOpts ->
   FilePath ->
   Manifest ->
-  [(ModuleName, MigrationChain)] ->
+  [(ModuleName, MigrationPlan)] ->
   IO Manifest
 handlePendingMigrations _ _ _ manifest [] = pure manifest
 handlePendingMigrations level runOpts manifestPath manifest pendings
@@ -492,17 +492,35 @@ handlePendingMigrations level runOpts manifestPath manifest pendings
             writeManifest manifest'
       pure manifest'
 
-renderPendingSummary :: (ModuleName, MigrationChain) -> Text
-renderPendingSummary (name, chain) =
-  "  "
-    <> name.unModuleName
-    <> ": "
-    <> renderVersion chain.chainFrom
-    <> " -> "
-    <> renderVersion chain.chainTo
-    <> " ("
-    <> T.pack (show (length chain.chainSteps))
-    <> " step(s))"
+renderPendingSummary :: (ModuleName, MigrationPlan) -> Text
+renderPendingSummary (name, plan)
+  | null plan.planChain.chainSteps,
+    Just (stuck, target) <- plan.planUnreachable =
+      "  "
+        <> name.unModuleName
+        <> ": Blocked: no migration declared from "
+        <> renderVersion stuck
+        <> "; remote is at "
+        <> renderVersion target
+  | otherwise =
+      let chain = plan.planChain
+          tail_ = case plan.planUnreachable of
+            Nothing -> ""
+            Just (stuck, target) ->
+              "; no migration declared from "
+                <> renderVersion stuck
+                <> ", remote is at "
+                <> renderVersion target
+       in "  "
+            <> name.unModuleName
+            <> ": "
+            <> renderVersion chain.chainFrom
+            <> " -> "
+            <> renderVersion chain.chainTo
+            <> " ("
+            <> T.pack (show (length chain.chainSteps))
+            <> " step(s))"
+            <> tail_
 
 -- | Apply one pending chain in-band. Reuses 'runMigrate' with
 -- @migrateNoFetch=True@ since 'detectPendingMigrations' already
@@ -515,9 +533,9 @@ renderPendingSummary (name, chain) =
 applyOneMigration ::
   LogLevel ->
   Manifest ->
-  (ModuleName, MigrationChain) ->
+  (ModuleName, MigrationPlan) ->
   IO Manifest
-applyOneMigration level manifest (modName, _chain) =
+applyOneMigration level manifest (modName, plan) =
   case findAppliedByName manifest modName of
     Nothing -> do
       logIO level $
@@ -526,32 +544,72 @@ applyOneMigration level manifest (modName, _chain) =
             <> modName.unModuleName
             <> "' missing while applying its migration"
       exitFailure
-    Just am -> do
-      let opts =
-            MigrateOpts
-              { migrateModule = modName,
-                migrateTo = Nothing,
-                migrateDryRun = False,
-                migrateForce = False,
-                migrateJson = False,
-                migrateVerbose = False,
-                migrateNoFetch = True
-              }
-      result <- runMigrate opts manifest am.source
-      case result of
-        Right (MigrateApplied _ manifest') -> do
-          TIO.putStrLn $ "  Migrated " <> modName.unModuleName
-          pure manifest'
-        Right (MigrateNoOp _) -> pure manifest
-        Right (MigrateDryRunOK _) -> pure manifest
-        Left err -> do
+    Just am
+      -- Blocked: no migration starts at the manifest version. M5 will
+      -- formalize the refusal message; for now, fail with the same
+      -- "Blocked: …" line the renderer would have shown.
+      | null plan.planChain.chainSteps,
+        Just (stuck, target) <- plan.planUnreachable -> do
           logIO level $
             logError $
-              "Migration failed for "
+              "Migration blocked for "
                 <> modName.unModuleName
-                <> ": "
-                <> renderMigrateError err
+                <> ": no migration declared from "
+                <> renderVersion stuck
+                <> "; remote is at "
+                <> renderVersion target
+                <> ". The module author must ship one before this project can move forward."
           exitFailure
+      | otherwise -> do
+          let opts =
+                MigrateOpts
+                  { migrateModule = modName,
+                    migrateTo = Nothing,
+                    migrateDryRun = False,
+                    migrateForce = False,
+                    migrateJson = False,
+                    migrateVerbose = False,
+                    migrateNoFetch = True
+                  }
+          result <- runMigrate opts manifest am.source
+          case result of
+            Right (MigrateApplied _ manifest') -> do
+              TIO.putStrLn $ "  Migrated " <> modName.unModuleName
+              pure manifest'
+            Right (MigrateAppliedPartial _ manifest' stuck target) -> do
+              TIO.putStrLn $
+                "  Migrated "
+                  <> modName.unModuleName
+                  <> " (partial; no migration declared from "
+                  <> renderVersion stuck
+                  <> ", remote is at "
+                  <> renderVersion target
+                  <> ")"
+              pure manifest'
+            Right (MigrateNoOp _) -> pure manifest
+            Right (MigrateDryRunOK _) -> pure manifest
+            Right (MigrateDryRunOKPartial _ _ _) -> pure manifest
+            Right (MigrateBlocked stuck target) -> do
+              -- Defensive: the planner-shape check above should make
+              -- this branch unreachable, but keep a clear message in
+              -- case it ever fires.
+              logIO level $
+                logError $
+                  "Migration blocked for "
+                    <> modName.unModuleName
+                    <> ": no migration declared from "
+                    <> renderVersion stuck
+                    <> "; remote is at "
+                    <> renderVersion target
+              exitFailure
+            Left err -> do
+              logIO level $
+                logError $
+                  "Migration failed for "
+                    <> modName.unModuleName
+                    <> ": "
+                    <> renderMigrateError err
+              exitFailure
 
 renderMigrateError :: MigrateError -> Text
 renderMigrateError err = case err of
