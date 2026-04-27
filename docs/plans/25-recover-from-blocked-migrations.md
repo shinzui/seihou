@@ -89,11 +89,17 @@ What stays out of scope:
 
 ## Progress
 
-- [ ] M1: Pin today's blocked-message text in regression tests
+- [x] M1: Pin today's blocked-message text in regression tests
       (StatusRenderSpec, MigrateSpec, RunSpec or PendingMigrationSpec,
       and an Upgrade spec if one exists; otherwise add coverage in the
       most relevant existing spec). The new tests assert the *current*
       message lacks the `--bump-only` hint; they flip in M2.
+      *Done 2026-04-27.* M1 pin lives in StatusSpec and
+      PendingMigrationSpec only — the lib-pure formatters reach the
+      shape every other site reproduces. MigrateSpec, RunSpec, and
+      UpgradeSpec were skipped because their blocked rendering is
+      embedded in IO-bound handlers in `src-exe/`; M2 lockstep edit
+      + manual demo + grep verification cover the regression risk.
 - [ ] M2: Update the four blocked-message sites to mention
       `--bump-only` and to drop the "module author must ship one"
       finality. Flip the M1 pinning tests.
@@ -114,7 +120,24 @@ What stays out of scope:
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **MigrateSpec/RunSpec/UpgradeSpec are not viable for the M1 pin.**
+  Migrate.hs's blocked branch lives inside `handleMigrate`'s IO shell
+  (TIO.putStrLn into stdout), Run.hs's `applyOneMigration` blocked arm
+  is in `src-exe/` (so the test suite cannot import it via the
+  `seihou-cli-internal` library), and Upgrade.hs's `printAdvisory`
+  also lives in `src-exe/`. Adding stdout-capture tests would have
+  required `silently`/`hSilence` and `try @ExitCode` plumbing for a
+  text shape that the lib-pure StatusRender + PendingMigrations
+  formatters already cover end-to-end. Decision: pin only at the
+  reachable lib sites in M1; rely on lockstep editing + grep
+  verification + the M4 live-tree demo to cover the IO sites in M2.
+  Recorded so a future plan that rewrites these sites again knows the
+  testability boundary.
+
+- **`cabal run seihou -- run --bump-blocked --dry-run` rejects the
+  flag with `Invalid option '--bump-blocked'`** on HEAD as expected
+  (verified 2026-04-27). Records the M3 acceptance baseline: the same
+  command must succeed after M3 ships.
 
 
 ## Decision Log
