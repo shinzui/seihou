@@ -927,6 +927,10 @@ migrateParser =
       <*> switch (long "json" <> help "Emit the plan as JSON instead of human-readable text")
       <*> switch (long "verbose" <> short 'v' <> help "Print extra detail about each operation")
       <*> switch (long "no-fetch" <> help "Skip the remote fetch; use only the locally installed copy")
+      <*> switch
+        ( long "bump-only"
+            <> help "Refresh the manifest version to match the installed copy without running migration ops (mutually exclusive with --to)"
+        )
 
 migrateFooter :: Doc
 migrateFooter =

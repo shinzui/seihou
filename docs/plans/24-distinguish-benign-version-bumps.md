@@ -130,13 +130,19 @@ the empty-migrations case softens.
       branch ("no migrations declared; run 'seihou run' to refresh
       templates"). runOnePostUpgradeMigration handles the new variant
       as a no-op for exhaustiveness.
-- [ ] Add a `migrateBumpOnly :: Bool` field to `MigrateOpts` in
-      `seihou-cli/src/Seihou/CLI/Migrate.hs`. When set, `runMigrate`
-      bypasses the planner entirely: it reads the installed copy's
-      version, writes that as the manifest's `moduleVersion`, and
-      exits with a `MigrateApplied` outcome carrying an empty
-      executed plan. Wire the flag into the option parser at
-      `seihou-cli/src-exe/Seihou/CLI/Commands.hs`.
+- [x] M6 (2026-04-26): Add migrateBumpOnly flag to MigrateOpts and
+      MigrateConflictingFlags error variant. runMigrate short-circuits
+      to runBumpOnly which fetches (unless --no-fetch) and writes the
+      installed-copy version into the manifest with an empty
+      ExecutedMigrationPlan. handleMigrate's MigrateApplied branch
+      detects the empty-steps case and renders a "✓ Bumped …" line.
+      --bump-only with --to is rejected upfront with
+      MigrateConflictingFlags. Four tests cover: bumps to the
+      installed version, errors on conflicting flags, idempotence,
+      and bypassing a partial-chain (master-plan shape) fixture.
+      Surprise: GHC HasField inference for chained dot syntax over
+      ExecutedMigrationPlan was ambiguous — bind the chain via a
+      type-annotated let to disambiguate.
 - [ ] Update `docs/cli/migrate.md`, `docs/cli/status.md`,
       `docs/cli/run.md`, and `docs/user/CHANGELOG.md` to describe the
       new behavior.
@@ -155,7 +161,14 @@ the empty-migrations case softens.
 
 ## Surprises & Discoveries
 
-(None yet — populated during implementation.)
+- GHC's HasField inference for chained `OverloadedRecordDot` syntax
+  on `ExecutedMigrationPlan` (e.g. `execPlan.planChain.chainSteps`
+  inside a `shouldBe` whose RHS is a polymorphic literal) didn't
+  resolve the intermediate `r0` type variable, surfacing as
+  "No instance for HasField …" plus an ambiguous Foldable
+  constraint. Workaround: bind the chain to a type-annotated let
+  (`let chain :: MigrationChain = execPlan.planChain in null
+  chain.chainSteps`). Logged in M6 milestone notes.
 
 Carry-overs from the parent EP-5 plan
 (`docs/plans/23-bulletproof-partial-migration-chains.md`) that this

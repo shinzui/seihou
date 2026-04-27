@@ -382,7 +382,8 @@ runOnePostUpgradeMigration installedDir name = do
                 -- The post-upgrade hook has already refreshed the
                 -- installed copy via 'seihou upgrade'; skip the
                 -- redundant fetch in 'runMigrate'.
-                migrateNoFetch = True
+                migrateNoFetch = True,
+                migrateBumpOnly = False
               }
       result <- runMigrate opts manifest installedDir
       case result of
@@ -433,6 +434,7 @@ renderMigrateError err = case err of
   MigratePlanFailed _ -> "plan failed"
   MigrateExecFailed _ -> "execution failed (use --force or revert your edits)"
   MigrateNoManifest _ -> "no manifest in current dir"
+  MigrateConflictingFlags msg -> msg
 
 -- | Local @unless@ to avoid pulling in another import.
 unless :: Bool -> IO () -> IO ()

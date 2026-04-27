@@ -14,6 +14,7 @@ import Seihou.CLI.Migrate
     MigrateResult (..),
     runMigrate,
   )
+import Seihou.Core.Migration (MigrationChain (..))
 import Seihou.Core.Types
   ( AppliedModule (..),
     FileRecord (..),
@@ -22,6 +23,7 @@ import Seihou.Core.Types
     Strategy (..),
     emptyParentVars,
   )
+import Seihou.Engine.Migrate (ExecutedMigrationPlan (..))
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.Types (emptyManifest)
 import System.Directory (createDirectoryIfMissing, doesFileExist, withCurrentDirectory)
@@ -149,7 +151,8 @@ defaultOpts =
       migrateVerbose = False,
       -- Existing local-only tests pass an installed dir directly; they
       -- do not need (and must not perform) network IO.
-      migrateNoFetch = True
+      migrateNoFetch = True,
+      migrateBumpOnly = False
     }
 
 -- ----------------------------------------------------------------------------
@@ -674,6 +677,107 @@ spec = do
               ( "expected (MigrateBenignUpgrade, MigrateBlocked), got: "
                   <> show other
               )
+
+    -- ------------------------------------------------------------------
+    -- M6: --bump-only escape hatch.
+    -- ------------------------------------------------------------------
+
+    it "--bump-only refreshes the manifest version to the installed copy without running ops" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        -- Live-tree exec-plan shape: manifest at 0.1.0, installed
+        -- declares no migrations at 0.3.0. Without --bump-only this
+        -- would route through MigrateBenignUpgrade (M3); --bump-only
+        -- forces the manifest to bump to 0.3.0 in one step.
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "0.3.0" emptyMigrationsLit
+        let manifest = mkManifest "0.1.0" installed []
+            opts = defaultOpts {migrateBumpOnly = True}
+        result <-
+          withCurrentDirectory dir $
+            runMigrate opts manifest installed
+        case result of
+          Right (MigrateApplied execPlan manifest') -> do
+            -- Manifest reflects the new version.
+            (head manifest'.modules).moduleVersion `shouldBe` Just "0.3.0"
+            -- Empty plan: bump-only never runs ops.
+            let chain :: MigrationChain
+                chain = execPlan.planChain
+             in null chain.chainSteps `shouldBe` True
+          other ->
+            expectationFailure
+              ("expected MigrateApplied (bump-only), got: " <> show other)
+
+    it "--bump-only --to TARGET errors with MigrateConflictingFlags" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "0.3.0" emptyMigrationsLit
+        let manifest = mkManifest "0.1.0" installed []
+            opts =
+              defaultOpts
+                { migrateBumpOnly = True,
+                  migrateTo = Just "0.2.0"
+                }
+        result <-
+          withCurrentDirectory dir $
+            runMigrate opts manifest installed
+        case result of
+          Left (MigrateConflictingFlags _) -> pure ()
+          other ->
+            expectationFailure
+              ("expected MigrateConflictingFlags, got: " <> show other)
+
+    it "--bump-only is idempotent: a second run targets the same version with no error" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "0.3.0" emptyMigrationsLit
+        let manifest = mkManifest "0.1.0" installed []
+            opts = defaultOpts {migrateBumpOnly = True}
+        first <-
+          withCurrentDirectory dir $
+            runMigrate opts manifest installed
+        manifest1 <- case first of
+          Right (MigrateApplied _ m) -> pure m
+          other ->
+            expectationFailure
+              ("expected first MigrateApplied, got: " <> show other)
+              >> error "unreachable"
+        second <-
+          withCurrentDirectory dir $
+            runMigrate opts manifest1 installed
+        case second of
+          Right (MigrateApplied plan manifest2) -> do
+            (head manifest2.modules).moduleVersion `shouldBe` Just "0.3.0"
+            length plan.planChain.chainSteps `shouldBe` 0
+          other ->
+            expectationFailure
+              ("expected second MigrateApplied, got: " <> show other)
+
+    it "--bump-only bypasses a partial-chain fixture (master-plan shape)" $
+      -- Manifest at 1.0.0, installed declares one edge 1.0.0 -> 2.0.0
+      -- but is at 3.0.0. Without --bump-only this would route through
+      -- MigrateAppliedPartial (the prefix is applied, the unreachable
+      -- 2.0.0 -> 3.0.0 tail is left). --bump-only skips the chain
+      -- entirely and bumps the manifest straight to 3.0.0.
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "3.0.0" moveAppToSrcLit
+        createDirectoryIfMissing True (dir </> "app")
+        TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
+        let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
+            opts = defaultOpts {migrateBumpOnly = True}
+        result <-
+          withCurrentDirectory dir $
+            runMigrate opts manifest installed
+        case result of
+          Right (MigrateApplied plan manifest') -> do
+            (head manifest'.modules).moduleVersion `shouldBe` Just "3.0.0"
+            length plan.planChain.chainSteps `shouldBe` 0
+            -- Disk is untouched: --bump-only never moves files.
+            doesFileExist (dir </> "app" </> "Main.hs") `shouldReturn` True
+            doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` False
+          other ->
+            expectationFailure
+              ("expected MigrateApplied, got: " <> show other)
 
     it "dry-run on a partial chain returns MigrateDryRunOKPartial without writing disk" $
       withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do

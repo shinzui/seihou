@@ -625,7 +625,8 @@ applyOneMigration level manifest (modName, plan) =
                     migrateForce = False,
                     migrateJson = False,
                     migrateVerbose = False,
-                    migrateNoFetch = True
+                    migrateNoFetch = True,
+                    migrateBumpOnly = False
                   }
           result <- runMigrate opts manifest am.source
           case result of
@@ -685,6 +686,7 @@ renderMigrateError err = case err of
   MigratePlanFailed _ -> "plan failed"
   MigrateExecFailed _ -> "execution failed; revert your edits or run 'seihou migrate <module> --force' first"
   MigrateNoManifest _ -> "no manifest in current dir"
+  MigrateConflictingFlags msg -> msg
 
 findAppliedByName :: Manifest -> ModuleName -> Maybe AppliedModule
 findAppliedByName manifest name =

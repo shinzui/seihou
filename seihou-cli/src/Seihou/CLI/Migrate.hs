@@ -17,6 +17,7 @@ import Data.Aeson (ToJSON, object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy.Char8 qualified as LBS
+import Data.Maybe (isJust)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time.Clock (getCurrentTime)
@@ -93,7 +94,21 @@ data MigrateOpts = MigrateOpts
     -- network IO and uses only the locally installed copy as the source
     -- of truth. Default: 'False' (fetch is the new default after EP-2;
     -- before EP-2 the only behavior was local-only).
-    migrateNoFetch :: Bool
+    migrateNoFetch :: Bool,
+    -- | Skip planning entirely. Read the installed copy's declared
+    -- version and write it as the manifest's recorded version, exiting
+    -- with a no-op-style outcome. Independent of @migrateNoFetch@:
+    -- when both are set, no fetch happens *and* no planning happens.
+    -- Mutually exclusive with @migrateTo@: passing both is rejected
+    -- with @MigrateConflictingFlags@ before any work is done.
+    --
+    -- Use case: a project pinned at an older version of a module that
+    -- has since reorganized its template paths but cannot reach those
+    -- new paths via declared migrations. The user can manually
+    -- acknowledge "I know the unreachable tail is safe for my
+    -- project" and bring the manifest's version field forward without
+    -- running any ops.
+    migrateBumpOnly :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -115,6 +130,9 @@ data MigrateError
   | MigrateUnparseableManifestVersion Text
   | MigratePlanFailed MigrationPlanError
   | MigrateExecFailed MigrationExecError
+  | -- | Two mutually exclusive flags were passed together. The
+    -- carried 'Text' is the message describing the conflict.
+    MigrateConflictingFlags Text
   deriving stock (Eq, Show, Generic)
 
 -- | Outcome of a successful @runMigrate@ call.
@@ -232,26 +250,55 @@ handleMigrate opts = do
                 <> "."
           TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
       exitSuccess
-    Right (MigrateApplied plan manifest') -> do
-      if opts.migrateJson
-        then LBS.putStr (encodePretty (planToJson plan))
-        else renderPlan colorEnabled plan
-      runEff $
-        runFilesystem $
-          runManifestStore manifestPath $
-            writeManifest manifest'
-      let toV = plan.planChain.chainTo
-      unless opts.migrateJson $ do
-        TIO.putStrLn ""
-        TIO.putStrLn $
-          applyColor colorEnabled green "✓"
-            <> " Migrated "
-            <> applyColor colorEnabled bold modName.unModuleName
-            <> " "
-            <> renderVersion fromV
-            <> " → "
-            <> renderVersion toV
-            <> "."
+    Right (MigrateApplied plan manifest')
+      -- --bump-only path: dispatchPlan never produces an empty plan
+      -- via MigrateApplied, but the bump-only path does. Render the
+      -- distinct "Bumped" line so the user knows no ops ran.
+      | null plan.planChain.chainSteps,
+        not opts.migrateJson -> do
+          runEff $
+            runFilesystem $
+              runManifestStore manifestPath $
+                writeManifest manifest'
+          let toV = plan.planChain.chainTo
+          TIO.putStrLn $
+            applyColor colorEnabled green "✓"
+              <> " Bumped "
+              <> applyColor colorEnabled bold modName.unModuleName
+              <> " "
+              <> renderVersion fromV
+              <> " → "
+              <> renderVersion toV
+              <> " (no migration ops)."
+      | null plan.planChain.chainSteps -> do
+          -- bump-only JSON path: emit the same shape as a regular
+          -- applied plan. Empty steps + empty operations make the
+          -- bump-only nature visible to consumers.
+          runEff $
+            runFilesystem $
+              runManifestStore manifestPath $
+                writeManifest manifest'
+          LBS.putStr (encodePretty (planToJson plan))
+      | otherwise -> do
+          if opts.migrateJson
+            then LBS.putStr (encodePretty (planToJson plan))
+            else renderPlan colorEnabled plan
+          runEff $
+            runFilesystem $
+              runManifestStore manifestPath $
+                writeManifest manifest'
+          let toV = plan.planChain.chainTo
+          unless opts.migrateJson $ do
+            TIO.putStrLn ""
+            TIO.putStrLn $
+              applyColor colorEnabled green "✓"
+                <> " Migrated "
+                <> applyColor colorEnabled bold modName.unModuleName
+                <> " "
+                <> renderVersion fromV
+                <> " → "
+                <> renderVersion toV
+                <> "."
     Right (MigrateAppliedPartial plan manifest' stuck target) -> do
       if opts.migrateJson
         then LBS.putStr (encodePretty (planToJsonWithTail plan (Just (stuck, target))))
@@ -353,8 +400,152 @@ runMigrate ::
   FilePath ->
   IO (Either MigrateError MigrateResult)
 runMigrate opts manifest installedDir
+  | opts.migrateBumpOnly = runBumpOnly opts manifest installedDir
   | opts.migrateNoFetch = runMigrateLocal opts manifest installedDir
   | otherwise = runMigrateWithFetch opts manifest installedDir
+
+-- | The @--bump-only@ escape hatch. Reads the installed copy's
+-- @module.dhall@ for its declared version and writes that as the
+-- manifest's recorded @moduleVersion@ without consulting the
+-- planner. Returns 'MigrateApplied' with an empty
+-- 'ExecutedMigrationPlan' so the renderer prints the bump-only
+-- summary line.
+--
+-- The fetch step is shared with the planning path: by default
+-- @--bump-only@ also fetches so the bump targets the latest remote
+-- version, not a possibly stale local cache. @--no-fetch@ skips the
+-- fetch and reads the local installed copy directly.
+--
+-- @--bump-only@ is mutually exclusive with @--to TARGET@. The
+-- contradiction is rejected with 'MigrateConflictingFlags' before
+-- any IO so the error is the very first thing the caller sees.
+runBumpOnly ::
+  MigrateOpts ->
+  Manifest ->
+  FilePath ->
+  IO (Either MigrateError MigrateResult)
+runBumpOnly opts manifest installedDir
+  | isJust opts.migrateTo =
+      pure
+        ( Left
+            ( MigrateConflictingFlags
+                "--bump-only and --to are mutually exclusive; --bump-only always targets the installed copy's declared version."
+            )
+        )
+  | opts.migrateNoFetch = bumpFromLocal opts manifest installedDir
+  | otherwise = bumpFromFetch opts manifest installedDir
+
+-- | Read the installed copy's @module.dhall@ in @sourceDir@ and
+-- write its declared version into the manifest. If the installed
+-- copy has no version, emit a no-op outcome (consistent with the
+-- planner's "nothing to do" semantics).
+bumpFromLocal ::
+  MigrateOpts ->
+  Manifest ->
+  FilePath ->
+  IO (Either MigrateError MigrateResult)
+bumpFromLocal opts manifest sourceDir = do
+  let modName = opts.migrateModule
+  case findApplied manifest modName of
+    Nothing -> pure (Left (MigrateModuleNotApplied modName))
+    Just applied -> do
+      let sourceDhall = sourceDir </> "module.dhall"
+      exists <- doesFileExist sourceDhall
+      if not exists
+        then
+          pure
+            ( Left
+                ( MigrateInstalledModuleEvalFailed
+                    sourceDhall
+                    "module.dhall not found at installed dir"
+                )
+            )
+        else do
+          r <- evalModuleFromFile sourceDhall
+          case r of
+            Left err ->
+              pure
+                ( Left
+                    ( MigrateInstalledModuleEvalFailed
+                        sourceDhall
+                        (T.pack (show err))
+                    )
+                )
+            Right sourceModule -> case sourceModule.version of
+              Nothing -> case applied.moduleVersion >>= parseVersion of
+                Just v -> pure (Right (MigrateNoOp v))
+                Nothing -> pure (Left (MigrateInstalledModuleHasNoVersion modName sourceDhall))
+              Just toText -> case parseVersion toText of
+                Nothing -> pure (Left (MigrateUnparseableInstalledVersion toText))
+                Just toV -> do
+                  let manifest' = replaceModuleVersion manifest modName toText
+                      chain =
+                        MigrationChain
+                          { migrationModule = modName.unModuleName,
+                            chainFrom = toV,
+                            chainTo = toV,
+                            chainSteps = []
+                          }
+                      executed =
+                        ExecutedMigrationPlan
+                          { planModule = modName,
+                            planChain = chain,
+                            planOps = []
+                          }
+                  pure (Right (MigrateApplied executed manifest'))
+
+-- | Fetch the source repo, locate the module dir, and bump from
+-- there. Soft-fail to the local path if the fetch cannot be
+-- completed (missing origin metadata, clone failure, module not in
+-- remote) — same fallback policy as 'runMigrateWithFetch'.
+bumpFromFetch ::
+  MigrateOpts ->
+  Manifest ->
+  FilePath ->
+  IO (Either MigrateError MigrateResult)
+bumpFromFetch opts manifest installedDir = do
+  origin <- readOriginInfo installedDir
+  case origin of
+    Nothing -> do
+      note opts $
+        "  no origin metadata at "
+          <> T.pack (installedDir </> ".seihou-origin.json")
+          <> "; using locally installed copy."
+      bumpFromLocal opts manifest installedDir
+    Just o -> withSystemTempDirectory "seihou-migrate-fetch" $ \tmp -> do
+      let cloneDir = tmp </> "clone"
+      note opts ("  Fetching " <> o.sourceUrl <> "...")
+      cloneRes <- cloneRepo o.sourceUrl cloneDir
+      case cloneRes of
+        Left err -> do
+          note opts ("  fetch failed: " <> err <> "; using locally installed copy.")
+          bumpFromLocal opts manifest installedDir
+        Right () -> do
+          contents <- discoverRepoContents evalRegistryFromFile cloneDir
+          case findRemoteModuleDir cloneDir contents opts.migrateModule of
+            Nothing -> do
+              note opts $
+                "  module '"
+                  <> opts.migrateModule.unModuleName
+                  <> "' not present in remote; using locally installed copy."
+              bumpFromLocal opts manifest installedDir
+            Just (moduleDir, tags) -> do
+              result <- bumpFromLocal opts manifest moduleDir
+              case result of
+                Right (MigrateApplied _ _) ->
+                  refreshInstalledFromClone moduleDir installedDir o tags
+                _ -> pure ()
+              pure result
+
+-- | Replace the @moduleVersion@ field on the matching applied module
+-- entry. Other entries are kept untouched.
+replaceModuleVersion :: Manifest -> ModuleName -> Text -> Manifest
+replaceModuleVersion manifest name newVer =
+  manifest {modules = map go manifest.modules}
+  where
+    go am
+      | am.name == name = am {moduleVersion = Just newVer}
+      | otherwise = am
 
 -- | Plan and (optionally) execute a migration chain using @sourceDir@
 -- as the source of truth for the module's @module.dhall@ and migrations
@@ -859,6 +1050,7 @@ renderError (MigrateUnparseableManifestVersion v) =
   "manifest's recorded module version '" <> v <> "' is not a valid dotted version."
 renderError (MigratePlanFailed e) = renderPlanError e
 renderError (MigrateExecFailed e) = renderExecError e
+renderError (MigrateConflictingFlags msg) = msg
 
 renderPlanError :: MigrationPlanError -> Text
 renderPlanError (MigrationVersionUnparseable t) =
