@@ -55,7 +55,7 @@ Alternatives considered:
 | 4   | Make `seihou status` surface staleness and pending migrations | docs/plans/17-improve-status-migration-visibility.md | EP-1      | EP-2      | Complete    |
 | 5   | Bulletproof partial migration chains across status, migrate, run | docs/plans/23-bulletproof-partial-migration-chains.md | EP-2, EP-3, EP-4 | None | Complete    |
 | 6   | Distinguish benign version bumps from missing migrations     | docs/plans/24-distinguish-benign-version-bumps.md   | EP-5      | None      | Complete    |
-| 7   | Make blocked migrations recoverable from the user's side     | docs/plans/25-recover-from-blocked-migrations.md    | EP-6      | None      | In Progress |
+| 7   | Make blocked migrations recoverable from the user's side     | docs/plans/25-recover-from-blocked-migrations.md    | EP-6      | None      | Complete    |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -155,10 +155,10 @@ Track milestone-level progress across all child plans. Each entry names the chil
 - [x] EP-6: Add `planMigrationsDeclared` to `MigrationPlan` and a `MigrateBenignUpgrade` variant so empty-migrations gaps stop being reported as blocked.
 - [x] EP-6: Add `seihou migrate <module> --bump-only` as the manual escape hatch for partial-chain projects; update status, run, and upgrade renderers to soften benign-bump advisories.
 - [x] EP-6: End-to-end demonstration: synthetic empty-migrations fixture exits zero with a softened note; live-tree `--bump-only` catches both partial-chain manifests up to the latest version.
-- [ ] EP-7: Pin today's blocked-migration message text at every site (Migrate, StatusRender, PendingMigrations, Run, Upgrade).
-- [ ] EP-7: Update every blocked-message site to drop the "module author must ship one" finality and to name `--bump-only` and `--bump-blocked` as recovery options.
-- [ ] EP-7: Add `seihou run --bump-blocked` flag that pre-applies `--bump-only` to every blocked entry; add `isBlockedMigration` classifier to `Seihou.CLI.PendingMigrations`.
-- [ ] EP-7: End-to-end demonstration on the live `seihou-project` tree: a single `seihou run --bump-blocked` invocation recovers both `master-plan` and `exec-plan` from the blocked state and writes the new templates.
+- [x] EP-7: Pin today's blocked-migration message text at every site (Migrate, StatusRender, PendingMigrations, Run, Upgrade).
+- [x] EP-7: Update every blocked-message site to drop the "module author must ship one" finality and to name `--bump-only` and `--bump-blocked` as recovery options.
+- [x] EP-7: Add `seihou run --bump-blocked` flag that pre-applies `--bump-only` to every blocked entry; add `isBlockedMigration` classifier to `Seihou.CLI.PendingMigrations`.
+- [x] EP-7: End-to-end demonstration on the live `seihou-project` tree: a single `seihou run --bump-blocked` invocation recovers both `master-plan` and `exec-plan` from the blocked state and writes the new templates.
 
 
 ## Surprises & Discoveries
@@ -241,6 +241,10 @@ Captured during research before implementation:
 
 - **Plan 24 (EP-6) shipped without a `MasterPlan:` line and was not registered in the Exec-Plan Registry.** It carried the same `Intention:` as this masterplan but the back-link was missing, so the registry table at EP-5's close still suggested the masterplan was Complete. Retroactively registered on 2026-04-27 alongside the EP-7 reopen. Lesson for future masterplans: every plan that lands in `docs/plans/` while a masterplan is open should be registered up-front, even if it is small and not strictly required to deliver the masterplan's vision; otherwise the registry stops being an authoritative inventory of in-flight work.
 
+- **`isBlockedMigration` shipped early (in EP-7's M2 messaging commit, not its M3 flag commit) because `formatRefusalMessage`'s shape-sensitive trailer needed the partition predicate before the flag itself was wired.** The plan had scheduled the helper for M3 alongside the run-side dispatch; in practice the `--bump-only`/`--bump-blocked` trailer can only be emitted when the formatter knows *which* entries are blocked vs runnable. Pulling the helper into M2 was the smaller change. Recorded so a future EP that schedules a "predicate" for "the milestone that uses it" can predict the same forward-pull when the predicate is also needed by adjacent rendering work.
+
+- **The live-tree demo for EP-7 only exercised the dry-run path; the destructive `--bump-blocked` apply step was deliberately skipped.** Working-tree restoration after a real `seihou run --bump-blocked` would have required undoing manifest writes, file moves out of `claude/skills/`, file creations under `agents/skills/`, `mkdir -p` side effects, and `ln -sfn` symlink installations. The dry-run-only demo + unit-test coverage of the bump-only persistence path + the user-visible rendering at every site gave high confidence without the destructive apply. The "fresh-worktree end-to-end test" hardening is deferred. Recorded so future EPs that ship destructive commands know the live-tree demo can stop at dry-run when restoring after the apply is mechanically risky.
+
 
 ## Decision Log
 
@@ -271,22 +275,14 @@ Captured during research before implementation:
 
 ## Outcomes & Retrospective
 
-> **Status (2026-04-27):** Masterplan reopened. EP-1–EP-6 landed and
-> deliver the bulk of the vision, but live verification on the
-> `seihou-project` working tree showed the blocked-migration UX still
-> leaves the user without a discoverable recovery path. EP-7
-> (`docs/plans/25-recover-from-blocked-migrations.md`) is the
-> remaining work; the retrospective below describes the EP-1–EP-6
-> arc and is complete only once EP-7 ships.
-
-With EP-1–EP-6 landed, a project owner who pulls a stale registry
-sees the truth, and `seihou status`, `seihou migrate`, and `seihou
-run` behave correctly across full chains, partial chains, blocked
-modules, and benign empty-migrations bumps. The remaining gap is
-purely a recovery-discoverability one: when a blocked module *is*
-encountered, the in-CLI message tells the user no recovery exists
-even though `--bump-only` is exactly the recovery (EP-7 fixes the
-messaging and adds a one-command flag).
+With EP-1–EP-7 landed, the upgrade-and-migrate DX vision ships in
+full. A project owner who pulls a stale registry sees the truth, and
+`seihou status`, `seihou migrate`, and `seihou run` behave correctly
+across full chains, partial chains, blocked modules, and benign
+empty-migrations bumps. The blocked-migration UX — the last gap
+EP-7 closed — now leaves the user with a discoverable recovery path
+at every consumer site, and a single command (`seihou run
+--bump-blocked`) acknowledges every blocked module in one pass.
 
 What the user sees end-to-end:
 
@@ -308,10 +304,21 @@ What the user sees end-to-end:
    (EP-3 + EP-5).
 4. `seihou status` reports outdated installed modules and pending
    migrations as full / partial / blocked rows, each with the
-   appropriate copy-pasteable command (or a `[blocked]` advisory for
-   blocked entries) plus a Recommended actions tail block. The
-   pending-migration check is unconditional (no `--check-updates`
-   needed) because it is purely local (EP-4 + EP-5).
+   appropriate copy-pasteable command (including `seihou migrate
+   <name> --bump-only` for blocked entries, after EP-7 replaced the
+   non-actionable `[blocked]` annotation) plus a Recommended
+   actions tail block. The pending-migration check is unconditional
+   (no `--check-updates` needed) because it is purely local
+   (EP-4 + EP-5 + EP-7).
+5. Blocked-migration messages at every site (Migrate, StatusRender,
+   PendingMigrations, Run, Upgrade) name `seihou migrate <name>
+   --bump-only` (per-module manual escape) and `seihou run
+   --bump-blocked` (one-command bulk recovery) as the recoveries.
+   `seihou run --bump-blocked` partitions blocked entries out of
+   the pre-flight, runs `--bump-only` on each, persists the
+   manifest, and proceeds to the rest of the run. Compatible with
+   `--with-migrations` for mixed projects in one invocation
+   (EP-7).
 
 What stays out of scope — deliberately:
 
@@ -331,15 +338,18 @@ What stays out of scope — deliberately:
   during the live-tree work. A future plan can revisit if user demand
   emerges.
 
-Cross-plan coordination held up across all five EPs. The integration
-points the masterplan called out — `fetchTrueModuleVersion` (EP-1
-definer; EP-2, EP-3, EP-4 consumers), `detectPendingMigrations` (EP-3
-definer; EP-4, EP-5 consumers), `installModuleDir` and friends in
-`Seihou.CLI.InstallShared` (EP-2 extractor; EP-3 consumer), the
+Cross-plan coordination held up across all seven EPs. The
+integration points the masterplan called out — `fetchTrueModuleVersion`
+(EP-1 definer; EP-2, EP-3, EP-4 consumers), `detectPendingMigrations`
+(EP-3 definer; EP-4, EP-5 consumers), `installModuleDir` and friends
+in `Seihou.CLI.InstallShared` (EP-2 extractor; EP-3 consumer), the
 planner contract itself (EP-5 definer; EP-2, EP-3, EP-4 retrofitted
-to consume the new `MigrationPlan` shape) — all ended up in
-library-exposed modules so the test suite could reach them without
-spinning up the executable.
+to consume the new `MigrationPlan` shape; EP-6 extended with
+`planMigrationsDeclared`), and the four-shape classifier
+`isBlockedMigration` + `isBenignUpgrade` (EP-6/EP-7 in
+`Seihou.CLI.PendingMigrations`; EP-7 consumer in `Run.handleBlocking`)
+— all ended up in library-exposed modules so the test suite could
+reach them without spinning up the executable.
 
 Implementation arc per plan:
 
@@ -377,9 +387,18 @@ Implementation arc per plan:
   already had a place to branch. The shipped slice deliberately
   preserved blocked semantics for "migrations declared but no edge
   from current"; that decision is what EP-7 revisits.
-- EP-7 is open (added 2026-04-27). The shape is purely consumer-side
-  messaging plus one new run-side flag; it does not touch the
-  planner contract or any data type.
+- EP-7 was a single-session ship (four small commits: M1 pin, M2
+  messaging, M3 flag, M4 docs). The five-site lockstep messaging
+  edit settled cleanly; the `isBlockedMigration` partition predicate
+  joined `isBenignUpgrade` as the second half of the four-shape
+  classifier in `Seihou.CLI.PendingMigrations`, reused by
+  `formatRefusalMessage`'s shape-sensitive trailer and by
+  `handleBlocking`'s run-side dispatch. The recursion-with-
+  runBumpBlocked=False pattern in `handleBlocking` lets one
+  invocation handle a mixed project (`--bump-blocked
+  --with-migrations` against blocked + partial inputs is a single
+  pass). The plan's stricter mutual-exclusion check between the two
+  flags turned out unnecessary.
 
 Lessons captured:
 
@@ -415,6 +434,18 @@ Lessons captured:
   exercise the blocked path via synthetic fixtures; future
   masterplans should treat live-tree state at reopen time as
   evidence, not contract.
+
+- Some live-tree demos are worse than useless. EP-7's strict
+  acceptance asked for an actual `seihou run --bump-blocked` apply
+  that bumps the manifest and re-renders templates. Restoring the
+  working tree afterwards (file moves, symlinks, orphan deletions,
+  shell-command side effects) would have meant `git checkout` plus
+  manual symlink cleanup plus directory removal. The dry-run-only
+  demo + unit-test coverage of the bump path turned out to give
+  the same confidence at a fraction of the risk. Future plans that
+  ship destructive commands should default to dry-run for the
+  live-tree demo and reserve the apply path for fresh-worktree
+  hardening tests.
 
 
 ## Revisions
@@ -471,3 +502,21 @@ Lessons captured:
   recovery), Progress, Surprises & Discoveries, Decision Log, and
   Outcomes & Retrospective to reflect the reopen. EP-1–EP-6 stay
   marked Complete within their original scopes.
+
+- 2026-04-27: EP-7 shipped. All four milestones landed in one
+  session with `cabal test all` green at every step (190 tests
+  passing) and `nix flake check` green at the end. The five-site
+  lockstep messaging edit (Migrate, StatusRender,
+  PendingMigrations, Run, Upgrade) settled cleanly via grep
+  verification; `isBlockedMigration` shipped earlier than planned
+  in EP-7's M2 because `formatRefusalMessage`'s shape-sensitive
+  trailer needed it before the run-side dispatcher of M3 could
+  reach it. Marked EP-7 Complete in the Exec-Plan Registry,
+  checked off all four EP-7 items in Progress, rewrote Outcomes &
+  Retrospective to describe the full seven-EP arc end-to-end
+  (no longer "what EP-1–EP-6 delivered" with EP-7 pending), and
+  recorded EP-7-specific lessons in Surprises and Lessons.
+  The live-tree demo exercised the dry-run path only; the
+  destructive `seihou run --bump-blocked` apply step was deferred
+  to a fresh-worktree hardening test (rationale captured in
+  Surprises & Discoveries and in the EP-7 retrospective).
