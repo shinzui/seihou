@@ -139,7 +139,7 @@ Alternatives considered:
 
 | #   | Title                                                                | Path                                                            | Hard Deps | Soft Deps | Status      |
 |-----|----------------------------------------------------------------------|-----------------------------------------------------------------|-----------|-----------|-------------|
-| 1   | Document the CLI library-first module-placement convention            | docs/plans/18-document-cli-library-first-convention.md          | None      | None      | In Progress |
+| 1   | Document the CLI library-first module-placement convention            | docs/plans/18-document-cli-library-first-convention.md          | None      | None      | Complete    |
 | 2   | Restructure `seihou-cli.cabal` so the library is the default home     | docs/plans/19-restructure-cli-cabal-library-first.md            | EP-1      | None      | Not Started |
 | 3   | Extract remaining executable-only helpers identified by the audit     | docs/plans/20-extract-trapped-cli-helpers.md                    | EP-2      | EP-1      | Not Started |
 | 4   | Add an automated enforcement check for the convention                 | docs/plans/21-enforce-cli-library-first-convention.md           | EP-2      | EP-3      | Not Started |
@@ -298,9 +298,9 @@ Track milestone-level progress across all child plans. Each entry names the chil
 plan and the milestone. This section provides an at-a-glance view of the entire
 initiative.
 
-- [ ] EP-1: Draft and land the "CLI Module Placement" section of `docs/dev/architecture/overview.md`.
-- [ ] EP-1: Create the project-root `CLAUDE.md` with a quick-reference pointer to the convention.
-- [ ] EP-1: Create `docs/dev/contributing.md` containing the convention plus general contributor guidance, and cross-link it from the architecture overview.
+- [x] EP-1: Draft and land the "CLI Module Placement" section of `docs/dev/architecture/overview.md`.
+- [x] EP-1: Create the project-root `CLAUDE.md` with a quick-reference pointer to the convention.
+- [x] EP-1: Create `docs/dev/contributing.md` containing the convention plus general contributor guidance, and cross-link it from the architecture overview.
 - [ ] EP-2: Reproduce the duplicate-compilation fingerprint of the current cabal layout (a short note for the EP-2 retrospective; not a regression test).
 - [ ] EP-2: Make `executable seihou` `build-depends: seihou-cli-internal`; remove from its `other-modules` every entry that already exists in the library's `exposed-modules`; verify `cabal build all` and `cabal test all` succeed.
 - [ ] EP-2: Move `Seihou.CLI.SchemaVersion` from the executable's `other-modules` to the library's `exposed-modules`; annotate every remaining entry in the executable's `other-modules` with a one-line cabal comment naming the executable-only dependency that traps it.
