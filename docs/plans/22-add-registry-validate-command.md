@@ -99,11 +99,12 @@ exit code.
       decisions and report contents for the success path, the version-drift
       path, and the missing-`module.dhall` path. Register the new spec module
       in `seihou-cli/test/Main.hs` and the cabal test stanza. (2026-04-27)
-- [ ] M4: Documentation. Extend `docs/cli/registry.md` with a `seihou registry
+- [x] M4: Documentation. Extend `docs/cli/registry.md` with a `seihou registry
       validate` section, add a CHANGELOG entry under Unreleased, and add a
       "Validating the registry" cross-reference to
       `docs/user/registries-and-multi-module-repos.md`. Update the "Current
-      subcommands" footer in `Seihou.CLI.Commands.registryInfo`.
+      subcommands" footer in `Seihou.CLI.Commands.registryInfo`. (2026-04-27;
+      footer updated in M2 alongside the parser wiring.)
 - [ ] M5: Manual end-to-end. In a throwaway temp directory, hand-construct a
       registry that exhibits each of the five failure modes, run `seihou
       registry validate`, observe the report, fix the entries, and confirm

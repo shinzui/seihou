@@ -34,6 +34,10 @@ All notable changes to this project will be documented in this file.
   compares against the registry, and rewrites `seihou-registry.dhall` with
   current versions. Supports `--dry-run` and a CI-friendly `--check` flag
   that exits 1 on drift.
+- `seihou registry validate`: check that registry entries match their
+  on-disk modules, including a strict `version` equality check. Exits
+  non-zero on any failure (structural or version drift), so it can act
+  as a single CI pre-merge gate. See `docs/cli/registry.md`.
 - Documented `version` field on registry entries in
   `docs/user/registries-and-multi-module-repos.md` and the bootstrap prompt.
 - `seihou browse` and `seihou install` emit a per-entry warning to stderr

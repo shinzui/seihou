@@ -13,8 +13,9 @@ seihou registry COMMAND [OPTIONS]
 | Command | Description |
 |---------|-------------|
 | `sync-versions` | Copy each module's declared version into the registry |
+| `validate`      | Check that entries and versions match their modules |
 
-The `registry` group is designed to extend. Future subcommands (e.g. `registry add`, `registry validate`, `registry publish`) will live on this page.
+The `registry` group is designed to extend. Future subcommands (e.g. `registry add`, `registry publish`) will live on this page.
 
 ## Description
 
@@ -84,3 +85,43 @@ seihou registry sync-versions --check
 ```
 
 It exits 0 if everything is in sync and 1 if any entry is missing, stale, or orphaned. Pair it with `seihou validate-module` to check the modules themselves.
+
+---
+
+## seihou registry validate
+
+Check that a multi-module repository's `seihou-registry.dhall` is well-formed and that every entry's `version` field agrees with the underlying `module.dhall` or `recipe.dhall`.
+
+### Usage
+
+```
+seihou registry validate [OPTIONS]
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--dir PATH` | Registry repo root. Defaults to the current directory. |
+
+### Description
+
+Combines two existing checks into a single command:
+
+1. **Structural** — every entry's `path` resolves to a `module.dhall` or `recipe.dhall`, every `name` matches `[a-z][a-z0-9-]*`, no module name collides with a recipe name, no path is absolute or contains `..`.
+2. **Version** — every entry's `version` field equals the `version` declared in the on-disk `module.dhall` / `recipe.dhall`. A missing registry version (where the module declares one) and a stale registry version both fail validation.
+
+Exits 0 on a clean registry and 1 on any failure. Suitable for CI pre-merge checks. Unlike `seihou registry sync-versions --check`, this also catches structural problems (renamed modules, illegal paths, name collisions).
+
+### Examples
+
+```sh
+seihou registry validate
+seihou registry validate --dir ./my-templates
+```
+
+### CI usage
+
+```yaml
+- run: seihou registry validate
+```

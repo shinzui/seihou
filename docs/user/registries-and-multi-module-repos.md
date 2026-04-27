@@ -296,6 +296,12 @@ See [`docs/cli/registry.md`](../cli/registry.md) for flags and CI usage.
 entry when they detect drift — they don't block, but the warning is a hint
 to run `registry sync-versions` before your next push.
 
+For a single one-shot check that catches both version drift *and*
+structural issues like a renamed module directory or an illegal path,
+run `seihou registry validate`. The command exits non-zero on any
+problem and is suitable for CI. See `docs/cli/registry.md` for the full
+option reference.
+
 
 ## Registry validation
 
