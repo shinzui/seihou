@@ -54,6 +54,8 @@ Alternatives considered:
 | 3   | Make `seihou run` migration-aware                            | docs/plans/16-make-run-migration-aware.md           | EP-2      | EP-1      | Complete    |
 | 4   | Make `seihou status` surface staleness and pending migrations | docs/plans/17-improve-status-migration-visibility.md | EP-1      | EP-2      | Complete    |
 | 5   | Bulletproof partial migration chains across status, migrate, run | docs/plans/23-bulletproof-partial-migration-chains.md | EP-2, EP-3, EP-4 | None | Complete    |
+| 6   | Distinguish benign version bumps from missing migrations     | docs/plans/24-distinguish-benign-version-bumps.md   | EP-5      | None      | Complete    |
+| 7   | Make blocked migrations recoverable from the user's side     | docs/plans/25-recover-from-blocked-migrations.md    | EP-6      | None      | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -73,6 +75,10 @@ Parallelism: After EP-1 ships, EP-2 and EP-4 can proceed in parallel (different 
 Critical path: EP-1 → EP-2 → EP-3 (three plans serial).
 
 EP-5 was added on 2026-04-26 as follow-up after EP-1–EP-4 shipped: the masterplan's vision is not actually delivered while the planner returns `MigrationGap` whenever the declared migration list does not reach the latest version exactly. EP-5 hard-depends on EP-2, EP-3, and EP-4 because it changes the planner contract that all three of them consume; each consumer needs a coordinated update. EP-5 has no soft dependencies because the consumers were the deferring plans, not the providing ones.
+
+EP-6 was added on 2026-04-26 (initially shipped as an unregistered side plan; retroactively registered into this masterplan on 2026-04-27) to retire the conflation between "author owes a migration" and "author bumped the version without needing one". EP-6 hard-depends on EP-5 because the `MigrationPlan` shape it extends (with `planMigrationsDeclared :: Bool`) is the shape EP-5 introduced. EP-6 introduced `--bump-only` and `MigrateBenignUpgrade` so the empty-migrations case (`migrations = []` + version gap) stops being reported as blocked.
+
+EP-7 was added on 2026-04-27 after live verification on the `seihou-project` working tree showed the masterplan's vision still incomplete: a blocked migration (migrations declared but no edge from the current version) gives the user no recoverable error message. The "module author must ship one before this project can move forward" sentence is wrong when the user *is* the module author, and `--bump-only` (already shipped in EP-6) is not surfaced anywhere in the in-CLI messaging. EP-7 hard-depends on EP-6 because the recovery path it adds (`seihou run --bump-blocked`) reuses EP-6's `--bump-only` plumbing under the hood.
 
 
 ## Integration Points
@@ -114,8 +120,13 @@ This section enumerates every shared artifact two or more child plans touch. Eac
 
 **6. Migration planner contract.**
 
-- Involved plans: EP-5 (definer); EP-2, EP-3, EP-4 (downstream consumers via `pendingChainFor` and `runMigrate`).
-- Artifact: `planMigrationChain` in `seihou-core/src/Seihou/Core/Migration.hs`. EP-5 changes its return type from `Either MigrationPlanError (Maybe MigrationChain)` to `Either MigrationPlanError (Maybe MigrationPlan)`, where `MigrationPlan` is a record `{ planChain :: MigrationChain, planUnreachable :: Maybe (Version, Version) }`. The `MigrationGap` error variant is removed from `MigrationPlanError` and replaced with the in-band `planUnreachable` field; partial coverage is no longer a hard error. The blocked case (no edge starts at the manifest version) is represented as `MigrationPlan { planChain = empty, planUnreachable = Just (installed, target) }`. Consumers must check `null planChain.chainSteps` to distinguish blocked from partial.
+- Involved plans: EP-5 (definer); EP-2, EP-3, EP-4 (downstream consumers via `pendingChainFor` and `runMigrate`); EP-6 (extends with `planMigrationsDeclared`).
+- Artifact: `planMigrationChain` in `seihou-core/src/Seihou/Core/Migration.hs`. EP-5 changes its return type from `Either MigrationPlanError (Maybe MigrationChain)` to `Either MigrationPlanError (Maybe MigrationPlan)`, where `MigrationPlan` is a record `{ planChain :: MigrationChain, planUnreachable :: Maybe (Version, Version) }`. The `MigrationGap` error variant is removed from `MigrationPlanError` and replaced with the in-band `planUnreachable` field; partial coverage is no longer a hard error. The blocked case (no edge starts at the manifest version) is represented as `MigrationPlan { planChain = empty, planUnreachable = Just (installed, target) }`. Consumers must check `null planChain.chainSteps` to distinguish blocked from partial. EP-6 extends the record with `planMigrationsDeclared :: Bool`, set from `not (null migrations)` at the single construction site, so consumers can distinguish "author declared no migrations" (benign bump) from "author declared migrations but none reach" (real block) without re-reading the source `Module`.
+
+**7. Blocked-migration messaging and recovery.**
+
+- Involved plans: EP-6 (definer of `--bump-only`); EP-7 (definer of `--bump-blocked` and the messaging update); EP-3, EP-4, EP-5 (provide the surfaces that get reworded).
+- Artifact: the four user-facing blocked-message sites — `Seihou.CLI.Migrate` (line ~349), `Seihou.CLI.StatusRender` (line ~350), `Seihou.CLI.PendingMigrations.formatRefusalMessage`, and `Seihou.CLI.Run.applyOneMigration` (line ~617) plus `Seihou.CLI.Upgrade.printAdvisory` and `runOnePostUpgradeMigration`. EP-7 rewrites all of them to surface `seihou migrate <module> --bump-only` (the EP-6 escape hatch) as the manual acknowledgement, and adds `seihou run --bump-blocked` as a one-command recovery flag that pre-applies bump-only semantics to every blocked entry before the run proceeds. The classifier `isBlockedMigration :: MigrationPlan -> Bool` joins EP-6's `isBenignUpgrade` in `Seihou.CLI.PendingMigrations`; together they exhaustively partition the four shapes (full / partial / blocked / benign) for run-side dispatch.
 
 
 ## Progress
@@ -140,6 +151,14 @@ Track milestone-level progress across all child plans. Each entry names the chil
 - [x] EP-5: Update `Seihou.CLI.StatusRender` to emit full / partial / blocked migration rows.
 - [x] EP-5: Update `seihou run` pre-flight to refuse on every divergence; `--with-migrations` applies reachable prefixes and refuses blocked modules.
 - [x] EP-5: End-to-end demonstration on the live `seihou-project` tree: status, migrate, and run all behave correctly for master-plan (partial chain) and exec-plan (blocked).
+- [x] EP-6: Pin "blocked" behavior for empty-migrations modules with regression tests.
+- [x] EP-6: Add `planMigrationsDeclared` to `MigrationPlan` and a `MigrateBenignUpgrade` variant so empty-migrations gaps stop being reported as blocked.
+- [x] EP-6: Add `seihou migrate <module> --bump-only` as the manual escape hatch for partial-chain projects; update status, run, and upgrade renderers to soften benign-bump advisories.
+- [x] EP-6: End-to-end demonstration: synthetic empty-migrations fixture exits zero with a softened note; live-tree `--bump-only` catches both partial-chain manifests up to the latest version.
+- [ ] EP-7: Pin today's blocked-migration message text at every site (Migrate, StatusRender, PendingMigrations, Run, Upgrade).
+- [ ] EP-7: Update every blocked-message site to drop the "module author must ship one" finality and to name `--bump-only` and `--bump-blocked` as recovery options.
+- [ ] EP-7: Add `seihou run --bump-blocked` flag that pre-applies `--bump-only` to every blocked entry; add `isBlockedMigration` classifier to `Seihou.CLI.PendingMigrations`.
+- [ ] EP-7: End-to-end demonstration on the live `seihou-project` tree: a single `seihou run --bump-blocked` invocation recovers both `master-plan` and `exec-plan` from the blocked state and writes the new templates.
 
 
 ## Surprises & Discoveries
@@ -205,6 +224,23 @@ Captured during research before implementation:
 
   master-plan: manifest=0.1.0, cache=0.3.0, declared `[0.1.0 → 0.2.0]` (partial chain). exec-plan: manifest=0.1.3, cache=0.3.0, no migrations declared (no-chain-at-all). Both consumers swallow the planner's `MigrationGap` and the user sees nothing actionable. `seihou run` would silently overwrite the 0.1.0 layout with 0.3.0 templates — the exact hazard EP-3 was meant to block. EP-5 (`docs/plans/23-bulletproof-partial-migration-chains.md`) reopens the masterplan to ship the longest-reachable-prefix planner mode and update all three consumers in lockstep.
 
+- **EP-6's blocked-preservation decision proved too restrictive when the user is also the module author.** EP-6 deliberately preserved the blocked semantics for "migrations declared but no edge starts at the manifest version", on the reasoning that "the gap is a real omission — refusing the run is still the correct default." Live verification on `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou` on 2026-04-27 (after EP-5 partial-applied both modules to 0.2.0 and the upstream `agent-seihou` advanced to 0.3.0 without shipping a 0.2.0 → 0.3.0 migration) showed the user — who is the module author — locked out:
+
+      $ seihou run
+      Pending migrations detected:
+        exec-plan: Blocked: no migration declared from 0.2.0; remote is at 0.3.0
+        master-plan: Blocked: no migration declared from 0.2.0; remote is at 0.3.0
+
+      Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run.
+
+      $ seihou migrate exec-plan
+      Fetching https://github.com/shinzui/agent-seihou.git...
+      Blocked: no migration declared from 0.2.0; remote is at 0.3.0. The module author must ship one before this project can move forward.
+
+  Two failures stack here. First, the message tells the user there is no recovery path ("the module author must ship one") even though `--bump-only` (shipped in EP-6) is exactly the manual acknowledgement for this case. Second, when the user is *both* the module author and the project owner, "wait for the module author" is a tautology — there is no second party to wait for. EP-7 (`docs/plans/25-recover-from-blocked-migrations.md`) reopens the masterplan to surface `--bump-only` in every blocked-message site and to add `seihou run --bump-blocked` as a one-command recovery for projects with multiple blocked modules.
+
+- **Plan 24 (EP-6) shipped without a `MasterPlan:` line and was not registered in the Exec-Plan Registry.** It carried the same `Intention:` as this masterplan but the back-link was missing, so the registry table at EP-5's close still suggested the masterplan was Complete. Retroactively registered on 2026-04-27 alongside the EP-7 reopen. Lesson for future masterplans: every plan that lands in `docs/plans/` while a masterplan is open should be registered up-front, even if it is small and not strictly required to deliver the masterplan's vision; otherwise the registry stops being an authoritative inventory of in-flight work.
+
 
 ## Decision Log
 
@@ -224,14 +260,33 @@ Captured during research before implementation:
   Rationale: The existing `AppliedModule.moduleVersion` field is sufficient. Adding a v3 manifest would force a forward-only migration of every project that uses Seihou, for negligible benefit.
   Date: 2026-04-26.
 
+- Decision: For the declared-but-no-edge-from-current case, keep the default `seihou run` refusal but make the recovery path discoverable in-CLI rather than reverting to a benign-bump for this shape.
+  Rationale: The EP-3 hazard is real — if the author *did* forget to ship a migration, silently writing the new templates over the old layout could leave the project broken. But the EP-6 reasoning that "the user is downstream and must wait for the author" failed to anticipate the common case where the user is the author. The right balance is: keep the safety check as the default, but make `--bump-only` (manual, per-module) and `--bump-blocked` (one-command, all blocked modules at once) visible escape hatches in every error message.
+  Alternatives considered:
+  (a) Treat declared-but-no-edge as benign by default. Rejected — re-introduces the EP-3 hazard for users who are *not* the author.
+  (b) Introduce a module-author-side sentinel (e.g. `noMigrationNeededFor : List Version` in `module.dhall`) so authors can declare specific transitions intentional. Rejected for now — schema change, requires an upgrade of every published module, and the in-CLI recovery covers the same use case at lower cost.
+  (c) Add `seihou upgrade --bump-blocked` as well. Deferred — `seihou upgrade` already prints a post-upgrade advisory; surfacing `--bump-only` there is enough for now.
+  Date: 2026-04-27.
+
 
 ## Outcomes & Retrospective
 
-This masterplan ships the upgrade-and-migrate DX vision in full. With
-EP-1–EP-5 landed, a project owner who pulls a stale registry sees
-the truth, and `seihou status`, `seihou migrate`, and `seihou run`
-all behave correctly across full chains, partial chains, and blocked
-modules.
+> **Status (2026-04-27):** Masterplan reopened. EP-1–EP-6 landed and
+> deliver the bulk of the vision, but live verification on the
+> `seihou-project` working tree showed the blocked-migration UX still
+> leaves the user without a discoverable recovery path. EP-7
+> (`docs/plans/25-recover-from-blocked-migrations.md`) is the
+> remaining work; the retrospective below describes the EP-1–EP-6
+> arc and is complete only once EP-7 ships.
+
+With EP-1–EP-6 landed, a project owner who pulls a stale registry
+sees the truth, and `seihou status`, `seihou migrate`, and `seihou
+run` behave correctly across full chains, partial chains, blocked
+modules, and benign empty-migrations bumps. The remaining gap is
+purely a recovery-discoverability one: when a blocked module *is*
+encountered, the in-CLI message tells the user no recovery exists
+even though `--bump-only` is exactly the recovery (EP-7 fixes the
+messaging and adds a one-command flag).
 
 What the user sees end-to-end:
 
@@ -313,6 +368,18 @@ Implementation arc per plan:
   ran had `exec-plan` upgraded from "no migrations" to "partial
   chain", so the demo only proves partial on real data; the blocked
   path is covered by unit tests.
+- EP-6 was a single-session ship that added one `Bool` to
+  `MigrationPlan` (`planMigrationsDeclared`), one variant to
+  `MigrateResult` (`MigrateBenignUpgrade`), one variant to
+  `ModuleAdvice` (`AdviceBenignUpgrade`), and one new flag
+  (`--bump-only`) — the four-shape dispatch (full / partial /
+  blocked / benign) crystallised cleanly because every consumer
+  already had a place to branch. The shipped slice deliberately
+  preserved blocked semantics for "migrations declared but no edge
+  from current"; that decision is what EP-7 revisits.
+- EP-7 is open (added 2026-04-27). The shape is purely consumer-side
+  messaging plus one new run-side flag; it does not touch the
+  planner contract or any data type.
 
 Lessons captured:
 
@@ -382,3 +449,25 @@ Lessons captured:
   the exec-plan author had shipped a continuation migration in the
   intervening time. Unit tests still exercise the blocked path via
   synthetic fixtures.
+
+- 2026-04-27: Reopened the masterplan after live verification on the
+  `seihou-project` working tree showed `seihou run` and
+  `seihou migrate` refusing both `master-plan` and `exec-plan` with
+  "Blocked: no migration declared from 0.2.0; remote is at 0.3.0.
+  The module author must ship one before this project can move
+  forward." The two failure layers — (a) the user is also the module
+  author, so "wait for the author" is a tautology, and (b)
+  `--bump-only` (shipped in EP-6) is not surfaced anywhere in the
+  in-CLI messaging — combine to lock the user out. Added EP-7
+  (`docs/plans/25-recover-from-blocked-migrations.md`) to surface
+  `--bump-only` at every blocked-message site and to add
+  `seihou run --bump-blocked` as a one-command recovery flag.
+  Retroactively registered the previously-unregistered EP-6
+  (`docs/plans/24-distinguish-benign-version-bumps.md`) into the
+  Exec-Plan Registry; added a `MasterPlan:` back-link to that plan.
+  Updated the Exec-Plan Registry, Dependency Graph, Integration
+  Points (extended #6 with EP-6's `planMigrationsDeclared`; added
+  integration point #7 for blocked-migration messaging and
+  recovery), Progress, Surprises & Discoveries, Decision Log, and
+  Outcomes & Retrospective to reflect the reopen. EP-1–EP-6 stay
+  marked Complete within their original scopes.

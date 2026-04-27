@@ -1,5 +1,7 @@
 # Distinguish benign version bumps from missing migrations
 
+MasterPlan: docs/masterplans/1-migrations-dx.md
+
 Intention: intention_01kq5pe8hhekrrb9wg4eb1jz74
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
