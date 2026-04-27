@@ -114,7 +114,7 @@ declared (no-chain-at-all). After this plan:
       prefix, refresh the manifest's `moduleVersion`, and print the
       unreachable-tail advisory when one exists. Preserve the
       `--to TARGET` semantics (hard error on partial reach).
-- [ ] Update `Seihou.CLI.StatusRender` to emit one of three row shapes
+- [x] Update `Seihou.CLI.StatusRender` to emit one of three row shapes
       (full / partial / blocked) based on the new planner result.
 - [ ] Update `seihou run`'s pre-flight in `Run.hs` to refuse on every
       divergence; update `--with-migrations` to apply the reachable prefix

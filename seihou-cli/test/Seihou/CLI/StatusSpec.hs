@@ -130,3 +130,47 @@ spec = describe "formatStatus" $ do
     out `shouldNotSatisfy` T.isInfixOf "seihou upgrade demo"
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
     out `shouldSatisfy` T.isInfixOf "  seihou migrate demo"
+
+  -- EP-5: partial chain mirrors the live-tree master-plan failure
+  -- (manifest=0.1.0, remote=0.3.0, declared edges only reach 0.2.0).
+  it "partial migration: chain summary + unreachable-tail advisory" $ do
+    let am = mkApplied "master-plan" (Just "0.1.0")
+        manifest = mkManifest [am]
+        chain = mkChain "master-plan" "0.1.0" "0.2.0" 1
+        plan =
+          MigrationPlan
+            { planChain = chain,
+              planUnreachable = Just (parseV "0.2.0", parseV "0.3.0")
+            }
+        out = formatStatus False manifest [] Nothing [(ModuleName "master-plan", plan)]
+    out `shouldSatisfy` T.isInfixOf "Pending migration: 0.1.0 -> 0.2.0"
+    out `shouldSatisfy` T.isInfixOf "Run: seihou migrate master-plan"
+    out `shouldSatisfy` T.isInfixOf "Note: no migration declared from 0.2.0"
+    out `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
+    out `shouldSatisfy` T.isInfixOf "Recommended actions:"
+    out `shouldSatisfy` T.isInfixOf "  seihou migrate master-plan"
+
+  -- EP-5: blocked plan mirrors the live-tree exec-plan failure
+  -- (manifest=0.1.3, remote=0.3.0, no migrations declared at all).
+  it "blocked migration: refusal row + [blocked] in Recommended actions" $ do
+    let am = mkApplied "exec-plan" (Just "0.1.3")
+        manifest = mkManifest [am]
+        plan =
+          MigrationPlan
+            { planChain =
+                MigrationChain
+                  { migrationModule = "exec-plan",
+                    chainFrom = parseV "0.1.3",
+                    chainTo = parseV "0.1.3",
+                    chainSteps = []
+                  },
+              planUnreachable = Just (parseV "0.1.3", parseV "0.3.0")
+            }
+        out = formatStatus False manifest [] Nothing [(ModuleName "exec-plan", plan)]
+    out `shouldSatisfy` T.isInfixOf "Blocked: no migration declared from 0.1.3"
+    out `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
+    out `shouldSatisfy` T.isInfixOf "Recommended actions:"
+    out `shouldSatisfy` T.isInfixOf "[blocked] no migration declared for exec-plan"
+    -- Blocked entries do NOT list a seihou migrate <name> command in
+    -- the Recommended actions block — running it would just error.
+    out `shouldNotSatisfy` T.isInfixOf "  seihou migrate exec-plan"
