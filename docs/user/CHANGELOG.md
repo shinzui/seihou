@@ -10,6 +10,35 @@ HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 
 
 ## Changelog
 
+### 2026-04-26 (CLI library-first: AgentLaunch split, Outdated re-exports retired)
+
+**Reviewed commits:** EP-3 of MasterPlan
+`docs/masterplans/2-cli-library-first-convention.md` — bringing the
+last two known violations of the library-first convention into
+compliance through source-level restructuring.
+
+**Behavior change (developer-facing only):**
+- `Seihou.CLI.AgentLaunch` is now a library module
+  (`seihou-cli-internal`) carrying the pure surface and the
+  IO-bearing context-gathering helpers (`AgentContext`,
+  `gatherAgentContext`, `agentDirsForSession`, the three
+  `*AllowedTools` constants, `substitute`, and the five `format*`
+  helpers). The launcher functions (`launchAgent`,
+  `launchAgentWith`) moved to a new executable-only module
+  `Seihou.CLI.AgentLaunchExec` because they call
+  `findExecutable`/`rawSystem`/`exitWith`. Consumers (`Assist`,
+  `Bootstrap`, `Setup`) now import from both modules.
+- `Seihou.CLI.Outdated`'s export list no longer re-exports
+  `OriginInfo`, `OutdatedStatus`, `OutdatedEntry`, `CheckStats`, or
+  `compareVersions`. Consumers import these names from their
+  canonical homes: `Seihou.CLI.InstallShared` (for `OriginInfo`)
+  and `Seihou.CLI.VersionCompare` (for the rest). `Status.hs` and
+  `Upgrade.hs` were updated.
+- Test suite gains `Seihou.CLI.AgentLaunchSpec` exercising
+  `substitute` and the five `format*` helpers — coverage that was
+  impossible while these helpers were trapped in the executable
+  target.
+
 ### 2026-04-26 (CLI cabal restructured; executable depends on library)
 
 **Reviewed commits:** EP-2 of MasterPlan

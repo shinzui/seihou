@@ -17,6 +17,7 @@ library seihou-cli-internal
   hs-source-dirs: src
   visibility: private
   exposed-modules:
+    Seihou.CLI.AgentLaunch
     Seihou.CLI.BrowseFormat
     Seihou.CLI.CommitMessage
     Seihou.CLI.Diff
@@ -81,7 +82,7 @@ executable seihou
   -- seihou-cli-internal library at hs-source-dirs: src.
   other-modules:
     Paths_seihou_cli
-    Seihou.CLI.AgentLaunch
+    Seihou.CLI.AgentLaunchExec
     Seihou.CLI.Assist
     Seihou.CLI.Bootstrap
     Seihou.CLI.Browse
@@ -144,6 +145,7 @@ test-suite seihou-cli-test
     TypeFamilies
 
   other-modules:
+    Seihou.CLI.AgentLaunchSpec
     Seihou.CLI.BrowseFormatSpec
     Seihou.CLI.CommitMessageSpec
     Seihou.CLI.DiffSpec

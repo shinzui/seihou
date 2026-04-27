@@ -14,6 +14,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (UpgradeOpts (..))
 import Seihou.CLI.Install (installModuleDir)
+import Seihou.CLI.InstallShared (OriginInfo (..))
 import Seihou.CLI.Migrate
   ( MigrateError (..),
     MigrateOpts (..),
@@ -21,7 +22,7 @@ import Seihou.CLI.Migrate
     pendingChainFor,
     runMigrate,
   )
-import Seihou.CLI.Outdated (OriginInfo (..), moduleNameFromDm, readOriginWithModule)
+import Seihou.CLI.Outdated (moduleNameFromDm, readOriginWithModule)
 import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)

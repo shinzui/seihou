@@ -1,13 +1,8 @@
 module Seihou.CLI.Outdated
   ( handleOutdated,
-    OriginInfo (..),
-    OutdatedStatus (..),
-    OutdatedEntry (..),
-    CheckStats (..),
     checkInstalledModulesForUpdates,
     readOriginWithModule,
     moduleNameFromDm,
-    compareVersions,
     checkSource,
   )
 where

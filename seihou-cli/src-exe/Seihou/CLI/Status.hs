@@ -6,14 +6,12 @@ where
 import Control.Exception (SomeException, try)
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (StatusOpts (..))
-import Seihou.CLI.Outdated
-  ( OutdatedEntry (..),
-    checkInstalledModulesForUpdates,
-  )
+import Seihou.CLI.Outdated (checkInstalledModulesForUpdates)
 import Seihou.CLI.PendingMigrations (detectPendingMigrations)
 import Seihou.CLI.Shared (logIO)
 import Seihou.CLI.StatusRender (formatStatus)
 import Seihou.CLI.Style (useColor)
+import Seihou.CLI.VersionCompare (OutdatedEntry (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverAllModules)
 import Seihou.Core.Status (computeTrackedFileStatuses)
 import Seihou.Core.Types

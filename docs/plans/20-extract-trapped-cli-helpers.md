@@ -57,23 +57,66 @@ which are now imported from their canonical sites.
 
 ## Progress
 
-- [ ] Confirm the post-EP-2 state: `executable seihou` `build-depends: seihou-cli-internal`; `Seihou.CLI.AgentLaunch` is in the executable's `other-modules` with a placeholder comment; `Seihou.CLI.SchemaVersion` has already moved to the library.
-- [ ] Plan the `AgentLaunch` split: identify every export of `Seihou.CLI.AgentLaunch` that uses `findExecutable`/`rawSystem`/`exitWith`/`exitFailure` and confirm they are exactly `launchAgent` and `launchAgentWith`.
-- [ ] Edit `seihou-cli/src/Seihou/CLI/AgentLaunch.hs` to remove `launchAgent` and `launchAgentWith`, drop the imports they uniquely needed (`findExecutable`, `rawSystem`, `exitFailure`, `exitWith`), and update the export list.
-- [ ] Create `seihou-cli/src/Seihou/CLI/AgentLaunchExec.hs` containing `launchAgent` and `launchAgentWith`, importing `Seihou.CLI.AgentLaunch` for `agentDirsForSession` and `defaultAllowedTools`.
-- [ ] Update `seihou-cli/seihou-cli.cabal`: add `Seihou.CLI.AgentLaunch` to the library's `exposed-modules`; add `Seihou.CLI.AgentLaunchExec` to the executable's `other-modules` with the comment "needs System.Process.rawSystem and System.Exit.exitWith for launching the claude binary"; remove the placeholder `Seihou.CLI.AgentLaunch` comment EP-2 left behind.
-- [ ] Update consumers (`Assist`, `Bootstrap`, `Setup`, `Main.hs`): change `import Seihou.CLI.AgentLaunch` to import the library names from `Seihou.CLI.AgentLaunch` and the launcher functions from `Seihou.CLI.AgentLaunchExec`. Verify each file compiles.
-- [ ] Update `Seihou.CLI.Outdated`'s export list (lines 1-13 of `seihou-cli/src/Seihou/CLI/Outdated.hs`): remove `OriginInfo`, `OutdatedStatus`, `OutdatedEntry`, `CheckStats`, `compareVersions` from the exports. Verify the file still compiles (it imports them; it just stops re-exporting).
-- [ ] Find and update every consumer that imports any of those names from `Seihou.CLI.Outdated`: change the import to the canonical site (`InstallShared` for `OriginInfo`; `VersionCompare` for the others).
-- [ ] Add `seihou-cli/test/Seihou/CLI/AgentLaunchSpec.hs` exercising `substitute` and at least one `format*` helper. Wire it into `seihou-cli/test/Main.hs` and `seihou-cli/seihou-cli.cabal`'s test-suite `other-modules`.
-- [ ] Run `cabal build all && cabal test all`; both succeed.
-- [ ] Add a CHANGELOG entry to `docs/user/CHANGELOG.md`.
+- [x] Confirm the post-EP-2 state: `executable seihou` `build-depends: seihou-cli-internal`; `Seihou.CLI.AgentLaunch` is in the executable's `other-modules` (no per-line cabal comment — see Surprises below); `Seihou.CLI.SchemaVersion` has already moved to the library.
+- [x] Plan the `AgentLaunch` split: identify every export of `Seihou.CLI.AgentLaunch` that uses `findExecutable`/`rawSystem`/`exitWith`/`exitFailure` and confirm they are exactly `launchAgent` and `launchAgentWith`.
+- [x] Create `seihou-cli/src/Seihou/CLI/AgentLaunch.hs` (library half: pure surface plus `AgentContext`, `gatherAgentContext`, `agentDirsForSession`, the three `*AllowedTools` constants, `substitute`, and the five `format*` helpers). The plan said to "edit" the existing file, but post-EP-2 the executable's source dir is `src-exe/`, so the library half is created fresh at `src/`.
+- [x] Create `seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs` containing `launchAgent` and `launchAgentWith`, importing `Seihou.CLI.AgentLaunch` for `agentDirsForSession` and `defaultAllowedTools`.
+- [x] Delete the old `seihou-cli/src-exe/Seihou/CLI/AgentLaunch.hs`.
+- [x] Update `seihou-cli/seihou-cli.cabal`: add `Seihou.CLI.AgentLaunch` to the library's `exposed-modules`; replace the executable's `Seihou.CLI.AgentLaunch` `other-modules` entry with `Seihou.CLI.AgentLaunchExec`. (No per-line cabal comment — see Surprises below.)
+- [x] Update consumers (`Assist`, `Bootstrap`, `Setup`): split the unqualified `import Seihou.CLI.AgentLaunch` into an explicit-list import of the library surface plus an `import Seihou.CLI.AgentLaunchExec (launchAgentWith)`. `Main.hs` does not import `AgentLaunch` directly, so no change there.
+- [x] Update `Seihou.CLI.Outdated`'s export list: remove `OriginInfo`, `OutdatedStatus`, `OutdatedEntry`, `CheckStats`, `compareVersions` from the exports. The file still compiles (it imports them; it just stops re-exporting).
+- [x] Update `Status.hs` (`OutdatedEntry` from `VersionCompare`) and `Upgrade.hs` (`OriginInfo` from `InstallShared`) — the only two consumers that pulled these names through `Outdated`.
+- [x] Add `seihou-cli/test/Seihou/CLI/AgentLaunchSpec.hs` exercising `substitute` and all five `format*` helpers (14 tests). Wired into `seihou-cli/test/Main.hs` and the test-suite's `other-modules`.
+- [x] Run `cabal build all && cabal test all --enable-tests`; both succeed (793 core + 157 cli tests pass; cli total grew from 143 to 157 — exactly the 14 new tests).
+- [x] Add a CHANGELOG entry to `docs/user/CHANGELOG.md`.
 
 
 ## Surprises & Discoveries
 
-(None yet. Add to this section as work proceeds. Capture any consumer of the
-`Outdated` re-exports the audit did not anticipate.)
+- **The plan referenced `seihou-cli/src/Seihou/CLI/AgentLaunch.hs` and
+  `seihou-cli/src/Seihou/CLI/Outdated.hs`, but EP-2's source-dir split moved
+  every executable-only module from `src/` to `src-exe/`.** The plan's file
+  paths were written before EP-2's mid-implementation discovery that
+  `hs-source-dirs: src` shared between targets defeats `other-modules`.
+  The library half of `AgentLaunch` was therefore created fresh at
+  `src/Seihou/CLI/AgentLaunch.hs`; the executable launcher was created at
+  `src-exe/Seihou/CLI/AgentLaunchExec.hs`; the old executable
+  `src-exe/Seihou/CLI/AgentLaunch.hs` was deleted. `Outdated.hs`,
+  `Status.hs`, and `Upgrade.hs` were edited at their `src-exe/` paths.
+
+- **The plan's per-module `other-modules` cabal comment was already
+  obsolete.** EP-2 documented in its Surprises section that `cabal-gild`
+  alphabetises and floats `--` comments to the top of the section, so
+  per-line annotations don't survive formatting. EP-2 had already replaced
+  the EP-3-targeted `Seihou.CLI.AgentLaunch` placeholder comment with a
+  block-level comment pointing at the inventory in
+  `docs/dev/architecture/overview.md`. EP-3 therefore swapped the
+  `other-modules` entry from `Seihou.CLI.AgentLaunch` to
+  `Seihou.CLI.AgentLaunchExec` and trusted the existing block comment to
+  speak for both old and new entries.
+
+- **`OverloadedRecordDot` made the explicit `AgentContext` import order-sensitive.**
+  The plan's import lists named `AgentContext` (no `(..)`) for
+  `Assist`, `Bootstrap`, `Setup`. The first build failed with
+  `No instance for HasField "cwd" AgentContext Text` because the field
+  selectors aren't in scope without the data constructor. Fixed by
+  importing `AgentContext (..)`. Plan-text for any future executable/library
+  split that uses `OverloadedRecordDot` should default to `Type (..)` for
+  any data type whose fields the consumer accesses with the dot operator.
+
+- **Outdated re-export consumers were exactly two files.** The audit
+  expected "limited" consumers; concretely: `Status.hs` pulled
+  `OutdatedEntry (..)` through `Outdated`, and `Upgrade.hs` pulled
+  `OriginInfo (..)`. `Main.hs` only imports `handleOutdated`, which is
+  still exported.
+
+- **Test suite count grew by exactly the new spec.** Before:
+  143 cli tests. After: 157. AgentLaunchSpec contributes 14 (4 substitute
+  + 2 each across 5 formatters). This confirms the new helpers were
+  unreachable from the test suite before EP-3.
+
+- **A `nix fmt` pass after the edits reordered some imports** in
+  `Status.hs` and `Upgrade.hs` (alphabetical). No semantic change.
 
 
 ## Decision Log
@@ -113,7 +156,34 @@ which are now imported from their canonical sites.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The three-milestone shape of the plan held up. Milestone 1 (the
+`AgentLaunch` split) was the largest in line-count but still mechanical;
+the only friction was the `OverloadedRecordDot`/`HasField` interaction
+that required `AgentContext (..)` imports rather than the type alone.
+Milestone 2 (the `Outdated` re-export cleanup) was as small as the audit
+predicted: two consumer edits (`Status.hs`, `Upgrade.hs`) plus the export
+list. Milestone 3 (the `AgentLaunchSpec`) is the most useful artifact —
+it is the proof-of-concept that the convention pays back: 14 tests on
+helpers that were unreachable from `seihou-cli-test` before EP-3 because
+the test suite depends on the library and the helpers lived in the
+executable target.
+
+The path-divergence surprise (the plan said `src/`, the actual path was
+`src-exe/`) is a documentation gap on EP-3's part: EP-3 was scoped before
+EP-2 surfaced its source-dir split, and the masterplan's Surprises
+section was updated but the EP-3 plan body was not. A future masterplan
+that ships in this style should review every child plan after each
+parent milestone and refresh paths.
+
+The cabal layout is now exactly the post-EP-2 vision: every helper that
+can live in the library does. The remaining executable-only modules are
+all transitively trapped through `Seihou.CLI.Commands` (the eighteen
+handlers) or directly trapped through one of the four enumerated
+dependencies (`Options.Applicative`, `Data.FileEmbed`, `GitHash`,
+`Paths_seihou_cli`) plus `Seihou.CLI.AgentLaunchExec` (process launching).
+EP-4's enforcement script can now be authored against a clean tree with
+an empty exempt list (apart from `Paths_seihou_cli`, the auto-generated
+module with no source file).
 
 
 ## Context and Orientation

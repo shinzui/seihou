@@ -8,6 +8,18 @@ where
 import Data.FileEmbed (embedFile)
 import Data.Text.Encoding qualified as TE
 import Seihou.CLI.AgentLaunch
+  ( AgentContext (..),
+    agentDirsForSession,
+    formatAvailableModules,
+    formatLocalModules,
+    formatManifestState,
+    formatModuleDhallState,
+    formatSeihouProjectState,
+    gatherAgentContext,
+    setupAllowedTools,
+    substitute,
+  )
+import Seihou.CLI.AgentLaunchExec (launchAgentWith)
 import Seihou.CLI.Commands (SetupOpts (..))
 import Seihou.Prelude
 

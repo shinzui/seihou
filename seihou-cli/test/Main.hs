@@ -1,5 +1,6 @@
 module Main (main) where
 
+import Seihou.CLI.AgentLaunchSpec qualified as AgentLaunchSpec
 import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
 import Seihou.CLI.CommitMessageSpec qualified as CommitMessageSpec
 import Seihou.CLI.DiffSpec qualified as DiffSpec
@@ -21,7 +22,8 @@ main :: IO ()
 main = do
   tests <-
     sequence
-      [ BrowseFormatSpec.tests,
+      [ AgentLaunchSpec.tests,
+        BrowseFormatSpec.tests,
         CommitMessageSpec.tests,
         DiffSpec.tests,
         GitSpec.tests,
