@@ -207,6 +207,59 @@ seihou/
 └── docs/                          # Documentation (this directory)
 ```
 
+## CLI Module Placement Convention
+
+Code under `seihou-cli/src/Seihou/` defaults to the `seihou-cli-internal`
+library. The `seihou` executable target is reserved for the IO shell:
+`Main.hs`, command dispatchers, and the small set of modules that genuinely
+cannot live in the library.
+
+A module belongs in the executable target only if it imports one of these
+four Haskell-package dependencies:
+
+- `Options.Applicative` (the optparse-applicative CLI parser).
+- `Data.FileEmbed` (compile-time `embedFile` for prompt and help text).
+- `GitHash` (compile-time git hash exposed by `--version`).
+- `Paths_seihou_cli` (Cabal's generated module exposing the package version).
+
+A fifth, transitive criterion also keeps a module in the executable: it
+imports another seihou module that is itself executable-only. The most
+common case today is `Seihou.CLI.Commands` (trapped by
+`Options.Applicative`); every command-handler module that imports
+`Commands` for its `Opts` type is transitively trapped.
+
+Any other module — pure helpers, formatters, IO-bearing primitives that
+other commands or tests might call — belongs in the library. The library
+already exposes IO-bearing helpers (for example, `cloneRepo` and
+`installModuleDir` in `Seihou.CLI.InstallShared`); needing IO is not a
+reason to stay in the executable.
+
+Each entry in `executable seihou`'s `other-modules` list in
+`seihou-cli/seihou-cli.cabal` carries a one-line cabal comment naming the
+trapping dependency, for example:
+
+    other-modules:
+      Seihou.CLI.Commands         -- needs Options.Applicative
+      Seihou.CLI.Help             -- needs Data.FileEmbed for embedded help
+      Seihou.CLI.Version          -- needs GitHash and Paths_seihou_cli
+      Seihou.CLI.Run              -- imports Seihou.CLI.Commands (transitively trapped)
+
+To add a new executable-only module, demonstrate the trapping dependency
+in the module's import list and add the matching one-line comment in the
+cabal file. To add an exemption (a module that legitimately stays in the
+executable despite not importing one of the four dependencies), add it to
+the `EXEMPT_MODULES` list in the enforcement script (see the path declared
+in `docs/plans/21-enforce-cli-library-first-convention.md`) with an inline
+comment naming the reason.
+
+Why this convention exists: the masterplan
+`docs/masterplans/1-migrations-dx.md` retrospective records that helpers
+repeatedly had to be hoisted from executable-only modules into library
+siblings during EP-1, EP-2, and EP-4, costing about three hours of
+unscheduled refactor work, because tests cannot import from the executable
+target. Defaulting to the library prevents the discovery from happening
+mid-implementation.
+
 ## Technology Stack
 
 | Component | Choice | Rationale |

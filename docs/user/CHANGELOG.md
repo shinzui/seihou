@@ -10,6 +10,36 @@ HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 
 
 ## Changelog
 
+### 2026-04-26 (CLI library-first module-placement convention documented)
+
+**Reviewed commits:** EP-1 of MasterPlan
+`docs/masterplans/2-cli-library-first-convention.md` — documenting the
+convention that new code under `seihou-cli/src/Seihou/` defaults to
+the `seihou-cli-internal` library.
+
+**Behavior change (developer-facing only):**
+- Added a "CLI Module Placement Convention" section to
+  `docs/dev/architecture/overview.md` (the canonical home of the
+  rule) between "Project Structure" and "Technology Stack". It names
+  the four executable-only Haskell-package dependencies
+  (`Options.Applicative`, `Data.FileEmbed`, `GitHash`,
+  `Paths_seihou_cli`), the fifth transitive criterion (importing
+  another executable-only seihou module, most commonly
+  `Seihou.CLI.Commands`), the cabal-comment format, and the appeal
+  procedure for adding an exemption.
+- Created a new project-root `CLAUDE.md` carrying a one-paragraph
+  summary of the convention plus pointers to the architecture doc and
+  the coordinating masterplan.
+- Created `docs/dev/contributing.md` as a developer-facing guide that
+  mirrors the convention, documents the Conventional Commits
+  expectation and the `ExecPlan:` / `MasterPlan:` / `Intention:` git
+  trailers, and explains where ExecPlans and MasterPlans live.
+
+**No user-visible CLI behavior change.** Subsequent EPs in
+`docs/masterplans/2-cli-library-first-convention.md` (EP-2 cabal
+restructure, EP-3 helper extraction, EP-4 enforcement check) encode
+the convention in build configuration and tooling.
+
 ### 2026-04-26 (`seihou status` surfaces staleness and pending migrations)
 
 **Reviewed commits:** EP-4 of MasterPlan
