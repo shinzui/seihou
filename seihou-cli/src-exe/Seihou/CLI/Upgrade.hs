@@ -315,6 +315,20 @@ printAdvisory :: Text -> MigrationPlan -> IO ()
 printAdvisory name plan = do
   colorEnabled <- useColor
   let msg
+        -- Benign: the module declared no migrations and the version
+        -- bumped. The post-upgrade advisory points at the natural
+        -- remediation (the user just ran `seihou upgrade` so the
+        -- "and seihou run" half is what's left to do).
+        | null plan.planChain.chainSteps,
+          not plan.planMigrationsDeclared,
+          Just (from, to) <- plan.planUnreachable =
+            "note: "
+              <> name
+              <> " has no migrations declared ("
+              <> renderVersion from
+              <> " -> "
+              <> renderVersion to
+              <> "); run 'seihou run' to refresh templates."
         | null plan.planChain.chainSteps,
           Just (stuck, target) <- plan.planUnreachable =
             "note: "
@@ -397,6 +411,7 @@ runOnePostUpgradeMigration installedDir name = do
                   <> "; remote is at "
                   <> renderVersion target
           TIO.putStrLn $ if colorEnabled then yellow msg else msg
+        Right (MigrateBenignUpgrade _ _) -> pure ()
         Right (MigrateNoOp _) -> pure ()
         Right (MigrateDryRunOK _) -> pure ()
         Right (MigrateDryRunOKPartial _ _ _) -> pure ()

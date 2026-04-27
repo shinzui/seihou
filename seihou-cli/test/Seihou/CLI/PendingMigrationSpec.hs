@@ -7,7 +7,11 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
 import Seihou.CLI.Migrate (pendingChainFor)
-import Seihou.CLI.PendingMigrations (detectPendingMigrations, formatRefusalMessage)
+import Seihou.CLI.PendingMigrations
+  ( detectPendingMigrations,
+    formatRefusalMessage,
+    isBenignUpgrade,
+  )
 import Seihou.Core.Migration
   ( Migration (..),
     MigrationChain (..),
@@ -381,6 +385,39 @@ spec = do
       msg `shouldSatisfy` T.isInfixOf "no migrations declared"
       msg `shouldSatisfy` T.isInfixOf "0.2.0 -> 0.3.0"
       msg `shouldNotSatisfy` T.isInfixOf "Blocked:"
+
+  describe "isBenignUpgrade" $ do
+    -- M5: the run pre-flight uses this predicate to partition pending
+    -- entries into benign (no destructive op; let the run flow's
+    -- updateAllModules catch the manifest up) vs blocking (refuse,
+    -- summarize in dry-run, or apply in --with-migrations mode).
+    let mkPlan :: [Migration] -> Bool -> MigrationPlan
+        mkPlan steps declared =
+          MigrationPlan
+            { planChain =
+                MigrationChain
+                  { migrationModule = "demo",
+                    chainFrom = parseV "0.2.0",
+                    chainTo = parseV "0.2.0",
+                    chainSteps = steps
+                  },
+              planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
+              planMigrationsDeclared = declared
+            }
+
+    it "is True for an empty chain with planMigrationsDeclared = False" $
+      isBenignUpgrade (mkPlan [] False) `shouldBe` True
+
+    it "is False for an empty chain with planMigrationsDeclared = True (real block)" $
+      isBenignUpgrade (mkPlan [] True) `shouldBe` False
+
+    it "is False for a non-empty chain regardless of declared bit" $ do
+      let stepped = [Migration "0.2.0" "0.3.0" []]
+      isBenignUpgrade (mkPlan stepped True) `shouldBe` False
+      -- Defensive: the planner cannot produce stepped + declared=False,
+      -- but the predicate must still say "not benign" because work
+      -- needs doing.
+      isBenignUpgrade (mkPlan stepped False) `shouldBe` False
 
 parseV :: Text -> Seihou.Core.Version.Version
 parseV t = case Seihou.Core.Version.parseVersion t of

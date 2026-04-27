@@ -4,6 +4,7 @@ module Seihou.CLI.Run
 where
 
 import Control.Monad (foldM, when)
+import Data.List (partition)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Set qualified as Set
@@ -20,7 +21,7 @@ import Seihou.CLI.Migrate
     MigrateResult (..),
     runMigrate,
   )
-import Seihou.CLI.PendingMigrations (detectPendingMigrations, formatRefusalMessage)
+import Seihou.CLI.PendingMigrations (detectPendingMigrations, formatRefusalMessage, isBenignUpgrade)
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
@@ -456,7 +457,15 @@ executeCommand level (cmd, workDir) = do
       logIO level (logError $ "Command failed (exit " <> T.pack (show code) <> "): " <> cmd)
       exitFailure
 
--- | Apply the pending-migration policy: refuse without
+-- | Apply the pending-migration policy. Splits pending entries into
+-- benign (the module declared no migrations and the version field
+-- changed; nothing destructive to apply) and blocking (a real chain
+-- to run, a partial chain, or a declared-but-unreachable block).
+--
+-- Benign entries are noted at info level and otherwise ignored: the
+-- run flow's 'updateAllModules' brings the manifest's recorded
+-- @moduleVersion@ up to the installed copy's version automatically.
+-- Blocking entries follow the existing policy: refuse without
 -- @--with-migrations@, show a chain summary in dry-run mode, or apply
 -- chains in-band before the run plan is computed.
 --
@@ -471,8 +480,37 @@ handlePendingMigrations ::
   Manifest ->
   [(ModuleName, MigrationPlan)] ->
   IO Manifest
-handlePendingMigrations _ _ _ manifest [] = pure manifest
-handlePendingMigrations level runOpts manifestPath manifest pendings
+handlePendingMigrations level runOpts manifestPath manifest pendings = do
+  let (benign, blocking) = partition (isBenignUpgrade . snd) pendings
+  mapM_ (logBenign level) benign
+  handleBlocking level runOpts manifestPath manifest blocking
+
+-- | Note a benign upgrade so the user knows the manifest is about
+-- to roll forward without a migration. Quiet but not silent: the
+-- info-level line is suppressed when @LogLevel@ filters it out.
+logBenign :: LogLevel -> (ModuleName, MigrationPlan) -> IO ()
+logBenign level (name, plan)
+  | Just (from, to) <- plan.planUnreachable =
+      logIO level $
+        logInfo $
+          "  Note: "
+            <> name.unModuleName
+            <> " has no migrations declared ("
+            <> renderVersion from
+            <> " -> "
+            <> renderVersion to
+            <> "); will refresh templates and bump manifest during this run."
+  | otherwise = pure ()
+
+handleBlocking ::
+  LogLevel ->
+  RunOpts ->
+  FilePath ->
+  Manifest ->
+  [(ModuleName, MigrationPlan)] ->
+  IO Manifest
+handleBlocking _ _ _ manifest [] = pure manifest
+handleBlocking level runOpts manifestPath manifest pendings
   | not runOpts.runWithMigrations = do
       TIO.putStr (formatRefusalMessage pendings)
       exitFailure
@@ -559,11 +597,13 @@ applyOneMigration level manifest (modName, plan) =
             <> "' missing while applying its migration"
       exitFailure
     Just am
-      -- Blocked: no migration starts at the manifest version. The
-      -- run cannot safely auto-upgrade past the gap (writing the new
-      -- template into the old layout is the original EP-3 hazard),
-      -- so refuse with the same "Blocked: …" line the migrate
-      -- renderer would have shown.
+      -- Blocked: no migration starts at the manifest version, and
+      -- (since handleBlocking has already filtered out benign
+      -- entries) the author shipped at least one migration that just
+      -- doesn't reach. The run cannot safely auto-upgrade past the
+      -- gap (writing the new template into the old layout is the
+      -- original EP-3 hazard), so refuse with the same "Blocked: …"
+      -- line the migrate renderer would have shown.
       | null plan.planChain.chainSteps,
         Just (stuck, target) <- plan.planUnreachable -> do
           logIO level $
@@ -618,6 +658,12 @@ applyOneMigration level manifest (modName, plan) =
                     <> "; remote is at "
                     <> renderVersion target
               exitFailure
+            Right (MigrateBenignUpgrade _ _) ->
+              -- Defensive: handleBlocking partitions benign entries
+              -- out before we ever get here. If a future caller forgets
+              -- to filter, behave like MigrateNoOp — the run flow's
+              -- updateAllModules will catch the manifest up.
+              pure manifest
             Left err -> do
               logIO level $
                 logError $

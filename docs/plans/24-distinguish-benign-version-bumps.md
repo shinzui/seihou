@@ -119,16 +119,17 @@ the empty-migrations case softens.
       Recommended actions tail lists the upgrade-and-run pair (not
       [blocked]). Flipped the M1 StatusSpec pin and added
       planMigrationsDeclared to all three existing fixtures.
-- [ ] Update `seihou-cli/src-exe/Seihou/CLI/Run.hs`'s
-      `handlePendingMigrations` so benign entries do *not* trigger a
-      refusal. The default path should silently proceed with the run
-      plan and let `updateAllModules` bump the manifest naturally.
-      `--with-migrations` should treat benign entries as a no-op (no
-      `runMigrate` invocation) and continue.
-- [ ] Update `seihou-cli/src-exe/Seihou/CLI/Upgrade.hs`'s
-      `printAdvisory` for the benign case (show "no migrations
-      declared; run 'seihou upgrade && seihou run'" rather than the
-      EP-5 blocked message).
+- [x] M5 (2026-04-26): Run.hs's handlePendingMigrations partitions
+      pendings into benign and blocking via isBenignUpgrade. Benign
+      entries get a quiet info-level note and are excluded from
+      refusal/dry-run/with-migrations dispatch; the run flow's
+      updateAllModules bumps the manifest naturally. applyOneMigration
+      gains a defensive MigrateBenignUpgrade arm that no-ops. Tests
+      assert isBenignUpgrade across the three relevant shapes.
+- [x] M5 (2026-04-26): Upgrade.hs's printAdvisory softens the benign
+      branch ("no migrations declared; run 'seihou run' to refresh
+      templates"). runOnePostUpgradeMigration handles the new variant
+      as a no-op for exhaustiveness.
 - [ ] Add a `migrateBumpOnly :: Bool` field to `MigrateOpts` in
       `seihou-cli/src/Seihou/CLI/Migrate.hs`. When set, `runMigrate`
       bypasses the planner entirely: it reads the installed copy's
