@@ -105,15 +105,29 @@ exit code.
       `docs/user/registries-and-multi-module-repos.md`. Update the "Current
       subcommands" footer in `Seihou.CLI.Commands.registryInfo`. (2026-04-27;
       footer updated in M2 alongside the parser wiring.)
-- [ ] M5: Manual end-to-end. In a throwaway temp directory, hand-construct a
+- [x] M5: Manual end-to-end. In a throwaway temp directory, hand-construct a
       registry that exhibits each of the five failure modes, run `seihou
       registry validate`, observe the report, fix the entries, and confirm
-      the command exits 0.
+      the command exits 0. (2026-04-27)
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- M5 produced 7 issues, not the 5 anticipated by the plan. The registry
+  entry named `Bad_Name` pointed at `alpha`, so `resolveOnDiskVersions`
+  read `alpha/module.dhall` (version `0.1.0`) and keyed the result as
+  `(ModuleEntry, "Bad_Name", Just "0.1.0")`. The resulting
+  `VersionMismatch` for `Bad_Name` is on top of the `StructuralError`
+  for the invalid name. Likewise, the `escape` entry's `../escape` path
+  triggered both the unsafe-path structural error *and* the missing
+  `module.dhall` structural error. The plan called this out as
+  expected ("some merge into one row depending on which checks
+  `validateRegistry` emits"); recording the actual count for future
+  retrospective.
+- Cabal in this workspace requires `--enable-tests` on `cabal test`
+  invocations because `cabal.project` does not pin `tests: True`. Not a
+  blocker — every `cabal test all --enable-tests` in this plan ran
+  cleanly — but worth knowing for anyone re-running the plan's commands.
 
 
 ## Decision Log
@@ -150,7 +164,33 @@ exit code.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Delivered as designed across all five milestones on 2026-04-27. The
+final shape matches the plan: a single pure `validateRegistryFull` in
+`Seihou.Core.Registry` that combines structural and version checks, a
+thin IO handler in `Seihou.CLI.Registry.Validate` that wires it into
+`seihou registry validate`, four CLI handler tests + six core unit
+tests (all passing alongside the rest of the 183-test suite), and the
+expected docs/CHANGELOG updates.
+
+The end-to-end demo confirmed the six acceptance criteria in
+"Validation and Acceptance":
+
+1. `--help` lists every rule (verified after M2).
+2. Clean fixture exits 0 with `OK: 2 modules, 0 recipes, all versions in sync.`
+3. Drifted fixture produces two `VersionMismatch` rows with statuses
+   `SyncMissing` and `SyncStale "2.0.0"` (M3 spec).
+4. Missing-file fixture produces a `StructuralError` containing
+   "missing module.dhall" (M3 spec).
+5. Empty target dir prints `error: registry validate requires a
+   seihou-registry.dhall at the target directory` to stderr and exits 1
+   (M5).
+6. `nix/check-cli-module-placement.sh` accepts the new module
+   (`OK: 24 modules in executable other-modules, all justified.`).
+
+No new third-party dependencies were introduced. `Seihou.CLI.Registry.Sync`
+gained a single re-export (`resolveOnDiskVersions`) so the new handler
+could reuse the existing on-disk-version loader instead of duplicating
+it.
 
 
 ## Context and Orientation
