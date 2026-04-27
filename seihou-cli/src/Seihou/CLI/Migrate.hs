@@ -33,6 +33,7 @@ import Seihou.Core.Migration
   ( Migration (..),
     MigrationChain (..),
     MigrationOp (..),
+    MigrationPlan (..),
     MigrationPlanError (..),
     planMigrationChain,
   )
@@ -278,24 +279,33 @@ runMigrateLocal opts manifest sourceDir = do
                         toV of
                         Left e -> pure (Left (MigratePlanFailed e))
                         Right Nothing -> pure (Right (MigrateNoOp toV))
-                        Right (Just chain) -> do
-                          plan <-
-                            runEff $
-                              runFilesystem $
-                                classifyMigration manifest chain
-                          if opts.migrateDryRun
-                            then pure (Right (MigrateDryRunOK plan))
-                            else do
-                              now <- getCurrentTime
-                              execRes <-
+                        Right (Just plan)
+                          -- Until M3 enriches this path, treat any
+                          -- partial/blocked plan as the legacy
+                          -- MigrationGap hard error so the user-facing
+                          -- behavior of `seihou migrate` is unchanged
+                          -- across the M2 commit boundary.
+                          | Just (stuck, target) <- plan.planUnreachable ->
+                              pure (Left (MigratePlanFailed (MigrationGap stuck target)))
+                          | otherwise -> do
+                              let chain = plan.planChain
+                              executedPlan <-
                                 runEff $
                                   runFilesystem $
-                                    runProcessIO $
-                                      executeMigration opts.migrateForce plan manifest now
-                              case execRes of
-                                Left err -> pure (Left (MigrateExecFailed err))
-                                Right manifest' ->
-                                  pure (Right (MigrateApplied plan manifest'))
+                                    classifyMigration manifest chain
+                              if opts.migrateDryRun
+                                then pure (Right (MigrateDryRunOK executedPlan))
+                                else do
+                                  now <- getCurrentTime
+                                  execRes <-
+                                    runEff $
+                                      runFilesystem $
+                                        runProcessIO $
+                                          executeMigration opts.migrateForce executedPlan manifest now
+                                  case execRes of
+                                    Left err -> pure (Left (MigrateExecFailed err))
+                                    Right manifest' ->
+                                      pure (Right (MigrateApplied executedPlan manifest'))
 
 -- | The fetch-and-refresh wrapper. Reads @<installedDir>\/.seihou-origin.json@,
 -- clones the source repo to a temp dir, locates the module within the
@@ -438,7 +448,14 @@ pendingChainFor applied installed = do
     installed.migrations
     fromV
     toV of
-    Right (Just chain) -> Just chain
+    -- Until M3 widens this signature to MigrationPlan, only surface a
+    -- chain when the planner reaches the target exactly. Partial and
+    -- blocked plans stay invisible to status/run, preserving pre-EP-5
+    -- behavior across the M2 commit boundary.
+    Right (Just plan)
+      | Nothing <- plan.planUnreachable,
+        not (null plan.planChain.chainSteps) ->
+          Just plan.planChain
     _ -> Nothing
 
 -- ----------------------------------------------------------------------------

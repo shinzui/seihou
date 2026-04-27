@@ -134,7 +134,7 @@ Track milestone-level progress across all child plans. Each entry names the chil
 - [x] EP-4: Update `seihou status` to surface true outdated state.
 - [x] EP-4: Update `seihou status` to surface pending migrations with a copy-pasteable next command.
 - [x] EP-4: End-to-end demonstration: `seihou status --check-updates` against a stale-registry project lists outdated modules and pending migrations and the exact remediation command for each.
-- [ ] EP-5: Pin current `MigrationGap` behavior with regression tests for partial-chain and no-chain-at-all fixtures.
+- [x] EP-5: Pin current `MigrationGap` behavior with regression tests for partial-chain and no-chain-at-all fixtures.
 - [ ] EP-5: Change the planner contract to return reachable prefix plus unreachable tail; update existing planner tests.
 - [ ] EP-5: Update `pendingChainFor`/`runMigrate` so migrate applies the longest reachable prefix and refreshes the manifest.
 - [ ] EP-5: Update `Seihou.CLI.StatusRender` to emit full / partial / blocked migration rows.

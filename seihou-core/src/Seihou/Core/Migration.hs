@@ -5,6 +5,7 @@ module Seihou.Core.Migration
 
     -- * Migration planning
     MigrationChain (..),
+    MigrationPlan (..),
     MigrationPlanError (..),
     planMigrationChain,
   )
@@ -70,6 +71,29 @@ data MigrationChain = MigrationChain
   }
   deriving stock (Eq, Show, Generic)
 
+-- | The planner result for a non-trivial @installed → target@ request.
+--
+-- 'planChain' is the longest reachable prefix the planner could build by
+-- greedily walking declared edges starting at @installed@. If the planner
+-- could not take a single step (no edge starts at @installed@), the chain
+-- is empty: @chainFrom == chainTo == installed@ and @chainSteps == []@.
+--
+-- 'planUnreachable' is 'Nothing' when the chain reaches the requested
+-- target exactly, and @Just (stuckAt, target)@ when the chain stops short
+-- — either because no edge continues from @stuckAt@ or because the only
+-- continuing edge would overshoot @target@.
+--
+-- Consumers distinguish three shapes:
+--
+--   * Full chain: @chainSteps@ non-empty and @planUnreachable == Nothing@.
+--   * Partial chain: @chainSteps@ non-empty and @planUnreachable@ is 'Just'.
+--   * Blocked: @chainSteps == []@ and @planUnreachable@ is 'Just'.
+data MigrationPlan = MigrationPlan
+  { planChain :: MigrationChain,
+    planUnreachable :: Maybe (Version, Version)
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | All the ways planning can fail. Each carries enough information to
 -- write a useful error message at the CLI layer.
 data MigrationPlanError
@@ -78,6 +102,12 @@ data MigrationPlanError
     MigrationVersionUnparseable Text
   | -- | No contiguous chain spans @installed → target@. The two arguments
     -- are the version we got stuck at, and the target we couldn't reach.
+    --
+    -- The planner itself no longer produces this variant — it returns the
+    -- partial chain plus 'planUnreachable' instead. CLI consumers that
+    -- need to fail hard (notably @seihou migrate --to TARGET@) construct
+    -- this error from a 'planUnreachable' tail to preserve the existing
+    -- error message.
     MigrationGap Version Version
   | -- | Refusing to plan a downgrade. @installed → target@ where @target@
     -- compares strictly less than @installed@.
@@ -92,14 +122,21 @@ data MigrationPlanError
     MigrationOvershoot Version Version
   deriving stock (Eq, Show, Generic)
 
--- | Compute the migration chain that spans installed → target.
+-- | Compute the migration plan that spans installed → target.
 --
 -- Returns:
 --
 --   * @Right Nothing@ — installed and target are equal; no work to do.
---   * @Right (Just chain)@ — the contiguous, in-order chain that lands on
---     the target.
+--   * @Right (Just plan)@ — the plan carries the longest reachable prefix
+--     plus, if the prefix doesn't reach the target exactly, an in-band
+--     description of the unreachable tail. Consumers decide whether the
+--     partial coverage is fatal (e.g. @seihou migrate --to TARGET@) or
+--     surfaceable as an advisory (e.g. @seihou status@,
+--     @seihou migrate@ without a target).
 --   * @Left e@ — planning failed; the error variant explains why.
+--     Author-side mistakes (overshoot, duplicate edge, unparseable
+--     version) and downgrades are still hard errors. Partial coverage is
+--     not.
 --
 -- The chain is built greedily: starting at the installed version, the
 -- planner picks the migration whose @from@ equals the current version,
@@ -115,7 +152,7 @@ planMigrationChain ::
   Version ->
   -- | Target version
   Version ->
-  Either MigrationPlanError (Maybe MigrationChain)
+  Either MigrationPlanError (Maybe MigrationPlan)
 planMigrationChain modName migrations installed target
   | installed == target = Right Nothing
   | target < installed =
@@ -123,14 +160,20 @@ planMigrationChain modName migrations installed target
   | otherwise = do
       parsed <- traverse parseEdges migrations
       checkDuplicates parsed
-      steps <- walk installed target (sortOn (\(_, f, _) -> f) parsed) []
-      Right
-        ( Just
+      (steps, reached, mTail) <-
+        walk installed target (sortOn (\(_, f, _) -> f) parsed) []
+      let chain =
             MigrationChain
               { migrationModule = modName,
                 chainFrom = installed,
-                chainTo = target,
+                chainTo = reached,
                 chainSteps = steps
+              }
+      Right
+        ( Just
+            MigrationPlan
+              { planChain = chain,
+                planUnreachable = mTail
               }
         )
   where
@@ -155,12 +198,12 @@ planMigrationChain modName migrations installed target
     -- Greedy walk: at each step, find the migration whose `from` is the
     -- current version. If `to` exceeds the target, that's an overshoot;
     -- if no migration matches and we haven't reached the target, that's
-    -- a gap.
+    -- an unreachable tail (the chain so far is returned in-band).
     walk current tgt edges acc
-      | current == tgt = Right (reverse acc)
+      | current == tgt = Right (reverse acc, current, Nothing)
       | otherwise =
           case [(m, f, t) | (m, f, t) <- edges, f == current] of
-            [] -> Left (MigrationGap current tgt)
+            [] -> Right (reverse acc, current, Just (current, tgt))
             ((m, _f, t) : _)
               | t > tgt -> Left (MigrationOvershoot current t)
               | otherwise -> walk t tgt edges (m : acc)

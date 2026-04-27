@@ -97,7 +97,7 @@ declared (no-chain-at-all). After this plan:
 
 ## Progress
 
-- [ ] Repro the live-tree failure with regression tests against fixtures
+- [x] Repro the live-tree failure with regression tests against fixtures
       that mirror master-plan (partial chain) and exec-plan (no chain) and
       assert the current planner returns `MigrationGap` on both.
 - [ ] Change the planner contract in `seihou-core/src/Seihou/Core/Migration.hs`:
