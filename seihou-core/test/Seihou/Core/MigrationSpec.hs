@@ -56,6 +56,22 @@ spec = do
           r = planMigrationChain "demo" [m1] (mkV "1.0.0") (mkV "2.0.0")
       r `shouldBe` Left (MigrationGap (mkV "1.5.0") (mkV "2.0.0"))
 
+    -- Pin the current behavior for the EP-5 partial-chain case (mirrors
+    -- the live-tree master-plan failure: manifest=0.1.0, target=0.3.0,
+    -- declared [0.1.0 → 0.2.0]). EP-5 will replace the assertion with a
+    -- successful partial plan once the planner contract softens.
+    it "currently reports MigrationGap for a partial chain (pinned for EP-5)" $ do
+      let m = Migration "0.1.0" "0.2.0" []
+          r = planMigrationChain "demo" [m] (mkV "0.1.0") (mkV "0.3.0")
+      r `shouldBe` Left (MigrationGap (mkV "0.2.0") (mkV "0.3.0"))
+
+    -- Pin the current behavior for the EP-5 no-chain-at-all case
+    -- (mirrors the live-tree exec-plan failure: manifest=0.1.3,
+    -- target=0.3.0, no migrations declared).
+    it "currently reports MigrationGap for an empty migrations list (pinned for EP-5)" $ do
+      let r = planMigrationChain "demo" [] (mkV "0.1.3") (mkV "0.3.0")
+      r `shouldBe` Left (MigrationGap (mkV "0.1.3") (mkV "0.3.0"))
+
     it "reports MigrationVersionUnparseable when a from string is malformed" $ do
       let m = Migration "not-a-version" "2.0.0" []
           r = planMigrationChain "demo" [m] (mkV "1.0.0") (mkV "2.0.0")

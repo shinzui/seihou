@@ -156,6 +156,23 @@ spec = do
           installed = mkInstalled (Just "1.0.0") []
       pendingChainFor am installed `shouldBe` Nothing
 
+    -- Pin the current partial-chain silence (mirrors live-tree
+    -- master-plan: manifest=0.1.0, installed=0.3.0, edges=[0.1.0→0.2.0]).
+    -- EP-5 will flip this to a Just plan with reachable prefix +
+    -- unreachable tail.
+    it "currently returns Nothing for a partial chain (pinned for EP-5)" $ do
+      let am = mkApplied (Just "0.1.0")
+          installed =
+            mkInstalled (Just "0.3.0") [Migration "0.1.0" "0.2.0" []]
+      pendingChainFor am installed `shouldBe` Nothing
+
+    -- Pin the current no-chain-at-all silence (mirrors live-tree
+    -- exec-plan: manifest=0.1.3, installed=0.3.0, no migrations).
+    it "currently returns Nothing when no edge starts at the manifest version (pinned for EP-5)" $ do
+      let am = mkApplied (Just "0.1.3")
+          installed = mkInstalled (Just "0.3.0") []
+      pendingChainFor am installed `shouldBe` Nothing
+
   describe "detectPendingMigrations" $ do
     it "with Nothing filter, surfaces every applied module's pending chain" $
       withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
