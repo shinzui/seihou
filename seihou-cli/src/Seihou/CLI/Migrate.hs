@@ -155,6 +155,15 @@ data MigrateResult
     -- is converted to 'MigratePlanFailed' (MigrationGap …) for the
     -- strict-target contract.
     MigrateBlocked Version Version
+  | -- | The module's manifest version trails its installed copy's
+    -- version, but the module declares no migrations at all
+    -- (@migrations = []@). The two 'Version's are @(manifest, target)@.
+    -- The renderer prints a softened advisory pointing at
+    -- "seihou upgrade && seihou run"; the exit code is zero (no work
+    -- was done; no manifest change). Distinct from 'MigrateBlocked'
+    -- (migrations declared but none reach the manifest version, which
+    -- is a real block).
+    MigrateBenignUpgrade Version Version
   deriving stock (Eq, Show, Generic)
 
 -- ----------------------------------------------------------------------------
@@ -291,6 +300,32 @@ handleMigrate opts = do
                 <> "; remote is at "
                 <> renderVersion target
                 <> ". The module author must ship one before this project can move forward."
+      exitSuccess
+    Right (MigrateBenignUpgrade from to) -> do
+      if opts.migrateJson
+        then
+          LBS.putStr
+            ( encodePretty
+                ( object
+                    [ "module" .= modName.unModuleName,
+                      "benign" .= True,
+                      "from" .= renderVersion from,
+                      "to" .= renderVersion to
+                    ]
+                )
+            )
+        else
+          TIO.putStrLn $
+            applyColor colorEnabled yellow $
+              "Note: "
+                <> modName.unModuleName
+                <> " has no migrations declared ("
+                <> renderVersion from
+                <> " -> "
+                <> renderVersion to
+                <> "). This is a benign version bump; run 'seihou upgrade "
+                <> modName.unModuleName
+                <> " && seihou run' to refresh templates and bring the manifest up to date."
       exitSuccess
 
 -- | The non-IO core of the handler. Useful as a building block for
@@ -560,11 +595,20 @@ dispatchPlan ::
   MigrationPlan ->
   IO (Either MigrateError MigrateResult)
 dispatchPlan opts manifest plan
-  -- Blocked case: no edge starts at the manifest version.
+  -- Blocked / benign case: no edge starts at the manifest version.
+  -- The two are split by planMigrationsDeclared: True (declared but
+  -- unreachable) keeps the EP-5 blocked semantics; False (no
+  -- migrations declared) surfaces as a benign upgrade so the renderer
+  -- can soften the message. --to TARGET stays strict in both
+  -- sub-cases because the user named a specific version they did not
+  -- get; the new --bump-only escape hatch (M6) is the way to bypass
+  -- planning when that is what the user actually wants.
   | null plan.planChain.chainSteps = case plan.planUnreachable of
       Just (stuck, target)
         | hasExplicitTo opts ->
             pure (Left (MigratePlanFailed (MigrationGap stuck target)))
+        | not plan.planMigrationsDeclared ->
+            pure (Right (MigrateBenignUpgrade stuck target))
         | otherwise ->
             pure (Right (MigrateBlocked stuck target))
       Nothing ->

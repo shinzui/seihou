@@ -104,20 +104,14 @@ the empty-migrations case softens.
       Haddock and asserted the field on every existing planner test.
       Flipped the M1 core pin to assert the new field distinguishes
       []-from-orphan-edge. cabal test seihou-core green (796 tests).
-- [ ] Add a new outcome `MigrateBenignUpgrade Version Version` to
-      `MigrateResult` in `seihou-cli/src/Seihou/CLI/Migrate.hs`. Update
-      `dispatchPlan` to route the empty-migrations + version-gap case
-      to this outcome when `--to` is not set. With `--to TARGET`,
-      preserve the strict-target error so explicit targets keep
-      contracting.
-- [ ] Update `handleMigrate`'s renderer for the new outcome (softened
-      advisory, exit zero) and the JSON path
-      (`{ "module": ..., "benign": true, "from": ..., "to": ... }`).
-- [ ] Update `pendingChainFor` in
-      `seihou-cli/src/Seihou/CLI/Migrate.hs` so its return value
-      preserves the `planMigrationsDeclared` bit, and update
-      `Seihou.CLI.PendingMigrations.formatRefusalMessage` to render
-      benign-upgrade entries with softened language.
+- [x] M3 (2026-04-26): Add MigrateBenignUpgrade variant to
+      MigrateResult; dispatchPlan routes the empty-migrations + version
+      gap (without --to) to this outcome. With --to TARGET, the
+      strict-target MigrationGap error stays. handleMigrate renders the
+      softened "Note: …" message in human mode and a `{benign: true}`
+      JSON payload in --json mode. PendingMigrations exports
+      isBenignUpgrade and formatRefusalMessage softens benign entries
+      defensively. cabal test seihou-cli green (172 tests).
 - [ ] Update `Seihou.CLI.StatusRender` with a new
       `AdviceBenignUpgrade Text Version Version` variant; the
       Recommended actions tail should list `seihou upgrade <name> &&

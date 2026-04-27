@@ -188,12 +188,10 @@ spec = do
             Nothing -> False
         Nothing -> expectationFailure "expected Just plan with blocked chain"
 
-    -- M1 pin: the empty-migrations + version-gap case is currently
-    -- indistinguishable from the [someEdge]-but-can't-reach case. Both
-    -- produce a MigrationPlan with an empty chain and an unreachable
-    -- tail covering the full span. The next milestone introduces
-    -- planMigrationsDeclared so consumers can tell them apart.
-    it "today returns the same MigrationPlan shape for [] and [orphanEdge] when neither reaches" $ do
+    -- M1 pin, flipped in M3: pendingChainFor still surfaces both
+    -- cases (the chain-level shape is identical), but
+    -- planMigrationsDeclared now lets consumers distinguish them.
+    it "distinguishes [] vs [orphanEdge] via planMigrationsDeclared" $ do
       let am = mkApplied (Just "0.2.0")
           emptyInstalled = mkInstalled (Just "0.3.0") []
           orphanInstalled =
@@ -205,6 +203,8 @@ spec = do
           pEmpty.planChain.chainFrom `shouldBe` pOrphan.planChain.chainFrom
           pEmpty.planChain.chainTo `shouldBe` pOrphan.planChain.chainTo
           pEmpty.planUnreachable `shouldBe` pOrphan.planUnreachable
+          pEmpty.planMigrationsDeclared `shouldBe` False
+          pOrphan.planMigrationsDeclared `shouldBe` True
         other ->
           expectationFailure
             ("expected two Just plans, got: " <> show other)
@@ -307,7 +307,8 @@ spec = do
                       chainSteps =
                         [Migration "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]]
                     },
-                planUnreachable = Nothing
+                planUnreachable = Nothing,
+                planMigrationsDeclared = True
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "Pending migrations detected:"
@@ -328,7 +329,8 @@ spec = do
                       chainTo = parseV "0.2.0",
                       chainSteps = [Migration "0.1.0" "0.2.0" []]
                     },
-                planUnreachable = Just (parseV "0.2.0", parseV "0.3.0")
+                planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
+                planMigrationsDeclared = True
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "demo: 0.1.0 -> 0.2.0"
@@ -336,8 +338,11 @@ spec = do
       msg `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
 
     -- EP-5: blocked rows print a Blocked: prefix and skip the chain
-    -- summary (there are no steps to summarize).
-    it "prints a Blocked entry when the plan has no reachable steps" $ do
+    -- summary (there are no steps to summarize). After M3 the
+    -- "Blocked:" wording only fires when planMigrationsDeclared is
+    -- True (the author shipped at least one migration but the chain
+    -- doesn't reach the manifest version).
+    it "prints a Blocked entry when the plan has no reachable steps and migrations were declared" $ do
       let plan =
             MigrationPlan
               { planChain =
@@ -347,11 +352,35 @@ spec = do
                       chainTo = parseV "0.1.3",
                       chainSteps = []
                     },
-                planUnreachable = Just (parseV "0.1.3", parseV "0.3.0")
+                planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
+                planMigrationsDeclared = True
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "demo: Blocked: no migration declared from 0.1.3"
       msg `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
+
+    -- M3: a benign upgrade entry (planMigrationsDeclared = False)
+    -- routes through the softened branch in formatRefusalMessage.
+    -- M5 strips benign entries from the input before calling this
+    -- formatter, so this is the defensive fallback. The renderer
+    -- must not say "Blocked:" for a benign case.
+    it "softens benign entries when planMigrationsDeclared is False" $ do
+      let plan =
+            MigrationPlan
+              { planChain =
+                  MigrationChain
+                    { migrationModule = "demo",
+                      chainFrom = parseV "0.2.0",
+                      chainTo = parseV "0.2.0",
+                      chainSteps = []
+                    },
+                planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
+                planMigrationsDeclared = False
+              }
+          msg = formatRefusalMessage [(ModuleName "demo", plan)]
+      msg `shouldSatisfy` T.isInfixOf "no migrations declared"
+      msg `shouldSatisfy` T.isInfixOf "0.2.0 -> 0.3.0"
+      msg `shouldNotSatisfy` T.isInfixOf "Blocked:"
 
 parseV :: Text -> Seihou.Core.Version.Version
 parseV t = case Seihou.Core.Version.parseVersion t of

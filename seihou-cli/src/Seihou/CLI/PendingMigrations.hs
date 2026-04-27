@@ -1,6 +1,7 @@
 module Seihou.CLI.PendingMigrations
   ( detectPendingMigrations,
     formatRefusalMessage,
+    isBenignUpgrade,
   )
 where
 
@@ -87,6 +88,22 @@ formatRefusalMessage pendings =
   where
     renderEntry (name, plan)
       | null plan.planChain.chainSteps,
+        not plan.planMigrationsDeclared,
+        Just (_stuck, target) <- plan.planUnreachable =
+          -- Defensive: M5 strips benign entries from the input list
+          -- before calling this formatter, so this branch is normally
+          -- unreachable. Keep it correct in case a future caller
+          -- forwards benign entries — the language stays softened so
+          -- the user never sees the EP-5 "Blocked:" wording for a
+          -- benign version bump.
+          "  "
+            <> name.unModuleName
+            <> ": "
+            <> renderVersion plan.planChain.chainFrom
+            <> " -> "
+            <> renderVersion target
+            <> " (no migrations declared; benign — would not block run)"
+      | null plan.planChain.chainSteps,
         Just (stuck, target) <- plan.planUnreachable =
           "  "
             <> name.unModuleName
@@ -114,3 +131,14 @@ formatRefusalMessage pendings =
                     <> renderVersion stuck
                     <> ", remote is at "
                     <> renderVersion target
+
+-- | A benign upgrade is a 'MigrationPlan' that the planner produced
+-- because the manifest version trails the installed copy's version,
+-- but the module declared no migrations at all (@migrations = []@).
+-- Callers (notably @seihou run@'s pre-flight) treat these as
+-- non-blocking: the project can be re-rendered against the new
+-- template content without any destructive migration ops.
+isBenignUpgrade :: MigrationPlan -> Bool
+isBenignUpgrade plan =
+  null plan.planChain.chainSteps
+    && not plan.planMigrationsDeclared
