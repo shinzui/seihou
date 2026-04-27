@@ -112,11 +112,13 @@ the empty-migrations case softens.
       JSON payload in --json mode. PendingMigrations exports
       isBenignUpgrade and formatRefusalMessage softens benign entries
       defensively. cabal test seihou-cli green (172 tests).
-- [ ] Update `Seihou.CLI.StatusRender` with a new
-      `AdviceBenignUpgrade Text Version Version` variant; the
-      Recommended actions tail should list `seihou upgrade <name> &&
-      seihou run` for benign entries (not `[blocked]`, since this is
-      not a real block).
+- [x] M4 (2026-04-26): Add AdviceBenignUpgrade variant to ModuleAdvice.
+      moduleAdvice routes empty-migrations + version gap to it. The
+      formatter prints a softened "Pending: … (no migrations declared).
+      Run: seihou upgrade <name> && seihou run" advisory; the
+      Recommended actions tail lists the upgrade-and-run pair (not
+      [blocked]). Flipped the M1 StatusSpec pin and added
+      planMigrationsDeclared to all three existing fixtures.
 - [ ] Update `seihou-cli/src-exe/Seihou/CLI/Run.hs`'s
       `handlePendingMigrations` so benign entries do *not* trigger a
       refusal. The default path should silently proceed with the run

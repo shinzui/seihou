@@ -66,8 +66,15 @@ mkChain modName from to nSteps =
     }
 
 -- | Wrap a fully-reachable chain into a 'MigrationPlan' for formatStatus.
+-- Defaults @planMigrationsDeclared@ to True since a non-empty chain
+-- implies the module declared at least one migration.
 fullPlan :: MigrationChain -> MigrationPlan
-fullPlan chain = MigrationPlan {planChain = chain, planUnreachable = Nothing}
+fullPlan chain =
+  MigrationPlan
+    { planChain = chain,
+      planUnreachable = Nothing,
+      planMigrationsDeclared = True
+    }
 
 parseV :: Text -> Seihou.Core.Version.Version
 parseV t = case Seihou.Core.Version.parseVersion t of
@@ -140,7 +147,8 @@ spec = describe "formatStatus" $ do
         plan =
           MigrationPlan
             { planChain = chain,
-              planUnreachable = Just (parseV "0.2.0", parseV "0.3.0")
+              planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
+              planMigrationsDeclared = True
             }
         out = formatStatus False manifest [] Nothing [(ModuleName "master-plan", plan)]
     out `shouldSatisfy` T.isInfixOf "Pending migration: 0.1.0 -> 0.2.0"
@@ -150,8 +158,11 @@ spec = describe "formatStatus" $ do
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
     out `shouldSatisfy` T.isInfixOf "  seihou migrate master-plan"
 
-  -- EP-5: blocked plan mirrors the live-tree exec-plan failure
-  -- (manifest=0.1.3, remote=0.3.0, no migrations declared at all).
+  -- EP-5 / M3: blocked plan now requires planMigrationsDeclared = True
+  -- (the author shipped at least one migration but the chain doesn't
+  -- reach the manifest version). The empty-migrations case routes
+  -- through the new AdviceBenignUpgrade variant — see the M1 pin
+  -- below for that flip.
   it "blocked migration: refusal row + [blocked] in Recommended actions" $ do
     let am = mkApplied "exec-plan" (Just "0.1.3")
         manifest = mkManifest [am]
@@ -164,7 +175,8 @@ spec = describe "formatStatus" $ do
                     chainTo = parseV "0.1.3",
                     chainSteps = []
                   },
-              planUnreachable = Just (parseV "0.1.3", parseV "0.3.0")
+              planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
+              planMigrationsDeclared = True
             }
         out = formatStatus False manifest [] Nothing [(ModuleName "exec-plan", plan)]
     out `shouldSatisfy` T.isInfixOf "Blocked: no migration declared from 0.1.3"
@@ -175,14 +187,14 @@ spec = describe "formatStatus" $ do
     -- the Recommended actions block — running it would just error.
     out `shouldNotSatisfy` T.isInfixOf "  seihou migrate exec-plan"
 
-  -- M1 pin: today an empty-migrations module with a version gap
-  -- renders the same Blocked: row as a module that declares
-  -- migrations but none reach the manifest version. The renderer
-  -- only sees the plan shape and cannot distinguish them yet. After
-  -- M4 the empty-migrations case will render as a softened
-  -- "Pending: … (no migrations declared)" advisory and recommend
-  -- "seihou upgrade <name> && seihou run".
-  it "today renders empty-migrations + version-gap with the same Blocked language" $ do
+  -- M1 pin, flipped in M4: an empty-migrations module with a version
+  -- gap renders as a softened "Pending: … (no migrations declared)"
+  -- advisory rather than the hard "Blocked: …" wording. The
+  -- Recommended actions tail lists "seihou upgrade <name> && seihou
+  -- run" because that is the actual remediation — no migration is
+  -- needed and the run flow's updateAllModules brings the manifest
+  -- up to date.
+  it "renders empty-migrations + version-gap as a benign upgrade row" $ do
     let am = mkApplied "demo" (Just "0.2.0")
         manifest = mkManifest [am]
         plan =
@@ -194,10 +206,14 @@ spec = describe "formatStatus" $ do
                     chainTo = parseV "0.2.0",
                     chainSteps = []
                   },
-              planUnreachable = Just (parseV "0.2.0", parseV "0.3.0")
+              planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
+              planMigrationsDeclared = False
             }
         out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
-    out `shouldSatisfy` T.isInfixOf "Blocked: no migration declared from 0.2.0"
-    out `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
-    out `shouldSatisfy` T.isInfixOf "[blocked] no migration declared for demo"
-    out `shouldNotSatisfy` T.isInfixOf "no migrations declared"
+    out `shouldSatisfy` T.isInfixOf "Pending: 0.2.0 -> 0.3.0 (no migrations declared)"
+    out `shouldSatisfy` T.isInfixOf "Run: seihou upgrade demo && seihou run"
+    out `shouldSatisfy` T.isInfixOf "Recommended actions:"
+    out `shouldSatisfy` T.isInfixOf "  seihou upgrade demo && seihou run"
+    -- Benign rows do NOT use the EP-5 blocked language.
+    out `shouldNotSatisfy` T.isInfixOf "Blocked:"
+    out `shouldNotSatisfy` T.isInfixOf "[blocked]"

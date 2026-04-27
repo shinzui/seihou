@@ -65,6 +65,13 @@ data ModuleAdvice
     -- row and the Recommended actions tail lists a @[blocked]@ entry
     -- (no @seihou migrate@ command, since it would refuse).
     AdviceBlockedMigration Text Version Version
+  | -- | The module's manifest version trails its installed copy's
+    -- version, but the module declared no migrations at all
+    -- (@migrations = []@). The renderer prints a softened "Pending:
+    -- … (no migrations declared)" advisory and the Recommended
+    -- actions tail lists @"seihou upgrade <name> && seihou run"@
+    -- (not @[blocked]@, because nothing is actually blocking).
+    AdviceBenignUpgrade Text Version Version
   deriving stock (Eq, Show)
 
 -- | Decide which advice to emit for a single applied module.
@@ -93,6 +100,10 @@ moduleAdvice ::
 moduleAdvice am mStatus mPlan =
   case mPlan of
     Just plan
+      | null plan.planChain.chainSteps,
+        not plan.planMigrationsDeclared,
+        Just (stuck, target) <- plan.planUnreachable ->
+          AdviceBenignUpgrade am.name.unModuleName stuck target
       | null plan.planChain.chainSteps,
         Just (stuck, target) <- plan.planUnreachable ->
           AdviceBlockedMigration am.name.unModuleName stuck target
@@ -240,6 +251,8 @@ adviceCommand (AdviceBlockedMigration name stuck target) =
         <> renderVersion target
         <> ")"
     )
+adviceCommand (AdviceBenignUpgrade name _ _) =
+  Just ("seihou upgrade " <> name <> " && seihou run")
 
 -- ---------------------------------------------------------------------------
 -- Per-row formatting
@@ -335,6 +348,20 @@ formatAdvice color (AdviceBlockedMigration _ stuck target) =
             <> "; remote is at "
             <> renderVersion target
             <> ". The module author must ship one before this project can move forward."
+        )
+  ]
+formatAdvice color (AdviceBenignUpgrade name from to) =
+  [ "    "
+      <> applyColor
+        color
+        yellow
+        ( "Pending: "
+            <> renderVersion from
+            <> " -> "
+            <> renderVersion to
+            <> " (no migrations declared). Run: seihou upgrade "
+            <> name
+            <> " && seihou run"
         )
   ]
 
