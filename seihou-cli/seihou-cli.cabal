@@ -20,6 +20,9 @@ library seihou-cli-internal
     Seihou.CLI.AgentLaunch
     Seihou.CLI.BrowseFormat
     Seihou.CLI.CommitMessage
+    Seihou.CLI.Completions.Bash
+    Seihou.CLI.Completions.Fish
+    Seihou.CLI.Completions.Zsh
     Seihou.CLI.Diff
     Seihou.CLI.Git
     Seihou.CLI.Init
@@ -88,9 +91,6 @@ executable seihou
     Seihou.CLI.Browse
     Seihou.CLI.Commands
     Seihou.CLI.Completions
-    Seihou.CLI.Completions.Bash
-    Seihou.CLI.Completions.Fish
-    Seihou.CLI.Completions.Zsh
     Seihou.CLI.Config
     Seihou.CLI.Context
     Seihou.CLI.Help
