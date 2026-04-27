@@ -26,6 +26,12 @@ Full convention, the per-module trapping inventory, and rationale:
 Convention". Coordinating masterplan:
 `docs/masterplans/2-cli-library-first-convention.md`.
 
+The convention is mechanically enforced by
+`nix/check-cli-module-placement.sh`, wired into both `nix flake check`
+and the pre-commit hook. A new module added to `executable seihou`'s
+`other-modules` without a recognised trapping import will fail the
+check.
+
 ## Commit messages
 
 Conventional Commits, per the global guidance.

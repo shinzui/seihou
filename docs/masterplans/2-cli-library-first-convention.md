@@ -142,7 +142,7 @@ Alternatives considered:
 | 1   | Document the CLI library-first module-placement convention            | docs/plans/18-document-cli-library-first-convention.md          | None      | None      | Complete    |
 | 2   | Restructure `seihou-cli.cabal` so the library is the default home     | docs/plans/19-restructure-cli-cabal-library-first.md            | EP-1      | None      | Complete    |
 | 3   | Extract remaining executable-only helpers identified by the audit     | docs/plans/20-extract-trapped-cli-helpers.md                    | EP-2      | EP-1      | Complete    |
-| 4   | Add an automated enforcement check for the convention                 | docs/plans/21-enforce-cli-library-first-convention.md           | EP-2      | EP-3      | Not Started |
+| 4   | Add an automated enforcement check for the convention                 | docs/plans/21-enforce-cli-library-first-convention.md           | EP-2      | EP-3      | Complete    |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -307,9 +307,9 @@ initiative.
 - [x] EP-3: Split `Seihou.CLI.AgentLaunch` into `Seihou.CLI.AgentLaunch` (library, pure surface plus `AgentContext`) and `Seihou.CLI.AgentLaunchExec` (executable, process invocation); update `Assist`, `Bootstrap`, `Setup`, and `Main.hs` imports.
 - [x] EP-3: Drop the re-exports of `OriginInfo`, `OutdatedStatus`, `OutdatedEntry`, `CheckStats`, and `compareVersions` from `Seihou.CLI.Outdated`'s export list; update any consumer to import from the canonical site (`InstallShared` or `VersionCompare`).
 - [x] EP-3: Add a regression test under `seihou-cli/test/Seihou/CLI/AgentLaunchSpec.hs` that exercises the now-library-exposed pure surface (e.g., `substitute` and one of the formatters) to demonstrate the extraction enabled testing that was impossible before.
-- [ ] EP-4: Write the enforcement script (Bash or Haskell), commit it under `nix/` or `scripts/`, and verify it passes against the post-EP-3 tree.
-- [ ] EP-4: Wire the script into `flake.nix`'s `checks` attribute so `nix flake check` runs it; verify the check fails with a clear message when a known-pure module is deliberately moved into `executable seihou`'s `other-modules` without a matching import.
-- [ ] EP-4: Wire the script into the existing pre-commit configuration so a violation is caught at commit time, and update the project-root `CLAUDE.md` with a one-line pointer to the check.
+- [x] EP-4: Write the enforcement script (Bash) at `nix/check-cli-module-placement.sh`; verify it passes against the post-EP-3 tree (after promoting `Completions.{Bash,Fish,Zsh}` to the library — see Surprises & Discoveries).
+- [x] EP-4: Wire the script into `flake.nix`'s `checks` attribute so `nix flake check` runs it; verified the check fails with a clear message when `Seihou.CLI.RemoteVersion` is deliberately added to `executable seihou`'s `other-modules`.
+- [x] EP-4: Wire the script into the `pre-commit-check.hooks` block in `flake.nix` so a violation is caught at commit time, and updated the project-root `CLAUDE.md` with a one-line pointer to the check.
 
 
 ## Surprises & Discoveries
@@ -453,6 +453,46 @@ section as work proceeds and cross-plan insights emerge.
   `Paths_seihou_cli`. EP-4's enforcement script can be authored with an
   empty exempt list apart from `Paths_seihou_cli`.
 
+- **EP-4: the "clean starting position" claim was off by three modules.**
+  The enforcement script's first run flagged
+  `Seihou.CLI.Completions.{Bash,Fish,Zsh}` as violations. They import
+  only `Data.Text` and `Seihou.Prelude`; nothing exec-only and no
+  transitive trap. The pre-EP-4 audits (EP-1 and EP-2) had categorised
+  them as "shell-specific completion modules" and assumed they
+  belonged in the executable, but the strict import-based rule
+  disagreed. Fix: promoted all three to `seihou-cli-internal`'s
+  `exposed-modules` (one cabal edit plus three `git mv` from
+  `src-exe/Seihou/CLI/Completions/` to `src/Seihou/CLI/Completions/`).
+  Post-fix, the executable's `other-modules` count dropped from 27 to
+  24. This is the first concrete payoff of the enforcement check —
+  it caught a soft assumption the human audit had missed.
+
+- **EP-4: `AgentLaunchExec` had to be exempt, not "directly trapped".**
+  This masterplan's earlier note implied
+  `System.Process`/`System.Exit` would justify trapping. They do not
+  — the rule is strictly the four enumerated dependencies plus the
+  transitive criterion. `AgentLaunchExec` imports neither (it imports
+  the library `AgentLaunch` and wraps it with system calls), so it
+  appears in `EXEMPT_MODULES` with an inline comment. This is the
+  second EP-4 deviation from the masterplan's planning text and the
+  honest framing for any future reader.
+
+- **EP-4: the script's repo-root resolution had to handle three
+  callers.** Direct invocation (script and `$PWD` both at the repo
+  root), `pkgs.runCommand` in the flake (`cd ./repo`), and
+  pre-commit (script lives in `/nix/store/...` but `$PWD` is the
+  repo root). The initial `BASH_SOURCE`-based logic was correct only
+  for the first case. The fix prefers `$PWD` when it looks like a
+  seihou checkout, with a `BASH_SOURCE` fallback and a
+  `SEIHOU_REPO_ROOT` env-var override.
+
+- **EP-4: `nix flake check`'s `pre-commit-check` derivation
+  exercises the new hook end-to-end.** Adding a hook to
+  `pre-commit-check.hooks` causes `pre-commit run --all-files` to
+  invoke it during `nix flake check`, so a single deliberate-violation
+  test verified both the standalone `cli-module-placement` check and
+  the pre-commit wiring.
+
 
 ## Decision Log
 
@@ -534,21 +574,64 @@ section as work proceeds and cross-plan insights emerge.
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation. At completion, summarise:
+The four-plan decomposition delivered the convention end-to-end:
+documented (EP-1), encoded in cabal (EP-2), brought into compliance
+(EP-3), and mechanically enforced (EP-4). The post-EP-4 state is one
+where a future contributor who adds a new pure helper to
+`executable seihou`'s `other-modules` will see the
+`cli-module-placement` check fail in `nix flake check` and at commit
+time, with a message that names the module and points at
+`docs/dev/architecture/overview.md`.
 
-- Whether the four-plan decomposition held up or required mid-implementation
-  revision (e.g., did EP-2's cabal restructure surface modules the audit missed?
-  did the enforcement check catch any latent violations beyond the audit's list?).
-- Whether the documentation-first ordering paid off (was EP-2's cabal restructure
-  cleaner because it could quote EP-1's text? did EP-4's script reuse the same
-  enumerated dependency list the docs name?).
-- Whether the `AgentLaunch` split was the only significant code restructuring or
-  whether the cabal-restructure surfaced others (e.g., a circular import that
-  required additional movement).
-- Whether the post-EP-4 build feedback loop is short enough to be useful (does
-  `nix flake check` complete in a reasonable time? does the pre-commit hook fire
-  on the right kind of edit? does the error message actually point a contributor
-  at the right doc?).
-- Any follow-on initiatives the work uncovered, including the deferred
-  `Migrate.hs` extraction and any "should have been a library helper from day
-  one" patterns that the EP-4 enforcement check brought to light.
+**Did the decomposition hold up?** Mostly yes. The lifecycle ordering
+(state → encode → comply → enforce) survived intact. Two mid-flight
+discoveries forced revisions:
+
+- EP-2 hit the source-dir trap (shared `hs-source-dirs` made
+  `other-modules` non-controlling for compilation), requiring a
+  source-dir split into `src/` and `src-exe/`. This was invisible to
+  EP-3's plan body but EP-3 worked around the path drift by reading
+  the actual layout. EP-4's script body had the same drift and was
+  adapted to read `src-exe/`.
+- EP-4 found three latent violations (`Completions.{Bash,Fish,Zsh}`)
+  that the EP-1/EP-2 audits had implicitly excused. The enforcement
+  check upgraded a soft assumption into a hard error. This is exactly
+  what the masterplan hoped for.
+
+**Did documentation-first ordering pay off?** Yes. EP-2's cabal
+restructure quotes the EP-1 doc table; EP-4's script reuses the same
+four enumerated dependencies the docs name; EP-4's FAIL message points
+back to the same doc section. There is one source of truth for "what
+makes a module executable-only", and three places (cabal, script,
+docs) that all reference it.
+
+**Was `AgentLaunch` the only significant code restructuring?** No —
+EP-2's source-dir split was a substantial restructuring not anticipated
+by the masterplan. EP-3's `AgentLaunch` split was the only audit-listed
+code move; EP-4 added a fourth (`Completions.{Bash,Fish,Zsh}` to the
+library) that the audit missed.
+
+**Is the build feedback loop short enough?** Yes.
+- The script alone runs in well under a second.
+- `nix flake check` completes in normal flake-check time and surfaces
+  the `FAIL:` message verbatim in the build log.
+- The pre-commit hook fires on every commit (regardless of which
+  files changed) because `pass_filenames = false`; the script always
+  inspects the cabal file.
+- A clean checkout reports `OK: 24 modules in executable
+  other-modules, all justified.`
+
+**Follow-on initiatives uncovered by this work:**
+
+- The deferred `Seihou.CLI.Commands` `Opts`-type extraction (recorded
+  in the Decision Log) is now even more attractive: with the
+  enforcement check in place, extracting `Opts` would unlock all
+  eighteen handler modules to move to the library, shrinking the
+  executable's `other-modules` from 24 to about six.
+- The deferred `Migrate.hs` pure-surface extraction stays available;
+  the enforcement check will catch any future `Migrate`-adjacent
+  helper added to the wrong target.
+- The script's `EXEMPT_MODULES` mechanism is the right escape valve
+  but should remain rare. Today it carries two entries
+  (`Paths_seihou_cli` and `Seihou.CLI.AgentLaunchExec`). A growing
+  list would be a smell that the rule needs another criterion.

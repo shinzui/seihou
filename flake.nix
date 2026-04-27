@@ -54,8 +54,34 @@
               treefmt.package = formatter;
               treefmt.enable = true;
 
+              cli-module-placement = {
+                enable = true;
+                name = "cli-module-placement";
+                entry = "${pkgs.bash}/bin/bash ${./nix/check-cli-module-placement.sh}";
+                language = "system";
+                pass_filenames = false;
+              };
             };
           };
+          cli-module-placement = pkgs.runCommand "cli-module-placement-check"
+            {
+              src = self;
+              nativeBuildInputs = [
+                pkgs.bash
+                pkgs.coreutils
+                pkgs.findutils
+                pkgs.gawk
+                pkgs.gnugrep
+                pkgs.gnused
+              ];
+            }
+            ''
+              cp -r $src ./repo
+              chmod -R u+w ./repo
+              cd ./repo
+              bash nix/check-cli-module-placement.sh
+              touch $out
+            '';
         };
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = [

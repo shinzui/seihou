@@ -62,22 +62,65 @@ the same message.
 
 ## Progress
 
-- [ ] Confirm the post-EP-3 layout: `executable seihou`'s `other-modules` is annotated; `Seihou.CLI.AgentLaunch` is in the library; `Seihou.CLI.AgentLaunchExec` is in the executable; `Seihou.CLI.SchemaVersion` is in the library; `Seihou.CLI.Outdated`'s re-exports are gone.
-- [ ] Decide the script location and language. The plan recommends Bash at `nix/check-cli-module-placement.sh` for transparency and zero new build dependencies.
-- [ ] Implement the script. It parses the cabal file's executable `other-modules` list, walks each named source file, and verifies the trapping condition.
-- [ ] Verify the script passes against the post-EP-3 tree. Run it manually and capture the output.
-- [ ] Wire the script into `flake.nix`'s `checks.<system>` attribute as a new `cli-module-placement` check.
-- [ ] Wire the script into `.pre-commit-config.yaml` (or the equivalent flake-driven pre-commit configuration in `flake.nix`'s `pre-commit-check.hooks` block) so violations fail at commit time.
-- [ ] Verify the deliberate-violation test from the Purpose section: temporarily add `Seihou.CLI.RemoteVersion` (a known library module) to the executable's `other-modules`, run `nix flake check`, observe the failure with a clear message, and restore the cabal file.
-- [ ] Update the project-root `CLAUDE.md` (created by sibling plan `docs/plans/18-document-cli-library-first-convention.md`) with a one-line pointer to the check.
-- [ ] Add a CHANGELOG entry to `docs/user/CHANGELOG.md`.
+- [x] Confirm the post-EP-3 layout: `executable seihou`'s `other-modules` is annotated; `Seihou.CLI.AgentLaunch` is in the library; `Seihou.CLI.AgentLaunchExec` is in the executable; `Seihou.CLI.SchemaVersion` is in the library; `Seihou.CLI.Outdated`'s re-exports are gone.
+- [x] Decide the script location and language. Bash at `nix/check-cli-module-placement.sh`.
+- [x] Implement the script. Adapted to the post-EP-2 source-dir split (reads `seihou-cli/src-exe`, not `seihou-cli/src`). Robust repo-root resolution covers direct invocation, `pkgs.runCommand`, and the pre-commit hook.
+- [x] Verify the script passes against the current tree. Output: `OK: 24 modules in executable other-modules, all justified.`
+- [x] Wire the script into `flake.nix`'s `checks.<system>` attribute as a new `cli-module-placement` check.
+- [x] Wire the script into `flake.nix`'s `pre-commit-check.hooks` block so violations fail at commit time.
+- [x] Verify the deliberate-violation test: temporarily added `Seihou.CLI.RemoteVersion` to the executable's `other-modules`; `nix flake check` failed with the script's `FAIL:` message naming the module; restored the cabal file and confirmed the check passes again.
+- [x] Update the project-root `CLAUDE.md` with a one-line pointer to the check.
+- [x] Add a CHANGELOG entry to `docs/user/CHANGELOG.md`.
 
 
 ## Surprises & Discoveries
 
-(None yet. Add to this section as work proceeds. Capture any module the
-script flags that the audit captured by sibling plans did not anticipate —
-that is high-value data for the masterplan's retrospective.)
+- **The pre-EP-4 tree was not as clean as the masterplan claimed.** The
+  first run of the script flagged three violations:
+  `Seihou.CLI.Completions.{Bash,Fish,Zsh}`. These shell-completion text
+  generators import only `Data.Text` and `Seihou.Prelude`; nothing
+  exec-only and no transitive trap. The audit captured by EP-1 had
+  classified them as "shell-specific completion modules" and assumed
+  they belonged in the executable, but the strict import-based rule
+  disagreed. Fixed by promoting all three to
+  `seihou-cli-internal`'s `exposed-modules` (a pure cabal edit plus
+  three `git mv` from `src-exe/Seihou/CLI/Completions/` to
+  `src/Seihou/CLI/Completions/`). The dispatcher
+  `Seihou.CLI.Completions` stayed executable-side (transitively
+  trapped via `Seihou.CLI.Commands`). After the move, the count of
+  modules in the executable's `other-modules` dropped from 27 to 24.
+  This is the first concrete payoff of the enforcement check: it
+  caught a soft assumption the human audit had missed.
+
+- **`Seihou.CLI.AgentLaunchExec` is the only "intentional" exemption.**
+  It imports neither the four trapping deps nor any transitively
+  trapped seihou module — it imports the library `Seihou.CLI.AgentLaunch`
+  and wraps it with `findExecutable`/`rawSystem`/`exitWith`. By the
+  strict closure rule, it is a violation. By design it lives next to
+  the agent-prompt wrappers that consume it, so it stays
+  executable-side via an `EXEMPT_MODULES` entry with an inline comment
+  pointing at EP-3.
+
+- **The script's repo-root resolution had to handle three callers.**
+  Initial implementation used `BASH_SOURCE[0]` to compute `REPO_ROOT`,
+  which is correct for direct invocation but resolves to `/nix/store/...`
+  when pre-commit copies the script. The fix prefers `$PWD` (which
+  pre-commit and `pkgs.runCommand` both set to the repo root) with a
+  `BASH_SOURCE` fallback for ad-hoc invocations from elsewhere, plus a
+  `SEIHOU_REPO_ROOT` env-var override for CI flexibility.
+
+- **`pkgs.runCommand` requires explicit `nativeBuildInputs` for shell
+  utilities.** The script uses `awk`, `grep`, `find`, `sed`, and
+  `sort`. The Nix sandbox does not provide a default `PATH`, so the
+  flake check declares all five (`gawk`, `gnugrep`, `findutils`,
+  `gnused`, `coreutils`) plus `bash` itself.
+
+- **`nix flake check`'s `pre-commit-check` derivation already
+  exercises the new hook end-to-end.** Adding a hook to
+  `pre-commit-check.hooks` causes `pre-commit run --all-files` to
+  invoke it during `nix flake check`, so the deliberate-violation
+  test verified both the standalone `cli-module-placement` derivation
+  and the pre-commit wiring in one run.
 
 
 ## Decision Log
@@ -132,7 +175,54 @@ that is high-value data for the masterplan's retrospective.)
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The convention is now mechanically guarded. Every PR that adds a new
+helper to `executable seihou`'s `other-modules` will fail the
+`cli-module-placement` check unless the helper imports one of the
+recognised trapping dependencies, transitively imports an already-trapped
+seihou module, or is added to `EXEMPT_MODULES` with an inline
+justification.
+
+What worked:
+
+- The script's structure (extract → closure → check) maps cleanly
+  onto the three-paragraph rule in the architecture doc, and the FAIL
+  message echoes the same three options a contributor has for fixing
+  a violation. The doc and the script stayed in lock-step.
+- Wiring through `flake.nix`'s existing `pre-commit-check.hooks`
+  block — rather than introducing a separate `.pre-commit-config.yaml` —
+  meant `nix develop` regenerated `.git/hooks/pre-commit`
+  automatically. No new flake input needed.
+- The deliberate-violation test (`Seihou.CLI.RemoteVersion` in the
+  executable's `other-modules`) drove `nix flake check` to fail with
+  the exact `FAIL:` message the contributor would see, including the
+  pointer at the architecture doc. The end-to-end loop is short.
+
+What was unexpected:
+
+- The masterplan's claim that "EP-4 starting position is now clean"
+  was off by three modules. The script's first run flagged
+  `Completions.{Bash,Fish,Zsh}` as violations. The fix was a
+  one-commit promotion to the library plus a Surprises & Discoveries
+  entry. This validates the masterplan's framing that the human audit
+  could miss things and the mechanical check is the safety net.
+- The original plan's script used `seihou-cli/src` as `SRC_DIR`. EP-2's
+  source-dir split made `src-exe/` the right target. The plan body
+  was authored before EP-2 landed and never refreshed — same lesson
+  as the EP-3 retrospective.
+
+Follow-ons (not blocking):
+
+- The error message references `${BASH_SOURCE[0]}` literally, which
+  resolves to a `/nix/store/...` path under pre-commit. A future
+  improvement could detect this and report
+  `nix/check-cli-module-placement.sh` instead. Low priority — the
+  contextual hint and the `EXEMPT_MODULES` mention together still
+  point a reader at the right file.
+- If the convention's transitive-trap rule ever needs to recognise
+  imports under `import qualified ... as Alias`, the
+  `seihou_imports` function would need to handle `as` alias syntax.
+  Currently any reasonable `import` line is accepted because we only
+  use the module name (the first whitespace-separated token).
 
 
 ## Context and Orientation

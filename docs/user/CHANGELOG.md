@@ -10,6 +10,34 @@ HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 
 
 ## Changelog
 
+### 2026-04-26 (CLI library-first: enforcement check)
+
+**Reviewed commits:** EP-4 of MasterPlan
+`docs/masterplans/2-cli-library-first-convention.md` — adding an
+automated enforcement check so the convention cannot silently erode.
+
+**Behavior change (developer-facing only):**
+- Added `nix/check-cli-module-placement.sh`, a Bash script that walks
+  `executable seihou`'s `other-modules` and fails when an entry does
+  not import one of `Options.Applicative`, `Data.FileEmbed`,
+  `GitHash`, or `Paths_seihou_cli`, and is not transitively trapped
+  via importing another already-trapped seihou module. Two modules
+  are exempt with inline justification: `Paths_seihou_cli` (no source
+  file on disk) and `Seihou.CLI.AgentLaunchExec` (process launcher
+  consumed only by trapped agent-prompt wrappers).
+- Wired the script into `flake.nix`'s `checks` attribute as the new
+  `cli-module-placement` check, and into the `pre-commit-check.hooks`
+  block so a violating commit is rejected at commit time. Both are
+  reachable via `nix flake check`.
+- Promoted `Seihou.CLI.Completions.{Bash,Fish,Zsh}` from the
+  executable target to `seihou-cli-internal`'s `exposed-modules`. The
+  three modules generate shell-completion text and have no
+  executable-only imports; they are pure helpers and were the only
+  pre-EP-4 violations the script flagged.
+
+**Documentation impact:** `CLAUDE.md` gained a one-line pointer to the
+new check. No user-facing CLI behaviour changed.
+
 ### 2026-04-26 (CLI library-first: AgentLaunch split, Outdated re-exports retired)
 
 **Reviewed commits:** EP-3 of MasterPlan
