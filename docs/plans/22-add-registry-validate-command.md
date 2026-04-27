@@ -94,11 +94,11 @@ exit code.
       half of `seihou-cli`). Wire the parser in
       `seihou-cli/src-exe/Seihou/CLI/Commands.hs` and the dispatcher in
       `seihou-cli/src/Seihou/CLI/Registry.hs`. (2026-04-27)
-- [ ] M3: Tests for the CLI handler. Mirror the temp-dir fixture style of
+- [x] M3: Tests for the CLI handler. Mirror the temp-dir fixture style of
       `seihou-cli/test/Seihou/CLI/Registry/SyncSpec.hs` and assert exit
       decisions and report contents for the success path, the version-drift
       path, and the missing-`module.dhall` path. Register the new spec module
-      in `seihou-cli/test/Main.hs` and the cabal test stanza.
+      in `seihou-cli/test/Main.hs` and the cabal test stanza. (2026-04-27)
 - [ ] M4: Documentation. Extend `docs/cli/registry.md` with a `seihou registry
       validate` section, add a CHANGELOG entry under Unreleased, and add a
       "Validating the registry" cross-reference to

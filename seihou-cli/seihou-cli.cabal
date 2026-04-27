@@ -157,6 +157,7 @@ test-suite seihou-cli-test
     Seihou.CLI.MigrateSpec
     Seihou.CLI.PendingMigrationSpec
     Seihou.CLI.Registry.SyncSpec
+    Seihou.CLI.Registry.ValidateSpec
     Seihou.CLI.RemoteVersionSpec
     Seihou.CLI.SavePromptedSpec
     Seihou.CLI.StatusSpec
