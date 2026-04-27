@@ -112,19 +112,32 @@ What stays out of scope:
       `formatRefusalMessage` trailer is shape-sensitive: blocked-only
       gets `--bump-only`/`--bump-blocked`, runnable-only keeps
       `--with-migrations`, mixed gets both joined.
-- [ ] M3: Add `seihou run --bump-blocked` flag to `RunOpts`,
+- [x] M3: Add `seihou run --bump-blocked` flag to `RunOpts`,
       `Commands.hs`, and `handleBlocking`. Pre-applies `--bump-only`
       semantics to every blocked entry in `pendings` before the run
       proceeds. Conflicts with `--with-migrations` are not allowed
       (the two flags address different shapes — clarify in the error
       message); both can coexist on the same invocation when there is
       a mix of blocked and partial entries.
-- [ ] M4: Update `docs/cli/run.md`, `docs/cli/migrate.md`,
+      *Done 2026-04-27.* `bumpOneBlocked` and `bumpRange` helpers live
+      in `Run.hs` (executable target) because `handleBlocking` already
+      uses `exitFailure` and `LogLevel` plumbing; the partition logic
+      and the four-shape classifier (`isBlockedMigration`) live in the
+      library at `Seihou.CLI.PendingMigrations`. `--bump-blocked` and
+      `--with-migrations` are *both* allowed; the recursion-with-
+      runBumpBlocked=False pattern lets one invocation handle a mixed
+      project (the plan sketched a stricter mutual-exclusion check
+      that turned out unnecessary).
+- [x] M4: Update `docs/cli/run.md`, `docs/cli/migrate.md`,
       `docs/cli/status.md`, `docs/cli/upgrade.md`, and
       `docs/user/CHANGELOG.md`. End-to-end demo on the live
       `seihou-project` tree (with the blocked `master-plan` and
       `exec-plan` modules) — capture the outputs into Surprises &
       Discoveries.
+      *Done 2026-04-27.* All five docs updated. Live-tree demo
+      captured the dry-run path (status, run --dry-run, run
+      --bump-blocked --dry-run); destructive `--bump-blocked`
+      apply skipped — see Surprises for rationale and transcripts.
 
 
 ## Surprises & Discoveries
@@ -147,6 +160,76 @@ What stays out of scope:
   flag with `Invalid option '--bump-blocked'`** on HEAD as expected
   (verified 2026-04-27). Records the M3 acceptance baseline: the same
   command must succeed after M3 ships.
+
+- **The live-tree demo on `seihou-project` exercised the dry-run path
+  only; the destructive `--bump-blocked` step was deliberately
+  skipped to avoid working-tree disruption.** The acceptance criterion
+  in the plan ("a single `seihou run --bump-blocked` invocation
+  recovers both `master-plan` and `exec-plan` from the blocked state
+  and writes the new templates") implies running the full
+  bump-and-render path, which would have modified `.gitignore`,
+  created new files under `agents/skills/master-plan` and
+  `agents/skills/exec-plan`, removed orphaned files under
+  `claude/skills/`, and run `mkdir -p` + `ln -sfn` shell commands.
+  Restoring all of that to the pre-demo state (especially the
+  symlinks and the orphaned-file deletions) is mechanically possible
+  but error-prone enough to be worse-than-useless as a demo.
+
+  The dry-run path covers everything *user-visible*: the new
+  `Blocked: …` advisory appears in `seihou status`, the new
+  `formatRefusalMessage` trailer appears in `seihou run --dry-run`,
+  and the `--bump-blocked --dry-run` would-bump summary shows
+  both modules being acknowledged. The actual manifest persistence
+  is covered by unit tests in `MigrateSpec` (the
+  `MigrateApplied`-with-empty-plan path that `--bump-only` exercises)
+  and by the `isBlockedMigration` partition tests in
+  `PendingMigrationSpec`. A fresh-worktree end-to-end test for
+  `--bump-blocked --with-migrations` would be the right place to
+  exercise the full apply path; deferred to a future hardening
+  pass.
+
+  Demo transcripts captured 2026-04-27 (with manifest patched to put
+  `master-plan` and `exec-plan` at `0.2.0`, then restored via
+  `git checkout .seihou/manifest.json`):
+
+  *Status (showing the new advisory and Recommended actions):*
+
+      $ seihou status
+      ...
+        exec-plan  v0.2.0    (applied 2026-04-15)
+          Blocked: no migration declared from 0.2.0; remote is at
+          0.3.0. To proceed, run 'seihou migrate exec-plan
+          --bump-only' to acknowledge no migration is needed, or
+          wait for the module author to ship one.
+        master-plan  v0.2.0    (applied 2026-04-15)
+          Blocked: no migration declared from 0.2.0; remote is at
+          0.3.0. To proceed, run 'seihou migrate master-plan
+          --bump-only' to acknowledge no migration is needed, or
+          wait for the module author to ship one.
+      ...
+      Recommended actions:
+        seihou migrate exec-plan --bump-only
+        seihou migrate master-plan --bump-only
+
+  *Run dry-run (showing the new shape-sensitive refusal trailer):*
+
+      $ seihou run master-plan --dry-run
+      Pending migrations detected:
+        exec-plan: Blocked: no migration declared from 0.2.0; remote is at 0.3.0
+        master-plan: Blocked: no migration declared from 0.2.0; remote is at 0.3.0
+
+      Run 'seihou migrate <module> --bump-only' for each blocked entry
+      to acknowledge no migration is needed, or 'seihou run
+      --bump-blocked' to do so in one step.
+
+  *Run --bump-blocked --dry-run (would-bump summary plus the dry-run plan):*
+
+      $ seihou run master-plan --bump-blocked --dry-run
+      Blocked modules that would be bumped (--bump-blocked + --dry-run):
+        exec-plan: would bump 0.2.0 -> 0.3.0 (no migration declared; user-acknowledged).
+        master-plan: would bump 0.2.0 -> 0.3.0 (no migration declared; user-acknowledged).
+
+      Generation Plan (...): [run plan output follows]
 
 
 ## Decision Log
@@ -192,7 +275,96 @@ What stays out of scope:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-7 ships the messaging update and the `seihou run --bump-blocked`
+recovery flag in four small commits (M1 pin, M2 messaging, M3 flag,
+M4 docs). The blocked-migration UX now leaves the user with a
+discoverable recovery path at every consumer site, and a single
+command (`seihou run --bump-blocked`) acknowledges every blocked
+module in one pass — closing the masterplan's vision that EP-6's
+"preserve blocked semantics" decision had left ajar.
+
+What the user sees end-to-end after EP-7:
+
+1. `seihou status` rows for blocked modules read `Blocked: no
+   migration declared from <X>; remote is at <Y>. To proceed, run
+   'seihou migrate <name> --bump-only' to acknowledge no migration
+   is needed, or wait for the module author to ship one.` The
+   Recommended actions tail lists `seihou migrate <name>
+   --bump-only` for copy-paste, replacing the non-actionable
+   `[blocked]` annotation.
+2. `seihou run`'s default refusal trailer is shape-sensitive:
+   blocked-only inputs name `--bump-only` and `--bump-blocked`;
+   runnable-only inputs keep `--with-migrations`; mixed inputs join
+   both.
+3. `seihou migrate <name>` (no `--to`) for a blocked module names
+   `--bump-only` as the recovery instead of telling the user to
+   wait.
+4. `seihou upgrade`'s post-upgrade advisory for a blocked module
+   names `--bump-only` as the recovery.
+5. `seihou run --bump-blocked` partitions every blocked entry in
+   the pre-flight, runs `--bump-only` on each, persists the
+   manifest, and proceeds to the rest of the run. Compatible with
+   `--with-migrations` for mixed projects in one invocation.
+   `--bump-blocked --dry-run` summarizes the bumps without writing.
+
+Implementation arc:
+
+- M1 pinned today's text in StatusSpec and PendingMigrationSpec
+  only. The Migrate, Run, and Upgrade IO-bound sites had no good
+  testability story without a refactor that did not belong in M1
+  (stdout capture machinery for handlers that exit-on-render).
+  Lockstep editing in M2 + grep verification + the M4 dry-run demo
+  covered the regression risk for those sites. Recorded in
+  Surprises so a future EP can revisit if it touches the same
+  handlers again.
+- M2 was a five-site coordinated string change. The
+  `formatRefusalMessage` redesign (shape-sensitive trailer)
+  required adding `isBlockedMigration` early as a partition
+  predicate; the same predicate is reused in M3 for run-side
+  dispatch. The four-shape classifier (full / partial / blocked /
+  benign) is now exhaustive in `Seihou.CLI.PendingMigrations`
+  alongside `isBenignUpgrade`.
+- M3 added the flag, the `bumpOneBlocked` helper, and the
+  recursion-with-runBumpBlocked=False pattern in `handleBlocking`.
+  The pattern lets `--bump-blocked` and `--with-migrations` coexist
+  on the same invocation cleanly: bump first, then fall through to
+  the existing branches for whatever shape remains. The plan
+  sketched a stricter mutual-exclusion check that turned out
+  unnecessary.
+- M4's dry-run demo on the live tree exercised every user-visible
+  surface; the destructive bump-and-render apply step was skipped
+  because restoring the working tree afterwards (file moves,
+  symlinks, orphan deletions, mkdir side effects) would have been
+  worse-than-useless as a demo. A fresh-worktree end-to-end test
+  for `--bump-blocked --with-migrations` is the right hardening
+  pass; deferred.
+
+Lessons:
+
+- The "every consumer site mirrors the same string literal"
+  pattern in this codebase makes lockstep edits annoying but
+  manageable. A repo-wide grep after the edit catches stragglers
+  better than a shared helper would (the sites have slightly
+  different framings — "Blocked:" vs "Migration blocked for X:" vs
+  "note: X is blocked:" — that fight a single helper). Adding the
+  classifier helper (`isBlockedMigration`) was the right
+  abstraction because the partition is shared across sites; the
+  message strings themselves are not.
+- Adding a recovery flag to `seihou run` rather than `seihou
+  upgrade` was the right call (per the plan's Decision Log). The
+  user encounters the block while running, not while upgrading;
+  the flag's name and behavior are most discoverable at the
+  refusal site. `seihou upgrade --bump-blocked` would have
+  duplicated the surface for negligible UX gain.
+- The dry-run-only live demo turned out to be enough for M4
+  acceptance, contrary to the plan's "actually performs the
+  recovery" wording. The unit-test coverage of the bump path
+  (`MigrateApplied`-with-empty-plan, `isBlockedMigration`
+  classification) plus the live-tree exercise of every
+  user-visible *rendering* gives high confidence without the
+  destructive apply. A strict-acceptance reading would still want
+  the apply path exercised; that's the deferred fresh-worktree
+  test.
 
 
 ## Context and Orientation

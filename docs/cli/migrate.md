@@ -87,10 +87,14 @@ version exactly. `seihou migrate` distinguishes four outcomes:
   continuation migration.
 - **Blocked** — the module declared at least one migration but no
   edge starts at the manifest's recorded version, so the planner has
-  nothing to apply. Without `--to`, `migrate` prints
-  `Blocked: no migration declared from <manifest-version>; remote is at
-  <target>. The module author must ship one before this project can
-  move forward.` and exits zero (no work was done; no manifest change).
+  nothing to apply. Without `--to`, `migrate` prints `Blocked: no
+  migration declared from <manifest-version>; remote is at
+  <target>. To proceed, run 'seihou migrate <name> --bump-only' to
+  acknowledge no migration is needed, or wait for the module author
+  to ship one.` and exits zero (no work was done; no manifest
+  change). When several modules are blocked at once, prefer the
+  one-command `seihou run --bump-blocked` recovery; see
+  [`docs/cli/run.md`](run.md) for details.
 - **No migrations declared** — the module's `migrations` field is the
   empty list (`migrations = []`) and the manifest version trails the
   installed copy's version. This is **benign**: there is no
@@ -128,6 +132,13 @@ Use cases:
 - Cleaning up after a `--with-migrations` partial apply where the
   user has manually finished the remaining work outside of
   `seihou migrate`.
+- A project where the user is *also* the module author and is
+  intentionally bumping the version without a destructive change
+  (e.g. a doc tweak that does not warrant declaring a migration).
+  When several modules are in this state at once, `seihou run
+  --bump-blocked` is the bulk equivalent: it runs `--bump-only` for
+  every blocked module in one invocation. See
+  [`docs/cli/run.md`](run.md) for the recovery flow.
 
 `--bump-only` is **mutually exclusive** with `--to TARGET`:
 `--bump-only` always targets the installed copy's declared version,

@@ -20,6 +20,7 @@ seihou upgrade [MODULE...] [OPTIONS]
 |--------|-------------|
 | `--dry-run` | Show what would be upgraded without making changes |
 | `--json` | Output as JSON |
+| `--with-migrations` | After each successful per-module upgrade, also run `seihou migrate` against the current project. Without this flag, `seihou upgrade` emits a one-line advisory pointing at the next command. |
 
 ## Description
 
@@ -39,6 +40,27 @@ registry index has caught up. After a successful upgrade, the version recorded
 in the local manifest's `.seihou-origin.json` is the one read from
 `module.dhall`, not the one declared in the registry.
 
+## Post-upgrade advisory
+
+After a successful upgrade, if the manifest's recorded version still
+trails the freshly-installed copy's declared version, `seihou
+upgrade` prints a one-line advisory naming the next command. The
+text varies by the migration plan's shape:
+
+- **Full / partial chain** — `note: <name> has N migration(s) pending
+  (X → Y); run 'seihou migrate <name>'`. The user runs `seihou
+  migrate <name>` (or `seihou upgrade --with-migrations` to combine
+  the steps in a future upgrade).
+- **Blocked** — `note: <name> is blocked: no migration declared from
+  X; remote is at Y. Run 'seihou migrate <name> --bump-only' to
+  acknowledge no migration is needed.` See [`docs/cli/run.md`](run.md)
+  for `seihou run --bump-blocked`, the bulk recovery for projects
+  with several blocked modules.
+- **Benign (no migrations declared)** — `note: <name> has no
+  migrations declared (X → Y); run 'seihou run' to refresh
+  templates.` No migration is needed; the run flow's
+  `updateAllModules` records the new version automatically.
+
 ## Examples
 
 ```sh
@@ -50,4 +72,7 @@ seihou upgrade haskell-project nix-flake
 
 # Preview upgrades
 seihou upgrade --dry-run
+
+# Upgrade and immediately apply any pending migrations
+seihou upgrade --with-migrations
 ```

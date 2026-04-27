@@ -3,12 +3,77 @@
 ## Last Reviewed Commit
 
 ```
-HEAD  Distinguish benign version bumps from missing migrations (ExecPlan 24)
+HEAD  Recover from blocked migrations from the user's side (ExecPlan 25)
 ```
 
 ---
 
 ## Changelog
+
+### 2026-04-27 (Recover from blocked migrations from the user's side)
+
+**Reviewed commits:** EP-7 of MasterPlan
+`docs/masterplans/1-migrations-dx.md` — surfacing the existing
+`seihou migrate <module> --bump-only` escape hatch in every
+blocked-migration message and adding a new bulk recovery flag for
+`seihou run`.
+
+**Behavior change (user-facing):**
+
+- Blocked-migration messages at every site (Migrate, StatusRender,
+  PendingMigrations.formatRefusalMessage, Run.applyOneMigration,
+  Upgrade.printAdvisory, Upgrade.runOnePostUpgradeMigration) drop the
+  "the module author must ship one before this project can move
+  forward" finality sentence. Each site now names `seihou migrate
+  <name> --bump-only` (the per-module manual escape hatch shipped in
+  EP-6) as the recovery path. The PendingMigrations refusal trailer
+  composes itself from the actual entry shapes: blocked-only inputs
+  get `--bump-only` / `--bump-blocked` wording, runnable-only inputs
+  keep the legacy `--with-migrations` wording, mixed inputs get both
+  joined.
+- `seihou status` Recommended actions tail block lists `seihou
+  migrate <name> --bump-only` for blocked modules instead of the
+  non-actionable `[blocked]` annotation.
+- New flag `seihou run --bump-blocked`: acknowledges every blocked
+  module by running `--bump-only` on each (writing the installed
+  copy's declared version into the manifest with no migration ops),
+  persists the manifest, and proceeds to the rest of the run.
+  Compatible with `--with-migrations` for mixed projects: a single
+  invocation of `seihou run --bump-blocked --with-migrations` bumps
+  blocked entries and applies runnable chains in one pass.
+  `--bump-blocked --dry-run` summarizes the bumps without writing.
+  Each bump prints `  Bumping <name> <from> -> <to> (no migration
+  declared; user-acknowledged).` as the audit trail.
+
+**Why:**
+
+After EP-6 the `--bump-only` escape hatch existed but was not surfaced
+anywhere in the in-CLI messaging. Live verification on the
+`seihou-project` working tree on 2026-04-27 (after EP-5 partial-applied
+both `master-plan` and `exec-plan` to 0.2.0 and the upstream
+`agent-seihou` advanced to 0.3.0 without shipping a continuation
+migration) showed the user — who is *also* the module author — locked
+out. The "wait for the module author to ship one" sentence is wrong
+when the user *is* the author, and the absence of `--bump-only` /
+`--bump-blocked` in the messaging meant a discoverable recovery
+existed only for users who had already read the EP-6 changelog.
+
+**Docs updated:**
+- `docs/cli/run.md` — adds `--bump-blocked` to the flags table, adds
+  a "Recovering from blocked migrations" subsection, updates the
+  refusal-listing example to show the new shape-sensitive trailer,
+  and adds `--bump-blocked` invocation examples.
+- `docs/cli/migrate.md` — updates the Blocked subsection's example
+  text and cross-references `seihou run --bump-blocked` from the
+  `--bump-only` use cases.
+- `docs/cli/status.md` — updates the Blocked example to show the
+  new advisory and replaces the `[blocked]` annotation in the
+  Recommended actions example with `seihou migrate <name>
+  --bump-only`.
+- `docs/cli/upgrade.md` — adds a new "Post-upgrade advisory" section
+  documenting the three shapes (full/partial, blocked, benign) and
+  what each prints; documents `--with-migrations` (already shipped
+  in EP-2 but undocumented here).
 
 ### 2026-04-26 (Distinguish benign version bumps from missing migrations)
 

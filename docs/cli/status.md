@@ -75,12 +75,15 @@ planner returns:
   apply. The hint reads:
 
   ```
-      Blocked: no migration declared from 0.1.3; remote is at 0.3.0. The module author must ship one before this project can move forward.
+      Blocked: no migration declared from 0.1.3; remote is at 0.3.0. To proceed, run 'seihou migrate exec-plan --bump-only' to acknowledge no migration is needed, or wait for the module author to ship one.
   ```
 
-  The Recommended actions tail lists `[blocked] no migration declared
-  for <name> (<from> -> <target>)` instead of `seihou migrate <name>`,
-  because running migrate would just print the same blocked message.
+  The Recommended actions tail lists `seihou migrate <name>
+  --bump-only` for copy-paste — the manual escape hatch that
+  acknowledges no migration is needed and bumps the manifest forward.
+  When several modules are blocked at once, prefer `seihou run
+  --bump-blocked` (see [`docs/cli/run.md`](run.md)), which runs
+  `--bump-only` on every blocked entry in one invocation.
 
 - **No migrations declared** — the module's `migrations` field is the
   empty list and the manifest version trails the installed copy's
@@ -143,7 +146,7 @@ Applied modules:
     Pending migration: 0.1.0 -> 0.2.0 (6 operation(s)). Run: seihou migrate master-plan
     Note: no migration declared from 0.2.0; remote is at 0.3.0.
   exec-plan  v0.1.3    (applied 2026-04-15)  outdated: 0.3.0 available
-    Blocked: no migration declared from 0.1.3; remote is at 0.3.0. The module author must ship one before this project can move forward.
+    Blocked: no migration declared from 0.1.3; remote is at 0.3.0. To proceed, run 'seihou migrate exec-plan --bump-only' to acknowledge no migration is needed, or wait for the module author to ship one.
   example  v0.2.0    (applied 2026-04-15)  outdated: 0.3.0 available
     Pending: 0.2.0 -> 0.3.0 (no migrations declared). Run: seihou upgrade example && seihou run
 
@@ -156,6 +159,6 @@ Variables: 4 resolved
 
 Recommended actions:
   seihou migrate master-plan
-  [blocked] no migration declared for exec-plan (0.1.3 → 0.3.0)
+  seihou migrate exec-plan --bump-only
   seihou upgrade example && seihou run
 ```
