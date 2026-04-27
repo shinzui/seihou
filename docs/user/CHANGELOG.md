@@ -10,6 +10,53 @@ HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 
 
 ## Changelog
 
+### 2026-04-26 (CLI cabal restructured; executable depends on library)
+
+**Reviewed commits:** EP-2 of MasterPlan
+`docs/masterplans/2-cli-library-first-convention.md` — restructuring
+`seihou-cli/seihou-cli.cabal` so the executable depends on the
+library and lives in its own source directory.
+
+**Behavior change (developer-facing only):**
+- `executable seihou` in `seihou-cli/seihou-cli.cabal` now has
+  `build-depends: seihou-cli-internal` and `hs-source-dirs:
+  src-exe`. Main.hs and the 27 executable-only modules
+  (`Seihou.CLI.AgentLaunch`, `Assist`, `Bootstrap`, `Browse`,
+  `Commands`, `Completions`, `Completions.Bash`, `Completions.Fish`,
+  `Completions.Zsh`, `Config`, `Context`, `Help`, `Install`, `Kit`,
+  `NewModule`, `NewRecipe`, `Outdated`, `Remove`, `Run`,
+  `SchemaUpgrade`, `Setup`, `Status`, `Upgrade`, `Validate`, `Vars`,
+  `Version`) moved from `seihou-cli/src/` to `seihou-cli/src-exe/`.
+  The library still owns `seihou-cli/src/`.
+- The executable's `other-modules` list is now strictly the
+  trapped-by-dependency set. Each module's trapping reason
+  (`Options.Applicative`, `Data.FileEmbed`, `GitHash`,
+  `Paths_seihou_cli`, or — transitively — `Seihou.CLI.Commands`) is
+  recorded in a "Trapped-modules inventory" table in
+  `docs/dev/architecture/overview.md`. The cabal file carries a
+  single header comment pointing at the table, since the project's
+  `cabal-gild` formatter floats per-line `--` comments to the top of
+  `other-modules` and would silently desynchronise per-module
+  annotations.
+- `Seihou.CLI.SchemaVersion`, `Seihou.CLI.Shared`, and
+  `Seihou.CLI.Style` are now exposed by the library
+  (previously they were either executable-only or library-private).
+- The build no longer compiles shared modules twice. `cabal build`
+  now compiles 24 library modules + 28 executable modules per clean
+  build, down from 23 + 52.
+
+**Mid-implementation discovery (recorded in EP-2):** the original
+plan assumed that removing duplicate `other-modules` entries from
+the executable would suffice. Empirically GHC walks
+`hs-source-dirs: src` and recompiles every reachable source file
+regardless of `other-modules`, preferring local source over the
+package. Splitting `hs-source-dirs` was required to make
+`build-depends` actually do its job.
+
+**No user-visible CLI behavior change.** The 143-test CLI suite
+still passes; `seihou --version` and `seihou --help` still produce
+their expected output.
+
 ### 2026-04-26 (CLI library-first module-placement convention documented)
 
 **Reviewed commits:** EP-1 of MasterPlan

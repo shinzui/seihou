@@ -51,19 +51,73 @@ types.
 
 ## Progress
 
-- [ ] Confirm the current cabal layout matches the assumptions in this plan (executable does not depend on the library; ~30 entries in `other-modules`; many duplicate the library's `exposed-modules`).
-- [ ] Capture a one-paragraph note for the Surprises & Discoveries section recording the duplicate-compilation fingerprint (a `cabal build all -v` snippet showing each duplicated module compiling twice is sufficient evidence; not a regression test).
-- [ ] Add `seihou-cli-internal` to `executable seihou`'s `build-depends` in `seihou-cli/seihou-cli.cabal`.
-- [ ] Remove from `executable seihou`'s `other-modules` every module that already appears in `library seihou-cli-internal`'s `exposed-modules`. Verify `cabal build all` still succeeds and tests still pass.
-- [ ] Move `Seihou.CLI.SchemaVersion` from the executable's `other-modules` to the library's `exposed-modules`. Verify `cabal build all` and `cabal test all` succeed.
-- [ ] Annotate every remaining entry in `executable seihou`'s `other-modules` with a one-line cabal comment naming the trapping dependency. Use the four-import detection plus the transitive "imports another executable-only seihou module" rule.
-- [ ] Update `docs/user/CHANGELOG.md` with the cabal-restructure entry.
+- [x] Confirm the current cabal layout matches the assumptions in this plan (executable does not depend on the library; ~30 entries in `other-modules`; many duplicate the library's `exposed-modules`). (2026-04-26)
+- [x] Capture a one-paragraph note for the Surprises & Discoveries section recording the duplicate-compilation fingerprint (a `cabal build all -v` snippet showing each duplicated module compiling twice is sufficient evidence; not a regression test). (2026-04-26)
+- [x] Add `seihou-cli-internal` to `executable seihou`'s `build-depends` in `seihou-cli/seihou-cli.cabal`. (2026-04-26)
+- [x] Remove from `executable seihou`'s `other-modules` every module that already appears in `library seihou-cli-internal`'s `exposed-modules`. Verify `cabal build all` still succeeds and tests still pass. (2026-04-26)
+- [x] Move `Seihou.CLI.SchemaVersion` from the executable's `other-modules` to the library's `exposed-modules`. Verify `cabal build all` and `cabal test all` succeed. (2026-04-26)
+- [x] Promote `Seihou.CLI.Shared` and `Seihou.CLI.Style` to the library's `exposed-modules` (mid-implementation discovery; required by the source-dir split below). (2026-04-26)
+- [x] Split `hs-source-dirs` so the executable lives in `src-exe/` while the library keeps `src/`. Move Main.hs and the 27 executable-only modules. (2026-04-26)
+- [x] Annotate every remaining entry in `executable seihou`'s `other-modules` with a one-line cabal comment naming the trapping dependency. Use the four-import detection plus the transitive "imports another executable-only seihou module" rule. (2026-04-26)
+- [x] Update `docs/user/CHANGELOG.md` with the cabal-restructure entry. (2026-04-26)
 
 
 ## Surprises & Discoveries
 
-(None yet. Add to this section as work proceeds. The duplicate-compilation
-fingerprint should land here once captured.)
+- **Baseline duplicate-compilation fingerprint (Milestone 1).** Before
+  any cabal edit, `cabal build all -v 2>&1 | rg "Compiling
+  Seihou.CLI.Migrate"` returned two lines: one for the library target
+  (`l/seihou-cli-internal/...`) and one for the executable target
+  (`x/seihou/...`). The executable build reported `[N of 52]` for each
+  module, confirming GHC was compiling 52 files for the executable
+  including all the library-exposed modules.
+
+- **`other-modules` does not control GHC's import resolution when both
+  targets share `hs-source-dirs: src`.** The original plan assumed
+  removing duplicate entries from the executable's `other-modules`
+  would stop the executable from compiling them. Empirically that is
+  false: GHC follows imports from `Main.hs`, finds the library
+  modules' source files in `src/` (because `hs-source-dirs: src` is on
+  the executable too), and compiles them locally — preferring the
+  local source over the package import declared by `build-depends:
+  seihou-cli-internal`. After Milestone 2 (deduplicating
+  `other-modules`), the executable still compiled 52 modules and
+  Migrate still compiled twice. This is structural: the only fix that
+  actually eliminates the duplicate compilation and lets `build-depends`
+  do its job is to give the executable its own `hs-source-dirs`. The
+  decision to split source dirs is recorded in the Decision Log.
+
+- **Library-private modules (`Shared`, `Style`) had to be promoted to
+  `exposed-modules`.** Once the executable depends on the library and
+  cannot reach into `src/` directly, every executable-only module that
+  imports `Seihou.CLI.Shared` or `Seihou.CLI.Style` (Outdated, Remove,
+  Browse, Status, Run, Validate, Config, Install, NewRecipe, NewModule,
+  Vars, SchemaUpgrade — twelve handlers) needs those modules visible
+  through the library. They were already library code in every other
+  sense; the `other-modules` placement was an oversight from before
+  the executable depended on the library.
+
+- **Post-restructure baseline.** After Milestones 1-3 plus the
+  source-dir split: the library compiles 24 modules (up from 21 with
+  the addition of `SchemaVersion`, `Shared`, `Style`); the executable
+  compiles exactly 28 modules (down from 52); `cabal build -v | rg
+  "Compiling Seihou.CLI.Migrate"` returns one line. The CLI test suite
+  remains green at 143 tests.
+
+- **Per-line cabal annotations don't survive `cabal-gild`.** The
+  project's formatter (configured in `treefmt.nix`) sorts
+  `other-modules` entries alphabetically and floats every `--`
+  comment to the top of the section. The originally-planned
+  per-module annotation format (`Seihou.CLI.Foo  -- needs X`) was
+  silently desynchronised on the first pre-commit format run.
+  Resolution: the cabal file carries one header comment pointing
+  readers at a "Trapped-modules inventory" table in
+  `docs/dev/architecture/overview.md`; the table is the canonical
+  per-module mapping. EP-1's documentation, EP-2's cabal file, and
+  the project-root `CLAUDE.md` plus `docs/dev/contributing.md` were
+  updated to describe this format. EP-4's enforcement script will
+  inspect imports directly and does not rely on the cabal-comment
+  format, so the loss is purely a doc-format deviation.
 
 
 ## Decision Log
@@ -93,10 +147,85 @@ fingerprint should land here once captured.)
   computes the closure rather than maintaining a static list.
   Date: 2026-04-26.
 
+- Decision: Split `hs-source-dirs` between the library (`src/`) and the
+  executable (`src-exe/`), moving Main.hs and the 27 executable-only
+  modules into `src-exe/`.
+  Rationale: The original plan assumed that `other-modules` controlled
+  what GHC compiled, so removing duplicates from the executable's
+  `other-modules` would eliminate duplicate compilation. Empirically,
+  GHC walks imports through `hs-source-dirs: src` and compiles every
+  reachable source file locally regardless of `other-modules`,
+  preferring the local source over the package binary that
+  `build-depends` would otherwise provide. The result was that even
+  after deduplicating `other-modules`, the executable still recompiled
+  52 modules including all the library code. Splitting source dirs is
+  the only fix that actually elicits `build-depends` resolution: the
+  executable cannot find `Seihou.CLI.Migrate` in `src-exe/`, so it
+  loads the library binary instead. This change is invisible to users
+  (modules keep their Haskell module names) and to test code (tests
+  always went through the library). It also makes the convention
+  enforceable at the GHC level — a new helper added to `src/` is
+  automatically library-visible, and a new helper added to `src-exe/`
+  cannot be reached by the test suite.
+  Date: 2026-04-26.
+
+- Decision: Promote `Seihou.CLI.Shared` and `Seihou.CLI.Style` from
+  the library's `other-modules` to its `exposed-modules`.
+  Rationale: Once the executable lives in `src-exe/` and depends on
+  the library, executable-only handlers (Outdated, Remove, Browse,
+  Status, Run, Validate, Config, Install, NewRecipe, NewModule, Vars,
+  SchemaUpgrade) need to import `Shared` and `Style` through the
+  library. Library-private placement only worked while both targets
+  shared `hs-source-dirs: src`. Promoting them is consistent with
+  their actual role — they are shared CLI utilities used both inside
+  and outside the library — and aligns with the library-first
+  convention.
+  Date: 2026-04-26.
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The cabal restructure landed and the build is structurally healthier
+than the plan promised. The executable now compiles exactly 28
+modules (its IO-shell layer) and the library compiles 24; previously
+both targets compiled overlapping subsets totaling 23 + 52. `cabal
+build -v 2>&1 | rg "Compiling Seihou.CLI.Migrate"` returns one line
+where it returned two before. The 143-test CLI suite still passes,
+and `seihou --version` / `seihou --help` exercise the path through
+`Data.FileEmbed` (Help.hs) and `GitHash` + `Paths_seihou_cli`
+(Version.hs) without issue.
+
+The biggest deviation from the plan was the source-dir split. The
+original plan correctly identified `build-depends:
+seihou-cli-internal` and the deduplicated `other-modules` as the two
+necessary cabal edits, but it assumed those alone would eliminate
+duplicate compilation. They did not, because `hs-source-dirs: src`
+in the executable lets GHC find every library source file directly
+and prefer local compilation over package resolution. The fix —
+moving Main.hs and the 27 executable-only modules into `src-exe/`,
+leaving `src/` library-only — is invisible to users and to test
+code (which always went through the library), but it makes the
+convention enforceable at the GHC level: a new helper added to
+`src/` is automatically library-visible, and a new helper added to
+`src-exe/` cannot be reached by the test suite.
+
+Two additional cleanups landed alongside the source-dir split.
+`Seihou.CLI.Shared` and `Seihou.CLI.Style` were promoted from the
+library's `other-modules` to its `exposed-modules` because twelve
+executable-only handlers import them; the library-private placement
+only worked while both targets shared `src/`.
+`Seihou.CLI.SchemaVersion` was promoted as planned (no source
+change, just a cabal edit).
+
+EP-3's work (the AgentLaunch split, the Outdated re-export cleanup,
+and a regression test for the now-library-visible AgentLaunch
+helpers) is now a single-target edit per the plan: the executable
+already depends on the library, so moving a module is a single
+cabal-line change.
+
+EP-4's enforcement script will assert this layout. The
+`EXEMPT_MODULES` array can stay tiny — only `Paths_seihou_cli` (and
+optionally `AgentLaunch` until EP-3 splits it) needs an exemption.
 
 
 ## Context and Orientation

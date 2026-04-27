@@ -33,24 +33,32 @@ library already exposes IO-bearing helpers (for example, `cloneRepo`
 and `installModuleDir` in `Seihou.CLI.InstallShared`); needing IO is
 not a reason to stay in the executable.
 
-Each entry in `executable seihou`'s `other-modules` list in
-`seihou-cli/seihou-cli.cabal` carries a one-line cabal comment naming
-the trapping dependency, for example:
+The executable target lives in `seihou-cli/src-exe/`. The library
+lives in `seihou-cli/src/`. The split source directories make GHC
+resolve library imports through the package binary instead of
+finding the source files locally — a module added to `src/` is
+automatically library-visible, and a module added to `src-exe/`
+cannot be reached by the test suite.
 
-    other-modules:
-      Seihou.CLI.Commands         -- needs Options.Applicative
-      Seihou.CLI.Help             -- needs Data.FileEmbed for embedded help
-      Seihou.CLI.Version          -- needs GitHash and Paths_seihou_cli
-      Seihou.CLI.Run              -- imports Seihou.CLI.Commands (transitively trapped)
+`seihou-cli/seihou-cli.cabal`'s `executable seihou` block carries a
+single header comment above its `other-modules` list pointing
+readers at the architecture doc's "Trapped-modules inventory" table
+(under section "CLI Module Placement Convention"). Per-line cabal
+comments are not used because the project's formatter (`cabal-gild`)
+sorts module entries alphabetically and floats `--` comments to the
+top of the section, which would silently desynchronise per-module
+annotations from the modules they describe.
 
 To add a new executable-only module, demonstrate the trapping
-dependency in the module's import list and add the matching one-line
-comment in the cabal file. To add an exemption (a module that
-legitimately stays in the executable despite not importing one of the
-four dependencies), add it to the `EXEMPT_MODULES` list in the
+dependency in the module's import list, add the file under
+`seihou-cli/src-exe/Seihou/CLI/...`, list it in the executable's
+`other-modules`, and add a row to the "Trapped-modules inventory"
+table in the architecture doc. To add an exemption (a module that
+legitimately stays in the executable despite not importing one of
+the four dependencies), add it to the `EXEMPT_MODULES` list in the
 enforcement script (see the path declared in
-`docs/plans/21-enforce-cli-library-first-convention.md`) with an inline
-comment naming the reason.
+`docs/plans/21-enforce-cli-library-first-convention.md`) with an
+inline comment naming the reason.
 
 The architecture doc at `docs/dev/architecture/overview.md` is the
 canonical home for this convention; this section mirrors it for

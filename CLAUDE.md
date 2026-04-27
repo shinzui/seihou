@@ -5,8 +5,9 @@ these notes with any global guidance in your user-level `CLAUDE.md`.
 
 ## CLI Module Placement (library-first)
 
-New code under `seihou-cli/src/Seihou/` goes in the `seihou-cli-internal`
-library by default. The `seihou` executable target is reserved for
+The `seihou-cli-internal` library lives at `seihou-cli/src/`. The
+`seihou` executable target lives at `seihou-cli/src-exe/`. New code
+goes in `src/` (the library) by default; `src-exe/` is reserved for
 `Main.hs`, command dispatchers, and modules that genuinely need one of
 these four dependencies:
 
@@ -15,12 +16,14 @@ these four dependencies:
 - `GitHash`
 - `Paths_seihou_cli`
 
-A fifth, transitive criterion also keeps a module in the executable: it
-imports another seihou module that is itself executable-only (most
-commonly `Seihou.CLI.Commands`, which is trapped by `Options.Applicative`).
+A fifth, transitive criterion also keeps a module in the executable:
+it imports another seihou module that is itself executable-only (most
+commonly `Seihou.CLI.Commands`, which is trapped by
+`Options.Applicative`).
 
-Full convention and rationale: `docs/dev/architecture/overview.md`,
-section "CLI Module Placement Convention". Coordinating masterplan:
+Full convention, the per-module trapping inventory, and rationale:
+`docs/dev/architecture/overview.md`, section "CLI Module Placement
+Convention". Coordinating masterplan:
 `docs/masterplans/2-cli-library-first-convention.md`.
 
 ## Commit messages
