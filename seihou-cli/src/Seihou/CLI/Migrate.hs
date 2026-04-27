@@ -346,7 +346,9 @@ handleMigrate opts = do
                 <> renderVersion stuck
                 <> "; remote is at "
                 <> renderVersion target
-                <> ". The module author must ship one before this project can move forward."
+                <> ". To proceed, run 'seihou migrate "
+                <> modName.unModuleName
+                <> " --bump-only' to acknowledge no migration is needed, or wait for the module author to ship one."
       exitSuccess
     Right (MigrateBenignUpgrade from to) -> do
       if opts.migrateJson

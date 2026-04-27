@@ -2,9 +2,11 @@ module Seihou.CLI.PendingMigrations
   ( detectPendingMigrations,
     formatRefusalMessage,
     isBenignUpgrade,
+    isBlockedMigration,
   )
 where
 
+import Data.Maybe (isJust)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -82,10 +84,24 @@ formatRefusalMessage pendings =
   T.unlines $
     "Pending migrations detected:"
       : map renderEntry pendings
-      ++ [ "",
-           "Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run."
-         ]
+      ++ ["", trailingInstructions]
   where
+    hasBlocked = any (isBlockedMigration . snd) pendings
+    hasRunnable = any (not . isBlockedMigration . snd) pendings
+
+    -- Compose the trailing instructional sentence from the per-shape
+    -- recoveries the user actually has. A run with only blocked
+    -- entries gets the --bump-only / --bump-blocked sentence; a run
+    -- with only runnable (full / partial) entries gets the legacy
+    -- --with-migrations sentence; a mixed run gets both, joined.
+    trailingInstructions
+      | hasBlocked && hasRunnable =
+          "Run 'seihou migrate <module> --bump-only' for each blocked entry to acknowledge no migration is needed, or 'seihou run --bump-blocked' to do so in one step. For runnable entries, pass --with-migrations to apply during this run."
+      | hasBlocked =
+          "Run 'seihou migrate <module> --bump-only' for each blocked entry to acknowledge no migration is needed, or 'seihou run --bump-blocked' to do so in one step."
+      | otherwise =
+          "Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run."
+
     renderEntry (name, plan)
       | null plan.planChain.chainSteps,
         not plan.planMigrationsDeclared,
@@ -142,3 +158,18 @@ isBenignUpgrade :: MigrationPlan -> Bool
 isBenignUpgrade plan =
   null plan.planChain.chainSteps
     && not plan.planMigrationsDeclared
+
+-- | A blocked migration is a 'MigrationPlan' where the module declared
+-- at least one migration but no edge starts at the manifest version,
+-- so the planner produced an empty chain plus an unreachable tail
+-- spanning the full gap. Distinct from 'isBenignUpgrade' (no
+-- migrations declared at all) and from a partial chain (some edges
+-- reach forward but don't span the full gap). Callers use this to
+-- partition pending entries for run-side dispatch: blocked entries
+-- can only be cleared via @seihou migrate <module> --bump-only@ or
+-- @seihou run --bump-blocked@, never via @--with-migrations@.
+isBlockedMigration :: MigrationPlan -> Bool
+isBlockedMigration plan =
+  null plan.planChain.chainSteps
+    && plan.planMigrationsDeclared
+    && isJust plan.planUnreachable

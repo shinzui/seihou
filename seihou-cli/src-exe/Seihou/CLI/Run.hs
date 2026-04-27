@@ -614,7 +614,9 @@ applyOneMigration level manifest (modName, plan) =
                 <> renderVersion stuck
                 <> "; remote is at "
                 <> renderVersion target
-                <> ". The module author must ship one before this project can move forward."
+                <> ". To proceed, run 'seihou migrate "
+                <> modName.unModuleName
+                <> " --bump-only' to acknowledge no migration is needed (or 'seihou run --bump-blocked' to do so for every blocked module in one step), or wait for the module author to ship one."
           exitFailure
       | otherwise -> do
           let opts =
@@ -658,6 +660,9 @@ applyOneMigration level manifest (modName, plan) =
                     <> renderVersion stuck
                     <> "; remote is at "
                     <> renderVersion target
+                    <> ". To proceed, run 'seihou migrate "
+                    <> modName.unModuleName
+                    <> " --bump-only' to acknowledge no migration is needed."
               exitFailure
             Right (MigrateBenignUpgrade _ _) ->
               -- Defensive: handleBlocking partitions benign entries

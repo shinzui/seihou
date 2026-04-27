@@ -363,12 +363,11 @@ spec = do
       msg `shouldSatisfy` T.isInfixOf "demo: Blocked: no migration declared from 0.1.3"
       msg `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
 
-    -- EP-7 / M1 pin: today's refusal trailer asks the user to run
-    -- 'seihou migrate <module>' or pass --with-migrations, with no
-    -- mention of --bump-only or --bump-blocked. M2 flips this test
-    -- to assert the new recovery-oriented wording when the input
-    -- contains a blocked entry.
-    it "M1 pin: today's refusal trailer names no blocked-recovery option" $ do
+    -- EP-7 / M2: when the input contains a blocked entry, the trailer
+    -- names --bump-only (per-module) and --bump-blocked (one-command)
+    -- as the recoveries. The legacy "pass --with-migrations" sentence
+    -- is reserved for runnable (full / partial) entries.
+    it "blocked-only trailer names --bump-only and --bump-blocked" $ do
       let plan =
             MigrationPlan
               { planChain =
@@ -382,9 +381,46 @@ spec = do
                 planMigrationsDeclared = True
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
-      msg `shouldSatisfy` T.isInfixOf "Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run."
-      msg `shouldNotSatisfy` T.isInfixOf "--bump-only"
-      msg `shouldNotSatisfy` T.isInfixOf "--bump-blocked"
+      msg `shouldSatisfy` T.isInfixOf "seihou migrate <module> --bump-only"
+      msg `shouldSatisfy` T.isInfixOf "seihou run --bump-blocked"
+      msg `shouldNotSatisfy` T.isInfixOf "pass --with-migrations"
+
+    -- EP-7 / M2: a mixed input (one blocked + one runnable) gets both
+    -- the bump-only / bump-blocked recovery and the --with-migrations
+    -- recovery, joined.
+    it "mixed trailer names both blocked recoveries and --with-migrations" $ do
+      let blocked =
+            MigrationPlan
+              { planChain =
+                  MigrationChain
+                    { migrationModule = "blocked-mod",
+                      chainFrom = parseV "0.1.3",
+                      chainTo = parseV "0.1.3",
+                      chainSteps = []
+                    },
+                planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
+                planMigrationsDeclared = True
+              }
+          runnable =
+            MigrationPlan
+              { planChain =
+                  MigrationChain
+                    { migrationModule = "runnable-mod",
+                      chainFrom = parseV "1.0.0",
+                      chainTo = parseV "2.0.0",
+                      chainSteps = [Migration "1.0.0" "2.0.0" [DeleteFile "x"]]
+                    },
+                planUnreachable = Nothing,
+                planMigrationsDeclared = True
+              }
+          msg =
+            formatRefusalMessage
+              [ (ModuleName "blocked-mod", blocked),
+                (ModuleName "runnable-mod", runnable)
+              ]
+      msg `shouldSatisfy` T.isInfixOf "--bump-only"
+      msg `shouldSatisfy` T.isInfixOf "--bump-blocked"
+      msg `shouldSatisfy` T.isInfixOf "--with-migrations"
 
     -- M3: a benign upgrade entry (planMigrationsDeclared = False)
     -- routes through the softened branch in formatRefusalMessage.

@@ -337,6 +337,9 @@ printAdvisory name plan = do
               <> renderVersion stuck
               <> "; remote is at "
               <> renderVersion target
+              <> ". Run 'seihou migrate "
+              <> name
+              <> " --bump-only' to acknowledge no migration is needed."
         | otherwise =
             let chain = plan.planChain
                 base =
@@ -411,6 +414,9 @@ runOnePostUpgradeMigration installedDir name = do
                   <> renderVersion stuck
                   <> "; remote is at "
                   <> renderVersion target
+                  <> ". Run 'seihou migrate "
+                  <> name
+                  <> " --bump-only' to acknowledge no migration is needed."
           TIO.putStrLn $ if colorEnabled then yellow msg else msg
         Right (MigrateBenignUpgrade _ _) -> pure ()
         Right (MigrateNoOp _) -> pure ()

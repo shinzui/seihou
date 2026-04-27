@@ -158,12 +158,11 @@ spec = describe "formatStatus" $ do
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
     out `shouldSatisfy` T.isInfixOf "  seihou migrate master-plan"
 
-  -- EP-5 / M3: blocked plan now requires planMigrationsDeclared = True
-  -- (the author shipped at least one migration but the chain doesn't
-  -- reach the manifest version). The empty-migrations case routes
-  -- through the new AdviceBenignUpgrade variant — see the M1 pin
-  -- below for that flip.
-  it "blocked migration: refusal row + [blocked] in Recommended actions" $ do
+  -- EP-7 / M2: blocked rendering now names --bump-only as the recovery
+  -- path both inline (in the row text) and in the Recommended actions
+  -- tail block (where it replaces the old [blocked] annotation). The
+  -- "module author must ship one" finality sentence is gone.
+  it "blocked migration: refusal row + bump-only command in Recommended actions" $ do
     let am = mkApplied "exec-plan" (Just "0.1.3")
         manifest = mkManifest [am]
         plan =
@@ -182,34 +181,13 @@ spec = describe "formatStatus" $ do
     out `shouldSatisfy` T.isInfixOf "Blocked: no migration declared from 0.1.3"
     out `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
-    out `shouldSatisfy` T.isInfixOf "[blocked] no migration declared for exec-plan"
-    -- Blocked entries do NOT list a seihou migrate <name> command in
-    -- the Recommended actions block — running it would just error.
-    out `shouldNotSatisfy` T.isInfixOf "  seihou migrate exec-plan"
-
-  -- EP-7 / M1 pin: today's blocked rendering carries the "module
-  -- author must ship one" finality sentence and does not surface
-  -- --bump-only or --bump-blocked. M2 flips this test to assert the
-  -- new recovery-oriented wording.
-  it "M1 pin: today's blocked rendering names no recovery option" $ do
-    let am = mkApplied "exec-plan" (Just "0.1.3")
-        manifest = mkManifest [am]
-        plan =
-          MigrationPlan
-            { planChain =
-                MigrationChain
-                  { migrationModule = "exec-plan",
-                    chainFrom = parseV "0.1.3",
-                    chainTo = parseV "0.1.3",
-                    chainSteps = []
-                  },
-              planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
-              planMigrationsDeclared = True
-            }
-        out = formatStatus False manifest [] Nothing [(ModuleName "exec-plan", plan)]
-    out `shouldSatisfy` T.isInfixOf "module author must ship one before this project can move forward"
-    out `shouldNotSatisfy` T.isInfixOf "--bump-only"
-    out `shouldNotSatisfy` T.isInfixOf "--bump-blocked"
+    -- The actionable command appears both in the inline advisory and
+    -- as a copy-pasteable line in Recommended actions.
+    out `shouldSatisfy` T.isInfixOf "seihou migrate exec-plan --bump-only"
+    -- The [blocked] no-action annotation and the "module author must
+    -- ship one" finality sentence are gone.
+    out `shouldNotSatisfy` T.isInfixOf "[blocked]"
+    out `shouldNotSatisfy` T.isInfixOf "module author must ship one"
 
   -- M1 pin, flipped in M4: an empty-migrations module with a version
   -- gap renders as a softened "Pending: … (no migrations declared)"

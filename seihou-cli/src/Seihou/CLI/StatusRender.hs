@@ -62,8 +62,9 @@ data ModuleAdvice
   | -- | No migration starts at the manifest version, so the planner
     -- can build no chain. Carries the module name and the
     -- @(stuckAt, target)@ pair. The renderer prints a "Blocked: …"
-    -- row and the Recommended actions tail lists a @[blocked]@ entry
-    -- (no @seihou migrate@ command, since it would refuse).
+    -- row that names @seihou migrate <name> --bump-only@ as the
+    -- recovery path; the Recommended actions tail lists the same
+    -- command for copy-paste.
     AdviceBlockedMigration Text Version Version
   | -- | The module's manifest version trails its installed copy's
     -- version, but the module declared no migrations at all
@@ -90,8 +91,9 @@ data ModuleAdvice
 -- @seihou migrate@ (after EP-2) is self-contained: one command brings
 -- the project to the new version. For blocked plans we still emit
 -- 'AdviceBlockedMigration' rather than fall back to an upgrade hint
--- because @seihou upgrade@ alone does not solve the problem (the
--- author must ship the missing migration first).
+-- because @seihou upgrade@ alone does not solve the problem; the
+-- recovery is @seihou migrate <name> --bump-only@ (per-module) or
+-- @seihou run --bump-blocked@ (one-command, all blocked at once).
 moduleAdvice ::
   AppliedModule ->
   Maybe OutdatedStatus ->
@@ -241,16 +243,8 @@ adviceCommand AdviceNone = Nothing
 adviceCommand (AdviceUpgradeOnly name) = Just ("seihou upgrade " <> name)
 adviceCommand (AdvicePendingMigration name _) = Just ("seihou migrate " <> name)
 adviceCommand (AdvicePartialMigration name _) = Just ("seihou migrate " <> name)
-adviceCommand (AdviceBlockedMigration name stuck target) =
-  Just
-    ( "[blocked] no migration declared for "
-        <> name
-        <> " ("
-        <> renderVersion stuck
-        <> " → "
-        <> renderVersion target
-        <> ")"
-    )
+adviceCommand (AdviceBlockedMigration name _stuck _target) =
+  Just ("seihou migrate " <> name <> " --bump-only")
 adviceCommand (AdviceBenignUpgrade name _ _) =
   Just ("seihou upgrade " <> name <> " && seihou run")
 
@@ -338,7 +332,7 @@ formatAdvice color (AdvicePartialMigration name plan) =
           ]
         Nothing -> []
    in ("    " <> applyColor color yellow summary) : tail_
-formatAdvice color (AdviceBlockedMigration _ stuck target) =
+formatAdvice color (AdviceBlockedMigration name stuck target) =
   [ "    "
       <> applyColor
         color
@@ -347,7 +341,9 @@ formatAdvice color (AdviceBlockedMigration _ stuck target) =
             <> renderVersion stuck
             <> "; remote is at "
             <> renderVersion target
-            <> ". The module author must ship one before this project can move forward."
+            <> ". To proceed, run 'seihou migrate "
+            <> name
+            <> " --bump-only' to acknowledge no migration is needed, or wait for the module author to ship one."
         )
   ]
 formatAdvice color (AdviceBenignUpgrade name from to) =
