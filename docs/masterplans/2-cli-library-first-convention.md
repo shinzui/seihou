@@ -140,7 +140,7 @@ Alternatives considered:
 | #   | Title                                                                | Path                                                            | Hard Deps | Soft Deps | Status      |
 |-----|----------------------------------------------------------------------|-----------------------------------------------------------------|-----------|-----------|-------------|
 | 1   | Document the CLI library-first module-placement convention            | docs/plans/18-document-cli-library-first-convention.md          | None      | None      | Complete    |
-| 2   | Restructure `seihou-cli.cabal` so the library is the default home     | docs/plans/19-restructure-cli-cabal-library-first.md            | EP-1      | None      | Not Started |
+| 2   | Restructure `seihou-cli.cabal` so the library is the default home     | docs/plans/19-restructure-cli-cabal-library-first.md            | EP-1      | None      | Complete    |
 | 3   | Extract remaining executable-only helpers identified by the audit     | docs/plans/20-extract-trapped-cli-helpers.md                    | EP-2      | EP-1      | Not Started |
 | 4   | Add an automated enforcement check for the convention                 | docs/plans/21-enforce-cli-library-first-convention.md           | EP-2      | EP-3      | Not Started |
 
@@ -301,9 +301,9 @@ initiative.
 - [x] EP-1: Draft and land the "CLI Module Placement" section of `docs/dev/architecture/overview.md`.
 - [x] EP-1: Create the project-root `CLAUDE.md` with a quick-reference pointer to the convention.
 - [x] EP-1: Create `docs/dev/contributing.md` containing the convention plus general contributor guidance, and cross-link it from the architecture overview.
-- [ ] EP-2: Reproduce the duplicate-compilation fingerprint of the current cabal layout (a short note for the EP-2 retrospective; not a regression test).
-- [ ] EP-2: Make `executable seihou` `build-depends: seihou-cli-internal`; remove from its `other-modules` every entry that already exists in the library's `exposed-modules`; verify `cabal build all` and `cabal test all` succeed.
-- [ ] EP-2: Move `Seihou.CLI.SchemaVersion` from the executable's `other-modules` to the library's `exposed-modules`; annotate every remaining entry in the executable's `other-modules` with a one-line cabal comment naming the executable-only dependency that traps it.
+- [x] EP-2: Reproduce the duplicate-compilation fingerprint of the current cabal layout (a short note for the EP-2 retrospective; not a regression test).
+- [x] EP-2: Make `executable seihou` `build-depends: seihou-cli-internal`; remove from its `other-modules` every entry that already exists in the library's `exposed-modules`; verify `cabal build all` and `cabal test all` succeed.
+- [x] EP-2: Move `Seihou.CLI.SchemaVersion` from the executable's `other-modules` to the library's `exposed-modules`; annotate every remaining entry in the executable's `other-modules` (record the trapping reason — see Surprises & Discoveries for the format change from per-line cabal comments to a doc-driven inventory table).
 - [ ] EP-3: Split `Seihou.CLI.AgentLaunch` into `Seihou.CLI.AgentLaunch` (library, pure surface plus `AgentContext`) and `Seihou.CLI.AgentLaunchExec` (executable, process invocation); update `Assist`, `Bootstrap`, `Setup`, and `Main.hs` imports.
 - [ ] EP-3: Drop the re-exports of `OriginInfo`, `OutdatedStatus`, `OutdatedEntry`, `CheckStats`, and `compareVersions` from `Seihou.CLI.Outdated`'s export list; update any consumer to import from the canonical site (`InstallShared` or `VersionCompare`).
 - [ ] EP-3: Add a regression test under `seihou-cli/test/Seihou/CLI/AgentLaunchSpec.hs` that exercises the now-library-exposed pure surface (e.g., `substitute` and one of the formatters) to demonstrate the extraction enabled testing that was impossible before.
@@ -375,6 +375,42 @@ section as work proceeds and cross-plan insights emerge.
   not amending existing ones. This makes EP-1 simpler (no merge concerns) but
   raises the question of whether the new docs should also be linked from the
   README; EP-1 should answer this in its own scoping.
+
+- **EP-2: shared `hs-source-dirs` made `other-modules` a non-control over
+  compilation.** The plan's Milestone 2 assumption that removing duplicate
+  `other-modules` entries from the executable would eliminate duplicate
+  compilation was wrong. GHC walks `hs-source-dirs: src` and compiles
+  every reachable source file regardless of `other-modules`, preferring
+  local source over the package binary that `build-depends` would
+  otherwise provide. The fix — splitting `hs-source-dirs` so the
+  executable lives in `src-exe/` while the library keeps `src/` —
+  required moving Main.hs and 27 executable-only modules. This change is
+  invisible to users and to test code, but it makes the convention
+  enforceable at the GHC level: a new helper added to `src/` is
+  automatically library-visible, and a new helper added to `src-exe/`
+  cannot be reached by the test suite. Impact on EP-3 and EP-4: no
+  change. EP-3's `AgentLaunch` split lands the library half in `src/`
+  and the executable half in `src-exe/`. EP-4's enforcement script
+  inspects imports directly and works on either layout.
+
+- **EP-2: per-line cabal comments don't survive `cabal-gild`.** The
+  project's formatter (configured in `treefmt.nix`) sorts
+  `other-modules` entries alphabetically and floats every `--` comment
+  to the top of the section, silently desynchronising the originally
+  planned per-module annotations from the modules they describe. The
+  trapping inventory now lives in
+  `docs/dev/architecture/overview.md` as a Markdown table. EP-1's
+  documentation, EP-2's cabal file, the project-root `CLAUDE.md`, and
+  `docs/dev/contributing.md` were updated to describe the
+  doc-table format. Impact on EP-4: the enforcement script does not
+  rely on the cabal-comment format — it inspects imports directly —
+  so the format change is purely a documentation deviation.
+
+- **EP-2 also promoted `Seihou.CLI.Shared` and `Seihou.CLI.Style` to
+  the library's `exposed-modules`.** Twelve executable-only handlers
+  import them. With the source-dir split, library-private placement
+  no longer worked. This was not in the original audit; it surfaced
+  during Milestone 2 of EP-2.
 
 
 ## Decision Log
