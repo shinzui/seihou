@@ -10,9 +10,13 @@ module Seihou.CLI.Migrate
 
     -- * Helpers for upgrade/status integration
     pendingChainFor,
+
+    -- * Auto-commit helper
+    commitMigratedFiles,
   )
 where
 
+import Control.Monad (unless, when)
 import Data.Aeson (ToJSON, object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
@@ -23,6 +27,8 @@ import Data.Text.IO qualified as TIO
 import Data.Time.Clock (getCurrentTime)
 import Effectful (runEff)
 import GHC.Generics (Generic)
+import Seihou.CLI.CommitMessage (generateCommitMessage)
+import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
 import Seihou.CLI.InstallShared
   ( OriginInfo (..),
     cloneRepo,
@@ -66,8 +72,9 @@ import Seihou.Engine.Migrate
   )
 import Seihou.Prelude
 import System.Directory (doesFileExist)
-import System.Exit (exitFailure, exitSuccess)
+import System.Exit (ExitCode (..), exitFailure, exitSuccess)
 import System.FilePath (takeFileName, (</>))
+import System.IO (stderr)
 import System.IO.Temp (withSystemTempDirectory)
 
 -- ----------------------------------------------------------------------------
@@ -271,6 +278,8 @@ handleMigrate opts = do
             runFilesystem $
               runManifestStore manifestPath $
                 writeManifest manifest'
+          when (opts.migrateCommit || isJust opts.migrateCommitMessage) $
+            commitMigratedFiles opts manifestPath plan
           let toV = plan.planChain.chainTo
           TIO.putStrLn $
             applyColor colorEnabled green "✓"
@@ -289,6 +298,8 @@ handleMigrate opts = do
             runFilesystem $
               runManifestStore manifestPath $
                 writeManifest manifest'
+          when (opts.migrateCommit || isJust opts.migrateCommitMessage) $
+            commitMigratedFiles opts manifestPath plan
           LBS.putStr (encodePretty (planToJson plan))
       | otherwise -> do
           if opts.migrateJson
@@ -298,6 +309,8 @@ handleMigrate opts = do
             runFilesystem $
               runManifestStore manifestPath $
                 writeManifest manifest'
+          when (opts.migrateCommit || isJust opts.migrateCommitMessage) $
+            commitMigratedFiles opts manifestPath plan
           let toV = plan.planChain.chainTo
           unless opts.migrateJson $ do
             TIO.putStrLn ""
@@ -318,6 +331,8 @@ handleMigrate opts = do
         runFilesystem $
           runManifestStore manifestPath $
             writeManifest manifest'
+      when (opts.migrateCommit || isJust opts.migrateCommitMessage) $
+        commitMigratedFiles opts manifestPath plan
       let toV = plan.planChain.chainTo
       unless opts.migrateJson $ do
         TIO.putStrLn ""
@@ -870,6 +885,49 @@ applyChain opts manifest chain mUnreachable = do
           Just (stuck, target) ->
             pure (Right (MigrateAppliedPartial executedPlan manifest' stuck target))
 
+-- | Stage and commit the files touched by a successful migration plan.
+-- Mirrors the @seihou run --commit@ post-execution helper. No-op
+-- outside a git work tree, when every staged path is git-ignored, or
+-- when both flags are off (callers gate on the flags before invoking
+-- this). 'RunCommandInst' ops contribute no paths — their filesystem
+-- effects are opaque, so any extra working-tree changes need a
+-- separate manual commit.
+commitMigratedFiles ::
+  MigrateOpts ->
+  -- | Manifest path (added to the staged set).
+  FilePath ->
+  ExecutedMigrationPlan ->
+  IO ()
+commitMigratedFiles opts manifestPath plan = do
+  let touched = concatMap pathsForOp plan.planOps
+      filesToStage = touched ++ [manifestPath]
+  inGit <- runEff $ runProcessIO isGitRepo
+  when inGit $ do
+    ignored <- runEff $ runProcessIO $ gitCheckIgnore filesToStage
+    let staged = filter (`notElem` ignored) filesToStage
+    unless (null staged) $ do
+      (addExit, _, addErr) <- runEff $ runProcessIO $ gitAdd staged
+      case addExit of
+        ExitFailure _ -> TIO.hPutStrLn stderr ("git add failed: " <> addErr)
+        ExitSuccess -> do
+          msg <- case opts.migrateCommitMessage of
+            Just m -> pure m
+            Nothing -> do
+              diffText <- runEff $ runProcessIO gitDiffCached
+              generateCommitMessage [opts.migrateModule] diffText
+          (cExit, _, cErr) <- runEff $ runProcessIO $ gitCommit msg
+          case cExit of
+            ExitSuccess -> pure ()
+            ExitFailure _ ->
+              TIO.hPutStrLn stderr ("git commit failed: " <> cErr)
+  where
+    pathsForOp inst = case inst of
+      MoveFileInst src dest _ -> [src, dest]
+      MoveDirInst src dest -> [src, dest]
+      DeleteFileInst path _ -> [path]
+      DeleteDirInst path -> [path]
+      RunCommandInst _ _ -> []
+
 resolveTarget ::
   MigrateOpts -> Module -> ModuleName -> FilePath -> Either MigrateError Version
 resolveTarget opts installedModule modName installedDhall =
@@ -1111,9 +1169,3 @@ renderExecError (MigrationCommandFailed msg code) =
 -- documented above.
 instance ToJSON ExecutedMigrationPlan where
   toJSON = planToJson
-
--- Avoid an unused-import warning when 'unless' is the only Control.Monad
--- use and tests trim other helpers.
-unless :: Bool -> IO () -> IO ()
-unless True _ = pure ()
-unless False action = action

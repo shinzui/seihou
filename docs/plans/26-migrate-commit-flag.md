@@ -73,8 +73,8 @@ point. Add timestamps in `YYYY-MM-DD` form.
         `seihou-cli/test/Seihou/CLI/MigrateSpec.hs` (`defaultOpts`).
         Each of these sets `migrateCommit = False, migrateCommitMessage = Nothing`.
   - [x] `cabal build all` succeeds with no warnings beyond pre-existing ones
-- [ ] M2 — wire commit logic into `handleMigrate`
-  - [ ] In `seihou-cli/src/Seihou/CLI/Migrate.hs`, after the manifest write
+- [x] M2 — wire commit logic into `handleMigrate` (2026-04-27)
+  - [x] In `seihou-cli/src/Seihou/CLI/Migrate.hs`, after the manifest write
         on the `MigrateApplied` and `MigrateAppliedPartial` branches,
         invoke a new `commitMigratedFiles` helper when
         `opts.migrateCommit || isJust opts.migrateCommitMessage` is true.
@@ -82,14 +82,14 @@ point. Add timestamps in `YYYY-MM-DD` form.
         `gitDiffCached`, `gitCommit`, and `generateCommitMessage` —
         the same primitives `seihou-cli/src-exe/Seihou/CLI/Run.hs`
         uses today (lines 341–368).
-  - [ ] Choose the staged path set: union of every `src` and `dest` from
+  - [x] Choose the staged path set: union of every `src` and `dest` from
         the plan's `MoveFileInst` / `MoveDirInst` instances, every
         `path` from `DeleteFileInst` / `DeleteDirInst` instances,
         the `RunCommandInst` ops contribute nothing (their effect is
         opaque), and finally `.seihou/manifest.json`.
-  - [ ] Bump-only path (`MigrateApplied` with empty `planOps`) commits
+  - [x] Bump-only path (`MigrateApplied` with empty `planOps`) commits
         only the manifest.
-  - [ ] Outcomes that did nothing on disk (`MigrateNoOp`, `MigrateBlocked`,
+  - [x] Outcomes that did nothing on disk (`MigrateNoOp`, `MigrateBlocked`,
         `MigrateBenignUpgrade`, dry-run variants) **must not** commit
         even when the flags are set; the helper is simply not called on
         those branches.
