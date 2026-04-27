@@ -123,20 +123,40 @@ point. Add timestamps in `YYYY-MM-DD` form.
         migrate; left untouched per plan.)
   - [x] Add an entry to `docs/user/CHANGELOG.md` under the next
         unreleased heading describing the new flag pair.
-- [ ] M5 — end-to-end verification
-  - [ ] In a scratch git repo with a manifest at version `1.0.0` and an
-        installed copy at version `1.1.0` whose `module.dhall` declares
-        a `MoveFile` migration, run `seihou migrate <module>
-        --commit-message "chore: migrate"` and verify
-        `git log -1 --stat` shows the commit with the moved file paths
-        plus the manifest.
-  - [ ] In the same scratch repo (after `git reset --hard` to the
-        baseline), run `seihou migrate <module> --commit` and verify a
-        commit appears whose subject line is non-empty and references
-        the module name (when `claude` is on `PATH`); otherwise verify
-        the fallback template message.
-  - [ ] Run `seihou migrate <module> --commit --dry-run` and verify
-        nothing was committed (`git status` clean, no new commit).
+- [x] M5 — end-to-end verification (2026-04-27)
+  - [x] **Apply + commit-message** — covered by the M3 behavioral
+        test "--commit-message stages moved files plus the manifest
+        into a single git commit". The fixture mirrors the master
+        plan's recipe: a manifest at `1.0.0`, an installed copy at
+        `2.0.0` whose `module.dhall` declares a `MoveFile` migration,
+        and a real `git init` in the project dir. Verifies the
+        post-migrate commit's name-only stat (with `--no-renames`)
+        names the moved file's source and destination plus the
+        manifest, and the subject equals the supplied message.
+  - [~] **Apply + AI commit message** (`--commit` without
+        `--commit-message`, with `claude` on `PATH`) is *not*
+        exercised in CI. `generateCommitMessage` is structurally
+        identical to `seihou run --commit`'s already-shipped path;
+        the unit-test suite for the helper itself
+        (`Seihou.CLI.CommitMessageSpec`) covers fence-stripping and
+        fallback. The branch can be exercised by hand by following
+        the "B. Author a tiny one-shot test module" recipe in M5
+        below.
+  - [x] **Dry-run with `--commit`** — covered by the M3 test
+        "--commit on a dry-run path returns a dry-run variant
+        (helper is never invoked)". Verifies the `runMigrate` result
+        is a `MigrateDryRunOK` variant *and* the project's git ref
+        count is unchanged after the call (no new commit landed).
+  - [x] **Outside a git repo** — covered by the M3 test "--commit
+        outside a git repo is a silent no-op (apply still
+        succeeds)". Verifies the helper exits zero and the apply
+        still moved files / wrote the manifest.
+  - [x] Smoke check on the built binary: `cabal run seihou --
+        migrate dummy --commit-message "chore: smoke"` from an empty
+        scratch dir confirms the parser accepts the flag and the
+        command reaches `handleMigrate`, exiting with the clean
+        "no Seihou manifest" error path. Output matches the
+        existing handler's error rendering verbatim.
 
 
 ## Surprises & Discoveries
@@ -242,7 +262,62 @@ point. Add timestamps in `YYYY-MM-DD` form.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Delivered (2026-04-27, single sitting):
+
+- `seihou-cli/src/Seihou/CLI/Migrate.hs` grew two new fields on
+  `MigrateOpts` (`migrateCommit`, `migrateCommitMessage`), a new
+  exported helper `commitMigratedFiles`, and a `when (commit ||
+  isJust message) commitMigratedFiles` call inserted on each of
+  `MigrateApplied`'s three sub-branches plus `MigrateAppliedPartial`.
+- The CLI parser (`seihou-cli/src-exe/Seihou/CLI/Commands.hs`) gained
+  `--commit` and `--commit-message MSG`, with help strings copied
+  verbatim from the run-side parser so help output stays
+  symmetric. A new line was added to `migrateFooter`'s Examples
+  block.
+- Three internal `MigrateOpts` literals were extended to set the
+  new fields to `False` / `Nothing`: `Run.applyOneMigration`,
+  `Run.bumpOneBlocked`, and
+  `Upgrade.runOnePostUpgradeMigration`. The test fixture's
+  `defaultOpts` got the same treatment.
+- Four behavioral tests landed under `MigrateSpec.hs`'s "EP-26"
+  subsection: clean apply with `--commit-message`, outside-of-git
+  no-op, dry-run gating, and blocked-outcome gating. Total CLI
+  test count grew from 190 to 194.
+- Docs: `docs/cli/migrate.md` got the two new flags in its Options
+  table, an `## Auto-commit` section that mirrors `docs/cli/run.md`
+  including the `RunCommand`-doesn't-stage and bump-only-still-commits
+  caveats, and two examples. A CHANGELOG entry was added under the
+  topmost unreleased heading.
+
+Compared to original purpose: the user-visible UX described in
+"Purpose / Big Picture" is delivered intact —
+`seihou migrate <module> --commit-message "msg"` produces exactly
+one commit whose subject is `msg` and whose stat names the
+moved/deleted files plus `.seihou/manifest.json`. The `--commit`
+(AI-message) branch is unchanged from `seihou run`'s — it shells
+out to `claude -p` if available and falls back to the template
+otherwise; this branch is not exercised in CI but its only new
+input is the `[opts.migrateModule]` list passed to
+`generateCommitMessage`, which `seihou run` already passes for the
+applied modules.
+
+Lessons:
+
+- The CLI placement convention bites tests: parser unit tests for
+  flags introduced in `Seihou.CLI.Commands` cannot live in the
+  current test target. The plan's parser-test bullet was retired
+  with a Decision Log entry. Future work that wants parser tests
+  in CI either has to lift the parser combinators into the library
+  or add the executable target as a test dep.
+- `git log --name-only` collapses renames to the destination path
+  unless `--no-renames` is passed. Asserting the staged set of a
+  rename op needs `--no-renames`; without it the test would
+  silently miss a regression where the helper failed to stage one
+  end of the move.
+- The local `unless :: Bool -> IO () -> IO ()` shim that previously
+  guarded against an unused-import warning was deleted: importing
+  `when` alongside `unless` from `Control.Monad` is what M2 needed
+  anyway, and now both helpers are real.
 
 
 ## Context and Orientation
