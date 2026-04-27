@@ -6,6 +6,7 @@ module Seihou.CLI.Registry.Sync
     handleSyncVersions,
     renderSyncReport,
     checkRegistryVersionDrift,
+    resolveOnDiskVersions,
   )
 where
 

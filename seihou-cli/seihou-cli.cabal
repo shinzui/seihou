@@ -33,6 +33,7 @@ library seihou-cli-internal
     Seihou.CLI.PendingMigrations
     Seihou.CLI.Registry
     Seihou.CLI.Registry.Sync
+    Seihou.CLI.Registry.Validate
     Seihou.CLI.RemoteVersion
     Seihou.CLI.SavePrompted
     Seihou.CLI.SchemaVersion

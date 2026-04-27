@@ -27,6 +27,7 @@ module Seihou.CLI.Commands
     KitCommand (..),
     RegistryCommand (..),
     SyncVersionsOpts (..),
+    ValidateRegistryOpts (..),
     commandParser,
     opts,
   )
@@ -41,6 +42,7 @@ import Seihou.CLI.Kit (KitCommand, kitCommandParser)
 import Seihou.CLI.Migrate (MigrateOpts (..))
 import Seihou.CLI.Registry (RegistryCommand (..))
 import Seihou.CLI.Registry.Sync (SyncVersionsOpts (..))
+import Seihou.CLI.Registry.Validate (ValidateRegistryOpts (..))
 import Seihou.CLI.Version (seihouVersionWithGit)
 import Seihou.Core.Types (ModuleName (..))
 import Seihou.Prelude
@@ -1032,15 +1034,18 @@ registryInfo =
                   line,
                   pretty ("Current subcommands:" :: String),
                   indent 2 $
-                    pretty
-                      ("sync-versions   Copy each module's declared version into the registry" :: String),
+                    vsep
+                      [ pretty ("sync-versions   Copy each module's declared version into the registry" :: String),
+                        pretty ("validate        Check that registry entries match their on-disk modules" :: String)
+                      ],
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
                     vsep
                       [ pretty ("seihou registry sync-versions" :: String),
                         pretty ("seihou registry sync-versions --dry-run" :: String),
-                        pretty ("seihou registry sync-versions --check" :: String)
+                        pretty ("seihou registry sync-versions --check" :: String),
+                        pretty ("seihou registry validate" :: String)
                       ]
                 ]
           )
@@ -1049,7 +1054,9 @@ registryInfo =
 registryCommandParser :: Parser RegistryCommand
 registryCommandParser =
   hsubparser
-    (command "sync-versions" syncVersionsInfo)
+    ( command "sync-versions" syncVersionsInfo
+        <> command "validate" validateRegistryInfo
+    )
 
 syncVersionsInfo :: ParserInfo RegistryCommand
 syncVersionsInfo =
@@ -1085,6 +1092,43 @@ syncVersionsParser =
         )
       <*> switch (long "dry-run" <> help "Show diff without writing the registry file")
       <*> switch (long "check" <> help "Exit 1 if any entry is out of sync; do not write")
+
+validateRegistryInfo :: ParserInfo RegistryCommand
+validateRegistryInfo =
+  info
+    (validateRegistryParser <**> helper)
+    ( fullDesc
+        <> progDesc "Check that registry entries match their on-disk modules"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Validates a multi-module repository's seihou-registry.dhall:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("- every entry path resolves to a module.dhall / recipe.dhall" :: String),
+                        pretty ("- entry names match [a-z][a-z0-9-]*" :: String),
+                        pretty ("- no name collisions between modules and recipes" :: String),
+                        pretty ("- entry paths are relative and contain no '..'" :: String),
+                        pretty ("- each entry's `version` matches the underlying module/recipe" :: String)
+                      ],
+                  line,
+                  pretty ("Exits 1 on any failure. Run from a writable checkout of the registry repo." :: String)
+                ]
+          )
+    )
+
+validateRegistryParser :: Parser RegistryCommand
+validateRegistryParser =
+  fmap RegistryValidate $
+    ValidateRegistryOpts
+      <$> optional
+        ( option
+            str
+            ( long "dir"
+                <> metavar "PATH"
+                <> help "Registry repo root (default: current directory)"
+            )
+        )
 
 agentInfo :: ParserInfo Command
 agentInfo =

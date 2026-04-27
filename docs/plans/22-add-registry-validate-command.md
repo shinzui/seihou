@@ -87,13 +87,13 @@ exit code.
       checks) into a single pure function in `Seihou.Core.Registry` that
       returns a structured `RegistryValidationReport`. Add unit tests covering
       every failure mode plus the fully-clean case. (2026-04-27)
-- [ ] M2: CLI subcommand. Add `RegistryValidate ValidateRegistryOpts` to
+- [x] M2: CLI subcommand. Add `RegistryValidate ValidateRegistryOpts` to
       `RegistryCommand`. Implement
       `Seihou.CLI.Registry.Validate.handleValidate` (in
       `seihou-cli/src/Seihou/CLI/Registry/Validate.hs`, the *library*
       half of `seihou-cli`). Wire the parser in
       `seihou-cli/src-exe/Seihou/CLI/Commands.hs` and the dispatcher in
-      `seihou-cli/src/Seihou/CLI/Registry.hs`.
+      `seihou-cli/src/Seihou/CLI/Registry.hs`. (2026-04-27)
 - [ ] M3: Tests for the CLI handler. Mirror the temp-dir fixture style of
       `seihou-cli/test/Seihou/CLI/Registry/SyncSpec.hs` and assert exit
       decisions and report contents for the success path, the version-drift
