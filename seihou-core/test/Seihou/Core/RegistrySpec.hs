@@ -1,7 +1,19 @@
 module Seihou.Core.RegistrySpec (tests) where
 
 import Data.List (isInfixOf)
-import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents, validateRegistry)
+import Seihou.Core.Registry
+  ( EntryKind (..),
+    Registry (..),
+    RegistryEntry (..),
+    RegistryValidationIssue (..),
+    RegistryValidationReport (..),
+    RepoContents (..),
+    SyncDiff (..),
+    SyncStatus (..),
+    discoverRepoContents,
+    validateRegistry,
+    validateRegistryFull,
+  )
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalRegistryFromFile)
 import System.Directory (createDirectoryIfMissing)
@@ -209,6 +221,118 @@ spec = do
                 }
         errs <- validateRegistry tmpDir reg
         any ("must not contain" `isInfixOf`) (map show errs) `shouldBe` True
+
+  describe "validateRegistryFull" $ do
+    it "returns no issues for a fully clean registry" $ do
+      withSystemTempDirectory "seihou-validate-full" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "mod-a")
+        writeMinimalModuleDhall (tmpDir </> "mod-a" </> "module.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "mod-a") (Just "1.0.0") "mod-a" Nothing []],
+                  recipes = []
+                }
+            lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
+        report <- validateRegistryFull tmpDir reg lookups
+        report.reportIssues `shouldBe` []
+        report.reportModuleCount `shouldBe` 1
+        report.reportRecipeCount `shouldBe` 0
+
+    it "flags a SyncMissing entry as a single VersionMismatch" $ do
+      withSystemTempDirectory "seihou-validate-full" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "mod-a")
+        writeMinimalModuleDhall (tmpDir </> "mod-a" </> "module.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "mod-a") Nothing "mod-a" Nothing []],
+                  recipes = []
+                }
+            lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
+        report <- validateRegistryFull tmpDir reg lookups
+        case report.reportIssues of
+          [VersionMismatch d] -> d.diffStatus `shouldBe` SyncMissing
+          other -> expectationFailure ("expected one VersionMismatch SyncMissing, got: " <> show other)
+
+    it "flags a SyncStale entry as a single VersionMismatch carrying the new version" $ do
+      withSystemTempDirectory "seihou-validate-full" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "mod-a")
+        writeMinimalModuleDhall (tmpDir </> "mod-a" </> "module.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "mod-a") (Just "1.0.0") "mod-a" Nothing []],
+                  recipes = []
+                }
+            lookups = [(ModuleEntry, ModuleName "mod-a", Just "2.0.0")]
+        report <- validateRegistryFull tmpDir reg lookups
+        case report.reportIssues of
+          [VersionMismatch d] -> d.diffStatus `shouldBe` SyncStale "2.0.0"
+          other -> expectationFailure ("expected one VersionMismatch SyncStale, got: " <> show other)
+
+    it "flags an invalid module name as a StructuralError" $ do
+      withSystemTempDirectory "seihou-validate-full" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "Bad_Name")
+        writeMinimalModuleDhall (tmpDir </> "Bad_Name" </> "module.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "Bad_Name") Nothing "Bad_Name" Nothing []],
+                  recipes = []
+                }
+            lookups = [(ModuleEntry, ModuleName "Bad_Name", Nothing)]
+        report <- validateRegistryFull tmpDir reg lookups
+        let structurals = [msg | StructuralError msg <- report.reportIssues]
+        any ("must match" `isInfixOf`) (map show structurals) `shouldBe` True
+
+    it "flags an unsafe path with .. as a StructuralError" $ do
+      withSystemTempDirectory "seihou-validate-full" $ \tmpDir -> do
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "escape") Nothing "../escape" Nothing []],
+                  recipes = []
+                }
+        report <- validateRegistryFull tmpDir reg []
+        let structurals = [msg | StructuralError msg <- report.reportIssues]
+        any ("must not contain" `isInfixOf`) (map show structurals) `shouldBe` True
+
+    it "lists structural issues before version issues when both are present" $ do
+      withSystemTempDirectory "seihou-validate-full" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "good")
+        writeMinimalModuleDhall (tmpDir </> "good" </> "module.dhall")
+        createDirectoryIfMissing True (tmpDir </> "stale")
+        writeMinimalModuleDhall (tmpDir </> "stale" </> "module.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules =
+                    [ RegistryEntry (ModuleName "good") (Just "1.0.0") "good" Nothing [],
+                      RegistryEntry (ModuleName "missing-mod") Nothing "no-such-dir" Nothing [],
+                      RegistryEntry (ModuleName "stale") (Just "1.0.0") "stale" Nothing []
+                    ],
+                  recipes = []
+                }
+            lookups =
+              [ (ModuleEntry, ModuleName "good", Just "1.0.0"),
+                (ModuleEntry, ModuleName "stale", Just "2.0.0")
+              ]
+        report <- validateRegistryFull tmpDir reg lookups
+        length report.reportIssues `shouldBe` 2
+        case report.reportIssues of
+          [StructuralError msg, VersionMismatch d] -> do
+            ("missing module.dhall" `isInfixOf` show msg) `shouldBe` True
+            d.diffStatus `shouldBe` SyncStale "2.0.0"
+          other ->
+            expectationFailure
+              ("expected [StructuralError, VersionMismatch], got: " <> show other)
 
 -- Helper: write a minimal valid seihou-registry.dhall
 writeRegistryFile :: FilePath -> IO ()

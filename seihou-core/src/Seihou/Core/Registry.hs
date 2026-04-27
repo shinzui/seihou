@@ -11,6 +11,11 @@ module Seihou.Core.Registry
     SyncReport (..),
     computeRegistrySync,
     formatDriftWarning,
+    RegistryValidationIssue (..),
+    RegistryValidationReport (..),
+    reportHasIssues,
+    validateRegistryFull,
+    formatValidationIssue,
   )
 where
 
@@ -299,6 +304,83 @@ formatDriftWarning diff = case diff.diffStatus of
     kindWord RecipeEntry = "recipe"
     entryFile ModuleEntry = "module.dhall"
     entryFile RecipeEntry = "recipe.dhall"
+
+-- | One row of the unified validation report. Either reuses an existing
+-- structural error message (path/name/file-existence/collisions) or
+-- carries a version-mismatch row classified by 'SyncStatus'.
+data RegistryValidationIssue
+  = StructuralError Text
+  | VersionMismatch SyncDiff
+  deriving stock (Eq, Show, Generic)
+
+-- | Whole-registry validation outcome, carrying every issue plus the
+-- entry counts used by the human-readable summary line.
+data RegistryValidationReport = RegistryValidationReport
+  { reportIssues :: [RegistryValidationIssue],
+    reportModuleCount :: Int,
+    reportRecipeCount :: Int
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | True iff the report has at least one issue.
+reportHasIssues :: RegistryValidationReport -> Bool
+reportHasIssues r = not (null r.reportIssues)
+
+-- | Combine the existing structural checks with version classification.
+-- The third argument is the same shape 'computeRegistrySync' takes —
+-- the caller loads each entry's @module.dhall@/@recipe.dhall@ once and
+-- passes a lookup list keyed by @(kind, name)@.
+validateRegistryFull ::
+  FilePath ->
+  Registry ->
+  [(EntryKind, ModuleName, Maybe Text)] ->
+  IO RegistryValidationReport
+validateRegistryFull repoRoot reg lookups = do
+  structuralErrs <- validateRegistry repoRoot reg
+  let report = computeRegistrySync reg lookups
+      versionIssues =
+        [ VersionMismatch d
+        | d <- report.syncDiffs,
+          isVersionDrift d.diffStatus
+        ]
+  pure
+    RegistryValidationReport
+      { reportIssues = map StructuralError structuralErrs <> versionIssues,
+        reportModuleCount = length reg.modules,
+        reportRecipeCount = length reg.recipes
+      }
+  where
+    isVersionDrift SyncMissing = True
+    isVersionDrift (SyncStale _) = True
+    isVersionDrift _ = False
+
+-- | Render a single 'RegistryValidationIssue' as a one-line human-readable
+-- string. 'VersionMismatch' rows reuse the @modules.foo@/@recipes.bar@
+-- prefix used by @sync-versions@ but omit the trailing
+-- "run @seihou registry sync-versions@" suggestion — the validate handler
+-- prints a single aggregated suggestion at the bottom.
+formatValidationIssue :: RegistryValidationIssue -> Text
+formatValidationIssue (StructuralError msg) = msg
+formatValidationIssue (VersionMismatch diff) =
+  validationKindPrefix diff.diffKind
+    <> diff.diffName.unModuleName
+    <> ": registry version "
+    <> validationRenderVersion diff.diffOld
+    <> " does not match "
+    <> entryFile diff.diffKind
+    <> " version "
+    <> validationRenderVersion diff.diffNew
+  where
+    entryFile ModuleEntry = "module.dhall"
+    entryFile RecipeEntry = "recipe.dhall"
+
+validationKindPrefix :: EntryKind -> Text
+validationKindPrefix ModuleEntry = "modules."
+validationKindPrefix RecipeEntry = "recipes."
+
+validationRenderVersion :: Maybe Text -> Text
+validationRenderVersion Nothing = "(none)"
+validationRenderVersion (Just v) = v
 
 -- | Serialize a 'Registry' as a Dhall record literal compatible with
 -- 'Seihou.Dhall.Eval.registryDecoder'. Rewrites lose hand-written comments
