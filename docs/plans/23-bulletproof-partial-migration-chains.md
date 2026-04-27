@@ -116,10 +116,10 @@ declared (no-chain-at-all). After this plan:
       `--to TARGET` semantics (hard error on partial reach).
 - [x] Update `Seihou.CLI.StatusRender` to emit one of three row shapes
       (full / partial / blocked) based on the new planner result.
-- [ ] Update `seihou run`'s pre-flight in `Run.hs` to refuse on every
+- [x] Update `seihou run`'s pre-flight in `Run.hs` to refuse on every
       divergence; update `--with-migrations` to apply the reachable prefix
       and refuse the no-chain-at-all case.
-- [ ] Add tests for the migrate, status, and run consumer paths covering
+- [x] Add tests for the migrate, status, and run consumer paths covering
       full / partial / blocked cases.
 - [ ] End-to-end demonstration on
       `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`: status

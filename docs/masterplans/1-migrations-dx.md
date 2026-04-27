@@ -138,7 +138,7 @@ Track milestone-level progress across all child plans. Each entry names the chil
 - [x] EP-5: Change the planner contract to return reachable prefix plus unreachable tail; update existing planner tests.
 - [x] EP-5: Update `pendingChainFor`/`runMigrate` so migrate applies the longest reachable prefix and refreshes the manifest.
 - [x] EP-5: Update `Seihou.CLI.StatusRender` to emit full / partial / blocked migration rows.
-- [ ] EP-5: Update `seihou run` pre-flight to refuse on every divergence; `--with-migrations` applies reachable prefixes and refuses blocked modules.
+- [x] EP-5: Update `seihou run` pre-flight to refuse on every divergence; `--with-migrations` applies reachable prefixes and refuses blocked modules.
 - [ ] EP-5: End-to-end demonstration on the live `seihou-project` tree: status, migrate, and run all behave correctly for master-plan (partial chain) and exec-plan (blocked).
 
 

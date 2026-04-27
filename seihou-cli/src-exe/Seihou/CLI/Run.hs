@@ -477,11 +477,25 @@ handlePendingMigrations level runOpts manifestPath manifest pendings
       TIO.putStr (formatRefusalMessage pendings)
       exitFailure
   | runOpts.runDryRun = do
-      TIO.putStrLn "Pending migrations would be applied (--with-migrations + --dry-run):"
+      TIO.putStrLn "Pending migrations detected (--with-migrations + --dry-run):"
       mapM_ (TIO.putStrLn . renderPendingSummary) pendings
       TIO.putStrLn ""
-      TIO.putStrLn "Note: the run plan below is computed against the current (pre-migration)"
-      TIO.putStrLn "disk state. Re-run without --dry-run to apply migrations and regenerate."
+      let blockedNames =
+            [ name.unModuleName
+            | (name, plan) <- pendings,
+              null plan.planChain.chainSteps,
+              isJust plan.planUnreachable
+            ]
+      if not (null blockedNames)
+        then do
+          TIO.putStrLn $
+            "Note: --with-migrations would refuse the run because "
+              <> T.intercalate ", " blockedNames
+              <> " has no applicable migration."
+          TIO.putStrLn "Resolve the block (the module author needs to ship the missing migration) before re-running."
+        else do
+          TIO.putStrLn "Note: the run plan below is computed against the current (pre-migration)"
+          TIO.putStrLn "disk state. Re-run without --dry-run to apply migrations and regenerate."
       pure manifest
   | otherwise = do
       logIO level (logInfo "Applying pending migrations before run plan...")
@@ -545,9 +559,11 @@ applyOneMigration level manifest (modName, plan) =
             <> "' missing while applying its migration"
       exitFailure
     Just am
-      -- Blocked: no migration starts at the manifest version. M5 will
-      -- formalize the refusal message; for now, fail with the same
-      -- "Blocked: …" line the renderer would have shown.
+      -- Blocked: no migration starts at the manifest version. The
+      -- run cannot safely auto-upgrade past the gap (writing the new
+      -- template into the old layout is the original EP-3 hazard),
+      -- so refuse with the same "Blocked: …" line the migrate
+      -- renderer would have shown.
       | null plan.planChain.chainSteps,
         Just (stuck, target) <- plan.planUnreachable -> do
           logIO level $
