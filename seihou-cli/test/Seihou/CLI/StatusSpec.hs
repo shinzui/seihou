@@ -174,3 +174,30 @@ spec = describe "formatStatus" $ do
     -- Blocked entries do NOT list a seihou migrate <name> command in
     -- the Recommended actions block — running it would just error.
     out `shouldNotSatisfy` T.isInfixOf "  seihou migrate exec-plan"
+
+  -- M1 pin: today an empty-migrations module with a version gap
+  -- renders the same Blocked: row as a module that declares
+  -- migrations but none reach the manifest version. The renderer
+  -- only sees the plan shape and cannot distinguish them yet. After
+  -- M4 the empty-migrations case will render as a softened
+  -- "Pending: … (no migrations declared)" advisory and recommend
+  -- "seihou upgrade <name> && seihou run".
+  it "today renders empty-migrations + version-gap with the same Blocked language" $ do
+    let am = mkApplied "demo" (Just "0.2.0")
+        manifest = mkManifest [am]
+        plan =
+          MigrationPlan
+            { planChain =
+                MigrationChain
+                  { migrationModule = "demo",
+                    chainFrom = parseV "0.2.0",
+                    chainTo = parseV "0.2.0",
+                    chainSteps = []
+                  },
+              planUnreachable = Just (parseV "0.2.0", parseV "0.3.0")
+            }
+        out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
+    out `shouldSatisfy` T.isInfixOf "Blocked: no migration declared from 0.2.0"
+    out `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
+    out `shouldSatisfy` T.isInfixOf "[blocked] no migration declared for demo"
+    out `shouldNotSatisfy` T.isInfixOf "no migrations declared"

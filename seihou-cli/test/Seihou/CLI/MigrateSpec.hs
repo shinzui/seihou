@@ -609,6 +609,44 @@ spec = do
             expectationFailure
               ("expected MigratePlanFailed, got: " <> show other)
 
+    -- M1 pin: today an empty-migrations module with a version gap
+    -- routes through MigrateBlocked, indistinguishably from a module
+    -- that declares migrations but none reach the manifest version.
+    -- The next milestones split these two cases: the empty-migrations
+    -- case becomes a benign upgrade (MigrateBenignUpgrade), and only
+    -- the declared-but-unreachable case keeps MigrateBlocked.
+    it "today returns MigrateBlocked indistinguishably for both [] and [orphanEdge]" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installedEmpty = dir </> "installed-empty"
+            installedOrphan = dir </> "installed-orphan"
+            -- An edge that starts at 0.5.0; manifest is at 0.1.3 so it
+            -- doesn't reach.
+            orphanEdgeLit =
+              T.unlines
+                [ "[ { from = \"0.5.0\"",
+                  "  , to = \"0.6.0\"",
+                  "  , ops = [] : List < MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >",
+                  "  }",
+                  "]"
+                ]
+        writeInstalledModule installedEmpty "0.3.0" emptyMigrationsLit
+        writeInstalledModule installedOrphan "0.3.0" orphanEdgeLit
+        let manifestEmpty = mkManifest "0.1.3" installedEmpty []
+            manifestOrphan = mkManifest "0.1.3" installedOrphan []
+        rEmpty <-
+          withCurrentDirectory dir $
+            runMigrate defaultOpts manifestEmpty installedEmpty
+        rOrphan <-
+          withCurrentDirectory dir $
+            runMigrate defaultOpts {migrateModule = modName} manifestOrphan installedOrphan
+        case (rEmpty, rOrphan) of
+          (Right (MigrateBlocked sEmpty tEmpty), Right (MigrateBlocked sOrphan tOrphan)) -> do
+            sEmpty `shouldBe` sOrphan
+            tEmpty `shouldBe` tOrphan
+          other ->
+            expectationFailure
+              ("expected two MigrateBlocked, got: " <> show other)
+
     it "dry-run on a partial chain returns MigrateDryRunOKPartial without writing disk" $
       withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
         let installed = dir </> "installed-demo"

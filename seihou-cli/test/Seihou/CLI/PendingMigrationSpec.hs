@@ -188,6 +188,27 @@ spec = do
             Nothing -> False
         Nothing -> expectationFailure "expected Just plan with blocked chain"
 
+    -- M1 pin: the empty-migrations + version-gap case is currently
+    -- indistinguishable from the [someEdge]-but-can't-reach case. Both
+    -- produce a MigrationPlan with an empty chain and an unreachable
+    -- tail covering the full span. The next milestone introduces
+    -- planMigrationsDeclared so consumers can tell them apart.
+    it "today returns the same MigrationPlan shape for [] and [orphanEdge] when neither reaches" $ do
+      let am = mkApplied (Just "0.2.0")
+          emptyInstalled = mkInstalled (Just "0.3.0") []
+          orphanInstalled =
+            mkInstalled (Just "0.3.0") [Migration "0.5.0" "0.6.0" []]
+      case (pendingChainFor am emptyInstalled, pendingChainFor am orphanInstalled) of
+        (Just pEmpty, Just pOrphan) -> do
+          pEmpty.planChain.chainSteps `shouldBe` []
+          pOrphan.planChain.chainSteps `shouldBe` []
+          pEmpty.planChain.chainFrom `shouldBe` pOrphan.planChain.chainFrom
+          pEmpty.planChain.chainTo `shouldBe` pOrphan.planChain.chainTo
+          pEmpty.planUnreachable `shouldBe` pOrphan.planUnreachable
+        other ->
+          expectationFailure
+            ("expected two Just plans, got: " <> show other)
+
   describe "detectPendingMigrations" $ do
     it "with Nothing filter, surfaces every applied module's pending plan" $
       withSystemTempDirectory "seihou-pending-detect" $ \dir -> do

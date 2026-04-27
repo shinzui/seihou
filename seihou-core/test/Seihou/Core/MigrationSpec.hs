@@ -94,6 +94,30 @@ spec = do
           plan.planUnreachable `shouldBe` Just (mkV "0.1.3", mkV "0.3.0")
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
+    -- M1 pin: today the planner output cannot distinguish
+    -- "migrations = []" from "migrations = [someEdge]" where
+    -- someEdge does not start at the installed version. Both produce
+    -- the same MigrationPlan shape (empty chain + unreachable tail
+    -- spanning the full gap). After the next milestone this changes:
+    -- planMigrationsDeclared lets consumers tell the two cases apart.
+    it "today returns the same shape for migrations=[] and migrations=[someEdge-that-doesnt-reach]" $ do
+      let rEmpty =
+            planMigrationChain "demo" [] (mkV "0.2.0") (mkV "0.3.0")
+          unreachableEdge = Migration "0.5.0" "0.6.0" []
+          rOrphan =
+            planMigrationChain "demo" [unreachableEdge] (mkV "0.2.0") (mkV "0.3.0")
+      case (rEmpty, rOrphan) of
+        (Right (Just pEmpty), Right (Just pOrphan)) -> do
+          pEmpty.planChain.chainSteps `shouldBe` []
+          pOrphan.planChain.chainSteps `shouldBe` []
+          pEmpty.planChain.chainFrom `shouldBe` pOrphan.planChain.chainFrom
+          pEmpty.planChain.chainTo `shouldBe` pOrphan.planChain.chainTo
+          pEmpty.planUnreachable `shouldBe` pOrphan.planUnreachable
+          pEmpty.planUnreachable `shouldBe` Just (mkV "0.2.0", mkV "0.3.0")
+        other ->
+          expectationFailure
+            ("Expected two Right (Just …), got: " <> show other)
+
     it "reports MigrationVersionUnparseable when a from string is malformed" $ do
       let m = Migration "not-a-version" "2.0.0" []
           r = planMigrationChain "demo" [m] (mkV "1.0.0") (mkV "2.0.0")
