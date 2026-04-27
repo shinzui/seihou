@@ -30,6 +30,9 @@ final: prev: {
           cp -r ${seihou-schema-src} ../schema
         '' else ""
       );
+      # Migrate fetch-path tests (MigrateSpec) shell out to `git` to set up
+      # fixture remotes; make it available inside the nix sandbox.
+      testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git ];
     })
     (doJailbreak (final.callCabal2nix "seihou-cli" ../seihou-cli { }));
 }
