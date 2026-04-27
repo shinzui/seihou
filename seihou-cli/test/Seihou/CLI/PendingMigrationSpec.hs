@@ -363,6 +363,29 @@ spec = do
       msg `shouldSatisfy` T.isInfixOf "demo: Blocked: no migration declared from 0.1.3"
       msg `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
 
+    -- EP-7 / M1 pin: today's refusal trailer asks the user to run
+    -- 'seihou migrate <module>' or pass --with-migrations, with no
+    -- mention of --bump-only or --bump-blocked. M2 flips this test
+    -- to assert the new recovery-oriented wording when the input
+    -- contains a blocked entry.
+    it "M1 pin: today's refusal trailer names no blocked-recovery option" $ do
+      let plan =
+            MigrationPlan
+              { planChain =
+                  MigrationChain
+                    { migrationModule = "demo",
+                      chainFrom = parseV "0.1.3",
+                      chainTo = parseV "0.1.3",
+                      chainSteps = []
+                    },
+                planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
+                planMigrationsDeclared = True
+              }
+          msg = formatRefusalMessage [(ModuleName "demo", plan)]
+      msg `shouldSatisfy` T.isInfixOf "Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run."
+      msg `shouldNotSatisfy` T.isInfixOf "--bump-only"
+      msg `shouldNotSatisfy` T.isInfixOf "--bump-blocked"
+
     -- M3: a benign upgrade entry (planMigrationsDeclared = False)
     -- routes through the softened branch in formatRefusalMessage.
     -- M5 strips benign entries from the input before calling this

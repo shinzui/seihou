@@ -187,6 +187,30 @@ spec = describe "formatStatus" $ do
     -- the Recommended actions block — running it would just error.
     out `shouldNotSatisfy` T.isInfixOf "  seihou migrate exec-plan"
 
+  -- EP-7 / M1 pin: today's blocked rendering carries the "module
+  -- author must ship one" finality sentence and does not surface
+  -- --bump-only or --bump-blocked. M2 flips this test to assert the
+  -- new recovery-oriented wording.
+  it "M1 pin: today's blocked rendering names no recovery option" $ do
+    let am = mkApplied "exec-plan" (Just "0.1.3")
+        manifest = mkManifest [am]
+        plan =
+          MigrationPlan
+            { planChain =
+                MigrationChain
+                  { migrationModule = "exec-plan",
+                    chainFrom = parseV "0.1.3",
+                    chainTo = parseV "0.1.3",
+                    chainSteps = []
+                  },
+              planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
+              planMigrationsDeclared = True
+            }
+        out = formatStatus False manifest [] Nothing [(ModuleName "exec-plan", plan)]
+    out `shouldSatisfy` T.isInfixOf "module author must ship one before this project can move forward"
+    out `shouldNotSatisfy` T.isInfixOf "--bump-only"
+    out `shouldNotSatisfy` T.isInfixOf "--bump-blocked"
+
   -- M1 pin, flipped in M4: an empty-migrations module with a version
   -- gap renders as a softened "Pending: … (no migrations declared)"
   -- advisory rather than the hard "Blocked: …" wording. The
