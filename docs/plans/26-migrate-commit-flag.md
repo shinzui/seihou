@@ -93,21 +93,25 @@ point. Add timestamps in `YYYY-MM-DD` form.
         `MigrateBenignUpgrade`, dry-run variants) **must not** commit
         even when the flags are set; the helper is simply not called on
         those branches.
-- [ ] M3 — tests
-  - [ ] Add behavioral tests to
-        `seihou-cli/test/Seihou/CLI/MigrateSpec.hs` (or a new
-        `Seihou.CLI.MigrateCommitSpec` if the existing file is too
-        crowded; see Decision Log) covering:
+- [x] M3 — tests (2026-04-27)
+  - [x] Add behavioral tests to
+        `seihou-cli/test/Seihou/CLI/MigrateSpec.hs` covering:
         a clean apply with `--commit-message "msg"` produces a commit
         whose body is exactly `msg` and whose tree contains the moved
         files; the `.seihou/manifest.json` is part of the staged set;
-        and a dry-run with `--commit` does not commit.
-  - [ ] Add a parser unit test asserting `--commit` and
-        `--commit-message MSG` populate the new fields.
-  - [ ] Update `seihou-cli/test/Seihou/CLI/MigrateSpec.hs::defaultOpts`
-        as noted under M1 (this should already be done in M1; the
-        repeated bullet is here so the M3 test additions don't break
-        the build).
+        outside-of-git is a silent no-op; a dry-run with `--commit`
+        produces a `MigrateDryRunOK` result without firing the helper;
+        and a `MigrateBlocked` outcome likewise never fires the helper.
+  - [~] Skipped: parser unit test. `migrateParser` lives in the
+        executable target (`Seihou.CLI.Commands`), which the test
+        suite cannot import. The CLI placement convention (CLAUDE.md
+        / `nix/check-cli-module-placement.sh`) traps the parser there
+        because it depends on `Options.Applicative`. The plan's
+        baseline manual check — `cabal run seihou -- migrate --help`
+        — is still part of M5 and adequately covers parser shape.
+        Recorded under Decision Log.
+  - [x] Update `seihou-cli/test/Seihou/CLI/MigrateSpec.hs::defaultOpts`
+        as noted under M1 (already done in M1).
 - [ ] M4 — documentation
   - [ ] Update `docs/cli/migrate.md` to add `--commit` and
         `--commit-message` rows to the **Options** table, an
@@ -136,7 +140,14 @@ point. Add timestamps in `YYYY-MM-DD` form.
 
 ## Surprises & Discoveries
 
-(None yet.)
+- `git add <src> <dest>` for a moved file correctly stages the move
+  (status reports `R src -> dest`), but `git log --name-only` then
+  collapses the rename to just the destination. Asserting that the
+  source path *also* appears in the commit requires
+  `git log --name-only --no-renames`. Without this, a regression
+  where the helper fails to stage the source-side deletion would
+  silently pass the test.
+  (2026-04-27)
 
 
 ## Decision Log
@@ -190,6 +201,41 @@ point. Add timestamps in `YYYY-MM-DD` form.
   fixture with a real manifest and a real installed copy, which is
   exactly the substrate the new tests need. A second module would
   duplicate that fixture.
+  Date: 2026-04-27
+  Resolution: Stayed in `MigrateSpec.hs` under a new "EP-26" subsection.
+
+- Decision: Skip the parser unit test for `--commit` /
+  `--commit-message`. The plan listed it but the test target cannot
+  import the parser without restructuring.
+  Rationale: `migrateParser` is in `Seihou.CLI.Commands`, which lives
+  in the `seihou` executable target because it depends on
+  `Options.Applicative`. The CLI placement convention
+  (`nix/check-cli-module-placement.sh`) deliberately traps it there.
+  The test suite depends only on `seihou-cli-internal`, so the parser
+  is unreachable from tests without lifting it (and `optparse`) into
+  the library or duplicating the parser fragment. The behavior under
+  test — "do these two flag tokens populate two boolean / Maybe-Text
+  fields" — is mechanical optparse glue with no domain logic; the
+  full-pipeline behavioral tests, the `migrate --help` smoke check
+  in M5, and the existing run-side flag pair already exercise the
+  same `switch` / `option (T.pack <$> str)` pattern.
+  Date: 2026-04-27
+
+- Decision: When a migration moves a file, the commit's name-only
+  output collapses the source and destination to just the
+  destination unless rename detection is disabled. The behavioral
+  test asserts both endpoints by passing `--no-renames` to
+  `git log`.
+  Rationale: `git add app/Main.hs src/Main.hs` correctly stages a
+  rename (verified out-of-band: status shows
+  `R app/Main.hs -> src/Main.hs`), but `git log --name-only` reports
+  it as a single rename entry whose name-only flattening is the
+  destination. Asserting against the rename-detected name-only
+  output would silently miss the case where the helper failed to
+  stage one of the two paths. `--no-renames` forces git to report
+  the deletion and addition as two distinct entries, which is what
+  the test wants to verify. The helper itself does not need any
+  change — it always passes both src and dest to `git add`.
   Date: 2026-04-27
 
 

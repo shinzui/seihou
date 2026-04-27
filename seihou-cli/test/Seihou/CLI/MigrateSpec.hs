@@ -8,10 +8,12 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
+import Effectful (runEff)
 import Seihou.CLI.Migrate
   ( MigrateError (..),
     MigrateOpts (..),
     MigrateResult (..),
+    commitMigratedFiles,
     runMigrate,
   )
 import Seihou.Core.Migration (MigrationChain (..))
@@ -23,6 +25,9 @@ import Seihou.Core.Types
     Strategy (..),
     emptyParentVars,
   )
+import Seihou.Effect.FilesystemInterp (runFilesystem)
+import Seihou.Effect.ManifestStore (writeManifest)
+import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Engine.Migrate (ExecutedMigrationPlan (..))
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.Types (emptyManifest)
@@ -234,6 +239,34 @@ initRemoteRepo dir = do
   run "git" ["-C", dir, "config", "commit.gpgsign", "false"]
   run "git" ["-C", dir, "add", "."]
   run "git" ["-C", dir, "commit", "--quiet", "--no-verify", "-m", "fixture"]
+  where
+    run cmd args = do
+      (code, _out, err) <- readProcessWithExitCode cmd args ""
+      case code of
+        ExitSuccess -> pure ()
+        ExitFailure n ->
+          expectationFailure
+            ( cmd
+                <> " "
+                <> show args
+                <> " exited with "
+                <> show n
+                <> ":\n"
+                <> err
+            )
+
+-- | Initialize a project directory as a git repo with a baseline
+-- commit covering everything currently on disk. Used by the
+-- auto-commit tests so they can assert the new commit produced by
+-- 'commitMigratedFiles' lands on top of a clean baseline.
+initProjectRepo :: FilePath -> IO ()
+initProjectRepo dir = do
+  run "git" ["init", "--quiet", "--initial-branch=main", dir]
+  run "git" ["-C", dir, "config", "user.email", "test@example.com"]
+  run "git" ["-C", dir, "config", "user.name", "Test"]
+  run "git" ["-C", dir, "config", "commit.gpgsign", "false"]
+  run "git" ["-C", dir, "add", "."]
+  run "git" ["-C", dir, "commit", "--quiet", "--no-verify", "-m", "baseline"]
   where
     run cmd args = do
       (code, _out, err) <- readProcessWithExitCode cmd args ""
@@ -800,3 +833,150 @@ spec = do
           other ->
             expectationFailure
               ("expected MigrateDryRunOKPartial, got: " <> show other)
+
+    -- ------------------------------------------------------------------
+    -- EP-26: --commit / --commit-message auto-commit flags.
+    --
+    -- These tests drive the full apply path and then invoke
+    -- 'commitMigratedFiles' the same way 'handleMigrate' would, so the
+    -- helper's behavior is observed against a real git repo. The
+    -- AI-message branch is intentionally not tested here (it would
+    -- shell out to 'claude' on the test host); manual verification in
+    -- M5 covers it.
+    -- ------------------------------------------------------------------
+
+    it "--commit-message stages moved files plus the manifest into a single git commit" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+            manifestPath = ".seihou" </> "manifest.json"
+        writeInstalledModule installed "2.0.0" moveAppToSrcLit
+        createDirectoryIfMissing True (dir </> "app")
+        TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
+        let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
+            opts =
+              defaultOpts
+                { migrateCommit = True,
+                  migrateCommitMessage = Just "chore: migrate"
+                }
+        withCurrentDirectory dir $ do
+          createDirectoryIfMissing True (dir </> ".seihou")
+          -- Seed the manifest file so the baseline commit captures it
+          -- alongside the tracked file.
+          runEff $
+            runFilesystem $
+              runManifestStore manifestPath $
+                writeManifest manifest
+          initProjectRepo dir
+          result <- runMigrate opts manifest installed
+          case result of
+            Right (MigrateApplied plan manifest') -> do
+              -- Mimic 'handleMigrate': persist the post-migration
+              -- manifest, then drive the commit helper.
+              runEff $
+                runFilesystem $
+                  runManifestStore manifestPath $
+                    writeManifest manifest'
+              commitMigratedFiles opts manifestPath plan
+              -- Latest commit subject matches what we asked for.
+              (subjectExit, subject, _) <-
+                readProcessWithExitCode "git" ["log", "-1", "--pretty=%s"] ""
+              subjectExit `shouldBe` ExitSuccess
+              T.strip (T.pack subject) `shouldBe` "chore: migrate"
+              -- Latest commit's name-only stat lists the moved files
+              -- plus the manifest. Disable rename detection so the
+              -- source and destination of a moved file appear as
+              -- distinct entries — git's default rename detection
+              -- collapses them to just the destination.
+              (_, names, _) <-
+                readProcessWithExitCode
+                  "git"
+                  ["log", "-1", "--name-only", "--no-renames", "--pretty="]
+                  ""
+              let touched = filter (not . T.null) (T.lines (T.pack names))
+              touched `shouldContain` ["app/Main.hs"]
+              touched `shouldContain` ["src/Main.hs"]
+              touched `shouldContain` [".seihou/manifest.json"]
+            other ->
+              expectationFailure ("expected MigrateApplied, got: " <> show other)
+
+    it "--commit outside a git repo is a silent no-op (apply still succeeds)" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+            manifestPath = ".seihou" </> "manifest.json"
+        writeInstalledModule installed "2.0.0" moveAppToSrcLit
+        createDirectoryIfMissing True (dir </> "app")
+        TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
+        let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
+            opts = defaultOpts {migrateCommitMessage = Just "chore: migrate"}
+        withCurrentDirectory dir $ do
+          createDirectoryIfMissing True (dir </> ".seihou")
+          result <- runMigrate opts manifest installed
+          case result of
+            Right (MigrateApplied plan manifest') -> do
+              runEff $
+                runFilesystem $
+                  runManifestStore manifestPath $
+                    writeManifest manifest'
+              -- The helper must not throw outside a git work tree.
+              commitMigratedFiles opts manifestPath plan
+              -- Apply still happened (file moved on disk, manifest
+              -- written) — the commit helper just had nothing to do.
+              doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` True
+              doesFileExist (dir </> manifestPath) `shouldReturn` True
+            other ->
+              expectationFailure ("expected MigrateApplied, got: " <> show other)
+
+    it "--commit on a dry-run path returns a dry-run variant (helper is never invoked)" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "2.0.0" moveAppToSrcLit
+        createDirectoryIfMissing True (dir </> "app")
+        TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
+        let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
+            opts =
+              defaultOpts
+                { migrateDryRun = True,
+                  migrateCommit = True,
+                  migrateCommitMessage = Just "chore: migrate"
+                }
+        withCurrentDirectory dir $ do
+          initProjectRepo dir
+          result <- runMigrate opts manifest installed
+          -- Establish the contract handleMigrate relies on: dry-run
+          -- never reaches MigrateApplied / MigrateAppliedPartial, so
+          -- the gating predicate in handleMigrate never fires the
+          -- commit helper. Verify by ensuring the result is a dry-run
+          -- variant *and* no new commit landed in git.
+          case result of
+            Right (MigrateDryRunOK _) -> pure ()
+            other ->
+              expectationFailure ("expected MigrateDryRunOK, got: " <> show other)
+          (_, before, _) <- readProcessWithExitCode "git" ["rev-list", "--count", "HEAD"] ""
+          T.strip (T.pack before) `shouldBe` "1"
+
+    it "--commit on a blocked outcome returns MigrateBlocked (helper is never invoked)" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+            -- Manifest at 0.1.3, single migration starts at 0.5.0 ->
+            -- 0.6.0; nothing reaches the manifest version. Without
+            -- --to this is MigrateBlocked.
+            orphanEdgeLit =
+              T.unlines
+                [ "[ { from = \"0.5.0\"",
+                  "  , to = \"0.6.0\"",
+                  "  , ops = [] : List < MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >",
+                  "  }",
+                  "]"
+                ]
+        writeInstalledModule installed "0.3.0" orphanEdgeLit
+        let manifest = mkManifest "0.1.3" installed []
+            opts = defaultOpts {migrateCommitMessage = Just "chore: migrate"}
+        withCurrentDirectory dir $ do
+          initProjectRepo dir
+          result <- runMigrate opts manifest installed
+          case result of
+            Right (MigrateBlocked _ _) -> pure ()
+            other ->
+              expectationFailure ("expected MigrateBlocked, got: " <> show other)
+          (_, count, _) <- readProcessWithExitCode "git" ["rev-list", "--count", "HEAD"] ""
+          T.strip (T.pack count) `shouldBe` "1"
