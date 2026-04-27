@@ -10,6 +10,68 @@ HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 
 
 ## Changelog
 
+### 2026-04-26 (Bulletproof partial migration chains)
+
+**Reviewed commits:** EP-5 of MasterPlan
+`docs/masterplans/1-migrations-dx.md` — softening the migration
+planner's all-or-nothing contract so partial and blocked chains
+become first-class outcomes across `seihou status`, `seihou migrate`,
+and `seihou run`.
+
+**Behavior change (user-facing):**
+- `seihou status` now reports modules whose declared migrations don't
+  reach the latest version. Previously these were silent. Three row
+  shapes:
+  - **Full chain** — `Pending migration: 0.1.0 -> 0.3.0 (N op(s)).
+    Run: seihou migrate <name>` (unchanged).
+  - **Partial chain** — same chain summary plus a `Note: no migration
+    declared from <stuckAt>; remote is at <target>.` line.
+  - **Blocked** — `Blocked: no migration declared from
+    <manifest-version>; remote is at <target>. The module author must
+    ship one before this project can move forward.` The Recommended
+    actions tail uses `[blocked] no migration declared for <name>`
+    instead of `seihou migrate <name>` because running migrate would
+    just print the same blocked message.
+- `seihou migrate <module>` (no `--to`) now applies the longest
+  reachable prefix when the declared chain doesn't reach the remote
+  exactly. The manifest's `moduleVersion` is bumped to the highest
+  reached version, and a `Note: no migration declared from
+  <stuckAt>; remote is at <target>.` advisory is printed. Blocked
+  modules surface the same `Blocked: …` message; the command exits
+  zero (no work was done; no manifest change).
+- `seihou migrate <module> --to TARGET` keeps its strict-target
+  contract: if the declared chain cannot reach `TARGET` exactly
+  (partial or blocked), the command errors with `no migration covers
+  the gap from X to TARGET`.
+- `seihou run` (default) now refuses on every divergence — full,
+  partial, and blocked — rather than silently falling back to "no
+  pending plan" for partial/blocked. The refusal listing distinguishes
+  the three shapes inline.
+- `seihou run --with-migrations` applies full and partial chains
+  in-band before the run plan is computed. For blocked entries it
+  refuses with the same `Blocked: …` message, since there is no
+  safe automatic upgrade past a missing migration.
+- `seihou upgrade --with-migrations`'s post-upgrade hook now
+  surfaces partial and blocked outcomes with the same advisories.
+
+**Internal:**
+- `planMigrationChain` now returns `Either MigrationPlanError (Maybe
+  MigrationPlan)` where `MigrationPlan` carries a reachable
+  `planChain` (possibly empty) and an optional `planUnreachable ::
+  Maybe (Version, Version)` tail. The `MigrationGap` error variant
+  remains in `MigrationPlanError` for the strict-target path
+  (`seihou migrate --to TARGET`) but is no longer produced by the
+  planner directly; CLI consumers synthesize it from
+  `planUnreachable` when needed.
+- `pendingChainFor` widens to `Maybe MigrationPlan`;
+  `detectPendingMigrations` widens to `[(ModuleName, MigrationPlan)]`.
+  All consumers (`Status`, `Run`, `Upgrade`, `formatRefusalMessage`)
+  updated in lockstep.
+- New `MigrateResult` variants: `MigrateAppliedPartial`,
+  `MigrateDryRunOKPartial`, `MigrateBlocked`. New `ModuleAdvice`
+  variants in `StatusRender`: `AdvicePartialMigration`,
+  `AdviceBlockedMigration`.
+
 ### 2026-04-26 (CLI library-first: enforcement check)
 
 **Reviewed commits:** EP-4 of MasterPlan

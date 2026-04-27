@@ -53,7 +53,7 @@ Alternatives considered:
 | 2   | Make `seihou migrate` self-contained (no manual upgrade)     | docs/plans/15-make-migrate-self-contained.md        | EP-1      | None      | Complete    |
 | 3   | Make `seihou run` migration-aware                            | docs/plans/16-make-run-migration-aware.md           | EP-2      | EP-1      | Complete    |
 | 4   | Make `seihou status` surface staleness and pending migrations | docs/plans/17-improve-status-migration-visibility.md | EP-1      | EP-2      | Complete    |
-| 5   | Bulletproof partial migration chains across status, migrate, run | docs/plans/23-bulletproof-partial-migration-chains.md | EP-2, EP-3, EP-4 | None | In Progress |
+| 5   | Bulletproof partial migration chains across status, migrate, run | docs/plans/23-bulletproof-partial-migration-chains.md | EP-2, EP-3, EP-4 | None | Complete    |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -139,7 +139,7 @@ Track milestone-level progress across all child plans. Each entry names the chil
 - [x] EP-5: Update `pendingChainFor`/`runMigrate` so migrate applies the longest reachable prefix and refreshes the manifest.
 - [x] EP-5: Update `Seihou.CLI.StatusRender` to emit full / partial / blocked migration rows.
 - [x] EP-5: Update `seihou run` pre-flight to refuse on every divergence; `--with-migrations` applies reachable prefixes and refuses blocked modules.
-- [ ] EP-5: End-to-end demonstration on the live `seihou-project` tree: status, migrate, and run all behave correctly for master-plan (partial chain) and exec-plan (blocked).
+- [x] EP-5: End-to-end demonstration on the live `seihou-project` tree: status, migrate, and run all behave correctly for master-plan (partial chain) and exec-plan (blocked).
 
 
 ## Surprises & Discoveries
@@ -227,19 +227,13 @@ Captured during research before implementation:
 
 ## Outcomes & Retrospective
 
-> **Status note (2026-04-26):** This masterplan was provisionally closed
-> after EP-1–EP-4 shipped, but live verification on the
-> `seihou-project` tree found that the planner-gap carve-out (deferred
-> below) is the common case, not the edge case: `seihou status` is
-> silent and `seihou migrate` errors out for both modules whose
-> migrations don't reach the latest version exactly. EP-5 reopens the
-> initiative to retire the carve-out. The retrospective below describes
-> what EP-1–EP-4 delivered; the final retrospective will be rewritten
-> after EP-5 lands.
+This masterplan ships the upgrade-and-migrate DX vision in full. With
+EP-1–EP-5 landed, a project owner who pulls a stale registry sees
+the truth, and `seihou status`, `seihou migrate`, and `seihou run`
+all behave correctly across full chains, partial chains, and blocked
+modules.
 
-The four child plans landed in the order the dependency graph
-predicted (EP-1 → EP-2 → EP-3 → EP-4). What the user sees after that
-work, when the declared migrations cover the entire gap exactly:
+What the user sees end-to-end:
 
 1. `seihou outdated` and `seihou upgrade` correctly flag a module as
    outdated as soon as the upstream `module.dhall` declares a higher
@@ -247,32 +241,22 @@ work, when the declared migrations cover the entire gap exactly:
    (EP-1).
 2. `seihou migrate <module>` works without a prior `seihou upgrade`:
    it fetches the source repo, plans the chain against the remote's
-   `module.dhall`, applies it, and refreshes the on-disk installed
-   copy. `--no-fetch` preserves the legacy local-only behavior for
-   offline use and for callers that have already refreshed (EP-2).
-3. `seihou run` no longer silently writes the new template into paths
-   a pending migration would have moved. By default it refuses with a
-   clear message naming the next command; `--with-migrations`
-   applies the chain in-band before the run plan executes (EP-3).
-4. `seihou status` reports both outdated installed modules and
-   pending migrations whose chains reach the latest version exactly,
-   with a copy-pasteable next command under each problem row plus a
-   Recommended actions tail block. The pending-migration check is
-   unconditional (no `--check-updates` needed) because it is purely
-   local (EP-4).
-
-What did *not* land and is now scheduled in EP-5
-(`docs/plans/23-bulletproof-partial-migration-chains.md`):
-
-- A "longest-reachable-prefix" planner mode. The `MigrationGap` error
-  variant is treated as "no chain" by every consumer
-  (`pendingChainFor`, `runMigrate`, `detectPendingMigrations`), so the
-  user sees nothing pending and `seihou migrate` refuses to apply any
-  step. Live failure: master-plan (manifest=0.1.0, cache=0.3.0,
-  migrations=[0.1.0 → 0.2.0]) gets a partial-chain silence;
-  exec-plan (manifest=0.1.3, cache=0.3.0, no migrations declared)
-  gets a no-chain-at-all silence. EP-5 reshapes the planner contract
-  and updates all three consumers.
+   `module.dhall`, applies it (or the longest reachable prefix, after
+   EP-5), and refreshes the on-disk installed copy. `--no-fetch`
+   preserves the legacy local-only behavior; `--to TARGET` keeps the
+   strict-target contract (EP-2 + EP-5).
+3. `seihou run` never silently writes new templates into paths a
+   pending migration would have moved. By default it refuses on
+   every divergence (full, partial, or blocked) with a clear message
+   naming the next command; `--with-migrations` applies full and
+   partial chains in-band and refuses for blocked entries
+   (EP-3 + EP-5).
+4. `seihou status` reports outdated installed modules and pending
+   migrations as full / partial / blocked rows, each with the
+   appropriate copy-pasteable command (or a `[blocked]` advisory for
+   blocked entries) plus a Recommended actions tail block. The
+   pending-migration check is unconditional (no `--check-updates`
+   needed) because it is purely local (EP-4 + EP-5).
 
 What stays out of scope — deliberately:
 
@@ -280,20 +264,29 @@ What stays out of scope — deliberately:
   `docs/plans/13-module-migrations.md`).
 - A new manifest schema version. The existing
   `AppliedModule.moduleVersion` field plus careful refresh-on-apply
-  bookkeeping (EP-1's post-install fix and EP-2's
-  `runMigrate`-refreshes-manifest behavior) covered every case
-  EP-1–EP-4 needed. EP-5 reuses the same hook.
+  bookkeeping (EP-1's post-install fix, EP-2's `runMigrate`-refreshes-
+  manifest behavior, and EP-5's partial-apply manifest bump) covered
+  every case the initiative needed. The `bumpVersion` hook from EP-2
+  records `chain.chainTo`, which equals the highest reached version
+  for both full and partial chains — so EP-5 reused it without
+  modification.
+- A `--to TARGET --partial` flag relaxing the strict-target contract.
+  The current split (no `--to` for "go as far as possible",
+  `--to TARGET` for a contract) matches the mental model uncovered
+  during the live-tree work. A future plan can revisit if user demand
+  emerges.
 
-Cross-plan coordination held up across EP-1–EP-4. The integration
+Cross-plan coordination held up across all five EPs. The integration
 points the masterplan called out — `fetchTrueModuleVersion` (EP-1
 definer; EP-2, EP-3, EP-4 consumers), `detectPendingMigrations` (EP-3
-definer; EP-4 consumer), `installModuleDir` and friends in
-`Seihou.CLI.InstallShared` (EP-2 extractor; EP-3 consumer) — all
-ended up in library-exposed modules so the test suite could reach
-them without spinning up the executable. EP-5 inherits that pattern
-and adds the planner contract itself as a sixth integration point.
+definer; EP-4, EP-5 consumers), `installModuleDir` and friends in
+`Seihou.CLI.InstallShared` (EP-2 extractor; EP-3 consumer), the
+planner contract itself (EP-5 definer; EP-2, EP-3, EP-4 retrofitted
+to consume the new `MigrationPlan` shape) — all ended up in
+library-exposed modules so the test suite could reach them without
+spinning up the executable.
 
-Implementation arc per plan (EP-1–EP-4):
+Implementation arc per plan:
 
 - EP-1 took the longest because the bug was non-obvious (registry
   metadata vs. module.dhall divergence) and required adding a new
@@ -311,15 +304,23 @@ Implementation arc per plan (EP-1–EP-4):
   EP-3 were in. The data-type-locality cleanup (moving
   `OutdatedEntry` to `VersionCompare`) was the only cross-cutting
   edit, and it preserved every existing call site.
+- EP-5 reshaped the planner contract and updated every consumer in
+  one session. The variant explosion in `MigrateResult` (six
+  variants after EP-5: NoOp, DryRunOK, DryRunOKPartial, Applied,
+  AppliedPartial, Blocked) settled cleanly because a new
+  `dispatchPlan` + `applyChain` pair centralized the
+  classify-then-execute logic. The live-tree state by the time EP-5
+  ran had `exec-plan` upgraded from "no migrations" to "partial
+  chain", so the demo only proves partial on real data; the blocked
+  path is covered by unit tests.
 
-Lessons captured so far:
+Lessons captured:
 
 - Decomposing by user-visible command paid off. Each child plan
   closed with a concrete `seihou <command>` invocation against the
   live tree as its acceptance criterion, which made "is this done?"
-  unambiguous — and made it possible to spot, after the fact, that
-  the chosen acceptance scenario didn't cover the partial-chain
-  failure mode that EP-5 is now retiring.
+  unambiguous — and made it possible to spot, after EP-1–EP-4
+  shipped, that the partial-chain failure mode hadn't been covered.
 - The Surprises & Discoveries section earned its keep. EP-3's
   planner-gap discovery directly shaped EP-4's documentation
   decisions and pre-staged the EP-5 reopen. Future masterplans should
@@ -330,13 +331,23 @@ Lessons captured so far:
   exec-plan immediately rather than relying on the masterplan
   retrospective to remember. Future masterplans should treat any
   deferred work as eligible for an exec-plan number and a Not Started
-  registry row, even if implementation is months out.
+  registry row, even if implementation is months out — exactly what
+  EP-5 became when the masterplan reopened.
 - Pushing helpers from executable-only to library-exposed is a
   recurring move in this codebase. A repo-wide convention ("CLI
   helpers default to the library; executable target is for the IO
   shell only") would have saved ~3 hours of small refactors across
   EP-1, EP-2, and EP-4. (This convention has since landed via
-  `docs/masterplans/2-cli-library-first-convention.md`.)
+  `docs/masterplans/2-cli-library-first-convention.md`, and EP-5
+  benefited directly: the new `dispatchPlan`, `applyChain`, and
+  enriched `pendingChainFor` all stayed in the library without a
+  refactor in the middle of implementation.)
+- Live-tree fixtures decay. The masterplan's "blocked" demo case
+  (exec-plan with no declared migrations) had been resolved by the
+  module author by the time EP-5 implemented. The unit tests still
+  exercise the blocked path via synthetic fixtures; future
+  masterplans should treat live-tree state at reopen time as
+  evidence, not contract.
 
 
 ## Revisions
@@ -359,3 +370,15 @@ Lessons captured so far:
   extended #2 with the new return shape), Progress, Surprises &
   Discoveries, and Outcomes & Retrospective to reflect the reopen.
   EP-1–EP-4 stay marked Complete within their original scopes.
+
+- 2026-04-26: EP-5 shipped. All six milestones landed in one session
+  with `cabal test all` green at every step and `nix flake check`
+  green at the end. Marked EP-5 Complete in the Exec-Plan Registry,
+  checked off all M1–M6 items in Progress, and rewrote Outcomes &
+  Retrospective to describe the full initiative end-to-end (no longer
+  scoped to "what EP-1–EP-4 delivered"). The live demo on the
+  `seihou-project` tree showed both master-plan and exec-plan as
+  partial-chain rows rather than one partial + one blocked, because
+  the exec-plan author had shipped a continuation migration in the
+  intervening time. Unit tests still exercise the blocked path via
+  synthetic fixtures.

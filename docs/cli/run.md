@@ -61,52 +61,67 @@ outside of a git repository (a warning is emitted).
 
 Before computing the diff, `seihou run` checks every module in the current
 composition (the primary module plus the `-m/--module` additionals plus
-any transitive dependencies) for a *pending migration chain* — that is,
-a manifest-recorded version that is older than the locally installed
-copy and a `migrations` list that bridges the gap. When at least one
-composed module has a pending chain:
+any transitive dependencies) for a *pending migration plan* — that is,
+a manifest-recorded version that does not match the locally installed
+copy. The plan can take three shapes:
 
-- **Default behavior**: `seihou run` refuses with an actionable message
-  listing each module's pending range and exits non-zero. This prevents
-  the failure mode where new template content is written into paths a
-  migration would have moved (orphaning user edits at the old paths and
-  silently losing the migration's `RunCommand` ops). The user has two
-  paths forward: run `seihou migrate <module>` for each pending module,
-  or pass `--with-migrations`.
+- **Full chain** — declared migrations cover the gap exactly.
+- **Partial chain** — declared migrations reach an intermediate version
+  but not the latest installed copy.
+- **Blocked** — no migration starts at the manifest version (the
+  module author owes a continuation migration).
 
-- **`--with-migrations`**: For each pending chain, `seihou run` calls the
-  same code path as `seihou migrate <module> --no-fetch` (the local copy
-  was already inspected during detection — there is no need to clone the
-  source repo a second time). The migration is applied to the working
-  tree and manifest *before* the run plan's diff is computed, so the
-  diff reflects the post-migration layout rather than the pre-migration
-  layout. After the chain, the run plan executes normally.
+`seihou run` refuses on every divergence — full, partial, or blocked
+— because all three can lead to writing new template content into
+paths a migration would have moved (or should have moved, if the
+author had shipped one). The refusal listing distinguishes the three
+shapes:
 
-  Migration conflicts (a tracked file the user has edited since
-  generation) propagate as a hard failure here. `seihou run --force`
-  governs the run plan's conflict policy, not the migration's; to
-  proceed through a migration conflict, run `seihou migrate <module>
-  --force` first.
+```
+Pending migrations detected:
+  master-plan: 0.1.0 -> 0.2.0 (1 step(s)); no migration declared from 0.2.0, remote is at 0.3.0
+  exec-plan: Blocked: no migration declared from 0.1.3; remote is at 0.3.0
 
-- **`--dry-run` + `--with-migrations`**: Shows a chain summary for each
-  pending migration, then runs the dry-run output against the *current*
-  (pre-migration) disk state with a one-line note. Computing a real
-  post-migration dry-run would require staging the migration's file
-  moves to disk, which `--dry-run` deliberately does not do; re-run
-  without `--dry-run` to see the post-migration plan.
+Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run.
+```
+
+`--with-migrations` semantics by shape:
+
+- **Full chain**: applies the chain and continues to the run plan.
+- **Partial chain**: applies the longest reachable prefix, refreshes the
+  manifest, and continues to the run plan. The user gets one more
+  iteration of progress without a manual step.
+- **Blocked**: refuses the run with the same `Blocked: …` message the
+  default refusal would have shown. There is no safe automatic upgrade
+  path — the module author has to ship the missing migration before
+  `seihou run` can resume.
+
+`seihou run --with-migrations` calls the same code path as `seihou
+migrate <module> --no-fetch` for each pending module (the local copy
+was already inspected during detection — there is no need to clone the
+source repo a second time). Migration conflicts (a tracked file the
+user has edited since generation) propagate as a hard failure here.
+`seihou run --force` governs the run plan's conflict policy, not the
+migration's; to proceed through a migration conflict, run `seihou
+migrate <module> --force` first.
+
+`--dry-run` + `--with-migrations` shows a chain summary for each
+pending entry. When any entry is blocked, an explicit note states that
+the real (non-`--dry-run`) command would refuse the run. The dry-run
+plan output is still computed against the *current* (pre-migration)
+disk state with a one-line note. Computing a real post-migration
+dry-run would require staging the migration's file moves to disk,
+which `--dry-run` deliberately does not do; re-run without `--dry-run`
+to see the post-migration plan.
 
 Detection is **scoped to the composition**: a pending chain on an
 applied module that is not part of the current run cannot block. For
 example, if `master-plan` has a pending chain but `seihou run
 nix-flake` is invoked, `nix-flake`'s run proceeds unimpeded.
 
-Detection is **best-effort**: parse failures, eval errors, and
-planner gaps (a migrations list that does not reach the installed
-version) all fall back to "no pending chain", so a chain that the
-planner cannot fully resolve will not surface here. In that case
-`seihou run` proceeds with its older behavior. Use `seihou status` and
-`seihou migrate <module> --to <intermediate>` to make progress
-manually.
+Detection is **best-effort**: parse failures and eval errors fall back
+to "no pending plan", so a malformed `module.dhall` does not block the
+run.
 
 ## Examples
 

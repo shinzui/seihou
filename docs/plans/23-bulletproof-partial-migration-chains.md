@@ -121,19 +121,103 @@ declared (no-chain-at-all). After this plan:
       and refuse the no-chain-at-all case.
 - [x] Add tests for the migrate, status, and run consumer paths covering
       full / partial / blocked cases.
-- [ ] End-to-end demonstration on
+- [x] End-to-end demonstration on
       `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`: status
       shows the truth for both master-plan and exec-plan; `seihou migrate
       master-plan` lands the project at 0.2.0 with the advisory; `seihou
       run --dry-run` refuses by default and refuses for exec-plan even
       with `--with-migrations`.
-- [ ] Update `docs/cli/migrate.md`, `docs/cli/status.md`, `docs/cli/run.md`,
+- [x] Update `docs/cli/migrate.md`, `docs/cli/status.md`, `docs/cli/run.md`,
       and `docs/user/CHANGELOG.md`.
 
 
 ## Surprises & Discoveries
 
-(None yet — populated during implementation.)
+- **The live exec-plan fixture moved from "blocked" to "partial chain"
+  during the EP-5 work.** When the masterplan reopened (2026-04-26),
+  the live `seihou-project` tree had `exec-plan` at manifest=0.1.3,
+  installed=0.3.0, and *no* migrations declared — the canonical
+  blocked case. Sometime between then and the M6 live demo, the
+  module author shipped a `0.1.3 → 0.2.0` migration on the installed
+  copy. The live tree now exercises *two* partial-chain modules
+  rather than one partial + one blocked, so the M6 demo only proves
+  the partial path on real data; the blocked path is covered by
+  unit tests in `MigrateSpec` (`MigrateBlocked`-with-no-flag and
+  `MigratePlanFailed`-with-`--to`) and `StatusSpec` ("blocked
+  migration: refusal row …").
+
+- **`Migrate.hs`'s outcome variant explosion settled at six rather than
+  four.** The plan called for `MigrateAppliedPartial` and
+  `MigrateBlocked`. In practice the dry-run path also needed
+  `MigrateDryRunOKPartial` (since `MigrateDryRunOK` carries only the
+  classified plan), and the existing `MigrateNoOp`, `MigrateDryRunOK`,
+  and `MigrateApplied` stayed as-is. The `applyChain` helper centralizes
+  the "classify, optionally execute, package the outcome" path so the
+  variant explosion does not duplicate logic.
+
+- **The renderer for `MigrateAppliedPartial` reuses the existing
+  `MigrateApplied` rendering and appends an advisory line.** The plan
+  suggested two distinct render branches; in code, deduplicating
+  through a shared `renderPlan` plus a conditional `Note: …`
+  trailer was simpler. Same pattern in `StatusRender`'s
+  `formatAdvice` for `AdvicePartialMigration`.
+
+- **`--with-migrations` for blocked entries refuses inside
+  `applyOneMigration` rather than at the pre-flight.** The pre-flight
+  `handlePendingMigrations` doesn't pre-classify the plans because
+  the per-module application path already has shape-aware logic;
+  treating blocked entries uniformly with full/partial in the
+  refusal path keeps the dry-run summary code (which iterates the
+  same list) consistent. The dry-run path adds a separate "Note:
+  --with-migrations would refuse the run because <names>" line so
+  the user is not surprised by the actual run aborting.
+
+- **Live-tree demo (M6, 2026-04-26)** confirms EP-5 lands. From
+  `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`:
+
+      $ cabal run seihou -- status
+      ...
+      Applied modules:
+        ...
+        exec-plan  v0.1.3    (applied 2026-04-15)
+          Pending migration: 0.1.3 -> 0.2.0 (1 operation(s)). Run: seihou migrate exec-plan
+          Note: no migration declared from 0.2.0; remote is at 0.3.0.
+        master-plan  v0.1.0    (applied 2026-04-15)
+          Pending migration: 0.1.0 -> 0.2.0 (1 operation(s)). Run: seihou migrate master-plan
+          Note: no migration declared from 0.2.0; remote is at 0.3.0.
+      ...
+      Recommended actions:
+        seihou migrate exec-plan
+        seihou migrate master-plan
+
+      $ cabal run seihou -- migrate master-plan --dry-run --no-fetch
+      Migration plan: master-plan  0.1.0 → 0.2.0
+        ...
+      6 operation(s), 0 conflict(s).
+      Note: no migration declared from 0.2.0; remote is at 0.3.0.
+      (dry run — no changes made)
+
+      $ cabal run seihou -- run master-plan --dry-run
+      Pending migrations detected:
+        exec-plan: 0.1.3 -> 0.2.0 (1 step(s)); no migration declared from 0.2.0, remote is at 0.3.0
+        master-plan: 0.1.0 -> 0.2.0 (1 step(s)); no migration declared from 0.2.0, remote is at 0.3.0
+      Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run.
+      [exit 1]
+
+      $ cabal run seihou -- run master-plan --dry-run --with-migrations
+      Pending migrations detected (--with-migrations + --dry-run):
+        exec-plan: 0.1.3 -> 0.2.0 (1 step(s)); no migration declared from 0.2.0, remote is at 0.3.0
+        master-plan: 0.1.0 -> 0.2.0 (1 step(s)); no migration declared from 0.2.0, remote is at 0.3.0
+      Note: the run plan below is computed against the current (pre-migration)
+      ...
+
+  Compare against the masterplan's "Status note (2026-04-26)" entry:
+  before EP-5, `seihou status` showed nothing for these two modules
+  and `seihou run` would silently overwrite the old layout. After
+  EP-5, both modules surface as partial-chain rows with actionable
+  advice, and `seihou run` refuses by default.
+
+Carry-overs from the parent masterplan that this plan exists to retire:
 
 Carry-overs from the parent masterplan that this plan exists to retire:
 
@@ -198,7 +282,81 @@ covers the gap from 0.2.0 to 0.3.0"`.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-5 shipped in six milestones over a single session on 2026-04-26.
+Each milestone closed with `cabal test all` green; the live demo on
+`/Users/shinzui/Keikaku/bokuno/seihou-project/seihou` (M6, captured
+under Surprises & Discoveries) shows status, migrate, and run all
+handling partial chains correctly. `nix flake check` is also green.
+
+What's now true that wasn't before:
+
+- The migration planner returns a 'MigrationPlan' carrying a
+  reachable prefix plus an optional unreachable tail. Partial
+  coverage is no longer a hard error.
+- `seihou migrate <module>` (without `--to`) applies the longest
+  reachable prefix and refreshes the manifest. With `--to TARGET`
+  the strict-target contract is preserved.
+- `seihou status` renders three pending-migration row shapes (full,
+  partial, blocked) with a copy-pasteable next command for full and
+  partial entries and a `[blocked]` advisory for blocked entries.
+- `seihou run` refuses on every divergence by default;
+  `--with-migrations` applies full and partial chains in-band and
+  refuses for blocked entries.
+- `seihou upgrade --with-migrations`'s post-upgrade hook surfaces
+  the same advisories.
+
+Test coverage shipped:
+
+- 4 new planner cases in `MigrationSpec`: partial reachable prefix
+  with declared edge, blocked (empty chain + unreachable tail),
+  master-plan partial fixture, exec-plan blocked fixture.
+- 5 new CLI cases in `MigrateSpec`: partial-apply,
+  partial-with-explicit-`--to` refused, blocked-with-no-flag,
+  blocked-with-explicit-`--to` refused, dry-run-partial.
+- 5 new CLI cases in `PendingMigrationSpec`: pendingChainFor
+  partial/blocked surfaces, formatRefusalMessage partial/blocked
+  rendering.
+- 2 new CLI cases in `StatusSpec`: partial chain row, blocked row +
+  Recommended actions tail.
+
+What stayed out of scope:
+
+- A `--to TARGET --partial` flag that would relax the strict-target
+  contract on demand. Not needed today; the current split (no
+  `--to` for "go as far as possible", `--to TARGET` for a contract)
+  matches the user mental model uncovered during the live-tree
+  iteration.
+- A planner mode that picks the "best" partial prefix when multiple
+  edges start at the same `from`. The duplicate-edge planner error
+  still rejects ambiguity at module-author time, so this never
+  arises at runtime.
+- Surfacing partial coverage from upstream tooling other than the
+  three commands EP-5 touched. `seihou outdated` still reports
+  outdated state without consulting the migration planner — the
+  same separation of concerns EP-1 maintained.
+
+Lessons captured:
+
+- The masterplan's expected live-tree fixture for "blocked"
+  (exec-plan with no migrations declared) had decayed by the time
+  EP-5 implemented; the module author had since shipped a partial
+  migration. The new behavior still demonstrates correctly on
+  partial chains, and the unit tests cover blocked fixtures
+  independently. Future masterplans should treat "live-tree
+  fixtures" as snapshot data: useful as evidence of the bug at
+  reopen time, but not a fixed contract for the implementation
+  demo.
+- Routing six new outcome variants through Migrate.hs almost
+  duplicated the classify-then-execute pipeline. Centralizing in
+  a `dispatchPlan` + `applyChain` pair (not in the original plan
+  text but added during implementation) kept the variant explosion
+  from spreading. Any future planner-shape change that adds yet
+  another outcome should reuse this same dispatch helper rather
+  than copy-pasting another `runMigrateLocal` arm.
+- The dry-run + `--with-migrations` heading needed an extra audit
+  during M5 because "would be applied" is misleading once blocked
+  entries can appear in the list. Consider preview text more
+  defensively when it summarizes a heterogeneous list of outcomes.
 
 
 ## Context and Orientation

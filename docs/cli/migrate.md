@@ -67,6 +67,35 @@ Migrations are declared on the module's `module.dhall`. See
 [module-authoring](../user/module-authoring.md#migrations) for how to
 author them, and `seihou help migrations` for the full reference.
 
+## Partial chains and blocked modules
+
+The declared migration list does not always reach the latest remote
+version exactly. `seihou migrate` distinguishes three outcomes:
+
+- **Full chain** — the declared migrations cover
+  `manifest.moduleVersion → remote_version` exactly. The chain runs to
+  completion, the manifest is bumped to `remote_version`, and the
+  command exits zero.
+- **Partial chain** — the chain reaches some intermediate version and
+  then stops because no migration starts at that version. Without
+  `--to`, `migrate` applies the longest reachable prefix, refreshes the
+  manifest's `moduleVersion` to the highest reached version, and prints
+  a `Note: no migration declared from <stuckAt>; remote is at <target>`
+  advisory. The next `seihou status` will show the same module either
+  blocked or up-to-date depending on whether the author later ships a
+  continuation migration.
+- **Blocked** — no migration starts at the manifest version, so the
+  planner has nothing to apply. Without `--to`, `migrate` prints
+  `Blocked: no migration declared from <manifest-version>; remote is at
+  <target>. The module author must ship one before this project can
+  move forward.` and exits zero (no work was done; no manifest change).
+
+Passing `--to TARGET` keeps the strict-target contract: if the
+declared chain cannot reach `TARGET` exactly (partial *or* blocked),
+the command errors with `no migration covers the gap from <X> to
+<TARGET>`. Use `--to TARGET` when you need a specific version; omit it
+when you want "as far as the declared chain can go."
+
 ## Conflict semantics
 
 For each move-file or delete-file op, the engine compares the disk
@@ -111,9 +140,11 @@ seihou migrate haskell-base --json
 
 ## Exit codes
 
-- `0` — chain applied (or dry-run completed; or already at target).
-- `1` — error (no manifest, module not applied, planner refused,
-  executor refused without `--force`).
+- `0` — chain applied (or dry-run completed; or already at target;
+  or blocked with no `--to` flag — the module author owes a
+  migration but the command has done its part).
+- `1` — error (no manifest, module not applied, planner refused with
+  `--to TARGET` it cannot reach, executor refused without `--force`).
 
 ## See also
 

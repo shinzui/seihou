@@ -47,22 +47,43 @@ local (it compares the manifest's recorded `moduleVersion` against the
 locally installed `module.dhall`'s version and asks the planner whether
 a contiguous chain exists).
 
-When a chain is found, the row's hint reads:
+The row's hint takes one of three shapes depending on what the
+planner returns:
 
-```
-    Pending migration: 0.1.0 -> 0.2.0 (6 operation(s)). Run: seihou migrate <name>
-```
+- **Full chain** — the declared migrations cover the gap exactly. The
+  hint reads:
+
+  ```
+      Pending migration: 0.1.0 -> 0.3.0 (6 operation(s)). Run: seihou migrate <name>
+  ```
+
+- **Partial chain** — the declared migrations reach an intermediate
+  version but not the latest remote version. The hint reads the
+  chain summary plus an extra `Note:` line below:
+
+  ```
+      Pending migration: 0.1.0 -> 0.2.0 (1 operation(s)). Run: seihou migrate <name>
+      Note: no migration declared from 0.2.0; remote is at 0.3.0.
+  ```
+
+  `seihou migrate <name>` will apply the prefix (0.1.0 → 0.2.0),
+  refresh the manifest's `moduleVersion` to 0.2.0, and print the same
+  advisory.
+
+- **Blocked** — no migration starts at the manifest version, so the
+  planner has nothing to apply. The hint reads:
+
+  ```
+      Blocked: no migration declared from 0.1.3; remote is at 0.3.0. The module author must ship one before this project can move forward.
+  ```
+
+  The Recommended actions tail lists `[blocked] no migration declared
+  for <name> (<from> -> <target>)` instead of `seihou migrate <name>`,
+  because running migrate would just print the same blocked message.
 
 `seihou migrate <name>` is self-contained (it fetches the source repo
 on its own — see `docs/cli/migrate.md`), so a single command resolves
-the row.
-
-If the migrations list does not reach the installed version exactly
-(for example, only `0.1.0 -> 0.2.0` is declared but the installed
-copy is at `0.3.0`), the planner returns a "gap" and the row is
-silently treated as "no pending chain". This mirrors `seihou run`'s
-pre-flight behavior. A future planner mode for longest-reachable
-prefixes would change this.
+full and partial chains.
 
 ### Update checking
 
