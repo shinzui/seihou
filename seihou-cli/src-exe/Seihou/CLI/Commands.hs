@@ -113,7 +113,17 @@ data RunOpts = RunOpts
     -- 'seihou run' to refuse with an actionable message and a
     -- non-zero exit, so a user never silently writes new templates
     -- into paths a migration would have moved.
-    runWithMigrations :: Bool
+    runWithMigrations :: Bool,
+    -- | When 'True', acknowledge blocked modules by bumping the
+    -- manifest's recorded version to the installed copy's declared
+    -- version, with no migration ops applied. Equivalent to running
+    -- 'seihou migrate <module> --bump-only' for each blocked module
+    -- before the run. Mutually compatible with 'runWithMigrations':
+    -- a single invocation of @seihou run --bump-blocked
+    -- --with-migrations@ recovers a project that has both blocked
+    -- modules (need manifest bump) and runnable chains (need ops
+    -- applied).
+    runBumpBlocked :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -651,6 +661,10 @@ runParser =
       <*> switch
         ( long "with-migrations"
             <> help "Apply any pending module migrations before the run plan; without this, 'seihou run' refuses when migrations are pending"
+        )
+      <*> switch
+        ( long "bump-blocked"
+            <> help "Acknowledge blocked modules by bumping the manifest's recorded version to the installed copy's declared version, with no migration ops applied. Equivalent to 'seihou migrate <module> --bump-only' for each blocked module before the run."
         )
 
 varsParser :: Parser Command

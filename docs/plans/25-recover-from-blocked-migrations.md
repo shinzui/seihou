@@ -100,9 +100,18 @@ What stays out of scope:
       UpgradeSpec were skipped because their blocked rendering is
       embedded in IO-bound handlers in `src-exe/`; M2 lockstep edit
       + manual demo + grep verification cover the regression risk.
-- [ ] M2: Update the four blocked-message sites to mention
+- [x] M2: Update the four blocked-message sites to mention
       `--bump-only` and to drop the "module author must ship one"
       finality. Flip the M1 pinning tests.
+      *Done 2026-04-27.* All five sites edited (Migrate, StatusRender,
+      PendingMigrations, Run, Upgrade — five sites, not four, since
+      Upgrade has both `printAdvisory` and `runOnePostUpgradeMigration`
+      blocked arms). `isBlockedMigration` shipped early because
+      `formatRefusalMessage` needs it to partition entries by shape;
+      M3 uses the same helper for run-side dispatch. The
+      `formatRefusalMessage` trailer is shape-sensitive: blocked-only
+      gets `--bump-only`/`--bump-blocked`, runnable-only keeps
+      `--with-migrations`, mixed gets both joined.
 - [ ] M3: Add `seihou run --bump-blocked` flag to `RunOpts`,
       `Commands.hs`, and `handleBlocking`. Pre-applies `--bump-only`
       semantics to every blocked entry in `pendings` before the run

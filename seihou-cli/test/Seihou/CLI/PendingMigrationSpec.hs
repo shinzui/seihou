@@ -11,6 +11,7 @@ import Seihou.CLI.PendingMigrations
   ( detectPendingMigrations,
     formatRefusalMessage,
     isBenignUpgrade,
+    isBlockedMigration,
   )
 import Seihou.Core.Migration
   ( Migration (..),
@@ -477,6 +478,52 @@ spec = do
       -- but the predicate must still say "not benign" because work
       -- needs doing.
       isBenignUpgrade (mkPlan stepped False) `shouldBe` False
+
+  describe "isBlockedMigration" $ do
+    -- EP-7 / M3: the run-side --bump-blocked dispatcher uses this
+    -- predicate to partition pending entries into blocked (need a
+    -- manifest bump, no ops) vs runnable (apply via runMigrate or
+    -- --with-migrations). Together with isBenignUpgrade it forms an
+    -- exhaustive four-shape classifier (full / partial / blocked /
+    -- benign).
+    let mkPlan ::
+          [Migration] ->
+          Bool ->
+          Maybe (Seihou.Core.Version.Version, Seihou.Core.Version.Version) ->
+          MigrationPlan
+        mkPlan steps declared unreachable =
+          MigrationPlan
+            { planChain =
+                MigrationChain
+                  { migrationModule = "demo",
+                    chainFrom = parseV "0.1.3",
+                    chainTo = parseV "0.1.3",
+                    chainSteps = steps
+                  },
+              planUnreachable = unreachable,
+              planMigrationsDeclared = declared
+            }
+        gap = Just (parseV "0.1.3", parseV "0.3.0")
+
+    it "is True for blocked: empty chain + migrations declared + unreachable tail" $
+      isBlockedMigration (mkPlan [] True gap) `shouldBe` True
+
+    it "is False for benign: empty chain + migrations not declared" $
+      isBlockedMigration (mkPlan [] False gap) `shouldBe` False
+
+    it "is False for partial: non-empty chain + migrations declared + unreachable tail" $
+      let stepped = [Migration "0.1.3" "0.2.0" []]
+       in isBlockedMigration (mkPlan stepped True gap) `shouldBe` False
+
+    it "is False for full: non-empty chain + migrations declared + no unreachable" $
+      let stepped = [Migration "0.1.3" "0.2.0" []]
+       in isBlockedMigration (mkPlan stepped True Nothing) `shouldBe` False
+
+    it "is False when there is no unreachable tail (defensive)" $
+      -- An empty chain with no unreachable tail is the no-op case;
+      -- isBlockedMigration must not classify it as blocked because
+      -- there is nothing to acknowledge.
+      isBlockedMigration (mkPlan [] True Nothing) `shouldBe` False
 
 parseV :: Text -> Seihou.Core.Version.Version
 parseV t = case Seihou.Core.Version.parseVersion t of

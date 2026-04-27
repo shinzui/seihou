@@ -3,7 +3,7 @@ module Seihou.CLI.Run
   )
 where
 
-import Control.Monad (foldM, when)
+import Control.Monad (foldM, unless, when)
 import Data.List (partition)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
@@ -21,7 +21,12 @@ import Seihou.CLI.Migrate
     MigrateResult (..),
     runMigrate,
   )
-import Seihou.CLI.PendingMigrations (detectPendingMigrations, formatRefusalMessage, isBenignUpgrade)
+import Seihou.CLI.PendingMigrations
+  ( detectPendingMigrations,
+    formatRefusalMessage,
+    isBenignUpgrade,
+    isBlockedMigration,
+  )
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
@@ -511,6 +516,28 @@ handleBlocking ::
   IO Manifest
 handleBlocking _ _ _ manifest [] = pure manifest
 handleBlocking level runOpts manifestPath manifest pendings
+  | runOpts.runBumpBlocked,
+    runOpts.runDryRun = do
+      let (toBump, others) = partition (isBlockedMigration . snd) pendings
+      unless (null toBump) $ do
+        TIO.putStrLn "Blocked modules that would be bumped (--bump-blocked + --dry-run):"
+        mapM_ (TIO.putStrLn . renderBumpDryRun) toBump
+        TIO.putStrLn ""
+      handleBlocking level (runOpts {runBumpBlocked = False}) manifestPath manifest others
+  | runOpts.runBumpBlocked = do
+      let (toBump, others) = partition (isBlockedMigration . snd) pendings
+      manifest' <-
+        if null toBump
+          then pure manifest
+          else do
+            logIO level (logInfo "Acknowledging blocked modules (--bump-blocked)...")
+            m <- foldM (bumpOneBlocked level) manifest toBump
+            runEff $
+              runFilesystem $
+                runManifestStore manifestPath $
+                  writeManifest m
+            pure m
+      handleBlocking level (runOpts {runBumpBlocked = False}) manifestPath manifest' others
   | not runOpts.runWithMigrations = do
       TIO.putStr (formatRefusalMessage pendings)
       exitFailure
@@ -678,6 +705,82 @@ applyOneMigration level manifest (modName, plan) =
                     <> ": "
                     <> renderMigrateError err
               exitFailure
+
+-- | Acknowledge a single blocked entry by writing the installed
+-- copy's declared version into the manifest with no migration ops
+-- applied. The work is delegated to 'runMigrate' with
+-- @migrateBumpOnly = True@; this is the same code path
+-- @seihou migrate <module> --bump-only@ uses.
+bumpOneBlocked ::
+  LogLevel ->
+  Manifest ->
+  (ModuleName, MigrationPlan) ->
+  IO Manifest
+bumpOneBlocked level manifest (modName, plan) =
+  case findAppliedByName manifest modName of
+    Nothing -> pure manifest
+    Just am -> do
+      let opts =
+            MigrateOpts
+              { migrateModule = modName,
+                migrateTo = Nothing,
+                migrateDryRun = False,
+                migrateForce = False,
+                migrateJson = False,
+                migrateVerbose = False,
+                migrateNoFetch = True,
+                migrateBumpOnly = True
+              }
+          (fromV, toV) = bumpRange plan
+      result <- runMigrate opts manifest am.source
+      case result of
+        Right (MigrateApplied _ manifest') -> do
+          TIO.putStrLn $
+            "  Bumping "
+              <> modName.unModuleName
+              <> " "
+              <> fromV
+              <> " -> "
+              <> toV
+              <> " (no migration declared; user-acknowledged)."
+          pure manifest'
+        Right other -> do
+          logIO level $
+            logError $
+              "internal error: --bump-only for "
+                <> modName.unModuleName
+                <> " returned unexpected result: "
+                <> T.pack (show other)
+          exitFailure
+        Left err -> do
+          logIO level $
+            logError $
+              "Failed to bump "
+                <> modName.unModuleName
+                <> ": "
+                <> renderMigrateError err
+          exitFailure
+
+-- | Pretty-print a single blocked entry for the dry-run summary.
+renderBumpDryRun :: (ModuleName, MigrationPlan) -> Text
+renderBumpDryRun (modName, plan) =
+  let (fromV, toV) = bumpRange plan
+   in "  "
+        <> modName.unModuleName
+        <> ": would bump "
+        <> fromV
+        <> " -> "
+        <> toV
+        <> " (no migration declared; user-acknowledged)."
+
+-- | Extract the (from, to) version pair to display for a blocked
+-- bump. Prefers the 'planUnreachable' span (which is what
+-- @--bump-only@ actually moves the manifest across) and falls back
+-- to the chain's bookends as a defensive default.
+bumpRange :: MigrationPlan -> (Text, Text)
+bumpRange plan = case plan.planUnreachable of
+  Just (f, t) -> (renderVersion f, renderVersion t)
+  Nothing -> (renderVersion plan.planChain.chainFrom, renderVersion plan.planChain.chainTo)
 
 renderMigrateError :: MigrateError -> Text
 renderMigrateError err = case err of
