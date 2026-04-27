@@ -23,6 +23,7 @@ seihou migrate <MODULE> [OPTIONS]
 | `--force` | Proceed even when files have been edited since they were generated. |
 | `--json` | Emit the plan as JSON instead of human-readable text. |
 | `--no-fetch` | Skip the remote fetch; plan against the locally installed copy only. Useful for offline / hermetic workflows. |
+| `--bump-only` | Refresh the manifest's recorded `moduleVersion` to match the installed copy's declared version without running any migration ops. Mutually exclusive with `--to`. |
 | `-v`, `--verbose` | Print extra detail about each operation. |
 
 ## Default behavior: fetch first
@@ -70,7 +71,7 @@ author them, and `seihou help migrations` for the full reference.
 ## Partial chains and blocked modules
 
 The declared migration list does not always reach the latest remote
-version exactly. `seihou migrate` distinguishes three outcomes:
+version exactly. `seihou migrate` distinguishes four outcomes:
 
 - **Full chain** — the declared migrations cover
   `manifest.moduleVersion → remote_version` exactly. The chain runs to
@@ -84,17 +85,56 @@ version exactly. `seihou migrate` distinguishes three outcomes:
   advisory. The next `seihou status` will show the same module either
   blocked or up-to-date depending on whether the author later ships a
   continuation migration.
-- **Blocked** — no migration starts at the manifest version, so the
-  planner has nothing to apply. Without `--to`, `migrate` prints
+- **Blocked** — the module declared at least one migration but no
+  edge starts at the manifest's recorded version, so the planner has
+  nothing to apply. Without `--to`, `migrate` prints
   `Blocked: no migration declared from <manifest-version>; remote is at
   <target>. The module author must ship one before this project can
   move forward.` and exits zero (no work was done; no manifest change).
+- **No migrations declared** — the module's `migrations` field is the
+  empty list (`migrations = []`) and the manifest version trails the
+  installed copy's version. This is **benign**: there is no
+  destructive op to apply and no missing-migration hazard, just a
+  template-content refresh. `migrate` prints `Note: <name> has no
+  migrations declared (X -> Y). This is a benign version bump; run
+  'seihou upgrade <name> && seihou run' …` and exits zero. The
+  manifest catches up naturally during the next `seihou run` because
+  the run flow records `moduleVersion = installed.version` for every
+  applied module.
 
 Passing `--to TARGET` keeps the strict-target contract: if the
-declared chain cannot reach `TARGET` exactly (partial *or* blocked),
-the command errors with `no migration covers the gap from <X> to
-<TARGET>`. Use `--to TARGET` when you need a specific version; omit it
-when you want "as far as the declared chain can go."
+declared chain cannot reach `TARGET` exactly (partial *or* blocked
+*or* benign), the command errors with `no migration covers the gap
+from <X> to <TARGET>`. Use `--to TARGET` when you need a specific
+version; omit it when you want "as far as the declared chain can go."
+
+### `--bump-only` (manual escape hatch)
+
+`seihou migrate <module> --bump-only` skips the planner entirely. It
+fetches the installed copy's source repo (unless `--no-fetch` is
+also set), reads the remote's `module.dhall` for its declared
+version, and writes that as the manifest's recorded `moduleVersion`.
+No migration ops are executed; no files are moved or deleted. The
+output line is `✓ Bumped <name> X → Y (no migration ops).`
+
+Use cases:
+
+- A project pinned at an older version of a module that has since
+  reorganized its template paths but cannot reach those new paths via
+  declared migrations. The user manually verifies that the
+  unreachable tail is safe for their project (no template the
+  project actually uses changed paths) and bumps the manifest in one
+  step.
+- Cleaning up after a `--with-migrations` partial apply where the
+  user has manually finished the remaining work outside of
+  `seihou migrate`.
+
+`--bump-only` is **mutually exclusive** with `--to TARGET`:
+`--bump-only` always targets the installed copy's declared version,
+while `--to` is a contract for a specific version. Passing both
+errors with `--bump-only and --to are mutually exclusive`. Use
+`--no-fetch --bump-only` together to skip both planning and the
+remote fetch — useful in offline workflows.
 
 ## Conflict semantics
 
@@ -136,6 +176,11 @@ seihou migrate haskell-base --no-fetch
 # Machine-readable plan for tooling (suppresses the fetch chatter on
 # stdout so the JSON stays parseable)
 seihou migrate haskell-base --json
+
+# Catch the manifest's recorded version up to the installed copy
+# without running any migration ops (manual escape hatch for the
+# partial-chain or unreachable-tail case)
+seihou migrate haskell-base --bump-only
 ```
 
 ## Exit codes

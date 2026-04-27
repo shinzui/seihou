@@ -143,20 +143,22 @@ the empty-migrations case softens.
       Surprise: GHC HasField inference for chained dot syntax over
       ExecutedMigrationPlan was ambiguous — bind the chain via a
       type-annotated let to disambiguate.
-- [ ] Update `docs/cli/migrate.md`, `docs/cli/status.md`,
-      `docs/cli/run.md`, and `docs/user/CHANGELOG.md` to describe the
-      new behavior.
-- [ ] End-to-end demonstration: create a synthetic empty-migrations
-      fixture (a temp project with a manifest pointing at an
-      `installed/example/module.dhall` declaring `migrations = []` at
-      `0.3.0` and a manifest entry at `0.2.0`). Run the four commands
-      shown in Purpose / Big Picture and capture the actual output in
-      Surprises & Discoveries. Run `seihou migrate <module>
-      --bump-only` against the live `seihou-project` tree to verify
-      the partial-chain escape hatch works for `master-plan` and
-      `exec-plan`.
-- [ ] Run `cabal test all` and `nix flake check` and confirm both are
-      green.
+- [x] M7 (2026-04-26): Updated docs/cli/migrate.md (fourth bullet
+      under Partial chains and blocked modules; new `--bump-only`
+      section; example sh transcript), docs/cli/status.md (fourth
+      row shape under Pending migrations + updated example output),
+      docs/cli/run.md (fourth shape; benign no-refusal language),
+      docs/user/CHANGELOG.md (new dated entry summarizing the
+      user-visible behavior change and the internal type changes).
+- [x] M7 (2026-04-26): End-to-end demos captured in Surprises &
+      Discoveries. Synthetic fixture at `/tmp/seihou-benign-demo/`
+      proves the three flows (status soft row, migrate softened
+      note, run dry-run no longer refusing); live-tree
+      `--bump-only` against master-plan and exec-plan caught both
+      manifest entries up to 0.3.0 in one step each, restored after
+      via `git checkout`.
+- [x] M7 (2026-04-26): `cabal test all` is green (796 + 179 = 975
+      tests). `nix flake check` pending below.
 
 
 ## Surprises & Discoveries
@@ -169,6 +171,59 @@ the empty-migrations case softens.
   constraint. Workaround: bind the chain to a type-annotated let
   (`let chain :: MigrationChain = execPlan.planChain in null
   chain.chainSteps`). Logged in M6 milestone notes.
+
+- M7 demo (synthetic empty-migrations fixture at
+  `/tmp/seihou-benign-demo/`):
+
+  ```
+  $ seihou status
+  Seihou Status:
+
+  Applied modules:
+    example  v0.2.0    (applied 2026-04-15)
+      Pending: 0.2.0 -> 0.3.0 (no migrations declared). Run: seihou upgrade example && seihou run
+
+  Tracked files: 0
+    (none)
+
+  Variables: 0 resolved
+
+  Recommended actions:
+    seihou upgrade example && seihou run
+
+  $ seihou migrate example --no-fetch
+  Note: example has no migrations declared (0.2.0 -> 0.3.0). This is
+  a benign version bump; run 'seihou upgrade example && seihou run'
+  to refresh templates and bring the manifest up to date.
+
+  $ seihou run example --dry-run
+  Generation Plan (example):
+
+    Operations:
+    No operations to perform.
+
+    0 files to write, 0 conflicts
+  ```
+
+  All three outcomes match the Purpose / Big Picture target. The
+  `seihou run --dry-run` output is the new behavior (previously this
+  refused with the EP-5 "Pending migrations detected:" listing).
+
+- M7 live-tree `--bump-only` demo against `seihou-project/.seihou/manifest.json`:
+
+  ```
+  $ seihou migrate master-plan --bump-only --no-fetch
+  ✓ Bumped master-plan 0.1.0 → 0.3.0 (no migration ops).
+
+  $ seihou migrate exec-plan --bump-only --no-fetch
+  ✓ Bumped exec-plan 0.1.3 → 0.3.0 (no migration ops).
+  ```
+
+  Both bumps wrote the new versions into the manifest in one step.
+  `git diff .seihou/manifest.json` confirmed only the two version
+  fields changed (no other manifest mutation), and the manifest was
+  reverted via `git checkout .seihou/manifest.json` after the demo
+  per the plan's post-demo cleanup note.
 
 Carry-overs from the parent EP-5 plan
 (`docs/plans/23-bulletproof-partial-migration-chains.md`) that this
@@ -257,7 +312,48 @@ plan refines:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The change shipped in the seven-milestone shape the plan called for.
+Behavior matches the Purpose / Big Picture targets:
+
+- An empty-migrations module with a version gap renders `Pending: …
+  (no migrations declared). Run: seihou upgrade <name> && seihou
+  run` rather than the EP-5 blocked language. The Recommended
+  actions tail names the actual remediation.
+- `seihou migrate <name>` (no `--to`) for the same shape exits zero
+  with a softened "Note: …" message. With `--to TARGET`, the
+  strict-target contract still rejects.
+- `seihou run` no longer refuses for the benign case; the run flow's
+  `updateAllModules` brings the manifest's recorded version up to
+  the installed copy automatically.
+- `seihou migrate <module> --bump-only` is a clean manual escape
+  hatch for the partial-chain case, mutually exclusive with `--to`.
+
+Test coverage: 796 + 179 = 975 tests, +13 over the EP-5 close. The
+M1 pinning tests that locked down "today's blocked behavior" are not
+deleted; they are flipped at later milestones to assert the new
+behavior, so the regression cannot silently regrow.
+
+`nix flake check`: green (cli-module-placement, pre-commit-check,
+formatting). The new helper code (`isBenignUpgrade`,
+`AdviceBenignUpgrade`, `MigrateBenignUpgrade`, `runBumpOnly` and
+friends) lives in `seihou-cli/src/` per the library-first
+convention; only the option parsing and dispatch in `Run.hs` /
+`Upgrade.hs` / `Commands.hs` stays executable-side, and that placement
+matches the EP-5 baseline.
+
+Lessons captured for the parent masterplan:
+
+- The four-shape dispatch (full / partial / blocked /
+  no-migrations-declared) is now a single bool's worth of extra
+  data on the planner contract. Future migration concerns that need
+  to distinguish "shape of the gap" should similarly live on
+  `MigrationPlan` rather than re-deriving from the `Module` at
+  every consumer site.
+- Synthetic fixtures (`/tmp/seihou-benign-demo/` rather than the
+  live tree) are sufficient verification for the no-migrations
+  case, since there is no live-tree fixture to decay. The two live
+  modules (`master-plan`, `exec-plan`) only verify the
+  `--bump-only` partial-chain escape hatch.
 
 
 ## Context and Orientation

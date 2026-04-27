@@ -3,12 +3,92 @@
 ## Last Reviewed Commit
 
 ```
-HEAD  Run parameterized dependencies once per distinct parent binding (ExecPlan 10)
+HEAD  Distinguish benign version bumps from missing migrations (ExecPlan 24)
 ```
 
 ---
 
 ## Changelog
+
+### 2026-04-26 (Distinguish benign version bumps from missing migrations)
+
+**Reviewed commits:** EP-6 of MasterPlan
+`docs/masterplans/1-migrations-dx.md` — splitting today's
+"blocked" outcome into two cases so a module that bumps its declared
+`version` without shipping any migrations is no longer treated as
+broken.
+
+**Behavior change (user-facing):**
+- `seihou status` softens the row for modules whose `migrations`
+  field is the empty list and whose manifest version trails the
+  installed copy. Previously this rendered as `Blocked: …`; now it
+  reads:
+
+  ```
+      Pending: 0.2.0 -> 0.3.0 (no migrations declared). Run: seihou upgrade <name> && seihou run
+  ```
+
+  The Recommended actions tail lists `seihou upgrade <name> && seihou
+  run` (the actual remediation) instead of `[blocked]`. The
+  declared-but-unreachable case is unchanged: it still renders as
+  `Blocked: …` and `[blocked]` because the author owes a migration.
+- `seihou migrate <module>` (no `--to`) for an empty-migrations module
+  with a version gap exits zero with a softened note:
+
+  ```
+  Note: <name> has no migrations declared (X -> Y). This is a benign
+  version bump; run 'seihou upgrade <name> && seihou run' to refresh
+  templates and bring the manifest up to date.
+  ```
+
+  No manifest change happens at this step; the next `seihou run`
+  brings the manifest up to date. With `--to TARGET`, the
+  strict-target contract still rejects this case as
+  `MigrationGap`. The declared-but-unreachable case is unchanged: it
+  still surfaces as `Blocked: …`.
+- `seihou run` no longer refuses for the empty-migrations + version
+  gap case. The benign entry is reported as a quiet info-level note
+  (`Note: <name> has no migrations declared …; will refresh templates
+  and bump manifest during this run.`) and the run proceeds normally;
+  the manifest's recorded `moduleVersion` is updated to match the
+  installed copy by the run flow's existing `updateAllModules`.
+  `--with-migrations` treats benign entries as a no-op and continues.
+  Declared-but-unreachable entries still trigger the `Blocked: …`
+  refusal.
+- New flag `seihou migrate <module> --bump-only`: refreshes the
+  manifest's recorded `moduleVersion` to match the installed copy's
+  declared version without running any migration ops. Mutually
+  exclusive with `--to TARGET`. Use case: a project pinned at an
+  older version of a module whose unreachable tail (from the
+  `Bulletproof partial migration chains` work) the user has manually
+  verified to be safe; `--bump-only` updates the bookkeeping without
+  staging any chain. Output: `✓ Bumped <name> X → Y (no migration ops).`
+- `seihou upgrade --with-migrations`'s post-upgrade advisory softens
+  for the benign case: rather than `is blocked: no migration declared
+  …`, it reads `<name> has no migrations declared (X -> Y); run
+  'seihou run' to refresh templates.`
+
+**Internal:**
+- `MigrationPlan` gains a `planMigrationsDeclared :: Bool` field that
+  records whether the input migrations list was non-empty. Consumers
+  use it to dispatch between `MigrateBlocked` (declared but
+  unreachable) and the new `MigrateBenignUpgrade` (no migrations
+  declared).
+- New `MigrateResult` variant `MigrateBenignUpgrade Version Version`
+  for the empty-migrations case. Renderer prints the softened note;
+  JSON path emits `{"benign": true, "from": …, "to": …}`.
+- New `MigrateError` variant `MigrateConflictingFlags Text` (raised by
+  `--bump-only --to`).
+- New `MigrateOpts` field `migrateBumpOnly :: Bool`. When set,
+  `runMigrate` short-circuits planning: fetches (unless `--no-fetch`),
+  evaluates the installed copy's `module.dhall`, and writes the
+  declared version into the manifest with an empty
+  `ExecutedMigrationPlan`.
+- New `Seihou.CLI.PendingMigrations.isBenignUpgrade :: MigrationPlan
+  -> Bool`. The run pre-flight uses it to partition pending entries
+  into benign (skip the refusal/dispatch entirely) and blocking.
+- New `Seihou.CLI.StatusRender.AdviceBenignUpgrade Text Version
+  Version` variant for the softened status row.
 
 ### 2026-04-26 (Bulletproof partial migration chains)
 

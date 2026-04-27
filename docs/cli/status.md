@@ -47,7 +47,7 @@ local (it compares the manifest's recorded `moduleVersion` against the
 locally installed `module.dhall`'s version and asks the planner whether
 a contiguous chain exists).
 
-The row's hint takes one of three shapes depending on what the
+The row's hint takes one of four shapes depending on what the
 planner returns:
 
 - **Full chain** — the declared migrations cover the gap exactly. The
@@ -70,8 +70,9 @@ planner returns:
   refresh the manifest's `moduleVersion` to 0.2.0, and print the same
   advisory.
 
-- **Blocked** — no migration starts at the manifest version, so the
-  planner has nothing to apply. The hint reads:
+- **Blocked** — the module declared at least one migration but no
+  edge starts at the manifest version, so the planner has nothing to
+  apply. The hint reads:
 
   ```
       Blocked: no migration declared from 0.1.3; remote is at 0.3.0. The module author must ship one before this project can move forward.
@@ -80,6 +81,19 @@ planner returns:
   The Recommended actions tail lists `[blocked] no migration declared
   for <name> (<from> -> <target>)` instead of `seihou migrate <name>`,
   because running migrate would just print the same blocked message.
+
+- **No migrations declared** — the module's `migrations` field is the
+  empty list and the manifest version trails the installed copy's
+  version. This is **benign**: there is nothing destructive to apply,
+  and `seihou run` will catch the manifest up automatically. The
+  hint softens to:
+
+  ```
+      Pending: 0.2.0 -> 0.3.0 (no migrations declared). Run: seihou upgrade <name> && seihou run
+  ```
+
+  The Recommended actions tail lists `seihou upgrade <name> && seihou
+  run` rather than `[blocked]` — this row is not blocking anything.
 
 `seihou migrate <name>` is self-contained (it fetches the source repo
 on its own — see `docs/cli/migrate.md`), so a single command resolves
@@ -127,17 +141,21 @@ Seihou Status:
 Applied modules:
   master-plan  v0.1.0    (applied 2026-04-15)  outdated: 0.3.0 available
     Pending migration: 0.1.0 -> 0.2.0 (6 operation(s)). Run: seihou migrate master-plan
+    Note: no migration declared from 0.2.0; remote is at 0.3.0.
   exec-plan  v0.1.3    (applied 2026-04-15)  outdated: 0.3.0 available
-    Run: seihou upgrade exec-plan
+    Blocked: no migration declared from 0.1.3; remote is at 0.3.0. The module author must ship one before this project can move forward.
+  example  v0.2.0    (applied 2026-04-15)  outdated: 0.3.0 available
+    Pending: 0.2.0 -> 0.3.0 (no migrations declared). Run: seihou upgrade example && seihou run
 
 Tracked files: 5
   ...
 
 Variables: 4 resolved
 
-7 module(s) checked, 2 outdated.
+7 module(s) checked, 3 outdated.
 
 Recommended actions:
   seihou migrate master-plan
-  seihou upgrade exec-plan
+  [blocked] no migration declared for exec-plan (0.1.3 → 0.3.0)
+  seihou upgrade example && seihou run
 ```

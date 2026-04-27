@@ -63,18 +63,37 @@ Before computing the diff, `seihou run` checks every module in the current
 composition (the primary module plus the `-m/--module` additionals plus
 any transitive dependencies) for a *pending migration plan* — that is,
 a manifest-recorded version that does not match the locally installed
-copy. The plan can take three shapes:
+copy. The plan can take four shapes:
 
 - **Full chain** — declared migrations cover the gap exactly.
 - **Partial chain** — declared migrations reach an intermediate version
   but not the latest installed copy.
-- **Blocked** — no migration starts at the manifest version (the
-  module author owes a continuation migration).
+- **Blocked** — the module declared at least one migration but no edge
+  starts at the manifest version (the module author owes a
+  continuation migration).
+- **No migrations declared** — the module's `migrations` field is the
+  empty list and the manifest version trails the installed copy. This
+  is **benign**: there is no destructive op to apply and no
+  missing-migration hazard, just a template-content refresh.
 
-`seihou run` refuses on every divergence — full, partial, or blocked
-— because all three can lead to writing new template content into
+`seihou run` refuses on full, partial, and blocked divergences,
+because all three can lead to writing new template content into
 paths a migration would have moved (or should have moved, if the
-author had shipped one). The refusal listing distinguishes the three
+author had shipped one).
+
+`seihou run` does **not** refuse for the benign no-migrations-declared
+case. There is no destructive op to apply, so writing the new
+template into the existing layout is safe; the run flow's
+`updateAllModules` records `moduleVersion = installed.version`
+during the run, which catches the manifest up automatically. The
+benign entry is reported as a quiet info-level note and the run
+proceeds normally:
+
+```
+  Note: example has no migrations declared (0.2.0 -> 0.3.0); will refresh templates and bump manifest during this run.
+```
+
+The refusal listing for the blocking cases distinguishes their
 shapes:
 
 ```
@@ -95,6 +114,9 @@ Run 'seihou migrate <module>' for each, or pass --with-migrations to apply durin
   default refusal would have shown. There is no safe automatic upgrade
   path — the module author has to ship the missing migration before
   `seihou run` can resume.
+- **No migrations declared**: a no-op in the migration phase
+  (nothing to apply); the run continues with the same flow as the
+  default-mode benign case.
 
 `seihou run --with-migrations` calls the same code path as `seihou
 migrate <module> --no-fetch` for each pending module (the local copy
