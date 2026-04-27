@@ -34,6 +34,7 @@ spec = do
       case r of
         Right (Just plan) -> do
           plan.planUnreachable `shouldBe` Nothing
+          plan.planMigrationsDeclared `shouldBe` True
           plan.planChain.migrationModule `shouldBe` "demo"
           plan.planChain.chainFrom `shouldBe` mkV "1.0.0"
           plan.planChain.chainTo `shouldBe` mkV "2.0.0"
@@ -47,6 +48,7 @@ spec = do
       case r of
         Right (Just plan) -> do
           plan.planUnreachable `shouldBe` Nothing
+          plan.planMigrationsDeclared `shouldBe` True
           plan.planChain.chainSteps `shouldBe` [m1, m2]
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
@@ -64,6 +66,7 @@ spec = do
           plan.planChain.chainTo `shouldBe` mkV "1.5.0"
           plan.planChain.chainSteps `shouldBe` [m1]
           plan.planUnreachable `shouldBe` Just (mkV "1.5.0", mkV "2.0.0")
+          plan.planMigrationsDeclared `shouldBe` True
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     -- Live-tree master-plan failure mode (manifest=0.1.0, target=0.3.0,
@@ -78,12 +81,14 @@ spec = do
           plan.planChain.chainFrom `shouldBe` mkV "0.1.0"
           plan.planChain.chainTo `shouldBe` mkV "0.2.0"
           plan.planUnreachable `shouldBe` Just (mkV "0.2.0", mkV "0.3.0")
+          plan.planMigrationsDeclared `shouldBe` True
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     -- Live-tree exec-plan failure mode (manifest=0.1.3, target=0.3.0, no
     -- migrations declared). Was Left (MigrationGap 0.1.3 0.3.0) before
     -- EP-5; now returned as a blocked plan: empty chain + unreachable
-    -- tail covering the full span.
+    -- tail covering the full span. With M2 the empty list is also
+    -- reflected in planMigrationsDeclared = False.
     it "returns a blocked plan (empty chain + unreachable tail) when no edge starts at installed" $ do
       let r = planMigrationChain "demo" [] (mkV "0.1.3") (mkV "0.3.0")
       case r of
@@ -92,15 +97,16 @@ spec = do
           plan.planChain.chainFrom `shouldBe` mkV "0.1.3"
           plan.planChain.chainTo `shouldBe` mkV "0.1.3"
           plan.planUnreachable `shouldBe` Just (mkV "0.1.3", mkV "0.3.0")
+          plan.planMigrationsDeclared `shouldBe` False
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
-    -- M1 pin: today the planner output cannot distinguish
-    -- "migrations = []" from "migrations = [someEdge]" where
-    -- someEdge does not start at the installed version. Both produce
-    -- the same MigrationPlan shape (empty chain + unreachable tail
-    -- spanning the full gap). After the next milestone this changes:
-    -- planMigrationsDeclared lets consumers tell the two cases apart.
-    it "today returns the same shape for migrations=[] and migrations=[someEdge-that-doesnt-reach]" $ do
+    -- M1 pin, flipped in M2: planMigrationsDeclared now distinguishes
+    -- the two cases that EP-5 collapsed. The empty list yields
+    -- planMigrationsDeclared = False (benign version gap); the
+    -- orphan-edge list yields True (declared but unreachable). The
+    -- chain shape itself remains identical, which is what consumers
+    -- (status / migrate / run) layer their dispatch on top of.
+    it "distinguishes migrations=[] from migrations=[someEdge-that-doesnt-reach] via planMigrationsDeclared" $ do
       let rEmpty =
             planMigrationChain "demo" [] (mkV "0.2.0") (mkV "0.3.0")
           unreachableEdge = Migration "0.5.0" "0.6.0" []
@@ -114,6 +120,8 @@ spec = do
           pEmpty.planChain.chainTo `shouldBe` pOrphan.planChain.chainTo
           pEmpty.planUnreachable `shouldBe` pOrphan.planUnreachable
           pEmpty.planUnreachable `shouldBe` Just (mkV "0.2.0", mkV "0.3.0")
+          pEmpty.planMigrationsDeclared `shouldBe` False
+          pOrphan.planMigrationsDeclared `shouldBe` True
         other ->
           expectationFailure
             ("Expected two Right (Just …), got: " <> show other)
@@ -145,6 +153,7 @@ spec = do
         Right (Just plan) -> do
           plan.planUnreachable `shouldBe` Nothing
           plan.planChain.chainSteps `shouldBe` [live]
+          plan.planMigrationsDeclared `shouldBe` True
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     it "treats version equality with trailing zeros consistently" $ do

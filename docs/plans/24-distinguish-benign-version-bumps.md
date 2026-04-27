@@ -99,10 +99,11 @@ the empty-migrations case softens.
       indistinguishability of empty-migrations + version-gap from
       `[orphanEdge]` + version-gap. All 966 tests green on HEAD before
       any code changes (was 962; +4 pins).
-- [ ] Extend `MigrationPlan` in `seihou-core/src/Seihou/Core/Migration.hs`
-      with a new `planMigrationsDeclared :: Bool` field that records
-      whether the input list of migrations was non-empty. Update the
-      planner and existing planner tests.
+- [x] M2 (2026-04-26): Extend MigrationPlan with planMigrationsDeclared
+      field. Planner sets it from `not (null migrations)`. Updated
+      Haddock and asserted the field on every existing planner test.
+      Flipped the M1 core pin to assert the new field distinguishes
+      []-from-orphan-edge. cabal test seihou-core green (796 tests).
 - [ ] Add a new outcome `MigrateBenignUpgrade Version Version` to
       `MigrateResult` in `seihou-cli/src/Seihou/CLI/Migrate.hs`. Update
       `dispatchPlan` to route the empty-migrations + version-gap case

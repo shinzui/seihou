@@ -83,14 +83,26 @@ data MigrationChain = MigrationChain
 -- — either because no edge continues from @stuckAt@ or because the only
 -- continuing edge would overshoot @target@.
 --
--- Consumers distinguish three shapes:
+-- 'planMigrationsDeclared' is 'True' when the input migrations list was
+-- non-empty and 'False' when the module declared @migrations = []@.
+-- Consumers use this to distinguish a benign version bump (no migrations
+-- declared, version field changed) from a blocked migration (migrations
+-- declared but none reach the installed version).
+--
+-- Consumers distinguish four shapes:
 --
 --   * Full chain: @chainSteps@ non-empty and @planUnreachable == Nothing@.
 --   * Partial chain: @chainSteps@ non-empty and @planUnreachable@ is 'Just'.
---   * Blocked: @chainSteps == []@ and @planUnreachable@ is 'Just'.
+--   * Blocked: @chainSteps == []@, @planUnreachable@ is 'Just', and
+--     @planMigrationsDeclared == True@ (author shipped migrations but
+--     none reach the manifest version).
+--   * Benign version gap: @chainSteps == []@, @planUnreachable@ is
+--     'Just', and @planMigrationsDeclared == False@ (author declared no
+--     migrations; the version bump is just template content).
 data MigrationPlan = MigrationPlan
   { planChain :: MigrationChain,
-    planUnreachable :: Maybe (Version, Version)
+    planUnreachable :: Maybe (Version, Version),
+    planMigrationsDeclared :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -173,7 +185,8 @@ planMigrationChain modName migrations installed target
         ( Just
             MigrationPlan
               { planChain = chain,
-                planUnreachable = mTail
+                planUnreachable = mTail,
+                planMigrationsDeclared = not (null migrations)
               }
         )
   where
