@@ -678,7 +678,22 @@ runMigrateWithFetch opts manifest installedDir = do
               -- chain operates on the project's working tree; the
               -- moduleDir only supplies the migrations list and the
               -- target version.
-              result <- runMigrateLocal opts manifest moduleDir
+              cloneResult <- runMigrateLocal opts manifest moduleDir
+              -- EP-27: when the clone-based plan would refuse to apply
+              -- because the cloned remote no longer ships an applicable
+              -- migration (BenignUpgrade or Blocked), retry the planner
+              -- against the locally installed copy's migrations list.
+              -- The user's installed copy may still declare an
+              -- applicable edge that the remote dropped; honour it
+              -- rather than silently skip. Successful clone-based
+              -- outcomes (Applied, AppliedPartial, NoOp, dry-run
+              -- variants, errors) keep the clone's authoritative view.
+              result <- case cloneResult of
+                Right (MigrateBenignUpgrade _ _) ->
+                  fallbackToLocal opts manifest installedDir cloneResult
+                Right (MigrateBlocked _ _) ->
+                  fallbackToLocal opts manifest installedDir cloneResult
+                _ -> pure cloneResult
               -- Refresh the installed copy on the disk so future
               -- commands see the new version locally. Both full and
               -- partial applies update the disk; blocked / dry-run /
@@ -692,6 +707,29 @@ runMigrateWithFetch opts manifest installedDir = do
                       refreshInstalledFromClone moduleDir installedDir o tags
                 _ -> pure ()
               pure result
+
+-- | Re-plan against the locally installed copy's @module.dhall@. Used
+-- as a fallback by 'runMigrateWithFetch' when the clone-based plan
+-- would have refused to apply but the installed copy may still declare
+-- applicable migrations the remote has dropped. If the local plan
+-- yields a non-empty chain (full or partial, executed or dry-run),
+-- prefer it; any other outcome (no-op, benign, blocked, error)
+-- collapses to the original clone-based result so the user-visible
+-- answer is unchanged.
+fallbackToLocal ::
+  MigrateOpts ->
+  Manifest ->
+  FilePath ->
+  Either MigrateError MigrateResult ->
+  IO (Either MigrateError MigrateResult)
+fallbackToLocal opts manifest installedDir cloneResult = do
+  localResult <- runMigrateLocal opts manifest installedDir
+  pure $ case localResult of
+    Right (MigrateApplied _ _) -> localResult
+    Right (MigrateAppliedPartial {}) -> localResult
+    Right (MigrateDryRunOK _) -> localResult
+    Right (MigrateDryRunOKPartial {}) -> localResult
+    _ -> cloneResult
 
 -- | Print a one-line note unless JSON output is requested. Using JSON
 -- output requires a clean, parseable stdout.
