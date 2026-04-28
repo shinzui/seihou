@@ -583,19 +583,30 @@ renderPendingSummary (name, plan)
         <> renderVersion target
   | otherwise =
       let chain = plan.planChain
-          tail_ = case plan.planUnreachable of
-            Nothing -> ""
-            Just (stuck, target) ->
-              "; no migration declared from "
-                <> renderVersion stuck
-                <> ", remote is at "
-                <> renderVersion target
+          (effectiveTo, tail_) = case plan.planUnreachable of
+            Nothing -> (chain.chainTo, "")
+            Just (stuck, target)
+              -- EP-28: exhausted tail bumps through to target.
+              | plan.planTailExhausted ->
+                  ( target,
+                    " + bump through "
+                      <> renderVersion stuck
+                      <> " -> "
+                      <> renderVersion target
+                  )
+              | otherwise ->
+                  ( chain.chainTo,
+                    "; no migration declared from "
+                      <> renderVersion stuck
+                      <> ", remote is at "
+                      <> renderVersion target
+                  )
        in "  "
             <> name.unModuleName
             <> ": "
             <> renderVersion chain.chainFrom
             <> " -> "
-            <> renderVersion chain.chainTo
+            <> renderVersion effectiveTo
             <> " ("
             <> T.pack (show (length chain.chainSteps))
             <> " step(s))"

@@ -318,18 +318,39 @@ formatAdvice color (AdvicePendingMigration name chain) =
 formatAdvice color (AdvicePartialMigration name plan) =
   let summary = chainSummary name plan.planChain
       tail_ = case plan.planUnreachable of
-        Just (stuck, target) ->
-          [ "    "
-              <> applyColor
-                color
-                yellow
-                ( "Note: no migration declared from "
-                    <> renderVersion stuck
-                    <> "; remote is at "
-                    <> renderVersion target
-                    <> "."
-                )
-          ]
+        Just (stuck, target)
+          -- EP-28: exhausted tail — `seihou migrate <name>` will run
+          -- the prefix and bump the manifest all the way to target in
+          -- one shot. Tell the user that's what to expect, instead of
+          -- the legacy "no migration declared" advisory that implied
+          -- a follow-up --bump-only was needed.
+          | plan.planTailExhausted ->
+              [ "    "
+                  <> applyColor
+                    color
+                    yellow
+                    ( "Note: "
+                        <> renderVersion stuck
+                        <> " -> "
+                        <> renderVersion target
+                        <> " has no declared migration; "
+                        <> "'seihou migrate "
+                        <> name
+                        <> "' will bump through."
+                    )
+              ]
+          | otherwise ->
+              [ "    "
+                  <> applyColor
+                    color
+                    yellow
+                    ( "Note: no migration declared from "
+                        <> renderVersion stuck
+                        <> "; remote is at "
+                        <> renderVersion target
+                        <> "."
+                    )
+              ]
         Nothing -> []
    in ("    " <> applyColor color yellow summary) : tail_
 formatAdvice color (AdviceBlockedMigration name stuck target) =

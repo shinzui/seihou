@@ -73,7 +73,8 @@ fullPlan chain =
   MigrationPlan
     { planChain = chain,
       planUnreachable = Nothing,
-      planMigrationsDeclared = True
+      planMigrationsDeclared = True,
+      planTailExhausted = True
     }
 
 parseV :: Text -> Seihou.Core.Version.Version
@@ -138,9 +139,12 @@ spec = describe "formatStatus" $ do
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
     out `shouldSatisfy` T.isInfixOf "  seihou migrate demo"
 
-  -- EP-5: partial chain mirrors the live-tree master-plan failure
-  -- (manifest=0.1.0, remote=0.3.0, declared edges only reach 0.2.0).
-  it "partial migration: chain summary + unreachable-tail advisory" $ do
+  -- EP-5 + EP-28: partial chain with a BLOCKED tail (a future edge
+  -- declared past the chain's stopping point but the chain doesn't
+  -- span the gap). The advisory still names the unreachable tail in
+  -- the legacy "no migration declared from X; remote is at Y" wording
+  -- because `seihou migrate` will only apply the prefix and stop.
+  it "partial migration (blocked tail): chain summary + unreachable-tail advisory" $ do
     let am = mkApplied "master-plan" (Just "0.1.0")
         manifest = mkManifest [am]
         chain = mkChain "master-plan" "0.1.0" "0.2.0" 1
@@ -148,7 +152,8 @@ spec = describe "formatStatus" $ do
           MigrationPlan
             { planChain = chain,
               planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
-              planMigrationsDeclared = True
+              planMigrationsDeclared = True,
+              planTailExhausted = False
             }
         out = formatStatus False manifest [] Nothing [(ModuleName "master-plan", plan)]
     out `shouldSatisfy` T.isInfixOf "Pending migration: 0.1.0 -> 0.2.0"
@@ -157,6 +162,34 @@ spec = describe "formatStatus" $ do
     out `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
     out `shouldSatisfy` T.isInfixOf "  seihou migrate master-plan"
+
+  -- EP-28: partial chain with an EXHAUSTED tail (no migration
+  -- declared past the chain's stopping point). The status row tells
+  -- the user that `seihou migrate` will bump through to the target
+  -- in one shot.
+  it "partial migration (exhausted tail): bump-through advisory in status" $ do
+    let am = mkApplied "demo" (Just "0.1.0")
+        manifest = mkManifest [am]
+        chain = mkChain "demo" "0.1.0" "0.2.0" 1
+        plan =
+          MigrationPlan
+            { planChain = chain,
+              planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
+              planMigrationsDeclared = True,
+              planTailExhausted = True
+            }
+        out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
+    out `shouldSatisfy` T.isInfixOf "Pending migration: 0.1.0 -> 0.2.0"
+    -- The new advisory line names "bump through" so the user
+    -- understands one command will land them at the target.
+    out `shouldSatisfy` T.isInfixOf "0.2.0 -> 0.3.0 has no declared migration"
+    out `shouldSatisfy` T.isInfixOf "will bump through"
+    out `shouldSatisfy` T.isInfixOf "Recommended actions:"
+    out `shouldSatisfy` T.isInfixOf "  seihou migrate demo"
+    -- The legacy "no migration declared from 0.2.0; remote is at 0.3.0"
+    -- wording is gone for exhausted-tail rows (it still appears for
+    -- blocked-tail rows, tested above).
+    out `shouldNotSatisfy` T.isInfixOf "Note: no migration declared from 0.2.0"
 
   -- EP-7 / M2: blocked rendering now names --bump-only as the recovery
   -- path both inline (in the row text) and in the Recommended actions
@@ -175,7 +208,8 @@ spec = describe "formatStatus" $ do
                     chainSteps = []
                   },
               planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
-              planMigrationsDeclared = True
+              planMigrationsDeclared = True,
+              planTailExhausted = False
             }
         out = formatStatus False manifest [] Nothing [(ModuleName "exec-plan", plan)]
     out `shouldSatisfy` T.isInfixOf "Blocked: no migration declared from 0.1.3"
@@ -209,7 +243,8 @@ spec = describe "formatStatus" $ do
                     chainSteps = []
                   },
               planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
-              planMigrationsDeclared = False
+              planMigrationsDeclared = False,
+              planTailExhausted = True
             }
         out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
     out `shouldSatisfy` T.isInfixOf "Pending: 0.2.0 -> 0.3.0 (no migrations declared)"

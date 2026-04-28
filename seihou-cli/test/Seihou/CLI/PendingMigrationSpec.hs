@@ -313,7 +313,8 @@ spec = do
                         [Migration "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]]
                     },
                 planUnreachable = Nothing,
-                planMigrationsDeclared = True
+                planMigrationsDeclared = True,
+                planTailExhausted = True
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "Pending migrations detected:"
@@ -323,8 +324,10 @@ spec = do
 
     -- EP-5: partial-chain rows include the unreachable-tail advisory
     -- so the user knows the chain doesn't reach the latest remote
-    -- version even after they apply it.
-    it "annotates a partial-chain entry with the unreachable tail" $ do
+    -- version even after they apply it. EP-28 splits this into two
+    -- sub-cases by planTailExhausted; this test covers the BLOCKED
+    -- tail (future edge declared past the chain's stopping point).
+    it "annotates a blocked-tail partial-chain entry with the unreachable tail" $ do
       let plan =
             MigrationPlan
               { planChain =
@@ -335,12 +338,38 @@ spec = do
                       chainSteps = [Migration "0.1.0" "0.2.0" []]
                     },
                 planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
-                planMigrationsDeclared = True
+                planMigrationsDeclared = True,
+                planTailExhausted = False
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "demo: 0.1.0 -> 0.2.0"
       msg `shouldSatisfy` T.isInfixOf "no migration declared from 0.2.0"
       msg `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
+
+    -- EP-28: a partial-chain entry whose tail is exhausted bumps
+    -- through to target in one shot. The refusal row's effective
+    -- destination is target, not chainTo, and the trailer names the
+    -- bump-through region.
+    it "EP-28: annotates an exhausted-tail partial-chain entry as bump-through" $ do
+      let plan =
+            MigrationPlan
+              { planChain =
+                  MigrationChain
+                    { migrationModule = "demo",
+                      chainFrom = parseV "0.1.0",
+                      chainTo = parseV "0.2.0",
+                      chainSteps = [Migration "0.1.0" "0.2.0" []]
+                    },
+                planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
+                planMigrationsDeclared = True,
+                planTailExhausted = True
+              }
+          msg = formatRefusalMessage [(ModuleName "demo", plan)]
+      msg `shouldSatisfy` T.isInfixOf "demo: 0.1.0 -> 0.3.0"
+      msg `shouldSatisfy` T.isInfixOf "bump through 0.2.0 -> 0.3.0"
+      -- The legacy "no migration declared from X" wording does not
+      -- appear for exhausted-tail rows.
+      msg `shouldNotSatisfy` T.isInfixOf "no migration declared from 0.2.0"
 
     -- EP-5: blocked rows print a Blocked: prefix and skip the chain
     -- summary (there are no steps to summarize). After M3 the
@@ -358,7 +387,8 @@ spec = do
                       chainSteps = []
                     },
                 planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
-                planMigrationsDeclared = True
+                planMigrationsDeclared = True,
+                planTailExhausted = False
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "demo: Blocked: no migration declared from 0.1.3"
@@ -379,7 +409,8 @@ spec = do
                       chainSteps = []
                     },
                 planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
-                planMigrationsDeclared = True
+                planMigrationsDeclared = True,
+                planTailExhausted = False
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "seihou migrate <module> --bump-only"
@@ -400,7 +431,8 @@ spec = do
                       chainSteps = []
                     },
                 planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
-                planMigrationsDeclared = True
+                planMigrationsDeclared = True,
+                planTailExhausted = False
               }
           runnable =
             MigrationPlan
@@ -412,7 +444,8 @@ spec = do
                       chainSteps = [Migration "1.0.0" "2.0.0" [DeleteFile "x"]]
                     },
                 planUnreachable = Nothing,
-                planMigrationsDeclared = True
+                planMigrationsDeclared = True,
+                planTailExhausted = True
               }
           msg =
             formatRefusalMessage
@@ -439,7 +472,8 @@ spec = do
                       chainSteps = []
                     },
                 planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
-                planMigrationsDeclared = False
+                planMigrationsDeclared = False,
+                planTailExhausted = True
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "no migrations declared"
@@ -462,7 +496,8 @@ spec = do
                     chainSteps = steps
                   },
               planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
-              planMigrationsDeclared = declared
+              planMigrationsDeclared = declared,
+              planTailExhausted = not declared
             }
 
     it "is True for an empty chain with planMigrationsDeclared = False" $
@@ -501,7 +536,8 @@ spec = do
                     chainSteps = steps
                   },
               planUnreachable = unreachable,
-              planMigrationsDeclared = declared
+              planMigrationsDeclared = declared,
+              planTailExhausted = not declared
             }
         gap = Just (parseV "0.1.3", parseV "0.3.0")
 

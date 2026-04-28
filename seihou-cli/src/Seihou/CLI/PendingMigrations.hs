@@ -141,12 +141,30 @@ formatRefusalMessage pendings =
                   <> " step(s))"
            in case plan.planUnreachable of
                 Nothing -> base
-                Just (stuck, target) ->
-                  base
-                    <> "; no migration declared from "
-                    <> renderVersion stuck
-                    <> ", remote is at "
-                    <> renderVersion target
+                Just (stuck, target)
+                  -- EP-28: an exhausted-tail partial chain bumps
+                  -- through to target in one command, so the row's
+                  -- effective destination is target, not chainTo.
+                  | plan.planTailExhausted ->
+                      "  "
+                        <> name.unModuleName
+                        <> ": "
+                        <> renderVersion chain.chainFrom
+                        <> " -> "
+                        <> renderVersion target
+                        <> " ("
+                        <> T.pack (show (length chain.chainSteps))
+                        <> " step(s) + bump through "
+                        <> renderVersion stuck
+                        <> " -> "
+                        <> renderVersion target
+                        <> ")"
+                  | otherwise ->
+                      base
+                        <> "; no migration declared from "
+                        <> renderVersion stuck
+                        <> ", remote is at "
+                        <> renderVersion target
 
 -- | A benign upgrade is a 'MigrationPlan' that the planner produced
 -- because the manifest version trails the installed copy's version,

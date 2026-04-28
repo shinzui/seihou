@@ -342,6 +342,12 @@ printAdvisory name plan = do
               <> " --bump-only' to acknowledge no migration is needed."
         | otherwise =
             let chain = plan.planChain
+                effectiveTo = case plan.planUnreachable of
+                  -- EP-28: an exhausted-tail partial chain bumps the
+                  -- manifest through to the target. Show that as the
+                  -- effective destination.
+                  Just (_, target) | plan.planTailExhausted -> target
+                  _ -> chain.chainTo
                 base =
                   "note: "
                     <> name
@@ -350,18 +356,25 @@ printAdvisory name plan = do
                     <> " migration(s) pending ("
                     <> renderVersion chain.chainFrom
                     <> " → "
-                    <> renderVersion chain.chainTo
+                    <> renderVersion effectiveTo
                     <> "); run 'seihou migrate "
                     <> name
                     <> "'"
                 tail_ = case plan.planUnreachable of
                   Nothing -> ""
-                  Just (stuck, target) ->
-                    " (note: no migration declared from "
-                      <> renderVersion stuck
-                      <> "; remote is at "
-                      <> renderVersion target
-                      <> ")"
+                  Just (stuck, target)
+                    | plan.planTailExhausted ->
+                        " (note: "
+                          <> renderVersion stuck
+                          <> " → "
+                          <> renderVersion target
+                          <> " has no declared migration; will bump through)"
+                    | otherwise ->
+                        " (note: no migration declared from "
+                          <> renderVersion stuck
+                          <> "; remote is at "
+                          <> renderVersion target
+                          <> ")"
              in base <> tail_
   TIO.putStrLn $ if colorEnabled then yellow msg else msg
 
