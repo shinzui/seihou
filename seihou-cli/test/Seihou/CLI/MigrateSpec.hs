@@ -25,6 +25,7 @@ import Seihou.Core.Types
     Strategy (..),
     emptyParentVars,
   )
+import Seihou.Core.Version (renderVersion)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
@@ -1121,6 +1122,144 @@ spec = do
             runMigrate defaultOpts manifest installed
         case result of
           Right (MigrateBenignUpgrade _from _to) -> pure ()
+          other ->
+            expectationFailure
+              ("expected MigrateBenignUpgrade, got: " <> show other)
+
+    -- ------------------------------------------------------------------
+    -- EP-27 M2 regression: the bug. The default fetch path silently
+    -- skipped the locally-declared partial chain when the cloned remote
+    -- did not declare the same edges. The fix retries against the local
+    -- installed copy's migrations when the clone-based plan would have
+    -- refused to apply. Two-component version strings mirror the user's
+    -- literal report.
+    -- ------------------------------------------------------------------
+
+    it "EP-27 M2: applies locally-declared partial chain even when remote has dropped the edges" $
+      -- Manifest at 0.1; locally installed copy declares 0.3 with the
+      -- {0.1 -> 0.2} migration; cloned remote also declares 0.3 but
+      -- migrations = []. Without the fix, the fetch path classifies the
+      -- result as MigrateBenignUpgrade and skips the locally-declared
+      -- edge. With the fix, the local fallback applies the chain.
+      let partialLit =
+            T.unlines
+              [ "[ { from = \"0.1\"",
+                "  , to = \"0.2\"",
+                "  , ops =",
+                "      [ (< MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >).MoveFile { src = \"old.txt\", dest = \"new.txt\" }",
+                "      ]",
+                "  }",
+                "]"
+              ]
+       in -- withFetchFixture seeds remote with the supplied migrations lit
+          -- and installed with emptyMigrationsLit; we want the inverse, so
+          -- pass empty for the remote and overwrite the installed copy
+          -- afterward.
+          withFetchFixture "0.3" "0.3" emptyMigrationsLit $ \fix -> do
+            writeInstalledModule fix.installedDir "0.3" partialLit
+            writeOriginJson fix.installedDir (T.pack fix.remoteDir)
+            TIO.writeFile (fix.projectDir </> "old.txt") "tracked\n"
+            let manifest = mkManifestAt fix "0.1" [("old.txt", "tracked\n")]
+                opts = (defaultOpts {migrateNoFetch = False}) {migrateModule = ModuleName fix.modName}
+            result <-
+              withCurrentDirectory fix.projectDir $
+                runMigrate opts manifest fix.installedDir
+            case result of
+              Right (MigrateAppliedPartial _ manifest' stuck target) -> do
+                renderVersion stuck `shouldBe` "0.2"
+                renderVersion target `shouldBe` "0.3"
+                case manifest'.modules of
+                  (am : _) -> am.moduleVersion `shouldBe` Just "0.2"
+                  [] -> expectationFailure "manifest has no modules"
+                doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` True
+                doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` False
+                Map.member "new.txt" manifest'.files `shouldBe` True
+                Map.member "old.txt" manifest'.files `shouldBe` False
+              other ->
+                expectationFailure
+                  ("expected MigrateAppliedPartial (local fallback), got: " <> show other)
+
+    it "EP-27 M2: applies local-only chain (full) even when remote has dropped the edges" $
+      -- Same shape as above but the locally-declared chain reaches the
+      -- target exactly. Pin that the local fallback can produce a
+      -- MigrateApplied (full chain), not just MigrateAppliedPartial.
+      let fullLit =
+            T.unlines
+              [ "[ { from = \"0.1\"",
+                "  , to = \"0.3\"",
+                "  , ops =",
+                "      [ (< MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >).MoveFile { src = \"old.txt\", dest = \"new.txt\" }",
+                "      ]",
+                "  }",
+                "]"
+              ]
+       in withFetchFixture "0.3" "0.3" emptyMigrationsLit $ \fix -> do
+            writeInstalledModule fix.installedDir "0.3" fullLit
+            writeOriginJson fix.installedDir (T.pack fix.remoteDir)
+            TIO.writeFile (fix.projectDir </> "old.txt") "tracked\n"
+            let manifest = mkManifestAt fix "0.1" [("old.txt", "tracked\n")]
+                opts = (defaultOpts {migrateNoFetch = False}) {migrateModule = ModuleName fix.modName}
+            result <-
+              withCurrentDirectory fix.projectDir $
+                runMigrate opts manifest fix.installedDir
+            case result of
+              Right (MigrateApplied _ manifest') -> do
+                case manifest'.modules of
+                  (am : _) -> am.moduleVersion `shouldBe` Just "0.3"
+                  [] -> expectationFailure "manifest has no modules"
+                doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` True
+                doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` False
+              other ->
+                expectationFailure
+                  ("expected MigrateApplied (local fallback, full chain), got: " <> show other)
+
+    it "EP-27 M2: dry-run on a divergence partial-chain returns a partial dry-run" $
+      let partialLit =
+            T.unlines
+              [ "[ { from = \"0.1\"",
+                "  , to = \"0.2\"",
+                "  , ops =",
+                "      [ (< MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >).MoveFile { src = \"old.txt\", dest = \"new.txt\" }",
+                "      ]",
+                "  }",
+                "]"
+              ]
+       in withFetchFixture "0.3" "0.3" emptyMigrationsLit $ \fix -> do
+            writeInstalledModule fix.installedDir "0.3" partialLit
+            writeOriginJson fix.installedDir (T.pack fix.remoteDir)
+            TIO.writeFile (fix.projectDir </> "old.txt") "tracked\n"
+            let manifest = mkManifestAt fix "0.1" [("old.txt", "tracked\n")]
+                opts =
+                  (defaultOpts {migrateNoFetch = False, migrateDryRun = True})
+                    { migrateModule = ModuleName fix.modName
+                    }
+            result <-
+              withCurrentDirectory fix.projectDir $
+                runMigrate opts manifest fix.installedDir
+            case result of
+              Right (MigrateDryRunOKPartial _ stuck target) -> do
+                renderVersion stuck `shouldBe` "0.2"
+                renderVersion target `shouldBe` "0.3"
+                -- Disk untouched.
+                doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` True
+                doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` False
+              other ->
+                expectationFailure
+                  ("expected MigrateDryRunOKPartial (local fallback), got: " <> show other)
+
+    it "EP-27 M2: clone-based BenignUpgrade still wins when local also has [] migrations" $
+      -- Sanity: when neither the clone nor the local installed copy
+      -- declares a usable chain, the legacy MigrateBenignUpgrade
+      -- outcome still wins. The fallback only kicks in when the local
+      -- has applicable edges.
+      withFetchFixture "0.3" "0.3" emptyMigrationsLit $ \fix -> do
+        let manifest = mkManifestAt fix "0.1" []
+            opts = (defaultOpts {migrateNoFetch = False}) {migrateModule = ModuleName fix.modName}
+        result <-
+          withCurrentDirectory fix.projectDir $
+            runMigrate opts manifest fix.installedDir
+        case result of
+          Right (MigrateBenignUpgrade _ _) -> pure ()
           other ->
             expectationFailure
               ("expected MigrateBenignUpgrade, got: " <> show other)
