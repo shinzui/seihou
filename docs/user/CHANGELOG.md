@@ -10,6 +10,65 @@ HEAD  Recover from blocked migrations from the user's side (ExecPlan 25)
 
 ## Changelog
 
+### 2026-04-28 (One-command upgrade through partial-chain tails with no further migrations)
+
+**Reviewed commits:** ExecPlan 28
+(`docs/plans/28-bump-through-benign-tail.md`) — collapsing the
+legacy "seihou migrate; seihou migrate --bump-only" two-command
+workflow into one for the common partial-chain shape.
+
+**Behavior change (user-facing):**
+
+- `seihou migrate <module>` (no `--to`) now applies the chain
+  prefix *and* bumps the manifest all the way to the remote
+  version when the partial chain's unreachable tail has no further
+  declared migrations (the migrations list is exhausted past the
+  chain's stopping point). The user gets one line of output
+  `✓ Migrated <name> <fromV> → <target>.` followed by a
+  per-segment trailer naming the prefix the chain ran and the
+  bumped-through region.
+- The "blocked tail" case (a future edge declared past the chain's
+  stopping point but the chain doesn't span the gap) keeps its
+  EP-5/EP-6/EP-7 semantics: `migrate` applies the prefix, leaves
+  the manifest at the chain's `chainTo`, and prints the legacy
+  `Note: no migration declared from <stuckAt>; remote is at
+  <target>` advisory. The user is genuinely waiting for a
+  continuation migration there, so auto-bumping would silently
+  paper over a real gap.
+- `--to TARGET` keeps the strict-target contract: an exhausted-tail
+  partial chain still fails with `MigrationGap` if the user named a
+  specific version they didn't get a migration coverage for. The
+  bump-through behaviour is only the default (no `--to`).
+- `seihou status`, `seihou run --with-migrations`, and `seihou
+  upgrade --with-migrations` all describe the new exhausted-tail
+  shape as "would bump through" so the user reads their pending row
+  and knows that one command will land them at the target. Blocked
+  tails keep the legacy "Note: no migration declared from X; remote
+  is at Y" wording.
+
+**Why:**
+
+A user reported (in the same session that produced EP-27) that even
+after EP-27 fixed the underlying "skipped" bug, the typical upgrade
+workflow still required two commands: `seihou migrate <module>`
+(applies the chain prefix, manifest at chainTo, blocked advisory)
+followed by `seihou migrate <module> --bump-only` (bumps the
+manifest the rest of the way). For the common case of "module
+bumped its version field but didn't ship a migration for the tail,"
+that's two commands for one mental operation. EP-28 collapses them
+into one for the unambiguous case (no further migrations declared
+past the chain's stopping point), preserving the two-step
+recovery for cases where the author owes a continuation migration
+in the unreachable region.
+
+**Docs updated:**
+
+- `docs/cli/migrate.md` — splits the Partial chains subsection into
+  "exhausted tail" and "blocked tail" sub-cases with example
+  transcripts, lifts the count of distinguished outcomes from four
+  to five.
+- `docs/user/CHANGELOG.md` — this entry.
+
 ### 2026-04-28 (Fetch path no longer skips locally-declared partial chains)
 
 **Reviewed commits:** ExecPlan 27

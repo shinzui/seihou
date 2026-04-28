@@ -87,20 +87,46 @@ author them, and `seihou help migrations` for the full reference.
 ## Partial chains and blocked modules
 
 The declared migration list does not always reach the latest remote
-version exactly. `seihou migrate` distinguishes four outcomes:
+version exactly. `seihou migrate` distinguishes five outcomes:
 
 - **Full chain** — the declared migrations cover
   `manifest.moduleVersion → remote_version` exactly. The chain runs to
   completion, the manifest is bumped to `remote_version`, and the
   command exits zero.
-- **Partial chain** — the chain reaches some intermediate version and
-  then stops because no migration starts at that version. Without
-  `--to`, `migrate` applies the longest reachable prefix, refreshes the
-  manifest's `moduleVersion` to the highest reached version, and prints
-  a `Note: no migration declared from <stuckAt>; remote is at <target>`
-  advisory. The next `seihou status` will show the same module either
-  blocked or up-to-date depending on whether the author later ships a
-  continuation migration.
+- **Partial chain, exhausted tail (bump through)** — the chain reaches
+  some intermediate version and then stops because no migration starts
+  at that version, *and* no further migration is declared past that
+  version. Without `--to`, `migrate` applies the longest reachable
+  prefix *and* bumps the manifest's `moduleVersion` all the way to the
+  remote version. The output line is `✓ Migrated <name> X → Y.`
+  followed by a per-segment trailer naming the chain prefix and the
+  bumped-through region. This collapses the legacy "migrate, then
+  --bump-only" two-command workflow into one command for the common
+  case of "module bumped its version field but didn't ship a migration
+  for the tail." Example:
+
+      $ seihou migrate demo
+      Migration plan: demo  0.1 → 0.2
+        0.1 → 0.2:
+          move-file old.txt -> new.txt
+      1 operation(s), 0 conflict(s).
+      ✓ Migrated demo 0.1 → 0.3.
+        0.1 → 0.2: 1 migration(s) applied.
+        0.2 → 0.3: no migration declared; bumped through.
+
+- **Partial chain, blocked tail** — the chain reaches some intermediate
+  version and then stops because no migration starts at that version,
+  but a migration *does* start at some later version. The author has
+  plans in the unreachable region but the chain doesn't span the gap.
+  Without `--to`, `migrate` applies the longest reachable prefix,
+  refreshes the manifest's `moduleVersion` to the highest reached
+  version, and prints a `Note: no migration declared from <stuckAt>;
+  remote is at <target>` advisory. The next `seihou status` will show
+  the same module either blocked or up-to-date depending on whether
+  the author later ships a continuation migration. To clear the
+  blocked tail, run `seihou migrate <name> --bump-only` (or
+  `seihou run --bump-blocked` for a multi-module project) once the
+  user has verified the unreachable region is safe to skip.
 - **Blocked** — the module declared at least one migration but no
   edge starts at the manifest's recorded version, so the planner has
   nothing to apply. Without `--to`, `migrate` prints `Blocked: no

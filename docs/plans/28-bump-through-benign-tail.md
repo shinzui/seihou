@@ -71,27 +71,47 @@ wait for the author to ship a continuation migration or run
 
 ## Progress
 
-- [ ] M1: Add `planTailExhausted :: Bool` to `MigrationPlan` in
-      `seihou-core/src/Seihou/Core/Migration.hs`. Extend the planner
-      to set this field and add tests in
-      `seihou-core/test/Seihou/Core/MigrationSpec.hs`.
-- [ ] M2: In `seihou-cli/src/Seihou/CLI/Migrate.hs`, dispatch
-      partial-chain plans with `planTailExhausted = True` to a new
-      apply path that runs the chain *and* bumps the manifest to the
-      target version. Add tests in
-      `seihou-cli/test/Seihou/CLI/MigrateSpec.hs`. Render the new
-      apply variant correctly in `handleMigrate`.
-- [ ] M3: Update `pendingChainFor`-driven displays
-      (`seihou status`, `seihou run`'s pre-flight,
-      `seihou upgrade --with-migrations`'s post-upgrade advisory) so
-      they describe an exhausted-tail partial chain as "would
-      migrate fully to <target>" rather than "Blocked at
-      <chainTo>". Add tests for the affected modules
-      (`StatusRenderSpec.hs`, `PendingMigrationSpec.hs`).
-- [ ] M4: Live verification on the seihou-project working tree (the
-      same `master-plan 0.1.0 → 0.3.0` shape the user ran into) plus
-      docs: `docs/cli/migrate.md`, `docs/cli/status.md` if needed,
-      and `docs/user/CHANGELOG.md`.
+- [x] M1: Add `planTailExhausted :: Bool` to `MigrationPlan` in
+      `seihou-core/src/Seihou/Core/Migration.hs`. (2026-04-28) Field
+      added; the planner sets it as
+      `not (any (\(_, fv, _) -> fv > reached) parsed)`. Six new
+      tests in `seihou-core/test/Seihou/Core/MigrationSpec.hs` pin
+      the field across the four canonical shapes (full, partial
+      exhausted, partial blocked, benign empty, orphan-edge full
+      block, plus a past-edge no-count case).
+- [x] M2: Dispatch partial-chain plans with
+      `planTailExhausted = True` to a new apply path that runs the
+      chain *and* bumps the manifest to target. (2026-04-28) Added
+      two new `MigrateResult` variants
+      (`MigrateAppliedBumpedThrough`,
+      `MigrateDryRunOKBumpedThrough`); added
+      `applyChainBumpThrough` helper; updated `dispatchPlan`,
+      `handleMigrate`'s renderer, the JSON encoder
+      (`planToJsonBumpedThrough`), the fetch path's
+      refresh-from-clone branch, EP-27's `fallbackToLocal`, and
+      the executable consumers in `Seihou.CLI.Run.applyOneMigration`
+      and `Seihou.CLI.Upgrade.runOnePostUpgradeMigration`. Existing
+      partial-chain tests have been updated to expect the new
+      variants where the fixture's tail is exhausted; new EP-28
+      tests pin the blocked-tail behaviour, the strict `--to TARGET`
+      refusal, and idempotence.
+- [x] M3: Update pending-display surfaces. (2026-04-28) Branched on
+      `plan.planTailExhausted` in
+      `Seihou.CLI.StatusRender.formatAdvice`,
+      `Seihou.CLI.PendingMigrations.formatRefusalMessage`,
+      `Seihou.CLI.Upgrade.printAdvisory`, and
+      `Seihou.CLI.Run.renderPendingSummary`. The exhausted-tail
+      branch tells the user one `seihou migrate <name>` will bump
+      through to target; the blocked-tail branch keeps the legacy
+      "no migration declared from X" wording. Tests added /
+      updated in `StatusSpec.hs` and `PendingMigrationSpec.hs`.
+- [x] M4: Live verification + docs. (2026-04-28) Live fixture at
+      `/tmp/seihou-bump-through-repro/` runs `seihou migrate demo
+      --no-fetch` once and lands the manifest at `0.3` with the
+      file moved. `cabal test all` passes (808 core + 207 CLI
+      tests); `nix flake check` passes. Updated `docs/cli/migrate.md`
+      to document the new outcome and `docs/user/CHANGELOG.md` with
+      the user-facing entry.
 
 
 ## Surprises & Discoveries
@@ -171,7 +191,101 @@ wait for the author to ship a continuation migration or run
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+### What shipped
+
+The user's two-command upgrade workflow collapses into one for the
+common partial-chain shape (manifest at X, installed at Z, single
+edge X → Y declared, no migration declared past Y). Live transcript
+on the canonical fixture:
+
+    $ seihou migrate demo --no-fetch
+    Migration plan: demo  0.1 → 0.2
+      0.1 → 0.2:
+        move-file old.txt -> new.txt
+    1 operation(s), 0 conflict(s).
+    ✓ Migrated demo 0.1 → 0.3.
+      0.1 → 0.2: 1 migration(s) applied.
+      0.2 → 0.3: no migration declared; bumped through.
+
+    $ jq '.modules[0].version' .seihou/manifest.json
+    "0.3"
+
+The blocked-tail case (a future edge declared past the chain's
+stopping point) is preserved at `MigrateAppliedPartial` so users
+who actually need a continuation migration still see the
+EP-5/EP-6/EP-7 advisory and don't have an unsafe auto-bump papered
+over their workflow.
+
+### Diff scope
+
+- `seihou-core/src/Seihou/Core/Migration.hs` — one new field on
+  `MigrationPlan`, one extra construction line, three lines of new
+  haddock.
+- `seihou-cli/src/Seihou/CLI/Migrate.hs` — two new `MigrateResult`
+  variants, one new helper (`applyChainBumpThrough`), one new
+  branch in `dispatchPlan`, one new branch in each of the dry-run
+  and apply renderers in `handleMigrate`, one new JSON helper, two
+  new pattern arms in the fetch refresh and `fallbackToLocal`.
+- `seihou-cli/src-exe/Seihou/CLI/Run.hs` — one new pattern arm in
+  `applyOneMigration` and one new branch in `renderPendingSummary`.
+- `seihou-cli/src-exe/Seihou/CLI/Upgrade.hs` — one new pattern arm
+  in `runOnePostUpgradeMigration` and one new branch in
+  `printAdvisory`.
+- `seihou-cli/src/Seihou/CLI/StatusRender.hs` — one new branch in
+  `formatAdvice` for the partial-chain row.
+- `seihou-cli/src/Seihou/CLI/PendingMigrations.hs` — one new branch
+  in `formatRefusalMessage`.
+- Tests: 6 new in `MigrationSpec.hs` (planner field), 4 reshaped
+  + 3 new in `MigrateSpec.hs` (dispatch + renderer), 1 reshaped +
+  2 new in `StatusSpec.hs`, 1 reshaped + 1 new in
+  `PendingMigrationSpec.hs`. The reshaped tests reflect that
+  fixtures whose tails are exhausted now produce the new variants.
+- Docs: one paragraph rewrite in `docs/cli/migrate.md` (Partial
+  chains subsection split into "exhausted tail" and "blocked tail"
+  sub-cases with example transcripts), one new CHANGELOG entry.
+
+No `MigrateResult` variants were removed. The planner contract was
+extended (one new field), not changed.
+
+### Comparison against the original purpose
+
+The plan's purpose section anchored the fix on this transcript:
+
+    $ seihou migrate master-plan
+    Migration plan: master-plan  0.1.0 → 0.2.0
+      0.1.0 → 0.2.0:
+        <ops>
+    ✓ Migrated master-plan 0.1.0 → 0.3.0.
+      0.1.0 → 0.2.0: applied (1 migration).
+      0.2.0 → 0.3.0: no migration declared; bumped through.
+
+The shipped output line is essentially identical (with a minor
+phrasing tweak — "1 migration(s) applied." instead of "applied
+(1 migration)."). Manifest lands at `0.3`. No second command. The
+DX failure the user reported in the same session is closed.
+
+### Lessons
+
+- The EP-5 partial-chain contract was correct *for the case it was
+  designed for* (the live-tree master-plan failure where edges
+  partially span the gap). Where it broke down was in conflating
+  "the chain stops because no edge starts here" (a procedural
+  pause) with "the author has plans we're blocked on" (a stop
+  signal). EP-28 splits those two cases via `planTailExhausted`,
+  which is now the right discriminator across every consumer.
+- The Decision Log's "small, surgical fix" framing carried through
+  the implementation: every change is one branch, one new variant,
+  or one new helper. No type signatures shifted; no consumers
+  rewrote logic. The diff is reviewable as a single coherent
+  feature.
+- Two follow-on opportunities surfaced but are out of scope:
+  (1) the partial-chain renderer's per-segment trailer could
+  benefit from colour or spacing adjustments — left for a future
+  visual polish pass; (2) the JSON output's
+  `planToJsonBumpedThrough` shape is currently a sibling of
+  `planToJsonWithTail` rather than a parameterized variant —
+  acceptable for now, refactor candidate if more EP-* plans need
+  to extend the JSON shape.
 
 
 ## Context and Orientation
