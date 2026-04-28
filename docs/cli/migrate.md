@@ -49,6 +49,20 @@ failure, module not present in the remote), the command emits a
 one-line note and falls back to the local-only path: planning against
 whatever the locally installed copy currently declares.
 
+There is also a **success-path local fallback**. If the clone-based
+plan would refuse to apply (`MigrateBenignUpgrade` or `MigrateBlocked`)
+but the locally installed `module.dhall` still declares an applicable
+migration starting from the manifest's recorded version, `migrate`
+re-plans against the local migrations and applies that chain instead.
+This covers the case where the cloned remote has dropped (or never
+shipped) a migration the user's installed copy still has — for
+example, an installed copy taken at an earlier release that included
+the edge, when the upstream has since rewritten or pruned its
+migrations list. The clone still drives the post-apply install
+refresh, so the templates and version field on disk continue to
+reflect the freshest remote content. The fallback is silent: the
+command output looks identical to a normal partial / full apply.
+
 Pass `--no-fetch` to skip the fetch entirely. In that mode, `migrate`
 performs no network IO and behaves like the pre-EP-2 implementation:
 it consults only `~/.config/seihou/installed/<name>/module.dhall`. Use

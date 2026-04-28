@@ -78,11 +78,36 @@ above.
       the locally-declared edge. See Surprises & Discoveries
       "EP-27 reproducer: clone/local migrations divergence" for the
       transcript.
-- [ ] Add a regression test that pins the correct behaviour for the
-      newly localized failing path (M2).
-- [ ] Fix the underlying defect (M3).
-- [ ] Re-run the full test suite plus the live reproducer (M3 + M4).
-- [ ] Update `docs/cli/migrate.md` and `docs/user/CHANGELOG.md` (M4).
+- [x] Add a regression test that pins the correct behaviour for the
+      newly localized failing path (M2). (2026-04-28) Added four
+      tests under "EP-27 M2:" in
+      `seihou-cli/test/Seihou/CLI/MigrateSpec.hs`: applies the
+      locally-declared partial chain via the fetch path, applies a
+      local-only full chain, dry-run on a divergence partial chain,
+      and a sanity test confirming clone-based BenignUpgrade still
+      wins when the local copy has no migrations either. Three
+      failed on master with `Right (MigrateBenignUpgrade …)` instead
+      of the expected applied/dry-run partial.
+- [x] Fix the underlying defect (M3). (2026-04-28) Added a local
+      fallback in `runMigrateWithFetch` and a helper
+      `fallbackToLocal` in
+      `seihou-cli/src/Seihou/CLI/Migrate.hs`. When the clone-based
+      plan returns `MigrateBenignUpgrade` or `MigrateBlocked`, the
+      planner is re-run against the locally installed copy's
+      migrations list; if that produces a chain (full or partial,
+      executed or dry-run), the local result is preferred. All other
+      outcomes from either side keep the original clone-based result.
+- [x] Re-run the full test suite plus the live reproducer (M3 + M4).
+      (2026-04-28) `cabal test all` passes (802 core + 202 CLI tests),
+      `nix flake check` passes (cli-module-placement + treefmt +
+      pre-commit), and the live divergence fixture at
+      `/tmp/seihou-bug-divergence/` now applies the partial chain in
+      one shot. The original `/tmp/seihou-bug-repro/` fixture is
+      unchanged in behaviour.
+- [x] Update `docs/cli/migrate.md` and `docs/user/CHANGELOG.md` (M4).
+      (2026-04-28) Added a "success-path local fallback" paragraph to
+      `docs/cli/migrate.md` under the "Default behavior: fetch first"
+      section; added a 2026-04-28 entry to `docs/user/CHANGELOG.md`.
 
 
 ## Surprises & Discoveries
@@ -294,7 +319,80 @@ in those plans' test matrices.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+### What shipped
+
+The bug was localized to `runMigrateWithFetch` in
+`seihou-cli/src/Seihou/CLI/Migrate.hs`. The fix is a 39-line addition:
+when the clone-based plan returns `MigrateBenignUpgrade` or
+`MigrateBlocked`, a new helper `fallbackToLocal` re-runs
+`runMigrateLocal` against the locally installed copy. If that yields
+a non-empty chain (`MigrateApplied`, `MigrateAppliedPartial`,
+`MigrateDryRunOK`, or `MigrateDryRunOKPartial`), the local result is
+preferred; otherwise the original clone-based result stands. The
+clone still drives the post-apply install refresh, so the templates
+and version field on disk continue to reflect the freshest remote
+content.
+
+The diff scope:
+
+- `seihou-cli/src/Seihou/CLI/Migrate.hs` — 1 dispatch + 1 helper.
+- `seihou-cli/test/Seihou/CLI/MigrateSpec.hs` — 4 EP-27 M1 probes
+  (positive regression pins) + 4 EP-27 M2 regression tests (one of
+  which is the negative-case sanity).
+- `docs/cli/migrate.md` — one paragraph documenting the fallback.
+- `docs/user/CHANGELOG.md` — one entry.
+
+### Comparison against the original purpose
+
+The plan's purpose section anchored the fix on this user-visible
+behavior:
+
+    $ seihou migrate <module>           # without --to
+    Migration plan: <module>  0.1 → 0.2
+      0.1 → 0.2:
+        <ops...>
+    1 operation(s), 0 conflict(s).
+    ✓ Migrated <module> 0.1 → 0.2.
+    Note: no migration declared from 0.2; remote is at 0.3.
+
+    $ jq '.modules[] | select(.name == "<module>") | .version' .seihou/manifest.json
+    "0.2"
+
+The live transcript on `/tmp/seihou-bug-divergence/project/` after
+the fix matches this exactly:
+
+    $ seihou migrate demo
+      Fetching /tmp/seihou-bug-divergence/remote...
+    Migration plan: demo  0.1 → 0.2
+      0.1 → 0.2:
+        move-file old.txt -> new.txt
+    1 operation(s), 0 conflict(s).
+    ✓ Migrated demo 0.1 → 0.2.
+    Note: no migration declared from 0.2; remote is at 0.3.
+    $ jq '.modules[0].version' .seihou/manifest.json
+    "0.2"
+
+### Lessons
+
+- The basic `--no-fetch` reproducer the plan author built was correct
+  but insufficient: the bug only triggers when the *clone* and the
+  *local installed copy* have *different* migrations lists. The plan
+  anticipated this by listing six probes; the divergence case wasn't
+  one of them but was an obvious step adjacent to probes 2-4. M1's
+  transcript-based reproduction would have benefited from one
+  additional probe explicitly testing the divergence shape.
+- EP-15's "freshest content" intent and the user's "the migration
+  declared on disk should run" mental model are in genuine tension
+  when the remote has dropped a migration the local copy still
+  declares. The chosen resolution preserves both: the clone is the
+  source of truth for *target version* and *templates*, while the
+  *migrations list* is taken as a union (clone first; local fallback
+  only when the clone has nothing applicable). Future plans that
+  touch this dispatch should preserve this asymmetry.
+- The fix does not change the planner contract or any
+  `MigrateResult` variant, in line with the Decision Log's
+  no-scope-creep guardrail. The change is entirely composition-level
+  in the IO shell.
 
 
 ## Context and Orientation

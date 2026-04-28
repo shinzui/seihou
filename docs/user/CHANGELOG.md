@@ -10,6 +10,55 @@ HEAD  Recover from blocked migrations from the user's side (ExecPlan 25)
 
 ## Changelog
 
+### 2026-04-28 (Fetch path no longer skips locally-declared partial chains)
+
+**Reviewed commits:** ExecPlan 27
+(`docs/plans/27-fix-migrate-skips-partial-chain.md`) — fix for a
+report that `seihou migrate <module>` silently skipped a declared
+migration in a specific divergence scenario.
+
+**Behavior change (user-facing):**
+
+- The default `seihou migrate <module>` (fetch enabled) now applies
+  the locally-declared migration chain when the cloned remote no
+  longer ships an applicable edge. Previously, the fetch path planned
+  exclusively against the cloned remote's `migrations` list; if the
+  remote had dropped the edge that the locally installed
+  `module.dhall` still declared, the planner returned a `MigrateBenignUpgrade`
+  (or `MigrateBlocked`) outcome and the manifest stayed at the user's
+  current version. Now, when the clone-based plan would refuse to
+  apply, Seihou retries against the locally installed copy's
+  migrations list. If that yields a chain (full or partial), it is
+  applied in place of the no-op outcome.
+- The clone still drives the post-apply install refresh, so the
+  templates and version field on disk continue to reflect the
+  freshest remote content (EP-15's "freshest content" intent).
+- The fallback never fires when both the clone and the locally
+  installed copy declare empty migrations: in that case the
+  `MigrateBenignUpgrade` outcome is correct and is preserved.
+
+**Why:**
+
+A user reported that `seihou migrate demo` silently skipped a
+`{ from = "0.1", to = "0.2", ops = ... }` edge declared in their
+locally installed `module.dhall` even though their manifest was at
+`0.1`. The basic `--no-fetch` path applied the chain correctly, but
+the default fetch path classified the result as a benign version
+bump and refused. Investigation localized the bug to
+`runMigrateWithFetch` in `seihou-cli/src/Seihou/CLI/Migrate.hs`,
+which planned exclusively against the cloned remote's migrations
+list — losing visibility of the user's locally-declared edge when
+the remote and local diverged. The fix preserves EP-15's "freshest
+content" intent for the common case while honouring the user's
+mental model ("I have the edge declared on disk; it should run") in
+the divergence case.
+
+**Docs updated:**
+
+- `docs/cli/migrate.md` — adds a "Local fallback when remote drops a
+  migration" note under the fetch behaviour subsection.
+- `docs/user/CHANGELOG.md` — this entry.
+
 ### 2026-04-27 (Auto-commit flag for `seihou migrate`)
 
 **Reviewed commits:** ExecPlan 26
