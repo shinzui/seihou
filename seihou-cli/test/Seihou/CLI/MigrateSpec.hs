@@ -980,3 +980,147 @@ spec = do
               expectationFailure ("expected MigrateBlocked, got: " <> show other)
           (_, count, _) <- readProcessWithExitCode "git" ["rev-list", "--count", "HEAD"] ""
           T.strip (T.pack count) `shouldBe` "1"
+
+    -- ------------------------------------------------------------------
+    -- EP-27 M1 probes: localize the path that skips the partial-chain
+    -- prefix in the user's reported scenario (manifest at 0.1; installed
+    -- declares 0.3 with migrations = [{0.1 -> 0.2}]; user runs `seihou
+    -- migrate <module>` without --no-fetch). The basic --no-fetch
+    -- partial-chain test above already passes, so this block exercises
+    -- the variants the user's scenario could plausibly hit:
+    --
+    --   1. Two-component version strings ("0.1" / "0.2" / "0.3") rather
+    --      than three-component ("1.0.0" / "2.0.0" / "3.0.0"). Padding
+    --      should make these equivalent, but pin it.
+    --   2. The default fetch path (migrateNoFetch = False) where the
+    --      remote ships the partial-chain migrations list and the
+    --      installed copy is the pre-upgrade snapshot at 0.1.
+    --   3. The fetch path with the user's exact disk shape: installed
+    --      already declares 0.3 + the migrations list, manifest still
+    --      at 0.1, remote at the same 0.3 + migrations list.
+    --   4. A "stale installed" scenario: installed declares 0.3 but
+    --      its migrations list lost the 0.1 -> 0.2 edge (e.g. a prior
+    --      upgrade dropped it). With --no-fetch this routes through
+    --      MigrateBenignUpgrade today; the user could plausibly read
+    --      that as "migration was skipped."
+    -- ------------------------------------------------------------------
+
+    it "EP-27 probe 1: applies partial chain with two-component version strings" $
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+            -- Move old.txt -> new.txt between 0.1 and 0.2; installed
+            -- declares 0.3 (no edge from 0.2). User's literal versions.
+            moveLit =
+              T.unlines
+                [ "[ { from = \"0.1\"",
+                  "  , to = \"0.2\"",
+                  "  , ops =",
+                  "      [ (< MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >).MoveFile { src = \"old.txt\", dest = \"new.txt\" }",
+                  "      ]",
+                  "  }",
+                  "]"
+                ]
+        writeInstalledModule installed "0.3" moveLit
+        TIO.writeFile (dir </> "old.txt") "tracked\n"
+        let manifest = mkManifest "0.1" installed [("old.txt", "tracked\n")]
+        result <-
+          withCurrentDirectory dir $
+            runMigrate defaultOpts manifest installed
+        case result of
+          Right (MigrateAppliedPartial _ manifest' _stuck _target) -> do
+            (head manifest'.modules).moduleVersion `shouldBe` Just "0.2"
+            doesFileExist (dir </> "new.txt") `shouldReturn` True
+            doesFileExist (dir </> "old.txt") `shouldReturn` False
+            Map.member "new.txt" manifest'.files `shouldBe` True
+            Map.member "old.txt" manifest'.files `shouldBe` False
+          other ->
+            expectationFailure
+              ("expected MigrateAppliedPartial, got: " <> show other)
+
+    it "EP-27 probe 2: applies partial chain via the default fetch path (installed pre-upgrade)" $
+      -- Installed copy is the pre-upgrade snapshot: declares 0.1 with
+      -- no migrations. Remote ships 0.3 with the partial migrations
+      -- list. Manifest at 0.1. The fetch path clones the remote and
+      -- plans against the clone's module.dhall, so the partial chain
+      -- 0.1 -> 0.2 should be applied.
+      let partialLit =
+            T.unlines
+              [ "[ { from = \"0.1\"",
+                "  , to = \"0.2\"",
+                "  , ops =",
+                "      [ (< MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >).MoveFile { src = \"old.txt\", dest = \"new.txt\" }",
+                "      ]",
+                "  }",
+                "]"
+              ]
+       in withFetchFixture "0.1" "0.3" partialLit $ \fix -> do
+            TIO.writeFile (fix.projectDir </> "old.txt") "tracked\n"
+            let manifest = mkManifestAt fix "0.1" [("old.txt", "tracked\n")]
+                opts = (defaultOpts {migrateNoFetch = False}) {migrateModule = ModuleName fix.modName}
+            result <-
+              withCurrentDirectory fix.projectDir $
+                runMigrate opts manifest fix.installedDir
+            case result of
+              Right (MigrateAppliedPartial _ manifest' _stuck _target) -> do
+                case manifest'.modules of
+                  (am : _) -> am.moduleVersion `shouldBe` Just "0.2"
+                  [] -> expectationFailure "manifest has no modules"
+                doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` True
+                doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` False
+              other ->
+                expectationFailure
+                  ("expected MigrateAppliedPartial, got: " <> show other)
+
+    it "EP-27 probe 3: applies partial chain via fetch path when installed already declares 0.3" $
+      -- The user's exact reported shape: manifest at 0.1, installed
+      -- copy already declares 0.3 with the [0.1 -> 0.2] migrations
+      -- list, remote also at 0.3 with the same migrations list.
+      let partialLit =
+            T.unlines
+              [ "[ { from = \"0.1\"",
+                "  , to = \"0.2\"",
+                "  , ops =",
+                "      [ (< MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >).MoveFile { src = \"old.txt\", dest = \"new.txt\" }",
+                "      ]",
+                "  }",
+                "]"
+              ]
+       in withFetchFixture "0.3" "0.3" partialLit $ \fix -> do
+            -- Overwrite the installed module.dhall to match the remote
+            -- (withFetchFixture defaults installed to emptyMigrationsLit).
+            writeInstalledModule fix.installedDir "0.3" partialLit
+            writeOriginJson fix.installedDir (T.pack fix.remoteDir)
+            TIO.writeFile (fix.projectDir </> "old.txt") "tracked\n"
+            let manifest = mkManifestAt fix "0.1" [("old.txt", "tracked\n")]
+                opts = (defaultOpts {migrateNoFetch = False}) {migrateModule = ModuleName fix.modName}
+            result <-
+              withCurrentDirectory fix.projectDir $
+                runMigrate opts manifest fix.installedDir
+            case result of
+              Right (MigrateAppliedPartial _ manifest' _stuck _target) -> do
+                case manifest'.modules of
+                  (am : _) -> am.moduleVersion `shouldBe` Just "0.2"
+                  [] -> expectationFailure "manifest has no modules"
+                doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` True
+                doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` False
+              other ->
+                expectationFailure
+                  ("expected MigrateAppliedPartial, got: " <> show other)
+
+    it "EP-27 probe 4: stale installed (declares 0.3 but [] migrations) is benign-upgrade not skip" $
+      -- If a previous upgrade dropped the migrations list somehow, the
+      -- installed copy ends up at version 0.3 with migrations = [].
+      -- With --no-fetch this routes through MigrateBenignUpgrade. Pin
+      -- that contract so we know the user's scenario is NOT this path.
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "0.3" emptyMigrationsLit
+        let manifest = mkManifest "0.1" installed []
+        result <-
+          withCurrentDirectory dir $
+            runMigrate defaultOpts manifest installed
+        case result of
+          Right (MigrateBenignUpgrade _from _to) -> pure ()
+          other ->
+            expectationFailure
+              ("expected MigrateBenignUpgrade, got: " <> show other)

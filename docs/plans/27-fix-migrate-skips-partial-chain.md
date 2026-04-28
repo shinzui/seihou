@@ -65,17 +65,24 @@ above.
 
 ## Progress
 
-- [ ] Locate the precise scenario that reproduces the bug. The author
-      of this plan reproduced the basic `--no-fetch` case and found
-      `seihou migrate` correctly applies the prefix and bumps the
-      manifest to `0.2`. The bug must therefore live in a path that
-      the basic reproducer did not exercise. Candidates to probe in
-      M1 below.
+- [x] Locate the precise scenario that reproduces the bug.
+      (2026-04-28) Probes 1-4 (two-component versions, default fetch
+      with pre-upgrade installed, default fetch with already-upgraded
+      installed, stale-installed BenignUpgrade) all *pass* on master
+      — the bug is not on those paths. The scenario that reproduces
+      it: the local installed copy declares the partial-chain
+      migrations list, but the cloned remote has dropped or never
+      shipped those edges. The fetch path plans against the *clone's*
+      migrations list, classifies the result as
+      `MigrateBenignUpgrade` (or `MigrateBlocked`), and never applies
+      the locally-declared edge. See Surprises & Discoveries
+      "EP-27 reproducer: clone/local migrations divergence" for the
+      transcript.
 - [ ] Add a regression test that pins the correct behaviour for the
-      newly localized failing path.
-- [ ] Fix the underlying defect.
-- [ ] Re-run the full test suite plus the live reproducer.
-- [ ] Update `docs/cli/migrate.md` and `docs/user/CHANGELOG.md`.
+      newly localized failing path (M2).
+- [ ] Fix the underlying defect (M3).
+- [ ] Re-run the full test suite plus the live reproducer (M3 + M4).
+- [ ] Update `docs/cli/migrate.md` and `docs/user/CHANGELOG.md` (M4).
 
 
 ## Surprises & Discoveries
@@ -152,6 +159,71 @@ so `Version [0,1] == Version [0,1,0]` and the planner treats the
 user's two-component versions identically to three-component ones.
 This is not a bug source.
 
+### EP-27 reproducer: clone/local migrations divergence (M1 finding)
+
+The bug reproduces deterministically on the default fetch path when
+the cloned remote's `migrations` list disagrees with the locally
+installed copy's `migrations` list — specifically, when the remote
+has dropped (or never shipped) the edge that the locally installed
+copy still declares. The fetch path in
+`seihou-cli/src/Seihou/CLI/Migrate.hs:runMigrateWithFetch` (lines
+645-694 at the time of writing) calls
+`runMigrateLocal opts manifest moduleDir` with `moduleDir` set to
+the *clone's* module directory; the planner then sees only the
+clone's migrations list, and classifies the result as
+`MigrateBenignUpgrade` (or `MigrateBlocked`) when no edge in that
+list starts at the manifest version. The locally-declared edge is
+never consulted, so the manifest stays at the user's version and
+nothing on disk moves.
+
+Live transcript against `/tmp/seihou-bug-divergence/` (a fixture
+where the local install at `/tmp/seihou-bug-divergence/installed/`
+declares `version = "0.3"` and `migrations = [{0.1 -> 0.2}]`, the
+remote at `/tmp/seihou-bug-divergence/remote/` declares the same
+version with `migrations = []`, and the project's manifest is at
+`0.1`):
+
+    $ seihou migrate demo
+      Fetching /tmp/seihou-bug-divergence/remote...
+    Note: demo has no migrations declared (0.1 -> 0.3). This is a
+    benign version bump; run 'seihou upgrade demo && seihou run' to
+    refresh templates and bring the manifest up to date.
+    $ jq '.modules[0].version' .seihou/manifest.json
+    "0.1"
+
+    $ seihou migrate demo --no-fetch
+    Migration plan: demo  0.1 → 0.2
+      0.1 → 0.2:
+        move-file old.txt -> new.txt
+    1 operation(s), 0 conflict(s).
+    ✓ Migrated demo 0.1 → 0.2.
+    Note: no migration declared from 0.2; remote is at 0.3.
+    $ jq '.modules[0].version' .seihou/manifest.json
+    "0.2"
+
+`--no-fetch` works (it plans against the local install, which
+declares the edge). Default fetch silently skips. Same fixture, same
+manifest, same locally-declared edge.
+
+Why the divergence happens in real life: the user's installed copy
+was acquired at a point when the migration was still declared
+(e.g., they ran `seihou upgrade` against an earlier remote, or
+hand-installed the module dir from a tarball that included the
+migration), and the remote has since dropped the migration declaration
+while keeping the version field at the same value (or while moving
+to a newer version that shipped no migration covering the older
+gap). The user's manifest, however, is still at the pre-migration
+version, so the locally-declared edge is genuinely applicable.
+
+The fix surface (M3) is the dispatch in `runMigrateWithFetch`: when
+the clone-based plan would refuse to apply (BenignUpgrade or
+Blocked), the locally installed copy's migrations list is consulted
+as a fallback. If it yields a non-empty chain that starts at the
+manifest version, that chain is applied instead. The clone's content
+still drives the install refresh after a successful apply, so the
+"freshest content" intent of EP-15 is preserved for everything
+downstream (templates, version field).
+
 ### The ExecPlan registry
 
 This bug touches the same areas as EP-5
@@ -181,6 +253,42 @@ in those plans' test matrices.
   contract; the planner contract is correct. The defect is somewhere
   in a downstream consumer or in a soft-fallback path. Keeping the
   plan narrow keeps the diff reviewable.
+  Date: 2026-04-28
+
+- Decision: Fix the divergence-case bug by making
+  `runMigrateWithFetch` fall back to the locally installed copy's
+  migrations list when the clone-based plan would have refused to
+  apply (`MigrateBenignUpgrade` or `MigrateBlocked`). Do not change
+  the planner contract or any `MigrateResult` variant. Do not change
+  the success path (full chain, partial chain, no-op): those keep
+  using the clone's migrations list, preserving EP-15's "freshest
+  content" intent for the common case.
+  Rationale: The user's mental model is "I have a migration declared
+  on disk; running `seihou migrate` should apply it." The current
+  fetch path silently throws away that declaration when the remote
+  has moved on, and the user has no way to recover except by
+  remembering `--no-fetch` (which is poorly discoverable and
+  inappropriate as the default since it loses the freshness
+  benefit). A targeted local-fallback re-uses the existing
+  `runMigrateLocal` and changes only one branch of one function, so
+  the diff is reviewable and the contract surface stays exactly
+  what EP-5/EP-6/EP-7 settled.
+  Date: 2026-04-28
+
+- Decision: Treat `MigrateNoOp` from the local fallback as "the
+  fallback has nothing to add"; keep the clone-based result. Treat
+  `MigrateApplied`, `MigrateAppliedPartial`, `MigrateDryRunOK`, and
+  `MigrateDryRunOKPartial` from the local fallback as "the local
+  copy has applicable edges the clone doesn't"; prefer the
+  fallback. Treat any error or other variant from the local
+  fallback as a non-improvement; keep the clone's result. The
+  install refresh from the clone runs after either path succeeds
+  with an apply, exactly as before.
+  Rationale: A fallback that produces only a no-op or another
+  benign/blocked outcome doesn't change the user-visible answer;
+  there's no point routing through it. Errors from the fallback
+  are confusing if surfaced (the user didn't ask for the local
+  path), so they collapse to the clone's outcome.
   Date: 2026-04-28
 
 
