@@ -89,10 +89,26 @@ data MigrationChain = MigrationChain
 -- declared, version field changed) from a blocked migration (migrations
 -- declared but none reach the installed version).
 --
--- Consumers distinguish four shapes:
+-- 'planTailExhausted' is 'True' when the unreachable tail (if any) has
+-- no further declared migrations: no migration in the input list has
+-- @from > stuckAt@. Consumers use this to distinguish an "exhausted
+-- tail" partial chain (the author ran out of declared migrations
+-- past the chain's stopping point — the gap is presumed benign and
+-- safe to bump through) from a "blocked tail" partial chain (the
+-- author has migration plans in the unreachable region but they
+-- don't form a continuous chain — the user is genuinely stuck
+-- waiting for a continuation migration). For full chains
+-- (@planUnreachable == Nothing@) the field is conventionally 'True'
+-- (the empty tail is trivially exhausted) but consumers should not
+-- branch on it for full chains.
+--
+-- Consumers distinguish six shapes:
 --
 --   * Full chain: @chainSteps@ non-empty and @planUnreachable == Nothing@.
---   * Partial chain: @chainSteps@ non-empty and @planUnreachable@ is 'Just'.
+--   * Partial chain, exhausted tail: @chainSteps@ non-empty,
+--     @planUnreachable@ is 'Just', @planTailExhausted == True@.
+--   * Partial chain, blocked tail: @chainSteps@ non-empty,
+--     @planUnreachable@ is 'Just', @planTailExhausted == False@.
 --   * Blocked: @chainSteps == []@, @planUnreachable@ is 'Just', and
 --     @planMigrationsDeclared == True@ (author shipped migrations but
 --     none reach the manifest version).
@@ -102,7 +118,8 @@ data MigrationChain = MigrationChain
 data MigrationPlan = MigrationPlan
   { planChain :: MigrationChain,
     planUnreachable :: Maybe (Version, Version),
-    planMigrationsDeclared :: Bool
+    planMigrationsDeclared :: Bool,
+    planTailExhausted :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -186,7 +203,8 @@ planMigrationChain modName migrations installed target
             MigrationPlan
               { planChain = chain,
                 planUnreachable = mTail,
-                planMigrationsDeclared = not (null migrations)
+                planMigrationsDeclared = not (null migrations),
+                planTailExhausted = not (any (\(_, fv, _) -> fv > reached) parsed)
               }
         )
   where

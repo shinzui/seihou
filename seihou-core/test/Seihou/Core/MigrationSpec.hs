@@ -162,6 +162,102 @@ spec = do
       let r = planMigrationChain "demo" [] (mkV "1.0") (mkV "1.0.0")
       r `shouldBe` Right Nothing
 
+    -- ----------------------------------------------------------------
+    -- EP-28 M1: planTailExhausted
+    --
+    -- The planner now reports whether the unreachable tail's region
+    -- declares any further migrations. Consumers (notably `seihou
+    -- migrate`) split the partial-chain shape into two sub-cases:
+    --
+    --   * Exhausted tail — no migration in the input list has
+    --     `from > stuckAt`. The author ran out of declared migrations.
+    --     `seihou migrate` will treat this as a benign version-only
+    --     bump and advance the manifest all the way to target.
+    --   * Blocked tail — some migration has `from > stuckAt`. The
+    --     author has plans in the unreachable region but they don't
+    --     form a continuous chain. The user is genuinely stuck.
+    -- ----------------------------------------------------------------
+
+    it "EP-28: planTailExhausted = True for full chains" $ do
+      let m = Migration "1.0.0" "2.0.0" [DeleteFile "x"]
+          r = planMigrationChain "demo" [m] (mkV "1.0.0") (mkV "2.0.0")
+      case r of
+        Right (Just plan) -> plan.planTailExhausted `shouldBe` True
+        other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
+
+    it "EP-28: planTailExhausted = True for partial chain whose tail has no further declared edges" $ do
+      -- The user's master-plan-shape fixture: migrations=[{0.1->0.2}],
+      -- target=0.3. After the chain reaches 0.2, no migration has
+      -- `from > 0.2`, so the tail is exhausted.
+      let m = Migration "0.1.0" "0.2.0" []
+          r = planMigrationChain "demo" [m] (mkV "0.1.0") (mkV "0.3.0")
+      case r of
+        Right (Just plan) -> do
+          plan.planChain.chainSteps `shouldBe` [m]
+          plan.planChain.chainTo `shouldBe` mkV "0.2.0"
+          plan.planUnreachable `shouldBe` Just (mkV "0.2.0", mkV "0.3.0")
+          plan.planTailExhausted `shouldBe` True
+        other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
+
+    it "EP-28: planTailExhausted = False for partial chain whose tail still has future edges" $ do
+      -- The "real block past the chain" shape: migrations=[{0.1->0.2,
+      -- 0.5->0.6}], target=0.6. After the chain reaches 0.2, the
+      -- declared edge {0.5->0.6} starts at a version > 0.2, so the
+      -- tail is *not* exhausted — the author has plans in the
+      -- unreachable region but the chain doesn't span the gap.
+      let early = Migration "0.1.0" "0.2.0" []
+          future = Migration "0.5.0" "0.6.0" []
+          r = planMigrationChain "demo" [early, future] (mkV "0.1.0") (mkV "0.6.0")
+      case r of
+        Right (Just plan) -> do
+          plan.planChain.chainSteps `shouldBe` [early]
+          plan.planChain.chainTo `shouldBe` mkV "0.2.0"
+          plan.planUnreachable `shouldBe` Just (mkV "0.2.0", mkV "0.6.0")
+          plan.planTailExhausted `shouldBe` False
+        other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
+
+    it "EP-28: planTailExhausted = True for benign empty migrations" $ do
+      -- migrations=[], manifest=0.1, target=0.3. No declared edges
+      -- anywhere → tail is trivially exhausted.
+      let r = planMigrationChain "demo" [] (mkV "0.1.0") (mkV "0.3.0")
+      case r of
+        Right (Just plan) -> do
+          plan.planMigrationsDeclared `shouldBe` False
+          plan.planTailExhausted `shouldBe` True
+        other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
+
+    it "EP-28: planTailExhausted = False for orphan-edge full block" $ do
+      -- Empty chain (orphan edge starts past manifest), migrations
+      -- list has an edge with from > stuckAt (= manifest version).
+      -- Tail is not exhausted: the author declared a future edge.
+      let orphan = Migration "0.5.0" "0.6.0" []
+          r = planMigrationChain "demo" [orphan] (mkV "0.1.0") (mkV "0.6.0")
+      case r of
+        Right (Just plan) -> do
+          plan.planChain.chainSteps `shouldBe` []
+          plan.planMigrationsDeclared `shouldBe` True
+          plan.planTailExhausted `shouldBe` False
+        other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
+
+    it "EP-28: planTailExhausted ignores edges with from <= stuckAt" $ do
+      -- A migration with `from < stuckAt` is in the past; it doesn't
+      -- count as a future edge. Same chain shape as the bump-through
+      -- case but with an extra stale edge that the walker overshot.
+      let stale = Migration "0.0.5" "0.1.0" []
+          applied = Migration "0.1.0" "0.2.0" []
+          r =
+            planMigrationChain
+              "demo"
+              [stale, applied]
+              (mkV "0.1.0")
+              (mkV "0.3.0")
+      case r of
+        Right (Just plan) -> do
+          plan.planChain.chainSteps `shouldBe` [applied]
+          plan.planChain.chainTo `shouldBe` mkV "0.2.0"
+          plan.planTailExhausted `shouldBe` True
+        other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
+
 -- ---------------------------------------------------------------------------
 -- Helpers
 -- ---------------------------------------------------------------------------
