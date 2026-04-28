@@ -674,9 +674,23 @@ applyOneMigration level manifest (modName, plan) =
                   <> renderVersion target
                   <> ")"
               pure manifest'
+            Right (MigrateAppliedBumpedThrough _ manifest' stuck target) -> do
+              -- EP-28: chain prefix ran AND manifest bumped through
+              -- the exhausted tail. Surface both pieces so the user
+              -- knows where the manifest landed.
+              TIO.putStrLn $
+                "  Migrated "
+                  <> modName.unModuleName
+                  <> " (chain prefix applied; "
+                  <> renderVersion stuck
+                  <> " → "
+                  <> renderVersion target
+                  <> " bumped through with no migration declared)"
+              pure manifest'
             Right (MigrateNoOp _) -> pure manifest
             Right (MigrateDryRunOK _) -> pure manifest
             Right (MigrateDryRunOKPartial _ _ _) -> pure manifest
+            Right (MigrateDryRunOKBumpedThrough _ _ _) -> pure manifest
             Right (MigrateBlocked stuck target) -> do
               -- Defensive: the planner-shape check above should make
               -- this branch unreachable, but keep a clear message in

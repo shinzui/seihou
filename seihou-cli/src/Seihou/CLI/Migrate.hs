@@ -182,6 +182,20 @@ data MigrateResult
     -- migration declared from <stuckAt>; remote is at <target>"
     -- advisory.
     MigrateAppliedPartial ExecutedMigrationPlan Manifest Version Version
+  | -- | A partial-chain plan was applied AND the unreachable tail had
+    -- no further declared migrations, so the manifest was bumped all
+    -- the way to the target version (collapsing the legacy
+    -- "migrate, then --bump-only" workflow into one step). The chain
+    -- ran to its prefix's end (=@plan.planChain.chainTo@); the
+    -- manifest's recorded @moduleVersion@ is the target. The two
+    -- 'Version's are @(stuckAt, target)@ so the renderer can describe
+    -- both segments — the chain prefix and the bumped-through tail.
+    -- Distinct from 'MigrateAppliedPartial' (blocked tail; manifest
+    -- stops at @stuckAt@) and from 'MigrateApplied' (full chain via
+    -- declared ops; chain reaches target).
+    MigrateAppliedBumpedThrough ExecutedMigrationPlan Manifest Version Version
+  | -- | Dry-run companion of 'MigrateAppliedBumpedThrough'.
+    MigrateDryRunOKBumpedThrough ExecutedMigrationPlan Version Version
   | -- | No migration starts at the manifest's current version, so no
     -- step can be applied. The two 'Version's are @(stuckAt, target)@
     -- — i.e. the manifest's current version and the target. Distinct
@@ -268,6 +282,26 @@ handleMigrate opts = do
                 <> "."
           TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
       exitSuccess
+    Right (MigrateDryRunOKBumpedThrough plan stuck target) -> do
+      -- EP-28: dry-run preview of an exhausted-tail partial chain.
+      -- The chain prefix runs to @stuck@; the manifest would then be
+      -- bumped from @stuck@ all the way to @target@ since no further
+      -- migration is declared. Show both pieces so the user can see
+      -- where the manifest will land.
+      if opts.migrateJson
+        then LBS.putStr (encodePretty (planToJsonBumpedThrough plan stuck target))
+        else do
+          renderPlan colorEnabled plan
+          TIO.putStrLn ""
+          TIO.putStrLn $
+            applyColor colorEnabled yellow $
+              "Note: "
+                <> renderVersion stuck
+                <> " → "
+                <> renderVersion target
+                <> " has no declared migration; would bump through."
+          TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
+      exitSuccess
     Right (MigrateApplied plan manifest')
       -- --bump-only path: dispatchPlan never produces an empty plan
       -- via MigrateApplied, but the bump-only path does. Render the
@@ -352,6 +386,48 @@ handleMigrate opts = do
               <> "; remote is at "
               <> renderVersion target
               <> "."
+    Right (MigrateAppliedBumpedThrough plan manifest' stuck target) -> do
+      -- EP-28: chain's prefix ran AND manifest was bumped through
+      -- the exhausted tail to @target@. The "✓ Migrated" footer shows
+      -- the full manifest move (@fromV → target@); the chain summary
+      -- shows the prefix's coverage; the bump-through trailer names
+      -- the gap.
+      if opts.migrateJson
+        then LBS.putStr (encodePretty (planToJsonBumpedThrough plan stuck target))
+        else renderPlan colorEnabled plan
+      runEff $
+        runFilesystem $
+          runManifestStore manifestPath $
+            writeManifest manifest'
+      when (opts.migrateCommit || isJust opts.migrateCommitMessage) $
+        commitMigratedFiles opts manifestPath plan
+      unless opts.migrateJson $ do
+        TIO.putStrLn ""
+        TIO.putStrLn $
+          applyColor colorEnabled green "✓"
+            <> " Migrated "
+            <> applyColor colorEnabled bold modName.unModuleName
+            <> " "
+            <> renderVersion fromV
+            <> " → "
+            <> renderVersion target
+            <> "."
+        TIO.putStrLn $
+          applyColor colorEnabled dim $
+            "  "
+              <> renderVersion plan.planChain.chainFrom
+              <> " → "
+              <> renderVersion plan.planChain.chainTo
+              <> ": "
+              <> T.pack (show (length plan.planChain.chainSteps))
+              <> " migration(s) applied."
+        TIO.putStrLn $
+          applyColor colorEnabled dim $
+            "  "
+              <> renderVersion stuck
+              <> " → "
+              <> renderVersion target
+              <> ": no migration declared; bumped through."
     Right (MigrateBlocked stuck target) -> do
       if opts.migrateJson
         then
@@ -695,14 +771,18 @@ runMigrateWithFetch opts manifest installedDir = do
                   fallbackToLocal opts manifest installedDir cloneResult
                 _ -> pure cloneResult
               -- Refresh the installed copy on the disk so future
-              -- commands see the new version locally. Both full and
-              -- partial applies update the disk; blocked / dry-run /
+              -- commands see the new version locally. Full chains,
+              -- partial-with-blocked-tail chains, and bump-through
+              -- chains (EP-28) all update the disk; blocked / dry-run /
               -- no-op outcomes leave the disk untouched.
               case result of
                 Right (MigrateApplied _ _)
                   | not opts.migrateDryRun ->
                       refreshInstalledFromClone moduleDir installedDir o tags
-                Right (MigrateAppliedPartial _ _ _ _)
+                Right (MigrateAppliedPartial {})
+                  | not opts.migrateDryRun ->
+                      refreshInstalledFromClone moduleDir installedDir o tags
+                Right (MigrateAppliedBumpedThrough {})
                   | not opts.migrateDryRun ->
                       refreshInstalledFromClone moduleDir installedDir o tags
                 _ -> pure ()
@@ -727,8 +807,10 @@ fallbackToLocal opts manifest installedDir cloneResult = do
   pure $ case localResult of
     Right (MigrateApplied _ _) -> localResult
     Right (MigrateAppliedPartial {}) -> localResult
+    Right (MigrateAppliedBumpedThrough {}) -> localResult
     Right (MigrateDryRunOK _) -> localResult
     Right (MigrateDryRunOKPartial {}) -> localResult
+    Right (MigrateDryRunOKBumpedThrough {}) -> localResult
     _ -> cloneResult
 
 -- | Print a one-line note unless JSON output is requested. Using JSON
@@ -874,10 +956,24 @@ dispatchPlan opts manifest plan
         -- == target and walk produced nothing — treat as no-op.
         pure (Right (MigrateNoOp plan.planChain.chainTo))
   -- Partial chain: chain has steps but doesn't reach target.
+  -- EP-28 splits this into two sub-cases by 'planTailExhausted':
+  --   * Exhausted tail (no migration declared past stuckAt) — apply
+  --     the chain prefix AND bump the manifest all the way to target.
+  --     Collapses the legacy "seihou migrate; seihou migrate --bump-only"
+  --     two-command workflow into one.
+  --   * Blocked tail (migrations declared past stuckAt but the chain
+  --     doesn't span the gap) — keep the EP-5 partial-apply behavior:
+  --     apply the prefix, leave the manifest at chainTo, surface a
+  --     "Blocked" advisory pointing at --bump-only.
+  -- Either sub-case still refuses partial fulfillment under
+  -- @--to TARGET@ (strict-target contract from EP-5).
   | Just (stuck, target) <- plan.planUnreachable =
       if hasExplicitTo opts
         then pure (Left (MigratePlanFailed (MigrationGap stuck target)))
-        else applyChain opts manifest plan.planChain (Just (stuck, target))
+        else
+          if plan.planTailExhausted
+            then applyChainBumpThrough opts manifest plan.planChain stuck target
+            else applyChain opts manifest plan.planChain (Just (stuck, target))
   -- Full chain: chain reaches target exactly.
   | otherwise = applyChain opts manifest plan.planChain Nothing
 
@@ -922,6 +1018,50 @@ applyChain opts manifest chain mUnreachable = do
           Nothing -> pure (Right (MigrateApplied executedPlan manifest'))
           Just (stuck, target) ->
             pure (Right (MigrateAppliedPartial executedPlan manifest' stuck target))
+
+-- | Apply a partial chain whose unreachable tail has no further
+-- declared migrations (EP-28). Runs the chain's prefix exactly like
+-- 'applyChain' and then advances the manifest's recorded
+-- @moduleVersion@ all the way from @chainTo@ (= @stuck@) to @target@.
+-- The chain itself does not have a step for the @stuck → target@ gap;
+-- the bump is a manifest-only mutation reflecting "the author shipped
+-- no migration here, the version field just moves forward."
+--
+-- The dry-run path returns 'MigrateDryRunOKBumpedThrough' without
+-- touching disk or manifest. The execute path returns
+-- 'MigrateAppliedBumpedThrough' with the post-bump manifest.
+applyChainBumpThrough ::
+  MigrateOpts ->
+  Manifest ->
+  MigrationChain ->
+  -- | The stuck-at version: the chain's @chainTo@.
+  Version ->
+  -- | The target version the manifest will be bumped to.
+  Version ->
+  IO (Either MigrateError MigrateResult)
+applyChainBumpThrough opts manifest chain stuck target = do
+  executedPlan <-
+    runEff $
+      runFilesystem $
+        classifyMigration manifest chain
+  if opts.migrateDryRun
+    then pure (Right (MigrateDryRunOKBumpedThrough executedPlan stuck target))
+    else do
+      now <- getCurrentTime
+      execRes <-
+        runEff $
+          runFilesystem $
+            runProcessIO $
+              executeMigration opts.migrateForce executedPlan manifest now
+      case execRes of
+        Left err -> pure (Left (MigrateExecFailed err))
+        Right manifest' -> do
+          let manifest'' =
+                replaceModuleVersion
+                  manifest'
+                  opts.migrateModule
+                  (renderVersion target)
+          pure (Right (MigrateAppliedBumpedThrough executedPlan manifest'' stuck target))
 
 -- | Stage and commit the files touched by a successful migration plan.
 -- Mirrors the @seihou run --commit@ post-execution helper. No-op
@@ -1075,6 +1215,37 @@ planToJsonWithTail plan mTail =
                 ]
           ]
         Nothing -> []
+
+-- | JSON encoding of a bump-through plan (EP-28). Same shape as a
+-- partial plan plus a @bumpedThrough: true@ flag and a
+-- @manifestVersion@ field naming where the manifest landed (the
+-- target, not the chain's @chainTo@). Scripted consumers can
+-- distinguish bump-through outcomes from blocked-tail partial chains
+-- and from full chains by the presence of the flag.
+planToJsonBumpedThrough ::
+  ExecutedMigrationPlan -> Version -> Version -> Aeson.Value
+planToJsonBumpedThrough plan stuck target =
+  object
+    [ "module" .= plan.planModule.unModuleName,
+      "from" .= renderVersion plan.planChain.chainFrom,
+      "to" .= renderVersion plan.planChain.chainTo,
+      "manifestVersion" .= renderVersion target,
+      "bumpedThrough" .= True,
+      "steps"
+        .= [ object
+               [ "from" .= step.from,
+                 "to" .= step.to,
+                 "ops" .= map opToJson step.ops
+               ]
+           | step <- plan.planChain.chainSteps
+           ],
+      "operations" .= map instToJson plan.planOps,
+      "unreachable"
+        .= object
+          [ "stuckAt" .= renderVersion stuck,
+            "target" .= renderVersion target
+          ]
+    ]
 
 opToJson :: MigrationOp -> Aeson.Value
 opToJson op = case op of

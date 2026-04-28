@@ -407,6 +407,19 @@ runOnePostUpgradeMigration installedDir name = do
                   <> renderVersion target
                   <> ")"
           TIO.putStrLn $ if colorEnabled then yellow msg else msg
+        Right (MigrateAppliedBumpedThrough _ _ stuck target) -> do
+          -- EP-28: chain prefix ran AND manifest bumped through the
+          -- exhausted tail to @target@.
+          colorEnabled <- useColor
+          let msg =
+                "    Migrated "
+                  <> name
+                  <> " (chain applied; "
+                  <> renderVersion stuck
+                  <> " → "
+                  <> renderVersion target
+                  <> " bumped through with no migration declared)"
+          TIO.putStrLn $ if colorEnabled then green msg else msg
         Right (MigrateBlocked stuck target) -> do
           colorEnabled <- useColor
           let msg =
@@ -424,6 +437,7 @@ runOnePostUpgradeMigration installedDir name = do
         Right (MigrateNoOp _) -> pure ()
         Right (MigrateDryRunOK _) -> pure ()
         Right (MigrateDryRunOKPartial _ _ _) -> pure ()
+        Right (MigrateDryRunOKBumpedThrough _ _ _) -> pure ()
         Left err -> do
           colorEnabled <- useColor
           let msg = "    Migration failed for " <> name <> ": " <> renderMigrateError err

@@ -566,11 +566,13 @@ spec = do
     -- EP-5: partial / blocked planner outcomes
     -- ------------------------------------------------------------------
 
-    it "applies the longest reachable prefix and surfaces the unreachable tail" $
+    it "applies the longest reachable prefix and bumps through the exhausted tail" $
       -- Master-plan live-tree shape: installed declares one edge
       -- 1.0.0 -> 2.0.0 but is itself at 3.0.0. Manifest at 1.0.0
       -- targets 3.0.0 implicitly. Without --to, we should apply the
-      -- prefix and report the unreachable (2.0.0, 3.0.0) tail.
+      -- prefix AND (since EP-28) bump the manifest all the way to
+      -- 3.0.0 because the tail is exhausted (no migration declared
+      -- past 2.0.0).
       withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
         let installed = dir </> "installed-demo"
         writeInstalledModule installed "3.0.0" moveAppToSrcLit
@@ -581,10 +583,12 @@ spec = do
           withCurrentDirectory dir $
             runMigrate defaultOpts manifest installed
         case result of
-          Right (MigrateAppliedPartial _ manifest' _stuck _target) -> do
-            -- Manifest bumped to the highest reached version, not the
-            -- unreachable target.
-            (head manifest'.modules).moduleVersion `shouldBe` Just "2.0.0"
+          Right (MigrateAppliedBumpedThrough _ manifest' stuck target) -> do
+            -- Manifest bumped through the exhausted tail to the
+            -- target, not stopped at the chain's chainTo.
+            renderVersion stuck `shouldBe` "2.0.0"
+            renderVersion target `shouldBe` "3.0.0"
+            (head manifest'.modules).moduleVersion `shouldBe` Just "3.0.0"
             -- File moved as the prefix specified.
             Map.member "src/Main.hs" manifest'.files `shouldBe` True
             Map.member "app/Main.hs" manifest'.files `shouldBe` False
@@ -592,7 +596,7 @@ spec = do
             doesFileExist (dir </> "app" </> "Main.hs") `shouldReturn` False
           other ->
             expectationFailure
-              ("expected MigrateAppliedPartial, got: " <> show other)
+              ("expected MigrateAppliedBumpedThrough, got: " <> show other)
 
     it "errors with MigrationGap when --to TARGET cannot be reached (partial)" $
       -- Same fixture as above, but the user explicitly asked for
@@ -815,7 +819,10 @@ spec = do
             expectationFailure
               ("expected MigrateApplied, got: " <> show other)
 
-    it "dry-run on a partial chain returns MigrateDryRunOKPartial without writing disk" $
+    it "dry-run on an exhausted-tail partial chain returns MigrateDryRunOKBumpedThrough" $
+      -- Same fixture as the partial-apply test (migrations=[1.0→2.0],
+      -- target 3.0). Tail exhausted → EP-28 dispatches to the
+      -- bump-through dry-run variant.
       withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
         let installed = dir </> "installed-demo"
         writeInstalledModule installed "3.0.0" moveAppToSrcLit
@@ -827,13 +834,15 @@ spec = do
           withCurrentDirectory dir $
             runMigrate opts manifest installed
         case result of
-          Right (MigrateDryRunOKPartial _ _stuck _target) -> do
+          Right (MigrateDryRunOKBumpedThrough _ stuck target) -> do
+            renderVersion stuck `shouldBe` "2.0.0"
+            renderVersion target `shouldBe` "3.0.0"
             -- Disk untouched.
             doesFileExist (dir </> "app" </> "Main.hs") `shouldReturn` True
             doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` False
           other ->
             expectationFailure
-              ("expected MigrateDryRunOKPartial, got: " <> show other)
+              ("expected MigrateDryRunOKBumpedThrough, got: " <> show other)
 
     -- ------------------------------------------------------------------
     -- EP-26: --commit / --commit-message auto-commit flags.
@@ -1006,7 +1015,10 @@ spec = do
     --      that as "migration was skipped."
     -- ------------------------------------------------------------------
 
-    it "EP-27 probe 1: applies partial chain with two-component version strings" $
+    it "EP-27 probe 1: bump-through partial chain with two-component version strings" $
+      -- Two-component version variant of the user's reported scenario.
+      -- After EP-28, the exhausted tail collapses into a one-shot
+      -- upgrade: manifest moves from 0.1 → 0.3 in one command.
       withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
         let installed = dir </> "installed-demo"
             -- Move old.txt -> new.txt between 0.1 and 0.2; installed
@@ -1028,22 +1040,24 @@ spec = do
           withCurrentDirectory dir $
             runMigrate defaultOpts manifest installed
         case result of
-          Right (MigrateAppliedPartial _ manifest' _stuck _target) -> do
-            (head manifest'.modules).moduleVersion `shouldBe` Just "0.2"
+          Right (MigrateAppliedBumpedThrough _ manifest' stuck target) -> do
+            renderVersion stuck `shouldBe` "0.2"
+            renderVersion target `shouldBe` "0.3"
+            (head manifest'.modules).moduleVersion `shouldBe` Just "0.3"
             doesFileExist (dir </> "new.txt") `shouldReturn` True
             doesFileExist (dir </> "old.txt") `shouldReturn` False
             Map.member "new.txt" manifest'.files `shouldBe` True
             Map.member "old.txt" manifest'.files `shouldBe` False
           other ->
             expectationFailure
-              ("expected MigrateAppliedPartial, got: " <> show other)
+              ("expected MigrateAppliedBumpedThrough, got: " <> show other)
 
-    it "EP-27 probe 2: applies partial chain via the default fetch path (installed pre-upgrade)" $
+    it "EP-27 probe 2: bump-through partial chain via the default fetch path (installed pre-upgrade)" $
       -- Installed copy is the pre-upgrade snapshot: declares 0.1 with
       -- no migrations. Remote ships 0.3 with the partial migrations
       -- list. Manifest at 0.1. The fetch path clones the remote and
-      -- plans against the clone's module.dhall, so the partial chain
-      -- 0.1 -> 0.2 should be applied.
+      -- plans against the clone's module.dhall; tail is exhausted →
+      -- bump-through.
       let partialLit =
             T.unlines
               [ "[ { from = \"0.1\"",
@@ -1062,17 +1076,17 @@ spec = do
               withCurrentDirectory fix.projectDir $
                 runMigrate opts manifest fix.installedDir
             case result of
-              Right (MigrateAppliedPartial _ manifest' _stuck _target) -> do
+              Right (MigrateAppliedBumpedThrough _ manifest' _stuck _target) -> do
                 case manifest'.modules of
-                  (am : _) -> am.moduleVersion `shouldBe` Just "0.2"
+                  (am : _) -> am.moduleVersion `shouldBe` Just "0.3"
                   [] -> expectationFailure "manifest has no modules"
                 doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` True
                 doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` False
               other ->
                 expectationFailure
-                  ("expected MigrateAppliedPartial, got: " <> show other)
+                  ("expected MigrateAppliedBumpedThrough, got: " <> show other)
 
-    it "EP-27 probe 3: applies partial chain via fetch path when installed already declares 0.3" $
+    it "EP-27 probe 3: bump-through partial chain via fetch path when installed already declares 0.3" $
       -- The user's exact reported shape: manifest at 0.1, installed
       -- copy already declares 0.3 with the [0.1 -> 0.2] migrations
       -- list, remote also at 0.3 with the same migrations list.
@@ -1098,15 +1112,15 @@ spec = do
               withCurrentDirectory fix.projectDir $
                 runMigrate opts manifest fix.installedDir
             case result of
-              Right (MigrateAppliedPartial _ manifest' _stuck _target) -> do
+              Right (MigrateAppliedBumpedThrough _ manifest' _stuck _target) -> do
                 case manifest'.modules of
-                  (am : _) -> am.moduleVersion `shouldBe` Just "0.2"
+                  (am : _) -> am.moduleVersion `shouldBe` Just "0.3"
                   [] -> expectationFailure "manifest has no modules"
                 doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` True
                 doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` False
               other ->
                 expectationFailure
-                  ("expected MigrateAppliedPartial, got: " <> show other)
+                  ("expected MigrateAppliedBumpedThrough, got: " <> show other)
 
     it "EP-27 probe 4: stale installed (declares 0.3 but [] migrations) is benign-upgrade not skip" $
       -- If a previous upgrade dropped the migrations list somehow, the
@@ -1135,12 +1149,13 @@ spec = do
     -- literal report.
     -- ------------------------------------------------------------------
 
-    it "EP-27 M2: applies locally-declared partial chain even when remote has dropped the edges" $
+    it "EP-27 M2: applies locally-declared partial chain (with EP-28 bump-through) when remote has dropped the edges" $
       -- Manifest at 0.1; locally installed copy declares 0.3 with the
       -- {0.1 -> 0.2} migration; cloned remote also declares 0.3 but
-      -- migrations = []. Without the fix, the fetch path classifies the
-      -- result as MigrateBenignUpgrade and skips the locally-declared
-      -- edge. With the fix, the local fallback applies the chain.
+      -- migrations = []. EP-27's fallback to local migrations + EP-28's
+      -- bump-through compose: the local plan finds an exhausted-tail
+      -- partial chain, dispatch routes it to MigrateAppliedBumpedThrough,
+      -- and the manifest lands at 0.3 in one shot.
       let partialLit =
             T.unlines
               [ "[ { from = \"0.1\"",
@@ -1165,11 +1180,11 @@ spec = do
               withCurrentDirectory fix.projectDir $
                 runMigrate opts manifest fix.installedDir
             case result of
-              Right (MigrateAppliedPartial _ manifest' stuck target) -> do
+              Right (MigrateAppliedBumpedThrough _ manifest' stuck target) -> do
                 renderVersion stuck `shouldBe` "0.2"
                 renderVersion target `shouldBe` "0.3"
                 case manifest'.modules of
-                  (am : _) -> am.moduleVersion `shouldBe` Just "0.2"
+                  (am : _) -> am.moduleVersion `shouldBe` Just "0.3"
                   [] -> expectationFailure "manifest has no modules"
                 doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` True
                 doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` False
@@ -1177,7 +1192,7 @@ spec = do
                 Map.member "old.txt" manifest'.files `shouldBe` False
               other ->
                 expectationFailure
-                  ("expected MigrateAppliedPartial (local fallback), got: " <> show other)
+                  ("expected MigrateAppliedBumpedThrough (local fallback + EP-28), got: " <> show other)
 
     it "EP-27 M2: applies local-only chain (full) even when remote has dropped the edges" $
       -- Same shape as above but the locally-declared chain reaches the
@@ -1213,7 +1228,7 @@ spec = do
                 expectationFailure
                   ("expected MigrateApplied (local fallback, full chain), got: " <> show other)
 
-    it "EP-27 M2: dry-run on a divergence partial-chain returns a partial dry-run" $
+    it "EP-27 M2: dry-run on a divergence partial-chain returns a bump-through dry-run" $
       let partialLit =
             T.unlines
               [ "[ { from = \"0.1\"",
@@ -1237,7 +1252,7 @@ spec = do
               withCurrentDirectory fix.projectDir $
                 runMigrate opts manifest fix.installedDir
             case result of
-              Right (MigrateDryRunOKPartial _ stuck target) -> do
+              Right (MigrateDryRunOKBumpedThrough _ stuck target) -> do
                 renderVersion stuck `shouldBe` "0.2"
                 renderVersion target `shouldBe` "0.3"
                 -- Disk untouched.
@@ -1245,7 +1260,7 @@ spec = do
                 doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` False
               other ->
                 expectationFailure
-                  ("expected MigrateDryRunOKPartial (local fallback), got: " <> show other)
+                  ("expected MigrateDryRunOKBumpedThrough (local fallback), got: " <> show other)
 
     it "EP-27 M2: clone-based BenignUpgrade still wins when local also has [] migrations" $
       -- Sanity: when neither the clone nor the local installed copy
@@ -1263,3 +1278,109 @@ spec = do
           other ->
             expectationFailure
               ("expected MigrateBenignUpgrade, got: " <> show other)
+
+    -- ------------------------------------------------------------------
+    -- EP-28: bump-through partial-chain tail.
+    -- The new MigrateAppliedBumpedThrough variant fires when the
+    -- partial chain's unreachable tail has no further declared
+    -- migrations. Apply the prefix AND bump the manifest all the way
+    -- to target. The "blocked tail" case (a future edge starts past
+    -- the chain's stopping point) still produces MigrateAppliedPartial
+    -- — the user can't safely auto-bump there.
+    -- ------------------------------------------------------------------
+
+    it "EP-28: keeps MigrateAppliedPartial when the unreachable tail has a future edge" $
+      -- Two declared edges: 1.0.0 -> 2.0.0 and 5.0.0 -> 6.0.0.
+      -- Manifest at 1.0.0, target 6.0.0. After applying the prefix the
+      -- chain stops at 2.0.0; the future edge at 5.0.0 is in the
+      -- unreachable region but doesn't extend the chain. Tail is NOT
+      -- exhausted — author has plans the chain doesn't span. EP-28
+      -- preserves the EP-5 partial-apply behavior.
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+            twoEdgesLit =
+              T.unlines
+                [ "[ { from = \"1.0.0\"",
+                  "  , to = \"2.0.0\"",
+                  "  , ops =",
+                  "      [ (< MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >).MoveFile { src = \"app/Main.hs\", dest = \"src/Main.hs\" }",
+                  "      ]",
+                  "  }",
+                  ", { from = \"5.0.0\"",
+                  "  , to = \"6.0.0\"",
+                  "  , ops = [] : List < MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >",
+                  "  }",
+                  "]"
+                ]
+        writeInstalledModule installed "6.0.0" twoEdgesLit
+        createDirectoryIfMissing True (dir </> "app")
+        TIO.writeFile (dir </> "app" </> "Main.hs") "x"
+        let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "x")]
+        result <-
+          withCurrentDirectory dir $
+            runMigrate defaultOpts manifest installed
+        case result of
+          Right (MigrateAppliedPartial _ manifest' stuck target) -> do
+            renderVersion stuck `shouldBe` "2.0.0"
+            renderVersion target `shouldBe` "6.0.0"
+            (head manifest'.modules).moduleVersion `shouldBe` Just "2.0.0"
+            doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` True
+          other ->
+            expectationFailure
+              ("expected MigrateAppliedPartial (blocked tail), got: " <> show other)
+
+    it "EP-28: --to TARGET still errors with MigrationGap on an exhausted-tail partial" $
+      -- Strict-target contract: if the user named --to 0.3 explicitly
+      -- but the chain only reaches 0.2, refuse the partial fulfillment
+      -- regardless of whether the tail is exhausted. The bump-through
+      -- behaviour is only the default (no --to).
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+        writeInstalledModule installed "3.0.0" moveAppToSrcLit
+        createDirectoryIfMissing True (dir </> "app")
+        TIO.writeFile (dir </> "app" </> "Main.hs") "x"
+        let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "x")]
+            opts = defaultOpts {migrateTo = Just "3.0.0"}
+        result <-
+          withCurrentDirectory dir $
+            runMigrate opts manifest installed
+        case result of
+          Left (MigratePlanFailed _) ->
+            doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` False
+          other ->
+            expectationFailure
+              ("expected MigratePlanFailed (--to refuses partial), got: " <> show other)
+
+    it "EP-28: bump-through is idempotent — second run is a no-op" $
+      -- After the first invocation lands the manifest at the target,
+      -- a second invocation has nothing to do. Pin the no-op contract.
+      withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
+        let installed = dir </> "installed-demo"
+            moveLit =
+              T.unlines
+                [ "[ { from = \"0.1\"",
+                  "  , to = \"0.2\"",
+                  "  , ops =",
+                  "      [ (< MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } >).MoveFile { src = \"old.txt\", dest = \"new.txt\" }",
+                  "      ]",
+                  "  }",
+                  "]"
+                ]
+        writeInstalledModule installed "0.3" moveLit
+        TIO.writeFile (dir </> "old.txt") "tracked\n"
+        let manifest = mkManifest "0.1" installed [("old.txt", "tracked\n")]
+        first <-
+          withCurrentDirectory dir $
+            runMigrate defaultOpts manifest installed
+        manifest1 <- case first of
+          Right (MigrateAppliedBumpedThrough _ m _ _) -> pure m
+          other ->
+            expectationFailure ("first call: expected bump-through, got: " <> show other)
+              >> error "unreachable"
+        second <-
+          withCurrentDirectory dir $
+            runMigrate defaultOpts manifest1 installed
+        case second of
+          Right (MigrateNoOp v) -> renderVersion v `shouldBe` "0.3"
+          other ->
+            expectationFailure ("second call: expected MigrateNoOp, got: " <> show other)
