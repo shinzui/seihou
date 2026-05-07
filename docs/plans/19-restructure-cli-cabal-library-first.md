@@ -1,8 +1,15 @@
+---
+id: 19
+slug: restructure-cli-cabal-library-first
+title: "Restructure seihou-cli.cabal so the Library is the Default Home"
+kind: exec-plan
+created_at: 2026-04-27T01:00:01Z
+intention: "intention_01kq63sz0ced98e23qvad7zpnp"
+master_plan: "docs/masterplans/2-cli-library-first-convention.md"
+---
+
+
 # Restructure `seihou-cli.cabal` so the Library is the Default Home
-
-MasterPlan: docs/masterplans/2-cli-library-first-convention.md
-
-Intention: intention_01kq63sz0ced98e23qvad7zpnp
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

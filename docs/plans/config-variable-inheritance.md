@@ -1,3 +1,11 @@
+---
+slug: config-variable-inheritance
+title: "Automatic Variable Resolution via Config Hierarchy"
+kind: exec-plan
+created_at: 2026-03-06T14:13:45Z
+---
+
+
 # Automatic Variable Resolution via Config Hierarchy
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

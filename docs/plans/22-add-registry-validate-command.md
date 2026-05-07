@@ -1,6 +1,14 @@
-# Add `seihou registry validate` Subcommand
+---
+id: 22
+slug: add-registry-validate-command
+title: "Add seihou registry validate Subcommand"
+kind: exec-plan
+created_at: 2026-04-27T14:07:32Z
+intention: "intention_01kq6cyx1ze8nt897kgbq2mtas"
+---
 
-Intention: intention_01kq6cyx1ze8nt897kgbq2mtas
+
+# Add `seihou registry validate` Subcommand
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

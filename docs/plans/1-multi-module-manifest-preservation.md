@@ -1,6 +1,14 @@
-# Preserve manifest state across independent module runs
+---
+id: 1
+slug: multi-module-manifest-preservation
+title: "Preserve manifest state across independent module runs"
+kind: exec-plan
+created_at: 2026-03-30T14:46:56Z
+intention: "intention_01kmzj9vx8en3t4b08eb4eytjq"
+---
 
-Intention: intention_01kmzj9vx8en3t4b08eb4eytjq
+
+# Preserve manifest state across independent module runs
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

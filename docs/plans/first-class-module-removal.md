@@ -1,3 +1,11 @@
+---
+slug: first-class-module-removal
+title: "First-class module removal"
+kind: exec-plan
+created_at: 2026-03-21T15:50:44Z
+---
+
+
 # First-class module removal
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,8 +1,15 @@
+---
+id: 18
+slug: document-cli-library-first-convention
+title: "Document the CLI Library-First Module-Placement Convention"
+kind: exec-plan
+created_at: 2026-04-27T00:39:07Z
+intention: "intention_01kq63sz0ced98e23qvad7zpnp"
+master_plan: "docs/masterplans/2-cli-library-first-convention.md"
+---
+
+
 # Document the CLI Library-First Module-Placement Convention
-
-MasterPlan: docs/masterplans/2-cli-library-first-convention.md
-
-Intention: intention_01kq63sz0ced98e23qvad7zpnp
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

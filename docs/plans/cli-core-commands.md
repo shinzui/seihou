@@ -1,3 +1,11 @@
+---
+slug: cli-core-commands
+title: "Implement Remaining CLI Core Commands"
+kind: exec-plan
+created_at: 2026-03-02T05:03:49Z
+---
+
+
 # Implement Remaining CLI Core Commands
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

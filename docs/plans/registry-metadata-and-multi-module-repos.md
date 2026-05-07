@@ -1,3 +1,11 @@
+---
+slug: registry-metadata-and-multi-module-repos
+title: "Registry Metadata and Multi-Module Repository Support"
+kind: exec-plan
+created_at: 2026-03-06T15:51:27Z
+---
+
+
 # Registry Metadata and Multi-Module Repository Support
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,6 +1,13 @@
-# Show Module Versions in Status Output
+---
+slug: status-show-module-versions
+title: "Show Module Versions in Status Output"
+kind: exec-plan
+created_at: 2026-03-26T14:09:30Z
+intention: "intention_01kjjgfv60e8y9qata1sfk8qrc"
+---
 
-Intention: intention_01kjjgfv60e8y9qata1sfk8qrc
+
+# Show Module Versions in Status Output
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

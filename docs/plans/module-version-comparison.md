@@ -1,3 +1,11 @@
+---
+slug: module-version-comparison
+title: "Add module version tracking and outdated detection"
+kind: exec-plan
+created_at: 2026-03-16T03:46:01Z
+---
+
+
 # Add module version tracking and outdated detection
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

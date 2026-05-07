@@ -1,3 +1,11 @@
+---
+slug: add-list-command
+title: "Add seihou list Command"
+kind: exec-plan
+created_at: 2026-03-05T23:05:12Z
+---
+
+
 # Add `seihou list` Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

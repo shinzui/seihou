@@ -1,6 +1,14 @@
-# Add --commit flag to seihou migrate with AI-generated commit messages
+---
+id: 26
+slug: migrate-commit-flag
+title: "Add --commit flag to seihou migrate with AI-generated commit messages"
+kind: exec-plan
+created_at: 2026-04-27T19:16:03Z
+intention: "intention_01kq2gy6yde258gd30xjvs85g7"
+---
 
-Intention: intention_01kq2gy6yde258gd30xjvs85g7
+
+# Add --commit flag to seihou migrate with AI-generated commit messages
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

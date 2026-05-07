@@ -1,3 +1,11 @@
+---
+slug: template-rendering-and-variable-resolution
+title: "Template Rendering and Variable Resolution"
+kind: exec-plan
+created_at: 2026-03-02T03:16:59Z
+---
+
+
 # Template Rendering and Variable Resolution
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

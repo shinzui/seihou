@@ -1,3 +1,12 @@
+---
+id: 28
+slug: bump-through-benign-tail
+title: "Bump through partial-chain tail when no further migrations are declared"
+kind: exec-plan
+created_at: 2026-04-28T15:02:03Z
+---
+
+
 # Bump through partial-chain tail when no further migrations are declared
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

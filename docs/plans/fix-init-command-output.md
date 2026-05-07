@@ -1,3 +1,11 @@
+---
+slug: fix-init-command-output
+title: "Fix Init Command Output"
+kind: exec-plan
+created_at: 2026-03-05T02:50:48Z
+---
+
+
 # Fix Init Command Output
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

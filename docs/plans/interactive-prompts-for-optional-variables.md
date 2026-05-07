@@ -1,3 +1,11 @@
+---
+slug: interactive-prompts-for-optional-variables
+title: "Interactive Prompts for Optional Variables"
+kind: exec-plan
+created_at: 2026-03-06T16:32:11Z
+---
+
+
 # Interactive Prompts for Optional Variables
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

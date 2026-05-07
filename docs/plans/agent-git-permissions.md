@@ -1,6 +1,13 @@
-# Grant full git access to all agent commands
+---
+slug: agent-git-permissions
+title: "Grant full git access to all agent commands"
+kind: exec-plan
+created_at: 2026-03-27T13:14:36Z
+intention: "intention_01kjjgfv60e8y9qata1sfk8qrc"
+---
 
-Intention: intention_01kjjgfv60e8y9qata1sfk8qrc
+
+# Grant full git access to all agent commands
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

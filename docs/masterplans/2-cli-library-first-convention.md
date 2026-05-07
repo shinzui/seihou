@@ -1,6 +1,14 @@
-# Establish a CLI Library-First Convention to Prevent Recurring Helper-Extraction Refactors
+---
+id: 2
+slug: cli-library-first-convention
+title: "Establish a CLI Library-First Convention to Prevent Recurring Helper-Extraction Refactors"
+kind: master-plan
+created_at: 2026-04-27T02:09:55Z
+intention: "intention_01kq63sz0ced98e23qvad7zpnp"
+---
 
-Intention: intention_01kq63sz0ced98e23qvad7zpnp
+
+# Establish a CLI Library-First Convention to Prevent Recurring Helper-Extraction Refactors
 
 This MasterPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

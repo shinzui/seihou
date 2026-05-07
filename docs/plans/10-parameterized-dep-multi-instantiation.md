@@ -1,6 +1,14 @@
-# Run parameterized dependencies once per distinct parent binding
+---
+id: 10
+slug: parameterized-dep-multi-instantiation
+title: "Run parameterized dependencies once per distinct parent binding"
+kind: exec-plan
+created_at: 2026-04-19T16:49:16Z
+intention: "intention_01kpk82xjve7er8t8f3avfazjp"
+---
 
-Intention: intention_01kpk82xjve7er8t8f3avfazjp
+
+# Run parameterized dependencies once per distinct parent binding
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

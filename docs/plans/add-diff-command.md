@@ -1,3 +1,11 @@
+---
+slug: add-diff-command
+title: "Add seihou diff Command"
+kind: exec-plan
+created_at: 2026-03-05T04:08:22Z
+---
+
+
 # Add `seihou diff` Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: filesystem-execution-and-manifest-tracking
+title: "Filesystem Execution and Manifest Tracking"
+kind: exec-plan
+created_at: 2026-03-02T04:19:33Z
+---
+
+
 # Filesystem Execution and Manifest Tracking
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

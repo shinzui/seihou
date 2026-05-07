@@ -1,3 +1,11 @@
+---
+slug: config-writing
+title: "Add Config Writing Command"
+kind: exec-plan
+created_at: 2026-03-04T00:17:46Z
+---
+
+
 # Add Config Writing Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,6 +1,14 @@
-# Fix `seihou migrate` skipping the reachable prefix when the chain stops one step short of the installed version
+---
+id: 27
+slug: fix-migrate-skips-partial-chain
+title: "Fix seihou migrate skipping the reachable prefix when the chain stops one step short of the installed version"
+kind: exec-plan
+created_at: 2026-04-28T14:22:27Z
+intention: "intention_01kq2gy6yde258gd30xjvs85g7"
+---
 
-Intention: intention_01kq2gy6yde258gd30xjvs85g7
+
+# Fix `seihou migrate` skipping the reachable prefix when the chain stops one step short of the installed version
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

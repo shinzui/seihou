@@ -1,3 +1,11 @@
+---
+slug: cli-help-text-and-usage-docs
+title: "Improve CLI Help Text and Usage Documentation"
+kind: exec-plan
+created_at: 2026-03-02T06:20:06Z
+---
+
+
 # Improve CLI Help Text and Usage Documentation
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

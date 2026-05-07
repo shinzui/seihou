@@ -1,3 +1,11 @@
+---
+slug: command-variable-interpolation
+title: "Add variable interpolation to command strings"
+kind: exec-plan
+created_at: 2026-03-08T00:13:11Z
+---
+
+
 # Add variable interpolation to command strings
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

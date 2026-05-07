@@ -1,3 +1,11 @@
+---
+slug: add-remove-command
+title: "Add seihou remove Command"
+kind: exec-plan
+created_at: 2026-03-21T14:53:46Z
+---
+
+
 # Add `seihou remove` Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

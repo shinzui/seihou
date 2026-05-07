@@ -1,3 +1,11 @@
+---
+slug: agent-assist-command
+title: "Add Native CLI Agent Assist Command"
+kind: exec-plan
+created_at: 2026-03-07T16:50:39Z
+---
+
+
 # Add Native CLI Agent Assist Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

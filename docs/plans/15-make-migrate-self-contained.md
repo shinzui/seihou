@@ -1,7 +1,15 @@
-# Make `seihou migrate` self-contained (no manual upgrade required)
+---
+id: 15
+slug: make-migrate-self-contained
+title: "Make seihou migrate self-contained (no manual upgrade required)"
+kind: exec-plan
+created_at: 2026-04-26T23:06:30Z
+intention: "intention_01kq5pe8hhekrrb9wg4eb1jz74"
+master_plan: "docs/masterplans/1-migrations-dx.md"
+---
 
-MasterPlan: docs/masterplans/1-migrations-dx.md
-Intention: intention_01kq5pe8hhekrrb9wg4eb1jz74
+
+# Make `seihou migrate` self-contained (no manual upgrade required)
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

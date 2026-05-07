@@ -1,3 +1,11 @@
+---
+slug: parameterized-dependencies
+title: "Parameterized Dependencies"
+kind: exec-plan
+created_at: 2026-03-11T23:44:25Z
+---
+
+
 # Parameterized Dependencies
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

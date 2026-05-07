@@ -1,3 +1,11 @@
+---
+slug: refactor-nested-conditionals
+title: "Refactor Nested Conditionals to Idiomatic Haskell"
+kind: exec-plan
+created_at: 2026-03-21T14:02:13Z
+---
+
+
 # Refactor Nested Conditionals to Idiomatic Haskell
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

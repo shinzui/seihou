@@ -1,3 +1,11 @@
+---
+slug: upgrade-installed-modules
+title: "Add seihou upgrade command for installed modules"
+kind: exec-plan
+created_at: 2026-03-16T04:24:39Z
+---
+
+
 # Add seihou upgrade command for installed modules
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

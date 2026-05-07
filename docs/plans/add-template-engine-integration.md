@@ -1,3 +1,11 @@
+---
+slug: add-template-engine-integration
+title: "Integrate Template Engine with Execution Pipeline and Add Structured Strategy"
+kind: exec-plan
+created_at: 2026-03-02T21:27:16Z
+---
+
+
 # Integrate Template Engine with Execution Pipeline and Add Structured Strategy
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

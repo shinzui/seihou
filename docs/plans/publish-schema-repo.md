@@ -1,3 +1,11 @@
+---
+slug: publish-schema-repo
+title: "Publish seihou-schema to a Separate Repository"
+kind: exec-plan
+created_at: 2026-03-21T13:11:53Z
+---
+
+
 # Publish seihou-schema to a Separate Repository
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

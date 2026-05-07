@@ -1,6 +1,14 @@
-# Show available registry updates in `seihou status`
+---
+id: 5
+slug: status-show-available-updates
+title: "Show available registry updates in seihou status"
+kind: exec-plan
+created_at: 2026-04-15T21:09:00Z
+intention: "intention_01kp9dp8zte2rrnzzt3qr73j0m"
+---
 
-Intention: intention_01kp9dp8zte2rrnzzt3qr73j0m
+
+# Show available registry updates in `seihou status`
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

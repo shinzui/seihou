@@ -1,3 +1,11 @@
+---
+slug: fix-new-module-scaffolding
+title: "Fix new-module Scaffolding to Generate Valid Modules"
+kind: exec-plan
+created_at: 2026-03-04T05:51:18Z
+---
+
+
 # Fix new-module Scaffolding to Generate Valid Modules
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

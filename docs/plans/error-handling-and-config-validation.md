@@ -1,3 +1,11 @@
+---
+slug: error-handling-and-config-validation
+title: "Replace error Crashes with Structured Error Propagation"
+kind: exec-plan
+created_at: 2026-03-02T18:41:39Z
+---
+
+
 # Replace `error` Crashes with Structured Error Propagation
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: add-help-topics-command
+title: "Add help topics subcommand"
+kind: exec-plan
+created_at: 2026-03-12T15:43:07Z
+---
+
+
 # Add help topics subcommand
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

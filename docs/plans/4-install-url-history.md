@@ -1,3 +1,12 @@
+---
+id: 4
+slug: install-url-history
+title: "Add install URL history with FZF selection"
+kind: exec-plan
+created_at: 2026-04-07T15:57:23Z
+---
+
+
 # Add install URL history with FZF selection
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

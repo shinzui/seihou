@@ -1,3 +1,11 @@
+---
+slug: upgrade-unversioned-modules
+title: "Support Upgrading Unversioned Modules"
+kind: exec-plan
+created_at: 2026-03-21T15:57:21Z
+---
+
+
 # Support Upgrading Unversioned Modules
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

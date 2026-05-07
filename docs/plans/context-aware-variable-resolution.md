@@ -1,3 +1,11 @@
+---
+slug: context-aware-variable-resolution
+title: "Add Context-Aware Variable Resolution"
+kind: exec-plan
+created_at: 2026-03-07T16:26:47Z
+---
+
+
 # Add Context-Aware Variable Resolution
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: bootstrap-and-cli-skeleton
+title: "Bootstrap Project and Initial CLI Skeleton"
+kind: exec-plan
+created_at: 2026-03-02T01:19:11Z
+---
+
+
 # Bootstrap Project and Initial CLI Skeleton
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

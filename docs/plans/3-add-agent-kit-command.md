@@ -1,6 +1,14 @@
-# Add Agent Kit Command
+---
+id: 3
+slug: add-agent-kit-command
+title: "Add Agent Kit Command"
+kind: exec-plan
+created_at: 2026-04-03T14:40:08Z
+intention: "intention_01kn9vq8ayerxab7m295qqpnb6"
+---
 
-Intention: intention_01kn9vq8ayerxab7m295qqpnb6
+
+# Add Agent Kit Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

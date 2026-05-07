@@ -1,3 +1,11 @@
+---
+slug: config-file-layering-and-precedence-chain
+title: "Implement Config File Layering and Precedence Chain"
+kind: exec-plan
+created_at: 2026-03-02T15:52:18Z
+---
+
+
 # Implement Config File Layering and Precedence Chain
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

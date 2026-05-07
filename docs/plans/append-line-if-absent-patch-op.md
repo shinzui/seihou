@@ -1,3 +1,11 @@
+---
+slug: append-line-if-absent-patch-op
+title: "Add AppendLineIfAbsent PatchOp"
+kind: exec-plan
+created_at: 2026-03-25T14:07:12Z
+---
+
+
 # Add `AppendLineIfAbsent` PatchOp
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

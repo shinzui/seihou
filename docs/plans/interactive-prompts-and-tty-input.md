@@ -1,3 +1,11 @@
+---
+slug: interactive-prompts-and-tty-input
+title: "Add Interactive Prompts and TTY Input Handling"
+kind: exec-plan
+created_at: 2026-03-02T15:23:29Z
+---
+
+
 # Add Interactive Prompts and TTY Input Handling
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

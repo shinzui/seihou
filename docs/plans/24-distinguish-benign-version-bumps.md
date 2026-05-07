@@ -1,8 +1,15 @@
+---
+id: 24
+slug: distinguish-benign-version-bumps
+title: "Distinguish benign version bumps from missing migrations"
+kind: exec-plan
+created_at: 2026-04-27T14:38:51Z
+intention: "intention_01kq5pe8hhekrrb9wg4eb1jz74"
+master_plan: "docs/masterplans/1-migrations-dx.md"
+---
+
+
 # Distinguish benign version bumps from missing migrations
-
-MasterPlan: docs/masterplans/1-migrations-dx.md
-
-Intention: intention_01kq5pe8hhekrrb9wg4eb1jz74
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

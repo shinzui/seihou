@@ -1,6 +1,14 @@
-# Add Recipe: Named Module Compositions
+---
+id: 6
+slug: recipe-module-composition
+title: "Add Recipe: Named Module Compositions"
+kind: exec-plan
+created_at: 2026-04-16T05:20:39Z
+intention: "intention_01kpa7sf5ve7rasvfnkw4c8wy3"
+---
 
-Intention: intention_01kpa7sf5ve7rasvfnkw4c8wy3
+
+# Add Recipe: Named Module Compositions
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

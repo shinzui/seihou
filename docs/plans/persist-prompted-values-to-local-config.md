@@ -1,3 +1,11 @@
+---
+slug: persist-prompted-values-to-local-config
+title: "Persist Prompted Variable Values to Local Config"
+kind: exec-plan
+created_at: 2026-03-26T13:32:37Z
+---
+
+
 # Persist Prompted Variable Values to Local Config
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: shell-command-execution
+title: "Wire Shell Command Execution into the Generation Pipeline"
+kind: exec-plan
+created_at: 2026-03-03T05:32:40Z
+---
+
+
 # Wire Shell Command Execution into the Generation Pipeline
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: text-patching-and-structured-merge
+title: "Add Text Patching and Structured Merge"
+kind: exec-plan
+created_at: 2026-03-03T01:25:50Z
+---
+
+
 # Add Text Patching and Structured Merge
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

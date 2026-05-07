@@ -1,3 +1,11 @@
+---
+slug: fix-vars-command
+title: "Fix Vars Command Output Format"
+kind: exec-plan
+created_at: 2026-03-04T21:37:36Z
+---
+
+
 # Fix Vars Command Output Format
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

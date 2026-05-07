@@ -1,3 +1,11 @@
+---
+slug: bootstrap-agent-permissions
+title: "Expand Bootstrap Agent Permissions to Reduce User Prompts"
+kind: exec-plan
+created_at: 2026-03-24T15:00:54Z
+---
+
+
 # Expand Bootstrap Agent Permissions to Reduce User Prompts
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,6 +1,14 @@
-# Add inline conditional blocks to the Template strategy
+---
+id: 9
+slug: inline-conditionals-in-template-strategy
+title: "Add inline conditional blocks to the Template strategy"
+kind: exec-plan
+created_at: 2026-04-19T16:01:07Z
+intention: "intention_01kphc0qkeewfsrht6xa7p7x20"
+---
 
-Intention: intention_01kphc0qkeewfsrht6xa7p7x20
+
+# Add inline conditional blocks to the Template strategy
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

@@ -1,3 +1,11 @@
+---
+slug: improve-install-command
+title: "Improve Install Command"
+kind: exec-plan
+created_at: 2026-03-04T15:56:29Z
+---
+
+
 # Improve Install Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

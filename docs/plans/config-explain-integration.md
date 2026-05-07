@@ -1,3 +1,11 @@
+---
+slug: config-explain-integration
+title: "Thread Namespace Name Through Variable Resolution"
+kind: exec-plan
+created_at: 2026-03-04T04:58:35Z
+---
+
+
 # Thread Namespace Name Through Variable Resolution
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

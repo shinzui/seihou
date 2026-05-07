@@ -1,3 +1,11 @@
+---
+slug: fix-run-command-output
+title: "Fix Run Command Output Format"
+kind: exec-plan
+created_at: 2026-03-05T00:30:40Z
+---
+
+
 # Fix Run Command Output Format
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

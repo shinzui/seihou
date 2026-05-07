@@ -1,3 +1,11 @@
+---
+slug: shell-completions
+title: "Add Shell Completion Generation"
+kind: exec-plan
+created_at: 2026-03-13T14:34:16Z
+---
+
+
 # Add Shell Completion Generation
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: group-help-output
+title: "Group CLI help output into coherent command groups"
+kind: exec-plan
+created_at: 2026-03-24T14:46:02Z
+---
+
+
 # Group CLI help output into coherent command groups
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

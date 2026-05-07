@@ -1,6 +1,14 @@
-# Add a --confirm-defaults flag to seihou run
+---
+id: 7
+slug: run-confirm-defaults-flag
+title: "Add a --confirm-defaults flag to seihou run"
+kind: exec-plan
+created_at: 2026-04-18T22:51:47Z
+intention: "intention_01kphbvya3enva4yj3w1kyxrgp"
+---
 
-Intention: intention_01kphbvya3enva4yj3w1kyxrgp
+
+# Add a --confirm-defaults flag to seihou run
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

@@ -1,3 +1,11 @@
+---
+slug: add-fzf-integration
+title: "Add fzf Integration for Interactive Selection"
+kind: exec-plan
+created_at: 2026-03-12T16:02:52Z
+---
+
+
 # Add fzf Integration for Interactive Selection
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

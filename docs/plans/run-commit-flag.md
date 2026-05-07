@@ -1,6 +1,13 @@
-# Add --commit flag to seihou run with AI-generated commit messages
+---
+slug: run-commit-flag
+title: "Add --commit flag to seihou run with AI-generated commit messages"
+kind: exec-plan
+created_at: 2026-03-27T13:05:09Z
+intention: "intention_01kjjgfv60e8y9qata1sfk8qrc"
+---
 
-Intention: intention_01kjjgfv60e8y9qata1sfk8qrc
+
+# Add --commit flag to seihou run with AI-generated commit messages
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

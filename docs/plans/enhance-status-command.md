@@ -1,3 +1,11 @@
+---
+slug: enhance-status-command
+title: "Enhance Status Command with File State Classification"
+kind: exec-plan
+created_at: 2026-03-04T15:26:19Z
+---
+
+
 # Enhance Status Command with File State Classification
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

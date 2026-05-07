@@ -1,3 +1,11 @@
+---
+slug: logger-effect-interpreters
+title: "Wire the Logger Effect into the CLI"
+kind: exec-plan
+created_at: 2026-03-03T16:05:46Z
+---
+
+
 # Wire the Logger Effect into the CLI
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: schema-upgrade-command
+title: "Add seihou schema-upgrade Command"
+kind: exec-plan
+created_at: 2026-03-21T12:15:05Z
+---
+
+
 # Add `seihou schema-upgrade` Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

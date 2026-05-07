@@ -1,6 +1,14 @@
-# Skip git-ignored files when committing generated output
+---
+id: 2
+slug: commit-skip-gitignored-files
+title: "Skip git-ignored files when committing generated output"
+kind: exec-plan
+created_at: 2026-04-02T13:40:06Z
+intention: "intention_01kn76py8wee3bg5j7vvp2a48h"
+---
 
-Intention: intention_01kn76py8wee3bg5j7vvp2a48h
+
+# Skip git-ignored files when committing generated output
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

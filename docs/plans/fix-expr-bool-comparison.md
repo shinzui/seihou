@@ -1,3 +1,11 @@
+---
+slug: fix-expr-bool-comparison
+title: "Fix Bool Value Comparison in Conditional Expressions"
+kind: exec-plan
+created_at: 2026-03-21T14:28:29Z
+---
+
+
 # Fix Bool Value Comparison in Conditional Expressions
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

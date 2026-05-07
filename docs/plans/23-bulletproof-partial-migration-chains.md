@@ -1,7 +1,15 @@
-# Bulletproof partial migration chains across status, migrate, and run
+---
+id: 23
+slug: bulletproof-partial-migration-chains
+title: "Bulletproof partial migration chains across status, migrate, and run"
+kind: exec-plan
+created_at: 2026-04-27T03:28:27Z
+intention: "intention_01kq5pe8hhekrrb9wg4eb1jz74"
+master_plan: "docs/masterplans/1-migrations-dx.md"
+---
 
-MasterPlan: docs/masterplans/1-migrations-dx.md
-Intention: intention_01kq5pe8hhekrrb9wg4eb1jz74
+
+# Bulletproof partial migration chains across status, migrate, and run
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

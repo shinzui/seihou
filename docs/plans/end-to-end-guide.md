@@ -1,3 +1,11 @@
+---
+slug: end-to-end-guide
+title: "Create End-to-End Usage Guide"
+kind: exec-plan
+created_at: 2026-03-06T13:32:08Z
+---
+
+
 # Create End-to-End Usage Guide
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

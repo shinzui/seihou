@@ -1,6 +1,14 @@
-# Fix Migrations, Upgrade, Run, and Status DX
+---
+id: 1
+slug: migrations-dx
+title: "Fix Migrations, Upgrade, Run, and Status DX"
+kind: master-plan
+created_at: 2026-04-27T15:24:14Z
+intention: "intention_01kq5pe8hhekrrb9wg4eb1jz74"
+---
 
-Intention: intention_01kq5pe8hhekrrb9wg4eb1jz74
+
+# Fix Migrations, Upgrade, Run, and Status DX
 
 This MasterPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

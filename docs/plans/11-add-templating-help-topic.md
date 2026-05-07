@@ -1,3 +1,12 @@
+---
+id: 11
+slug: add-templating-help-topic
+title: "Add a templating help topic"
+kind: exec-plan
+created_at: 2026-04-19T16:34:35Z
+---
+
+
 # Add a `templating` help topic
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

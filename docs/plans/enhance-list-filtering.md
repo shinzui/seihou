@@ -1,3 +1,11 @@
+---
+slug: enhance-list-filtering
+title: "Enhance seihou list with repoName and tag filtering"
+kind: exec-plan
+created_at: 2026-03-26T03:28:00Z
+---
+
+
 # Enhance `seihou list` with repoName and tag filtering
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

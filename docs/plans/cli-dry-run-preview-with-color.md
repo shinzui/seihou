@@ -1,3 +1,11 @@
+---
+slug: cli-dry-run-preview-with-color
+title: "Add Colored Dry-Run Preview with Diff Status"
+kind: exec-plan
+created_at: 2026-03-03T03:12:57Z
+---
+
+
 # Add Colored Dry-Run Preview with Diff Status
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

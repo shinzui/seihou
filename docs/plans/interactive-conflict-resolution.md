@@ -1,3 +1,11 @@
+---
+slug: interactive-conflict-resolution
+title: "Interactive Conflict Resolution"
+kind: exec-plan
+created_at: 2026-03-03T15:36:36Z
+---
+
+
 # Interactive Conflict Resolution
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: fix-commit-message-backticks
+title: "Fix --commit message stripping triple-backtick fencing"
+kind: exec-plan
+created_at: 2026-03-28T23:24:52Z
+---
+
+
 # Fix --commit message stripping triple-backtick fencing
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

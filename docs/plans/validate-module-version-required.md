@@ -1,6 +1,13 @@
-# Validate that modules declare a version
+---
+slug: validate-module-version-required
+title: "Validate that modules declare a version"
+kind: exec-plan
+created_at: 2026-03-27T12:36:08Z
+intention: "intention_01kjjgfv60e8y9qata1sfk8qrc"
+---
 
-Intention: intention_01kjjgfv60e8y9qata1sfk8qrc
+
+# Validate that modules declare a version
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

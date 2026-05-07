@@ -1,3 +1,11 @@
+---
+slug: fix-validate-command
+title: "Fix Validate Command"
+kind: exec-plan
+created_at: 2026-03-04T19:58:19Z
+---
+
+
 # Fix Validate Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: agent-setup-command
+title: "Add agent consume Command"
+kind: exec-plan
+created_at: 2026-03-13T18:37:41Z
+---
+
+
 # Add `agent consume` Command
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

@@ -1,3 +1,11 @@
+---
+slug: validate-module-diagnostics-and-linting
+title: "Enhance validate-module with Rich Diagnostics and Lint Checks"
+kind: exec-plan
+created_at: 2026-03-03T04:38:46Z
+---
+
+
 # Enhance validate-module with Rich Diagnostics and Lint Checks
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

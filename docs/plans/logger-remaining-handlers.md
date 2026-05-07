@@ -1,3 +1,11 @@
+---
+slug: logger-remaining-handlers
+title: "Wire Logger into Remaining CLI Handlers"
+kind: exec-plan
+created_at: 2026-03-03T19:37:32Z
+---
+
+
 # Wire Logger into Remaining CLI Handlers
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,

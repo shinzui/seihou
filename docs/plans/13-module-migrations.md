@@ -1,6 +1,14 @@
-# Module Migrations: Apply Author-Declared Steps to Move a Project Between Module Versions
+---
+id: 13
+slug: module-migrations
+title: "Module Migrations: Apply Author-Declared Steps to Move a Project Between Module Versions"
+kind: exec-plan
+created_at: 2026-04-25T17:50:08Z
+intention: "intention_01kq2gy6yde258gd30xjvs85g7"
+---
 
-Intention: intention_01kq2gy6yde258gd30xjvs85g7
+
+# Module Migrations: Apply Author-Declared Steps to Move a Project Between Module Versions
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.

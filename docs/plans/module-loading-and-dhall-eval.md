@@ -1,3 +1,11 @@
+---
+slug: module-loading-and-dhall-eval
+title: "Module Loading and Dhall Evaluation"
+kind: exec-plan
+created_at: 2026-03-02T02:29:12Z
+---
+
+
 # Module Loading and Dhall Evaluation
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
