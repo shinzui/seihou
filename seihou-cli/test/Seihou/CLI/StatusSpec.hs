@@ -16,7 +16,8 @@ import Seihou.Core.Migration
     MigrationPlan (..),
   )
 import Seihou.Core.Types
-  ( AppliedModule (..),
+  ( AppliedBlueprint (..),
+    AppliedModule (..),
     Manifest (..),
     ModuleName (..),
     emptyParentVars,
@@ -91,8 +92,93 @@ mkEntry name inst avail status =
       status = status
     }
 
+-- | Build an 'AppliedBlueprint' fixture with the most common shape:
+-- name, version, two baseline modules, and a user prompt.
+mkBlueprint ::
+  Text ->
+  Maybe Text ->
+  [Text] ->
+  Bool ->
+  Maybe Text ->
+  AppliedBlueprint
+mkBlueprint name mver baselines noBL prompt =
+  AppliedBlueprint
+    { name = ModuleName name,
+      blueprintVersion = mver,
+      appliedAt = fixedTime,
+      baselineModules = map ModuleName baselines,
+      noBaseline = noBL,
+      userPrompt = prompt,
+      agentSessionId = Nothing
+    }
+
+withManifestBlueprint :: Maybe AppliedBlueprint -> Manifest -> Manifest
+withManifestBlueprint mb m = m {blueprint = mb}
+
 spec :: Spec
 spec = describe "formatStatus" $ do
+  describe "blueprint provenance" $ do
+    it "renders a populated blueprint with version, two baselines, and prompt" $ do
+      let manifest =
+            withManifestBlueprint
+              ( Just $
+                  mkBlueprint
+                    "payments-service"
+                    (Just "0.3.1")
+                    ["nix-flake", "haskell-base"]
+                    False
+                    (Just "set this up for a payments microservice")
+              )
+              (mkManifest [])
+          out = formatStatus False manifest [] Nothing []
+      out `shouldSatisfy` T.isInfixOf "Blueprint: payments-service v0.3.1 (applied"
+      out `shouldSatisfy` T.isInfixOf "  Baseline: nix-flake, haskell-base"
+      out `shouldSatisfy` T.isInfixOf "  Prompt: \"set this up for a payments microservice\""
+
+    it "renders --no-baseline as the dedicated placeholder" $ do
+      let manifest =
+            withManifestBlueprint
+              ( Just $
+                  mkBlueprint "lone-blueprint" Nothing [] True Nothing
+              )
+              (mkManifest [])
+          out = formatStatus False manifest [] Nothing []
+      out `shouldSatisfy` T.isInfixOf "Blueprint: lone-blueprint (applied"
+      out `shouldSatisfy` T.isInfixOf "  Baseline: (none -- --no-baseline)"
+      out `shouldNotSatisfy` T.isInfixOf "  Prompt:"
+
+    it "omits the Prompt line when no positional prompt was supplied" $ do
+      let manifest =
+            withManifestBlueprint
+              ( Just $
+                  mkBlueprint
+                    "payments-service"
+                    (Just "0.3.1")
+                    ["nix-flake"]
+                    False
+                    Nothing
+              )
+              (mkManifest [])
+          out = formatStatus False manifest [] Nothing []
+      out `shouldSatisfy` T.isInfixOf "Blueprint: payments-service v0.3.1 (applied"
+      out `shouldSatisfy` T.isInfixOf "  Baseline: nix-flake"
+      out `shouldNotSatisfy` T.isInfixOf "  Prompt:"
+
+    it "omits the entire blueprint section when manifest.blueprint is Nothing" $ do
+      let manifest = withManifestBlueprint Nothing (mkManifest [])
+          out = formatStatus False manifest [] Nothing []
+      out `shouldNotSatisfy` T.isInfixOf "Blueprint: "
+      out `shouldNotSatisfy` T.isInfixOf "  Baseline:"
+
+    it "renders an empty-baseline (no --no-baseline) blueprint with the (none declared) placeholder" $ do
+      let manifest =
+            withManifestBlueprint
+              (Just $ mkBlueprint "pure-prompt" Nothing [] False Nothing)
+              (mkManifest [])
+          out = formatStatus False manifest [] Nothing []
+      out `shouldSatisfy` T.isInfixOf "Blueprint: pure-prompt (applied"
+      out `shouldSatisfy` T.isInfixOf "  Baseline: (none declared)"
+
   it "all modules clean: no remediation, no Recommended actions block" $ do
     let am = mkApplied "demo" (Just "1.0.0")
         manifest = mkManifest [am]

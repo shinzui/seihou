@@ -254,7 +254,7 @@ Alternatives considered:
 | 29  | Define the Blueprint domain model, schema, discovery, and run-time refusal  | docs/plans/29-blueprint-domain-model-and-discovery.md             | None       | None       | Complete    |
 | 30  | Authoring and inspection commands for blueprints                            | docs/plans/30-blueprint-authoring-and-inspection.md               | EP-29      | None       | Complete    |
 | 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | Complete    |
-| 32  | Manifest tracking and `seihou status` integration for applied blueprints    | docs/plans/32-blueprint-manifest-and-status.md                    | EP-31      | None       | In Progress |
+| 32  | Manifest tracking and `seihou status` integration for applied blueprints    | docs/plans/32-blueprint-manifest-and-status.md                    | EP-31      | None       | Complete    |
 | 33  | Registry and multi-module-repository support for blueprints                 | docs/plans/33-blueprint-registry-and-install.md                   | EP-29      | EP-30      | Not Started |
 | 34  | Documentation, agent-prompt updates, and ecosystem polish                   | docs/plans/34-blueprint-docs-and-ecosystem.md                     | EP-31      | EP-30, EP-32, EP-33 | Not Started |
 
@@ -542,7 +542,7 @@ view of the entire initiative.
 - [x] EP-31: Add the embedded blueprint-agent system-prompt scaffold at `seihou-cli/data/blueprint-prompt.md` (mirrors `assist-prompt.md` shape) and embed via `Data.FileEmbed`.
 - [x] EP-32: Add `AppliedBlueprint` to `Seihou.Core.Types`, extend `Manifest`, bump `currentManifestVersion`, and update the JSON encoder/decoder with backwards-compatible decoding for older manifests.
 - [x] EP-32: Wire EP-31's runner to write the `AppliedBlueprint` entry on successful agent launch.
-- [ ] EP-32: Update `seihou status` to display the applied-blueprint line; verify via integration test.
+- [x] EP-32: Update `seihou status` to display the applied-blueprint line; verify via integration test.
 - [ ] EP-33: Extend `Registry` with `blueprints :: [RegistryEntry]`; update the Dhall registry schema and `evalRegistryFromFile`/`registryDecoder`.
 - [ ] EP-33: Update `discoverRepoContents` with a `SingleBlueprint FilePath` constructor; update `seihou install` to handle the new constructor and registry-listed blueprints; update `seihou browse`.
 - [ ] EP-33: Update `seihou registry sync-versions` and `seihou registry validate` to walk the new `blueprints` list.
@@ -668,6 +668,39 @@ view of the entire initiative.
   unchanged because EP-29 is the owner of the type and the field name
   there is correct; this note records the discrepancy with the
   masterplan's prose.
+
+- 2026-05-08 (EP-32) — `Seihou.CLI.AgentLaunchExec.launchAgentWith`
+  used to call `exitWith exitCode` itself, which made it impossible
+  to do post-launch bookkeeping (the manifest write that EP-32
+  needed). EP-32 refactored it to return `IO ExitCode`; the four
+  callers (Assist, Bootstrap, Setup, AgentRun) propagate the code
+  themselves. The non-runner callers gained a one-liner `exitWith`.
+  **Cross-plan signal for EP-34:** the design doc's runner-flow
+  diagram should describe `launchAgentWith` as returning the exit
+  code, not as terminating the process directly. The agent-prompt
+  edits (`assist`/`bootstrap`/`setup`-prompt.md) describe user-facing
+  behaviour and need no change.
+
+- 2026-05-08 (EP-32) — EP-31 exported a placeholder
+  `BlueprintRunOutcome` record from `Seihou.CLI.AgentRun` reserved
+  for EP-32. EP-32 did not need it — the helper
+  `appliedBlueprintFromOutcome` consumes the runner's local state
+  directly and `recordAppliedBlueprint` consumes an
+  `AppliedBlueprint` (the persistent form). The unused export was
+  removed. **Cross-plan signal for EP-34:** the documentation must
+  not describe `BlueprintRunOutcome` — it does not exist in the
+  shipped surface.
+
+- 2026-05-08 (EP-32) — The IO writer for `AppliedBlueprint` lives in
+  `seihou-cli/src/Seihou/CLI/AppliedBlueprint.hs` (the
+  `seihou-cli-internal` library), exposing
+  `recordAppliedBlueprint :: FilePath -> AppliedBlueprint -> IO
+  (Either Text ())`. The location is forced by the same Cabal
+  trapping constraint EP-30 and EP-31 documented (`seihou-cli-test`
+  cannot import from `executable seihou`). EP-33's registry work
+  does not touch the manifest writer; EP-34's doc page should
+  reference the helper by full module path so future contributors
+  can find it.
 
 - 2026-05-07 (EP-30) — `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`
   exports `schemaImportLine` (a precomputed `let S = … sha256:…`

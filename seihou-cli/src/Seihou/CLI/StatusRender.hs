@@ -18,7 +18,8 @@ import Seihou.CLI.VersionCompare
   )
 import Seihou.Core.Migration (MigrationChain (..), MigrationPlan (..))
 import Seihou.Core.Types
-  ( AppliedModule (..),
+  ( AppliedBlueprint (..),
+    AppliedModule (..),
     AppliedRecipe (..),
     Manifest (..),
     ModuleName (..),
@@ -133,6 +134,7 @@ formatStatus color manifest tracked mEntries pendings =
   T.unlines $
     ["Seihou Status:", ""]
       ++ recipeSection manifest
+      ++ blueprintSection manifest
       ++ appliedSection color manifest mEntries pendings
       ++ trackedSection color tracked
       ++ varsSection manifest
@@ -171,6 +173,40 @@ recipeSection manifest = case manifest.recipe of
         <> maybe "" (\v -> " v" <> v) ar.recipeVersion,
       ""
     ]
+
+-- | Render the "Blueprint:" provenance block when 'Manifest.blueprint'
+-- is populated. Empty otherwise.
+--
+-- Header line: name, optional @vX.Y.Z@, and the applied timestamp.
+-- Baseline line: comma-separated baseline module names, or one of the
+-- two empty-baseline placeholders.
+-- Prompt line: present only when the user passed a positional prompt.
+blueprintSection :: Manifest -> [Text]
+blueprintSection manifest = case manifest.blueprint of
+  Nothing -> []
+  Just ab ->
+    let header =
+          "Blueprint: "
+            <> ab.name.unModuleName
+            <> maybe "" (\v -> " v" <> v) ab.blueprintVersion
+            <> " (applied "
+            <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" ab.appliedAt)
+            <> ")"
+        baselineLine = "  Baseline: " <> renderBaseline ab
+        promptLines = case ab.userPrompt of
+          Nothing -> []
+          Just p -> ["  Prompt: \"" <> p <> "\""]
+     in [header, baselineLine] ++ promptLines ++ [""]
+
+-- | Render the baseline body for the blueprint section. Three cases:
+-- @--no-baseline@ was passed, the blueprint declared no baseline at
+-- all, or one or more baseline modules were applied.
+renderBaseline :: AppliedBlueprint -> Text
+renderBaseline ab
+  | ab.noBaseline = "(none -- --no-baseline)"
+  | null ab.baselineModules = "(none declared)"
+  | otherwise =
+      T.intercalate ", " (map (.unModuleName) ab.baselineModules)
 
 appliedSection ::
   Bool ->

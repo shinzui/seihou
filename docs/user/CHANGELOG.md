@@ -10,6 +10,44 @@ HEAD  Recover from blocked migrations from the user's side (ExecPlan 25)
 
 ## Changelog
 
+### 2026-05-08 (Manifest tracking and `seihou status` for applied blueprints)
+
+**Reviewed commits:** ExecPlan 32
+(`docs/plans/32-blueprint-manifest-and-status.md`) under the
+agent-driven-blueprints master plan
+(`docs/masterplans/3-agent-driven-blueprints.md`).
+
+**Behavior change (user-facing):**
+
+- A successful `seihou agent run BLUEPRINT` now records an
+  applied-blueprint provenance entry into `.seihou/manifest.json`. The
+  entry captures the blueprint name, version, applied timestamp, the
+  baseline modules that were applied (or `--no-baseline` if the user
+  skipped baseline application), and the user's positional `PROMPT`
+  argument when supplied. A non-zero agent exit (Ctrl-C, `claude`
+  failure) leaves the manifest untouched, so the recorded blueprint
+  always reflects the most recent *successful* application.
+- `seihou status` now surfaces the recorded blueprint above the
+  applied-modules block:
+
+      Blueprint: payments-service v0.3.1 (applied 2026-05-12 14:23 UTC)
+        Baseline: nix-flake, haskell-base
+        Prompt: "set this up for a payments microservice"
+
+  The Baseline line reads `(none -- --no-baseline)` when the user
+  passed `--no-baseline`, and the Prompt line is omitted when no
+  positional prompt was supplied.
+
+**Schema change:**
+
+- The internal manifest schema (`.seihou/manifest.json`) bumps from
+  version 2 to version 3 to add the optional `blueprint` field. The
+  decoder reads pre-bump (v2) manifests with no blueprint entry —
+  upgrading seihou does not require any user action. Downgrading to a
+  pre-EP-32 build of seihou after the schema bump is rejected with the
+  documented "manifest was created by a newer version of seihou"
+  error, mirroring the v1→v2 precedent.
+
 ### 2026-05-08 (Agent runner for blueprints)
 
 **Reviewed commits:** ExecPlan 31

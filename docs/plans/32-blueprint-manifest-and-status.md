@@ -69,7 +69,7 @@ and a fixture-driven test decodes a pre-bump manifest and asserts
 
 - [x] Milestone 1: Domain model and JSON serialization. Added `AppliedBlueprint` to `seihou-core/src/Seihou/Core/Types.hs`, extended `Manifest` with `blueprint :: Maybe AppliedBlueprint`, bumped `currentManifestVersion` from 2 to 3 in `seihou-core/src/Seihou/Manifest/Types.hs`, added the `ToJSON`/`FromJSON` instances and `writeAppliedBlueprint` helper. Six new spec tests cover round-trip and back-compat decode; all 837 seihou-core tests pass.
 - [x] Milestone 2: Wire the runner. Refactored `launchAgentWith` to return `ExitCode` (with the three other callers — Assist/Bootstrap/Setup — propagating it via `exitWith`). Added the `Seihou.CLI.AppliedBlueprint` library module exporting `recordAppliedBlueprint`. Wired `handleAgentRun` so it builds an `AppliedBlueprint` only on `ExitSuccess` and writes it to `.seihou/manifest.json`; non-zero exits leave the manifest untouched. Four new unit tests in `Seihou.CLI.AppliedBlueprintSpec` cover fresh-manifest creation, preservation of unrelated fields, replace-prior-entry semantics, and corrupt-manifest fail-soft. End-to-end `seihou agent run --debug sample-bp` confirms the manifest is populated.
-- [ ] Milestone 3: Status display. Extend `seihou-cli/src/Seihou/CLI/StatusRender.hs` with a `blueprintSection` and wire it into `formatStatus`. Add tests that construct a `Manifest` fixture with a populated `blueprint` and assert the rendered output contains the documented lines.
+- [x] Milestone 3: Status display. Extended `seihou-cli/src/Seihou/CLI/StatusRender.hs` with `blueprintSection`/`renderBaseline` and wired the section into `formatStatus` between `recipeSection` and `appliedSection`. Five new fixtures in `Seihou.CLI.StatusSpec` cover populated rendering, the `--no-baseline` placeholder, the omitted-prompt branch, the absent-blueprint branch, and the rare empty-baseline-without-skip branch (`(none declared)`). End-to-end smoke test confirms the documented "Blueprint: payments-service v0.3.1 (applied 2026-05-12 14:23 UTC) / Baseline: nix-flake, haskell-base / Prompt: \"set this up for a payments microservice\"" output verbatim.
 
 
 ## Surprises & Discoveries
@@ -165,7 +165,67 @@ and a fixture-driven test decodes a pre-bump manifest and asserts
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-32 landed in three commits matching the milestone structure (M1 →
+M2 → M3, all on `master` per project convention). After the work:
+
+- `seihou agent run BLUEPRINT [PROMPT]` records an `AppliedBlueprint`
+  provenance entry into `.seihou/manifest.json` on `ExitSuccess`. A
+  non-zero subprocess exit leaves the manifest untouched.
+- `seihou status` surfaces the recorded blueprint above the
+  applied-modules block with the documented header / Baseline / Prompt
+  shape; the omit-prompt and `--no-baseline` cases are handled.
+- The manifest schema is at version 3. Pre-bump (v2) manifests still
+  decode; the decoder treats a missing `blueprint` key as `Nothing`,
+  mirroring the parentVars precedent. Downgrading after the schema
+  bump is rejected with the documented "newer version of seihou"
+  error.
+
+Test coverage:
+
+- 6 new tests in `Seihou.Manifest.TypesSpec` (round-trip,
+  back-compat decode, `writeAppliedBlueprint` semantics).
+- 4 new tests in `Seihou.CLI.AppliedBlueprintSpec` (writer
+  fail-soft, fresh-manifest creation, prior-entry replacement,
+  field preservation).
+- 5 new tests in `Seihou.CLI.StatusSpec` (populated row,
+  `--no-baseline`, omitted prompt, absent blueprint,
+  empty-baseline-without-skip).
+
+Total: `cabal test all` reports **848 + 231 = 1079 tests passing**
+after EP-32 (837 + 222 = 1059 before; +20 new tests).
+
+What deviated from the plan:
+
+- The plan anticipated either a typeclass-parameter or
+  refactor-launchAgentWith approach for the runner seam. The
+  refactor-launchAgentWith path was taken: `launchAgentWith` now
+  returns `IO ExitCode` and the four call sites (Assist, Bootstrap,
+  Setup, AgentRun) decide whether/how to exit. This is the smaller
+  diff and matches the existing CLI shape — no new abstractions.
+- The pure helper `appliedBlueprintFromOutcome :: Blueprint ->
+  BaselineStatus -> BlueprintRunOpts -> UTCTime -> AppliedBlueprint`
+  lives in `Seihou.CLI.AgentRun` next to the call site rather than
+  being lifted into the library. EP-31's placeholder
+  `BlueprintRunOutcome` record turned out not to be needed and was
+  removed. The IO writer `recordAppliedBlueprint` lives in the
+  library so the test suite can drive it (per the executable-target
+  trapping constraint EP-30 and EP-31 already documented).
+
+Hand-off notes:
+
+- EP-33 (registry / `seihou install`) inherits the v3 manifest
+  schema. No work to do — the `blueprint` field is independent of the
+  registry classifier; an installed blueprint in a registry sets up
+  the *blueprint definition*, not an applied-blueprint manifest entry.
+- EP-34 (documentation) should describe the schema bump and the new
+  status-line shape verbatim from this plan; do not paraphrase the
+  three-line block. The unused `BlueprintRunOutcome` from EP-31 was
+  removed — the doc should not mention it.
+- A future `seihou outdated` extension can use
+  `manifest.blueprint.blueprintVersion` to flag a newer blueprint.
+- A future `seihou agent run --resume` can populate
+  `manifest.blueprint.agentSessionId` (always `Nothing` in v1).
+  Adding it is a pure additive change to the encoder/decoder.
 
 
 ## Context and Orientation
