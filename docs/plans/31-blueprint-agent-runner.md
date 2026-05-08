@@ -69,7 +69,7 @@ allowlist.
 
 ## Progress
 
-- [ ] Milestone 1 — CLI parsing: add `AgentRun BlueprintRunOpts` constructor, the `BlueprintRunOpts` record, and the `agent run` subcommand parser.
+- [x] Milestone 1 — CLI parsing: add `AgentRun BlueprintRunOpts` constructor, the `BlueprintRunOpts` record, and the `agent run` subcommand parser. *(2026-05-08: parser, footer, and help text wired; `cabal run seihou -- agent run --help` renders correctly. Stub handler exits 1 with a "not yet implemented" message.)*
 - [ ] Milestone 2 — Handler skeleton + prompt scaffold: create `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` and `seihou-cli/data/blueprint-prompt.md`. Implement discovery, var resolution, and prompt rendering. The `--no-baseline` path is fully wired; the baseline-application path returns a stub status.
 - [ ] Milestone 3 — Baseline application: implement `applyBaseline` calling `loadComposition`, `resolveWithPrompts`, `compileComposedPlan`, `executePlan` directly. Base modules' manifest entries are written via the existing `updateAllModules` path; the *blueprint manifest entry* is left as a TODO for EP-32.
 - [ ] Milestone 4 — Tests: integration tests under `seihou-cli/test/Seihou/CLI/AgentRunSpec.hs` covering `--debug`, `--no-baseline`, `--var` overrides, and missing-required-var failure. Pure-formatter unit tests added to `seihou-cli/test/Seihou/CLI/AgentLaunchSpec.hs`. CHANGELOG entry under `docs/user/CHANGELOG.md`.

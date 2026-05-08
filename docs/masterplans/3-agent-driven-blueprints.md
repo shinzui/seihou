@@ -253,7 +253,7 @@ Alternatives considered:
 |-----|-----------------------------------------------------------------------------|-------------------------------------------------------------------|------------|------------|-------------|
 | 29  | Define the Blueprint domain model, schema, discovery, and run-time refusal  | docs/plans/29-blueprint-domain-model-and-discovery.md             | None       | None       | Complete    |
 | 30  | Authoring and inspection commands for blueprints                            | docs/plans/30-blueprint-authoring-and-inspection.md               | EP-29      | None       | Complete    |
-| 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | Not Started |
+| 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | In Progress |
 | 32  | Manifest tracking and `seihou status` integration for applied blueprints    | docs/plans/32-blueprint-manifest-and-status.md                    | EP-31      | None       | Not Started |
 | 33  | Registry and multi-module-repository support for blueprints                 | docs/plans/33-blueprint-registry-and-install.md                   | EP-29      | EP-30      | Not Started |
 | 34  | Documentation, agent-prompt updates, and ecosystem polish                   | docs/plans/34-blueprint-docs-and-ecosystem.md                     | EP-31      | EP-30, EP-32, EP-33 | Not Started |

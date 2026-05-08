@@ -87,6 +87,7 @@ executable seihou
   other-modules:
     Paths_seihou_cli
     Seihou.CLI.AgentLaunchExec
+    Seihou.CLI.AgentRun
     Seihou.CLI.Assist
     Seihou.CLI.Bootstrap
     Seihou.CLI.Browse

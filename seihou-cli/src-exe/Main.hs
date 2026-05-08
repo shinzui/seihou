@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
+import Seihou.CLI.AgentRun (handleAgentRun)
 import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Bootstrap (handleBootstrap)
 import Seihou.CLI.Browse (handleBrowse)
@@ -85,6 +86,8 @@ main = do
         handleBootstrap agentOpts.agentDebug bootstrapOpts
       AgentSetup setupOpts ->
         handleSetup agentOpts.agentDebug setupOpts
+      AgentRun blueprintRunOpts ->
+        handleAgentRun agentOpts.agentDebug blueprintRunOpts
     HelpCmd helpCmd ->
       handleHelpCommand helpCmd
     Completions completionsCmd ->

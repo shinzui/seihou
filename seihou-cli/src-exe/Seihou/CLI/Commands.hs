@@ -24,6 +24,7 @@ module Seihou.CLI.Commands
     AssistOpts (..),
     BootstrapOpts (..),
     SetupOpts (..),
+    BlueprintRunOpts (..),
     CompletionsCommand (..),
     HelpCommand (..),
     KitCommand (..),
@@ -93,6 +94,7 @@ data AgentCommand
   = AgentAssist AssistOpts
   | AgentBootstrap BootstrapOpts
   | AgentSetup SetupOpts
+  | AgentRun BlueprintRunOpts
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -267,6 +269,18 @@ data BootstrapOpts = BootstrapOpts
 
 data SetupOpts = SetupOpts
   { setupPrompt :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+data BlueprintRunOpts = BlueprintRunOpts
+  { runBlueprintName :: ModuleName,
+    runBlueprintPrompt :: Maybe Text,
+    runBlueprintVars :: [(Text, Text)],
+    runBlueprintNoBaseline :: Bool,
+    runBlueprintNamespace :: Maybe Text,
+    runBlueprintContext :: Maybe Text,
+    runBlueprintVerbose :: Bool,
+    runBlueprintForce :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -1250,7 +1264,8 @@ agentInfo =
                     vsep
                       [ pretty ("assist      Interactive template authoring session" :: String),
                         pretty ("bootstrap   Bootstrap a new module or multi-module repo" :: String),
-                        pretty ("setup       Guided project setup: configure, run, and commit" :: String)
+                        pretty ("setup       Guided project setup: configure, run, and commit" :: String),
+                        pretty ("run         Run an agent-driven blueprint" :: String)
                       ]
                 ]
           )
@@ -1269,6 +1284,7 @@ agentCommandParser =
     ( command "assist" agentAssistInfo
         <> command "bootstrap" agentBootstrapInfo
         <> command "setup" agentSetupInfo
+        <> command "run" agentRunInfo
     )
 
 agentAssistInfo :: ParserInfo AgentCommand
@@ -1374,6 +1390,58 @@ agentSetupParser =
   fmap AgentSetup $
     SetupOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Description of what you want to set up"))
+
+agentRunInfo :: ParserInfo AgentCommand
+agentRunInfo =
+  info
+    (agentRunParser <**> helper)
+    ( fullDesc
+        <> progDesc "Run an agent-driven blueprint"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Resolves the named blueprint, prompts for any required variables," :: String),
+                  pretty ("optionally applies the blueprint's baseModules as a starting scaffold," :: String),
+                  pretty ("renders the prompt template, and launches an interactive Claude Code" :: String),
+                  pretty ("session pre-configured for the task." :: String),
+                  line,
+                  pretty ("Variable resolution follows the same precedence as 'seihou run':" :: String),
+                  pretty ("CLI overrides > env > local config > namespace > context > global > defaults" :: String),
+                  pretty ("> interactive prompts." :: String),
+                  line,
+                  pretty ("Pass --no-baseline to skip baseline application; --debug (on the parent" :: String),
+                  pretty ("'seihou agent --debug') prints the resolved system prompt without" :: String),
+                  pretty ("launching Claude." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou agent run my-blueprint" :: String),
+                        pretty ("seihou agent run my-blueprint \"set this up for billing\"" :: String),
+                        pretty ("seihou agent run my-blueprint --var service.name=billing" :: String),
+                        pretty ("seihou agent run my-blueprint --no-baseline" :: String),
+                        pretty ("seihou agent --debug run my-blueprint" :: String)
+                      ]
+                ]
+          )
+    )
+
+agentRunParser :: Parser AgentCommand
+agentRunParser =
+  fmap AgentRun $
+    BlueprintRunOpts
+      <$> argument moduleNameReader (metavar "BLUEPRINT" <> help "Name of the blueprint to run")
+      <*> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Optional initial user prompt"))
+      <*> many
+        ( option
+            varPair
+            (long "var" <> metavar "KEY=VALUE" <> help "Variable override (repeatable)")
+        )
+      <*> switch (long "no-baseline" <> help "Skip applying the blueprint's baseModules before launching the agent")
+      <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
+      <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
+      <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
+      <*> switch (long "force" <> help "Auto-resolve baseline conflicts (accept new files)")
 
 helpCmdInfo :: ParserInfo Command
 helpCmdInfo =
