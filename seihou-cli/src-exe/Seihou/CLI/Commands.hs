@@ -6,7 +6,9 @@ module Seihou.CLI.Commands
     InstallOpts (..),
     NewModuleOpts (..),
     NewRecipeOpts (..),
+    NewBlueprintOpts (..),
     ValidateOpts (..),
+    ValidateBlueprintOpts (..),
     ConfigOpts (..),
     ConfigAction (..),
     ContextAction (..),
@@ -58,7 +60,9 @@ data Command
   | List ListOpts
   | NewModule NewModuleOpts
   | NewRecipe NewRecipeOpts
+  | NewBlueprint NewBlueprintOpts
   | ValidateModule ValidateOpts
+  | ValidateBlueprint ValidateBlueprintOpts
   | Config ConfigOpts
   | Context ContextAction
   | Browse BrowseOpts
@@ -165,9 +169,21 @@ data NewRecipeOpts = NewRecipeOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data NewBlueprintOpts = NewBlueprintOpts
+  { newBlueprintName :: Text,
+    newBlueprintPath :: Maybe FilePath
+  }
+  deriving stock (Eq, Show, Generic)
+
 data ValidateOpts = ValidateOpts
   { validatePath :: Maybe FilePath,
     validateLint :: Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
+data ValidateBlueprintOpts = ValidateBlueprintOpts
+  { validateBlueprintPath :: Maybe FilePath,
+    validateBlueprintLint :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -307,7 +323,9 @@ commandParser =
     <|> hsubparser
       ( command "new-module" newModuleInfo
           <> command "new-recipe" newRecipeInfo
+          <> command "new-blueprint" newBlueprintInfo
           <> command "validate-module" validateInfo
+          <> command "validate-blueprint" validateBlueprintInfo
           <> command "vars" varsInfo
           <> command "schema-upgrade" schemaUpgradeInfo
           <> command "registry" registryInfo
@@ -730,6 +748,71 @@ validateParser :: Parser Command
 validateParser =
   fmap ValidateModule $
     ValidateOpts
+      <$> optional (argument str (metavar "PATH"))
+      <*> switch (long "lint" <> help "Include advisory lint warnings")
+
+newBlueprintInfo :: ParserInfo Command
+newBlueprintInfo =
+  info
+    (newBlueprintParser <**> helper)
+    ( fullDesc
+        <> progDesc "Scaffold a new agent-driven blueprint"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Creates a new blueprint directory containing three artifacts:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("blueprint.dhall   the blueprint record (imports the schema)" :: String),
+                        pretty ("prompt.md         the Markdown body the agent runner consumes" :: String),
+                        pretty ("files/            empty reference directory for snippets, templates" :: String)
+                      ],
+                  line,
+                  pretty ("The output directory defaults to ./<name>/ in the current directory." :: String),
+                  line,
+                  pretty ("Blueprint names must match [a-z][a-z0-9-]* (lowercase, hyphens allowed," :: String),
+                  pretty ("must start with a letter)." :: String),
+                  line,
+                  pretty ("Example:" :: String),
+                  indent 2 $ pretty ("seihou new-blueprint payments-service" :: String)
+                ]
+          )
+    )
+
+newBlueprintParser :: Parser Command
+newBlueprintParser =
+  fmap NewBlueprint $
+    NewBlueprintOpts
+      <$> argument (T.pack <$> str) (metavar "NAME")
+      <*> optional (option str (long "path" <> metavar "DIR" <> help "Output directory (default: ./<name>/)"))
+
+validateBlueprintInfo :: ParserInfo Command
+validateBlueprintInfo =
+  info
+    (validateBlueprintParser <**> helper)
+    ( fullDesc
+        <> progDesc "Validate a blueprint"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Checks that a blueprint directory is well-formed: blueprint.dhall" :: String),
+                  pretty ("evaluates, the blueprint name is valid, the prompt body is non-empty," :: String),
+                  pretty ("variable names are unique, prompts reference declared variables," :: String),
+                  pretty ("every entry in the files list resolves under files/, and base modules" :: String),
+                  pretty ("are not themselves blueprints." :: String),
+                  line,
+                  pretty ("PATH defaults to the current directory if not specified." :: String),
+                  line,
+                  pretty ("Example:" :: String),
+                  indent 2 $ pretty ("seihou validate-blueprint ./payments-service" :: String)
+                ]
+          )
+    )
+
+validateBlueprintParser :: Parser Command
+validateBlueprintParser =
+  fmap ValidateBlueprint $
+    ValidateBlueprintOpts
       <$> optional (argument str (metavar "PATH"))
       <*> switch (long "lint" <> help "Include advisory lint warnings")
 

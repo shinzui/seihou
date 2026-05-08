@@ -10,6 +10,45 @@ HEAD  Recover from blocked migrations from the user's side (ExecPlan 25)
 
 ## Changelog
 
+### 2026-05-07 (Authoring and inspection commands for blueprints)
+
+**Reviewed commits:** ExecPlan 30
+(`docs/plans/30-blueprint-authoring-and-inspection.md`) under the
+agent-driven-blueprints master plan
+(`docs/masterplans/3-agent-driven-blueprints.md`).
+
+**Behavior change (user-facing):**
+
+- New command `seihou new-blueprint NAME [--path DIR]` scaffolds a
+  fresh blueprint directory containing `blueprint.dhall`,
+  `prompt.md`, and an empty `files/` subdirectory. The Dhall record
+  imports the prompt body via `./prompt.md as Text` so authors can
+  edit Markdown directly without escaping through Dhall string
+  literals. The output directory defaults to `./<name>/`.
+- New command `seihou validate-blueprint [PATH] [--lint]` reports
+  whether a blueprint is well-formed. Verifies that the Dhall
+  evaluates, the name matches `[a-z][a-z0-9-]*`, the prompt body is
+  non-empty, declared variable names are unique, every interactive
+  prompt references a declared variable, every entry in `files`
+  resolves under `files/`, and `baseModules` are not themselves
+  blueprints. Exits 4 when `blueprint.dhall` is missing; exits 1 on
+  any rule violation; exits 0 when clean. `--lint` is currently a
+  no-op reserved for future advisory checks.
+- `seihou list` now displays each discovered blueprint with a
+  `[blueprint]` suffix in the source-tag column, alongside modules
+  (no suffix) and recipes (`[recipe]`).
+- `seihou vars BLUEPRINT` lists a blueprint's declared variables in
+  declaration mode (heading: `Variables for <name> (blueprint):`).
+  `seihou vars BLUEPRINT --explain` is refused with a four-line
+  message naming `seihou agent run` (which lands in EP-31): resolving
+  a blueprint's variables is the agent runner's job, not vars'.
+- `seihou vars` was rewritten to dispatch through `discoverRunnable`,
+  so it now handles recipes in declaration mode too — previously a
+  recipe name fell through to a "module not found" error.
+
+Documentation: `docs/cli/new-blueprint.md`,
+`docs/cli/validate-blueprint.md`.
+
 ### 2026-04-28 (One-command upgrade through partial-chain tails with no further migrations)
 
 **Reviewed commits:** ExecPlan 28

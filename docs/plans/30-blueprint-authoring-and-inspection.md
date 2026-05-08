@@ -69,43 +69,106 @@ introduces no runner-shaped command.
 
 ## Progress
 
-- [ ] M1: Scaffolding command. Add `NewBlueprintOpts` to
+- [x] M1: Scaffolding command. Added `NewBlueprintOpts` to
       `seihou-cli/src-exe/Seihou/CLI/Commands.hs`,
-      `Seihou.CLI.NewBlueprint.handleNewBlueprint` in a new file
+      `Seihou.CLI.NewBlueprint.handleNewBlueprint` in
       `seihou-cli/src-exe/Seihou/CLI/NewBlueprint.hs`, and the
       `blueprintDhall` + `examplePromptMarkdown` exports in
-      `seihou-core/src/Seihou/Core/Scaffold.hs`. Wire the parser into
-      `commandParser`'s "Authoring:" group, the `NewBlueprint`
-      `Command` constructor, and the dispatch arm in
+      `seihou-core/src/Seihou/Core/Scaffold.hs`. Parser wired into
+      `commandParser`'s "Authoring:" group; `NewBlueprint`
+      constructor on `Command`; dispatch arm in
       `seihou-cli/src-exe/Main.hs`.
-- [ ] M2: Validation command. Add `ValidateBlueprintOpts` to
+- [x] M2: Validation command. Added `ValidateBlueprintOpts` to
       `Commands.hs`, `Seihou.CLI.ValidateBlueprint.handleValidateBlueprint`
-      in a new file `seihou-cli/src-exe/Seihou/CLI/ValidateBlueprint.hs`,
-      the parser branch alongside `validate-module`, the
-      `ValidateBlueprint` `Command` constructor, and the `Main.hs`
-      dispatch arm. The handler reuses EP-29's `buildBlueprintReport`
-      and the existing `Seihou.CLI.Style.renderReportColor` pipeline.
-- [ ] M3: List + Vars updates. Extend
-      `seihou-cli/src/Seihou/CLI/List.hs`'s `kindSuffix` case to cover
-      `KindBlueprint` (rendering `[blueprint]`). Extend
-      `seihou-cli/src-exe/Seihou/CLI/Vars.hs` to resolve blueprint
-      names through `discoverRunnable`, print declarations for
-      blueprints, and refuse `--explain` with an EP-31-pointing
-      message.
-- [ ] M4: Tests. Add `seihou-cli/test/Seihou/CLI/NewBlueprintSpec.hs`,
-      `seihou-cli/test/Seihou/CLI/ValidateBlueprintSpec.hs`, and a new
-      blueprint case in `seihou-cli/test/Seihou/CLI/ListSpec.hs`.
-      Register them in `seihou-cli/seihou-cli.cabal` and
-      `seihou-cli/test/Main.hs`.
-- [ ] M5: Documentation. Add `seihou new-blueprint` and `seihou
-      validate-blueprint` sections to the existing CLI authoring
-      doc, and a CHANGELOG entry under `docs/user/CHANGELOG.md`'s
-      "Unreleased" section.
+      in `seihou-cli/src-exe/Seihou/CLI/ValidateBlueprint.hs`, the
+      parser branch, the `ValidateBlueprint` `Command` constructor,
+      and the `Main.hs` dispatch arm. Note: EP-29 did *not* ship the
+      `buildBlueprintReport` / `blueprintAsModule` / `emptyBlueprint`
+      adapters this plan assumed; instead the handler builds a
+      blueprint-shaped `BlueprintReport` locally by calling EP-29's
+      individual `checkBlueprint*` functions and renders via a small
+      blueprint-shaped renderer in the same file. Recorded under
+      Decision Log.
+- [x] M3: List + Vars updates. List.hs `kindSuffix` already handled
+      `KindBlueprint -> " [blueprint]"` (landed with EP-29's
+      exhaustiveness fix-ups); no further change needed there.
+      `seihou-cli/src-exe/Seihou/CLI/Vars.hs` was rewritten to
+      dispatch through `discoverRunnable` with three arms
+      (`declarationModeModule`, `declarationModeRecipe`,
+      `declarationModeBlueprint`); `--explain` against a blueprint
+      refuses with the documented four-line message.
+- [x] M4: Tests. Pure-helper coverage lives in
+      `seihou-core/test/Seihou/Core/ScaffoldSpec.hs` (six new cases
+      for `blueprintDhall` and `examplePromptMarkdown`, including
+      end-to-end scaffold → eval → validate). List handling is
+      covered by a new `runnableToEntryWithOrigin` blueprint case in
+      `seihou-cli/test/Seihou/CLI/ListSpec.hs`. The handler-level
+      test specs that the plan originally described
+      (`NewBlueprintSpec`, `ValidateBlueprintSpec`) were not added —
+      see Decision Log: `seihou-cli`'s test suite cannot import the
+      `executable seihou` modules where the handlers live, so these
+      mirror the existing `NewModule`/`Validate` siblings (no
+      direct unit tests; smoke-tested manually).
+- [x] M5: Documentation. New pages at `docs/cli/new-blueprint.md`
+      and `docs/cli/validate-blueprint.md` mirror the existing
+      `new-module` / `validate-module` docs. `docs/user/CHANGELOG.md`
+      gained a 2026-05-07 entry summarising EP-30's user-visible
+      changes.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- 2026-05-07 (M2) — EP-29's `Seihou.Core.Blueprint` ships the
+  individual `checkBlueprint*` rule-checking functions and the
+  top-level `validateBlueprint :: FilePath -> Blueprint -> IO
+  (Either ModuleLoadError Blueprint)` aggregator, but it does *not*
+  ship a `buildBlueprintReport` adapter, a `blueprintAsModule`
+  shim, or an `emptyBlueprint` placeholder constructor. The
+  Integration Points section of this plan and of the masterplan
+  both name those three adapters as EP-29 contracts. They are not
+  there. EP-30's `ValidateBlueprint` handler therefore calls each
+  EP-29 `checkBlueprint*` function directly and synthesises its own
+  blueprint-shaped report (`BlueprintReport`) and renderer rather
+  than feeding through `Seihou.CLI.Style.renderReportColor`. The
+  divergence is contained: the new renderer reuses
+  `DiagCheck`/`DiagSeverity` from `Seihou.Engine.Validate` so the
+  visual style matches `validate-module`. Cross-plan note: the
+  masterplan's Integration Point #1 description (mentions of
+  `buildBlueprintReport`/`blueprintAsModule`/`emptyBlueprint`)
+  should be updated when EP-31 lands so a future contributor does
+  not look for adapters that never existed.
+
+- 2026-05-07 (M3) — `List.hs`'s `kindSuffix` already had the
+  `KindBlueprint -> " [blueprint]"` arm. EP-29's M1 commit was
+  required to land all three constructor consumers in lockstep
+  (`-Wincomplete-patterns` makes any `case` over `RunnableKind`
+  fail to compile until every kind is handled), and the list
+  formatter is one of those consumers. M3 of this plan therefore
+  reduced to "extend Vars.hs" — the list change was already there.
+
+- 2026-05-07 (M3) — Pre-EP-30 behaviour: `seihou vars <recipe>`
+  always errored with `Module 'X' not found` because `handleVars`
+  unconditionally called `loadModule` (which only knows about
+  `module.dhall`). The rewrite to `discoverRunnable` made recipe
+  declaration mode work as a side effect — `declarationModeRecipe`
+  is a parallel arm to `declarationModeModule`. `--explain` for
+  recipes still passes through to `explainMode`, which calls
+  `loadComposition` and may or may not handle recipes; that's
+  out-of-scope for EP-30.
+
+- 2026-05-07 (M4) — The seihou-cli test suite's `other-modules`
+  layout is library-only: tests cannot import
+  `Seihou.CLI.Commands`, `Seihou.CLI.NewBlueprint`, or
+  `Seihou.CLI.ValidateBlueprint` because all three live in the
+  `executable seihou` target. This is the same trap that explains
+  why `NewModule.hs` and `Validate.hs` do not have direct
+  handler-level unit tests. The plan's M4 originally specified
+  `NewBlueprintSpec` and `ValidateBlueprintSpec` against handler
+  IO; those would not compile. EP-30 covers the equivalent pure
+  surface (`blueprintDhall`/`examplePromptMarkdown` end-to-end
+  scaffold → eval → validate) in `seihou-core/test`, plus a
+  formatter test for the list `[blueprint]` suffix in
+  `seihou-cli/test`. Smoke-test transcript verified manually.
 
 
 ## Decision Log
@@ -160,10 +223,156 @@ introduces no runner-shaped command.
   single source of truth.
   Date: 2026-05-07.
 
+- Decision (M2 implementation-time): Build the validate-blueprint
+  report locally in `Seihou.CLI.ValidateBlueprint` rather than
+  depending on a `buildBlueprintReport`/`blueprintAsModule`
+  adapter from `Seihou.Core.Blueprint`.
+  Rationale: EP-29's `Seihou.Core.Blueprint` ships only the
+  individual `checkBlueprint*` rule predicates and the top-level
+  `validateBlueprint :: FilePath -> Blueprint -> IO (Either
+  ModuleLoadError Blueprint)` aggregator. The
+  `buildBlueprintReport`/`blueprintAsModule`/`emptyBlueprint`
+  adapters this plan named under "What EP-29 ships" do not exist.
+  EP-30 had two paths: (a) extend `Seihou.Core.Blueprint` with
+  the missing adapters, or (b) build the report at the consumer
+  site. Option (b) keeps EP-29 immutable, isolates the
+  blueprint-vs-module rendering split inside
+  `ValidateBlueprint.hs`, and matches the existing CLI pattern
+  where module/recipe formatters live in the CLI layer. Chosen.
+  Visual style matches `validate-module` because the new renderer
+  reuses `DiagCheck`/`DiagSeverity` from
+  `Seihou.Engine.Validate`. EP-31's runner, which also wants to
+  validate a blueprint before launching the agent, can either
+  reuse the same `BlueprintReport` shape (re-exporting it from
+  `ValidateBlueprint`) or call `validateBlueprint` directly and
+  format errors itself. Recorded so a future contributor does not
+  refactor toward an adapter that was never designed.
+  Date: 2026-05-07.
+
+- Decision (M3 implementation-time): Switch `seihou vars` from
+  `loadModule` to `discoverRunnable` for *all* runnable kinds, not
+  only blueprints.
+  Rationale: The plan says to use `discoverRunnable` for blueprints
+  and leaves the recipe arm as optional. The simplest shape that
+  ships blueprints correctly *also* fixes a pre-existing dead path
+  for recipes (`vars <recipe>` previously errored "module not
+  found"). Splitting the dispatch by kind in `handleVars` is a
+  one-screen change and the new `declarationModeRecipe` is a
+  trivial mirror of `declarationModeModule`. Cost: the small
+  behaviour change that an *invalid* module (one that decodes but
+  fails `validateModule`) now shows its declared variables in
+  declaration mode rather than erroring out, because
+  `discoverRunnable` decodes without validating. This is on the
+  right side of useful for `seihou vars` whose job is to inspect
+  declarations, and matches what most users expect when they ask
+  "what variables does this thing declare?".
+  Date: 2026-05-07.
+
+- Decision (M4 implementation-time): Cover the new behaviour
+  through pure-helper specs in `seihou-core/test` and a list
+  formatter case in `seihou-cli/test`, rather than direct
+  handler-level specs in `seihou-cli/test`.
+  Rationale: `seihou-cli`'s `test-suite` `other-modules` layout
+  cannot import any module from the `executable seihou` target
+  (Cabal layout — test suites in the same package can only import
+  library modules). `Seihou.CLI.NewBlueprint`,
+  `Seihou.CLI.ValidateBlueprint`, and `Seihou.CLI.Commands` all
+  live under `executable seihou` (transitively trapped by
+  `Options.Applicative`). The originally-planned
+  `NewBlueprintSpec` / `ValidateBlueprintSpec` modules failed to
+  compile (`Could not find module 'Seihou.CLI.NewBlueprint'`).
+  Existing siblings `NewModule.hs` and `Validate.hs` have the
+  same constraint and ship without direct handler unit tests, so
+  this plan follows the same pattern: pure-helper coverage in
+  `Seihou.Core.ScaffoldSpec` (six new cases exercising
+  `blueprintDhall`/`examplePromptMarkdown` through the full
+  scaffold → eval → validate pipeline against the on-disk
+  schema), plus a `runnableToEntryWithOrigin` blueprint case in
+  `Seihou.CLI.ListSpec`, plus the smoke-test transcript that was
+  manually verified during M1–M3. Future work that wants
+  handler-level coverage should either move shared helpers into
+  `seihou-cli-internal` (the library) or shell out to the
+  `seihou` executable from a test (more friction, less precise).
+  Date: 2026-05-07.
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-30 shipped the static surface around the new blueprint runnable
+type. After this plan landed, a contributor in a writable git
+checkout can:
+
+- run `seihou new-blueprint NAME [--path DIR]` and get a fresh
+  directory containing `blueprint.dhall` (importing the seihou-schema
+  via URL and using `S.Blueprint::`), `prompt.md` (a 30-line Markdown
+  body imported by the Dhall record as `./prompt.md as Text`), and
+  an empty `files/` subdirectory;
+- run `seihou validate-blueprint [PATH]` and see a structured
+  report mirroring `validate-module`'s shape, with one row per
+  rule (Dhall evaluation, name format, version, prompt non-empty,
+  unique vars, prompt refs, base modules, reference files, tags,
+  allowed tools);
+- run `seihou list` and see blueprints displayed alongside modules
+  and recipes with a `[blueprint]` source-tag suffix;
+- run `seihou vars BLUEPRINT` and see the blueprint's declared
+  variables under a `(blueprint)` heading. `--explain` is refused
+  with a four-line message pointing at `seihou agent run` (EP-31).
+
+Surface that lands but is intentionally limited:
+
+- `--lint` on `validate-blueprint` is a no-op. The flag is wired
+  through the parser for parity with `validate-module`; future
+  work can add lint checks without changing the CLI surface.
+- `seihou vars <recipe>` declaration mode now works as a side
+  effect of routing through `discoverRunnable`; previously it
+  errored. `vars --explain <recipe>` still goes through the
+  pre-existing `loadComposition` path which may not handle
+  recipes — out-of-scope for EP-30.
+
+What was harder than expected:
+
+- The plan named EP-29 adapters
+  (`buildBlueprintReport`/`blueprintAsModule`/`emptyBlueprint`)
+  that EP-29 never shipped. Recovery was straightforward:
+  `ValidateBlueprint.hs` builds a parallel `BlueprintReport` /
+  renderer locally, reusing `DiagCheck`/`DiagSeverity` for visual
+  consistency. Recorded under Surprises and Decision Log.
+- The seihou-cli test-suite layout cannot import src-exe modules.
+  M4's plan-described handler specs would not compile. Recovery:
+  shift M4 to pure-helper coverage in `seihou-core/test`
+  (validating `blueprintDhall`/`examplePromptMarkdown` through the
+  full scaffold pipeline) plus a list formatter case in
+  `seihou-cli/test`.
+
+Cross-plan implications recorded for the next plans in the
+masterplan:
+
+- EP-31 (agent runner): can choose to reuse `BlueprintReport` from
+  `ValidateBlueprint` (re-export it from the module) or call
+  `validateBlueprint` directly. Either is fine. The existing
+  `discoverRunnable` is the right entry point — do not roll a
+  blueprint-only loader.
+- EP-31 must preserve the user-typed name when echoing it back to
+  the user (e.g., in error messages), as discovered in EP-29's
+  Surprises section. EP-30's `--explain` refusal already follows
+  this rule.
+- EP-34 (docs): update the masterplan's Integration Point #1
+  description to drop mentions of
+  `buildBlueprintReport`/`blueprintAsModule`/`emptyBlueprint`,
+  which never existed. EP-30's Surprises section is the canonical
+  reference for what actually shipped.
+- EP-34: when documenting `validate-blueprint`, copy from
+  `docs/cli/validate-blueprint.md` rather than re-stating from the
+  master plan; the doc reflects shipped behaviour.
+
+Tests: 831 (seihou-core) + 212 (seihou-cli) all pass. Six new
+cases under `Seihou.Core.Scaffold` cover the new helpers
+end-to-end. One new case under `Seihou.CLI.List` covers the
+`[blueprint]` formatter arm. Smoke-test transcript with
+`new-blueprint` → `validate-blueprint` → `list` → `vars` (with and
+without `--explain`) verified manually at M1–M3 stopping points.
+`nix/check-cli-module-placement.sh` accepts the two new src-exe
+modules (both transitively import `Seihou.CLI.Commands`).
 
 
 ## Context and Orientation

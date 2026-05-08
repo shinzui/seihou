@@ -97,6 +97,7 @@ executable seihou
     Seihou.CLI.Help
     Seihou.CLI.Install
     Seihou.CLI.Kit
+    Seihou.CLI.NewBlueprint
     Seihou.CLI.NewModule
     Seihou.CLI.NewRecipe
     Seihou.CLI.Outdated
@@ -107,6 +108,7 @@ executable seihou
     Seihou.CLI.Status
     Seihou.CLI.Upgrade
     Seihou.CLI.Validate
+    Seihou.CLI.ValidateBlueprint
     Seihou.CLI.Vars
     Seihou.CLI.Version
 

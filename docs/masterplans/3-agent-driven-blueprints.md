@@ -252,7 +252,7 @@ Alternatives considered:
 | #   | Title                                                                       | Path                                                              | Hard Deps  | Soft Deps  | Status      |
 |-----|-----------------------------------------------------------------------------|-------------------------------------------------------------------|------------|------------|-------------|
 | 29  | Define the Blueprint domain model, schema, discovery, and run-time refusal  | docs/plans/29-blueprint-domain-model-and-discovery.md             | None       | None       | Complete    |
-| 30  | Authoring and inspection commands for blueprints                            | docs/plans/30-blueprint-authoring-and-inspection.md               | EP-29      | None       | Not Started |
+| 30  | Authoring and inspection commands for blueprints                            | docs/plans/30-blueprint-authoring-and-inspection.md               | EP-29      | None       | Complete    |
 | 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | Not Started |
 | 32  | Manifest tracking and `seihou status` integration for applied blueprints    | docs/plans/32-blueprint-manifest-and-status.md                    | EP-31      | None       | Not Started |
 | 33  | Registry and multi-module-repository support for blueprints                 | docs/plans/33-blueprint-registry-and-install.md                   | EP-29      | EP-30      | Not Started |
@@ -533,9 +533,9 @@ view of the entire initiative.
 - [x] EP-29: Add `Seihou.Core.Blueprint.validateBlueprint` with the documented validation rules; add `discoverBlueprint` and extend `discoverRunnable` and `discoverAllRunnables` to recognise `blueprint.dhall`.
 - [x] EP-29: Mirror the schema into the `seihou-schema` repository, publish a release commit, and bump the schema URL/hash in `mori.dhall` and `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`. *(`mori.dhall` left untouched — it pins `mori-schema`, not `seihou-schema`.)*
 - [x] EP-29: Add the `seihou run` refusal branch in `seihou-cli/src-exe/Seihou/CLI/Run.hs` for `RunnableBlueprint`; verify via integration test that `seihou run my-blueprint` fails with the documented message. *(Refusal arm in place; integration test arrives with EP-29 M7.)*
-- [ ] EP-30: Add `seihou new-blueprint NAME [--path DIR]` CLI handler scaffolding `blueprint.dhall`, `prompt.md`, and `files/`.
-- [ ] EP-30: Add `seihou validate-blueprint [PATH]` CLI handler exercising the EP-29 validator.
-- [ ] EP-30: Update `seihou list` and `seihou vars` to display blueprints with the new `RunnableKind`.
+- [x] EP-30: Add `seihou new-blueprint NAME [--path DIR]` CLI handler scaffolding `blueprint.dhall`, `prompt.md`, and `files/`.
+- [x] EP-30: Add `seihou validate-blueprint [PATH]` CLI handler exercising the EP-29 validator.
+- [x] EP-30: Update `seihou list` and `seihou vars` to display blueprints with the new `RunnableKind`. *(List arm landed with EP-29's exhaustiveness fix-ups; EP-30 added the Vars dispatch and the blueprint declaration-mode formatter.)*
 - [ ] EP-31: Add the `AgentRun BlueprintRunOpts` constructor to `Seihou.CLI.Commands.AgentCommand` and the matching parser.
 - [ ] EP-31: Implement `Seihou.CLI.AgentRun.handleAgentRun`: discover the blueprint, validate, resolve variables (with prompts), render the prompt template, and invoke `launchAgentWith` with the right `--add-dir` and `--allowedTools`.
 - [ ] EP-31: Implement optional baseline application — programmatically apply each declared base module before launching the agent; respect `--no-baseline`.
@@ -594,6 +594,60 @@ view of the entire initiative.
   EP-30 (which calls it from `seihou validate-blueprint`) should both
   use the original `validateBlueprint`. The `…With` form is internal
   to the test suite.
+
+- 2026-05-07 (EP-30) — Integration Point #1 of this masterplan named
+  three EP-29 adapters that EP-29 *did not* ship:
+  `buildBlueprintReport :: Bool -> FilePath -> Blueprint -> IO
+  ValidateReport`, `blueprintAsModule :: Blueprint -> Module`, and
+  `emptyBlueprint :: Text -> Blueprint`. EP-29 ships the individual
+  `checkBlueprint*` rule predicates and the top-level
+  `validateBlueprint :: FilePath -> Blueprint -> IO (Either
+  ModuleLoadError Blueprint)` aggregator only. EP-30 recovered by
+  building its validation report locally in
+  `seihou-cli/src-exe/Seihou/CLI/ValidateBlueprint.hs`
+  (a `BlueprintReport` record + parallel renderer reusing
+  `DiagCheck`/`DiagSeverity` from `Seihou.Engine.Validate`). EP-31
+  and EP-34 should not look for those adapters. EP-31's runner that
+  wants to validate-then-launch can either call `validateBlueprint`
+  directly (`Either ModuleLoadError Blueprint`) and format errors
+  itself, or re-export `BlueprintReport` from EP-30's module.
+
+- 2026-05-07 (EP-30) — `seihou-cli`'s test suite cannot import any
+  module from the `executable seihou` target because Cabal's test
+  suites in the same package are limited to `lib:` modules.
+  `Seihou.CLI.Commands`, `Seihou.CLI.NewBlueprint`, and
+  `Seihou.CLI.ValidateBlueprint` all live under
+  `executable seihou`'s `other-modules` (transitively trapped by
+  `Options.Applicative`). EP-30 originally planned handler-level
+  unit specs (`NewBlueprintSpec`, `ValidateBlueprintSpec`) that
+  would not compile. The recovery — pure-helper coverage in
+  `seihou-core/test/Seihou/Core/ScaffoldSpec.hs` for
+  `blueprintDhall`/`examplePromptMarkdown` (six cases driving the
+  full scaffold → eval → validate pipeline) plus a list-formatter
+  case in `seihou-cli/test/Seihou/CLI/ListSpec.hs` — is the same
+  pattern existing siblings `NewModule.hs`/`Validate.hs` use (no
+  direct handler unit tests, smoke-tested manually). EP-31 and
+  EP-32 will hit the same constraint. They should plan around it
+  from the start: shared helpers go in `seihou-cli-internal` (the
+  library) so they are testable; handlers in `src-exe` are
+  smoke-tested.
+
+- 2026-05-07 (EP-30) — `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`
+  exports `schemaImportLine` (a precomputed `let S = … sha256:…`
+  string), used by EP-30's `blueprintDhall` indirectly via the
+  `schemaUrl` and `schemaHash` fields. The masterplan's Integration
+  Point #3 says "the seihou-schema URL/hash live solely in
+  `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`" and that note
+  remains accurate. No changes to `SchemaVersion.hs` were needed in
+  EP-30; the existing pin from EP-29 already exposes
+  `S.Blueprint::` and the `S.Blueprint.BlueprintFile` nested
+  export. *Note for future EPs:* `BlueprintFile` is exported as a
+  nested record under `S.Blueprint.BlueprintFile`, **not** as a
+  top-level `S.BlueprintFile` (despite the masterplan's wording in
+  Integration Point #3 implying otherwise). `blueprintDhall`'s
+  generated `[] : List S.Blueprint.BlueprintFile.Type` reflects
+  this. EP-31's prompt-rendering machinery and EP-33's registry
+  classifier should match.
 
 
 ## Decision Log

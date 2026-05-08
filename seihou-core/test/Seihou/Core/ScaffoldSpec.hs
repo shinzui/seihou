@@ -1,10 +1,11 @@
 module Seihou.Core.ScaffoldSpec (tests) where
 
 import Data.Text qualified as T
+import Seihou.Core.Blueprint (validateBlueprint)
 import Seihou.Core.Module (validateModule)
-import Seihou.Core.Scaffold (moduleDhall, readmeTemplate)
+import Seihou.Core.Scaffold (blueprintDhall, examplePromptMarkdown, moduleDhall, readmeTemplate)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalModuleFromFile)
+import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile)
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, makeAbsolute)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -94,3 +95,74 @@ spec = do
   describe "readmeTemplate" $ do
     it "contains the project.name placeholder" $ do
       T.isInfixOf "{{project.name}}" readmeTemplate `shouldBe` True
+
+  describe "blueprintDhall" $ do
+    it "generates Dhall that imports the schema and uses Blueprint::" $ do
+      schemaPath <- resolveSchemaPath
+      let content = blueprintDhall "test-bp" schemaPath ""
+      T.isInfixOf "let S =" content `shouldBe` True
+      T.isInfixOf "S.Blueprint::" content `shouldBe` True
+
+    it "imports prompt.md as Text rather than inlining the body" $ do
+      schemaPath <- resolveSchemaPath
+      let content = blueprintDhall "test-bp" schemaPath ""
+      T.isInfixOf "./prompt.md as Text" content `shouldBe` True
+
+    it "decodes via evalBlueprintFromFile when prompt.md is present" $ do
+      schemaPath <- resolveSchemaPath
+      withSystemTempDirectory "seihou-blueprint-scaffold-test" $ \tmpDir -> do
+        let bpDir = tmpDir </> "test-bp"
+            dhallFile = bpDir </> "blueprint.dhall"
+            filesDir = bpDir </> "files"
+        createDirectoryIfMissing True filesDir
+        writeFile dhallFile (T.unpack (blueprintDhall "test-bp" schemaPath ""))
+        writeFile (bpDir </> "prompt.md") (T.unpack examplePromptMarkdown)
+        result <- evalBlueprintFromFile dhallFile
+        case result of
+          Left err -> expectationFailure $ "Failed to load generated blueprint: " ++ show err
+          Right b -> b.name `shouldBe` "test-bp"
+
+    it "produces a blueprint that passes validateBlueprint" $ do
+      schemaPath <- resolveSchemaPath
+      withSystemTempDirectory "seihou-blueprint-scaffold-test" $ \tmpDir -> do
+        let bpDir = tmpDir </> "test-bp"
+            dhallFile = bpDir </> "blueprint.dhall"
+            filesDir = bpDir </> "files"
+        createDirectoryIfMissing True filesDir
+        writeFile dhallFile (T.unpack (blueprintDhall "test-bp" schemaPath ""))
+        writeFile (bpDir </> "prompt.md") (T.unpack examplePromptMarkdown)
+        result <- evalBlueprintFromFile dhallFile
+        case result of
+          Left err -> expectationFailure $ "Failed to load: " ++ show err
+          Right b -> do
+            validated <- validateBlueprint bpDir b
+            case validated of
+              Left err -> expectationFailure $ "Validation failed: " ++ show err
+              Right _ -> pure ()
+
+    it "produces the expected blueprint structure (1 var, 1 prompt, 0 base modules, 0 files)" $ do
+      schemaPath <- resolveSchemaPath
+      withSystemTempDirectory "seihou-blueprint-scaffold-test" $ \tmpDir -> do
+        let bpDir = tmpDir </> "test-bp"
+            dhallFile = bpDir </> "blueprint.dhall"
+            filesDir = bpDir </> "files"
+        createDirectoryIfMissing True filesDir
+        writeFile dhallFile (T.unpack (blueprintDhall "test-bp" schemaPath ""))
+        writeFile (bpDir </> "prompt.md") (T.unpack examplePromptMarkdown)
+        result <- evalBlueprintFromFile dhallFile
+        case result of
+          Left err -> expectationFailure $ "Failed to load: " ++ show err
+          Right b -> do
+            length (b.vars) `shouldBe` 1
+            (head b.vars).name `shouldBe` "project.name"
+            length (b.prompts) `shouldBe` 1
+            length (b.baseModules) `shouldBe` 0
+            length (b.files) `shouldBe` 0
+            length (b.tags) `shouldBe` 0
+
+  describe "examplePromptMarkdown" $ do
+    it "contains the {{project.name}} placeholder so authors see substitution" $ do
+      T.isInfixOf "{{project.name}}" examplePromptMarkdown `shouldBe` True
+
+    it "is non-empty after trimming (would otherwise fail prompt-non-empty validation)" $ do
+      T.null (T.strip examplePromptMarkdown) `shouldBe` False

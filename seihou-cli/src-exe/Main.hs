@@ -15,6 +15,7 @@ import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.Kit (runKit)
 import Seihou.CLI.List (ListFilter (..), handleList)
 import Seihou.CLI.Migrate (handleMigrate)
+import Seihou.CLI.NewBlueprint (handleNewBlueprint)
 import Seihou.CLI.NewModule (handleNewModule)
 import Seihou.CLI.NewRecipe (handleNewRecipe)
 import Seihou.CLI.Outdated (handleOutdated)
@@ -26,6 +27,7 @@ import Seihou.CLI.Setup (handleSetup)
 import Seihou.CLI.Status (handleStatus)
 import Seihou.CLI.Upgrade (handleUpgrade)
 import Seihou.CLI.Validate (handleValidateModule)
+import Seihou.CLI.ValidateBlueprint (handleValidateBlueprint)
 import Seihou.CLI.Vars (handleVars)
 
 main :: IO ()
@@ -52,8 +54,12 @@ main = do
       handleNewModule newModOpts
     NewRecipe newRecOpts ->
       handleNewRecipe newRecOpts
+    NewBlueprint newBpOpts ->
+      handleNewBlueprint newBpOpts
     ValidateModule validateOpts ->
       handleValidateModule validateOpts
+    ValidateBlueprint validateBpOpts ->
+      handleValidateBlueprint validateBpOpts
     Config configOpts ->
       handleConfig configOpts
     Context contextAction ->

@@ -4,6 +4,7 @@ module Seihou.CLI.List
     applyFilters,
     ListFilter (..),
     Entry (..),
+    runnableToEntryWithOrigin,
   )
 where
 

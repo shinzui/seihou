@@ -1,8 +1,9 @@
 module Seihou.CLI.ListSpec (tests) where
 
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Seihou.CLI.List (Entry (..), ListFilter (..), applyFilters, formatListOutput)
-import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..))
+import Seihou.CLI.List (Entry (..), ListFilter (..), applyFilters, formatListOutput, runnableToEntryWithOrigin)
+import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..))
 import Seihou.Core.Types
 import Test.Hspec
 import Test.Tasty
@@ -147,3 +148,20 @@ spec = do
       let opts = ListFilter (Just "repo-x") Nothing
           result = applyFilters opts entries
       all (\e -> e.entryRepoName == Just "repo-x") result `shouldBe` True
+
+  describe "runnableToEntryWithOrigin (blueprint)" $ do
+    it "tags blueprint entries with [blueprint] in the source label" $ do
+      let dr =
+            DiscoveredRunnable
+              { drName = "demo",
+                drDescription = Just "A new seihou blueprint",
+                drKind = KindBlueprint,
+                drSource = SourceProject,
+                drDir = "/fake/demo",
+                drIsError = False,
+                drError = Nothing
+              }
+          entry = runnableToEntryWithOrigin Map.empty dr
+      entry.entrySource `shouldBe` "project [blueprint]"
+      entry.entryName `shouldBe` "demo"
+      entry.entryIsError `shouldBe` False

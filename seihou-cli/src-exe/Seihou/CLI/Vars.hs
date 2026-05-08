@@ -13,7 +13,7 @@ import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, 
 import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Context (resolveContext)
-import Seihou.Core.Module (defaultSearchPaths, loadModule)
+import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution, formatDeclarations, formatExplain)
 import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
@@ -50,33 +50,77 @@ handleVars vopts = do
           logIO LogNormal (logError "MODULE argument is required when fzf is not available.")
           exitFailure
 
-  if vopts.varsExplain
-    then explainMode modName vopts
-    else do
-      -- Declaration mode: load single module, show declarations
-      searchPaths <- defaultSearchPaths
-      result <- loadModule searchPaths modName
-      modul <- case result of
-        Left (ModuleNotFound _ searched) -> do
+  -- Resolve the runnable's kind first so we can dispatch correctly:
+  -- modules go through the existing module/composition pipeline,
+  -- recipes show their declared vars in declaration mode, and
+  -- blueprints get their own declaration-mode formatter and refuse
+  -- @--explain@ entirely (resolving a blueprint's variables is the
+  -- agent runner's job, not vars').
+  searchPaths <- defaultSearchPaths
+  discResult <- discoverRunnable searchPaths modName
+  case discResult of
+    Left (ModuleNotFound _ searched) -> do
+      logIO LogNormal $ do
+        logError $ "Module '" <> modName.unModuleName <> "' not found."
+        logError "Searched in:"
+        mapM_ (\p -> logError $ "  " <> T.pack p) searched
+      exitFailure
+    Left err -> do
+      logIO LogNormal (logError $ T.pack (show err))
+      exitFailure
+    Right (RunnableModule m _) ->
+      if vopts.varsExplain
+        then explainMode modName vopts
+        else declarationModeModule m
+    Right (RunnableRecipe r _) ->
+      if vopts.varsExplain
+        then explainMode modName vopts
+        else declarationModeRecipe r
+    Right (RunnableBlueprint b _) ->
+      if vopts.varsExplain
+        then do
           logIO LogNormal $ do
-            logError $ "Module '" <> modName.unModuleName <> "' not found."
-            logError "Searched in:"
-            mapM_ (\p -> logError $ "  " <> T.pack p) searched
+            logError $ "'" <> modName.unModuleName <> "' is a blueprint; --explain is not supported in this release."
+            logError "Resolving a blueprint's variables requires the agent runner."
+            logError "Run `seihou agent run <blueprint>` instead (when EP-31 ships)."
+            logError "For a read-only listing of declared variables, omit --explain."
           exitFailure
-        Left err -> do
-          logIO LogNormal (logError $ T.pack (show err))
-          exitFailure
-        Right m -> pure m
-      declarationMode modul
+        else declarationModeBlueprint b
 
--- | Default mode: show variable declarations
-declarationMode :: Module -> IO ()
-declarationMode modul = do
+-- | Declaration mode for a module: list declared variables.
+declarationModeModule :: Module -> IO ()
+declarationModeModule modul = do
   let vs = modul.vars
   if null vs
     then TIO.putStrLn "No variables declared."
     else do
       TIO.putStrLn $ "Variables for " <> modul.name.unModuleName <> ":"
+      TIO.putStrLn ""
+      TIO.putStr (formatDeclarations vs)
+
+-- | Declaration mode for a recipe: list its declared variables. Recipes
+-- carry their own @vars@ list (separately from the modules they
+-- compose); this prints those without expanding the recipe.
+declarationModeRecipe :: Recipe -> IO ()
+declarationModeRecipe r = do
+  let vs = r.vars
+  if null vs
+    then TIO.putStrLn "No variables declared."
+    else do
+      TIO.putStrLn $ "Variables for " <> r.name.unRecipeName <> " (recipe):"
+      TIO.putStrLn ""
+      TIO.putStr (formatDeclarations vs)
+
+-- | Declaration mode for a blueprint: list its declared variables. The
+-- blueprint kind is surfaced in the heading so users can tell at a
+-- glance that this is the agent-driven runnable, not a module/recipe.
+declarationModeBlueprint :: Blueprint -> IO ()
+declarationModeBlueprint b = do
+  let vs = b.vars
+  if null vs
+    then TIO.putStrLn "No variables declared."
+    else do
+      TIO.putStrLn $ "Variables for " <> b.name.unModuleName <> " (blueprint):"
       TIO.putStrLn ""
       TIO.putStr (formatDeclarations vs)
 
