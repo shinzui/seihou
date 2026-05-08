@@ -64,6 +64,7 @@ Alternatives considered:
 | 5   | Bulletproof partial migration chains across status, migrate, run | docs/plans/23-bulletproof-partial-migration-chains.md | EP-2, EP-3, EP-4 | None | Complete    |
 | 6   | Distinguish benign version bumps from missing migrations     | docs/plans/24-distinguish-benign-version-bumps.md   | EP-5      | None      | Complete    |
 | 7   | Make blocked migrations recoverable from the user's side     | docs/plans/25-recover-from-blocked-migrations.md    | EP-6      | None      | Complete    |
+| 8   | Rewrite migration planner as gap-tolerant version-window walker | docs/plans/35-rewrite-migration-planner-as-gap-tolerant-walker.md | EP-1–EP-7 | None | Complete    |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -528,3 +529,19 @@ Lessons captured:
   destructive `seihou run --bump-blocked` apply step was deferred
   to a fresh-worktree hardening test (rationale captured in
   Surprises & Discoveries and in the EP-7 retrospective).
+
+- 2026-05-08: EP-8 supersedes the EP-5 / EP-6 / EP-7 / EP-27 / EP-28
+  arc with a single coherent rule: the planner is now a gap-tolerant
+  version-window walker that applies every declared migration whose
+  range falls inside `[installed, target]`, in ascending `from` order,
+  skipping gaps. The manifest always advances to the supplied target.
+  All five of the previous "outcome shapes" — full chain, partial
+  chain (blocked tail), partial chain (exhausted tail / bump
+  through), blocked, benign upgrade — collapse into the single
+  `MigrateApplied` result. The terms "blocked migration", "benign
+  upgrade", and "bump-through" disappear from the user-facing
+  vocabulary along with the `--bump-only` and `--bump-blocked`
+  flags. EP-1–EP-7 stay marked Complete within their original scopes;
+  EP-8 simplifies the contract they collectively shaped to where the
+  user's mental model originally landed. The migrations-DX masterplan
+  is closed out with EP-8.

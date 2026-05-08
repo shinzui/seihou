@@ -69,21 +69,44 @@ OPERATIONS
                 S.MigrationOp.RunCommand
                   { run = "cabal run my-tool -- migrate", workDir = None Text }
 
-CHAIN SEMANTICS
+WINDOW SEMANTICS
 
-  When a user runs `seihou migrate`, the planner finds a contiguous
-  sequence of migrations that spans the project's recorded version up
-  to the target. The chain is built greedily:
+  When a user runs `seihou migrate`, the planner walks every declared
+  migration whose [from, to] range falls inside [installed, target] in
+  ascending `from` order, advancing a cursor as it goes. Migrations
+  whose `from` is already past the cursor (overlap or stale) are
+  skipped silently; migrations whose `to` exceeds the target are
+  skipped (a future invocation with a higher target will pick them
+  up).
 
-    installed: 1.0.0    target: 3.0.0
-    declared:  1.0.0 → 2.0.0,  2.0.0 → 3.0.0
+  The cursor never has to land on a declared `from`. Gaps are
+  permitted:
 
-  picks both, in order. There is no graph search and no skipping. If
-  two migrations share the same `from`, that is an ambiguity and the
-  planner refuses (`MigrationDuplicateEdge`). If a migration would
-  jump past the target (e.g. 1.0.0 → 5.0.0 when target is 2.0.0), that
-  is `MigrationOvershoot` and the planner refuses too — the author
-  should ship intermediate migrations or the user should pass `--to`.
+    installed: 0.2     target: 0.6
+    declared:  0.2 → 0.3,   0.5 → 0.6
+
+  Both edges run in order. The 0.3 → 0.5 gap has no declared
+  migration and the planner does not stop — it skips the gap and
+  keeps walking.
+
+MANIFEST ALWAYS LANDS AT TARGET
+
+  After a successful (non-dry-run) migration, the manifest's recorded
+  version for the module advances to the supplied target — regardless
+  of whether any of the declared migrations bridged every gap. A plan
+  with zero in-window migrations is a "pure version bump" that
+  advances the manifest's `moduleVersion` field without running any
+  ops. The terms "blocked migration", "benign upgrade", and
+  "bump-through" are gone; every invocation either has nothing to do
+  (`installed == target`) or lands the manifest at the target.
+
+DUPLICATES AND OVERLAPS
+
+  If two migrations share the same `from`, that is an ambiguity and
+  the planner refuses (`MigrationDuplicateEdge`). Authors who want a
+  "leapfrog" migration alongside the smaller steps should declare the
+  longer span and let the smaller overlapping edges sit unused — the
+  cursor will advance past them after picking the leapfrog.
 
 CONFLICT SEMANTICS
 
@@ -127,10 +150,13 @@ UPGRADE INTEGRATION
 
 STATUS INTEGRATION
 
-  `seihou status` shows a `Pending migrations: …` sub-line under any
-  applied module whose installed copy has advanced past the manifest's
-  recorded version with a covering chain. The line is informational —
-  use `seihou migrate <module>` to apply.
+  `seihou status` shows a `Pending migration: <from> -> <to> (<N>
+  step(s)). Run: seihou migrate <name>` sub-line under any applied
+  module whose installed copy has advanced past the manifest's
+  recorded version. `<N>` is the count of in-window declared
+  migrations that will run; it may be zero (the version range has no
+  applicable migrations and the run will only advance the manifest).
+  The line is informational — use `seihou migrate <module>` to apply.
 
 MANIFEST GUARANTEE
 
@@ -138,9 +164,10 @@ MANIFEST GUARANTEE
   reflects the new paths exactly: a MoveFile rewrites one key, a
   MoveDir rewrites every contained key, deletes drop their entries,
   and the manifest's `genAt` is bumped. The named applied module's
-  `moduleVersion` is updated to the chain's target. `seihou diff`
-  after a clean migration is empty; `seihou status` shows no pending
-  migrations.
+  `moduleVersion` is updated to the supplied target (which may differ
+  from the highest `to` in the applied migrations — see "Manifest
+  always lands at target" above). `seihou diff` after a clean
+  migration is empty; `seihou status` shows no pending migrations.
 
 SEE ALSO
 

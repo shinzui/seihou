@@ -32,8 +32,7 @@ seihou run [MODULE] [OPTIONS]
 | `--confirm-defaults` | Step through default/parent-sourced variables and confirm or override each one |
 | `--commit` | Commit generated files to git after execution (uses AI-generated message) |
 | `--commit-message MSG` | Use a custom commit message instead of the AI-generated one (implies `--commit`) |
-| `--with-migrations` | Apply any pending module migrations before computing the run plan; without this flag, `seihou run` refuses when a composed module has a pending migration chain |
-| `--bump-blocked` | Acknowledge blocked modules by bumping the manifest's recorded version to the installed copy's declared version, with no migration ops applied. Equivalent to `seihou migrate <module> --bump-only` for each blocked module before the run. Compatible with `--with-migrations` for mixed projects (blocked + runnable). |
+| `--with-migrations` | Apply any pending module migrations before computing the run plan; without this flag, `seihou run` refuses when a composed module has a pending migration |
 
 ## Description
 
@@ -58,142 +57,60 @@ and build artifacts never end up in the commit. Passing
 commit message, bypassing the AI call entirely. `--commit` is a no-op
 outside of a git repository (a warning is emitted).
 
-### Migration awareness
+### Pending migrations
 
-Before computing the diff, `seihou run` checks every module in the current
-composition (the primary module plus the `-m/--module` additionals plus
-any transitive dependencies) for a *pending migration plan* — that is,
-a manifest-recorded version that does not match the locally installed
-copy. The plan can take four shapes:
+Before computing the diff, `seihou run` checks every module in the
+current composition (the primary module plus the `-m/--module`
+additionals plus any transitive dependencies) for a pending migration
+plan — that is, a manifest-recorded version that does not match the
+locally installed copy.
 
-- **Full chain** — declared migrations cover the gap exactly.
-- **Partial chain** — declared migrations reach an intermediate version
-  but not the latest installed copy.
-- **Blocked** — the module declared at least one migration but no edge
-  starts at the manifest version (the module author owes a
-  continuation migration).
-- **No migrations declared** — the module's `migrations` field is the
-  empty list and the manifest version trails the installed copy. This
-  is **benign**: there is no destructive op to apply and no
-  missing-migration hazard, just a template-content refresh.
-
-`seihou run` refuses on full, partial, and blocked divergences,
-because all three can lead to writing new template content into
-paths a migration would have moved (or should have moved, if the
-author had shipped one).
-
-`seihou run` does **not** refuse for the benign no-migrations-declared
-case. There is no destructive op to apply, so writing the new
-template into the existing layout is safe; the run flow's
-`updateAllModules` records `moduleVersion = installed.version`
-during the run, which catches the manifest up automatically. The
-benign entry is reported as a quiet info-level note and the run
-proceeds normally:
-
-```
-  Note: example has no migrations declared (0.2.0 -> 0.3.0); will refresh templates and bump manifest during this run.
-```
-
-The refusal listing for the blocking cases distinguishes their
-shapes. The trailing instructional sentence is composed from the
-shapes actually present — blocked-only inputs name `--bump-only` and
-`--bump-blocked`; runnable-only (full / partial) inputs name
-`--with-migrations`; mixed inputs name both:
+By default, `seihou run` refuses when any composed module has a
+pending plan, because writing new template content into paths a
+migration would have moved is the underlying hazard:
 
 ```
 Pending migrations detected:
-  master-plan: 0.1.0 -> 0.2.0 (1 step(s)); no migration declared from 0.2.0, remote is at 0.3.0
-  exec-plan: Blocked: no migration declared from 0.1.3; remote is at 0.3.0
+  master-plan: 0.1.0 -> 0.3.0 (1 step(s))
+  exec-plan: 0.1.3 -> 0.3.0 (0 step(s))
 
-Run 'seihou migrate <module> --bump-only' for each blocked entry to
-acknowledge no migration is needed, or 'seihou run --bump-blocked' to
-do so in one step. For runnable entries, pass --with-migrations to
-apply during this run.
+Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run.
 ```
 
-`--with-migrations` semantics by shape:
+The step count is the number of declared migrations whose `[from, to]`
+range falls inside `[manifest.moduleVersion, installed.version]`. It
+may be zero — a "pure version bump" where no declared migration
+applies but the manifest will still advance to the installed copy's
+version when migrate runs.
 
-- **Full chain**: applies the chain and continues to the run plan.
-- **Partial chain**: applies the longest reachable prefix, refreshes the
-  manifest, and continues to the run plan. The user gets one more
-  iteration of progress without a manual step.
-- **Blocked**: refuses the run with the same `Blocked: …` message the
-  default refusal would have shown. `--with-migrations` cannot recover
-  blocked modules because there is no migration to apply; use
-  `--bump-blocked` (or `seihou migrate <module> --bump-only` for a
-  single module) to acknowledge that no migration is needed.
-- **No migrations declared**: a no-op in the migration phase
-  (nothing to apply); the run continues with the same flow as the
-  default-mode benign case.
+`--with-migrations` semantics: applies every pending plan inline by
+calling the same code path as `seihou migrate <module> --no-fetch`
+for each pending module (the local copy was already inspected during
+detection — there is no need to clone the source repo a second time).
+After all in-band migrations complete, the run continues with the
+post-migration manifest.
 
-### Recovering from blocked migrations
+`--dry-run --with-migrations` shows a one-line summary for each pending
+entry and proceeds to compute the run plan against the *current*
+(pre-migration) disk state with a one-line note. Computing a real
+post-migration dry-run would require staging the migration's file moves
+to disk, which `--dry-run` deliberately does not do; re-run without
+`--dry-run` to see the post-migration plan.
 
-A *blocked* module is one where the author shipped at least one
-migration but no edge starts at the manifest version, so the planner
-cannot construct any chain. `seihou run` refuses by default because
-silently writing the new templates over the old layout could leave
-the project broken. Two recoveries are available:
-
-- **Per-module**: `seihou migrate <name> --bump-only` writes the
-  installed copy's declared version into the manifest with no
-  migration ops applied. Use this when one module is blocked, or
-  when you want to inspect each bump before proceeding.
-- **One-command**: `seihou run --bump-blocked` partitions every
-  blocked entry out of the pre-flight, runs `--bump-only` on each,
-  persists the manifest, and then proceeds to the rest of the run.
-  Use this when several modules are blocked at once (the typical
-  case after upgrading a registry that has advanced past versions
-  whose migrations were not declared).
-
-Both flows print a `Bumping <name> <from> -> <to> (no migration
-declared; user-acknowledged).` line per bumped module as the audit
-trail; the manifest's recorded version changes without a corresponding
-migration apply, which is unusual enough that the run output should
-make it visible.
-
-When *not* to use either flag: when the user is downstream of the
-module author and the gap looks unintentional (the author probably
-forgot to ship a migration). In that case, acknowledging via
-`--bump-only` could mask a real schema mismatch. The safer move is
-to wait for the upstream author to ship the missing migration.
-
-When the project has both blocked and runnable (full / partial)
-entries, `--bump-blocked` and `--with-migrations` are mutually
-compatible:
-
-```sh
-seihou run my-project --bump-blocked --with-migrations
-```
-
-This bumps blocked entries, persists the manifest, and then applies
-the runnable chains in the same invocation.
-
-`seihou run --with-migrations` calls the same code path as `seihou
-migrate <module> --no-fetch` for each pending module (the local copy
-was already inspected during detection — there is no need to clone the
-source repo a second time). Migration conflicts (a tracked file the
-user has edited since generation) propagate as a hard failure here.
-`seihou run --force` governs the run plan's conflict policy, not the
-migration's; to proceed through a migration conflict, run `seihou
-migrate <module> --force` first.
-
-`--dry-run` + `--with-migrations` shows a chain summary for each
-pending entry. When any entry is blocked, an explicit note states that
-the real (non-`--dry-run`) command would refuse the run. The dry-run
-plan output is still computed against the *current* (pre-migration)
-disk state with a one-line note. Computing a real post-migration
-dry-run would require staging the migration's file moves to disk,
-which `--dry-run` deliberately does not do; re-run without `--dry-run`
-to see the post-migration plan.
-
-Detection is **scoped to the composition**: a pending chain on an
+Detection is **scoped to the composition**: a pending plan on an
 applied module that is not part of the current run cannot block. For
-example, if `master-plan` has a pending chain but `seihou run
-nix-flake` is invoked, `nix-flake`'s run proceeds unimpeded.
+example, if `master-plan` has a pending plan but `seihou run nix-flake`
+is invoked, `nix-flake`'s run proceeds unimpeded.
 
 Detection is **best-effort**: parse failures and eval errors fall back
 to "no pending plan", so a malformed `module.dhall` does not block the
 run.
+
+Migration conflicts (a tracked file the user has edited since
+generation) propagate as a hard failure during `--with-migrations`.
+`seihou run --force` governs the run plan's conflict policy, not the
+migration's; to proceed through a migration conflict, run `seihou
+migrate <module> --force` first.
 
 ## Examples
 
@@ -225,18 +142,8 @@ seihou run haskell-project --confirm-defaults
 # Apply pending migrations in-band before the run plan
 seihou run haskell-project --with-migrations
 
-# Preview both the migration chain and the run plan together
+# Preview both the migrations and the run plan together
 seihou run haskell-project --dry-run --with-migrations
-
-# Acknowledge every blocked module and proceed to the run plan
-seihou run haskell-project --bump-blocked
-
-# Preview the bumps that --bump-blocked would write to the manifest
-seihou run haskell-project --dry-run --bump-blocked
-
-# Mixed-shape projects: bump blocked entries and apply runnable chains
-# in one invocation
-seihou run haskell-project --bump-blocked --with-migrations
 ```
 
 ### Reviewing defaults interactively

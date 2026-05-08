@@ -67,27 +67,36 @@ changes from a command's effect, so if your command moves files, you
 must follow it with explicit `MoveFile` / `DeleteFile` ops, or live
 with manifest drift.
 
-## Chain semantics
+## Window-walker semantics
 
-When a user runs `seihou migrate`, the planner finds a contiguous
-sequence of migrations that spans the project's recorded version up
-to the target:
+When a user runs `seihou migrate`, the planner walks every declared
+migration whose `[from, to]` range falls inside `[installed, target]`
+in ascending `from` order:
 
 ```text
-installed: 1.0.0    target: 3.0.0
-declared:  1.0.0 → 2.0.0,  2.0.0 → 3.0.0
+installed: 0.2    target: 0.6
+declared:  0.2 → 0.3,   0.5 → 0.6
 ```
 
-picks both, in order. The chain is **strictly contiguous**: each step's
-`to` must equal the next step's `from`. There is no graph search and no
-skipping. Two migrations sharing the same `from` is an error
-(`MigrationDuplicateEdge`); a single migration that overshoots the
-target is an error (`MigrationOvershoot`).
+picks both, in order. The cursor advances from `0.2` to `0.3` after
+the first edge, then jumps the `0.3 → 0.5` gap and runs the second
+edge. **Gaps are permitted**: missing edges do not stop the walk.
 
-This rule lets authors ship "fast-path" migrations
-(e.g. 1.0.0 → 3.0.0) and have the planner pick whichever edge lands on
-the target — without ambiguity. If you ship both `1.0.0 → 2.0.0` and
-`1.0.0 → 3.0.0`, the planner refuses; pick one.
+After the in-window migrations run, the manifest's recorded
+`moduleVersion` advances to the supplied target — even when no
+declared migration covers the entire span. A plan with zero in-window
+migrations is a "pure version bump" that advances the manifest's
+version field without running any ops.
+
+Two migrations sharing the same `from` is an error
+(`MigrationDuplicateEdge`); the chain would be ambiguous. Migrations
+whose `to` exceeds the target are silently skipped — a future
+invocation with a higher target will pick them up. Migrations whose
+`from` is already past the cursor (because an earlier edge advanced
+the cursor past it) are skipped silently as well; authors who want
+both a "fast-path" leapfrog migration and the smaller intermediate
+edges should declare the leapfrog and let the smaller overlapping
+edges sit unused.
 
 ## Conflict semantics
 
@@ -155,9 +164,11 @@ need to clone again.)
 
 ## Integration with `seihou status`
 
-`seihou status` adds a `Pending migrations: N migration(s) pending: a → b`
-sub-line under any applied module whose manifest version trails the
-installed copy with a covering chain. The line is informational; run
+`seihou status` adds a `Pending migration: <from> -> <to> (<N>
+step(s)). Run: seihou migrate <name>` sub-line under any applied
+module whose manifest version trails the installed copy. `<N>` is the
+count of declared migrations that fall in the version window; it may
+be zero (a pure version bump). The line is informational; run
 `seihou migrate <module>` to apply.
 
 ## Integration with `seihou run`
@@ -199,8 +210,8 @@ generation) abort the run; `seihou run --force` handles diff conflicts,
 not migration conflicts. Run `seihou migrate <module> --force` first if
 you want to overwrite user edits during the migration.
 
-See [`docs/cli/run.md`](../cli/run.md#migration-awareness) for the full
-behavior table.
+See [`docs/cli/run.md`](../cli/run.md#pending-migrations) for the
+full behavior table.
 
 ## What happens to the manifest
 
@@ -209,7 +220,8 @@ After a successful (non-dry-run) migration:
 1. The `files` map keys reflect the new paths exactly.
 2. `genAt` is bumped to the migration's timestamp.
 3. The named applied module's `moduleVersion` is updated to the
-   chain's target.
+   supplied target — which may differ from the highest `to` in the
+   applied migrations when a gap was skipped.
 4. The applied module's `removal` field is **not** touched (the next
    `seihou run` re-derives it from the new `module.dhall`).
 

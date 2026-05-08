@@ -3,12 +3,66 @@
 ## Last Reviewed Commit
 
 ```
-HEAD  Recover from blocked migrations from the user's side (ExecPlan 25)
+HEAD  Rewrite migration planner as gap-tolerant version-window walker (ExecPlan 35)
 ```
 
 ---
 
 ## Changelog
+
+### 2026-05-08 (Migration planner: gap-tolerant version-window walker)
+
+**Reviewed commits:** ExecPlan 35
+(`docs/plans/35-rewrite-migration-planner-as-gap-tolerant-walker.md`).
+
+**Behaviour change (user-facing):**
+
+- The migration planner now applies every declared migration whose
+  version range falls inside `[installed, target]`, in ascending
+  `from` order, skipping versions that have no declared migration.
+  The manifest always advances to the supplied target after
+  `seihou migrate` completes — even when no declared migration covers
+  the entire span.
+- The previous "partial chain", "blocked migration", "benign upgrade",
+  and "bump-through" outcomes are unified under a single
+  `MigrateApplied` result. The corresponding advisory messages
+  (`Blocked: …`, `Note: no migration declared from …`, `bumped
+  through`) have been removed from CLI output.
+- `seihou migrate` no longer ever requires a follow-up command. A
+  single invocation either lands the manifest at the target or
+  surfaces a real error (file conflict, downgrade refused,
+  unparseable version).
+
+**Removed:**
+
+- The `--bump-only` flag (`seihou migrate`) and the `--bump-blocked`
+  flag (`seihou run`) are removed. The default `seihou migrate` and
+  `seihou run --with-migrations` already advance the manifest even
+  when no migration ops apply, making both flags redundant. Scripts
+  that relied on them should drop the flag and call the default
+  invocation.
+- The `MigrationGap` and `MigrationOvershoot` planner errors are
+  removed. Partial coverage is no longer an error; overshoots are
+  silently skipped.
+- The JSON output's `unreachable`, `bumpedThrough`, and
+  `manifestVersion` keys are removed; consumers should read `to` (the
+  manifest's new version) and inspect `steps` directly.
+- The `MigrateAppliedPartial`, `MigrateAppliedBumpedThrough`,
+  `MigrateBlocked`, `MigrateBenignUpgrade`,
+  `MigrateDryRunOKPartial`, `MigrateDryRunOKBumpedThrough`,
+  `MigrateConflictingFlags` `MigrateResult` variants are removed.
+- The `Seihou.Core.Migration.MigrationChain` type is removed; the
+  flattened `MigrationPlan` record (with `planModule`, `planFrom`,
+  `planTo`, `planSteps`) replaces it.
+
+**Why:**
+
+`seihou migrate` had been patched five times (EP-5, EP-6, EP-7,
+EP-27, EP-28) without ever matching the user's mental model: "look
+at the current installed version, run each migration between it and
+the latest, skip versions that have no migration." This rewrite
+deletes the strict-chain machinery and replaces it with that single
+rule.
 
 ### 2026-05-08 (Blueprints: agent-driven scaffolding for open-ended project shapes)
 

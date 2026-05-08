@@ -45,62 +45,24 @@ Pending-migration detection runs on every `seihou status` invocation —
 no `--check-updates` flag is required, because the check is purely
 local (it compares the manifest's recorded `moduleVersion` against the
 locally installed `module.dhall`'s version and asks the planner whether
-a contiguous chain exists).
+any in-window migrations apply).
 
-The row's hint takes one of four shapes depending on what the
-planner returns:
+The row's hint takes one shape regardless of how many migrations the
+planner found:
 
-- **Full chain** — the declared migrations cover the gap exactly. The
-  hint reads:
+```
+    Pending migration: 0.1.0 -> 0.3.0 (6 step(s)). Run: seihou migrate <name>
+```
 
-  ```
-      Pending migration: 0.1.0 -> 0.3.0 (6 operation(s)). Run: seihou migrate <name>
-  ```
-
-- **Partial chain** — the declared migrations reach an intermediate
-  version but not the latest remote version. The hint reads the
-  chain summary plus an extra `Note:` line below:
-
-  ```
-      Pending migration: 0.1.0 -> 0.2.0 (1 operation(s)). Run: seihou migrate <name>
-      Note: no migration declared from 0.2.0; remote is at 0.3.0.
-  ```
-
-  `seihou migrate <name>` will apply the prefix (0.1.0 → 0.2.0),
-  refresh the manifest's `moduleVersion` to 0.2.0, and print the same
-  advisory.
-
-- **Blocked** — the module declared at least one migration but no
-  edge starts at the manifest version, so the planner has nothing to
-  apply. The hint reads:
-
-  ```
-      Blocked: no migration declared from 0.1.3; remote is at 0.3.0. To proceed, run 'seihou migrate exec-plan --bump-only' to acknowledge no migration is needed, or wait for the module author to ship one.
-  ```
-
-  The Recommended actions tail lists `seihou migrate <name>
-  --bump-only` for copy-paste — the manual escape hatch that
-  acknowledges no migration is needed and bumps the manifest forward.
-  When several modules are blocked at once, prefer `seihou run
-  --bump-blocked` (see [`docs/cli/run.md`](run.md)), which runs
-  `--bump-only` on every blocked entry in one invocation.
-
-- **No migrations declared** — the module's `migrations` field is the
-  empty list and the manifest version trails the installed copy's
-  version. This is **benign**: there is nothing destructive to apply,
-  and `seihou run` will catch the manifest up automatically. The
-  hint softens to:
-
-  ```
-      Pending: 0.2.0 -> 0.3.0 (no migrations declared). Run: seihou upgrade <name> && seihou run
-  ```
-
-  The Recommended actions tail lists `seihou upgrade <name> && seihou
-  run` rather than `[blocked]` — this row is not blocking anything.
+The step count is the number of declared migrations whose `[from, to]`
+range falls inside `[manifest.moduleVersion, installed.version]`. It
+may be zero — a "pure version bump" where no declared migration
+applies but the manifest will still advance to the installed copy's
+version when the user runs `seihou migrate`.
 
 `seihou migrate <name>` is self-contained (it fetches the source repo
-on its own — see `docs/cli/migrate.md`), so a single command resolves
-full and partial chains.
+on its own — see `docs/cli/migrate.md`), so one command always
+resolves the row.
 
 ### Update checking
 
@@ -143,12 +105,11 @@ Seihou Status:
 
 Applied modules:
   master-plan  v0.1.0    (applied 2026-04-15)  outdated: 0.3.0 available
-    Pending migration: 0.1.0 -> 0.2.0 (6 operation(s)). Run: seihou migrate master-plan
-    Note: no migration declared from 0.2.0; remote is at 0.3.0.
+    Pending migration: 0.1.0 -> 0.3.0 (1 step(s)). Run: seihou migrate master-plan
   exec-plan  v0.1.3    (applied 2026-04-15)  outdated: 0.3.0 available
-    Blocked: no migration declared from 0.1.3; remote is at 0.3.0. To proceed, run 'seihou migrate exec-plan --bump-only' to acknowledge no migration is needed, or wait for the module author to ship one.
+    Pending migration: 0.1.3 -> 0.3.0 (0 step(s)). Run: seihou migrate exec-plan
   example  v0.2.0    (applied 2026-04-15)  outdated: 0.3.0 available
-    Pending: 0.2.0 -> 0.3.0 (no migrations declared). Run: seihou upgrade example && seihou run
+    Pending migration: 0.2.0 -> 0.3.0 (0 step(s)). Run: seihou migrate example
 
 Tracked files: 5
   ...
@@ -159,6 +120,6 @@ Variables: 4 resolved
 
 Recommended actions:
   seihou migrate master-plan
-  seihou migrate exec-plan --bump-only
-  seihou upgrade example && seihou run
+  seihou migrate exec-plan
+  seihou migrate example
 ```

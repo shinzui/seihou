@@ -142,11 +142,19 @@ The work is observable in three places:
       planner contract. Done 2026-05-08, folded into M2's commit.
       Renamed `fallbackToLocal` to `maybeFallbackToLocal`; trigger is
       now "local plan has strictly more steps than clone plan."
-- [ ] M6 — Live verification + docs + CHANGELOG, covering every
+- [x] M6 — Live verification + docs + CHANGELOG, covering every
       user-visible surface: the embedded `seihou help migrations`
       topic, the four touched CLI references (`migrate.md`, `status.md`,
       `run.md`, `upgrade.md`), the user concept guide
       (`docs/user/migrations.md`), and the migrations DX masterplan.
+      Done 2026-05-08. Live fixture at `/tmp/seihou-walker-repro/`
+      reproduced Scenario A end-to-end (manifest 0.2 → 0.6 in one
+      command, both edges applied in order). All 1053 tests pass
+      (847 core + 206 cli) and `nix flake check` is green. Docs and
+      CHANGELOG updated; masterplan registry gained EP-8 row and
+      close-out entry. EP-1–EP-7 stay marked Complete in their
+      original scopes; EP-8 supersedes the contract they collectively
+      shaped.
 
 
 ## Surprises & Discoveries
@@ -286,7 +294,81 @@ The work is observable in three places:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The plan landed in three commits across one session:
+
+1. **M1** — planner core rewritten and pinned by 16 unit tests
+   (down from 23). Engine layer (`Seihou.Engine.Migrate`) updated
+   minimally to use the new `MigrationPlan` shape; the engine's
+   `bumpVersion` now reads `planTo` directly so empty-step plans
+   advance the manifest the same way the `--bump-only` path used
+   to.
+2. **M2/M4/M5** — collapsed `MigrateResult` to three constructors,
+   merged the EP-27 fallback into a "more steps wins" trigger, and
+   simplified every consumer of `MigrationPlan` (`StatusRender`,
+   `PendingMigrations`, `Run`, `Upgrade`) to a single branch on
+   "is there any pending plan." Net delta: −2,082 lines of source +
+   tests. M4 and M5 were folded into M2's commit because the
+   planner-field removals made keeping the consumer files compiling
+   between commits impossible (Decision Log records the regrouping).
+3. **M3** — removed the `--bump-only` and `--bump-blocked` flag
+   scaffolding. Added explicit "BREAKING CHANGE" footer to the
+   commit; CHANGELOG entry covers scripted-caller migration paths.
+
+**Live verification.** The fixture at `/tmp/seihou-walker-repro/`
+reproduced Scenario A from the Purpose section verbatim:
+
+    $ seihou migrate foo --no-fetch
+    Migration plan: foo  0.2 → 0.6
+      0.2 → 0.3:
+        move-file v2.txt -> v3.txt
+      0.5 → 0.6:
+        move-file v5.txt -> v6.txt
+
+    2 operation(s), 0 conflict(s).
+
+    ✓ Migrated foo 0.2 → 0.6.
+
+    $ jq '.modules[] | select(.name=="foo") | .version' .seihou/manifest.json
+    "0.6"
+
+The manifest landed at 0.6 in one command, both edges applied in
+order, the 0.3 → 0.5 gap silently skipped — exactly what the user
+asked for.
+
+**Test coverage.** 1053 tests pass: 847 in `seihou-core` (16 in the
+rewritten `MigrationSpec`), 206 in `seihou-cli` (the `MigrateSpec`
+suite shrank from 28 to 20 cases, all of which now expect the
+collapsed `MigrateResult` shape and exercise the new walker
+contract). `nix flake check` green.
+
+**What changed in the user-facing vocabulary.** The terms "blocked
+migration," "benign upgrade," "bump-through," "partial chain," and
+"unreachable tail" no longer appear anywhere a user (or agent) can
+read them — not in CLI output, not in `seihou help migrations`, not
+in `docs/cli/*.md`, not in `docs/user/migrations.md`. The single
+remaining occurrences are in `docs/user/CHANGELOG.md` (the removal
+note) and in this plan's text.
+
+**What was easier than expected.** The engine layer
+(`Seihou.Engine.Migrate`) needed only field-renames plus a one-line
+change to `bumpVersion`; no new conditional branches were required.
+The `executeMigration` function's "advance the manifest's
+moduleVersion at the end" logic worked out of the box for empty-step
+plans because it was already keyed on the supplied target.
+
+**What was harder than expected.** The decision to fold M4 and M5
+into M2's commit came from realizing that the planner-field removals
+forced their hand — there was no way to keep `Run.hs`, `Upgrade.hs`,
+`StatusRender.hs`, and `PendingMigrations.hs` compiling between
+commits if M2 landed alone. The Decision Log captures the rationale.
+
+**Lessons.** Five preceding plans (EP-5/EP-6/EP-7/EP-27/EP-28) each
+extended the planner's outcome shape rather than questioning the
+strict-chain premise. Each extension made the next one harder. The
+user's two-component fixture (literally "0.2/0.6 with [0.2→0.3,
+0.5→0.6]") exposed the issue in one paragraph. Lesson: when a
+patch trajectory accumulates this many shape variants, look for
+the bigger simplification before adding a sixth.
 
 
 ## Context and Orientation
