@@ -4,7 +4,6 @@ module Seihou.Core.Migration
     MigrationOp (..),
 
     -- * Migration planning
-    MigrationChain (..),
     MigrationPlan (..),
     MigrationPlanError (..),
     planMigrationChain,
@@ -49,77 +48,44 @@ data Migration = Migration
   deriving stock (Eq, Show, Generic)
 
 -- ----------------------------------------------------------------------------
--- Pure planner
+-- Pure planner — gap-tolerant version-window walker
 --
 -- The planner is the bridge between the unsorted list of author-declared
--- migrations on a 'Module' and the contiguous chain that the migration
+-- migrations on a 'Module' and the ordered sequence that the migration
 -- engine actually executes. It is a pure function: no IO, no filesystem,
 -- no manifest. The @moduleName@ parameter is the rendered module name
 -- (a 'Text', not 'Seihou.Core.Types.ModuleName') so this module can stay
 -- self-contained and avoid a circular dependency with @Types@ (which
 -- imports 'Migration' for the @migrations@ field on @Module@). The CLI
 -- handler unwraps the 'ModuleName' newtype before calling.
+--
+-- The planner's contract is simple: given an installed manifest version
+-- and a target version, apply every declared migration @m@ such that
+-- @installed ≤ m.from@ and @m.to ≤ target@, in ascending @from@ order,
+-- advancing a cursor as you go (skipping any edge whose @from@ has
+-- fallen behind the cursor). After all applicable edges have been
+-- collected, the manifest's recorded version always advances to
+-- @target@, even when no migration applies (a "pure version bump").
 -- ----------------------------------------------------------------------------
-
--- | A contiguous, ordered sequence of migrations that spans a known
--- installed version up to a known target version.
-data MigrationChain = MigrationChain
-  { migrationModule :: Text,
-    chainFrom :: Version,
-    chainTo :: Version,
-    chainSteps :: [Migration]
-  }
-  deriving stock (Eq, Show, Generic)
 
 -- | The planner result for a non-trivial @installed → target@ request.
 --
--- 'planChain' is the longest reachable prefix the planner could build by
--- greedily walking declared edges starting at @installed@. If the planner
--- could not take a single step (no edge starts at @installed@), the chain
--- is empty: @chainFrom == chainTo == installed@ and @chainSteps == []@.
---
--- 'planUnreachable' is 'Nothing' when the chain reaches the requested
--- target exactly, and @Just (stuckAt, target)@ when the chain stops short
--- — either because no edge continues from @stuckAt@ or because the only
--- continuing edge would overshoot @target@.
---
--- 'planMigrationsDeclared' is 'True' when the input migrations list was
--- non-empty and 'False' when the module declared @migrations = []@.
--- Consumers use this to distinguish a benign version bump (no migrations
--- declared, version field changed) from a blocked migration (migrations
--- declared but none reach the installed version).
---
--- 'planTailExhausted' is 'True' when the unreachable tail (if any) has
--- no further declared migrations: no migration in the input list has
--- @from > stuckAt@. Consumers use this to distinguish an "exhausted
--- tail" partial chain (the author ran out of declared migrations
--- past the chain's stopping point — the gap is presumed benign and
--- safe to bump through) from a "blocked tail" partial chain (the
--- author has migration plans in the unreachable region but they
--- don't form a continuous chain — the user is genuinely stuck
--- waiting for a continuation migration). For full chains
--- (@planUnreachable == Nothing@) the field is conventionally 'True'
--- (the empty tail is trivially exhausted) but consumers should not
--- branch on it for full chains.
---
--- Consumers distinguish six shapes:
---
---   * Full chain: @chainSteps@ non-empty and @planUnreachable == Nothing@.
---   * Partial chain, exhausted tail: @chainSteps@ non-empty,
---     @planUnreachable@ is 'Just', @planTailExhausted == True@.
---   * Partial chain, blocked tail: @chainSteps@ non-empty,
---     @planUnreachable@ is 'Just', @planTailExhausted == False@.
---   * Blocked: @chainSteps == []@, @planUnreachable@ is 'Just', and
---     @planMigrationsDeclared == True@ (author shipped migrations but
---     none reach the manifest version).
---   * Benign version gap: @chainSteps == []@, @planUnreachable@ is
---     'Just', and @planMigrationsDeclared == False@ (author declared no
---     migrations; the version bump is just template content).
+-- The plan carries the module name for rendering, the start and end
+-- versions of the user-visible "X → Y" header, and the ordered list of
+-- migrations that will run. A plan with @planSteps == []@ means the
+-- manifest will advance from @planFrom@ to @planTo@ without running
+-- any migration ops (a pure version bump).
 data MigrationPlan = MigrationPlan
-  { planChain :: MigrationChain,
-    planUnreachable :: Maybe (Version, Version),
-    planMigrationsDeclared :: Bool,
-    planTailExhausted :: Bool
+  { planModule :: Text,
+    -- | Installed (manifest) version at the start.
+    planFrom :: Version,
+    -- | Target version. The manifest will land here after the plan
+    -- runs, regardless of whether any of the declared migrations
+    -- bridge every gap inside @[planFrom, planTo]@.
+    planTo :: Version,
+    -- | The migrations that actually apply, in ascending @from@
+    -- order. May be empty.
+    planSteps :: [Migration]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -129,15 +95,6 @@ data MigrationPlanError
   = -- | A 'Migration' had a 'from' or 'to' string that didn't parse.
     -- Carries the offending string verbatim.
     MigrationVersionUnparseable Text
-  | -- | No contiguous chain spans @installed → target@. The two arguments
-    -- are the version we got stuck at, and the target we couldn't reach.
-    --
-    -- The planner itself no longer produces this variant — it returns the
-    -- partial chain plus 'planUnreachable' instead. CLI consumers that
-    -- need to fail hard (notably @seihou migrate --to TARGET@) construct
-    -- this error from a 'planUnreachable' tail to preserve the existing
-    -- error message.
-    MigrationGap Version Version
   | -- | Refusing to plan a downgrade. @installed → target@ where @target@
     -- compares strictly less than @installed@.
     MigrationDowngradeNotSupported Version Version
@@ -145,10 +102,6 @@ data MigrationPlanError
     -- can't unambiguously pick a successor. Args: the duplicated 'from'
     -- and one of the conflicting 'to' versions.
     MigrationDuplicateEdge Version Version
-  | -- | A migration would step past the target (e.g. installed = 1.0.0,
-    -- target = 1.5.0, available = 1.0.0 → 2.0.0). Args: the offending
-    -- 'from' and the offending 'to'.
-    MigrationOvershoot Version Version
   deriving stock (Eq, Show, Generic)
 
 -- | Compute the migration plan that spans installed → target.
@@ -156,22 +109,26 @@ data MigrationPlanError
 -- Returns:
 --
 --   * @Right Nothing@ — installed and target are equal; no work to do.
---   * @Right (Just plan)@ — the plan carries the longest reachable prefix
---     plus, if the prefix doesn't reach the target exactly, an in-band
---     description of the unreachable tail. Consumers decide whether the
---     partial coverage is fatal (e.g. @seihou migrate --to TARGET@) or
---     surfaceable as an advisory (e.g. @seihou status@,
---     @seihou migrate@ without a target).
+--   * @Right (Just plan)@ — the plan carries every migration whose
+--     version range falls inside @[installed, target]@, plus the
+--     installed and target versions for downstream rendering and
+--     manifest-advance logic. The list may be empty (a pure version
+--     bump where no migration applies); the manifest still advances
+--     to @target@ in that case.
 --   * @Left e@ — planning failed; the error variant explains why.
---     Author-side mistakes (overshoot, duplicate edge, unparseable
---     version) and downgrades are still hard errors. Partial coverage is
---     not.
+--     Author-side mistakes (duplicate edge, unparseable version) and
+--     downgrades are still hard errors. Partial coverage is not, and
+--     overshoots are silently skipped.
 --
--- The chain is built greedily: starting at the installed version, the
--- planner picks the migration whose @from@ equals the current version,
--- moves to that migration's @to@, and repeats. Migrations declared with a
--- @from@ already past the target are ignored; migrations whose @to@
--- overshoots the target are rejected with 'MigrationOvershoot'.
+-- Algorithm: parse every declared migration's @from@/@to@ into
+-- 'Version' values, reject duplicate @from@s, sort the remaining edges
+-- by @from@ ascending, then walk the sorted list with a cursor. Each
+-- edge is either picked (and the cursor advances to its @to@), skipped
+-- because its @from@ has fallen behind the cursor (already covered by
+-- an earlier picked edge), skipped because its @to@ overshoots the
+-- target (the user hasn't asked to go that far), or terminates the
+-- walk because its @from@ has reached or exceeded the target (no
+-- subsequent edge in the sorted list can contribute either).
 planMigrationChain ::
   -- | Module name (already rendered to text)
   Text ->
@@ -189,22 +146,15 @@ planMigrationChain modName migrations installed target
   | otherwise = do
       parsed <- traverse parseEdges migrations
       checkDuplicates parsed
-      (steps, reached, mTail) <-
-        walk installed target (sortOn (\(_, f, _) -> f) parsed) []
-      let chain =
-            MigrationChain
-              { migrationModule = modName,
-                chainFrom = installed,
-                chainTo = reached,
-                chainSteps = steps
-              }
+      let sorted = sortOn (\(_, f, _) -> f) parsed
+          steps = pickInWindow installed target sorted
       Right
         ( Just
             MigrationPlan
-              { planChain = chain,
-                planUnreachable = mTail,
-                planMigrationsDeclared = not (null migrations),
-                planTailExhausted = not (any (\(_, fv, _) -> fv > reached) parsed)
+              { planModule = modName,
+                planFrom = installed,
+                planTo = target,
+                planSteps = steps
               }
         )
   where
@@ -226,15 +176,16 @@ planMigrationChain modName migrations installed target
         (t' : _) -> Left (MigrationDuplicateEdge f t')
         [] -> checkDuplicates rest
 
-    -- Greedy walk: at each step, find the migration whose `from` is the
-    -- current version. If `to` exceeds the target, that's an overshoot;
-    -- if no migration matches and we haven't reached the target, that's
-    -- an unreachable tail (the chain so far is returned in-band).
-    walk current tgt edges acc
-      | current == tgt = Right (reverse acc, current, Nothing)
-      | otherwise =
-          case [(m, f, t) | (m, f, t) <- edges, f == current] of
-            [] -> Right (reverse acc, current, Just (current, tgt))
-            ((m, _f, t) : _)
-              | t > tgt -> Left (MigrationOvershoot current t)
-              | otherwise -> walk t tgt edges (m : acc)
+    -- Walk the sorted edge list collecting in-window migrations.
+    -- The list is sorted by `from` ascending, so once an edge has
+    -- `from >= end` no later edge can contribute either. An edge with
+    -- `from < cursor` is already-covered (or precedes the manifest)
+    -- and is skipped. An edge with `to > end` overshoots the target
+    -- and is silently skipped — a future invocation with a higher
+    -- target will pick it up.
+    pickInWindow _cursor _end [] = []
+    pickInWindow cursor end ((m, f, t) : rest)
+      | f < cursor = pickInWindow cursor end rest
+      | f >= end = []
+      | t > end = pickInWindow cursor end rest
+      | otherwise = m : pickInWindow t end rest

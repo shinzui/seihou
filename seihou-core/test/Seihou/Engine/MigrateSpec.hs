@@ -7,8 +7,8 @@ import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
 import Effectful
 import Seihou.Core.Migration
   ( Migration (..),
-    MigrationChain (..),
     MigrationOp (..),
+    MigrationPlan (..),
   )
 import Seihou.Core.Types
 import Seihou.Core.Version (Version, parseVersion)
@@ -83,17 +83,17 @@ mkManifest entries =
 mkFS :: [(FilePath, Text)] -> PureFS
 mkFS entries = PureFS (Map.fromList entries) Set.empty
 
--- | Single-step chain wrapping the supplied ops.
-chain1 :: Text -> Text -> [MigrationOp] -> MigrationChain
+-- | Single-step plan wrapping the supplied ops.
+chain1 :: Text -> Text -> [MigrationOp] -> MigrationPlan
 chain1 fromV toV ops =
-  MigrationChain
-    { migrationModule = "demo",
-      chainFrom = mkV fromV,
-      chainTo = mkV toV,
-      chainSteps = [Migration {from = fromV, to = toV, ops}]
+  MigrationPlan
+    { planModule = "demo",
+      planFrom = mkV fromV,
+      planTo = mkV toV,
+      planSteps = [Migration {from = fromV, to = toV, ops}]
     }
 
-runClassify :: PureFS -> Manifest -> MigrationChain -> ExecutedMigrationPlan
+runClassify :: PureFS -> Manifest -> MigrationPlan -> ExecutedMigrationPlan
 runClassify fs manifest c =
   fst $
     runPureEff $
@@ -240,11 +240,11 @@ spec = do
       let manifest = mkManifest [("app/Main.hs", "x")]
           fs = mkFS [("app/Main.hs", "x")]
           chain =
-            MigrationChain
-              { migrationModule = "demo",
-                chainFrom = mkV "1.0.0",
-                chainTo = mkV "3.0.0",
-                chainSteps =
+            MigrationPlan
+              { planModule = "demo",
+                planFrom = mkV "1.0.0",
+                planTo = mkV "3.0.0",
+                planSteps =
                   [ Migration "1.0.0" "2.0.0" [MoveDir "app" "src"],
                     Migration "2.0.0" "3.0.0" [DeleteFile "src/Main.hs"]
                   ]

@@ -19,8 +19,8 @@ import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Seihou.Core.Migration
   ( Migration (..),
-    MigrationChain (..),
     MigrationOp (..),
+    MigrationPlan (..),
   )
 import Seihou.Core.Types
   ( AppliedModule (..),
@@ -73,12 +73,12 @@ data MigrationOpInstance
   | RunCommandInst Text (Maybe FilePath)
   deriving stock (Eq, Show, Generic)
 
--- | The complete plan that 'classifyMigration' returns: the chain it was
--- built from, and the linearized list of concrete op instances in
--- execution order.
+-- | The complete plan that 'classifyMigration' returns: the planner's
+-- 'MigrationPlan' it was built from, and the linearized list of
+-- concrete op instances in execution order.
 data ExecutedMigrationPlan = ExecutedMigrationPlan
   { planModule :: ModuleName,
-    planChain :: MigrationChain,
+    planSource :: MigrationPlan,
     planOps :: [MigrationOpInstance]
   }
   deriving stock (Eq, Show, Generic)
@@ -95,21 +95,21 @@ data MigrationExecError
 -- classifyMigration
 -- ----------------------------------------------------------------------------
 
--- | Walk a 'MigrationChain' and produce a fully classified
+-- | Walk a 'MigrationPlan' and produce a fully classified
 -- 'ExecutedMigrationPlan'. The classification reads files from the
 -- filesystem (for hash comparisons against the manifest) but does not
 -- modify anything.
 classifyMigration ::
   (Filesystem :> es) =>
   Manifest ->
-  MigrationChain ->
+  MigrationPlan ->
   Eff es ExecutedMigrationPlan
-classifyMigration manifest chain = do
-  ops <- traverse (classifyOp manifest) (concatMap (.ops) chain.chainSteps)
+classifyMigration manifest plan = do
+  ops <- traverse (classifyOp manifest) (concatMap (.ops) plan.planSteps)
   pure
     ExecutedMigrationPlan
-      { planModule = ModuleName chain.migrationModule,
-        planChain = chain,
+      { planModule = ModuleName plan.planModule,
+        planSource = plan,
         planOps = ops
       }
 
@@ -164,7 +164,9 @@ classifyFile manifest path = do
 -- Otherwise runs every op in declaration order, rewrites the manifest's
 -- @files@ map to reflect new paths, bumps @genAt@ to the supplied
 -- timestamp, and updates the named 'AppliedModule''s @moduleVersion@ to
--- the chain's target version.
+-- @planTo@ (the user's supplied target). When the source plan has an
+-- empty 'planSteps' list, no file ops run but the manifest still
+-- advances to @planTo@ — this is the "pure version bump" path.
 executeMigration ::
   (Filesystem :> es, Process :> es) =>
   -- | If 'True', proceed even when files are 'MFConflict'. Mirrors the
@@ -192,7 +194,7 @@ executeMigration force plan manifest now = do
           let bumped =
                 man'
                   { genAt = now,
-                    modules = map (bumpVersion plan.planModule plan.planChain) man'.modules
+                    modules = map (bumpVersion plan.planModule plan.planSource) man'.modules
                   }
           pure (Right bumped)
 
@@ -291,12 +293,12 @@ dropDirFromManifest path manifest =
       keep k = k /= path && not (prefix `isPrefixOfPath` k)
    in manifest {files = Map.filterWithKey (\k _ -> keep k) manifest.files}
 
--- | Update the named applied module's @moduleVersion@ to the chain's
+-- | Update the named applied module's @moduleVersion@ to the plan's
 -- target. Other applied modules are untouched.
-bumpVersion :: ModuleName -> MigrationChain -> AppliedModule -> AppliedModule
-bumpVersion modName chain am
+bumpVersion :: ModuleName -> MigrationPlan -> AppliedModule -> AppliedModule
+bumpVersion modName plan am
   | am.name == modName =
-      am {moduleVersion = Just (renderVersion chain.chainTo)}
+      am {moduleVersion = Just (renderVersion plan.planTo)}
   | otherwise = am
 
 -- ----------------------------------------------------------------------------
