@@ -2,9 +2,12 @@ module Seihou.Dhall.Eval
   ( evalDhallExpr,
     evalModuleFromFile,
     evalRecipeFromFile,
+    evalBlueprintFromFile,
     evalRegistryFromFile,
     moduleDecoder,
     recipeDecoder,
+    blueprintDecoder,
+    blueprintFileDecoder,
     registryDecoder,
     registryEntryDecoder,
     varTypeDecoder,
@@ -243,6 +246,61 @@ recipeDecoder =
 
 recipeNameDecoder :: Decoder RecipeName
 recipeNameDecoder = RecipeName <$> strictText
+
+-- | Decoder for a 'BlueprintFile' record. The @src@ is a path relative
+-- to the blueprint's @files/@ directory; the optional @description@ is
+-- shown to the agent so it can pick the right reference.
+blueprintFileDecoder :: Decoder BlueprintFile
+blueprintFileDecoder =
+  record
+    ( BlueprintFile
+        <$> field "src" string
+        <*> field "description" (maybe strictText)
+    )
+
+-- | Decoder for the top-level Blueprint type from Dhall.
+blueprintDecoder :: Decoder Blueprint
+blueprintDecoder =
+  record
+    ( Blueprint
+        <$> field "name" moduleNameDecoder
+        <*> field "version" (maybe strictText)
+        <*> field "description" (maybe strictText)
+        <*> field "prompt" strictText
+        <*> field "vars" (list varDeclDecoder)
+        <*> field "prompts" (list promptDecoder)
+        <*> field "baseModules" (list dependencyDecoder)
+        <*> field "files" (list blueprintFileDecoder)
+        <*> field "allowedTools" (maybe (list strictText))
+        <*> field "tags" (list strictText)
+    )
+
+-- | Evaluate a @blueprint.dhall@ file and decode it into a 'Blueprint'.
+-- Returns 'Left' with a 'ModuleLoadError' if evaluation or decoding fails.
+--
+-- Follows the same pattern as 'evalModuleFromFile' / 'evalRecipeFromFile':
+-- uses 'inputExprWithSettings' to parse and normalize, then extracts with
+-- 'blueprintDecoder' and forces lazy decoder thunks so 'error' calls in
+-- the inner decoders are caught here rather than escaping later.
+evalBlueprintFromFile :: FilePath -> IO (Either ModuleLoadError Blueprint)
+evalBlueprintFromFile path = do
+  result <- try $ do
+    text <- TIO.readFile path
+    let settings =
+          set rootDirectory (takeDirectory path) $
+            set sourceName path defaultInputSettings
+    expr <- inputExprWithSettings settings text
+    case extract blueprintDecoder expr of
+      Success b -> do
+        mapM_ (\v -> evaluate v.type_) b.vars
+        mapM_ (\p -> evaluate p.condition) b.prompts
+        pure b
+      Failure e -> throwIO e
+  case result of
+    Left (e :: SomeException) ->
+      let nm = guessModuleName path
+       in pure $ Left (DhallEvalError nm (T.pack (show e)))
+    Right b -> pure (Right b)
 
 -- | Decoder for Removal from a Dhall record.
 removalDecoder :: Decoder Removal

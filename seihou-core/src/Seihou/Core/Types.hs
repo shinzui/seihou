@@ -24,6 +24,8 @@ module Seihou.Core.Types
     Module (..),
     RecipeName (..),
     Recipe (..),
+    BlueprintFile (..),
+    Blueprint (..),
     Runnable (..),
     recipeNameToModuleName,
     Operation (..),
@@ -267,10 +269,40 @@ data Recipe = Recipe
   }
   deriving stock (Eq, Show, Generic)
 
--- | The result of name-based discovery: either a module or a recipe.
+-- | A reference to a file in a blueprint's @files/@ subdirectory.
+-- The runner mounts the blueprint's @files/@ directory into the
+-- agent's filesystem; @description@ is shown to the agent so it can
+-- pick the right reference for the user's request.
+data BlueprintFile = BlueprintFile
+  { src :: FilePath,
+    description :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A blueprint: an agent-driven runnable artifact bundling a base
+-- prompt, optional baseline modules, and reference files. Blueprints
+-- are not directly executable — running @seihou run@ on a blueprint
+-- name refuses with an actionable message; the agent runner
+-- @seihou agent run@ (EP-31) consumes them instead.
+data Blueprint = Blueprint
+  { name :: ModuleName,
+    version :: Maybe Text,
+    description :: Maybe Text,
+    prompt :: Text,
+    vars :: [VarDecl],
+    prompts :: [Prompt],
+    baseModules :: [Dependency],
+    files :: [BlueprintFile],
+    allowedTools :: Maybe [Text],
+    tags :: [Text]
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | The result of name-based discovery: a module, a recipe, or a blueprint.
 data Runnable
   = RunnableModule Module FilePath
   | RunnableRecipe Recipe FilePath
+  | RunnableBlueprint Blueprint FilePath
   deriving stock (Show)
 
 -- | Convert a 'RecipeName' to a 'ModuleName' (they share a namespace).

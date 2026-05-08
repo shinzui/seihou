@@ -21,6 +21,7 @@ library
     Seihou.Composition.Plan
     Seihou.Composition.Recipe
     Seihou.Composition.Resolve
+    Seihou.Core.Blueprint
     Seihou.Core.Context
     Seihou.Core.Expr
     Seihou.Core.Install

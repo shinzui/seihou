@@ -89,6 +89,7 @@ runnableToEntryWithOrigin origins dr =
       kindSuffix = case dr.drKind of
         KindModule -> ""
         KindRecipe -> " [recipe]"
+        KindBlueprint -> " [blueprint]"
    in if dr.drIsError
         then
           Entry

@@ -105,6 +105,16 @@ handleRun runOpts = do
         pure (primary, recipeAdditional ++ additional, overrides, Just (recipe.name, recipe.version))
       Right (RunnableModule _ _) ->
         pure (modName, additional, Map.empty, Nothing)
+      Right (RunnableBlueprint b _blueprintDir) -> do
+        logIO level $
+          logError $
+            T.intercalate
+              "\n"
+              [ "'" <> b.name.unModuleName <> "' is a blueprint, not a module or recipe.",
+                "Blueprints must be run interactively via:",
+                "  seihou agent run " <> b.name.unModuleName
+              ]
+        exitFailure
       Left _ ->
         -- Discovery failed — let loadComposition handle the error with its detailed message
         pure (modName, additional, Map.empty, Nothing)
