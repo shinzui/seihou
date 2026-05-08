@@ -554,17 +554,22 @@ registryEntryDecoder =
       )
 
 -- | Decoder for a registry metadata file from Dhall.
--- Uses 'withDefaults' to handle registries that omit the @recipes@ field
--- (backwards compatibility with existing seihou-registry.dhall files).
+-- Uses 'withDefaults' to handle registries that omit the @recipes@ or
+-- @blueprints@ field (backwards compatibility with existing
+-- seihou-registry.dhall files).
 registryDecoder :: Decoder Registry
 registryDecoder =
-  withDefaults [("recipes", emptyRegistryEntryList)] $
-    record
+  withDefaults
+    [ ("recipes", emptyRegistryEntryList),
+      ("blueprints", emptyRegistryEntryList)
+    ]
+    $ record
       ( Registry
           <$> field "repoName" strictText
           <*> field "repoDescription" (maybe strictText)
           <*> field "modules" (list registryEntryDecoder)
           <*> field "recipes" (list registryEntryDecoder)
+          <*> field "blueprints" (list registryEntryDecoder)
       )
 
 -- | A Dhall expression representing an empty list of registry entries.

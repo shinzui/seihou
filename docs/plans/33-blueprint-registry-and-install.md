@@ -70,10 +70,10 @@ end-to-end.
 
 ## Progress
 
-- [ ] M1: Extend `Registry` with `blueprints :: [RegistryEntry]`, add `BlueprintEntry` to `EntryKind`, update `validateRegistry`/`checkNameCollisions`/`computeRegistrySync`/`validateRegistryFull`/`formatValidationIssue`/`validationKindPrefix`/`formatDriftWarning`, and `renderRegistryDhall` in `seihou-core/src/Seihou/Core/Registry.hs`.
-- [ ] M1: Update `registryDecoder` in `seihou-core/src/Seihou/Dhall/Eval.hs` so it accepts the new `blueprints` field and decodes pre-existing registries (no `blueprints` field) with `blueprints = []`.
-- [ ] M1: Add `SingleBlueprint FilePath` to `RepoContents` and extend `discoverRepoContents` to detect `blueprint.dhall` after the existing module/recipe probes.
-- [ ] M1: Add unit tests for the new field decoding, the backwards-compat path, three-way collision detection, sync classification of blueprint entries, validate-full integration, and `renderRegistryDhall` round-trip.
+- [x] M1: Extend `Registry` with `blueprints :: [RegistryEntry]`, add `BlueprintEntry` to `EntryKind`, update `validateRegistry`/`checkNameCollisions`/`computeRegistrySync`/`validateRegistryFull`/`formatValidationIssue`/`validationKindPrefix`/`formatDriftWarning`, and `renderRegistryDhall` in `seihou-core/src/Seihou/Core/Registry.hs`.
+- [x] M1: Update `registryDecoder` in `seihou-core/src/Seihou/Dhall/Eval.hs` so it accepts the new `blueprints` field and decodes pre-existing registries (no `blueprints` field) with `blueprints = []`.
+- [x] M1: Add `SingleBlueprint FilePath` to `RepoContents` and extend `discoverRepoContents` to detect `blueprint.dhall` after the existing module/recipe probes.
+- [x] M1: Add unit tests for the new field decoding, the backwards-compat path, three-way collision detection, sync classification of blueprint entries, validate-full integration, and `renderRegistryDhall` round-trip.
 - [ ] M2: Update `handleInstall` in `seihou-cli/src-exe/Seihou/CLI/Install.hs` so `SingleBlueprint` installs the root directory; extend `installFromRegistry`/`selectModules`/`installRegistryEntry` to handle blueprints under `--all`, `--module`, and the interactive picker. Pass kind labels into the picker rows.
 - [ ] M2: Update `handleBrowse` in `seihou-cli/src-exe/Seihou/CLI/Browse.hs` and the formatter at `seihou-cli/src/Seihou/CLI/BrowseFormat.hs` to render kind labels per row, filter blueprints by `--tag`, and handle the `SingleBlueprint` repo shape.
 - [ ] M2: Add an end-to-end install test that drives `handleInstall` against a fixture multi-kind registry and verifies all three kinds land under a redirected `XDG_CONFIG_HOME`.

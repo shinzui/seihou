@@ -45,7 +45,8 @@ spec = describe "renderRegistryDhall" $ do
                       description = Just "Library recipe",
                       tags = ["lib"]
                     }
-                ]
+                ],
+              blueprints = []
             }
     roundTrip reg
 
@@ -63,7 +64,8 @@ spec = describe "renderRegistryDhall" $ do
                       tags = []
                     }
                 ],
-              recipes = []
+              recipes = [],
+              blueprints = []
             }
     roundTrip reg
 
@@ -81,7 +83,8 @@ spec = describe "renderRegistryDhall" $ do
                       tags = []
                     }
                 ],
-              recipes = []
+              recipes = [],
+              blueprints = []
             }
     roundTrip reg
 
@@ -99,7 +102,8 @@ spec = describe "renderRegistryDhall" $ do
                       tags = ["has \"quote\""]
                     }
                 ],
-              recipes = []
+              recipes = [],
+              blueprints = []
             }
     roundTrip reg
 
@@ -109,7 +113,50 @@ spec = describe "renderRegistryDhall" $ do
             { repoName = "Empty",
               repoDescription = Nothing,
               modules = [],
-              recipes = []
+              recipes = [],
+              blueprints = []
+            }
+    roundTrip reg
+
+  it "round-trips a registry with all three entry kinds" $ do
+    let reg =
+          Registry
+            { repoName = "All Three",
+              repoDescription = Just "Modules, recipes, and blueprints",
+              modules =
+                [ RegistryEntry
+                    { name = ModuleName "mod-one",
+                      version = Just "1.0.0",
+                      path = "modules/mod-one",
+                      description = Just "Module entry",
+                      tags = ["m"]
+                    }
+                ],
+              recipes =
+                [ RegistryEntry
+                    { name = ModuleName "rec-one",
+                      version = Just "0.2.0",
+                      path = "recipes/rec-one",
+                      description = Just "Recipe entry",
+                      tags = ["r"]
+                    }
+                ],
+              blueprints =
+                [ RegistryEntry
+                    { name = ModuleName "bp-one",
+                      version = Just "0.3.0",
+                      path = "blueprints/bp-one",
+                      description = Just "Blueprint entry",
+                      tags = ["agent", "service"]
+                    },
+                  RegistryEntry
+                    { name = ModuleName "bp-two",
+                      version = Nothing,
+                      path = "blueprints/bp-two",
+                      description = Nothing,
+                      tags = []
+                    }
+                ]
             }
     roundTrip reg
 

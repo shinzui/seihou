@@ -255,7 +255,7 @@ Alternatives considered:
 | 30  | Authoring and inspection commands for blueprints                            | docs/plans/30-blueprint-authoring-and-inspection.md               | EP-29      | None       | Complete    |
 | 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | Complete    |
 | 32  | Manifest tracking and `seihou status` integration for applied blueprints    | docs/plans/32-blueprint-manifest-and-status.md                    | EP-31      | None       | Complete    |
-| 33  | Registry and multi-module-repository support for blueprints                 | docs/plans/33-blueprint-registry-and-install.md                   | EP-29      | EP-30      | Not Started |
+| 33  | Registry and multi-module-repository support for blueprints                 | docs/plans/33-blueprint-registry-and-install.md                   | EP-29      | EP-30      | In Progress |
 | 34  | Documentation, agent-prompt updates, and ecosystem polish                   | docs/plans/34-blueprint-docs-and-ecosystem.md                     | EP-31      | EP-30, EP-32, EP-33 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled. Hard Deps and Soft
@@ -543,7 +543,7 @@ view of the entire initiative.
 - [x] EP-32: Add `AppliedBlueprint` to `Seihou.Core.Types`, extend `Manifest`, bump `currentManifestVersion`, and update the JSON encoder/decoder with backwards-compatible decoding for older manifests.
 - [x] EP-32: Wire EP-31's runner to write the `AppliedBlueprint` entry on successful agent launch.
 - [x] EP-32: Update `seihou status` to display the applied-blueprint line; verify via integration test.
-- [ ] EP-33: Extend `Registry` with `blueprints :: [RegistryEntry]`; update the Dhall registry schema and `evalRegistryFromFile`/`registryDecoder`.
+- [x] EP-33: Extend `Registry` with `blueprints :: [RegistryEntry]`; update the Dhall registry schema and `evalRegistryFromFile`/`registryDecoder`.
 - [ ] EP-33: Update `discoverRepoContents` with a `SingleBlueprint FilePath` constructor; update `seihou install` to handle the new constructor and registry-listed blueprints; update `seihou browse`.
 - [ ] EP-33: Update `seihou registry sync-versions` and `seihou registry validate` to walk the new `blueprints` list.
 - [ ] EP-34: Write `docs/dev/design/proposed/blueprints.md` describing the design, motivation, validation rules, runner flow, manifest behaviour, and registry integration.

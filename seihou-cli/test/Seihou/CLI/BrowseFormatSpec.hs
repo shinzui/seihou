@@ -26,7 +26,9 @@ mkRegistry n desc ms =
   Registry
     { repoName = pack n,
       repoDescription = fmap pack desc,
-      modules = ms
+      modules = ms,
+      recipes = [],
+      blueprints = []
     }
 
 spec :: Spec

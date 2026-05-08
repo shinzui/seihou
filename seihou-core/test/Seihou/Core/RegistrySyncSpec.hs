@@ -146,5 +146,6 @@ mkReg mods recs =
     { repoName = "Test",
       repoDescription = Nothing,
       modules = mods,
-      recipes = recs
+      recipes = recs,
+      blueprints = []
     }

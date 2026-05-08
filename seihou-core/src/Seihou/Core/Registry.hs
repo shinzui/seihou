@@ -41,7 +41,8 @@ data Registry = Registry
   { repoName :: Text,
     repoDescription :: Maybe Text,
     modules :: [RegistryEntry],
-    recipes :: [RegistryEntry]
+    recipes :: [RegistryEntry],
+    blueprints :: [RegistryEntry]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -51,6 +52,8 @@ data RepoContents
     SingleModule FilePath
   | -- | Repo root has @recipe.dhall@ (single recipe)
     SingleRecipe FilePath
+  | -- | Repo root has @blueprint.dhall@ (single blueprint)
+    SingleBlueprint FilePath
   | -- | Repo root has @seihou-registry.dhall@
     MultiModule Registry
   | -- | Neither found
@@ -66,44 +69,48 @@ discoverRepoContents ::
   IO RepoContents
 discoverRepoContents evalRegistry repoRoot = do
   let registryFile = repoRoot </> "seihou-registry.dhall"
-      moduleFile = repoRoot </> "module.dhall"
-      recipeFile = repoRoot </> "recipe.dhall"
   hasRegistry <- doesFileExist registryFile
   if hasRegistry
     then do
       result <- evalRegistry registryFile
       case result of
         Right reg -> pure (MultiModule reg)
-        Left _ -> do
-          -- Registry file exists but failed to parse; fall back
-          hasModule <- doesFileExist moduleFile
-          if hasModule
-            then pure (SingleModule repoRoot)
-            else do
-              hasRecipe <- doesFileExist recipeFile
-              if hasRecipe
-                then pure (SingleRecipe repoRoot)
-                else pure EmptyRepo
+        Left _ -> probeSingleArtifact repoRoot
+    else probeSingleArtifact repoRoot
+
+-- | Probe for a single-artifact repo at @repoRoot@. Precedence:
+-- @module.dhall@ → @recipe.dhall@ → @blueprint.dhall@ → 'EmptyRepo'.
+-- A stray @module.dhall@ next to a @blueprint.dhall@ resolves as the
+-- module: the more specific, deterministic artifact wins.
+probeSingleArtifact :: FilePath -> IO RepoContents
+probeSingleArtifact repoRoot = do
+  let moduleFile = repoRoot </> "module.dhall"
+      recipeFile = repoRoot </> "recipe.dhall"
+      blueprintFile = repoRoot </> "blueprint.dhall"
+  hasModule <- doesFileExist moduleFile
+  if hasModule
+    then pure (SingleModule repoRoot)
     else do
-      hasModule <- doesFileExist moduleFile
-      if hasModule
-        then pure (SingleModule repoRoot)
+      hasRecipe <- doesFileExist recipeFile
+      if hasRecipe
+        then pure (SingleRecipe repoRoot)
         else do
-          hasRecipe <- doesFileExist recipeFile
-          if hasRecipe
-            then pure (SingleRecipe repoRoot)
+          hasBlueprint <- doesFileExist blueprintFile
+          if hasBlueprint
+            then pure (SingleBlueprint repoRoot)
             else pure EmptyRepo
 
 -- | Validate a registry's entries against the filesystem.
 -- Returns a list of error messages (empty means valid).
 -- Checks: module name format, path safety, entry file existence,
--- and no name collisions between modules and recipes.
+-- and no name collisions between modules, recipes, and blueprints.
 validateRegistry :: FilePath -> Registry -> IO [Text]
 validateRegistry repoRoot reg = do
   modErrs <- concat <$> mapM (validateModuleEntry repoRoot) reg.modules
   recErrs <- concat <$> mapM (validateRecipeEntry repoRoot) reg.recipes
-  let collisionErrs = checkNameCollisions reg.modules reg.recipes
-  pure (modErrs <> recErrs <> collisionErrs)
+  bpErrs <- concat <$> mapM (validateBlueprintEntry repoRoot) reg.blueprints
+  let collisionErrs = checkNameCollisions reg.modules reg.recipes reg.blueprints
+  pure (modErrs <> recErrs <> bpErrs <> collisionErrs)
 
 validateModuleEntry :: FilePath -> RegistryEntry -> IO [Text]
 validateModuleEntry repoRoot entry = do
@@ -151,13 +158,43 @@ validateRecipeEntry repoRoot entry = do
       | ".." `T.isInfixOf` path = ["registry recipe path must not contain '..': " <> path]
       | otherwise = []
 
--- | Detect name collisions between module and recipe entries.
-checkNameCollisions :: [RegistryEntry] -> [RegistryEntry] -> [Text]
-checkNameCollisions mods recs =
+validateBlueprintEntry :: FilePath -> RegistryEntry -> IO [Text]
+validateBlueprintEntry repoRoot entry = do
+  let nameText = entry.name.unModuleName
+      nameErrors = checkBlueprintName nameText
+      pathText = T.pack entry.path
+      pathErrors = checkBlueprintPath pathText
+  let blueprintDhall = repoRoot </> entry.path </> "blueprint.dhall"
+  fileExists <- doesFileExist blueprintDhall
+  let fileErrors =
+        if fileExists
+          then []
+          else ["registry blueprint entry '" <> nameText <> "' points to missing blueprint.dhall at " <> pathText]
+  pure (nameErrors <> pathErrors <> fileErrors)
+  where
+    checkBlueprintName name
+      | validModuleName name = []
+      | otherwise = ["registry blueprint name must match [a-z][a-z0-9-]*, got: " <> name]
+
+    checkBlueprintPath path
+      | T.isPrefixOf "/" path = ["registry blueprint path must be relative: " <> path]
+      | ".." `T.isInfixOf` path = ["registry blueprint path must not contain '..': " <> path]
+      | otherwise = []
+
+-- | Detect name collisions across module, recipe, and blueprint entries.
+-- Each cross-kind pair sharing a name produces one message; a name that
+-- appears in all three kinds produces three messages (one per pair).
+checkNameCollisions :: [RegistryEntry] -> [RegistryEntry] -> [RegistryEntry] -> [Text]
+checkNameCollisions mods recs bps =
   let modNames = map (\e -> e.name.unModuleName) mods
       recNames = map (\e -> e.name.unModuleName) recs
-      collisions = filter (`elem` recNames) modNames
-   in map (\n -> "name collision: '" <> n <> "' appears as both a module and a recipe") collisions
+      bpNames = map (\e -> e.name.unModuleName) bps
+      modRec = [n | n <- modNames, n `elem` recNames]
+      modBp = [n | n <- modNames, n `elem` bpNames]
+      recBp = [n | n <- recNames, n `elem` bpNames]
+   in map (\n -> "name collision: '" <> n <> "' appears as both a module and a recipe") modRec
+        <> map (\n -> "name collision: '" <> n <> "' appears as both a module and a blueprint") modBp
+        <> map (\n -> "name collision: '" <> n <> "' appears as both a recipe and a blueprint") recBp
 
 -- | Check that a text matches @[a-z][a-z0-9-]*@.
 -- Duplicated from @Seihou.Core.Module.isValidModuleName@ to avoid
@@ -170,7 +207,7 @@ validModuleName t = case T.uncons t of
       && T.all (\ch -> (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-') rest
 
 -- | What a registry entry points at on disk.
-data EntryKind = ModuleEntry | RecipeEntry
+data EntryKind = ModuleEntry | RecipeEntry | BlueprintEntry
   deriving stock (Eq, Show, Generic)
 
 -- | Classification of a single registry entry relative to the on-disk
@@ -219,16 +256,18 @@ computeRegistrySync ::
   SyncReport
 computeRegistrySync reg lookups =
   SyncReport
-    { syncDiffs = moduleDiffs <> recipeDiffs,
+    { syncDiffs = moduleDiffs <> recipeDiffs <> blueprintDiffs,
       syncUpdated =
         reg
           { modules = zipWith applyDiff moduleDiffs reg.modules,
-            recipes = zipWith applyDiff recipeDiffs reg.recipes
+            recipes = zipWith applyDiff recipeDiffs reg.recipes,
+            blueprints = zipWith applyDiff blueprintDiffs reg.blueprints
           }
     }
   where
     moduleDiffs = map (classify ModuleEntry) reg.modules
     recipeDiffs = map (classify RecipeEntry) reg.recipes
+    blueprintDiffs = map (classify BlueprintEntry) reg.blueprints
 
     classify :: EntryKind -> RegistryEntry -> SyncDiff
     classify kind entry =
@@ -302,8 +341,10 @@ formatDriftWarning diff = case diff.diffStatus of
     renderVersion (Just v) = v
     kindWord ModuleEntry = "module"
     kindWord RecipeEntry = "recipe"
+    kindWord BlueprintEntry = "blueprint"
     entryFile ModuleEntry = "module.dhall"
     entryFile RecipeEntry = "recipe.dhall"
+    entryFile BlueprintEntry = "blueprint.dhall"
 
 -- | One row of the unified validation report. Either reuses an existing
 -- structural error message (path/name/file-existence/collisions) or
@@ -318,7 +359,8 @@ data RegistryValidationIssue
 data RegistryValidationReport = RegistryValidationReport
   { reportIssues :: [RegistryValidationIssue],
     reportModuleCount :: Int,
-    reportRecipeCount :: Int
+    reportRecipeCount :: Int,
+    reportBlueprintCount :: Int
   }
   deriving stock (Eq, Show, Generic)
 
@@ -347,7 +389,8 @@ validateRegistryFull repoRoot reg lookups = do
     RegistryValidationReport
       { reportIssues = map StructuralError structuralErrs <> versionIssues,
         reportModuleCount = length reg.modules,
-        reportRecipeCount = length reg.recipes
+        reportRecipeCount = length reg.recipes,
+        reportBlueprintCount = length reg.blueprints
       }
   where
     isVersionDrift SyncMissing = True
@@ -373,10 +416,12 @@ formatValidationIssue (VersionMismatch diff) =
   where
     entryFile ModuleEntry = "module.dhall"
     entryFile RecipeEntry = "recipe.dhall"
+    entryFile BlueprintEntry = "blueprint.dhall"
 
 validationKindPrefix :: EntryKind -> Text
 validationKindPrefix ModuleEntry = "modules."
 validationKindPrefix RecipeEntry = "recipes."
+validationKindPrefix BlueprintEntry = "blueprints."
 
 validationRenderVersion :: Maybe Text -> Text
 validationRenderVersion Nothing = "(none)"
@@ -394,6 +439,8 @@ renderRegistryDhall reg =
       renderEntryList reg.modules,
       ", recipes =",
       renderEntryList reg.recipes,
+      ", blueprints =",
+      renderEntryList reg.blueprints,
       "}"
     ]
 
