@@ -834,6 +834,7 @@ findRemoteModuleDir cloneDir contents modName = case contents of
       (entry : _) -> Just (cloneDir </> entry.path, entry.tags)
       [] -> Nothing
   SingleRecipe _ -> Nothing
+  SingleBlueprint _ -> Nothing
   EmptyRepo -> Nothing
 
 -- | Refresh the on-disk installed module directory from a cloned

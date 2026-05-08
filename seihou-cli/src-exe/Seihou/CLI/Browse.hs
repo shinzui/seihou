@@ -5,14 +5,14 @@ where
 
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleModule)
+import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleModule)
 import Seihou.CLI.Commands (BrowseOpts (..))
 import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
-import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
+import Seihou.Core.Registry (EntryKind (..), Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile)
+import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile)
 import Seihou.Effect.Logger (logError, logWarn)
 import Seihou.Prelude
 import System.Exit (ExitCode (..), exitFailure)
@@ -60,13 +60,25 @@ handleBrowse bopts = do
             exitFailure
           Right r ->
             TIO.putStr $ formatBrowseSingleModule source r.name.unRecipeName r.description
+      SingleBlueprint rootDir -> do
+        let dhallFile = rootDir </> "blueprint.dhall"
+        decoded <- evalBlueprintFromFile dhallFile
+        case decoded of
+          Left err -> do
+            logIO LogNormal (logError $ "failed to load blueprint: " <> T.pack (show err))
+            exitFailure
+          Right b -> do
+            let bpName = case b of Blueprint nm _ _ _ _ _ _ _ _ _ -> nm
+                bpDesc = case b of Blueprint _ _ d _ _ _ _ _ _ _ -> d
+            TIO.putStr $ formatBrowseSingleBlueprint source bpName.unModuleName bpDesc
       MultiModule registry -> do
         driftWarnings <- checkRegistryVersionDrift cloneDir registry
         logIO LogNormal (mapM_ logWarn driftWarnings)
-        let filteredMods = case bopts.browseTag of
-              Nothing -> registry.modules
-              Just tag -> filter (\e -> tag `elem` e.tags) registry.modules
-            filteredRecs = case bopts.browseTag of
-              Nothing -> registry.recipes
-              Just tag -> filter (\e -> tag `elem` e.tags) registry.recipes
-        TIO.putStr $ formatBrowseRegistry source registry (filteredMods ++ filteredRecs) bopts.browseTag
+        let matchTag e = case bopts.browseTag of
+              Nothing -> True
+              Just tag -> tag `elem` e.tags
+            tagged =
+              [(ModuleEntry, e) | e <- registry.modules, matchTag e]
+                ++ [(RecipeEntry, e) | e <- registry.recipes, matchTag e]
+                ++ [(BlueprintEntry, e) | e <- registry.blueprints, matchTag e]
+        TIO.putStr $ formatBrowseRegistry source registry tagged bopts.browseTag

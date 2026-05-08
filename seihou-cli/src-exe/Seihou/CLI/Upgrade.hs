@@ -182,6 +182,8 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
           case filter (\e -> e.name.unModuleName == name) registry.modules of
             (entry : _) -> Just (cloneDir </> entry.path, Just registry.repoName)
             [] -> Nothing
+        SingleRecipe _ -> Nothing
+        SingleBlueprint _ -> Nothing
         EmptyRepo -> Nothing
 
   case result of

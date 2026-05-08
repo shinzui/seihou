@@ -61,6 +61,7 @@ fetchTrueModuleVersion clonedRepoPath name = do
       Just entry ->
         readModuleDhallVersion (clonedRepoPath </> entry.path </> "module.dhall")
     SingleRecipe _ -> pure (Left (RegistryNotFound clonedRepoPath))
+    SingleBlueprint _ -> pure (Left (RegistryNotFound clonedRepoPath))
     EmptyRepo -> pure (Left (RegistryNotFound clonedRepoPath))
   where
     findEntry :: Registry -> Maybe RegistryEntry

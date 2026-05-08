@@ -10,16 +10,18 @@ import Control.Applicative ((<|>))
 import Control.Monad (when)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.BrowseFormat (kindLabel)
 import Seihou.CLI.Commands (InstallOpts (..))
 import Seihou.CLI.InstallHistory (HistoryEntry (..), InstallHistory (..), readHistory, recordUrl)
 import Seihou.CLI.InstallShared (cloneRepo, copyDirectoryRecursive, installModuleDir)
 import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
+import Seihou.Core.Blueprint (validateBlueprint)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (validateModule)
-import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents, validateRegistry)
+import Seihou.Core.Registry (EntryKind (..), Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents, validateRegistry)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
+import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Effect.Fzf (selectOne)
 import Seihou.Effect.FzfInterp (runFzfIO)
 import Seihou.Effect.Logger (logError, logWarn)
@@ -63,6 +65,10 @@ handleInstall iopts = do
         when (not (null iopts.installModules) || iopts.installAll) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-recipe repositories.")
         installSingleRecipe iopts rootDir source
+      SingleBlueprint rootDir -> do
+        when (not (null iopts.installModules) || iopts.installAll) $
+          logIO LogNormal (logWarn "--module and --all flags are ignored for single-blueprint repositories.")
+        installSingleBlueprint iopts rootDir source
       MultiModule registry -> do
         regErrors <- validateRegistry cloneDir registry
         if not (null regErrors)
@@ -188,6 +194,41 @@ installSingleRecipe iopts rootDir source = do
   TIO.putStrLn ""
   TIO.putStrLn $ "Recipe available as: " <> T.pack name
 
+-- | Install a single-blueprint repo.
+installSingleBlueprint :: InstallOpts -> FilePath -> Text -> IO ()
+installSingleBlueprint iopts rootDir source = do
+  let name = case iopts.installName of
+        Just n -> T.unpack n
+        Nothing -> parseModuleName source
+
+  let dhallFile = rootDir </> "blueprint.dhall"
+  decoded <- evalBlueprintFromFile dhallFile
+  bp <- case decoded of
+    Left err -> do
+      logIO LogNormal $ do
+        logError "repository is not a valid seihou blueprint."
+        logError $ "  " <> T.pack (show err)
+      exitFailure
+    Right b -> pure b
+
+  result <- validateBlueprint rootDir bp
+  case result of
+    Left (ValidationError _ errors) -> do
+      logIO LogNormal $ do
+        logError "blueprint has validation errors:"
+        mapM_ (\e -> logError $ "  - " <> e) errors
+      exitFailure
+    Left err -> do
+      logIO LogNormal (logError $ T.pack (show err))
+      exitFailure
+    Right _ -> pure ()
+  TIO.putStrLn "  Validated blueprint definition"
+
+  let bpVersion = case bp of Blueprint _ v _ _ _ _ _ _ _ _ -> v
+  installModuleDir rootDir name source Nothing bpVersion []
+  TIO.putStrLn ""
+  TIO.putStrLn $ "Blueprint available as: " <> T.pack name
+
 -- | Install from a multi-module registry.
 installFromRegistry :: InstallOpts -> FilePath -> Registry -> Text -> IO ()
 installFromRegistry iopts cloneDir registry source = do
@@ -205,12 +246,27 @@ installFromRegistry iopts cloneDir registry source = do
           <> (if failed > 0 then ", " <> T.pack (show failed) <> " failed" else "")
           <> "."
 
+-- | All registry entries (modules, recipes, blueprints) in display order.
+-- Used wherever installation must treat all three kinds uniformly.
+allEntries :: Registry -> [RegistryEntry]
+allEntries registry = registry.modules ++ registry.recipes ++ registry.blueprints
+
+-- | Pair each registry entry with its 'EntryKind' tag, preserving the
+-- module → recipe → blueprint display order. Used by the install picker
+-- to render per-kind labels and by callers that need to discriminate
+-- after selection.
+labelledEntries :: Registry -> [(EntryKind, RegistryEntry)]
+labelledEntries registry =
+  map ((,) ModuleEntry) registry.modules
+    ++ map ((,) RecipeEntry) registry.recipes
+    ++ map ((,) BlueprintEntry) registry.blueprints
+
 -- | Select which modules to install from a registry.
 selectModules :: InstallOpts -> Registry -> IO [RegistryEntry]
 selectModules iopts registry
-  | iopts.installAll = pure (registry.modules ++ registry.recipes)
+  | iopts.installAll = pure (allEntries registry)
   | not (null iopts.installModules) = do
-      let entries = registry.modules ++ registry.recipes
+      let entries = allEntries registry
           findEntry name = filter (\e -> e.name.unModuleName == name) entries
           (found, missing) =
             foldr
@@ -223,7 +279,7 @@ selectModules iopts registry
       if not (null missing)
         then do
           logIO LogNormal $ do
-            logError "the following modules were not found in the registry:"
+            logError "the following entries were not found in the registry:"
             mapM_ (\n -> logError $ "  - " <> n) missing
           exitFailure
         else pure found
@@ -236,18 +292,20 @@ selectModules iopts registry
 -- | Interactive module selection via fzf.
 fzfModuleSelection :: Seihou.Fzf.FzfConfig -> Registry -> IO [RegistryEntry]
 fzfModuleSelection fzfCfg registry = do
-  let entries = registry.modules ++ registry.recipes
+  let entries = labelledEntries registry
       candidates =
         [ Candidate
             { candidateDisplay =
-                entry.name.unModuleName
+                kindLabel kind
+                  <> "  "
+                  <> entry.name.unModuleName
                   <> maybe "" (\d -> "  " <> d) entry.description
                   <> if null entry.tags then "" else "  [" <> T.intercalate ", " entry.tags <> "]",
               candidateValue = entry
             }
-        | entry <- entries
+        | (kind, entry) <- entries
         ]
-      opts = withPrompt "module> " <> withHeight "40%" <> withAnsi <> withNoSort
+      opts = withPrompt "entry> " <> withHeight "40%" <> withAnsi <> withNoSort
   result <- runEff $ runFzfIO fzfCfg $ selectOne opts candidates
   case result of
     FzfSelected entry -> pure [entry]
@@ -266,26 +324,28 @@ promptModuleSelection registry = do
     Just desc -> TIO.putStrLn $ "  " <> desc
     Nothing -> pure ()
   TIO.putStrLn ""
-  TIO.putStrLn "Available modules and recipes:"
-  let entries = zip [1 :: Int ..] (registry.modules ++ registry.recipes)
+  TIO.putStrLn "Available modules, recipes, and blueprints:"
+  let entries = zip [1 :: Int ..] (labelledEntries registry)
   mapM_
-    ( \(i, entry) ->
+    ( \(i, (kind, entry)) ->
         TIO.putStrLn $
           "  "
             <> T.pack (show i)
             <> ") "
+            <> kindLabel kind
+            <> "  "
             <> entry.name.unModuleName
             <> maybe "" (\d -> " - " <> d) entry.description
     )
     entries
   TIO.putStrLn ""
-  TIO.putStr "Select modules (comma-separated numbers, or 'all'): "
+  TIO.putStr "Select entries (comma-separated numbers, or 'all'): "
   hFlush stdout
   input <- TIO.getLine
   let trimmed = T.strip input
-  let allEntries = registry.modules ++ registry.recipes
+  let entryList = allEntries registry
   if T.toLower trimmed == "all"
-    then pure allEntries
+    then pure entryList
     else do
       let nums = map (readMaybe . T.unpack . T.strip) (T.splitOn "," trimmed)
       if any (== Nothing) nums
@@ -294,21 +354,22 @@ promptModuleSelection registry = do
           pure []
         else do
           let indices = map (\(Just n) -> n) nums
-              maxIdx = length allEntries
+              maxIdx = length entryList
               valid = all (\n -> n >= 1 && n <= maxIdx) indices
           if not valid
             then do
               TIO.putStrLn $ "Invalid selection. Please enter numbers between 1 and " <> T.pack (show maxIdx) <> "."
               pure []
-            else pure [allEntries !! (n - 1) | n <- indices]
+            else pure [entryList !! (n - 1) | n <- indices]
 
--- | Install a single registry entry (module or recipe).
+-- | Install a single registry entry (module, recipe, or blueprint).
 installRegistryEntry :: FilePath -> Text -> Text -> RegistryEntry -> IO Bool
 installRegistryEntry cloneDir source repoName entry = do
   let entryDir = cloneDir </> entry.path
       name = T.unpack entry.name.unModuleName
       moduleDhall = entryDir </> "module.dhall"
       recipeDhall = entryDir </> "recipe.dhall"
+      blueprintDhall = entryDir </> "blueprint.dhall"
   TIO.putStrLn $ "  Installing " <> entry.name.unModuleName <> "..."
 
   hasModule <- doesFileExist moduleDhall
@@ -344,9 +405,25 @@ installRegistryEntry cloneDir source repoName entry = do
           TIO.putStrLn $ "    Installed recipe as: " <> T.pack name
           pure True
         else do
-          logIO LogNormal $ do
-            logError $ "  entry '" <> entry.name.unModuleName <> "' has neither module.dhall nor recipe.dhall at " <> T.pack entry.path
-          pure False
+          hasBlueprint <- doesFileExist blueprintDhall
+          if hasBlueprint
+            then do
+              decoded <- evalBlueprintFromFile blueprintDhall
+              case decoded of
+                Left err -> do
+                  logIO LogNormal $ do
+                    logError $ "  failed to load " <> entry.name.unModuleName <> ": " <> T.pack (show err)
+                  pure False
+                Right bp -> do
+                  let bpVersion = case bp of Blueprint _ v _ _ _ _ _ _ _ _ -> v
+                      ver = entry.version <|> bpVersion
+                  installModuleDir entryDir name source (Just repoName) ver entry.tags
+                  TIO.putStrLn $ "    Installed blueprint as: " <> T.pack name
+                  pure True
+            else do
+              logIO LogNormal $ do
+                logError $ "  entry '" <> entry.name.unModuleName <> "' has neither module.dhall, recipe.dhall, nor blueprint.dhall at " <> T.pack entry.path
+              pure False
 
 readMaybe :: String -> Maybe Int
 readMaybe s = case reads s of

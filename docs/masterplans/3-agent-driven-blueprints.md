@@ -544,7 +544,7 @@ view of the entire initiative.
 - [x] EP-32: Wire EP-31's runner to write the `AppliedBlueprint` entry on successful agent launch.
 - [x] EP-32: Update `seihou status` to display the applied-blueprint line; verify via integration test.
 - [x] EP-33: Extend `Registry` with `blueprints :: [RegistryEntry]`; update the Dhall registry schema and `evalRegistryFromFile`/`registryDecoder`.
-- [ ] EP-33: Update `discoverRepoContents` with a `SingleBlueprint FilePath` constructor; update `seihou install` to handle the new constructor and registry-listed blueprints; update `seihou browse`.
+- [x] EP-33: Update `discoverRepoContents` with a `SingleBlueprint FilePath` constructor; update `seihou install` to handle the new constructor and registry-listed blueprints; update `seihou browse`.
 - [ ] EP-33: Update `seihou registry sync-versions` and `seihou registry validate` to walk the new `blueprints` list.
 - [ ] EP-34: Write `docs/dev/design/proposed/blueprints.md` describing the design, motivation, validation rules, runner flow, manifest behaviour, and registry integration.
 - [ ] EP-34: Update `docs/dev/architecture/overview.md` with the third runnable type and the updated project-structure tree.

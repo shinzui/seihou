@@ -74,9 +74,9 @@ end-to-end.
 - [x] M1: Update `registryDecoder` in `seihou-core/src/Seihou/Dhall/Eval.hs` so it accepts the new `blueprints` field and decodes pre-existing registries (no `blueprints` field) with `blueprints = []`.
 - [x] M1: Add `SingleBlueprint FilePath` to `RepoContents` and extend `discoverRepoContents` to detect `blueprint.dhall` after the existing module/recipe probes.
 - [x] M1: Add unit tests for the new field decoding, the backwards-compat path, three-way collision detection, sync classification of blueprint entries, validate-full integration, and `renderRegistryDhall` round-trip.
-- [ ] M2: Update `handleInstall` in `seihou-cli/src-exe/Seihou/CLI/Install.hs` so `SingleBlueprint` installs the root directory; extend `installFromRegistry`/`selectModules`/`installRegistryEntry` to handle blueprints under `--all`, `--module`, and the interactive picker. Pass kind labels into the picker rows.
-- [ ] M2: Update `handleBrowse` in `seihou-cli/src-exe/Seihou/CLI/Browse.hs` and the formatter at `seihou-cli/src/Seihou/CLI/BrowseFormat.hs` to render kind labels per row, filter blueprints by `--tag`, and handle the `SingleBlueprint` repo shape.
-- [ ] M2: Add an end-to-end install test that drives `handleInstall` against a fixture multi-kind registry and verifies all three kinds land under a redirected `XDG_CONFIG_HOME`.
+- [x] M2: Update `handleInstall` in `seihou-cli/src-exe/Seihou/CLI/Install.hs` so `SingleBlueprint` installs the root directory; extend `installFromRegistry`/`selectModules`/`installRegistryEntry` to handle blueprints under `--all`, `--module`, and the interactive picker. Pass kind labels into the picker rows.
+- [x] M2: Update `handleBrowse` in `seihou-cli/src-exe/Seihou/CLI/Browse.hs` and the formatter at `seihou-cli/src/Seihou/CLI/BrowseFormat.hs` to render kind labels per row, filter blueprints by `--tag`, and handle the `SingleBlueprint` repo shape.
+- [x] M2: Smoke-tested manually with a local git fixture (Cabal trapping precludes a test-suite integration test; pure helpers / formatters covered in `BrowseFormatSpec`). *(See Surprises for the constraint.)*
 - [ ] M3: Update `resolveOnDiskVersions` and `kindPrefix` in `seihou-cli/src/Seihou/CLI/Registry/Sync.hs` to read each blueprint entry's `blueprint.dhall` and emit the `blueprints.NAME` prefix.
 - [ ] M3: Update `renderValidationReport` in `seihou-cli/src/Seihou/CLI/Registry/Validate.hs` to count blueprints in the success summary.
 - [ ] M3: Add tests covering sync-versions and validate against a registry with a blueprint entry whose on-disk version drifts from the registry's recorded version.
@@ -84,7 +84,40 @@ end-to-end.
 
 ## Surprises & Discoveries
 
-(None yet.)
+- 2026-05-08 (M1) — `RegistrySpec.hs` imports `Seihou.Core.Types`
+  wholesale, which puts every type with a `version` field
+  (Module/Recipe/Blueprint/Manifest/AppliedBlueprint) in scope. The
+  resulting `OverloadedRecordDot` ambiguity blocks idioms like
+  `(head reg.blueprints).version` even though `RegistrySyncSpec.hs`
+  uses the same idiom with no trouble — the latter restricts its Types
+  import to `(ModuleName (..))`. The recovery pattern for the new
+  tests is positional pattern-matching on `Registry`/`RegistryEntry`
+  /`SyncReport`/`SyncDiff`. M3 follow-on tests should either narrow
+  the Types import or use positional matches from the start.
+
+- 2026-05-08 (M1) — Pre-EP-33 callers of `RepoContents` in `seihou-cli`
+  were either non-exhaustive (`Upgrade.hs::doUpgrade`) or relied on
+  the `EmptyRepo`/`SingleRecipe` arms that the codebase did not
+  enforce as exhaustive. Adding `SingleBlueprint` exposed the gap.
+  Three sites were updated to handle the new constructor explicitly:
+  `Migrate.hs::findRemoteModuleDir`, `RemoteVersion.hs::fetchTrueModuleVersion`,
+  and `Upgrade.hs::doUpgrade`. All three classify a single-blueprint
+  clone as "no module to read", matching the existing `SingleRecipe`
+  treatment.
+
+- 2026-05-08 (M2) — Cabal trapping (already documented in the
+  masterplan's EP-30/EP-31 surprises) blocks an end-to-end install
+  test of `handleInstall` from the test suite: `Install.hs` lives
+  in `executable seihou` and is not importable from `seihou-cli-test`.
+  M2 recovers via the same pattern EP-30 and EP-31 used: pure
+  helpers (`kindLabel`, the BrowseFormat row layout) live in
+  `seihou-cli-internal` and are unit-tested; the handler itself is
+  smoke-tested manually. The smoke run drove `seihou install` against
+  a local git fixture with a multi-kind registry under a redirected
+  `XDG_CONFIG_HOME` and confirmed all three kinds land at
+  `~/.config/seihou/installed/<name>/`. The single-blueprint repo
+  shape installs at the same location and `seihou browse` renders
+  the dedicated single-blueprint header.
 
 
 ## Decision Log

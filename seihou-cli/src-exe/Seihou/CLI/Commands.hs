@@ -719,8 +719,8 @@ installParser =
     InstallOpts
       <$> optional (argument (T.pack <$> str) (metavar "GIT-URL"))
       <*> optional (option (T.pack <$> str) (long "name" <> metavar "NAME" <> help "Override installed module name"))
-      <*> many (option (T.pack <$> str) (long "module" <> metavar "MODULE" <> help "Install specific module from registry (repeatable)"))
-      <*> switch (long "all" <> help "Install all modules from registry")
+      <*> many (option (T.pack <$> str) (long "module" <> metavar "MODULE" <> help "Module, recipe, or blueprint name from the registry to install (repeatable)"))
+      <*> switch (long "all" <> help "Install every module, recipe, and blueprint listed in the registry")
 
 newModuleParser :: Parser Command
 newModuleParser =
