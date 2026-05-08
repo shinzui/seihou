@@ -3,6 +3,7 @@ module Seihou.Manifest.Types
     currentManifestVersion,
     manifestToJSON,
     manifestFromJSON,
+    writeAppliedBlueprint,
   )
 where
 
@@ -22,8 +23,13 @@ import Seihou.Prelude hiding ((.=))
 -- (see docs/plans/10-parameterized-dep-multi-instantiation.md). Version-1
 -- manifests remain readable because the decoder treats a missing
 -- @parentVars@ key as 'emptyParentVars'.
+--
+-- Bumped from 2 to 3 when 'Manifest' gained the optional @blueprint@
+-- field (see docs/plans/32-blueprint-manifest-and-status.md).
+-- Schema-2 manifests remain readable because the decoder treats a
+-- missing @blueprint@ key as 'Nothing'.
 currentManifestVersion :: Int
-currentManifestVersion = 2
+currentManifestVersion = 3
 
 -- | Create an empty manifest with the given timestamp.
 emptyManifest :: UTCTime -> Manifest
@@ -34,7 +40,24 @@ emptyManifest now =
       modules = [],
       vars = Map.empty,
       files = Map.empty,
-      recipe = Nothing
+      recipe = Nothing,
+      blueprint = Nothing
+    }
+
+-- | Record an applied-blueprint provenance on a manifest, replacing any
+-- prior entry. Re-running @seihou agent run@ overwrites the recorded
+-- blueprint, mirroring the way 'Manifest.recipe' is overwritten when a
+-- recipe is re-applied.
+writeAppliedBlueprint :: AppliedBlueprint -> Manifest -> Manifest
+writeAppliedBlueprint ab m =
+  Manifest
+    { version = m.version,
+      genAt = m.genAt,
+      modules = m.modules,
+      vars = m.vars,
+      files = m.files,
+      recipe = m.recipe,
+      blueprint = Just ab
     }
 
 -- | Encode a manifest to JSON bytes.
@@ -57,6 +80,7 @@ instance ToJSON Manifest where
         "files" .= filesToJSON m.files
       ]
         ++ maybe [] (\r -> ["recipe" .= r]) m.recipe
+        ++ maybe [] (\b -> ["blueprint" .= b]) m.blueprint
 
 instance FromJSON Manifest where
   parseJSON = Aeson.withObject "Manifest" $ \o -> do
@@ -70,6 +94,7 @@ instance FromJSON Manifest where
           <*> (varsFromJSON =<< o .: "variables")
           <*> (filesFromJSON =<< o .: "files")
           <*> o Aeson..:? "recipe"
+          <*> o Aeson..:? "blueprint"
 
 instance ToJSON AppliedRecipe where
   toJSON ar =
@@ -85,6 +110,29 @@ instance FromJSON AppliedRecipe where
       <$> (RecipeName <$> o .: "name")
       <*> o Aeson..:? "version"
       <*> o .: "appliedAt"
+
+instance ToJSON AppliedBlueprint where
+  toJSON ab =
+    Aeson.object $
+      [ "name" .= ab.name.unModuleName,
+        "appliedAt" .= ab.appliedAt,
+        "baselineModules" .= map (.unModuleName) ab.baselineModules,
+        "noBaseline" .= ab.noBaseline
+      ]
+        ++ maybe [] (\v -> ["version" .= v]) ab.blueprintVersion
+        ++ maybe [] (\p -> ["userPrompt" .= p]) ab.userPrompt
+        ++ maybe [] (\s -> ["agentSessionId" .= s]) ab.agentSessionId
+
+instance FromJSON AppliedBlueprint where
+  parseJSON = Aeson.withObject "AppliedBlueprint" $ \o ->
+    AppliedBlueprint
+      <$> (ModuleName <$> o .: "name")
+      <*> o Aeson..:? "version"
+      <*> o .: "appliedAt"
+      <*> (map ModuleName <$> o Aeson..:? "baselineModules" Aeson..!= [])
+      <*> o Aeson..:? "noBaseline" Aeson..!= False
+      <*> o Aeson..:? "userPrompt"
+      <*> o Aeson..:? "agentSessionId"
 
 instance ToJSON AppliedModule where
   toJSON am =

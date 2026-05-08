@@ -33,6 +33,7 @@ module Seihou.Core.Types
     Manifest (..),
     AppliedModule (..),
     AppliedRecipe (..),
+    AppliedBlueprint (..),
     FileRecord (..),
     SHA256 (..),
     DiffResult (..),
@@ -398,7 +399,8 @@ data Manifest = Manifest
     modules :: [AppliedModule],
     vars :: Map VarName Text,
     files :: Map FilePath FileRecord,
-    recipe :: Maybe AppliedRecipe
+    recipe :: Maybe AppliedRecipe,
+    blueprint :: Maybe AppliedBlueprint
   }
   deriving stock (Eq, Show, Generic)
 
@@ -407,6 +409,30 @@ data AppliedRecipe = AppliedRecipe
   { name :: RecipeName,
     recipeVersion :: Maybe Text,
     appliedAt :: UTCTime
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Blueprint provenance recorded in the manifest after a successful
+-- @seihou agent run@ invocation. The agent owns file output, so this
+-- entry describes the *invocation* (which blueprint, which baseline, the
+-- user's prompt) — not the file set the agent produced.
+--
+-- @baselineModules@ records the modules the runner applied as the
+-- baseline. @noBaseline@ distinguishes "no baseline declared"
+-- (@baselineModules = []@, @noBaseline = False@) from "baseline skipped
+-- by user" (@baselineModules = []@, @noBaseline = True@).
+-- @userPrompt@ captures the positional @PROMPT@ argument when supplied.
+-- @agentSessionId@ is reserved for the deferred resume feature recorded
+-- in @docs/masterplans/3-agent-driven-blueprints.md@; in v1 it is always
+-- 'Nothing' and the encoder omits the JSON key in that case.
+data AppliedBlueprint = AppliedBlueprint
+  { name :: ModuleName,
+    blueprintVersion :: Maybe Text,
+    appliedAt :: UTCTime,
+    baselineModules :: [ModuleName],
+    noBaseline :: Bool,
+    userPrompt :: Maybe Text,
+    agentSessionId :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 

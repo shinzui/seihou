@@ -90,7 +90,7 @@ spec = do
                 runManifestStore manifestPath (writeManifest sampleManifest)
                 c <- readFileText manifestPath
                 pure ((), c)
-      T.isInfixOf "\"version\":2" content `shouldBe` True
+      T.isInfixOf "\"version\":3" content `shouldBe` True
       T.isInfixOf "haskell-base" content `shouldBe` True
       T.isInfixOf "my-app" content `shouldBe` True
 

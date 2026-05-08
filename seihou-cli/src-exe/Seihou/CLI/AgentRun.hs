@@ -341,7 +341,8 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
                   modules = allModuleEntries,
                   vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
                   files = Map.unions [recs, keepRecords, cleanedFiles],
-                  recipe = manifest.recipe
+                  recipe = manifest.recipe,
+                  blueprint = manifest.blueprint
                 }
         writeManifest newManifest
 

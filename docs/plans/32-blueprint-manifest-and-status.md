@@ -67,7 +67,7 @@ and a fixture-driven test decodes a pre-bump manifest and asserts
 
 ## Progress
 
-- [ ] Milestone 1: Domain model and JSON serialization. Add `AppliedBlueprint` to `seihou-core/src/Seihou/Core/Types.hs`, extend `Manifest` with `blueprint :: Maybe AppliedBlueprint`, bump `currentManifestVersion` from 2 to 3 in `seihou-core/src/Seihou/Manifest/Types.hs`, add the `ToJSON`/`FromJSON` instances, and add the `writeAppliedBlueprint` helper. All seihou-core tests still pass.
+- [x] Milestone 1: Domain model and JSON serialization. Added `AppliedBlueprint` to `seihou-core/src/Seihou/Core/Types.hs`, extended `Manifest` with `blueprint :: Maybe AppliedBlueprint`, bumped `currentManifestVersion` from 2 to 3 in `seihou-core/src/Seihou/Manifest/Types.hs`, added the `ToJSON`/`FromJSON` instances and `writeAppliedBlueprint` helper. Six new spec tests cover round-trip and back-compat decode; all 837 seihou-core tests pass.
 - [ ] Milestone 2: Wire the runner. In EP-31's `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs`, after a successful `claude` exit, read the manifest, apply `writeAppliedBlueprint`, and write the manifest back. The runner tests assert the entry is present after a simulated successful exit and absent after a simulated failure.
 - [ ] Milestone 3: Status display. Extend `seihou-cli/src/Seihou/CLI/StatusRender.hs` with a `blueprintSection` and wire it into `formatStatus`. Add tests that construct a `Manifest` fixture with a populated `blueprint` and assert the rendered output contains the documented lines.
 

@@ -1,5 +1,6 @@
 module Seihou.Manifest.TypesSpec (tests) where
 
+import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
@@ -22,7 +23,8 @@ fixedTime2 = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-
 
 -- | Helper to set modules on a Manifest without ambiguous record update.
 withManifestModules :: [AppliedModule] -> Manifest -> Manifest
-withManifestModules mods m = Manifest m.version m.genAt mods m.vars m.files m.recipe
+withManifestModules mods m =
+  Manifest m.version m.genAt mods m.vars m.files m.recipe m.blueprint
 
 spec :: Spec
 spec = do
@@ -30,7 +32,7 @@ spec = do
     it "creates a manifest with the current version" $ do
       let m = emptyManifest fixedTime
       m.version `shouldBe` currentManifestVersion
-      m.version `shouldBe` 2
+      m.version `shouldBe` 3
 
     it "creates a manifest with no modules, vars, or files" $ do
       let m = emptyManifest fixedTime
@@ -71,7 +73,8 @@ spec = do
                       (VarName "license", "MIT")
                     ],
                 files = base.files,
-                recipe = Nothing
+                recipe = Nothing,
+                blueprint = Nothing
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -124,7 +127,8 @@ spec = do
                         FileRecord (SHA256 "bbb") (ModuleName "haskell-base") Copy fixedTime
                       )
                     ],
-                recipe = Nothing
+                recipe = Nothing,
+                blueprint = Nothing
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -196,6 +200,94 @@ spec = do
               (emptyManifest fixedTime)
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
+  describe "AppliedBlueprint" $ do
+    it "round-trips a fully populated entry through JSON" $ do
+      let ab =
+            AppliedBlueprint
+              { name = ModuleName "payments-service",
+                blueprintVersion = Just "0.3.1",
+                appliedAt = fixedTime,
+                baselineModules = [ModuleName "nix-flake", ModuleName "haskell-base"],
+                noBaseline = False,
+                userPrompt = Just "set this up for a payments microservice",
+                agentSessionId = Nothing
+              }
+      Aeson.eitherDecode (Aeson.encode ab) `shouldBe` Right ab
+
+    it "round-trips a --no-baseline entry through JSON" $ do
+      let ab =
+            AppliedBlueprint
+              { name = ModuleName "lone-blueprint",
+                blueprintVersion = Nothing,
+                appliedAt = fixedTime,
+                baselineModules = [],
+                noBaseline = True,
+                userPrompt = Nothing,
+                agentSessionId = Nothing
+              }
+      Aeson.eitherDecode (Aeson.encode ab) `shouldBe` Right ab
+
+    it "writeAppliedBlueprint replaces any prior entry" $ do
+      let m0 = emptyManifest fixedTime
+          ab1 =
+            AppliedBlueprint
+              (ModuleName "first")
+              Nothing
+              fixedTime
+              []
+              False
+              Nothing
+              Nothing
+          ab2 =
+            AppliedBlueprint
+              (ModuleName "second")
+              (Just "1.0.0")
+              fixedTime2
+              [ModuleName "x"]
+              False
+              (Just "do the thing")
+              Nothing
+          m1 = writeAppliedBlueprint ab1 m0
+          m2 = writeAppliedBlueprint ab2 m1
+      m1.blueprint `shouldBe` Just ab1
+      m2.blueprint `shouldBe` Just ab2
+
+  describe "schema back-compat" $ do
+    -- A pre-EP-32 (schema v2) manifest has no @blueprint@ key. The
+    -- decoder must read it as 'Nothing' regardless of the version
+    -- field, so a pre-bump project does not refuse to load after the
+    -- user upgrades seihou.
+    it "decodes a v2 manifest with no blueprint key as Nothing" $ do
+      let json = "{\"version\":2,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{}}"
+      case manifestFromJSON json of
+        Right manifest -> do
+          manifest.blueprint `shouldBe` Nothing
+          manifest.version `shouldBe` 2
+        Left err -> expectationFailure ("failed to parse: " <> err)
+
+    it "decodes a v3 manifest with an explicit null blueprint as Nothing" $ do
+      let json = "{\"version\":3,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},\"blueprint\":null}"
+      case manifestFromJSON json of
+        Right manifest -> manifest.blueprint `shouldBe` Nothing
+        Left err -> expectationFailure ("failed to parse: " <> err)
+
+    it "decodes a v3 manifest with a populated blueprint object" $ do
+      let json =
+            "{\"version\":3,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},"
+              <> "\"blueprint\":{\"name\":\"payments-service\",\"version\":\"0.3.1\",\"appliedAt\":\"2026-03-01T11:00:00Z\","
+              <> "\"baselineModules\":[\"nix-flake\"],\"noBaseline\":false,\"userPrompt\":\"set up payments\"}}"
+      case manifestFromJSON json of
+        Right manifest -> case manifest.blueprint of
+          Just ab -> do
+            ab.name `shouldBe` ModuleName "payments-service"
+            ab.blueprintVersion `shouldBe` Just "0.3.1"
+            ab.baselineModules `shouldBe` [ModuleName "nix-flake"]
+            ab.noBaseline `shouldBe` False
+            ab.userPrompt `shouldBe` Just "set up payments"
+            ab.agentSessionId `shouldBe` Nothing
+          Nothing -> expectationFailure "expected populated blueprint"
+        Left err -> expectationFailure ("failed to parse: " <> err)
+
   describe "schema back-compat (version 1)" $ do
     it "decodes a version-1 manifest with parentVars defaulting to empty" $ do
       let json = "{\"version\":1,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[{\"name\":\"haskell-base\",\"source\":\"/path\",\"appliedAt\":\"2026-03-01T10:30:00Z\"}],\"variables\":{},\"files\":{}}"
@@ -215,7 +307,7 @@ spec = do
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
       let base = emptyManifest fixedTime
-          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files, recipe = Nothing}
+          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files, recipe = Nothing, blueprint = Nothing}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"

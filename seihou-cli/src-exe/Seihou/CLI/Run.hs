@@ -326,7 +326,8 @@ handleRun runOpts = do
                           modules = allModuleEntries,
                           vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
                           files = Map.unions [recs, keepRecords, cleanedFiles],
-                          recipe = appliedRecipe
+                          recipe = appliedRecipe,
+                          blueprint = manifest.blueprint
                         }
 
                 -- Save manifest
