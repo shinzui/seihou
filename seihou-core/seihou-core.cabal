@@ -117,6 +117,7 @@ test-suite seihou-core-test
     Seihou.Composition.PlanSpec
     Seihou.Composition.RecipeSpec
     Seihou.Composition.ResolveSpec
+    Seihou.Core.BlueprintSpec
     Seihou.Core.ContextSpec
     Seihou.Core.ExprSpec
     Seihou.Core.InstallSpec

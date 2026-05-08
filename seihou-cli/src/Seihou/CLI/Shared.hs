@@ -1,6 +1,7 @@
 module Seihou.CLI.Shared
   ( formatVarError,
     formatConfigError,
+    formatBlueprintRefusal,
     deriveNamespace,
     toVarNameMap,
     logIO,
@@ -30,6 +31,23 @@ formatVarError (CoercionFailed (VarName n) _ raw) = "cannot coerce '" <> raw <> 
 formatConfigError :: ConfigError -> Text
 formatConfigError (ConfigParseError path msg) = T.pack path <> ": " <> msg
 formatConfigError (InvalidNamespace ns reason) = "invalid namespace '" <> ns <> "': " <> reason
+
+-- | The canonical message text emitted when @seihou run NAME@ resolves
+-- to a blueprint. Returned as a single multi-line string so the run
+-- handler can pass it to a single 'logError' call (the logger
+-- prefixes each invocation with @[error] @, so emitting the body in
+-- one call keeps the prefix off the continuation lines). Kept here in
+-- @Seihou.CLI.Shared@ — rather than inlined in @Seihou.CLI.Run@ —
+-- specifically so the message can be unit-tested without invoking the
+-- full run handler.
+formatBlueprintRefusal :: ModuleName -> Text
+formatBlueprintRefusal name =
+  T.intercalate
+    "\n"
+    [ "'" <> name.unModuleName <> "' is a blueprint, not a module or recipe.",
+      "Blueprints must be run interactively via:",
+      "  seihou agent run " <> name.unModuleName
+    ]
 
 -- | Derive the namespace from a module name by taking the prefix before the first hyphen.
 -- For example, @ModuleName "haskell-base"@ yields @"haskell"@.

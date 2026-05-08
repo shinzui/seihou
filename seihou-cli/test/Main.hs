@@ -13,6 +13,7 @@ import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
 import Seihou.CLI.Registry.SyncSpec qualified as RegistrySyncSpec
 import Seihou.CLI.Registry.ValidateSpec qualified as RegistryValidateSpec
 import Seihou.CLI.RemoteVersionSpec qualified as RemoteVersionSpec
+import Seihou.CLI.RunBlueprintRefusalSpec qualified as RunBlueprintRefusalSpec
 import Seihou.CLI.SavePromptedSpec qualified as SavePromptedSpec
 import Seihou.CLI.StatusSpec qualified as StatusSpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
@@ -36,6 +37,7 @@ main = do
         RegistrySyncSpec.tests,
         RegistryValidateSpec.tests,
         RemoteVersionSpec.tests,
+        RunBlueprintRefusalSpec.tests,
         SavePromptedSpec.tests,
         StatusSpec.tests,
         UpgradeSpec.tests,

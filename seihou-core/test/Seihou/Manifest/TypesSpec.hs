@@ -76,7 +76,8 @@ spec = do
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
     it "roundtrips a manifest with file records" $ do
-      let m =
+      let m :: Manifest
+          m =
             (emptyManifest fixedTime)
               { files =
                   Map.fromList
@@ -131,6 +132,7 @@ spec = do
       let strategies = [Copy, Template, DhallText, Structured]
           makeRecord s =
             FileRecord (SHA256 "hash") (ModuleName "mod") s fixedTime
+          m :: Manifest
           m =
             (emptyManifest fixedTime)
               { files =

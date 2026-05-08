@@ -69,10 +69,10 @@ enough to demonstrate the full surface end-to-end.
 - [x] M2: Add `schema/Blueprint.dhall`, update `schema/package.dhall`, and add `evalBlueprintFromFile`, `blueprintDecoder`, `blueprintFileDecoder` to `seihou-core/src/Seihou/Dhall/Eval.hs`. *Done 2026-05-07.*
 - [x] M3: Add `seihou-core/src/Seihou/Core/Blueprint.hs` exposing `validateBlueprint` and the per-rule `check…` helpers, mirroring `Seihou.Core.Module`'s validator shape. *Done 2026-05-07; registered in `seihou-core.cabal`.*
 - [x] M4: Extend `Seihou.Core.Module.discoverRunnable` with a `blueprint.dhall` branch and `discoverAllRunnables` with the matching enumeration; add a private `discoverBlueprint` helper for symmetry with `discoverModule` / `discoverRecipe`. *Done 2026-05-07; `discoverBlueprint` exported.*
-- [ ] M5: Mirror `schema/Blueprint.dhall` and the updated `schema/package.dhall` into `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou-schema/`, commit and push, and bump the URL/hash in `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`. Bump `mori.dhall` if it pins the schema (it currently pins mori-schema; verify before editing).
+- [x] M5: Mirror `schema/Blueprint.dhall` and the updated `schema/package.dhall` into `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou-schema/`, commit and push, and bump the URL/hash in `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`. Bump `mori.dhall` if it pins the schema (it currently pins mori-schema; verify before editing). *Done 2026-05-07: schema repo is the seihou-schema submodule at `schema/`; commit `a0fba0d` published to `origin/master`. SchemaVersion.hs URL/hash bumped to `a0fba0d…` / `sha256:36250d3…`. `mori.dhall` confirmed unaffected — it pins `mori-schema`, not `seihou-schema`. Verified via `dhall --plain` against the new URL: the resolved record exposes `Blueprint`.*
 - [x] M6: Add the `RunnableBlueprint` refusal branch to `seihou-cli/src-exe/Seihou/CLI/Run.hs` (lines 95-110, the recipe-detection block). *Done 2026-05-07 alongside M1; using a single multi-line `logError` call so the `[error]` prefix appears once. See Decision Log.*
-- [ ] M7: Add a positive-and-negative-case `seihou-core` test fixture under `seihou-core/test/fixtures/sample-blueprint/` and a matching `seihou-core/test/Seihou/Core/BlueprintSpec.hs` covering each validation rule. Add a `seihou-cli` integration test under `seihou-cli/test/Seihou/CLI/` exercising the run-refusal branch.
-- [ ] M8: Run `cabal build all`, `cabal test all --enable-tests`, `nix flake check`, and a manual end-to-end demo of the refusal message; record the demo transcript in Surprises & Discoveries if it diverges from the plan.
+- [x] M7: Add a positive-and-negative-case `seihou-core` test fixture under `seihou-core/test/fixtures/sample-blueprint/` and a matching `seihou-core/test/Seihou/Core/BlueprintSpec.hs` covering each validation rule. Add a `seihou-cli` integration test under `seihou-cli/test/Seihou/CLI/` exercising the run-refusal branch. *Done 2026-05-07: 16 BlueprintSpec tests + 4 RunBlueprintRefusalSpec tests; full suite 824 core + 211 CLI tests pass. The CLI test exercises the pure refusal-formatter helper (`Seihou.CLI.Shared.formatBlueprintRefusal`), which `Run.hs` now calls — the `handleRun` IO orchestration itself isn't unit-testable from `seihou-cli/test/` because `Run` lives in `src-exe/`, but the formatter's text is the user-observable surface. End-to-end stderr+exit verification is M8.*
+- [x] M8: Run `cabal build all`, `cabal test all --enable-tests`, `nix flake check`, and a manual end-to-end demo of the refusal message; record the demo transcript in Surprises & Discoveries if it diverges from the plan. *Done 2026-05-07: `cabal build all` clean, `cabal test all` passes 824 core + 211 CLI tests, `nix flake check` passes (3 checks: cli-module-placement, formatting, pre-commit-check), demo transcript recorded in Surprises & Discoveries.*
 
 
 ## Surprises & Discoveries
@@ -85,6 +85,26 @@ enough to demonstrate the full surface end-to-end.
   the same body lines — but the literal string visible on stderr begins
   with `[error] `, not `Error:`. Recorded so EP-34's documentation plan
   describes what users actually see.
+
+- 2026-05-07 — Initial implementation of the refusal arm passed the
+  blueprint's *declared* name (`b.name`) to `formatBlueprintRefusal`.
+  An end-to-end demo with a directory `demo-blueprint/blueprint.dhall`
+  whose `name = "sample-blueprint"` produced a misleading suggestion
+  `seihou agent run sample-blueprint` — but discovery resolves by
+  directory name, so the user can only re-type `demo-blueprint`. The
+  arm now passes the *user-typed* `modName` instead. Demo transcript:
+
+      $ XDG_CONFIG_HOME=/tmp/demo-home/.config seihou run demo-blueprint
+      [error] 'demo-blueprint' is a blueprint, not a module or recipe.
+      Blueprints must be run interactively via:
+        seihou agent run demo-blueprint
+      ----
+      exit code: 1
+
+  EP-34's docs plan and EP-31's runner plan should both use the
+  user-typed name (the runner does too, since it accepts the name as
+  a positional arg). Recorded as a hard invariant to avoid the same
+  bug regressing.
 
 
 ## Decision Log
@@ -173,10 +193,114 @@ enough to demonstrate the full surface end-to-end.
   readable in terminals.
   Date: 2026-05-07.
 
+- Decision: Add a sibling `validateBlueprintWith :: [FilePath] ->
+  FilePath -> Blueprint -> IO (Either ModuleLoadError Blueprint)` next
+  to the plan's documented `validateBlueprint :: FilePath -> Blueprint
+  -> IO …`. The plan signature was useful for production callers (it
+  pulls search paths from `defaultSearchPaths`) but unworkable for
+  tests, which need to pin the lookup roots to a temp directory.
+  Tests call the `…With` form; production callers continue to call
+  `validateBlueprint`, which is now a thin wrapper that supplies
+  `defaultSearchPaths`.
+  Date: 2026-05-07.
+
+- Decision: Factor the run-refusal text into a pure
+  `formatBlueprintRefusal :: ModuleName -> Text` helper in
+  `Seihou.CLI.Shared` rather than inlining the body in
+  `Seihou.CLI.Run`. The plan suggested an inline `T.intercalate`
+  call, but `Run.hs` lives in `src-exe/` (it imports
+  `Options.Applicative` transitively via `Seihou.CLI.Commands`) and
+  `seihou-cli/test/` cannot link executable modules. Moving the
+  formatter to `Shared` (already in `src/`) makes the text
+  unit-testable while leaving the run-time orchestration in
+  `Run.hs` untouched.
+  Date: 2026-05-07.
+
+- Decision: Use positional `Blueprint` constructor application in
+  `BlueprintSpec` (`withBlueprintName`, `withBlueprintFiles`, …) rather
+  than record-update syntax. Several `Blueprint` field names —
+  `name`, `version`, `vars`, `prompts`, `files`, `description` —
+  collide with `Module`/`Recipe`/`Manifest`. Under
+  `DuplicateRecordFields`, GHC's type-directed disambiguation for
+  record updates is being deprecated (it warns at use sites in
+  `Manifest.TypesSpec`), and several of the conflicting types had no
+  unique disambiguation. Positional construction is what
+  `Seihou.Core.ModuleSpec` already uses (`withModuleName`,
+  `withModuleVars`, …); reusing the pattern keeps the test code
+  uniform and future-proof. Two lone updates in
+  `Manifest.TypesSpec.hs` got an explicit `:: Manifest` annotation —
+  there were already legitimate `Manifest`-only fields, so the
+  annotation is the lighter touch.
+  Date: 2026-05-07.
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-29 landed all eight milestones in a single session on 2026-05-07.
+
+What works after EP-29:
+
+- `blueprint.dhall` files authored against the new `Blueprint` schema
+  type-check against the published seihou-schema commit
+  `a0fba0d17b43b14bfdf6d0bf98f1b7ff7af4ebab` (URL/hash pinned in
+  `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`).
+- `Seihou.Dhall.Eval.evalBlueprintFromFile` decodes valid blueprint
+  files into the new `Blueprint` record.
+- `Seihou.Core.Blueprint.validateBlueprint` runs nine validation rules
+  (name format, version, prompt non-empty, var uniqueness, prompt
+  refs, base-module resolution, file existence, tag well-formedness,
+  allowedTools well-formedness) and returns `ValidationError` with
+  the full list of violations. A sibling
+  `validateBlueprintWith :: [FilePath] -> FilePath -> Blueprint -> IO …`
+  takes search paths explicitly for tests.
+- `Seihou.Core.Module.discoverRunnable` and `discoverAllRunnables`
+  recognise `blueprint.dhall` and produce `RunnableBlueprint` /
+  `KindBlueprint` results. Within a single directory the priority
+  order `module > recipe > blueprint` is locked in by tests.
+- `seihou run NAME` against a directory whose `blueprint.dhall`
+  resolves prints
+
+      [error] 'NAME' is a blueprint, not a module or recipe.
+      Blueprints must be run interactively via:
+        seihou agent run NAME
+
+  on stderr (a single multi-line `logError` call) and exits with
+  code 1. The user-typed `NAME` is preserved in the suggestion (see
+  Surprises & Discoveries on why this matters).
+- `seihou list` and the fzf module picker render blueprints with a
+  `[blueprint]` suffix.
+- 16 BlueprintSpec tests + 4 RunBlueprintRefusalSpec tests cover the
+  validator's nine rules plus the discovery and refusal text. The
+  full workspace test suite is 824 core + 211 CLI tests, all green.
+
+Gaps and follow-ups:
+
+- The `seihou agent run BLUEPRINT` command does not yet exist (EP-31).
+  The refusal message points at it, but invoking it produces the
+  expected "command not found" today.
+- There is no command to scaffold or validate a `blueprint.dhall`
+  on-disk yet; that lands in EP-30 (`seihou new-blueprint`,
+  `seihou validate-blueprint`).
+- `seihou install` and the registry tooling do not yet recognise
+  blueprints; that lands in EP-33.
+
+Lessons learned:
+
+- The masterplan documented `Error:` as the refusal-line prefix, but
+  the actual logger emits `[error] `. Future plans should describe
+  user-observable text by reading the logger interpreter, not by
+  reproducing the spec verbatim.
+- `DuplicateRecordFields` + `OverloadedRecordDot` reads beautifully but
+  loses ground at *record-update* sites: `Blueprint.files`,
+  `Blueprint.vars`, etc. now collide with `Manifest`/`Module`/`Recipe`.
+  GHC warns that the type-directed disambiguation is being deprecated.
+  The codebase's existing pattern — positional `withModuleName`,
+  `withModuleVars` helpers in test code — generalises well; new test
+  modules should follow it from the start.
+- The `defaultSearchPaths`-baked-in version of `validateBlueprint`
+  can't be unit-tested without writing fixtures into XDG. Always
+  expose a `…With` variant when a validator does IO against the user
+  environment.
 
 
 ## Context and Orientation

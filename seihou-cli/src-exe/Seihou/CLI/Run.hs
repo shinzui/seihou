@@ -28,7 +28,7 @@ import Seihou.CLI.PendingMigrations
     isBlockedMigration,
   )
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
-import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
+import Seihou.CLI.Shared (deriveNamespace, formatBlueprintRefusal, formatVarError, logIO, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (compileComposedPlan)
@@ -105,15 +105,12 @@ handleRun runOpts = do
         pure (primary, recipeAdditional ++ additional, overrides, Just (recipe.name, recipe.version))
       Right (RunnableModule _ _) ->
         pure (modName, additional, Map.empty, Nothing)
-      Right (RunnableBlueprint b _blueprintDir) -> do
-        logIO level $
-          logError $
-            T.intercalate
-              "\n"
-              [ "'" <> b.name.unModuleName <> "' is a blueprint, not a module or recipe.",
-                "Blueprints must be run interactively via:",
-                "  seihou agent run " <> b.name.unModuleName
-              ]
+      Right (RunnableBlueprint _b _blueprintDir) -> do
+        -- Use the user-typed name (modName) rather than the blueprint's
+        -- declared name. Discovery resolves by directory name; the
+        -- suggested 'seihou agent run NAME' must match what the user
+        -- can re-type to find the same artifact.
+        logIO level $ logError (formatBlueprintRefusal modName)
         exitFailure
       Left _ ->
         -- Discovery failed — let loadComposition handle the error with its detailed message

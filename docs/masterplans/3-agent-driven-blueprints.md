@@ -251,7 +251,7 @@ Alternatives considered:
 
 | #   | Title                                                                       | Path                                                              | Hard Deps  | Soft Deps  | Status      |
 |-----|-----------------------------------------------------------------------------|-------------------------------------------------------------------|------------|------------|-------------|
-| 29  | Define the Blueprint domain model, schema, discovery, and run-time refusal  | docs/plans/29-blueprint-domain-model-and-discovery.md             | None       | None       | In Progress |
+| 29  | Define the Blueprint domain model, schema, discovery, and run-time refusal  | docs/plans/29-blueprint-domain-model-and-discovery.md             | None       | None       | Complete    |
 | 30  | Authoring and inspection commands for blueprints                            | docs/plans/30-blueprint-authoring-and-inspection.md               | EP-29      | None       | Not Started |
 | 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | Not Started |
 | 32  | Manifest tracking and `seihou status` integration for applied blueprints    | docs/plans/32-blueprint-manifest-and-status.md                    | EP-31      | None       | Not Started |
@@ -531,7 +531,7 @@ view of the entire initiative.
 - [x] EP-29: Add the `Blueprint` data type, the `BlueprintFile` helper, the `RunnableBlueprint` constructor on the `Runnable` ADT, and the `KindBlueprint` constructor on `RunnableKind`.
 - [x] EP-29: Add `schema/Blueprint.dhall`, update `schema/package.dhall`, and add `evalBlueprintFromFile` plus `blueprintDecoder` in `Seihou.Dhall.Eval`.
 - [x] EP-29: Add `Seihou.Core.Blueprint.validateBlueprint` with the documented validation rules; add `discoverBlueprint` and extend `discoverRunnable` and `discoverAllRunnables` to recognise `blueprint.dhall`.
-- [ ] EP-29: Mirror the schema into the `seihou-schema` repository, publish a release commit, and bump the schema URL/hash in `mori.dhall` and `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`.
+- [x] EP-29: Mirror the schema into the `seihou-schema` repository, publish a release commit, and bump the schema URL/hash in `mori.dhall` and `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`. *(`mori.dhall` left untouched — it pins `mori-schema`, not `seihou-schema`.)*
 - [x] EP-29: Add the `seihou run` refusal branch in `seihou-cli/src-exe/Seihou/CLI/Run.hs` for `RunnableBlueprint`; verify via integration test that `seihou run my-blueprint` fails with the documented message. *(Refusal arm in place; integration test arrives with EP-29 M7.)*
 - [ ] EP-30: Add `seihou new-blueprint NAME [--path DIR]` CLI handler scaffolding `blueprint.dhall`, `prompt.md`, and `files/`.
 - [ ] EP-30: Add `seihou validate-blueprint [PATH]` CLI handler exercising the EP-29 validator.
@@ -553,7 +553,47 @@ view of the entire initiative.
 
 ## Surprises & Discoveries
 
-(None yet.)
+- 2026-05-07 (EP-29) — `Seihou.Effect.Logger.logError` prefixes each
+  call with `[error] `, not `Error:` as the masterplan's "canonical
+  refusal text" suggested. The body lines are unchanged; only the
+  prefix differs. EP-34's documentation plan must reflect the
+  literal observable output (e.g., `[error] 'NAME' is a blueprint, …`),
+  not the placeholder `Error:` form. The single multi-line `logError`
+  shape was retained so the prefix appears once.
+
+- 2026-05-07 (EP-29) — Initial implementation passed the blueprint's
+  declared `name` field into `formatBlueprintRefusal`. An end-to-end
+  demo with directory `demo-blueprint/blueprint.dhall` whose
+  `name = "sample-blueprint"` produced a misleading suggestion
+  `seihou agent run sample-blueprint`. Discovery resolves by
+  *directory name*, not by the declared `name`, so the suggestion
+  must echo the user-typed name. Fixed by passing `modName` (the CLI
+  positional argument) rather than `b.name`. **Cross-plan invariant:**
+  EP-31's runner accepts the same positional `BLUEPRINT` argument
+  and should preserve it through error messages; EP-34's doc must
+  describe the suggestion as "the same name you typed".
+
+- 2026-05-07 (EP-29) — `DuplicateRecordFields` plus
+  `OverloadedRecordDot` reads cleanly but produces ambiguous
+  *record-update* sites once `Blueprint` enters the type system —
+  fields like `version`, `vars`, `prompts`, and `files` collide with
+  `Module`/`Recipe`/`Manifest`. GHC warns that the type-directed
+  disambiguation is being deprecated. EP-29 followed the codebase's
+  existing convention (positional `withModuleName`-style helpers) in
+  `BlueprintSpec`. EP-30, EP-31, and EP-32 should all use the
+  positional pattern from the start; do not introduce new
+  record-update sites on `Blueprint` values.
+
+- 2026-05-07 (EP-29) — The `validateBlueprint :: FilePath -> Blueprint
+  -> IO …` signature documented in the masterplan calls
+  `defaultSearchPaths` internally, which is unworkable for tests that
+  need to pin lookup roots. EP-29 added a sibling
+  `validateBlueprintWith :: [FilePath] -> FilePath -> Blueprint -> IO …`
+  for testability; production callers continue to use the original.
+  EP-31 (which calls the validator before launching the agent) and
+  EP-30 (which calls it from `seihou validate-blueprint`) should both
+  use the original `validateBlueprint`. The `…With` form is internal
+  to the test suite.
 
 
 ## Decision Log

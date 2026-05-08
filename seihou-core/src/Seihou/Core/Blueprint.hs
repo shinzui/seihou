@@ -1,11 +1,13 @@
 module Seihou.Core.Blueprint
   ( validateBlueprint,
+    validateBlueprintWith,
     checkBlueprintNameFormat,
     checkBlueprintVersionPresent,
     checkBlueprintPromptNonEmpty,
     checkBlueprintUniqueVars,
     checkBlueprintPromptRefs,
     checkBlueprintBaseModules,
+    checkBlueprintBaseModulesWith,
     checkBlueprintFiles,
     checkBlueprintTags,
     checkBlueprintAllowedTools,
@@ -40,8 +42,21 @@ import System.Directory (doesFileExist)
 --   9. Every @allowedTools@ entry, when set, is non-empty.
 validateBlueprint :: FilePath -> Blueprint -> IO (Either ModuleLoadError Blueprint)
 validateBlueprint baseDir b = do
+  searchPaths <- defaultSearchPaths
+  validateBlueprintWith searchPaths baseDir b
+
+-- | Same as 'validateBlueprint' but takes the search paths used for
+-- resolving base-module references explicitly. Useful for tests that
+-- need to pin the lookup roots; production code should call
+-- 'validateBlueprint' which pulls them from 'defaultSearchPaths'.
+validateBlueprintWith ::
+  [FilePath] ->
+  FilePath ->
+  Blueprint ->
+  IO (Either ModuleLoadError Blueprint)
+validateBlueprintWith searchPaths baseDir b = do
   fileErrs <- checkBlueprintFiles baseDir b
-  baseErrs <- checkBlueprintBaseModules b
+  baseErrs <- checkBlueprintBaseModulesWith searchPaths b
   let pureErrs =
         checkBlueprintNameFormat b
           <> checkBlueprintVersionPresent b
@@ -104,14 +119,19 @@ checkBlueprintPromptRefs b =
 
 -- Rule 6: base modules must be well-formed and resolve to a module or
 -- recipe (not another blueprint). The check uses the same default
--- search paths as @seihou run@.
+-- search paths as @seihou run@; tests can pass custom roots via
+-- 'checkBlueprintBaseModulesWith'.
 checkBlueprintBaseModules :: Blueprint -> IO [Text]
 checkBlueprintBaseModules b = do
   searchPaths <- defaultSearchPaths
+  checkBlueprintBaseModulesWith searchPaths b
+
+checkBlueprintBaseModulesWith :: [FilePath] -> Blueprint -> IO [Text]
+checkBlueprintBaseModulesWith searchPaths b =
   concat <$> mapM (checkOne searchPaths) b.baseModules
   where
     checkOne :: [FilePath] -> Dependency -> IO [Text]
-    checkOne searchPaths dep = do
+    checkOne paths dep = do
       let n = dep.depModule.unModuleName
           nameErrs =
             [ "invalid baseModule name: " <> n
@@ -126,7 +146,7 @@ checkBlueprintBaseModules b = do
         if not (isValidModuleName n)
           then pure []
           else do
-            result <- discoverRunnable searchPaths dep.depModule
+            result <- discoverRunnable paths dep.depModule
             pure $ case result of
               Right (RunnableModule _ _) -> []
               Right (RunnableRecipe _ _) -> []
