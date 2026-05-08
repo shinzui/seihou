@@ -174,6 +174,19 @@ my-templates/
 │       └── files/
 ```
 
+A registry can also list blueprints alongside modules:
+
+    , blueprints =
+      [ { name = "payments-service"
+        , version = Some "0.1.0"
+        , path = "blueprints/payments-service"
+        , description = Some "Microservice scaffold (agent-driven)"
+        , tags = [ "service", "haskell" ]
+        }
+      ]
+
+`seihou install`, `seihou browse`, and `seihou registry sync-versions` all handle blueprint entries.
+
 
 ## Template Syntax
 
@@ -206,7 +219,10 @@ my-templates/
 Use these commands via the Bash tool:
 
 - `seihou new-module NAME` — scaffold a new module with boilerplate
+- `seihou new-blueprint NAME [--path DIR]` — scaffold a new blueprint (agent-driven)
 - `seihou validate-module [PATH]` — validate module.dhall (9 checks)
+- `seihou validate-blueprint [PATH]` — validate blueprint.dhall
+- `seihou agent run BLUEPRINT [PROMPT]` — run a blueprint (launches Claude with the rendered prompt)
 - `seihou vars MODULE [--explain]` — show variable declarations or resolved values
 - `seihou run MODULE --dry-run [--var K=V]` — preview generation without writing
 - `seihou run MODULE [--var K=V]` — generate project
@@ -220,40 +236,63 @@ Use these commands via the Bash tool:
 
 ## Bootstrap Workflow
 
-1. **Gather requirements**: Ask the user what kind of project they want to scaffold.
+1. **Choose the kind.** Three artifact kinds are available:
+   - **Module** when all variation is enumerable as typed variables and the
+     output is a deterministic function of those variables
+     (deterministic-axes-known). Most scaffolding requests fit here.
+   - **Recipe** when the user wants a static composition of existing modules
+     with pre-bound variables — no new generation logic, just a named
+     bundle. Use when the user already has the modules and wants a one-name
+     handle to apply them all.
+   - **Blueprint** when the variation is open-ended and a coding agent
+     should drive the customisation (open-ended-with-baseline). Use when
+     listing the user's requirements would produce dozens of variables and
+     conditional steps. Authored as `blueprint.dhall` + `prompt.md` +
+     optional `files/`; run via `seihou agent run NAME`, not `seihou run`.
+
+   Decision tree: if you can list the inputs as typed variables, it's a
+   module. If you're composing existing modules without new logic, it's a
+   recipe. If you'd be writing a prose prompt to explain conventions to the
+   user, it's a blueprint.
+
+2. **Gather requirements**: Ask the user what kind of project they want to scaffold.
    Understand what files should be generated, what variables the user needs, and
    what should be configurable vs hardcoded.
 
-2. **Scaffold**: Run `seihou new-module NAME` to create the directory structure,
-   then immediately customize the generated module.dhall.
+3. **Scaffold**: Run `seihou new-module NAME` (or `seihou new-blueprint NAME`
+   for the agent-driven kind) to create the directory structure, then
+   immediately customize the generated definition file.
 
-3. **Define variables**: Based on requirements, set up vars with appropriate types,
+4. **Define variables**: Based on requirements, set up vars with appropriate types,
    defaults, validation, and descriptions. Add prompts for interactive use.
 
-4. **Write templates**: Create template files in `files/` with proper placeholder
+5. **Write templates**: Create template files in `files/` with proper placeholder
    syntax. Use the right strategy for each file (template for most, copy for
    static files, dhall-text for computed output).
 
-5. **Add conditional steps**: Use `when` expressions for optional features
+6. **Add conditional steps**: Use `when` expressions for optional features
    (e.g., `when = Some "IsSet license"` for an optional LICENSE file).
 
-6. **Plan for versioning**: Ask whether the user expects to ship breaking
+7. **Plan for versioning**: Ask whether the user expects to ship breaking
    layout changes later (file renames, removed files). If so, leave the
    `migrations = [] : List Migration.Type` skeleton in place — when a
    future v2 renames `app/` to `src/`, the author appends an
    `S.Migration::{ from = "1.0.0", to = "2.0.0", ops = … }` entry so
    consumers can run `seihou migrate <module>` instead of
    reconciling by hand. Set an explicit initial `version` (e.g.
-   `Some "1.0.0"`) so the chain has a starting point.
+   `Some "1.0.0"`) so the chain has a starting point. (Blueprints do not
+   support migrations — their output is non-deterministic.)
 
-7. **Validate**: Run `seihou validate-module ./MODULE` and fix any issues.
+8. **Validate**: Run `seihou validate-module ./MODULE` (or
+   `seihou validate-blueprint ./BLUEPRINT`) and fix any issues.
 
-8. **Test**: Run `seihou run MODULE --dry-run --var key=value` to preview the
-   generated output. Show results to the user.
+9. **Test**: Run `seihou run MODULE --dry-run --var key=value` to preview the
+   generated output (or `seihou agent --debug run BLUEPRINT` for blueprints
+   to print the rendered system prompt). Show results to the user.
 
-9. **Iterate**: Refine based on user feedback until the module is complete.
+10. **Iterate**: Refine based on user feedback until the artifact is complete.
 
-For multi-module repos, repeat steps 2-8 for each module, then create the
+For multi-module repos, repeat steps 3-9 for each module, then create the
 seihou-registry.dhall at the root.
 
 

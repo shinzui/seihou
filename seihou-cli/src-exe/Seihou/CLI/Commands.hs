@@ -487,20 +487,21 @@ installInfo =
   info
     (installParser <**> helper)
     ( fullDesc
-        <> progDesc "Install module(s) from git"
+        <> progDesc "Install module(s), recipe(s), or blueprint(s) from git"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Clones the git repository and installs modules to" :: String),
-                  pretty ("~/.config/seihou/installed/<name>/." :: String),
+                [ pretty ("Clones the git repository and installs modules, recipes, or" :: String),
+                  pretty ("blueprints to ~/.config/seihou/installed/<name>/." :: String),
                   line,
                   pretty ("If the repository contains a seihou-registry.dhall file, it is" :: String),
                   pretty ("treated as a multi-module registry. Use --module to pick specific" :: String),
-                  pretty ("modules or --all to install everything. Without either flag, you" :: String),
+                  pretty ("entries or --all to install everything. Without either flag, you" :: String),
                   pretty ("will be prompted to choose interactively." :: String),
                   line,
-                  pretty ("For single-module repositories (just a root module.dhall), the" :: String),
-                  pretty ("module name defaults to the repository name. Use --name to override." :: String),
+                  pretty ("For single-artifact repositories (a root module.dhall, recipe.dhall," :: String),
+                  pretty ("or blueprint.dhall), the artifact name defaults to the repository" :: String),
+                  pretty ("name. Use --name to override." :: String),
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
@@ -568,13 +569,14 @@ listInfo =
   info
     (listParser <**> helper)
     ( fullDesc
-        <> progDesc "List available modules"
+        <> progDesc "List available modules, recipes, and blueprints"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Scans all module search paths and lists every available module with" :: String),
-                  pretty ("its name, description, and source location (project, user, or installed)." :: String),
-                  pretty ("Modules that fail to load are shown with an error indicator." :: String),
+                [ pretty ("Scans all search paths and lists every available runnable artifact" :: String),
+                  pretty ("(modules, recipes, blueprints) with its name, kind, description, and" :: String),
+                  pretty ("source location (project, user, or installed). Entries that fail to" :: String),
+                  pretty ("load are shown with an error indicator." :: String),
                   line,
                   pretty ("Use --repo and --tag to filter the output." :: String)
                 ]
@@ -904,14 +906,14 @@ browseInfo =
   info
     (browseParser <**> helper)
     ( fullDesc
-        <> progDesc "Browse modules in a git repository"
+        <> progDesc "Browse modules, recipes, and blueprints in a git repository"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Clones the repository and shows available modules without" :: String),
-                  pretty ("installing anything. For multi-module repos with a" :: String),
-                  pretty ("seihou-registry.dhall, displays all modules with descriptions" :: String),
-                  pretty ("and tags. Use --tag to filter by tag." :: String),
+                [ pretty ("Clones the repository and shows available modules, recipes, and" :: String),
+                  pretty ("blueprints without installing anything. For multi-artifact repos" :: String),
+                  pretty ("with a seihou-registry.dhall, displays all entries with descriptions," :: String),
+                  pretty ("kind labels, and tags. Use --tag to filter by tag." :: String),
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
@@ -1177,12 +1179,12 @@ syncVersionsInfo =
   info
     (syncVersionsParser <**> helper)
     ( fullDesc
-        <> progDesc "Populate registry entry versions from each module/recipe"
+        <> progDesc "Populate registry entry versions from each module/recipe/blueprint"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Reads every entry's module.dhall or recipe.dhall, copies the" :: String),
-                  pretty ("declared version into the registry, and rewrites" :: String),
+                [ pretty ("Reads every entry's module.dhall, recipe.dhall, or blueprint.dhall," :: String),
+                  pretty ("copies the declared version into the registry, and rewrites" :: String),
                   pretty ("seihou-registry.dhall. Hand-written comments and formatting are lost." :: String),
                   line,
                   pretty ("With --dry-run the diff is printed but the file is left untouched." :: String),
@@ -1216,14 +1218,14 @@ validateRegistryInfo =
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Validates a multi-module repository's seihou-registry.dhall:" :: String),
+                [ pretty ("Validates a multi-artifact repository's seihou-registry.dhall:" :: String),
                   indent 2 $
                     vsep
-                      [ pretty ("- every entry path resolves to a module.dhall / recipe.dhall" :: String),
+                      [ pretty ("- every entry path resolves to a module.dhall, recipe.dhall, or blueprint.dhall" :: String),
                         pretty ("- entry names match [a-z][a-z0-9-]*" :: String),
-                        pretty ("- no name collisions between modules and recipes" :: String),
+                        pretty ("- no name collisions between modules, recipes, and blueprints" :: String),
                         pretty ("- entry paths are relative and contain no '..'" :: String),
-                        pretty ("- each entry's `version` matches the underlying module/recipe" :: String)
+                        pretty ("- each entry's `version` matches the underlying module/recipe/blueprint" :: String)
                       ],
                   line,
                   pretty ("Exits 1 on any failure. Run from a writable checkout of the registry repo." :: String)

@@ -10,6 +10,69 @@ HEAD  Recover from blocked migrations from the user's side (ExecPlan 25)
 
 ## Changelog
 
+### 2026-05-08 (Blueprints: agent-driven scaffolding for open-ended project shapes)
+
+**Reviewed commits:** ExecPlans 29–34
+(`docs/plans/29-blueprint-domain-model-and-discovery.md`,
+`docs/plans/30-blueprint-authoring-and-inspection.md`,
+`docs/plans/31-blueprint-agent-runner.md`,
+`docs/plans/32-blueprint-manifest-and-status.md`,
+`docs/plans/33-blueprint-registry-and-install.md`,
+`docs/plans/34-blueprint-docs-and-ecosystem.md`) — the
+agent-driven-blueprints initiative.
+
+**Behaviour change (user-facing):**
+
+- A new third runnable kind, the **blueprint**
+  (`blueprint.dhall`), joins modules and recipes. Blueprints
+  bundle a prompt template, an optional baseline of modules to
+  apply before the agent takes over, and an optional `files/`
+  directory of reference snippets.
+- Authoring: `seihou new-blueprint NAME [--path DIR]` scaffolds
+  a blueprint; `seihou validate-blueprint [PATH]` validates one.
+- Running: `seihou agent run BLUEPRINT [PROMPT]` resolves the
+  blueprint's variables, optionally applies the baseline
+  (`--no-baseline` skips), renders the prompt, and launches an
+  interactive Claude Code session with the blueprint's `files/`
+  mounted as a read-only reference.
+- `seihou run BLUEPRINT` refuses with an actionable message
+  directing the user to `seihou agent run`. Blueprints are not
+  directly runnable by design.
+- `seihou status` records `Blueprint: <name> v<version> (applied
+  <date>)` when a blueprint has been applied, with baseline and
+  prompt sub-lines.
+- `seihou list`, `seihou vars`, `seihou install`, `seihou
+  browse`, `seihou registry sync-versions`, and `seihou registry
+  validate` all understand the new kind. A `seihou-registry.dhall`
+  can list blueprints alongside modules and recipes.
+
+**Why:**
+
+Modules and recipes are deterministic by design — every input
+captured by a `VarDecl`, every output a function of resolved
+variables. That shape works for project shapes that vary along
+small, well-understood axes; it fits poorly for shapes whose
+variation is inherently open-ended ("scaffold a microservice
+for $domain", "wire in observability that matches our team's
+pattern"). Blueprints are the escape hatch: an author writes a
+prompt, the AI agent drives the open-ended customisation under
+the user's supervision, and the deterministic surface stays
+uncluttered.
+
+**Docs updated:**
+
+- `docs/dev/design/proposed/blueprints.md` — new design doc
+  describing the runnable type, validation, runner workflow,
+  manifest behaviour, and registry integration.
+- `docs/dev/architecture/overview.md` — Module Loading paragraph
+  mentions blueprint discovery; Project Structure tree adds the
+  new files; Trapped-modules inventory adds the new exec-target
+  modules.
+- `seihou-cli/data/{assist,bootstrap,setup}-prompt.md` — the
+  three AI-assisted commands now know blueprints exist and route
+  users to `seihou agent run`.
+- `README.md` — feature description names all three runnable kinds.
+
 ### 2026-05-08 (Manifest tracking and `seihou status` for applied blueprints)
 
 **Reviewed commits:** ExecPlan 32

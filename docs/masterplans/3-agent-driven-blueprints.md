@@ -256,7 +256,7 @@ Alternatives considered:
 | 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | Complete    |
 | 32  | Manifest tracking and `seihou status` integration for applied blueprints    | docs/plans/32-blueprint-manifest-and-status.md                    | EP-31      | None       | Complete    |
 | 33  | Registry and multi-module-repository support for blueprints                 | docs/plans/33-blueprint-registry-and-install.md                   | EP-29      | EP-30      | Complete    |
-| 34  | Documentation, agent-prompt updates, and ecosystem polish                   | docs/plans/34-blueprint-docs-and-ecosystem.md                     | EP-31      | EP-30, EP-32, EP-33 | Not Started |
+| 34  | Documentation, agent-prompt updates, and ecosystem polish                   | docs/plans/34-blueprint-docs-and-ecosystem.md                     | EP-31      | EP-30, EP-32, EP-33 | Complete    |
 
 Status values: Not Started, In Progress, Complete, Cancelled. Hard Deps and Soft
 Deps reference other rows by their `EP-N` prefix.
@@ -546,9 +546,9 @@ view of the entire initiative.
 - [x] EP-33: Extend `Registry` with `blueprints :: [RegistryEntry]`; update the Dhall registry schema and `evalRegistryFromFile`/`registryDecoder`.
 - [x] EP-33: Update `discoverRepoContents` with a `SingleBlueprint FilePath` constructor; update `seihou install` to handle the new constructor and registry-listed blueprints; update `seihou browse`.
 - [x] EP-33: Update `seihou registry sync-versions` and `seihou registry validate` to walk the new `blueprints` list.
-- [ ] EP-34: Write `docs/dev/design/proposed/blueprints.md` describing the design, motivation, validation rules, runner flow, manifest behaviour, and registry integration.
-- [ ] EP-34: Update `docs/dev/architecture/overview.md` with the third runnable type and the updated project-structure tree.
-- [ ] EP-34: Update `seihou-cli/data/assist-prompt.md`, `bootstrap-prompt.md`, and `setup-prompt.md` so neighbouring agents understand blueprints; add a CHANGELOG entry summarising the whole initiative.
+- [x] EP-34: Write `docs/dev/design/proposed/blueprints.md` describing the design, motivation, validation rules, runner flow, manifest behaviour, and registry integration.
+- [x] EP-34: Update `docs/dev/architecture/overview.md` with the third runnable type and the updated project-structure tree.
+- [x] EP-34: Update `seihou-cli/data/assist-prompt.md`, `bootstrap-prompt.md`, and `setup-prompt.md` so neighbouring agents understand blueprints; add a CHANGELOG entry summarising the whole initiative.
 
 
 ## Surprises & Discoveries
@@ -760,6 +760,40 @@ view of the entire initiative.
   per-row labels — call sites elsewhere in the codebase, if any
   appear, must thread the kind through.
 
+- 2026-05-08 (EP-34) — `docs/dev/architecture/overview.md`'s
+  Project Structure tree had drifted significantly from on-disk
+  reality. It still showed a single `seihou-cli/src/` tree (with
+  `Main.hs` directly under it) and listed every CLI handler as
+  if it were in the library — pre-dating the EP-19/EP-21
+  src/src-exe split. EP-34 was scoped to add three lines for the
+  blueprint files but the structural fix was unavoidable: the
+  inserts had no defensible position in the old layout. The
+  rewrite reflects the actual library/executable split and lists
+  only the directories visible at HEAD; per-file annotations stay
+  one-line so future drift is easier to spot.
+
+- 2026-05-08 (EP-34) — The Trapped-modules inventory was
+  missing `Seihou.CLI.AgentLaunchExec`, an exemption already
+  recorded in `EXEMPT_MODULES` in
+  `nix/check-cli-module-placement.sh` since EP-3. The placement
+  check passed regardless because the script consults its
+  exemption list directly, not the doc table. EP-34 added the
+  row alongside the EP-31/EP-30 additions so future readers see
+  the exemption in both places. Cross-plan note: when adding
+  exempt modules in future plans, update the doc inventory as
+  part of the same commit.
+
+- 2026-05-08 (EP-34) — The masterplan's prose mentioned two
+  sibling spec files that do not exist in the test tree:
+  `seihou-cli/test/Seihou/CLI/StatusRenderSpec.hs` and
+  `seihou-cli/test/Seihou/CLI/SharedSpec.hs`. The actual coverage
+  lives in `StatusSpec.hs` and `RunBlueprintRefusalSpec.hs`
+  respectively, plus `AppliedBlueprintSpec.hs` for the manifest
+  writer. The design doc's Testing Plan table was written
+  against the on-disk filenames; cross-plan note for any future
+  audit script that grep-checks doc paths against `find`-output:
+  use the actual filenames, not the masterplan's prose.
+
 
 ## Decision Log
 
@@ -878,4 +912,65 @@ view of the entire initiative.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The agent-driven-blueprints initiative shipped end-to-end across
+six exec-plans (EP-29 through EP-34). Seihou now recognises a
+third runnable kind. **Modules** (deterministic, typed inputs in,
+exact files out) and **recipes** (named compositions with
+pre-bound variables) sit alongside **blueprints**: an agent-driven
+artifact that bundles a Markdown prompt, an optional baseline of
+modules to apply before the agent takes over, and an optional
+`files/` directory of reference snippets. A user runs
+`seihou agent run BLUEPRINT [PROMPT]` and Claude Code launches
+with the blueprint's prompt rendered, the `files/` mounted via
+`--add-dir`, and the baseline already applied to the project
+directory. `seihou run BLUEPRINT` refuses with an actionable
+message; `seihou status` records `Blueprint: NAME vX.Y.Z (applied
+DATE)` on success with baseline and prompt sub-lines; the manifest
+schema bumped from v2 to v3 with backwards-compatible decoding.
+Blueprints are first-class in registries: `seihou install`,
+`seihou browse`, `seihou registry sync-versions`, and
+`seihou registry validate` all handle them.
+
+Authoring is supported by `seihou new-blueprint NAME [--path DIR]`
+and `seihou validate-blueprint [PATH]`. `seihou list` and
+`seihou vars` distinguish the kind. The full surface is documented
+in `docs/dev/design/proposed/blueprints.md`; the architecture
+overview names the third kind in the Module Loading pipeline-stage
+paragraph, lists every new file in the Project Structure tree, and
+covers the four new exec-target modules in the Trapped-modules
+inventory. The CHANGELOG carries a top-of-section summary entry,
+plus per-EP entries from the individual plans.
+
+The decomposition held up well: EP-29 (type + schema + discovery
++ run-refusal) was the unavoidable single-commit foundation, and
+each subsequent plan landed against it independently.
+EP-30/EP-31/EP-33 ran in parallel as the dependency graph allowed.
+EP-32 (manifest tracking) was deliberately split off from EP-31
+(runner) and that paid off — the schema bump landed as a single
+reviewable diff with its own backwards-compat fixture, exactly the
+"isolate the riskiest persistent-state change" rationale the
+decomposition strategy section called out.
+
+Two cross-plan friction points showed up in EP-34's closing
+audit. First, the architecture overview's Project Structure tree
+had drifted significantly from on-disk reality (it pre-dated the
+EP-19/EP-21 src/src-exe split). The plan anticipated this
+("if the overview still shows the old single-path layout, also
+update the directory header") but the structural fix was much
+larger than the planned three-line insert. Second, the trapped-modules
+inventory in the doc was missing `Seihou.CLI.AgentLaunchExec`, an
+exemption already carried in `EXEMPT_MODULES` in the placement
+script. The placement check stayed green throughout because the
+script consults its exemption list directly, not the doc — but the
+discrepancy is exactly the kind of silent drift a future
+`check-trapped-modules-doc.sh` could catch.
+
+What worked: the integration-points table in the masterplan was
+load-bearing through every plan. Each child EP could check off
+its consumer relationships against a single canonical list.
+Where the prose drifted from on-disk reality (the test-file
+names in the Testing Plan table; the `BlueprintFile`'s `src`
+field vs. the masterplan's implied `path`; the `Module`'s
+`exitWith` location after EP-32's refactor), the surprises log
+captured the corrections in real time and EP-34's design doc was
+written against on-disk reality, not the masterplan's prose.

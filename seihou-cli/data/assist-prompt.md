@@ -135,6 +135,21 @@ Dhall requires type annotations on empty lists. Common patterns:
 - choice: Must match one of the prompt's choices list
 
 
+### Blueprints (third runnable kind)
+
+Some authoring requests are too open-ended for a typed module (dozens of `{{#if}}` branches, a templating combinatoric explosion). Those belong in a *blueprint* — an authoring artifact that bundles a Markdown prompt, an optional list of base modules to apply, and an optional `files/` directory of reference snippets. A blueprint runs via `seihou agent run NAME`, not `seihou run`.
+
+Use a blueprint when:
+- the variation axes are inherently open-ended ("scaffold a microservice for $domain")
+- a prose prompt is the right interface for a coding agent
+
+Use a module when:
+- all variation is enumerable as `VarDecl`s
+- the output is deterministic given those variables
+
+To scaffold one: `seihou new-blueprint NAME` writes `blueprint.dhall`, `prompt.md`, and `files/`. Validate with `seihou validate-blueprint .`.
+
+
 ## Template Syntax
 
 ### Placeholder syntax
@@ -166,7 +181,9 @@ Dhall requires type annotations on empty lists. Common patterns:
 Use these commands via the Bash tool:
 
 - `seihou new-module NAME` — scaffold a new module with boilerplate
+- `seihou new-blueprint NAME [--path DIR]` — scaffold a new blueprint (agent-driven)
 - `seihou validate-module [PATH]` — validate module.dhall (9 checks)
+- `seihou validate-blueprint [PATH]` — validate blueprint.dhall
 - `seihou vars MODULE [--explain]` — show variable declarations or resolved values
 - `seihou run MODULE --dry-run [--var K=V]` — preview generation without writing
 - `seihou run MODULE [--var K=V]` — generate project

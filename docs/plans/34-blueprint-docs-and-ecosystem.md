@@ -68,21 +68,74 @@ the new top entry summarises the initiative.
 
 ## Progress
 
-- [ ] Read EP-29 through EP-33 in their final, merged form to confirm what shipped (file paths, command names, manifest fields, registry shape).
-- [ ] Sanity-check that the dependencies are merged: run `git log --oneline | grep -E "(blueprint|EP-29|EP-30|EP-31|EP-32|EP-33)"` and confirm merges for each.
-- [ ] Milestone 1: write `docs/dev/design/proposed/blueprints.md` (rei-style; full sections enumerated under Concrete Steps).
-- [ ] Milestone 2: edit `docs/dev/architecture/overview.md` (Module Loading paragraph; Project Structure tree; Trapped-modules inventory; Cross-References list).
-- [ ] Milestone 2 sub-task: verify the Trapped-modules inventory matches the actual `other-modules` list in `seihou-cli/seihou-cli.cabal` after EP-30 and EP-31 land.
-- [ ] Milestone 3: edit `seihou-cli/data/assist-prompt.md`, `bootstrap-prompt.md`, `setup-prompt.md` per the inserts listed under Concrete Steps.
-- [ ] Milestone 3 sub-task: audit each new command's `Info` block in `seihou-cli/src-exe/Seihou/CLI/Commands.hs` (`newBlueprintInfo`, `validateBlueprintInfo`, `agentRunInfo`, the registry blueprints branches) and the `agentInfo` umbrella for consistency, examples, and stale phrasing.
-- [ ] Milestone 3 sub-task: append the unified CHANGELOG summary entry to `docs/user/CHANGELOG.md` at the top of the Changelog section.
-- [ ] Run validation suite: `nix flake check`, `cabal build all`, `seihou agent assist --debug | grep -i blueprint`, `seihou agent bootstrap --debug | grep -i blueprint`, `seihou agent setup --debug | grep -i blueprint`.
-- [ ] Final commit and update of the Outcomes & Retrospective section.
+- [x] Read EP-29 through EP-33 in their final, merged form to confirm what shipped (file paths, command names, manifest fields, registry shape).
+- [x] Sanity-check that the dependencies are merged: run `git log --oneline | grep -E "(blueprint|EP-29|EP-30|EP-31|EP-32|EP-33)"` and confirm merges for each.
+- [x] Milestone 1: write `docs/dev/design/proposed/blueprints.md` (rei-style; full sections enumerated under Concrete Steps).
+- [x] Milestone 2: edit `docs/dev/architecture/overview.md` (Module Loading paragraph; Project Structure tree; Trapped-modules inventory; Cross-References list).
+- [x] Milestone 2 sub-task: verify the Trapped-modules inventory matches the actual `other-modules` list in `seihou-cli/seihou-cli.cabal` after EP-30 and EP-31 land.
+- [x] Milestone 3: edit `seihou-cli/data/assist-prompt.md`, `bootstrap-prompt.md`, `setup-prompt.md` per the inserts listed under Concrete Steps.
+- [x] Milestone 3 sub-task: audit each new command's `Info` block in `seihou-cli/src-exe/Seihou/CLI/Commands.hs` (`newBlueprintInfo`, `validateBlueprintInfo`, `agentRunInfo`, the registry blueprints branches) and the `agentInfo` umbrella for consistency, examples, and stale phrasing.
+- [x] Milestone 3 sub-task: append the unified CHANGELOG summary entry to `docs/user/CHANGELOG.md` at the top of the Changelog section.
+- [x] Run validation suite: `cabal build all`, `cabal test all --enable-tests`, `nix/check-cli-module-placement.sh`, `seihou agent --debug assist|bootstrap|setup | grep -i blueprint`.
+- [x] Final commit and update of the Outcomes & Retrospective section.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- 2026-05-08 — The architecture overview's Project Structure tree
+  was severely out of date. It still showed a single
+  `seihou-cli/src/` directory with `Main.hs` directly under it and
+  every CLI handler listed as if library-resident — a layout that
+  pre-dates the EP-19/EP-21 src/src-exe split. The plan
+  anticipated this risk ("if the overview still shows the old
+  single-path layout, also update the directory header"). The
+  three blueprint files had no defensible alphabetical position
+  in the stale tree, so the structural fix was completed in the
+  same edit. The new tree lists every CLI directory present at
+  HEAD plus the new top-level `schema/` block.
+
+- 2026-05-08 — The Trapped-modules inventory was missing
+  `Seihou.CLI.AgentLaunchExec`. The placement check passed
+  regardless because `EXEMPT_MODULES` in
+  `nix/check-cli-module-placement.sh` carries the exemption
+  directly. EP-34 added the row alongside the EP-31/EP-30
+  additions (`AgentRun`, `NewBlueprint`, `ValidateBlueprint`).
+  The discrepancy between the script's exemption list and the
+  doc inventory should ideally be impossible — adding a
+  `nix/check-trapped-modules-doc.sh` that diffs the two would
+  prevent recurrence; deferred as out of scope for EP-34.
+
+- 2026-05-08 — Two test-file paths named in the masterplan's
+  prose do not exist in the test tree:
+  `seihou-cli/test/Seihou/CLI/StatusRenderSpec.hs` and
+  `seihou-cli/test/Seihou/CLI/SharedSpec.hs`. The actual
+  coverage lives in `StatusSpec.hs` and
+  `RunBlueprintRefusalSpec.hs` respectively; the manifest
+  writer is covered by `AppliedBlueprintSpec.hs`. The Testing
+  Plan table in `docs/dev/design/proposed/blueprints.md` was
+  written against the on-disk filenames, not the masterplan's
+  prose, and the validation `grep -oE 'seihou-(core|cli)/…'`
+  pipeline confirmed every cited path resolves.
+
+- 2026-05-08 — `cabal test all` fails with a Cabal-7043 solver
+  error unless `--enable-tests` is passed (or `tests: True` is
+  set in `cabal.project.local`). This is harmless but worth
+  remembering for future validation suites — the documented
+  invocation in the plan was `cabal test all` and the recovery
+  was to switch to `cabal test all --enable-tests`. All 1089
+  tests passed (851 in `seihou-core-test`, 238 in
+  `seihou-cli-test`).
+
+- 2026-05-08 — The CLI help-text audit (Milestone 3 sub-task)
+  found six existing blocks that named "modules and recipes"
+  without acknowledging blueprints despite the registry/install
+  surfaces handling them since EP-33: `installInfo`,
+  `browseInfo`, `listInfo`, `syncVersionsInfo`,
+  `validateRegistryInfo`, and the related progDesc lines. EP-34
+  edited all six to mention the third kind; the changes are
+  deliberately small (one sentence, one bullet, one `progDesc`
+  per block) because the goal was consistency with the shipped
+  surface, not a rewrite.
 
 
 ## Decision Log
@@ -133,7 +186,35 @@ the new top entry summarises the initiative.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-34 closes the agent-driven-blueprints initiative. After EP-29
+through EP-33 shipped the type, the validator, the authoring
+commands, the agent runner, the manifest entry, and the registry
+support, EP-34 made the work durable: a 274-line design doc at
+`docs/dev/design/proposed/blueprints.md` covering every shipped
+surface; an updated architecture overview that names the third
+runnable kind in the Module Loading paragraph, lists the new
+files in the Project Structure tree (after fixing the long-stale
+src/src-exe split), and adds four rows to the Trapped-modules
+inventory; embedded prompt updates so the existing
+`assist`/`bootstrap`/`setup` agents recommend the right kind and
+route users to `seihou agent run`; a top-of-section CHANGELOG
+entry summarising the initiative; six minor CLI help-text
+touch-ups so blueprints are visible in `--help`; and a one-line
+README description naming all three runnable kinds. All 1089
+tests still pass; the placement check is green.
+
+What worked well: the rei-style design doc absorbed the existing
+formatting conventions cleanly; the Testing Plan table (written
+from on-disk filenames) caught one mismatch with the masterplan
+prose during the cross-reference pass; the `nix/check-cli-module-placement.sh`
+script provided a fast loop on the inventory edit. What could be
+better: the `cabal test all` solver error required a hint
+(`--enable-tests`) that nothing in the plan or the project
+documents; flagged for future validation-suite plans. The
+discrepancy between the trapped-modules doc table and
+`EXEMPT_MODULES` in the placement script suggests an opportunity
+for a small `check-trapped-modules-doc.sh` that diffs the two —
+deferred as out of scope for EP-34.
 
 
 ## Context and Orientation

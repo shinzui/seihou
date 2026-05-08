@@ -63,7 +63,7 @@ CLI input
 
 **Config Resolution** merges configuration from seven sources (CLI flags, environment variables, local project config, namespace config, context config, global config, module defaults) into a single resolved configuration map. Each value retains provenance metadata for the `--explain` feature. The active context is resolved from `--context` flag, `SEIHOU_CONTEXT` env var, `.seihou/context` file, or `~/.config/seihou/default-context`.
 
-**Module Loading** evaluates Dhall module definitions into typed Haskell values. When multiple modules are composed, their dependency graph is resolved via topological sort to determine execution order. If the name resolves to a recipe (`recipe.dhall`), it is expanded into its constituent modules before entering the composition pipeline.
+**Module Loading** evaluates Dhall module definitions into typed Haskell values. When multiple modules are composed, their dependency graph is resolved via topological sort to determine execution order. If the name resolves to a recipe (`recipe.dhall`), it is expanded into its constituent modules before entering the composition pipeline. If the name resolves to a blueprint (`blueprint.dhall`), the loader hands control to `seihou agent run` rather than the deterministic pipeline; the blueprint is not plan-compiled (see [Blueprints](../design/proposed/blueprints.md)).
 
 **Variable Resolution** walks each module's variable declarations and resolves values from the merged config. Type checking and validation (required, pattern, range) happen here. Cross-module variable references are resolved through explicit exports.
 
@@ -124,8 +124,9 @@ seihou/
 │           │   ├── Variable.hs    # Resolution, validation, coercion
 │           │   ├── Module.hs      # Loading, validation, discovery (discoverRunnable)
 │           │   ├── Recipe.hs      # Recipe validation (validateRecipe)
+│           │   ├── Blueprint.hs   # Blueprint validation, discovery (validateBlueprint, discoverBlueprint)
 │           │   ├── Expr.hs        # Expression language AST and evaluator
-│           │   ├── Registry.hs    # Multi-module repository support (modules + recipes)
+│           │   ├── Registry.hs    # Multi-module repository support (modules + recipes + blueprints)
 │           │   ├── Version.hs     # Semantic version parsing and comparison
 │           │   ├── Install.hs     # Module name parsing from URLs
 │           │   ├── Status.hs      # Tracked file status computation
@@ -163,47 +164,78 @@ seihou/
 │               ├── ManifestStore.hs
 │               ├── Process.hs
 │               └── Logger.hs
-├── seihou-cli/                    # Executable: CLI parsing, command dispatch
+├── seihou-cli/                    # CLI: library-first; executable holds only the trapped IO shell
 │   ├── seihou-cli.cabal
-│   └── src/
-│       ├── Main.hs                # Entry point + command dispatcher
-│       └── Seihou/
-│           ├── CLI/
-│           │   ├── Commands.hs    # Command ADT + optparse-applicative
-│           │   ├── Run.hs         # seihou run handler
-│           │   ├── Init.hs        # seihou init handler
-│           │   ├── Vars.hs        # seihou vars handler
-│           │   ├── Install.hs     # seihou install handler
-│           │   ├── Status.hs      # seihou status handler
-│           │   ├── Diff.hs        # seihou diff handler
-│           │   ├── List.hs        # seihou list handler
-│           │   ├── NewModule.hs   # seihou new-module handler
-│           │   ├── NewRecipe.hs  # seihou new-recipe handler
-│           │   ├── Validate.hs    # seihou validate-module handler
-│           │   ├── Config.hs      # seihou config handler
-│           │   ├── Context.hs     # seihou context handler
-│           │   ├── Browse.hs      # seihou browse handler
-│           │   ├── Outdated.hs    # seihou outdated handler
-│           │   ├── Remove.hs      # seihou remove handler
-│           │   ├── Upgrade.hs     # seihou upgrade handler
-│           │   ├── Help.hs        # seihou help handler
-│           │   ├── Completions.hs # seihou completions handler
-│           │   ├── Kit.hs         # seihou kit handler (skills/subagents)
-│           │   ├── InstallHistory.hs # Install URL history (XDG config)
-│           │   ├── CommitMessage.hs  # AI-generated commit messages (claude CLI)
-│           │   ├── Git.hs         # Git porcelain helpers for --commit
-│           │   ├── SavePrompted.hs   # Persist prompted values to local config
-│           │   ├── AgentLaunch.hs    # Shared Claude Code launcher
-│           │   ├── Assist.hs      # agent assist handler
-│           │   ├── Bootstrap.hs   # agent bootstrap handler
-│           │   ├── Setup.hs       # agent setup handler
-│           │   ├── Shared.hs      # Common CLI utilities
-│           │   ├── Style.hs       # Color/formatting
-│           │   └── BrowseFormat.hs # Module browsing output formatter
-│           ├── Effect/
-│           │   └── Fzf.hs         # Fzf effect + interpreter
-│           └── Fzf/
-│               └── Selector.hs    # Interactive module selection via fzf
+│   ├── src/                       # seihou-cli-internal library (test-importable)
+│   │   └── Seihou/
+│   │       ├── CLI/
+│   │       │   ├── AgentLaunch.hs    # Shared Claude Code launcher (pure formatters + IO helpers)
+│   │       │   ├── AppliedBlueprint.hs # Manifest writer for AppliedBlueprint provenance
+│   │       │   ├── BrowseFormat.hs   # Module/recipe/blueprint browsing output formatter
+│   │       │   ├── CommitMessage.hs  # AI-generated commit messages (claude CLI)
+│   │       │   ├── Completions/      # Bash/Fish/Zsh completion emitters
+│   │       │   ├── Diff.hs           # seihou diff helpers
+│   │       │   ├── Git.hs            # Git porcelain helpers for --commit
+│   │       │   ├── Init.hs           # seihou init helpers
+│   │       │   ├── InstallHistory.hs # Install URL history (XDG config)
+│   │       │   ├── InstallShared.hs  # Shared install helpers (cloneRepo, installModuleDir)
+│   │       │   ├── List.hs           # seihou list formatter
+│   │       │   ├── Migrate.hs        # Migration planning helpers
+│   │       │   ├── PendingMigrations.hs  # Pending-migrations probe
+│   │       │   ├── Registry.hs       # seihou registry shared helpers
+│   │       │   ├── Registry/
+│   │       │   │   ├── Sync.hs       # seihou registry sync-versions
+│   │       │   │   └── Validate.hs   # seihou registry validate
+│   │       │   ├── RemoteVersion.hs  # Remote module version probing
+│   │       │   ├── SavePrompted.hs   # Persist prompted values to local config
+│   │       │   ├── SchemaVersion.hs  # Pinned seihou-schema URL/hash
+│   │       │   ├── Shared.hs         # Common CLI utilities (formatBlueprintRefusal, etc.)
+│   │       │   ├── StatusRender.hs   # seihou status renderer (modules + blueprint section)
+│   │       │   ├── Style.hs          # Color/formatting
+│   │       │   └── VersionCompare.hs # Version comparison helpers
+│   │       ├── Effect/
+│   │       │   └── Fzf.hs            # Fzf effect + interpreter
+│   │       └── Fzf.hs                # Interactive module selection via fzf
+│   ├── src-exe/                   # Executable target: Main.hs + trapped command handlers
+│   │   ├── Main.hs                # Entry point + command dispatcher
+│   │   └── Seihou/
+│   │       └── CLI/
+│   │           ├── AgentLaunchExec.hs  # claude shell-out (returns ExitCode)
+│   │           ├── AgentRun.hs       # seihou agent run BLUEPRINT handler
+│   │           ├── Assist.hs         # seihou agent assist handler (embedded prompt)
+│   │           ├── Bootstrap.hs      # seihou agent bootstrap handler (embedded prompt)
+│   │           ├── Browse.hs         # seihou browse handler
+│   │           ├── Commands.hs       # Command ADT + optparse-applicative
+│   │           ├── Completions.hs    # seihou completions handler
+│   │           ├── Config.hs         # seihou config handler
+│   │           ├── Context.hs        # seihou context handler
+│   │           ├── Help.hs           # seihou help handler
+│   │           ├── Install.hs        # seihou install handler
+│   │           ├── Kit.hs            # seihou kit handler (skills/subagents)
+│   │           ├── NewBlueprint.hs   # seihou new-blueprint handler
+│   │           ├── NewModule.hs      # seihou new-module handler
+│   │           ├── NewRecipe.hs      # seihou new-recipe handler
+│   │           ├── Outdated.hs       # seihou outdated handler
+│   │           ├── Remove.hs         # seihou remove handler
+│   │           ├── Run.hs            # seihou run handler (with blueprint refusal)
+│   │           ├── SchemaUpgrade.hs  # seihou schema-upgrade handler
+│   │           ├── Setup.hs          # seihou agent setup handler (embedded prompt)
+│   │           ├── Status.hs         # seihou status handler
+│   │           ├── Upgrade.hs        # seihou upgrade handler
+│   │           ├── Validate.hs       # seihou validate-module handler
+│   │           ├── ValidateBlueprint.hs # seihou validate-blueprint handler
+│   │           ├── Vars.hs           # seihou vars handler
+│   │           └── Version.hs        # --version (GitHash + Paths_seihou_cli)
+│   └── data/                      # Embedded prompt templates (Data.FileEmbed)
+│       ├── assist-prompt.md
+│       ├── bootstrap-prompt.md
+│       ├── setup-prompt.md
+│       └── blueprint-prompt.md
+├── schema/                        # Dhall schema (mirrored into seihou-schema)
+│   ├── package.dhall
+│   ├── Module.dhall
+│   ├── Recipe.dhall
+│   └── Blueprint.dhall
 └── docs/                          # Documentation (this directory)
 ```
 
@@ -272,6 +304,8 @@ the cabal file's `other-modules`.
 |---|---|
 | `Paths_seihou_cli` | Generated by Cabal; lives in the executable |
 | `Seihou.CLI.AgentLaunch` | Mixed pure surface + `launchAgent` (process invocation); split deferred to `docs/plans/20-extract-trapped-cli-helpers.md` |
+| `Seihou.CLI.AgentLaunchExec` | Exempt — process launcher (`rawSystem`/`exitWith`) consumed only by trapped agent-prompt wrappers; kept executable-side by design (see `EXEMPT_MODULES` in `nix/check-cli-module-placement.sh`) |
+| `Seihou.CLI.AgentRun` | `Data.FileEmbed` for the embedded `blueprint-prompt.md` template |
 | `Seihou.CLI.Assist` | `Data.FileEmbed` for the embedded prompt template |
 | `Seihou.CLI.Bootstrap` | `Data.FileEmbed` for the embedded prompt template |
 | `Seihou.CLI.Browse` | Imports `Seihou.CLI.Commands` (transitively trapped) |
@@ -285,6 +319,7 @@ the cabal file's `other-modules`.
 | `Seihou.CLI.Help` | `Data.FileEmbed` for embedded help-topic content |
 | `Seihou.CLI.Install` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.Kit` | `Options.Applicative` |
+| `Seihou.CLI.NewBlueprint` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.NewModule` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.NewRecipe` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.Outdated` | Imports `Seihou.CLI.Commands` (transitively trapped) |
@@ -295,6 +330,7 @@ the cabal file's `other-modules`.
 | `Seihou.CLI.Status` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.Upgrade` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.Validate` | Imports `Seihou.CLI.Commands` (transitively trapped) |
+| `Seihou.CLI.ValidateBlueprint` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.Vars` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.Version` | `GitHash` and `Paths_seihou_cli` |
 
@@ -362,6 +398,7 @@ The diff engine compares three sources: the manifest (last known generated state
 
 - [Module System](../design/proposed/module-system.md) — Module structure, loading, variables, exports
 - [Composition and Layering](../design/proposed/composition-and-layering.md) — Dependency graph, patch model
+- [Blueprints](../design/proposed/blueprints.md) — Agent-driven runnable type, runner workflow, manifest behaviour
 - [Variable Resolution](../design/proposed/variable-resolution.md) — Resolution precedence, expression language
 - [Generation Strategies](../design/proposed/generation-strategies.md) — Per-strategy specs, placeholder engine
 - [Manifest and Incrementality](../design/proposed/manifest-and-incrementality.md) — Manifest format, three-state model

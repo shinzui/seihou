@@ -23,14 +23,23 @@ Working directory: {{cwd}}
 
 Adapt to the user's situation, but the general flow is:
 
-1. **Discover**: Check available modules (`seihou list`). If the user names a module
+1. **Recognise the kind.** Some discoverable runnables are blueprints, not
+   modules or recipes. `seihou list` distinguishes them with a kind label.
+   A module or recipe runs via `seihou run NAME`. A blueprint runs via
+   `seihou agent run NAME [PROMPT]` — `seihou run NAME` against a blueprint
+   refuses with an actionable message. If the user names a runnable that
+   turns out to be a blueprint, switch to the agent-run flow: resolve the
+   variables the blueprint declares (the standard precedence chain
+   applies), optionally let the baseline modules apply, then launch.
+
+2. **Discover**: Check available modules (`seihou list`). If the user names a module
    that isn't installed, help them install it (`seihou install`). Browse remote
    repositories if needed (`seihou browse`).
 
-2. **Understand**: Show the module's variables (`seihou vars MODULE`) so the user
+3. **Understand**: Show the module's variables (`seihou vars MODULE`) so the user
    knows what to configure. Use `--explain` to show resolution sources.
 
-3. **Configure**: Set up variables via config layers as appropriate:
+4. **Configure**: Set up variables via config layers as appropriate:
    - Project-local: `seihou config set KEY VALUE` (stored in `.seihou/config.dhall`)
    - Global defaults: `seihou config set KEY VALUE --global`
    - Namespace-specific: `seihou config set KEY VALUE --namespace NS`
@@ -38,19 +47,19 @@ Adapt to the user's situation, but the general flow is:
      edit `~/.config/seihou/contexts/NAME/config.dhall`
    - One-off overrides: pass `--var KEY=VALUE` to `seihou run`
 
-4. **Preview**: Run `seihou run MODULE --dry-run [--var K=V]` to show what files
+5. **Preview**: Run `seihou run MODULE --dry-run [--var K=V]` to show what files
    will be generated. Review the plan with the user before proceeding.
 
-5. **Execute**: Run `seihou run MODULE [--var K=V]` to generate files. Use `--force`
+6. **Execute**: Run `seihou run MODULE [--var K=V]` to generate files. Use `--force`
    only if the user explicitly wants to overwrite conflicting files.
 
-6. **Verify**: Check the results with `seihou status` and `seihou diff`. Read key
+7. **Verify**: Check the results with `seihou status` and `seihou diff`. Read key
    generated files to confirm they look correct.
 
-7. **Commit**: Stage and commit the generated files to git. See the Git Workflow
+8. **Commit**: Stage and commit the generated files to git. See the Git Workflow
    section below for details.
 
-8. **Stay current**: When a module's source repository ships a new version, the
+9. **Stay current**: When a module's source repository ships a new version, the
    user has two surfaces that surface migrations:
    - `seihou outdated` lists installed modules whose source has advanced.
    - `seihou upgrade` (or `seihou upgrade <module>`) replaces the central
@@ -107,6 +116,10 @@ Use these commands via the Bash tool:
   - Only works for modules with a `removal` section (not `None`)
   - `--dry-run`: preview the removal plan (Delete, Strip, Rewrite, Run operations)
   - `--force`: skip confirmation prompts
+- `seihou agent run BLUEPRINT [PROMPT] [--var K=V] [--no-baseline]` — run a blueprint
+  - Discovers the blueprint, resolves variables (same precedence chain as `seihou run`), optionally applies base modules, then launches Claude Code with the rendered prompt and the blueprint's `files/` mounted as a read-only reference
+  - `--no-baseline`: skip applying declared base modules
+  - `seihou agent --debug run BLUEPRINT`: print the resolved system prompt instead of launching
 
 ### Upgrade and migration
 - `seihou outdated` — show installed modules whose source repos have newer versions

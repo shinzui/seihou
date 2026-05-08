@@ -1,6 +1,6 @@
 # Seihou (製法)
 
-Composable, type-safe project scaffolding. Define reusable modules in Dhall, compose them with dependency resolution, and generate projects with incremental updates.
+Composable, type-safe project scaffolding. Define reusable modules in Dhall, compose them with dependency resolution, and generate projects with incremental updates. Three authorable artifact kinds are supported: deterministic *modules*, named compositions called *recipes*, and agent-driven *blueprints* for open-ended scaffolding.
 
 ## Quick Start
 
@@ -139,6 +139,8 @@ seihou run my-template --dry-run --var project.name=test
 ```
 
 See the [Module Authoring Reference](docs/user/module-authoring.md) for the complete specification.
+
+- **Blueprints** (`seihou agent run BLUEPRINT`) — agent-driven scaffolding for open-ended project shapes (see [`docs/dev/design/proposed/blueprints.md`](docs/dev/design/proposed/blueprints.md)).
 
 ## Building from Source
 
