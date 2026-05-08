@@ -1,17 +1,14 @@
 module Seihou.CLI.PendingMigrations
   ( detectPendingMigrations,
     formatRefusalMessage,
-    isBenignUpgrade,
-    isBlockedMigration,
   )
 where
 
-import Data.Maybe (isJust)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.CLI.Migrate (pendingChainFor)
-import Seihou.Core.Migration (MigrationChain (..), MigrationPlan (..))
+import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
   ( AppliedModule (..),
     Manifest (..),
@@ -26,14 +23,11 @@ import System.Directory (doesFileExist)
 --
 -- For each applied module whose installed @module.dhall@ declares a
 -- newer version than the manifest's recorded version, return the
--- migration plan that describes the gap. The plan's shape tells the
--- caller which user-visible row to render:
---
---   * Full chain — chain reaches the remote version exactly.
---   * Partial chain — chain reaches some intermediate version; the
---     'planUnreachable' field carries the remaining tail.
---   * Blocked — no edge starts at the manifest version; @planChain@'s
---     step list is empty and 'planUnreachable' covers the entire span.
+-- migration plan that describes the gap. Under the gap-tolerant
+-- planner the plan always advances the manifest to the supplied
+-- target on apply; the carried 'planSteps' may be empty (a pure
+-- version bump where no declared migration falls in the window) or
+-- non-empty.
 --
 -- IO failures (missing @module.dhall@, eval errors, parse failures) are
 -- silently skipped: pending-migration reporting is best-effort and never
@@ -70,124 +64,23 @@ detectPendingMigrations manifest mFilter =
 
 -- | Format the user-facing refusal message that @seihou run@ prints
 -- when it detects pending migrations and the user has not opted into
--- @--with-migrations@.
---
--- Each row's shape follows the underlying 'MigrationPlan': full
--- chains print @from -> to (N step(s))@; partial chains add the
--- unreachable-tail advisory; blocked plans print a "Blocked: no
--- migration declared from <version>" line because there is no
--- chain summary to show. The closing instructions explain both the
--- per-module @seihou migrate@ remediation and the @--with-migrations@
--- shortcut.
+-- @--with-migrations@. Each row reports the module, the version range
+-- the migration would cover, and how many migration ops it would run
+-- (which may be zero — a pure version bump).
 formatRefusalMessage :: [(ModuleName, MigrationPlan)] -> Text
 formatRefusalMessage pendings =
   T.unlines $
     "Pending migrations detected:"
       : map renderEntry pendings
-      ++ ["", trailingInstructions]
+      ++ ["", "Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run."]
   where
-    hasBlocked = any (isBlockedMigration . snd) pendings
-    hasRunnable = any (not . isBlockedMigration . snd) pendings
-
-    -- Compose the trailing instructional sentence from the per-shape
-    -- recoveries the user actually has. A run with only blocked
-    -- entries gets the --bump-only / --bump-blocked sentence; a run
-    -- with only runnable (full / partial) entries gets the legacy
-    -- --with-migrations sentence; a mixed run gets both, joined.
-    trailingInstructions
-      | hasBlocked && hasRunnable =
-          "Run 'seihou migrate <module> --bump-only' for each blocked entry to acknowledge no migration is needed, or 'seihou run --bump-blocked' to do so in one step. For runnable entries, pass --with-migrations to apply during this run."
-      | hasBlocked =
-          "Run 'seihou migrate <module> --bump-only' for each blocked entry to acknowledge no migration is needed, or 'seihou run --bump-blocked' to do so in one step."
-      | otherwise =
-          "Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run."
-
-    renderEntry (name, plan)
-      | null plan.planChain.chainSteps,
-        not plan.planMigrationsDeclared,
-        Just (_stuck, target) <- plan.planUnreachable =
-          -- Defensive: M5 strips benign entries from the input list
-          -- before calling this formatter, so this branch is normally
-          -- unreachable. Keep it correct in case a future caller
-          -- forwards benign entries — the language stays softened so
-          -- the user never sees the EP-5 "Blocked:" wording for a
-          -- benign version bump.
-          "  "
-            <> name.unModuleName
-            <> ": "
-            <> renderVersion plan.planChain.chainFrom
-            <> " -> "
-            <> renderVersion target
-            <> " (no migrations declared; benign — would not block run)"
-      | null plan.planChain.chainSteps,
-        Just (stuck, target) <- plan.planUnreachable =
-          "  "
-            <> name.unModuleName
-            <> ": Blocked: no migration declared from "
-            <> renderVersion stuck
-            <> "; remote is at "
-            <> renderVersion target
-      | otherwise =
-          let chain = plan.planChain
-              base =
-                "  "
-                  <> name.unModuleName
-                  <> ": "
-                  <> renderVersion chain.chainFrom
-                  <> " -> "
-                  <> renderVersion chain.chainTo
-                  <> " ("
-                  <> T.pack (show (length chain.chainSteps))
-                  <> " step(s))"
-           in case plan.planUnreachable of
-                Nothing -> base
-                Just (stuck, target)
-                  -- EP-28: an exhausted-tail partial chain bumps
-                  -- through to target in one command, so the row's
-                  -- effective destination is target, not chainTo.
-                  | plan.planTailExhausted ->
-                      "  "
-                        <> name.unModuleName
-                        <> ": "
-                        <> renderVersion chain.chainFrom
-                        <> " -> "
-                        <> renderVersion target
-                        <> " ("
-                        <> T.pack (show (length chain.chainSteps))
-                        <> " step(s) + bump through "
-                        <> renderVersion stuck
-                        <> " -> "
-                        <> renderVersion target
-                        <> ")"
-                  | otherwise ->
-                      base
-                        <> "; no migration declared from "
-                        <> renderVersion stuck
-                        <> ", remote is at "
-                        <> renderVersion target
-
--- | A benign upgrade is a 'MigrationPlan' that the planner produced
--- because the manifest version trails the installed copy's version,
--- but the module declared no migrations at all (@migrations = []@).
--- Callers (notably @seihou run@'s pre-flight) treat these as
--- non-blocking: the project can be re-rendered against the new
--- template content without any destructive migration ops.
-isBenignUpgrade :: MigrationPlan -> Bool
-isBenignUpgrade plan =
-  null plan.planChain.chainSteps
-    && not plan.planMigrationsDeclared
-
--- | A blocked migration is a 'MigrationPlan' where the module declared
--- at least one migration but no edge starts at the manifest version,
--- so the planner produced an empty chain plus an unreachable tail
--- spanning the full gap. Distinct from 'isBenignUpgrade' (no
--- migrations declared at all) and from a partial chain (some edges
--- reach forward but don't span the full gap). Callers use this to
--- partition pending entries for run-side dispatch: blocked entries
--- can only be cleared via @seihou migrate <module> --bump-only@ or
--- @seihou run --bump-blocked@, never via @--with-migrations@.
-isBlockedMigration :: MigrationPlan -> Bool
-isBlockedMigration plan =
-  null plan.planChain.chainSteps
-    && plan.planMigrationsDeclared
-    && isJust plan.planUnreachable
+    renderEntry (name, plan) =
+      "  "
+        <> name.unModuleName
+        <> ": "
+        <> renderVersion plan.planFrom
+        <> " -> "
+        <> renderVersion plan.planTo
+        <> " ("
+        <> T.pack (show (length plan.planSteps))
+        <> " step(s))"

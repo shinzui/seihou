@@ -27,7 +27,7 @@ import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
 import Seihou.Core.Install (parseModuleName)
-import Seihou.Core.Migration (MigrationChain (..), MigrationPlan (..))
+import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules, validateModule)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types (AppliedModule (..), Manifest (..), Module (..), ModuleName (..))
@@ -316,68 +316,18 @@ findAppliedByName manifest name =
 printAdvisory :: Text -> MigrationPlan -> IO ()
 printAdvisory name plan = do
   colorEnabled <- useColor
-  let msg
-        -- Benign: the module declared no migrations and the version
-        -- bumped. The post-upgrade advisory points at the natural
-        -- remediation (the user just ran `seihou upgrade` so the
-        -- "and seihou run" half is what's left to do).
-        | null plan.planChain.chainSteps,
-          not plan.planMigrationsDeclared,
-          Just (from, to) <- plan.planUnreachable =
-            "note: "
-              <> name
-              <> " has no migrations declared ("
-              <> renderVersion from
-              <> " -> "
-              <> renderVersion to
-              <> "); run 'seihou run' to refresh templates."
-        | null plan.planChain.chainSteps,
-          Just (stuck, target) <- plan.planUnreachable =
-            "note: "
-              <> name
-              <> " is blocked: no migration declared from "
-              <> renderVersion stuck
-              <> "; remote is at "
-              <> renderVersion target
-              <> ". Run 'seihou migrate "
-              <> name
-              <> " --bump-only' to acknowledge no migration is needed."
-        | otherwise =
-            let chain = plan.planChain
-                effectiveTo = case plan.planUnreachable of
-                  -- EP-28: an exhausted-tail partial chain bumps the
-                  -- manifest through to the target. Show that as the
-                  -- effective destination.
-                  Just (_, target) | plan.planTailExhausted -> target
-                  _ -> chain.chainTo
-                base =
-                  "note: "
-                    <> name
-                    <> " has "
-                    <> T.pack (show (length chain.chainSteps))
-                    <> " migration(s) pending ("
-                    <> renderVersion chain.chainFrom
-                    <> " → "
-                    <> renderVersion effectiveTo
-                    <> "); run 'seihou migrate "
-                    <> name
-                    <> "'"
-                tail_ = case plan.planUnreachable of
-                  Nothing -> ""
-                  Just (stuck, target)
-                    | plan.planTailExhausted ->
-                        " (note: "
-                          <> renderVersion stuck
-                          <> " → "
-                          <> renderVersion target
-                          <> " has no declared migration; will bump through)"
-                    | otherwise ->
-                        " (note: no migration declared from "
-                          <> renderVersion stuck
-                          <> "; remote is at "
-                          <> renderVersion target
-                          <> ")"
-             in base <> tail_
+  let msg =
+        "note: "
+          <> name
+          <> " has "
+          <> T.pack (show (length plan.planSteps))
+          <> " migration(s) pending ("
+          <> renderVersion plan.planFrom
+          <> " → "
+          <> renderVersion plan.planTo
+          <> "); run 'seihou migrate "
+          <> name
+          <> "'"
   TIO.putStrLn $ if colorEnabled then yellow msg else msg
 
 -- | Run a migration for a single module. Reads the manifest fresh so
@@ -407,52 +357,12 @@ runOnePostUpgradeMigration installedDir name = do
               }
       result <- runMigrate opts manifest installedDir
       case result of
-        Right (MigrateApplied _ _) -> do
+        Right (MigrateApplied _ _ _ _) -> do
           colorEnabled <- useColor
-          let msg = "    " <> "Migrated " <> name
+          let msg = "    Migrated " <> name
           TIO.putStrLn $ if colorEnabled then green msg else msg
-        Right (MigrateAppliedPartial _ _ stuck target) -> do
-          colorEnabled <- useColor
-          let msg =
-                "    Migrated "
-                  <> name
-                  <> " (partial; no migration declared from "
-                  <> renderVersion stuck
-                  <> ", remote is at "
-                  <> renderVersion target
-                  <> ")"
-          TIO.putStrLn $ if colorEnabled then yellow msg else msg
-        Right (MigrateAppliedBumpedThrough _ _ stuck target) -> do
-          -- EP-28: chain prefix ran AND manifest bumped through the
-          -- exhausted tail to @target@.
-          colorEnabled <- useColor
-          let msg =
-                "    Migrated "
-                  <> name
-                  <> " (chain applied; "
-                  <> renderVersion stuck
-                  <> " → "
-                  <> renderVersion target
-                  <> " bumped through with no migration declared)"
-          TIO.putStrLn $ if colorEnabled then green msg else msg
-        Right (MigrateBlocked stuck target) -> do
-          colorEnabled <- useColor
-          let msg =
-                "    Migration blocked for "
-                  <> name
-                  <> ": no migration declared from "
-                  <> renderVersion stuck
-                  <> "; remote is at "
-                  <> renderVersion target
-                  <> ". Run 'seihou migrate "
-                  <> name
-                  <> " --bump-only' to acknowledge no migration is needed."
-          TIO.putStrLn $ if colorEnabled then yellow msg else msg
-        Right (MigrateBenignUpgrade _ _) -> pure ()
         Right (MigrateNoOp _) -> pure ()
-        Right (MigrateDryRunOK _) -> pure ()
-        Right (MigrateDryRunOKPartial _ _ _) -> pure ()
-        Right (MigrateDryRunOKBumpedThrough _ _ _) -> pure ()
+        Right (MigrateDryRunOK {}) -> pure ()
         Left err -> do
           colorEnabled <- useColor
           let msg = "    Migration failed for " <> name <> ": " <> renderMigrateError err
@@ -471,7 +381,6 @@ renderMigrateError err = case err of
   MigratePlanFailed _ -> "plan failed"
   MigrateExecFailed _ -> "execution failed (use --force or revert your edits)"
   MigrateNoManifest _ -> "no manifest in current dir"
-  MigrateConflictingFlags msg -> msg
 
 -- | Local @unless@ to avoid pulling in another import.
 unless :: Bool -> IO () -> IO ()

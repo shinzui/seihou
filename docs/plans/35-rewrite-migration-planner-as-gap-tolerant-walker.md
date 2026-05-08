@@ -117,15 +117,27 @@ The work is observable in three places:
       `planSource :: MigrationPlan` (renamed from `planChain`); `bumpVersion`
       reads `planTo` directly so empty-step plans still advance the
       manifest. All 16 planner specs + all 847 seihou-core tests pass.
-- [ ] M2 — Collapse `MigrateResult` and rewrite `dispatchPlan`
+- [x] M2 — Collapse `MigrateResult` and rewrite `dispatchPlan`
       (`seihou-cli/src/Seihou/CLI/Migrate.hs` + tests + JSON shape).
+      Done 2026-05-08. Folded M4 + M5 in alongside M2 (see Decision
+      Log) because the planner field removals forced the consumer
+      simplifications and EP-27 fallback retune to land in the same
+      commit. `MigrateResult` now has only `MigrateNoOp`,
+      `MigrateApplied`, `MigrateDryRunOK`. JSON shape simplified to
+      `{module, from, to, steps, operations}`. EP-27 fallback retuned
+      to "local declares more in-window steps than clone."
 - [ ] M3 — Remove the `--bump-only` (`seihou migrate`) and
       `--bump-blocked` (`seihou run`) flags and their scaffolding.
-- [ ] M4 — Simplify the pending-migration consumers
+- [x] M4 — Simplify the pending-migration consumers
       (`StatusRender.hs`, `PendingMigrations.hs`, `Run.hs`, `Upgrade.hs`),
-      including the user-facing refusal-message strings.
-- [ ] M5 — Reconcile the EP-27 fetch-vs-local fallback against the new
-      planner contract.
+      including the user-facing refusal-message strings. Done
+      2026-05-08, folded into M2's commit. Removed
+      `isBenignUpgrade`, `isBlockedMigration`; collapsed the
+      `ModuleAdvice` ADT; rewrote refusal/advisory strings.
+- [x] M5 — Reconcile the EP-27 fetch-vs-local fallback against the new
+      planner contract. Done 2026-05-08, folded into M2's commit.
+      Renamed `fallbackToLocal` to `maybeFallbackToLocal`; trigger is
+      now "local plan has strictly more steps than clone plan."
 - [ ] M6 — Live verification + docs + CHANGELOG, covering every
       user-visible surface: the embedded `seihou help migrations`
       topic, the four touched CLI references (`migrate.md`, `status.md`,
@@ -236,6 +248,22 @@ The work is observable in three places:
   on overlap is too aggressive (it would break the master-plan EP-5
   fixture which has `[{0.1 → 0.2}, {0.5 → 0.6}]` against installed=0.1
   target=0.6 — a non-overlapping pair this plan must support).
+  Date: 2026-05-08
+
+- Decision: Fold M4 (consumer simplification) and M5 (EP-27 fallback
+  retune) into M2's commit rather than land them as separate
+  milestones.
+  Rationale: The planner-field removals (`planChain`, `planUnreachable`,
+  `planMigrationsDeclared`, `planTailExhausted`) made it impossible to
+  keep the consumer files compiling after M2's `MigrationPlan` rewrite.
+  Splitting M2 / M4 / M5 across three commits would have meant either
+  (a) leaving the workspace un-buildable between commits, contrary to
+  PLANS.md's "every commit leaves the codebase in a working state"
+  guideline, or (b) shipping a "M2-bridge" with placeholder consumer
+  code only to immediately replace it in M4. Folding the three
+  together preserves the milestone numbering in the plan ledger but
+  produces one buildable commit. Progress checkboxes mark M4 and M5
+  complete with a "folded into M2" note.
   Date: 2026-05-08
 
 - Decision: Retain the EP-27 fetch-vs-local fallback shape, but rewrite

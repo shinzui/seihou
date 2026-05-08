@@ -16,7 +16,7 @@ import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
     OutdatedStatus (..),
   )
-import Seihou.Core.Migration (MigrationChain (..), MigrationPlan (..))
+import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
   ( AppliedBlueprint (..),
     AppliedModule (..),
@@ -29,95 +29,42 @@ import Seihou.Core.Types
     TrackedFileStatus (..),
     VarName (..),
   )
-import Seihou.Core.Version (Version, renderVersion)
+import Seihou.Core.Version (renderVersion)
 
 -- | What action a single applied-module row recommends.
 --
 -- Order of precedence: a pending migration always wins over a bare
 -- "outdated" annotation, because @seihou migrate@ (after EP-2) is
 -- self-contained and one command suffices to bring the project to the
--- new version. An outdated row with no declared migration falls back
--- to @seihou upgrade@.
+-- new version. An outdated row with no detected pending plan falls
+-- back to @seihou upgrade@.
 data ModuleAdvice
   = -- | Nothing pending; do not emit a hint.
     AdviceNone
-  | -- | Module is outdated and no chain is declared. The renderer
-    -- prints @"Run: seihou upgrade <name>"@.
+  | -- | Module is outdated and no pending migration was detected. The
+    -- renderer prints @"Run: seihou upgrade <name>"@.
     AdviceUpgradeOnly Text
-  | -- | A pending migration was detected and the declared chain
-    -- reaches the latest remote version exactly. The renderer prints a
-    -- chain summary and @"Run: seihou migrate <name>"@. This variant
-    -- subsumes the outdated case because the migration command also
-    -- fetches the new module version (after EP-2's self-contained
-    -- migrate landed).
-    AdvicePendingMigration Text MigrationChain
-  | -- | A pending migration whose declared chain reaches an
-    -- intermediate version but not the latest remote version. The
-    -- renderer prints the chain summary, a @"Run: seihou migrate
-    -- <name>"@ hint, and a "no migration declared from <stuckAt>;
-    -- remote is at <target>" advisory. The migrate command will apply
-    -- the prefix and refresh the manifest; the next status will
-    -- report blocked or up-to-date depending on whether the author
-    -- ships a continuation migration.
-    AdvicePartialMigration Text MigrationPlan
-  | -- | No migration starts at the manifest version, so the planner
-    -- can build no chain. Carries the module name and the
-    -- @(stuckAt, target)@ pair. The renderer prints a "Blocked: …"
-    -- row that names @seihou migrate <name> --bump-only@ as the
-    -- recovery path; the Recommended actions tail lists the same
-    -- command for copy-paste.
-    AdviceBlockedMigration Text Version Version
-  | -- | The module's manifest version trails its installed copy's
-    -- version, but the module declared no migrations at all
-    -- (@migrations = []@). The renderer prints a softened "Pending:
-    -- … (no migrations declared)" advisory and the Recommended
-    -- actions tail lists @"seihou upgrade <name> && seihou run"@
-    -- (not @[blocked]@, because nothing is actually blocking).
-    AdviceBenignUpgrade Text Version Version
+  | -- | A pending migration was detected. The carried 'MigrationPlan'
+    -- describes the version range and the in-window migrations that
+    -- would run; 'planSteps' may be empty (a pure version bump) or
+    -- non-empty. The renderer prints a one-line summary and
+    -- @"Run: seihou migrate <name>"@.
+    AdvicePendingMigration Text MigrationPlan
   deriving stock (Eq, Show)
 
--- | Decide which advice to emit for a single applied module.
---
--- Maps the four 'MigrationPlan' shapes onto distinct advice variants:
---
---   * No plan + outdated → 'AdviceUpgradeOnly'.
---   * Full chain (steps non-empty, no unreachable tail) →
---     'AdvicePendingMigration'.
---   * Partial chain (steps non-empty, unreachable tail) →
---     'AdvicePartialMigration'.
---   * Blocked (steps empty, unreachable tail) →
---     'AdviceBlockedMigration'.
---
--- A pending plan always wins over a bare outdated annotation because
--- @seihou migrate@ (after EP-2) is self-contained: one command brings
--- the project to the new version. For blocked plans we still emit
--- 'AdviceBlockedMigration' rather than fall back to an upgrade hint
--- because @seihou upgrade@ alone does not solve the problem; the
--- recovery is @seihou migrate <name> --bump-only@ (per-module) or
--- @seihou run --bump-blocked@ (one-command, all blocked at once).
+-- | Decide which advice to emit for a single applied module. Any
+-- detected pending plan wins over a bare outdated annotation because
+-- @seihou migrate@ (after EP-2) is self-contained.
 moduleAdvice ::
   AppliedModule ->
   Maybe OutdatedStatus ->
   Maybe MigrationPlan ->
   ModuleAdvice
-moduleAdvice am mStatus mPlan =
-  case mPlan of
-    Just plan
-      | null plan.planChain.chainSteps,
-        not plan.planMigrationsDeclared,
-        Just (stuck, target) <- plan.planUnreachable ->
-          AdviceBenignUpgrade am.name.unModuleName stuck target
-      | null plan.planChain.chainSteps,
-        Just (stuck, target) <- plan.planUnreachable ->
-          AdviceBlockedMigration am.name.unModuleName stuck target
-      | not (null plan.planChain.chainSteps),
-        Just _ <- plan.planUnreachable ->
-          AdvicePartialMigration am.name.unModuleName plan
-      | not (null plan.planChain.chainSteps) ->
-          AdvicePendingMigration am.name.unModuleName plan.planChain
-    _ -> case mStatus of
-      Just OutdatedSt -> AdviceUpgradeOnly am.name.unModuleName
-      _ -> AdviceNone
+moduleAdvice am mStatus mPlan = case mPlan of
+  Just plan -> AdvicePendingMigration am.name.unModuleName plan
+  Nothing -> case mStatus of
+    Just OutdatedSt -> AdviceUpgradeOnly am.name.unModuleName
+    _ -> AdviceNone
 
 -- | Render the full @seihou status@ output as a single 'Text' value.
 --
@@ -278,11 +225,6 @@ adviceCommand :: ModuleAdvice -> Maybe Text
 adviceCommand AdviceNone = Nothing
 adviceCommand (AdviceUpgradeOnly name) = Just ("seihou upgrade " <> name)
 adviceCommand (AdvicePendingMigration name _) = Just ("seihou migrate " <> name)
-adviceCommand (AdvicePartialMigration name _) = Just ("seihou migrate " <> name)
-adviceCommand (AdviceBlockedMigration name _stuck _target) =
-  Just ("seihou migrate " <> name <> " --bump-only")
-adviceCommand (AdviceBenignUpgrade name _ _) =
-  Just ("seihou upgrade " <> name <> " && seihou run")
 
 -- ---------------------------------------------------------------------------
 -- Per-row formatting
@@ -342,94 +284,25 @@ formatModuleLine color annotation am =
 
 -- | Per-row remediation hint. Indented two characters past the row's
 -- two-space indentation (i.e. four spaces total) so it visually nests
--- under the module name. Partial and blocked migrations get an extra
--- line below the chain summary describing the unreachable tail or
--- the missing edge.
+-- under the module name.
 formatAdvice :: Bool -> ModuleAdvice -> [Text]
 formatAdvice _ AdviceNone = []
 formatAdvice color (AdviceUpgradeOnly name) =
   ["    " <> applyColor color yellow ("Run: seihou upgrade " <> name)]
-formatAdvice color (AdvicePendingMigration name chain) =
-  ["    " <> applyColor color yellow (chainSummary name chain)]
-formatAdvice color (AdvicePartialMigration name plan) =
-  let summary = chainSummary name plan.planChain
-      tail_ = case plan.planUnreachable of
-        Just (stuck, target)
-          -- EP-28: exhausted tail — `seihou migrate <name>` will run
-          -- the prefix and bump the manifest all the way to target in
-          -- one shot. Tell the user that's what to expect, instead of
-          -- the legacy "no migration declared" advisory that implied
-          -- a follow-up --bump-only was needed.
-          | plan.planTailExhausted ->
-              [ "    "
-                  <> applyColor
-                    color
-                    yellow
-                    ( "Note: "
-                        <> renderVersion stuck
-                        <> " -> "
-                        <> renderVersion target
-                        <> " has no declared migration; "
-                        <> "'seihou migrate "
-                        <> name
-                        <> "' will bump through."
-                    )
-              ]
-          | otherwise ->
-              [ "    "
-                  <> applyColor
-                    color
-                    yellow
-                    ( "Note: no migration declared from "
-                        <> renderVersion stuck
-                        <> "; remote is at "
-                        <> renderVersion target
-                        <> "."
-                    )
-              ]
-        Nothing -> []
-   in ("    " <> applyColor color yellow summary) : tail_
-formatAdvice color (AdviceBlockedMigration name stuck target) =
-  [ "    "
-      <> applyColor
-        color
-        red
-        ( "Blocked: no migration declared from "
-            <> renderVersion stuck
-            <> "; remote is at "
-            <> renderVersion target
-            <> ". To proceed, run 'seihou migrate "
-            <> name
-            <> " --bump-only' to acknowledge no migration is needed, or wait for the module author to ship one."
-        )
-  ]
-formatAdvice color (AdviceBenignUpgrade name from to) =
-  [ "    "
-      <> applyColor
-        color
-        yellow
-        ( "Pending: "
-            <> renderVersion from
-            <> " -> "
-            <> renderVersion to
-            <> " (no migrations declared). Run: seihou upgrade "
-            <> name
-            <> " && seihou run"
-        )
-  ]
+formatAdvice color (AdvicePendingMigration name plan) =
+  ["    " <> applyColor color yellow (planSummary name plan)]
 
--- | Format the "Pending migration: from -> to (N operation(s)). Run:
--- seihou migrate <name>" line shared by full- and partial-chain
--- advices.
-chainSummary :: Text -> MigrationChain -> Text
-chainSummary name chain =
+-- | Format the "Pending migration: from -> to (N step(s)). Run:
+-- seihou migrate <name>" line for a pending-migration advice row.
+planSummary :: Text -> MigrationPlan -> Text
+planSummary name plan =
   "Pending migration: "
-    <> renderVersion chain.chainFrom
+    <> renderVersion plan.planFrom
     <> " -> "
-    <> renderVersion chain.chainTo
+    <> renderVersion plan.planTo
     <> " ("
-    <> T.pack (show (length chain.chainSteps))
-    <> " operation(s)). Run: seihou migrate "
+    <> T.pack (show (length plan.planSteps))
+    <> " step(s)). Run: seihou migrate "
     <> name
 
 renderEntry :: Bool -> OutdatedEntry -> Text

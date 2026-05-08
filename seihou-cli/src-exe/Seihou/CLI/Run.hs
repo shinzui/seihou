@@ -4,7 +4,6 @@ module Seihou.CLI.Run
 where
 
 import Control.Monad (foldM, unless, when)
-import Data.List (partition)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Set qualified as Set
@@ -24,8 +23,6 @@ import Seihou.CLI.Migrate
 import Seihou.CLI.PendingMigrations
   ( detectPendingMigrations,
     formatRefusalMessage,
-    isBenignUpgrade,
-    isBlockedMigration,
   )
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatBlueprintRefusal, formatVarError, logIO, toVarNameMap, unwrapConfig)
@@ -35,7 +32,7 @@ import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Context (resolveContext)
-import Seihou.Core.Migration (MigrationChain (..), MigrationPlan (..))
+import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution)
@@ -470,22 +467,18 @@ executeCommand level (cmd, workDir) = do
       logIO level (logError $ "Command failed (exit " <> T.pack (show code) <> "): " <> cmd)
       exitFailure
 
--- | Apply the pending-migration policy. Splits pending entries into
--- benign (the module declared no migrations and the version field
--- changed; nothing destructive to apply) and blocking (a real chain
--- to run, a partial chain, or a declared-but-unreachable block).
+-- | Apply the pending-migration policy.
 --
--- Benign entries are noted at info level and otherwise ignored: the
--- run flow's 'updateAllModules' brings the manifest's recorded
--- @moduleVersion@ up to the installed copy's version automatically.
--- Blocking entries follow the existing policy: refuse without
--- @--with-migrations@, show a chain summary in dry-run mode, or apply
--- chains in-band before the run plan is computed.
+-- Without @--with-migrations@: the run refuses and prints a one-line
+-- summary per pending module.
+-- With @--with-migrations@ in dry-run mode: print the same summary
+-- and proceed with the diff against the current (pre-migration) disk
+-- state.
+-- With @--with-migrations@ in apply mode: run @seihou migrate@ for
+-- each pending module before computing the run plan, persist the new
+-- manifest, and continue.
 --
--- Returns the manifest the run flow should continue with — either the
--- one that was passed in (refusal aborts before this returns; dry-run
--- with-migrations leaves disk and manifest untouched) or the
--- post-migration manifest (non-dry-run with-migrations).
+-- Returns the manifest the run flow should continue with.
 handlePendingMigrations ::
   LogLevel ->
   RunOpts ->
@@ -493,59 +486,8 @@ handlePendingMigrations ::
   Manifest ->
   [(ModuleName, MigrationPlan)] ->
   IO Manifest
-handlePendingMigrations level runOpts manifestPath manifest pendings = do
-  let (benign, blocking) = partition (isBenignUpgrade . snd) pendings
-  mapM_ (logBenign level) benign
-  handleBlocking level runOpts manifestPath manifest blocking
-
--- | Note a benign upgrade so the user knows the manifest is about
--- to roll forward without a migration. Quiet but not silent: the
--- info-level line is suppressed when @LogLevel@ filters it out.
-logBenign :: LogLevel -> (ModuleName, MigrationPlan) -> IO ()
-logBenign level (name, plan)
-  | Just (from, to) <- plan.planUnreachable =
-      logIO level $
-        logInfo $
-          "  Note: "
-            <> name.unModuleName
-            <> " has no migrations declared ("
-            <> renderVersion from
-            <> " -> "
-            <> renderVersion to
-            <> "); will refresh templates and bump manifest during this run."
-  | otherwise = pure ()
-
-handleBlocking ::
-  LogLevel ->
-  RunOpts ->
-  FilePath ->
-  Manifest ->
-  [(ModuleName, MigrationPlan)] ->
-  IO Manifest
-handleBlocking _ _ _ manifest [] = pure manifest
-handleBlocking level runOpts manifestPath manifest pendings
-  | runOpts.runBumpBlocked,
-    runOpts.runDryRun = do
-      let (toBump, others) = partition (isBlockedMigration . snd) pendings
-      unless (null toBump) $ do
-        TIO.putStrLn "Blocked modules that would be bumped (--bump-blocked + --dry-run):"
-        mapM_ (TIO.putStrLn . renderBumpDryRun) toBump
-        TIO.putStrLn ""
-      handleBlocking level (runOpts {runBumpBlocked = False}) manifestPath manifest others
-  | runOpts.runBumpBlocked = do
-      let (toBump, others) = partition (isBlockedMigration . snd) pendings
-      manifest' <-
-        if null toBump
-          then pure manifest
-          else do
-            logIO level (logInfo "Acknowledging blocked modules (--bump-blocked)...")
-            m <- foldM (bumpOneBlocked level) manifest toBump
-            runEff $
-              runFilesystem $
-                runManifestStore manifestPath $
-                  writeManifest m
-            pure m
-      handleBlocking level (runOpts {runBumpBlocked = False}) manifestPath manifest' others
+handlePendingMigrations _ _ _ manifest [] = pure manifest
+handlePendingMigrations level runOpts manifestPath manifest pendings
   | not runOpts.runWithMigrations = do
       TIO.putStr (formatRefusalMessage pendings)
       exitFailure
@@ -553,22 +495,8 @@ handleBlocking level runOpts manifestPath manifest pendings
       TIO.putStrLn "Pending migrations detected (--with-migrations + --dry-run):"
       mapM_ (TIO.putStrLn . renderPendingSummary) pendings
       TIO.putStrLn ""
-      let blockedNames =
-            [ name.unModuleName
-            | (name, plan) <- pendings,
-              null plan.planChain.chainSteps,
-              isJust plan.planUnreachable
-            ]
-      if not (null blockedNames)
-        then do
-          TIO.putStrLn $
-            "Note: --with-migrations would refuse the run because "
-              <> T.intercalate ", " blockedNames
-              <> " has no applicable migration."
-          TIO.putStrLn "Resolve the block (the module author needs to ship the missing migration) before re-running."
-        else do
-          TIO.putStrLn "Note: the run plan below is computed against the current (pre-migration)"
-          TIO.putStrLn "disk state. Re-run without --dry-run to apply migrations and regenerate."
+      TIO.putStrLn "Note: the run plan below is computed against the current (pre-migration)"
+      TIO.putStrLn "disk state. Re-run without --dry-run to apply migrations and regenerate."
       pure manifest
   | otherwise = do
       logIO level (logInfo "Applying pending migrations before run plan...")
@@ -580,47 +508,18 @@ handleBlocking level runOpts manifestPath manifest pendings
       pure manifest'
 
 renderPendingSummary :: (ModuleName, MigrationPlan) -> Text
-renderPendingSummary (name, plan)
-  | null plan.planChain.chainSteps,
-    Just (stuck, target) <- plan.planUnreachable =
-      "  "
-        <> name.unModuleName
-        <> ": Blocked: no migration declared from "
-        <> renderVersion stuck
-        <> "; remote is at "
-        <> renderVersion target
-  | otherwise =
-      let chain = plan.planChain
-          (effectiveTo, tail_) = case plan.planUnreachable of
-            Nothing -> (chain.chainTo, "")
-            Just (stuck, target)
-              -- EP-28: exhausted tail bumps through to target.
-              | plan.planTailExhausted ->
-                  ( target,
-                    " + bump through "
-                      <> renderVersion stuck
-                      <> " -> "
-                      <> renderVersion target
-                  )
-              | otherwise ->
-                  ( chain.chainTo,
-                    "; no migration declared from "
-                      <> renderVersion stuck
-                      <> ", remote is at "
-                      <> renderVersion target
-                  )
-       in "  "
-            <> name.unModuleName
-            <> ": "
-            <> renderVersion chain.chainFrom
-            <> " -> "
-            <> renderVersion effectiveTo
-            <> " ("
-            <> T.pack (show (length chain.chainSteps))
-            <> " step(s))"
-            <> tail_
+renderPendingSummary (name, plan) =
+  "  "
+    <> name.unModuleName
+    <> ": "
+    <> renderVersion plan.planFrom
+    <> " -> "
+    <> renderVersion plan.planTo
+    <> " ("
+    <> T.pack (show (length plan.planSteps))
+    <> " step(s))"
 
--- | Apply one pending chain in-band. Reuses 'runMigrate' with
+-- | Apply one pending plan in-band. Reuses 'runMigrate' with
 -- @migrateNoFetch=True@ since 'detectPendingMigrations' already
 -- compared against the locally installed copy: there is no need to
 -- clone the source repo a second time. Migration conflicts (a tracked
@@ -633,7 +532,7 @@ applyOneMigration ::
   Manifest ->
   (ModuleName, MigrationPlan) ->
   IO Manifest
-applyOneMigration level manifest (modName, plan) =
+applyOneMigration level manifest (modName, _) =
   case findAppliedByName manifest modName of
     Nothing -> do
       logIO level $
@@ -642,118 +541,6 @@ applyOneMigration level manifest (modName, plan) =
             <> modName.unModuleName
             <> "' missing while applying its migration"
       exitFailure
-    Just am
-      -- Blocked: no migration starts at the manifest version, and
-      -- (since handleBlocking has already filtered out benign
-      -- entries) the author shipped at least one migration that just
-      -- doesn't reach. The run cannot safely auto-upgrade past the
-      -- gap (writing the new template into the old layout is the
-      -- original EP-3 hazard), so refuse with the same "Blocked: …"
-      -- line the migrate renderer would have shown.
-      | null plan.planChain.chainSteps,
-        Just (stuck, target) <- plan.planUnreachable -> do
-          logIO level $
-            logError $
-              "Migration blocked for "
-                <> modName.unModuleName
-                <> ": no migration declared from "
-                <> renderVersion stuck
-                <> "; remote is at "
-                <> renderVersion target
-                <> ". To proceed, run 'seihou migrate "
-                <> modName.unModuleName
-                <> " --bump-only' to acknowledge no migration is needed (or 'seihou run --bump-blocked' to do so for every blocked module in one step), or wait for the module author to ship one."
-          exitFailure
-      | otherwise -> do
-          let opts =
-                MigrateOpts
-                  { migrateModule = modName,
-                    migrateTo = Nothing,
-                    migrateDryRun = False,
-                    migrateForce = False,
-                    migrateJson = False,
-                    migrateVerbose = False,
-                    migrateNoFetch = True,
-                    migrateBumpOnly = False,
-                    migrateCommit = False,
-                    migrateCommitMessage = Nothing
-                  }
-          result <- runMigrate opts manifest am.source
-          case result of
-            Right (MigrateApplied _ manifest') -> do
-              TIO.putStrLn $ "  Migrated " <> modName.unModuleName
-              pure manifest'
-            Right (MigrateAppliedPartial _ manifest' stuck target) -> do
-              TIO.putStrLn $
-                "  Migrated "
-                  <> modName.unModuleName
-                  <> " (partial; no migration declared from "
-                  <> renderVersion stuck
-                  <> ", remote is at "
-                  <> renderVersion target
-                  <> ")"
-              pure manifest'
-            Right (MigrateAppliedBumpedThrough _ manifest' stuck target) -> do
-              -- EP-28: chain prefix ran AND manifest bumped through
-              -- the exhausted tail. Surface both pieces so the user
-              -- knows where the manifest landed.
-              TIO.putStrLn $
-                "  Migrated "
-                  <> modName.unModuleName
-                  <> " (chain prefix applied; "
-                  <> renderVersion stuck
-                  <> " → "
-                  <> renderVersion target
-                  <> " bumped through with no migration declared)"
-              pure manifest'
-            Right (MigrateNoOp _) -> pure manifest
-            Right (MigrateDryRunOK _) -> pure manifest
-            Right (MigrateDryRunOKPartial _ _ _) -> pure manifest
-            Right (MigrateDryRunOKBumpedThrough _ _ _) -> pure manifest
-            Right (MigrateBlocked stuck target) -> do
-              -- Defensive: the planner-shape check above should make
-              -- this branch unreachable, but keep a clear message in
-              -- case it ever fires.
-              logIO level $
-                logError $
-                  "Migration blocked for "
-                    <> modName.unModuleName
-                    <> ": no migration declared from "
-                    <> renderVersion stuck
-                    <> "; remote is at "
-                    <> renderVersion target
-                    <> ". To proceed, run 'seihou migrate "
-                    <> modName.unModuleName
-                    <> " --bump-only' to acknowledge no migration is needed."
-              exitFailure
-            Right (MigrateBenignUpgrade _ _) ->
-              -- Defensive: handleBlocking partitions benign entries
-              -- out before we ever get here. If a future caller forgets
-              -- to filter, behave like MigrateNoOp — the run flow's
-              -- updateAllModules will catch the manifest up.
-              pure manifest
-            Left err -> do
-              logIO level $
-                logError $
-                  "Migration failed for "
-                    <> modName.unModuleName
-                    <> ": "
-                    <> renderMigrateError err
-              exitFailure
-
--- | Acknowledge a single blocked entry by writing the installed
--- copy's declared version into the manifest with no migration ops
--- applied. The work is delegated to 'runMigrate' with
--- @migrateBumpOnly = True@; this is the same code path
--- @seihou migrate <module> --bump-only@ uses.
-bumpOneBlocked ::
-  LogLevel ->
-  Manifest ->
-  (ModuleName, MigrationPlan) ->
-  IO Manifest
-bumpOneBlocked level manifest (modName, plan) =
-  case findAppliedByName manifest modName of
-    Nothing -> pure manifest
     Just am -> do
       let opts =
             MigrateOpts
@@ -764,60 +551,25 @@ bumpOneBlocked level manifest (modName, plan) =
                 migrateJson = False,
                 migrateVerbose = False,
                 migrateNoFetch = True,
-                migrateBumpOnly = True,
+                migrateBumpOnly = False,
                 migrateCommit = False,
                 migrateCommitMessage = Nothing
               }
-          (fromV, toV) = bumpRange plan
       result <- runMigrate opts manifest am.source
       case result of
-        Right (MigrateApplied _ manifest') -> do
-          TIO.putStrLn $
-            "  Bumping "
-              <> modName.unModuleName
-              <> " "
-              <> fromV
-              <> " -> "
-              <> toV
-              <> " (no migration declared; user-acknowledged)."
+        Right (MigrateApplied _ manifest' _ _) -> do
+          TIO.putStrLn $ "  Migrated " <> modName.unModuleName
           pure manifest'
-        Right other -> do
-          logIO level $
-            logError $
-              "internal error: --bump-only for "
-                <> modName.unModuleName
-                <> " returned unexpected result: "
-                <> T.pack (show other)
-          exitFailure
+        Right (MigrateNoOp _) -> pure manifest
+        Right (MigrateDryRunOK {}) -> pure manifest
         Left err -> do
           logIO level $
             logError $
-              "Failed to bump "
+              "Migration failed for "
                 <> modName.unModuleName
                 <> ": "
                 <> renderMigrateError err
           exitFailure
-
--- | Pretty-print a single blocked entry for the dry-run summary.
-renderBumpDryRun :: (ModuleName, MigrationPlan) -> Text
-renderBumpDryRun (modName, plan) =
-  let (fromV, toV) = bumpRange plan
-   in "  "
-        <> modName.unModuleName
-        <> ": would bump "
-        <> fromV
-        <> " -> "
-        <> toV
-        <> " (no migration declared; user-acknowledged)."
-
--- | Extract the (from, to) version pair to display for a blocked
--- bump. Prefers the 'planUnreachable' span (which is what
--- @--bump-only@ actually moves the manifest across) and falls back
--- to the chain's bookends as a defensive default.
-bumpRange :: MigrationPlan -> (Text, Text)
-bumpRange plan = case plan.planUnreachable of
-  Just (f, t) -> (renderVersion f, renderVersion t)
-  Nothing -> (renderVersion plan.planChain.chainFrom, renderVersion plan.planChain.chainTo)
 
 renderMigrateError :: MigrateError -> Text
 renderMigrateError err = case err of
@@ -831,7 +583,6 @@ renderMigrateError err = case err of
   MigratePlanFailed _ -> "plan failed"
   MigrateExecFailed _ -> "execution failed; revert your edits or run 'seihou migrate <module> --force' first"
   MigrateNoManifest _ -> "no manifest in current dir"
-  MigrateConflictingFlags msg -> msg
 
 findAppliedByName :: Manifest -> ModuleName -> Maybe AppliedModule
 findAppliedByName manifest name =

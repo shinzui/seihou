@@ -10,12 +10,9 @@ import Seihou.CLI.Migrate (pendingChainFor)
 import Seihou.CLI.PendingMigrations
   ( detectPendingMigrations,
     formatRefusalMessage,
-    isBenignUpgrade,
-    isBlockedMigration,
   )
 import Seihou.Core.Migration
   ( Migration (..),
-    MigrationChain (..),
     MigrationOp (..),
     MigrationPlan (..),
   )
@@ -73,9 +70,6 @@ mkInstalled v migs =
       migrations = migs
     }
 
--- | Write a minimal but parseable @module.dhall@ for a fixture module.
--- Mirrors the helper in MigrateSpec — kept inline here so this spec
--- stays self-contained.
 writeInstalledModule :: FilePath -> Text -> Text -> Text -> IO ()
 writeInstalledModule dir name version migrationsLit = do
   createDirectoryIfMissing True dir
@@ -97,8 +91,6 @@ writeInstalledModule dir name version migrationsLit = do
           "}"
         ]
 
--- | A migrations Dhall literal that moves @old.txt@ to @new.txt@
--- between 1.0.0 and 2.0.0.
 moveOldToNewLit :: Text
 moveOldToNewLit =
   T.unlines
@@ -150,8 +142,8 @@ spec = do
           installed = mkInstalled (Just "2.0.0") [mig]
       case pendingChainFor am installed of
         Just plan -> do
-          plan.planUnreachable `shouldBe` Nothing
-          plan.planChain.chainSteps `shouldBe` [mig]
+          plan.planSteps `shouldBe` [mig]
+          plan.planTo `shouldBe` parseV "2.0.0"
         Nothing -> expectationFailure "expected Just plan"
 
     it "returns Nothing for downgrade (manifest > installed)" $ do
@@ -159,57 +151,45 @@ spec = do
           installed = mkInstalled (Just "1.0.0") []
       pendingChainFor am installed `shouldBe` Nothing
 
-    -- EP-5: partial chain returns a plan with the unreachable tail
-    -- in-band rather than collapsing to Nothing. This is the master-plan
-    -- live-tree fixture (manifest=0.1.0, installed=0.3.0,
-    -- edges=[0.1.0 -> 0.2.0]).
-    it "returns a partial plan when the chain reaches some intermediate version" $ do
+    it "returns a partial-cover plan when the chain reaches some intermediate version" $ do
+      -- master-plan live-tree fixture: manifest=0.1.0, installed=0.3.0,
+      -- edges=[0.1.0 -> 0.2.0]. Under the gap-tolerant walker the plan
+      -- always carries the supplied target as planTo, regardless of
+      -- whether the steps reach it.
       let am = mkApplied (Just "0.1.0")
           mig = Migration "0.1.0" "0.2.0" [DeleteFile "x"]
           installed = mkInstalled (Just "0.3.0") [mig]
       case pendingChainFor am installed of
         Just plan -> do
-          plan.planChain.chainSteps `shouldBe` [mig]
-          plan.planUnreachable `shouldSatisfy` \mt -> case mt of
-            Just (s, t) ->
-              Seihou.Core.Version.renderVersion s == "0.2.0"
-                && Seihou.Core.Version.renderVersion t == "0.3.0"
-            Nothing -> False
-        Nothing -> expectationFailure "expected Just plan with partial chain"
+          plan.planSteps `shouldBe` [mig]
+          plan.planFrom `shouldBe` parseV "0.1.0"
+          plan.planTo `shouldBe` parseV "0.3.0"
+        Nothing -> expectationFailure "expected Just plan with partial cover"
 
-    -- EP-5: blocked plan returns an empty chain plus the unreachable
-    -- tail covering the full span. Live-tree exec-plan fixture
-    -- (manifest=0.1.3, installed=0.3.0, no migrations declared).
-    it "returns a blocked plan when no edge starts at the manifest version" $ do
+    it "returns an empty-steps plan when no edge starts at the manifest version" $ do
       let am = mkApplied (Just "0.1.3")
           installed = mkInstalled (Just "0.3.0") []
       case pendingChainFor am installed of
         Just plan -> do
-          plan.planChain.chainSteps `shouldBe` []
-          plan.planUnreachable `shouldSatisfy` \mt -> case mt of
-            Just (s, t) ->
-              Seihou.Core.Version.renderVersion s == "0.1.3"
-                && Seihou.Core.Version.renderVersion t == "0.3.0"
-            Nothing -> False
-        Nothing -> expectationFailure "expected Just plan with blocked chain"
+          plan.planSteps `shouldBe` []
+          plan.planFrom `shouldBe` parseV "0.1.3"
+          plan.planTo `shouldBe` parseV "0.3.0"
+        Nothing -> expectationFailure "expected Just plan with empty steps"
 
-    -- M1 pin, flipped in M3: pendingChainFor still surfaces both
-    -- cases (the chain-level shape is identical), but
-    -- planMigrationsDeclared now lets consumers distinguish them.
-    it "distinguishes [] vs [orphanEdge] via planMigrationsDeclared" $ do
+    it "[] vs [orphanEdge] both yield empty-steps plans (window walker)" $ do
+      -- Under the gap-tolerant walker an orphan edge entirely outside
+      -- the [installed, target] window contributes nothing — same plan
+      -- shape as no migrations declared at all.
       let am = mkApplied (Just "0.2.0")
           emptyInstalled = mkInstalled (Just "0.3.0") []
           orphanInstalled =
             mkInstalled (Just "0.3.0") [Migration "0.5.0" "0.6.0" []]
       case (pendingChainFor am emptyInstalled, pendingChainFor am orphanInstalled) of
         (Just pEmpty, Just pOrphan) -> do
-          pEmpty.planChain.chainSteps `shouldBe` []
-          pOrphan.planChain.chainSteps `shouldBe` []
-          pEmpty.planChain.chainFrom `shouldBe` pOrphan.planChain.chainFrom
-          pEmpty.planChain.chainTo `shouldBe` pOrphan.planChain.chainTo
-          pEmpty.planUnreachable `shouldBe` pOrphan.planUnreachable
-          pEmpty.planMigrationsDeclared `shouldBe` False
-          pOrphan.planMigrationsDeclared `shouldBe` True
+          pEmpty.planSteps `shouldBe` []
+          pOrphan.planSteps `shouldBe` []
+          pEmpty.planFrom `shouldBe` pOrphan.planFrom
+          pEmpty.planTo `shouldBe` pOrphan.planTo
         other ->
           expectationFailure
             ("expected two Just plans, got: " <> show other)
@@ -275,11 +255,6 @@ spec = do
         result <- detectPendingMigrations manifest Nothing
         result `shouldBe` []
 
-    -- This test mirrors the EP-3 milestone-5 expectation: a pending
-    -- migration on a module that is *not* part of the current run
-    -- composition must not block the run. We model that by setting
-    -- the filter to the no-chain module's name only; the with-chain
-    -- module's pending entry is ignored.
     it "with a filter selecting only no-chain modules, returns empty" $
       withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
         let withChain = dir </> "with-chain"
@@ -301,20 +276,14 @@ spec = do
         result `shouldBe` []
 
   describe "formatRefusalMessage" $ do
-    it "lists each module's chain summary and the actionable next step" $ do
+    it "lists each module's plan summary and the actionable next step" $ do
       let plan =
             MigrationPlan
-              { planChain =
-                  MigrationChain
-                    { migrationModule = "demo",
-                      chainFrom = parseV "1.0.0",
-                      chainTo = parseV "2.0.0",
-                      chainSteps =
-                        [Migration "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]]
-                    },
-                planUnreachable = Nothing,
-                planMigrationsDeclared = True,
-                planTailExhausted = True
+              { planModule = "demo",
+                planFrom = parseV "1.0.0",
+                planTo = parseV "2.0.0",
+                planSteps =
+                  [Migration "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]]
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "Pending migrations detected:"
@@ -322,244 +291,19 @@ spec = do
       msg `shouldSatisfy` T.isInfixOf "--with-migrations"
       msg `shouldSatisfy` T.isInfixOf "seihou migrate <module>"
 
-    -- EP-5: partial-chain rows include the unreachable-tail advisory
-    -- so the user knows the chain doesn't reach the latest remote
-    -- version even after they apply it. EP-28 splits this into two
-    -- sub-cases by planTailExhausted; this test covers the BLOCKED
-    -- tail (future edge declared past the chain's stopping point).
-    it "annotates a blocked-tail partial-chain entry with the unreachable tail" $ do
+    it "reports a 0-step pure version-bump entry without doomed vocabulary" $ do
       let plan =
             MigrationPlan
-              { planChain =
-                  MigrationChain
-                    { migrationModule = "demo",
-                      chainFrom = parseV "0.1.0",
-                      chainTo = parseV "0.2.0",
-                      chainSteps = [Migration "0.1.0" "0.2.0" []]
-                    },
-                planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
-                planMigrationsDeclared = True,
-                planTailExhausted = False
+              { planModule = "demo",
+                planFrom = parseV "0.2.0",
+                planTo = parseV "0.3.0",
+                planSteps = []
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
-      msg `shouldSatisfy` T.isInfixOf "demo: 0.1.0 -> 0.2.0"
-      msg `shouldSatisfy` T.isInfixOf "no migration declared from 0.2.0"
-      msg `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
-
-    -- EP-28: a partial-chain entry whose tail is exhausted bumps
-    -- through to target in one shot. The refusal row's effective
-    -- destination is target, not chainTo, and the trailer names the
-    -- bump-through region.
-    it "EP-28: annotates an exhausted-tail partial-chain entry as bump-through" $ do
-      let plan =
-            MigrationPlan
-              { planChain =
-                  MigrationChain
-                    { migrationModule = "demo",
-                      chainFrom = parseV "0.1.0",
-                      chainTo = parseV "0.2.0",
-                      chainSteps = [Migration "0.1.0" "0.2.0" []]
-                    },
-                planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
-                planMigrationsDeclared = True,
-                planTailExhausted = True
-              }
-          msg = formatRefusalMessage [(ModuleName "demo", plan)]
-      msg `shouldSatisfy` T.isInfixOf "demo: 0.1.0 -> 0.3.0"
-      msg `shouldSatisfy` T.isInfixOf "bump through 0.2.0 -> 0.3.0"
-      -- The legacy "no migration declared from X" wording does not
-      -- appear for exhausted-tail rows.
-      msg `shouldNotSatisfy` T.isInfixOf "no migration declared from 0.2.0"
-
-    -- EP-5: blocked rows print a Blocked: prefix and skip the chain
-    -- summary (there are no steps to summarize). After M3 the
-    -- "Blocked:" wording only fires when planMigrationsDeclared is
-    -- True (the author shipped at least one migration but the chain
-    -- doesn't reach the manifest version).
-    it "prints a Blocked entry when the plan has no reachable steps and migrations were declared" $ do
-      let plan =
-            MigrationPlan
-              { planChain =
-                  MigrationChain
-                    { migrationModule = "demo",
-                      chainFrom = parseV "0.1.3",
-                      chainTo = parseV "0.1.3",
-                      chainSteps = []
-                    },
-                planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
-                planMigrationsDeclared = True,
-                planTailExhausted = False
-              }
-          msg = formatRefusalMessage [(ModuleName "demo", plan)]
-      msg `shouldSatisfy` T.isInfixOf "demo: Blocked: no migration declared from 0.1.3"
-      msg `shouldSatisfy` T.isInfixOf "remote is at 0.3.0"
-
-    -- EP-7 / M2: when the input contains a blocked entry, the trailer
-    -- names --bump-only (per-module) and --bump-blocked (one-command)
-    -- as the recoveries. The legacy "pass --with-migrations" sentence
-    -- is reserved for runnable (full / partial) entries.
-    it "blocked-only trailer names --bump-only and --bump-blocked" $ do
-      let plan =
-            MigrationPlan
-              { planChain =
-                  MigrationChain
-                    { migrationModule = "demo",
-                      chainFrom = parseV "0.1.3",
-                      chainTo = parseV "0.1.3",
-                      chainSteps = []
-                    },
-                planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
-                planMigrationsDeclared = True,
-                planTailExhausted = False
-              }
-          msg = formatRefusalMessage [(ModuleName "demo", plan)]
-      msg `shouldSatisfy` T.isInfixOf "seihou migrate <module> --bump-only"
-      msg `shouldSatisfy` T.isInfixOf "seihou run --bump-blocked"
-      msg `shouldNotSatisfy` T.isInfixOf "pass --with-migrations"
-
-    -- EP-7 / M2: a mixed input (one blocked + one runnable) gets both
-    -- the bump-only / bump-blocked recovery and the --with-migrations
-    -- recovery, joined.
-    it "mixed trailer names both blocked recoveries and --with-migrations" $ do
-      let blocked =
-            MigrationPlan
-              { planChain =
-                  MigrationChain
-                    { migrationModule = "blocked-mod",
-                      chainFrom = parseV "0.1.3",
-                      chainTo = parseV "0.1.3",
-                      chainSteps = []
-                    },
-                planUnreachable = Just (parseV "0.1.3", parseV "0.3.0"),
-                planMigrationsDeclared = True,
-                planTailExhausted = False
-              }
-          runnable =
-            MigrationPlan
-              { planChain =
-                  MigrationChain
-                    { migrationModule = "runnable-mod",
-                      chainFrom = parseV "1.0.0",
-                      chainTo = parseV "2.0.0",
-                      chainSteps = [Migration "1.0.0" "2.0.0" [DeleteFile "x"]]
-                    },
-                planUnreachable = Nothing,
-                planMigrationsDeclared = True,
-                planTailExhausted = True
-              }
-          msg =
-            formatRefusalMessage
-              [ (ModuleName "blocked-mod", blocked),
-                (ModuleName "runnable-mod", runnable)
-              ]
-      msg `shouldSatisfy` T.isInfixOf "--bump-only"
-      msg `shouldSatisfy` T.isInfixOf "--bump-blocked"
-      msg `shouldSatisfy` T.isInfixOf "--with-migrations"
-
-    -- M3: a benign upgrade entry (planMigrationsDeclared = False)
-    -- routes through the softened branch in formatRefusalMessage.
-    -- M5 strips benign entries from the input before calling this
-    -- formatter, so this is the defensive fallback. The renderer
-    -- must not say "Blocked:" for a benign case.
-    it "softens benign entries when planMigrationsDeclared is False" $ do
-      let plan =
-            MigrationPlan
-              { planChain =
-                  MigrationChain
-                    { migrationModule = "demo",
-                      chainFrom = parseV "0.2.0",
-                      chainTo = parseV "0.2.0",
-                      chainSteps = []
-                    },
-                planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
-                planMigrationsDeclared = False,
-                planTailExhausted = True
-              }
-          msg = formatRefusalMessage [(ModuleName "demo", plan)]
-      msg `shouldSatisfy` T.isInfixOf "no migrations declared"
-      msg `shouldSatisfy` T.isInfixOf "0.2.0 -> 0.3.0"
-      msg `shouldNotSatisfy` T.isInfixOf "Blocked:"
-
-  describe "isBenignUpgrade" $ do
-    -- M5: the run pre-flight uses this predicate to partition pending
-    -- entries into benign (no destructive op; let the run flow's
-    -- updateAllModules catch the manifest up) vs blocking (refuse,
-    -- summarize in dry-run, or apply in --with-migrations mode).
-    let mkPlan :: [Migration] -> Bool -> MigrationPlan
-        mkPlan steps declared =
-          MigrationPlan
-            { planChain =
-                MigrationChain
-                  { migrationModule = "demo",
-                    chainFrom = parseV "0.2.0",
-                    chainTo = parseV "0.2.0",
-                    chainSteps = steps
-                  },
-              planUnreachable = Just (parseV "0.2.0", parseV "0.3.0"),
-              planMigrationsDeclared = declared,
-              planTailExhausted = not declared
-            }
-
-    it "is True for an empty chain with planMigrationsDeclared = False" $
-      isBenignUpgrade (mkPlan [] False) `shouldBe` True
-
-    it "is False for an empty chain with planMigrationsDeclared = True (real block)" $
-      isBenignUpgrade (mkPlan [] True) `shouldBe` False
-
-    it "is False for a non-empty chain regardless of declared bit" $ do
-      let stepped = [Migration "0.2.0" "0.3.0" []]
-      isBenignUpgrade (mkPlan stepped True) `shouldBe` False
-      -- Defensive: the planner cannot produce stepped + declared=False,
-      -- but the predicate must still say "not benign" because work
-      -- needs doing.
-      isBenignUpgrade (mkPlan stepped False) `shouldBe` False
-
-  describe "isBlockedMigration" $ do
-    -- EP-7 / M3: the run-side --bump-blocked dispatcher uses this
-    -- predicate to partition pending entries into blocked (need a
-    -- manifest bump, no ops) vs runnable (apply via runMigrate or
-    -- --with-migrations). Together with isBenignUpgrade it forms an
-    -- exhaustive four-shape classifier (full / partial / blocked /
-    -- benign).
-    let mkPlan ::
-          [Migration] ->
-          Bool ->
-          Maybe (Seihou.Core.Version.Version, Seihou.Core.Version.Version) ->
-          MigrationPlan
-        mkPlan steps declared unreachable =
-          MigrationPlan
-            { planChain =
-                MigrationChain
-                  { migrationModule = "demo",
-                    chainFrom = parseV "0.1.3",
-                    chainTo = parseV "0.1.3",
-                    chainSteps = steps
-                  },
-              planUnreachable = unreachable,
-              planMigrationsDeclared = declared,
-              planTailExhausted = not declared
-            }
-        gap = Just (parseV "0.1.3", parseV "0.3.0")
-
-    it "is True for blocked: empty chain + migrations declared + unreachable tail" $
-      isBlockedMigration (mkPlan [] True gap) `shouldBe` True
-
-    it "is False for benign: empty chain + migrations not declared" $
-      isBlockedMigration (mkPlan [] False gap) `shouldBe` False
-
-    it "is False for partial: non-empty chain + migrations declared + unreachable tail" $
-      let stepped = [Migration "0.1.3" "0.2.0" []]
-       in isBlockedMigration (mkPlan stepped True gap) `shouldBe` False
-
-    it "is False for full: non-empty chain + migrations declared + no unreachable" $
-      let stepped = [Migration "0.1.3" "0.2.0" []]
-       in isBlockedMigration (mkPlan stepped True Nothing) `shouldBe` False
-
-    it "is False when there is no unreachable tail (defensive)" $
-      -- An empty chain with no unreachable tail is the no-op case;
-      -- isBlockedMigration must not classify it as blocked because
-      -- there is nothing to acknowledge.
-      isBlockedMigration (mkPlan [] True Nothing) `shouldBe` False
+      msg `shouldSatisfy` T.isInfixOf "demo: 0.2.0 -> 0.3.0 (0 step(s))"
+      msg `shouldNotSatisfy` T.isInfixOf "Blocked"
+      msg `shouldNotSatisfy` T.isInfixOf "--bump-only"
+      msg `shouldNotSatisfy` T.isInfixOf "--bump-blocked"
 
 parseV :: Text -> Seihou.Core.Version.Version
 parseV t = case Seihou.Core.Version.parseVersion t of
