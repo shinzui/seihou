@@ -9,6 +9,7 @@ import Seihou.CLI.Registry.Sync
   ( SyncAction (..),
     SyncOutcome (..),
     SyncVersionsOpts (..),
+    renderSyncReport,
     runSync,
   )
 import Seihou.Core.Registry
@@ -99,6 +100,38 @@ spec = do
           SyncFailure _ -> pure ()
           SyncSuccess {} -> expectationFailure "expected SyncFailure for empty directory"
 
+    it "rewrites a blueprint entry's on-disk version into the registry" $ do
+      withBlueprintFixture $ \dir -> do
+        outcome <-
+          runSync
+            SyncVersionsOpts
+              { syncVersionsDir = Just dir,
+                syncVersionsDryRun = False,
+                syncVersionsCheck = False
+              }
+        case outcome of
+          SyncFailure msg -> expectationFailure ("expected success, got: " <> T.unpack msg)
+          SyncSuccess _ action -> action `shouldBe` Wrote
+        reloaded <- evalRegistryFromFile (dir </> "seihou-registry.dhall")
+        case reloaded of
+          Left err -> expectationFailure ("failed to reload: " <> show err)
+          Right reg -> map (.version) reg.blueprints `shouldBe` [Just "0.2.0"]
+
+    it "renderSyncReport prefixes blueprint rows with blueprints." $ do
+      withBlueprintFixture $ \dir -> do
+        outcome <-
+          runSync
+            SyncVersionsOpts
+              { syncVersionsDir = Just dir,
+                syncVersionsDryRun = True,
+                syncVersionsCheck = False
+              }
+        case outcome of
+          SyncSuccess report _ -> do
+            let rendered = renderSyncReport report
+            T.isInfixOf "blueprints.payments-service:" rendered `shouldBe` True
+          other -> expectationFailure ("expected SyncSuccess, got " <> show other)
+
 -- | Build a temp registry repo with:
 --
 --   * modules/alpha/module.dhall declaring version = Some "2.0.0"
@@ -113,6 +146,53 @@ withFixture action = withSystemTempDirectory "seihou-sync-fixture" $ \dir -> do
   writeModuleDhall (dir </> "modules" </> "beta" </> "module.dhall") "beta" "2.0.0"
   TIO.writeFile (dir </> "seihou-registry.dhall") (registryDhall "alpha" Nothing "beta" (Just "1.0.0"))
   action dir
+
+-- | Build a temp registry repo with a single blueprint entry whose
+-- on-disk @blueprint.dhall@ declares @version = "0.2.0"@ but the
+-- @seihou-registry.dhall@ pins @"0.1.0"@.
+withBlueprintFixture :: (FilePath -> IO ()) -> IO ()
+withBlueprintFixture action = withSystemTempDirectory "seihou-sync-bp" $ \dir -> do
+  createDirectoryIfMissing True (dir </> "blueprints" </> "payments-service")
+  writeBlueprintDhall (dir </> "blueprints" </> "payments-service" </> "blueprint.dhall") "payments-service" "0.2.0"
+  TIO.writeFile (dir </> "seihou-registry.dhall") (registryWithBlueprint "payments-service" (Just "0.1.0"))
+  action dir
+
+writeBlueprintDhall :: FilePath -> Text -> Text -> IO ()
+writeBlueprintDhall path name ver =
+  TIO.writeFile
+    path
+    ( T.unlines
+        [ "{ name = \"" <> name <> "\"",
+          ", version = Some \"" <> ver <> "\"",
+          ", description = None Text",
+          ", prompt = \"hi\"",
+          ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+          ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+          ", baseModules = [] : List { module : Text, vars : List { name : Text, value : Text } }",
+          ", files = [] : List { src : Text, description : Optional Text }",
+          ", allowedTools = None (List Text)",
+          ", tags = [] : List Text",
+          "}"
+        ]
+    )
+
+registryWithBlueprint :: Text -> Maybe Text -> Text
+registryWithBlueprint n v =
+  T.unlines
+    [ "{ repoName = \"Test\"",
+      ", repoDescription = None Text",
+      ", modules = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }",
+      ", recipes = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }",
+      ", blueprints =",
+      "  [ { name = \"" <> n <> "\"",
+      "    , version = " <> optVersion v,
+      "    , path = \"blueprints/" <> n <> "\"",
+      "    , description = None Text",
+      "    , tags = [] : List Text",
+      "    }",
+      "  ]",
+      "}"
+    ]
 
 writeModuleDhall :: FilePath -> Text -> Text -> IO ()
 writeModuleDhall path name ver =

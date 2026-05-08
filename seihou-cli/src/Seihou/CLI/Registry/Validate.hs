@@ -92,6 +92,10 @@ renderValidationReport r
             <> T.pack (show r.reportRecipeCount)
             <> " "
             <> pluralize r.reportRecipeCount "recipe" "recipes"
+            <> ", "
+            <> T.pack (show r.reportBlueprintCount)
+            <> " "
+            <> pluralize r.reportBlueprintCount "blueprint" "blueprints"
             <> ", all versions in sync."
         ]
   | otherwise =

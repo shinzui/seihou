@@ -77,9 +77,9 @@ end-to-end.
 - [x] M2: Update `handleInstall` in `seihou-cli/src-exe/Seihou/CLI/Install.hs` so `SingleBlueprint` installs the root directory; extend `installFromRegistry`/`selectModules`/`installRegistryEntry` to handle blueprints under `--all`, `--module`, and the interactive picker. Pass kind labels into the picker rows.
 - [x] M2: Update `handleBrowse` in `seihou-cli/src-exe/Seihou/CLI/Browse.hs` and the formatter at `seihou-cli/src/Seihou/CLI/BrowseFormat.hs` to render kind labels per row, filter blueprints by `--tag`, and handle the `SingleBlueprint` repo shape.
 - [x] M2: Smoke-tested manually with a local git fixture (Cabal trapping precludes a test-suite integration test; pure helpers / formatters covered in `BrowseFormatSpec`). *(See Surprises for the constraint.)*
-- [ ] M3: Update `resolveOnDiskVersions` and `kindPrefix` in `seihou-cli/src/Seihou/CLI/Registry/Sync.hs` to read each blueprint entry's `blueprint.dhall` and emit the `blueprints.NAME` prefix.
-- [ ] M3: Update `renderValidationReport` in `seihou-cli/src/Seihou/CLI/Registry/Validate.hs` to count blueprints in the success summary.
-- [ ] M3: Add tests covering sync-versions and validate against a registry with a blueprint entry whose on-disk version drifts from the registry's recorded version.
+- [x] M3: Update `resolveOnDiskVersions` and `kindPrefix` in `seihou-cli/src/Seihou/CLI/Registry/Sync.hs` to read each blueprint entry's `blueprint.dhall` and emit the `blueprints.NAME` prefix.
+- [x] M3: Update `renderValidationReport` in `seihou-cli/src/Seihou/CLI/Registry/Validate.hs` to count blueprints in the success summary.
+- [x] M3: Add tests covering sync-versions and validate against a registry with a blueprint entry whose on-disk version drifts from the registry's recorded version.
 
 
 ## Surprises & Discoveries
@@ -154,7 +154,36 @@ end-to-end.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+- All three milestones landed across three commits:
+  - M1: `Registry`, `EntryKind`, decoder, validator, sync, render, and
+    `RepoContents.SingleBlueprint` extended in `seihou-core`. Three-way
+    name-collision detection added; `validateRegistryFull` populates
+    `reportBlueprintCount`. 14 new unit tests in
+    `seihou-core/test/Seihou/Core/RegistrySpec.hs` plus a round-trip
+    case in `RegistryEmitSpec.hs`. Pre-EP-33 callers of `RepoContents`
+    updated for the new constructor in `Migrate.hs`,
+    `RemoteVersion.hs`, and `Upgrade.hs`.
+  - M2: `seihou install` recognises `SingleBlueprint`, applies kind
+    labels in the picker, treats blueprints uniformly under `--all`
+    and `--module`, and `seihou browse` formats all three kinds with
+    `[module]` / `[recipe]` / `[blueprint]` prefixes and a dedicated
+    single-blueprint header. Cabal trapping precluded a handler-level
+    integration test (recovered with library-side formatter unit
+    tests + manual smoke runs covering single-blueprint install,
+    multi-kind `--all` install, and `browse --tag` filtering).
+  - M3: `seihou registry sync-versions` reads each blueprint entry's
+    `blueprint.dhall` version and rewrites the registry, prefixing
+    rows with `blueprints.NAME`. `seihou registry validate` reports
+    blueprint drift with the same prefix and includes the blueprint
+    count in the success summary.
+- Out-of-scope items deliberately deferred: handler-level integration
+  test for install (Cabal trapping, documented in Surprises). The
+  M2 manual smoke test covers the same flow.
+- All 851 `seihou-core` tests and 238 `seihou-cli` tests pass.
+- A blueprint installed via this plan is a first-class artifact:
+  `seihou list` shows it, `seihou install` keeps it up to date, and
+  the EP-32 manifest writer records the AppliedBlueprint entry once
+  EP-31's runner is invoked.
 
 
 ## Context and Orientation

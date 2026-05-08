@@ -8,6 +8,7 @@ import Data.Text.IO qualified as TIO
 import Seihou.CLI.Registry.Validate
   ( ValidateOutcome (..),
     ValidateRegistryOpts (..),
+    renderValidationReport,
     runValidate,
   )
 import Seihou.Core.Registry
@@ -72,6 +73,27 @@ spec = do
           ValidateOk _ ->
             expectationFailure "expected ValidateFailed for empty directory"
 
+    it "flags blueprint version drift with the blueprints. prefix" $ do
+      withDriftedBlueprintFixture $ \dir -> do
+        outcome <- runValidate (ValidateRegistryOpts (Just dir))
+        case outcome of
+          ValidateOk r -> do
+            let rendered = renderValidationReport r
+            T.isInfixOf "blueprints.payments-service:" rendered `shouldBe` True
+          other -> expectationFailure ("unexpected outcome: " <> show other)
+
+    it "renders the success summary with module, recipe, and blueprint counts" $ do
+      withCleanBlueprintFixture $ \dir -> do
+        outcome <- runValidate (ValidateRegistryOpts (Just dir))
+        case outcome of
+          ValidateOk r -> do
+            let rendered = renderValidationReport r
+            T.isInfixOf "1 module" rendered `shouldBe` True
+            T.isInfixOf "0 recipes" rendered `shouldBe` True
+            T.isInfixOf "1 blueprint" rendered `shouldBe` True
+            T.isInfixOf "all versions in sync" rendered `shouldBe` True
+          other -> expectationFailure ("unexpected outcome: " <> show other)
+
 -- | Two modules at version 1.0.0, registry lists both at version 1.0.0.
 withCleanFixture :: (FilePath -> IO ()) -> IO ()
 withCleanFixture action = withSystemTempDirectory "seihou-validate-clean" $ \dir -> do
@@ -101,6 +123,76 @@ withMissingFileFixture action = withSystemTempDirectory "seihou-validate-missing
   writeModuleDhall (dir </> "modules" </> "alpha" </> "module.dhall") "alpha" "1.0.0"
   TIO.writeFile (dir </> "seihou-registry.dhall") (registryDhall "alpha" (Just "1.0.0") "ghost" Nothing)
   action dir
+
+-- | One module + one drifted blueprint. Module's registry version
+-- matches its on-disk version (no module drift); the blueprint's
+-- registry version is "0.1.0" while its on-disk version is "0.2.0".
+withDriftedBlueprintFixture :: (FilePath -> IO ()) -> IO ()
+withDriftedBlueprintFixture action = withSystemTempDirectory "seihou-validate-bp-drift" $ \dir -> do
+  createDirectoryIfMissing True (dir </> "modules" </> "alpha")
+  writeModuleDhall (dir </> "modules" </> "alpha" </> "module.dhall") "alpha" "1.0.0"
+  createDirectoryIfMissing True (dir </> "blueprints" </> "payments-service")
+  writeBlueprintDhall (dir </> "blueprints" </> "payments-service" </> "blueprint.dhall") "payments-service" "0.2.0"
+  TIO.writeFile
+    (dir </> "seihou-registry.dhall")
+    (mixedRegistry "alpha" (Just "1.0.0") "payments-service" (Just "0.1.0"))
+  action dir
+
+-- | One module + one blueprint, all versions matching on disk and in
+-- the registry.
+withCleanBlueprintFixture :: (FilePath -> IO ()) -> IO ()
+withCleanBlueprintFixture action = withSystemTempDirectory "seihou-validate-bp-clean" $ \dir -> do
+  createDirectoryIfMissing True (dir </> "modules" </> "alpha")
+  writeModuleDhall (dir </> "modules" </> "alpha" </> "module.dhall") "alpha" "1.0.0"
+  createDirectoryIfMissing True (dir </> "blueprints" </> "payments-service")
+  writeBlueprintDhall (dir </> "blueprints" </> "payments-service" </> "blueprint.dhall") "payments-service" "0.1.0"
+  TIO.writeFile
+    (dir </> "seihou-registry.dhall")
+    (mixedRegistry "alpha" (Just "1.0.0") "payments-service" (Just "0.1.0"))
+  action dir
+
+writeBlueprintDhall :: FilePath -> Text -> Text -> IO ()
+writeBlueprintDhall path name ver =
+  TIO.writeFile
+    path
+    ( T.unlines
+        [ "{ name = \"" <> name <> "\"",
+          ", version = Some \"" <> ver <> "\"",
+          ", description = None Text",
+          ", prompt = \"hi\"",
+          ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+          ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+          ", baseModules = [] : List { module : Text, vars : List { name : Text, value : Text } }",
+          ", files = [] : List { src : Text, description : Optional Text }",
+          ", allowedTools = None (List Text)",
+          ", tags = [] : List Text",
+          "}"
+        ]
+    )
+
+mixedRegistry :: Text -> Maybe Text -> Text -> Maybe Text -> Text
+mixedRegistry modName modVer bpName bpVer =
+  T.unlines
+    [ "{ repoName = \"Mixed\"",
+      ", repoDescription = None Text",
+      ", modules =",
+      "  [ { name = \"" <> modName <> "\"",
+      "    , version = " <> optVersion modVer,
+      "    , path = \"modules/" <> modName <> "\"",
+      "    , description = None Text",
+      "    , tags = [] : List Text",
+      "    }",
+      "  ]",
+      ", blueprints =",
+      "  [ { name = \"" <> bpName <> "\"",
+      "    , version = " <> optVersion bpVer,
+      "    , path = \"blueprints/" <> bpName <> "\"",
+      "    , description = None Text",
+      "    , tags = [] : List Text",
+      "    }",
+      "  ]",
+      "}"
+    ]
 
 writeModuleDhall :: FilePath -> Text -> Text -> IO ()
 writeModuleDhall path name ver =

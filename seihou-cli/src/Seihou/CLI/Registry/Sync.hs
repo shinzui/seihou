@@ -27,10 +27,11 @@ import Seihou.Core.Registry
     formatDriftWarning,
     renderRegistryDhall,
   )
-import Seihou.Core.Types (Module, ModuleName (..), Recipe)
+import Seihou.Core.Types (Blueprint, Module, ModuleName (..), Recipe)
 import Seihou.Core.Types qualified as Types
 import Seihou.Dhall.Eval
-  ( evalModuleFromFile,
+  ( evalBlueprintFromFile,
+    evalModuleFromFile,
     evalRecipeFromFile,
     evalRegistryFromFile,
   )
@@ -114,7 +115,8 @@ resolveOnDiskVersions ::
 resolveOnDiskVersions repoRoot reg = do
   modulePairs <- mapM (loadModule repoRoot) reg.modules
   recipePairs <- mapM (loadRecipe repoRoot) reg.recipes
-  pure (concat modulePairs <> concat recipePairs)
+  blueprintPairs <- mapM (loadBlueprint repoRoot) reg.blueprints
+  pure (concat modulePairs <> concat recipePairs <> concat blueprintPairs)
   where
     loadModule :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
     loadModule root entry = do
@@ -130,6 +132,13 @@ resolveOnDiskVersions repoRoot reg = do
       case decoded of
         Right r -> pure [(RecipeEntry, entry.name, recipeVersion r)]
         Left _ -> pure []
+    loadBlueprint :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
+    loadBlueprint root entry = do
+      let path = root </> entry.path </> "blueprint.dhall"
+      decoded <- evalBlueprintFromFile path
+      case decoded of
+        Right b -> pure [(BlueprintEntry, entry.name, blueprintVersion b)]
+        Left _ -> pure []
 
 -- | Extract the @version@ field from a 'Module' by pattern match. A direct
 -- record-dot access (@m.version@) fails under 'DuplicateRecordFields' +
@@ -141,6 +150,10 @@ moduleVersion Types.Module {Types.version = v} = v
 -- | Analogous accessor for 'Recipe.version'. See 'moduleVersion'.
 recipeVersion :: Recipe -> Maybe Text
 recipeVersion Types.Recipe {Types.version = v} = v
+
+-- | Analogous accessor for 'Blueprint.version'. See 'moduleVersion'.
+blueprintVersion :: Blueprint -> Maybe Text
+blueprintVersion Types.Blueprint {Types.version = v} = v
 
 -- | Handler wired into the CLI command dispatcher. Drives 'runSync', prints a
 -- human-readable diff, and exits with 0 or 1 as appropriate.
@@ -195,6 +208,7 @@ renderSyncReport report
 kindPrefix :: EntryKind -> Text
 kindPrefix ModuleEntry = "modules."
 kindPrefix RecipeEntry = "recipes."
+kindPrefix BlueprintEntry = "blueprints."
 
 renderVersion :: Maybe Text -> Text
 renderVersion Nothing = "(none)"

@@ -255,7 +255,7 @@ Alternatives considered:
 | 30  | Authoring and inspection commands for blueprints                            | docs/plans/30-blueprint-authoring-and-inspection.md               | EP-29      | None       | Complete    |
 | 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | Complete    |
 | 32  | Manifest tracking and `seihou status` integration for applied blueprints    | docs/plans/32-blueprint-manifest-and-status.md                    | EP-31      | None       | Complete    |
-| 33  | Registry and multi-module-repository support for blueprints                 | docs/plans/33-blueprint-registry-and-install.md                   | EP-29      | EP-30      | In Progress |
+| 33  | Registry and multi-module-repository support for blueprints                 | docs/plans/33-blueprint-registry-and-install.md                   | EP-29      | EP-30      | Complete    |
 | 34  | Documentation, agent-prompt updates, and ecosystem polish                   | docs/plans/34-blueprint-docs-and-ecosystem.md                     | EP-31      | EP-30, EP-32, EP-33 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled. Hard Deps and Soft
@@ -545,7 +545,7 @@ view of the entire initiative.
 - [x] EP-32: Update `seihou status` to display the applied-blueprint line; verify via integration test.
 - [x] EP-33: Extend `Registry` with `blueprints :: [RegistryEntry]`; update the Dhall registry schema and `evalRegistryFromFile`/`registryDecoder`.
 - [x] EP-33: Update `discoverRepoContents` with a `SingleBlueprint FilePath` constructor; update `seihou install` to handle the new constructor and registry-listed blueprints; update `seihou browse`.
-- [ ] EP-33: Update `seihou registry sync-versions` and `seihou registry validate` to walk the new `blueprints` list.
+- [x] EP-33: Update `seihou registry sync-versions` and `seihou registry validate` to walk the new `blueprints` list.
 - [ ] EP-34: Write `docs/dev/design/proposed/blueprints.md` describing the design, motivation, validation rules, runner flow, manifest behaviour, and registry integration.
 - [ ] EP-34: Update `docs/dev/architecture/overview.md` with the third runnable type and the updated project-structure tree.
 - [ ] EP-34: Update `seihou-cli/data/assist-prompt.md`, `bootstrap-prompt.md`, and `setup-prompt.md` so neighbouring agents understand blueprints; add a CHANGELOG entry summarising the whole initiative.
@@ -718,6 +718,47 @@ view of the entire initiative.
   generated `[] : List S.Blueprint.BlueprintFile.Type` reflects
   this. EP-31's prompt-rendering machinery and EP-33's registry
   classifier should match.
+
+- 2026-05-08 (EP-33) — Pre-EP-33 callers of `RepoContents` were not
+  exhaustive: `Seihou.CLI.Upgrade.doUpgrade` had `SingleModule`,
+  `MultiModule`, and `EmptyRepo` arms only (no `SingleRecipe`), and
+  the codebase relied on GHC's default warning level which does not
+  flag missing arms. Adding `SingleBlueprint` exposed this. EP-33
+  filled in the gap at three sites
+  (`Migrate.hs::findRemoteModuleDir`,
+  `RemoteVersion.hs::fetchTrueModuleVersion`,
+  `Upgrade.hs::doUpgrade`), each treating a single-blueprint clone
+  the same way as a single-recipe clone: "no module to read".
+  EP-34's design doc should mention that single-blueprint clones do
+  not feed `seihou outdated` or `seihou upgrade` (those operate on
+  installed *modules*).
+
+- 2026-05-08 (EP-33) — `RegistrySpec.hs` imports `Seihou.Core.Types`
+  wholesale, which puts every `version`-bearing record type into
+  scope and breaks `OverloadedRecordDot` for accessors like
+  `(head reg.blueprints).version`. The sibling `RegistrySyncSpec.hs`
+  works fine because it imports `Types (ModuleName (..))`. EP-33's
+  new tests recover via positional pattern matches on
+  `Registry`/`RegistryEntry`/`SyncReport`/`SyncDiff`. **Cross-plan
+  signal for EP-34:** documentation snippets that show a `Blueprint`
+  field access in code should prefer pattern-matching syntax over
+  record-dot to remain copy-pasteable in test files where the wide
+  `Types` import is common.
+
+- 2026-05-08 (EP-33) — Cabal trapping (already documented in EP-30
+  and EP-31 surprises) blocked an end-to-end install test of
+  `handleInstall` from the seihou-cli test suite: `Install.hs` lives
+  in `executable seihou` and is not importable by `seihou-cli-test`.
+  EP-33 recovered with library-side tests of `BrowseFormat`'s row
+  layout (including a mixed-kind case) plus manual smoke runs that
+  drive the built `seihou` binary against a local git fixture under
+  a redirected `XDG_CONFIG_HOME`. **Cross-plan signal for EP-34:**
+  the design doc should describe the install/browse behaviour in
+  terms of observable CLI output rather than internal helper
+  signatures. The `formatBrowseRegistry` signature changed from
+  `[RegistryEntry]` to `[(EntryKind, RegistryEntry)]` to support
+  per-row labels — call sites elsewhere in the codebase, if any
+  appear, must thread the kind through.
 
 
 ## Decision Log
