@@ -12,19 +12,27 @@ import Seihou.CLI.AgentLaunch
   )
 import Seihou.Prelude
 import System.Directory (findExecutable)
-import System.Exit (exitFailure, exitWith)
+import System.Exit (ExitCode (..), exitFailure)
 import System.Process (rawSystem)
 
 -- | Launch claude with a system prompt, or print it in debug mode.
-launchAgent :: Bool -> Text -> Maybe Text -> IO ()
+-- Returns the subprocess exit code so the caller can perform any
+-- post-launch bookkeeping (e.g. recording an 'AppliedBlueprint' manifest
+-- entry) before exiting.
+launchAgent :: Bool -> Text -> Maybe Text -> IO ExitCode
 launchAgent debug systemPrompt initialPrompt = do
   addDirs <- agentDirsForSession
   launchAgentWith addDirs defaultAllowedTools debug systemPrompt initialPrompt
 
--- | Launch claude with custom add-dirs and allowed tools.
-launchAgentWith :: [FilePath] -> [String] -> Bool -> Text -> Maybe Text -> IO ()
+-- | Launch claude with custom add-dirs and allowed tools. Returns the
+-- subprocess exit code (or 'ExitSuccess' in debug mode); the caller is
+-- responsible for propagating the exit status with 'exitWith' once any
+-- post-launch work is done.
+launchAgentWith :: [FilePath] -> [String] -> Bool -> Text -> Maybe Text -> IO ExitCode
 launchAgentWith addDirs tools debug systemPrompt initialPrompt
-  | debug = TIO.putStr systemPrompt
+  | debug = do
+      TIO.putStr systemPrompt
+      pure ExitSuccess
   | otherwise = do
       claudePath <- findExecutable "claude"
       case claudePath of
@@ -38,5 +46,4 @@ launchAgentWith addDirs tools debug systemPrompt initialPrompt
                   <> concatMap (\d -> ["--add-dir", d]) addDirs
                   <> concatMap (\t -> ["--allowedTools", t]) tools
                   <> maybe [] (\p -> [T.unpack p]) initialPrompt
-          exitCode <- rawSystem "claude" args
-          exitWith exitCode
+          rawSystem "claude" args

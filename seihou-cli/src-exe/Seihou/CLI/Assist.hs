@@ -22,6 +22,7 @@ import Seihou.CLI.AgentLaunch
 import Seihou.CLI.AgentLaunchExec (launchAgentWith)
 import Seihou.CLI.Commands (AssistOpts (..))
 import Seihou.Prelude
+import System.Exit (exitWith)
 
 -- | The prompt template, embedded at compile time from data/assist-prompt.md.
 promptTemplate :: Text
@@ -32,7 +33,9 @@ handleAssist debug assistOpts = do
   ctx <- gatherAgentContext
   addDirs <- agentDirsForSession
   let systemPrompt = renderPrompt ctx
-  launchAgentWith addDirs defaultAllowedTools debug systemPrompt assistOpts.assistPrompt
+  exitCode <-
+    launchAgentWith addDirs defaultAllowedTools debug systemPrompt assistOpts.assistPrompt
+  exitWith exitCode
 
 renderPrompt :: AgentContext -> Text
 renderPrompt ctx =

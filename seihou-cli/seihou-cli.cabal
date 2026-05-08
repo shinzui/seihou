@@ -18,6 +18,7 @@ library seihou-cli-internal
   visibility: private
   exposed-modules:
     Seihou.CLI.AgentLaunch
+    Seihou.CLI.AppliedBlueprint
     Seihou.CLI.BrowseFormat
     Seihou.CLI.CommitMessage
     Seihou.CLI.Completions.Bash
@@ -150,6 +151,7 @@ test-suite seihou-cli-test
 
   other-modules:
     Seihou.CLI.AgentLaunchSpec
+    Seihou.CLI.AppliedBlueprintSpec
     Seihou.CLI.BrowseFormatSpec
     Seihou.CLI.CommitMessageSpec
     Seihou.CLI.DiffSpec

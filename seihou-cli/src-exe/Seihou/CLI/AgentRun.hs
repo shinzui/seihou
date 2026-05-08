@@ -7,7 +7,7 @@
 -- (docs/plans/31-blueprint-agent-runner.md) for the full design.
 module Seihou.CLI.AgentRun
   ( handleAgentRun,
-    BlueprintRunOutcome (..),
+    appliedBlueprintFromOutcome,
   )
 where
 
@@ -35,6 +35,7 @@ import Seihou.CLI.AgentLaunch
     substitute,
   )
 import Seihou.CLI.AgentLaunchExec (launchAgentWith)
+import Seihou.CLI.AppliedBlueprint (recordAppliedBlueprint)
 import Seihou.CLI.Commands (BlueprintRunOpts (..))
 import Seihou.CLI.Shared
   ( deriveNamespace,
@@ -69,23 +70,12 @@ import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import Seihou.Prelude
 import System.Directory (doesDirectoryExist)
 import System.Environment (getEnvironment)
-import System.Exit (exitFailure)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory)
 
 -- | The prompt template, embedded at compile time from data/blueprint-prompt.md.
 promptTemplate :: Text
 promptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-prompt.md")
-
--- | What the runner reports back to its caller after a successful agent
--- launch. EP-32 will consume this to write an @AppliedBlueprint@
--- manifest entry; until then it is constructed but not persisted.
-data BlueprintRunOutcome = BlueprintRunOutcome
-  { outcomeBlueprintName :: ModuleName,
-    outcomeBlueprintVersion :: Maybe Text,
-    outcomeBaseline :: BaselineStatus,
-    outcomeAppliedAt :: UTCTime
-  }
-  deriving stock (Eq, Show)
 
 handleAgentRun :: Bool -> BlueprintRunOpts -> IO ()
 handleAgentRun debug opts = do
@@ -190,13 +180,50 @@ handleAgentRun debug opts = do
         Nothing -> setupAllowedTools
 
   -- (g) Launch.
-  launchAgentWith addDirs tools debug systemPrompt opts.runBlueprintPrompt
+  exitCode <-
+    launchAgentWith addDirs tools debug systemPrompt opts.runBlueprintPrompt
 
--- (h) TODO(EP-32): write AppliedBlueprint{name = bp.name,
---     version = bp.version, baseline = baseline, appliedAt = now}
---     to .seihou/manifest.json. EP-32 owns the manifest schema bump
---     and the writer. The 'BlueprintRunOutcome' record is exposed
---     for that future call site.
+  -- (h) Record the applied-blueprint provenance into
+  -- .seihou/manifest.json *only* on a clean agent exit. A non-zero exit
+  -- (Ctrl-C, claude crash, user-quit) means the session did not run to
+  -- completion; recording it would misrepresent the project's state.
+  case exitCode of
+    ExitSuccess -> do
+      now <- getCurrentTime
+      let entry = appliedBlueprintFromOutcome bp baseline opts now
+          manifestPath = ".seihou" </> "manifest.json"
+      writeRes <- recordAppliedBlueprint manifestPath entry
+      case writeRes of
+        Right () -> pure ()
+        Left err ->
+          logIO level $
+            logError $
+              "Warning: agent succeeded but recording the applied-blueprint entry failed: "
+                <> err
+      exitWith exitCode
+    _ -> exitWith exitCode
+
+-- | Project the runner's local state into the persistent
+-- 'AppliedBlueprint' shape. Pure so the manifest writer remains a
+-- one-liner at the call site and so cross-plan tests can drive it
+-- with synthetic inputs.
+appliedBlueprintFromOutcome ::
+  Blueprint -> BaselineStatus -> BlueprintRunOpts -> UTCTime -> AppliedBlueprint
+appliedBlueprintFromOutcome bp baseline opts now =
+  AppliedBlueprint
+    { name = bp.name,
+      blueprintVersion = bp.version,
+      appliedAt = now,
+      baselineModules = case baseline of
+        BaselineApplied entries -> map fst entries
+        BaselineEmpty -> []
+        BaselineSkipped -> [],
+      noBaseline = case baseline of
+        BaselineSkipped -> True
+        _ -> False,
+      userPrompt = opts.runBlueprintPrompt,
+      agentSessionId = Nothing
+    }
 
 -- | Apply the blueprint's @baseModules@ to the cwd. Mirrors the
 -- composition pipeline in @Seihou.CLI.Run.handleRun@: load every

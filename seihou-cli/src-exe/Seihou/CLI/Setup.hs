@@ -22,6 +22,7 @@ import Seihou.CLI.AgentLaunch
 import Seihou.CLI.AgentLaunchExec (launchAgentWith)
 import Seihou.CLI.Commands (SetupOpts (..))
 import Seihou.Prelude
+import System.Exit (exitWith)
 
 -- | The prompt template, embedded at compile time from data/setup-prompt.md.
 promptTemplate :: Text
@@ -32,7 +33,9 @@ handleSetup debug setupOpts = do
   ctx <- gatherAgentContext
   addDirs <- agentDirsForSession
   let systemPrompt = renderPrompt ctx
-  launchAgentWith addDirs setupAllowedTools debug systemPrompt setupOpts.setupPrompt
+  exitCode <-
+    launchAgentWith addDirs setupAllowedTools debug systemPrompt setupOpts.setupPrompt
+  exitWith exitCode
 
 renderPrompt :: AgentContext -> Text
 renderPrompt ctx =

@@ -68,13 +68,47 @@ and a fixture-driven test decodes a pre-bump manifest and asserts
 ## Progress
 
 - [x] Milestone 1: Domain model and JSON serialization. Added `AppliedBlueprint` to `seihou-core/src/Seihou/Core/Types.hs`, extended `Manifest` with `blueprint :: Maybe AppliedBlueprint`, bumped `currentManifestVersion` from 2 to 3 in `seihou-core/src/Seihou/Manifest/Types.hs`, added the `ToJSON`/`FromJSON` instances and `writeAppliedBlueprint` helper. Six new spec tests cover round-trip and back-compat decode; all 837 seihou-core tests pass.
-- [ ] Milestone 2: Wire the runner. In EP-31's `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs`, after a successful `claude` exit, read the manifest, apply `writeAppliedBlueprint`, and write the manifest back. The runner tests assert the entry is present after a simulated successful exit and absent after a simulated failure.
+- [x] Milestone 2: Wire the runner. Refactored `launchAgentWith` to return `ExitCode` (with the three other callers — Assist/Bootstrap/Setup — propagating it via `exitWith`). Added the `Seihou.CLI.AppliedBlueprint` library module exporting `recordAppliedBlueprint`. Wired `handleAgentRun` so it builds an `AppliedBlueprint` only on `ExitSuccess` and writes it to `.seihou/manifest.json`; non-zero exits leave the manifest untouched. Four new unit tests in `Seihou.CLI.AppliedBlueprintSpec` cover fresh-manifest creation, preservation of unrelated fields, replace-prior-entry semantics, and corrupt-manifest fail-soft. End-to-end `seihou agent run --debug sample-bp` confirms the manifest is populated.
 - [ ] Milestone 3: Status display. Extend `seihou-cli/src/Seihou/CLI/StatusRender.hs` with a `blueprintSection` and wire it into `formatStatus`. Add tests that construct a `Manifest` fixture with a populated `blueprint` and assert the rendered output contains the documented lines.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- 2026-05-08 (M2) — EP-31's `launchAgentWith` shells out to `claude`
+  via `rawSystem` and then calls `exitWith exitCode` immediately,
+  meaning the runner never gets control back to record the manifest
+  entry. The plan anticipated this in the "Runner integration"
+  section ("EP-31 is expected to expose `launchAgentWith` through a
+  parameter or a small typeclass; this plan inherits that seam. If
+  EP-31 did not expose one, this plan adds it as a focused refactor").
+  This plan chose the simpler refactor: `launchAgentWith` now returns
+  `IO ExitCode` and each caller (Assist, Bootstrap, Setup, AgentRun)
+  decides what to do. No typeclass parameter was introduced. The
+  three non-AgentRun callers gain a one-liner `exitCode <- launchAgentWith
+  ...; exitWith exitCode`; AgentRun does its manifest-record work
+  before exiting.
+
+- 2026-05-08 (M2) — EP-31 exported a placeholder
+  `BlueprintRunOutcome` record from `Seihou.CLI.AgentRun` to be
+  consumed by EP-32. M2 ended up not needing it: the helper
+  `appliedBlueprintFromOutcome :: Blueprint -> BaselineStatus ->
+  BlueprintRunOpts -> UTCTime -> AppliedBlueprint` lives directly in
+  `Seihou.CLI.AgentRun` next to the call site, and the persistent IO
+  helper `recordAppliedBlueprint :: FilePath -> AppliedBlueprint -> IO
+  (Either Text ())` lives in the new library module
+  `Seihou.CLI.AppliedBlueprint`. The unused `BlueprintRunOutcome`
+  record and its export were removed. Cross-plan note for EP-34's
+  documentation: do not describe `BlueprintRunOutcome` — it is gone.
+
+- 2026-05-08 (M2) — The Cabal trapping constraint flagged in EP-31's
+  surprises (the `seihou-cli-test` suite cannot import any module from
+  the executable target) was confirmed once again: the
+  `recordAppliedBlueprint` helper had to live in `seihou-cli-internal`
+  (the library) so that `Seihou.CLI.AppliedBlueprintSpec` could exercise
+  it directly. Tests on `handleAgentRun` itself remain out of reach, so
+  the success-writes / failure-does-not-write contract is enforced by
+  hand-inspection of the runner's `case exitCode of ExitSuccess -> …;
+  _ -> exitWith exitCode` branch plus a manual smoke test.
 
 
 ## Decision Log

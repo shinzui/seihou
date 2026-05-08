@@ -23,6 +23,7 @@ import Seihou.CLI.AgentLaunch
 import Seihou.CLI.AgentLaunchExec (launchAgentWith)
 import Seihou.CLI.Commands (BootstrapOpts (..))
 import Seihou.Prelude
+import System.Exit (exitWith)
 
 -- | The prompt template, embedded at compile time from data/bootstrap-prompt.md.
 promptTemplate :: Text
@@ -33,7 +34,9 @@ handleBootstrap debug bootstrapOpts = do
   ctx <- gatherAgentContext
   addDirs <- agentDirsForSession
   let systemPrompt = renderPrompt ctx bootstrapOpts
-  launchAgentWith addDirs bootstrapAllowedTools debug systemPrompt bootstrapOpts.bootstrapPrompt
+  exitCode <-
+    launchAgentWith addDirs bootstrapAllowedTools debug systemPrompt bootstrapOpts.bootstrapPrompt
+  exitWith exitCode
 
 renderPrompt :: AgentContext -> BootstrapOpts -> Text
 renderPrompt ctx bootstrapOpts =

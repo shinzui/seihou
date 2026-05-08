@@ -541,7 +541,7 @@ view of the entire initiative.
 - [x] EP-31: Implement optional baseline application — programmatically apply each declared base module before launching the agent; respect `--no-baseline`.
 - [x] EP-31: Add the embedded blueprint-agent system-prompt scaffold at `seihou-cli/data/blueprint-prompt.md` (mirrors `assist-prompt.md` shape) and embed via `Data.FileEmbed`.
 - [x] EP-32: Add `AppliedBlueprint` to `Seihou.Core.Types`, extend `Manifest`, bump `currentManifestVersion`, and update the JSON encoder/decoder with backwards-compatible decoding for older manifests.
-- [ ] EP-32: Wire EP-31's runner to write the `AppliedBlueprint` entry on successful agent launch.
+- [x] EP-32: Wire EP-31's runner to write the `AppliedBlueprint` entry on successful agent launch.
 - [ ] EP-32: Update `seihou status` to display the applied-blueprint line; verify via integration test.
 - [ ] EP-33: Extend `Registry` with `blueprints :: [RegistryEntry]`; update the Dhall registry schema and `evalRegistryFromFile`/`registryDecoder`.
 - [ ] EP-33: Update `discoverRepoContents` with a `SingleBlueprint FilePath` constructor; update `seihou install` to handle the new constructor and registry-listed blueprints; update `seihou browse`.
