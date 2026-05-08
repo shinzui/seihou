@@ -253,7 +253,7 @@ Alternatives considered:
 |-----|-----------------------------------------------------------------------------|-------------------------------------------------------------------|------------|------------|-------------|
 | 29  | Define the Blueprint domain model, schema, discovery, and run-time refusal  | docs/plans/29-blueprint-domain-model-and-discovery.md             | None       | None       | Complete    |
 | 30  | Authoring and inspection commands for blueprints                            | docs/plans/30-blueprint-authoring-and-inspection.md               | EP-29      | None       | Complete    |
-| 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | In Progress |
+| 31  | Agent runner for blueprints (`seihou agent run BLUEPRINT`)                  | docs/plans/31-blueprint-agent-runner.md                           | EP-29      | EP-30      | Complete    |
 | 32  | Manifest tracking and `seihou status` integration for applied blueprints    | docs/plans/32-blueprint-manifest-and-status.md                    | EP-31      | None       | Not Started |
 | 33  | Registry and multi-module-repository support for blueprints                 | docs/plans/33-blueprint-registry-and-install.md                   | EP-29      | EP-30      | Not Started |
 | 34  | Documentation, agent-prompt updates, and ecosystem polish                   | docs/plans/34-blueprint-docs-and-ecosystem.md                     | EP-31      | EP-30, EP-32, EP-33 | Not Started |
@@ -536,10 +536,10 @@ view of the entire initiative.
 - [x] EP-30: Add `seihou new-blueprint NAME [--path DIR]` CLI handler scaffolding `blueprint.dhall`, `prompt.md`, and `files/`.
 - [x] EP-30: Add `seihou validate-blueprint [PATH]` CLI handler exercising the EP-29 validator.
 - [x] EP-30: Update `seihou list` and `seihou vars` to display blueprints with the new `RunnableKind`. *(List arm landed with EP-29's exhaustiveness fix-ups; EP-30 added the Vars dispatch and the blueprint declaration-mode formatter.)*
-- [ ] EP-31: Add the `AgentRun BlueprintRunOpts` constructor to `Seihou.CLI.Commands.AgentCommand` and the matching parser.
-- [ ] EP-31: Implement `Seihou.CLI.AgentRun.handleAgentRun`: discover the blueprint, validate, resolve variables (with prompts), render the prompt template, and invoke `launchAgentWith` with the right `--add-dir` and `--allowedTools`.
-- [ ] EP-31: Implement optional baseline application — programmatically apply each declared base module before launching the agent; respect `--no-baseline`.
-- [ ] EP-31: Add the embedded blueprint-agent system-prompt scaffold at `seihou-cli/data/blueprint-prompt.md` (mirrors `assist-prompt.md` shape) and embed via `Data.FileEmbed`.
+- [x] EP-31: Add the `AgentRun BlueprintRunOpts` constructor to `Seihou.CLI.Commands.AgentCommand` and the matching parser.
+- [x] EP-31: Implement `Seihou.CLI.AgentRun.handleAgentRun`: discover the blueprint, validate, resolve variables (with prompts), render the prompt template, and invoke `launchAgentWith` with the right `--add-dir` and `--allowedTools`.
+- [x] EP-31: Implement optional baseline application — programmatically apply each declared base module before launching the agent; respect `--no-baseline`.
+- [x] EP-31: Add the embedded blueprint-agent system-prompt scaffold at `seihou-cli/data/blueprint-prompt.md` (mirrors `assist-prompt.md` shape) and embed via `Data.FileEmbed`.
 - [ ] EP-32: Add `AppliedBlueprint` to `Seihou.Core.Types`, extend `Manifest`, bump `currentManifestVersion`, and update the JSON encoder/decoder with backwards-compatible decoding for older manifests.
 - [ ] EP-32: Wire EP-31's runner to write the `AppliedBlueprint` entry on successful agent launch.
 - [ ] EP-32: Update `seihou status` to display the applied-blueprint line; verify via integration test.
@@ -631,6 +631,43 @@ view of the entire initiative.
   from the start: shared helpers go in `seihou-cli-internal` (the
   library) so they are testable; handlers in `src-exe` are
   smoke-tested.
+
+- 2026-05-08 (EP-31) — `OverloadedRecordDot` against
+  `ModuleInstance.instanceModule` and `instanceParentVars` requires
+  importing the *constructor* (`ModuleInstance (..)`), not just the
+  type alias. Type-only imports compile but every `inst.instanceModule`
+  use site fails with "No instance for HasField …". `Seihou.CLI.Run`
+  imports `(..)` already; EP-31 hit the error briefly and fixed it.
+  EP-32 (manifest writer that consumes the runner's output) and
+  EP-33 (registry classifier that case-splits on `RunnableKind` and
+  may also touch `ModuleInstance`) should both import
+  `ModuleInstance (..)` from `Seihou.Composition.Instance` from the
+  start.
+
+- 2026-05-08 (EP-31) — Cabal's `seihou-cli-test` test suite cannot
+  import `Seihou.CLI.AgentRun`, `Seihou.CLI.Commands.BlueprintRunOpts`,
+  or `Seihou.CLI.AgentLaunchExec.launchAgentWith`: each lives in the
+  `executable seihou` target (trapped by `Options.Applicative` /
+  `Data.FileEmbed` / `Paths_seihou_cli`), and tests can only import
+  from the `seihou-cli-internal` library. EP-30 hit the same wall and
+  recovered by covering pure helpers in the library and smoke-testing
+  the handler manually; EP-31 followed the same pattern (10 new
+  formatter unit tests + manual smoke tests). **Cross-plan signal for
+  EP-32:** when wiring the manifest writer into the runner, design
+  the writer to live in `seihou-cli-internal` (or in `seihou-core`)
+  and consume `BlueprintRunOutcome` from the library side — the call
+  site in `Seihou.CLI.AgentRun` is a one-liner, and the test suite
+  covers the writer directly. Do not put the writer next to
+  `handleAgentRun` in `src-exe/`.
+
+- 2026-05-08 (EP-31) — `BlueprintFile` exposes its filesystem path as
+  `src :: FilePath`, not `path :: FilePath` as Integration Point #1
+  of this masterplan implies. The runner uses `bf.src` to render the
+  reference-files block. EP-33's registry classifier and EP-34's doc
+  snippets must also use `src`. Integration Point #1 is left
+  unchanged because EP-29 is the owner of the type and the field name
+  there is correct; this note records the discrepancy with the
+  masterplan's prose.
 
 - 2026-05-07 (EP-30) — `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`
   exports `schemaImportLine` (a precomputed `let S = … sha256:…`

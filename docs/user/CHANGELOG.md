@@ -10,6 +10,41 @@ HEAD  Recover from blocked migrations from the user's side (ExecPlan 25)
 
 ## Changelog
 
+### 2026-05-08 (Agent runner for blueprints)
+
+**Reviewed commits:** ExecPlan 31
+(`docs/plans/31-blueprint-agent-runner.md`) under the
+agent-driven-blueprints master plan
+(`docs/masterplans/3-agent-driven-blueprints.md`).
+
+**Behavior change (user-facing):**
+
+- New command `seihou agent run BLUEPRINT [PROMPT]` runs an
+  agent-driven blueprint. The runner discovers the blueprint by name
+  (same search paths as `seihou run`), resolves the blueprint's
+  declared variables through the standard precedence chain (CLI >
+  env > local > namespace > context > global > defaults > interactive
+  prompts), optionally applies the blueprint's `baseModules` as a
+  starting scaffold, renders the prompt template with the resolved
+  variables substituted in, and launches Claude Code with the
+  blueprint's `files/` directory mounted via `--add-dir`.
+- Pass `--var KEY=VALUE` to override individual variables;
+  `--no-baseline` to skip baseline application; `--namespace`,
+  `--context`, `--force`, and `--verbose` for the same overrides
+  `seihou run` accepts.
+- Pass `--debug` on the parent (`seihou agent --debug run …`) to
+  print the resolved system prompt to stdout instead of launching
+  Claude. The debug path still applies the baseline (so files are
+  written to disk) but does not start an interactive session.
+- Blueprints without `claude` on PATH receive the same install hint
+  the existing `seihou agent assist`/`bootstrap`/`setup` commands
+  produce.
+
+Note: the manifest entry recording that a blueprint was applied
+(`AppliedBlueprint`) is intentionally deferred to a follow-up plan —
+the base modules' manifest entries are written on each invocation,
+but the blueprint's own provenance is not yet persisted.
+
 ### 2026-05-07 (Authoring and inspection commands for blueprints)
 
 **Reviewed commits:** ExecPlan 30

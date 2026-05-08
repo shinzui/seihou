@@ -2,12 +2,21 @@ module Seihou.CLI.AgentLaunchSpec (tests) where
 
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
+    BaselineStatus (..),
     formatAvailableModules,
+    formatBaselineStatus,
+    formatBlueprintIdentity,
     formatLocalModules,
     formatManifestState,
     formatModuleDhallState,
+    formatReferenceFiles,
     formatSeihouProjectState,
     substitute,
+  )
+import Seihou.Core.Types
+  ( Blueprint (..),
+    BlueprintFile (..),
+    ModuleName (..),
   )
 import Test.Hspec
 import Test.Tasty (TestTree)
@@ -78,3 +87,51 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
         formatAvailableModules
           (baseCtx {availableModules = [("foo", "the foo module", "user")]})
           `shouldBe` "Available modules across search paths:\n  - foo — the foo module (user)"
+
+  describe "formatBaselineStatus" $ do
+    it "names --no-baseline as the reason when skipped" $
+      formatBaselineStatus BaselineSkipped
+        `shouldBe` "(no baseline applied — `--no-baseline` was passed)"
+    it "calls out an empty baseModules list" $
+      formatBaselineStatus BaselineEmpty
+        `shouldBe` "(this blueprint declares no base modules)"
+    it "renders an applied versioned module as a bullet" $
+      formatBaselineStatus (BaselineApplied [(ModuleName "foo", Just "1.0.0")])
+        `shouldBe` "  - foo (v1.0.0)"
+    it "renders an applied unversioned module as a bullet" $
+      formatBaselineStatus (BaselineApplied [(ModuleName "foo", Nothing)])
+        `shouldBe` "  - foo (unversioned)"
+
+  describe "formatReferenceFiles" $ do
+    it "states '(no reference files)' when empty" $
+      formatReferenceFiles [] `shouldBe` "(no reference files)"
+    it "renders an entry with a description as 'path — description'" $
+      formatReferenceFiles [BlueprintFile {src = "x.txt", description = Just "an example"}]
+        `shouldBe` "  - x.txt — an example"
+    it "renders an entry without a description as just the path" $
+      formatReferenceFiles [BlueprintFile {src = "y.txt", description = Nothing}]
+        `shouldBe` "  - y.txt"
+
+  describe "formatBlueprintIdentity" $ do
+    let mk v d =
+          Blueprint
+            { name = ModuleName "bp",
+              version = v,
+              description = d,
+              prompt = "",
+              vars = [],
+              prompts = [],
+              baseModules = [],
+              files = [],
+              allowedTools = Nothing,
+              tags = []
+            }
+    it "renders name, version, description as a three-line block" $
+      formatBlueprintIdentity (mk (Just "0.1") (Just "a thing"))
+        `shouldBe` "Name: bp\nVersion: 0.1\nDescription: a thing"
+    it "names '(unspecified)' when version is missing" $
+      formatBlueprintIdentity (mk Nothing (Just "a thing"))
+        `shouldBe` "Name: bp\nVersion: (unspecified)\nDescription: a thing"
+    it "names '(no description)' when description is missing" $
+      formatBlueprintIdentity (mk (Just "0.1") Nothing)
+        `shouldBe` "Name: bp\nVersion: 0.1\nDescription: (no description)"

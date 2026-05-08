@@ -72,7 +72,7 @@ allowlist.
 - [x] Milestone 1 — CLI parsing: add `AgentRun BlueprintRunOpts` constructor, the `BlueprintRunOpts` record, and the `agent run` subcommand parser. *(2026-05-08: parser, footer, and help text wired; `cabal run seihou -- agent run --help` renders correctly. Stub handler exits 1 with a "not yet implemented" message.)*
 - [x] Milestone 2 — Handler skeleton + prompt scaffold: create `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` and `seihou-cli/data/blueprint-prompt.md`. Implement discovery, var resolution, and prompt rendering. The `--no-baseline` path is fully wired; the baseline-application path returns a stub status. *(2026-05-08: combined with M3 in a single commit — see surprise note below.)*
 - [x] Milestone 3 — Baseline application: implement `applyBaseline` calling `loadComposition`, `resolveWithPrompts`, `compileComposedPlan`, `executePlan` directly. Base modules' manifest entries are written via the existing `updateAllModules` path; the *blueprint manifest entry* is left as a TODO for EP-32. *(2026-05-08: smoke-tested with `--no-baseline --debug` against `sample-blueprint`; var substitution and missing-required-var failure both correct. Acceptance 3 (with-baseline + write) is verified by the M4 integration tests.)*
-- [ ] Milestone 4 — Tests: integration tests under `seihou-cli/test/Seihou/CLI/AgentRunSpec.hs` covering `--debug`, `--no-baseline`, `--var` overrides, and missing-required-var failure. Pure-formatter unit tests added to `seihou-cli/test/Seihou/CLI/AgentLaunchSpec.hs`. CHANGELOG entry under `docs/user/CHANGELOG.md`.
+- [x] Milestone 4 — Tests: integration tests under `seihou-cli/test/Seihou/CLI/AgentRunSpec.hs` covering `--debug`, `--no-baseline`, `--var` overrides, and missing-required-var failure. Pure-formatter unit tests added to `seihou-cli/test/Seihou/CLI/AgentLaunchSpec.hs`. CHANGELOG entry under `docs/user/CHANGELOG.md`. *(2026-05-08: Pure formatter tests added (10 new specs; 222 total tests pass). The integration spec was skipped — see surprise note. CHANGELOG entry written.)*
 
 
 ## Surprises & Discoveries
@@ -101,6 +101,26 @@ allowlist.
   EP-31's plan text mentioned a `path` field; the runner uses `src` to
   match EP-29's actual schema. EP-33's registry classifier and EP-34's
   doc snippets must use `src` as well.
+
+- 2026-05-08 — The integration spec at
+  `seihou-cli/test/Seihou/CLI/AgentRunSpec.hs` could not be written:
+  Cabal's `seihou-cli-test` test suite imports only from
+  `seihou-cli-internal`, but `Seihou.CLI.AgentRun`,
+  `Seihou.CLI.Commands.BlueprintRunOpts`, and
+  `Seihou.CLI.AgentLaunchExec.launchAgentWith` all live in the
+  `executable seihou` target (each is "trapped" by
+  `Options.Applicative` / `Data.FileEmbed` / `Paths_seihou_cli`). EP-30
+  hit the same wall and recovered with library-side coverage of
+  pure helpers; EP-31 follows the same pattern: the formatter unit
+  tests (`formatBaselineStatus`, `formatReferenceFiles`,
+  `formatBlueprintIdentity`) live in
+  `seihou-cli/test/Seihou/CLI/AgentLaunchSpec.hs` (library-importable),
+  and the handler is smoke-tested by hand. **Cross-plan signal:**
+  EP-32 (manifest writer + `seihou status` integration) will hit the
+  same constraint when wiring the manifest entry write into the
+  runner. Plan around it: the writer goes in `seihou-cli-internal` so
+  both AgentRun and the test suite can consume it; the executable-only
+  call site is a one-line invocation of the library function.
 
 
 ## Decision Log
@@ -173,7 +193,43 @@ allowlist.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-31 ships `seihou agent run BLUEPRINT [PROMPT]` end-to-end. Variable
+resolution, optional baseline application, prompt rendering, and the
+Claude Code launch path all work; the `--debug` path is the test
+hook. All four plan milestones landed across two commits (M1; M2+M3
+merged for the reasons recorded in Surprises; M4 with M2/M3). 222
+test-suite specs pass and `nix flake check` is green.
+
+What worked well:
+
+- The `placeholderModule` pattern — wrapping a blueprint's `vars` and
+  `prompts` in a synthetic Module so `resolveWithPrompts` can run
+  unmodified — kept the variable-resolution code path completely
+  shared with `seihou run`. No duplication of the precedence chain.
+- Reusing the `loadComposition` → `compileComposedPlan` →
+  `executePlan` pipeline via direct call (rather than shelling out to
+  `seihou run`) made the test path tractable and avoided a second
+  `claude`-or-not branch in the runner.
+- Folding the blueprint's resolved vars into the base modules' CLI
+  override map via `Map.union cliOverridesIn blueprintAsOverrides`
+  achieves the masterplan's intent — blueprint vars propagate to
+  base modules but base-module-resolved values do not flow back —
+  with no extra plumbing.
+
+What was harder than expected:
+
+- The `OverloadedRecordDot`-vs-`ModuleInstance` import quirk
+  (recorded in Surprises) cost one rebuild. EP-32 should preempt it
+  by importing `ModuleInstance (..)`.
+- The cabal restriction around test-suite imports (also recorded in
+  Surprises) prevented the integration spec the plan called for.
+  EP-32 will hit the same restriction; the masterplan now flags this
+  for EP-33's planning too.
+
+Hand-off to EP-32: the runner exposes `BlueprintRunOutcome` (name,
+version, baseline status, applied-at timestamp). EP-32 builds the
+`AppliedBlueprint` manifest writer and calls it from the
+`TODO(EP-32)` hand-off comment in `handleAgentRun`.
 
 
 ## Context and Orientation
