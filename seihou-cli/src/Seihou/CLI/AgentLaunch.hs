@@ -1,5 +1,6 @@
 module Seihou.CLI.AgentLaunch
   ( AgentContext (..),
+    BaselineStatus (..),
     gatherAgentContext,
     agentDirsForSession,
     defaultAllowedTools,
@@ -11,10 +12,14 @@ module Seihou.CLI.AgentLaunch
     formatModuleDhallState,
     formatLocalModules,
     formatAvailableModules,
+    formatBlueprintIdentity,
+    formatBaselineStatus,
+    formatReferenceFiles,
   )
 where
 
 import Control.Monad (filterM)
+import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
 import Seihou.Core.Types
@@ -196,3 +201,50 @@ sourceLabel :: ModuleSource -> Text
 sourceLabel SourceProject = "project"
 sourceLabel SourceUser = "user"
 sourceLabel SourceInstalled = "installed"
+
+-- | Outcome of the optional baseline-application phase in
+-- @seihou agent run@. Captured here in the library so the runner
+-- (in @src-exe@) and the formatter share one shape.
+data BaselineStatus
+  = -- | The user passed @--no-baseline@; the runner skipped baseline application entirely.
+    BaselineSkipped
+  | -- | The blueprint declared no @baseModules@; nothing to apply.
+    BaselineEmpty
+  | -- | Baseline modules were applied. Each entry is the module's name and (optional) version.
+    BaselineApplied [(ModuleName, Maybe Text)]
+  deriving stock (Eq, Show)
+
+-- | Render a blueprint's identity (name, version, description) as the
+-- block embedded under "## Blueprint Identity" in the agent's system prompt.
+formatBlueprintIdentity :: Blueprint -> Text
+formatBlueprintIdentity bp =
+  T.intercalate
+    "\n"
+    [ "Name: " <> bp.name.unModuleName,
+      "Version: " <> fromMaybe "(unspecified)" bp.version,
+      "Description: " <> fromMaybe "(no description)" bp.description
+    ]
+
+-- | Render the "## Baseline" body for the agent prompt.
+formatBaselineStatus :: BaselineStatus -> Text
+formatBaselineStatus BaselineSkipped =
+  "(no baseline applied — `--no-baseline` was passed)"
+formatBaselineStatus BaselineEmpty =
+  "(this blueprint declares no base modules)"
+formatBaselineStatus (BaselineApplied entries) =
+  T.intercalate "\n" (map render entries)
+  where
+    render (n, Just v) = "  - " <> n.unModuleName <> " (v" <> v <> ")"
+    render (n, Nothing) = "  - " <> n.unModuleName <> " (unversioned)"
+
+-- | Render a blueprint's @files@ list as the body of the
+-- "## Reference Files" block. The agent runner mounts the blueprint's
+-- @files/@ directory via @--add-dir@; this list helps the agent pick
+-- the right reference for the user's request.
+formatReferenceFiles :: [BlueprintFile] -> Text
+formatReferenceFiles [] = "(no reference files)"
+formatReferenceFiles bfs = T.intercalate "\n" (map render bfs)
+  where
+    render bf = case bf.description of
+      Just d -> "  - " <> T.pack bf.src <> " — " <> d
+      Nothing -> "  - " <> T.pack bf.src
