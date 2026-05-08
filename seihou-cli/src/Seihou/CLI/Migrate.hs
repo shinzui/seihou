@@ -104,14 +104,6 @@ data MigrateOpts = MigrateOpts
     -- of truth. Default: 'False' (fetch is the new default after EP-2;
     -- before EP-2 the only behavior was local-only).
     migrateNoFetch :: Bool,
-    -- | Legacy escape hatch retained for one milestone of CLI
-    -- compatibility while M3 of EP-35 removes the @--bump-only@
-    -- flag. Under the gap-tolerant planner the field has no effect
-    -- on outcomes — every successful @seihou migrate@ already
-    -- advances the manifest to the target version regardless of
-    -- whether any migration ops apply. Treat this field as
-    -- deprecated; M3 removes it.
-    migrateBumpOnly :: Bool,
     -- | When 'True', and only on success branches that mutated the
     -- project's working tree, stage the touched files plus
     -- @.seihou/manifest.json@ and create a git commit. The commit

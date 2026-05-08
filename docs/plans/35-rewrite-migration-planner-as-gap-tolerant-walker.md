@@ -126,8 +126,12 @@ The work is observable in three places:
       `MigrateApplied`, `MigrateDryRunOK`. JSON shape simplified to
       `{module, from, to, steps, operations}`. EP-27 fallback retuned
       to "local declares more in-window steps than clone."
-- [ ] M3 — Remove the `--bump-only` (`seihou migrate`) and
+- [x] M3 — Remove the `--bump-only` (`seihou migrate`) and
       `--bump-blocked` (`seihou run`) flags and their scaffolding.
+      Done 2026-05-08. Removed `migrateBumpOnly` from `MigrateOpts`,
+      `runBumpBlocked` from `RunOpts`, and the parser entries / record
+      construction sites for both. `seihou migrate --help` /
+      `seihou run --help` no longer mention the flags.
 - [x] M4 — Simplify the pending-migration consumers
       (`StatusRender.hs`, `PendingMigrations.hs`, `Run.hs`, `Upgrade.hs`),
       including the user-facing refusal-message strings. Done

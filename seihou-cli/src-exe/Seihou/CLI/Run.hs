@@ -551,7 +551,6 @@ applyOneMigration level manifest (modName, _) =
                 migrateJson = False,
                 migrateVerbose = False,
                 migrateNoFetch = True,
-                migrateBumpOnly = False,
                 migrateCommit = False,
                 migrateCommitMessage = Nothing
               }
