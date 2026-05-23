@@ -1,6 +1,7 @@
 module Main (main) where
 
 import Seihou.CLI.AgentCompletionSpec qualified as AgentCompletionSpec
+import Seihou.CLI.AgentConfigSpec qualified as AgentConfigSpec
 import Seihou.CLI.AgentLaunchSpec qualified as AgentLaunchSpec
 import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
 import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
@@ -28,6 +29,7 @@ main = do
     sequence
       [ AgentLaunchSpec.tests,
         AgentCompletionSpec.tests,
+        AgentConfigSpec.tests,
         AppliedBlueprintSpec.tests,
         BrowseFormatSpec.tests,
         CommitMessageSpec.tests,

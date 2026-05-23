@@ -86,6 +86,8 @@ data CompletionsCommand
 
 data AgentOpts = AgentOpts
   { agentDebug :: Bool,
+    agentProvider :: Maybe Text,
+    agentModel :: Maybe Text,
     agentCommand :: AgentCommand
   }
   deriving stock (Eq, Show, Generic)
@@ -1260,6 +1262,22 @@ agentParser =
   fmap Agent $
     AgentOpts
       <$> switch (long "debug" <> help "Print the resolved system prompt and exit")
+      <*> optional
+        ( option
+            (T.pack <$> str)
+            ( long "provider"
+                <> metavar "PROVIDER"
+                <> help "Agent provider: claude-cli, codex-cli, anthropic, or openai"
+            )
+        )
+      <*> optional
+        ( option
+            (T.pack <$> str)
+            ( long "model"
+                <> metavar "MODEL"
+                <> help "Agent model name or provider-specific model alias"
+            )
+        )
       <*> agentCommandParser
 
 agentCommandParser :: Parser AgentCommand

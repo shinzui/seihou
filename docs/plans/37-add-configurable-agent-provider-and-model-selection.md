@@ -27,10 +27,10 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Add provider/model fields to `AgentOpts` and the `seihou agent` parser.
-- [ ] Define config key names and precedence for agent provider/model lookup.
-- [ ] Implement pure resolution logic that merges CLI flags, environment variables, Seihou config, and defaults.
-- [ ] Add parser and resolver tests.
+- [x] Add provider/model fields to `AgentOpts` and the `seihou agent` parser. Completed 2026-05-23T23:30:32Z.
+- [x] Define config key names and precedence for agent provider/model lookup. Completed 2026-05-23T23:30:32Z.
+- [x] Implement pure resolution logic that merges CLI flags, environment variables, Seihou config, and defaults. Completed 2026-05-23T23:30:32Z.
+- [x] Add resolver tests and parser smoke validation. Completed 2026-05-23T23:30:32Z.
 
 
 ## Surprises & Discoveries
@@ -38,7 +38,7 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: `Seihou.CLI.Commands` is still in the executable target under `seihou-cli/src-exe`, while `seihou-cli-test` builds against the internal library. That makes a direct parser unit test impractical without moving executable modules or broadening the test target. Evidence: the Cabal file lists `Seihou.CLI.Commands` under executable `other-modules`, not the `seihou-cli-internal` library. The parser behavior was therefore validated with `cabal run seihou -- agent --help` and `cabal run seihou -- agent --provider codex-cli --model gpt-5 --debug assist "say hello"`.
 
 
 ## Decision Log
@@ -53,13 +53,39 @@ Record every decision made while working on the plan.
   Rationale: Existing config is a flat Dhall record of text values. These keys are explicit, do not collide with module variables, and can be managed through the existing `seihou config set/get/list` command.
   Date: 2026-05-23
 
+- Decision: Treat blank provider/model values as absent during resolution.
+  Rationale: Empty strings from environment variables or config files should not mask a lower-precedence useful value or force provider parsing to fail with an empty provider name.
+  Date: 2026-05-23
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Implemented `Seihou.CLI.AgentConfig` with constants for `agent.provider`, `agent.model`, `SEIHOU_AGENT_PROVIDER`, and `SEIHOU_AGENT_MODEL`; a pure `resolveAgentModelConfig`; and an IO `loadAgentModelConfig` that reads local and global Seihou config plus the two environment variables. Added `--provider` and `--model` to the parent `seihou agent` parser and stored them on `AgentOpts` for EP-3 to thread into handlers.
+
+Focused resolver validation passed:
+
+```text
+All 7 tests passed (0.00s)
+1 of 1 test suites (1 of 1 test cases) passed.
+```
+
+Full CLI validation also passed:
+
+```text
+All 220 tests passed (16.26s)
+1 of 1 test suites (1 of 1 test cases) passed.
+```
+
+Parser smoke validation passed. `cabal run seihou -- agent --help` rendered:
+
+```text
+Usage: seihou agent [--debug] [--provider PROVIDER] [--model MODEL] COMMAND
+```
+
+`cabal run seihou -- agent --provider codex-cli --model gpt-5 --debug assist "say hello"` reached the debug command handler and printed the resolved assist system prompt instead of failing option parsing.
 
 
 ## Context and Orientation
@@ -71,11 +97,13 @@ The command-line parser is in `seihou-cli/src-exe/Seihou/CLI/Commands.hs`. It de
 ```haskell
 data AgentOpts = AgentOpts
   { agentDebug :: Bool,
+    agentProvider :: Maybe Text,
+    agentModel :: Maybe Text,
     agentCommand :: AgentCommand
   }
 ```
 
-`agentParser` currently parses only `--debug` before `agentCommandParser`. The child subcommands are `assist`, `bootstrap`, `setup`, and `run`.
+`agentParser` now parses `--debug`, `--provider`, and `--model` before `agentCommandParser`. The child subcommands are `assist`, `bootstrap`, `setup`, and `run`.
 
 Seihou config files are flat Dhall records read through `seihou-core/src/Seihou/Effect/ConfigReader.hs` and `seihou-core/src/Seihou/Effect/ConfigReaderInterp.hs`. The existing config command in `seihou-cli/src-exe/Seihou/CLI/Config.hs` can write any key/value pair, so this plan does not need a new config subcommand. `docs/user/config-and-variables.md` documents precedence for module variables, but agent provider/model resolution should be narrower and explicit: CLI flag, environment variable, local config, global config, built-in default. Namespace and context config can be added later if there is a concrete use case.
 
@@ -97,6 +125,7 @@ data AgentConfigInputs = AgentConfigInputs
   }
 
 resolveAgentModelConfig :: AgentConfigInputs -> Either Text AgentModelConfig
+loadAgentModelConfig :: Maybe Text -> Maybe Text -> IO (Either Text AgentModelConfig)
 ```
 
 Use keys `agent.provider` and `agent.model` in config maps and environment variables `SEIHOU_AGENT_PROVIDER` and `SEIHOU_AGENT_MODEL`. The built-in default is `provider = claude-cli` and `model = Nothing`, which lets `claude -p` select its default model.
@@ -145,3 +174,5 @@ At the end of this plan, later handlers can call:
 loadAgentModelConfig :: Maybe Text -> Maybe Text -> IO (Either Text AgentModelConfig)
 resolveAgentModelConfig :: AgentConfigInputs -> Either Text AgentModelConfig
 ```
+
+Revision Note 2026-05-23: Updated this ExecPlan after implementation to record completed progress, validation evidence, the executable-target parser testing constraint, and the final `AgentOpts` and `AgentConfig` interfaces.

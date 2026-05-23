@@ -34,7 +34,7 @@ An alternative was to keep the existing interactive Claude Code launch path and 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Add Baikai dependency and agent completion facade | docs/plans/36-add-baikai-dependency-and-agent-completion-facade.md | None | None | Complete |
-| EP-2 | Add configurable agent provider and model selection | docs/plans/37-add-configurable-agent-provider-and-model-selection.md | EP-1 | None | Not Started |
+| EP-2 | Add configurable agent provider and model selection | docs/plans/37-add-configurable-agent-provider-and-model-selection.md | EP-1 | None | Complete |
 | EP-3 | Migrate agent commands to Baikai launcher | docs/plans/38-migrate-agent-commands-to-baikai-launcher.md | EP-1, EP-2 | None | Not Started |
 | EP-4 | Document and validate configurable Baikai agents | docs/plans/39-document-and-validate-configurable-baikai-agents.md | EP-3 | None | Not Started |
 
@@ -69,9 +69,9 @@ Documentation files `docs/cli/agent.md`, `docs/user/config-and-variables.md`, `d
 - [x] EP-1: Add Baikai packages to the local build inputs.
 - [x] EP-1: Create `Seihou.CLI.AgentCompletion` with provider registration, model construction, request execution, and response text extraction.
 - [x] EP-1: Add focused tests for pure completion facade helpers.
-- [ ] EP-2: Add parent `seihou agent --provider` and `--model` parser fields.
-- [ ] EP-2: Implement provider/model resolution from CLI flags, environment variables, local config, global config, and defaults.
-- [ ] EP-2: Add parser and resolver tests.
+- [x] EP-2: Add parent `seihou agent --provider` and `--model` parser fields.
+- [x] EP-2: Implement provider/model resolution from CLI flags, environment variables, local config, global config, and defaults.
+- [x] EP-2: Add parser smoke validation and resolver tests.
 - [ ] EP-3: Thread resolved `AgentModelConfig` through agent command dispatch and handlers.
 - [ ] EP-3: Replace raw Claude launcher calls in assist, bootstrap, setup, and blueprint runner.
 - [ ] EP-3: Preserve debug behavior and successful blueprint bookkeeping semantics.
@@ -89,6 +89,8 @@ The MasterPlan child init step was initially run in parallel and produced duplic
 EP-1 uses local Baikai package paths in `cabal.project`: `../../baikai/baikai`, `../../baikai/baikai-claude`, and `../../baikai/baikai-openai`. The relative path is from `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`; the initially assumed `../baikai/...` path does not exist.
 
 Baikai re-exports duplicate record selectors named `api` and `provider` from both `Model` and `Response`. Later plans that inspect Baikai records directly should import narrower modules such as `Baikai.Model` or avoid direct Baikai selectors from command code.
+
+`Seihou.CLI.Commands` still belongs to the executable target, not the `seihou-cli-internal` library that `seihou-cli-test` imports. EP-2 therefore validated parent parser behavior with `cabal run seihou -- agent --help` and `cabal run seihou -- agent --provider codex-cli --model gpt-5 --debug assist "say hello"` rather than adding a direct parser unit test.
 
 
 ## Decision Log
@@ -111,6 +113,10 @@ Baikai re-exports duplicate record selectors named `api` and `provider` from bot
 
 - Decision: EP-1 exposes `AgentModelConfig` fields as `agentProvider` and `agentModel`.
   Rationale: These names avoid colliding with Baikai's own `provider` and `model` selectors while still carrying the provider/model concepts required by EP-2 and EP-3.
+  Date: 2026-05-23
+
+- Decision: Treat blank EP-2 provider/model inputs as absent when resolving agent configuration.
+  Rationale: Blank CLI, environment, or config values should not mask useful lower-precedence values or produce an empty provider diagnostic.
   Date: 2026-05-23
 
 
