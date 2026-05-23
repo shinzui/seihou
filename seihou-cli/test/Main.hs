@@ -1,5 +1,6 @@
 module Main (main) where
 
+import Seihou.CLI.AgentCompletionSpec qualified as AgentCompletionSpec
 import Seihou.CLI.AgentLaunchSpec qualified as AgentLaunchSpec
 import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
 import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
@@ -26,6 +27,7 @@ main = do
   tests <-
     sequence
       [ AgentLaunchSpec.tests,
+        AgentCompletionSpec.tests,
         AppliedBlueprintSpec.tests,
         BrowseFormatSpec.tests,
         CommitMessageSpec.tests,

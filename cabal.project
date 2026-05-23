@@ -1,5 +1,20 @@
 packages:
   seihou-core
   seihou-cli
+  ../../baikai/baikai
+  ../../baikai/baikai-claude
+  ../../baikai/baikai-openai
 
 write-ghc-environment-files: never
+
+source-repository-package
+  type: git
+  location: https://github.com/shinzui/streamly-project
+  tag: f8e33b5600f5ddadc17ce5d9a8e45a16c09899cb
+  subdir: streamly
+
+source-repository-package
+  type: git
+  location: https://github.com/shinzui/streamly-project
+  tag: f8e33b5600f5ddadc17ce5d9a8e45a16c09899cb
+  subdir: streamly/core

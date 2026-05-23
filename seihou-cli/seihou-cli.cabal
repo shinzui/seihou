@@ -17,6 +17,7 @@ library seihou-cli-internal
   hs-source-dirs: src
   visibility: private
   exposed-modules:
+    Seihou.CLI.AgentCompletion
     Seihou.CLI.AgentLaunch
     Seihou.CLI.AppliedBlueprint
     Seihou.CLI.BrowseFormat
@@ -52,6 +53,9 @@ library seihou-cli-internal
     aeson >=2.1 && <3,
     aeson-pretty >=0.8 && <1,
     ansi-terminal >=1.1 && <2,
+    baikai,
+    baikai-claude,
+    baikai-openai,
     base >=4.18 && <5,
     bytestring >=0.11 && <1,
     containers >=0.6 && <1,
@@ -63,6 +67,7 @@ library seihou-cli-internal
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
+    vector,
 
 executable seihou
   default-language: GHC2024
@@ -150,6 +155,7 @@ test-suite seihou-cli-test
     TypeFamilies
 
   other-modules:
+    Seihou.CLI.AgentCompletionSpec
     Seihou.CLI.AgentLaunchSpec
     Seihou.CLI.AppliedBlueprintSpec
     Seihou.CLI.BrowseFormatSpec
@@ -172,6 +178,7 @@ test-suite seihou-cli-test
 
   build-depends:
     aeson >=2.1 && <3,
+    baikai,
     base >=4.18 && <5,
     bytestring >=0.11 && <1,
     containers >=0.6 && <1,
@@ -187,3 +194,4 @@ test-suite seihou-cli-test
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
+    vector,

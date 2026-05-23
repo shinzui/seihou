@@ -1,0 +1,120 @@
+---
+id: 39
+slug: document-and-validate-configurable-baikai-agents
+title: "Document and validate configurable Baikai agents"
+kind: exec-plan
+created_at: 2026-05-23T22:53:01Z
+intention: "intention_01ksbgksmgeaesf6sft8prdvyn"
+master_plan: "docs/masterplans/4-baikai-backed-configurable-agent-assistance.md"
+---
+
+# Document and validate configurable Baikai agents
+
+This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
+Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
+
+
+## Purpose / Big Picture
+
+After this change, the configurable Baikai-backed agent behavior is documented and validated at the user and developer levels. Users can discover accepted provider values, understand how `agent.provider` and `agent.model` are resolved, and see that `claude-cli` means Baikai's `claude -p` provider while `codex-cli` means Baikai's `codex exec` provider.
+
+This plan also updates architecture notes and command reference text so future contributors do not reintroduce direct `claude` process launches for agent assistance.
+
+
+## Progress
+
+Use a checklist to summarize granular steps. Every stopping point must be documented here,
+even if it requires splitting a partially completed task into two ("done" vs. "remaining").
+This section must always reflect the actual current state of the work.
+
+- [ ] Update CLI reference docs for `seihou agent`.
+- [ ] Update user config docs with `agent.provider` and `agent.model`.
+- [ ] Update architecture docs and changelog entries.
+- [ ] Run full build and test validation, plus debug-mode command smoke checks.
+
+
+## Surprises & Discoveries
+
+Document unexpected behaviors, bugs, optimizations, or insights discovered during
+implementation. Provide concise evidence.
+
+(None yet.)
+
+
+## Decision Log
+
+Record every decision made while working on the plan.
+
+- Decision: Document the batch nature of Baikai CLI providers directly in `docs/cli/agent.md`.
+  Rationale: Existing docs promise interactive Claude Code sessions with tools. After the migration, `claude-cli` and `codex-cli` are one-shot completion providers, so the docs must prevent users from expecting the old terminal handoff.
+  Date: 2026-05-23
+
+
+## Outcomes & Retrospective
+
+Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
+Compare the result against the original purpose.
+
+(To be filled during and after implementation.)
+
+
+## Context and Orientation
+
+This plan depends on [36-add-baikai-dependency-and-agent-completion-facade.md](/Users/shinzui/Keikaku/bokuno/seihou-project/seihou/docs/plans/36-add-baikai-dependency-and-agent-completion-facade.md), [37-add-configurable-agent-provider-and-model-selection.md](/Users/shinzui/Keikaku/bokuno/seihou-project/seihou/docs/plans/37-add-configurable-agent-provider-and-model-selection.md), and [38-migrate-agent-commands-to-baikai-launcher.md](/Users/shinzui/Keikaku/bokuno/seihou-project/seihou/docs/plans/38-migrate-agent-commands-to-baikai-launcher.md).
+
+Current command docs live in `docs/cli/agent.md`. They say each subcommand launches an interactive Claude session and requires the `claude` CLI. That becomes inaccurate once plan 38 is implemented.
+
+Configuration docs live in `docs/user/config-and-variables.md` and `docs/cli/config.md`. They already explain that arbitrary keys can be written with `seihou config set KEY VALUE`; this plan adds agent-specific examples and precedence text.
+
+Architecture notes live in `docs/dev/architecture/overview.md`. That file currently identifies `Seihou.CLI.AgentLaunchExec` as the Claude shell-out module and describes `AgentLaunch.hs` as a shared Claude Code launcher. Update those references to the Baikai facade and provider/model resolver.
+
+
+## Plan of Work
+
+Milestone 1 updates `docs/cli/agent.md`. Add parent options `--provider PROVIDER` and `--model MODEL`, list accepted providers, and show examples for `claude-cli`, `codex-cli`, `anthropic`, and `openai`. Replace wording that says every command launches an interactive Claude Code session with wording that says the command renders a Seihou-aware prompt and sends it to the configured Baikai provider. Mention that `--debug` still prints the resolved system prompt without contacting the provider.
+
+Milestone 2 updates config docs. In `docs/user/config-and-variables.md`, add an "Agent provider defaults" subsection explaining `agent.provider`, `agent.model`, `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`, and precedence. Include examples:
+
+```bash
+seihou config set agent.provider codex-cli --global
+seihou config set agent.model gpt-5 --global
+seihou agent assist "create a module"
+seihou agent --provider claude-cli --model sonnet setup "add nix"
+```
+
+Milestone 3 updates developer docs and changelog. In `docs/dev/architecture/overview.md`, replace references to `AgentLaunchExec.hs` as the active launcher with `AgentCompletion.hs` and `AgentConfig.hs`. In `docs/user/CHANGELOG.md`, add a dated entry for configurable Baikai-backed agent commands.
+
+Milestone 4 validates the full initiative. Run the full CLI test suite and at least one debug-mode command for every agent subcommand. Debug commands should not require provider binaries or API keys.
+
+
+## Concrete Steps
+
+Run these commands from `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`:
+
+```bash
+cabal build all
+cabal test all
+cabal run seihou -- agent --help
+cabal run seihou -- agent --debug --provider claude-cli assist "debug"
+cabal run seihou -- agent --debug --provider codex-cli bootstrap --repo "debug"
+cabal run seihou -- agent --debug --provider openai setup "debug"
+```
+
+The debug commands should print rendered prompts and exit successfully without contacting any AI provider.
+
+
+## Validation and Acceptance
+
+Acceptance is met when docs and help text agree on provider values, config keys, and precedence; `cabal build all` and `cabal test all` pass; and all listed debug smoke commands print prompt text without requiring `claude`, `codex`, or API keys.
+
+When live provider tools and credentials are available, run one non-debug `claude-cli` and one non-debug `codex-cli` command to prove both Baikai CLI providers are wired. Record failures caused by missing binaries as environment limitations, not implementation failures.
+
+
+## Idempotence and Recovery
+
+Documentation edits are repeatable. Debug smoke checks are safe because they do not contact providers. Non-debug live checks may consume API quota for `anthropic` or `openai`; prefer `claude-cli` or `codex-cli` for local subscription-backed smoke tests when available.
+
+
+## Interfaces and Dependencies
+
+This plan edits `docs/cli/agent.md`, `docs/user/config-and-variables.md`, `docs/dev/architecture/overview.md`, and `docs/user/CHANGELOG.md`. It validates the interfaces created by the earlier plans: `Seihou.CLI.AgentCompletion` for provider execution and `Seihou.CLI.AgentConfig` for provider/model resolution.
