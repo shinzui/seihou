@@ -8,6 +8,7 @@
 
   # Shared Haskell patch management
   inputs.haskell-nix.url = "github:shinzui/haskell-nix";
+  inputs.haskell-nix.inputs.nixpkgs.follows = "nixpkgs";
 
   # Dhall schema package (non-flake, pinned to commit)
   inputs.seihou-schema-src = {
@@ -21,7 +22,6 @@
       let
         pkgs = import nixpkgs {
           inherit system;
-          overlays = [ inputs.haskell-nix.overlays.default ];
         };
         ghcVersion = "ghc9122";
         treefmtEval = treefmt-nix.lib.evalModule pkgs (import ./treefmt.nix { inherit pkgs ghcVersion; });
