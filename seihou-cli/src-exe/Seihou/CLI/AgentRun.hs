@@ -3,7 +3,7 @@
 -- | Agent runner for blueprints. Loads a blueprint, resolves its
 -- variables (with the same precedence chain as @seihou run@), optionally
 -- applies its declared @baseModules@, renders the prompt template, and
--- launches Claude Code via 'launchAgentWith'. See EP-31
+-- sends the rendered prompt through the configured Baikai provider. See EP-31
 -- (docs/plans/31-blueprint-agent-runner.md) for the full design.
 module Seihou.CLI.AgentRun
   ( handleAgentRun,
@@ -11,18 +11,24 @@ module Seihou.CLI.AgentRun
   )
 where
 
+import Control.Monad (when)
 import Data.FileEmbed (embedFile)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
+import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
+import Seihou.CLI.AgentCompletion
+  ( AgentModelConfig,
+    buildAgentCompletionRequest,
+    runAgentCompletion,
+  )
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
     BaselineStatus (..),
-    agentDirsForSession,
     formatAvailableModules,
     formatBaselineStatus,
     formatLocalModules,
@@ -31,10 +37,8 @@ import Seihou.CLI.AgentLaunch
     formatReferenceFiles,
     formatSeihouProjectState,
     gatherAgentContext,
-    setupAllowedTools,
     substitute,
   )
-import Seihou.CLI.AgentLaunchExec (launchAgentWith)
 import Seihou.CLI.AppliedBlueprint (recordAppliedBlueprint)
 import Seihou.CLI.Commands (BlueprintRunOpts (..))
 import Seihou.CLI.Shared
@@ -68,17 +72,16 @@ import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
 import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import Seihou.Prelude
-import System.Directory (doesDirectoryExist)
 import System.Environment (getEnvironment)
-import System.Exit (ExitCode (..), exitFailure, exitWith)
+import System.Exit (exitFailure)
 import System.FilePath (takeDirectory)
 
 -- | The prompt template, embedded at compile time from data/blueprint-prompt.md.
 promptTemplate :: Text
 promptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-prompt.md")
 
-handleAgentRun :: Bool -> BlueprintRunOpts -> IO ()
-handleAgentRun debug opts = do
+handleAgentRun :: Bool -> AgentModelConfig -> BlueprintRunOpts -> IO ()
+handleAgentRun debug modelConfig opts = do
   let level = if opts.runBlueprintVerbose then LogVerbose else LogNormal
 
   -- (a) Discover and validate. discoverRunnable resolves by directory
@@ -170,38 +173,41 @@ handleAgentRun debug opts = do
   ctx <- gatherAgentContext
   let systemPrompt = renderSystemPrompt ctx bp baseline renderedUser
 
-  -- (f) Add-dirs and tool allowlist.
-  sessionDirs <- agentDirsForSession
-  let filesDir = blueprintDir </> "files"
-  filesDirExists <- doesDirectoryExist filesDir
-  let addDirs = sessionDirs ++ [filesDir | filesDirExists]
-      tools = case bp.allowedTools of
-        Just custom -> map T.unpack custom
-        Nothing -> setupAllowedTools
+  -- (f) Launch.
+  launchSucceeded <-
+    runRenderedAgentPrompt debug modelConfig systemPrompt opts.runBlueprintPrompt
 
-  -- (g) Launch.
-  exitCode <-
-    launchAgentWith addDirs tools debug systemPrompt opts.runBlueprintPrompt
+  -- (g) Record the applied-blueprint provenance into
+  -- .seihou/manifest.json only after a successful provider response. In
+  -- debug mode, keep the previous successful dry-launch behavior by recording
+  -- after the rendered prompt is printed successfully.
+  when launchSucceeded $ do
+    now <- getCurrentTime
+    let entry = appliedBlueprintFromOutcome bp baseline opts now
+        manifestPath = ".seihou" </> "manifest.json"
+    writeRes <- recordAppliedBlueprint manifestPath entry
+    case writeRes of
+      Right () -> pure ()
+      Left err ->
+        logIO level $
+          logError $
+            "Warning: agent succeeded but recording the applied-blueprint entry failed: "
+              <> err
 
-  -- (h) Record the applied-blueprint provenance into
-  -- .seihou/manifest.json *only* on a clean agent exit. A non-zero exit
-  -- (Ctrl-C, claude crash, user-quit) means the session did not run to
-  -- completion; recording it would misrepresent the project's state.
-  case exitCode of
-    ExitSuccess -> do
-      now <- getCurrentTime
-      let entry = appliedBlueprintFromOutcome bp baseline opts now
-          manifestPath = ".seihou" </> "manifest.json"
-      writeRes <- recordAppliedBlueprint manifestPath entry
-      case writeRes of
-        Right () -> pure ()
-        Left err ->
-          logIO level $
-            logError $
-              "Warning: agent succeeded but recording the applied-blueprint entry failed: "
-                <> err
-      exitWith exitCode
-    _ -> exitWith exitCode
+runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Text -> Maybe Text -> IO Bool
+runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
+  | debug = do
+      TIO.putStr systemPrompt
+      pure True
+  | otherwise = do
+      result <- runAgentCompletion (buildAgentCompletionRequest modelConfig systemPrompt initialPrompt)
+      case result of
+        Right assistantText -> do
+          TIO.putStrLn assistantText
+          pure True
+        Left err -> do
+          TIO.putStrLn $ "Error: " <> err
+          exitFailure
 
 -- | Project the runner's local state into the persistent
 -- 'AppliedBlueprint' shape. Pure so the manifest writer remains a

@@ -1,6 +1,8 @@
 module Main (main) where
 
+import Data.Text.IO qualified as TIO
 import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
+import Seihou.CLI.AgentConfig (loadAgentModelConfig)
 import Seihou.CLI.AgentRun (handleAgentRun)
 import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Bootstrap (handleBootstrap)
@@ -30,6 +32,7 @@ import Seihou.CLI.Upgrade (handleUpgrade)
 import Seihou.CLI.Validate (handleValidateModule)
 import Seihou.CLI.ValidateBlueprint (handleValidateBlueprint)
 import Seihou.CLI.Vars (handleVars)
+import System.Exit (exitFailure)
 
 main :: IO ()
 main = do
@@ -79,15 +82,22 @@ main = do
       handleRegistry registryCmd
     Kit kitCmd ->
       runKit kitCmd
-    Agent agentOpts -> case agentOpts.agentCommand of
-      AgentAssist assistOpts ->
-        handleAssist agentOpts.agentDebug assistOpts
-      AgentBootstrap bootstrapOpts ->
-        handleBootstrap agentOpts.agentDebug bootstrapOpts
-      AgentSetup setupOpts ->
-        handleSetup agentOpts.agentDebug setupOpts
-      AgentRun blueprintRunOpts ->
-        handleAgentRun agentOpts.agentDebug blueprintRunOpts
+    Agent agentOpts -> do
+      configResult <- loadAgentModelConfig agentOpts.agentProvider agentOpts.agentModel
+      modelConfig <- case configResult of
+        Left err -> do
+          TIO.putStrLn $ "Error: " <> err
+          exitFailure
+        Right config -> pure config
+      case agentOpts.agentCommand of
+        AgentAssist assistOpts ->
+          handleAssist agentOpts.agentDebug modelConfig assistOpts
+        AgentBootstrap bootstrapOpts ->
+          handleBootstrap agentOpts.agentDebug modelConfig bootstrapOpts
+        AgentSetup setupOpts ->
+          handleSetup agentOpts.agentDebug modelConfig setupOpts
+        AgentRun blueprintRunOpts ->
+          handleAgentRun agentOpts.agentDebug modelConfig blueprintRunOpts
     HelpCmd helpCmd ->
       handleHelpCommand helpCmd
     Completions completionsCmd ->

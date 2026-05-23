@@ -35,7 +35,7 @@ An alternative was to keep the existing interactive Claude Code launch path and 
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Add Baikai dependency and agent completion facade | docs/plans/36-add-baikai-dependency-and-agent-completion-facade.md | None | None | Complete |
 | EP-2 | Add configurable agent provider and model selection | docs/plans/37-add-configurable-agent-provider-and-model-selection.md | EP-1 | None | Complete |
-| EP-3 | Migrate agent commands to Baikai launcher | docs/plans/38-migrate-agent-commands-to-baikai-launcher.md | EP-1, EP-2 | None | Not Started |
+| EP-3 | Migrate agent commands to Baikai launcher | docs/plans/38-migrate-agent-commands-to-baikai-launcher.md | EP-1, EP-2 | None | Complete |
 | EP-4 | Document and validate configurable Baikai agents | docs/plans/39-document-and-validate-configurable-baikai-agents.md | EP-3 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -72,9 +72,9 @@ Documentation files `docs/cli/agent.md`, `docs/user/config-and-variables.md`, `d
 - [x] EP-2: Add parent `seihou agent --provider` and `--model` parser fields.
 - [x] EP-2: Implement provider/model resolution from CLI flags, environment variables, local config, global config, and defaults.
 - [x] EP-2: Add parser smoke validation and resolver tests.
-- [ ] EP-3: Thread resolved `AgentModelConfig` through agent command dispatch and handlers.
-- [ ] EP-3: Replace raw Claude launcher calls in assist, bootstrap, setup, and blueprint runner.
-- [ ] EP-3: Preserve debug behavior and successful blueprint bookkeeping semantics.
+- [x] EP-3: Thread resolved `AgentModelConfig` through agent command dispatch and handlers.
+- [x] EP-3: Replace raw Claude launcher calls in assist, bootstrap, setup, and blueprint runner.
+- [x] EP-3: Preserve debug behavior and successful blueprint bookkeeping semantics.
 - [ ] EP-4: Update user command and configuration documentation.
 - [ ] EP-4: Update architecture docs and changelog.
 - [ ] EP-4: Run full build, tests, and debug-mode command smoke checks.
@@ -91,6 +91,10 @@ EP-1 uses local Baikai package paths in `cabal.project`: `../../baikai/baikai`, 
 Baikai re-exports duplicate record selectors named `api` and `provider` from both `Model` and `Response`. Later plans that inspect Baikai records directly should import narrower modules such as `Baikai.Model` or avoid direct Baikai selectors from command code.
 
 `Seihou.CLI.Commands` still belongs to the executable target, not the `seihou-cli-internal` library that `seihou-cli-test` imports. EP-2 therefore validated parent parser behavior with `cabal run seihou -- agent --help` and `cabal run seihou -- agent --provider codex-cli --model gpt-5 --debug assist "say hello"` rather than adding a direct parser unit test.
+
+EP-3 removed `Seihou.CLI.AgentLaunchExec` from the executable target after migration. A handler-scoped ripgrep check found no `launchAgentWith`, `AgentLaunchExec`, `rawSystem "claude"`, or `findExecutable "claude"` references in the active agent launch modules. `Seihou.CLI.CommitMessage` still has its own Claude-based commit-message helper and is outside the `seihou agent` command migration.
+
+EP-3 preserves `agent run --debug` as a successful dry launch for applied-blueprint bookkeeping. The old launcher returned `ExitSuccess` after printing a debug prompt, so the migrated runner records provenance after successful debug prompt printing as well as after successful Baikai provider completion.
 
 
 ## Decision Log

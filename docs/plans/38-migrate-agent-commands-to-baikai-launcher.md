@@ -27,10 +27,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Thread resolved `AgentModelConfig` from `Main.hs`/command dispatch into all agent handlers.
-- [ ] Replace `launchAgentWith` calls in assist/bootstrap/setup/blueprint runner with `runAgentCompletion`.
-- [ ] Preserve debug output and non-zero error behavior.
-- [ ] Add tests for prompt rendering and handler-level launch request construction where possible.
+- [x] 2026-05-23: Threaded resolved `AgentModelConfig` from `Main.hs` command dispatch into all agent handlers.
+- [x] 2026-05-23: Replaced `launchAgentWith` calls in assist, bootstrap, setup, and blueprint runner with `runAgentCompletion`.
+- [x] 2026-05-23: Preserved debug output, provider error handling, provider failure exits, and successful blueprint bookkeeping semantics.
+- [x] 2026-05-23: Added a pure `buildAgentCompletionRequest` helper and test coverage for rendered prompt plus resolved model request construction.
+- [x] 2026-05-23: Removed the obsolete `Seihou.CLI.AgentLaunchExec` module from the executable target after confirming no active agent handler references it.
+- [x] 2026-05-23: Validated with `cabal build seihou`, `cabal test seihou-cli-test`, and `cabal run seihou -- agent --debug --provider codex-cli assist "show me the prompt"`.
 
 
 ## Surprises & Discoveries
@@ -38,7 +40,19 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: `AgentRun` debug mode previously treated prompt printing as a successful launch because `launchAgentWith` returned `ExitSuccess` in debug mode. The migration preserves that by recording blueprint provenance after successful debug prompt printing as well as after successful Baikai completion.
+  Evidence: the old `Seihou.CLI.AgentLaunchExec.launchAgentWith` returned `ExitSuccess` in debug mode and `AgentRun` recorded only on `ExitSuccess`.
+  Date: 2026-05-23
+
+- Discovery: After deleting `Seihou.CLI.AgentLaunchExec`, the active executable agent modules have no raw Claude launcher references.
+  Evidence:
+
+```text
+$ rg -n "launchAgentWith|AgentLaunchExec|rawSystem \"claude\"|findExecutable \"claude\"" seihou-cli/src-exe seihou-cli/src/Seihou/CLI/AgentLaunch.hs seihou-cli/src/Seihou/CLI/AgentCompletion.hs
+```
+
+  The command exited with status 1 and no matches, which is ripgrep's normal result for no matches.
+  Date: 2026-05-23
 
 
 ## Decision Log
@@ -53,13 +67,27 @@ Record every decision made while working on the plan.
   Rationale: Baikai's CLI providers explicitly ignore tool calling. The current `defaultAllowedTools`, `bootstrapAllowedTools`, and `setupAllowedTools` are Claude Code-specific launch flags, not portable Baikai tools.
   Date: 2026-05-23
 
+- Decision: Preserve `agent run --debug` as a successful dry-launch for blueprint bookkeeping.
+  Rationale: The previous launcher returned `ExitSuccess` after printing the debug prompt, and `AgentRun` recorded applied-blueprint provenance after `ExitSuccess`. Keeping that behavior avoids a hidden semantic change while still preventing provider calls in debug mode.
+  Date: 2026-05-23
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Completed on 2026-05-23. `seihou agent` dispatch now resolves provider/model configuration once, threads `AgentModelConfig` into assist, bootstrap, setup, and blueprint run handlers, and sends non-debug prompts through the Baikai completion facade. Debug mode still prints the rendered prompt without contacting a provider. The old raw Claude Code launcher module was deleted from the executable build.
+
+Validation passed:
+
+```text
+cabal build seihou
+cabal test seihou-cli-test
+cabal run seihou -- agent --debug --provider codex-cli assist "show me the prompt"
+```
+
+The test suite reported `All 221 tests passed`, and the debug smoke command exited 0 after printing the rendered assist prompt.
 
 
 ## Context and Orientation
@@ -68,15 +96,15 @@ This plan depends on [36-add-baikai-dependency-and-agent-completion-facade.md](/
 
 The current handlers are executable-side modules:
 
-`seihou-cli/src-exe/Seihou/CLI/Assist.hs` gathers `AgentContext`, renders `data/assist-prompt.md`, calls `agentDirsForSession`, and invokes `launchAgentWith addDirs defaultAllowedTools debug systemPrompt assistOpts.assistPrompt`.
+`seihou-cli/src-exe/Seihou/CLI/Assist.hs` gathers `AgentContext`, renders `data/assist-prompt.md`, prints the prompt in debug mode, and otherwise calls `runAgentCompletion` with the resolved `AgentModelConfig`.
 
-`seihou-cli/src-exe/Seihou/CLI/Bootstrap.hs` renders `data/bootstrap-prompt.md` and uses `bootstrapAllowedTools`.
+`seihou-cli/src-exe/Seihou/CLI/Bootstrap.hs` renders `data/bootstrap-prompt.md`, prints the prompt in debug mode, and otherwise calls `runAgentCompletion`.
 
-`seihou-cli/src-exe/Seihou/CLI/Setup.hs` renders `data/setup-prompt.md` and uses `setupAllowedTools`.
+`seihou-cli/src-exe/Seihou/CLI/Setup.hs` renders `data/setup-prompt.md`, prints the prompt in debug mode, and otherwise calls `runAgentCompletion`.
 
-`seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` resolves an agent-driven blueprint, optionally applies baseline modules, renders `data/blueprint-prompt.md`, calls `launchAgentWith`, and records the applied blueprint only after a clean agent exit.
+`seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` resolves an agent-driven blueprint, optionally applies baseline modules, renders `data/blueprint-prompt.md`, calls `runAgentCompletion`, and records the applied blueprint only after successful debug prompt printing or successful provider completion.
 
-`seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs` is the raw process launcher. After this plan it should either be deleted if no longer referenced, or left unused only if another checked-in plan still needs it.
+`seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs` was the raw process launcher. It has been deleted because no active agent handler references it.
 
 
 ## Plan of Work
@@ -141,3 +169,7 @@ At completion, no handler should depend on `Seihou.CLI.AgentLaunchExec`. The por
 ```haskell
 runAgentCompletion :: AgentCompletionRequest -> IO (Either Text Text)
 ```
+
+## Revision Note
+
+2026-05-23: Implemented the plan, updated living sections with validation evidence and the debug-mode blueprint bookkeeping decision, and revised context prose to describe the migrated Baikai launch path.

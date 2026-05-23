@@ -7,6 +7,7 @@ module Seihou.CLI.AgentCompletion
     defaultAgentModelConfig,
     providerFromText,
     providerToText,
+    buildAgentCompletionRequest,
     buildBaikaiModel,
     runAgentCompletion,
     responseText,
@@ -42,6 +43,14 @@ data AgentCompletionRequest = AgentCompletionRequest
     completionModelConfig :: AgentModelConfig
   }
   deriving stock (Eq, Show)
+
+buildAgentCompletionRequest :: AgentModelConfig -> Text -> Maybe Text -> AgentCompletionRequest
+buildAgentCompletionRequest modelConfig systemPrompt initialPrompt =
+  AgentCompletionRequest
+    { completionSystemPrompt = systemPrompt,
+      completionInitialPrompt = initialPrompt,
+      completionModelConfig = modelConfig
+    }
 
 defaultAgentModelConfig :: AgentModelConfig
 defaultAgentModelConfig =

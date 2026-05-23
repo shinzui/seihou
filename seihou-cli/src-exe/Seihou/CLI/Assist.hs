@@ -7,10 +7,14 @@ where
 
 import Data.FileEmbed (embedFile)
 import Data.Text.Encoding qualified as TE
+import Data.Text.IO qualified as TIO
+import Seihou.CLI.AgentCompletion
+  ( AgentModelConfig,
+    buildAgentCompletionRequest,
+    runAgentCompletion,
+  )
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
-    agentDirsForSession,
-    defaultAllowedTools,
     formatAvailableModules,
     formatLocalModules,
     formatManifestState,
@@ -19,23 +23,19 @@ import Seihou.CLI.AgentLaunch
     gatherAgentContext,
     substitute,
   )
-import Seihou.CLI.AgentLaunchExec (launchAgentWith)
 import Seihou.CLI.Commands (AssistOpts (..))
 import Seihou.Prelude
-import System.Exit (exitWith)
+import System.Exit (exitFailure)
 
 -- | The prompt template, embedded at compile time from data/assist-prompt.md.
 promptTemplate :: Text
 promptTemplate = TE.decodeUtf8 $(embedFile "data/assist-prompt.md")
 
-handleAssist :: Bool -> AssistOpts -> IO ()
-handleAssist debug assistOpts = do
+handleAssist :: Bool -> AgentModelConfig -> AssistOpts -> IO ()
+handleAssist debug modelConfig assistOpts = do
   ctx <- gatherAgentContext
-  addDirs <- agentDirsForSession
   let systemPrompt = renderPrompt ctx
-  exitCode <-
-    launchAgentWith addDirs defaultAllowedTools debug systemPrompt assistOpts.assistPrompt
-  exitWith exitCode
+  runRenderedAgentPrompt debug modelConfig systemPrompt assistOpts.assistPrompt
 
 renderPrompt :: AgentContext -> Text
 renderPrompt ctx =
@@ -48,3 +48,14 @@ renderPrompt ctx =
       ("available_modules", formatAvailableModules ctx)
     ]
     promptTemplate
+
+runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Text -> Maybe Text -> IO ()
+runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
+  | debug = TIO.putStr systemPrompt
+  | otherwise = do
+      result <- runAgentCompletion (buildAgentCompletionRequest modelConfig systemPrompt initialPrompt)
+      case result of
+        Right assistantText -> TIO.putStrLn assistantText
+        Left err -> do
+          TIO.putStrLn $ "Error: " <> err
+          exitFailure

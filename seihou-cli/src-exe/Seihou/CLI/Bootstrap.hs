@@ -8,10 +8,14 @@ where
 import Data.FileEmbed (embedFile)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
+import Data.Text.IO qualified as TIO
+import Seihou.CLI.AgentCompletion
+  ( AgentModelConfig,
+    buildAgentCompletionRequest,
+    runAgentCompletion,
+  )
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
-    agentDirsForSession,
-    bootstrapAllowedTools,
     formatAvailableModules,
     formatLocalModules,
     formatManifestState,
@@ -20,23 +24,19 @@ import Seihou.CLI.AgentLaunch
     gatherAgentContext,
     substitute,
   )
-import Seihou.CLI.AgentLaunchExec (launchAgentWith)
 import Seihou.CLI.Commands (BootstrapOpts (..))
 import Seihou.Prelude
-import System.Exit (exitWith)
+import System.Exit (exitFailure)
 
 -- | The prompt template, embedded at compile time from data/bootstrap-prompt.md.
 promptTemplate :: Text
 promptTemplate = TE.decodeUtf8 $(embedFile "data/bootstrap-prompt.md")
 
-handleBootstrap :: Bool -> BootstrapOpts -> IO ()
-handleBootstrap debug bootstrapOpts = do
+handleBootstrap :: Bool -> AgentModelConfig -> BootstrapOpts -> IO ()
+handleBootstrap debug modelConfig bootstrapOpts = do
   ctx <- gatherAgentContext
-  addDirs <- agentDirsForSession
   let systemPrompt = renderPrompt ctx bootstrapOpts
-  exitCode <-
-    launchAgentWith addDirs bootstrapAllowedTools debug systemPrompt bootstrapOpts.bootstrapPrompt
-  exitWith exitCode
+  runRenderedAgentPrompt debug modelConfig systemPrompt bootstrapOpts.bootstrapPrompt
 
 renderPrompt :: AgentContext -> BootstrapOpts -> Text
 renderPrompt ctx bootstrapOpts =
@@ -50,6 +50,17 @@ renderPrompt ctx bootstrapOpts =
       ("bootstrap_mode", bootstrapMode bootstrapOpts)
     ]
     promptTemplate
+
+runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Text -> Maybe Text -> IO ()
+runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
+  | debug = TIO.putStr systemPrompt
+  | otherwise = do
+      result <- runAgentCompletion (buildAgentCompletionRequest modelConfig systemPrompt initialPrompt)
+      case result of
+        Right assistantText -> TIO.putStrLn assistantText
+        Left err -> do
+          TIO.putStrLn $ "Error: " <> err
+          exitFailure
 
 bootstrapMode :: BootstrapOpts -> Text
 bootstrapMode opts

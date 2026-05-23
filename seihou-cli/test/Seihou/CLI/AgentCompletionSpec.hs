@@ -65,6 +65,20 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
       BaikaiModel.provider model `shouldBe` "openai"
       BaikaiModel.modelId model `shouldBe` "gpt-5"
 
+  describe "buildAgentCompletionRequest" $ do
+    it "preserves rendered prompts and resolved model configuration" $ do
+      let config =
+            AgentModelConfig
+              { agentProvider = AgentProviderCodexCli,
+                agentModel = Just "gpt-5"
+              }
+      buildAgentCompletionRequest config "system" (Just "user")
+        `shouldBe` AgentCompletionRequest
+          { completionSystemPrompt = "system",
+            completionInitialPrompt = Just "user",
+            completionModelConfig = config
+          }
+
   describe "responseText" $ do
     it "extracts and joins assistant text blocks only" $ do
       let resp =
