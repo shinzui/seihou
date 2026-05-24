@@ -1,56 +1,5 @@
 {
   "nodes": {
-    "baikai-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1779575346,
-        "narHash": "sha256-sGko8ZEBYYLT+MRNmLYAixTou4ezuRQ7sNJKyK2SDWE=",
-        "owner": "shinzui",
-        "repo": "baikai",
-        "rev": "e47a02ba740945e5aacf545b98c9ce81d2c26c4b",
-        "type": "github"
-      },
-      "original": {
-        "owner": "shinzui",
-        "repo": "baikai",
-        "rev": "e47a02ba740945e5aacf545b98c9ce81d2c26c4b",
-        "type": "github"
-      }
-    },
-    "claude-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1778714408,
-        "narHash": "sha256-WDQRhEqhU6y73cPC+WWNBlpRFOORNrlCI2yQK6X6nZk=",
-        "owner": "shinzui",
-        "repo": "claude-project",
-        "rev": "60332ebb5686fa0a9ba2aa4ce9e582611cac4463",
-        "type": "github"
-      },
-      "original": {
-        "owner": "shinzui",
-        "repo": "claude-project",
-        "rev": "60332ebb5686fa0a9ba2aa4ce9e582611cac4463",
-        "type": "github"
-      }
-    },
-    "cradle-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1759779411,
-        "narHash": "sha256-wg1/WMu624PQuzrSEE2SP31AbzrIQmUZm4dcCQ/yvYk=",
-        "owner": "garnix-io",
-        "repo": "cradle",
-        "rev": "711c441fa8f190a8964c56a3bae864cd5321c5c5",
-        "type": "github"
-      },
-      "original": {
-        "owner": "garnix-io",
-        "repo": "cradle",
-        "rev": "711c441fa8f190a8964c56a3bae864cd5321c5c5",
-        "type": "github"
-      }
-    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -113,11 +62,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1777072531,
-        "narHash": "sha256-9U3S5NjsR8peai7ZxKB3k5TepIY3aTmm54aI7zg3XRw=",
+        "lastModified": 1779633930,
+        "narHash": "sha256-6XHXvH1FvIh8UQ/qsR4kdNxJZ6dytWQdjzKU6M4N5UY=",
         "owner": "shinzui",
         "repo": "haskell-nix",
-        "rev": "4747cb8b0137b0d8e4e3d5d159c58e9097928943",
+        "rev": "1fe113bda7ffc86b27fa0ffcfd12b1539ed6ba12",
         "type": "github"
       },
       "original": {
@@ -174,23 +123,6 @@
         "type": "github"
       }
     },
-    "openai-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1778712843,
-        "narHash": "sha256-Q8VcGBNnHiZ8GfM3v9749CndRcx/Wo97YLfPSmJLv2I=",
-        "owner": "shinzui",
-        "repo": "openai-project",
-        "rev": "ffb38dbd714e23bc5a9a11555dd9a34da4ffe5df",
-        "type": "github"
-      },
-      "original": {
-        "owner": "shinzui",
-        "repo": "openai-project",
-        "rev": "ffb38dbd714e23bc5a9a11555dd9a34da4ffe5df",
-        "type": "github"
-      }
-    },
     "pre-commit-hooks": {
       "inputs": {
         "flake-compat": "flake-compat",
@@ -213,13 +145,9 @@
     },
     "root": {
       "inputs": {
-        "baikai-src": "baikai-src",
-        "claude-src": "claude-src",
-        "cradle-src": "cradle-src",
         "flake-utils": "flake-utils",
         "haskell-nix": "haskell-nix",
         "nixpkgs": "nixpkgs",
-        "openai-src": "openai-src",
         "pre-commit-hooks": "pre-commit-hooks",
         "seihou-schema-src": "seihou-schema-src",
         "treefmt-nix": "treefmt-nix"
