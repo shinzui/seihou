@@ -16,6 +16,26 @@
     flake = false;
   };
 
+  # Baikai provider abstraction packages (non-flake, pinned to commit)
+  inputs.baikai-src = {
+    url = "github:shinzui/baikai/e47a02ba740945e5aacf545b98c9ce81d2c26c4b";
+    flake = false;
+  };
+
+  # Baikai provider dependencies (non-flake, pinned to commits)
+  inputs.claude-src = {
+    url = "github:shinzui/claude-project/60332ebb5686fa0a9ba2aa4ce9e582611cac4463";
+    flake = false;
+  };
+  inputs.openai-src = {
+    url = "github:shinzui/openai-project/ffb38dbd714e23bc5a9a11555dd9a34da4ffe5df";
+    flake = false;
+  };
+  inputs.cradle-src = {
+    url = "github:garnix-io/cradle/711c441fa8f190a8964c56a3bae864cd5321c5c5";
+    flake = false;
+  };
+
 
   outputs = { self, nixpkgs, pre-commit-hooks, flake-utils, treefmt-nix, ... }@inputs:
     flake-utils.lib.eachDefaultSystem (system:
@@ -35,6 +55,10 @@
             (import ./nix/haskell-overlay.nix {
               inherit pkgs gitRev;
               seihou-schema-src = inputs.seihou-schema-src;
+              baikai-src = inputs.baikai-src;
+              claude-src = inputs.claude-src;
+              openai-src = inputs.openai-src;
+              cradle-src = inputs.cradle-src;
             });
         };
       in
