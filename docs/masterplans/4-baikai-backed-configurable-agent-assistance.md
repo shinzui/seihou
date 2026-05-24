@@ -175,8 +175,12 @@ Validation completed on 2026-05-23 with `cabal build all`, `cabal test all`, `se
 
 EP-5 validation completed on 2026-05-24 with `nix fmt`, `cabal build seihou`, `cabal test seihou-cli-test`, a temporary project-scope `seihou kit install/status/uninstall seihou-module-readme --project` smoke check, and `seihou agent --provider codex-cli --debug assist "confirm kit content is mounted"`.
 
+The reusable migration lessons from this initiative are summarized in `docs/references/baikai-codex-agent-migration.md` so other projects can follow the same pattern without reading the full MasterPlan and child ExecPlans.
+
 Revision note, 2026-05-24: Updated the MasterPlan after bug reports showed the completed Baikai CLI-provider behavior was not the desired user experience. The plan now records the corrected split: interactive local CLI providers are launched directly, while API providers continue through Baikai. It also records the parser precedence change and the threaded runtime fix.
 
 Revision note, 2026-05-24: Added EP-5, `docs/plans/40-support-codex-kit-skills-and-agents.md`, after discovering that `seihou kit` still installs Claude-only `.claude/...` content even though `codex-cli` is now a supported interactive provider. The registry, dependency graph, integration points, progress, discoveries, decision log, and retrospective now track the Codex kit follow-up.
 
 Revision note, 2026-05-24: Marked EP-5 complete after implementing `docs/plans/40-support-codex-kit-skills-and-agents.md`. Updated the registry, dependency graph, integration points, progress, surprises, decision log, and retrospective to reflect Codex-native kit layouts, provider-aware lifecycle behavior, and validation evidence.
+
+Revision note, 2026-05-24: Added a standalone reference guide at `docs/references/baikai-codex-agent-migration.md` for projects that need to migrate agent commands to Baikai while preserving interactive Codex and Claude CLI sessions and provider-native kit layouts.

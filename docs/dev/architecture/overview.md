@@ -392,7 +392,9 @@ that the downstream CLI loaded a skill or custom agent. Kit lifecycle
 tests should verify files and provider coverage through `seihou kit
 status`; end-to-end provider discovery needs a real non-debug CLI
 session or a provider command that enumerates loaded skills from the
-target working directory.
+target working directory. For a standalone migration guide that other
+projects can reference, see
+[`docs/references/baikai-codex-agent-migration.md`](../../references/baikai-codex-agent-migration.md).
 
 ## Technology Stack
 
