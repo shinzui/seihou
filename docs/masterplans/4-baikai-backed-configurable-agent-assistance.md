@@ -17,7 +17,7 @@ Decision Log, and Outcomes & Retrospective must be kept up to date as work proce
 
 After this initiative, Seihou's `seihou agent` commands support configurable providers instead of hard-coding only Claude. Users can choose a provider and model with parent command flags, subcommand flags, environment variables, or existing Seihou config files. The supported provider set includes interactive local CLI sessions for `claude-cli` and `codex-cli`, plus Baikai API providers for Anthropic and OpenAI-compatible hosts.
 
-The included commands are `seihou agent assist`, `seihou agent bootstrap`, `seihou agent setup`, and `seihou agent run`. The initiative includes build dependency integration, provider/model resolution, command migration, documentation, and validation. Baikai remains the API completion facade; local CLI providers are launched directly because users expect an interactive Claude Code or Codex session.
+The included commands are `seihou agent assist`, `seihou agent bootstrap`, `seihou agent setup`, and `seihou agent run`. The initiative includes build dependency integration, provider/model resolution, command migration, documentation, and validation. Baikai remains the API completion facade for one-shot providers and now supplies the interactive launch abstraction used for local Claude Code and Codex sessions.
 
 
 ## Decomposition Strategy
@@ -26,7 +26,7 @@ The work is decomposed by functional concern. First, Seihou needs a stable inter
 
 This avoids one large plan that touches dependencies, parsing, launch behavior, blueprint bookkeeping, docs, and tests at once. The first two plans can be verified mostly with pure tests and compilation. The migration plan depends on both because it needs both a completion facade and a resolved model config. The documentation plan comes last so it documents the actual implemented behavior.
 
-The initial implementation attempted to use Baikai CLI providers for `claude-cli` and `codex-cli`, which made those providers batch completions. That was corrected on 2026-05-24 after live usage showed it was not acceptable for `seihou agent assist`: CLI providers must start interactive sessions, while API providers continue to use Baikai.
+The initial implementation attempted to use Baikai CLI providers for `claude-cli` and `codex-cli`, which made those providers batch completions. That was corrected on 2026-05-24 after live usage showed it was not acceptable for `seihou agent assist`: CLI providers must start interactive sessions. A later Baikai update added the correct interactive surface, so Seihou now uses Baikai for both categories while keeping completion and terminal-handoff paths separate.
 
 
 ## Exec-Plan Registry
@@ -58,9 +58,9 @@ No plans are intentionally parallel at the start. After EP-1 is complete, EP-2 i
 
 `Seihou.CLI.AgentCompletion` is shared by EP-1, EP-2, and EP-3. EP-1 defines the module, provider enum, model config record, provider parsing helpers, Baikai model construction, provider registration, and one-shot completion function. EP-2 consumes the provider enum and model config record from its resolver. EP-3 consumes `runAgentCompletion` for API providers.
 
-`Seihou.CLI.AgentLaunchExec` is owned by the corrective update after EP-4. It launches `claude` and `codex` interactively for CLI providers, passing rendered prompts and model selection without going through Baikai's batch CLI providers.
+`Seihou.CLI.AgentLaunchExec` is owned by the corrective update after EP-4. It launches `claude` and `codex` interactively for CLI providers through Baikai's interactive launcher modules, passing rendered prompts and model selection without going through Baikai's batch CLI-provider adapters.
 
-`Seihou.CLI.Kit` is shared with EP-5. Before EP-5, kit install, update, uninstall, and status were Claude-layout-only: skills were copied below `.claude/skills` and agents below `.claude/agents`. EP-5 extended those lifecycle operations so installed kit content is visible to Codex interactive sessions under Codex-native layouts while preserving the existing Claude layout. The provider-specific layout helpers now live in the internal library module `Seihou.CLI.KitPaths`, which keeps the executable command handler focused on command flow and makes path behavior directly testable.
+`Seihou.CLI.Kit` is shared with EP-5. Before EP-5, kit install, update, uninstall, and status were Claude-layout-only: skills were copied below `.claude/skills` and agents below `.claude/agents`. EP-5 extended those lifecycle operations so installed kit content is visible to Codex interactive sessions under Codex-native layouts while preserving the existing Claude layout. The provider-specific layout helpers live in the internal library module `Seihou.CLI.KitPaths`, which now delegates provider-native asset paths and Codex custom-agent TOML rendering to `Baikai.AgentAssets` while keeping Seihou's scope-to-base-directory policy local.
 
 `Seihou.CLI.AgentConfig` is shared by EP-2 and EP-3. EP-2 defines config keys, environment variables, precedence, and IO loading. EP-3 calls it from command dispatch before invoking each handler.
 
@@ -101,7 +101,7 @@ Baikai re-exports duplicate record selectors named `api` and `provider` from bot
 
 `Seihou.CLI.Commands` still belongs to the executable target, not the `seihou-cli-internal` library that `seihou-cli-test` imports. EP-2 therefore validated parent parser behavior with `cabal run seihou -- agent --help` and `cabal run seihou -- agent --provider codex-cli --model gpt-5 --debug assist "say hello"` rather than adding a direct parser unit test.
 
-EP-3 initially removed `Seihou.CLI.AgentLaunchExec` from the executable target after migration. The 2026-05-24 correction reintroduced that module as the direct interactive launcher for `claude-cli` and `codex-cli`. `Seihou.CLI.CommitMessage` still has its own Claude-based commit-message helper and is outside the `seihou agent` command migration.
+EP-3 initially removed `Seihou.CLI.AgentLaunchExec` from the executable target after migration. The 2026-05-24 correction reintroduced that module as the interactive launcher for `claude-cli` and `codex-cli`; after Baikai gained an interactive launch abstraction, Seihou kept the executable adapter but moved provider-specific command construction into Baikai. `Seihou.CLI.CommitMessage` still has its own Claude-based commit-message helper and is outside the `seihou agent` command migration.
 
 EP-3 preserves `agent run --debug` as a successful dry launch for applied-blueprint bookkeeping. The old launcher returned `ExitSuccess` after printing a debug prompt, so the migrated runner records provenance after successful debug prompt printing as well as after successful provider completion.
 
@@ -129,7 +129,7 @@ EP-4 also found that `seihou agent run` discovers blueprints from `.seihou/modul
   Date: 2026-05-23
 
 - Decision: Initially model the CLI providers as batch completion providers, not interactive agents. Superseded on 2026-05-24.
-  Rationale: The Baikai source and docs show the Claude CLI provider shells out to `claude -p --output-format json --no-session-persistence` and the OpenAI CLI provider shells out to `codex exec --json`; neither path supports Claude Code `--allowedTools` semantics. Live usage showed this did not meet `seihou agent` expectations, so direct interactive launches replaced the batch CLI-provider path.
+  Rationale: The Baikai source and docs show the Claude CLI provider shells out to `claude -p --output-format json --no-session-persistence` and the OpenAI CLI provider shells out to `codex exec --json`; neither path supports Claude Code `--allowedTools` semantics. Live usage showed this did not meet `seihou agent` expectations, so interactive launches replaced the batch CLI-provider path.
   Date: 2026-05-23
 
 - Decision: Put provider/model flags on the parent `seihou agent` parser.
@@ -144,8 +144,12 @@ EP-4 also found that `seihou agent run` discovers blueprints from `.seihou/modul
   Rationale: Blank CLI, environment, or config values should not mask useful lower-precedence values or produce an empty provider diagnostic.
   Date: 2026-05-23
 
-- Decision: Restore direct interactive launches for `claude-cli` and `codex-cli`; keep Baikai for API providers.
-  Rationale: Users invoke `seihou agent assist` to start an agent session, and Baikai's CLI providers are intentionally batch subprocess adapters. Directly launching `claude` and `codex` matches user expectations while preserving configurable provider/model resolution and Baikai API support.
+- Decision: Restore interactive launches for `claude-cli` and `codex-cli`; keep batch Baikai CLI-provider adapters out of the interactive path. Superseded in implementation detail by the later Baikai interactive launcher integration.
+  Rationale: Users invoke `seihou agent assist` to start an agent session, and Baikai's original CLI providers are intentionally batch subprocess adapters. Starting `claude` and `codex` interactively matches user expectations while preserving configurable provider/model resolution and Baikai API support.
+  Date: 2026-05-24
+
+- Decision: Use Baikai's interactive launcher and agent-asset abstractions for CLI-provider support.
+  Rationale: Baikai now exposes the right abstraction for terminal handoff separately from its batch CLI-provider adapters. Seihou should keep command policy, provider resolution, prompt rendering, and scope-to-base-directory decisions locally, while Baikai owns provider-specific `claude`/`codex` flags, asset paths, and Codex custom-agent TOML rendering.
   Date: 2026-05-24
 
 - Decision: Accept `--provider` and `--model` both before and after agent subcommands, with subcommand-local flags taking precedence.
@@ -177,10 +181,12 @@ EP-5 validation completed on 2026-05-24 with `nix fmt`, `cabal build seihou`, `c
 
 The reusable migration lessons from this initiative are summarized in `docs/references/baikai-codex-agent-migration.md` so other projects can follow the same pattern without reading the full MasterPlan and child ExecPlans.
 
-Revision note, 2026-05-24: Updated the MasterPlan after bug reports showed the completed Baikai CLI-provider behavior was not the desired user experience. The plan now records the corrected split: interactive local CLI providers are launched directly, while API providers continue through Baikai. It also records the parser precedence change and the threaded runtime fix.
+Revision note, 2026-05-24: Updated the MasterPlan after bug reports showed the completed Baikai CLI-provider behavior was not the desired user experience. The plan now records the corrected split: interactive local CLI providers use Baikai's interactive launch abstraction, while API providers continue through Baikai completion providers. It also records the parser precedence change and the threaded runtime fix.
 
 Revision note, 2026-05-24: Added EP-5, `docs/plans/40-support-codex-kit-skills-and-agents.md`, after discovering that `seihou kit` still installs Claude-only `.claude/...` content even though `codex-cli` is now a supported interactive provider. The registry, dependency graph, integration points, progress, discoveries, decision log, and retrospective now track the Codex kit follow-up.
 
 Revision note, 2026-05-24: Marked EP-5 complete after implementing `docs/plans/40-support-codex-kit-skills-and-agents.md`. Updated the registry, dependency graph, integration points, progress, surprises, decision log, and retrospective to reflect Codex-native kit layouts, provider-aware lifecycle behavior, and validation evidence.
+
+Revision note, 2026-05-24: Updated Seihou after Baikai added interactive launch and agent asset helpers. `AgentLaunchExec` now adapts Seihou prompts to Baikai interactive requests, and `KitPaths` delegates provider-native layout and Codex TOML rendering to `Baikai.AgentAssets`.
 
 Revision note, 2026-05-24: Added a standalone reference guide at `docs/references/baikai-codex-agent-migration.md` for projects that need to migrate agent commands to Baikai while preserving interactive Codex and Claude CLI sessions and provider-native kit layouts.

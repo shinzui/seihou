@@ -2,7 +2,7 @@
 
 This reference captures the reusable migration pattern for projects that are moving agent commands to Baikai while also supporting Codex as an interactive local CLI provider. It is written for other projects that have the same broad shape as Seihou: a CLI has agent commands, prompt rendering, optional kit/skill installation, and a desire to support both API-backed completions and local interactive agent sessions.
 
-The key lesson is that "provider abstraction" has two different meanings. Baikai is a good abstraction for batch API completions: render one prompt, send one request, receive one assistant response. It is not a replacement for an interactive local agent CLI. Claude Code and Codex interactive sessions should be launched directly so the user keeps the expected terminal session, authenticated local state, permissions behavior, and working-directory context.
+The key lesson is that "provider abstraction" has two different meanings. Baikai completion providers are for batch flows: render one prompt, send one request, receive one assistant response. Baikai interactive providers are for terminal handoff flows: construct a launch request, inherit the user's terminal, and let Claude Code or Codex own the session. Do not use Baikai's batch CLI-provider adapters when the user expects an interactive local agent CLI.
 
 
 ## Target Architecture
@@ -11,7 +11,7 @@ Split providers into two categories.
 
 API providers go through Baikai. These include providers such as Anthropic and OpenAI-compatible APIs. The project should expose a small internal facade that converts project prompts into Baikai requests, registers the needed Baikai providers, executes the request, and extracts assistant text from the response. In Seihou this facade is `Seihou.CLI.AgentCompletion`.
 
-Interactive CLI providers are launched directly. These include `claude-cli` and `codex-cli`. The project should still use the same provider/model resolution path, but dispatch to a launcher that shells out to the local CLI instead of calling Baikai. In Seihou this direct launcher is `Seihou.CLI.AgentLaunchExec`.
+Interactive CLI providers use Baikai's interactive launch abstraction. These include `claude-cli` and `codex-cli`. The project should still use the same provider/model resolution path, but dispatch to an executable-side adapter that builds a `Baikai.Interactive.InteractiveLaunchRequest` and calls the provider-specific interactive launcher. In Seihou this adapter is `Seihou.CLI.AgentLaunchExec`.
 
 Keep prompt rendering provider-neutral. The command should build the same high-quality project context regardless of provider. The last step decides whether that rendered prompt goes into a Baikai batch request or an interactive local CLI process.
 
@@ -24,7 +24,7 @@ Introduce a Baikai facade for batch completions. Keep Baikai imports isolated in
 
 Move existing agent command handlers to consume the resolved provider config and rendered prompt. The handler should not know provider package details. It should choose between the Baikai completion path and the interactive launcher path.
 
-Restore or preserve direct local CLI launch behavior for `claude-cli` and `codex-cli`. For Codex, pass the rendered prompt to `codex` and choose explicit sandbox and approval defaults that match the command's safety model. In Seihou the chosen defaults are workspace-write sandboxing and on-request approvals.
+Restore or preserve interactive local CLI behavior for `claude-cli` and `codex-cli`. Use Baikai's interactive launcher modules, not the batch `claude -p` or `codex exec` completion adapters. For Codex, pass the rendered prompt to `codex` and choose explicit sandbox and approval defaults that match the command's safety model. In Seihou the chosen defaults are workspace-write sandboxing and on-request approvals.
 
 Make parser ergonomics explicit. Users expect provider/model flags to work both before and after the agent subcommand, such as `tool agent --provider codex-cli assist` and `tool agent assist --provider codex-cli`. If both positions are supported, document the precedence.
 
@@ -51,7 +51,7 @@ $HOME/.codex/agents/<name>.toml
 
 If a shared kit contains Markdown agent files for Claude Code, convert those files into Codex custom-agent TOML for Codex. Preserve the kit agent's instructions as `developer_instructions`, and write stable metadata such as `name` and `description`.
 
-Put provider path rules in one testable helper module. Seihou uses `Seihou.CLI.KitPaths` for `skillTargetDir`, `agentTargetFile`, Codex TOML generation, and provider-specific installed scans. The command handler calls those helpers for install, update, uninstall, and status instead of duplicating string literals.
+Put provider path rules in one testable helper module. Seihou uses `Seihou.CLI.KitPaths` for `skillTargetDir`, `agentTargetFile`, Codex TOML generation, and provider-specific installed scans. That module delegates provider-native path and Codex TOML rules to `Baikai.AgentAssets`, while Seihou still decides which base directory each scope maps to. The command handler calls those helpers for install, update, uninstall, and status instead of duplicating string literals.
 
 Make lifecycle operations symmetric. Install should write every supported provider layout. Update should repair partial installs when one provider copy exists and another is missing. Status should show provider coverage, for example `claude,codex`. Uninstall should remove all provider copies for the selected item and scope without deleting parent provider directories.
 
@@ -75,7 +75,7 @@ Run build and tests sequentially when they share the same build directory.
 
 ## Common Mistakes
 
-Do not route interactive CLI providers through Baikai just because Baikai has CLI-provider adapters. Those adapters are batch subprocess integrations, not an interactive terminal session with the user's expected workflow.
+Do not route interactive CLI providers through Baikai's batch CLI-provider adapters. Those adapters are one-shot subprocess integrations. Use Baikai's interactive modules when the product behavior is an interactive terminal session.
 
 Do not let a provider/model abstraction hide behavior changes. If a provider opens an interactive session, model it as an interactive launch path. If a provider returns a one-shot response, model it as a completion path.
 
@@ -91,8 +91,8 @@ The Seihou implementation is a concrete example of this pattern:
 - `seihou-cli/src/Seihou/CLI/AgentCompletion.hs` isolates Baikai batch completion behavior.
 - `seihou-cli/src/Seihou/CLI/AgentConfig.hs` resolves provider and model settings.
 - `seihou-cli/src/Seihou/CLI/AgentLaunch.hs` gathers and formats shared prompt context.
-- `seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs` launches local interactive Claude Code and Codex sessions.
+- `seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs` adapts Seihou agent commands to Baikai's interactive Claude Code and Codex launchers.
 - `seihou-cli/src-exe/Seihou/CLI/Kit.hs` owns kit command flow.
-- `seihou-cli/src/Seihou/CLI/KitPaths.hs` owns provider-native kit layouts.
+- `seihou-cli/src/Seihou/CLI/KitPaths.hs` applies Seihou scope policy while delegating provider-native layout details to `Baikai.AgentAssets`.
 - `docs/masterplans/4-baikai-backed-configurable-agent-assistance.md` records the initiative history and decision log.
 - `docs/plans/40-support-codex-kit-skills-and-agents.md` records the Codex kit follow-up implementation.

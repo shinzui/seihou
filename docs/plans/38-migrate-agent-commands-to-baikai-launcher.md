@@ -16,7 +16,7 @@ Decision Log, and Outcomes & Retrospective must be kept up to date as work proce
 
 ## Purpose / Big Picture
 
-After this change and its 2026-05-24 correction, the existing `seihou agent assist`, `seihou agent bootstrap`, `seihou agent setup`, and `seihou agent run` commands use resolved provider/model configuration for every launch. API providers send their rendered system prompt and initial user prompt through the Baikai completion facade. CLI providers launch interactive local `claude` or `codex` sessions directly.
+After this change and its 2026-05-24 correction, the existing `seihou agent assist`, `seihou agent bootstrap`, `seihou agent setup`, and `seihou agent run` commands use resolved provider/model configuration for every launch. API providers send their rendered system prompt and initial user prompt through the Baikai completion facade. CLI providers launch interactive local `claude` or `codex` sessions through Baikai's interactive launcher modules.
 
 The user-visible behavior is that `seihou agent --provider claude-cli assist "..."` starts Claude Code, while `seihou agent assist --provider codex-cli "..."` starts Codex. `--debug` continues to print the resolved prompt without contacting a provider.
 
@@ -33,7 +33,8 @@ This section must always reflect the actual current state of the work.
 - [x] 2026-05-23: Added a pure `buildAgentCompletionRequest` helper and test coverage for rendered prompt plus resolved model request construction.
 - [x] 2026-05-23: Removed the obsolete `Seihou.CLI.AgentLaunchExec` module from the executable target after confirming no active agent handler references it.
 - [x] 2026-05-23: Validated with `cabal build seihou`, `cabal test seihou-cli-test`, and `cabal run seihou -- agent --debug --provider codex-cli assist "show me the prompt"`.
-- [x] 2026-05-24: Corrective update restored direct interactive launch for `claude-cli` and `codex-cli`, added subcommand-local provider/model flags, and linked `seihou` with `-threaded`.
+- [x] 2026-05-24: Corrective update restored interactive launch for `claude-cli` and `codex-cli`, added subcommand-local provider/model flags, and linked `seihou` with `-threaded`.
+- [x] 2026-05-24: Follow-up update moved provider-specific interactive `claude`/`codex` command construction from Seihou into Baikai's interactive launcher modules.
 
 
 ## Surprises & Discoveries
@@ -57,6 +58,10 @@ $ rg -n "launchAgentWith|AgentLaunchExec|rawSystem \"claude\"|findExecutable \"c
 
 - Discovery: Baikai's CLI providers are the wrong abstraction for interactive `seihou agent` sessions.
   Evidence: Baikai's local docs and source show `claude-cli` drives `claude -p` and `codex-cli` drives `codex exec`, both as batch providers. A live `seihou agent assist --provider codex-cli` smoke check reached Codex and failed with `stdin is not a terminal` in the non-TTY test harness after the direct-launch fix, proving Seihou now starts the interactive CLI.
+  Date: 2026-05-24
+
+- Discovery: Baikai's new interactive modules are the right abstraction for Seihou's terminal handoff path.
+  Evidence: `Baikai.Interactive` now models provider, working directory, extra directories, safety policy, and prompt fields separately from Baikai's batch completion request type; `Baikai.Provider.Claude.Interactive` and `Baikai.Provider.OpenAI.Interactive` own the concrete `claude` and `codex` argument rendering. Seihou now builds an `InteractiveLaunchRequest` and preserves its command-level defaults.
   Date: 2026-05-24
 
 
@@ -183,4 +188,4 @@ runAgentCompletion :: AgentCompletionRequest -> IO (Either Text Text)
 
 2026-05-23: Implemented the plan, updated living sections with validation evidence and the debug-mode blueprint bookkeeping decision, and revised context prose to describe the migrated Baikai launch path.
 
-2026-05-24: Corrected this plan after live use showed that Baikai CLI providers were batch subprocess adapters and did not satisfy `seihou agent`'s interactive-session requirement. The implemented behavior now splits API providers through Baikai from interactive local CLI providers through direct process launch.
+2026-05-24: Corrected this plan after live use showed that Baikai CLI providers were batch subprocess adapters and did not satisfy `seihou agent`'s interactive-session requirement. The implemented behavior now splits API providers through Baikai completion providers from interactive local CLI providers through Baikai's interactive launcher modules.

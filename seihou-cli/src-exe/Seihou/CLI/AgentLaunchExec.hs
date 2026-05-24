@@ -4,6 +4,21 @@ module Seihou.CLI.AgentLaunchExec
   )
 where
 
+import Baikai.Interactive
+  ( CodexApprovalPolicy (CodexApprovalOnRequest),
+    CodexSandboxMode (CodexWorkspaceWrite),
+    InteractiveLaunchRequest (..),
+    InteractiveLaunchResult (..),
+    InteractiveSafety (ClaudeAllowedTools, CodexSandbox),
+  )
+import Baikai.Provider.Claude.Interactive
+  ( defaultClaudeInteractiveConfig,
+    launchClaudeInteractive,
+  )
+import Baikai.Provider.OpenAI.Interactive
+  ( defaultCodexInteractiveConfig,
+    launchCodexInteractive,
+  )
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentCompletion (AgentModelConfig (..), AgentProvider (..))
@@ -11,7 +26,6 @@ import Seihou.CLI.AgentLaunch (agentDirsForSession)
 import Seihou.Prelude
 import System.Directory (findExecutable, getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure)
-import System.Process (rawSystem)
 
 launchConfiguredAgent :: AgentModelConfig -> [String] -> Bool -> Text -> Maybe Text -> IO ExitCode
 launchConfiguredAgent modelConfig tools debug systemPrompt initialPrompt = do
@@ -43,13 +57,20 @@ launchClaude addDirs tools model systemPrompt initialPrompt = do
       TIO.putStrLn "Install it from: https://docs.anthropic.com/en/docs/claude-code"
       exitFailure
     Just _ -> do
-      let args =
-            ["--system-prompt", T.unpack systemPrompt]
-              <> maybe [] (\m -> ["--model", T.unpack m]) model
-              <> concatMap (\d -> ["--add-dir", d]) addDirs
-              <> concatMap (\t -> ["--allowedTools", t]) tools
-              <> maybe [] (\p -> [T.unpack p]) initialPrompt
-      rawSystem "claude" args
+      cwd <- getCurrentDirectory
+      InteractiveLaunchResult {exitCode} <-
+        launchClaudeInteractive
+          defaultClaudeInteractiveConfig
+          InteractiveLaunchRequest
+            { systemPrompt = Just systemPrompt,
+              userPrompt = promptOrEmpty initialPrompt,
+              model = model,
+              workingDir = Just cwd,
+              extraDirs = addDirs,
+              safety = ClaudeAllowedTools (map T.pack tools),
+              extraArgs = []
+            }
+      pure exitCode
 
 launchCodex :: [FilePath] -> Maybe Text -> Text -> Maybe Text -> IO ExitCode
 launchCodex addDirs model systemPrompt initialPrompt = do
@@ -61,21 +82,22 @@ launchCodex addDirs model systemPrompt initialPrompt = do
       exitFailure
     Just _ -> do
       cwd <- getCurrentDirectory
-      let args =
-            maybe [] (\m -> ["--model", T.unpack m]) model
-              <> ["--ask-for-approval", "on-request"]
-              <> ["--sandbox", "workspace-write"]
-              <> ["--cd", cwd]
-              <> concatMap (\d -> ["--add-dir", d]) addDirs
-              <> [T.unpack (codexInitialPrompt systemPrompt initialPrompt)]
-      rawSystem "codex" args
+      InteractiveLaunchResult {exitCode} <-
+        launchCodexInteractive
+          defaultCodexInteractiveConfig
+          InteractiveLaunchRequest
+            { systemPrompt = Just systemPrompt,
+              userPrompt = promptOrEmpty initialPrompt,
+              model = model,
+              workingDir = Just cwd,
+              extraDirs = addDirs,
+              safety = CodexSandbox CodexWorkspaceWrite CodexApprovalOnRequest,
+              extraArgs = []
+            }
+      pure exitCode
 
-codexInitialPrompt :: Text -> Maybe Text -> Text
-codexInitialPrompt systemPrompt initialPrompt =
-  T.strip $
-    T.unlines $
-      [systemPrompt]
-        <> maybe [] (\p -> ["", "## Initial user request", p]) initialPrompt
+promptOrEmpty :: Maybe Text -> Text
+promptOrEmpty = maybe "" id
 
 unsupportedInteractiveProvider :: Text -> IO ExitCode
 unsupportedInteractiveProvider providerName = do

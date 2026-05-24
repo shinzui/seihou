@@ -10,6 +10,19 @@ HEAD  Rewrite migration planner as gap-tolerant version-window walker (ExecPlan 
 
 ## Changelog
 
+### 2026-05-24 (Baikai interactive integration follow-up)
+
+**Developer-facing maintenance:**
+
+- Seihou now uses Baikai's interactive launcher modules for
+  `claude-cli` and `codex-cli` instead of constructing provider-specific
+  command arguments locally.
+- `seihou kit` path helpers now delegate provider-native skill, custom
+  agent, and Codex TOML rules to `Baikai.AgentAssets` while keeping
+  Seihou's user/project scope policy unchanged.
+- No user-facing command behavior changed in this follow-up; existing
+  build and CLI tests pass against the updated Baikai packages.
+
 ### 2026-05-24 (Interactive CLI agent provider fix)
 
 **Behavior change (user-facing):**

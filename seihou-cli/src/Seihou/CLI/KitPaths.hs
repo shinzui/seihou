@@ -10,6 +10,11 @@ module Seihou.CLI.KitPaths
   )
 where
 
+import Baikai.AgentAssets qualified as AgentAssets
+import Baikai.Interactive
+  ( InteractiveProvider (InteractiveClaude, InteractiveCodex),
+    InteractiveScope (InteractiveProjectScope),
+  )
 import Data.List (isPrefixOf, isSuffixOf)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -17,7 +22,7 @@ import System.Directory
   ( doesDirectoryExist,
     listDirectory,
   )
-import System.FilePath (dropExtension, (</>))
+import System.FilePath (dropExtension, takeDirectory, (</>))
 
 data KitProviderLayout
   = ClaudeLayout
@@ -39,39 +44,29 @@ providerLabel ClaudeLayout = "claude"
 providerLabel CodexLayout = "codex"
 
 skillTargetDir :: KitProviderLayout -> FilePath -> Text -> FilePath
-skillTargetDir ClaudeLayout baseDir n =
-  baseDir </> ".claude" </> "skills" </> T.unpack n
-skillTargetDir CodexLayout baseDir n =
-  baseDir </> ".agents" </> "skills" </> T.unpack n
+skillTargetDir layout baseDir n =
+  baseDir
+    </> AgentAssets.skillTargetPath
+      (assetProvider layout)
+      InteractiveProjectScope
+      (T.unpack n)
 
 agentTargetFile :: KitProviderLayout -> FilePath -> Text -> FilePath
-agentTargetFile ClaudeLayout baseDir n =
-  baseDir </> ".claude" </> "agents" </> T.unpack n <> ".md"
-agentTargetFile CodexLayout baseDir n =
-  baseDir </> ".codex" </> "agents" </> T.unpack n <> ".toml"
+agentTargetFile layout baseDir n =
+  baseDir
+    </> AgentAssets.agentTargetPath
+      (assetProvider layout)
+      InteractiveProjectScope
+      (T.unpack n)
 
 codexAgentToml :: Text -> Text -> Text -> Text
 codexAgentToml n desc instructions =
-  T.unlines
-    [ "name = " <> tomlString n,
-      "description = " <> tomlString desc,
-      "developer_instructions = " <> tomlMultilineString instructions
-    ]
-
-tomlString :: Text -> Text
-tomlString t =
-  "\"" <> T.concatMap escape t <> "\""
-  where
-    escape '"' = "\\\""
-    escape '\\' = "\\\\"
-    escape '\n' = "\\n"
-    escape '\r' = "\\r"
-    escape '\t' = "\\t"
-    escape c = T.singleton c
-
-tomlMultilineString :: Text -> Text
-tomlMultilineString t =
-  "\"\"\"\n" <> T.replace "\"\"\"" "\\\"\\\"\\\"" t <> "\n\"\"\""
+  AgentAssets.codexCustomAgentToml
+    AgentAssets.CodexCustomAgent
+      { name = n,
+        description = desc,
+        developerInstructions = instructions
+      }
 
 scanInstalledForProvider :: KitProviderLayout -> FilePath -> IO [InstalledKitItem]
 scanInstalledForProvider layout baseDir = do
@@ -80,12 +75,12 @@ scanInstalledForProvider layout baseDir = do
   pure (skillItems ++ agentItems)
 
 skillsDir :: KitProviderLayout -> FilePath -> FilePath
-skillsDir ClaudeLayout baseDir = baseDir </> ".claude" </> "skills"
-skillsDir CodexLayout baseDir = baseDir </> ".agents" </> "skills"
+skillsDir layout baseDir =
+  takeDirectory (skillTargetDir layout baseDir "__scan__")
 
 agentsDir :: KitProviderLayout -> FilePath -> FilePath
-agentsDir ClaudeLayout baseDir = baseDir </> ".claude" </> "agents"
-agentsDir CodexLayout baseDir = baseDir </> ".codex" </> "agents"
+agentsDir layout baseDir =
+  takeDirectory (agentTargetFile layout baseDir "__scan__")
 
 scanSkills :: KitProviderLayout -> FilePath -> IO [InstalledKitItem]
 scanSkills layout dir = do
@@ -114,8 +109,15 @@ scanAgents layout dir = do
     else pure []
 
 agentExtension :: KitProviderLayout -> String
-agentExtension ClaudeLayout = ".md"
-agentExtension CodexLayout = ".toml"
+agentExtension layout =
+  case AgentAssets.agentAssetFormat (assetProvider layout) AgentAssets.CustomAgentAsset of
+    AgentAssets.MarkdownFile -> ".md"
+    AgentAssets.TomlFile -> ".toml"
+    AgentAssets.DirectoryAsset -> ""
 
 visible :: FilePath -> Bool
 visible = not . ("." `isPrefixOf`)
+
+assetProvider :: KitProviderLayout -> InteractiveProvider
+assetProvider ClaudeLayout = InteractiveClaude
+assetProvider CodexLayout = InteractiveCodex
