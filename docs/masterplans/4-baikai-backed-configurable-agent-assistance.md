@@ -15,9 +15,9 @@ Decision Log, and Outcomes & Retrospective must be kept up to date as work proce
 
 ## Vision & Scope
 
-After this initiative, Seihou's `seihou agent` commands use the Baikai provider abstraction for AI completions instead of hard-coding a direct Claude process launch. Users can choose a provider and model with parent command flags, environment variables, or existing Seihou config files. The supported provider set includes Baikai's API providers for Anthropic and OpenAI-compatible hosts plus Baikai's CLI providers for `claude -p` and the Codex equivalent, `codex exec`.
+After this initiative, Seihou's `seihou agent` commands support configurable providers instead of hard-coding only Claude. Users can choose a provider and model with parent command flags, subcommand flags, environment variables, or existing Seihou config files. The supported provider set includes interactive local CLI sessions for `claude-cli` and `codex-cli`, plus Baikai API providers for Anthropic and OpenAI-compatible hosts.
 
-The included commands are `seihou agent assist`, `seihou agent bootstrap`, `seihou agent setup`, and `seihou agent run`. The initiative includes build dependency integration, provider/model resolution, command migration, documentation, and validation. It explicitly excludes implementing tool-calling parity for Baikai CLI providers because the Baikai docs state those providers are batch text providers and do not expose tool calls.
+The included commands are `seihou agent assist`, `seihou agent bootstrap`, `seihou agent setup`, and `seihou agent run`. The initiative includes build dependency integration, provider/model resolution, command migration, documentation, and validation. Baikai remains the API completion facade; local CLI providers are launched directly because users expect an interactive Claude Code or Codex session.
 
 
 ## Decomposition Strategy
@@ -26,7 +26,7 @@ The work is decomposed by functional concern. First, Seihou needs a stable inter
 
 This avoids one large plan that touches dependencies, parsing, launch behavior, blueprint bookkeeping, docs, and tests at once. The first two plans can be verified mostly with pure tests and compilation. The migration plan depends on both because it needs both a completion facade and a resolved model config. The documentation plan comes last so it documents the actual implemented behavior.
 
-An alternative was to keep the existing interactive Claude Code launch path and add Baikai only for Codex or API providers. That was rejected for the main path because the user asked for the agent assist commands to use Baikai. The plans still call out the behavior change: Baikai's `claude-cli` provider is `claude -p`, not the prior interactive Claude Code session with `--allowedTools`.
+The initial implementation attempted to use Baikai CLI providers for `claude-cli` and `codex-cli`, which made those providers batch completions. That was corrected on 2026-05-24 after live usage showed it was not acceptable for `seihou agent assist`: CLI providers must start interactive sessions, while API providers continue to use Baikai.
 
 
 ## Exec-Plan Registry
@@ -46,14 +46,16 @@ Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3
 
 EP-1 must run first because it creates the shared `Seihou.CLI.AgentCompletion` facade and integrates the Baikai packages into the Cabal build. EP-2 depends on EP-1 because it resolves provider text into the `AgentProvider` and `AgentModelConfig` types defined by that facade.
 
-EP-3 depends on EP-1 and EP-2. The command handlers cannot migrate until there is a completion function to call and a resolved model configuration to pass into it. EP-4 depends on EP-3 because user documentation and architecture notes need to describe the final command behavior, including the fact that non-debug commands produce a batch assistant response instead of opening an interactive Claude Code session.
+EP-3 depends on EP-1 and EP-2. The command handlers cannot migrate until there is a completion function to call and a resolved model configuration to pass into it. EP-4 depends on EP-3 because user documentation and architecture notes need to describe the final command behavior. After the 2026-05-24 correction, CLI providers are interactive local sessions and API providers are batch completions through Baikai.
 
 No plans are intentionally parallel at the start. After EP-1 is complete, EP-2 is the next hard dependency. Documentation drafting for EP-4 can begin informally during EP-3, but it should not be committed as complete until the migrated command behavior is verified.
 
 
 ## Integration Points
 
-`Seihou.CLI.AgentCompletion` is shared by EP-1, EP-2, and EP-3. EP-1 defines the module, provider enum, model config record, provider parsing helpers, Baikai model construction, provider registration, and one-shot completion function. EP-2 consumes the provider enum and model config record from its resolver. EP-3 consumes `runAgentCompletion`.
+`Seihou.CLI.AgentCompletion` is shared by EP-1, EP-2, and EP-3. EP-1 defines the module, provider enum, model config record, provider parsing helpers, Baikai model construction, provider registration, and one-shot completion function. EP-2 consumes the provider enum and model config record from its resolver. EP-3 consumes `runAgentCompletion` for API providers.
+
+`Seihou.CLI.AgentLaunchExec` is owned by the corrective update after EP-4. It launches `claude` and `codex` interactively for CLI providers, passing rendered prompts and model selection without going through Baikai's batch CLI providers.
 
 `Seihou.CLI.AgentConfig` is shared by EP-2 and EP-3. EP-2 defines config keys, environment variables, precedence, and IO loading. EP-3 calls it from command dispatch before invoking each handler.
 
@@ -78,11 +80,12 @@ Documentation files `docs/cli/agent.md`, `docs/user/config-and-variables.md`, `d
 - [x] EP-4: Update user command and configuration documentation.
 - [x] EP-4: Update architecture docs, changelog, parser help text, and embedded agent prompt templates.
 - [x] EP-4: Run full build, tests, and debug-mode command smoke checks.
+- [x] 2026-05-24 corrective update: Restore interactive `claude-cli` and `codex-cli` launches, allow provider/model flags after agent subcommands, and link the executable with `-threaded`.
 
 
 ## Surprises & Discoveries
 
-Baikai's CLI providers are not drop-in replacements for the current interactive Claude Code launch. Evidence from `/Users/shinzui/Keikaku/bokuno/baikai/docs/user/cli-providers.md`: `claude-cli` drives `claude -p`, `codex-cli` drives `codex exec`, streaming is synthetic, usage is zeroed, and tool calling is not supported. EP-3 and EP-4 must make this batch behavior explicit.
+Baikai's CLI providers are not drop-in replacements for interactive local agent launches. Evidence from `/Users/shinzui/Keikaku/bokuno/baikai/docs/user/cli-providers.md`: `claude-cli` drives `claude -p`, `codex-cli` drives `codex exec`, streaming is synthetic, usage is zeroed, and tool calling is not supported. The 2026-05-24 correction therefore restored direct `claude` and `codex` launches for CLI providers and kept Baikai for API providers.
 
 The MasterPlan child init step was initially run in parallel and produced duplicate `36-` plan prefixes because the init script scans the directory without locking. The newly created files were renumbered immediately to `36` through `39`; future plan creation in this repository should run init scripts sequentially.
 
@@ -92,13 +95,15 @@ Baikai re-exports duplicate record selectors named `api` and `provider` from bot
 
 `Seihou.CLI.Commands` still belongs to the executable target, not the `seihou-cli-internal` library that `seihou-cli-test` imports. EP-2 therefore validated parent parser behavior with `cabal run seihou -- agent --help` and `cabal run seihou -- agent --provider codex-cli --model gpt-5 --debug assist "say hello"` rather than adding a direct parser unit test.
 
-EP-3 removed `Seihou.CLI.AgentLaunchExec` from the executable target after migration. A handler-scoped ripgrep check found no `launchAgentWith`, `AgentLaunchExec`, `rawSystem "claude"`, or `findExecutable "claude"` references in the active agent launch modules. `Seihou.CLI.CommitMessage` still has its own Claude-based commit-message helper and is outside the `seihou agent` command migration.
+EP-3 initially removed `Seihou.CLI.AgentLaunchExec` from the executable target after migration. The 2026-05-24 correction reintroduced that module as the direct interactive launcher for `claude-cli` and `codex-cli`. `Seihou.CLI.CommitMessage` still has its own Claude-based commit-message helper and is outside the `seihou agent` command migration.
 
-EP-3 preserves `agent run --debug` as a successful dry launch for applied-blueprint bookkeeping. The old launcher returned `ExitSuccess` after printing a debug prompt, so the migrated runner records provenance after successful debug prompt printing as well as after successful Baikai provider completion.
+EP-3 preserves `agent run --debug` as a successful dry launch for applied-blueprint bookkeeping. The old launcher returned `ExitSuccess` after printing a debug prompt, so the migrated runner records provenance after successful debug prompt printing as well as after successful provider completion.
 
-EP-4 found that the embedded prompt templates were part of the user-visible debug surface and still told providers they could use repository tools or launch Claude Code. Those templates were updated to describe batch Baikai responses and local commands for the user to run. This affects future prompt work: prompt text must be validated against provider capabilities, not only Markdown docs.
+EP-4 found that the embedded prompt templates were part of the user-visible debug surface. They now describe both cases: interactive CLI sessions may use repository tools directly, while one-shot API completions should return guidance and snippets for the user to apply.
 
 EP-4 also found that `seihou agent run` discovers blueprints from `.seihou/modules`, user modules, and installed modules, not from the current directory itself. The blueprint debug smoke check therefore used a temporary project with the sample blueprint copied under `.seihou/modules/sample-blueprint`.
+
+2026-05-24: The completed behavior had two regressions. First, `seihou agent assist --provider codex-cli` was parsed as a subcommand-local provider request by users but the parser only accepted provider flags before the subcommand. Second, the default `claude-cli` path attempted Baikai's Cradle-backed `claude -p` provider from an executable not linked with `-threaded`, producing `Cradle needs the ghc's threaded runtime system to work correctly. Use the ghc option '-threaded'.`
 
 
 ## Decision Log
@@ -107,12 +112,12 @@ EP-4 also found that `seihou agent run` discovers blueprints from `.seihou/modul
   Rationale: These are separate functional concerns with clear hard dependencies and independently verifiable outcomes.
   Date: 2026-05-23
 
-- Decision: Default to Baikai's Claude CLI provider with no explicit model when users do not configure anything.
-  Rationale: This preserves the closest available Claude-backed behavior while routing through Baikai. Leaving the model empty lets `claude -p` choose its own default, matching the existing command's lack of a model flag.
+- Decision: Default to `claude-cli` with no explicit model when users do not configure anything.
+  Rationale: This preserves the closest available Claude-backed behavior. After the 2026-05-24 correction, leaving the model empty lets interactive Claude Code choose its own default, matching the existing command's lack of a model flag.
   Date: 2026-05-23
 
-- Decision: Model the CLI providers as batch completion providers, not interactive agents.
-  Rationale: The Baikai source and docs show the Claude CLI provider shells out to `claude -p --output-format json --no-session-persistence` and the OpenAI CLI provider shells out to `codex exec --json`; neither path supports Claude Code `--allowedTools` semantics.
+- Decision: Initially model the CLI providers as batch completion providers, not interactive agents. Superseded on 2026-05-24.
+  Rationale: The Baikai source and docs show the Claude CLI provider shells out to `claude -p --output-format json --no-session-persistence` and the OpenAI CLI provider shells out to `codex exec --json`; neither path supports Claude Code `--allowedTools` semantics. Live usage showed this did not meet `seihou agent` expectations, so direct interactive launches replaced the batch CLI-provider path.
   Date: 2026-05-23
 
 - Decision: Put provider/model flags on the parent `seihou agent` parser.
@@ -127,9 +132,19 @@ EP-4 also found that `seihou agent run` discovers blueprints from `.seihou/modul
   Rationale: Blank CLI, environment, or config values should not mask useful lower-precedence values or produce an empty provider diagnostic.
   Date: 2026-05-23
 
+- Decision: Restore direct interactive launches for `claude-cli` and `codex-cli`; keep Baikai for API providers.
+  Rationale: Users invoke `seihou agent assist` to start an agent session, and Baikai's CLI providers are intentionally batch subprocess adapters. Directly launching `claude` and `codex` matches user expectations while preserving configurable provider/model resolution and Baikai API support.
+  Date: 2026-05-24
+
+- Decision: Accept `--provider` and `--model` both before and after agent subcommands, with subcommand-local flags taking precedence.
+  Rationale: The reported command was `seihou agent assist --provider codex-cli`; treating that as valid is more ergonomic and avoids surprising parser failures.
+  Date: 2026-05-24
+
 
 ## Outcomes & Retrospective
 
-The Baikai-backed configurable agent assistance initiative is complete. Seihou now has a Baikai completion facade, provider/model resolution from flags, environment, local config, global config, and defaults, migrated agent command handlers, updated user/developer documentation, updated parser help text, and prompt templates aligned with batch provider semantics.
+The configurable agent assistance initiative is complete after a corrective update. Seihou now has a Baikai API completion facade, provider/model resolution from subcommand flags, parent flags, environment, local config, global config, and defaults, interactive local launchers for `claude-cli` and `codex-cli`, migrated agent command handlers, updated user/developer documentation, updated parser help text, and prompt templates that work for both interactive CLI sessions and one-shot API completions.
 
-Validation completed on 2026-05-23 with `cabal build all`, `cabal test all`, `seihou agent --help`, debug smoke checks for `assist`, `bootstrap`, and `setup`, and a temporary-project debug smoke check for `agent run sample-blueprint`. Live non-debug provider calls were not run as part of EP-4; the documented acceptance treats missing local binaries or credentials as an environment limitation.
+Validation completed on 2026-05-23 with `cabal build all`, `cabal test all`, `seihou agent --help`, debug smoke checks for `assist`, `bootstrap`, and `setup`, and a temporary-project debug smoke check for `agent run sample-blueprint`. The 2026-05-24 corrective update additionally validated `cabal build seihou`, parent-position debug parsing, subcommand-position provider parsing, and a non-TTY `codex-cli` smoke check that reached Codex and failed with `stdin is not a terminal`, proving Seihou starts the interactive CLI instead of printing a batch response.
+
+Revision note, 2026-05-24: Updated the MasterPlan after bug reports showed the completed Baikai CLI-provider behavior was not the desired user experience. The plan now records the corrected split: interactive local CLI providers are launched directly, while API providers continue through Baikai. It also records the parser precedence change and the threaded runtime fix.

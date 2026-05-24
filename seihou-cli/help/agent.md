@@ -1,14 +1,13 @@
 AGENT COMMANDS
 
-`seihou agent` renders Seihou-aware prompts and sends them to a
-configured Baikai provider. The agent commands are for AI-assisted
+`seihou agent` renders Seihou-aware prompts and starts a configured
+provider. The agent commands are for AI-assisted
 module authoring, bootstrapping, project setup, and running
 agent-driven blueprints.
 
-The provider call is a batch completion: Seihou sends one rendered
-prompt and prints one assistant response. The CLI-backed providers do
-not open an interactive Claude Code or Codex session, and Baikai does
-not expose tool calling through those CLI provider paths.
+CLI providers open interactive local Claude Code or Codex sessions.
+API providers send one rendered prompt as a batch completion and print
+one assistant response.
 
 USAGE
 
@@ -28,20 +27,22 @@ PARENT OPTIONS
       Select a provider-specific model name or alias for this
       invocation.
 
-Parent options must appear before the subcommand:
+Provider and model options may appear on the parent command or on the
+subcommand:
 
   seihou agent --provider codex-cli --model gpt-5 assist "create a module"
+  seihou agent assist --provider codex-cli --model gpt-5 "create a module"
   seihou agent --debug --provider openai setup "inspect this prompt"
 
 PROVIDERS
 
   claude-cli
-      Uses Baikai's `claude -p` provider. Requires the `claude`
-      binary on PATH and a working local login. With no explicit
-      model, the CLI chooses its own default.
+      Starts an interactive Claude Code session. Requires the
+      `claude` binary on PATH and a working local login. With no
+      explicit model, the CLI chooses its own default.
 
   codex-cli
-      Uses Baikai's `codex exec` provider. Requires the `codex`
+      Starts an interactive Codex session. Requires the `codex`
       binary on PATH and a working local login. With no explicit
       model, the CLI chooses its own default.
 
@@ -60,11 +61,12 @@ CONFIGURATION
 Provider and model values resolve independently from module variables.
 The first non-blank value wins:
 
-  1. Parent CLI flags: `--provider`, `--model`
-  2. Environment: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`
-  3. Local config: `.seihou/config.dhall`
-  4. Global config: `~/.config/seihou/config.dhall`
-  5. Built-in defaults: provider `claude-cli`, no explicit model
+  1. Subcommand CLI flags: `--provider`, `--model`
+  2. Parent CLI flags: `--provider`, `--model`
+  3. Environment: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`
+  4. Local config: `.seihou/config.dhall`
+  5. Global config: `~/.config/seihou/config.dhall`
+  6. Built-in defaults: provider `claude-cli`, no explicit model
 
 Set personal defaults globally:
 

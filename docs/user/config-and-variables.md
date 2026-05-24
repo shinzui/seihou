@@ -144,11 +144,12 @@ seihou run haskell-base
 
 Agent provider resolution uses this order, with the first non-blank value winning:
 
-1. Parent CLI flag: `seihou agent --provider ... --model ...`
-2. Environment variables: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`
-3. Local project config: `.seihou/config.dhall`
-4. Global config: `~/.config/seihou/config.dhall`
-5. Built-in defaults: provider `claude-cli`, no explicit model
+1. Subcommand CLI flag: `seihou agent assist --provider ... --model ...`
+2. Parent CLI flag: `seihou agent --provider ... --model ... assist`
+3. Environment variables: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`
+4. Local project config: `.seihou/config.dhall`
+5. Global config: `~/.config/seihou/config.dhall`
+6. Built-in defaults: provider `claude-cli`, no explicit model
 
 Namespace config, context config, parent bindings, module defaults, and interactive variable prompts are not part of agent provider resolution. They still apply to blueprint variables and module variables that `seihou agent run` resolves before rendering its prompt.
 
@@ -174,7 +175,7 @@ export SEIHOU_AGENT_MODEL=gpt-4o-mini
 seihou agent --debug assist "inspect the prompt"
 ```
 
-The `claude-cli` provider runs Baikai's `claude -p` provider and the `codex-cli` provider runs Baikai's `codex exec` provider. Both are batch text providers: Seihou sends one rendered prompt and prints one assistant response. They do not open an interactive Claude Code or Codex session, and Baikai does not expose tool calling through those CLI provider paths. The `anthropic` and `openai` providers call API endpoints and read API keys from the standard provider environment variables.
+The `claude-cli` provider starts an interactive local Claude Code session and the `codex-cli` provider starts an interactive local Codex session. The `anthropic` and `openai` providers call API endpoints through Baikai and read API keys from the standard provider environment variables.
 
 
 ## Inspecting resolved variables

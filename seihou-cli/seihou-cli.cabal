@@ -72,6 +72,7 @@ library seihou-cli-internal
 
 executable seihou
   default-language: GHC2024
+  ghc-options: -threaded
   default-extensions:
     DuplicateRecordFields
     NoFieldSelectors
@@ -93,6 +94,7 @@ executable seihou
   -- seihou-cli-internal library at hs-source-dirs: src.
   other-modules:
     Paths_seihou_cli
+    Seihou.CLI.AgentLaunchExec
     Seihou.CLI.AgentRun
     Seihou.CLI.Assist
     Seihou.CLI.Bootstrap

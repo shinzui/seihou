@@ -10,12 +10,14 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentCompletion
-  ( AgentModelConfig,
+  ( AgentModelConfig (..),
+    AgentProvider (..),
     buildAgentCompletionRequest,
     runAgentCompletion,
   )
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
+    bootstrapAllowedTools,
     formatAvailableModules,
     formatLocalModules,
     formatManifestState,
@@ -24,9 +26,10 @@ import Seihou.CLI.AgentLaunch
     gatherAgentContext,
     substitute,
   )
+import Seihou.CLI.AgentLaunchExec (launchConfiguredAgent)
 import Seihou.CLI.Commands (BootstrapOpts (..))
 import Seihou.Prelude
-import System.Exit (exitFailure)
+import System.Exit (exitFailure, exitWith)
 
 -- | The prompt template, embedded at compile time from data/bootstrap-prompt.md.
 promptTemplate :: Text
@@ -54,6 +57,9 @@ renderPrompt ctx bootstrapOpts =
 runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Text -> Maybe Text -> IO ()
 runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
   | debug = TIO.putStr systemPrompt
+  | modelConfig.agentProvider == AgentProviderClaudeCli || modelConfig.agentProvider == AgentProviderCodexCli = do
+      exitCode <- launchConfiguredAgent modelConfig bootstrapAllowedTools debug systemPrompt initialPrompt
+      exitWith exitCode
   | otherwise = do
       result <- runAgentCompletion (buildAgentCompletionRequest modelConfig systemPrompt initialPrompt)
       case result of

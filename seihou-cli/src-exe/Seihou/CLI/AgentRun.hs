@@ -22,7 +22,8 @@ import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.AgentCompletion
-  ( AgentModelConfig,
+  ( AgentModelConfig (..),
+    AgentProvider (..),
     buildAgentCompletionRequest,
     runAgentCompletion,
   )
@@ -37,8 +38,10 @@ import Seihou.CLI.AgentLaunch
     formatReferenceFiles,
     formatSeihouProjectState,
     gatherAgentContext,
+    setupAllowedTools,
     substitute,
   )
+import Seihou.CLI.AgentLaunchExec (launchConfiguredAgent)
 import Seihou.CLI.AppliedBlueprint (recordAppliedBlueprint)
 import Seihou.CLI.Commands (BlueprintRunOpts (..))
 import Seihou.CLI.Shared
@@ -73,7 +76,7 @@ import Seihou.Engine.Execute (executePlan)
 import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import Seihou.Prelude
 import System.Environment (getEnvironment)
-import System.Exit (exitFailure)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory)
 
 -- | The prompt template, embedded at compile time from data/blueprint-prompt.md.
@@ -199,6 +202,11 @@ runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
   | debug = do
       TIO.putStr systemPrompt
       pure True
+  | modelConfig.agentProvider == AgentProviderClaudeCli || modelConfig.agentProvider == AgentProviderCodexCli = do
+      exitCode <- launchConfiguredAgent modelConfig setupAllowedTools debug systemPrompt initialPrompt
+      case exitCode of
+        ExitSuccess -> pure True
+        ExitFailure _ -> exitWith exitCode
   | otherwise = do
       result <- runAgentCompletion (buildAgentCompletionRequest modelConfig systemPrompt initialPrompt)
       case result of

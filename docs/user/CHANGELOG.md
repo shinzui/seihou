@@ -10,6 +10,19 @@ HEAD  Rewrite migration planner as gap-tolerant version-window walker (ExecPlan 
 
 ## Changelog
 
+### 2026-05-24 (Interactive CLI agent provider fix)
+
+**Behavior change (user-facing):**
+
+- `seihou agent assist --provider codex-cli` and the matching
+  `bootstrap`, `setup`, and `run` forms now accept provider/model flags
+  after the subcommand as well as on the parent `seihou agent` command.
+- `claude-cli` and `codex-cli` now start interactive local `claude` and
+  `codex` sessions. API providers still use Baikai batch completions.
+- The `seihou` executable is linked with GHC's threaded runtime so
+  Baikai/Cradle-backed code paths do not fail with the runtime-system
+  diagnostic.
+
 ### 2026-05-23 (Configurable Baikai-backed agent assistance)
 
 **Reviewed commits:** ExecPlans 36-39
@@ -31,15 +44,13 @@ under the Baikai-backed configurable agent assistance master plan
 - Agent provider defaults can be configured with `agent.provider`
   and `agent.model` in Seihou config, or with
   `SEIHOU_AGENT_PROVIDER` and `SEIHOU_AGENT_MODEL` in the
-  environment. Parent CLI flags override environment values, which
-  override local config, then global config, then the built-in
-  default of `claude-cli` with no explicit model.
-- `claude-cli` uses Baikai's `claude -p` provider and `codex-cli`
-  uses Baikai's `codex exec` provider. These CLI providers are
-  batch text providers: Seihou sends one rendered prompt and prints
-  one assistant response. They do not open interactive Claude Code or
-  Codex sessions, and Baikai does not expose tool calls through those
-  CLI paths.
+  environment. The 2026-05-24 corrective update also allows
+  subcommand-local provider/model flags, which override parent CLI
+  flags.
+- The original 2026-05-23 implementation routed `claude-cli` and
+  `codex-cli` through Baikai batch CLI providers. The 2026-05-24
+  corrective update superseded that behavior: those providers now
+  start interactive local `claude` and `codex` sessions.
 - `--debug` still prints the resolved prompt and exits without
   contacting any provider, so it remains safe for prompt inspection
   and smoke checks.

@@ -16,9 +16,9 @@ Decision Log, and Outcomes & Retrospective must be kept up to date as work proce
 
 ## Purpose / Big Picture
 
-After this change, the existing `seihou agent assist`, `seihou agent bootstrap`, `seihou agent setup`, and `seihou agent run` commands send their rendered system prompt and initial user prompt through the Baikai completion facade instead of directly shelling out to the interactive Claude Code launcher. The same command can target `claude -p`, `codex exec`, Anthropic API, or OpenAI API depending on the resolved provider and model.
+After this change and its 2026-05-24 correction, the existing `seihou agent assist`, `seihou agent bootstrap`, `seihou agent setup`, and `seihou agent run` commands use resolved provider/model configuration for every launch. API providers send their rendered system prompt and initial user prompt through the Baikai completion facade. CLI providers launch interactive local `claude` or `codex` sessions directly.
 
-The user-visible behavior is that `seihou agent --provider claude-cli assist "..."` still uses a Claude CLI backend, while `seihou agent --provider codex-cli assist "..."` uses Codex's non-interactive CLI backend through Baikai. `--debug` continues to print the resolved prompt without contacting a provider.
+The user-visible behavior is that `seihou agent --provider claude-cli assist "..."` starts Claude Code, while `seihou agent assist --provider codex-cli "..."` starts Codex. `--debug` continues to print the resolved prompt without contacting a provider.
 
 
 ## Progress
@@ -33,6 +33,7 @@ This section must always reflect the actual current state of the work.
 - [x] 2026-05-23: Added a pure `buildAgentCompletionRequest` helper and test coverage for rendered prompt plus resolved model request construction.
 - [x] 2026-05-23: Removed the obsolete `Seihou.CLI.AgentLaunchExec` module from the executable target after confirming no active agent handler references it.
 - [x] 2026-05-23: Validated with `cabal build seihou`, `cabal test seihou-cli-test`, and `cabal run seihou -- agent --debug --provider codex-cli assist "show me the prompt"`.
+- [x] 2026-05-24: Corrective update restored direct interactive launch for `claude-cli` and `codex-cli`, added subcommand-local provider/model flags, and linked `seihou` with `-threaded`.
 
 
 ## Surprises & Discoveries
@@ -54,6 +55,10 @@ $ rg -n "launchAgentWith|AgentLaunchExec|rawSystem \"claude\"|findExecutable \"c
   The command exited with status 1 and no matches, which is ripgrep's normal result for no matches.
   Date: 2026-05-23
 
+- Discovery: Baikai's CLI providers are the wrong abstraction for interactive `seihou agent` sessions.
+  Evidence: Baikai's local docs and source show `claude-cli` drives `claude -p` and `codex-cli` drives `codex exec`, both as batch providers. A live `seihou agent assist --provider codex-cli` smoke check reached Codex and failed with `stdin is not a terminal` in the non-TTY test harness after the direct-launch fix, proving Seihou now starts the interactive CLI.
+  Date: 2026-05-24
+
 
 ## Decision Log
 
@@ -71,13 +76,17 @@ Record every decision made while working on the plan.
   Rationale: The previous launcher returned `ExitSuccess` after printing the debug prompt, and `AgentRun` recorded applied-blueprint provenance after `ExitSuccess`. Keeping that behavior avoids a hidden semantic change while still preventing provider calls in debug mode.
   Date: 2026-05-23
 
+- Decision: Directly launch `claude` and `codex` for CLI providers.
+  Rationale: Users expect `seihou agent assist --provider codex-cli` to open an interactive Codex session, not produce a one-shot `codex exec` response.
+  Date: 2026-05-24
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-Completed on 2026-05-23. `seihou agent` dispatch now resolves provider/model configuration once, threads `AgentModelConfig` into assist, bootstrap, setup, and blueprint run handlers, and sends non-debug prompts through the Baikai completion facade. Debug mode still prints the rendered prompt without contacting a provider. The old raw Claude Code launcher module was deleted from the executable build.
+Completed on 2026-05-23 and corrected on 2026-05-24. `seihou agent` dispatch now resolves provider/model configuration, threads `AgentModelConfig` into assist, bootstrap, setup, and blueprint run handlers, sends API-provider prompts through the Baikai completion facade, and launches CLI providers interactively through `Seihou.CLI.AgentLaunchExec`. Debug mode still prints the rendered prompt without contacting a provider.
 
 Validation passed:
 
@@ -162,9 +171,9 @@ The migration is repeatable because prompt rendering remains pure and Baikai cal
 
 ## Interfaces and Dependencies
 
-This plan consumes `Seihou.CLI.AgentCompletion` and `Seihou.CLI.AgentConfig`. It edits `seihou-cli/src-exe/Main.hs`, `seihou-cli/src-exe/Seihou/CLI/Assist.hs`, `seihou-cli/src-exe/Seihou/CLI/Bootstrap.hs`, `seihou-cli/src-exe/Seihou/CLI/Setup.hs`, and `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs`.
+This plan consumes `Seihou.CLI.AgentCompletion`, `Seihou.CLI.AgentConfig`, and `Seihou.CLI.AgentLaunchExec`. It edits `seihou-cli/src-exe/Main.hs`, `seihou-cli/src-exe/Seihou/CLI/Assist.hs`, `seihou-cli/src-exe/Seihou/CLI/Bootstrap.hs`, `seihou-cli/src-exe/Seihou/CLI/Setup.hs`, and `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs`.
 
-At completion, no handler should depend on `Seihou.CLI.AgentLaunchExec`. The portable launch interface is:
+At completion, API providers use the portable completion interface:
 
 ```haskell
 runAgentCompletion :: AgentCompletionRequest -> IO (Either Text Text)
@@ -173,3 +182,5 @@ runAgentCompletion :: AgentCompletionRequest -> IO (Either Text Text)
 ## Revision Note
 
 2026-05-23: Implemented the plan, updated living sections with validation evidence and the debug-mode blueprint bookkeeping decision, and revised context prose to describe the migrated Baikai launch path.
+
+2026-05-24: Corrected this plan after live use showed that Baikai CLI providers were batch subprocess adapters and did not satisfy `seihou agent`'s interactive-session requirement. The implemented behavior now splits API providers through Baikai from interactive local CLI providers through direct process launch.

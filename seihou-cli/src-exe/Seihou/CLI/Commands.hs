@@ -249,18 +249,24 @@ data SchemaUpgradeOpts = SchemaUpgradeOpts
   deriving stock (Eq, Show, Generic)
 
 data AssistOpts = AssistOpts
-  { assistPrompt :: Maybe Text
+  { assistPrompt :: Maybe Text,
+    assistProvider :: Maybe Text,
+    assistModel :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
 data BootstrapOpts = BootstrapOpts
   { bootstrapPrompt :: Maybe Text,
-    bootstrapRepo :: Bool
+    bootstrapRepo :: Bool,
+    bootstrapProvider :: Maybe Text,
+    bootstrapModel :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
 data SetupOpts = SetupOpts
-  { setupPrompt :: Maybe Text
+  { setupPrompt :: Maybe Text,
+    setupProvider :: Maybe Text,
+    setupModel :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -272,7 +278,9 @@ data BlueprintRunOpts = BlueprintRunOpts
     runBlueprintNamespace :: Maybe Text,
     runBlueprintContext :: Maybe Text,
     runBlueprintVerbose :: Bool,
-    runBlueprintForce :: Bool
+    runBlueprintForce :: Bool,
+    runBlueprintProvider :: Maybe Text,
+    runBlueprintModel :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -1240,7 +1248,7 @@ agentInfo =
           ( Just $
               vsep
                 [ pretty ("Agent subcommands provide AI-assisted workflows powered by" :: String),
-                  pretty ("Baikai. Use --provider to select claude-cli, codex-cli," :: String),
+                  pretty ("configurable CLI or API providers. Use --provider to select claude-cli, codex-cli," :: String),
                   pretty ("anthropic, or openai, and --model for a provider-specific model." :: String),
                   line,
                   pretty ("Use --debug with any subcommand to print the resolved system" :: String),
@@ -1300,14 +1308,14 @@ agentAssistInfo =
           ( Just $
               vsep
                 [ pretty ("Renders a Seihou-aware prompt for creating and modifying" :: String),
-                  pretty ("modules, then sends it to the configured Baikai provider." :: String),
+                  pretty ("modules, then starts the configured provider." :: String),
                   pretty ("The prompt gathers context" :: String),
                   pretty ("about your current directory (existing modules, manifest state," :: String),
                   pretty ("available modules) and includes the Seihou" :: String),
                   pretty ("module schema." :: String),
                   line,
-                  pretty ("CLI providers are one-shot text completions, not interactive" :: String),
-                  pretty ("Claude Code or Codex sessions with tool calls." :: String),
+                  pretty ("CLI providers open interactive Claude Code or Codex sessions;" :: String),
+                  pretty ("API providers run one-shot text completions." :: String),
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
@@ -1325,6 +1333,8 @@ agentAssistParser =
   fmap AgentAssist $
     AssistOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Initial prompt describing what you want to do"))
+      <*> providerOption
+      <*> modelOption
 
 agentBootstrapInfo :: ParserInfo AgentCommand
 agentBootstrapInfo =
@@ -1360,6 +1370,8 @@ agentBootstrapParser =
     BootstrapOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Description of what to bootstrap"))
       <*> switch (long "repo" <> help "Bootstrap a multi-module repository with registry")
+      <*> providerOption
+      <*> modelOption
 
 agentSetupInfo :: ParserInfo AgentCommand
 agentSetupInfo =
@@ -1375,7 +1387,7 @@ agentSetupInfo =
                   pretty ("context, running the module to generate files, verifying the output," :: String),
                   pretty ("and committing the changes to git." :: String),
                   line,
-                  pretty ("The rendered prompt is sent to the configured Baikai provider;" :: String),
+                  pretty ("The rendered prompt is sent to the configured provider;" :: String),
                   pretty ("--debug prints it without contacting that provider." :: String),
                   line,
                   pretty ("Examples:" :: String),
@@ -1394,6 +1406,8 @@ agentSetupParser =
   fmap AgentSetup $
     SetupOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Description of what you want to set up"))
+      <*> providerOption
+      <*> modelOption
 
 agentRunInfo :: ParserInfo AgentCommand
 agentRunInfo =
@@ -1406,8 +1420,8 @@ agentRunInfo =
               vsep
                 [ pretty ("Resolves the named blueprint, prompts for any required variables," :: String),
                   pretty ("optionally applies the blueprint's baseModules as a starting scaffold," :: String),
-                  pretty ("renders the prompt template, and sends it to the configured" :: String),
-                  pretty ("Baikai provider." :: String),
+                  pretty ("renders the prompt template, and starts the configured" :: String),
+                  pretty ("provider." :: String),
                   line,
                   pretty ("Variable resolution follows the same precedence as 'seihou run':" :: String),
                   pretty ("CLI overrides > env > local config > namespace > context > global > defaults" :: String),
@@ -1446,6 +1460,8 @@ agentRunParser =
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
       <*> switch (long "force" <> help "Auto-resolve baseline conflicts (accept new files)")
+      <*> providerOption
+      <*> modelOption
 
 helpCmdInfo :: ParserInfo Command
 helpCmdInfo =
@@ -1500,3 +1516,23 @@ varPair = eitherReader $ \s ->
       | T.null k -> Left "variable name cannot be empty"
       | T.null v -> Left "expected KEY=VALUE format"
       | otherwise -> Right (k, T.drop 1 v)
+
+providerOption :: Parser (Maybe Text)
+providerOption =
+  optional $
+    option
+      (T.pack <$> str)
+      ( long "provider"
+          <> metavar "PROVIDER"
+          <> help "Agent provider: claude-cli, codex-cli, anthropic, or openai"
+      )
+
+modelOption :: Parser (Maybe Text)
+modelOption =
+  optional $
+    option
+      (T.pack <$> str)
+      ( long "model"
+          <> metavar "MODEL"
+          <> help "Agent model name or provider-specific model alias"
+      )

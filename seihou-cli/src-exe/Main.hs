@@ -1,7 +1,10 @@
 module Main (main) where
 
+import Control.Applicative ((<|>))
+import Data.Text (Text)
 import Data.Text.IO qualified as TIO
 import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
+import Seihou.CLI.AgentCompletion qualified as AgentCompletion
 import Seihou.CLI.AgentConfig (loadAgentModelConfig)
 import Seihou.CLI.AgentRun (handleAgentRun)
 import Seihou.CLI.Assist (handleAssist)
@@ -83,22 +86,29 @@ main = do
     Kit kitCmd ->
       runKit kitCmd
     Agent agentOpts -> do
-      configResult <- loadAgentModelConfig agentOpts.agentProvider agentOpts.agentModel
-      modelConfig <- case configResult of
-        Left err -> do
-          TIO.putStrLn $ "Error: " <> err
-          exitFailure
-        Right config -> pure config
       case agentOpts.agentCommand of
-        AgentAssist assistOpts ->
+        AgentAssist assistOpts -> do
+          modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel assistOpts.assistProvider assistOpts.assistModel
           handleAssist agentOpts.agentDebug modelConfig assistOpts
-        AgentBootstrap bootstrapOpts ->
+        AgentBootstrap bootstrapOpts -> do
+          modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel bootstrapOpts.bootstrapProvider bootstrapOpts.bootstrapModel
           handleBootstrap agentOpts.agentDebug modelConfig bootstrapOpts
-        AgentSetup setupOpts ->
+        AgentSetup setupOpts -> do
+          modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel setupOpts.setupProvider setupOpts.setupModel
           handleSetup agentOpts.agentDebug modelConfig setupOpts
-        AgentRun blueprintRunOpts ->
+        AgentRun blueprintRunOpts -> do
+          modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel
           handleAgentRun agentOpts.agentDebug modelConfig blueprintRunOpts
     HelpCmd helpCmd ->
       handleHelpCommand helpCmd
     Completions completionsCmd ->
       handleCompletionsCommand completionsCmd
+
+resolveAgentModelConfig :: Maybe Text -> Maybe Text -> Maybe Text -> Maybe Text -> IO AgentCompletion.AgentModelConfig
+resolveAgentModelConfig parentProvider parentModel commandProvider commandModel = do
+  configResult <- loadAgentModelConfig (commandProvider <|> parentProvider) (commandModel <|> parentModel)
+  case configResult of
+    Left err -> do
+      TIO.putStrLn $ "Error: " <> err
+      exitFailure
+    Right config -> pure config
