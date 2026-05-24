@@ -18,11 +18,15 @@ seihou help [TOPIC]
 
 | Topic | Description |
 |-------|-------------|
+| `agent` | Baikai-backed AI assistance commands |
 | `modules` | How Seihou modules work |
 | `variables` | Variable declaration, resolution, and overrides |
 | `contexts` | Using contexts for environment-specific config |
 | `config` | Config scopes, reading, and writing values |
 | `git-repository` | Sharing and installing modules from git |
+| `kit` | Manage Claude Code skills and subagents |
+| `migrations` | Migrating a project between module versions |
+| `templating` | Placeholder substitution, `{{#if}}` blocks, and patterns |
 
 ## Examples
 
@@ -32,4 +36,7 @@ seihou help
 
 # Read about variables
 seihou help variables
+
+# Read about agent providers and commands
+seihou help agent
 ```

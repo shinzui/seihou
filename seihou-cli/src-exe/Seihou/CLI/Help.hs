@@ -28,7 +28,8 @@ data HelpCommand
 
 helpTopics :: [HelpTopic]
 helpTopics =
-  [ HelpTopic "modules" "How Seihou modules work" modulesContent,
+  [ HelpTopic "agent" "Baikai-backed AI assistance commands" agentContent,
+    HelpTopic "modules" "How Seihou modules work" modulesContent,
     HelpTopic "variables" "Variable declaration, resolution, and overrides" variablesContent,
     HelpTopic "contexts" "Using contexts for environment-specific config" contextsContent,
     HelpTopic "config" "Config scopes, reading, and writing values" configContent,
@@ -37,6 +38,9 @@ helpTopics =
     HelpTopic "migrations" "Migrating a project between module versions" migrationsContent,
     HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent
   ]
+
+agentContent :: Text
+agentContent = $(embedStringFile "help/agent.md")
 
 modulesContent :: Text
 modulesContent = $(embedStringFile "help/modules.md")
