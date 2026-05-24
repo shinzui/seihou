@@ -18,13 +18,13 @@ seihou help [TOPIC]
 
 | Topic | Description |
 |-------|-------------|
-| `agent` | Baikai-backed AI assistance commands |
+| `agent` | Configurable AI assistance commands |
 | `modules` | How Seihou modules work |
 | `variables` | Variable declaration, resolution, and overrides |
 | `contexts` | Using contexts for environment-specific config |
 | `config` | Config scopes, reading, and writing values |
 | `git-repository` | Sharing and installing modules from git |
-| `kit` | Manage Claude Code skills and subagents |
+| `kit` | Manage Claude Code and Codex skills and subagents |
 | `migrations` | Migrating a project between module versions |
 | `templating` | Placeholder substitution, `{{#if}}` blocks, and patterns |
 

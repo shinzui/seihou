@@ -359,6 +359,41 @@ unscheduled refactor work, because tests cannot import from the executable
 target. Defaulting to the library prevents the discovery from happening
 mid-implementation.
 
+### Agent Provider Lessons
+
+Baikai is the right abstraction for API-backed completions, but not for
+interactive local agent sessions. Seihou uses Baikai behind
+`Seihou.CLI.AgentCompletion` for providers that accept one rendered
+prompt and return one assistant response, such as `anthropic` and
+`openai`. The local CLI provider names `claude-cli` and `codex-cli`
+are deliberately handled by `Seihou.CLI.AgentLaunchExec` instead,
+because users expect those modes to open an interactive Claude Code or
+Codex session with the project mounted, provider-specific permission
+settings, and the user's authenticated local CLI state. Treating the
+CLI providers as Baikai batch subprocess providers made `seihou agent`
+look configurable while removing the core interactive workflow; that
+boundary is now explicit in the architecture.
+
+The kit work reinforced the same boundary from the filesystem side.
+Claude Code and Codex do not share a portable "agent content" layout,
+so `seihou kit` must install provider-native copies instead of assuming
+that `--add-dir` makes one directory tree meaningful to every provider.
+Claude Code kit content remains below Seihou's agent base in
+`.claude/skills` and `.claude/agents`. Codex skills are installed into
+`.agents/skills` for project scope and `$HOME/.agents/skills` for user
+scope; Codex custom agents are installed as TOML files in
+`.codex/agents` or `$HOME/.codex/agents`. The helper module
+`Seihou.CLI.KitPaths` is the source of truth for these layouts.
+
+Validation should match the boundary being tested. `seihou agent
+--debug` proves Seihou rendered the prompt and resolved the provider,
+but it exits before starting Claude Code or Codex, so it cannot prove
+that the downstream CLI loaded a skill or custom agent. Kit lifecycle
+tests should verify files and provider coverage through `seihou kit
+status`; end-to-end provider discovery needs a real non-debug CLI
+session or a provider command that enumerates loaded skills from the
+target working directory.
+
 ## Technology Stack
 
 | Component | Choice | Rationale |

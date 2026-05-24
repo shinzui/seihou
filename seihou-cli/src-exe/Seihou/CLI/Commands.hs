@@ -1125,7 +1125,7 @@ kitInfo =
   info
     (Kit <$> kitCommandParser <**> helper)
     ( fullDesc
-        <> progDesc "Manage Claude Code skills and subagents"
+        <> progDesc "Manage Claude Code and Codex skills and subagents"
     )
 
 registryInfo :: ParserInfo Command
