@@ -63,6 +63,8 @@ launchCodex addDirs model systemPrompt initialPrompt = do
       cwd <- getCurrentDirectory
       let args =
             maybe [] (\m -> ["--model", T.unpack m]) model
+              <> ["--ask-for-approval", "on-request"]
+              <> ["--sandbox", "workspace-write"]
               <> ["--cd", cwd]
               <> concatMap (\d -> ["--add-dir", d]) addDirs
               <> [T.unpack (codexInitialPrompt systemPrompt initialPrompt)]

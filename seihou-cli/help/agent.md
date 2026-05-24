@@ -44,7 +44,8 @@ PROVIDERS
   codex-cli
       Starts an interactive Codex session. Requires the `codex`
       binary on PATH and a working local login. With no explicit
-      model, the CLI chooses its own default.
+      model, the CLI chooses its own default. Seihou launches Codex
+      with workspace-write sandboxing and on-request approvals.
 
   anthropic
       Uses the Anthropic Messages API. Requires `ANTHROPIC_API_KEY`

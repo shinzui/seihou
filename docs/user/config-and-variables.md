@@ -175,7 +175,7 @@ export SEIHOU_AGENT_MODEL=gpt-4o-mini
 seihou agent --debug assist "inspect the prompt"
 ```
 
-The `claude-cli` provider starts an interactive local Claude Code session and the `codex-cli` provider starts an interactive local Codex session. The `anthropic` and `openai` providers call API endpoints through Baikai and read API keys from the standard provider environment variables.
+The `claude-cli` provider starts an interactive local Claude Code session and the `codex-cli` provider starts an interactive local Codex session. Seihou launches Codex with workspace-write sandboxing and on-request approvals so routine project commands do not require confirmation for every step. The `anthropic` and `openai` providers call API endpoints through Baikai and read API keys from the standard provider environment variables.
 
 
 ## Inspecting resolved variables

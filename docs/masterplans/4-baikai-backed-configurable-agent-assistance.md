@@ -140,10 +140,14 @@ EP-4 also found that `seihou agent run` discovers blueprints from `.seihou/modul
   Rationale: The reported command was `seihou agent assist --provider codex-cli`; treating that as valid is more ergonomic and avoids surprising parser failures.
   Date: 2026-05-24
 
+- Decision: Launch interactive `codex-cli` sessions with `--ask-for-approval on-request --sandbox workspace-write`.
+  Rationale: Codex's default interactive approval behavior prompts too often for normal Seihou workflows such as running project commands and git operations. Codex does not expose a Claude-style per-tool allowlist, so Seihou maps its permission intent to Codex's approval policy and sandbox flags.
+  Date: 2026-05-24
+
 
 ## Outcomes & Retrospective
 
-The configurable agent assistance initiative is complete after a corrective update. Seihou now has a Baikai API completion facade, provider/model resolution from subcommand flags, parent flags, environment, local config, global config, and defaults, interactive local launchers for `claude-cli` and `codex-cli`, migrated agent command handlers, updated user/developer documentation, updated parser help text, and prompt templates that work for both interactive CLI sessions and one-shot API completions.
+The configurable agent assistance initiative is complete after a corrective update. Seihou now has a Baikai API completion facade, provider/model resolution from subcommand flags, parent flags, environment, local config, global config, and defaults, interactive local launchers for `claude-cli` and `codex-cli`, Codex approval/sandbox defaults for smoother interactive sessions, migrated agent command handlers, updated user/developer documentation, updated parser help text, and prompt templates that work for both interactive CLI sessions and one-shot API completions.
 
 Validation completed on 2026-05-23 with `cabal build all`, `cabal test all`, `seihou agent --help`, debug smoke checks for `assist`, `bootstrap`, and `setup`, and a temporary-project debug smoke check for `agent run sample-blueprint`. The 2026-05-24 corrective update additionally validated `cabal build seihou`, parent-position debug parsing, subcommand-position provider parsing, and a non-TTY `codex-cli` smoke check that reached Codex and failed with `stdin is not a terminal`, proving Seihou starts the interactive CLI instead of printing a batch response.
 
