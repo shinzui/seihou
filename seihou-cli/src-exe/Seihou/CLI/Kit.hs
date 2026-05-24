@@ -11,13 +11,14 @@ module Seihou.CLI.Kit
 where
 
 import Control.Exception (IOException, try)
-import Control.Monad (forM, unless, when)
+import Control.Monad (forM, forM_, unless, when)
 import Data.Aeson (FromJSON, eitherDecodeFileStrict')
-import Data.List (isPrefixOf, isSuffixOf)
+import Data.List (groupBy, nub, sortOn)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import GHC.Generics (Generic)
 import Options.Applicative
+import Seihou.CLI.KitPaths
 import Seihou.Prelude
 import System.Directory
   ( copyFile,
@@ -26,12 +27,11 @@ import System.Directory
     doesFileExist,
     getCurrentDirectory,
     getHomeDirectory,
-    listDirectory,
     removeDirectoryRecursive,
     removeFile,
   )
 import System.Exit (ExitCode (..), exitFailure)
-import System.FilePath (takeFileName, (</>))
+import System.FilePath (takeDirectory, (</>))
 import System.IO (hPutStrLn, stderr)
 import System.Process (readProcessWithExitCode)
 
@@ -210,23 +210,33 @@ installItem itemN scope = do
       let typeLabel = case item of
             KitSkillItem {} -> "skill"
             KitAgentItem {} -> "agent" :: Text
-      targetBase <- resolveTargetDir scope
       TIO.putStrLn $
-        "Installed " <> typeLabel <> " '" <> itemN <> "' to " <> T.pack targetBase
+        "Installed "
+          <> typeLabel
+          <> " '"
+          <> itemN
+          <> "' for Claude Code and Codex ("
+          <> scopeLabel scope
+          <> " scope)."
 
 doInstall :: FilePath -> KitItem -> KitScope -> IO ()
 doInstall repoDir (KitSkillItem entry) scope = do
-  targetBase <- resolveTargetDir scope
-  let targetDir = targetBase </> ".claude" </> "skills" </> T.unpack (skillName entry)
-  createDirectoryIfMissing True targetDir
-  mapM_ (copySkillFile repoDir entry targetDir) entry.files
+  forM_ allKitProviderLayouts $ \layout -> do
+    targetBase <- resolveProviderTargetDir layout scope
+    let targetDir = skillTargetDir layout targetBase (skillName entry)
+    createDirectoryIfMissing True targetDir
+    mapM_ (copySkillFile repoDir entry targetDir) entry.files
 doInstall repoDir (KitAgentItem entry) scope = do
-  targetBase <- resolveTargetDir scope
-  let agentDir = targetBase </> ".claude" </> "agents"
-      srcFile = repoDir </> T.unpack (agentPathOf entry)
-      dstFile = agentDir </> takeFileName (T.unpack (agentPathOf entry))
-  createDirectoryIfMissing True agentDir
-  copyFile srcFile dstFile
+  let srcFile = repoDir </> T.unpack (agentPathOf entry)
+  forM_ allKitProviderLayouts $ \layout -> do
+    targetBase <- resolveProviderTargetDir layout scope
+    let dstFile = agentTargetFile layout targetBase (agentNameOf entry)
+    createDirectoryIfMissing True (takeDirectory dstFile)
+    case layout of
+      ClaudeLayout -> copyFile srcFile dstFile
+      CodexLayout -> do
+        body <- TIO.readFile srcFile
+        TIO.writeFile dstFile (codexAgentToml (agentNameOf entry) (agentDescOf entry) body)
 
 copySkillFile :: FilePath -> SkillEntry -> FilePath -> Text -> IO ()
 copySkillFile repoDir entry targetDir fileName =
@@ -295,20 +305,29 @@ reinstallAllPresent manifest = do
 
 uninstallItem :: Text -> KitScope -> IO ()
 uninstallItem n scope = do
-  targetBase <- resolveTargetDir scope
-  let skillDir = targetBase </> ".claude" </> "skills" </> T.unpack n
-      agentFile = targetBase </> ".claude" </> "agents" </> T.unpack n <> ".md"
-  skillExists <- doesDirectoryExist skillDir
-  agentExists <- doesFileExist agentFile
-  case (skillExists, agentExists) of
-    (True, _) -> do
-      removeDirectoryRecursive skillDir
-      TIO.putStrLn $ "Uninstalled skill '" <> n <> "' from " <> scopeLabel scope <> " scope."
-    (_, True) -> do
-      removeFile agentFile
-      TIO.putStrLn $ "Uninstalled agent '" <> n <> "' from " <> scopeLabel scope <> " scope."
-    _ ->
-      TIO.putStrLn $ "'" <> n <> "' is not installed in " <> scopeLabel scope <> " scope."
+  removed <- fmap concat $
+    forM allKitProviderLayouts $ \layout -> do
+      targetBase <- resolveProviderTargetDir layout scope
+      let skillDir = skillTargetDir layout targetBase n
+          agentFile = agentTargetFile layout targetBase n
+      skillExists <- doesDirectoryExist skillDir
+      agentExists <- doesFileExist agentFile
+      when skillExists (removeDirectoryRecursive skillDir)
+      when agentExists (removeFile agentFile)
+      pure $
+        (if skillExists then [providerLabel layout <> " skill"] else [])
+          ++ (if agentExists then [providerLabel layout <> " agent"] else [])
+  if null removed
+    then TIO.putStrLn $ "'" <> n <> "' is not installed in " <> scopeLabel scope <> " scope."
+    else
+      TIO.putStrLn $
+        "Uninstalled '"
+          <> n
+          <> "' from "
+          <> scopeLabel scope
+          <> " scope ("
+          <> T.intercalate ", " removed
+          <> ")."
 
 --------------------------------------------------------------------------------
 -- kit status
@@ -316,56 +335,59 @@ uninstallItem n scope = do
 
 kitStatus :: IO ()
 kitStatus = do
-  userDir <- resolveTargetDir UserScope
-  projectDir <- resolveTargetDir ProjectScope
-  userItems <- scanInstalled userDir
-  projectItems <- scanInstalled projectDir
-  let allItems =
-        map (\(n, t) -> (n, t, "user" :: Text)) userItems
-          ++ map (\(n, t) -> (n, t, "project" :: Text)) projectItems
+  userItems <- scanInstalled UserScope
+  projectItems <- scanInstalled ProjectScope
+  let allItems = aggregateInstalled (userItems ++ projectItems)
   if null allItems
     then TIO.putStrLn "No kit items installed."
     else do
-      let nameW = max 4 $ maximum $ map (\(n, _, _) -> T.length n) allItems
-          typeW = max 4 $ maximum $ map (\(_, t, _) -> T.length t) allItems
+      let nameW = max 4 $ maximum $ map (\(n, _, _, _) -> T.length n) allItems
+          typeW = max 4 $ maximum $ map (\(_, t, _, _) -> T.length t) allItems
+          scopeW = max 5 $ maximum $ map (\(_, _, s, _) -> T.length s) allItems
           hdr =
             T.justifyLeft (nameW + 2) ' ' "NAME"
               <> T.justifyLeft (typeW + 2) ' ' "TYPE"
-              <> "SCOPE"
+              <> T.justifyLeft (scopeW + 2) ' ' "SCOPE"
+              <> "PROVIDERS"
       TIO.putStrLn hdr
-      mapM_ (printStatusRow nameW typeW) allItems
+      mapM_ (printStatusRow nameW typeW scopeW) allItems
 
-printStatusRow :: Int -> Int -> (Text, Text, Text) -> IO ()
-printStatusRow nameW typeW (n, t, s) =
+printStatusRow :: Int -> Int -> Int -> (Text, Text, Text, Text) -> IO ()
+printStatusRow nameW typeW scopeW (n, t, s, providers) =
   TIO.putStrLn $
     T.justifyLeft (nameW + 2) ' ' n
       <> T.justifyLeft (typeW + 2) ' ' t
-      <> s
+      <> T.justifyLeft (scopeW + 2) ' ' s
+      <> providers
 
-scanInstalled :: FilePath -> IO [(Text, Text)]
-scanInstalled baseDir = do
-  skillItems <- scanSkills (baseDir </> ".claude" </> "skills")
-  agentItems <- scanAgents (baseDir </> ".claude" </> "agents")
-  pure (skillItems ++ agentItems)
+scanInstalled :: KitScope -> IO [(Text, Text, Text, Text)]
+scanInstalled scope = fmap concat $
+  forM allKitProviderLayouts $ \layout -> do
+    targetBase <- resolveProviderTargetDir layout scope
+    items <- scanInstalledForProvider layout targetBase
+    pure $
+      map
+        ( \item ->
+            ( item.installedName,
+              item.installedType,
+              scopeLabel scope,
+              item.installedProvider
+            )
+        )
+        items
 
-scanSkills :: FilePath -> IO [(Text, Text)]
-scanSkills dir = do
-  exists <- doesDirectoryExist dir
-  if exists
-    then do
-      entries <- listDirectory dir
-      pure $ map (\e -> (T.pack e, "skill")) $ filter (not . ("." `isPrefixOf`)) entries
-    else pure []
-
-scanAgents :: FilePath -> IO [(Text, Text)]
-scanAgents dir = do
-  exists <- doesDirectoryExist dir
-  if exists
-    then do
-      entries <- listDirectory dir
-      let mdFiles = filter (\f -> ".md" `isSuffixOf` f && not ("." `isPrefixOf` f)) entries
-      pure $ map (\f -> (T.pack (take (length f - 3) f), "agent")) mdFiles
-    else pure []
+aggregateInstalled :: [(Text, Text, Text, Text)] -> [(Text, Text, Text, Text)]
+aggregateInstalled rows =
+  map summarize grouped
+  where
+    sorted = sortOn (\(n, t, s, p) -> (n, t, s, p)) rows
+    grouped = groupBy sameItem sorted
+    sameItem (n1, t1, s1, _) (n2, t2, s2, _) =
+      n1 == n2 && t1 == t2 && s1 == s2
+    summarize groupRows@((n, t, s, _) : _) =
+      (n, t, s, T.intercalate "," (nub (map fourth groupRows)))
+    summarize [] = error "aggregateInstalled: empty group"
+    fourth (_, _, _, p) = p
 
 --------------------------------------------------------------------------------
 -- Git operations
@@ -455,18 +477,24 @@ resolveTargetDir ProjectScope = do
   cwd <- getCurrentDirectory
   pure (cwd </> ".seihou" </> "agents")
 
+resolveProviderTargetDir :: KitProviderLayout -> KitScope -> IO FilePath
+resolveProviderTargetDir ClaudeLayout scope = resolveTargetDir scope
+resolveProviderTargetDir CodexLayout UserScope = getHomeDirectory
+resolveProviderTargetDir CodexLayout ProjectScope = getCurrentDirectory
+
 scopeLabel :: KitScope -> Text
 scopeLabel UserScope = "user"
 scopeLabel ProjectScope = "project"
 
 isInstalled :: Text -> KitScope -> IO Bool
 isInstalled n scope = do
-  targetBase <- resolveTargetDir scope
-  let skillDir = targetBase </> ".claude" </> "skills" </> T.unpack n
-      agentFile = targetBase </> ".claude" </> "agents" </> T.unpack n <> ".md"
-  skillExists <- doesDirectoryExist skillDir
-  agentExists <- doesFileExist agentFile
-  pure (skillExists || agentExists)
+  or <$> forM allKitProviderLayouts isInstalledForProvider
+  where
+    isInstalledForProvider layout = do
+      targetBase <- resolveProviderTargetDir layout scope
+      skillExists <- doesDirectoryExist (skillTargetDir layout targetBase n)
+      agentExists <- doesFileExist (agentTargetFile layout targetBase n)
+      pure (skillExists || agentExists)
 
 --------------------------------------------------------------------------------
 -- Record field accessors (avoid DuplicateRecordFields ambiguity)

@@ -10,6 +10,7 @@ import Seihou.CLI.DiffSpec qualified as DiffSpec
 import Seihou.CLI.GitSpec qualified as GitSpec
 import Seihou.CLI.InitSpec qualified as InitSpec
 import Seihou.CLI.InstallHistorySpec qualified as InstallHistorySpec
+import Seihou.CLI.KitPathsSpec qualified as KitPathsSpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.MigrateSpec qualified as MigrateSpec
 import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
@@ -37,6 +38,7 @@ main = do
         GitSpec.tests,
         InitSpec.tests,
         InstallHistorySpec.tests,
+        KitPathsSpec.tests,
         ListSpec.tests,
         MigrateSpec.tests,
         PendingMigrationSpec.tests,

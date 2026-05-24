@@ -181,6 +181,7 @@ seihou/
 │   │       │   ├── Init.hs           # seihou init helpers
 │   │       │   ├── InstallHistory.hs # Install URL history (XDG config)
 │   │       │   ├── InstallShared.hs  # Shared install helpers (cloneRepo, installModuleDir)
+│   │       │   ├── KitPaths.hs       # Provider-native kit install paths and scans
 │   │       │   ├── List.hs           # seihou list formatter
 │   │       │   ├── Migrate.hs        # Migration planning helpers
 │   │       │   ├── PendingMigrations.hs  # Pending-migrations probe
@@ -212,7 +213,7 @@ seihou/
 │   │           ├── Context.hs        # seihou context handler
 │   │           ├── Help.hs           # seihou help handler
 │   │           ├── Install.hs        # seihou install handler
-│   │           ├── Kit.hs            # seihou kit handler (skills/subagents)
+│   │           ├── Kit.hs            # seihou kit command handler (skills/subagents)
 │   │           ├── NewBlueprint.hs   # seihou new-blueprint handler
 │   │           ├── NewModule.hs      # seihou new-module handler
 │   │           ├── NewRecipe.hs      # seihou new-recipe handler
@@ -303,6 +304,14 @@ and model configuration, `Seihou.CLI.AgentLaunch` gathers context and
 formats shared prompt sections, and `Seihou.CLI.AgentLaunchExec`
 starts interactive local CLI providers. The executable handlers import
 those modules after embedding their command-specific prompt templates.
+Kit installation is split the same way: `Seihou.CLI.Kit` remains in the
+executable because it owns `Options.Applicative` parsing and command IO,
+while `Seihou.CLI.KitPaths` lives in the internal library so provider
+layout rules can be tested. Claude Code kit copies are written below
+Seihou's agent directory in `.claude/skills` and `.claude/agents`;
+Codex kit copies are written to Codex's native `.agents/skills` and
+`.codex/agents` locations for project scope, with matching user-scope
+paths under the user's home directory.
 
 The table below names every module in `executable seihou`'s
 `other-modules` and the trapping reason that keeps it out of the
@@ -326,7 +335,7 @@ the cabal file's `other-modules`.
 | `Seihou.CLI.Context` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.Help` | `Data.FileEmbed` for embedded help-topic content |
 | `Seihou.CLI.Install` | Imports `Seihou.CLI.Commands` (transitively trapped) |
-| `Seihou.CLI.Kit` | `Options.Applicative` |
+| `Seihou.CLI.Kit` | `Options.Applicative`; provider path helpers live in library module `Seihou.CLI.KitPaths` |
 | `Seihou.CLI.NewBlueprint` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.NewModule` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.NewRecipe` | Imports `Seihou.CLI.Commands` (transitively trapped) |

@@ -31,6 +31,7 @@ library seihou-cli-internal
     Seihou.CLI.Init
     Seihou.CLI.InstallHistory
     Seihou.CLI.InstallShared
+    Seihou.CLI.KitPaths
     Seihou.CLI.List
     Seihou.CLI.Migrate
     Seihou.CLI.PendingMigrations
@@ -167,6 +168,7 @@ test-suite seihou-cli-test
     Seihou.CLI.GitSpec
     Seihou.CLI.InitSpec
     Seihou.CLI.InstallHistorySpec
+    Seihou.CLI.KitPathsSpec
     Seihou.CLI.ListSpec
     Seihou.CLI.MigrateSpec
     Seihou.CLI.PendingMigrationSpec

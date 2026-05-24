@@ -1,6 +1,6 @@
 # seihou kit
 
-Manage Claude Code skills and subagents from the `seihou-kit` repository.
+Manage Claude Code and Codex skills and subagents from the `seihou-kit` repository.
 
 ## Usage
 
@@ -18,21 +18,23 @@ Running `seihou kit` with no subcommand is equivalent to `seihou kit list`.
 | `install NAME [--project]` | Install a skill or subagent |
 | `update [NAME]` | Pull latest and reinstall (all by default) |
 | `uninstall NAME [--project]` | Remove an installed skill or subagent |
-| `status` | Show installed items with their scope |
+| `status` | Show installed items with their scope and provider coverage |
 
 ## Options
 
 | Option | Description |
 |--------|-------------|
-| `--project` | Target project scope (`.seihou/agents/`) instead of user scope (available on `install` and `uninstall`) |
+| `--project` | Target project scope instead of user scope (available on `install` and `uninstall`) |
 
 ## Description
 
-Seihou Kit installs curated Claude Code skills and subagents from a remote
-repository (`https://github.com/shinzui/seihou-kit`). Installed content is
-automatically exposed to the assist and bootstrap agents via `--add-dir`, so
-the skills and agents become available in `seihou agent assist`, `seihou
-agent bootstrap`, and `seihou agent setup` sessions.
+Seihou Kit installs curated skills and subagents from a remote repository
+(`https://github.com/shinzui/seihou-kit`). Install writes provider-native
+copies for both Claude Code and Codex. Claude Code content is exposed to
+interactive sessions through Seihou's agent directories and `--add-dir`.
+Codex content is written to Codex's documented discovery locations, so
+`seihou agent --provider codex-cli ...` sessions launched from the same
+project can discover project-scoped skills and custom agents.
 
 The kit repository is shallow-cloned to `~/.cache/seihou/kit/` on first use
 and refreshed with `git pull --ff-only` on subsequent invocations. A
@@ -42,14 +44,21 @@ commands continue with cached data.
 
 ### Scopes
 
-| Scope | Skills directory | Agents file |
-|-------|------------------|-------------|
-| **User** (default) | `~/.config/seihou/agents/.claude/skills/<name>/` | `~/.config/seihou/agents/.claude/agents/<name>.md` |
-| **Project** (`--project`) | `.seihou/agents/.claude/skills/<name>/` | `.seihou/agents/.claude/agents/<name>.md` |
+| Scope | Provider | Skills directory | Agents file |
+|-------|----------|------------------|-------------|
+| **User** (default) | Claude Code | `~/.config/seihou/agents/.claude/skills/<name>/` | `~/.config/seihou/agents/.claude/agents/<name>.md` |
+| **User** (default) | Codex | `~/.agents/skills/<name>/` | `~/.codex/agents/<name>.toml` |
+| **Project** (`--project`) | Claude Code | `.seihou/agents/.claude/skills/<name>/` | `.seihou/agents/.claude/agents/<name>.md` |
+| **Project** (`--project`) | Codex | `.agents/skills/<name>/` | `.codex/agents/<name>.toml` |
 
 User-scope items are available across every project. Project-scope items are
 checked in with the project and only activated when running `seihou` from
 that project directory.
+
+`seihou kit status` groups installed rows by name, type, and scope, then shows
+a `PROVIDERS` column such as `claude,codex`. If one provider copy is missing,
+`seihou kit update NAME` repairs the missing copy for any scope where the item
+is otherwise installed.
 
 ## Examples
 
