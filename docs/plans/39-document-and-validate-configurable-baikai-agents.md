@@ -27,10 +27,11 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Update CLI reference docs for `seihou agent`.
-- [ ] Update user config docs with `agent.provider` and `agent.model`.
-- [ ] Update architecture docs and changelog entries.
-- [ ] Run full build and test validation, plus debug-mode command smoke checks.
+- [x] Update CLI reference docs for `seihou agent`. Completed 2026-05-23: `docs/cli/agent.md` now documents parent provider/model flags, accepted providers, batch CLI-provider behavior, `agent run`, and debug examples.
+- [x] Update user config docs with `agent.provider` and `agent.model`. Completed 2026-05-23: `docs/user/config-and-variables.md` now explains config keys, environment variables, precedence, examples, and the batch nature of `claude-cli`/`codex-cli`.
+- [x] Update architecture docs and changelog entries. Completed 2026-05-23: `docs/dev/architecture/overview.md` now describes `AgentCompletion`, `AgentConfig`, and prompt formatting split; `docs/user/CHANGELOG.md` has the Baikai-backed agent entry.
+- [x] Update embedded agent prompts for batch provider semantics. Completed 2026-05-23: `seihou-cli/data/assist-prompt.md`, `bootstrap-prompt.md`, `setup-prompt.md`, and `blueprint-prompt.md` no longer claim the provider can use repository tools or launch an interactive Claude Code session.
+- [x] Run full build and test validation, plus debug-mode command smoke checks. Completed 2026-05-23: `cabal build all`, `cabal test all`, `seihou agent --help`, `agent --debug assist`, `agent --debug bootstrap`, `agent --debug setup`, and a temp-project `agent --debug run sample-blueprint` all succeeded.
 
 
 ## Surprises & Discoveries
@@ -38,7 +39,8 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- 2026-05-23: Debug smoke checks showed that the embedded prompt templates still described interactive tool-using sessions even though Baikai CLI providers are batch text providers. Evidence: the first `seihou agent --debug --provider claude-cli assist debug` run printed "You have access to the seihou CLI, git, and file editing tools." and setup/bootstrap prompts mentioned launching Claude Code. The prompts were updated to describe batch responses and local commands for the user to run.
+- 2026-05-23: `seihou agent run` discovery does not load a blueprint from the current directory itself; it searches `.seihou/modules`, user modules, and installed modules. Evidence: running from `seihou-core/test/fixtures/sample-blueprint` failed with "Module 'sample-blueprint' not found" and listed those search paths. The smoke check was rerun by copying the fixture under a temp project's `.seihou/modules/sample-blueprint`.
 
 
 ## Decision Log
@@ -49,13 +51,17 @@ Record every decision made while working on the plan.
   Rationale: Existing docs promise interactive Claude Code sessions with tools. After the migration, `claude-cli` and `codex-cli` are one-shot completion providers, so the docs must prevent users from expecting the old terminal handoff.
   Date: 2026-05-23
 
+- Decision: Update embedded prompt templates as part of this documentation and validation plan.
+  Rationale: `--debug` prints those prompts as user-visible behavior, and leaving them with tool/session claims would contradict the documented batch Baikai semantics even if the Markdown docs were correct.
+  Date: 2026-05-23
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Completed 2026-05-23. The CLI reference, configuration guide, architecture overview, changelog, parser help text, and embedded prompt templates now describe configurable Baikai-backed agent execution. Provider selection is documented consistently across flags, environment variables, local/global config, and defaults. Validation passed with `cabal build all`, `cabal test all`, and debug smoke checks for assist, bootstrap, setup, and blueprint run. No live non-debug provider calls were run, because the plan only requires them when local provider tools and credentials are available.
 
 
 ## Context and Orientation
@@ -118,3 +124,5 @@ Documentation edits are repeatable. Debug smoke checks are safe because they do 
 ## Interfaces and Dependencies
 
 This plan edits `docs/cli/agent.md`, `docs/user/config-and-variables.md`, `docs/dev/architecture/overview.md`, and `docs/user/CHANGELOG.md`. It validates the interfaces created by the earlier plans: `Seihou.CLI.AgentCompletion` for provider execution and `Seihou.CLI.AgentConfig` for provider/model resolution.
+
+Revision note, 2026-05-23: Implementation expanded the documented file set to include `seihou-cli/data/assist-prompt.md`, `seihou-cli/data/bootstrap-prompt.md`, `seihou-cli/data/setup-prompt.md`, `seihou-cli/data/blueprint-prompt.md`, and parser help text in `seihou-cli/src-exe/Seihou/CLI/Commands.hs`. Debug validation showed those embedded prompts were user-visible and still described interactive tool-using sessions, so they were brought into scope to keep the completed behavior coherent.

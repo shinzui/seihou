@@ -10,6 +10,48 @@ HEAD  Rewrite migration planner as gap-tolerant version-window walker (ExecPlan 
 
 ## Changelog
 
+### 2026-05-23 (Configurable Baikai-backed agent assistance)
+
+**Reviewed commits:** ExecPlans 36-39
+(`docs/plans/36-add-baikai-dependency-and-agent-completion-facade.md`,
+`docs/plans/37-add-configurable-agent-provider-and-model-selection.md`,
+`docs/plans/38-migrate-agent-commands-to-baikai-launcher.md`,
+`docs/plans/39-document-and-validate-configurable-baikai-agents.md`)
+under the Baikai-backed configurable agent assistance master plan
+(`docs/masterplans/4-baikai-backed-configurable-agent-assistance.md`).
+
+**Behavior change (user-facing):**
+
+- `seihou agent assist`, `seihou agent bootstrap`, `seihou agent
+  setup`, and `seihou agent run` now route their rendered prompts
+  through Baikai instead of directly launching a raw Claude process.
+- The parent `seihou agent` command accepts `--provider PROVIDER`
+  and `--model MODEL`. Supported providers are `claude-cli`,
+  `codex-cli`, `anthropic`, and `openai`.
+- Agent provider defaults can be configured with `agent.provider`
+  and `agent.model` in Seihou config, or with
+  `SEIHOU_AGENT_PROVIDER` and `SEIHOU_AGENT_MODEL` in the
+  environment. Parent CLI flags override environment values, which
+  override local config, then global config, then the built-in
+  default of `claude-cli` with no explicit model.
+- `claude-cli` uses Baikai's `claude -p` provider and `codex-cli`
+  uses Baikai's `codex exec` provider. These CLI providers are
+  batch text providers: Seihou sends one rendered prompt and prints
+  one assistant response. They do not open interactive Claude Code or
+  Codex sessions, and Baikai does not expose tool calls through those
+  CLI paths.
+- `--debug` still prints the resolved prompt and exits without
+  contacting any provider, so it remains safe for prompt inspection
+  and smoke checks.
+
+**Why:**
+
+The previous direct Claude launch path made `seihou agent` behavior
+hard-coded to one local tool. Baikai gives Seihou one provider facade
+for Claude CLI, Codex CLI, Anthropic API, and OpenAI-compatible API
+providers, while keeping provider/model selection configurable from
+the same places users already expect Seihou defaults to live.
+
 ### 2026-05-08 (Migration planner: gap-tolerant version-window walker)
 
 **Reviewed commits:** ExecPlan 35

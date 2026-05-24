@@ -1240,15 +1240,16 @@ agentInfo =
           ( Just $
               vsep
                 [ pretty ("Agent subcommands provide AI-assisted workflows powered by" :: String),
-                  pretty ("Claude Code. Requires the 'claude' CLI to be installed." :: String),
+                  pretty ("Baikai. Use --provider to select claude-cli, codex-cli," :: String),
+                  pretty ("anthropic, or openai, and --model for a provider-specific model." :: String),
                   line,
                   pretty ("Use --debug with any subcommand to print the resolved system" :: String),
-                  pretty ("prompt instead of launching Claude." :: String),
+                  pretty ("prompt without contacting the configured provider." :: String),
                   line,
                   pretty ("Available subcommands:" :: String),
                   indent 2 $
                     vsep
-                      [ pretty ("assist      Interactive template authoring session" :: String),
+                      [ pretty ("assist      AI-assisted template authoring prompt" :: String),
                         pretty ("bootstrap   Bootstrap a new module or multi-module repo" :: String),
                         pretty ("setup       Guided project setup: configure, run, and commit" :: String),
                         pretty ("run         Run an agent-driven blueprint" :: String)
@@ -1298,14 +1299,15 @@ agentAssistInfo =
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Launches an interactive Claude Code session pre-configured for" :: String),
-                  pretty ("creating and modifying Seihou modules. The agent gathers context" :: String),
+                [ pretty ("Renders a Seihou-aware prompt for creating and modifying" :: String),
+                  pretty ("modules, then sends it to the configured Baikai provider." :: String),
+                  pretty ("The prompt gathers context" :: String),
                   pretty ("about your current directory (existing modules, manifest state," :: String),
-                  pretty ("available modules) and starts with full knowledge of the Seihou" :: String),
+                  pretty ("available modules) and includes the Seihou" :: String),
                   pretty ("module schema." :: String),
                   line,
-                  pretty ("The agent can run seihou commands (new-module, validate-module," :: String),
-                  pretty ("run --dry-run, vars, list), git commands, and read/write files." :: String),
+                  pretty ("CLI providers are one-shot text completions, not interactive" :: String),
+                  pretty ("Claude Code or Codex sessions with tool calls." :: String),
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
@@ -1333,8 +1335,8 @@ agentBootstrapInfo =
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Launches an interactive Claude Code session that guides you through" :: String),
-                  pretty ("creating a complete Seihou module from scratch — defining variables," :: String),
+                [ pretty ("Renders a Seihou-aware prompt for creating a complete module" :: String),
+                  pretty ("from scratch: defining variables," :: String),
                   pretty ("writing templates, setting up prompts, and validating the result." :: String),
                   line,
                   pretty ("Use --repo to bootstrap a multi-module repository with a" :: String),
@@ -1368,13 +1370,13 @@ agentSetupInfo =
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Launches an interactive Claude Code session that guides you through" :: String),
-                  pretty ("using a Seihou module: selecting a module, configuring variables and" :: String),
+                [ pretty ("Renders a Seihou-aware prompt for using a module: selecting" :: String),
+                  pretty ("a module, configuring variables and" :: String),
                   pretty ("context, running the module to generate files, verifying the output," :: String),
                   pretty ("and committing the changes to git." :: String),
                   line,
-                  pretty ("The agent can run all seihou commands (run, config, context, vars," :: String),
-                  pretty ("status, diff, list, install), git commands, and read/write files." :: String),
+                  pretty ("The rendered prompt is sent to the configured Baikai provider;" :: String),
+                  pretty ("--debug prints it without contacting that provider." :: String),
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
@@ -1404,8 +1406,8 @@ agentRunInfo =
               vsep
                 [ pretty ("Resolves the named blueprint, prompts for any required variables," :: String),
                   pretty ("optionally applies the blueprint's baseModules as a starting scaffold," :: String),
-                  pretty ("renders the prompt template, and launches an interactive Claude Code" :: String),
-                  pretty ("session pre-configured for the task." :: String),
+                  pretty ("renders the prompt template, and sends it to the configured" :: String),
+                  pretty ("Baikai provider." :: String),
                   line,
                   pretty ("Variable resolution follows the same precedence as 'seihou run':" :: String),
                   pretty ("CLI overrides > env > local config > namespace > context > global > defaults" :: String),
@@ -1413,7 +1415,7 @@ agentRunInfo =
                   line,
                   pretty ("Pass --no-baseline to skip baseline application; --debug (on the parent" :: String),
                   pretty ("'seihou agent --debug') prints the resolved system prompt without" :: String),
-                  pretty ("launching Claude." :: String),
+                  pretty ("contacting the configured provider." :: String),
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
@@ -1439,7 +1441,7 @@ agentRunParser =
             varPair
             (long "var" <> metavar "KEY=VALUE" <> help "Variable override (repeatable)")
         )
-      <*> switch (long "no-baseline" <> help "Skip applying the blueprint's baseModules before launching the agent")
+      <*> switch (long "no-baseline" <> help "Skip applying the blueprint's baseModules before rendering the prompt")
       <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")

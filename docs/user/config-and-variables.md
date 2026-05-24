@@ -133,6 +133,49 @@ export SEIHOU_VAR_PROJECT_NAME=my-app
 seihou run haskell-base
 ```
 
+## Agent provider defaults
+
+`seihou agent` resolves its AI provider separately from module variables. These keys configure the default provider and model used by `seihou agent assist`, `seihou agent bootstrap`, `seihou agent setup`, and `seihou agent run`:
+
+| Setting | Environment variable | Accepted values |
+|---------|----------------------|-----------------|
+| `agent.provider` | `SEIHOU_AGENT_PROVIDER` | `claude-cli`, `codex-cli`, `anthropic`, `openai` |
+| `agent.model` | `SEIHOU_AGENT_MODEL` | Any provider-specific model name or alias |
+
+Agent provider resolution uses this order, with the first non-blank value winning:
+
+1. Parent CLI flag: `seihou agent --provider ... --model ...`
+2. Environment variables: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`
+3. Local project config: `.seihou/config.dhall`
+4. Global config: `~/.config/seihou/config.dhall`
+5. Built-in defaults: provider `claude-cli`, no explicit model
+
+Namespace config, context config, parent bindings, module defaults, and interactive variable prompts are not part of agent provider resolution. They still apply to blueprint variables and module variables that `seihou agent run` resolves before rendering its prompt.
+
+Use global config for personal provider defaults:
+
+```sh
+seihou config set agent.provider codex-cli --global
+seihou config set agent.model gpt-5 --global
+seihou agent assist "create a module"
+```
+
+Use parent CLI flags for a one-off override:
+
+```sh
+seihou agent --provider claude-cli --model sonnet setup "add nix"
+```
+
+Use environment variables for temporary shell sessions or CI:
+
+```sh
+export SEIHOU_AGENT_PROVIDER=openai
+export SEIHOU_AGENT_MODEL=gpt-4o-mini
+seihou agent --debug assist "inspect the prompt"
+```
+
+The `claude-cli` provider runs Baikai's `claude -p` provider and the `codex-cli` provider runs Baikai's `codex exec` provider. Both are batch text providers: Seihou sends one rendered prompt and prints one assistant response. They do not open an interactive Claude Code or Codex session, and Baikai does not expose tool calling through those CLI provider paths. The `anthropic` and `openai` providers call API endpoints and read API keys from the standard provider environment variables.
+
 
 ## Inspecting resolved variables
 

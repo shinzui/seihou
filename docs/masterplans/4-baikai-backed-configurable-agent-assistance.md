@@ -36,7 +36,7 @@ An alternative was to keep the existing interactive Claude Code launch path and 
 | EP-1 | Add Baikai dependency and agent completion facade | docs/plans/36-add-baikai-dependency-and-agent-completion-facade.md | None | None | Complete |
 | EP-2 | Add configurable agent provider and model selection | docs/plans/37-add-configurable-agent-provider-and-model-selection.md | EP-1 | None | Complete |
 | EP-3 | Migrate agent commands to Baikai launcher | docs/plans/38-migrate-agent-commands-to-baikai-launcher.md | EP-1, EP-2 | None | Complete |
-| EP-4 | Document and validate configurable Baikai agents | docs/plans/39-document-and-validate-configurable-baikai-agents.md | EP-3 | None | Not Started |
+| EP-4 | Document and validate configurable Baikai agents | docs/plans/39-document-and-validate-configurable-baikai-agents.md | EP-3 | None | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -75,9 +75,9 @@ Documentation files `docs/cli/agent.md`, `docs/user/config-and-variables.md`, `d
 - [x] EP-3: Thread resolved `AgentModelConfig` through agent command dispatch and handlers.
 - [x] EP-3: Replace raw Claude launcher calls in assist, bootstrap, setup, and blueprint runner.
 - [x] EP-3: Preserve debug behavior and successful blueprint bookkeeping semantics.
-- [ ] EP-4: Update user command and configuration documentation.
-- [ ] EP-4: Update architecture docs and changelog.
-- [ ] EP-4: Run full build, tests, and debug-mode command smoke checks.
+- [x] EP-4: Update user command and configuration documentation.
+- [x] EP-4: Update architecture docs, changelog, parser help text, and embedded agent prompt templates.
+- [x] EP-4: Run full build, tests, and debug-mode command smoke checks.
 
 
 ## Surprises & Discoveries
@@ -95,6 +95,10 @@ Baikai re-exports duplicate record selectors named `api` and `provider` from bot
 EP-3 removed `Seihou.CLI.AgentLaunchExec` from the executable target after migration. A handler-scoped ripgrep check found no `launchAgentWith`, `AgentLaunchExec`, `rawSystem "claude"`, or `findExecutable "claude"` references in the active agent launch modules. `Seihou.CLI.CommitMessage` still has its own Claude-based commit-message helper and is outside the `seihou agent` command migration.
 
 EP-3 preserves `agent run --debug` as a successful dry launch for applied-blueprint bookkeeping. The old launcher returned `ExitSuccess` after printing a debug prompt, so the migrated runner records provenance after successful debug prompt printing as well as after successful Baikai provider completion.
+
+EP-4 found that the embedded prompt templates were part of the user-visible debug surface and still told providers they could use repository tools or launch Claude Code. Those templates were updated to describe batch Baikai responses and local commands for the user to run. This affects future prompt work: prompt text must be validated against provider capabilities, not only Markdown docs.
+
+EP-4 also found that `seihou agent run` discovers blueprints from `.seihou/modules`, user modules, and installed modules, not from the current directory itself. The blueprint debug smoke check therefore used a temporary project with the sample blueprint copied under `.seihou/modules/sample-blueprint`.
 
 
 ## Decision Log
@@ -126,4 +130,6 @@ EP-3 preserves `agent run --debug` as a successful dry launch for applied-bluepr
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The Baikai-backed configurable agent assistance initiative is complete. Seihou now has a Baikai completion facade, provider/model resolution from flags, environment, local config, global config, and defaults, migrated agent command handlers, updated user/developer documentation, updated parser help text, and prompt templates aligned with batch provider semantics.
+
+Validation completed on 2026-05-23 with `cabal build all`, `cabal test all`, `seihou agent --help`, debug smoke checks for `assist`, `bootstrap`, and `setup`, and a temporary-project debug smoke check for `agent run sample-blueprint`. Live non-debug provider calls were not run as part of EP-4; the documented acceptance treats missing local binaries or credentials as an environment limitation.
