@@ -24,7 +24,15 @@ runFilesystem = interpret $ \_ -> \case
   GetCurrentDirectory -> liftIO Dir.getCurrentDirectory
   RemoveFile path -> liftIO (Dir.removeFile path)
   RemoveDirectoryIfEmpty path -> liftIO $ do
-    entries <- Dir.listDirectory path
-    when (null entries) (Dir.removeDirectory path)
+    -- Treat a missing directory as a no-op so this matches the pure
+    -- interpreter's semantics. Without this guard, callers that walk
+    -- a list of "maybe-now-empty" parents (e.g. cleanupEmptyDirs in
+    -- Engine.Migrate / Engine.Remove) crash whenever a sibling
+    -- operation — typically a user-authored 'rm -rf' RunCommand step
+    -- in a migration chain — has already removed the directory.
+    exists <- Dir.doesDirectoryExist path
+    when exists $ do
+      entries <- Dir.listDirectory path
+      when (null entries) (Dir.removeDirectory path)
   RenamePath src dest -> liftIO (Dir.renamePath src dest)
   RemoveDirectoryRecursive path -> liftIO (Dir.removeDirectoryRecursive path)

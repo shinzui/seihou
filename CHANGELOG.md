@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- `seihou migrate` no longer crashes with
+  `getDirectoryContents:openDirStream: does not exist` when a migration
+  chain mixes a `MoveFile` op with a `RunCommand` step (e.g.
+  `rm -rf <src-dir>`) that removes the source's parent directory before
+  `cleanupEmptyDirs` runs. The IO interpreter of
+  `Filesystem.RemoveDirectoryIfEmpty` now treats a missing path as a
+  no-op, matching the pure interpreter's semantics. On the affected
+  chain the manifest had already been rolled back even though the disk
+  moves had completed, so a second `seihou migrate` invocation
+  succeeded — the fix removes the need for that retry dance.
+
 ## [0.2.0.0] - 2026-04-29
 
 ### Added

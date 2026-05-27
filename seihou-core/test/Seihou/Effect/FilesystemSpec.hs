@@ -117,3 +117,31 @@ spec = do
         copyFile src dest
         readFileText dest
       content `shouldBe` "copy me"
+
+    it "removeDirectoryIfEmpty removes an empty directory" $ do
+      exists <- runReal $ \tmpDir -> do
+        let dir = tmpDir </> "empty"
+        createDirectoryIfMissing True dir
+        removeDirectoryIfEmpty dir
+        doesDirectoryExist dir
+      exists `shouldBe` False
+
+    it "removeDirectoryIfEmpty leaves a non-empty directory alone" $ do
+      exists <- runReal $ \tmpDir -> do
+        let dir = tmpDir </> "non-empty"
+        createDirectoryIfMissing True dir
+        writeFileText (dir </> "keep.txt") "."
+        removeDirectoryIfEmpty dir
+        doesDirectoryExist dir
+      exists `shouldBe` True
+
+    it "removeDirectoryIfEmpty is a no-op when the directory is missing" $ do
+      -- Regression test: a migration chain that mixes MoveFile with a
+      -- RunCommand 'rm -rf <src-dir>' previously crashed here because
+      -- cleanupEmptyDirs revisits the source's parents after the
+      -- shell step has already removed them.
+      exists <- runReal $ \tmpDir -> do
+        let dir = tmpDir </> "never-existed"
+        removeDirectoryIfEmpty dir
+        doesDirectoryExist dir
+      exists `shouldBe` False
