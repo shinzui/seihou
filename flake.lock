@@ -62,11 +62,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1779940492,
-        "narHash": "sha256-U+Dov3k3HySBWfA9R8bmnNPnXU6lJ6GSDIwo78dr8Wg=",
+        "lastModified": 1779978303,
+        "narHash": "sha256-tlCDKx9UgXR+wEaXHkt2DAtXeoYM17F56Wra5OzaP5s=",
         "owner": "shinzui",
         "repo": "haskell-nix",
-        "rev": "9dc1bd147a6551395681df0d9b4ffd72713842a2",
+        "rev": "f07c420d15917d372a76f2ab3e1712521a2c7473",
         "type": "github"
       },
       "original": {
