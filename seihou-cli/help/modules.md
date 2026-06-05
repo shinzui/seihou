@@ -78,7 +78,7 @@ COMMON COMMANDS
   seihou list                          List all available modules
   seihou new-module my-template        Scaffold a new module
   seihou validate-module ./my-module   Check a module is well-formed
-  seihou install <git-url>             Install modules from git
+  seihou install <git-url>             Install modules, recipes, or blueprints from git
   seihou run <module> --var k=v        Run a module to generate files
   seihou remove <module>               Remove an applied module and its files
   seihou schema-upgrade ./my-module    Upgrade module.dhall to current schema

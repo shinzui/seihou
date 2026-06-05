@@ -23,7 +23,7 @@ seihou help [TOPIC]
 | `variables` | Variable declaration, resolution, and overrides |
 | `contexts` | Using contexts for environment-specific config |
 | `config` | Config scopes, reading, and writing values |
-| `git-repository` | Sharing and installing modules from git |
+| `git-repository` | Sharing and installing items from git |
 | `kit` | Manage Claude Code and Codex skills and subagents |
 | `migrations` | Migrating a project between module versions |
 | `templating` | Placeholder substitution, `{{#if}}` blocks, and patterns |

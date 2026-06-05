@@ -34,7 +34,7 @@ helpTopics =
     HelpTopic "variables" "Variable declaration, resolution, and overrides" variablesContent,
     HelpTopic "contexts" "Using contexts for environment-specific config" contextsContent,
     HelpTopic "config" "Config scopes, reading, and writing values" configContent,
-    HelpTopic "git-repository" "Sharing and installing modules from git" gitRepositoryContent,
+    HelpTopic "git-repository" "Sharing and installing items from git" gitRepositoryContent,
     HelpTopic "kit" "Manage Claude Code and Codex skills and subagents" kitContent,
     HelpTopic "migrations" "Migrating a project between module versions" migrationsContent,
     HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent

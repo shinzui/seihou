@@ -1,6 +1,6 @@
 # Getting Started with Seihou
 
-Seihou (製法) is a composable, type-safe project scaffolding system. You define reusable **modules** — directories containing a Dhall definition and template files — then run `seihou run <module>` to generate projects. You can also define **recipes** — named compositions of modules that bundle multiple modules into a single runnable name. Seihou resolves variables from multiple sources, compiles a generation plan, and writes files to disk, tracking everything in a manifest for incremental updates.
+Seihou (製法) is a composable, type-safe project scaffolding system. You define reusable **modules** — directories containing a Dhall definition and template files — then run `seihou run <module>` to generate projects. You can also define **recipes** — named compositions of modules that bundle multiple modules into a single runnable name — and **blueprints**, agent-driven project starters for open-ended scaffolding. Seihou resolves variables from multiple sources, compiles a generation plan for deterministic runs, and tracks generated files in a manifest for incremental updates.
 
 This guide walks you through the complete workflow: initializing Seihou, creating a module from scratch, generating a project, and inspecting the results. By the end, you will have used every major CLI command.
 
@@ -58,8 +58,6 @@ This creates the following structure:
 ```
 my-haskell/
 ├── module.dhall
-├── schema/
-│   └── Module.dhall
 └── files/
     └── README.md.tpl
 ```
@@ -67,36 +65,36 @@ my-haskell/
 Open `my-haskell/module.dhall` to see the boilerplate:
 
 ```dhall
-{ name = "my-haskell"
-, description = Some "A new seihou module"
-, vars =
-  [ { name = "project.name"
-    , type = "text"
-    , default = None Text
-    , description = Some "The name of the project"
-    , required = True
-    , validation = None Text
+let S =
+      https://raw.githubusercontent.com/shinzui/seihou-schema/<commit>/package.dhall
+        sha256:<hash>
+
+in  S.Module::{
+    , name = "my-haskell"
+    , version = Some "0.1.0"
+    , description = Some "A new seihou module"
+    , vars =
+      [ S.VarDecl::{
+        , name = "project.name"
+        , type = "text"
+        , description = Some "The name of the project"
+        , required = True
+        }
+      ]
+    , prompts =
+      [ S.Prompt::{
+        , var = "project.name"
+        , text = "What is your project name?"
+        }
+      ]
+    , steps =
+      [ S.Step::{
+        , strategy = "template"
+        , src = "README.md.tpl"
+        , dest = "README.md"
+        }
+      ]
     }
-  ]
-, exports = [] : List { var : Text, alias : Optional Text }
-, prompts =
-  [ { var = "project.name"
-    , text = "What is your project name?"
-    , when = None Text
-    , choices = None (List Text)
-    }
-  ]
-, steps =
-  [ { strategy = "template"
-    , src = "README.md.tpl"
-    , dest = "README.md"
-    , when = None Text
-    , patch = None Text
-    }
-  ]
-, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
-}
 ```
 
 Each field:
@@ -128,62 +126,29 @@ The `{{project.name}}` syntax is a placeholder — Seihou replaces it with the r
 Let's make this module more useful. Replace the contents of `my-haskell/module.dhall` with:
 
 ```dhall
-{ name = "my-haskell"
-, description = Some "A Haskell project template"
-, vars =
-  [ { name = "project.name"
-    , type = "text"
-    , default = None Text
-    , description = Some "Name of the project"
-    , required = True
-    , validation = Some "[a-z][a-z0-9-]*"
+let S =
+      https://raw.githubusercontent.com/shinzui/seihou-schema/<commit>/package.dhall
+        sha256:<hash>
+
+in  S.Module::{
+    , name = "my-haskell"
+    , version = Some "0.1.0"
+    , description = Some "A Haskell project template"
+    , vars =
+      [ S.VarDecl::{ name = "project.name", type = "text", default = None Text, description = Some "Name of the project", required = True, validation = Some "[a-z][a-z0-9-]*" }
+      , S.VarDecl::{ name = "project.version", type = "text", default = Some "0.1.0.0", description = Some "Initial version", required = False }
+      , S.VarDecl::{ name = "license", type = "text", default = Some "MIT", description = Some "License type", required = False }
+      ]
+    , exports = [ S.VarExport::{ var = "project.name" } ]
+    , prompts =
+      [ S.Prompt::{ var = "project.name", text = "What is your project name?" }
+      ]
+    , steps =
+      [ S.Step::{ strategy = "template", src = "README.md.tpl", dest = "README.md" }
+      , S.Step::{ strategy = "template", src = "package.cabal.tpl", dest = "{{project.name}}.cabal" }
+      , S.Step::{ strategy = "copy", src = "LICENSE", dest = "LICENSE", when = Some "IsSet license" }
+      ]
     }
-  , { name = "project.version"
-    , type = "text"
-    , default = Some "0.1.0.0"
-    , description = Some "Initial version"
-    , required = False
-    , validation = None Text
-    }
-  , { name = "license"
-    , type = "text"
-    , default = Some "MIT"
-    , description = Some "License type"
-    , required = False
-    , validation = None Text
-    }
-  ]
-, exports = [ { var = "project.name", alias = None Text } ]
-, prompts =
-  [ { var = "project.name"
-    , text = "What is your project name?"
-    , when = None Text
-    , choices = None (List Text)
-    }
-  ]
-, steps =
-  [ { strategy = "template"
-    , src = "README.md.tpl"
-    , dest = "README.md"
-    , when = None Text
-    , patch = None Text
-    }
-  , { strategy = "template"
-    , src = "package.cabal.tpl"
-    , dest = "{{project.name}}.cabal"
-    , when = None Text
-    , patch = None Text
-    }
-  , { strategy = "copy"
-    , src = "LICENSE"
-    , dest = "LICENSE"
-    , when = Some "IsSet license"
-    , patch = None Text
-    }
-  ]
-, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
-}
 ```
 
 What changed:
@@ -434,9 +399,9 @@ seihou vars my-haskell --explain --var project.name=demo-app
 The `--explain` flag shows the provenance of each resolved variable — whether it came from a CLI flag, environment variable, config file, or module default. This is invaluable for debugging variable resolution in complex setups.
 
 
-## Step 10: List available modules and recipes
+## Step 10: List available modules, recipes, and blueprints
 
-To see all modules and recipes Seihou can find across its search paths:
+To see all modules, recipes, and blueprints Seihou can find across its search paths:
 
 ```sh
 seihou list
@@ -448,15 +413,16 @@ Seihou searches three locations in order:
 2. **User modules**: `~/.config/seihou/modules/`
 3. **Installed modules**: `~/.config/seihou/installed/`
 
-Output shows each item with its name, description, and source. Recipes are distinguished with a `[recipe]` tag:
+Output shows each item with its name, description, and source. Recipes and blueprints are distinguished with `[recipe]` and `[blueprint]` tags:
 
 ```
-Available modules and recipes:
+Available modules, recipes, and blueprints:
 
   my-haskell        A Haskell project template   (user)
   haskell-library   Haskell with Nix + Cabal     (installed: my-templates v1.0.0 [recipe])
+  api-service       Agent-guided API service     (installed: my-templates v0.1.0 [blueprint])
 
-2 modules found (3 sources searched)
+3 items found (3 sources searched)
 ```
 
 To make your module available everywhere, move it to `~/.config/seihou/modules/`:
@@ -466,9 +432,9 @@ mv my-haskell ~/.config/seihou/modules/
 ```
 
 
-## Step 11: Install modules from git
+## Step 11: Install items from git
 
-You can install modules directly from git repositories:
+You can install modules, recipes, and blueprints directly from git repositories:
 
 ```sh
 seihou install https://github.com/user/haskell-nix-module.git
@@ -476,7 +442,7 @@ seihou install https://github.com/user/haskell-nix-module.git
 
 This clones the repository, validates its `module.dhall`, and copies it to `~/.config/seihou/installed/<name>/`. Use `--name` to override the installed module name.
 
-Repositories can also provide multiple modules and recipes via a **registry**. Use `seihou browse` to preview what's available, and `--module` or `--all` with `seihou install` to select which modules to install. Single-recipe repos (containing `recipe.dhall` at the root) are also supported. See the [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) guide for details.
+Repositories can also provide multiple modules, recipes, and blueprints via a **registry**. Use `seihou browse` to preview what's available, and `--module` or `--all` with `seihou install` to select which items to install. Single-recipe repos (containing `recipe.dhall` at the root) and single-blueprint repos (containing `blueprint.dhall` at the root) are also supported. See the [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) guide for details.
 
 
 ## Other commands
@@ -504,6 +470,37 @@ seihou run haskell-base -m nix-flake --var project.name=my-app
 ```
 
 Seihou resolves dependencies automatically via topological sort. If `nix-flake` depends on `nix-base`, all three modules are loaded and executed in the correct order.
+
+### Blueprints: agent-driven scaffolding
+
+Use blueprints when a project starter needs an agent to adapt examples and
+make context-specific choices:
+
+```sh
+seihou new-blueprint api-service
+seihou validate-blueprint api-service
+seihou agent run api-service --var project.name=payments
+```
+
+Blueprints can apply deterministic baseline modules first, then hand the
+project to the configured agent provider. `seihou run api-service` refuses
+when `api-service` is a blueprint; use `seihou agent run` instead. See
+[Agent-Driven Blueprints](blueprints.md).
+
+### AI-assisted workflows
+
+`seihou agent` can help author modules, bootstrap registries, guide project
+setup, or run blueprints:
+
+```sh
+seihou agent assist "add optional PostgreSQL support"
+seihou agent bootstrap --repo "create a team template registry"
+seihou agent setup "apply our Haskell starter"
+```
+
+Provider defaults are configurable (`claude-cli`, `codex-cli`, `anthropic`,
+or `openai`), and `--debug` prints the rendered prompt without contacting a
+provider. See [AI Agent Assistance](agent-assistance.md).
 
 ### `seihou run` flags
 
@@ -603,11 +600,15 @@ seihou help              # list available topics
 seihou help modules      # learn about module authoring
 seihou help variables    # learn about variable resolution
 seihou help contexts     # learn about context-based config
+seihou help blueprints   # learn about agent-driven blueprints
+seihou help agent        # learn about AI agent commands
 ```
 
 
 ## Next steps
 
 - Read the [Module Authoring Reference](module-authoring.md) for the complete module format, all four generation strategies, variable types, the expression language, composition patterns, and recipes.
-- Read [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) to learn how to publish multiple modules and recipes from a single git repository.
+- Read [Agent-Driven Blueprints](blueprints.md) to learn how to author and run open-ended project starters.
+- Read [AI Agent Assistance](agent-assistance.md) to configure providers and use `seihou agent` / `seihou kit`.
+- Read [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) to learn how to publish multiple modules, recipes, and blueprints from a single git repository.
 - Explore the test fixtures at `seihou-core/test/fixtures/` for working examples of multi-module composition (`haskell-with-nix`), structured output (`structured-basic`), shell commands (`command-test`), and recipes (`haskell-with-nix-recipe`).

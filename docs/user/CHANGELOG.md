@@ -3,12 +3,53 @@
 ## Last Reviewed Commit
 
 ```
-HEAD  Rewrite migration planner as gap-tolerant version-window walker (ExecPlan 35)
+68da440 docs: add blueprints help topic
 ```
 
 ---
 
 ## Changelog
+
+### 2026-06-05 (User docs audit: blueprints, agents, and registry items)
+
+**Reviewed commits:** `a87088f` through `68da440`
+
+**Documentation changes:**
+
+- Added `docs/user/blueprints.md` — user-facing guide for authoring,
+  validating, running, and publishing agent-driven blueprints.
+- Added `docs/user/agent-assistance.md` — provider selection, debug mode,
+  agent subcommands, and Seihou Kit provider-native installs for Claude Code
+  and Codex.
+- Updated `docs/user/getting-started.md` — current `new-module` scaffold
+  output, blueprints as the third runnable kind, `seihou agent` workflows, and
+  new help topics.
+- Updated `docs/user/registries-and-multi-module-repos.md` — registry
+  examples and discovery/install/validation rules now cover modules, recipes,
+  and blueprints.
+- Updated `docs/user/module-authoring.md` — discovery and variable precedence
+  sections now match current behavior.
+- Updated `docs/cli/{browse,help,install,list,registry}.md` — command references
+  no longer describe registry commands as module/recipe-only.
+- Updated embedded help topics for git repositories and module common commands
+  to mention recipes and blueprints where relevant.
+
+**Features documented:**
+
+- `seihou new-blueprint`, `seihou validate-blueprint`, and
+  `seihou agent run` as the blueprint authoring and execution path.
+- Configurable agent providers (`claude-cli`, `codex-cli`, `anthropic`,
+  `openai`) and provider/model precedence.
+- `seihou kit` installing provider-native Claude Code and Codex skills and
+  subagents at user or project scope.
+- Registry `blueprints` entries and single-blueprint repository discovery.
+
+**No documentation needed:**
+
+- Nix flake/overlay updates and Baikai package source changes are build-system
+  maintenance with no user-facing CLI behavior change.
+- Agent API compatibility fixes preserve the already documented provider
+  behavior.
 
 ### 2026-05-24 (Baikai interactive integration follow-up)
 

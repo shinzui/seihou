@@ -1,6 +1,6 @@
 # seihou install
 
-Install modules and recipes from a git repository.
+Install modules, recipes, and blueprints from a git repository.
 
 ## Usage
 
@@ -19,23 +19,24 @@ seihou install [GIT-URL] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--name NAME` | Override installed module name (single-module repos only) |
-| `--module MODULE` | Install a specific module from the registry (repeatable) |
-| `--all` | Install all modules from the registry |
+| `--module MODULE` | Install a specific module, recipe, or blueprint from the registry (repeatable) |
+| `--all` | Install all modules, recipes, and blueprints from the registry |
 
 ## Description
 
-Clones the git repository and installs modules and recipes to
+Clones the git repository and installs modules, recipes, and blueprints to
 `~/.config/seihou/installed/<name>/`.
 
 Handles three repository types:
 
 - **Single-module** repos (containing `module.dhall` at the root)
 - **Single-recipe** repos (containing `recipe.dhall` at the root)
-- **Multi-module registries** (containing `seihou-registry.dhall`)
+- **Single-blueprint** repos (containing `blueprint.dhall` at the root)
+- **Multi-item registries** (containing `seihou-registry.dhall`)
 
-For registries, both module and recipe entries are presented for selection.
+For registries, module, recipe, and blueprint entries are presented for selection.
 If neither `--module` nor `--all` is specified, an interactive picker is shown.
-The `--all` flag installs all modules and recipes from the registry.
+The `--all` flag installs all modules, recipes, and blueprints from the registry.
 
 ### Install history
 
@@ -64,10 +65,10 @@ seihou install https://github.com/user/seihou-haskell.git
 # Install with a custom name
 seihou install https://github.com/user/seihou-haskell.git --name my-haskell
 
-# Install specific modules from a registry
-seihou install https://github.com/user/seihou-modules.git --module haskell --module nix
+# Install specific items from a registry
+seihou install https://github.com/user/seihou-modules.git --module haskell --module api-service
 
-# Install all modules from a registry
+# Install all items from a registry
 seihou install https://github.com/user/seihou-modules.git --all
 
 # Reinstall from history (opens fzf picker)

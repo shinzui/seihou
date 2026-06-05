@@ -463,6 +463,7 @@ Seihou resolves variables from multiple sources in this precedence order (first 
 6. **Global config** — `~/.config/seihou/config.dhall`
 7. **Parent bindings** — Parameterized dependency `depVars` from parent module
 8. **Module defaults** — `default = Some "value"` in `module.dhall`
+9. **Interactive prompt** — User input for missing variables when a TTY is available
 
 ### Environment variable mapping
 
@@ -590,7 +591,7 @@ The name "recipe" aligns with seihou (製法, "method of production / recipe"): 
 
 ### Recipe fields
 
-**name** (Text, required): The recipe identifier. Must match `[a-z][a-z0-9-]*`. Shares a namespace with modules — `seihou run foo` auto-detects whether `foo` is a module or recipe.
+**name** (Text, required): The recipe identifier. Must match `[a-z][a-z0-9-]*`. Shares a namespace with modules and blueprints — `seihou run foo` auto-detects whether `foo` is a module or recipe, while blueprints run through `seihou agent run`.
 
 **version** (Optional Text): Semantic version string.
 
@@ -640,13 +641,18 @@ Recipes are validated with these rules:
 
 ## Module search paths
 
-Seihou discovers modules and recipes from three directories, searched in order:
+Seihou discovers modules, recipes, and blueprints from three directories, searched in order:
 
 1. **Project-local**: `.seihou/modules/` relative to the current working directory
 2. **User modules**: `~/.config/seihou/modules/`
 3. **Installed modules**: `~/.config/seihou/installed/`
 
-A directory is recognized as a module if it contains a `module.dhall` file, or as a recipe if it contains a `recipe.dhall` file. Modules take priority: if both exist, the `module.dhall` is used. Use `seihou list` to see all discovered modules and recipes and their sources.
+A directory is recognized as a module if it contains `module.dhall`, as a
+recipe if it contains `recipe.dhall`, or as a blueprint if it contains
+`blueprint.dhall`. Discovery prefers `module.dhall`, then `recipe.dhall`, then
+`blueprint.dhall` when more than one runnable file is present. Use
+`seihou list` to see all discovered modules, recipes, and blueprints and their
+sources.
 
 
 ## Validation

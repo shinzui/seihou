@@ -1,8 +1,8 @@
 GIT REPOSITORY
 
-Seihou modules can be shared and installed from git repositories. A
-repository can contain a single module or multiple modules organized
-as a registry.
+Seihou modules, recipes, and blueprints can be shared and installed from git
+repositories. A repository can contain a single runnable item or multiple items
+organized as a registry.
 
 SINGLE-MODULE REPOSITORY
 
@@ -19,25 +19,31 @@ SINGLE-MODULE REPOSITORY
     seihou install https://github.com/user/my-module.git
     seihou install https://github.com/user/my-module.git --name custom-name
 
-MULTI-MODULE REPOSITORY (REGISTRY)
+SINGLE-RECIPE OR SINGLE-BLUEPRINT REPOSITORY
+
+  A repository with a recipe.dhall or blueprint.dhall at the root is treated
+  as a single recipe or single blueprint. Install it the same way:
+
+    seihou install https://github.com/user/my-recipe.git
+    seihou install https://github.com/user/my-blueprint.git
+
+  Recipes run through `seihou run`; blueprints run through
+  `seihou agent run`.
+
+REGISTRY REPOSITORY
 
   A repository with a seihou-registry.dhall at the root is treated as a
-  registry containing multiple modules. Each module lives in its own
-  subdirectory with its own module.dhall.
+  registry containing multiple modules, recipes, and blueprints. Each item
+  lives in its own subdirectory with its own runnable definition.
 
     my-templates/
       seihou-registry.dhall
-      haskell-base/
-        module.dhall
-        templates/
-          ...
-      rust-base/
-        module.dhall
-        templates/
-          ...
+      modules/haskell-base/module.dhall
+      recipes/haskell-library/recipe.dhall
+      blueprints/api-service/blueprint.dhall
 
-  The registry file declares available modules with descriptions and tags.
-  Install specific modules, all modules, or choose interactively:
+  The registry file declares available items with descriptions, versions, and
+  tags. Install specific items, all items, or choose interactively:
 
     seihou install https://github.com/user/templates.git --module haskell-base
     seihou install https://github.com/user/templates.git --all
@@ -50,29 +56,30 @@ BROWSING BEFORE INSTALLING
     seihou browse https://github.com/user/templates.git
     seihou browse https://github.com/user/templates.git --tag haskell
 
-  For multi-module repos, this lists all modules with descriptions and tags.
+  For registry repos, this lists all items with descriptions and tags.
 
-WHERE MODULES ARE INSTALLED
+WHERE ITEMS ARE INSTALLED
 
-  Installed modules are stored under ~/.config/seihou/installed/<name>/.
-  They appear alongside user-created modules in the module search path:
+  Installed items are stored under ~/.config/seihou/installed/<name>/.
+  They appear alongside user-created modules, recipes, and blueprints in the
+  search path:
 
-  1. .seihou/modules/             Project-local modules
-  2. ~/.config/seihou/modules/    User modules
+  1. .seihou/modules/             Project-local items
+  2. ~/.config/seihou/modules/    User items
   3. ~/.config/seihou/installed/  Installed (from git)
 
 BOOTSTRAPPING A NEW REPOSITORY
 
-  The agent bootstrap command can create a new module or multi-module
-  repository structure for you:
+  The agent bootstrap command can create a new module or registry repository
+  structure for you:
 
     seihou agent bootstrap                    # single module
     seihou agent bootstrap --repo             # multi-module with registry
 
 UPGRADE WORKFLOW
 
-  Once installed, modules can be upgraded with `seihou upgrade`. If a
-  newer version ships migrations (for renames, deletions, etc.), the
-  upgrade command surfaces them via an advisory; running
+  Once installed, modules, recipes, and blueprints can be upgraded with
+  `seihou upgrade`. If a newer module version ships migrations (for renames,
+  deletions, etc.), the upgrade command surfaces them via an advisory; running
   `seihou migrate <module>` is the post-upgrade step that applies them
   to the current project. See `seihou help migrations`.
