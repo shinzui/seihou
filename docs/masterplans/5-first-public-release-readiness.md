@@ -32,7 +32,7 @@ Seven child plans are used because the audit found seven distinct classes of wor
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Package embedded CLI assets for Hackage | docs/plans/41-package-embedded-cli-assets-for-hackage.md | None | None | Complete |
-| EP-2 | Constrain rendered generation paths | docs/plans/42-constrain-rendered-generation-paths.md | None | EP-3 | Not Started |
+| EP-2 | Constrain rendered generation paths | docs/plans/42-constrain-rendered-generation-paths.md | None | EP-3 | Complete |
 | EP-3 | Validate migration and removal paths | docs/plans/43-validate-migration-and-removal-paths.md | None | EP-2 | Not Started |
 | EP-4 | Make manifest writes atomic | docs/plans/44-make-manifest-writes-atomic.md | None | None | Not Started |
 | EP-5 | Make recipe expansion total | docs/plans/45-make-recipe-expansion-total.md | None | None | Not Started |
@@ -47,7 +47,7 @@ Hard Deps and Soft Deps reference other rows by their # prefix.
 
 EP-1 can begin immediately. It fixes a confirmed Hackage source distribution build failure by packaging files that are embedded by Template Haskell in the CLI executable. EP-6 has a soft dependency on EP-1 because both touch Cabal metadata, but either can be implemented first if the implementer carefully merges Cabal edits.
 
-EP-2 and EP-3 can proceed in either order, but they share a path-safety concept. EP-2 owns rendered generation destination and command work-directory validation. EP-3 owns author-declared migration and removal paths. If one plan creates a shared path-safety helper, the other should reuse it rather than creating an incompatible duplicate.
+EP-2 and EP-3 can proceed in either order, but they share a path-safety concept. EP-2 owns rendered generation destination and command work-directory validation and has created `Seihou.Core.Path.validateProjectRelativePath` as the shared helper. EP-3 owns author-declared migration and removal paths and should reuse that helper rather than creating an incompatible duplicate.
 
 EP-4 and EP-5 are independent code hardening plans. EP-4 changes the manifest writer implementation and tests atomic write behavior. EP-5 makes recipe expansion total and ensures invalid recipes surface as structured errors instead of crashes.
 
@@ -56,7 +56,7 @@ EP-7 depends hard on EP-6 because README and public docs should name the final l
 
 ## Integration Points
 
-Path safety is shared by EP-2 and EP-3. The shared artifact should be a small helper in `seihou-core`, either in `Seihou.Core.Module` or a new focused module, that decides whether a project-relative path is safe. It must reject absolute paths and any path segment equal to `..`; it should not reject a harmless string merely because two dots appear inside a filename such as `README.v2.md`. EP-2 applies the helper after destination and command work-directory interpolation. EP-3 applies the helper to migration and removal declarations before disk mutation.
+Path safety is shared by EP-2 and EP-3. The shared artifact is `Seihou.Core.Path.validateProjectRelativePath :: Text -> Either Text FilePath`, a focused helper in `seihou-core` that decides whether a project-relative path is safe. It rejects blank paths, POSIX and Windows absolute paths, and any path segment equal to `..`; it does not reject a harmless string merely because two dots appear inside a filename such as `README.v2.md`. EP-2 applies the helper after destination and command work-directory interpolation. EP-3 applies the helper to migration and removal declarations before disk mutation.
 
 `seihou-cli/seihou-cli.cabal` is shared by EP-1 and EP-6. EP-1 adds `extra-source-files` entries for embedded help and prompt assets. EP-6 adds release metadata, dependency bounds, license information, and possibly source repository metadata. The later plan should preserve the earlier `extra-source-files` entries.
 
@@ -69,8 +69,8 @@ Release validation is shared by all plans. The final acceptance for the whole Ma
 
 - [x] EP-1: Add embedded CLI help and prompt assets to the source distribution.
 - [x] EP-1: Prove the `seihou-cli` tarball builds far enough to compile embedded files.
-- [ ] EP-2: Add post-render safety checks for generated file paths and command work directories.
-- [ ] EP-2: Add regression tests for variable-expanded `..` and absolute paths.
+- [x] EP-2: Add post-render safety checks for generated file paths and command work directories.
+- [x] EP-2: Add regression tests for variable-expanded `..` and absolute paths.
 - [ ] EP-3: Validate migration and removal paths before destructive operations.
 - [ ] EP-3: Add regression tests for unsafe move/delete/remove declarations.
 - [ ] EP-4: Replace manifest double-write with an actual atomic temp-write and rename flow.
@@ -90,6 +90,10 @@ The audit found that `cabal sdist all` succeeds even when the CLI source distrib
 The audit also found that the local `just test` gate passed with 850 core tests and 226 CLI tests. The release-readiness blockers are therefore not broad test failures; they are targeted safety, packaging, and documentation issues.
 
 During EP-1 validation, the unpacked source distribution build emitted existing `-Wx-partial` warnings in `seihou-core/src/Seihou/Composition/Recipe.hs` for `head` and `tail`. This confirms the EP-5 scope, and it did not block the EP-1 package asset fix.
+
+EP-2 created `Seihou.Core.Path.validateProjectRelativePath` as the shared path-safety helper for rendered generation paths and future migration/removal validation. The helper rejects blank paths, POSIX and Windows absolute paths, and path segments exactly equal to `..`, while allowing dotted filenames such as `README.v2.md`.
+
+The EP-2 focused test command in the initial plan used `--match`, but the current test runner accepts `--pattern`. `cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Plan"'` passed 40 planner tests, and `cabal test seihou-core-test` passed 855 core tests.
 
 
 ## Decision Log

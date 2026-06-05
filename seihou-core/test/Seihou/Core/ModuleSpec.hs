@@ -203,6 +203,20 @@ spec = do
           Left other -> expectationFailure ("Expected ValidationError, got: " <> show other)
           Right _ -> expectationFailure "Expected validation failure"
 
+    it "allows dots inside destination filenames" $ do
+      withSystemTempDirectory "seihou-test" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let dotted =
+              goodModule
+                { steps =
+                    [Step Template "README.md.tpl" "docs/README.v2.md" Nothing Nothing]
+                }
+        result <- validateModule tmpDir dotted
+        case result of
+          Right m -> m.name `shouldBe` "test-module"
+          Left err -> expectationFailure ("Expected Right, got: " <> show err)
+
     it "rejects destination referencing undeclared variable" $ do
       withSystemTempDirectory "seihou-test" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")

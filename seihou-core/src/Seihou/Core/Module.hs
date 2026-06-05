@@ -26,6 +26,7 @@ module Seihou.Core.Module
     checkCommandSafety,
     isValidModuleName,
     extractPlaceholders,
+    validateProjectRelativePath,
   )
 where
 
@@ -33,6 +34,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile)
 import Seihou.Prelude
@@ -259,10 +261,10 @@ checkDependencyVarBindings m =
 checkSafeDestinations :: Module -> [Text]
 checkSafeDestinations m = concatMap checkDest m.steps
   where
-    checkDest s
-      | T.isPrefixOf "/" s.dest = ["step destination must be relative: " <> s.dest]
-      | ".." `T.isInfixOf` s.dest = ["step destination must not contain '..': " <> s.dest]
-      | otherwise = []
+    checkDest s =
+      case validateProjectRelativePath s.dest of
+        Left err -> ["step destination " <> err]
+        Right _ -> []
 
 -- Rule 8: Variables referenced in step dest placeholders must be declared
 checkDestVarRefs :: Module -> [Text]
@@ -287,10 +289,10 @@ checkCommandSafety m = concatMap checkCmd m.commands
       | otherwise = []
 
     checkWorkDir Nothing = []
-    checkWorkDir (Just wd)
-      | T.isPrefixOf "/" wd = ["command workDir must be relative: " <> wd]
-      | ".." `T.isInfixOf` wd = ["command workDir must not contain '..': " <> wd]
-      | otherwise = []
+    checkWorkDir (Just wd) =
+      case validateProjectRelativePath wd of
+        Left err -> ["command workDir " <> err]
+        Right _ -> []
 
 -- | Extract placeholder variable references from a text like @"src/{{project.name}}/Main.hs"@.
 extractPlaceholders :: Text -> [Text]

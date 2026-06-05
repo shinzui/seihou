@@ -19,6 +19,7 @@ import Dhall qualified
 import Dhall.Core qualified as DhallCore
 import Dhall.Src (Src)
 import Seihou.Core.Expr (evalExpr)
+import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Engine.DhallJSON (dhallExprToJSON)
 import Seihou.Engine.Template (renderCommand, renderDestPath, renderTemplate, renderTemplateText)
@@ -67,15 +68,18 @@ compileCommands vars = foldl' go (Right [])
 -- | Compile a single command, interpolating placeholders in @run@ and @workDir@.
 compileOneCommand :: Map VarName VarValue -> Command -> Either [Text] Operation
 compileOneCommand vars cmd =
-  let runResult = renderCommand cmd.run vars
-      wdResult = case cmd.workDir of
-        Nothing -> Right Nothing
-        Just wd -> Just <$> renderCommand wd vars
-   in case (runResult, wdResult) of
-        (Left e1, Left e2) -> Left (map formatPlaceholderError (e1 ++ e2))
-        (Left e1, _) -> Left (map formatPlaceholderError e1)
-        (_, Left e2) -> Left (map formatPlaceholderError e2)
-        (Right r, Right w) -> Right (RunCommandOp r (fmap T.unpack w))
+  case renderCommand cmd.run vars of
+    Left placeholderErrors -> Left (map formatPlaceholderError placeholderErrors)
+    Right runText ->
+      case cmd.workDir of
+        Nothing -> Right (RunCommandOp runText Nothing)
+        Just wd ->
+          case renderCommand wd vars of
+            Left placeholderErrors -> Left (map formatPlaceholderError placeholderErrors)
+            Right renderedWd ->
+              case validateRenderedCommandWorkDir renderedWd of
+                Left err -> Left [err]
+                Right safeWd -> Right (RunCommandOp runText (Just (T.unpack safeWd)))
 
 -- | Compile a single step into operations (or skip it).
 -- If the step has a patch operation, it produces a 'PatchFileOp'; otherwise
@@ -116,10 +120,8 @@ compileCopyStep baseDir vars step = do
       case renderDestPath step.dest vars of
         Left placeholderErrors ->
           pure (Left (map formatPlaceholderError placeholderErrors))
-        Right dest -> do
-          let destStr = T.unpack dest
-              dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-          pure (Right (dirOps ++ [WriteFileOp destStr content Copy]))
+        Right dest ->
+          pure (writeFileOps dest content Copy)
 
 -- | Compile a Template step: read, render placeholders, write.
 compileTemplateStep ::
@@ -140,10 +142,8 @@ compileTemplateStep baseDir vars step = do
           case renderDestPath step.dest vars of
             Left placeholderErrors ->
               pure (Left (map formatPlaceholderError placeholderErrors))
-            Right dest -> do
-              let destStr = T.unpack dest
-                  dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-              pure (Right (dirOps ++ [WriteFileOp destStr rendered Template]))
+            Right dest ->
+              pure (writeFileOps dest rendered Template)
 
 -- | Compile a DhallText step: read source, substitute placeholders, evaluate as Dhall.
 compileDhallTextStep ::
@@ -168,10 +168,8 @@ compileDhallTextStep baseDir vars step = do
               case renderDestPath step.dest vars of
                 Left placeholderErrors ->
                   pure (Left (map formatPlaceholderError placeholderErrors))
-                Right dest -> do
-                  let destStr = T.unpack dest
-                      dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-                  pure (Right (dirOps ++ [WriteFileOp destStr evaluated DhallText]))
+                Right dest ->
+                  pure (writeFileOps dest evaluated DhallText)
 
 -- | Compile a Structured step: read source, substitute placeholders, evaluate as Dhall,
 -- then serialize to JSON or YAML based on the destination file extension.
@@ -201,12 +199,12 @@ compileStructuredStep baseDir vars step = do
                     Left placeholderErrors ->
                       pure (Left (map formatPlaceholderError placeholderErrors))
                     Right dest ->
-                      case serializeByExtension (T.unpack dest) jsonValue of
+                      case validateRenderedDestination dest of
                         Left err -> pure (Left [err])
-                        Right serialized -> do
-                          let destStr = T.unpack dest
-                              dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-                          pure (Right (dirOps ++ [WriteFileOp destStr serialized Structured]))
+                        Right safeDest ->
+                          case serializeByExtension (T.unpack safeDest) jsonValue of
+                            Left err -> pure (Left [err])
+                            Right serialized -> pure (Right (writeFileOpsUnchecked safeDest serialized Structured))
 
 -- | Compile a patch step: read source, render template, produce PatchFileOp.
 -- The content rendering follows the step's strategy (Template renders placeholders,
@@ -249,10 +247,8 @@ compilePatchStep baseDir vars modName step = do
           case renderDestPath step.dest vars of
             Left placeholderErrors ->
               pure (Left (map formatPlaceholderError placeholderErrors))
-            Right dest -> do
-              let destStr = T.unpack dest
-                  dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
-              pure (Right (dirOps ++ [PatchFileOp destStr content patchOp' step.strategy modName]))
+            Right dest ->
+              pure (patchFileOps dest content patchOp' step.strategy modName)
 
 -- | Evaluate a Dhall expression and return the normalized AST.
 evaluateDhallExpr :: Text -> IO (Either Text (DhallCore.Expr Src Void))
@@ -281,6 +277,39 @@ renderDhallText dhallSource = do
     Left (e :: SomeException) ->
       pure (Left ("Dhall evaluation failed: " <> T.pack (show e)))
     Right t -> pure (Right t)
+
+validateRenderedDestination :: Text -> Either Text Text
+validateRenderedDestination dest =
+  case validateProjectRelativePath dest of
+    Left err -> Left ("rendered destination " <> err)
+    Right safePath -> Right (T.pack safePath)
+
+validateRenderedCommandWorkDir :: Text -> Either Text Text
+validateRenderedCommandWorkDir workDir =
+  case validateProjectRelativePath workDir of
+    Left err -> Left ("rendered command workDir " <> err)
+    Right safePath -> Right (T.pack safePath)
+
+writeFileOps :: Text -> Text -> Strategy -> Either [Text] [Operation]
+writeFileOps dest content strategy =
+  case validateRenderedDestination dest of
+    Left err -> Left [err]
+    Right safeDest -> Right (writeFileOpsUnchecked safeDest content strategy)
+
+writeFileOpsUnchecked :: Text -> Text -> Strategy -> [Operation]
+writeFileOpsUnchecked dest content strategy =
+  let destStr = T.unpack dest
+      dirOps = map (CreateDirOp . T.unpack) (parentDirs dest)
+   in dirOps ++ [WriteFileOp destStr content strategy]
+
+patchFileOps :: Text -> Text -> PatchOp -> Strategy -> ModuleName -> Either [Text] [Operation]
+patchFileOps dest content patchOp' strategy modName =
+  case validateRenderedDestination dest of
+    Left err -> Left [err]
+    Right safeDest ->
+      let destStr = T.unpack safeDest
+          dirOps = map (CreateDirOp . T.unpack) (parentDirs safeDest)
+       in Right (dirOps ++ [PatchFileOp destStr content patchOp' strategy modName])
 
 -- | Extract parent directories from a path.
 -- @"src/Lib.hs"@ produces @["src"]@.

@@ -27,6 +27,7 @@ library
     Seihou.Core.Install
     Seihou.Core.Migration
     Seihou.Core.Module
+    Seihou.Core.Path
     Seihou.Core.Recipe
     Seihou.Core.Registry
     Seihou.Core.Scaffold

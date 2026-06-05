@@ -188,6 +188,78 @@ spec = do
           Right ops -> ops `shouldBe` [WriteFileOp "my-app.cabal" "name: my-app\n" Template]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
+    it "rejects a rendered destination with a parent directory segment" $ do
+      withFixture [("README.md.tpl", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "test",
+                  version = Nothing,
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "README.md.tpl" "{{project.name}}/README.md" Nothing Nothing],
+                  commands = [],
+                  dependencies = [],
+                  removal = Nothing,
+                  migrations = []
+                }
+            vars = Map.fromList [("project.name", VText "..")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Left errs -> do
+            length errs `shouldBe` 1
+            T.isInfixOf "rendered destination" (errs !! 0) `shouldBe` True
+            T.isInfixOf "must not contain '..' segment" (errs !! 0) `shouldBe` True
+          Right _ -> expectationFailure "Expected Left"
+
+    it "rejects a rendered absolute destination" $ do
+      withFixture [("README.md.tpl", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "test",
+                  version = Nothing,
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "README.md.tpl" "{{project.name}}/README.md" Nothing Nothing],
+                  commands = [],
+                  dependencies = [],
+                  removal = Nothing,
+                  migrations = []
+                }
+            vars = Map.fromList [("project.name", VText "/tmp/outside")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Left errs -> do
+            length errs `shouldBe` 1
+            T.isInfixOf "rendered destination" (errs !! 0) `shouldBe` True
+            T.isInfixOf "must be relative" (errs !! 0) `shouldBe` True
+          Right _ -> expectationFailure "Expected Left"
+
+    it "allows dots inside a rendered destination filename" $ do
+      withFixture [("README.md.tpl", "content")] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "test",
+                  version = Nothing,
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [Step Template "README.md.tpl" "docs/README.v2.md" Nothing Nothing],
+                  commands = [],
+                  dependencies = [],
+                  removal = Nothing,
+                  migrations = []
+                }
+            vars = Map.empty
+        result <- compilePlan baseDir modul vars
+        case result of
+          Right ops -> ops `shouldBe` [CreateDirOp "docs", WriteFileOp "docs/README.v2.md" "content" Template]
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
     it "creates parent directories" $ do
       withFixture [("Lib.hs.tpl", "module Lib where\n")] $ \baseDir -> do
         let modul =
@@ -836,6 +908,31 @@ spec = do
             length cmdOps `shouldBe` 1
             (cmdOps !! 0).workDir `shouldBe` Just "my-app"
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "rejects a rendered command workDir with a parent directory segment" $ do
+      withFixture [] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "test",
+                  version = Nothing,
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [],
+                  commands = [Command "cabal build" (Just "{{project.name}}") Nothing],
+                  dependencies = [],
+                  removal = Nothing,
+                  migrations = []
+                }
+            vars = Map.fromList [("project.name", VText "..")]
+        result <- compilePlan baseDir modul vars
+        case result of
+          Left errs -> do
+            length errs `shouldBe` 1
+            T.isInfixOf "rendered command workDir" (errs !! 0) `shouldBe` True
+            T.isInfixOf "must not contain '..' segment" (errs !! 0) `shouldBe` True
+          Right _ -> expectationFailure "Expected Left"
 
     it "fails compilation when command has unresolved placeholder" $ do
       withFixture [("data.txt", "content")] $ \baseDir -> do

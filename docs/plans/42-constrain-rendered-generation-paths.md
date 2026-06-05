@@ -23,16 +23,16 @@ The current validator checks the authored `dest` and `workDir` text before inter
 
 ## Progress
 
-- [ ] Add or identify a reusable project-relative path safety helper.
-- [ ] Apply the helper to rendered step destinations in `Seihou.Engine.Plan`.
-- [ ] Apply the helper to rendered command `workDir` values in `Seihou.Engine.Plan`.
-- [ ] Add regression tests for rendered absolute paths and rendered `..` path segments.
-- [ ] Run focused plan/template tests and full core tests.
+- [x] Add or identify a reusable project-relative path safety helper. Completed 2026-06-05: added `Seihou.Core.Path.validateProjectRelativePath` and exposed it through `Seihou.Core.Module`.
+- [x] Apply the helper to rendered step destinations in `Seihou.Engine.Plan`. Completed 2026-06-05: all write and patch step compilers now validate rendered destinations before producing operations.
+- [x] Apply the helper to rendered command `workDir` values in `Seihou.Engine.Plan`. Completed 2026-06-05: `compileOneCommand` validates rendered work directories before creating `RunCommandOp`.
+- [x] Add regression tests for rendered absolute paths and rendered `..` path segments. Completed 2026-06-05: added planner tests for rendered `..`, rendered absolute destinations, rendered unsafe `workDir`, and dotted filenames.
+- [x] Run focused plan/template tests and full core tests. Completed 2026-06-05: focused planner tests passed with `--pattern`, and the full core suite passed with 855 tests.
 
 
 ## Surprises & Discoveries
 
-None yet.
+- The test runner does not accept the `--match` option suggested in the original plan. It accepts `--pattern`; `cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Plan"'` ran the focused planner suite and passed 40 tests.
 
 
 ## Decision Log
@@ -41,10 +41,32 @@ None yet.
   Rationale: The planner is where variable values are known. Validation before interpolation cannot prove the final filesystem path is safe.
   Date: 2026-06-05
 
+- Decision: Put the shared path rule in a new `Seihou.Core.Path` module.
+  Rationale: EP-3 also needs this rule for migration and removal paths. A focused module avoids coupling later destructive-operation validation to module discovery and loading code.
+  Date: 2026-06-05
+
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+Implemented rendered path safety for generation planning. `compilePlan` now rejects rendered file destinations and command work directories that are absolute, blank, or contain a `..` path segment after placeholder substitution. Dotted filenames such as `README.v2.md` remain valid. Raw module validation now uses the same helper, so EP-3 can reuse `Seihou.Core.Path.validateProjectRelativePath` for migration and removal declarations.
+
+Validation evidence:
+
+```bash
+cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Plan"'
+```
+
+```text
+All 40 tests passed (0.04s)
+```
+
+```bash
+cabal test seihou-core-test
+```
+
+```text
+All 855 tests passed (0.42s)
+```
 
 
 ## Context and Orientation
@@ -84,7 +106,7 @@ rg -n "renderDestPath|renderCommand|checkSafeDestinations|checkCommandSafety" se
 After implementation, run focused tests:
 
 ```bash
-cabal test seihou-core-test --test-options '--match "Seihou.Engine.Plan"'
+cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Plan"'
 ```
 
 Then run the full core test suite:
@@ -93,7 +115,7 @@ Then run the full core test suite:
 cabal test seihou-core-test
 ```
 
-If the focused `--match` option is not accepted by the test runner, run `cabal test seihou-core-test` directly and record that in Surprises & Discoveries.
+The focused `--match` option is not accepted by this test runner; use `--pattern` instead.
 
 
 ## Validation and Acceptance
@@ -116,4 +138,4 @@ The edits are pure validation and planner changes. If a new helper module causes
 
 ## Interfaces and Dependencies
 
-This plan may define a shared path helper for EP-3. If it does, `docs/plans/43-validate-migration-and-removal-paths.md` should reuse the same helper and error language. No external dependency is needed; use `System.FilePath` and `Data.Text`.
+This plan defines `Seihou.Core.Path.validateProjectRelativePath :: Text -> Either Text FilePath` for EP-3 to reuse. The helper rejects blank paths, POSIX and Windows absolute paths, and path segments exactly equal to `..`; it accepts dotted filenames such as `README.v2.md`. No external dependency was added; the helper uses `System.FilePath`, `System.FilePath.Windows`, and `Data.Text`.
