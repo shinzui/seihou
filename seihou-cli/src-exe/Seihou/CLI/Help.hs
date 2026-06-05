@@ -29,6 +29,7 @@ data HelpCommand
 helpTopics :: [HelpTopic]
 helpTopics =
   [ HelpTopic "agent" "Configurable AI assistance commands" agentContent,
+    HelpTopic "blueprints" "Agent-driven project blueprints" blueprintsContent,
     HelpTopic "modules" "How Seihou modules work" modulesContent,
     HelpTopic "variables" "Variable declaration, resolution, and overrides" variablesContent,
     HelpTopic "contexts" "Using contexts for environment-specific config" contextsContent,
@@ -41,6 +42,9 @@ helpTopics =
 
 agentContent :: Text
 agentContent = $(embedStringFile "help/agent.md")
+
+blueprintsContent :: Text
+blueprintsContent = $(embedStringFile "help/blueprints.md")
 
 modulesContent :: Text
 modulesContent = $(embedStringFile "help/modules.md")
