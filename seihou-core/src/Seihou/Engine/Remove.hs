@@ -20,6 +20,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
+import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText, removeDirectoryIfEmpty, removeFile, writeFileText)
 import Seihou.Engine.Section (removeSection)
@@ -87,6 +88,8 @@ data RemovalError
     ModuleNotApplied ModuleName
   | -- | The module has no removal specification.
     ModuleNotRemovable ModuleName
+  | -- | A module-declared removal path would escape the project root.
+    RemovalUnsafePath Text Text Text
   deriving stock (Eq, Show)
 
 -- ============================================================
@@ -142,15 +145,16 @@ buildRemovalOps manifest modName removal = do
   case findApplied manifest modName of
     Nothing -> pure (Left (ModuleNotApplied modName))
     Just _ -> do
-      stepOps <- mapM (buildStepOp manifest modName) removal.removalSteps
-      let cmdOps = map (\c -> RemovalCommandOp c.run c.workDir) removal.removalCommands
-      pure
-        ( Right
-            ExecutedRemovalPlan
-              { targetModule = modName,
-                ops = stepOps ++ cmdOps
-              }
-        )
+      stepResults <- mapM (buildStepOp manifest modName) removal.removalSteps
+      let cmdResults = map buildCommandOp removal.removalCommands
+      pure $ do
+        stepOps <- sequence stepResults
+        cmdOps <- sequence cmdResults
+        Right
+          ExecutedRemovalPlan
+            { targetModule = modName,
+              ops = stepOps ++ cmdOps
+            }
 
 -- | Build a single removal operation from a removal step.
 buildStepOp ::
@@ -158,19 +162,38 @@ buildStepOp ::
   Manifest ->
   ModuleName ->
   RemovalStep ->
-  Eff es RemovalOp
+  Eff es (Either RemovalError RemovalOp)
 buildStepOp manifest _modName step = case step.action of
-  RemoveFileAction -> do
-    let path = T.unpack step.dest
-    status <- classifyFileStatus manifest path
-    pure (DeleteFileOp path status)
+  RemoveFileAction ->
+    case validateRemovalPath "remove-file destination" step.dest of
+      Left err -> pure (Left err)
+      Right path -> do
+        status <- classifyFileStatus manifest path
+        pure (Right (DeleteFileOp path status))
   RemoveSectionAction ->
-    pure (StripSectionOp (T.unpack step.dest))
+    pure $
+      case validateRemovalPath "remove-section destination" step.dest of
+        Left err -> Left err
+        Right path -> Right (StripSectionOp path)
   RewriteFileAction ->
-    let src = case step.src of
-          Just s -> s
-          Nothing -> error "rewrite-file step requires a src field"
-     in pure (RewriteOp (T.unpack step.dest) src)
+    pure $ do
+      dest <- validateRemovalPath "rewrite-file destination" step.dest
+      src <- case step.src of
+        Just s -> validateRemovalPath "rewrite-file source" (T.pack s)
+        Nothing -> Left (RemovalUnsafePath "rewrite-file source" "" "path must not be empty")
+      Right (RewriteOp dest src)
+
+buildCommandOp :: Command -> Either RemovalError RemovalOp
+buildCommandOp command =
+  case traverse (validateRemovalPath "remove-command workDir") command.workDir of
+    Left err -> Left err
+    Right safeWorkDir -> Right (RemovalCommandOp command.run (fmap T.pack safeWorkDir))
+
+validateRemovalPath :: Text -> Text -> Either RemovalError FilePath
+validateRemovalPath label path =
+  case validateProjectRelativePath path of
+    Left reason -> Left (RemovalUnsafePath label path reason)
+    Right safePath -> Right safePath
 
 -- | Classify a file's status for removal by comparing disk to manifest.
 classifyFileStatus ::

@@ -22,6 +22,7 @@ import Seihou.Core.Migration
     MigrationOp (..),
     MigrationPlan (..),
   )
+import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
   ( AppliedModule (..),
     FileRecord (..),
@@ -89,6 +90,7 @@ data ExecutedMigrationPlan = ExecutedMigrationPlan
 data MigrationExecError
   = MigrationConflict [FilePath]
   | MigrationCommandFailed Text Int
+  | MigrationUnsafePath Text FilePath Text
   deriving stock (Eq, Show, Generic)
 
 -- ----------------------------------------------------------------------------
@@ -103,35 +105,60 @@ classifyMigration ::
   (Filesystem :> es) =>
   Manifest ->
   MigrationPlan ->
-  Eff es ExecutedMigrationPlan
+  Eff es (Either MigrationExecError ExecutedMigrationPlan)
 classifyMigration manifest plan = do
-  ops <- traverse (classifyOp manifest) (concatMap (.ops) plan.planSteps)
-  pure
-    ExecutedMigrationPlan
-      { planModule = ModuleName plan.planModule,
-        planSource = plan,
-        planOps = ops
-      }
+  opsResult <- traverse (classifyOp manifest) (concatMap (.ops) plan.planSteps)
+  pure $ do
+    ops <- sequence opsResult
+    Right
+      ExecutedMigrationPlan
+        { planModule = ModuleName plan.planModule,
+          planSource = plan,
+          planOps = ops
+        }
 
 -- | Classify a single 'MigrationOp' against the manifest and disk.
 classifyOp ::
   (Filesystem :> es) =>
   Manifest ->
   MigrationOp ->
-  Eff es MigrationOpInstance
+  Eff es (Either MigrationExecError MigrationOpInstance)
 classifyOp manifest op = case op of
-  MoveFile {src, dest} -> do
-    status <- classifyFile manifest src
-    pure (MoveFileInst src dest status)
+  MoveFile {src, dest} ->
+    case (validateMigrationPath "move-file source" src, validateMigrationPath "move-file destination" dest) of
+      (Left err, _) -> pure (Left err)
+      (_, Left err) -> pure (Left err)
+      (Right safeSrc, Right safeDest) -> do
+        status <- classifyFile manifest safeSrc
+        pure (Right (MoveFileInst safeSrc safeDest status))
   MoveDir {src, dest} ->
-    pure (MoveDirInst src dest)
-  DeleteFile {path} -> do
-    status <- classifyFile manifest path
-    pure (DeleteFileInst path status)
+    pure $
+      case (validateMigrationPath "move-dir source" src, validateMigrationPath "move-dir destination" dest) of
+        (Left err, _) -> Left err
+        (_, Left err) -> Left err
+        (Right safeSrc, Right safeDest) -> Right (MoveDirInst safeSrc safeDest)
+  DeleteFile {path} ->
+    case validateMigrationPath "delete-file path" path of
+      Left err -> pure (Left err)
+      Right safePath -> do
+        status <- classifyFile manifest safePath
+        pure (Right (DeleteFileInst safePath status))
   DeleteDir {path} ->
-    pure (DeleteDirInst path)
+    pure $
+      case validateMigrationPath "delete-dir path" path of
+        Left err -> Left err
+        Right safePath -> Right (DeleteDirInst safePath)
   RunCommand {run, workDir} ->
-    pure (RunCommandInst run workDir)
+    pure $
+      case traverse (validateMigrationPath "run-command workDir") workDir of
+        Left err -> Left err
+        Right safeWorkDir -> Right (RunCommandInst run safeWorkDir)
+
+validateMigrationPath :: Text -> FilePath -> Either MigrationExecError FilePath
+validateMigrationPath label path =
+  case validateProjectRelativePath (T.pack path) of
+    Left reason -> Left (MigrationUnsafePath label path reason)
+    Right safePath -> Right safePath
 
 -- | Compare the disk copy of a file to the manifest's recorded hash.
 -- Returns 'MFGone' if the file is missing, 'MFSafe' if the manifest has

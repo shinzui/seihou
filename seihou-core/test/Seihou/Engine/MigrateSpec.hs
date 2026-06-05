@@ -93,12 +93,18 @@ chain1 fromV toV ops =
       planSteps = [Migration {from = fromV, to = toV, ops}]
     }
 
-runClassify :: PureFS -> Manifest -> MigrationPlan -> ExecutedMigrationPlan
-runClassify fs manifest c =
+runClassifyResult :: PureFS -> Manifest -> MigrationPlan -> Either MigrationExecError ExecutedMigrationPlan
+runClassifyResult fs manifest c =
   fst $
     runPureEff $
       runFilesystemPure fs $
         classifyMigration manifest c
+
+runClassify :: PureFS -> Manifest -> MigrationPlan -> ExecutedMigrationPlan
+runClassify fs manifest c =
+  case runClassifyResult fs manifest c of
+    Right plan -> plan
+    Left err -> error ("MigrateSpec.runClassify: unexpected error " <> show err)
 
 runExecute ::
   PureFS ->
@@ -139,6 +145,27 @@ spec = do
           c = chain1 "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]
           plan = runClassify fs manifest c
       plan.planOps `shouldBe` [DeleteFileInst "Setup.hs" MFGone]
+
+    it "rejects a delete-dir path with a parent directory segment" $ do
+      let manifest = mkManifest []
+          fs = mkFS []
+          c = chain1 "1.0.0" "2.0.0" [DeleteDir "../outside"]
+          result = runClassifyResult fs manifest c
+      result `shouldBe` Left (MigrationUnsafePath "delete-dir path" "../outside" "path must not contain '..' segment: ../outside")
+
+    it "rejects a move-file destination with a parent directory segment" $ do
+      let manifest = mkManifest [("README.md", "hello")]
+          fs = mkFS [("README.md", "hello")]
+          c = chain1 "1.0.0" "2.0.0" [MoveFile "README.md" "../outside"]
+          result = runClassifyResult fs manifest c
+      result `shouldBe` Left (MigrationUnsafePath "move-file destination" "../outside" "path must not contain '..' segment: ../outside")
+
+    it "rejects a run-command workDir with a parent directory segment" $ do
+      let manifest = mkManifest []
+          fs = mkFS []
+          c = chain1 "1.0.0" "2.0.0" [RunCommand "echo unsafe" (Just "../outside")]
+          result = runClassifyResult fs manifest c
+      result `shouldBe` Left (MigrationUnsafePath "run-command workDir" "../outside" "path must not contain '..' segment: ../outside")
 
   describe "executeMigration" $ do
     it "renames a single safe file and rewrites the manifest" $ do

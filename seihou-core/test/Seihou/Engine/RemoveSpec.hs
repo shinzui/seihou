@@ -279,6 +279,32 @@ spec = do
         Left err -> expectationFailure ("unexpected error: " <> show err)
         Right plan -> plan.ops `shouldBe` [RemovalCommandOp "cabal clean" Nothing]
 
+    it "rejects a removal step destination with a parent directory segment" $ do
+      let removal = Removal [RemovalStep RemoveFileAction "../outside" Nothing] []
+          manifest = mkManifestWithRemoval removal []
+          fs = mkFS [("../outside", "do not delete")]
+          result = runBuildOps fs manifest modName removal
+      result
+        `shouldBe` Left
+          ( RemovalUnsafePath
+              "remove-file destination"
+              "../outside"
+              "path must not contain '..' segment: ../outside"
+          )
+      Map.member "../outside" fs.files `shouldBe` True
+
+    it "rejects a removal command workDir with a parent directory segment" $ do
+      let removal = Removal [] [Command "echo unsafe" (Just "../outside") Nothing]
+          manifest = mkManifestWithRemoval removal []
+          result = runBuildOps emptyFS manifest modName removal
+      result
+        `shouldBe` Left
+          ( RemovalUnsafePath
+              "remove-command workDir"
+              "../outside"
+              "path must not contain '..' segment: ../outside"
+          )
+
     it "combines steps and commands in order" $ do
       let removal =
             Removal

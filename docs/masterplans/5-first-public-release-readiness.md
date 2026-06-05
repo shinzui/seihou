@@ -33,7 +33,7 @@ Seven child plans are used because the audit found seven distinct classes of wor
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Package embedded CLI assets for Hackage | docs/plans/41-package-embedded-cli-assets-for-hackage.md | None | None | Complete |
 | EP-2 | Constrain rendered generation paths | docs/plans/42-constrain-rendered-generation-paths.md | None | EP-3 | Complete |
-| EP-3 | Validate migration and removal paths | docs/plans/43-validate-migration-and-removal-paths.md | None | EP-2 | Not Started |
+| EP-3 | Validate migration and removal paths | docs/plans/43-validate-migration-and-removal-paths.md | None | EP-2 | Complete |
 | EP-4 | Make manifest writes atomic | docs/plans/44-make-manifest-writes-atomic.md | None | None | Not Started |
 | EP-5 | Make recipe expansion total | docs/plans/45-make-recipe-expansion-total.md | None | None | Not Started |
 | EP-6 | Add Hackage metadata and license | docs/plans/46-add-hackage-metadata-and-license.md | None | EP-1 | Not Started |
@@ -71,8 +71,8 @@ Release validation is shared by all plans. The final acceptance for the whole Ma
 - [x] EP-1: Prove the `seihou-cli` tarball builds far enough to compile embedded files.
 - [x] EP-2: Add post-render safety checks for generated file paths and command work directories.
 - [x] EP-2: Add regression tests for variable-expanded `..` and absolute paths.
-- [ ] EP-3: Validate migration and removal paths before destructive operations.
-- [ ] EP-3: Add regression tests for unsafe move/delete/remove declarations.
+- [x] EP-3: Validate migration and removal paths before destructive operations.
+- [x] EP-3: Add regression tests for unsafe move/delete/remove declarations.
 - [ ] EP-4: Replace manifest double-write with an actual atomic temp-write and rename flow.
 - [ ] EP-4: Add tests or a focused smoke check that verifies temp files do not remain after normal writes.
 - [ ] EP-5: Make recipe expansion handle empty module lists without partial functions.
@@ -94,6 +94,10 @@ During EP-1 validation, the unpacked source distribution build emitted existing 
 EP-2 created `Seihou.Core.Path.validateProjectRelativePath` as the shared path-safety helper for rendered generation paths and future migration/removal validation. The helper rejects blank paths, POSIX and Windows absolute paths, and path segments exactly equal to `..`, while allowing dotted filenames such as `README.v2.md`.
 
 The EP-2 focused test command in the initial plan used `--match`, but the current test runner accepts `--pattern`. `cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Plan"'` passed 40 planner tests, and `cabal test seihou-core-test` passed 855 core tests.
+
+EP-3 reused `Seihou.Core.Path.validateProjectRelativePath` for destructive-operation boundaries. Migration classification now rejects unsafe `MoveFile`, `MoveDir`, `DeleteFile`, `DeleteDir`, and `RunCommand.workDir` paths with `MigrationUnsafePath`; removal operation building now rejects unsafe step destinations and command work directories with `RemovalUnsafePath`.
+
+EP-3 validation passed with `cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Migrate"'` (13 tests), `cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Remove"'` (29 tests), `cabal test seihou-core-test` (860 tests), and `cabal test seihou-cli-test` (226 tests).
 
 
 ## Decision Log

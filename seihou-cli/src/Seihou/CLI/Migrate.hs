@@ -519,23 +519,26 @@ applyOrDryRun ::
   MigrationPlan ->
   IO (Either MigrateError MigrateResult)
 applyOrDryRun opts manifest plan = do
-  executedPlan <-
+  classifyResult <-
     runEff $
       runFilesystem $
         classifyMigration manifest plan
-  if opts.migrateDryRun
-    then pure (Right (MigrateDryRunOK executedPlan plan.planFrom plan.planTo))
-    else do
-      now <- getCurrentTime
-      execRes <-
-        runEff $
-          runFilesystem $
-            runProcessIO $
-              executeMigration opts.migrateForce executedPlan manifest now
-      case execRes of
-        Left err -> pure (Left (MigrateExecFailed err))
-        Right manifest' ->
-          pure (Right (MigrateApplied executedPlan manifest' plan.planFrom plan.planTo))
+  case classifyResult of
+    Left err -> pure (Left (MigrateExecFailed err))
+    Right executedPlan ->
+      if opts.migrateDryRun
+        then pure (Right (MigrateDryRunOK executedPlan plan.planFrom plan.planTo))
+        else do
+          now <- getCurrentTime
+          execRes <-
+            runEff $
+              runFilesystem $
+                runProcessIO $
+                  executeMigration opts.migrateForce executedPlan manifest now
+          case execRes of
+            Left err -> pure (Left (MigrateExecFailed err))
+            Right manifest' ->
+              pure (Right (MigrateApplied executedPlan manifest' plan.planFrom plan.planTo))
 
 -- | Stage and commit the files touched by a successful migration plan.
 -- Mirrors the @seihou run --commit@ post-execution helper. No-op
@@ -789,6 +792,13 @@ renderExecError (MigrationCommandFailed msg code) =
     <> T.pack (show code)
     <> ":\n  "
     <> msg
+renderExecError (MigrationUnsafePath label path reason) =
+  "unsafe migration "
+    <> label
+    <> " '"
+    <> T.pack path
+    <> "': "
+    <> reason
 
 -- Aeson ToJSON pass-through for ExecutedMigrationPlan: routed through
 -- planToJson manually rather than deriving so we have the field shape

@@ -23,17 +23,18 @@ This is release-critical because Seihou installs and runs third-party modules fr
 
 ## Progress
 
-- [ ] Reuse or add a shared project-relative path safety helper.
-- [ ] Validate migration `MoveFile`, `MoveDir`, `DeleteFile`, `DeleteDir`, and `RunCommand.workDir` paths.
-- [ ] Validate removal step destinations and removal command work directories.
-- [ ] Add tests covering unsafe migration declarations.
-- [ ] Add tests covering unsafe removal declarations.
-- [ ] Run focused migration/removal and full core tests.
+- [x] Reuse or add a shared project-relative path safety helper. Completed 2026-06-05: reused `Seihou.Core.Path.validateProjectRelativePath` from EP-2.
+- [x] Validate migration `MoveFile`, `MoveDir`, `DeleteFile`, `DeleteDir`, and `RunCommand.workDir` paths. Completed 2026-06-05: `classifyMigration` now returns `Left (MigrationUnsafePath ...)` before producing executable migration operations.
+- [x] Validate removal step destinations and removal command work directories. Completed 2026-06-05: `buildRemovalOps` now returns `Left (RemovalUnsafePath ...)` before producing deletion, rewrite, section-strip, or command operations.
+- [x] Add tests covering unsafe migration declarations. Completed 2026-06-05: added tests for unsafe `DeleteDir`, `MoveFile.dest`, and `RunCommand.workDir`.
+- [x] Add tests covering unsafe removal declarations. Completed 2026-06-05: added tests for unsafe removal step destinations and removal command work directories.
+- [x] Run focused migration/removal and full core tests. Completed 2026-06-05: focused migration and removal suites, full core tests, and CLI tests passed.
 
 
 ## Surprises & Discoveries
 
-None yet.
+- EP-2 had already discovered that this test runner uses `--pattern` rather than `--match`, so the focused commands for this plan used `--pattern`.
+- `classifyMigration` previously could not fail, so migration path validation required changing its return type from `Eff es ExecutedMigrationPlan` to `Eff es (Either MigrationExecError ExecutedMigrationPlan)`. The CLI migrate handler now treats classification failures as normal `MigrateExecFailed` errors.
 
 
 ## Decision Log
@@ -42,10 +43,48 @@ None yet.
   Rationale: Conflict detection protects user edits but does not protect the project boundary. Path validation must happen before `renamePath`, `removeFile`, or `removeDirectoryRecursive`.
   Date: 2026-06-05
 
+- Decision: Report unsafe migration paths through `MigrationExecError` and unsafe removal paths through `RemovalError`.
+  Rationale: Migration validation happens during classification, while removal validation happens while building declared removal operations. Using the existing error channels gives the CLI normal user-facing errors without crashes or partial plans.
+  Date: 2026-06-05
+
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+Implemented pre-mutation path validation for migration and removal declarations. Migration classification now rejects unsafe path-bearing operations before `renamePath`, `removeFile`, `removeDirectoryRecursive`, or command execution can run. Removal operation building now rejects unsafe step destinations and command work directories before deletion, section stripping, rewrite, or command operations are produced. The CLI renders both cases as normal errors.
+
+Validation evidence:
+
+```bash
+cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Migrate"'
+```
+
+```text
+All 13 tests passed (0.00s)
+```
+
+```bash
+cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Remove"'
+```
+
+```text
+All 29 tests passed (0.01s)
+```
+
+```bash
+cabal test seihou-core-test
+```
+
+```text
+All 860 tests passed (0.44s)
+```
+
+```bash
+cabal test seihou-cli-test
+```
+
+```text
+All 226 tests passed (15.87s)
+```
 
 
 ## Context and Orientation
@@ -85,8 +124,8 @@ rg -n "MoveFile|MoveDir|DeleteFile|DeleteDir|RunCommand|RemovalStep|RemovalComma
 Run focused tests after edits:
 
 ```bash
-cabal test seihou-core-test --test-options '--match "Seihou.Engine.Migrate"'
-cabal test seihou-core-test --test-options '--match "Seihou.Engine.Remove"'
+cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Migrate"'
+cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Remove"'
 ```
 
 Then run:
@@ -116,4 +155,4 @@ These changes add validation before mutation, so they are safe to retry. If a te
 
 ## Interfaces and Dependencies
 
-This plan integrates with EP-2 through the shared path safety helper. It touches `Seihou.Core.Migration`, `Seihou.Engine.Migrate`, `Seihou.Engine.Remove`, their tests, and possibly `seihou-core/seihou-core.cabal` if a new helper module is added.
+This plan integrates with EP-2 through `Seihou.Core.Path.validateProjectRelativePath`. It touches `Seihou.Engine.Migrate`, `Seihou.Engine.Remove`, their tests, and the CLI handlers that render migration and removal errors. `Seihou.Core.Migration` did not need changes because validation belongs to execution/classification rather than the pure version-window planner.

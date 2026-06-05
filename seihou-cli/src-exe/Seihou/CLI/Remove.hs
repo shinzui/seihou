@@ -61,6 +61,15 @@ handleRemove opts = do
                 <> name.unModuleName
                 <> "' has no removal spec."
             exitFailure
+          Left (RemovalUnsafePath label path reason) -> do
+            TIO.putStrLn $
+              "Unsafe removal "
+                <> label
+                <> " '"
+                <> path
+                <> "': "
+                <> reason
+            exitFailure
           Right p -> pure p
 
         colorEnabled <- useColor
