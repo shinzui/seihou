@@ -3,6 +3,21 @@ name: seihou-cli
 version: 0.2.0.0
 synopsis: CLI for Seihou project scaffolding
 build-type: Simple
+extra-source-files:
+  data/assist-prompt.md
+  data/blueprint-prompt.md
+  data/bootstrap-prompt.md
+  data/setup-prompt.md
+  help/agent.md
+  help/blueprints.md
+  help/config.md
+  help/contexts.md
+  help/git-repository.md
+  help/kit.md
+  help/migrations.md
+  help/modules.md
+  help/templating.md
+  help/variables.md
 
 library seihou-cli-internal
   default-language: GHC2024
