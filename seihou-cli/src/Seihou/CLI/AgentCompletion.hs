@@ -121,12 +121,16 @@ buildBaikaiModel config =
 runAgentCompletion :: AgentCompletionRequest -> IO (Either Text Text)
 runAgentCompletion req = do
   registerAgentProviders
+  initialMessages <-
+    maybe
+      (pure V.empty)
+      (fmap V.singleton . Baikai.userNow)
+      req.completionInitialPrompt
   let model = buildBaikaiModel req.completionModelConfig
       ctx =
         Baikai._Context
           { Baikai.systemPrompt = Just req.completionSystemPrompt,
-            Baikai.messages =
-              maybe V.empty (V.singleton . Baikai.user) req.completionInitialPrompt
+            Baikai.messages = initialMessages
           }
   result <- try (Baikai.completeRequest model ctx Baikai._Options) :: IO (Either Baikai.BaikaiError Baikai.Response)
   pure $ case result of

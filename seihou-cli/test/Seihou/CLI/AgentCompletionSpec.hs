@@ -84,8 +84,8 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
       let resp =
             BaikaiResponse._Response
               { BaikaiResponse.message =
-                  Baikai.AssistantMessage
-                    { Baikai.assistantContent =
+                  Baikai.AssistantPayload
+                    { Baikai.content =
                         V.fromList
                           [ Baikai.AssistantText (Baikai.TextContent "hello"),
                             Baikai.AssistantThinking Baikai._ThinkingContent,
