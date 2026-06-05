@@ -1,9 +1,6 @@
 packages:
   seihou-core
   seihou-cli
-  ../../baikai/baikai
-  ../../baikai/baikai-claude
-  ../../baikai/baikai-openai
 
 write-ghc-environment-files: never
 
