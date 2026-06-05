@@ -34,7 +34,7 @@ Seven child plans are used because the audit found seven distinct classes of wor
 | EP-1 | Package embedded CLI assets for Hackage | docs/plans/41-package-embedded-cli-assets-for-hackage.md | None | None | Complete |
 | EP-2 | Constrain rendered generation paths | docs/plans/42-constrain-rendered-generation-paths.md | None | EP-3 | Complete |
 | EP-3 | Validate migration and removal paths | docs/plans/43-validate-migration-and-removal-paths.md | None | EP-2 | Complete |
-| EP-4 | Make manifest writes atomic | docs/plans/44-make-manifest-writes-atomic.md | None | None | Not Started |
+| EP-4 | Make manifest writes atomic | docs/plans/44-make-manifest-writes-atomic.md | None | None | Complete |
 | EP-5 | Make recipe expansion total | docs/plans/45-make-recipe-expansion-total.md | None | None | Not Started |
 | EP-6 | Add Hackage metadata and license | docs/plans/46-add-hackage-metadata-and-license.md | None | EP-1 | Not Started |
 | EP-7 | Clean public documentation for release | docs/plans/47-clean-public-documentation-for-release.md | EP-6 | EP-1, EP-2, EP-3, EP-4, EP-5 | Not Started |
@@ -73,8 +73,8 @@ Release validation is shared by all plans. The final acceptance for the whole Ma
 - [x] EP-2: Add regression tests for variable-expanded `..` and absolute paths.
 - [x] EP-3: Validate migration and removal paths before destructive operations.
 - [x] EP-3: Add regression tests for unsafe move/delete/remove declarations.
-- [ ] EP-4: Replace manifest double-write with an actual atomic temp-write and rename flow.
-- [ ] EP-4: Add tests or a focused smoke check that verifies temp files do not remain after normal writes.
+- [x] EP-4: Replace manifest double-write with an actual atomic temp-write and rename flow.
+- [x] EP-4: Add tests or a focused smoke check that verifies temp files do not remain after normal writes.
 - [ ] EP-5: Make recipe expansion handle empty module lists without partial functions.
 - [ ] EP-5: Validate recipe discovery/run paths so invalid recipes fail with user-facing errors.
 - [ ] EP-6: Add Hackage metadata, dependency bounds, and a real license file.
@@ -98,6 +98,8 @@ The EP-2 focused test command in the initial plan used `--match`, but the curren
 EP-3 reused `Seihou.Core.Path.validateProjectRelativePath` for destructive-operation boundaries. Migration classification now rejects unsafe `MoveFile`, `MoveDir`, `DeleteFile`, `DeleteDir`, and `RunCommand.workDir` paths with `MigrationUnsafePath`; removal operation building now rejects unsafe step destinations and command work directories with `RemovalUnsafePath`.
 
 EP-3 validation passed with `cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Migrate"'` (13 tests), `cabal test seihou-core-test --test-options '--pattern "Seihou.Engine.Remove"'` (29 tests), `cabal test seihou-core-test` (860 tests), and `cabal test seihou-cli-test` (226 tests).
+
+EP-4 replaced manifest persistence's double-write with a same-directory temp write followed by `renamePath`. The writer now creates the manifest parent directory before writing and successful writes leave no `.tmp` file. Validation passed with `cabal test seihou-core-test --test-options '--pattern "Seihou.Effect.ManifestStore"'` (10 tests), `cabal test seihou-core-test` (862 tests), and `cabal test seihou-cli-test` (226 tests).
 
 
 ## Decision Log

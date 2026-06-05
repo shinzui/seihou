@@ -7,11 +7,15 @@ import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
 import Effectful
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem (readFileText)
+import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.FilesystemPure (PureFS (..), emptyFS, runFilesystemPure)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.ManifestStorePure (runManifestStorePure)
 import Seihou.Manifest.Types (emptyManifest)
+import System.Directory (doesFileExist)
+import System.FilePath ((</>))
+import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -94,6 +98,16 @@ spec = do
       T.isInfixOf "haskell-base" content `shouldBe` True
       T.isInfixOf "my-app" content `shouldBe` True
 
+    it "renames the temp manifest away after a successful write" $ do
+      let manifestPath = ".seihou/manifest.json"
+          (_, finalFS) =
+            runPureEff $
+              runFilesystemPure emptyFS $
+                runManifestStore manifestPath (writeManifest sampleManifest)
+      Map.member manifestPath finalFS.files `shouldBe` True
+      Map.member (manifestPath <> ".tmp") finalFS.files `shouldBe` False
+      Set.member ".seihou" finalFS.dirs `shouldBe` True
+
     it "returns Left for corrupt JSON" $ do
       let manifestPath = ".seihou/manifest.json"
           corruptFS = PureFS (Map.fromList [(manifestPath, "{ this is not json }")]) Set.empty
@@ -104,3 +118,21 @@ spec = do
       case result of
         Left _err -> pure () -- Any Left is correct for corrupt JSON
         Right _ -> expectationFailure "Expected Left for corrupt JSON"
+
+  describe "real filesystem interpreter" $ do
+    it "writes valid JSON atomically and leaves no temp file" $ do
+      withSystemTempDirectory "seihou-manifest-store" $ \tmpDir -> do
+        let manifestPath = tmpDir </> ".seihou" </> "manifest.json"
+            tmpPath = manifestPath <> ".tmp"
+        runEff $
+          runFilesystem $
+            runManifestStore manifestPath (writeManifest sampleManifest)
+        finalExists <- doesFileExist manifestPath
+        tempExists <- doesFileExist tmpPath
+        finalExists `shouldBe` True
+        tempExists `shouldBe` False
+        result <-
+          runEff $
+            runFilesystem $
+              runManifestStore manifestPath readManifest
+        result `shouldBe` Right (Just sampleManifest)

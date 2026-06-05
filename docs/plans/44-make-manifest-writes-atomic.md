@@ -23,16 +23,17 @@ The current implementation says it is atomic but writes the final path directly 
 
 ## Progress
 
-- [ ] Replace double-write manifest persistence with temp-write and rename.
-- [ ] Ensure the parent `.seihou` directory exists before writing.
-- [ ] Remove or clean up stale temp files after successful writes.
-- [ ] Add IO-level tests or a focused smoke test for manifest write behavior.
-- [ ] Run manifest-store tests and full core tests.
+- [x] Replace double-write manifest persistence with temp-write and rename. Completed 2026-06-05: `WriteManifest` now writes `manifestPath <> ".tmp"` and renames it to the final path.
+- [x] Ensure the parent `.seihou` directory exists before writing. Completed 2026-06-05: `runManifestStore` creates the manifest parent directory when it is not `.` or empty.
+- [x] Remove or clean up stale temp files after successful writes. Completed 2026-06-05: the temp path is consumed by `renamePath`; tests assert no `.tmp` remains.
+- [x] Add IO-level tests or a focused smoke test for manifest write behavior. Completed 2026-06-05: added pure filesystem and real IO smoke coverage.
+- [x] Run manifest-store tests and full core tests. Completed 2026-06-05: focused manifest-store tests, full core tests, and CLI tests passed.
 
 
 ## Surprises & Discoveries
 
-None yet.
+- The filesystem effect already had `renamePath` and both interpreters implemented it, so no effect interface change was needed.
+- As with EP-2 and EP-3, the focused test command needs `--pattern` rather than `--match` for this test runner.
 
 
 ## Decision Log
@@ -41,10 +42,40 @@ None yet.
   Rationale: Atomic rename is the standard way to avoid torn final files on POSIX-style filesystems, and using the same directory avoids cross-device rename failures.
   Date: 2026-06-05
 
+- Decision: Keep the existing deterministic `manifestPath <> ".tmp"` temp path.
+  Rationale: The plan does not require solving concurrent writers. Overwriting the deterministic temp file before rename also recovers cleanly from stale temp files left by older versions.
+  Date: 2026-06-05
+
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+Implemented atomic manifest replacement in `Seihou.Effect.ManifestStoreInterp`. `WriteManifest` now ensures the manifest parent directory exists, writes complete JSON to a same-directory temp file, and calls `renamePath` to replace the final manifest. The old misleading comment and direct second write are gone.
+
+Validation evidence:
+
+```bash
+cabal test seihou-core-test --test-options '--pattern "Seihou.Effect.ManifestStore"'
+```
+
+```text
+All 10 tests passed (0.01s)
+```
+
+```bash
+cabal test seihou-core-test
+```
+
+```text
+All 862 tests passed (0.47s)
+```
+
+```bash
+cabal test seihou-cli-test
+```
+
+```text
+All 226 tests passed (11.25s)
+```
 
 
 ## Context and Orientation
@@ -76,7 +107,7 @@ sed -n '1,120p' seihou-core/src/Seihou/Effect/FilesystemPure.hs
 Run focused tests:
 
 ```bash
-cabal test seihou-core-test --test-options '--match "Seihou.Effect.ManifestStore"'
+cabal test seihou-core-test --test-options '--pattern "Seihou.Effect.ManifestStore"'
 ```
 
 Then run:

@@ -3,10 +3,11 @@ module Seihou.Effect.ManifestStoreInterp
   )
 where
 
+import Control.Monad (unless)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
-import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText, writeFileText)
+import Seihou.Effect.Filesystem (Filesystem, createDirectoryIfMissing, doesFileExist, readFileText, renamePath, writeFileText)
 import Seihou.Effect.ManifestStore (ManifestStore (..))
 import Seihou.Manifest.Types (manifestFromJSON, manifestToJSON)
 import Seihou.Prelude
@@ -14,7 +15,8 @@ import System.FilePath (takeDirectory)
 
 -- | Real interpreter for the ManifestStore effect.
 -- Reads and writes manifest JSON via the Filesystem effect.
--- Write is atomic: writes to a temp path then renames (via overwrite).
+-- Write is atomic within one filesystem: writes to a temp path in the
+-- manifest directory, then renames that complete file over the final path.
 runManifestStore ::
   (Filesystem :> es) =>
   FilePath ->
@@ -35,8 +37,8 @@ runManifestStore manifestPath = interpret $ \_ -> \case
     let bs = manifestToJSON manifest
         content = TE.decodeUtf8 (LBS.toStrict bs)
         tmpPath = manifestPath <> ".tmp"
-    -- Atomic write: write to temp file, then overwrite original.
-    -- In the pure FS this is a simple two-step; on real FS the rename
-    -- happens implicitly when we overwrite.
+        parentDir = takeDirectory manifestPath
+    unless (parentDir == "." || null parentDir) $
+      createDirectoryIfMissing True parentDir
     writeFileText tmpPath content
-    writeFileText manifestPath content
+    renamePath tmpPath manifestPath
