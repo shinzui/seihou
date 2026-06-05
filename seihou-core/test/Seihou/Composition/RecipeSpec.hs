@@ -1,6 +1,7 @@
 module Seihou.Composition.RecipeSpec (tests) where
 
 import Data.Map.Strict qualified as Map
+import Data.Text (Text)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Core.Types
 import Test.Hspec
@@ -9,6 +10,12 @@ import Test.Tasty.Hspec (testSpec)
 
 tests :: IO TestTree
 tests = testSpec "Seihou.Composition.Recipe" spec
+
+expectExpanded :: Recipe -> (ModuleName, [ModuleName], Map.Map VarName Text, [VarDecl], [Prompt])
+expectExpanded recipe =
+  case expandRecipe recipe of
+    Right expanded -> expanded
+    Left errs -> error ("expected recipe expansion, got errors: " <> show errs)
 
 spec :: Spec
 spec = do
@@ -27,7 +34,7 @@ spec = do
                 vars = [],
                 prompts = []
               }
-          (primary, additional, _, _, _) = expandRecipe recipe
+          (primary, additional, _, _, _) = expectExpanded recipe
       primary `shouldBe` ModuleName "mod-a"
       additional `shouldBe` [ModuleName "mod-b", ModuleName "mod-c"]
 
@@ -44,7 +51,7 @@ spec = do
                 vars = [],
                 prompts = []
               }
-          (_, _, overrides, _, _) = expandRecipe recipe
+          (_, _, overrides, _, _) = expectExpanded recipe
       Map.lookup (VarName "project.name") overrides `shouldBe` Just "my-app"
       Map.lookup (VarName "nix.system") overrides `shouldBe` Just "aarch64-darwin"
 
@@ -74,11 +81,9 @@ spec = do
                 vars = [recipeVar],
                 prompts = [recipePrompt]
               }
-          (_, _, _, vars, prompts) = expandRecipe recipe
-      length vars `shouldBe` 1
-      (head vars).name `shouldBe` VarName "project.name"
-      length prompts `shouldBe` 1
-      (head prompts).var `shouldBe` VarName "project.name"
+          (_, _, _, vars, prompts) = expectExpanded recipe
+      vars `shouldBe` [recipeVar]
+      prompts `shouldBe` [recipePrompt]
 
     it "handles a single-module recipe (alias)" $ do
       let recipe =
@@ -90,7 +95,19 @@ spec = do
                 vars = [],
                 prompts = []
               }
-          (primary, additional, overrides, _, _) = expandRecipe recipe
+          (primary, additional, overrides, _, _) = expectExpanded recipe
       primary `shouldBe` ModuleName "the-module"
       additional `shouldBe` []
       Map.null overrides `shouldBe` True
+
+    it "returns validation errors for an empty recipe" $ do
+      let recipe =
+            Recipe
+              { name = "empty",
+                version = Nothing,
+                description = Nothing,
+                modules = [],
+                vars = [],
+                prompts = []
+              }
+      expandRecipe recipe `shouldBe` Left ["recipe must list at least one module"]

@@ -95,11 +95,20 @@ handleRun runOpts = do
     runnableResult <- discoverRunnable searchPaths modName
     case runnableResult of
       Right (RunnableRecipe recipe _recipeDir) -> do
-        let (primary, recipeAdditional, overrides, _recipeVars, _recipePrompts) = expandRecipe recipe
-        logIO level $
-          logInfo $
-            "Recipe '" <> recipe.name.unRecipeName <> "' expanding to " <> T.pack (show (length recipe.modules)) <> " modules"
-        pure (primary, recipeAdditional ++ additional, overrides, Just (recipe.name, recipe.version))
+        case expandRecipe recipe of
+          Left errs -> do
+            logIO level $
+              logError $
+                "Invalid recipe '"
+                  <> recipe.name.unRecipeName
+                  <> "': "
+                  <> T.intercalate "; " errs
+            exitFailure
+          Right (primary, recipeAdditional, overrides, _recipeVars, _recipePrompts) -> do
+            logIO level $
+              logInfo $
+                "Recipe '" <> recipe.name.unRecipeName <> "' expanding to " <> T.pack (show (length recipe.modules)) <> " modules"
+            pure (primary, recipeAdditional ++ additional, overrides, Just (recipe.name, recipe.version))
       Right (RunnableModule _ _) ->
         pure (modName, additional, Map.empty, Nothing)
       Right (RunnableBlueprint _b _blueprintDir) -> do

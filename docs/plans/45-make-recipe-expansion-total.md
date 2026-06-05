@@ -23,16 +23,18 @@ This matters for public release because users can install recipes from git. Inva
 
 ## Progress
 
-- [ ] Make `expandRecipe` total by removing `head` and `tail`.
-- [ ] Ensure discovered recipes are validated before `seihou run` expands them.
-- [ ] Add regression tests for empty recipes.
-- [ ] Confirm the source distribution build no longer emits library partial warnings for `Seihou.Composition.Recipe`.
-- [ ] Run focused recipe/composition tests and full core/CLI tests as needed.
+- [x] Make `expandRecipe` total by removing `head` and `tail`. Completed 2026-06-05: `expandRecipe` now returns `Either [Text] ExpandedRecipe` and pattern matches on the validated module list.
+- [x] Ensure discovered recipes are validated before `seihou run` expands them. Completed 2026-06-05: `Seihou.CLI.Run` handles `Left` from `expandRecipe` as a normal invalid-recipe error before loading the composition.
+- [x] Add regression tests for empty recipes. Completed 2026-06-05: `Seihou.Composition.RecipeSpec` asserts that empty recipes return `Left ["recipe must list at least one module"]`.
+- [x] Confirm the source distribution build no longer emits library partial warnings for `Seihou.Composition.Recipe`. Completed 2026-06-05: `cabal build all` passed without the prior `Seihou.Composition.Recipe` `head`/`tail` warnings.
+- [x] Run focused recipe/composition tests and full core/CLI tests as needed. Completed 2026-06-05: focused recipe tests, full core tests, full CLI tests, and `cabal build all` passed.
 
 
 ## Surprises & Discoveries
 
 During the audit, building from source distributions emitted GHC warnings for `head` and `tail` in `seihou-core/src/Seihou/Composition/Recipe.hs`.
+
+As with the earlier plans, the focused test command needs `--pattern` rather than `--match` for this test runner.
 
 
 ## Decision Log
@@ -41,10 +43,48 @@ During the audit, building from source distributions emitted GHC warnings for `h
   Rationale: Defensive total functions make command paths safer and remove the possibility that a future caller forgets validation.
   Date: 2026-06-05
 
+- Decision: Validate at `expandRecipe` and handle the error in `seihou run`, rather than changing recipe discovery globally.
+  Rationale: The release blocker is the expansion crash in the run path. Keeping validation at expansion makes the function total for every caller while avoiding broader discovery behavior changes for commands that inspect recipe metadata without expanding it.
+  Date: 2026-06-05
+
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+Implemented total recipe expansion. `expandRecipe` now returns `Either [Text] ExpandedRecipe`, reuses `validateRecipe`, and pattern matches on the module list instead of calling `head` and `tail`. `seihou run` now reports invalid recipes through the normal logger path before composition loading.
+
+Validation evidence:
+
+```bash
+cabal test seihou-core-test --test-options '--pattern "Seihou.Composition.Recipe"'
+```
+
+```text
+All 5 tests passed (0.00s)
+```
+
+```bash
+cabal test seihou-core-test
+```
+
+```text
+All 863 tests passed (0.50s)
+```
+
+```bash
+cabal test seihou-cli-test
+```
+
+```text
+All 226 tests passed (24.99s)
+```
+
+```bash
+cabal build all
+```
+
+```text
+Build completed successfully with no Seihou.Composition.Recipe partial head/tail warnings.
+```
 
 
 ## Context and Orientation
@@ -86,7 +126,7 @@ rg -n "expandRecipe|validateRecipe|RunnableRecipe" seihou-core/src seihou-cli/sr
 Run focused tests:
 
 ```bash
-cabal test seihou-core-test --test-options '--match "Seihou.Composition.Recipe"'
+cabal test seihou-core-test --test-options '--pattern "Seihou.Composition.Recipe"'
 ```
 
 Run a broader suite if CLI call sites changed:
