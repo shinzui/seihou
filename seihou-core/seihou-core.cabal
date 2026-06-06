@@ -2,7 +2,24 @@ cabal-version: 3.0
 name: seihou-core
 version: 0.2.0.0
 synopsis: Core library for Seihou project scaffolding
+description:
+  Core library for Seihou, a composable project scaffolding system.
+  It provides the types, Dhall loading, template rendering, execution
+  engine, manifest handling, and validation logic used by the Seihou CLI.
+
+homepage: https://github.com/shinzui/seihou
+bug-reports: https://github.com/shinzui/seihou/issues
+license: BSD-3-Clause
+license-file: LICENSE
+author: Nadeem Bitar
+maintainer: nadeem@gmail.com
+copyright: (c) 2026 Nadeem Bitar
+category: Development
 build-type: Simple
+
+source-repository head
+  type: git
+  location: https://github.com/shinzui/seihou.git
 
 library
   default-language: GHC2024

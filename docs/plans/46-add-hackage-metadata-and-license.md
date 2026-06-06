@@ -23,17 +23,21 @@ The current packages are rejected by `cabal check` because the `license` field i
 
 ## Progress
 
-- [ ] Confirm the intended open-source license with the repository owner.
-- [ ] Add a root `LICENSE` file for the chosen license.
-- [ ] Add package metadata to `seihou-core/seihou-core.cabal`.
-- [ ] Add package metadata and dependency bounds to `seihou-cli/seihou-cli.cabal`.
-- [ ] Run `cabal check` in both package directories and resolve all errors.
-- [ ] Update `README.md` license text if needed.
+- [x] Confirm the intended open-source license with the repository owner. Completed 2026-06-06: the owner chose BSD-3-Clause with `Nadeem Bitar` / `nadeem@gmail.com` as the public package identity.
+- [x] Add a root `LICENSE` file for the chosen license. Completed 2026-06-06.
+- [x] Add package metadata to `seihou-core/seihou-core.cabal`. Completed 2026-06-06.
+- [x] Add package metadata and dependency bounds to `seihou-cli/seihou-cli.cabal`. Completed 2026-06-06.
+- [x] Run `cabal check` in both package directories and resolve all errors. Completed 2026-06-06: both packages reported no errors or warnings.
+- [x] Update `README.md` license text if needed. Completed 2026-06-06.
 
 
 ## Surprises & Discoveries
 
 The audit found no `LICENSE` or `COPYING` file in the repository, while `README.md` says "See LICENSE file."
+
+`cabal check` initially rejected both public packages with `license-none` and warned about missing `category`, `maintainer`, and `description`. `seihou-cli` also warned that the private library target missed upper bounds for `baikai`, `baikai-claude`, `baikai-openai`, `seihou-core`, and `vector`.
+
+Package-local `LICENSE` files are needed alongside the root `LICENSE` because each Cabal source distribution is rooted at its package directory. `cabal sdist all` includes `seihou-core-0.2.0.0/LICENSE` and `seihou-cli-0.2.0.0/LICENSE`, and the package-local copies match the root file byte-for-byte.
 
 
 ## Decision Log
@@ -42,10 +46,43 @@ The audit found no `LICENSE` or `COPYING` file in the repository, while `README.
   Rationale: A license is a legal/publishing decision, not a mechanical coding choice. Implementation should not guess.
   Date: 2026-06-05
 
+- Decision: Use BSD-3-Clause metadata with `Nadeem Bitar` as author/copyright holder and `nadeem@gmail.com` as maintainer.
+  Rationale: The repository owner supplied those values after the implementation paused at the legal metadata step.
+  Date: 2026-06-06
+
+- Decision: Use package-local `LICENSE` files in `seihou-core` and `seihou-cli`, in addition to the root `LICENSE`.
+  Rationale: Cabal sdists are generated per package directory, so package-local license files make each uploaded tarball self-contained while preserving the repository-level license pointer.
+  Date: 2026-06-06
+
+- Decision: Bound `baikai`, `baikai-claude`, `baikai-openai`, `seihou-core`, and `vector` with caret bounds based on the versions resolved in the current Cabal plan.
+  Rationale: This follows Haskell PVP expectations, removes Hackage metadata warnings, and keeps `seihou-core` on the lockstep `0.2.0.0` release line until the release workflow bumps versions.
+  Date: 2026-06-06
+
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+EP-6 added BSD-3-Clause licensing and complete Hackage-facing metadata to both public packages. The root README now points to the real repository license, and each package source distribution includes a matching license file.
+
+Validation passed with:
+
+```text
+(cd seihou-core && cabal check)
+No errors or warnings could be found in the package.
+
+(cd seihou-cli && cabal check)
+No errors or warnings could be found in the package.
+
+cabal sdist all
+Wrote tarball sdist to .../dist-newstyle/sdist/seihou-core-0.2.0.0.tar.gz
+Wrote tarball sdist to .../dist-newstyle/sdist/seihou-cli-0.2.0.0.tar.gz
+```
+
+Tarball inspection confirmed:
+
+```text
+seihou-core-0.2.0.0/LICENSE
+seihou-cli-0.2.0.0/LICENSE
+```
 
 
 ## Context and Orientation

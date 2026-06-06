@@ -176,4 +176,4 @@ seihou/
 
 ## License
 
-See LICENSE file.
+Seihou is licensed under the BSD-3-Clause license. See `LICENSE` for details.

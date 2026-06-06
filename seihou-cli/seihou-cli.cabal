@@ -2,6 +2,19 @@ cabal-version: 3.0
 name: seihou-cli
 version: 0.2.0.0
 synopsis: CLI for Seihou project scaffolding
+description:
+  Command-line interface for Seihou, a composable project scaffolding
+  system. It creates and manages typed scaffolding modules, blueprints,
+  migrations, registry operations, and project-local configuration.
+
+homepage: https://github.com/shinzui/seihou
+bug-reports: https://github.com/shinzui/seihou/issues
+license: BSD-3-Clause
+license-file: LICENSE
+author: Nadeem Bitar
+maintainer: nadeem@gmail.com
+copyright: (c) 2026 Nadeem Bitar
+category: Development
 build-type: Simple
 extra-source-files:
   data/assist-prompt.md
@@ -18,6 +31,10 @@ extra-source-files:
   help/modules.md
   help/templating.md
   help/variables.md
+
+source-repository head
+  type: git
+  location: https://github.com/shinzui/seihou.git
 
 library seihou-cli-internal
   default-language: GHC2024
@@ -70,9 +87,9 @@ library seihou-cli-internal
     aeson >=2.1 && <3,
     aeson-pretty >=0.8 && <1,
     ansi-terminal >=1.1 && <2,
-    baikai,
-    baikai-claude,
-    baikai-openai,
+    baikai ^>=0.1.0.0,
+    baikai-claude ^>=0.1.0.0,
+    baikai-openai ^>=0.1.0.0,
     base >=4.18 && <5,
     bytestring >=0.11 && <1,
     containers >=0.6 && <1,
@@ -80,11 +97,11 @@ library seihou-cli-internal
     effectful-core >=2.4 && <3,
     filepath >=1.4 && <2,
     process >=1.6 && <2,
-    seihou-core,
+    seihou-core ^>=0.2.0.0,
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
-    vector,
+    vector ^>=0.13.2.0,
 
 executable seihou
   default-language: GHC2024
@@ -141,9 +158,9 @@ executable seihou
     aeson >=2.1 && <3,
     aeson-pretty >=0.8 && <1,
     ansi-terminal >=1.1 && <2,
-    baikai,
-    baikai-claude,
-    baikai-openai,
+    baikai ^>=0.1.0.0,
+    baikai-claude ^>=0.1.0.0,
+    baikai-openai ^>=0.1.0.0,
     base >=4.18 && <5,
     bytestring >=0.11 && <1,
     containers >=0.6 && <1,
@@ -155,7 +172,7 @@ executable seihou
     optparse-applicative >=0.18 && <1,
     process >=1.6 && <2,
     seihou-cli-internal,
-    seihou-core,
+    seihou-core ^>=0.2.0.0,
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
@@ -201,7 +218,7 @@ test-suite seihou-cli-test
 
   build-depends:
     aeson >=2.1 && <3,
-    baikai,
+    baikai ^>=0.1.0.0,
     base >=4.18 && <5,
     bytestring >=0.11 && <1,
     containers >=0.6 && <1,
@@ -211,10 +228,10 @@ test-suite seihou-cli-test
     hspec >=2.11 && <3,
     process >=1.6 && <2,
     seihou-cli-internal,
-    seihou-core,
+    seihou-core ^>=0.2.0.0,
     tasty >=1.4 && <2,
     tasty-hspec >=1.2 && <2,
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
-    vector,
+    vector ^>=0.13.2.0,

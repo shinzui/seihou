@@ -36,7 +36,7 @@ Seven child plans are used because the audit found seven distinct classes of wor
 | EP-3 | Validate migration and removal paths | docs/plans/43-validate-migration-and-removal-paths.md | None | EP-2 | Complete |
 | EP-4 | Make manifest writes atomic | docs/plans/44-make-manifest-writes-atomic.md | None | None | Complete |
 | EP-5 | Make recipe expansion total | docs/plans/45-make-recipe-expansion-total.md | None | None | Complete |
-| EP-6 | Add Hackage metadata and license | docs/plans/46-add-hackage-metadata-and-license.md | None | EP-1 | Not Started |
+| EP-6 | Add Hackage metadata and license | docs/plans/46-add-hackage-metadata-and-license.md | None | EP-1 | Complete |
 | EP-7 | Clean public documentation for release | docs/plans/47-clean-public-documentation-for-release.md | EP-6 | EP-1, EP-2, EP-3, EP-4, EP-5 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -77,8 +77,8 @@ Release validation is shared by all plans. The final acceptance for the whole Ma
 - [x] EP-4: Add tests or a focused smoke check that verifies temp files do not remain after normal writes.
 - [x] EP-5: Make recipe expansion handle empty module lists without partial functions.
 - [x] EP-5: Validate recipe discovery/run paths so invalid recipes fail with user-facing errors.
-- [ ] EP-6: Add Hackage metadata, dependency bounds, and a real license file.
-- [ ] EP-6: Make `cabal check` pass for both public packages.
+- [x] EP-6: Add Hackage metadata, dependency bounds, and a real license file.
+- [x] EP-6: Make `cabal check` pass for both public packages.
 - [ ] EP-7: Remove stale internal/proposed public documentation links and claims.
 - [ ] EP-7: Run final release-readiness validation from source distributions.
 
@@ -102,6 +102,8 @@ EP-3 validation passed with `cabal test seihou-core-test --test-options '--patte
 EP-4 replaced manifest persistence's double-write with a same-directory temp write followed by `renamePath`. The writer now creates the manifest parent directory before writing and successful writes leave no `.tmp` file. Validation passed with `cabal test seihou-core-test --test-options '--pattern "Seihou.Effect.ManifestStore"'` (10 tests), `cabal test seihou-core-test` (862 tests), and `cabal test seihou-cli-test` (226 tests).
 
 EP-5 made recipe expansion total by changing `expandRecipe` to return `Either [Text] ExpandedRecipe` and by handling invalid recipes in `seihou run` before composition loading. `cabal build all` passed without the prior production `Seihou.Composition.Recipe` partial `head`/`tail` warnings. Validation passed with `cabal test seihou-core-test --test-options '--pattern "Seihou.Composition.Recipe"'` (5 tests), `cabal test seihou-core-test` (863 tests), and `cabal test seihou-cli-test` (226 tests).
+
+EP-6 added BSD-3-Clause package metadata with `Nadeem Bitar` / `nadeem@gmail.com`, package-local license files for Cabal sdists, and upper bounds for the `seihou-cli` dependencies that `cabal check` flagged. Validation passed with `cabal check` reporting no errors or warnings for both `seihou-core` and `seihou-cli`; `cabal sdist all` produced the package tarballs and tarball inspection confirmed that each Seihou sdist includes `LICENSE`.
 
 
 ## Decision Log
