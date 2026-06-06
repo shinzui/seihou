@@ -26,8 +26,8 @@ A *blueprint* is the third runnable type in seihou (alongside *modules*
 and *recipes*). Where modules deterministically generate files, a
 blueprint hands a base prompt and reference materials to an AI coding
 agent which then iterates with the user on the actual project files. A
-blueprint cannot be run with `seihou run`; the agent runner
-(`seihou agent run`, landing in EP-31) consumes it.
+blueprint cannot be run with `seihou run`; the implemented agent
+runner (`seihou agent run`) consumes it.
 
 This command creates a new blueprint directory with boilerplate files:
 

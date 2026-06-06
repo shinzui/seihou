@@ -122,6 +122,8 @@ Manage configuration values. Subcommands: `set KEY VALUE`, `get KEY`, `unset KEY
 
 - [Getting Started Guide](docs/user/getting-started.md) — End-to-end walkthrough from initialization to project generation
 - [Module Authoring Reference](docs/user/module-authoring.md) — Complete module format, strategies, variables, composition
+- [Blueprints Guide](docs/user/blueprints.md) — Agent-driven scaffolding for open-ended project shapes
+- [Agent Assistance Guide](docs/user/agent-assistance.md) — Configuring and running Claude Code, Codex, Anthropic, and OpenAI providers
 
 ## Module Authoring
 
@@ -140,7 +142,7 @@ seihou run my-template --dry-run --var project.name=test
 
 See the [Module Authoring Reference](docs/user/module-authoring.md) for the complete specification.
 
-- **Blueprints** (`seihou agent run BLUEPRINT`) — agent-driven scaffolding for open-ended project shapes (see [`docs/dev/design/proposed/blueprints.md`](docs/dev/design/proposed/blueprints.md)).
+- **Blueprints** (`seihou agent run BLUEPRINT`) — agent-driven scaffolding for open-ended project shapes. See the [Blueprints Guide](docs/user/blueprints.md), [`seihou new-blueprint`](docs/cli/new-blueprint.md), [`seihou validate-blueprint`](docs/cli/validate-blueprint.md), and [`seihou agent`](docs/cli/agent.md).
 
 ## Building from Source
 
@@ -168,7 +170,9 @@ seihou/
 │                      # rendering, variable resolution, composition, execution
 ├── seihou-cli/        # Executable: CLI commands and handlers
 ├── docs/
-│   ├── dev/           # Architecture, design specs, roadmap
+│   ├── user/          # User guides and release-facing changelog
+│   ├── cli/           # Command reference
+│   ├── dev/           # Architecture, design notes, roadmap
 │   └── plans/         # Execution plans (living implementation documents)
 ├── cabal.project      # Multi-package workspace
 └── flake.nix          # Nix development environment

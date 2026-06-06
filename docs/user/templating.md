@@ -8,9 +8,7 @@ This page covers one of the four generation strategies. For the
 surrounding module-authoring model — how to declare variables,
 `when` guards at the step level, patching, exports — see
 [Module authoring](module-authoring.md). For the other strategies
-(Copy, DhallText, Structured), see the same doc; and for a
-design-level view of the engine, see
-[Generation Strategies (design)](../dev/design/proposed/generation-strategies.md).
+(Copy, DhallText, Structured), see the same doc.
 
 
 ## Where Template fits
@@ -381,6 +379,5 @@ available after substitution.
 
 - [Module authoring](module-authoring.md) — variable declarations, step fields, patch operations, the four strategies in context.
 - [Configuration and variables](config-and-variables.md) — how variables are resolved, including the `--confirm-defaults` interactive review flag.
-- [Generation Strategies (design)](../dev/design/proposed/generation-strategies.md) — the engine-level view: `PlaceholderError` taxonomy, strategy dispatch, composition model.
-- [Variable resolution (design)](../dev/design/proposed/variable-resolution.md) — the full resolution precedence, source tagging, and the `when`-expression grammar that template conditionals also use.
-- [ExecPlan 9](../plans/9-inline-conditionals-in-template-strategy.md) — provenance record for inline `{{#if}}` blocks and the standalone-trim addendum.
+- [Getting started](getting-started.md) — a complete walkthrough that uses template output in context.
+- [Command reference: run](../cli/run.md) — flags for rendering, previewing, and applying modules.

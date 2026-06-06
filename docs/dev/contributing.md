@@ -1,9 +1,10 @@
 # Contributing to Seihou
 
 This document is the developer-facing guide for the seihou project. The
-user-facing CHANGELOG is at `docs/user/CHANGELOG.md`; the architecture
-overview is at `docs/dev/architecture/overview.md`; the v1 milestones
-roadmap is at `docs/dev/roadmap/v1-milestones.md`.
+release-facing changelog is at `docs/user/CHANGELOG.md`; the detailed
+documentation review log is at `docs/dev/documentation-changelog.md`; the
+architecture overview is at `docs/dev/architecture/overview.md`; the v1
+milestones roadmap is at `docs/dev/roadmap/v1-milestones.md`.
 
 ## CLI Module Placement Convention
 

@@ -37,7 +37,7 @@ Seven child plans are used because the audit found seven distinct classes of wor
 | EP-4 | Make manifest writes atomic | docs/plans/44-make-manifest-writes-atomic.md | None | None | Complete |
 | EP-5 | Make recipe expansion total | docs/plans/45-make-recipe-expansion-total.md | None | None | Complete |
 | EP-6 | Add Hackage metadata and license | docs/plans/46-add-hackage-metadata-and-license.md | None | EP-1 | Complete |
-| EP-7 | Clean public documentation for release | docs/plans/47-clean-public-documentation-for-release.md | EP-6 | EP-1, EP-2, EP-3, EP-4, EP-5 | Not Started |
+| EP-7 | Clean public documentation for release | docs/plans/47-clean-public-documentation-for-release.md | EP-6 | EP-1, EP-2, EP-3, EP-4, EP-5 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix.
@@ -79,8 +79,8 @@ Release validation is shared by all plans. The final acceptance for the whole Ma
 - [x] EP-5: Validate recipe discovery/run paths so invalid recipes fail with user-facing errors.
 - [x] EP-6: Add Hackage metadata, dependency bounds, and a real license file.
 - [x] EP-6: Make `cabal check` pass for both public packages.
-- [ ] EP-7: Remove stale internal/proposed public documentation links and claims.
-- [ ] EP-7: Run final release-readiness validation from source distributions.
+- [x] EP-7: Remove stale internal/proposed public documentation links and claims.
+- [x] EP-7: Run final release-readiness validation from source distributions.
 
 
 ## Surprises & Discoveries
@@ -105,6 +105,8 @@ EP-5 made recipe expansion total by changing `expandRecipe` to return `Either [T
 
 EP-6 added BSD-3-Clause package metadata with `Nadeem Bitar` / `nadeem@gmail.com`, package-local license files for Cabal sdists, and upper bounds for the `seihou-cli` dependencies that `cabal check` flagged. Validation passed with `cabal check` reporting no errors or warnings for both `seihou-core` and `seihou-cli`; `cabal sdist all` produced the package tarballs and tarball inspection confirmed that each Seihou sdist includes `LICENSE`.
 
+EP-7 cleaned the public documentation path by moving the detailed documentation-review log to `docs/dev/documentation-changelog.md`, replacing `docs/user/CHANGELOG.md` with concise release notes, redirecting README blueprint links to user and CLI docs, and removing proposed-design links from release-facing docs. Validation passed with public-doc grep checks returning no matches, embedded help topics rendering for `blueprints`, `agent`, and `templating`, `cabal check` clean for both packages, `cabal build all`, `cabal test all`, and an unpacked-sdist `cabal build seihou`.
+
 
 ## Decision Log
 
@@ -123,4 +125,6 @@ EP-6 added BSD-3-Clause package metadata with `Nadeem Bitar` / `nadeem@gmail.com
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+The first-public-release readiness initiative is complete. The repository now has source distributions that include the CLI's embedded files and package-local license files, Cabal metadata that passes `cabal check` without warnings, path-safety checks before generated and destructive filesystem operations, atomic manifest writes, total recipe expansion with structured error reporting, and release-facing documentation that describes shipped behavior.
+
+Final validation on 2026-06-06 passed with `cabal sdist all`, clean `cabal check` runs for both public packages, `cabal build all`, `cabal test all`, and a build of `seihou` from freshly unpacked `seihou-core-0.2.0.0` and `seihou-cli-0.2.0.0` source distribution tarballs.

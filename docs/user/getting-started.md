@@ -345,7 +345,7 @@ Each tracked file shows its owning module and current state: `unchanged`, `modif
 Edit a generated file — for example, add a line to `README.md`:
 
 ```sh
-echo "\n## Development\n\nTODO" >> README.md
+echo "\n## Development\n\nNotes" >> README.md
 ```
 
 Now run `seihou diff`:
