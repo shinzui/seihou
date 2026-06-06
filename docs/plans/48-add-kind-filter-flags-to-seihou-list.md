@@ -83,6 +83,9 @@ This section must always reflect the actual current state of the work.
 - [x] **M3-3**: Run the full test suite — `cabal test all` — 863 core + 233 CLI tests pass. (2026-06-06)
 - [x] **M4-1**: Manual end-to-end verification of `--modules`, `--recipes`, `--blueprints`, combined flags, and `--help`. (2026-06-06)
 - [x] **M4-2**: Fill in Outcomes & Retrospective. (2026-06-06)
+- [x] **M5-1**: (follow-up) Make the summary count noun kind-aware via `summaryNoun`/`pluralize`, derived from displayed entries (empty case from the filter); export `formatListOutputEntries`. (2026-06-06)
+- [x] **M5-2**: (follow-up) Update the empty-list test and add count-noun tests (single kind, mixed, filtered-empty, unfiltered-empty). (2026-06-06)
+- [x] **M5-3**: (follow-up) Rebuild executable, re-run `cabal test all` — 863 core + 238 CLI tests pass — and re-verify end-to-end nouns. (2026-06-06)
 
 
 ## Surprises & Discoveries
@@ -157,6 +160,34 @@ implementation. Provide concise evidence.
   touching this area for kind filtering, correct the header so it matches reality.
   Date: 2026-06-06
 
+- Decision (follow-up): Make the summary count noun kind-aware, derived from the
+  kinds of the entries actually displayed rather than from the active filter. When
+  every shown entry shares one kind, the noun names that kind ("13 modules found",
+  "2 recipes found", "4 blueprints found"); when the displayed set is mixed (e.g.
+  an unfiltered listing, or `--modules --recipes` that yields both), it falls back
+  to the neutral "item(s)". The empty-listing message derives its noun from the
+  active filter instead (no entries to inspect): `--blueprints` with no matches
+  prints "No blueprints found.", while an unfiltered empty listing prints "No
+  items found."
+  Rationale: Deriving from displayed entries (not the filter) is the more accurate
+  and robust rule — it stays correct even when a kind flag matches nothing of that
+  kind, and it makes the previously-misleading unfiltered summary ("N modules
+  found" for a list that also contained recipes and blueprints) honest. This
+  resolves the future-work item flagged in the first Outcomes entry. The empty
+  case necessarily falls back to the filter because there are no entries to
+  inspect.
+  Date: 2026-06-06
+
+- Decision (follow-up): Export `formatListOutputEntries` from
+  `Seihou.CLI.List` so the test suite can assert the count noun against
+  hand-built `Entry` lists of arbitrary kinds. The pre-existing exported
+  `formatListOutput` only accepts `DiscoveredModule` values (always
+  `KindModule`), so it cannot exercise recipe/blueprint nouns.
+  Rationale: The noun logic is the point of this change; testing it requires
+  entries of every kind. Exporting the entry-level renderer is the smallest
+  surface change that makes that possible.
+  Date: 2026-06-06
+
 
 ## Outcomes & Retrospective
 
@@ -179,10 +210,19 @@ placement check passes (`OK: 27 modules in executable other-modules, all
 justified`) — the library/executable split was preserved: parser switches live in
 the executable, filtering logic in the internal library, bridged in `Main.hs`.
 
-**Gaps / future work.** The summary count noun is always "module(s)" regardless of
-the active kind filter. This was intentionally out of scope; the `[filtered:
-kind=...]` suffix disambiguates. A kind-aware count noun (e.g. "1 blueprint found")
-is a candidate future enhancement.
+**Gaps / future work (resolved 2026-06-06).** The summary count noun was
+originally always "module(s)" regardless of kind. This has since been made
+kind-aware (see Milestone M5 and the follow-up Decision Log entries): a
+single-kind listing now reports its kind ("4 blueprints found"), a mixed listing
+reports the neutral "item(s)" ("19 items found"), and the empty message names the
+filtered kind ("No blueprints found."). Verified end-to-end:
+
+```text
+list              -> 19 items found (3 sources searched)
+list --modules    -> 13 modules found (3 sources searched) [filtered: kind=module]
+list --recipes    ->  2 recipes found (3 sources searched) [filtered: kind=recipe]
+list --blueprints ->  4 blueprints found (3 sources searched) [filtered: kind=blueprint]
+```
 
 **Lessons.** Carrying the kind on the `Entry` record and filtering in the existing
 pure `applyFilters` kept the change small, testable without IO, and consistent
@@ -722,3 +762,22 @@ lives in the internal library, and `Main.hs` bridges them. Adding kind parsing i
 the executable and kind filtering in the library keeps
 `nix/check-cli-module-placement.sh` satisfied because no library module gains a
 trapped dependency.
+
+
+## Revision Notes
+
+- 2026-06-06 — Follow-up enhancement (Milestone M5): made the `seihou list`
+  summary count noun kind-aware. Previously the noun was hard-coded to
+  "module(s)" regardless of what was shown. It is now derived from the kinds of
+  the displayed entries via the new `summaryNoun`/`pluralize` helpers in
+  `seihou-cli/src/Seihou/CLI/List.hs` — a single shared kind names that kind
+  ("4 blueprints found"), and a mixed set falls back to the neutral "item(s)"
+  ("19 items found"). The empty-listing message derives its noun from the active
+  filter instead (no entries to inspect): "No blueprints found." when filtered to
+  blueprints, "No items found." otherwise. `formatListOutputEntries` was exported
+  so tests can assert nouns against arbitrary-kind entry lists. Why: the original
+  summary was misleading (it claimed "N modules found" for listings that also
+  contained recipes and blueprints), and the kind-aware noun was flagged as future
+  work in the first Outcomes entry; this revision closes that gap. All sections
+  above (Progress, Surprises, Decision Log, Outcomes) were updated accordingly.
+  Tests: 863 core + 238 CLI pass.

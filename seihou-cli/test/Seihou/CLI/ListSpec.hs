@@ -2,7 +2,7 @@ module Seihou.CLI.ListSpec (tests) where
 
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Seihou.CLI.List (Entry (..), ListFilter (..), applyFilters, formatListOutput, runnableToEntryWithOrigin)
+import Seihou.CLI.List (Entry (..), ListFilter (..), applyFilters, formatListOutput, formatListOutputEntries, runnableToEntryWithOrigin)
 import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..))
 import Seihou.Core.Types
 import Test.Hspec
@@ -67,9 +67,9 @@ noFilter = ListFilter Nothing Nothing []
 spec :: Spec
 spec = do
   describe "formatListOutput" $ do
-    it "shows no-modules message when list is empty" $ do
+    it "shows no-items message when list is empty" $ do
       let result = formatListOutput False [] ["path1", "path2"]
-      T.isInfixOf "No modules found." result `shouldBe` True
+      T.isInfixOf "No items found." result `shouldBe` True
       T.isInfixOf "path1" result `shouldBe` True
       T.isInfixOf "path2" result `shouldBe` True
 
@@ -189,6 +189,32 @@ spec = do
       let onlyRecipes = filter (\e -> e.entryKind == KindRecipe) mixed
           result = applyFilters (ListFilter Nothing Nothing [KindBlueprint]) onlyRecipes
       result `shouldBe` []
+
+  describe "formatListOutputEntries (count noun)" $ do
+    let noFilterF = ListFilter Nothing Nothing []
+
+    it "uses the kind noun when all shown entries share one kind" $ do
+      let entries = [mkEntryK KindBlueprint "bp-a" Nothing [], mkEntryK KindBlueprint "bp-b" Nothing []]
+          result = formatListOutputEntries False entries ["p1"] noFilterF
+      T.isInfixOf "2 blueprints found" result `shouldBe` True
+
+    it "uses the singular kind noun for one entry" $ do
+      let entries = [mkEntryK KindRecipe "rec-a" Nothing []]
+          result = formatListOutputEntries False entries ["p1"] noFilterF
+      T.isInfixOf "1 recipe found" result `shouldBe` True
+
+    it "falls back to the neutral noun for a mix of kinds" $ do
+      let entries = [mkEntryK KindModule "mod-a" Nothing [], mkEntryK KindRecipe "rec-a" Nothing []]
+          result = formatListOutputEntries False entries ["p1"] noFilterF
+      T.isInfixOf "2 items found" result `shouldBe` True
+
+    it "names the kind in the empty message when filtered to one kind" $ do
+      let result = formatListOutputEntries False [] ["p1"] (ListFilter Nothing Nothing [KindBlueprint])
+      T.isInfixOf "No blueprints found." result `shouldBe` True
+
+    it "uses the neutral noun in the empty message with no kind filter" $ do
+      let result = formatListOutputEntries False [] ["p1"] noFilterF
+      T.isInfixOf "No items found." result `shouldBe` True
 
   describe "runnableToEntryWithOrigin (blueprint)" $ do
     it "tags blueprint entries with [blueprint] in the source label" $ do

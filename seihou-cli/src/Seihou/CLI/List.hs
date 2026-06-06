@@ -1,6 +1,7 @@
 module Seihou.CLI.List
   ( handleList,
     formatListOutput,
+    formatListOutputEntries,
     applyFilters,
     ListFilter (..),
     Entry (..),
@@ -124,7 +125,10 @@ formatListOutput color modules searchPaths =
 formatListOutputEntries :: Bool -> [Entry] -> [Text] -> ListFilter -> Text
 formatListOutputEntries color entries searchPaths listOpts
   | null entries =
-      "No modules found."
+      -- With nothing to show, the kind comes from the active filter (if any).
+      "No "
+        <> pluralize 0 (summaryNoun listOpts.filterKinds)
+        <> " found."
         <> filterSuffix
         <> "\n\nSearched:\n"
         <> T.unlines (map ("  " <>) searchPaths)
@@ -135,7 +139,9 @@ formatListOutputEntries color entries searchPaths listOpts
           fileLines = map (formatEntry color maxNameLen maxDescLen) entries
           n = length entries
           nSources = length searchPaths
-          noun = if n == 1 then "module" else "modules"
+          -- The count noun reflects the kinds actually shown: a single shared
+          -- kind names that kind; a mix falls back to the neutral "item".
+          noun = pluralize n (summaryNoun (map (.entryKind) entries))
           summary =
             T.pack (show n)
               <> " "
@@ -148,6 +154,24 @@ formatListOutputEntries color entries searchPaths listOpts
        in header <> "\n" <> T.unlines fileLines <> "\n" <> summary
   where
     filterSuffix = formatFilterSuffix listOpts
+
+-- | Choose the singular base noun for a set of kinds.  When every kind is the
+-- same, name it ("module", "recipe", "blueprint"); when the set is empty or
+-- mixed, fall back to the neutral "item".
+summaryNoun :: [RunnableKind] -> Text
+summaryNoun kinds = case kinds of
+  [] -> "item"
+  (k : ks)
+    | all (== k) ks -> kindBase k
+    | otherwise -> "item"
+  where
+    kindBase KindModule = "module"
+    kindBase KindRecipe = "recipe"
+    kindBase KindBlueprint = "blueprint"
+
+-- | Append @s@ to a singular noun unless the count is exactly one.
+pluralize :: Int -> Text -> Text
+pluralize n base = if n == 1 then base else base <> "s"
 
 -- | Build a display suffix describing the active filters, e.g.
 -- @" [filtered: repo=foo, tag=bar]"@.  Returns empty text when no filters
