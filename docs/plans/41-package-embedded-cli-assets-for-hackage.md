@@ -45,8 +45,6 @@ The unpacked source distribution build emitted existing `-Wx-partial` warnings i
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
-
 Implemented on 2026-06-05. `seihou-cli/seihou-cli.cabal` now declares the embedded Markdown assets in `extra-source-files`, `cabal sdist all` includes those files in the CLI tarball, `cabal build all` passes from the repository checkout, and `cabal build exe:seihou` passes from freshly unpacked `seihou-core` and `seihou-cli` source distributions.
 
 
