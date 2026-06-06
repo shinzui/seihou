@@ -207,7 +207,10 @@ data ContextAction
 
 data ListOpts = ListOpts
   { listRepo :: Maybe Text,
-    listTag :: Maybe Text
+    listTag :: Maybe Text,
+    listModulesOnly :: Bool,
+    listRecipesOnly :: Bool,
+    listBlueprintsOnly :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -578,7 +581,9 @@ listInfo =
                   pretty ("source location (project, user, or installed). Entries that fail to" :: String),
                   pretty ("load are shown with an error indicator." :: String),
                   line,
-                  pretty ("Use --repo and --tag to filter the output." :: String)
+                  pretty ("Use --repo and --tag to filter the output." :: String),
+                  pretty ("Use --modules, --recipes, and --blueprints to restrict by kind" :: String),
+                  pretty ("(combine them to show several kinds; omit all to show every kind)." :: String)
                 ]
           )
     )
@@ -589,6 +594,9 @@ listParser =
     ListOpts
       <$> optional (option (T.pack <$> str) (long "repo" <> metavar "REPO" <> help "Filter by repository name"))
       <*> optional (option (T.pack <$> str) (long "tag" <> metavar "TAG" <> help "Filter by tag"))
+      <*> switch (long "modules" <> help "Show only modules")
+      <*> switch (long "recipes" <> help "Show only recipes")
+      <*> switch (long "blueprints" <> help "Show only blueprints")
 
 newModuleInfo :: ParserInfo Command
 newModuleInfo =

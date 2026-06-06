@@ -38,12 +38,13 @@ instance FromJSON OriginInfo where
 -- optparse-applicative.
 data ListFilter = ListFilter
   { filterRepo :: Maybe Text,
-    filterTag :: Maybe Text
+    filterTag :: Maybe Text,
+    filterKinds :: [RunnableKind]
   }
   deriving stock (Eq, Show)
 
 noFilter :: ListFilter
-noFilter = ListFilter Nothing Nothing
+noFilter = ListFilter Nothing Nothing []
 
 handleList :: ListFilter -> IO ()
 handleList listOpts = do
@@ -99,7 +100,8 @@ runnableToEntryWithOrigin origins dr =
               entrySource = srcLabel <> kindSuffix,
               entryIsError = True,
               entryRepoName = originName,
-              entryTags = originTags
+              entryTags = originTags,
+              entryKind = dr.drKind
             }
         else
           Entry
@@ -108,7 +110,8 @@ runnableToEntryWithOrigin origins dr =
               entrySource = srcLabel <> kindSuffix,
               entryIsError = False,
               entryRepoName = originName,
-              entryTags = originTags
+              entryTags = originTags,
+              entryKind = dr.drKind
             }
 
 -- | Format list output — backward-compatible version without origin info.
@@ -128,7 +131,7 @@ formatListOutputEntries color entries searchPaths listOpts
   | otherwise =
       let maxNameLen = maximum (map (T.length . (.entryName)) entries)
           maxDescLen = maximum (map (T.length . (.entryDesc)) entries)
-          header = "Available modules and recipes:\n"
+          header = "Available modules, recipes, and blueprints:\n"
           fileLines = map (formatEntry color maxNameLen maxDescLen) entries
           n = length entries
           nSources = length searchPaths
@@ -154,22 +157,33 @@ formatFilterSuffix opts =
   let parts =
         maybe [] (\r -> ["repo=" <> r]) opts.filterRepo
           <> maybe [] (\t -> ["tag=" <> t]) opts.filterTag
+          <> kindPart
+      kindPart = case opts.filterKinds of
+        [] -> []
+        ks -> ["kind=" <> T.intercalate "+" (map kindNoun ks)]
    in if null parts
         then ""
         else " [filtered: " <> T.intercalate ", " parts <> "]"
+  where
+    kindNoun KindModule = "module"
+    kindNoun KindRecipe = "recipe"
+    kindNoun KindBlueprint = "blueprint"
 
 -- | Apply repo and tag filters to a list of entries.  Both filters combine
 -- with AND: an entry must match all active filters to be included.
 applyFilters :: ListFilter -> [Entry] -> [Entry]
 applyFilters opts = filter match
   where
-    match entry = repoMatch entry && tagMatch entry
+    match entry = repoMatch entry && tagMatch entry && kindMatch entry
     repoMatch entry = case opts.filterRepo of
       Nothing -> True
       Just r -> entry.entryRepoName == Just r
     tagMatch entry = case opts.filterTag of
       Nothing -> True
       Just t -> t `elem` entry.entryTags
+    kindMatch entry = case opts.filterKinds of
+      [] -> True
+      ks -> entry.entryKind `elem` ks
 
 data Entry = Entry
   { entryName :: Text,
@@ -177,7 +191,8 @@ data Entry = Entry
     entrySource :: Text,
     entryIsError :: Bool,
     entryRepoName :: Maybe Text,
-    entryTags :: [Text]
+    entryTags :: [Text],
+    entryKind :: RunnableKind
   }
   deriving stock (Eq, Show)
 
@@ -198,7 +213,8 @@ toEntryWithOrigin origins dm =
               entrySource = srcLabel,
               entryIsError = False,
               entryRepoName = originName,
-              entryTags = originTags
+              entryTags = originTags,
+              entryKind = KindModule
             }
         Left err ->
           Entry
@@ -207,7 +223,8 @@ toEntryWithOrigin origins dm =
               entrySource = srcLabel,
               entryIsError = True,
               entryRepoName = originName,
-              entryTags = originTags
+              entryTags = originTags,
+              entryKind = KindModule
             }
 
 sourceLabelWithOrigin :: ModuleSource -> Maybe Text -> Maybe Text -> Text

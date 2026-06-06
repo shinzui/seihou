@@ -35,6 +35,7 @@ import Seihou.CLI.Upgrade (handleUpgrade)
 import Seihou.CLI.Validate (handleValidateModule)
 import Seihou.CLI.ValidateBlueprint (handleValidateBlueprint)
 import Seihou.CLI.Vars (handleVars)
+import Seihou.Core.Module (RunnableKind (..))
 import System.Exit (exitFailure)
 
 main :: IO ()
@@ -56,7 +57,11 @@ main = do
     Diff ->
       handleDiff
     List listOpts ->
-      handleList (ListFilter listOpts.listRepo listOpts.listTag)
+      let kinds =
+            [KindModule | listOpts.listModulesOnly]
+              <> [KindRecipe | listOpts.listRecipesOnly]
+              <> [KindBlueprint | listOpts.listBlueprintsOnly]
+       in handleList (ListFilter listOpts.listRepo listOpts.listTag kinds)
     NewModule newModOpts ->
       handleNewModule newModOpts
     NewRecipe newRecOpts ->
