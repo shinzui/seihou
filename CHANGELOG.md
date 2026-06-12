@@ -4,6 +4,66 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.3.0.0] - 2026-06-12
+
+### Added
+
+#### Blueprints (agent-driven scaffolding)
+- New first-class **`Blueprint`** runnable type: a `blueprint.dhall`
+  schema, Dhall decoder, validator, and run-refusal semantics for
+  agent-driven scaffolding that complements modules and recipes
+  (EP-29).
+- Blueprint authoring and inspection commands: `seihou new-blueprint`
+  scaffolds a blueprint and `seihou validate-blueprint` lints it
+  (EP-30).
+- `seihou agent run BLUEPRINT` parses and executes a blueprint through
+  the configured agent provider (EP-31).
+- **Applied-blueprint provenance**: a new `AppliedBlueprint` record is
+  written to the manifest after an agent run (manifest schema bumped to
+  **v3**), and `seihou status` surfaces which blueprint was applied
+  (EP-32).
+- **Registry support for blueprints**: the `Registry` type and the
+  `SingleBlueprint` repository shape gained blueprints; `seihou install`
+  and `seihou browse` handle blueprints alongside modules and recipes,
+  and `seihou registry sync-versions` / `validate` understand blueprint
+  entries (EP-33).
+- New `seihou help blueprints` topic and user-guide coverage of
+  agent-driven blueprints (EP-34).
+
+#### Agent provider integration (Baikai)
+- Agent commands are now routed through a configurable **provider**
+  backed by [Baikai](https://hackage.haskell.org/package/baikai): a
+  completion facade, configurable provider selection, and interactive
+  CLI provider launches. New `baikai`, `baikai-claude`, and
+  `baikai-openai` dependencies.
+- `seihou kit` installs Codex-compatible kit content, with reduced CLI
+  approval prompts for the Codex provider.
+- New `seihou help agent` topic and a Baikai-backed agent-configuration
+  guide.
+
+#### CLI flags and UX
+- `seihou list` gained `--modules`, `--recipes`, and `--blueprints`
+  filters to narrow output by kind, and its summary count is now
+  kind-aware.
+
+### Changed
+
+- **Migration planner rewritten** as a gap-tolerant window walker:
+  migration chains with version gaps are walked more robustly, and the
+  walker contract is documented in `docs/cli/migrate.md` and
+  `docs/user/migrations.md` (EP-35).
+- Agent dependencies now resolve from the published **Hackage** `baikai`
+  packages, and the git `streamly` pin tracks the official
+  `composewell/streamly` repository.
+
+### Removed
+
+- **Breaking:** removed the `seihou migrate --bump-only` and
+  `seihou run --bump-blocked` recovery flags. The rewritten gap-tolerant
+  migration planner advances recorded versions through benign
+  empty-migration gaps and exhausted partial-chain tails automatically,
+  so the manual escape hatches are no longer needed (EP-35).
+
 ### Fixed
 
 - `seihou migrate` no longer crashes with
@@ -16,6 +76,23 @@ All notable changes to this project will be documented in this file.
   chain the manifest had already been rolled back even though the disk
   moves had completed, so a second `seihou migrate` invocation
   succeeded — the fix removes the need for that retry dance.
+- Manifests are now written **atomically** (write-to-temp-then-rename),
+  avoiding corruption if the process is interrupted mid-write.
+- Recipe expansion is now **total** — malformed or cyclic recipes
+  surface as structured errors instead of throwing.
+- Generation, migration, and removal paths are validated and constrained
+  to stay within the project tree, rejecting paths that escape it.
+- The `seihou` executable now packages its **embedded source assets**
+  (`data/` prompts and `help/` topics) via `extra-source-files`, so the
+  Hackage tarball and installed binary carry them.
+
+### Packaging
+
+- Added Hackage metadata (`license`, `license-file`, `author`,
+  `maintainer`, `homepage`, `bug-reports`, `category`, `description`)
+  and a `LICENSE` (BSD-3-Clause) file to both packages.
+- `seihou-cli` now pins `seihou-core ^>=0.3.0.0`.
+- Both packages share version `0.3.0.0`.
 
 ## [0.2.0.0] - 2026-04-29
 
@@ -237,6 +314,7 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.2.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.3.0.0...HEAD
+[0.3.0.0]: https://github.com/shinzui/seihou/compare/v0.2.0.0...v0.3.0.0
 [0.2.0.0]: https://github.com/shinzui/seihou/compare/v0.1.0.0...v0.2.0.0
 [0.1.0.0]: https://github.com/shinzui/seihou/releases/tag/v0.1.0.0
