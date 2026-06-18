@@ -111,9 +111,13 @@ This section must always reflect the actual current state of the work.
         cases pass; 238 `seihou-cli-test` cases pass.
   - [x] End-to-end CLI transcript captured (see Concrete Steps below): flagged module exits
         1 with both findings; corrected module (barewords) exits 0.
-- [ ] **M4 — Cross-repo follow-up (documented, not code in this repo).**
-  - [ ] Record that the defensive `|| Eq X "true"` workarounds in the `seihou-modules`
-        templates become removable once M1 ships, and that the M3 lint will flag them.
+- [x] **M4 — Cross-repo follow-up (documented, not code in this repo).** Done 2026-06-18.
+  - [x] Recorded below (Outcomes & Retrospective → "Cross-repo follow-up"). The defensive
+        `|| Eq X "true"` workarounds in the `seihou-modules` `nix-haskell-flake` templates
+        become removable once this engine change ships and is released; the M3 lint
+        (`validate-module --lint`) run against the modules repo will flag any remaining
+        string-vs-bool comparisons. No code in this repo. (The mirror note belongs in the
+        `seihou-modules` repo's issue tracker when that work is scheduled.)
 
 
 ## Surprises & Discoveries
@@ -241,7 +245,46 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+**Completion summary (2026-06-18).** All four milestones landed, each as a separate commit
+carrying the `ExecPlan:`/`Intention:` trailers.
+
+- **M1 (root fix)** — `feat(variable): coerce module defaults to declared type`. Defaults are
+  now coerced against the declared type at decode time (`coerceDeclDefault` in
+  `Seihou.Dhall.Eval`) and again in `resolveOne`'s default branch (`coerceDefault` in
+  `Seihou.Core.Variable`, the single shared coercion point). A `bool` default of `"true"`
+  resolves to `VBool True`, so `Eq nix.treefmt true` matches from the default source; a
+  malformed default fails module load with a clear message. The int sibling bug was closed
+  too: `classifyBareWord` now classifies integer-literal barewords as `VInt` (user-approved
+  Decision Log resolution), so `Eq <int-var> N` matches symmetrically.
+- **M2 (completeness)** — `test(variable): document manifest values already coerce-safe`.
+  Audit conclusion: no manifest/stored path reconstructs a typed `VarValue` from raw text;
+  manifest vars live and die as `Text`. No production change; a round-trip regression test
+  guards the invariant.
+- **M3 (authoring guard)** — `feat(validate): lint conditionals for undeclared refs and bad
+  Eq types`. `validate-module --lint` now flags undeclared variable references and
+  type-inconsistent `Eq` comparisons in `when` clauses and template `{{#if}}` conditionals.
+  This is precisely the check that would have caught the original module bug before it
+  shipped — confirmed by the end-to-end transcript.
+- **M4 (cross-repo follow-up)** — documented below.
+
+**Result vs. purpose.** The bug class ("a defaulted typed variable reaches evaluation as the
+wrong runtime type, silently dropping guarded output") is closed at the engine boundary, and
+the authoring mistake that produced it is now caught by lint. Whole-tree `cabal build all &&
+cabal test all` is green (895 core + 238 CLI cases).
+
+**Cross-repo follow-up (M4).** The `seihou-modules` `nix-haskell-flake` templates carry
+defensive `Eq X true || Eq X "true"` forms that were added to work around this engine bug.
+Once this change ships and is released, those can be simplified back to `Eq X true`. Running
+`seihou validate-module --lint` against the modules repo will flag any remaining
+string-vs-bool comparisons, making the cleanup mechanical. That work lives in the
+`seihou-modules` repository and is out of scope here (see Decision Log).
+
+**Lessons / surprises.** The narrow root cause (one decoder line plus one resolution branch)
+was more tractable than the "manifest round-trip" framing suggested. Two adjacent gaps
+surfaced during implementation and were folded in: (1) `int` `Eq` literals had no surface
+syntax and needed the `classifyBareWord` extension to be consistent; (2) the Dhall decoder
+produces `VTChoice []` unconditionally, so `coerceDefault` had to treat an empty choice list
+as unconstrained text to avoid regressing choice defaults.
 
 
 ## Context and Orientation
