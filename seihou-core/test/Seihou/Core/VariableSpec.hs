@@ -352,6 +352,22 @@ spec = do
         Left errs -> errs `shouldBe` [CoercionFailed "feature.on" VTBool "treu"]
         Right _ -> expectationFailure "Expected Left"
 
+    it "re-coerces a manifest-round-tripped bool value to VBool" $ do
+      -- The manifest stores resolved variables as raw text (a 'VBool' is
+      -- serialized to "true"). On a re-run such a value can only re-enter
+      -- resolution through a config-style 'Map VarName Text' source, which
+      -- routes through 'coerceValue' — so a stored bool round-trips back to
+      -- 'VBool', never reaching evaluation as 'VText "true"'.
+      let manifestStoredText = "true" -- i.e. varValueToText (VBool True)
+          decls = [boolVar "feature.on" True Nothing]
+          cli = Map.empty
+          env = Map.empty
+          local = Map.fromList [("feature.on", manifestStoredText)]
+      case resolveVariables decls cli env "" "" local Map.empty Map.empty Map.empty Map.empty of
+        Right resolved ->
+          (.value) (resolved Map.! "feature.on") `shouldBe` VBool True
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
     it "Eq <var> true evaluates True for a defaulted bool" $ do
       -- The end-to-end bug: a bool default must make @Eq feature.on true@ match.
       let decls = [boolVar "feature.on" False (Just (VText "true"))]

@@ -74,10 +74,23 @@ This section must always reflect the actual current state of the work.
         coerces to the right `VarValue`; bad default errors at load and at resolve;
         `Eq feature.on true` against a defaulted bool evaluates `True`; int `Eq` matches a
         `VInt`. All 881 `seihou-core-test` cases pass.
-- [ ] **M2 — Re-coerce stored/manifest values on load (completeness).**
-  - [ ] Audit the manifest → variable path; route any raw-text-to-`VarValue`
-        reconstruction through `coerceValue` against declared types.
-  - [ ] Regression test for a value round-tripped through the manifest.
+- [x] **M2 — Re-coerce stored/manifest values on load (completeness).** Done 2026-06-18 —
+      **audit found no code change needed.**
+  - [x] Audited the manifest → variable path. **Finding: no path reconstructs a typed
+        `VarValue` from manifest-stored text.** `Manifest.vars :: Map VarName Text` is
+        JSON-decoded as `Map VarName Text` (`Seihou/Manifest/Types.hs`, `varsFromJSON`),
+        and is only ever consumed *as text* — saved by merging
+        `Map.map varValueToText allResolvedVals` (`CLI/Run.hs:333`) and shown in
+        diff/status/preview. Manifest vars are **not** fed back into `resolveVariables` on a
+        re-run (the manifest is read *after* resolution in `CLI/Run.hs`). The only text→
+        `VarValue` constructors are the resolution chain (`coerceValue`, fixed in M1), the
+        decoder (`coerceDefault`, fixed in M1), and the `{{#if}}` expression parser. The
+        one composition-synthesized default (`injectExportDefault`,
+        `Composition/Resolve.hs:331`) now also flows through M1's `coerceDefault` (typed
+        values pass through; a `VText` export is coerced against the importing var's type).
+  - [x] Regression test: `VariableSpec` "re-coerces a manifest-round-tripped bool value to
+        VBool" — a bool serialized to text `"true"` re-entering via a config-style source
+        resolves to `VBool True`, never `VText "true"`.
 - [ ] **M3 — Authoring-time lint in `validate-module --lint`.**
   - [ ] Add an `Expr`-walking helper that returns referenced variables and `Eq`
         comparisons (`seihou-core/src/Seihou/Core/Expr.hs`).
@@ -93,6 +106,13 @@ This section must always reflect the actual current state of the work.
 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
+
+- **M2 audit conclusion (2026-06-18): the manifest path is already safe — no change.** The
+  manifest stores variables as raw `Text` and *never* reconstructs them into a typed
+  `VarValue`, nor re-feeds them into `resolveVariables` on a re-run. They are decoded as
+  `Map VarName Text` and only consumed as text (saved via `varValueToText`, rendered in
+  diff/status/preview). So there is no stored-value path that bypasses `coerceValue`. M2 is
+  satisfied by M1 plus a round-trip regression test; no new production code.
 
 - The root cause is narrower and more concrete than "manifest round-trip". The decoder at
   `seihou-core/src/Seihou/Dhall/Eval.hs:428` builds the default unconditionally as text:
