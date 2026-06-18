@@ -2,6 +2,7 @@ module Seihou.Engine.Template
   ( renderTemplate,
     renderTemplateText,
     expandConditionals,
+    extractIfExprs,
     valueToText,
     renderDestPath,
     renderCommand,
@@ -50,6 +51,23 @@ renderTemplateText template vars =
   case expandConditionals vars template of
     Left errs -> Left errs
     Right expanded -> renderTemplate expanded vars
+
+-- | Extract the raw expression text from every @{{#if …}}@ opener in a
+-- template body, in document order. Used by authoring-time lint to scan
+-- template conditionals without expanding them; each returned string is
+-- intended to be fed to 'parseExpr'. Nesting is irrelevant here — every
+-- opener is reported, regardless of depth. A malformed (unterminated)
+-- opener stops the scan, mirroring 'splitNextBlock'.
+extractIfExprs :: Text -> [Text]
+extractIfExprs = go
+  where
+    go t = case T.breakOn "{{#if " t of
+      (_, "") -> []
+      (_, match) ->
+        let afterOpen = T.drop 6 match -- skip "{{#if "
+         in case T.breakOn "}}" afterOpen of
+              (_, "") -> [] -- unterminated opener; stop
+              (exprRaw, rest) -> T.strip exprRaw : go (T.drop 2 rest)
 
 -- | Render destination path placeholders (same substitution logic).
 renderDestPath :: Text -> Map VarName VarValue -> Either [PlaceholderError] Text

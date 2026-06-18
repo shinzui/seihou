@@ -1,7 +1,7 @@
 module Seihou.Core.ExprSpec (tests) where
 
 import Data.Map.Strict qualified as Map
-import Seihou.Core.Expr (evalExpr, parseExpr)
+import Seihou.Core.Expr (evalExpr, exprRefs, parseExpr)
 import Seihou.Core.Types
 import Test.Hspec
 import Test.Tasty
@@ -154,3 +154,24 @@ spec = do
       let expr = ExprAnd (ExprIsSet "license") (ExprEq "license" (VText "MIT"))
       evalExpr vars expr `shouldBe` True
       evalExpr Map.empty expr `shouldBe` False
+
+  describe "exprRefs" $ do
+    it "returns the compared literal for Eq with a bareword bool" $ do
+      exprRefs (ExprEq "x" (VBool True)) `shouldBe` [("x", Just (VBool True))]
+
+    it "returns the compared literal for Eq with a quoted string" $ do
+      exprRefs (ExprEq "x" (VText "true")) `shouldBe` [("x", Just (VText "true"))]
+
+    it "returns a Nothing literal for IsSet" $ do
+      exprRefs (ExprIsSet "y") `shouldBe` [("y", Nothing)]
+
+    it "collects refs across && with mixed atoms" $ do
+      exprRefs (ExprAnd (ExprIsSet "y") (ExprEq "z" (VInt 1)))
+        `shouldBe` [("y", Nothing), ("z", Just (VInt 1))]
+
+    it "recurses through Or and Not" $ do
+      exprRefs (ExprOr (ExprNot (ExprIsSet "a")) (ExprEq "b" (VBool False)))
+        `shouldBe` [("a", Nothing), ("b", Just (VBool False))]
+
+    it "returns nothing for a literal" $ do
+      exprRefs (ExprLit True) `shouldBe` []

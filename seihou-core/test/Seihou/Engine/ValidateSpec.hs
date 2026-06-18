@@ -270,6 +270,97 @@ spec = do
         report <- buildReport True tmpDir goodModule
         hasFailedCheck "Missing variable descriptions" report.reportChecks `shouldBe` False
 
+  describe "conditional lint" $ do
+    -- Base vars: keep project.name (referenced by goodModule's export/prompt)
+    -- and add a bool feature flag for the comparison tests.
+    let baseVars =
+          [ VarDecl "project.name" VTText Nothing (Just "Name") True Nothing,
+            VarDecl "feature.on" VTBool Nothing (Just "Feature flag") False Nothing
+          ]
+        stepWithCondition cond =
+          withSteps
+            [Step Template "README.md.tpl" "README.md" cond Nothing]
+            (withVars baseVars goodModule)
+
+    it "flags a bool variable compared against a string literal in a when clause" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let m = stepWithCondition (Just (ExprEq "feature.on" (VText "true")))
+        report <- buildReport True tmpDir m
+        hasFailedCheck "Conditional comparison types" report.reportChecks `shouldBe` True
+        reportHasErrors report `shouldBe` True
+        let details =
+              concatMap (.diagDetails) $
+                filter (\c -> c.diagLabel == "Conditional comparison types") report.reportChecks
+        any (T.isInfixOf "feature.on") details `shouldBe` True
+        any (T.isInfixOf "bareword true") details `shouldBe` True
+
+    it "does not flag a bool variable compared against a bareword true" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let m = stepWithCondition (Just (ExprEq "feature.on" (VBool True)))
+        report <- buildReport True tmpDir m
+        hasFailedCheck "Conditional comparison types" report.reportChecks `shouldBe` False
+        hasPassedCheck "Conditional comparison types" report.reportChecks `shouldBe` True
+
+    it "flags a when clause referencing an undeclared variable" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let m = stepWithCondition (Just (ExprIsSet "nix.treefmtt"))
+        report <- buildReport True tmpDir m
+        hasFailedCheck "Conditional variable references" report.reportChecks `shouldBe` True
+        let details =
+              concatMap (.diagDetails) $
+                filter (\c -> c.diagLabel == "Conditional variable references") report.reportChecks
+        any (T.isInfixOf "nix.treefmtt") details `shouldBe` True
+
+    it "passes both conditional checks for a correct module" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let m = stepWithCondition (Just (ExprEq "feature.on" (VBool True)))
+        report <- buildReport True tmpDir m
+        hasPassedCheck "Conditional variable references" report.reportChecks `shouldBe` True
+        hasPassedCheck "Conditional comparison types" report.reportChecks `shouldBe` True
+
+    it "does not run conditional checks when lint is False" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
+        let m = stepWithCondition (Just (ExprEq "feature.on" (VText "true")))
+        report <- buildReport False tmpDir m
+        any (\c -> c.diagLabel == "Conditional comparison types") report.reportChecks
+          `shouldBe` False
+        reportHasErrors report `shouldBe` False
+
+    it "flags an undeclared variable referenced in a template {{#if}} conditional" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile
+          (tmpDir </> "files" </> "README.md.tpl")
+          "{{#if Eq ghost true}}\nhi\n{{/if}}\n"
+        let m = withVars baseVars goodModule
+        report <- buildReport True tmpDir m
+        hasFailedCheck "Conditional variable references" report.reportChecks `shouldBe` True
+        let details =
+              concatMap (.diagDetails) $
+                filter (\c -> c.diagLabel == "Conditional variable references") report.reportChecks
+        any (T.isInfixOf "ghost") details `shouldBe` True
+        any (T.isInfixOf "README.md.tpl") details `shouldBe` True
+
+    it "flags a bool var compared to a string literal inside a template {{#if}}" $ do
+      withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "files")
+        writeFile
+          (tmpDir </> "files" </> "README.md.tpl")
+          "{{#if Eq feature.on \"true\"}}\nhi\n{{/if}}\n"
+        let m = withVars baseVars goodModule
+        report <- buildReport True tmpDir m
+        hasFailedCheck "Conditional comparison types" report.reportChecks `shouldBe` True
+
   describe "renderReportPlain" $ do
     it "renders a valid module report with check marks" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do

@@ -1,6 +1,7 @@
 module Seihou.Core.Expr
   ( parseExpr,
     evalExpr,
+    exprRefs,
   )
 where
 
@@ -45,6 +46,24 @@ evalExpr vars = go
     go (ExprNot e) = not (go e)
     go (ExprIsSet name) = Map.member name vars
     go (ExprLit b) = b
+
+-- | Collect the variables an expression references, paired with the literal
+-- each is compared against via 'Eq' (if any).
+--
+--   * @Eq n v@   → @[(n, Just v)]@
+--   * @IsSet n@  → @[(n, Nothing)]@
+--   * @And@\/@Or@\/@Not@ recurse into sub-expressions
+--   * @Lit@      → @[]@
+--
+-- Used by authoring-time lint to flag references to undeclared variables and
+-- type-inconsistent @Eq@ comparisons. Total over 'Expr'.
+exprRefs :: Expr -> [(VarName, Maybe VarValue)]
+exprRefs (ExprEq name val) = [(name, Just val)]
+exprRefs (ExprIsSet name) = [(name, Nothing)]
+exprRefs (ExprAnd l r) = exprRefs l ++ exprRefs r
+exprRefs (ExprOr l r) = exprRefs l ++ exprRefs r
+exprRefs (ExprNot e) = exprRefs e
+exprRefs (ExprLit _) = []
 
 -- Parser internals: a parser consumes text and returns the result plus unconsumed input.
 type Parser a = Text -> Either Text (a, Text)

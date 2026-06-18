@@ -91,12 +91,26 @@ This section must always reflect the actual current state of the work.
   - [x] Regression test: `VariableSpec` "re-coerces a manifest-round-tripped bool value to
         VBool" — a bool serialized to text `"true"` re-entering via a config-style source
         resolves to `VBool True`, never `VText "true"`.
-- [ ] **M3 — Authoring-time lint in `validate-module --lint`.**
-  - [ ] Add an `Expr`-walking helper that returns referenced variables and `Eq`
-        comparisons (`seihou-core/src/Seihou/Core/Expr.hs`).
-  - [ ] Extend `Seihou.Engine.Validate` to flag undeclared variable references in `when`
-        clauses and template conditionals, and type-inconsistent `Eq` comparisons.
-  - [ ] Unit tests for both new lint checks (positive and negative cases).
+- [x] **M3 — Authoring-time lint in `validate-module --lint`.** Done 2026-06-18.
+  - [x] Added `exprRefs :: Expr -> [(VarName, Maybe VarValue)]` to
+        `seihou-core/src/Seihou/Core/Expr.hs` (total over `Expr`, exported).
+  - [x] Factored `extractIfExprs :: Text -> [Text]` out of the Template engine
+        (`seihou-core/src/Seihou/Engine/Template.hs`) — pulls every `{{#if …}}` opener's
+        raw expression text from a template body for the lint to `parseExpr`.
+  - [x] Extended `Seihou.Engine.Validate.buildReport` with `lintConditionals` (runs in IO,
+        only when `--lint`): collects step/command/prompt `when` clauses (already parsed)
+        plus `{{#if …}}` conditionals from `Template`/`DhallText` source files under
+        `baseDir/files/`, then flags (a) references to undeclared variables and (b)
+        type-inconsistent `Eq` comparisons (e.g. `bool` vs `"true"`). Surfaced as two
+        `DiagError` checks ("Conditional variable references", "Conditional comparison
+        types") gated behind `--lint`, so they render through the existing formatter and
+        gate exit status.
+  - [x] Unit tests: `ExprSpec` `exprRefs` cases; `ValidateSpec` "conditional lint" block
+        (bool-vs-string flagged, bareword not flagged, undeclared `when` ref flagged,
+        template `{{#if}}` undeclared/type cases, lint-off no-op). 895 `seihou-core-test`
+        cases pass; 238 `seihou-cli-test` cases pass.
+  - [x] End-to-end CLI transcript captured (see Concrete Steps below): flagged module exits
+        1 with both findings; corrected module (barewords) exits 0.
 - [ ] **M4 — Cross-repo follow-up (documented, not code in this repo).**
   - [ ] Record that the defensive `|| Eq X "true"` workarounds in the `seihou-modules`
         templates become removable once M1 ships, and that the M3 lint will flag them.
@@ -495,6 +509,22 @@ the project provides one (`nix develop --command <cmd>`); otherwise `cabal` dire
 
 > Note: commit messages and the expected-output blocks above are illustrative; align final
 > wording with the existing `Seihou.Engine.Validate` report style during implementation.
+
+**Actual transcript (2026-06-18) — module with both lint issues:**
+
+```text
+  ✗ Conditional variable references
+      step 'flake.nix' when clause references undeclared variable: nix.treefmtt
+  ✗ Conditional comparison types
+      step 'nix/treefmt.nix' when clause compares variable 'nix.treefmt' (declared type
+      bool) against string literal "true"; the comparison can never match. Use the bareword
+      true instead of the quoted "true".
+  ...
+2 error(s) found. Module is invalid.    (exit code 1)
+```
+
+Correcting both to barewords (`Eq nix.treefmt true`, and the template `{{#if Eq nix.treefmt
+true}}`) yields `Module 'lint-demo' is valid.` and exit code 0.
 
 
 ## Validation and Acceptance
