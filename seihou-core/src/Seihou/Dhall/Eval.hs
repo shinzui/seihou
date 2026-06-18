@@ -44,6 +44,7 @@ import Seihou.Core.Expr (parseExpr)
 import Seihou.Core.Migration (Migration (..), MigrationOp (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
+import Seihou.Core.Variable (coerceDefault)
 import Seihou.Prelude
 import System.FilePath (takeDirectory)
 import Prelude hiding (maybe)
@@ -419,17 +420,59 @@ strategyDecoder = parseStrategy <$> strictText
       other -> error ("Unknown strategy \"" <> T.unpack other <> "\"; expected one of: copy, template, dhall-text, structured")
 
 -- | Decoder for VarDecl from a Dhall record.
+--
+-- The @default@ field is decoded as raw text and then coerced against the
+-- declared @type@ via 'coerceDeclDefault', so a defaulted variable carries the
+-- correctly-typed 'VarValue' for every downstream consumer (e.g. a @bool@
+-- default of @"true"@ becomes 'VBool' 'True'). A default that cannot be coerced
+-- is an authoring error and fails module load (caught by 'try' in
+-- 'evalModuleFromFile'; see the 'varTypeDecoder' note re: 'error' safety).
 varDeclDecoder :: Decoder VarDecl
 varDeclDecoder =
-  record
-    ( VarDecl
-        <$> field "name" varNameDecoder
-        <*> field "type" varTypeDecoder
-        <*> field "default" (fmap (fmap VText) (maybe strictText))
-        <*> field "description" (maybe strictText)
-        <*> field "required" bool
-        <*> field "validation" (fmap (fmap ValPattern) (maybe strictText))
-    )
+  fmap coerceDeclDefault $
+    record
+      ( VarDecl
+          <$> field "name" varNameDecoder
+          <*> field "type" varTypeDecoder
+          <*> field "default" (fmap (fmap VText) (maybe strictText))
+          <*> field "description" (maybe strictText)
+          <*> field "required" bool
+          <*> field "validation" (fmap (fmap ValPattern) (maybe strictText))
+      )
+
+-- | Coerce a decoded variable declaration's raw-text default against its
+-- declared type. On a type mismatch we 'error' with a clear, load-time message
+-- that names the variable and the offending value; this is caught by 'try' in
+-- 'evalModuleFromFile' and surfaced as a 'DhallEvalError'.
+coerceDeclDefault :: VarDecl -> VarDecl
+coerceDeclDefault decl =
+  case decl.default_ of
+    Nothing -> decl
+    Just rawDefault ->
+      case coerceDefault decl.name decl.type_ rawDefault of
+        Right val -> decl {default_ = Just val}
+        -- Caught by 'try' in 'evalModuleFromFile'
+        Left err -> error (T.unpack (renderDefaultError decl.name err))
+
+-- | Render a coercion failure for a module default into a load-time message.
+renderDefaultError :: VarName -> VarError -> Text
+renderDefaultError name (CoercionFailed _ ty raw) =
+  "Invalid default for variable '"
+    <> name.unVarName
+    <> "': cannot coerce "
+    <> T.pack (show raw)
+    <> " to declared type "
+    <> renderVarType ty
+renderDefaultError name err =
+  "Invalid default for variable '" <> name.unVarName <> "': " <> T.pack (show err)
+
+-- | A short rendering of a declared variable type for error messages.
+renderVarType :: VarType -> Text
+renderVarType VTText = "text"
+renderVarType VTBool = "bool"
+renderVarType VTInt = "int"
+renderVarType (VTList ty) = "list " <> renderVarType ty
+renderVarType (VTChoice _) = "choice"
 
 varNameDecoder :: Decoder VarName
 varNameDecoder = VarName <$> strictText

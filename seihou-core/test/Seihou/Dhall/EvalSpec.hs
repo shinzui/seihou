@@ -17,6 +17,37 @@ tests = testSpec "Seihou.Dhall.Eval" spec
 fixtureDir :: FilePath
 fixtureDir = "test/fixtures"
 
+-- | Build a minimal @module.dhall@ source containing a single variable with the
+-- given name, declared type string, and @default@ Dhall expression (e.g.
+-- @"Some \"true\""@ or @"None Text"@).
+moduleWithVar :: String -> String -> String -> String
+moduleWithVar varName varType defaultExpr =
+  "{ name = \"var-test\"\n\
+  \, version = None Text\n\
+  \, description = None Text\n\
+  \, vars =\n\
+  \  [ { name = \""
+    ++ varName
+    ++ "\"\n\
+       \    , type = \""
+    ++ varType
+    ++ "\"\n\
+       \    , default = "
+    ++ defaultExpr
+    ++ "\n\
+       \    , description = None Text\n\
+       \    , required = False\n\
+       \    , validation = None Text\n\
+       \    }\n\
+       \  ]\n\
+       \, exports = [] : List { var : Text, alias : Optional Text }\n\
+       \, prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }\n\
+       \, steps = [] : List { strategy : Text, src : Text, dest : Text, when : Optional Text, patch : Optional Text }\n\
+       \, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }\n\
+       \, dependencies = [] : List Text\n\
+       \, removal = None { steps : List { action : Text, dest : Text, src : Optional Text }, commands : List { run : Text, workDir : Optional Text, when : Optional Text } }\n\
+       \}"
+
 spec :: Spec
 spec = do
   describe "evalDhallExpr (spike)" $ do
@@ -196,6 +227,39 @@ spec = do
             T.isInfixOf "invalid-op" msg `shouldBe` True
           Left other -> expectationFailure ("Expected DhallEvalError, got: " <> show other)
           Right _ -> expectationFailure "Expected Left for bad patch operation"
+
+    it "coerces a bool default to VBool at decode time" $ do
+      withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
+        writeFile (tmpDir </> "module.dhall") (moduleWithVar "feature.on" "bool" "Some \"true\"")
+        result <- evalModuleFromFile (tmpDir </> "module.dhall")
+        case result of
+          Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
+          Right m -> do
+            let v = head m.vars
+            v.type_ `shouldBe` VTBool
+            v.default_ `shouldBe` Just (VBool True)
+
+    it "coerces an int default to VInt at decode time" $ do
+      withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
+        writeFile (tmpDir </> "module.dhall") (moduleWithVar "retries" "int" "Some \"3\"")
+        result <- evalModuleFromFile (tmpDir </> "module.dhall")
+        case result of
+          Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
+          Right m -> do
+            let v = head m.vars
+            v.type_ `shouldBe` VTInt
+            v.default_ `shouldBe` Just (VInt 3)
+
+    it "fails module load on a malformed bool default" $ do
+      withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
+        writeFile (tmpDir </> "module.dhall") (moduleWithVar "feature.on" "bool" "Some \"treu\"")
+        result <- evalModuleFromFile (tmpDir </> "module.dhall")
+        case result of
+          Left (DhallEvalError _ msg) -> do
+            T.isInfixOf "feature.on" msg `shouldBe` True
+            T.isInfixOf "treu" msg `shouldBe` True
+          Left other -> expectationFailure ("Expected DhallEvalError, got: " <> show other)
+          Right _ -> expectationFailure "Expected Left for malformed bool default"
 
   describe "dependencyDecoder" $ do
     let emptyModuleWithDeps depsStr =

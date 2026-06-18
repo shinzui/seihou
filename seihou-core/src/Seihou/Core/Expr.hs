@@ -4,6 +4,7 @@ module Seihou.Core.Expr
   )
 where
 
+import Data.Char (isDigit)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Types
@@ -169,4 +170,16 @@ parseBareWord input =
   where
     classifyBareWord "true" = VBool True
     classifyBareWord "false" = VBool False
-    classifyBareWord w = VText w
+    classifyBareWord w
+      | isIntLiteral w = VInt (read (T.unpack w))
+      | otherwise = VText w
+
+-- | Whether a bareword is an integer literal: all digits, with an optional
+-- leading minus sign and at least one digit. Such barewords are classified as
+-- 'VInt' so an @Eq <int-var> N@ comparison matches a resolved 'VInt' value
+-- (there is otherwise no surface syntax that produces an integer literal).
+isIntLiteral :: Text -> Bool
+isIntLiteral w =
+  case T.uncons w of
+    Just ('-', rest) -> not (T.null rest) && T.all isDigit rest
+    _ -> not (T.null w) && T.all isDigit w

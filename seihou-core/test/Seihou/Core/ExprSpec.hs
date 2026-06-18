@@ -41,6 +41,18 @@ spec = do
       parseExpr "Eq enabled false"
         `shouldBe` Right (ExprEq "enabled" (VBool False))
 
+    it "parses Eq with all-digit bare word as VInt" $ do
+      parseExpr "Eq count 3"
+        `shouldBe` Right (ExprEq "count" (VInt 3))
+
+    it "parses Eq with negative integer bare word as VInt" $ do
+      parseExpr "Eq offset -5"
+        `shouldBe` Right (ExprEq "offset" (VInt (-5)))
+
+    it "parses Eq with quoted digits as VText (not VInt)" $ do
+      parseExpr "Eq count \"3\""
+        `shouldBe` Right (ExprEq "count" (VText "3"))
+
     it "parses && expression" $ do
       parseExpr "IsSet a && IsSet b"
         `shouldBe` Right (ExprAnd (ExprIsSet "a") (ExprIsSet "b"))
@@ -119,6 +131,12 @@ spec = do
 
     it "evaluates ExprEq with VBool False against VBool True" $ do
       evalExpr vars (ExprEq "enabled" (VBool False)) `shouldBe` False
+
+    it "evaluates a parsed int Eq against a VInt binding" $ do
+      let intVars = Map.fromList [(VarName "count", VInt 3)]
+      case parseExpr "Eq count 3" of
+        Right expr -> evalExpr intVars expr `shouldBe` True
+        Left err -> expectationFailure ("Expected parse, got: " <> show err)
 
     it "evaluates ExprNot" $ do
       evalExpr vars (ExprNot (ExprLit True)) `shouldBe` False

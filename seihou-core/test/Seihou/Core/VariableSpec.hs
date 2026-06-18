@@ -2,6 +2,7 @@ module Seihou.Core.VariableSpec (tests) where
 
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
+import Seihou.Core.Expr (evalExpr, parseExpr)
 import Seihou.Core.Types
 import Seihou.Core.Variable
 import Test.Hspec
@@ -117,6 +118,30 @@ spec = do
     it "rejects invalid choice" $ do
       coerceValue "x" (VTChoice ["MIT", "BSD3"]) "GPL"
         `shouldBe` Left (CoercionFailed "x" (VTChoice ["MIT", "BSD3"]) "GPL")
+
+  describe "coerceDefault" $ do
+    it "coerces a raw-text bool default to VBool" $ do
+      coerceDefault "x" VTBool (VText "true") `shouldBe` Right (VBool True)
+
+    it "coerces a raw-text int default to VInt" $ do
+      coerceDefault "x" VTInt (VText "42") `shouldBe` Right (VInt 42)
+
+    it "keeps a text default as VText" $ do
+      coerceDefault "x" VTText (VText "hello") `shouldBe` Right (VText "hello")
+
+    it "validates a constrained choice default" $ do
+      coerceDefault "x" (VTChoice ["MIT", "BSD3"]) (VText "MIT")
+        `shouldBe` Right (VText "MIT")
+
+    it "keeps an unconstrained (empty) choice default as VText" $ do
+      coerceDefault "x" (VTChoice []) (VText "MIT") `shouldBe` Right (VText "MIT")
+
+    it "passes an already-typed default through unchanged" $ do
+      coerceDefault "x" VTBool (VBool True) `shouldBe` Right (VBool True)
+
+    it "fails on a malformed bool default" $ do
+      coerceDefault "x" VTBool (VText "treu")
+        `shouldBe` Left (CoercionFailed "x" VTBool "treu")
 
   describe "validateVarValue" $ do
     it "passes when no validation is set" $ do
@@ -296,6 +321,48 @@ spec = do
       case resolveVariables decls cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
         Right resolved ->
           (.value) (resolved Map.! "license") `shouldBe` VText "MIT"
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "coerces a raw-text bool default to VBool when falling through to default" $ do
+      -- Mirrors the Dhall decode of @default = Some "true"@ on a @bool@ var:
+      -- the default reaches resolution as 'VText' and must arrive typed.
+      let decls = [boolVar "feature.on" False (Just (VText "true"))]
+          cli = Map.empty
+          env = Map.empty
+      case resolveVariables decls cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+        Right resolved -> do
+          (.value) (resolved Map.! "feature.on") `shouldBe` VBool True
+          (.source) (resolved Map.! "feature.on") `shouldBe` FromDefault
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "coerces a raw-text int default to VInt when falling through to default" $ do
+      let decls = [intVar "retries" False (Just (VText "3")) Nothing]
+          cli = Map.empty
+          env = Map.empty
+      case resolveVariables decls cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+        Right resolved ->
+          (.value) (resolved Map.! "retries") `shouldBe` VInt 3
+        Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "errors when a bool default cannot be coerced" $ do
+      let decls = [boolVar "feature.on" False (Just (VText "treu"))]
+          cli = Map.empty
+          env = Map.empty
+      case resolveVariables decls cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+        Left errs -> errs `shouldBe` [CoercionFailed "feature.on" VTBool "treu"]
+        Right _ -> expectationFailure "Expected Left"
+
+    it "Eq <var> true evaluates True for a defaulted bool" $ do
+      -- The end-to-end bug: a bool default must make @Eq feature.on true@ match.
+      let decls = [boolVar "feature.on" False (Just (VText "true"))]
+          cli = Map.empty
+          env = Map.empty
+      case resolveVariables decls cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+        Right resolved -> do
+          let varMap = Map.map (.value) resolved
+          case parseExpr "Eq feature.on true" of
+            Right expr -> evalExpr varMap expr `shouldBe` True
+            Left err -> expectationFailure ("Expected parse, got: " <> show err)
         Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
   describe "formatExplain" $ do

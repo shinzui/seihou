@@ -1,6 +1,7 @@
 module Seihou.Core.Variable
   ( resolveVariables,
     coerceValue,
+    coerceDefault,
     validateVarValue,
     formatExplain,
     formatDeclarations,
@@ -46,6 +47,23 @@ coerceValue name (VTList elemTy) t =
 coerceValue name (VTChoice options) t
   | T.strip t `elem` options = Right (VText (T.strip t))
   | otherwise = Left (CoercionFailed name (VTChoice options) t)
+
+-- | Coerce a module *default* value to its declared type.
+--
+-- Defaults are decoded from Dhall as raw 'VText'; this routes them through the
+-- same 'coerceValue' contract as every other resolution source so a defaulted
+-- variable reaches evaluation with the correct runtime type (e.g. a @bool@
+-- default of @"true"@ becomes 'VBool' 'True', not 'VText' @"true"@).
+--
+-- A value that is already typed (e.g. a default synthesized during
+-- composition) passes through unchanged. An unconstrained choice
+-- (@VTChoice []@ — the only form the Dhall decoder currently produces, since
+-- options are not yet carried in the type string) keeps its text value, as
+-- there are no options to validate membership against.
+coerceDefault :: VarName -> VarType -> VarValue -> Either VarError VarValue
+coerceDefault _ (VTChoice []) (VText raw) = Right (VText raw)
+coerceDefault name ty (VText raw) = coerceValue name ty raw
+coerceDefault _ _ v = Right v
 
 -- | Validate a resolved value against its declaration's validation constraint.
 validateVarValue :: VarDecl -> VarValue -> Either VarError ()
@@ -163,7 +181,9 @@ resolveVariables decls cliOverrides envVars namespace context localConfig nsConf
                         Just result -> fmap Just (result >>= validateAndWrap decl)
                         Nothing -> case decl.default_ of
                           Just defVal ->
-                            fmap Just (validateAndWrap decl (defVal, FromDefault))
+                            case coerceDefault name ty defVal of
+                              Left err -> Left err
+                              Right val -> fmap Just (validateAndWrap decl (val, FromDefault))
                           Nothing
                             | decl.required -> Left (MissingRequiredVar name)
                             | otherwise -> Right Nothing
