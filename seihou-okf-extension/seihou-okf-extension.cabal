@@ -37,6 +37,7 @@ library seihou-okf-extension-internal
     Seihou.OKF.Docs.Model
     Seihou.OKF.Docs.Render
     Seihou.OKF.Extension
+    Seihou.OKF.Extension.Docs
 
   build-depends:
     aeson >=2.1 && <3,
@@ -81,6 +82,7 @@ test-suite seihou-okf-extension-test
   other-modules:
     Seihou.OKF.Docs.ModelSpec
     Seihou.OKF.Docs.RenderSpec
+    Seihou.OKF.Extension.DocsSpec
 
   build-depends:
     base >=4.18 && <5,

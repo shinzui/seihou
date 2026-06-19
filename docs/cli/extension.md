@@ -16,6 +16,17 @@ The extension process owns its own help text, arguments, stdout, and stderr. If 
 executable cannot be found, `seihou` reports the missing executable name and exits non-zero.
 If the extension exits non-zero, `seihou` exits with the same status.
 
-The first extension package in this repository is `seihou-okf-extension`. Its `docs`
-command is intentionally a placeholder until the OKF registry loader and renderer plans are
-implemented.
+The first extension package in this repository is `seihou-okf-extension`. It provides a
+`docs` command that generates an Open Knowledge Format bundle from a seihou registry:
+
+```bash
+seihou extension run okf -- docs --dir . --out okf-docs
+```
+
+The command is equivalent to running the extension executable directly:
+
+```bash
+seihou-okf-extension docs --dir . --out okf-docs
+```
+
+Use `--force` to replace a non-empty output directory.

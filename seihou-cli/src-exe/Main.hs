@@ -1,6 +1,8 @@
 module Main (main) where
 
 import Control.Applicative ((<|>))
+import Data.List (isPrefixOf)
+import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text.IO qualified as TIO
 import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
@@ -15,7 +17,7 @@ import Seihou.CLI.Completions (handleCompletionsCommand)
 import Seihou.CLI.Config (handleConfig)
 import Seihou.CLI.Context (handleContext)
 import Seihou.CLI.Diff (handleDiff)
-import Seihou.CLI.Extension (handleExtensionRun)
+import Seihou.CLI.Extension (ExtensionRunOpts (..), handleExtensionRun)
 import Seihou.CLI.Help (handleHelpCommand)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
@@ -40,11 +42,34 @@ import Seihou.CLI.ValidateBlueprint (handleValidateBlueprint)
 import Seihou.CLI.ValidatePrompt (handleValidatePrompt)
 import Seihou.CLI.Vars (handleVars)
 import Seihou.Core.Module (RunnableKind (..))
+import System.Environment (getArgs)
 import System.Exit (exitFailure)
 
 main :: IO ()
 main = do
-  cmd <- customExecParser (prefs showHelpOnEmpty) opts
+  rawArgs <- getArgs
+  case extensionRunFromRawArgs rawArgs of
+    Just extensionRunOpts ->
+      handleExtensionRun extensionRunOpts
+    Nothing -> do
+      cmd <- customExecParser (prefs showHelpOnEmpty) opts
+      dispatch cmd
+
+extensionRunFromRawArgs :: [String] -> Maybe ExtensionRunOpts
+extensionRunFromRawArgs ("extension" : "run" : name : rest)
+  | not ("-" `isPrefixOf` name) =
+      Just
+        ExtensionRunOpts
+          { extensionName = fromString name,
+            extensionArgs =
+              case rest of
+                "--" : forwarded -> forwarded
+                forwarded -> forwarded
+          }
+extensionRunFromRawArgs _ = Nothing
+
+dispatch :: Command -> IO ()
+dispatch cmd =
   case cmd of
     Init ->
       handleInit

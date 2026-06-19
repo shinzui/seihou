@@ -53,17 +53,24 @@ against a fixture registry both directly and through the extension host.
 
 ## Progress
 
-- [ ] Define `DocsOpts` in `seihou-okf-extension` and replace the EP-60 stub `docs` command
-- [ ] Implement testable `runDocs :: DocsOpts -> IO (Either Text Text)` plus `handleDocs`
-- [ ] Add an end-to-end test against a fixture registry (output files exist + validate)
-- [ ] Add a hosted-invocation test through `seihou extension run okf -- docs ...`
-- [ ] Add user documentation for `seihou-okf-extension docs` and `seihou extension run okf`
-- [ ] `cabal build all`, `cabal test seihou-okf-extension-test`, targeted host tests, and a manual run against `seihou-modules` all succeed
+- [x] 2026-06-19 13:36 PDT: Define `DocsOpts` in `seihou-okf-extension` and replace the EP-60 stub `docs` command.
+- [x] 2026-06-19 13:36 PDT: Implement testable `runDocs :: DocsOpts -> IO (Either Text Text)` plus `handleDocs`.
+- [x] 2026-06-19 13:36 PDT: Add an end-to-end test against a fixture registry (output files exist + validate).
+- [x] 2026-06-19 13:36 PDT: Validate hosted invocation through `seihou extension run okf -- docs ...`; fixed host forwarding so the first forwarded token is preserved.
+- [x] 2026-06-19 13:36 PDT: Add user documentation for `seihou-okf-extension docs` and `seihou extension run okf`.
+- [x] 2026-06-19 13:36 PDT: `cabal build all`, `cabal test seihou-okf-extension-test`, `cabal test seihou-cli-test`, command help, direct and hosted real-registry runs, and deterministic `diff -r` all succeed.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The EP-60 optparse-based host parser did not preserve forwarded arguments after `--`; a
+  fake extension showed `seihou extension run foo -- docs --dir X` invoked the extension with
+  no forwarded arguments. EP-59 fixes this in `seihou-cli/src-exe/Main.hs` by detecting
+  `extension run NAME -- ...` from raw argv before normal optparse dispatch. Cross-plan
+  impact: hosted invocation now matches the MasterPlan's required syntax.
+
+- The `okf` CLI was still not available on `PATH`, so validation used okf-core directly in
+  tests (`walkBundle` + `validateBundle`) and through `writeDocBundle` during command runs.
 
 
 ## Decision Log
@@ -90,6 +97,48 @@ against a fixture registry both directly and through the extension host.
   Rationale: This mirrors seihou's CLI library-first convention inside the extension package
   while keeping the main `seihou-cli` package independent of OKF internals.
   Date: 2026-06-19
+
+- Decision: Validate the model before clearing the output directory.
+  Rationale: The plan originally listed output hygiene before loading and validation, but a
+  failed registry load or bundle validation should not delete an existing output bundle.
+  `runDocs` now checks for a non-empty output directory first, then loads/renders/validates,
+  and only removes/recreates the output directory immediately before a clean write.
+  Date: 2026-06-19
+
+- Decision: Fix hosted argument forwarding with raw argv detection in the main `seihou`
+  executable.
+  Rationale: `optparse-applicative` did not preserve the first forwarded token for the
+  extension host contract. The extension host is an argv-forwarding boundary, so preserving
+  bytes after `--` is more important than forcing this path through the normal typed parser.
+  Date: 2026-06-19
+
+
+## Outcomes & Retrospective
+
+EP-59 is complete. `seihou-okf-extension docs` now loads a registry, renders and validates an
+OKF bundle, refuses non-empty output directories unless `--force` is supplied, clears and
+recreates the output directory for forced regeneration, writes the bundle, and prints
+`Wrote N concepts to <out>`. The same command works through `seihou extension run okf -- docs
+...` after fixing the host forwarding path.
+
+Tests cover the command flow against a temp-dir registry, verify generated files exist,
+re-read the output with okf-core `walkBundle`, validate it with `validateBundle
+PermissiveConformance`, check the non-empty output guard, and check missing-registry errors.
+User docs now exist in `docs/cli/extension.md` and `docs/cli/okf-docs.md`.
+
+Validation completed:
+
+```text
+cabal test seihou-okf-extension-test # All 16 tests passed
+cabal test seihou-cli-test           # All 253 tests passed
+cabal build all                      # success
+cabal run seihou-okf-extension -- docs --help # shows --dir, --out, --force defaults
+cabal run seihou-okf-extension -- docs --dir /Users/shinzui/Keikaku/bokuno/seihou-modules --out /tmp/seihou-okf --force
+Wrote 8 concepts to /tmp/seihou-okf
+cabal exec -- seihou extension run okf -- docs --dir /Users/shinzui/Keikaku/bokuno/seihou-modules --out /tmp/seihou-okf-hosted --force
+Wrote 8 concepts to /tmp/seihou-okf-hosted
+diff -r /tmp/seihou-okf-a /tmp/seihou-okf-b # no output
+```
 
 
 ## Context and Orientation
@@ -347,3 +396,6 @@ Relationship to other plans (see the MasterPlan's Integration Points):
   `seihou-okf-extension docs` command plus hosted invocation through
   `seihou extension run okf -- docs`. Parser, handler, tests, and docs now live under the
   extension package boundary introduced by EP-60.
+- 2026-06-19: Implemented the real docs command, added command-flow tests and user docs,
+  fixed hosted argument forwarding, and recorded validation evidence for direct, hosted, and
+  deterministic real-registry runs.

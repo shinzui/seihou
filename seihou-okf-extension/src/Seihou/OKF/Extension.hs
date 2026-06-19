@@ -6,14 +6,13 @@ where
 
 import Data.Text (Text)
 import Data.Text qualified as T
-import Data.Text.IO qualified as TIO
 import Okf.Document (OKFDocument (..), emptyFrontmatter, serializeDocument)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (pretty, vsep)
-import System.Exit (exitFailure)
+import Seihou.OKF.Extension.Docs (DocsOpts (..), handleDocs)
 
 data Command
-  = Docs
+  = Docs DocsOpts
   deriving stock (Eq, Show)
 
 okfSmoke :: Text
@@ -23,9 +22,8 @@ runExtensionMain :: IO ()
 runExtensionMain = do
   command <- customExecParser (prefs showHelpOnEmpty) opts
   case command of
-    Docs -> do
-      TIO.putStrLn "seihou-okf-extension docs is not implemented yet; see EP-57/EP-58/EP-59."
-      exitFailure
+    Docs docsOpts ->
+      handleDocs docsOpts
 
 opts :: ParserInfo Command
 opts =
@@ -44,15 +42,34 @@ commandParser =
 docsInfo :: ParserInfo Command
 docsInfo =
   info
-    (pure Docs <**> helper)
+    (Docs <$> docsParser <**> helper)
     ( fullDesc
-        <> progDesc "Generate OKF docs for a Seihou registry (not implemented yet)"
+        <> progDesc "Generate OKF docs for a Seihou registry"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("This command is a placeholder in EP-60." :: String),
-                  pretty ("EP-57, EP-58, and EP-59 add registry loading, OKF rendering, and file output." :: String),
+                [ pretty ("Reads seihou-registry.dhall, loads each listed artifact, validates the OKF bundle," :: String),
+                  pretty ("and writes one Markdown concept document per registry entry." :: String),
                   pretty ("Smoke value length: " <> show (T.length okfSmoke) :: String)
                 ]
           )
     )
+
+docsParser :: Parser DocsOpts
+docsParser =
+  DocsOpts
+    <$> strOption
+      ( long "dir"
+          <> metavar "PATH"
+          <> value "."
+          <> showDefault
+          <> help "Registry directory containing seihou-registry.dhall"
+      )
+    <*> strOption
+      ( long "out"
+          <> metavar "PATH"
+          <> value "okf-docs"
+          <> showDefault
+          <> help "Output directory for the generated OKF bundle"
+      )
+    <*> switch (long "force" <> help "Overwrite a non-empty output directory")

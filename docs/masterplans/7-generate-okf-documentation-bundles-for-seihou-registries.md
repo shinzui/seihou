@@ -124,7 +124,7 @@ should not expand the main CLI dependency graph).
 | EP-60 | Add a seihou extension contract and okf extension package | docs/plans/60-add-a-seihou-extension-contract-and-okf-extension-package.md | EP-56 | None | Complete |
 | EP-57 | Load a seihou registry into a documentation model | docs/plans/57-load-a-seihou-registry-into-a-documentation-model.md | EP-60 | None | Complete |
 | EP-58 | Render the seihou documentation model to an OKF bundle | docs/plans/58-render-the-seihou-documentation-model-to-an-okf-bundle.md | EP-56, EP-57, EP-60 | None | Complete |
-| EP-59 | Add the seihou okf extension docs command with fixture tests and user docs | docs/plans/59-add-the-seihou-docs-command-with-fixtures-tests-and-user-docs.md | EP-58, EP-60 | None | Not Started |
+| EP-59 | Add the seihou okf extension docs command with fixture tests and user docs | docs/plans/59-add-the-seihou-docs-command-with-fixtures-tests-and-user-docs.md | EP-58, EP-60 | None | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-56).
@@ -209,7 +209,7 @@ Track milestone-level progress across all child plans.
 - [x] EP-60: `seihou extension run okf -- ...` can delegate to `seihou-okf-extension`; `okf-core` dependency lives in the extension package, not `seihou-cli-internal`
 - [x] EP-57: `seihou-registry.dhall` loads into an extension-owned `DocModel` with full artifacts and resolved cross-references; unit tests on a fixture registry
 - [x] EP-58: extension-owned `DocModel` renders to `[Concept]` with cross-links; `validateBundle` clean; `writeBundle` emits the bundle; unit/golden tests
-- [ ] EP-59: `seihou-okf-extension docs --dir --out` and hosted invocation through `seihou extension run okf -- docs ...` work end to end on a fixture registry; user docs added; `okf validate` of the output passes
+- [x] EP-59: `seihou-okf-extension docs --dir --out` and hosted invocation through `seihou extension run okf -- docs ...` work end to end on a fixture registry; user docs added; okf-core validation of the output passes
 
 
 ## Surprises & Discoveries
@@ -248,6 +248,9 @@ interactions between child plans. Provide concise evidence.
   and can run external `okf` CLI checks only when the CLI is available.
 - EP-58 added a direct `aeson` dependency to `seihou-okf-extension` for the `version`
   frontmatter field. Cross-plan impact: EP-59 does not need to add this dependency again.
+- EP-59 found that EP-60's optparse-based host parser did not preserve forwarded arguments
+  after `--`. The main `seihou` executable now detects `extension run NAME -- ...` from raw
+  argv before normal optparse dispatch, preserving the required hosted syntax.
 
 
 ## Decision Log
@@ -346,6 +349,11 @@ okf-core concepts with deterministic frontmatter, resource pointers, and Markdow
 links, while `writeDocBundle` validates and writes only clean bundles. A spot-check wrote the
 real `seihou-modules` registry to `/tmp/seihou-okf-demo` as eight Markdown concepts.
 
+EP-59 completed the user-facing command. `seihou-okf-extension docs --dir --out --force` and
+`seihou extension run okf -- docs --dir --out --force` both generate the real
+`seihou-modules` OKF bundle with 8 concepts, and forced repeated runs are deterministic by
+`diff -r`.
+
 
 ## Revision Notes
 
@@ -367,3 +375,6 @@ real `seihou-modules` registry to `/tmp/seihou-okf-demo` as eight Markdown conce
 - 2026-06-19: Marked EP-58 complete after implementing `Seihou.OKF.Docs.Render`, adding
   render tests for concept IDs, frontmatter, cross-links, clean validation, dangling
   references, and invalid concept IDs, and writing a real `seihou-modules` OKF bundle.
+- 2026-06-19: Marked EP-59 complete after replacing the docs stub with the real command,
+  validating direct and hosted real-registry runs, adding command-flow tests and user docs,
+  and fixing hosted argv forwarding.
