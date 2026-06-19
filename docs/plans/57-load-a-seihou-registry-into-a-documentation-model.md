@@ -43,17 +43,31 @@ resolved cross-references are present. EP-58 then renders this model to an OKF b
 
 ## Progress
 
-- [ ] Define `DocModel`, `DocEntry`, `DocKind`, `ModuleRef`, and `DocLoadError` in `seihou-okf-extension`
-- [ ] Implement `loadDocModel :: FilePath -> IO (Either DocLoadError DocModel)` reusing `Seihou.Dhall.Eval` loaders
-- [ ] Resolve cross-references (module dependencies, recipe modules, blueprint base modules) into the model
-- [ ] Add a fixture registry under the test tree and unit tests asserting entities + cross-references
-- [ ] Add the new module(s) to `seihou-okf-extension-internal` `exposed-modules` and the spec to the extension test `Main.hs`
-- [ ] `cabal build all` and `cabal test seihou-okf-extension-test` green
+- [x] 2026-06-19 13:07 PDT: Define `DocModel`, `DocEntry`, `DocKind`, `ModuleRef`, and `DocLoadError` in `seihou-okf-extension`.
+- [x] 2026-06-19 13:07 PDT: Implement `loadDocModel :: FilePath -> IO (Either DocLoadError DocModel)` reusing `Seihou.Dhall.Eval` loaders.
+- [x] 2026-06-19 13:07 PDT: Resolve cross-references (module dependencies, recipe modules, blueprint base modules) into the model.
+- [x] 2026-06-19 13:07 PDT: Add a temp-dir fixture registry in `ModelSpec` and unit tests asserting entities + cross-references.
+- [x] 2026-06-19 13:07 PDT: Add the new module to `seihou-okf-extension-internal` `exposed-modules` and the spec to the extension test `Main.hs`.
+- [x] 2026-06-19 13:07 PDT: `cabal build all`, `cabal test seihou-okf-extension-test`, formatter check, no-OKF-import check, and real-registry REPL check are green.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The project enables `NoFieldSelectors`, so exported record fields are not ordinary
+  selector functions. Implementation and REPL examples must use record-dot syntax such as
+  `m.docEntries`, or constructor pattern matches such as `Module { dependencies }`, rather
+  than `docEntries m` or `artifact.dependencies` for core types. Evidence:
+
+  ```text
+  Variable not in scope: docEntries :: DocModel -> ...
+  Notice that ‘docEntries’ is a field selector belonging to the type ‘DocModel’
+  that has been suppressed by NoFieldSelectors.
+  ```
+
+- The fixture registry is generated in a temporary directory with raw Dhall records rather
+  than checked-in files importing `seihou-schema`. The existing `Seihou.Dhall.Eval` loaders
+  decode raw normalized Dhall records, so the tests stay offline and deterministic while
+  still exercising the real loaders.
 
 
 ## Decision Log
@@ -73,6 +87,47 @@ resolved cross-references are present. EP-58 then renders this model to an OKF b
   EP-58 render a link to `modules/<name>` and lets validation later flag unresolved
   references. Embedding full sub-artifacts would duplicate data and complicate cycles.
   Date: 2026-06-19
+
+- Decision: Generate the EP-57 fixture registry at test time instead of checking in Dhall
+  fixture files with remote schema imports.
+  Rationale: The loader tests need to exercise the real Dhall decoders, but they do not need
+  network access or schema hash maintenance. Raw Dhall records with explicit empty-list type
+  annotations are enough for the decoders and keep the tests deterministic.
+  Date: 2026-06-19
+
+
+## Outcomes & Retrospective
+
+EP-57 is complete. The extension package now exposes `Seihou.OKF.Docs.Model`, which defines
+the documentation model and implements `loadDocModel :: FilePath -> IO (Either DocLoadError
+DocModel)`. The loader reads `seihou-registry.dhall`, loads full module, recipe, blueprint,
+and agent-prompt artifacts through the existing `Seihou.Dhall.Eval` functions, preserves the
+registry catalog metadata, and resolves module references as `ModuleRef` values with
+`refResolved` set against the registry's module entries.
+
+The tests generate a temporary registry containing three modules, one recipe, one blueprint,
+and one prompt. They prove all four entry kinds load, catalog metadata is preserved, module
+dependencies resolve, dangling dependencies remain visible as unresolved refs, recipe module
+references are captured, blueprint base modules are captured, and a missing registry file
+returns `RegistryNotFound`.
+
+Validation completed:
+
+```text
+cabal test seihou-okf-extension-test # All 7 tests passed
+cabal build all                      # success
+nix fmt -- --fail-on-change          # formatted 2 files (0 changed)
+rg -n "Okf|okf-core" seihou-okf-extension/src/Seihou/OKF/Docs/Model.hs # no matches
+```
+
+Real-registry spot-check completed:
+
+```haskell
+ghci> import Seihou.OKF.Docs.Model
+ghci> Right m <- loadDocModel "/Users/shinzui/Keikaku/bokuno/seihou-modules"
+ghci> (length m.docEntries, m.docRepoName)
+(8,"seihou-modules")
+```
 
 
 ## Context and Orientation
@@ -132,12 +187,14 @@ The shared reference type used by `Module.dependencies`, `Recipe.modules`, and
 `Blueprint.baseModules`:
 
 ```haskell
-data Dependency = Dependency { module_ :: Text, vars :: [...] }   -- references a module by name
+data Dependency = Dependency
+  { depModule :: ModuleName
+  , depVars :: Map VarName Text
+  }
 ```
 
-(Check the exact field name for the referenced module in `Seihou.Core.Types` — research
-reported the Dhall field is `module`; the Haskell field is likely `module_` or accessed via a
-record selector. Confirm by reading the `Dependency` definition before using it.)
+Use `depModuleNames :: [Dependency] -> [ModuleName]` to extract referenced modules without
+depending on field-selector syntax.
 
 CRITICAL distinction (do not conflate): the schema has two "prompt" notions. `Prompt` (the
 sub-field in `vars`/`prompts` lists) is an *interactive variable prompt* (`var`, `text`,
@@ -331,8 +388,8 @@ cabal repl seihou-okf-extension-internal
 ```haskell
 ghci> import Seihou.OKF.Docs.Model
 ghci> Right m <- loadDocModel "/Users/shinzui/Keikaku/bokuno/seihou-modules"
-ghci> length (docEntries m)        -- 8 (5 modules + 2 recipes + 1 blueprint)
-ghci> docRepoName m                 -- "seihou-modules"
+ghci> length m.docEntries        -- 8 (5 modules + 2 recipes + 1 blueprint)
+ghci> m.docRepoName              -- "seihou-modules"
 ```
 
 
@@ -365,7 +422,9 @@ state to clean up; reverting the new module and spec removes the feature cleanly
 Uses existing seihou-core modules only: `Seihou.Core.Registry` (`Registry`, `RegistryEntry`),
 `Seihou.Core.Types` (`Module`, `Recipe`, `Blueprint`, `AgentPrompt`, `Dependency`,
 `ModuleName`, `RecipeName`), `Seihou.Dhall.Eval` (the `eval*FromFile` loaders), plus
-`System.Directory`/`System.FilePath`/`Data.Text`. No new package dependencies; no okf-core.
+`System.Directory`/`System.FilePath`/`Data.Text`. The package adds only standard library
+dependencies needed for those modules and temp-dir tests (`directory`, `filepath`, and
+`temporary`); no okf-core import appears in `Seihou.OKF.Docs.Model`.
 
 Types/functions that must exist at the end of this plan, in
 `seihou-okf-extension/src/Seihou/OKF/Docs/Model.hs`:
@@ -403,3 +462,6 @@ Relationship to other plans (see the MasterPlan's Integration Points):
 - 2026-06-19: Retargeted the plan from `seihou-cli-internal` to the new
   `seihou-okf-extension` package introduced by EP-60. The model remains okf-free but is now
   extension-owned so the private main CLI library is not part of the OKF feature boundary.
+- 2026-06-19: Implemented the documentation model loader in `seihou-okf-extension`, added
+  temp-dir Dhall fixture tests for all entry kinds and module-reference resolution, corrected
+  the REPL examples for `NoFieldSelectors`, and recorded validation evidence.
