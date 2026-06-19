@@ -20,9 +20,11 @@ This plan is the build foundation for the MasterPlan at
 `docs/masterplans/7-generate-okf-documentation-bundles-for-seihou-registries.md`. Read that
 file for the overall initiative; this plan stands alone for implementation.
 
-The initiative adds a `seihou docs` command that generates Open Knowledge Format (OKF)
-documentation bundles. OKF is implemented by the `okf-core` Haskell library, which lives in a
-separate repository at `/Users/shinzui/Keikaku/bokuno/okf` (package directory
+The initiative now adds a `seihou-okf-extension docs` command that generates Open Knowledge
+Format (OKF) documentation bundles. When this plan was implemented, OKF was still being
+proven as an in-core `seihou docs` feature; EP-60 later moves the consuming dependency and
+smoke import into the extension package. OKF is implemented by the `okf-core` Haskell library,
+which lives in a separate repository at `/Users/shinzui/Keikaku/bokuno/okf` (package directory
 `/Users/shinzui/Keikaku/bokuno/okf/okf-core`). Today `okf-core` is *local-only*: it is not on
 Hackage, and the okf repo's flake exposes only a whole-repo `packages.default` named `"okf"`,
 not a reusable `okf-core` library output. Seihou therefore cannot yet `import Okf.*`.
@@ -50,7 +52,7 @@ changes yet — that arrives in EP-58/EP-59.
 - [x] Add a smoke-test use of `okf-core` (`Seihou.CLI.Docs.Smoke`) and confirm it compiles (2026-06-19)
 - [x] `cabal build all` succeeds (okf-core resolved, smoke compiled, `seihou` exe linked) (2026-06-19)
 - [x] okf-core builds in the Nix sandbox and is consumed by the seihou package set; `flake.lock` adds only the `okf-src` node (2026-06-19)
-- [~] Full `nix build` of seihou-cli: BLOCKED by a **pre-existing** `baikai` version skew unrelated to okf-core (see Surprises). Not in scope for EP-56.
+- [ ] Full `nix build` of seihou-cli remains blocked by a **pre-existing** `baikai` version skew unrelated to okf-core (see Surprises). This is tracked as out of scope for EP-56.
 
 
 ## Surprises & Discoveries
@@ -181,13 +183,17 @@ The okf repo is a local git checkout at `/Users/shinzui/Keikaku/bokuno/okf` with
 remote `shinzui/okf`. For `source-repository-package` you need a commit SHA that contains the
 completed authoring API. Get it with:
 
-    git -C /Users/shinzui/Keikaku/bokuno/okf rev-parse HEAD
+```bash
+git -C /Users/shinzui/Keikaku/bokuno/okf rev-parse HEAD
+```
 
 and confirm that commit is pushed to `github.com/shinzui/okf` (so the Nix fetch and a clean
 cabal fetch can reach it):
 
-    git -C /Users/shinzui/Keikaku/bokuno/okf log --oneline -1
-    git -C /Users/shinzui/Keikaku/bokuno/okf branch -r --contains HEAD
+```bash
+git -C /Users/shinzui/Keikaku/bokuno/okf log --oneline -1
+git -C /Users/shinzui/Keikaku/bokuno/okf branch -r --contains HEAD
+```
 
 If HEAD is not yet pushed, push it (or coordinate with the user) before pinning, because both
 the cabal `source-repository-package` (when fetched fresh) and the Nix `github:` input
@@ -384,9 +390,22 @@ flake.lock                                        (updated)
 
 Relationship to other plans (see the MasterPlan's Integration Points):
 
-- This plan owns integration point 1 (okf-core dependency scoped to `seihou-cli-internal`).
-- EP-58 (`docs/plans/58-render-the-seihou-documentation-model-to-an-okf-bundle.md`) hard-
-  depends on this plan and will replace `Seihou.CLI.Docs.Smoke` with the real renderer under
-  the same `Seihou.CLI.Docs.*` namespace.
+- This plan proves okf-core can be pinned and built. EP-60
+  (`docs/plans/60-add-a-seihou-extension-contract-and-okf-extension-package.md`) hard-depends
+  on this plan and moves the consuming okf-core dependency from `seihou-cli-internal` into
+  `seihou-okf-extension`.
+- EP-58 (`docs/plans/58-render-the-seihou-documentation-model-to-an-okf-bundle.md`) depends
+  on this plan through EP-60 and implements the real renderer under the
+  `Seihou.OKF.Docs.*` namespace.
 - EP-57 (`docs/plans/57-load-a-seihou-registry-into-a-documentation-model.md`) does not depend
   on this plan (it imports no okf-core) and can be developed in parallel.
+
+
+## Revision Notes
+
+- 2026-06-19: Validated EP-56 as part of the MasterPlan review. Replaced the nonstandard
+  `[~]` progress marker with an unchecked out-of-scope blocker entry and converted indented
+  shell commands to fenced `bash` blocks, preserving the existing implementation status.
+- 2026-06-19: Updated relationship notes after the initiative moved to an extension package.
+  The smoke module remains historical evidence for EP-56, while EP-60 now owns moving the
+  okf-core dependency and smoke import out of `seihou-cli-internal`.

@@ -22,8 +22,10 @@ file for the overall initiative; this plan stands alone for implementation.
 
 This is the heart of the feature: it turns the in-memory documentation model produced by
 EP-57 (`docs/plans/57-load-a-seihou-registry-into-a-documentation-model.md`) into an Open
-Knowledge Format (OKF) bundle on disk, using the okf-core authoring API made available by
-EP-56 (`docs/plans/56-make-okf-core-a-buildable-dependency-of-seihou.md`).
+Knowledge Format (OKF) bundle on disk, using the okf-core authoring API made available in
+the `seihou-okf-extension` package by EP-56 and EP-60
+(`docs/plans/56-make-okf-core-a-buildable-dependency-of-seihou.md`,
+`docs/plans/60-add-a-seihou-extension-contract-and-okf-extension-package.md`).
 
 An OKF bundle is a directory of Markdown documents, each with a YAML frontmatter block
 (metadata fenced by `---`) and a Markdown body; Markdown links between documents become a
@@ -34,12 +36,13 @@ composition relationships as Markdown cross-links (a recipe links to the modules
 a blueprint to its base modules; a module to its dependencies). It then validates the whole
 set with okf-core's `validateBundle` and writes it with `writeBundle`.
 
-The observable outcome: a pure function `renderDocBundle :: DocModel -> ([Concept],
-[BundleValidationError])` (concepts plus any validation problems) and an IO function
-`writeDocBundle :: FilePath -> DocModel -> IO (Either [BundleValidationError] ())` that writes
-the bundle when valid; plus unit/golden tests proving a known model renders to the expected
+The observable outcome: a pure function `renderDocBundle :: DocModel -> Either
+[DocRenderError] ([Concept], [BundleValidationError])` (concepts plus any validation
+problems, or render-time failures such as an illegal OKF concept ID) and an IO function
+`writeDocBundle :: FilePath -> DocModel -> IO (Either [DocBundleError] ())` that writes the
+bundle when valid; plus unit/golden tests proving a known model renders to the expected
 concept IDs, frontmatter, and cross-links, and that the bundle validates clean. EP-59 wires
-these behind the `seihou docs` command.
+these behind the `seihou-okf-extension docs` command.
 
 
 ## Progress
@@ -47,10 +50,10 @@ these behind the `seihou docs` command.
 - [ ] Add the concept-ID scheme helpers (`modules/<name>` etc.) and `resource` builder
 - [ ] Render each entity kind to an `OKFDocument` (frontmatter + body) and then a `Concept` via `conceptFromDocument`
 - [ ] Render cross-links (dependencies / recipe modules / base modules) with `renderConceptLink`
-- [ ] Implement `renderDocBundle :: DocModel -> ([Concept], [BundleValidationError])`
-- [ ] Implement `writeDocBundle :: FilePath -> DocModel -> IO (Either [BundleValidationError] ())`
+- [ ] Implement `renderDocBundle :: DocModel -> Either [DocRenderError] ([Concept], [BundleValidationError])`
+- [ ] Implement `writeDocBundle :: FilePath -> DocModel -> IO (Either [DocBundleError] ())`
 - [ ] Unit/golden tests: concept IDs, frontmatter fields, cross-links, clean validation
-- [ ] `cabal build all` and `cabal test seihou-cli-test` green
+- [ ] `cabal build all` and `cabal test seihou-okf-extension-test` green
 
 
 ## Surprises & Discoveries
@@ -78,7 +81,15 @@ these behind the `seihou docs` command.
   default.
   Rationale: Seihou entities have no natural per-entity timestamp; omitting it keeps
   regenerated output deterministic. The richer fields still make the docs useful. (Strict mode
-  + timestamp source are an EP-59 command concern.)
+  + timestamp source are deferred until there is a deterministic timestamp source.)
+  Date: 2026-06-19
+
+- Decision: Use a seihou-owned error type for render failures and wrap okf-core validation
+  errors separately.
+  Rationale: okf-core `BundleValidationError` represents problems after concepts exist
+  (`DocumentInvalid`, `DanglingReference`, `DuplicateConceptId`). Seihou can fail earlier if a
+  registry name cannot be parsed as an OKF `ConceptId`, so `renderDocBundle` must be able to
+  return `DocRenderError` instead of silently dropping the entity or crashing.
   Date: 2026-06-19
 
 
@@ -87,7 +98,7 @@ these behind the `seihou docs` command.
 All paths are relative to the seihou repository root
 (`/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`).
 
-This plan consumes the model from EP-57 — `Seihou.CLI.Docs.Model` — whose key types are
+This plan consumes the model from EP-57 — `Seihou.OKF.Docs.Model` — whose key types are
 (defined there; do not redefine):
 
 ```haskell
@@ -162,21 +173,23 @@ okf-core link resolution: only `.md` links resolve, and bundle-absolute (`/path.
 resolve independent of the source document's directory. `renderConceptLink` emits exactly that
 form, so cross-links between any two concepts in the bundle resolve.
 
-Seihou test conventions (same as EP-57): tasty + tasty-hspec + hspec; a spec module exports
-`tests :: IO TestTree` and is added to `seihou-cli/test/Main.hs` and the test stanza
-`other-modules`.
+Extension test conventions (same as EP-57): tasty + tasty-hspec + hspec; a spec module
+exports `tests :: IO TestTree` and is added to `seihou-okf-extension/test/Main.hs` and the
+extension test stanza `other-modules`.
 
-Build/test: `nix develop`; `cabal build all`; `cabal test seihou-cli-test`.
+Build/test: `nix develop`; `cabal build all`; `cabal test seihou-okf-extension-test`.
 
 
 ## Plan of Work
 
 Single milestone: a render module plus tests. Create
-`seihou-cli/src/Seihou/CLI/Docs/Render.hs`:
+`seihou-okf-extension/src/Seihou/OKF/Docs/Render.hs`:
 
 ```haskell
-module Seihou.CLI.Docs.Render
+module Seihou.OKF.Docs.Render
   ( conceptIdFor
+  , DocRenderError (..)
+  , DocBundleError (..)
   , renderDocBundle
   , writeDocBundle
   ) where
@@ -256,21 +269,38 @@ Step 4 — concepts. For each `DocEntry`, build
 comes from `conceptIdFor (entryKind e) (entryName e)`. Collect `[Concept]`. If any
 `conceptIdFor` is `Left`, collect those as render errors (see `renderDocBundle`'s result).
 
-Step 5 — assemble + validate:
+Step 5 — assemble + validate. Define the seihou-owned errors first:
 
 ```haskell
-renderDocBundle :: DocModel -> ([Concept], [BundleValidationError])
-renderDocBundle model =
-  let concepts = ...                    -- Step 4
-      problems = validateBundle PermissiveConformance concepts
-   in (concepts, problems)
+data DocRenderError
+  = InvalidDocConceptId DocKind Text Text
+  deriving stock (Eq, Show)
 
-writeDocBundle :: FilePath -> DocModel -> IO (Either [BundleValidationError] ())
+data DocBundleError
+  = DocBundleRenderError DocRenderError
+  | DocBundleValidationError BundleValidationError
+  deriving stock (Eq, Show)
+```
+
+Then assemble concepts, failing before validation if any generated concept ID is invalid:
+
+```haskell
+renderDocBundle :: DocModel -> Either [DocRenderError] ([Concept], [BundleValidationError])
+renderDocBundle model =
+  case traverse conceptFor (docEntries model) of
+    Left renderErrors -> Left renderErrors
+    Right concepts ->
+      let problems = validateBundle PermissiveConformance concepts
+       in Right (concepts, problems)
+
+writeDocBundle :: FilePath -> DocModel -> IO (Either [DocBundleError] ())
 writeDocBundle outDir model =
-  let (concepts, problems) = renderDocBundle model
-   in if null problems
-        then Right <$> writeBundle outDir concepts
-        else pure (Left problems)
+  case renderDocBundle model of
+    Left renderErrors ->
+      pure (Left (DocBundleRenderError <$> renderErrors))
+    Right (concepts, problems)
+      | null problems -> Right <$> writeBundle outDir concepts
+      | otherwise -> pure (Left (DocBundleValidationError <$> problems))
 ```
 
 Note `validateBundle PermissiveConformance` still reports `DanglingReference` and
@@ -282,10 +312,10 @@ guarantee the MasterPlan promises.
 clearing/creating `outDir` before calling `writeDocBundle` so regeneration is pristine. This
 plan's `writeDocBundle` only writes; document that contract in a Haddock comment.)
 
-Step 6 — exports + cabal. Add `Seihou.CLI.Docs.Render` to `seihou-cli-internal`
-`exposed-modules`.
+Step 6 — exports + cabal. Add `Seihou.OKF.Docs.Render` to
+`seihou-okf-extension-internal` `exposed-modules`.
 
-Step 7 — tests. Create `seihou-cli/test/Seihou/CLI/Docs/RenderSpec.hs`. Build a small
+Step 7 — tests. Create `seihou-okf-extension/test/Seihou/OKF/Docs/RenderSpec.hs`. Build a small
 `DocModel` in memory (you can construct `DocEntry`/`DocArtifact` values directly with minimal
 `Module`/`Recipe` records, or call EP-57's `loadDocModel` on EP-57's fixture registry). Assert:
 
@@ -295,10 +325,12 @@ Step 7 — tests. Create `seihou-cli/test/Seihou/CLI/Docs/RenderSpec.hs`. Build 
   contains `type: SeihouModule`, the title, and the `resource:` line.
 - A recipe concept's body contains a resolvable link to each composed module — assert the
   body contains the substring `](/modules/<name>.md)`.
-- For a well-formed model, `renderDocBundle`'s `[BundleValidationError]` is empty.
+- For a well-formed model, `renderDocBundle` returns `Right (_, [])`.
 - For a model containing an unresolved module ref, the errors contain a `DanglingReference`.
+- For a model containing an illegal concept ID, `renderDocBundle` returns
+  `Left [InvalidDocConceptId ...]`.
 
-Add the spec to `seihou-cli/test/Main.hs` and the test stanza `other-modules`.
+Add the spec to `seihou-okf-extension/test/Main.hs` and the test stanza `other-modules`.
 
 
 ## Concrete Steps
@@ -308,13 +340,13 @@ From the seihou repository root, inside the dev shell:
 ```bash
 nix develop
 cabal build all
-cabal test seihou-cli-test
+cabal test seihou-okf-extension-test
 ```
 
 Expected new test output:
 
 ```text
-Seihou.CLI.Docs.Render
+Seihou.OKF.Docs.Render
   renderDocBundle
     emits one concept per entry with the modules/ recipes/ ... id scheme [✔]
     renders resolvable cross-links to composed modules [✔]
@@ -326,12 +358,12 @@ End-to-end spot-check against the real registry (write a bundle, then validate i
 okf CLI if available):
 
 ```bash
-cabal repl seihou-cli-internal
+cabal repl seihou-okf-extension-internal
 ```
 
 ```haskell
-ghci> import Seihou.CLI.Docs.Model
-ghci> import Seihou.CLI.Docs.Render
+ghci> import Seihou.OKF.Docs.Model
+ghci> import Seihou.OKF.Docs.Render
 ghci> Right m <- loadDocModel "/Users/shinzui/Keikaku/bokuno/seihou-modules"
 ghci> writeDocBundle "/tmp/seihou-okf-demo" m
 Right ()
@@ -348,11 +380,12 @@ okf graph /tmp/seihou-okf-demo --json    # expect edges like haskell-library -> 
 
 Acceptance is behavioral:
 
-1. `cabal test seihou-cli-test` passes the new `RenderSpec`, proving the model renders to
+1. `cabal test seihou-okf-extension-test` passes the new `RenderSpec`, proving the model renders to
    concepts with the documented ID scheme, frontmatter, and resolvable cross-links.
-2. `renderDocBundle` returns no `BundleValidationError`s for a well-formed model and returns a
-   `DanglingReference` when a module reference does not resolve — proving referential
-   integrity is enforced before writing.
+2. `renderDocBundle` returns `Right (_, [])` for a well-formed model, returns
+   `Right (_, [DanglingReference ...])` when a module reference does not resolve, and returns
+   `Left [InvalidDocConceptId ...]` for an illegal concept ID — proving both seihou render
+   failures and okf-core referential integrity are surfaced before writing.
 3. The REPL spot-check writes a bundle from the real `seihou-modules` registry and (if the okf
    CLI is available) `okf validate` reports OK and `okf graph` shows the
    `haskell-library → nix-haskell-flake` dependency edge — proving the cross-links round-trip
@@ -371,26 +404,42 @@ crashing. No global state; reverting the render module and spec removes the feat
 
 ## Interfaces and Dependencies
 
-Depends on okf-core (made available by EP-56) and on `Seihou.CLI.Docs.Model` (EP-57). Also
-uses `Data.Aeson (Value (..))` for extension-field values and `Data.Text`. No new package
-dependencies beyond `okf-core` (added in EP-56) and `aeson` (already a seihou dependency).
+Depends on okf-core (made available to `seihou-okf-extension` by EP-56 and EP-60) and on
+`Seihou.OKF.Docs.Model` (EP-57). Also uses `Data.Aeson (Value (..))` for extension-field
+values and `Data.Text`. No new package dependencies beyond those already assigned to
+`seihou-okf-extension` by EP-60.
 
 Functions that must exist at the end of this plan, in
-`seihou-cli/src/Seihou/CLI/Docs/Render.hs`:
+`seihou-okf-extension/src/Seihou/OKF/Docs/Render.hs`:
 
 ```haskell
 conceptIdFor   :: DocKind -> Text -> Either Text ConceptId
-renderDocBundle :: DocModel -> ([Concept], [BundleValidationError])
-writeDocBundle  :: FilePath -> DocModel -> IO (Either [BundleValidationError] ())
+data DocRenderError = InvalidDocConceptId DocKind Text Text
+data DocBundleError = DocBundleRenderError DocRenderError | DocBundleValidationError BundleValidationError
+renderDocBundle :: DocModel -> Either [DocRenderError] ([Concept], [BundleValidationError])
+writeDocBundle  :: FilePath -> DocModel -> IO (Either [DocBundleError] ())
 ```
 
 Relationship to other plans (see the MasterPlan's Integration Points):
 
 - This plan owns integration points 3 (concept-ID scheme + cross-link convention) and 4
   (frontmatter + validation-profile conventions).
-- Hard deps: EP-56 (okf-core buildable) and EP-57 (the `DocModel`).
+- Hard deps: EP-56 (okf-core buildable), EP-60 (`seihou-okf-extension` package exists and owns
+  the okf-core dependency), and EP-57 (the `DocModel`).
 - EP-59 (`docs/plans/59-add-the-seihou-docs-command-with-fixtures-tests-and-user-docs.md`)
   calls `writeDocBundle`/`renderDocBundle` from the command handler and asserts against the
   same concept-ID scheme; keep them in lockstep.
-- Shares `seihou-cli/test/Main.hs` and the test stanza `other-modules` with EP-57 and EP-59:
-  append the new spec; do not reorder existing ones.
+- Shares `seihou-okf-extension/test/Main.hs` and the extension test stanza `other-modules`
+  with EP-57 and EP-59: append the new spec; do not reorder existing ones.
+
+
+## Revision Notes
+
+- 2026-06-19: Validated EP-58 against okf-core's actual API and fixed the render contract.
+  The previous signature could not represent invalid generated concept IDs even though the
+  prose required surfacing them. The plan now introduces `DocRenderError` and
+  `DocBundleError`, keeps okf-core `BundleValidationError` for bundle validation, and updates
+  acceptance/tests/interfaces accordingly.
+- 2026-06-19: Retargeted the renderer from `seihou-cli-internal` to
+  `seihou-okf-extension`. The renderer remains the OKF-dependent layer, but the dependency is
+  now isolated in the extension package created by EP-60.

@@ -20,20 +20,20 @@ This plan is part of the MasterPlan at
 `docs/masterplans/7-generate-okf-documentation-bundles-for-seihou-registries.md`. Read that
 file for the overall initiative; this plan stands alone for implementation.
 
-The `seihou docs` feature must turn a seihou registry into documentation. A "registry" is a
-directory whose `seihou-registry.dhall` file lists the artifacts a repo publishes, in four
-groups: **modules** (deterministic scaffolding templates), **recipes** (named module
-compositions), **blueprints** (agent-driven scaffolds), and **prompts** (reusable
-agent-session templates). Each list entry is a thin record — `name`, `version`, `path`,
-`description`, `tags` — that points (via `path`) at a directory containing the full artifact
-definition (`module.dhall`, `recipe.dhall`, `blueprint.dhall`, or `prompt.dhall`).
+The `seihou-okf-extension docs` feature must turn a seihou registry into documentation. A
+"registry" is a directory whose `seihou-registry.dhall` file lists the artifacts a repo
+publishes, in four groups: **modules** (deterministic scaffolding templates), **recipes**
+(named module compositions), **blueprints** (agent-driven scaffolds), and **prompts**
+(reusable agent-session templates). Each list entry is a thin record — `name`, `version`,
+`path`, `description`, `tags` — that points (via `path`) at a directory containing the full
+artifact definition (`module.dhall`, `recipe.dhall`, `blueprint.dhall`, or `prompt.dhall`).
 
 This plan builds the **documentation model**: an in-memory value that, for every registry
 entry, pairs its catalog metadata with the *fully loaded* artifact and records the
 cross-references between entities (a module's dependencies, a recipe's composed modules, a
-blueprint's base modules). It deliberately imports only seihou's own types — not okf-core — so
-it can be built and tested in parallel with the build-wiring plan (EP-56) and so the loading
-logic is independently verifiable before any rendering exists.
+blueprint's base modules). It lives in the `seihou-okf-extension` package created by EP-60.
+It deliberately imports only seihou's own types — not okf-core — so the loading logic is
+independently verifiable before any rendering exists.
 
 The observable outcome: a function `loadDocModel :: FilePath -> IO (Either DocLoadError
 DocModel)` that, given a registry directory, returns a structured model; and unit tests that
@@ -43,12 +43,12 @@ resolved cross-references are present. EP-58 then renders this model to an OKF b
 
 ## Progress
 
-- [ ] Define `DocModel`, `DocEntry`, `DocKind`, and `DocLoadError` (in `seihou-cli-internal`)
+- [ ] Define `DocModel`, `DocEntry`, `DocKind`, `ModuleRef`, and `DocLoadError` in `seihou-okf-extension`
 - [ ] Implement `loadDocModel :: FilePath -> IO (Either DocLoadError DocModel)` reusing `Seihou.Dhall.Eval` loaders
 - [ ] Resolve cross-references (module dependencies, recipe modules, blueprint base modules) into the model
 - [ ] Add a fixture registry under the test tree and unit tests asserting entities + cross-references
-- [ ] Add the new module(s) to `seihou-cli-internal` `exposed-modules` and the spec to the cli test `Main.hs`
-- [ ] `cabal build all` and `cabal test seihou-cli-test` green
+- [ ] Add the new module(s) to `seihou-okf-extension-internal` `exposed-modules` and the spec to the extension test `Main.hs`
+- [ ] `cabal build all` and `cabal test seihou-okf-extension-test` green
 
 
 ## Surprises & Discoveries
@@ -58,11 +58,12 @@ resolved cross-references are present. EP-58 then renders this model to an OKF b
 
 ## Decision Log
 
-- Decision: Define the documentation model in `seihou-cli-internal`
-  (`seihou-cli/src/Seihou/CLI/Docs/Model.hs`), not in `seihou-core`.
-  Rationale: It is feature-specific (the docs command) and the MasterPlan scopes the docs
-  feature to `seihou-cli-internal`. It still freely calls the `seihou-core`
-  `Seihou.Dhall.Eval` loaders, which are ordinary IO functions.
+- Decision: Define the documentation model in `seihou-okf-extension`
+  (`seihou-okf-extension/src/Seihou/OKF/Docs/Model.hs`), not in `seihou-core` or
+  `seihou-cli-internal`.
+  Rationale: It is feature-specific to the OKF extension. The extension can freely call the
+  `seihou-core` `Seihou.Dhall.Eval` loaders, while the main CLI stays independent of OKF
+  documentation internals.
   Date: 2026-06-19
 
 - Decision: Resolve cross-references as *names plus a resolved/unresolved flag*, not as
@@ -172,16 +173,17 @@ A concrete registry to model and to base the fixture on:
 `nix-haskell-flake`), 2 recipes (`haskell-library-repo`, `haskell-cli-app-repo`), 1 blueprint
 (`upgrade-haskell-flake-parts`), no `prompts`.
 
-Seihou test conventions: tasty + tasty-hspec + hspec. Each spec module exports
+Seihou extension test conventions: tasty + tasty-hspec + hspec. Each spec module exports
 `tests :: IO TestTree` built with `testSpec "Name" spec`; `spec :: Spec` uses
-`describe`/`it`. Specs are aggregated in `seihou-cli/test/Main.hs` (import the spec, run its
-`tests`, add to the `testGroup`). New spec modules must be added to the test stanza's
-`other-modules` in `seihou-cli/seihou-cli.cabal` AND to `seihou-cli/test/Main.hs`. Fixtures
-live under the test tree; use `System.IO.Temp.withSystemTempDirectory` for generated ones or a
-checked-in fixture directory. Read `seihou-core/test/Seihou/Core/RegistrySpec.hs` for the
-exact pattern of writing a Dhall registry to a temp dir and asserting on the loader.
+`describe`/`it`. Specs are aggregated in `seihou-okf-extension/test/Main.hs` (import the
+spec, run its `tests`, add to the `testGroup`). New spec modules must be added to the test
+stanza's `other-modules` in `seihou-okf-extension/seihou-okf-extension.cabal` AND to
+`seihou-okf-extension/test/Main.hs`. Fixtures live under the extension test tree; use
+`System.IO.Temp.withSystemTempDirectory` for generated ones or a checked-in fixture
+directory. Read `seihou-core/test/Seihou/Core/RegistrySpec.hs` for the exact pattern of
+writing a Dhall registry to a temp dir and asserting on the loader.
 
-Build/test: `nix develop`, then `cabal build all`, `cabal test seihou-cli-test` (or
+Build/test: `nix develop`, then `cabal build all`, `cabal test seihou-okf-extension-test` (or
 `just build` / `just test`).
 
 
@@ -189,13 +191,14 @@ Build/test: `nix develop`, then `cabal build all`, `cabal test seihou-cli-test` 
 
 Single milestone delivering the model type and loader, plus tests.
 
-Step 1 — model types. Create `seihou-cli/src/Seihou/CLI/Docs/Model.hs`:
+Step 1 — model types. Create `seihou-okf-extension/src/Seihou/OKF/Docs/Model.hs`:
 
 ```haskell
-module Seihou.CLI.Docs.Model
+module Seihou.OKF.Docs.Model
   ( DocKind (..)
   , DocArtifact (..)
   , DocEntry (..)
+  , ModuleRef (..)
   , DocModel (..)
   , DocLoadError (..)
   , loadDocModel
@@ -272,11 +275,12 @@ Step 2 — loader. Implement `loadDocModel :: FilePath -> IO (Either DocLoadErro
 Keep `loadDocModel` in plain `IO` (the seihou loaders are plain IO; do not introduce an
 effectful stack here — EP-58/EP-59 stay in IO too).
 
-Step 3 — exports + cabal. Add `Seihou.CLI.Docs.Model` to the `exposed-modules` of the
-`seihou-cli-internal` stanza in `seihou-cli/seihou-cli.cabal`.
+Step 3 — exports + cabal. Add `Seihou.OKF.Docs.Model` to the `exposed-modules` of the
+`seihou-okf-extension-internal` stanza in
+`seihou-okf-extension/seihou-okf-extension.cabal`.
 
 Step 4 — fixture + tests. Create a small fixture registry under the test tree, e.g.
-`seihou-cli/test/fixtures/docs-registry/`, containing `seihou-registry.dhall` and the
+`seihou-okf-extension/test/fixtures/docs-registry/`, containing `seihou-registry.dhall` and the
 referenced artifact directories (at minimum: two modules where one depends on the other, one
 recipe composing both, one blueprint with a base module, and one prompt). Pin the
 seihou-schema import in the fixture `.dhall` files the same way the real registry does (a
@@ -288,12 +292,12 @@ test time (mirroring `RegistrySpec`), which avoids checking in network-fetched s
 prefer the temp-dir approach if the test environment lacks network access, and note the choice
 in Surprises & Discoveries.
 
-Create `seihou-cli/test/Seihou/CLI/Docs/ModelSpec.hs` exporting `tests :: IO TestTree`, with
+Create `seihou-okf-extension/test/Seihou/OKF/Docs/ModelSpec.hs` exporting `tests :: IO TestTree`, with
 cases asserting: the model has the expected counts per kind; a known module entry has the
 expected version/description/tags; the dependent module's `entryModuleRefs` contains its
 dependency with `refResolved == True`; and an intentionally-broken reference (a module naming
 a non-existent dependency) yields `refResolved == False`. Add the spec to
-`seihou-cli/test/Main.hs` and to the test stanza `other-modules`.
+`seihou-okf-extension/test/Main.hs` and to the test stanza `other-modules`.
 
 Step 5 — build and test (see Concrete Steps).
 
@@ -305,13 +309,13 @@ From the seihou repository root, inside the dev shell:
 ```bash
 nix develop
 cabal build all
-cabal test seihou-cli-test
+cabal test seihou-okf-extension-test
 ```
 
 Expected: the new `ModelSpec` cases pass, e.g.:
 
 ```text
-Seihou.CLI.Docs.Model
+Seihou.OKF.Docs.Model
   loadDocModel
     loads all four entry kinds from the fixture registry [✔]
     resolves haskell-library's dependency on nix-haskell-flake [✔]
@@ -321,11 +325,11 @@ Seihou.CLI.Docs.Model
 REPL spot-check against the real registry:
 
 ```bash
-cabal repl seihou-cli-internal
+cabal repl seihou-okf-extension-internal
 ```
 
 ```haskell
-ghci> import Seihou.CLI.Docs.Model
+ghci> import Seihou.OKF.Docs.Model
 ghci> Right m <- loadDocModel "/Users/shinzui/Keikaku/bokuno/seihou-modules"
 ghci> length (docEntries m)        -- 8 (5 modules + 2 recipes + 1 blueprint)
 ghci> docRepoName m                 -- "seihou-modules"
@@ -336,15 +340,15 @@ ghci> docRepoName m                 -- "seihou-modules"
 
 Acceptance is behavioral:
 
-1. `cabal test seihou-cli-test` passes the new `ModelSpec`, demonstrating that a registry
+1. `cabal test seihou-okf-extension-test` passes the new `ModelSpec`, demonstrating that a registry
    directory loads into a `DocModel` with the correct entities and metadata.
 2. Cross-reference resolution works: a real dependency is marked `refResolved == True` and a
    dangling one `refResolved == False` (the test proves both).
 3. The REPL spot-check against `/Users/shinzui/Keikaku/bokuno/seihou-modules` returns the
    real entry count and repo name, proving the loader works on production data, not only the
    fixture.
-4. No okf-core import appears in `Seihou.CLI.Docs.Model` (this plan is independent of EP-56);
-   confirm with `grep -n "Okf" seihou-cli/src/Seihou/CLI/Docs/Model.hs` returning nothing.
+4. No okf-core import appears in `Seihou.OKF.Docs.Model`; confirm with
+   `grep -n "Okf" seihou-okf-extension/src/Seihou/OKF/Docs/Model.hs` returning nothing.
 
 
 ## Idempotence and Recovery
@@ -364,7 +368,7 @@ Uses existing seihou-core modules only: `Seihou.Core.Registry` (`Registry`, `Reg
 `System.Directory`/`System.FilePath`/`Data.Text`. No new package dependencies; no okf-core.
 
 Types/functions that must exist at the end of this plan, in
-`seihou-cli/src/Seihou/CLI/Docs/Model.hs`:
+`seihou-okf-extension/src/Seihou/OKF/Docs/Model.hs`:
 
 ```haskell
 data DocKind = DocModuleKind | DocRecipeKind | DocBlueprintKind | DocPromptKind
@@ -384,6 +388,18 @@ Relationship to other plans (see the MasterPlan's Integration Points):
 - This plan owns integration point 2 (the documentation model type). EP-58
   (`docs/plans/58-render-the-seihou-documentation-model-to-an-okf-bundle.md`) consumes
   `DocModel`/`DocEntry` read-only.
-- It is independent of EP-56 (no okf-core import) and can be implemented in parallel.
-- It shares `seihou-cli/test/Main.hs` and the test stanza `other-modules` with EP-58 and
-  EP-59: append the new spec; do not reorder existing ones.
+- It depends on EP-60 because the `seihou-okf-extension` package must exist first.
+- It intentionally has no okf-core import; EP-58 introduces OKF rendering in the same package.
+- It shares `seihou-okf-extension/test/Main.hs` and the extension test stanza
+  `other-modules` with EP-58 and EP-59: append the new spec; do not reorder existing ones.
+
+
+## Revision Notes
+
+- 2026-06-19: Validated the model contract against downstream plans and added
+  `ModuleRef (..)` to the required export list. EP-58 and EP-59 need to inspect `refName`
+  and `refResolved`; omitting it from the export list would make the child plans inconsistent
+  even though the type is part of `DocEntry`.
+- 2026-06-19: Retargeted the plan from `seihou-cli-internal` to the new
+  `seihou-okf-extension` package introduced by EP-60. The model remains okf-free but is now
+  extension-owned so the private main CLI library is not part of the OKF feature boundary.

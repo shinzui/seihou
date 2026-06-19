@@ -1,14 +1,14 @@
 ---
 id: 59
 slug: add-the-seihou-docs-command-with-fixtures-tests-and-user-docs
-title: "Add the seihou docs command with fixtures tests and user docs"
+title: "Add the seihou okf extension docs command with fixture tests and user docs"
 kind: exec-plan
 created_at: 2026-06-19T17:55:29Z
 intention: "intention_01kvgg9k54efytmmeqty43t6y5"
 master_plan: "docs/masterplans/7-generate-okf-documentation-bundles-for-seihou-registries.md"
 ---
 
-# Add the seihou docs command with fixtures tests and user docs
+# Add the seihou okf extension docs command with fixture tests and user docs
 
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
@@ -20,35 +20,45 @@ This plan is the user-facing surface for the MasterPlan at
 `docs/masterplans/7-generate-okf-documentation-bundles-for-seihou-registries.md`. Read that
 file for the overall initiative; this plan stands alone for implementation.
 
-EP-57 (`docs/plans/57-load-a-seihou-registry-into-a-documentation-model.md`) loads a registry
-into a documentation model, and EP-58
+EP-60 (`docs/plans/60-add-a-seihou-extension-contract-and-okf-extension-package.md`) creates
+the `seihou-okf-extension` package and a stub `docs` command. EP-57
+(`docs/plans/57-load-a-seihou-registry-into-a-documentation-model.md`) loads a registry into a
+documentation model, and EP-58
 (`docs/plans/58-render-the-seihou-documentation-model-to-an-okf-bundle.md`) renders that model
-to an Open Knowledge Format (OKF) bundle and writes it. Neither is reachable from the command
-line. This plan adds the `seihou docs` subcommand that ties them together, an end-to-end test
-against a fixture registry, and seihou user documentation.
+to an Open Knowledge Format (OKF) bundle and writes it. This plan replaces the stub with the
+real `seihou-okf-extension docs` command, verifies it directly and through the seihou
+extension host, and adds user documentation.
 
 OKF, recap: a directory of Markdown documents with YAML frontmatter, cross-linked into a
 graph; produced here by the okf-core library.
 
 After this plan a user can run, inside a seihou registry repository:
 
-    seihou docs --dir . --out okf-docs
+```bash
+seihou-okf-extension docs --dir . --out okf-docs
+```
+
+or:
+
+```bash
+seihou extension run okf -- docs --dir . --out okf-docs
+```
 
 and get an `okf-docs/` directory containing one Markdown concept document per module, recipe,
 blueprint, and prompt, validated before writing. The observable outcome: running the command
 against the `seihou-modules` registry produces a bundle that `okf validate` accepts and whose
-`okf graph` shows the module dependency edges; and an automated test runs the whole command
-flow against a fixture registry and asserts the output files exist and validate.
+`okf graph` shows the module dependency edges; and automated tests run the command flow
+against a fixture registry both directly and through the extension host.
 
 
 ## Progress
 
-- [ ] Define `DocsOpts` and add `Docs DocsOpts` to the CLI `Command` type + parser
-- [ ] Implement `handleDocs :: DocsOpts -> IO ()` (clear/create out dir, load, render, write, report)
-- [ ] Wire dispatch in `seihou-cli/src-exe/Main.hs`
+- [ ] Define `DocsOpts` in `seihou-okf-extension` and replace the EP-60 stub `docs` command
+- [ ] Implement testable `runDocs :: DocsOpts -> IO (Either Text Text)` plus `handleDocs`
 - [ ] Add an end-to-end test against a fixture registry (output files exist + validate)
-- [ ] Add user documentation for `seihou docs`
-- [ ] `cabal build all`, `cabal test all`, and a manual run against `seihou-modules` all succeed
+- [ ] Add a hosted-invocation test through `seihou extension run okf -- docs ...`
+- [ ] Add user documentation for `seihou-okf-extension docs` and `seihou extension run okf`
+- [ ] `cabal build all`, `cabal test seihou-okf-extension-test`, targeted host tests, and a manual run against `seihou-modules` all succeed
 
 
 ## Surprises & Discoveries
@@ -58,11 +68,11 @@ flow against a fixture registry and asserts the output files exist and validate.
 
 ## Decision Log
 
-- Decision: Command shape is `seihou docs --dir <registry> --out <dir>` with `--dir`
-  defaulting to `.` and `--out` defaulting to `okf-docs`.
-  Rationale: Mirrors `seihou registry validate`'s `--dir` convention and matches the request
-  to document a registry's modules/blueprints/prompts/recipes. Sensible defaults let a user
-  run `seihou docs` with no arguments inside a registry repo.
+- Decision: Command shape is `seihou-okf-extension docs --dir <registry> --out <dir>` with
+  `--dir` defaulting to `.` and `--out` defaulting to `okf-docs`.
+  Rationale: The OKF generator is now an extension package. The option names still mirror
+  `seihou registry validate`'s `--dir` convention and let a user run
+  `seihou-okf-extension docs` with no arguments inside a registry repo.
   Date: 2026-06-19
 
 - Decision: The command clears (or refuses to overwrite without `--force`) the output
@@ -74,11 +84,11 @@ flow against a fixture registry and asserts the output files exist and validate.
   behavior and record it; see Plan of Work.)
   Date: 2026-06-19
 
-- Decision: Place `DocsOpts` and `handleDocs` in `seihou-cli-internal`
-  (`seihou-cli/src/Seihou/CLI/Docs.hs`); place only the optparse parser wiring in
-  `src-exe/Seihou/CLI/Commands.hs` and the dispatch in `src-exe/Main.hs`.
-  Rationale: Seihou's enforced "CLI library-first" convention — feature logic in the internal
-  library, only optparse/Paths/file-embed-coupled code in `src-exe`.
+- Decision: Place `DocsOpts`, `runDocs`, and `handleDocs` in
+  `seihou-okf-extension-internal`; keep the extension executable `src-exe/Main.hs` as parser
+  and dispatch only.
+  Rationale: This mirrors seihou's CLI library-first convention inside the extension package
+  while keeping the main `seihou-cli` package independent of OKF internals.
   Date: 2026-06-19
 
 
@@ -87,67 +97,42 @@ flow against a fixture registry and asserts the output files exist and validate.
 All paths are relative to the seihou repository root
 (`/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`).
 
-How seihou adds a subcommand (three files, from prior research):
+EP-60 creates `seihou-okf-extension`, with a private library
+`seihou-okf-extension-internal`, an executable `seihou-okf-extension`, and a test suite. This
+plan works only in that package except for a hosted-invocation test that exercises the main
+`seihou extension run okf -- ...` command added by EP-60.
 
-1. `seihou-cli/src-exe/Seihou/CLI/Commands.hs` — defines the `Command` sum type and the
-   optparse parser. Each command has a `*Info :: ParserInfo Command` and a
-   `*Parser :: Parser Command`, registered in an `hsubparser` block with
-   `command "<name>" <info>`. The `*Opts` records are imported from the internal library.
-   Canonical example to mirror is `migrate`:
-
-   ```haskell
-   migrateInfo :: ParserInfo Command
-   migrateInfo = info (migrateParser <**> helper) (fullDesc <> progDesc "..." <> footerDoc (Just migrateFooter))
-
-   migrateParser :: Parser Command
-   migrateParser = fmap Migrate $ MigrateOpts
-       <$> argument (ModuleName . T.pack <$> str) (metavar "MODULE" <> help "...")
-       <*> optional (option (T.pack <$> str) (long "to" <> ...))
-       <*> switch (long "dry-run" <> ...)
-   ```
-
-2. `seihou-cli/src-exe/Main.hs` — dispatch: `main = customExecParser (prefs showHelpOnEmpty)
-   opts` then `case cmd of ... Migrate o -> handleMigrate o`.
-
-3. The handler module. For `registry`, the handler lives in the internal library
-   (`seihou-cli/src/Seihou/CLI/Registry.hs`, `handleRegistry :: RegistryCommand -> IO ()`),
-   which is the pattern to follow here (`registry validate` already takes `--dir PATH` and
-   reads `seihou-registry.dhall`).
-
-Effects and IO: command handlers are plain `IO ()`. Filesystem work can be done in bare IO
-(`System.Directory`) — as `Seihou.CLI.List.handleList` and the `eval*FromFile` loaders do — or
-through seihou's `Filesystem` effect (`Seihou.Effect.Filesystem` +
-`Seihou.Effect.FilesystemInterp.runFilesystem`, used via `runEff $ runFilesystem $ ...`). For
-this command, bare `System.Directory` plus EP-58's `writeDocBundle` (which itself does IO) is
-the simplest; match whichever style the surrounding handlers prefer.
+Effects and IO: extension command handlers are plain `IO ()`. Use bare `System.Directory`
+for output-directory hygiene and EP-58's `writeDocBundle` for validated writes. Keep the core
+logic testable by factoring it as `runDocs :: DocsOpts -> IO (Either Text Text)`, where
+`Left` is the user-facing error text and `Right` is the success summary.
 
 This plan calls into EP-57 and EP-58:
 
 ```haskell
--- Seihou.CLI.Docs.Model (EP-57)
+-- Seihou.OKF.Docs.Model (EP-57)
 loadDocModel  :: FilePath -> IO (Either DocLoadError DocModel)
--- Seihou.CLI.Docs.Render (EP-58)
-renderDocBundle :: DocModel -> ([Concept], [BundleValidationError])
-writeDocBundle  :: FilePath -> DocModel -> IO (Either [BundleValidationError] ())
+-- Seihou.OKF.Docs.Render (EP-58)
+renderDocBundle :: DocModel -> Either [DocRenderError] ([Concept], [BundleValidationError])
+writeDocBundle  :: FilePath -> DocModel -> IO (Either [DocBundleError] ())
 ```
 
-okf-core's `BundleValidationError` (from `Okf.Validation`) is what `writeDocBundle` returns on
-failure; render it for the user (see Step 2). Its constructors:
-`DocumentInvalid ConceptId ValidationError | DanglingReference ConceptId ConceptId |
-DuplicateConceptId ConceptId`. `Okf.ConceptId.renderConceptId :: ConceptId -> Text` renders an
-ID for messages.
+`writeDocBundle` returns EP-58's `DocBundleError`. It wraps seihou render failures (currently
+an invalid generated OKF concept ID) and okf-core `BundleValidationError`s. okf-core's
+constructors are `DocumentInvalid ConceptId ValidationError | DanglingReference ConceptId
+ConceptId | DuplicateConceptId ConceptId`. `Okf.ConceptId.renderConceptId :: ConceptId ->
+Text` renders an ID for messages.
 
 Test conventions (same as EP-57/EP-58): tasty + tasty-hspec + hspec; spec exports
-`tests :: IO TestTree`; add to `seihou-cli/test/Main.hs` and the test stanza `other-modules`.
+`tests :: IO TestTree`; add to `seihou-okf-extension/test/Main.hs` and the extension test
+stanza `other-modules`.
 Use `System.IO.Temp.withSystemTempDirectory` for the output directory in tests. A fixture
-registry already exists from EP-57 (`seihou-cli/test/fixtures/docs-registry/` or its temp-dir
-equivalent); reuse it.
+registry already exists from EP-57 (`seihou-okf-extension/test/fixtures/docs-registry/` or
+its temp-dir equivalent); reuse it.
 
 User documentation lives under `docs/` (research found `docs/cli/`, `docs/user/`, and a
-`docs/generated/` area). Find where existing per-command docs live (e.g. how `migrate` or
-`registry` is documented) and add the `docs` command there in the same style. Also check
-`seihou-cli/help/` (the executable has a `help/` data dir) — if commands ship embedded help
-text via `file-embed`, add a `docs` help file in the same format.
+`docs/generated/` area). Add extension docs in the same style as existing command docs,
+covering both direct execution and hosted execution through `seihou extension run okf`.
 
 Build/run/test: `nix develop`; `cabal build all`; `cabal test all`;
 `cabal run seihou -- docs --dir <path> --out <path>`. Or `just build` / `just test`.
@@ -157,13 +142,14 @@ Build/run/test: `nix develop`; `cabal build all`; `cabal test all`;
 
 Single milestone: command + tests + docs.
 
-Step 1 — options + handler (internal library). Create `seihou-cli/src/Seihou/CLI/Docs.hs`
-exporting the options record and handler (re-export the model/render modules' needs as
-required):
+Step 1 — options + handler (extension internal library). Create
+`seihou-okf-extension/src/Seihou/OKF/Extension/Docs.hs` exporting the options record and
+handler:
 
 ```haskell
-module Seihou.CLI.Docs
+module Seihou.OKF.Extension.Docs
   ( DocsOpts (..)
+  , runDocs
   , handleDocs
   ) where
 
@@ -174,36 +160,40 @@ data DocsOpts = DocsOpts
   }
 ```
 
-`handleDocs :: DocsOpts -> IO ()`:
+`runDocs :: DocsOpts -> IO (Either Text Text)`:
 
 1. Resolve `docsDir`; verify `docsDir </> "seihou-registry.dhall"` exists, else print a clear
-   error to stderr and `exitFailure`.
+   error.
 2. Output-dir hygiene: if `docsOut` exists and is non-empty and `not docsForce`, print an
-   error ("output directory <out> is not empty; pass --force to overwrite") and `exitFailure`.
+   error ("output directory <out> is not empty; pass --force to overwrite").
    Otherwise remove `docsOut` if it exists (`removeDirectoryRecursive`) and recreate it
    (`createDirectoryIfMissing True`). This guarantees a pristine bundle.
-3. `loadDocModel docsDir`; on `Left err` print the rendered `DocLoadError` and `exitFailure`.
-4. `writeDocBundle docsOut model`; on `Left problems` print each `BundleValidationError`
-   (rendered) to stderr and `exitFailure`; on `Right ()` print a success summary, e.g.
-   `Wrote N concepts to <out>` where N is `length (fst (renderDocBundle model))`.
-5. Add a renderer `renderBundleValidationError :: BundleValidationError -> Text` mirroring the
-   one in the okf CLI:
+3. `loadDocModel docsDir`; on `Left err` return the rendered `DocLoadError`.
+4. `renderDocBundle model`; on `Left renderErrors`, print each rendered `DocRenderError` to
+   the returned error. On `Right (concepts, validationProblems)`, if validation problems are
+   present, return each rendered `BundleValidationError`.
+5. If rendering and validation are clean, call `writeDocBundle docsOut model`; on `Left
+   problems` return each rendered `DocBundleError`; on `Right ()` return
+   `Wrote N concepts to <out>` where N is `length concepts`.
+6. Add renderers for `DocBundleError` and `BundleValidationError`; the bundle-validation
+   renderer mirrors the one in the okf CLI:
    - `DocumentInvalid cid e` → `renderConceptId cid <> ": " <> <validation error text>`
    - `DanglingReference s t` → `renderConceptId s <> ": link to missing concept: " <> renderConceptId t`
    - `DuplicateConceptId cid` → `"duplicate concept ID: " <> renderConceptId cid`
 
-Step 2 — parser (executable). In `seihou-cli/src-exe/Seihou/CLI/Commands.hs`:
+`handleDocs :: DocsOpts -> IO ()` calls `runDocs`, prints `Left` to stderr and exits
+non-zero, or prints `Right` to stdout and exits success.
 
-- Add `Docs DocsOpts` to the `Command` sum type (import `DocsOpts` from `Seihou.CLI.Docs`).
-- Add `docsInfo`/`docsParser`:
+Step 2 — parser (extension executable). In `seihou-okf-extension/src-exe/Main.hs`, replace
+EP-60's stub parser with a real optparse parser:
 
   ```haskell
-  docsInfo :: ParserInfo Command
+  docsInfo :: ParserInfo DocsOpts
   docsInfo = info (docsParser <**> helper)
     (fullDesc <> progDesc "Generate an OKF documentation bundle for a seihou registry")
 
-  docsParser :: Parser Command
-  docsParser = fmap Docs $ DocsOpts
+  docsParser :: Parser DocsOpts
+  docsParser = DocsOpts
       <$> option str (long "dir" <> metavar "PATH" <> value "." <> showDefault
                        <> help "Registry directory containing seihou-registry.dhall")
       <*> option str (long "out" <> metavar "PATH" <> value "okf-docs" <> showDefault
@@ -211,44 +201,43 @@ Step 2 — parser (executable). In `seihou-cli/src-exe/Seihou/CLI/Commands.hs`:
       <*> switch (long "force" <> help "Overwrite a non-empty output directory")
   ```
 
-- Register it in the appropriate `hsubparser` group: `command "docs" docsInfo`.
+Register it under `command "docs" docsInfo`, and dispatch to `handleDocs`.
 
-Step 3 — dispatch. In `seihou-cli/src-exe/Main.hs` add `Docs o -> handleDocs o` to the
-command `case`, importing `handleDocs` from `Seihou.CLI.Docs`.
+Step 3 — cabal. Add `Seihou.OKF.Extension.Docs` to the `exposed-modules` of
+`seihou-okf-extension-internal`. `Seihou.OKF.Docs.Model` and `Seihou.OKF.Docs.Render` are
+already exposed by EP-57/EP-58.
 
-Step 4 — cabal. Add `Seihou.CLI.Docs` to the `exposed-modules` of `seihou-cli-internal`. The
-`executable seihou` stanza already depends on `seihou-cli-internal`, so no new dep there; it
-inherits okf-core transitively. (`Seihou.CLI.Docs.Model` and `.Render` are already exposed by
-EP-57/EP-58.)
-
-Step 5 — end-to-end test. Create `seihou-cli/test/Seihou/CLI/DocsSpec.hs` exporting
+Step 4 — end-to-end test. Create `seihou-okf-extension/test/Seihou/OKF/Extension/DocsSpec.hs` exporting
 `tests :: IO TestTree`. In a `withSystemTempDirectory`:
 
 - Point at the fixture registry from EP-57 (or write it into the temp dir).
-- Run `handleDocs DocsOpts{ docsDir = <fixture>, docsOut = <temp>/out, docsForce = True }`.
+- Run `runDocs DocsOpts{ docsDir = <fixture>, docsOut = <temp>/out, docsForce = True }`.
 - Assert the expected files exist: `<temp>/out/modules/<name>.md`,
   `<temp>/out/recipes/<name>.md`, etc., for the fixture's entities.
 - Re-read the written bundle with okf-core's `Okf.Bundle.walkBundle` and run
   `Okf.Validation.validateBundle PermissiveConformance` on the result; assert it is `[]`
   (the written bundle validates clean). This proves the command produced a valid OKF bundle
   end to end, using okf-core as the oracle.
-- Optionally capture that a second run with `docsForce = False` against the now-non-empty out
-  dir fails (returns non-zero / throws the handled error) — test the hygiene guard. Since
-  `handleDocs` calls `exitFailure`, either factor the core logic into a pure-result function
-  the test can call without exiting, or test the success path only and cover the guard with a
-  smaller unit. Prefer factoring `handleDocs` into `runDocs :: DocsOpts -> IO (Either Text
-  ())` (returns the message) plus a thin `handleDocs` that prints and exits — this makes the
-  command testable without `exitFailure`. Record this refactor in the Decision Log if adopted.
+- Capture that a second run with `docsForce = False` against the now-non-empty out dir returns
+  `Left`, covering the hygiene guard without triggering `exitFailure`.
 
-Add the spec to `seihou-cli/test/Main.hs` and the test stanza `other-modules`.
+Add the spec to `seihou-okf-extension/test/Main.hs` and the test stanza `other-modules`.
 
-Step 6 — user docs. Add documentation for `seihou docs` in the same place and style as other
-commands' docs (e.g. under `docs/cli/` or `docs/user/`). Cover: what it does (generate an OKF
-documentation bundle from a registry), the `--dir`/`--out`/`--force` flags and defaults, a
-worked example against `seihou-modules`, a note that output is *derived* (regenerate, do not
-hand-edit; each doc's `resource` points at the source `.dhall`), and how to explore the result
-with the `okf` CLI (`okf validate`, `okf index --write`, `okf graph --json`). If commands ship
-embedded help via `seihou-cli/help/`, add a matching `docs` help entry.
+Step 5 — hosted invocation test. Add or update a `seihou-cli` extension-host test from EP-60
+only if EP-60 did not already cover a real extension binary. The test should put the built or
+temporary `seihou-okf-extension` executable on `PATH`, run `seihou extension run okf -- docs
+--dir <fixture> --out <temp>/out --force`, and assert the output bundle exists. If invoking
+the built binary is too heavy for a unit test, keep this as a manual validation command and
+record why in Surprises & Discoveries.
+
+Step 6 — user docs. Add documentation for the OKF extension in the same place and style as
+other command docs (e.g. under `docs/cli/` or `docs/user/`). Cover: what it does (generate an
+OKF documentation bundle from a registry), the direct command
+`seihou-okf-extension docs`, the hosted command `seihou extension run okf -- docs`, the
+`--dir`/`--out`/`--force` flags and defaults, a worked example against `seihou-modules`, a
+note that output is *derived* (regenerate, do not hand-edit; each doc's `resource` points at
+the source `.dhall`), and how to explore the result with the `okf` CLI (`okf validate`,
+`okf index --write`, `okf graph --json`).
 
 
 ## Concrete Steps
@@ -258,13 +247,13 @@ From the seihou repository root, inside the dev shell:
 ```bash
 nix develop
 cabal build all
-cabal test all
+cabal test seihou-okf-extension-test
 ```
 
 Manual run against the real registry:
 
 ```bash
-cabal run seihou -- docs --dir /Users/shinzui/Keikaku/bokuno/seihou-modules --out /tmp/seihou-okf
+cabal run seihou-okf-extension -- docs --dir /Users/shinzui/Keikaku/bokuno/seihou-modules --out /tmp/seihou-okf
 ```
 
 Expected:
@@ -284,7 +273,7 @@ okf graph /tmp/seihou-okf --json   # edges incl. haskell-library -> nix-haskell-
 Help text check:
 
 ```bash
-cabal run seihou -- docs --help
+cabal run seihou-okf-extension -- docs --help
 ```
 
 Expected: usage showing `--dir`, `--out`, `--force` with their defaults.
@@ -294,22 +283,23 @@ Expected: usage showing `--dir`, `--out`, `--force` with their defaults.
 
 Acceptance is behavioral:
 
-1. `seihou docs --dir <registry> --out <dir>` writes one Markdown document per registry entry
-   into `<dir>` and prints a concept count; running it on `seihou-modules` yields a bundle
-   that `okf validate` accepts.
-2. `cabal test all` passes, including the new `DocsSpec`, which runs the command flow against a
-   fixture registry and re-validates the written bundle with okf-core (`walkBundle` +
-   `validateBundle` returns `[]`).
-3. `seihou docs --help` shows the `--dir`/`--out`/`--force` options with defaults, proving the
-   parser is wired into the top-level command set.
+1. `seihou-okf-extension docs --dir <registry> --out <dir>` writes one Markdown document per
+   registry entry into `<dir>` and prints a concept count; running it on `seihou-modules`
+   yields a bundle that `okf validate` accepts.
+2. `cabal test seihou-okf-extension-test` passes, including the new `DocsSpec`, which runs
+   the command flow against a fixture registry and re-validates the written bundle with
+   okf-core (`walkBundle` + `validateBundle` returns `[]`).
+3. `seihou-okf-extension docs --help` shows the `--dir`/`--out`/`--force` options with
+   defaults.
 4. The output is deterministic: running the command twice (with `--force`) produces identical
    files (no timestamps), demonstrable by `diff -r` of two runs.
-5. User documentation for `seihou docs` exists and its example matches real behavior.
+5. User documentation for `seihou-okf-extension docs` and the hosted
+   `seihou extension run okf -- docs` form exists and its example matches real behavior.
 
 
 ## Idempotence and Recovery
 
-The command is safe to re-run: with `--force` it clears and recreates the output directory, so
+The extension command is safe to re-run: with `--force` it clears and recreates the output directory, so
 repeated runs converge to the same bundle. Without `--force`, it refuses to overwrite a
 non-empty output directory, preventing accidental clobbering of unrelated files. If
 `writeDocBundle` reports validation errors, the command exits non-zero without writing a
@@ -321,27 +311,39 @@ cleanly; generated `okf-docs/` directories are disposable.
 
 ## Interfaces and Dependencies
 
-Depends on EP-58 (`renderDocBundle`/`writeDocBundle`) and transitively EP-57 (`loadDocModel`)
-and EP-56 (okf-core on the build path). Uses `optparse-applicative` (already a dependency of
-the `executable seihou` target), `System.Directory`, and okf-core's `Okf.Bundle.walkBundle` +
-`Okf.Validation.validateBundle` (in the test). No new package dependencies.
+Depends on EP-60 (extension package and host), EP-58 (`renderDocBundle`/`writeDocBundle`), and
+transitively EP-57 (`loadDocModel`) and EP-56 (okf-core source/build wiring). Uses
+`optparse-applicative` in the `seihou-okf-extension` executable, `System.Directory`, and
+okf-core's `Okf.Bundle.walkBundle` + `Okf.Validation.validateBundle` in the test. No new
+package dependencies beyond those already assigned to `seihou-okf-extension`.
 
 Artifacts that must exist at the end of this plan:
 
 ```text
-seihou-cli/src/Seihou/CLI/Docs.hs                 (DocsOpts + handleDocs / runDocs)
-seihou-cli/src-exe/Seihou/CLI/Commands.hs         (+ Docs constructor, docsInfo/docsParser, command "docs")
-seihou-cli/src-exe/Main.hs                        (+ Docs o -> handleDocs o)
-seihou-cli/seihou-cli.cabal                       (seihou-cli-internal exposed-modules: + Seihou.CLI.Docs; test other-modules: + DocsSpec)
-seihou-cli/test/Seihou/CLI/DocsSpec.hs            (end-to-end test)
-seihou-cli/test/Main.hs                           (+ DocsSpec in the test group)
-docs/cli/ or docs/user/ (+ seihou-cli/help/)      (user documentation for `seihou docs`)
+seihou-okf-extension/src/Seihou/OKF/Extension/Docs.hs      (DocsOpts + runDocs + handleDocs)
+seihou-okf-extension/src-exe/Main.hs                       (docs parser + dispatch)
+seihou-okf-extension/seihou-okf-extension.cabal            (exposed module + test other-modules)
+seihou-okf-extension/test/Seihou/OKF/Extension/DocsSpec.hs (end-to-end test)
+seihou-okf-extension/test/Main.hs                          (+ DocsSpec in the test group)
+docs/cli/ or docs/user/                                    (user documentation for the OKF extension)
 ```
 
 Relationship to other plans (see the MasterPlan's Integration Points):
 
-- Hard dep: EP-58. Soft dep: EP-56.
+- Hard deps: EP-58 and EP-60.
 - Must use the same concept-ID scheme and validation profile EP-58 established (integration
   points 3 and 4); the test asserts against them.
-- Shares `seihou-cli/test/Main.hs` and the test stanza `other-modules` with EP-57 and EP-58:
-  append the new spec; do not reorder existing ones.
+- Shares `seihou-okf-extension/test/Main.hs` and the extension test stanza `other-modules`
+  with EP-57 and EP-58: append the new spec; do not reorder existing ones.
+
+
+## Revision Notes
+
+- 2026-06-19: Updated EP-59 to consume EP-58's corrected render/write API. The command now
+  explicitly handles seihou render errors separately from okf-core bundle validation errors,
+  uses the already-rendered concept count for success output, and keeps strict/timestamp
+  behavior out of the first command surface.
+- 2026-06-19: Retargeted EP-59 from a main `seihou docs` subcommand to the
+  `seihou-okf-extension docs` command plus hosted invocation through
+  `seihou extension run okf -- docs`. Parser, handler, tests, and docs now live under the
+  extension package boundary introduced by EP-60.
