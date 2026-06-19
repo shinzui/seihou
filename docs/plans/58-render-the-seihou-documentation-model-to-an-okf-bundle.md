@@ -47,18 +47,24 @@ these behind the `seihou-okf-extension docs` command.
 
 ## Progress
 
-- [ ] Add the concept-ID scheme helpers (`modules/<name>` etc.) and `resource` builder
-- [ ] Render each entity kind to an `OKFDocument` (frontmatter + body) and then a `Concept` via `conceptFromDocument`
-- [ ] Render cross-links (dependencies / recipe modules / base modules) with `renderConceptLink`
-- [ ] Implement `renderDocBundle :: DocModel -> Either [DocRenderError] ([Concept], [BundleValidationError])`
-- [ ] Implement `writeDocBundle :: FilePath -> DocModel -> IO (Either [DocBundleError] ())`
-- [ ] Unit/golden tests: concept IDs, frontmatter fields, cross-links, clean validation
-- [ ] `cabal build all` and `cabal test seihou-okf-extension-test` green
+- [x] 2026-06-19 13:21 PDT: Add the concept-ID scheme helpers (`modules/<name>` etc.) and `resource` builder.
+- [x] 2026-06-19 13:21 PDT: Render each entity kind to an `OKFDocument` (frontmatter + body) and then a `Concept` via `conceptFromDocument`.
+- [x] 2026-06-19 13:21 PDT: Render cross-links (dependencies / recipe modules / base modules) with `renderConceptLink`.
+- [x] 2026-06-19 13:21 PDT: Implement `renderDocBundle :: DocModel -> Either [DocRenderError] ([Concept], [BundleValidationError])`.
+- [x] 2026-06-19 13:21 PDT: Implement `writeDocBundle :: FilePath -> DocModel -> IO (Either [DocBundleError] ())`.
+- [x] 2026-06-19 13:21 PDT: Unit tests cover concept IDs, frontmatter fields, cross-links, clean validation, dangling references, and invalid concept IDs.
+- [x] 2026-06-19 13:21 PDT: `cabal build all`, `cabal test seihou-okf-extension-test`, formatter check, and real-registry write spot-check are green.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- `okf` CLI was not available on `PATH` during validation, so the external CLI validation
+  part of the optional spot-check could not be run. The library path still validated before
+  writing because `writeDocBundle` calls okf-core `validateBundle PermissiveConformance` and
+  returned `Right ()` for the real `seihou-modules` registry.
+
+- The render module needs a direct `aeson` dependency because it sets the producer-specific
+  `version` frontmatter field via `Okf.setField "version" (String version)`.
 
 
 ## Decision Log
@@ -91,6 +97,54 @@ these behind the `seihou-okf-extension docs` command.
   registry name cannot be parsed as an OKF `ConceptId`, so `renderDocBundle` must be able to
   return `DocRenderError` instead of silently dropping the entity or crashing.
   Date: 2026-06-19
+
+- Decision: Keep `writeDocBundle` narrow: validate and write concepts, but do not clear the
+  output directory.
+  Rationale: okf-core `writeBundle` intentionally leaves unrelated files alone. EP-59 owns
+  command behavior such as creating or clearing the output directory before regeneration, so
+  this library function documents the contract and stays a thin validated write operation.
+  Date: 2026-06-19
+
+
+## Outcomes & Retrospective
+
+EP-58 is complete. The extension package now exposes `Seihou.OKF.Docs.Render`, which maps
+EP-57 `DocModel` values to okf-core `Concept` values using the documented concept IDs:
+`modules/<name>`, `recipes/<name>`, `blueprints/<name>`, and `prompts/<name>`. Frontmatter is
+built through okf-core authoring helpers, includes deterministic common fields plus
+`resource`, `tags`, and optional `version`, and deliberately omits timestamps.
+
+The Markdown body renderer emits a heading, description, optional version, kind-specific
+sections, and graph-bearing module links with `renderConceptLink`. `renderDocBundle` reports
+invalid generated concept IDs as `DocRenderError`s before validation and otherwise returns
+okf-core `BundleValidationError`s such as `DanglingReference`. `writeDocBundle` validates
+with `PermissiveConformance` and writes only when the bundle is clean.
+
+Validation completed:
+
+```text
+cabal test seihou-okf-extension-test # All 13 tests passed
+cabal build all                      # success
+nix fmt -- --fail-on-change          # formatted 4 files (0 changed)
+```
+
+Real-registry spot-check completed:
+
+```haskell
+ghci> import Seihou.OKF.Docs.Model
+ghci> import Seihou.OKF.Docs.Render
+ghci> Right m <- loadDocModel "/Users/shinzui/Keikaku/bokuno/seihou-modules"
+ghci> writeDocBundle "/tmp/seihou-okf-demo" m
+Right ()
+```
+
+Generated files included eight concepts, and `/tmp/seihou-okf-demo/modules/haskell-library.md`
+contained:
+
+```text
+resource: seihou://seihou-modules/modules/haskell/haskell-library
+- [nix-haskell-flake](/modules/nix-haskell-flake.md)
+```
 
 
 ## Context and Orientation
@@ -443,3 +497,6 @@ Relationship to other plans (see the MasterPlan's Integration Points):
 - 2026-06-19: Retargeted the renderer from `seihou-cli-internal` to
   `seihou-okf-extension`. The renderer remains the OKF-dependent layer, but the dependency is
   now isolated in the extension package created by EP-60.
+- 2026-06-19: Implemented `Seihou.OKF.Docs.Render`, added render tests for concept IDs,
+  frontmatter, cross-links, clean validation, dangling references, and invalid concept IDs,
+  and recorded the real-registry write spot-check.

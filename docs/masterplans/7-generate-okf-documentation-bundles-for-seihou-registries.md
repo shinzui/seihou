@@ -123,7 +123,7 @@ should not expand the main CLI dependency graph).
 | EP-56 | Make okf-core a buildable dependency of seihou | docs/plans/56-make-okf-core-a-buildable-dependency-of-seihou.md | None | None | Complete |
 | EP-60 | Add a seihou extension contract and okf extension package | docs/plans/60-add-a-seihou-extension-contract-and-okf-extension-package.md | EP-56 | None | Complete |
 | EP-57 | Load a seihou registry into a documentation model | docs/plans/57-load-a-seihou-registry-into-a-documentation-model.md | EP-60 | None | Complete |
-| EP-58 | Render the seihou documentation model to an OKF bundle | docs/plans/58-render-the-seihou-documentation-model-to-an-okf-bundle.md | EP-56, EP-57, EP-60 | None | Not Started |
+| EP-58 | Render the seihou documentation model to an OKF bundle | docs/plans/58-render-the-seihou-documentation-model-to-an-okf-bundle.md | EP-56, EP-57, EP-60 | None | Complete |
 | EP-59 | Add the seihou okf extension docs command with fixture tests and user docs | docs/plans/59-add-the-seihou-docs-command-with-fixtures-tests-and-user-docs.md | EP-58, EP-60 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -208,7 +208,7 @@ Track milestone-level progress across all child plans.
 - [x] EP-56: okf-core resolves under `cabal build` (source-repository-package) and builds in the Nix package set (flake input + callCabal2nix); smoke test compiles. (Full `nix build` of seihou-cli is blocked by a pre-existing, unrelated `baikai` skew — see Surprises.)
 - [x] EP-60: `seihou extension run okf -- ...` can delegate to `seihou-okf-extension`; `okf-core` dependency lives in the extension package, not `seihou-cli-internal`
 - [x] EP-57: `seihou-registry.dhall` loads into an extension-owned `DocModel` with full artifacts and resolved cross-references; unit tests on a fixture registry
-- [ ] EP-58: extension-owned `DocModel` renders to `[Concept]` with cross-links; `validateBundle` clean; `writeBundle` emits the bundle; unit/golden tests
+- [x] EP-58: extension-owned `DocModel` renders to `[Concept]` with cross-links; `validateBundle` clean; `writeBundle` emits the bundle; unit/golden tests
 - [ ] EP-59: `seihou-okf-extension docs --dir --out` and hosted invocation through `seihou extension run okf -- docs ...` work end to end on a fixture registry; user docs added; `okf validate` of the output passes
 
 
@@ -243,6 +243,11 @@ interactions between child plans. Provide concise evidence.
 - EP-57 uses temp-dir raw Dhall fixtures instead of checked-in files with remote schema
   imports. Cross-plan impact: EP-58 and EP-59 can reuse this style for focused loader and
   command fixtures when they need deterministic, offline tests.
+- EP-58 found that the `okf` CLI was not available on `PATH` during validation. Cross-plan
+  impact: EP-59 should validate the command primarily through the extension's library path
+  and can run external `okf` CLI checks only when the CLI is available.
+- EP-58 added a direct `aeson` dependency to `seihou-okf-extension` for the `version`
+  frontmatter field. Cross-plan impact: EP-59 does not need to add this dependency again.
 
 
 ## Decision Log
@@ -336,6 +341,11 @@ metadata and resolving module references as present or dangling without importin
 The loader passes fixture tests and a spot-check against
 `/Users/shinzui/Keikaku/bokuno/seihou-modules` with `(8,"seihou-modules")`.
 
+EP-58 completed OKF rendering for the documentation model. `renderDocBundle` now produces
+okf-core concepts with deterministic frontmatter, resource pointers, and Markdown graph
+links, while `writeDocBundle` validates and writes only clean bundles. A spot-check wrote the
+real `seihou-modules` registry to `/tmp/seihou-okf-demo` as eight Markdown concepts.
+
 
 ## Revision Notes
 
@@ -354,3 +364,6 @@ The loader passes fixture tests and a spot-check against
 - 2026-06-19: Marked EP-57 complete after implementing `Seihou.OKF.Docs.Model`, adding
   temp-dir loader tests for all registry kinds and resolved/unresolved module references,
   and validating the loader against the real `seihou-modules` registry.
+- 2026-06-19: Marked EP-58 complete after implementing `Seihou.OKF.Docs.Render`, adding
+  render tests for concept IDs, frontmatter, cross-links, clean validation, dangling
+  references, and invalid concept IDs, and writing a real `seihou-modules` OKF bundle.
