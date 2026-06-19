@@ -6,6 +6,10 @@
 # ./nix/haskell-overlay.nix (seihou-core / seihou-cli / seihou-okf-extension via
 # callCabal2nix, the seihou-schema submodule staged at ../schema, and the git
 # revision baked into the binary).
+#
+# The default (`seihou`) package is a symlinkJoin bundling the CLI with the OKF
+# extension so a single install exposes both binaries on PATH; the raw CLI and
+# extension remain available as `seihou-cli` and `seihou-okf-extension`.
 { inputs, ... }:
 {
   perSystem = { system, pkgs, ... }:
@@ -21,11 +25,24 @@
             okf-src = inputs.okf-src;
           });
       };
+      # Bundle the CLI together with the OKF extension so a single installed
+      # package exposes both `seihou` and `seihou-okf-extension` on PATH. The
+      # CLI discovers extensions via `findExecutable "seihou-<name>-extension"`
+      # (see Seihou.CLI.Extension), so `seihou docs` / `seihou extension run okf`
+      # only work when the extension binary is on PATH alongside the CLI.
+      seihou-bundle = pkgs.symlinkJoin {
+        name = "seihou";
+        paths = [
+          haskellPackages.seihou-cli
+          haskellPackages.seihou-okf-extension
+        ];
+      };
     in
     {
-      packages.seihou = haskellPackages.seihou-cli;
+      packages.seihou = seihou-bundle;
+      packages.seihou-cli = haskellPackages.seihou-cli;
       packages.seihou-okf-extension = haskellPackages.seihou-okf-extension;
-      packages.default = haskellPackages.seihou-cli;
+      packages.default = seihou-bundle;
 
       # Enforce the CLI library-first module-placement convention as a flake
       # check (mirrors the pre-commit hook in ./nix/pre-commit.nix).
