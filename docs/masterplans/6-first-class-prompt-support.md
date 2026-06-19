@@ -34,7 +34,7 @@ An alternative was to extend blueprints with a `purpose = "prompt"` field. That 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | EP-50 | Add prompt schema primitives | docs/plans/50-add-prompt-schema-primitives.md | None | None | Complete |
-| EP-51 | Add prompt domain and discovery | docs/plans/51-add-prompt-domain-and-discovery.md | EP-50 | None | Not Started |
+| EP-51 | Add prompt domain and discovery | docs/plans/51-add-prompt-domain-and-discovery.md | EP-50 | None | Complete |
 | EP-52 | Resolve command derived variables | docs/plans/52-resolve-command-derived-variables.md | EP-50 | EP-51 | Not Started |
 | EP-53 | Add prompt CLI workflows | docs/plans/53-add-prompt-cli-workflows.md | EP-51, EP-52 | None | Not Started |
 | EP-55 | Integrate prompts with registries and discovery surfaces | docs/plans/55-integrate-prompts-with-registries-and-discovery-surfaces.md | EP-51 | EP-53 | Not Started |
@@ -75,7 +75,7 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 
 - [x] EP-50: Define external and local schema records for `prompt.dhall`, reference files, launch metadata, and command-derived variables.
 - [x] EP-50: Validate schema examples with Dhall and update schema package exports.
-- [ ] EP-51: Add Haskell prompt types, Dhall decoder, validation module, and search/discovery support.
+- [x] EP-51: Add Haskell prompt types, Dhall decoder, validation module, and search/discovery support.
 - [ ] EP-52: Add safe command-derived variable resolution with process-effect tests and provenance.
 - [ ] EP-53: Add `seihou new-prompt`, `seihou validate-prompt`, and `seihou prompt run` workflows.
 - [ ] EP-55: Add prompts to registries, install, browse, list filters, sync, validation, and related tests.

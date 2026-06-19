@@ -25,11 +25,13 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Add `AgentPrompt`, `PromptFile`, and command-variable references to core types.
-- [ ] Add Dhall decoding for `prompt.dhall`.
-- [ ] Add prompt validation checks and tests.
-- [ ] Extend runnable discovery with `RunnableAgentPrompt` and `KindPrompt`.
-- [ ] Add fixtures proving module > recipe > blueprint > prompt precedence.
+- [x] 2026-06-19: Marked EP-51 In Progress in `docs/masterplans/6-first-class-prompt-support.md`.
+- [x] 2026-06-19: Added `CommandVar`, `AgentPromptLaunch`, `AgentPrompt`, and `RunnableAgentPrompt` to `seihou-core/src/Seihou/Core/Types.hs`.
+- [x] 2026-06-19: Added `evalAgentPromptFromFile`, `agentPromptDecoder`, `commandVarDecoder`, and `agentPromptLaunchDecoder` to `seihou-core/src/Seihou/Dhall/Eval.hs`.
+- [x] 2026-06-19: Added `Seihou.Core.AgentPrompt` validation checks and focused tests in `seihou-core/test/Seihou/Core/AgentPromptSpec.hs`.
+- [x] 2026-06-19: Extended runnable discovery with `RunnableAgentPrompt`, `KindPrompt`, and `prompt.dhall` precedence after blueprints.
+- [x] 2026-06-19: Added tests proving prompt discovery, `KindPrompt` enumeration, and blueprint-over-prompt precedence.
+- [x] 2026-06-19: Ran `cabal test seihou-core-test --test-options '--pattern AgentPrompt'`, `cabal build all`, and `cabal test seihou-core-test`.
 
 
 ## Surprises & Discoveries
@@ -37,7 +39,13 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: `KindPrompt` compiles through the existing CLI library and executable without adding CLI prompt behavior yet.
+  Evidence: `cabal build all` completed successfully after adding `KindPrompt` and `RunnableAgentPrompt`; later plans still own prompt-specific CLI workflows and list/filter polishing.
+  Date: 2026-06-19
+
+- Discovery: Command-derived variables should remain independent of typed `vars` at this layer.
+  Evidence: EP-50's accepted schema example declares `commandVars = [ S.CommandVar::{ name = "git.branch", ... } ]` without a matching `vars` declaration, so EP-51 validation checks command-var names, duplication, command text, work directories, and byte limits without requiring a matching `VarDecl`.
+  Date: 2026-06-19
 
 
 ## Decision Log
@@ -48,13 +56,30 @@ Record every decision made while working on the plan.
   Rationale: Existing deterministic artifacts and scaffolding blueprints should keep their current behavior; prompts are the broadest, least-specific runnable kind.
   Date: 2026-06-19
 
+- Decision: Include EP-50's `launch` metadata in the Haskell `AgentPrompt` model now.
+  Rationale: The schema exposes `launch`, and decoding it in EP-51 prevents later CLI plans from needing another domain-model migration to consume provider, mode, or model defaults.
+  Date: 2026-06-19
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-51 added the core Haskell domain and discovery support for first-class prompt artifacts. `prompt.dhall` files now decode into `AgentPrompt`, validation covers prompt body, variables, interactive prompts, command-derived variables, reference files, tags, and allowed tools, and discovery returns `RunnableAgentPrompt` / `KindPrompt` with precedence after blueprints.
+
+Validation evidence:
+
+```text
+cabal test seihou-core-test --test-options '--pattern AgentPrompt'
+All 11 tests passed
+
+cabal build all
+completed successfully
+
+cabal test seihou-core-test
+All 906 tests passed
+```
 
 
 ## Context and Orientation

@@ -1,6 +1,7 @@
 module Seihou.Core.Module
   ( discoverModule,
     discoverBlueprint,
+    discoverAgentPrompt,
     discoverRunnable,
     defaultSearchPaths,
     validateModule,
@@ -36,7 +37,7 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile)
+import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile)
 import Seihou.Prelude
 import System.Directory (XdgDirectory (..), doesDirectoryExist, doesFileExist, getCurrentDirectory, getXdgDirectory, listDirectory)
 
@@ -56,12 +57,13 @@ discoverModule searchPaths name = go searchPaths
         then pure (Right candidate)
         else go rest
 
--- | Search for a runnable (module, recipe, or blueprint) by name in the
+-- | Search for a runnable (module, recipe, blueprint, or prompt) by name in the
 -- given directories. For each search path, checks @module.dhall@ first
 -- (returning 'RunnableModule'), then @recipe.dhall@
 -- (returning 'RunnableRecipe'), then @blueprint.dhall@
--- (returning 'RunnableBlueprint'). Within a single candidate directory
--- the priority is module > recipe > blueprint, so a stray
+-- (returning 'RunnableBlueprint'), then @prompt.dhall@
+-- (returning 'RunnableAgentPrompt'). Within a single candidate directory
+-- the priority is module > recipe > blueprint > prompt, so a stray
 -- @module.dhall@ next to a @blueprint.dhall@ silently surfaces the
 -- module — the more specific, deterministic artifact. Returns
 -- 'ModuleNotFound' if none is found in any search path.
@@ -75,6 +77,7 @@ discoverRunnable searchPaths name = go searchPaths
           moduleDhall = candidate </> "module.dhall"
           recipeDhall = candidate </> "recipe.dhall"
           blueprintDhall = candidate </> "blueprint.dhall"
+          promptDhall = candidate </> "prompt.dhall"
       isModule <- doesFileExist moduleDhall
       if isModule
         then do
@@ -98,7 +101,15 @@ discoverRunnable searchPaths name = go searchPaths
                   case result of
                     Left err -> pure (Left err)
                     Right b -> pure (Right (RunnableBlueprint b candidate))
-                else go rest
+                else do
+                  isPrompt <- doesFileExist promptDhall
+                  if isPrompt
+                    then do
+                      result <- evalAgentPromptFromFile promptDhall
+                      case result of
+                        Left err -> pure (Left err)
+                        Right p -> pure (Right (RunnableAgentPrompt p candidate))
+                    else go rest
 
 -- | Search for a blueprint by name in the given directories. Returns
 -- the path to the directory containing @blueprint.dhall@, or
@@ -113,6 +124,22 @@ discoverBlueprint searchPaths name = go searchPaths
     go (dir : rest) = do
       let candidate = dir </> nameStr
       let dhallFile = candidate </> "blueprint.dhall"
+      exists <- doesFileExist dhallFile
+      if exists
+        then pure (Right candidate)
+        else go rest
+
+-- | Search for an agent prompt by name in the given directories. Returns
+-- the path to the directory containing @prompt.dhall@, or 'ModuleNotFound'
+-- listing the directories that were searched.
+discoverAgentPrompt :: [FilePath] -> ModuleName -> IO (Either ModuleLoadError FilePath)
+discoverAgentPrompt searchPaths name = go searchPaths
+  where
+    nameStr = T.unpack name.unModuleName
+    go [] = pure $ Left (ModuleNotFound name searchPaths)
+    go (dir : rest) = do
+      let candidate = dir </> nameStr
+      let dhallFile = candidate </> "prompt.dhall"
       exists <- doesFileExist dhallFile
       if exists
         then pure (Right candidate)
@@ -374,11 +401,11 @@ discoverAllModules searchPaths = do
         Right m -> validateModule moduleDir m
       pure DiscoveredModule {discoveredResult = result, discoveredSource = src, discoveredDir = moduleDir}
 
--- | Whether a discovered item is a module, a recipe, or a blueprint.
-data RunnableKind = KindModule | KindRecipe | KindBlueprint
+-- | Whether a discovered item is a module, recipe, blueprint, or prompt.
+data RunnableKind = KindModule | KindRecipe | KindBlueprint | KindPrompt
   deriving stock (Eq, Show, Generic)
 
--- | A module or recipe discovered during enumeration, with its load result, kind, and source.
+-- | A runnable discovered during enumeration, with its load result, kind, and source.
 data DiscoveredRunnable = DiscoveredRunnable
   { drName :: Text,
     drDescription :: Maybe Text,
@@ -390,7 +417,7 @@ data DiscoveredRunnable = DiscoveredRunnable
   }
   deriving stock (Show)
 
--- | Enumerate all modules and recipes across the given search paths.
+-- | Enumerate all modules, recipes, blueprints, and prompts across the given search paths.
 -- Returns a unified list of discovered items, each tagged with its kind.
 discoverAllRunnables :: [FilePath] -> IO [DiscoveredRunnable]
 discoverAllRunnables searchPaths = do
@@ -414,9 +441,11 @@ discoverAllRunnables searchPaths = do
           moduleDhall = entryDir </> "module.dhall"
           recipeDhall = entryDir </> "recipe.dhall"
           blueprintDhall = entryDir </> "blueprint.dhall"
+          promptDhall = entryDir </> "prompt.dhall"
       isModule <- doesFileExist moduleDhall
       isRecipe <- doesFileExist recipeDhall
       isBlueprint <- doesFileExist blueprintDhall
+      isPrompt <- doesFileExist promptDhall
       if isModule
         then do
           decoded <- evalModuleFromFile moduleDhall
@@ -497,7 +526,34 @@ discoverAllRunnables searchPaths = do
                               drError = Nothing
                             }
                     ]
-                else pure []
+                else
+                  if isPrompt
+                    then do
+                      decoded <- evalAgentPromptFromFile promptDhall
+                      pure
+                        [ case decoded of
+                            Left err ->
+                              DiscoveredRunnable
+                                { drName = T.pack entry,
+                                  drDescription = Nothing,
+                                  drKind = KindPrompt,
+                                  drSource = src,
+                                  drDir = entryDir,
+                                  drIsError = True,
+                                  drError = Just (briefLoadError err)
+                                }
+                            Right p ->
+                              DiscoveredRunnable
+                                { drName = p.name.unModuleName,
+                                  drDescription = p.description,
+                                  drKind = KindPrompt,
+                                  drSource = src,
+                                  drDir = entryDir,
+                                  drIsError = False,
+                                  drError = Nothing
+                                }
+                        ]
+                    else pure []
 
     briefLoadError :: ModuleLoadError -> Text
     briefLoadError (DhallEvalError _ _) = "Dhall evaluation failed"

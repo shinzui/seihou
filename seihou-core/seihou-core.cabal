@@ -38,6 +38,7 @@ library
     Seihou.Composition.Plan
     Seihou.Composition.Recipe
     Seihou.Composition.Resolve
+    Seihou.Core.AgentPrompt
     Seihou.Core.Blueprint
     Seihou.Core.Context
     Seihou.Core.Expr
@@ -135,6 +136,7 @@ test-suite seihou-core-test
     Seihou.Composition.PlanSpec
     Seihou.Composition.RecipeSpec
     Seihou.Composition.ResolveSpec
+    Seihou.Core.AgentPromptSpec
     Seihou.Core.BlueprintSpec
     Seihou.Core.ContextSpec
     Seihou.Core.ExprSpec

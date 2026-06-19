@@ -26,6 +26,9 @@ module Seihou.Core.Types
     Recipe (..),
     BlueprintFile (..),
     Blueprint (..),
+    CommandVar (..),
+    AgentPromptLaunch (..),
+    AgentPrompt (..),
     Runnable (..),
     recipeNameToModuleName,
     Operation (..),
@@ -60,6 +63,7 @@ import Data.String (IsString)
 import Data.Text (Text)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
+import Numeric.Natural (Natural)
 import Seihou.Core.Migration (Migration)
 
 -- | A module identifier such as @"haskell-base"@.
@@ -299,11 +303,53 @@ data Blueprint = Blueprint
   }
   deriving stock (Eq, Show, Generic)
 
--- | The result of name-based discovery: a module, a recipe, or a blueprint.
+-- | A prompt variable whose value is produced by running a local command.
+-- Process execution is implemented outside the core Dhall decoder; this
+-- record only captures the author-declared command and safety metadata.
+data CommandVar = CommandVar
+  { name :: VarName,
+    run :: Text,
+    workDir :: Maybe Text,
+    condition :: Maybe Expr,
+    trim :: Bool,
+    maxBytes :: Maybe Natural
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Optional launch metadata declared by an agent prompt. The CLI runner may
+-- use this as a default provider/model/mode hint, but project or CLI config
+-- remains authoritative.
+data AgentPromptLaunch = AgentPromptLaunch
+  { provider :: Maybe Text,
+    mode :: Maybe Text,
+    model :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A reusable agent-session prompt. Unlike 'Blueprint', an 'AgentPrompt'
+-- does not declare baseline modules and does not imply scaffolding or
+-- manifest provenance.
+data AgentPrompt = AgentPrompt
+  { name :: ModuleName,
+    version :: Maybe Text,
+    description :: Maybe Text,
+    prompt :: Text,
+    vars :: [VarDecl],
+    prompts :: [Prompt],
+    commandVars :: [CommandVar],
+    files :: [BlueprintFile],
+    allowedTools :: Maybe [Text],
+    tags :: [Text],
+    launch :: Maybe AgentPromptLaunch
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | The result of name-based discovery: a module, recipe, blueprint, or prompt.
 data Runnable
   = RunnableModule Module FilePath
   | RunnableRecipe Recipe FilePath
   | RunnableBlueprint Blueprint FilePath
+  | RunnableAgentPrompt AgentPrompt FilePath
   deriving stock (Show)
 
 -- | Convert a 'RecipeName' to a 'ModuleName' (they share a namespace).

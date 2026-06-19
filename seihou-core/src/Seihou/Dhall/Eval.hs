@@ -3,10 +3,14 @@ module Seihou.Dhall.Eval
     evalModuleFromFile,
     evalRecipeFromFile,
     evalBlueprintFromFile,
+    evalAgentPromptFromFile,
     evalRegistryFromFile,
     moduleDecoder,
     recipeDecoder,
     blueprintDecoder,
+    agentPromptDecoder,
+    commandVarDecoder,
+    agentPromptLaunchDecoder,
     blueprintFileDecoder,
     registryDecoder,
     registryEntryDecoder,
@@ -38,7 +42,7 @@ import Dhall (defaultInputSettings, input, inputExprWithSettings, inputFile, lis
 import Dhall.Core (Chunks (..), makeRecordField)
 import Dhall.Core qualified as Dhall (Expr (..))
 import Dhall.Map qualified as DhallMap
-import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, field, maybe, string, union)
+import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, field, maybe, natural, string, union)
 import Dhall.Src (Src)
 import Seihou.Core.Expr (parseExpr)
 import Seihou.Core.Migration (Migration (..), MigrationOp (..))
@@ -302,6 +306,79 @@ evalBlueprintFromFile path = do
       let nm = guessModuleName path
        in pure $ Left (DhallEvalError nm (T.pack (show e)))
     Right b -> pure (Right b)
+
+-- | Decoder for a 'CommandVar' record.
+commandVarDecoder :: Decoder CommandVar
+commandVarDecoder =
+  record
+    ( mkCommandVar
+        <$> field "name" varNameDecoder
+        <*> field "run" strictText
+        <*> field "workDir" (maybe strictText)
+        <*> field "when" (maybe strictText)
+        <*> field "trim" bool
+        <*> field "maxBytes" (maybe natural)
+    )
+  where
+    mkCommandVar name run workDir whenText trim maxBytes =
+      CommandVar
+        { name = name,
+          run = run,
+          workDir = workDir,
+          condition = parseWhen whenText,
+          trim = trim,
+          maxBytes = maxBytes
+        }
+
+-- | Decoder for optional agent prompt launch metadata.
+agentPromptLaunchDecoder :: Decoder AgentPromptLaunch
+agentPromptLaunchDecoder =
+  record
+    ( AgentPromptLaunch
+        <$> field "provider" (maybe strictText)
+        <*> field "mode" (maybe strictText)
+        <*> field "model" (maybe strictText)
+    )
+
+-- | Decoder for the top-level AgentPrompt type from Dhall.
+agentPromptDecoder :: Decoder AgentPrompt
+agentPromptDecoder =
+  record
+    ( AgentPrompt
+        <$> field "name" moduleNameDecoder
+        <*> field "version" (maybe strictText)
+        <*> field "description" (maybe strictText)
+        <*> field "prompt" strictText
+        <*> field "vars" (list varDeclDecoder)
+        <*> field "prompts" (list promptDecoder)
+        <*> field "commandVars" (list commandVarDecoder)
+        <*> field "files" (list blueprintFileDecoder)
+        <*> field "allowedTools" (maybe (list strictText))
+        <*> field "tags" (list strictText)
+        <*> field "launch" (maybe agentPromptLaunchDecoder)
+    )
+
+-- | Evaluate a @prompt.dhall@ file and decode it into an 'AgentPrompt'.
+evalAgentPromptFromFile :: FilePath -> IO (Either ModuleLoadError AgentPrompt)
+evalAgentPromptFromFile path = do
+  result <- try $ do
+    text <- TIO.readFile path
+    let settings =
+          set rootDirectory (takeDirectory path) $
+            set sourceName path defaultInputSettings
+    expr <- inputExprWithSettings settings text
+    case extract agentPromptDecoder expr of
+      Success p -> do
+        mapM_ (\v -> evaluate v.type_) p.vars
+        mapM_ (\prompt -> evaluate prompt.condition) p.prompts
+        mapM_ (\cv -> evaluate cv.condition) p.commandVars
+        pure p
+      Failure e -> throwIO e
+  case result of
+    Left (e :: SomeException) ->
+      let nm = guessModuleName path
+       in pure $ Left (DhallEvalError nm (T.pack (show e)))
+    Right p -> pure (Right p)
 
 -- | Decoder for Removal from a Dhall record.
 removalDecoder :: Decoder Removal
