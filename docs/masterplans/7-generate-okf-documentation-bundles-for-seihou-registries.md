@@ -121,7 +121,7 @@ should not expand the main CLI dependency graph).
 | #     | Title | Path | Hard Deps | Soft Deps | Status |
 |-------|-------|------|-----------|-----------|--------|
 | EP-56 | Make okf-core a buildable dependency of seihou | docs/plans/56-make-okf-core-a-buildable-dependency-of-seihou.md | None | None | Complete |
-| EP-60 | Add a seihou extension contract and okf extension package | docs/plans/60-add-a-seihou-extension-contract-and-okf-extension-package.md | EP-56 | None | Not Started |
+| EP-60 | Add a seihou extension contract and okf extension package | docs/plans/60-add-a-seihou-extension-contract-and-okf-extension-package.md | EP-56 | None | Complete |
 | EP-57 | Load a seihou registry into a documentation model | docs/plans/57-load-a-seihou-registry-into-a-documentation-model.md | EP-60 | None | Not Started |
 | EP-58 | Render the seihou documentation model to an OKF bundle | docs/plans/58-render-the-seihou-documentation-model-to-an-okf-bundle.md | EP-56, EP-57, EP-60 | None | Not Started |
 | EP-59 | Add the seihou okf extension docs command with fixture tests and user docs | docs/plans/59-add-the-seihou-docs-command-with-fixtures-tests-and-user-docs.md | EP-58, EP-60 | None | Not Started |
@@ -206,7 +206,7 @@ EP-56 → EP-60 → EP-57 → EP-58 → EP-59.
 Track milestone-level progress across all child plans.
 
 - [x] EP-56: okf-core resolves under `cabal build` (source-repository-package) and builds in the Nix package set (flake input + callCabal2nix); smoke test compiles. (Full `nix build` of seihou-cli is blocked by a pre-existing, unrelated `baikai` skew — see Surprises.)
-- [ ] EP-60: `seihou extension run okf -- ...` can delegate to `seihou-okf-extension`; `okf-core` dependency lives in the extension package, not `seihou-cli-internal`
+- [x] EP-60: `seihou extension run okf -- ...` can delegate to `seihou-okf-extension`; `okf-core` dependency lives in the extension package, not `seihou-cli-internal`
 - [ ] EP-57: `seihou-registry.dhall` loads into an extension-owned `DocModel` with full artifacts and resolved cross-references; unit tests on a fixture registry
 - [ ] EP-58: extension-owned `DocModel` renders to `[Concept]` with cross-links; `validateBundle` clean; `writeBundle` emits the bundle; unit/golden tests
 - [ ] EP-59: `seihou-okf-extension docs --dir --out` and hosted invocation through `seihou extension run okf -- docs ...` work end to end on a fixture registry; user docs added; `okf validate` of the output passes
@@ -228,6 +228,14 @@ interactions between child plans. Provide concise evidence.
   the seihou-cli test suite to the new baikai API). okf-core itself builds fine in Nix; only
   the downstream seihou-cli build is affected. Evidence: reproduced on pristine HEAD by stashing
   all changes + the WIP; `git diff flake.lock` adds only the `okf-src` node.
+- EP-60 found that `nix build .#seihou-okf-extension` cannot evaluate a new package directory
+  until that directory is tracked by git, because flake sources are taken from the git
+  worktree snapshot. After staging the new extension package and wiring, the Nix package
+  output built successfully. Cross-plan impact: future child plans that add files under
+  `seihou-okf-extension` should stage those files before validating Nix outputs.
+- EP-60 found that Cabal rejects `license-file: ../LICENSE` for the new package because the
+  path escapes the package source tree. The extension package now carries its own `LICENSE`
+  file. Cross-plan impact: later packaging work should keep package metadata self-contained.
 
 
 ## Decision Log
@@ -309,7 +317,11 @@ interactions between child plans. Provide concise evidence.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion. Compare
 the result against the original vision.
 
-(To be filled during and after implementation.)
+EP-60 completed the extension foundation. The main `seihou` executable now supports
+`seihou extension run <name> -- <args...>`, and the new `seihou-okf-extension` package is
+buildable through Cabal and Nix with the OKF dependency scoped to the extension package.
+The command currently exposes a non-zero `docs` placeholder; EP-57, EP-58, and EP-59 remain
+responsible for registry loading, OKF rendering, and the real docs command.
 
 
 ## Revision Notes
@@ -323,3 +335,6 @@ the result against the original vision.
   architecture. Added EP-60 for the extension host and `seihou-okf-extension` package,
   retargeted EP-57/EP-58/EP-59 to the extension package, and updated dependency and
   integration sections so `okf-core` is no longer a final dependency of `seihou-cli-internal`.
+- 2026-06-19: Marked EP-60 complete after implementing the extension host, adding the
+  `seihou-okf-extension` package, moving OKF dependency ownership into that package, adding
+  tests and docs, and validating with Cabal, Nix, formatter, and command smoke checks.

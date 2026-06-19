@@ -3,9 +3,9 @@
 #
 # seihou-cli is built from a ghc9124 Haskell package set extended with two
 # overlays: the shared haskell-nix registry (patch management) composed with
-# ./nix/haskell-overlay.nix (seihou-core / seihou-cli via callCabal2nix, the
-# seihou-schema submodule staged at ../schema, and the git revision baked into
-# the binary).
+# ./nix/haskell-overlay.nix (seihou-core / seihou-cli / seihou-okf-extension via
+# callCabal2nix, the seihou-schema submodule staged at ../schema, and the git
+# revision baked into the binary).
 { inputs, ... }:
 {
   perSystem = { system, pkgs, ... }:
@@ -24,6 +24,7 @@
     in
     {
       packages.seihou = haskellPackages.seihou-cli;
+      packages.seihou-okf-extension = haskellPackages.seihou-okf-extension;
       packages.default = haskellPackages.seihou-cli;
 
       # Enforce the CLI library-first module-placement convention as a flake

@@ -8,7 +8,7 @@ let
 in
 final: prev: {
   # OKF core library, built from the pinned okf-src flake input's okf-core/
-  # subdirectory. Consumed by seihou-cli's `seihou docs` command.
+  # subdirectory. Consumed by the seihou-okf-extension package.
   #
   # callCabal2nix copies only okf-core/, but the package references files at the
   # okf repo root that are absent in the staged subdir: ../CHANGELOG.md
@@ -53,4 +53,7 @@ final: prev: {
       testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git ];
     })
     (doJailbreak (final.callCabal2nix "seihou-cli" ../seihou-cli { }));
+
+  seihou-okf-extension =
+    doJailbreak (final.callCabal2nix "seihou-okf-extension" ../seihou-okf-extension { });
 }

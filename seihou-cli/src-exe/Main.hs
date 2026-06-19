@@ -15,6 +15,7 @@ import Seihou.CLI.Completions (handleCompletionsCommand)
 import Seihou.CLI.Config (handleConfig)
 import Seihou.CLI.Context (handleContext)
 import Seihou.CLI.Diff (handleDiff)
+import Seihou.CLI.Extension (handleExtensionRun)
 import Seihou.CLI.Help (handleHelpCommand)
 import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
@@ -117,6 +118,10 @@ main = do
         PromptRun promptRunOpts -> do
           modelConfig <- resolveAgentModelConfig Nothing Nothing promptRunOpts.runPromptProvider promptRunOpts.runPromptModel
           handlePromptRun modelConfig promptRunOpts
+    Extension extensionCmd -> do
+      case extensionCmd of
+        ExtensionRun extensionRunOpts ->
+          handleExtensionRun extensionRunOpts
     HelpCmd helpCmd ->
       handleHelpCommand helpCmd
     Completions completionsCmd ->

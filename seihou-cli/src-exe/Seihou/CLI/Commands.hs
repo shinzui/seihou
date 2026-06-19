@@ -30,6 +30,7 @@ module Seihou.CLI.Commands
     PromptCommand (..),
     PromptRunOpts (..),
     CompletionsCommand (..),
+    ExtensionCommand (..),
     HelpCommand (..),
     KitCommand (..),
     RegistryCommand (..),
@@ -44,6 +45,7 @@ import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
+import Seihou.CLI.Extension (ExtensionRunOpts (..))
 import Seihou.CLI.Help (HelpCommand, helpCommandParser)
 import Seihou.CLI.Kit (KitCommand, kitCommandParser)
 import Seihou.CLI.Migrate (MigrateOpts (..))
@@ -81,8 +83,13 @@ data Command
   | Kit KitCommand
   | Agent AgentOpts
   | Prompt PromptCommand
+  | Extension ExtensionCommand
   | HelpCmd HelpCommand
   | Completions CompletionsCommand
+  deriving stock (Eq, Show, Generic)
+
+data ExtensionCommand
+  = ExtensionRun ExtensionRunOpts
   deriving stock (Eq, Show, Generic)
 
 data CompletionsCommand
@@ -404,6 +411,7 @@ commandParser =
     <|> hsubparser
       ( command "help" helpCmdInfo
           <> command "completions" completionsInfo
+          <> command "extension" extensionInfo
           <> commandGroup "Help & shell integration:"
           <> hidden
       )
@@ -1664,6 +1672,48 @@ helpCmdInfo =
     ( fullDesc
         <> progDesc "Show help for commands and topics"
     )
+
+extensionInfo :: ParserInfo Command
+extensionInfo =
+  info
+    (Extension <$> extensionParser <**> helper)
+    ( fullDesc
+        <> progDesc "Run external seihou extensions"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Extensions are external executables named seihou-<name>-extension." :: String),
+                  pretty ("Everything after '--' is forwarded unchanged to the extension process." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou extension run okf -- --help" :: String),
+                        pretty ("seihou extension run okf -- docs --dir . --out okf-docs" :: String)
+                      ]
+                ]
+          )
+    )
+
+extensionParser :: Parser ExtensionCommand
+extensionParser =
+  hsubparser
+    (command "run" extensionRunInfo)
+
+extensionRunInfo :: ParserInfo ExtensionCommand
+extensionRunInfo =
+  info
+    (extensionRunParser <**> helper)
+    ( fullDesc
+        <> progDesc "Run an extension executable from PATH"
+    )
+
+extensionRunParser :: Parser ExtensionCommand
+extensionRunParser =
+  fmap ExtensionRun $
+    ExtensionRunOpts
+      <$> argument (T.pack <$> str) (metavar "NAME" <> help "Extension name")
+      <*> many (strArgument (metavar "ARGS..."))
 
 completionsInfo :: ParserInfo Command
 completionsInfo =

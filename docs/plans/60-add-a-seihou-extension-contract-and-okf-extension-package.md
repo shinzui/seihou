@@ -40,14 +40,14 @@ plan only creates the host contract and package boundary so okf-core does not li
 
 ## Progress
 
-- [ ] Add a testable extension runner to `seihou-cli-internal`
-- [ ] Add `seihou extension run NAME -- ARGS...` parser and top-level dispatch
-- [ ] Create the `seihou-okf-extension` Cabal package with a stub `docs` command
-- [ ] Move the `okf-core` package dependency from `seihou-cli-internal` to `seihou-okf-extension`
-- [ ] Wire `seihou-okf-extension` into `cabal.project`, Nix package set, and dev shell/package outputs
-- [ ] Add CLI tests for executable lookup, missing extension errors, and argument forwarding
-- [ ] Add extension contract documentation
-- [ ] `cabal build all` and targeted tests pass under the dev shell
+- [x] 2026-06-19 12:58 PDT: Add a testable extension runner to `seihou-cli-internal`.
+- [x] 2026-06-19 12:58 PDT: Add `seihou extension run NAME -- ARGS...` parser and top-level dispatch.
+- [x] 2026-06-19 12:58 PDT: Create the `seihou-okf-extension` Cabal package with a stub `docs` command.
+- [x] 2026-06-19 12:58 PDT: Move the `okf-core` package dependency from `seihou-cli-internal` to `seihou-okf-extension`.
+- [x] 2026-06-19 12:58 PDT: Wire `seihou-okf-extension` into `cabal.project`, Nix package set, and package outputs.
+- [x] 2026-06-19 12:58 PDT: Add CLI tests for executable lookup, missing extension errors, argument forwarding, and exit-code propagation.
+- [x] 2026-06-19 12:58 PDT: Add extension contract documentation.
+- [x] 2026-06-19 12:58 PDT: `cabal build all`, targeted tests, `cabal check`, formatter check, command smoke checks, and `nix build .#seihou-okf-extension` pass.
 
 
 ## Surprises & Discoveries
@@ -55,7 +55,21 @@ plan only creates the host contract and package boundary so okf-core does not li
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Cabal rejects a package-local `license-file` that points outside the package directory.
+  The new package therefore carries its own `LICENSE` file rather than using
+  `license-file: ../LICENSE`. Evidence:
+
+  ```text
+  Error: [relative-path-outside] 'license-file: ../LICENSE' is a relative path outside of the source tree.
+  ```
+
+- `nix build .#seihou-okf-extension` cannot see a newly created package directory until the
+  files are tracked in git. After staging the new package and wiring, the same command built
+  successfully. Evidence:
+
+  ```text
+  error: path '/Users/shinzui/Keikaku/bokuno/seihou-project/seihou/seihou-okf-extension' does not exist
+  ```
 
 
 ## Decision Log
@@ -81,26 +95,67 @@ implementation. Provide concise evidence.
   `seihou-core` and `okf-core`; `seihou-cli-internal` does not depend on `okf-core`.
   Date: 2026-06-19
 
+- Decision: The EP-60 `docs` command stub exits non-zero.
+  Rationale: The package boundary must be runnable, but EP-57, EP-58, and EP-59 still own
+  the real registry loading, rendering, and file output. A non-zero stub prevents users from
+  mistaking the placeholder for a successful documentation generator.
+  Date: 2026-06-19
+
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
-Compare the result against the original purpose.
+EP-60 is complete. `seihou-cli-internal` now exposes `Seihou.CLI.Extension`, the main
+executable parses and dispatches `seihou extension run <name> -- <args...>`, and the runner
+locates `seihou-<name>-extension` on `PATH`, forwards arguments unchanged, streams stdio
+through `rawSystem`, returns clear missing-executable errors, and preserves extension exit
+codes.
 
-(To be filled during and after implementation.)
+The repository now has a `seihou-okf-extension` package with a private library, executable,
+test suite, local license file, and `okf-core` smoke import. `okf-core` has been removed from
+`seihou-cli-internal`; a search for `okf-core` and `Okf.` finds OKF usage only in the new
+extension package and build wiring. The package is listed in `cabal.project`, the Nix
+overlay, and `packages.seihou-okf-extension`. `docs/cli/extension.md` documents the extension
+contract.
+
+Validation completed:
+
+```text
+cabal check                         # in seihou-cli: no errors or warnings
+cabal check                         # in seihou-okf-extension: no errors or warnings
+cabal build all                     # success
+cabal test seihou-cli-test          # All 253 tests passed
+cabal test seihou-okf-extension-test # All 1 tests passed
+nix fmt -- --fail-on-change         # formatted 1 files (0 changed)
+nix build .#seihou-okf-extension    # success
+```
+
+Command smoke checks completed:
+
+```text
+cabal run seihou -- extension run missing-extension -- --help
+error: extension executable not found: seihou-missing-extension-extension
+
+cabal run seihou-okf-extension -- --help
+seihou-okf-extension - OKF documentation extension for Seihou
+
+cabal run seihou-okf-extension -- docs
+seihou-okf-extension docs is not implemented yet; see EP-57/EP-58/EP-59.
+
+cabal exec -- seihou extension run okf -- --help
+seihou-okf-extension - OKF documentation extension for Seihou
+```
 
 
 ## Context and Orientation
 
 All paths are relative to `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`.
 
-The repository currently has two Cabal packages listed in `cabal.project`: `seihou-core` and
-`seihou-cli`. `seihou-cli/seihou-cli.cabal` contains a private library
-`seihou-cli-internal`, the executable `seihou`, and the test suite `seihou-cli-test`.
-`seihou-cli-internal` currently has an EP-56 smoke module
-`Seihou.CLI.Docs.Smoke` and an `okf-core` dependency. That was useful to prove okf-core can
-build in this repo, but it is no longer the final architecture: after this plan, okf-core is
-owned by `seihou-okf-extension`, not `seihou-cli-internal`.
+The repository has three Cabal packages listed in `cabal.project`: `seihou-core`,
+`seihou-cli`, and `seihou-okf-extension`. `seihou-cli/seihou-cli.cabal` contains a private
+library `seihou-cli-internal`, the executable `seihou`, and the test suite
+`seihou-cli-test`. The old EP-56 smoke module `Seihou.CLI.Docs.Smoke` has been removed from
+`seihou-cli-internal`; `okf-core` is owned by `seihou-okf-extension`, not
+`seihou-cli-internal`.
 
 The CLI parser is in `seihou-cli/src-exe/Seihou/CLI/Commands.hs`. It defines the `Command`
 sum type and an explicit `hsubparser` tree. Dispatch is in `seihou-cli/src-exe/Main.hs`. The
@@ -108,9 +163,9 @@ internal handler modules are under `seihou-cli/src/Seihou/CLI/`, and tests are r
 `seihou-cli/test/Main.hs` and `seihou-cli/seihou-cli.cabal`.
 
 The Nix Haskell package set is in `flake.module.nix` plus `nix/haskell-overlay.nix`.
-`nix/haskell-overlay.nix` already builds `okf-core` from the pinned `okf-src` input added by
-EP-56, and builds `seihou-core` / `seihou-cli` with `callCabal2nix`. This plan adds a sibling
-`seihou-okf-extension` entry.
+`nix/haskell-overlay.nix` builds `okf-core` from the pinned `okf-src` input added by EP-56,
+and builds `seihou-core`, `seihou-cli`, and `seihou-okf-extension` with `callCabal2nix`.
+`flake.module.nix` exposes `packages.seihou-okf-extension`.
 
 An extension is an external executable that follows seihou's process contract. The host
 command resolves `seihou-<name>-extension` on `PATH`, forwards every argument after `--`
@@ -325,3 +380,6 @@ Relationship to other plans:
 - 2026-06-19: Created as part of the MasterPlan update that moves OKF documentation
   generation from an in-core `seihou-cli` feature to the first external extension package,
   `seihou-okf-extension`.
+- 2026-06-19: Implemented the extension host contract and `seihou-okf-extension` package.
+  Updated progress, discoveries, context, and outcomes with the validation evidence from
+  Cabal, Nix, tests, formatter, and command smoke checks.

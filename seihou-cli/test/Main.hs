@@ -7,6 +7,7 @@ import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
 import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
 import Seihou.CLI.CommitMessageSpec qualified as CommitMessageSpec
 import Seihou.CLI.DiffSpec qualified as DiffSpec
+import Seihou.CLI.ExtensionSpec qualified as ExtensionSpec
 import Seihou.CLI.GitSpec qualified as GitSpec
 import Seihou.CLI.InitSpec qualified as InitSpec
 import Seihou.CLI.InstallHistorySpec qualified as InstallHistorySpec
@@ -35,6 +36,7 @@ main = do
         BrowseFormatSpec.tests,
         CommitMessageSpec.tests,
         DiffSpec.tests,
+        ExtensionSpec.tests,
         GitSpec.tests,
         InitSpec.tests,
         InstallHistorySpec.tests,
