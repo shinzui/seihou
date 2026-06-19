@@ -36,7 +36,7 @@ An alternative was to extend blueprints with a `purpose = "prompt"` field. That 
 | EP-50 | Add prompt schema primitives | docs/plans/50-add-prompt-schema-primitives.md | None | None | Complete |
 | EP-51 | Add prompt domain and discovery | docs/plans/51-add-prompt-domain-and-discovery.md | EP-50 | None | Complete |
 | EP-52 | Resolve command derived variables | docs/plans/52-resolve-command-derived-variables.md | EP-50 | EP-51 | Complete |
-| EP-53 | Add prompt CLI workflows | docs/plans/53-add-prompt-cli-workflows.md | EP-51, EP-52 | None | Not Started |
+| EP-53 | Add prompt CLI workflows | docs/plans/53-add-prompt-cli-workflows.md | EP-51, EP-52 | None | Complete |
 | EP-55 | Integrate prompts with registries and discovery surfaces | docs/plans/55-integrate-prompts-with-registries-and-discovery-surfaces.md | EP-51 | EP-53 | Not Started |
 | EP-54 | Document first class prompts | docs/plans/54-document-first-class-prompts.md | EP-53, EP-55 | None | Not Started |
 
@@ -77,7 +77,7 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-50: Validate schema examples with Dhall and update schema package exports.
 - [x] EP-51: Add Haskell prompt types, Dhall decoder, validation module, and search/discovery support.
 - [x] EP-52: Add safe command-derived variable resolution with process-effect tests and provenance.
-- [ ] EP-53: Add `seihou new-prompt`, `seihou validate-prompt`, and `seihou prompt run` workflows.
+- [x] EP-53: Add `seihou new-prompt`, `seihou validate-prompt`, and `seihou prompt run` workflows.
 - [ ] EP-55: Add prompts to registries, install, browse, list filters, sync, validation, and related tests.
 - [ ] EP-54: Update CLI help, user guides, generated prompt-authoring guidance, and changelog material.
 
@@ -101,6 +101,10 @@ interactions between child plans. Provide concise evidence.
 
 - Discovery: Command-derived prompt variables can exist without a matching typed variable declaration.
   Evidence: EP-50's accepted Dhall example uses `S.CommandVar::{ name = "git.branch", ... }` without a `vars` declaration. EP-52 preserved this by synthesizing a text declaration when no matching `VarDecl` exists, while still using typed declarations when present.
+  Date: 2026-06-19
+
+- Discovery: The public pinned schema import used by existing scaffolders predates `AgentPrompt`, while the prompt-aware schema commit is currently local/ahead of `origin/master`.
+  Evidence: `seihou validate-prompt` failed against a generated prompt when `prompt.dhall` imported the old pin, and the prompt-aware submodule commit `7beb88069f1e3697337b43a970b7582dca03e3f3` returned HTTP 404 from raw.githubusercontent.com before the schema repo is pushed.
   Date: 2026-06-19
 
 
@@ -129,10 +133,15 @@ plan.
   Rationale: This keeps the EP-50 schema example valid and lets prompts include lightweight dynamic context such as `git.branch` without forcing authors to duplicate it as a typed user-supplied variable. Typed declarations still apply when authors need coercion or validation.
   Date: 2026-06-19
 
+- Decision: Scaffold `prompt.dhall` as a self-contained Dhall record instead of importing the public pinned schema until the prompt-aware schema commit is published.
+  Rationale: `new-prompt` must create a directory that `validate-prompt` can evaluate immediately. Repointing the global schema pin to an unpublished commit would break existing module and blueprint scaffolders; a self-contained prompt record keeps the new workflow usable and avoids disturbing older scaffold output.
+  Date: 2026-06-19
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original vision.
 
-(To be filled during and after implementation.)
+- Outcome: EP-53 completed local prompt CLI workflows. Users can scaffold prompt directories, validate `prompt.dhall`, and run `seihou prompt run NAME --debug` to render typed variables plus command-derived variables without contacting a provider. Non-debug runs reuse the existing Baikai/agent provider path and do not apply blueprint baselines or write applied-blueprint manifest provenance.
+  Date: 2026-06-19

@@ -7,8 +7,10 @@ module Seihou.CLI.Commands
     NewModuleOpts (..),
     NewRecipeOpts (..),
     NewBlueprintOpts (..),
+    NewPromptOpts (..),
     ValidateOpts (..),
     ValidateBlueprintOpts (..),
+    ValidatePromptOpts (..),
     ConfigOpts (..),
     ConfigAction (..),
     ContextAction (..),
@@ -25,6 +27,8 @@ module Seihou.CLI.Commands
     BootstrapOpts (..),
     SetupOpts (..),
     BlueprintRunOpts (..),
+    PromptCommand (..),
+    PromptRunOpts (..),
     CompletionsCommand (..),
     HelpCommand (..),
     KitCommand (..),
@@ -62,8 +66,10 @@ data Command
   | NewModule NewModuleOpts
   | NewRecipe NewRecipeOpts
   | NewBlueprint NewBlueprintOpts
+  | NewPrompt NewPromptOpts
   | ValidateModule ValidateOpts
   | ValidateBlueprint ValidateBlueprintOpts
+  | ValidatePrompt ValidatePromptOpts
   | Config ConfigOpts
   | Context ContextAction
   | Browse BrowseOpts
@@ -74,6 +80,7 @@ data Command
   | Registry RegistryCommand
   | Kit KitCommand
   | Agent AgentOpts
+  | Prompt PromptCommand
   | HelpCmd HelpCommand
   | Completions CompletionsCommand
   deriving stock (Eq, Show, Generic)
@@ -169,6 +176,12 @@ data NewBlueprintOpts = NewBlueprintOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data NewPromptOpts = NewPromptOpts
+  { newPromptName :: Text,
+    newPromptPath :: Maybe FilePath
+  }
+  deriving stock (Eq, Show, Generic)
+
 data ValidateOpts = ValidateOpts
   { validatePath :: Maybe FilePath,
     validateLint :: Bool
@@ -178,6 +191,12 @@ data ValidateOpts = ValidateOpts
 data ValidateBlueprintOpts = ValidateBlueprintOpts
   { validateBlueprintPath :: Maybe FilePath,
     validateBlueprintLint :: Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
+data ValidatePromptOpts = ValidatePromptOpts
+  { validatePromptPath :: Maybe FilePath,
+    validatePromptLint :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -287,6 +306,23 @@ data BlueprintRunOpts = BlueprintRunOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data PromptCommand
+  = PromptRun PromptRunOpts
+  deriving stock (Eq, Show, Generic)
+
+data PromptRunOpts = PromptRunOpts
+  { runPromptName :: ModuleName,
+    runPromptPrompt :: Maybe Text,
+    runPromptVars :: [(Text, Text)],
+    runPromptNamespace :: Maybe Text,
+    runPromptContext :: Maybe Text,
+    runPromptVerbose :: Bool,
+    runPromptDebug :: Bool,
+    runPromptProvider :: Maybe Text,
+    runPromptModel :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
 opts :: ParserInfo Command
 opts =
   info
@@ -341,8 +377,10 @@ commandParser =
       ( command "new-module" newModuleInfo
           <> command "new-recipe" newRecipeInfo
           <> command "new-blueprint" newBlueprintInfo
+          <> command "new-prompt" newPromptInfo
           <> command "validate-module" validateInfo
           <> command "validate-blueprint" validateBlueprintInfo
+          <> command "validate-prompt" validatePromptInfo
           <> command "vars" varsInfo
           <> command "schema-upgrade" schemaUpgradeInfo
           <> command "registry" registryInfo
@@ -357,6 +395,7 @@ commandParser =
       )
     <|> hsubparser
       ( command "agent" agentInfo
+          <> command "prompt" promptInfo
           <> command "kit" kitInfo
           <> commandGroup "AI agent:"
           <> hidden
@@ -806,6 +845,41 @@ newBlueprintParser =
       <$> argument (T.pack <$> str) (metavar "NAME")
       <*> optional (option str (long "path" <> metavar "DIR" <> help "Output directory (default: ./<name>/)"))
 
+newPromptInfo :: ParserInfo Command
+newPromptInfo =
+  info
+    (newPromptParser <**> helper)
+    ( fullDesc
+        <> progDesc "Scaffold a new agent-session prompt"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Creates a new prompt directory containing three artifacts:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("prompt.dhall   the prompt record" :: String),
+                        pretty ("prompt.md      the Markdown body rendered before launch" :: String),
+                        pretty ("files/         empty reference directory for snippets and docs" :: String)
+                      ],
+                  line,
+                  pretty ("The output directory defaults to ./<name>/ in the current directory." :: String),
+                  line,
+                  pretty ("Prompt names must match [a-z][a-z0-9-]* (lowercase, hyphens allowed," :: String),
+                  pretty ("must start with a letter)." :: String),
+                  line,
+                  pretty ("Example:" :: String),
+                  indent 2 $ pretty ("seihou new-prompt review-changes" :: String)
+                ]
+          )
+    )
+
+newPromptParser :: Parser Command
+newPromptParser =
+  fmap NewPrompt $
+    NewPromptOpts
+      <$> argument (T.pack <$> str) (metavar "NAME")
+      <*> optional (option str (long "path" <> metavar "DIR" <> help "Output directory (default: ./<name>/)"))
+
 validateBlueprintInfo :: ParserInfo Command
 validateBlueprintInfo =
   info
@@ -833,6 +907,36 @@ validateBlueprintParser :: Parser Command
 validateBlueprintParser =
   fmap ValidateBlueprint $
     ValidateBlueprintOpts
+      <$> optional (argument str (metavar "PATH"))
+      <*> switch (long "lint" <> help "Include advisory lint warnings")
+
+validatePromptInfo :: ParserInfo Command
+validatePromptInfo =
+  info
+    (validatePromptParser <**> helper)
+    ( fullDesc
+        <> progDesc "Validate a prompt"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Checks that a prompt directory is well-formed: prompt.dhall" :: String),
+                  pretty ("evaluates, the prompt name is valid, the prompt body is non-empty," :: String),
+                  pretty ("variable names are unique, prompts reference declared variables," :: String),
+                  pretty ("command variables are well-formed, and every entry in files resolves" :: String),
+                  pretty ("under files/." :: String),
+                  line,
+                  pretty ("PATH defaults to the current directory if not specified." :: String),
+                  line,
+                  pretty ("Example:" :: String),
+                  indent 2 $ pretty ("seihou validate-prompt ./review-changes" :: String)
+                ]
+          )
+    )
+
+validatePromptParser :: Parser Command
+validatePromptParser =
+  fmap ValidatePrompt $
+    ValidatePromptOpts
       <$> optional (argument str (metavar "PATH"))
       <*> switch (long "lint" <> help "Include advisory lint warnings")
 
@@ -1468,6 +1572,86 @@ agentRunParser =
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
       <*> switch (long "force" <> help "Auto-resolve baseline conflicts (accept new files)")
+      <*> providerOption
+      <*> modelOption
+
+promptInfo :: ParserInfo Command
+promptInfo =
+  info
+    (promptParser <**> helper)
+    ( fullDesc
+        <> progDesc "Run first-class agent-session prompts"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Prompt subcommands render reusable prompt.dhall artifacts and" :: String),
+                  pretty ("start the configured provider. Use 'prompt run --debug' to print" :: String),
+                  pretty ("the fully rendered prompt without contacting a provider." :: String),
+                  line,
+                  pretty ("Available subcommands:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("run   Resolve, render, and launch a prompt" :: String)
+                      ]
+                ]
+          )
+    )
+
+promptParser :: Parser Command
+promptParser =
+  fmap Prompt $
+    subparser
+      (command "run" promptRunInfo)
+
+promptRunInfo :: ParserInfo PromptCommand
+promptRunInfo =
+  info
+    (promptRunParser <**> helper)
+    ( fullDesc
+        <> progDesc "Run an agent-session prompt"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Resolves the named prompt, prompts for any required variables," :: String),
+                  pretty ("runs command-derived variables, renders the prompt body, and" :: String),
+                  pretty ("starts the configured provider." :: String),
+                  line,
+                  pretty ("Variable resolution follows the same precedence as 'seihou run':" :: String),
+                  pretty ("CLI overrides > env > local config > namespace > context > global > defaults" :: String),
+                  pretty ("> interactive prompts. Command-derived variables fill any remaining" :: String),
+                  pretty ("prompt variables after that chain resolves." :: String),
+                  line,
+                  pretty ("CLI providers open interactive Claude Code or Codex sessions;" :: String),
+                  pretty ("API providers run one-shot text completions. Use --debug to print" :: String),
+                  pretty ("the rendered prompt and skip provider launch." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou prompt run review-changes" :: String),
+                        pretty ("seihou prompt run review-changes \"focus on API changes\"" :: String),
+                        pretty ("seihou prompt run review-changes --var project.name=demo" :: String),
+                        pretty ("seihou prompt run review-changes --debug" :: String)
+                      ]
+                ]
+          )
+    )
+
+promptRunParser :: Parser PromptCommand
+promptRunParser =
+  fmap PromptRun $
+    PromptRunOpts
+      <$> argument moduleNameReader (metavar "PROMPT" <> help "Name of the prompt to run")
+      <*> optional (argument (T.pack <$> str) (metavar "USER-PROMPT" <> help "Optional initial user prompt"))
+      <*> many
+        ( option
+            varPair
+            (long "var" <> metavar "KEY=VALUE" <> help "Variable override (repeatable)")
+        )
+      <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
+      <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
+      <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
+      <*> switch (long "debug" <> help "Print the rendered prompt and exit")
       <*> providerOption
       <*> modelOption
 

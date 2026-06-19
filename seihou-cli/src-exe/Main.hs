@@ -23,8 +23,10 @@ import Seihou.CLI.List (ListFilter (..), handleList)
 import Seihou.CLI.Migrate (handleMigrate)
 import Seihou.CLI.NewBlueprint (handleNewBlueprint)
 import Seihou.CLI.NewModule (handleNewModule)
+import Seihou.CLI.NewPrompt (handleNewPrompt)
 import Seihou.CLI.NewRecipe (handleNewRecipe)
 import Seihou.CLI.Outdated (handleOutdated)
+import Seihou.CLI.PromptRun (handlePromptRun)
 import Seihou.CLI.Registry (handleRegistry)
 import Seihou.CLI.Remove (handleRemove)
 import Seihou.CLI.Run (handleRun)
@@ -34,6 +36,7 @@ import Seihou.CLI.Status (handleStatus)
 import Seihou.CLI.Upgrade (handleUpgrade)
 import Seihou.CLI.Validate (handleValidateModule)
 import Seihou.CLI.ValidateBlueprint (handleValidateBlueprint)
+import Seihou.CLI.ValidatePrompt (handleValidatePrompt)
 import Seihou.CLI.Vars (handleVars)
 import Seihou.Core.Module (RunnableKind (..))
 import System.Exit (exitFailure)
@@ -68,10 +71,14 @@ main = do
       handleNewRecipe newRecOpts
     NewBlueprint newBpOpts ->
       handleNewBlueprint newBpOpts
+    NewPrompt newPromptOpts ->
+      handleNewPrompt newPromptOpts
     ValidateModule validateOpts ->
       handleValidateModule validateOpts
     ValidateBlueprint validateBpOpts ->
       handleValidateBlueprint validateBpOpts
+    ValidatePrompt validatePromptOpts ->
+      handleValidatePrompt validatePromptOpts
     Config configOpts ->
       handleConfig configOpts
     Context contextAction ->
@@ -104,6 +111,11 @@ main = do
         AgentRun blueprintRunOpts -> do
           modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel
           handleAgentRun agentOpts.agentDebug modelConfig blueprintRunOpts
+    Prompt promptCmd -> do
+      case promptCmd of
+        PromptRun promptRunOpts -> do
+          modelConfig <- resolveAgentModelConfig Nothing Nothing promptRunOpts.runPromptProvider promptRunOpts.runPromptModel
+          handlePromptRun modelConfig promptRunOpts
     HelpCmd helpCmd ->
       handleHelpCommand helpCmd
     Completions completionsCmd ->

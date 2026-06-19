@@ -141,8 +141,10 @@ executable seihou
     Seihou.CLI.Kit
     Seihou.CLI.NewBlueprint
     Seihou.CLI.NewModule
+    Seihou.CLI.NewPrompt
     Seihou.CLI.NewRecipe
     Seihou.CLI.Outdated
+    Seihou.CLI.PromptRun
     Seihou.CLI.Remove
     Seihou.CLI.Run
     Seihou.CLI.SchemaUpgrade
@@ -151,6 +153,7 @@ executable seihou
     Seihou.CLI.Upgrade
     Seihou.CLI.Validate
     Seihou.CLI.ValidateBlueprint
+    Seihou.CLI.ValidatePrompt
     Seihou.CLI.Vars
     Seihou.CLI.Version
 

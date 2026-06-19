@@ -8,6 +8,7 @@
 module Seihou.CLI.AgentRun
   ( handleAgentRun,
     appliedBlueprintFromOutcome,
+    runRenderedAgentPrompt,
   )
 where
 

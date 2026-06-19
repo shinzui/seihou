@@ -27,11 +27,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Add command parser types and help for `new-prompt`, `validate-prompt`, and `prompt run`.
-- [ ] Add scaffold generation for a prompt directory.
-- [ ] Add validate-prompt handler and renderer.
-- [ ] Add prompt runner that resolves variables, runs command vars, renders prompt text, and launches Baikai interactive providers.
-- [ ] Add CLI tests and debug-mode smoke coverage.
+- [x] Confirmed EP-51 and EP-52 are complete and inspected existing command/parser, blueprint scaffold, blueprint validation, agent launch, prompt validation, and command-variable resolver code.
+- [x] Add command parser types and help for `new-prompt`, `validate-prompt`, and `prompt run`.
+- [x] Add scaffold generation for a prompt directory.
+- [x] Add validate-prompt handler and renderer.
+- [x] Add prompt runner that resolves variables, runs command vars, renders prompt text, and launches Baikai interactive providers.
+- [x] Add scaffold tests and debug-mode smoke coverage.
 
 
 ## Surprises & Discoveries
@@ -39,7 +40,17 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: The existing blueprint agent runner already has the provider-launch split EP-53 needs: debug mode prints the rendered system prompt, CLI providers launch through Baikai, and API providers run a one-shot completion.
+  Evidence: `Seihou.CLI.AgentRun.runRenderedAgentPrompt` implements this behavior for blueprint prompts.
+  Date: 2026-06-19
+
+- Discovery: CLI parser and dispatch modules are executable-only/trapped modules, while the CLI test suite currently depends on the `seihou-cli-internal` library.
+  Evidence: `seihou-cli/seihou-cli.cabal` lists `Seihou.CLI.Commands` under executable `other-modules`, and the test-suite `build-depends` does not include the executable component.
+  Date: 2026-06-19
+
+- Discovery: A generated `prompt.dhall` that imports the existing pinned schema cannot validate because that schema predates `AgentPrompt`; the prompt-aware schema commit is local and not yet available from GitHub raw URLs.
+  Evidence: `seihou validate-prompt .seihou/modules/review-changes` failed with "Missing record field: AgentPrompt" against the old pin, and then with HTTP 404 when pointed at local submodule commit `7beb88069f1e3697337b43a970b7582dca03e3f3`.
+  Date: 2026-06-19
 
 
 ## Decision Log
@@ -54,13 +65,30 @@ Record every decision made while working on the plan.
   Rationale: Existing `seihou agent --debug` behavior is valuable for authoring, testing command-derived variables, and avoiding accidental live agent sessions.
   Date: 2026-06-19
 
+- Decision: Generate self-contained `prompt.dhall` records for `new-prompt` rather than importing the global pinned schema.
+  Rationale: Prompt scaffolds must validate immediately, and changing the global schema pin to an unpublished prompt-aware commit would break existing scaffold workflows. The generated record still decodes through the same Haskell `AgentPrompt` decoder and can later be switched back to schema completion once the schema pin is published.
+  Date: 2026-06-19
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Implemented `seihou new-prompt`, `seihou validate-prompt`, and `seihou prompt run`. The runner discovers only first-class prompt artifacts, rejects modules/recipes/blueprints with command-specific guidance, resolves regular variables through the existing config precedence chain, resolves command-derived variables through EP-52's process-effect helper, substitutes placeholders, and reuses the existing provider launch/debug behavior without baseline application or manifest provenance writes.
+
+Validation completed:
+
+- `cabal build seihou`
+- `cabal test seihou-core-test --test-options '--pattern Scaffold'`
+- `cabal build all`
+- `cabal test seihou-core-test`
+- `cabal test seihou-cli-test`
+- Manual smoke in a temp project:
+  - `seihou new-prompt review-changes --path .seihou/modules/review-changes`
+  - `seihou validate-prompt .seihou/modules/review-changes`
+  - `seihou prompt run review-changes --debug --var project.name=demo`
+  - edited the temp prompt to include `git.branch` from `printf main`, then validated and rendered again; debug output included `Branch: main`.
 
 
 ## Context and Orientation

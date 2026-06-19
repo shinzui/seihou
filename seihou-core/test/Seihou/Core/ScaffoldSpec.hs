@@ -1,11 +1,12 @@
 module Seihou.Core.ScaffoldSpec (tests) where
 
 import Data.Text qualified as T
+import Seihou.Core.AgentPrompt (validateAgentPrompt)
 import Seihou.Core.Blueprint (validateBlueprint)
 import Seihou.Core.Module (validateModule)
-import Seihou.Core.Scaffold (blueprintDhall, examplePromptMarkdown, moduleDhall, readmeTemplate)
+import Seihou.Core.Scaffold (blueprintDhall, exampleAgentPromptMarkdown, examplePromptMarkdown, moduleDhall, promptDhall, readmeTemplate)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile)
+import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile)
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, makeAbsolute)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -85,7 +86,7 @@ spec = do
           Left err -> expectationFailure $ "Failed to load: " ++ show err
           Right m -> do
             length (m.vars) `shouldBe` 1
-            (head m.vars).name `shouldBe` "project.name"
+            map (.name) m.vars `shouldBe` ["project.name"]
             length (m.steps) `shouldBe` 1
             length (m.prompts) `shouldBe` 1
             length (m.commands) `shouldBe` 0
@@ -154,7 +155,7 @@ spec = do
           Left err -> expectationFailure $ "Failed to load: " ++ show err
           Right b -> do
             length (b.vars) `shouldBe` 1
-            (head b.vars).name `shouldBe` "project.name"
+            map (.name) b.vars `shouldBe` ["project.name"]
             length (b.prompts) `shouldBe` 1
             length (b.baseModules) `shouldBe` 0
             length (b.files) `shouldBe` 0
@@ -166,3 +167,74 @@ spec = do
 
     it "is non-empty after trimming (would otherwise fail prompt-non-empty validation)" $ do
       T.null (T.strip examplePromptMarkdown) `shouldBe` False
+
+  describe "promptDhall" $ do
+    it "generates self-contained Dhall with prompt-specific type aliases" $ do
+      schemaPath <- resolveSchemaPath
+      let content = promptDhall "review-changes" schemaPath ""
+      T.isInfixOf "let Prompt =" content `shouldBe` True
+      T.isInfixOf "let CommandVar =" content `shouldBe` True
+
+    it "imports prompt.md as Text rather than inlining the body" $ do
+      schemaPath <- resolveSchemaPath
+      let content = promptDhall "review-changes" schemaPath ""
+      T.isInfixOf "./prompt.md as Text" content `shouldBe` True
+
+    it "decodes via evalAgentPromptFromFile when prompt.md is present" $ do
+      schemaPath <- resolveSchemaPath
+      withSystemTempDirectory "seihou-prompt-scaffold-test" $ \tmpDir -> do
+        let promptDir = tmpDir </> "review-changes"
+            dhallFile = promptDir </> "prompt.dhall"
+            filesDir = promptDir </> "files"
+        createDirectoryIfMissing True filesDir
+        writeFile dhallFile (T.unpack (promptDhall "review-changes" schemaPath ""))
+        writeFile (promptDir </> "prompt.md") (T.unpack exampleAgentPromptMarkdown)
+        result <- evalAgentPromptFromFile dhallFile
+        case result of
+          Left err -> expectationFailure $ "Failed to load generated prompt: " ++ show err
+          Right p -> p.name `shouldBe` "review-changes"
+
+    it "produces a prompt that passes validateAgentPrompt" $ do
+      schemaPath <- resolveSchemaPath
+      withSystemTempDirectory "seihou-prompt-scaffold-test" $ \tmpDir -> do
+        let promptDir = tmpDir </> "review-changes"
+            dhallFile = promptDir </> "prompt.dhall"
+            filesDir = promptDir </> "files"
+        createDirectoryIfMissing True filesDir
+        writeFile dhallFile (T.unpack (promptDhall "review-changes" schemaPath ""))
+        writeFile (promptDir </> "prompt.md") (T.unpack exampleAgentPromptMarkdown)
+        result <- evalAgentPromptFromFile dhallFile
+        case result of
+          Left err -> expectationFailure $ "Failed to load: " ++ show err
+          Right p -> do
+            validated <- validateAgentPrompt promptDir p
+            case validated of
+              Left err -> expectationFailure $ "Validation failed: " ++ show err
+              Right _ -> pure ()
+
+    it "produces the expected prompt structure" $ do
+      schemaPath <- resolveSchemaPath
+      withSystemTempDirectory "seihou-prompt-scaffold-test" $ \tmpDir -> do
+        let promptDir = tmpDir </> "review-changes"
+            dhallFile = promptDir </> "prompt.dhall"
+            filesDir = promptDir </> "files"
+        createDirectoryIfMissing True filesDir
+        writeFile dhallFile (T.unpack (promptDhall "review-changes" schemaPath ""))
+        writeFile (promptDir </> "prompt.md") (T.unpack exampleAgentPromptMarkdown)
+        result <- evalAgentPromptFromFile dhallFile
+        case result of
+          Left err -> expectationFailure $ "Failed to load: " ++ show err
+          Right p -> do
+            length (p.vars) `shouldBe` 1
+            map (.name) p.vars `shouldBe` ["project.name"]
+            length (p.prompts) `shouldBe` 0
+            length (p.commandVars) `shouldBe` 0
+            length (p.files) `shouldBe` 0
+            length (p.tags) `shouldBe` 0
+
+  describe "exampleAgentPromptMarkdown" $ do
+    it "contains the {{project.name}} placeholder so debug rendering shows substitution" $ do
+      T.isInfixOf "{{project.name}}" exampleAgentPromptMarkdown `shouldBe` True
+
+    it "is non-empty after trimming" $ do
+      T.null (T.strip exampleAgentPromptMarkdown) `shouldBe` False

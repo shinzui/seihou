@@ -3,6 +3,8 @@ module Seihou.Core.Scaffold
     readmeTemplate,
     blueprintDhall,
     examplePromptMarkdown,
+    promptDhall,
+    exampleAgentPromptMarkdown,
   )
 where
 
@@ -125,4 +127,70 @@ examplePromptMarkdown =
       "",
       "Replace this body with the workflow that fits your blueprint. The",
       "more specific the prompt, the more useful the agent's first pass."
+    ]
+
+-- | Generate the prompt.dhall content for a first-class agent prompt.
+-- The prompt schema may be ahead of the public pinned schema import during
+-- local development, so this scaffold emits a self-contained Dhall record
+-- with explicit empty-list types.
+promptDhall :: Text -> Text -> Text -> Text
+promptDhall name _url _hash =
+  T.unlines
+    [ "let Prompt =",
+      "      { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+      "",
+      "let CommandVar =",
+      "      { name : Text",
+      "      , run : Text",
+      "      , workDir : Optional Text",
+      "      , when : Optional Text",
+      "      , trim : Bool",
+      "      , maxBytes : Optional Natural",
+      "      }",
+      "",
+      "let PromptFile =",
+      "      { src : Text, description : Optional Text }",
+      "",
+      "let Launch =",
+      "      { provider : Optional Text, mode : Optional Text, model : Optional Text }",
+      "",
+      "in  { name = \"" <> name <> "\"",
+      "    , version = Some \"0.1.0\"",
+      "    , description = Some \"A reusable agent-session prompt\"",
+      "    , prompt = ./prompt.md as Text",
+      "    , vars =",
+      "      [ { name = \"project.name\"",
+      "        , type = \"text\"",
+      "        , default = None Text",
+      "        , description = Some \"The name of the project\"",
+      "        , required = False",
+      "        , validation = None Text",
+      "        }",
+      "      ]",
+      "    , prompts = [] : List Prompt",
+      "    , commandVars = [] : List CommandVar",
+      "    , files = [] : List PromptFile",
+      "    , allowedTools = None (List Text)",
+      "    , tags = [] : List Text",
+      "    , launch = None Launch",
+      "    }"
+    ]
+
+-- | Example @prompt.md@ body emitted next to a freshly scaffolded
+-- @prompt.dhall@. It includes one declared variable placeholder so
+-- authors can verify prompt rendering through @seihou prompt run --debug@.
+exampleAgentPromptMarkdown :: Text
+exampleAgentPromptMarkdown =
+  T.unlines
+    [ "# {{project.name}}",
+      "",
+      "You are helping the user with a focused repository task.",
+      "",
+      "Start by inspecting the current working tree and the files relevant to",
+      "the user's request. State the concrete plan before making edits, keep",
+      "changes scoped to the request, and verify the result with the smallest",
+      "useful command set.",
+      "",
+      "Ask before destructive changes such as deleting files, force-pushing,",
+      "or rewriting history."
     ]
