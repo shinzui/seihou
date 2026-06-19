@@ -15,6 +15,7 @@ import Seihou.CLI.KitPathsSpec qualified as KitPathsSpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.MigrateSpec qualified as MigrateSpec
 import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
+import Seihou.CLI.PromptRenderSpec qualified as PromptRenderSpec
 import Seihou.CLI.Registry.SyncSpec qualified as RegistrySyncSpec
 import Seihou.CLI.Registry.ValidateSpec qualified as RegistryValidateSpec
 import Seihou.CLI.RemoteVersionSpec qualified as RemoteVersionSpec
@@ -44,6 +45,7 @@ main = do
         ListSpec.tests,
         MigrateSpec.tests,
         PendingMigrationSpec.tests,
+        PromptRenderSpec.tests,
         RegistrySyncSpec.tests,
         RegistryValidateSpec.tests,
         RemoteVersionSpec.tests,

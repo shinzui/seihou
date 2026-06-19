@@ -23,8 +23,9 @@ seihou new-prompt <NAME> [OPTIONS]
 ## Description
 
 A prompt is a reusable agent-session template. It renders a Markdown prompt
-from typed variables, command-derived variables, and optional reference files,
-then launches the configured provider through `seihou prompt run`.
+from typed variables, command-derived variables, optional guidance blocks, and
+optional reference files, then launches the configured provider through
+`seihou prompt run`.
 
 This command creates:
 
@@ -35,8 +36,8 @@ This command creates:
 └── files/
 ```
 
-- `prompt.dhall` is the prompt record.
-- `prompt.md` is the Markdown body rendered before launch.
+- `prompt.dhall` is the prompt record, including a starter `guidance` block.
+- `prompt.md` is the Markdown task body rendered before launch.
 - `files/` is an optional reference-file directory.
 
 Prompt names must match `[a-z][a-z0-9-]*`. Prompts share the runnable lookup

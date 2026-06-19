@@ -32,6 +32,9 @@ Checks prompt well-formedness:
 - Typed variable names are unique.
 - Interactive prompts reference declared typed variables.
 - Command-derived variables are safe and well-formed.
+- Guidance titles and bodies are non-empty.
+- Guidance `when` expressions reference declared typed or command-derived
+  variables.
 - Every entry in the `files` list resolves under the prompt's `files/`
   directory.
 - Tags and `allowedTools` entries are non-empty.

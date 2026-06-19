@@ -25,6 +25,7 @@ goodAgentPrompt =
     [VarDecl "project.name" VTText Nothing Nothing True Nothing]
     [Prompt {var = "project.name", text = "Project?", condition = Nothing, choices = Nothing}]
     [CommandVar "git.branch" "git branch --show-current" Nothing Nothing True (Just 4096)]
+    [PromptGuidance "Repository workflow" "Inspect first." Nothing]
     []
     Nothing
     ["review"]
@@ -32,27 +33,31 @@ goodAgentPrompt =
 
 withAgentPromptName :: ModuleName -> AgentPrompt -> AgentPrompt
 withAgentPromptName n p =
-  AgentPrompt n p.version p.description p.prompt p.vars p.prompts p.commandVars p.files p.allowedTools p.tags p.launch
+  AgentPrompt n p.version p.description p.prompt p.vars p.prompts p.commandVars p.guidance p.files p.allowedTools p.tags p.launch
 
 withAgentPromptPrompt :: T.Text -> AgentPrompt -> AgentPrompt
 withAgentPromptPrompt body p =
-  AgentPrompt p.name p.version p.description body p.vars p.prompts p.commandVars p.files p.allowedTools p.tags p.launch
+  AgentPrompt p.name p.version p.description body p.vars p.prompts p.commandVars p.guidance p.files p.allowedTools p.tags p.launch
 
 withAgentPromptVars :: [VarDecl] -> AgentPrompt -> AgentPrompt
 withAgentPromptVars vars p =
-  AgentPrompt p.name p.version p.description p.prompt vars p.prompts p.commandVars p.files p.allowedTools p.tags p.launch
+  AgentPrompt p.name p.version p.description p.prompt vars p.prompts p.commandVars p.guidance p.files p.allowedTools p.tags p.launch
 
 withAgentPromptPrompts :: [Prompt] -> AgentPrompt -> AgentPrompt
 withAgentPromptPrompts prompts p =
-  AgentPrompt p.name p.version p.description p.prompt p.vars prompts p.commandVars p.files p.allowedTools p.tags p.launch
+  AgentPrompt p.name p.version p.description p.prompt p.vars prompts p.commandVars p.guidance p.files p.allowedTools p.tags p.launch
 
 withAgentPromptCommandVars :: [CommandVar] -> AgentPrompt -> AgentPrompt
 withAgentPromptCommandVars commandVars p =
-  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts commandVars p.files p.allowedTools p.tags p.launch
+  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts commandVars p.guidance p.files p.allowedTools p.tags p.launch
+
+withAgentPromptGuidance :: [PromptGuidance] -> AgentPrompt -> AgentPrompt
+withAgentPromptGuidance guidance p =
+  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts p.commandVars guidance p.files p.allowedTools p.tags p.launch
 
 withAgentPromptFiles :: [BlueprintFile] -> AgentPrompt -> AgentPrompt
 withAgentPromptFiles files p =
-  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts p.commandVars files p.allowedTools p.tags p.launch
+  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts p.commandVars p.guidance files p.allowedTools p.tags p.launch
 
 hasError :: T.Text -> [T.Text] -> Bool
 hasError needle = any (T.isInfixOf needle)
@@ -60,7 +65,7 @@ hasError needle = any (T.isInfixOf needle)
 spec :: Spec
 spec = do
   describe "evalAgentPromptFromFile" $ do
-    it "decodes prompt.dhall with command variables and launch metadata" $ do
+    it "decodes prompt.dhall with command variables, guidance, and launch metadata" $ do
       withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
         let promptDir = tmpDir </> "review-changes"
         createDirectoryIfMissing True promptDir
@@ -71,7 +76,23 @@ spec = do
             p.name `shouldBe` "review-changes"
             p.description `shouldBe` Just "Review local changes"
             length p.commandVars `shouldBe` 1
+            p.guidance
+              `shouldBe` [ PromptGuidance
+                             "Repository workflow"
+                             "Prefer focused validation commands."
+                             (Just (ExprEq "git.branch" (VText "main")))
+                         ]
             fmap (.provider) p.launch `shouldBe` Just (Just "codex-cli")
+          Left err -> expectationFailure ("Expected Right, got: " <> show err)
+
+    it "decodes prompt.dhall without guidance as an empty list" $ do
+      withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
+        let promptDir = tmpDir </> "review-changes"
+        createDirectoryIfMissing True promptDir
+        writeFile (promptDir </> "prompt.dhall") (samplePromptDhallWithoutGuidance "review-changes")
+        result <- evalAgentPromptFromFile (promptDir </> "prompt.dhall")
+        case result of
+          Right p -> p.guidance `shouldBe` []
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
   describe "validateAgentPrompt" $ do
@@ -139,6 +160,46 @@ spec = do
             hasError "run must not be empty" errs `shouldBe` True
             hasError "must not contain '..'" errs `shouldBe` True
             hasError "maxBytes must be greater than zero" errs `shouldBe` True
+          other -> expectationFailure ("Expected ValidationError, got: " <> show other)
+
+    it "accepts guidance that references declared typed and command variables" $ do
+      withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
+        let guided =
+              withAgentPromptGuidance
+                [ PromptGuidance "Project" "Use the declared project name." (Just (ExprIsSet "project.name")),
+                  PromptGuidance "Branch" "Account for branch-specific workflow." (Just (ExprIsSet "git.branch"))
+                ]
+                goodAgentPrompt
+        result <- validateAgentPrompt tmpDir guided
+        case result of
+          Right p -> length p.guidance `shouldBe` 2
+          Left err -> expectationFailure ("Expected Right, got: " <> show err)
+
+    it "rejects guidance with blank titles or bodies" $ do
+      withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
+        let bad =
+              withAgentPromptGuidance
+                [ PromptGuidance "  " "Body" Nothing,
+                  PromptGuidance "Title" " \n " Nothing
+                ]
+                goodAgentPrompt
+        result <- validateAgentPrompt tmpDir bad
+        case result of
+          Left (ValidationError _ errs) -> do
+            hasError "guidance title must not be empty" errs `shouldBe` True
+            hasError "guidance body must not be empty" errs `shouldBe` True
+          other -> expectationFailure ("Expected ValidationError, got: " <> show other)
+
+    it "rejects guidance conditions that reference undeclared variables" $ do
+      withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
+        let bad =
+              withAgentPromptGuidance
+                [PromptGuidance "Missing" "This references an unknown value." (Just (ExprIsSet "repo.kind"))]
+                goodAgentPrompt
+        result <- validateAgentPrompt tmpDir bad
+        case result of
+          Left (ValidationError _ errs) ->
+            hasError "guidance 'Missing' references undeclared variable: repo.kind" errs `shouldBe` True
           other -> expectationFailure ("Expected ValidationError, got: " <> show other)
 
     it "checks referenced prompt files under files/" $ do
@@ -219,10 +280,55 @@ samplePromptDhall n =
       "      , maxBytes = Some 4096",
       "      }",
       "    ]",
+      ", guidance =",
+      "    [ { title = \"Repository workflow\"",
+      "      , body = \"Prefer focused validation commands.\"",
+      "      , when = Some \"Eq git.branch main\"",
+      "      }",
+      "    ]",
       ", files = [] : List { src : Text, description : Optional Text }",
       ", allowedTools = None (List Text)",
       ", tags = [ \"review\" ]",
       ", launch = Some { provider = Some \"codex-cli\", mode = None Text, model = None Text }",
+      "}"
+    ]
+
+samplePromptDhallWithoutGuidance :: T.Text -> String
+samplePromptDhallWithoutGuidance n =
+  unlines
+    [ "{ name = \"" ++ T.unpack n ++ "\"",
+      ", version = Some \"0.1.0\"",
+      ", description = Some \"Review local changes\"",
+      ", prompt = \"Review the current repository.\"",
+      ", vars =",
+      "    [] : List",
+      "          { name : Text",
+      "          , type : Text",
+      "          , default : Optional Text",
+      "          , description : Optional Text",
+      "          , required : Bool",
+      "          , validation : Optional Text",
+      "          }",
+      ", prompts =",
+      "    [] : List",
+      "          { var : Text",
+      "          , text : Text",
+      "          , when : Optional Text",
+      "          , choices : Optional (List Text)",
+      "          }",
+      ", commandVars =",
+      "    [] : List",
+      "          { name : Text",
+      "          , run : Text",
+      "          , workDir : Optional Text",
+      "          , when : Optional Text",
+      "          , trim : Bool",
+      "          , maxBytes : Optional Natural",
+      "          }",
+      ", files = [] : List { src : Text, description : Optional Text }",
+      ", allowedTools = None (List Text)",
+      ", tags = [ \"review\" ]",
+      ", launch = None { provider : Optional Text, mode : Optional Text, model : Optional Text }",
       "}"
     ]
 

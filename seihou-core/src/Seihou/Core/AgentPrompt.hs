@@ -6,6 +6,7 @@ module Seihou.Core.AgentPrompt
     checkAgentPromptUniqueVars,
     checkAgentPromptPromptRefs,
     checkAgentPromptCommandVars,
+    checkAgentPromptGuidance,
     checkAgentPromptFiles,
     checkAgentPromptTags,
     checkAgentPromptAllowedTools,
@@ -15,6 +16,7 @@ where
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Numeric.Natural (Natural)
+import Seihou.Core.Expr (exprRefs)
 import Seihou.Core.Module (isValidModuleName)
 import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
@@ -33,6 +35,7 @@ validateAgentPrompt baseDir p = do
           <> checkAgentPromptUniqueVars p
           <> checkAgentPromptPromptRefs p
           <> checkAgentPromptCommandVars p
+          <> checkAgentPromptGuidance p
           <> checkAgentPromptTags p
           <> checkAgentPromptAllowedTools p
       allErrs = pureErrs <> fileErrs
@@ -112,6 +115,32 @@ checkAgentPromptCommandVars p =
 
     maxReasonableBytes :: Natural
     maxReasonableBytes = 1048576
+
+checkAgentPromptGuidance :: AgentPrompt -> [Text]
+checkAgentPromptGuidance p =
+  concatMap checkGuidance p.guidance
+  where
+    knownVars = Set.fromList (map (.name) p.vars <> map (.name) p.commandVars)
+
+    checkGuidance g =
+      checkTitle g <> checkBody g <> checkConditionRefs g
+
+    checkTitle g
+      | T.null (T.strip g.title) = ["guidance title must not be empty"]
+      | otherwise = []
+
+    checkBody g
+      | T.null (T.strip g.body) = ["guidance body must not be empty"]
+      | otherwise = []
+
+    checkConditionRefs g =
+      case g.condition of
+        Nothing -> []
+        Just cond ->
+          [ "guidance '" <> g.title <> "' references undeclared variable: " <> ref.unVarName
+          | (ref, _) <- exprRefs cond,
+            not (Set.member ref knownVars)
+          ]
 
 checkAgentPromptFiles :: FilePath -> AgentPrompt -> IO [Text]
 checkAgentPromptFiles baseDir p =

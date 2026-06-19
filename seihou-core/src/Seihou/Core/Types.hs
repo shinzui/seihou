@@ -27,6 +27,7 @@ module Seihou.Core.Types
     BlueprintFile (..),
     Blueprint (..),
     CommandVar (..),
+    PromptGuidance (..),
     AgentPromptLaunch (..),
     AgentPrompt (..),
     Runnable (..),
@@ -316,6 +317,15 @@ data CommandVar = CommandVar
   }
   deriving stock (Eq, Show, Generic)
 
+-- | A Markdown instruction block attached to an agent prompt. The optional
+-- condition is evaluated after normal and command-derived variables resolve.
+data PromptGuidance = PromptGuidance
+  { title :: Text,
+    body :: Text,
+    condition :: Maybe Expr
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | Optional launch metadata declared by an agent prompt. The CLI runner may
 -- use this as a default provider/model/mode hint, but project or CLI config
 -- remains authoritative.
@@ -337,6 +347,7 @@ data AgentPrompt = AgentPrompt
     vars :: [VarDecl],
     prompts :: [Prompt],
     commandVars :: [CommandVar],
+    guidance :: [PromptGuidance],
     files :: [BlueprintFile],
     allowedTools :: Maybe [Text],
     tags :: [Text],

@@ -1,8 +1,9 @@
 PROMPTS
 
 A prompt is a reusable agent-session template. It renders a Markdown prompt
-from Seihou variables, local command output, optional reference files, and an
-optional user instruction, then starts the configured provider.
+from Seihou variables, local command output, optional guidance blocks, optional
+reference files, and an optional user instruction, then starts the configured
+provider.
 
 Use a prompt for repeatable agent workflows such as code review, release
 preparation, planning, repository inspection, or dependency research. Use a
@@ -16,8 +17,8 @@ PROMPT STRUCTURE
 
     review-changes/
       prompt.dhall      Prompt definition (required)
-      prompt.md         Markdown body imported by prompt.dhall
-      files/            Optional reference files for the agent
+  prompt.md         Markdown body imported by prompt.dhall
+  files/            Optional reference files for the agent
 
   `seihou new-prompt review-changes` creates this layout.
 
@@ -30,6 +31,7 @@ SCHEMA FIELDS
   vars           Typed variables resolved before the prompt is rendered.
   prompts        Interactive questions for missing typed variables.
   commandVars    Variables filled by local command output.
+  guidance       Markdown instruction blocks selected after variables resolve.
   files          Reference files under the prompt's files/ directory.
   allowedTools   Optional tool allow-list metadata.
   tags           Optional discovery tags.
@@ -72,13 +74,29 @@ COMMAND-DERIVED VARIABLES
   stats, test summaries, or file lists. Non-zero exits fail rendering, and
   `maxBytes` limits captured output.
 
+PROMPT GUIDANCE
+
+  `guidance` adds Markdown instruction blocks around the prompt body in the
+  provider prompt. Use it for repository workflow rules, project-specific
+  validation commands, or adaptation based on command-derived variables.
+
+    guidance =
+      [ { title = "Haskell repository"
+        , body = "Prefer cabal build all and focused cabal test commands."
+        , when = Some "Eq repo.kind haskell"
+        }
+      ]
+
+  Guidance does not apply blueprint baseline modules and does not write
+  applied-blueprint provenance.
+
 COMMON COMMANDS
 
   seihou new-prompt review-changes       Scaffold a prompt
   seihou validate-prompt review-changes  Check prompt.dhall and files/
   seihou prompt run review-changes       Run the prompt with a provider
   seihou prompt run review-changes --debug
-                                         Print the rendered prompt only
+                                         Print the complete provider prompt
   seihou list --prompts                  Show only prompt artifacts
 
 PUBLISHING

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Prompt guidance blocks: `prompt.dhall` can now declare conditional Markdown
+  guidance that is rendered with project context around `seihou prompt run`
+  provider prompts. `--debug` prints the complete provider prompt, and
+  `validate-prompt` checks guidance titles, bodies, and condition references.
+
 ## [0.3.0.0] - 2026-06-12
 
 ### Added

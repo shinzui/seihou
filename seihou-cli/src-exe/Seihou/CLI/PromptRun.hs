@@ -8,9 +8,10 @@ import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.CLI.AgentCompletion (AgentModelConfig)
-import Seihou.CLI.AgentLaunch (substitute)
+import Seihou.CLI.AgentLaunch (gatherAgentContext)
 import Seihou.CLI.AgentRun (runRenderedAgentPrompt)
 import Seihou.CLI.Commands (PromptRunOpts (..))
+import Seihou.CLI.PromptRender (renderPromptBody, renderPromptSystemPrompt)
 import Seihou.CLI.Shared
   ( deriveNamespace,
     formatVarError,
@@ -133,8 +134,10 @@ handlePromptRun modelConfig opts = do
     Right r -> pure r
 
   let renderedPrompt = renderPromptBody resolved prompt.prompt
+  ctx <- gatherAgentContext
+  let systemPrompt = renderPromptSystemPrompt ctx prompt resolved renderedPrompt opts.runPromptPrompt
 
-  _ <- runRenderedAgentPrompt opts.runPromptDebug modelConfig renderedPrompt opts.runPromptPrompt
+  _ <- runRenderedAgentPrompt opts.runPromptDebug modelConfig systemPrompt opts.runPromptPrompt
   pure ()
 
 relaxCommandVarDecls :: [CommandVar] -> [VarDecl] -> [VarDecl]
@@ -145,19 +148,6 @@ relaxCommandVarDecls commandVars =
     relaxOne decl
       | Set.member decl.name commandNames = decl {required = False}
       | otherwise = decl
-
-renderPromptBody :: Map VarName ResolvedVar -> Text -> Text
-renderPromptBody resolved tpl =
-  substitute
-    [(vn.unVarName, varValueToText rv.value) | (vn, rv) <- Map.toList resolved]
-    tpl
-
-varValueToText :: VarValue -> Text
-varValueToText (VText t) = t
-varValueToText (VBool True) = "true"
-varValueToText (VBool False) = "false"
-varValueToText (VInt n) = T.pack (show n)
-varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
 
 exitErr :: LogLevel -> Text -> IO a
 exitErr level msg = do

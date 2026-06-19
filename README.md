@@ -116,7 +116,7 @@ Lists available modules, recipes, blueprints, and prompts across the three searc
 seihou prompt run PROMPT [USER-PROMPT] [--var KEY=VALUE...] [--debug]
 ```
 
-Resolves a reusable prompt artifact, runs command-derived variables, renders the prompt body, and launches the configured Claude Code, Codex, Anthropic, or OpenAI provider. `--debug` prints the rendered prompt without contacting a provider.
+Resolves a reusable prompt artifact, runs command-derived variables, selects prompt guidance, renders the prompt body with project context, and launches the configured Claude Code, Codex, Anthropic, or OpenAI provider. `--debug` prints the complete provider prompt without contacting a provider.
 
 ### `seihou config`
 

@@ -10,6 +10,7 @@ module Seihou.Dhall.Eval
     blueprintDecoder,
     agentPromptDecoder,
     commandVarDecoder,
+    promptGuidanceDecoder,
     agentPromptLaunchDecoder,
     blueprintFileDecoder,
     registryDecoder,
@@ -340,23 +341,45 @@ agentPromptLaunchDecoder =
         <*> field "model" (maybe strictText)
     )
 
+-- | Decoder for a prompt guidance block.
+promptGuidanceDecoder :: Decoder PromptGuidance
+promptGuidanceDecoder =
+  record
+    ( mkPromptGuidance
+        <$> field "title" strictText
+        <*> field "body" strictText
+        <*> field "when" (maybe strictText)
+    )
+  where
+    mkPromptGuidance title body whenText =
+      PromptGuidance
+        { title = title,
+          body = body,
+          condition = parseWhen whenText
+        }
+
 -- | Decoder for the top-level AgentPrompt type from Dhall.
 agentPromptDecoder :: Decoder AgentPrompt
 agentPromptDecoder =
-  record
-    ( AgentPrompt
-        <$> field "name" moduleNameDecoder
-        <*> field "version" (maybe strictText)
-        <*> field "description" (maybe strictText)
-        <*> field "prompt" strictText
-        <*> field "vars" (list varDeclDecoder)
-        <*> field "prompts" (list promptDecoder)
-        <*> field "commandVars" (list commandVarDecoder)
-        <*> field "files" (list blueprintFileDecoder)
-        <*> field "allowedTools" (maybe (list strictText))
-        <*> field "tags" (list strictText)
-        <*> field "launch" (maybe agentPromptLaunchDecoder)
-    )
+  withDefaults [("guidance", emptyPromptGuidanceList)] $
+    record
+      ( AgentPrompt
+          <$> field "name" moduleNameDecoder
+          <*> field "version" (maybe strictText)
+          <*> field "description" (maybe strictText)
+          <*> field "prompt" strictText
+          <*> field "vars" (list varDeclDecoder)
+          <*> field "prompts" (list promptDecoder)
+          <*> field "commandVars" (list commandVarDecoder)
+          <*> field "guidance" (list promptGuidanceDecoder)
+          <*> field "files" (list blueprintFileDecoder)
+          <*> field "allowedTools" (maybe (list strictText))
+          <*> field "tags" (list strictText)
+          <*> field "launch" (maybe agentPromptLaunchDecoder)
+      )
+
+emptyPromptGuidanceList :: Dhall.Expr Src Void
+emptyPromptGuidanceList = Dhall.ListLit (Just Dhall.Text) mempty
 
 -- | Evaluate a @prompt.dhall@ file and decode it into an 'AgentPrompt'.
 evalAgentPromptFromFile :: FilePath -> IO (Either ModuleLoadError AgentPrompt)
@@ -372,6 +395,7 @@ evalAgentPromptFromFile path = do
         mapM_ (\v -> evaluate v.type_) p.vars
         mapM_ (\prompt -> evaluate prompt.condition) p.prompts
         mapM_ (\cv -> evaluate cv.condition) p.commandVars
+        mapM_ (\g -> evaluate g.condition) p.guidance
         pure p
       Failure e -> throwIO e
   case result of

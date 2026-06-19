@@ -29,7 +29,7 @@ review-changes/
 ```
 
 - `prompt.dhall` declares metadata, variables, command-derived variables,
-  reference files, tags, and optional launch hints.
+  guidance blocks, reference files, tags, and optional launch hints.
 - `prompt.md` is the Markdown body imported by `prompt.dhall` as
   `./prompt.md as Text`.
 - `files/` holds optional reference files that the prompt can name for the
@@ -69,6 +69,12 @@ Fresh prompts are self-contained Dhall records:
     , maxBytes = Some 20000
     }
   ]
+, guidance =
+  [ { title = "Repository workflow"
+    , body = "Inspect the project before editing, keep changes scoped, and run the smallest useful validation command."
+    , when = None Text
+    }
+  ]
 , files =
   [ { src = "review-checklist.md"
     , description = Some "Team review checklist"
@@ -91,6 +97,7 @@ Important fields:
 | `vars` | Typed variables resolved before rendering. |
 | `prompts` | Interactive questions for unresolved typed variables. |
 | `commandVars` | Variables filled by local commands after normal variable resolution. |
+| `guidance` | Markdown instruction blocks selected after variables and command variables resolve. |
 | `files` | Reference files under `files/`. |
 | `allowedTools` | Optional runner metadata for future tool allow-lists. |
 | `tags` | Discovery tags for registries, browse, install, and list filters. |
@@ -161,6 +168,42 @@ Command variables are intentionally constrained:
 Use command variables for compact context such as branch names, diff stats,
 test summaries, or file lists. Avoid collecting secrets or huge command output.
 
+## Prompt Guidance
+
+`guidance` contains Markdown instruction blocks that are rendered around the
+prompt body in the provider system prompt. Use guidance for repository or
+project adaptation, workflow rules, and validation preferences. Keep `prompt`
+as the main task body: it should still say what the agent is supposed to do.
+
+Each guidance block has a `title`, a `body`, and an optional `when`
+expression. The `when` expression uses the same conditional language as
+interactive prompts and command-derived variables. It is evaluated after
+normal variables and `commandVars` finish resolving, so guidance can depend on
+values detected from the current repository:
+
+```dhall
+commandVars =
+  [ { name = "repo.kind"
+    , run = "if test -f cabal.project; then echo haskell; else echo unknown; fi"
+    , workDir = None Text
+    , when = None Text
+    , trim = True
+    , maxBytes = Some 100
+    }
+  ]
+
+guidance =
+  [ { title = "Haskell repository"
+    , body = "Prefer `cabal build all` and focused `cabal test` commands for validation."
+    , when = Some "Eq repo.kind haskell"
+    }
+  ]
+```
+
+Prompt guidance does not apply blueprint baseline modules, does not scaffold
+files by itself, and does not write applied-blueprint provenance into
+`.seihou/manifest.json`.
+
 ## Reference Files
 
 Declare reference files that live under `files/`:
@@ -190,6 +233,10 @@ Render without contacting a provider:
 ```sh
 seihou prompt run review-changes --debug
 ```
+
+Debug mode prints the complete provider prompt: current Seihou project
+context, prompt identity, reference-file list, selected guidance blocks, the
+rendered prompt body, and any one-off user instruction.
 
 Launch with the configured default provider:
 

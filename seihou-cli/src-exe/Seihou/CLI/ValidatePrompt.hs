@@ -13,6 +13,7 @@ import Seihou.Core.AgentPrompt
     checkAgentPromptBodyNonEmpty,
     checkAgentPromptCommandVars,
     checkAgentPromptFiles,
+    checkAgentPromptGuidance,
     checkAgentPromptNameFormat,
     checkAgentPromptPromptRefs,
     checkAgentPromptTags,
@@ -84,6 +85,7 @@ buildPromptReport baseDir p = do
           DiagCheck "Unique variable names" DiagError (checkAgentPromptUniqueVars p),
           DiagCheck "Prompt references" DiagError (checkAgentPromptPromptRefs p),
           DiagCheck "Command variables" DiagError (checkAgentPromptCommandVars p),
+          DiagCheck "Prompt guidance" DiagError (checkAgentPromptGuidance p),
           DiagCheck "Reference file existence" DiagError fileErrors,
           DiagCheck "Tags" DiagError (checkAgentPromptTags p),
           DiagCheck "Allowed tools" DiagError (checkAgentPromptAllowedTools p)
@@ -139,6 +141,7 @@ renderPromptReport color report =
           "  " <> okMark <> " " <> T.pack (show (length p.vars)) <> " variables declared",
           "  " <> okMark <> " " <> T.pack (show (length p.prompts)) <> " prompts defined",
           "  " <> okMark <> " " <> T.pack (show (length p.commandVars)) <> " command variables declared",
+          "  " <> okMark <> " " <> T.pack (show (length p.guidance)) <> " guidance blocks declared",
           "  " <> okMark <> " " <> T.pack (show (length p.files)) <> " reference files declared"
         ]
 

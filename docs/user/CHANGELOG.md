@@ -14,6 +14,8 @@ documentation-review log is developer-facing.
 
 ### Added
 
+- Prompt guidance blocks for reusable prompts, with conditional selection,
+  complete debug rendering, scaffold examples, and validation checks.
 - BSD-3-Clause license files for the repository and both Cabal packages.
 - Hackage metadata for `seihou-core` and `seihou-cli`.
 - Source distribution packaging for embedded CLI help topics and agent prompt
