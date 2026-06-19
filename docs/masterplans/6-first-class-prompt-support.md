@@ -35,7 +35,7 @@ An alternative was to extend blueprints with a `purpose = "prompt"` field. That 
 |---|-------|------|-----------|-----------|--------|
 | EP-50 | Add prompt schema primitives | docs/plans/50-add-prompt-schema-primitives.md | None | None | Complete |
 | EP-51 | Add prompt domain and discovery | docs/plans/51-add-prompt-domain-and-discovery.md | EP-50 | None | Complete |
-| EP-52 | Resolve command derived variables | docs/plans/52-resolve-command-derived-variables.md | EP-50 | EP-51 | Not Started |
+| EP-52 | Resolve command derived variables | docs/plans/52-resolve-command-derived-variables.md | EP-50 | EP-51 | Complete |
 | EP-53 | Add prompt CLI workflows | docs/plans/53-add-prompt-cli-workflows.md | EP-51, EP-52 | None | Not Started |
 | EP-55 | Integrate prompts with registries and discovery surfaces | docs/plans/55-integrate-prompts-with-registries-and-discovery-surfaces.md | EP-51 | EP-53 | Not Started |
 | EP-54 | Document first class prompts | docs/plans/54-document-first-class-prompts.md | EP-53, EP-55 | None | Not Started |
@@ -76,7 +76,7 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-50: Define external and local schema records for `prompt.dhall`, reference files, launch metadata, and command-derived variables.
 - [x] EP-50: Validate schema examples with Dhall and update schema package exports.
 - [x] EP-51: Add Haskell prompt types, Dhall decoder, validation module, and search/discovery support.
-- [ ] EP-52: Add safe command-derived variable resolution with process-effect tests and provenance.
+- [x] EP-52: Add safe command-derived variable resolution with process-effect tests and provenance.
 - [ ] EP-53: Add `seihou new-prompt`, `seihou validate-prompt`, and `seihou prompt run` workflows.
 - [ ] EP-55: Add prompts to registries, install, browse, list filters, sync, validation, and related tests.
 - [ ] EP-54: Update CLI help, user guides, generated prompt-authoring guidance, and changelog material.
@@ -99,6 +99,10 @@ interactions between child plans. Provide concise evidence.
   Evidence: before the EP-50 sync, the external package lacked `MigrationOp.dhall` and `Migration.dhall`, and its `Module.dhall` lacked the local mirror's `migrations : List Migration.Type` field. EP-50 synchronized those schema primitives while adding `CommandVar` and `AgentPrompt`.
   Date: 2026-06-19
 
+- Discovery: Command-derived prompt variables can exist without a matching typed variable declaration.
+  Evidence: EP-50's accepted Dhall example uses `S.CommandVar::{ name = "git.branch", ... }` without a `vars` declaration. EP-52 preserved this by synthesizing a text declaration when no matching `VarDecl` exists, while still using typed declarations when present.
+  Date: 2026-06-19
+
 
 ## Decision Log
 
@@ -119,6 +123,10 @@ plan.
 
 - Decision: Treat schema-publication drift discovered during EP-50 as part of the schema primitives plan.
   Rationale: Prompt work depends on a coherent schema package. Synchronizing external blueprint and migration exports with the local mirror before adding `AgentPrompt` keeps later `SchemaVersion.hs` pinning and generated imports unambiguous.
+  Date: 2026-06-19
+
+- Decision: Preserve prompt-only command variables instead of requiring every command var to reference a declared `vars` entry.
+  Rationale: This keeps the EP-50 schema example valid and lets prompts include lightweight dynamic context such as `git.branch` without forcing authors to duplicate it as a typed user-supplied variable. Typed declarations still apply when authors need coercion or validation.
   Date: 2026-06-19
 
 

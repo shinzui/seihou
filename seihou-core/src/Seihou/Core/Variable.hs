@@ -282,6 +282,7 @@ formatExplain resolved =
     showSource (FromParent mn) = "[parent: " <> mn.unModuleName <> "]"
     showSource FromDefault = "[default]"
     showSource FromPrompt = "[prompt]"
+    showSource (FromCommand cmd) = "[command: " <> cmd <> "]"
 
 -- | Format variable declarations for default mode output.
 -- Produces aligned output with @=@ signs and 2-space indent.

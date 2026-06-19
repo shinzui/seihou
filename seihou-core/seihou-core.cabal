@@ -40,6 +40,7 @@ library
     Seihou.Composition.Resolve
     Seihou.Core.AgentPrompt
     Seihou.Core.Blueprint
+    Seihou.Core.CommandVar
     Seihou.Core.Context
     Seihou.Core.Expr
     Seihou.Core.Install
@@ -138,6 +139,7 @@ test-suite seihou-core-test
     Seihou.Composition.ResolveSpec
     Seihou.Core.AgentPromptSpec
     Seihou.Core.BlueprintSpec
+    Seihou.Core.CommandVarSpec
     Seihou.Core.ContextSpec
     Seihou.Core.ExprSpec
     Seihou.Core.InstallSpec

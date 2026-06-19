@@ -405,6 +405,7 @@ data VarSource
   | FromParent ModuleName
   | FromDefault
   | FromPrompt
+  | FromCommand Text
   deriving stock (Eq, Show, Generic)
 
 -- | A variable that has been resolved to a concrete value with provenance.

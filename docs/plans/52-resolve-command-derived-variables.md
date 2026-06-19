@@ -27,11 +27,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Define command-derived variable types and provenance if not already added by EP-51.
-- [ ] Implement a pure planner for which command variables should run.
-- [ ] Implement process-effect based command execution with trimming, max-byte enforcement, coercion, and validation.
-- [ ] Integrate command-derived values into prompt variable resolution without overriding higher-precedence config values unexpectedly.
-- [ ] Add pure and effect-interpreter tests for success, failure, conditions, and safety limits.
+- [x] 2026-06-19: Added `FromCommand Text` provenance to `VarSource` and rendered it in `formatExplain`.
+- [x] 2026-06-19: Implemented `planCommandVars` in `seihou-core/src/Seihou/Core/CommandVar.hs` for deciding which command variables should run.
+- [x] 2026-06-19: Implemented `resolveCommandVars` using `Seihou.Effect.Process.runProcess` with trimming, `maxBytes` enforcement, coercion, declaration validation, workDir safety, non-zero exit diagnostics, and command provenance.
+- [x] 2026-06-19: Exposed a prompt-runner helper that fills command-derived values without overwriting already-resolved config, CLI, environment, default, parent, or prompted values.
+- [x] 2026-06-19: Added pure process-interpreter tests for success, failure, conditions, safety limits, coercion, validation, and precedence.
+- [x] 2026-06-19: Ran `cabal test seihou-core-test --test-options '--pattern CommandVar'`, `cabal build all`, and `cabal test seihou-core-test`.
 
 
 ## Surprises & Discoveries
@@ -39,7 +40,13 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: EP-51 intentionally allowed command-only prompt variables that have no matching `VarDecl`, matching EP-50's schema example for `git.branch`.
+  Evidence: `Seihou.Core.CommandVar.commandVarDecl` now uses a matching declaration when present and otherwise synthesizes a text declaration for prompt-only dynamic context. `Seihou.Core.CommandVarSpec` covers the command-only case.
+  Date: 2026-06-19
+
+- Discovery: `planCommandVars` must evaluate `when` conditions against both already-resolved values and explicit condition bindings.
+  Evidence: the initial focused `CommandVar` test failed when `IsSet git.branch` could not see an already-resolved `git.branch`; `planCommandVars` now merges `resolvedValues existing <> bindings`.
+  Date: 2026-06-19
 
 
 ## Decision Log
@@ -54,13 +61,30 @@ Record every decision made while working on the plan.
   Rationale: Seihou already has `Seihou.Effect.Process` and pure interpreters; using them keeps command resolution testable without spawning real processes.
   Date: 2026-06-19
 
+- Decision: Command variables may be prompt-only dynamic context when no matching typed declaration exists.
+  Rationale: EP-50 accepted a prompt schema expression with `commandVars = [ S.CommandVar::{ name = "git.branch", ... } ]` and no `vars` declaration. Requiring a matching `VarDecl` in EP-52 would invalidate that accepted schema behavior. When a declaration exists, its type and validation still govern the command output.
+  Date: 2026-06-19
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-52 added command-derived variable resolution as a core, process-effect-backed helper. Callers can pass declarations, command variables, and already-resolved values; the helper runs only commands that fill missing values, coerces and validates output, records `FromCommand` provenance, and returns a merged resolved map for later prompt rendering.
+
+Validation evidence:
+
+```text
+cabal test seihou-core-test --test-options '--pattern CommandVar'
+All 10 tests passed
+
+cabal build all
+completed successfully
+
+cabal test seihou-core-test
+All 916 tests passed
+```
 
 
 ## Context and Orientation
