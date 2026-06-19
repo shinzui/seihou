@@ -207,18 +207,17 @@
     "seihou-schema-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1778212937,
-        "narHash": "sha256-6SfGBCIzJ7RQdTzuXHy7Q33Ngd4mxgpxuICSSvH6Jwc=",
-        "owner": "shinzui",
-        "repo": "seihou-schema",
-        "rev": "a0fba0d17b43b14bfdf6d0bf98f1b7ff7af4ebab",
-        "type": "github"
+        "lastModified": 1781903221,
+        "narHash": "sha256-7MH19p7J8JDKUfX20aB+ESXQBCE16XZIOjaQtZJk1yc=",
+        "ref": "refs/heads/master",
+        "rev": "aee22d73fe76e7b1fbfac08dc98f0acc13d4088b",
+        "revCount": 8,
+        "type": "git",
+        "url": "file:./schema"
       },
       "original": {
-        "owner": "shinzui",
-        "repo": "seihou-schema",
-        "rev": "a0fba0d17b43b14bfdf6d0bf98f1b7ff7af4ebab",
-        "type": "github"
+        "type": "git",
+        "url": "file:./schema"
       }
     },
     "systems": {

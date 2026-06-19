@@ -57,6 +57,9 @@ cabal test all
 Test suite seihou-okf-extension-test: PASS
 Test suite seihou-core-test: PASS
 Test suite seihou-cli-test: PASS
+
+nix build .#seihou-cli --no-link
+Exit code 0
 ```
 
 Smoke validation used a temporary installed search path because `seihou prompt run` does not discover arbitrary directories outside project, user, or installed search paths:
@@ -97,7 +100,7 @@ Inspect the project before editing, keep changes scoped, and run the smallest us
 
 Implemented prompt guidance end to end. `AgentPrompt` now carries `PromptGuidance` blocks decoded from Dhall with a backwards-compatible missing-field default. Validation rejects blank guidance titles and bodies and rejects `when` conditions that reference undeclared typed or command-derived variables. `seihou prompt run` now renders a complete provider prompt with current project context, prompt identity, reference files, selected guidance, the rendered prompt body, and the optional one-off user instruction before calling the existing provider launch path.
 
-New prompt scaffolds include a starter guidance block, and prompt documentation, CLI references, embedded help, README, and changelog material describe the new field and debug behavior. The local `schema/` gitlink checkout and the external `shinzui/seihou-schema` checkout both typecheck with the new schema primitive. No blueprint baseline or applied-blueprint manifest behavior was added to prompts.
+New prompt scaffolds include a starter guidance block, and prompt documentation, CLI references, embedded help, README, and changelog material describe the new field and debug behavior. The local `schema/` gitlink checkout and the external `shinzui/seihou-schema` checkout both typecheck with the new schema primitive, and the Nix flake now stages the checked-in `schema` submodule commit for `seihou-core` and `seihou-cli` builds. No blueprint baseline or applied-blueprint manifest behavior was added to prompts.
 
 
 ## Context and Orientation

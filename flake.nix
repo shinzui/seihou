@@ -18,9 +18,10 @@
     haskell-nix.url = "github:shinzui/haskell-nix";
     haskell-nix.inputs.nixpkgs.follows = "nixpkgs";
 
-    # Dhall schema package (non-flake, pinned to commit).
+    # Dhall schema package (non-flake), sourced from the checked-in schema
+    # submodule so Nix builds use the same schema revision as the repository.
     seihou-schema-src = {
-      url = "github:shinzui/seihou-schema/a0fba0d17b43b14bfdf6d0bf98f1b7ff7af4ebab";
+      url = "git+file:./schema";
       flake = false;
     };
 
