@@ -14,3 +14,11 @@ source-repository-package
   location: https://github.com/composewell/streamly.git
   tag: a97ea85a194f6fd83513f84ce8ee2547147f553f
   subdir: core
+
+-- OKF core library, consumed by `seihou docs` to generate documentation bundles.
+-- Pinned to a commit on shinzui/okf; bump in lockstep with the okf-src flake input.
+source-repository-package
+  type: git
+  location: https://github.com/shinzui/okf
+  tag: fb73a013adf7b4c5c65fd55552ea1fa47ed6a165
+  subdir: okf-core

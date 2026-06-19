@@ -60,6 +60,7 @@ library seihou-cli-internal
     Seihou.CLI.Completions.Fish
     Seihou.CLI.Completions.Zsh
     Seihou.CLI.Diff
+    Seihou.CLI.Docs.Smoke
     Seihou.CLI.Git
     Seihou.CLI.Init
     Seihou.CLI.InstallHistory
@@ -97,6 +98,7 @@ library seihou-cli-internal
     directory >=1.3 && <2,
     effectful-core >=2.4 && <3,
     filepath >=1.4 && <2,
+    okf-core,
     process >=1.6 && <2,
     seihou-core ^>=0.3.0.0,
     temporary >=1.3 && <2,

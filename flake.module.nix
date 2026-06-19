@@ -18,6 +18,7 @@
           (import ./nix/haskell-overlay.nix {
             inherit pkgs gitRev;
             seihou-schema-src = inputs.seihou-schema-src;
+            okf-src = inputs.okf-src;
           });
       };
     in

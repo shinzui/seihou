@@ -23,6 +23,15 @@
       url = "github:shinzui/seihou-schema/a0fba0d17b43b14bfdf6d0bf98f1b7ff7af4ebab";
       flake = false;
     };
+
+    # OKF core library source (non-flake, pinned to commit). Built via
+    # callCabal2nix in ./nix/haskell-overlay.nix and consumed by `seihou docs`.
+    # Keep this commit in sync with the okf-core source-repository-package in
+    # cabal.project.
+    okf-src = {
+      url = "github:shinzui/okf/fb73a013adf7b4c5c65fd55552ea1fa47ed6a165";
+      flake = false;
+    };
   };
 
   nixConfig = {

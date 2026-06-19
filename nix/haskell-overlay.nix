@@ -1,11 +1,29 @@
 { pkgs
 , gitRev
 , seihou-schema-src ? null
+, okf-src ? null
 }:
 let
-  inherit (pkgs.haskell.lib.compose) doJailbreak;
+  inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck;
 in
 final: prev: {
+  # OKF core library, built from the pinned okf-src flake input's okf-core/
+  # subdirectory. Consumed by seihou-cli's `seihou docs` command.
+  #
+  # callCabal2nix copies only okf-core/, but the package references files at the
+  # okf repo root that are absent in the staged subdir: ../CHANGELOG.md
+  # (extra-doc-files) and ../LICENSE (license-file). Stage them from okf-src in
+  # prePatch (mirroring how seihou-core stages ../schema), and dontCheck since we
+  # only need the library.
+  okf-core = pkgs.haskell.lib.compose.overrideCabal
+    (drv: {
+      prePatch = (drv.prePatch or "") + ''
+        cp ${okf-src}/CHANGELOG.md ../CHANGELOG.md
+        cp ${okf-src}/LICENSE ../LICENSE
+      '';
+    })
+    (dontCheck (doJailbreak (final.callCabal2nix "okf-core" (okf-src + "/okf-core") { })));
+
   seihou-core = pkgs.haskell.lib.compose.overrideCabal
     (drv: {
       # callCabal2nix only copies seihou-core/, so make the schema submodule
