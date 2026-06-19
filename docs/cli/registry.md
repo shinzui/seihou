@@ -1,6 +1,6 @@
 # seihou registry
 
-Authoring-time operations on a multi-module repository's `seihou-registry.dhall`.
+Authoring-time operations on a multi-artifact repository's `seihou-registry.dhall`.
 
 ## Usage
 
@@ -12,7 +12,7 @@ seihou registry COMMAND [OPTIONS]
 
 | Command | Description |
 |---------|-------------|
-| `sync-versions` | Copy each module, recipe, or blueprint version into the registry |
+| `sync-versions` | Copy each module, recipe, blueprint, or prompt version into the registry |
 | `validate`      | Check that entries and versions match their items |
 
 The `registry` group is designed to extend. Future subcommands (e.g. `registry add`, `registry publish`) will live on this page.
@@ -26,7 +26,7 @@ Run `seihou registry` commands inside a writable checkout of a multi-module repo
 ## seihou registry sync-versions
 
 Populate every registry entry's `version` field from the matching module,
-recipe, or blueprint.
+recipe, blueprint, or prompt.
 
 ### Usage
 
@@ -44,7 +44,7 @@ seihou registry sync-versions [OPTIONS]
 
 ### Description
 
-Reads each entry's `module.dhall`, `recipe.dhall`, or `blueprint.dhall`,
+Reads each entry's `module.dhall`, `recipe.dhall`, `blueprint.dhall`, or `prompt.dhall`,
 compares the declared version against the registry entry's `version` field,
 and rewrites `seihou-registry.dhall` with the current values. The diff table
 classifies each entry:
@@ -60,7 +60,10 @@ Running the command twice in a row is a no-op on the second pass ("0 entries upd
 
 ### Why it matters
 
-External tools like `seihou browse` and `seihou outdated` prefer a registry entry's version over re-evaluating each item. A populated registry lets those tools skip N Dhall evaluations per repo — worth it for any registry with more than one or two items.
+External tools and drift checks can use a registry entry's version instead of
+re-evaluating each item. A populated registry lets those tools skip N Dhall
+evaluations per repo — worth it for any registry with more than one or two
+items.
 
 `seihou browse` and `seihou install` now also print a one-line warning per out-of-sync entry when operating against a multi-module repo. The warning is a soft hint, not an error — the operation continues.
 
@@ -88,13 +91,13 @@ Drop this into a `just` recipe or GitHub Actions step:
 seihou registry sync-versions --check
 ```
 
-It exits 0 if everything is in sync and 1 if any entry is missing, stale, or orphaned. Pair it with `seihou validate-module` and `seihou validate-blueprint` to check the items themselves.
+It exits 0 if everything is in sync and 1 if any entry is missing, stale, or orphaned. Pair it with `seihou validate-module`, `seihou validate-blueprint`, and `seihou validate-prompt` to check the items themselves.
 
 ---
 
 ## seihou registry validate
 
-Check that a multi-module repository's `seihou-registry.dhall` is well-formed and that every entry's `version` field agrees with the underlying `module.dhall`, `recipe.dhall`, or `blueprint.dhall`.
+Check that a multi-artifact repository's `seihou-registry.dhall` is well-formed and that every entry's `version` field agrees with the underlying `module.dhall`, `recipe.dhall`, `blueprint.dhall`, or `prompt.dhall`.
 
 ### Usage
 
@@ -112,8 +115,8 @@ seihou registry validate [OPTIONS]
 
 Combines two existing checks into a single command:
 
-1. **Structural** — every entry's `path` resolves to a `module.dhall`, `recipe.dhall`, or `blueprint.dhall`, every `name` matches `[a-z][a-z0-9-]*`, no module, recipe, or blueprint names collide, no path is absolute or contains `..`.
-2. **Version** — every entry's `version` field equals the `version` declared in the on-disk `module.dhall`, `recipe.dhall`, or `blueprint.dhall`. A missing registry version (where the item declares one) and a stale registry version both fail validation.
+1. **Structural** — every entry's `path` resolves to a `module.dhall`, `recipe.dhall`, `blueprint.dhall`, or `prompt.dhall`, every `name` matches `[a-z][a-z0-9-]*`, no module, recipe, blueprint, or prompt names collide, no path is absolute or contains `..`.
+2. **Version** — every entry's `version` field equals the `version` declared in the on-disk `module.dhall`, `recipe.dhall`, `blueprint.dhall`, or `prompt.dhall`. A missing registry version (where the item declares one) and a stale registry version both fail validation.
 
 Exits 0 on a clean registry and 1 on any failure. Suitable for CI pre-merge checks. Unlike `seihou registry sync-versions --check`, this also catches structural problems (renamed modules, illegal paths, name collisions).
 

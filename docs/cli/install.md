@@ -1,6 +1,6 @@
 # seihou install
 
-Install modules, recipes, and blueprints from a git repository.
+Install modules, recipes, blueprints, and prompts from a git repository.
 
 ## Usage
 
@@ -19,24 +19,26 @@ seihou install [GIT-URL] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `--name NAME` | Override installed module name (single-module repos only) |
-| `--module MODULE` | Install a specific module, recipe, or blueprint from the registry (repeatable) |
-| `--all` | Install all modules, recipes, and blueprints from the registry |
+| `--module MODULE` | Install a specific module, recipe, blueprint, or prompt from the registry (repeatable) |
+| `--all` | Install all modules, recipes, blueprints, and prompts from the registry |
 
 ## Description
 
-Clones the git repository and installs modules, recipes, and blueprints to
+Clones the git repository and installs modules, recipes, blueprints, and prompts to
 `~/.config/seihou/installed/<name>/`.
 
-Handles three repository types:
+Handles these repository types:
 
 - **Single-module** repos (containing `module.dhall` at the root)
 - **Single-recipe** repos (containing `recipe.dhall` at the root)
 - **Single-blueprint** repos (containing `blueprint.dhall` at the root)
+- **Single-prompt** repos (containing `prompt.dhall` at the root)
 - **Multi-item registries** (containing `seihou-registry.dhall`)
 
-For registries, module, recipe, and blueprint entries are presented for selection.
+For registries, module, recipe, blueprint, and prompt entries are presented for selection.
 If neither `--module` nor `--all` is specified, an interactive picker is shown.
-The `--all` flag installs all modules, recipes, and blueprints from the registry.
+The `--all` flag installs all registry entries. The `--module` flag name is kept
+for compatibility, but it can select any registry entry kind.
 
 ### Install history
 
@@ -70,6 +72,9 @@ seihou install https://github.com/user/seihou-modules.git --module haskell --mod
 
 # Install all items from a registry
 seihou install https://github.com/user/seihou-modules.git --all
+
+# Install a prompt entry from a registry
+seihou install https://github.com/user/team-prompts.git --module review-changes
 
 # Reinstall from history (opens fzf picker)
 seihou install

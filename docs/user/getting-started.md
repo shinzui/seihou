@@ -1,6 +1,6 @@
 # Getting Started with Seihou
 
-Seihou (製法) is a composable, type-safe project scaffolding system. You define reusable **modules** — directories containing a Dhall definition and template files — then run `seihou run <module>` to generate projects. You can also define **recipes** — named compositions of modules that bundle multiple modules into a single runnable name — and **blueprints**, agent-driven project starters for open-ended scaffolding. Seihou resolves variables from multiple sources, compiles a generation plan for deterministic runs, and tracks generated files in a manifest for incremental updates.
+Seihou (製法) is a composable, type-safe project scaffolding and agent workflow system. You define reusable **modules** — directories containing a Dhall definition and template files — then run `seihou run <module>` to generate projects. You can also define **recipes** — named compositions of modules that bundle multiple modules into a single runnable name — **blueprints**, agent-driven project starters for open-ended scaffolding, and **prompts**, reusable agent-session templates for workflows such as review or release preparation. Seihou resolves variables from multiple sources, compiles a generation plan for deterministic runs, and tracks generated files in a manifest for incremental updates.
 
 This guide walks you through the complete workflow: initializing Seihou, creating a module from scratch, generating a project, and inspecting the results. By the end, you will have used every major CLI command.
 
@@ -39,8 +39,8 @@ Initialized Seihou configuration at ~/.config/seihou/
 This creates three things inside `~/.config/seihou/`:
 
 - **config.dhall** — Global configuration file where you can set default variable values that apply to all projects.
-- **modules/** — Directory for your personal modules. Place module directories here and they will be available everywhere.
-- **installed/** — Directory for modules installed from git repositories via `seihou install`.
+- **modules/** — Directory for your personal modules, recipes, blueprints, and prompts. Place runnable directories here and they will be available everywhere.
+- **installed/** — Directory for artifacts installed from git repositories via `seihou install`.
 
 Running `seihou init` again is safe — it skips files that already exist.
 
@@ -399,9 +399,9 @@ seihou vars my-haskell --explain --var project.name=demo-app
 The `--explain` flag shows the provenance of each resolved variable — whether it came from a CLI flag, environment variable, config file, or module default. This is invaluable for debugging variable resolution in complex setups.
 
 
-## Step 10: List available modules, recipes, and blueprints
+## Step 10: List available modules, recipes, blueprints, and prompts
 
-To see all modules, recipes, and blueprints Seihou can find across its search paths:
+To see all runnable artifacts Seihou can find across its search paths:
 
 ```sh
 seihou list
@@ -413,16 +413,17 @@ Seihou searches three locations in order:
 2. **User modules**: `~/.config/seihou/modules/`
 3. **Installed modules**: `~/.config/seihou/installed/`
 
-Output shows each item with its name, description, and source. Recipes and blueprints are distinguished with `[recipe]` and `[blueprint]` tags:
+Output shows each item with its name, description, and source. Recipes, blueprints, and prompts are distinguished with `[recipe]`, `[blueprint]`, and `[prompt]` tags:
 
 ```
-Available modules, recipes, and blueprints:
+Available modules, recipes, blueprints, and prompts:
 
   my-haskell        A Haskell project template   (user)
   haskell-library   Haskell with Nix + Cabal     (installed: my-templates v1.0.0 [recipe])
   api-service       Agent-guided API service     (installed: my-templates v0.1.0 [blueprint])
+  review-changes    Review current git changes   (installed: team-prompts v0.1.0 [prompt])
 
-3 items found (3 sources searched)
+4 items found (3 sources searched)
 ```
 
 To make your module available everywhere, move it to `~/.config/seihou/modules/`:
@@ -434,15 +435,15 @@ mv my-haskell ~/.config/seihou/modules/
 
 ## Step 11: Install items from git
 
-You can install modules, recipes, and blueprints directly from git repositories:
+You can install modules, recipes, blueprints, and prompts directly from git repositories:
 
 ```sh
 seihou install https://github.com/user/haskell-nix-module.git
 ```
 
-This clones the repository, validates its `module.dhall`, and copies it to `~/.config/seihou/installed/<name>/`. Use `--name` to override the installed module name.
+This clones the repository, validates its runnable Dhall file, and copies it to `~/.config/seihou/installed/<name>/`. Use `--name` to override the installed module name for single-module repositories.
 
-Repositories can also provide multiple modules, recipes, and blueprints via a **registry**. Use `seihou browse` to preview what's available, and `--module` or `--all` with `seihou install` to select which items to install. Single-recipe repos (containing `recipe.dhall` at the root) and single-blueprint repos (containing `blueprint.dhall` at the root) are also supported. See the [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) guide for details.
+Repositories can also provide multiple modules, recipes, blueprints, and prompts via a **registry**. Use `seihou browse` to preview what's available, and `--module` or `--all` with `seihou install` to select which items to install. The selector flag is named `--module` for compatibility, but it can select any registry entry kind. Single-recipe, single-blueprint, and single-prompt repos are also supported. See the [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) guide for details.
 
 
 ## Other commands
@@ -487,15 +488,31 @@ project to the configured agent provider. `seihou run api-service` refuses
 when `api-service` is a blueprint; use `seihou agent run` instead. See
 [Agent-Driven Blueprints](blueprints.md).
 
+### Prompts: reusable agent sessions
+
+Use prompts when you want a repeatable agent workflow without deterministic
+generation or blueprint scaffold provenance:
+
+```sh
+seihou new-prompt review-changes
+seihou validate-prompt review-changes
+seihou prompt run review-changes --debug
+```
+
+Prompts can resolve typed variables from config and can fill placeholders from
+local command output such as `git diff --stat`. Non-debug runs launch the
+configured provider. See [First-Class Prompts](prompts.md).
+
 ### AI-assisted workflows
 
 `seihou agent` can help author modules, bootstrap registries, guide project
-setup, or run blueprints:
+setup, run blueprints, or launch first-class prompts:
 
 ```sh
 seihou agent assist "add optional PostgreSQL support"
 seihou agent bootstrap --repo "create a team template registry"
 seihou agent setup "apply our Haskell starter"
+seihou prompt run review-changes --debug
 ```
 
 Provider defaults are configurable (`claude-cli`, `codex-cli`, `anthropic`,
@@ -601,6 +618,7 @@ seihou help modules      # learn about module authoring
 seihou help variables    # learn about variable resolution
 seihou help contexts     # learn about context-based config
 seihou help blueprints   # learn about agent-driven blueprints
+seihou help prompts      # learn about first-class prompts
 seihou help agent        # learn about AI agent commands
 ```
 
@@ -609,6 +627,7 @@ seihou help agent        # learn about AI agent commands
 
 - Read the [Module Authoring Reference](module-authoring.md) for the complete module format, all four generation strategies, variable types, the expression language, composition patterns, and recipes.
 - Read [Agent-Driven Blueprints](blueprints.md) to learn how to author and run open-ended project starters.
+- Read [First-Class Prompts](prompts.md) to learn how to author reusable agent-session workflows.
 - Read [AI Agent Assistance](agent-assistance.md) to configure providers and use `seihou agent` / `seihou kit`.
-- Read [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) to learn how to publish multiple modules, recipes, and blueprints from a single git repository.
+- Read [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) to learn how to publish multiple modules, recipes, blueprints, and prompts from a single git repository.
 - Explore the test fixtures at `seihou-core/test/fixtures/` for working examples of multi-module composition (`haskell-with-nix`), structured output (`structured-basic`), shell commands (`command-test`), and recipes (`haskell-with-nix-recipe`).

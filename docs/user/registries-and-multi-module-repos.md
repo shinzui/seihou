@@ -1,7 +1,7 @@
 # Registries and Multi-Module Repositories
 
 A Seihou **registry** lets a single git repository provide multiple modules,
-recipes, and blueprints. Instead of one runnable file at the root, you create a
+recipes, blueprints, and prompts. Instead of one runnable file at the root, you create a
 `seihou-registry.dhall` file that lists every item in the repository with its
 name, path, description, version, and tags. Users can then browse, filter, and
 install individual items — or all of them at once.
@@ -18,10 +18,11 @@ items. For example:
 - A **team template collection** with modules for different project types: `api-service`, `cli-tool`, `library`
 - A **framework ecosystem** where each module adds a layer: `base`, `testing`, `ci`, `deployment`
 - An **agent-guided starter collection** with blueprints for open-ended project shapes: `api-service`, `worker-service`, `frontend-app`
+- A **team prompt library** with reusable agent sessions: `review-changes`, `release-prep`, `dependency-audit`
 
-If your repository contains a single module, recipe, or blueprint, you don't
+If your repository contains a single module, recipe, blueprint, or prompt, you don't
 need a registry — just place `module.dhall`, `recipe.dhall`, or
-`blueprint.dhall` at the root.
+`blueprint.dhall`, or `prompt.dhall` at the root.
 
 
 ## Repository layout
@@ -47,21 +48,28 @@ my-templates/
 ├── recipes/
 │   └── haskell-library/
 │       └── recipe.dhall       # Recipe composing modules above
-└── blueprints/
-    └── api-service/
-        ├── blueprint.dhall
+├── blueprints/
+│   └── api-service/
+│       ├── blueprint.dhall
+│       ├── prompt.md
+│       └── files/
+└── prompts/
+    └── review-changes/
+        ├── prompt.dhall
         ├── prompt.md
         └── files/
 ```
 
 Each module is a standard Seihou module directory, each recipe contains a
 `recipe.dhall`, and each blueprint contains a `blueprint.dhall` plus its
-prompt/reference files. The `seihou-registry.dhall` file at the root tells
+prompt/reference files. Each prompt contains `prompt.dhall`, `prompt.md`, and
+optional reference files. The `seihou-registry.dhall` file at the root tells
 Seihou where to find each item.
 
 Item directories can be organized however you like — flat, nested under
-`modules/`, `recipes/`, or `blueprints/`, grouped by category. The `path` field
-in each registry entry points to the directory relative to the repository root.
+`modules/`, `recipes/`, `blueprints/`, or `prompts/`, grouped by category. The
+`path` field in each registry entry points to the directory relative to the
+repository root.
 
 
 ## The seihou-registry.dhall format
@@ -105,11 +113,19 @@ in each registry entry points to the directory relative to the repository root.
     , tags = [ "api", "agent" ]
     }
   ]
+, prompts =
+  [ { name = "review-changes"
+    , version = Some "0.1.0"
+    , path = "prompts/review-changes"
+    , description = Some "Review current git changes"
+    , tags = [ "review" ]
+    }
+  ]
 }
 ```
 
 Keep entry `version` fields in sync with each module's `module.dhall` /
-`recipe.dhall` / `blueprint.dhall` by running
+`recipe.dhall` / `blueprint.dhall` / `prompt.dhall` by running
 [`seihou registry sync-versions`](../cli/registry.md).
 
 ### Fields
@@ -123,7 +139,7 @@ Keep entry `version` fields in sync with each module's `module.dhall` /
 | Field | Type | Description |
 |-------|------|-------------|
 | `name` | Text | Module identifier. Must match `[a-z][a-z0-9-]*`. |
-| `version` | Optional Text | Declared version of the entry, copied from the underlying `module.dhall`, `recipe.dhall`, or `blueprint.dhall`. Populated by `seihou registry sync-versions`. Optional but recommended — tooling reads this instead of evaluating each item. |
+| `version` | Optional Text | Declared version of the entry, copied from the underlying `module.dhall`, `recipe.dhall`, `blueprint.dhall`, or `prompt.dhall`. Populated by `seihou registry sync-versions`. Optional but recommended — tooling reads this instead of evaluating each item. |
 | `path` | Text | Relative path from the repository root to the module directory. Must not start with `/` or contain `..`. |
 | `description` | Optional Text | Human-readable description shown in browse output. |
 | `tags` | List Text | Tags for filtering. Users can filter with `--tag` when browsing. |
@@ -132,7 +148,9 @@ Keep entry `version` fields in sync with each module's `module.dhall` /
 
 **blueprints** (List, optional): Blueprint entries, using the same format as module entries. Each entry points to a directory containing `blueprint.dhall`. The `blueprints` field defaults to an empty list for backwards compatibility.
 
-Modules, recipes, and blueprints share one namespace — no name may appear in more than one list.
+**prompts** (List, optional): Prompt entries, using the same format as module entries. Each entry points to a directory containing `prompt.dhall`. The `prompts` field defaults to an empty list for backwards compatibility.
+
+Modules, recipes, blueprints, and prompts share one namespace — no name may appear in more than one list.
 
 
 ## Browsing a repository
@@ -149,14 +167,15 @@ For a multi-module repository, the output shows the registry listing:
 my-templates
 A collection of project templates
 
-Available modules, recipes, and blueprints:
+Available entries:
 
-  haskell-base   Base Haskell project with cabal  [haskell, cabal]
-  nix-flake      Nix flake with devShell  [nix, devops]
-  github-ci      GitHub Actions CI workflow  [ci, github]
-  api-service    Agent-guided API service starter  [api, agent] [blueprint]
+  [module]     haskell-base     Base Haskell project with cabal  [haskell, cabal]
+  [module]     nix-flake        Nix flake with devShell  [nix, devops]
+  [module]     github-ci        GitHub Actions CI workflow  [ci, github]
+  [blueprint]  api-service      Agent-guided API service starter  [api, agent]
+  [prompt]     review-changes   Review current git changes  [review]
 
-4 items available. Install with:
+5 entries available. Install with:
   seihou install https://github.com/user/my-templates.git --module <name>
   seihou install https://github.com/user/my-templates.git --all
 ```
@@ -173,11 +192,11 @@ seihou browse https://github.com/user/my-templates.git --tag haskell
 my-templates
 A collection of project templates
 
-Available modules, recipes, and blueprints:
+Available entries:
 
-  haskell-base   Base Haskell project with cabal  [haskell, cabal]
+  [module]  haskell-base   Base Haskell project with cabal  [haskell, cabal]
 
-1 item available. Install with:
+1 entry available. Install with:
   seihou install https://github.com/user/my-templates.git --module <name>
   seihou install https://github.com/user/my-templates.git --all
 ```
@@ -194,16 +213,16 @@ Single-module repository. Install with:
   seihou install https://github.com/user/haskell-base.git
 ```
 
-Similarly, repositories containing a `recipe.dhall` or `blueprint.dhall` (but no
-registry and no higher-priority runnable file) are detected as single-recipe or
-single-blueprint repositories.
+Similarly, repositories containing a `recipe.dhall`, `blueprint.dhall`, or
+`prompt.dhall` (but no registry and no higher-priority runnable file) are
+detected as single-recipe, single-blueprint, or single-prompt repositories.
 
 
 ## Installing from a registry
 
 ### Install specific items
 
-Use `--module` (repeatable) to install specific modules, recipes, or blueprints:
+Use `--module` (repeatable) to install specific modules, recipes, blueprints, or prompts:
 
 ```sh
 seihou install https://github.com/user/my-templates.git --module haskell-base --module nix-flake
@@ -213,7 +232,7 @@ Each selected item is validated and copied to `~/.config/seihou/installed/<name>
 
 ### Install all items
 
-Use `--all` to install every module, recipe, and blueprint in the registry:
+Use `--all` to install every module, recipe, blueprint, and prompt in the registry:
 
 ```sh
 seihou install https://github.com/user/my-templates.git --all
@@ -230,11 +249,12 @@ seihou install https://github.com/user/my-templates.git
 ```
 my-templates — A collection of project templates
 
-Available modules, recipes, and blueprints:
+Available modules, recipes, blueprints, and prompts:
   1) haskell-base   Base Haskell project with cabal
   2) nix-flake      Nix flake with devShell
   3) github-ci      GitHub Actions CI workflow
   4) api-service    Agent-guided API service starter
+  5) review-changes Review current git changes
 
 Enter item numbers to install (comma-separated), or 'all':
 ```
@@ -247,14 +267,15 @@ repository name, kind, version, and tags. The `seihou list` command uses this
 to show where installed items came from:
 
 ```
-Available modules, recipes, and blueprints:
+Available modules, recipes, blueprints, and prompts:
 
   haskell-base   Base Haskell project with cabal   (installed: my-templates)
   nix-flake      Nix flake with devShell           (installed: my-templates)
   api-service    Agent-guided API service starter  (installed: my-templates [blueprint])
+  review-changes Review current git changes        (installed: my-templates [prompt])
   my-local-mod   A local module                    (user)
 
-4 items found (3 sources searched)
+5 items found (3 sources searched)
 ```
 
 ### Overriding the install name
@@ -270,9 +291,9 @@ seihou install https://github.com/user/haskell-base.git --name my-haskell
 
 ### Step 1: Organize your items
 
-Create a directory for each module, recipe, or blueprint. A common convention is
-to put them under `modules/`, `recipes/`, and `blueprints/` directories, but any
-layout works.
+Create a directory for each module, recipe, blueprint, or prompt. A common
+convention is to put them under `modules/`, `recipes/`, `blueprints/`, and
+`prompts/` directories, but any layout works.
 
 ### Step 2: Write seihou-registry.dhall
 
@@ -295,6 +316,7 @@ Create `seihou-registry.dhall` at the repository root. List every item with its 
 	  ]
 , recipes = [] : List { name : Text, path : Text, description : Optional Text, tags : List Text }
 , blueprints = [] : List { name : Text, path : Text, description : Optional Text, tags : List Text }
+, prompts = [] : List { name : Text, path : Text, description : Optional Text, tags : List Text }
 }
 ```
 
@@ -306,6 +328,7 @@ Validate each item individually to catch errors before publishing:
 seihou validate-module modules/api-service
 seihou validate-module modules/cli-tool
 seihou validate-blueprint blueprints/api-service
+seihou validate-prompt prompts/review-changes
 ```
 
 ### Step 4: Test with browse
@@ -323,9 +346,9 @@ Verify the output shows all your items with correct descriptions and tags.
 
 Every registry entry has an optional `version` field that should match the
 version declared in the item's `module.dhall`, `recipe.dhall`, or
-`blueprint.dhall`. Tooling (`seihou browse`, `seihou outdated`) reads the
-registry `version` when present and falls back to evaluating each item only
-when it isn't — so a populated registry saves N Dhall evaluations per repo.
+`blueprint.dhall`, or `prompt.dhall`. Tooling and drift checks can read the
+registry `version` when present and fall back to evaluating each item only when
+they must — so a populated registry saves N Dhall evaluations per repo.
 
 Maintain the field with `seihou registry sync-versions`:
 
@@ -353,8 +376,8 @@ When Seihou loads a `seihou-registry.dhall`, it validates each entry:
 
 - **Name format**: Must match `[a-z][a-z0-9-]*`.
 - **Path safety**: Must be a relative path (no leading `/`) and must not contain `..`.
-- **Item existence**: Module entries must contain `module.dhall`; recipe entries must contain `recipe.dhall`; blueprint entries must contain `blueprint.dhall`.
-- **No name collisions**: No name may appear in more than one of the `modules`, `recipes`, and `blueprints` lists.
+- **Item existence**: Module entries must contain `module.dhall`; recipe entries must contain `recipe.dhall`; blueprint entries must contain `blueprint.dhall`; prompt entries must contain `prompt.dhall`.
+- **No name collisions**: No name may appear in more than one of the `modules`, `recipes`, `blueprints`, and `prompts` lists.
 
 If the registry file exists but fails to parse, Seihou falls back to checking
 for root runnable files. If none are found, the repository is reported as empty.
@@ -368,9 +391,10 @@ When Seihou examines a cloned repository, it checks in this order:
 2. **module.dhall** (at root) — If present, the repo is treated as a single-module repository.
 3. **recipe.dhall** (at root) — If present, the repo is treated as a single-recipe repository.
 4. **blueprint.dhall** (at root) — If present, the repo is treated as a single-blueprint repository.
-5. **None of the above** — The repo is empty and Seihou reports an error.
+5. **prompt.dhall** (at root) — If present, the repo is treated as a single-prompt repository.
+6. **None of the above** — The repo is empty and Seihou reports an error.
 
-The registry file always takes precedence. If both `seihou-registry.dhall` and a root `module.dhall` exist, only the registry is used. If a single-item repository contains multiple runnable files, discovery prefers `module.dhall`, then `recipe.dhall`, then `blueprint.dhall`.
+The registry file always takes precedence. If both `seihou-registry.dhall` and a root `module.dhall` exist, only the registry is used. If a single-item repository contains multiple runnable files, discovery prefers `module.dhall`, then `recipe.dhall`, then `blueprint.dhall`, then `prompt.dhall`.
 
 
 ## Tags best practices
@@ -416,6 +440,23 @@ set, but a blueprint cannot use another blueprint as a baseline.
 See [Agent-Driven Blueprints](blueprints.md) for the authoring guide.
 
 
+## Prompts in registries
+
+Prompts are installed and listed like other runnable artifacts, but they run
+through `seihou prompt run`:
+
+```sh
+seihou install https://github.com/user/team-prompts.git --module review-changes
+seihou prompt run review-changes --debug
+```
+
+Prompt entries should point at directories containing `prompt.dhall`. Their
+versions can be kept in sync with `seihou registry sync-versions`, just like
+modules, recipes, and blueprints.
+
+See [First-Class Prompts](prompts.md) for the authoring guide.
+
+
 ## Migrations in registries
 
 Migrations are declared on each module's own `module.dhall`, not on
@@ -438,5 +479,6 @@ See [migrations.md](migrations.md) for the full reference, or run
 
 - Read the [Module Authoring Reference](module-authoring.md) for the complete module format and all generation strategies.
 - Read [Agent-Driven Blueprints](blueprints.md) for blueprint authoring and agent-runner behavior.
+- Read [First-Class Prompts](prompts.md) for reusable agent-session prompt authoring.
 - Read [Configuration and Variable Resolution](config-and-variables.md) for details on how variable values flow through the config hierarchy.
 - Explore the test fixtures at `seihou-core/test/fixtures/` for working examples of module composition.

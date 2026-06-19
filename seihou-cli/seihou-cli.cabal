@@ -29,6 +29,7 @@ extra-source-files:
   help/kit.md
   help/migrations.md
   help/modules.md
+  help/prompts.md
   help/templating.md
   help/variables.md
 

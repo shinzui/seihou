@@ -1,6 +1,7 @@
 # seihou agent
 
-AI-powered agent commands backed by configurable providers.
+AI-powered agent commands backed by configurable providers. First-class prompt
+artifacts use the same provider configuration through `seihou prompt run`.
 
 ## Usage
 
@@ -98,3 +99,15 @@ seihou agent --debug --provider claude-cli assist "inspect this prompt"
 seihou agent --debug --provider codex-cli bootstrap --repo "inspect this prompt"
 seihou agent --debug --provider openai setup "inspect this prompt"
 ```
+
+## First-Class Prompts
+
+Use `seihou prompt run PROMPT` for reusable agent-session templates that do not
+apply blueprint baselines or record applied-blueprint provenance:
+
+```sh
+seihou prompt run review-changes --debug
+seihou prompt run review-changes --provider codex-cli
+```
+
+See [`seihou prompt`](prompt.md) and [First-Class Prompts](../user/prompts.md).

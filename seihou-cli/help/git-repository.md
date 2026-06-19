@@ -1,6 +1,6 @@
 GIT REPOSITORY
 
-Seihou modules, recipes, and blueprints can be shared and installed from git
+Seihou modules, recipes, blueprints, and prompts can be shared and installed from git
 repositories. A repository can contain a single runnable item or multiple items
 organized as a registry.
 
@@ -19,21 +19,23 @@ SINGLE-MODULE REPOSITORY
     seihou install https://github.com/user/my-module.git
     seihou install https://github.com/user/my-module.git --name custom-name
 
-SINGLE-RECIPE OR SINGLE-BLUEPRINT REPOSITORY
+SINGLE-RECIPE, SINGLE-BLUEPRINT, OR SINGLE-PROMPT REPOSITORY
 
-  A repository with a recipe.dhall or blueprint.dhall at the root is treated
-  as a single recipe or single blueprint. Install it the same way:
+  A repository with a recipe.dhall, blueprint.dhall, or prompt.dhall at the
+  root is treated as a single recipe, single blueprint, or single prompt.
+  Install it the same way:
 
     seihou install https://github.com/user/my-recipe.git
     seihou install https://github.com/user/my-blueprint.git
+    seihou install https://github.com/user/my-prompt.git
 
   Recipes run through `seihou run`; blueprints run through
-  `seihou agent run`.
+  `seihou agent run`; prompts run through `seihou prompt run`.
 
 REGISTRY REPOSITORY
 
   A repository with a seihou-registry.dhall at the root is treated as a
-  registry containing multiple modules, recipes, and blueprints. Each item
+  registry containing multiple modules, recipes, blueprints, and prompts. Each item
   lives in its own subdirectory with its own runnable definition.
 
     my-templates/
@@ -41,6 +43,7 @@ REGISTRY REPOSITORY
       modules/haskell-base/module.dhall
       recipes/haskell-library/recipe.dhall
       blueprints/api-service/blueprint.dhall
+      prompts/review-changes/prompt.dhall
 
   The registry file declares available items with descriptions, versions, and
   tags. Install specific items, all items, or choose interactively:
@@ -61,7 +64,7 @@ BROWSING BEFORE INSTALLING
 WHERE ITEMS ARE INSTALLED
 
   Installed items are stored under ~/.config/seihou/installed/<name>/.
-  They appear alongside user-created modules, recipes, and blueprints in the
+  They appear alongside user-created modules, recipes, blueprints, and prompts in the
   search path:
 
   1. .seihou/modules/             Project-local items
@@ -78,8 +81,8 @@ BOOTSTRAPPING A NEW REPOSITORY
 
 UPGRADE WORKFLOW
 
-  Once installed, modules, recipes, and blueprints can be upgraded with
-  `seihou upgrade`. If a newer module version ships migrations (for renames,
+  Once installed, modules can be upgraded with `seihou upgrade`. If a newer
+  module version ships migrations (for renames,
   deletions, etc.), the upgrade command surfaces them via an advisory; running
   `seihou migrate <module>` is the post-upgrade step that applies them
   to the current project. See `seihou help migrations`.

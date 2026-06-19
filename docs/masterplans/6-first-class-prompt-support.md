@@ -38,7 +38,7 @@ An alternative was to extend blueprints with a `purpose = "prompt"` field. That 
 | EP-52 | Resolve command derived variables | docs/plans/52-resolve-command-derived-variables.md | EP-50 | EP-51 | Complete |
 | EP-53 | Add prompt CLI workflows | docs/plans/53-add-prompt-cli-workflows.md | EP-51, EP-52 | None | Complete |
 | EP-55 | Integrate prompts with registries and discovery surfaces | docs/plans/55-integrate-prompts-with-registries-and-discovery-surfaces.md | EP-51 | EP-53 | Complete |
-| EP-54 | Document first class prompts | docs/plans/54-document-first-class-prompts.md | EP-53, EP-55 | None | Not Started |
+| EP-54 | Document first class prompts | docs/plans/54-document-first-class-prompts.md | EP-53, EP-55 | None | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -79,7 +79,7 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-52: Add safe command-derived variable resolution with process-effect tests and provenance.
 - [x] EP-53: Add `seihou new-prompt`, `seihou validate-prompt`, and `seihou prompt run` workflows.
 - [x] EP-55: Add prompts to registries, install, browse, list filters, sync, validation, and related tests.
-- [ ] EP-54: Update CLI help, user guides, generated prompt-authoring guidance, and changelog material.
+- [x] EP-54: Update CLI help, user guides, generated prompt-authoring guidance, and changelog material.
 
 
 ## Surprises & Discoveries
@@ -151,4 +151,7 @@ Compare the result against the original vision.
   Date: 2026-06-19
 
 - Outcome: EP-55 completed registry and discovery integration for prompts. Prompt entries now decode, render, validate, sync versions, browse, install, appear in `seihou list --prompts`, and show prompt labels in fzf selection; a prompt-only registry smoke passed browse/validate/sync/install/list checks.
+  Date: 2026-06-19
+
+- Outcome: EP-54 completed user-facing documentation for first-class prompts. The guide, CLI references, embedded help, broader user docs, changelog material, and agent authoring prompts now present prompts as the fourth runnable artifact and document config-backed variables, command-derived variables, registry publication, and provider launch behavior.
   Date: 2026-06-19

@@ -102,6 +102,11 @@ SUBCOMMANDS
       provider. A successful non-debug run records applied-blueprint
       provenance in `.seihou/manifest.json`.
 
+  seihou prompt run PROMPT [USER-PROMPT] [--var KEY=VALUE] [--debug]
+      Resolve a reusable prompt, run command-derived variables, render
+      the prompt body, and send it to the configured provider. Prompts
+      do not apply blueprint baselines or record blueprint provenance.
+
 DEBUG EXAMPLES
 
   seihou agent --debug --provider claude-cli assist "inspect this prompt"
@@ -114,5 +119,6 @@ SEE ALSO
   seihou agent --help
   seihou help config
   seihou help variables
+  seihou help prompts
   docs/cli/agent.md
   docs/user/config-and-variables.md

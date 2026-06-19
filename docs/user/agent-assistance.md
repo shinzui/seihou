@@ -2,7 +2,9 @@
 
 `seihou agent` renders Seihou-aware prompts and sends them to a configured AI
 provider. Use it to author modules, bootstrap template repositories, guide
-project setup, or run agent-driven blueprints.
+project setup, or run agent-driven blueprints. `seihou prompt` uses the same
+provider configuration for reusable prompt artifacts that are not project
+scaffolds.
 
 CLI providers start interactive local tools. API providers send one rendered
 prompt as a completion request and print one response.
@@ -47,6 +49,10 @@ Resolution order is:
 Agent provider settings are separate from module variable resolution.
 Blueprint variables still use the normal variable precedence chain before the
 blueprint prompt is rendered.
+
+First-class prompt variables use the same variable precedence chain, then run
+any command-derived variables declared by `prompt.dhall` before the final prompt
+body is rendered.
 
 ## Debug mode
 
@@ -106,6 +112,22 @@ successful run in `.seihou/manifest.json`.
 See [Agent-Driven Blueprints](blueprints.md) for blueprint authoring and
 publishing details.
 
+## First-Class Prompts
+
+```sh
+seihou prompt run review-changes --debug
+seihou prompt run review-changes --provider codex-cli
+```
+
+Use `seihou prompt run` for reusable agent-session templates such as code
+review, release preparation, planning, or repository inspection. Prompts can
+resolve typed variables from config, fill placeholders from local commands, and
+include reference files. They do not apply blueprint baselines and do not record
+applied-blueprint provenance in the manifest.
+
+See [First-Class Prompts](prompts.md) for prompt authoring and publishing
+details.
+
 ## Seihou Kit
 
 `seihou kit` installs curated Claude Code and Codex skills and subagents from
@@ -137,5 +159,7 @@ native discovery paths.
 
 - [Configuration and Variable Resolution](config-and-variables.md#agent-provider-defaults)
 - [Agent-Driven Blueprints](blueprints.md)
+- [First-Class Prompts](prompts.md)
 - [`seihou agent`](../cli/agent.md)
+- [`seihou prompt`](../cli/prompt.md)
 - [`seihou kit`](../cli/kit.md)

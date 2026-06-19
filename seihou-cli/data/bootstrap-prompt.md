@@ -141,7 +141,8 @@ Dhall requires type annotations on empty lists. Common patterns:
 
 ## Registry Format (for multi-module repos)
 
-A `seihou-registry.dhall` at the repository root lists all modules:
+A `seihou-registry.dhall` at the repository root lists modules, recipes,
+blueprints, and prompts:
 
 ```dhall
 { repoName = "my-templates"
@@ -163,6 +164,8 @@ A `seihou-registry.dhall` at the repository root lists all modules:
 - **modules**: List of entries with name, version, path, description, tags.
   Keep `version` in sync with each module's `module.dhall` using
   `seihou registry sync-versions`.
+- **recipes**, **blueprints**, **prompts**: Optional lists with the same entry
+  shape, pointing to `recipe.dhall`, `blueprint.dhall`, and `prompt.dhall`.
 
 ### Repository layout
 ```
@@ -177,7 +180,7 @@ my-templates/
 │       └── files/
 ```
 
-A registry can also list blueprints alongside modules:
+A registry can also list blueprints and prompts alongside modules:
 
     , blueprints =
       [ { name = "payments-service"
@@ -187,8 +190,16 @@ A registry can also list blueprints alongside modules:
         , tags = [ "service", "haskell" ]
         }
       ]
+    , prompts =
+      [ { name = "review-changes"
+        , version = Some "0.1.0"
+        , path = "prompts/review-changes"
+        , description = Some "Review current git changes"
+        , tags = [ "review" ]
+        }
+      ]
 
-`seihou install`, `seihou browse`, and `seihou registry sync-versions` all handle blueprint entries.
+`seihou install`, `seihou browse`, and `seihou registry sync-versions` all handle blueprint and prompt entries.
 
 
 ## Template Syntax
@@ -223,13 +234,16 @@ Suggest these commands when the user needs to run them locally:
 
 - `seihou new-module NAME` — scaffold a new module with boilerplate
 - `seihou new-blueprint NAME [--path DIR]` — scaffold a new blueprint (agent-driven)
+- `seihou new-prompt NAME [--path DIR]` — scaffold a reusable agent-session prompt
 - `seihou validate-module [PATH]` — validate module.dhall (9 checks)
 - `seihou validate-blueprint [PATH]` — validate blueprint.dhall
+- `seihou validate-prompt [PATH]` — validate prompt.dhall
 - `seihou agent run BLUEPRINT [PROMPT]` — run a blueprint through the configured provider with the rendered prompt
+- `seihou prompt run PROMPT [--debug] [--var K=V]` — render and launch a reusable prompt
 - `seihou vars MODULE [--explain]` — show variable declarations or resolved values
 - `seihou run MODULE --dry-run [--var K=V]` — preview generation without writing
 - `seihou run MODULE [--var K=V]` — generate project
-- `seihou list` — list all available modules
+- `seihou list` — list all available modules, recipes, blueprints, and prompts
 - `seihou status` — show manifest state
 - `seihou diff` — compare manifest vs disk
 - `seihou config set|get|unset|list KEY [VALUE] [--global]` — manage config
@@ -239,7 +253,7 @@ Suggest these commands when the user needs to run them locally:
 
 ## Bootstrap Workflow
 
-1. **Choose the kind.** Three artifact kinds are available:
+1. **Choose the kind.** Four artifact kinds are available:
    - **Module** when all variation is enumerable as typed variables and the
      output is a deterministic function of those variables
      (deterministic-axes-known). Most scaffolding requests fit here.
@@ -252,18 +266,23 @@ Suggest these commands when the user needs to run them locally:
      listing the user's requirements would produce dozens of variables and
      conditional steps. Authored as `blueprint.dhall` + `prompt.md` +
      optional `files/`; run via `seihou agent run NAME`, not `seihou run`.
+   - **Prompt** when the user wants a reusable agent-session workflow rather
+     than a project scaffold. Use for review, release, planning, dependency
+     research, or inspection prompts. Authored as `prompt.dhall` +
+     `prompt.md` + optional `files/`; run via `seihou prompt run NAME`.
 
    Decision tree: if you can list the inputs as typed variables, it's a
    module. If you're composing existing modules without new logic, it's a
-   recipe. If you'd be writing a prose prompt to explain conventions to the
-   user, it's a blueprint.
+   recipe. If a prose prompt should create or modify a project scaffold, it's
+   a blueprint. If a prose prompt should launch a reusable agent session, it's
+   a prompt.
 
 2. **Gather requirements**: Ask the user what kind of project they want to scaffold.
    Understand what files should be generated, what variables the user needs, and
    what should be configurable vs hardcoded.
 
-3. **Scaffold**: Run `seihou new-module NAME` (or `seihou new-blueprint NAME`
-   for the agent-driven kind) to create the directory structure, then
+3. **Scaffold**: Run `seihou new-module NAME`, `seihou new-blueprint NAME`,
+   or `seihou new-prompt NAME` to create the directory structure, then
    immediately customize the generated definition file.
 
 4. **Define variables**: Based on requirements, set up vars with appropriate types,
@@ -286,12 +305,13 @@ Suggest these commands when the user needs to run them locally:
    `Some "1.0.0"`) so the chain has a starting point. (Blueprints do not
    support migrations — their output is non-deterministic.)
 
-8. **Validate**: Run `seihou validate-module ./MODULE` (or
-   `seihou validate-blueprint ./BLUEPRINT`) and fix any issues.
+8. **Validate**: Run `seihou validate-module ./MODULE`,
+   `seihou validate-blueprint ./BLUEPRINT`, or
+   `seihou validate-prompt ./PROMPT` and fix any issues.
 
 9. **Test**: Run `seihou run MODULE --dry-run --var key=value` to preview the
-   generated output (or `seihou agent --debug run BLUEPRINT` for blueprints
-   to print the rendered system prompt). Show results to the user.
+   generated output, `seihou agent --debug run BLUEPRINT` for blueprints, or
+   `seihou prompt run PROMPT --debug` for prompts. Show results to the user.
 
 10. **Iterate**: Refine based on user feedback until the artifact is complete.
 
@@ -302,6 +322,6 @@ seihou-registry.dhall at the root.
 ## Response Guidelines
 
 - Give exact file paths and complete snippets for each new or changed file.
-- Include validation commands such as `seihou validate-module ./MODULE` or `seihou validate-blueprint ./BLUEPRINT`.
+- Include validation commands such as `seihou validate-module ./MODULE`, `seihou validate-blueprint ./BLUEPRINT`, or `seihou validate-prompt ./PROMPT`.
 - Include dry-run commands so the user can preview generated output.
 - Mention git commit points, but do not claim you committed anything.

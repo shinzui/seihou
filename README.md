@@ -1,6 +1,6 @@
 # Seihou (製法)
 
-Composable, type-safe project scaffolding. Define reusable modules in Dhall, compose them with dependency resolution, and generate projects with incremental updates. Three authorable artifact kinds are supported: deterministic *modules*, named compositions called *recipes*, and agent-driven *blueprints* for open-ended scaffolding.
+Composable, type-safe project scaffolding and agent workflow authoring. Define reusable modules in Dhall, compose them with dependency resolution, and generate projects with incremental updates. Four authorable artifact kinds are supported: deterministic *modules*, named compositions called *recipes*, agent-driven *blueprints* for open-ended scaffolding, and reusable *prompts* for agent-session workflows.
 
 ## Quick Start
 
@@ -65,10 +65,10 @@ seihou vars haskell-base --explain --var project.name=my-app
 ### `seihou install`
 
 ```
-seihou install GIT-URL [--name NAME]
+seihou install GIT-URL [--name NAME] [--module NAME...] [--all]
 ```
 
-Clones a git repository, validates its `module.dhall`, and installs it to `~/.config/seihou/installed/<name>/`. The module name defaults to the repository name.
+Clones a git repository and installs a module, recipe, blueprint, prompt, or selected entries from a registry to `~/.config/seihou/installed/<name>/`. The name defaults to the repository name for single-artifact repositories.
 
 ### `seihou status`
 
@@ -108,7 +108,15 @@ Shows files that have changed since the last generation by comparing current con
 seihou list
 ```
 
-Lists all available modules across the three search paths (project-local, user, installed).
+Lists available modules, recipes, blueprints, and prompts across the three search paths (project-local, user, installed). Use `--modules`, `--recipes`, `--blueprints`, or `--prompts` to restrict by kind.
+
+### `seihou prompt`
+
+```
+seihou prompt run PROMPT [USER-PROMPT] [--var KEY=VALUE...] [--debug]
+```
+
+Resolves a reusable prompt artifact, runs command-derived variables, renders the prompt body, and launches the configured Claude Code, Codex, Anthropic, or OpenAI provider. `--debug` prints the rendered prompt without contacting a provider.
 
 ### `seihou config`
 
@@ -123,6 +131,7 @@ Manage configuration values. Subcommands: `set KEY VALUE`, `get KEY`, `unset KEY
 - [Getting Started Guide](docs/user/getting-started.md) — End-to-end walkthrough from initialization to project generation
 - [Module Authoring Reference](docs/user/module-authoring.md) — Complete module format, strategies, variables, composition
 - [Blueprints Guide](docs/user/blueprints.md) — Agent-driven scaffolding for open-ended project shapes
+- [Prompts Guide](docs/user/prompts.md) — Reusable agent-session templates with variables and command-derived context
 - [Agent Assistance Guide](docs/user/agent-assistance.md) — Configuring and running Claude Code, Codex, Anthropic, and OpenAI providers
 
 ## Module Authoring
@@ -143,6 +152,7 @@ seihou run my-template --dry-run --var project.name=test
 See the [Module Authoring Reference](docs/user/module-authoring.md) for the complete specification.
 
 - **Blueprints** (`seihou agent run BLUEPRINT`) — agent-driven scaffolding for open-ended project shapes. See the [Blueprints Guide](docs/user/blueprints.md), [`seihou new-blueprint`](docs/cli/new-blueprint.md), [`seihou validate-blueprint`](docs/cli/validate-blueprint.md), and [`seihou agent`](docs/cli/agent.md).
+- **Prompts** (`seihou prompt run PROMPT`) — reusable agent-session templates for workflows such as code review, release preparation, and planning. See the [Prompts Guide](docs/user/prompts.md), [`seihou new-prompt`](docs/cli/new-prompt.md), [`seihou validate-prompt`](docs/cli/validate-prompt.md), and [`seihou prompt`](docs/cli/prompt.md).
 
 ## Building from Source
 

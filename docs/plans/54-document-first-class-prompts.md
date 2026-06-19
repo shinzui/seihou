@@ -25,11 +25,13 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Add a user guide for first-class prompts.
-- [ ] Add CLI reference pages for `new-prompt`, `validate-prompt`, and `prompt run`.
-- [ ] Update getting started, agent assistance, registries, module authoring, list/install/browse docs, and help topics.
-- [ ] Update embedded assist/bootstrap/setup prompt text so agents recommend prompts for prompt-session use cases.
-- [ ] Update changelog or release notes material.
+- [x] Add a user guide for first-class prompts.
+- [x] Add CLI reference pages for `new-prompt`, `validate-prompt`, and `prompt run`.
+- [x] Update getting started, agent assistance, registries, module authoring, list/install/browse docs, and help topics.
+- [x] Update embedded assist/bootstrap/setup prompt text so agents recommend prompts for prompt-session use cases.
+- [x] Update changelog or release notes material.
+
+- [x] Started EP-54 after EP-55 completion and inspected prompt-related command/help/doc surfaces for stale three-artifact wording.
 
 
 ## Surprises & Discoveries
@@ -37,7 +39,9 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: `seihou-cli-test --test-options '--pattern Help'` currently selects zero tests.
+  Evidence: the help acceptance check was covered by directly running `seihou help prompts` after embedding the new `prompts` topic.
+  Date: 2026-06-19
 
 
 ## Decision Log
@@ -54,7 +58,8 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+- Outcome: First-class prompts are documented across the user guide, CLI reference, embedded help, registry/list/install/browse docs, changelog material, and agent prompt templates. The docs now explain prompt layout, config-backed variables, command-derived variables, registry publication, provider launch behavior, and the distinction between prompts and blueprints.
+  Date: 2026-06-19
 
 
 ## Context and Orientation

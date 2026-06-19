@@ -137,19 +137,31 @@ Dhall requires type annotations on empty lists. Common patterns:
 - choice: Must match one of the prompt's choices list
 
 
-### Blueprints (third runnable kind)
+### Blueprints and prompts
 
 Some authoring requests are too open-ended for a typed module (dozens of `{{#if}}` branches, a templating combinatoric explosion). Those belong in a *blueprint* — an authoring artifact that bundles a Markdown prompt, an optional list of base modules to apply, and an optional `files/` directory of reference snippets. A blueprint runs via `seihou agent run NAME`, not `seihou run`.
 
 Use a blueprint when:
 - the variation axes are inherently open-ended ("scaffold a microservice for $domain")
 - a prose prompt is the right interface for a coding agent
+- the workflow should create or modify project files, optionally after applying baseline modules
 
 Use a module when:
 - all variation is enumerable as `VarDecl`s
 - the output is deterministic given those variables
 
 To scaffold one: `seihou new-blueprint NAME` writes `blueprint.dhall`, `prompt.md`, and `files/`. Validate with `seihou validate-blueprint .`.
+
+Use a *prompt* instead when the user wants a reusable agent-session workflow
+that does not imply scaffolding, baseline modules, or applied-blueprint
+manifest provenance. Examples: code review, release preparation, dependency
+research, planning, repository inspection, or writing an incident summary.
+
+To scaffold one: `seihou new-prompt NAME` writes `prompt.dhall`, `prompt.md`,
+and `files/`. Validate with `seihou validate-prompt .`. Run or inspect with
+`seihou prompt run NAME --debug`. Prompt definitions can declare normal typed
+variables plus `commandVars` for compact local context such as `git diff --stat`
+or `git branch --show-current`.
 
 
 ## Template Syntax
@@ -184,12 +196,15 @@ Suggest these commands when the user needs to run them locally:
 
 - `seihou new-module NAME` — scaffold a new module with boilerplate
 - `seihou new-blueprint NAME [--path DIR]` — scaffold a new blueprint (agent-driven)
+- `seihou new-prompt NAME [--path DIR]` — scaffold a reusable agent-session prompt
 - `seihou validate-module [PATH]` — validate module.dhall (9 checks)
 - `seihou validate-blueprint [PATH]` — validate blueprint.dhall
+- `seihou validate-prompt [PATH]` — validate prompt.dhall
+- `seihou prompt run PROMPT [--debug] [--var K=V]` — render and launch a reusable prompt
 - `seihou vars MODULE [--explain]` — show variable declarations or resolved values
 - `seihou run MODULE --dry-run [--var K=V]` — preview generation without writing
 - `seihou run MODULE [--var K=V]` — generate project
-- `seihou list` — list all available modules
+- `seihou list` — list all available modules, recipes, blueprints, and prompts
 - `seihou status` — show manifest state
 - `seihou diff` — compare manifest vs disk
 - `seihou config set|get|unset|list KEY [VALUE] [--global]` — manage config

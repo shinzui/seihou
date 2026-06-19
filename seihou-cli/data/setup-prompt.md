@@ -25,17 +25,17 @@ Working directory: {{cwd}}
 
 Adapt to the user's situation, but the general flow is:
 
-1. **Recognise the kind.** Some discoverable runnables are blueprints, not
-   modules or recipes. `seihou list` distinguishes them with a kind label.
-   A module or recipe runs via `seihou run NAME`. A blueprint runs via
-   `seihou agent run NAME [PROMPT]` — `seihou run NAME` against a blueprint
-   refuses with an actionable message. If the user names a runnable that
-   turns out to be a blueprint, switch to the agent-run flow: resolve the
-   variables the blueprint declares (the standard precedence chain
-   applies), optionally let the baseline modules apply, then start the
-   configured provider.
+1. **Recognise the kind.** Some discoverable runnables are blueprints or
+   prompts, not modules or recipes. `seihou list` distinguishes them with a
+   kind label. A module or recipe runs via `seihou run NAME`. A blueprint runs
+   via `seihou agent run NAME [PROMPT]`. A prompt runs via
+   `seihou prompt run NAME [USER-PROMPT]`. If the user names a blueprint,
+   switch to the agent-run flow: resolve variables, optionally let the baseline
+   modules apply, then start the configured provider. If the user names a
+   prompt, switch to the prompt-run flow: resolve variables, run command-derived
+   variables, render the prompt, then start the provider.
 
-2. **Discover**: Check available modules (`seihou list`). If the user names a module
+2. **Discover**: Check available runnables (`seihou list`). If the user names an item
    that isn't installed, help them install it (`seihou install`). Browse remote
    repositories if needed (`seihou browse`).
 
@@ -88,11 +88,12 @@ they want, go directly to preview and execution.
 Suggest these commands when the user needs to run them locally:
 
 ### Module discovery and inspection
-- `seihou list` — list all available modules (project, user, installed)
+- `seihou list` — list all available modules, recipes, blueprints, and prompts (project, user, installed)
+- `seihou list --prompts` — show only prompt artifacts
 - `seihou vars MODULE` — show variable declarations (types, defaults, descriptions)
 - `seihou vars MODULE --explain --var K=V` — show resolved values with provenance
-- `seihou browse GIT-URL [--tag TAG]` — preview modules in a remote repo
-- `seihou install GIT-URL [--module NAME] [--all]` — install modules from git
+- `seihou browse GIT-URL [--tag TAG]` — preview registry entries in a remote repo
+- `seihou install GIT-URL [--module NAME] [--all]` — install registry entries from git
 
 ### Configuration
 - `seihou config set KEY VALUE` — set local config (.seihou/config.dhall)
@@ -123,6 +124,9 @@ Suggest these commands when the user needs to run them locally:
   - Discovers the blueprint, resolves variables (same precedence chain as `seihou run`), optionally applies base modules, then starts the configured provider
   - `--no-baseline`: skip applying declared base modules
   - `seihou agent --debug run BLUEPRINT`: print the resolved system prompt without contacting the provider
+- `seihou prompt run PROMPT [USER-PROMPT] [--var K=V] [--debug]` — run a reusable prompt
+  - Discovers the prompt, resolves variables, runs command-derived variables, renders the prompt body, then starts the configured provider
+  - `--debug`: print the rendered prompt without contacting the provider
 
 ### Upgrade and migration
 - `seihou outdated` — show installed modules whose source repos have newer versions

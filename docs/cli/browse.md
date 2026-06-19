@@ -1,6 +1,6 @@
 # seihou browse
 
-Browse modules, recipes, and blueprints in a git repository without installing.
+Browse modules, recipes, blueprints, and prompts in a git repository without installing.
 
 ## Usage
 
@@ -22,12 +22,12 @@ seihou browse <GIT-URL> [OPTIONS]
 
 ## Description
 
-Clones the repository and shows available modules, recipes, and blueprints
+Clones the repository and shows available modules, recipes, blueprints, and prompts
 without installing anything. For registry repos with `seihou-registry.dhall`,
-displays all module, recipe, and blueprint entries with descriptions and tags.
+displays all entries with kind labels, descriptions, and tags.
 Single-recipe repos (containing `recipe.dhall` at the root) and
 single-blueprint repos (containing `blueprint.dhall` at the root) are also
-detected.
+detected, as are single-prompt repos containing `prompt.dhall`.
 
 ## Examples
 
@@ -37,4 +37,7 @@ seihou browse https://github.com/user/seihou-modules.git
 
 # Filter by tag
 seihou browse https://github.com/user/seihou-modules.git --tag haskell
+
+# Browse a prompt registry
+seihou browse https://github.com/user/team-prompts.git --tag review
 ```

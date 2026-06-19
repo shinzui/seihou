@@ -91,7 +91,7 @@ COMMON COMMANDS
 
   seihou new-blueprint api-service       Scaffold a blueprint
   seihou validate-blueprint api-service  Check blueprint.dhall and files/
-  seihou list                            List modules, recipes, and blueprints
+  seihou list                            List modules, recipes, blueprints, and prompts
   seihou vars api-service                Show blueprint variables
   seihou agent run api-service           Run the blueprint with an agent
 

@@ -9,7 +9,7 @@ filesystem writes and path validation before generation, migration, removal,
 and manifest updates.
 
 User-visible documentation now describes the shipped module, recipe, blueprint,
-agent, migration, registry, and configuration behavior. The detailed historical
+prompt, agent, migration, registry, and configuration behavior. The detailed historical
 documentation-review log is developer-facing.
 
 ### Added
@@ -20,6 +20,8 @@ documentation-review log is developer-facing.
   templates.
 - Agent-driven blueprints as the third runnable artifact kind, with user guides
   and CLI command references.
+- First-class prompts as the fourth runnable artifact kind, with authoring,
+  validation, running, registry, list, and install documentation.
 
 ### Changed
 

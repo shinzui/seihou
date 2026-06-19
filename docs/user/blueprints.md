@@ -7,8 +7,10 @@ optional baseline modules, resolved variables, and reference files for
 `seihou agent run`.
 
 Use a blueprint when an agent should adapt examples and conventions to the
-project in front of it. Use a module or recipe when the same inputs should
-always produce the same outputs.
+project in front of it, often after applying baseline modules. Use a module or
+recipe when the same inputs should always produce the same outputs. Use a
+prompt when you want a reusable agent-session workflow without scaffold
+baselines or manifest provenance.
 
 ## Blueprint layout
 
@@ -82,9 +84,10 @@ Important fields:
 | `allowedTools` | Optional runner metadata for tool allow-lists. |
 | `tags` | Discovery tags for registries, browse, install, and list filters. |
 
-Blueprints share a lookup namespace with modules and recipes. If one
+Blueprints share a lookup namespace with modules, recipes, and prompts. If one
 directory contains more than one runnable file, discovery prefers
-`module.dhall`, then `recipe.dhall`, then `blueprint.dhall`.
+`module.dhall`, then `recipe.dhall`, then `blueprint.dhall`, then
+`prompt.dhall`.
 
 ## Variables
 
@@ -174,7 +177,7 @@ resolve to modules or recipes, and declared reference files exist.
 
 ## Publishing blueprints
 
-Registries can publish blueprints alongside modules and recipes:
+Registries can publish blueprints alongside modules, recipes, and prompts:
 
 ```dhall
 { repoName = "team-templates"
@@ -189,6 +192,7 @@ Registries can publish blueprints alongside modules and recipes:
     , tags = [ "api", "agent" ]
     }
   ]
+, prompts = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }
 }
 ```
 
@@ -199,6 +203,7 @@ commands used for modules and recipes.
 
 - [AI Agent Assistance](agent-assistance.md)
 - [Configuration and Variable Resolution](config-and-variables.md)
+- [First-Class Prompts](prompts.md)
 - [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md)
 - [`seihou new-blueprint`](../cli/new-blueprint.md)
 - [`seihou validate-blueprint`](../cli/validate-blueprint.md)

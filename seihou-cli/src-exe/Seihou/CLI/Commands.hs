@@ -530,12 +530,12 @@ installInfo =
   info
     (installParser <**> helper)
     ( fullDesc
-        <> progDesc "Install module(s), recipe(s), or blueprint(s) from git"
+        <> progDesc "Install module(s), recipe(s), blueprint(s), or prompt(s) from git"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Clones the git repository and installs modules, recipes, or" :: String),
-                  pretty ("blueprints to ~/.config/seihou/installed/<name>/." :: String),
+                [ pretty ("Clones the git repository and installs modules, recipes," :: String),
+                  pretty ("blueprints, or prompts to ~/.config/seihou/installed/<name>/." :: String),
                   line,
                   pretty ("If the repository contains a seihou-registry.dhall file, it is" :: String),
                   pretty ("treated as a multi-module registry. Use --module to pick specific" :: String),
@@ -543,7 +543,7 @@ installInfo =
                   pretty ("will be prompted to choose interactively." :: String),
                   line,
                   pretty ("For single-artifact repositories (a root module.dhall, recipe.dhall," :: String),
-                  pretty ("or blueprint.dhall), the artifact name defaults to the repository" :: String),
+                  pretty ("blueprint.dhall, or prompt.dhall), the artifact name defaults to the repository" :: String),
                   pretty ("name. Use --name to override." :: String),
                   line,
                   pretty ("Examples:" :: String),
@@ -766,8 +766,8 @@ installParser =
     InstallOpts
       <$> optional (argument (T.pack <$> str) (metavar "GIT-URL"))
       <*> optional (option (T.pack <$> str) (long "name" <> metavar "NAME" <> help "Override installed module name"))
-      <*> many (option (T.pack <$> str) (long "module" <> metavar "MODULE" <> help "Module, recipe, or blueprint name from the registry to install (repeatable)"))
-      <*> switch (long "all" <> help "Install every module, recipe, and blueprint listed in the registry")
+      <*> many (option (T.pack <$> str) (long "module" <> metavar "MODULE" <> help "Module, recipe, blueprint, or prompt name from the registry to install (repeatable)"))
+      <*> switch (long "all" <> help "Install every module, recipe, blueprint, and prompt listed in the registry")
 
 newModuleParser :: Parser Command
 newModuleParser =
@@ -1251,13 +1251,13 @@ registryInfo =
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Authoring-time operations on a multi-module repository's" :: String),
+                [ pretty ("Authoring-time operations on a multi-artifact repository's" :: String),
                   pretty ("seihou-registry.dhall. Run against a writable checkout." :: String),
                   line,
                   pretty ("Current subcommands:" :: String),
                   indent 2 $
                     vsep
-                      [ pretty ("sync-versions   Copy each module's declared version into the registry" :: String),
+                      [ pretty ("sync-versions   Copy each entry's declared version into the registry" :: String),
                         pretty ("validate        Check that registry entries match their on-disk artifacts" :: String)
                       ],
                   line,

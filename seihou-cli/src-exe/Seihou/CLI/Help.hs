@@ -37,6 +37,7 @@ helpTopics =
     HelpTopic "git-repository" "Sharing and installing items from git" gitRepositoryContent,
     HelpTopic "kit" "Manage Claude Code and Codex skills and subagents" kitContent,
     HelpTopic "migrations" "Migrating a project between module versions" migrationsContent,
+    HelpTopic "prompts" "Reusable agent-session prompt artifacts" promptsContent,
     HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent
   ]
 
@@ -66,6 +67,9 @@ kitContent = $(embedStringFile "help/kit.md")
 
 migrationsContent :: Text
 migrationsContent = $(embedStringFile "help/migrations.md")
+
+promptsContent :: Text
+promptsContent = $(embedStringFile "help/prompts.md")
 
 templatingContent :: Text
 templatingContent = $(embedStringFile "help/templating.md")
