@@ -41,6 +41,7 @@ formatRunnableCandidate dr
             KindModule -> ""
             KindRecipe -> " [recipe]"
             KindBlueprint -> " [blueprint]"
+            KindPrompt -> " [prompt]"
           sourceTag = case dr.drSource of
             SourceProject -> "[project]"
             SourceUser -> "[user]"

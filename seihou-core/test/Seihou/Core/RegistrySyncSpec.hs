@@ -64,29 +64,34 @@ spec = describe "computeRegistrySync" $ do
 
   it "preserves registry order in the diff output" $ do
     let reg =
-          mkReg
-            [ mkEntry "alpha" Nothing,
-              mkEntry "beta" (Just "0.1.0"),
-              mkEntry "gamma" (Just "2.0.0")
-            ]
-            [mkEntry "lib-one" Nothing]
+          ( mkReg
+              [ mkEntry "alpha" Nothing,
+                mkEntry "beta" (Just "0.1.0"),
+                mkEntry "gamma" (Just "2.0.0")
+              ]
+              [mkEntry "lib-one" Nothing]
+          )
+            { prompts = [mkEntry "review" Nothing]
+            }
         lookups =
           [ (ModuleEntry, ModuleName "alpha", Just "1.0.0"),
             (ModuleEntry, ModuleName "beta", Just "0.2.0"),
             (ModuleEntry, ModuleName "gamma", Just "2.0.0"),
-            (RecipeEntry, ModuleName "lib-one", Just "0.3.0")
+            (RecipeEntry, ModuleName "lib-one", Just "0.3.0"),
+            (PromptEntry, ModuleName "review", Just "0.4.0")
           ]
         report = computeRegistrySync reg lookups
     map (.diffName) report.syncDiffs
       `shouldBe` [ ModuleName "alpha",
                    ModuleName "beta",
                    ModuleName "gamma",
-                   ModuleName "lib-one"
+                   ModuleName "lib-one",
+                   ModuleName "review"
                  ]
     map (.diffKind) report.syncDiffs
-      `shouldBe` [ModuleEntry, ModuleEntry, ModuleEntry, RecipeEntry]
+      `shouldBe` [ModuleEntry, ModuleEntry, ModuleEntry, RecipeEntry, PromptEntry]
     map (.diffStatus) report.syncDiffs
-      `shouldBe` [SyncMissing, SyncStale "0.2.0", SyncInSync, SyncMissing]
+      `shouldBe` [SyncMissing, SyncStale "0.2.0", SyncInSync, SyncMissing, SyncMissing]
 
   it "returns an empty report for an empty registry" $ do
     let reg = mkReg [] []
@@ -130,6 +135,15 @@ spec = describe "computeRegistrySync" $ do
           warnings = mapMaybe formatDriftWarning report.syncDiffs
       warnings `shouldBe` []
 
+    it "mentions prompt.dhall in stale prompt warnings" $ do
+      let reg = (mkReg [] []) {prompts = [mkEntry "review" (Just "0.1.0")]}
+          lookups = [(PromptEntry, ModuleName "review", Just "0.2.0")]
+          report = computeRegistrySync reg lookups
+          warnings = mapMaybe formatDriftWarning report.syncDiffs
+      warnings
+        `shouldBe` [ "prompt 'review' registry version 0.1.0 differs from prompt.dhall version 0.2.0 — run `seihou registry sync-versions`"
+                   ]
+
 mkEntry :: Text -> Maybe Text -> RegistryEntry
 mkEntry n v =
   RegistryEntry
@@ -147,5 +161,6 @@ mkReg mods recs =
       repoDescription = Nothing,
       modules = mods,
       recipes = recs,
-      blueprints = []
+      blueprints = [],
+      prompts = []
     }

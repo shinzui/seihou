@@ -46,7 +46,8 @@ spec = describe "renderRegistryDhall" $ do
                       tags = ["lib"]
                     }
                 ],
-              blueprints = []
+              blueprints = [],
+              prompts = []
             }
     roundTrip reg
 
@@ -65,7 +66,8 @@ spec = describe "renderRegistryDhall" $ do
                     }
                 ],
               recipes = [],
-              blueprints = []
+              blueprints = [],
+              prompts = []
             }
     roundTrip reg
 
@@ -84,7 +86,8 @@ spec = describe "renderRegistryDhall" $ do
                     }
                 ],
               recipes = [],
-              blueprints = []
+              blueprints = [],
+              prompts = []
             }
     roundTrip reg
 
@@ -103,7 +106,8 @@ spec = describe "renderRegistryDhall" $ do
                     }
                 ],
               recipes = [],
-              blueprints = []
+              blueprints = [],
+              prompts = []
             }
     roundTrip reg
 
@@ -114,15 +118,16 @@ spec = describe "renderRegistryDhall" $ do
               repoDescription = Nothing,
               modules = [],
               recipes = [],
-              blueprints = []
+              blueprints = [],
+              prompts = []
             }
     roundTrip reg
 
-  it "round-trips a registry with all three entry kinds" $ do
+  it "round-trips a registry with all four entry kinds" $ do
     let reg =
           Registry
-            { repoName = "All Three",
-              repoDescription = Just "Modules, recipes, and blueprints",
+            { repoName = "All Four",
+              repoDescription = Just "Modules, recipes, blueprints, and prompts",
               modules =
                 [ RegistryEntry
                     { name = ModuleName "mod-one",
@@ -155,6 +160,15 @@ spec = describe "renderRegistryDhall" $ do
                       path = "blueprints/bp-two",
                       description = Nothing,
                       tags = []
+                    }
+                ],
+              prompts =
+                [ RegistryEntry
+                    { name = ModuleName "prompt-one",
+                      version = Just "0.4.0",
+                      path = "prompts/prompt-one",
+                      description = Just "Prompt entry",
+                      tags = ["agent"]
                     }
                 ]
             }

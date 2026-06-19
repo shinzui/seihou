@@ -27,11 +27,15 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Extend registry core types, decoder, rendering, validation, and sync logic with prompt entries.
-- [ ] Extend install and browse paths for single-prompt and registry prompt repositories.
-- [ ] Extend list filters and display output with prompts.
-- [ ] Extend fzf selector, remote version, outdated, and registry validate/sync tests where applicable.
-- [ ] Add fixture coverage for name collisions and precedence with `prompt.dhall`.
+- [x] Extend registry core types, decoder, rendering, validation, and sync logic with prompt entries.
+- [x] Extend install and browse paths for single-prompt and registry prompt repositories.
+- [x] Extend list filters and display output with prompts.
+- [x] Extend fzf selector, remote version, outdated, and registry validate/sync tests where applicable.
+- [x] Add fixture coverage for name collisions and precedence with `prompt.dhall`.
+
+- [x] Inspected current registry, decoder, install, browse, list, fzf, sync, validate, remote-version, and outdated surfaces; prompt support is mostly an additive fourth case following existing blueprint handling.
+- [x] Implemented prompt registry entries across decoding, validation, rendering, sync, browse, install, list filters, selector labels, and compatibility branches for single-prompt repositories.
+- [x] Verified with focused registry/list/browse/fzf tests, full `seihou-core-test`, full `seihou-cli-test`, `cabal build all`, and an isolated prompt-registry browse/validate/sync/install/list smoke.
 
 
 ## Surprises & Discoveries
@@ -39,7 +43,9 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: `seihou install` already uses the `--module` flag to select any registry entry kind, so prompt registry installation can remain backward-compatible without adding a new selector flag.
+  Evidence: `selectModules` matches requested names against the combined registry entry list, and the prompt smoke installed `review-changes` with `seihou install <repo> --module review-changes`.
+  Date: 2026-06-19
 
 
 ## Decision Log
@@ -56,7 +62,8 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+- Outcome: Prompt artifacts are now the fourth registry entry kind. Registries can decode missing or populated `prompts` fields, validate prompt names/paths/files, detect prompt cross-kind collisions, sync prompt versions from `prompt.dhall`, browse prompt entries, install prompt registry entries or single-prompt repos, filter list output with `--prompts`, and show prompt labels in fzf candidates.
+  Date: 2026-06-19
 
 
 ## Context and Orientation

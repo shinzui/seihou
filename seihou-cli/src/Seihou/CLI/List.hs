@@ -93,6 +93,7 @@ runnableToEntryWithOrigin origins dr =
         KindModule -> ""
         KindRecipe -> " [recipe]"
         KindBlueprint -> " [blueprint]"
+        KindPrompt -> " [prompt]"
    in if dr.drIsError
         then
           Entry
@@ -135,7 +136,7 @@ formatListOutputEntries color entries searchPaths listOpts
   | otherwise =
       let maxNameLen = maximum (map (T.length . (.entryName)) entries)
           maxDescLen = maximum (map (T.length . (.entryDesc)) entries)
-          header = "Available modules, recipes, and blueprints:\n"
+          header = "Available modules, recipes, blueprints, and prompts:\n"
           fileLines = map (formatEntry color maxNameLen maxDescLen) entries
           n = length entries
           nSources = length searchPaths
@@ -168,6 +169,7 @@ summaryNoun kinds = case kinds of
     kindBase KindModule = "module"
     kindBase KindRecipe = "recipe"
     kindBase KindBlueprint = "blueprint"
+    kindBase KindPrompt = "prompt"
 
 -- | Append @s@ to a singular noun unless the count is exactly one.
 pluralize :: Int -> Text -> Text
@@ -192,6 +194,7 @@ formatFilterSuffix opts =
     kindNoun KindModule = "module"
     kindNoun KindRecipe = "recipe"
     kindNoun KindBlueprint = "blueprint"
+    kindNoun KindPrompt = "prompt"
 
 -- | Apply repo and tag filters to a list of entries.  Both filters combine
 -- with AND: an entry must match all active filters to be included.

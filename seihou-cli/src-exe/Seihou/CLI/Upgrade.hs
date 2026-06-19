@@ -184,6 +184,7 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
             [] -> Nothing
         SingleRecipe _ -> Nothing
         SingleBlueprint _ -> Nothing
+        SinglePrompt _ -> Nothing
         EmptyRepo -> Nothing
 
   case result of

@@ -229,7 +229,8 @@ data ListOpts = ListOpts
     listTag :: Maybe Text,
     listModulesOnly :: Bool,
     listRecipesOnly :: Bool,
-    listBlueprintsOnly :: Bool
+    listBlueprintsOnly :: Bool,
+    listPromptsOnly :: Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -611,17 +612,17 @@ listInfo =
   info
     (listParser <**> helper)
     ( fullDesc
-        <> progDesc "List available modules, recipes, and blueprints"
+        <> progDesc "List available modules, recipes, blueprints, and prompts"
         <> footerDoc
           ( Just $
               vsep
                 [ pretty ("Scans all search paths and lists every available runnable artifact" :: String),
-                  pretty ("(modules, recipes, blueprints) with its name, kind, description, and" :: String),
+                  pretty ("(modules, recipes, blueprints, prompts) with its name, kind, description, and" :: String),
                   pretty ("source location (project, user, or installed). Entries that fail to" :: String),
                   pretty ("load are shown with an error indicator." :: String),
                   line,
                   pretty ("Use --repo and --tag to filter the output." :: String),
-                  pretty ("Use --modules, --recipes, and --blueprints to restrict by kind" :: String),
+                  pretty ("Use --modules, --recipes, --blueprints, and --prompts to restrict by kind" :: String),
                   pretty ("(combine them to show several kinds; omit all to show every kind)." :: String)
                 ]
           )
@@ -636,6 +637,7 @@ listParser =
       <*> switch (long "modules" <> help "Show only modules")
       <*> switch (long "recipes" <> help "Show only recipes")
       <*> switch (long "blueprints" <> help "Show only blueprints")
+      <*> switch (long "prompts" <> help "Show only prompts")
 
 newModuleInfo :: ParserInfo Command
 newModuleInfo =
@@ -1014,12 +1016,12 @@ browseInfo =
   info
     (browseParser <**> helper)
     ( fullDesc
-        <> progDesc "Browse modules, recipes, and blueprints in a git repository"
+        <> progDesc "Browse modules, recipes, blueprints, and prompts in a git repository"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Clones the repository and shows available modules, recipes, and" :: String),
-                  pretty ("blueprints without installing anything. For multi-artifact repos" :: String),
+                [ pretty ("Clones the repository and shows available modules, recipes," :: String),
+                  pretty ("blueprints, and prompts without installing anything. For multi-artifact repos" :: String),
                   pretty ("with a seihou-registry.dhall, displays all entries with descriptions," :: String),
                   pretty ("kind labels, and tags. Use --tag to filter by tag." :: String),
                   line,
@@ -1256,7 +1258,7 @@ registryInfo =
                   indent 2 $
                     vsep
                       [ pretty ("sync-versions   Copy each module's declared version into the registry" :: String),
-                        pretty ("validate        Check that registry entries match their on-disk modules" :: String)
+                        pretty ("validate        Check that registry entries match their on-disk artifacts" :: String)
                       ],
                   line,
                   pretty ("Examples:" :: String),
@@ -1283,11 +1285,11 @@ syncVersionsInfo =
   info
     (syncVersionsParser <**> helper)
     ( fullDesc
-        <> progDesc "Populate registry entry versions from each module/recipe/blueprint"
+        <> progDesc "Populate registry entry versions from each module/recipe/blueprint/prompt"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Reads every entry's module.dhall, recipe.dhall, or blueprint.dhall," :: String),
+                [ pretty ("Reads every entry's module.dhall, recipe.dhall, blueprint.dhall, or prompt.dhall," :: String),
                   pretty ("copies the declared version into the registry, and rewrites" :: String),
                   pretty ("seihou-registry.dhall. Hand-written comments and formatting are lost." :: String),
                   line,
@@ -1318,18 +1320,18 @@ validateRegistryInfo =
   info
     (validateRegistryParser <**> helper)
     ( fullDesc
-        <> progDesc "Check that registry entries match their on-disk modules"
+        <> progDesc "Check that registry entries match their on-disk artifacts"
         <> footerDoc
           ( Just $
               vsep
                 [ pretty ("Validates a multi-artifact repository's seihou-registry.dhall:" :: String),
                   indent 2 $
                     vsep
-                      [ pretty ("- every entry path resolves to a module.dhall, recipe.dhall, or blueprint.dhall" :: String),
+                      [ pretty ("- every entry path resolves to a module.dhall, recipe.dhall, blueprint.dhall, or prompt.dhall" :: String),
                         pretty ("- entry names match [a-z][a-z0-9-]*" :: String),
-                        pretty ("- no name collisions between modules, recipes, and blueprints" :: String),
+                        pretty ("- no name collisions between modules, recipes, blueprints, and prompts" :: String),
                         pretty ("- entry paths are relative and contain no '..'" :: String),
-                        pretty ("- each entry's `version` matches the underlying module/recipe/blueprint" :: String)
+                        pretty ("- each entry's `version` matches the underlying module/recipe/blueprint/prompt" :: String)
                       ],
                   line,
                   pretty ("Exits 1 on any failure. Run from a writable checkout of the registry repo." :: String)

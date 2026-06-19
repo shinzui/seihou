@@ -96,6 +96,10 @@ renderValidationReport r
             <> T.pack (show r.reportBlueprintCount)
             <> " "
             <> pluralize r.reportBlueprintCount "blueprint" "blueprints"
+            <> ", "
+            <> T.pack (show r.reportPromptCount)
+            <> " "
+            <> pluralize r.reportPromptCount "prompt" "prompts"
             <> ", all versions in sync."
         ]
   | otherwise =

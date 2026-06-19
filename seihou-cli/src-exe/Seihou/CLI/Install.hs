@@ -16,12 +16,13 @@ import Seihou.CLI.InstallHistory (HistoryEntry (..), InstallHistory (..), readHi
 import Seihou.CLI.InstallShared (cloneRepo, copyDirectoryRecursive, installModuleDir)
 import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
+import Seihou.Core.AgentPrompt (validateAgentPrompt)
 import Seihou.Core.Blueprint (validateBlueprint)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Module (validateModule)
 import Seihou.Core.Registry (EntryKind (..), Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents, validateRegistry)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile, evalRegistryFromFile)
+import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Effect.Fzf (selectOne)
 import Seihou.Effect.FzfInterp (runFzfIO)
 import Seihou.Effect.Logger (logError, logWarn)
@@ -55,7 +56,7 @@ handleInstall iopts = do
     contents <- discoverRepoContents evalRegistryFromFile cloneDir
     case contents of
       EmptyRepo -> do
-        logIO LogNormal (logError "repository contains neither seihou-registry.dhall nor module.dhall.")
+        logIO LogNormal (logError "repository contains neither seihou-registry.dhall nor a supported runnable Dhall file.")
         exitFailure
       SingleModule rootDir -> do
         when (not (null iopts.installModules) || iopts.installAll) $
@@ -69,6 +70,10 @@ handleInstall iopts = do
         when (not (null iopts.installModules) || iopts.installAll) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-blueprint repositories.")
         installSingleBlueprint iopts rootDir source
+      SinglePrompt rootDir -> do
+        when (not (null iopts.installModules) || iopts.installAll) $
+          logIO LogNormal (logWarn "--module and --all flags are ignored for single-prompt repositories.")
+        installSinglePrompt iopts rootDir source
       MultiModule registry -> do
         regErrors <- validateRegistry cloneDir registry
         if not (null regErrors)
@@ -229,12 +234,46 @@ installSingleBlueprint iopts rootDir source = do
   TIO.putStrLn ""
   TIO.putStrLn $ "Blueprint available as: " <> T.pack name
 
+-- | Install a single-prompt repo.
+installSinglePrompt :: InstallOpts -> FilePath -> Text -> IO ()
+installSinglePrompt iopts rootDir source = do
+  let name = case iopts.installName of
+        Just n -> T.unpack n
+        Nothing -> parseModuleName source
+
+  let dhallFile = rootDir </> "prompt.dhall"
+  decoded <- evalAgentPromptFromFile dhallFile
+  prompt <- case decoded of
+    Left err -> do
+      logIO LogNormal $ do
+        logError "repository is not a valid seihou prompt."
+        logError $ "  " <> T.pack (show err)
+      exitFailure
+    Right p -> pure p
+
+  result <- validateAgentPrompt rootDir prompt
+  case result of
+    Left (ValidationError _ errors) -> do
+      logIO LogNormal $ do
+        logError "prompt has validation errors:"
+        mapM_ (\e -> logError $ "  - " <> e) errors
+      exitFailure
+    Left err -> do
+      logIO LogNormal (logError $ T.pack (show err))
+      exitFailure
+    Right _ -> pure ()
+  TIO.putStrLn "  Validated prompt definition"
+
+  installModuleDir rootDir name source Nothing prompt.version []
+  TIO.putStrLn ""
+  TIO.putStrLn $ "Prompt available as: " <> T.pack name
+
 -- | Install from a multi-module registry.
 installFromRegistry :: InstallOpts -> FilePath -> Registry -> Text -> IO ()
 installFromRegistry iopts cloneDir registry source = do
   selected <- selectModules iopts registry
   if null selected
-    then TIO.putStrLn "No modules selected."
+    then TIO.putStrLn "No entries selected."
     else do
       results <- mapM (installRegistryEntry cloneDir source registry.repoName) selected
       let succeeded = length (filter id results)
@@ -242,17 +281,19 @@ installFromRegistry iopts cloneDir registry source = do
       TIO.putStrLn ""
       TIO.putStrLn $
         T.pack (show succeeded)
-          <> " module(s) installed"
+          <> " "
+          <> (if succeeded == 1 then "entry" else "entries")
+          <> " installed"
           <> (if failed > 0 then ", " <> T.pack (show failed) <> " failed" else "")
           <> "."
 
--- | All registry entries (modules, recipes, blueprints) in display order.
--- Used wherever installation must treat all three kinds uniformly.
+-- | All registry entries (modules, recipes, blueprints, prompts) in display order.
+-- Used wherever installation must treat all four kinds uniformly.
 allEntries :: Registry -> [RegistryEntry]
-allEntries registry = registry.modules ++ registry.recipes ++ registry.blueprints
+allEntries registry = registry.modules ++ registry.recipes ++ registry.blueprints ++ registry.prompts
 
 -- | Pair each registry entry with its 'EntryKind' tag, preserving the
--- module → recipe → blueprint display order. Used by the install picker
+-- module → recipe → blueprint → prompt display order. Used by the install picker
 -- to render per-kind labels and by callers that need to discriminate
 -- after selection.
 labelledEntries :: Registry -> [(EntryKind, RegistryEntry)]
@@ -260,6 +301,7 @@ labelledEntries registry =
   map ((,) ModuleEntry) registry.modules
     ++ map ((,) RecipeEntry) registry.recipes
     ++ map ((,) BlueprintEntry) registry.blueprints
+    ++ map ((,) PromptEntry) registry.prompts
 
 -- | Select which modules to install from a registry.
 selectModules :: InstallOpts -> Registry -> IO [RegistryEntry]
@@ -324,7 +366,7 @@ promptModuleSelection registry = do
     Just desc -> TIO.putStrLn $ "  " <> desc
     Nothing -> pure ()
   TIO.putStrLn ""
-  TIO.putStrLn "Available modules, recipes, and blueprints:"
+  TIO.putStrLn "Available modules, recipes, blueprints, and prompts:"
   let entries = zip [1 :: Int ..] (labelledEntries registry)
   mapM_
     ( \(i, (kind, entry)) ->
@@ -362,7 +404,7 @@ promptModuleSelection registry = do
               pure []
             else pure [entryList !! (n - 1) | n <- indices]
 
--- | Install a single registry entry (module, recipe, or blueprint).
+-- | Install a single registry entry (module, recipe, blueprint, or prompt).
 installRegistryEntry :: FilePath -> Text -> Text -> RegistryEntry -> IO Bool
 installRegistryEntry cloneDir source repoName entry = do
   let entryDir = cloneDir </> entry.path
@@ -370,6 +412,7 @@ installRegistryEntry cloneDir source repoName entry = do
       moduleDhall = entryDir </> "module.dhall"
       recipeDhall = entryDir </> "recipe.dhall"
       blueprintDhall = entryDir </> "blueprint.dhall"
+      promptDhall = entryDir </> "prompt.dhall"
   TIO.putStrLn $ "  Installing " <> entry.name.unModuleName <> "..."
 
   hasModule <- doesFileExist moduleDhall
@@ -421,9 +464,35 @@ installRegistryEntry cloneDir source repoName entry = do
                   TIO.putStrLn $ "    Installed blueprint as: " <> T.pack name
                   pure True
             else do
-              logIO LogNormal $ do
-                logError $ "  entry '" <> entry.name.unModuleName <> "' has neither module.dhall, recipe.dhall, nor blueprint.dhall at " <> T.pack entry.path
-              pure False
+              hasPrompt <- doesFileExist promptDhall
+              if hasPrompt
+                then do
+                  decoded <- evalAgentPromptFromFile promptDhall
+                  case decoded of
+                    Left err -> do
+                      logIO LogNormal $ do
+                        logError $ "  failed to load " <> entry.name.unModuleName <> ": " <> T.pack (show err)
+                      pure False
+                    Right prompt -> do
+                      result <- validateAgentPrompt entryDir prompt
+                      case result of
+                        Left (ValidationError _ errors) -> do
+                          logIO LogNormal $ do
+                            logError $ "  " <> entry.name.unModuleName <> " has validation errors:"
+                            mapM_ (\e -> logError $ "    - " <> e) errors
+                          pure False
+                        Left err -> do
+                          logIO LogNormal (logError $ "  " <> T.pack (show err))
+                          pure False
+                        Right _ -> do
+                          let ver = entry.version <|> prompt.version
+                          installModuleDir entryDir name source (Just repoName) ver entry.tags
+                          TIO.putStrLn $ "    Installed prompt as: " <> T.pack name
+                          pure True
+                else do
+                  logIO LogNormal $ do
+                    logError $ "  entry '" <> entry.name.unModuleName <> "' has no supported runnable Dhall file at " <> T.pack entry.path
+                  pure False
 
 readMaybe :: String -> Maybe Int
 readMaybe s = case reads s of

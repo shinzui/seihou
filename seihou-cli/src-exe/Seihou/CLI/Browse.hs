@@ -5,14 +5,14 @@ where
 
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleModule)
+import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleModule, formatBrowseSinglePrompt)
 import Seihou.CLI.Commands (BrowseOpts (..))
 import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Registry (EntryKind (..), Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile)
+import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile)
 import Seihou.Effect.Logger (logError, logWarn)
 import Seihou.Prelude
 import System.Exit (ExitCode (..), exitFailure)
@@ -71,6 +71,15 @@ handleBrowse bopts = do
             let bpName = case b of Blueprint nm _ _ _ _ _ _ _ _ _ -> nm
                 bpDesc = case b of Blueprint _ _ d _ _ _ _ _ _ _ -> d
             TIO.putStr $ formatBrowseSingleBlueprint source bpName.unModuleName bpDesc
+      SinglePrompt rootDir -> do
+        let dhallFile = rootDir </> "prompt.dhall"
+        decoded <- evalAgentPromptFromFile dhallFile
+        case decoded of
+          Left err -> do
+            logIO LogNormal (logError $ "failed to load prompt: " <> T.pack (show err))
+            exitFailure
+          Right p ->
+            TIO.putStr $ formatBrowseSinglePrompt source p.name.unModuleName p.description
       MultiModule registry -> do
         driftWarnings <- checkRegistryVersionDrift cloneDir registry
         logIO LogNormal (mapM_ logWarn driftWarnings)
@@ -81,4 +90,5 @@ handleBrowse bopts = do
               [(ModuleEntry, e) | e <- registry.modules, matchTag e]
                 ++ [(RecipeEntry, e) | e <- registry.recipes, matchTag e]
                 ++ [(BlueprintEntry, e) | e <- registry.blueprints, matchTag e]
+                ++ [(PromptEntry, e) | e <- registry.prompts, matchTag e]
         TIO.putStr $ formatBrowseRegistry source registry tagged bopts.browseTag

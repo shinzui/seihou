@@ -1,7 +1,7 @@
 module Seihou.CLI.BrowseFormatSpec (tests) where
 
 import Data.Text (Text, pack)
-import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleModule)
+import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleModule, formatBrowseSinglePrompt)
 import Seihou.Core.Registry (EntryKind (..), Registry (..), RegistryEntry (..))
 import Seihou.Core.Types (ModuleName (..))
 import Test.Hspec
@@ -28,7 +28,8 @@ mkRegistry n desc ms =
       repoDescription = fmap pack desc,
       modules = ms,
       recipes = [],
-      blueprints = []
+      blueprints = [],
+      prompts = []
     }
 
 asModules :: [RegistryEntry] -> [(EntryKind, RegistryEntry)]
@@ -71,6 +72,24 @@ spec = do
                    \\n\
                    \Single-blueprint repository. Install with:\n\
                    \  seihou install https://github.com/user/bp\n"
+
+  describe "formatBrowseSinglePrompt" $ do
+    it "formats single prompt with description" $ do
+      let result = formatBrowseSinglePrompt "https://github.com/user/prompt" "review-changes" (Just "Review the current diff")
+      result
+        `shouldBe` "review-changes\n\
+                   \  Review the current diff\n\
+                   \\n\
+                   \Single-prompt repository. Install with:\n\
+                   \  seihou install https://github.com/user/prompt\n"
+
+    it "formats single prompt without description" $ do
+      let result = formatBrowseSinglePrompt "https://github.com/user/prompt" "quick-note" Nothing
+      result
+        `shouldBe` "quick-note\n\
+                   \\n\
+                   \Single-prompt repository. Install with:\n\
+                   \  seihou install https://github.com/user/prompt\n"
 
   describe "formatBrowseRegistry" $ do
     it "formats multi-module registry with kind labels" $ do
@@ -164,14 +183,16 @@ spec = do
                    \  seihou install source --module <name>\n\
                    \  seihou install source --all\n"
 
-    it "formats a mixed-kind registry with module, recipe, and blueprint labels" $ do
+    it "formats a mixed-kind registry with module, recipe, blueprint, and prompt labels" $ do
       let modEntry = mkEntry "haskell-base" "modules/haskell-base" (Just "Module entry") ["haskell"]
           recEntry = mkEntry "lib-recipe" "recipes/lib-recipe" (Just "Recipe entry") []
           bpEntry = mkEntry "payments-service" "blueprints/payments-service" (Just "Blueprint entry") []
+          promptEntry = mkEntry "review-changes" "prompts/review-changes" (Just "Prompt entry") ["review"]
           mixed =
             [ (ModuleEntry, modEntry),
               (RecipeEntry, recEntry),
-              (BlueprintEntry, bpEntry)
+              (BlueprintEntry, bpEntry),
+              (PromptEntry, promptEntry)
             ]
           registry = mkRegistry "mixed-repo" Nothing [modEntry]
           result = formatBrowseRegistry "source" registry mixed Nothing
@@ -183,7 +204,8 @@ spec = do
                    \  [module]     haskell-base       Module entry  [haskell]\n\
                    \  [recipe]     lib-recipe         Recipe entry\n\
                    \  [blueprint]  payments-service   Blueprint entry\n\
+                   \  [prompt]     review-changes     Prompt entry  [review]\n\
                    \\n\
-                   \3 entries available. Install with:\n\
+                   \4 entries available. Install with:\n\
                    \  seihou install source --module <name>\n\
                    \  seihou install source --all\n"

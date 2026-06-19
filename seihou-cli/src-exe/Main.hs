@@ -64,6 +64,7 @@ main = do
             [KindModule | listOpts.listModulesOnly]
               <> [KindRecipe | listOpts.listRecipesOnly]
               <> [KindBlueprint | listOpts.listBlueprintsOnly]
+              <> [KindPrompt | listOpts.listPromptsOnly]
        in handleList (ListFilter listOpts.listRepo listOpts.listTag kinds)
     NewModule newModOpts ->
       handleNewModule newModOpts

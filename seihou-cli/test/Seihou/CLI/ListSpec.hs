@@ -76,7 +76,7 @@ spec = do
     it "shows available modules header" $ do
       let mods = [validModule "test-mod" "A test module" SourceUser]
           result = formatListOutput False mods ["p1", "p2", "p3"]
-      T.isInfixOf "Available modules, recipes, and blueprints:" result `shouldBe` True
+      T.isInfixOf "Available modules, recipes, blueprints, and prompts:" result `shouldBe` True
 
     it "shows module name and description" $ do
       let mods = [validModule "haskell-base" "Haskell boilerplate" SourceUser]
@@ -159,11 +159,12 @@ spec = do
           [ mkEntryK KindModule "mod-a" Nothing [],
             mkEntryK KindRecipe "rec-a" Nothing [],
             mkEntryK KindBlueprint "bp-a" Nothing [],
+            mkEntryK KindPrompt "prompt-a" Nothing [],
             mkEntryK KindModule "mod-b" (Just "repo-x") ["haskell"]
           ]
 
     it "keeps all kinds when filterKinds is empty" $ do
-      length (applyFilters (ListFilter Nothing Nothing []) mixed) `shouldBe` 4
+      length (applyFilters (ListFilter Nothing Nothing []) mixed) `shouldBe` 5
 
     it "keeps only modules with --modules" $ do
       let result = applyFilters (ListFilter Nothing Nothing [KindModule]) mixed
@@ -176,6 +177,10 @@ spec = do
     it "keeps only blueprints with --blueprints" $ do
       let result = applyFilters (ListFilter Nothing Nothing [KindBlueprint]) mixed
       map (.entryName) result `shouldBe` ["bp-a"]
+
+    it "keeps only prompts with --prompts" $ do
+      let result = applyFilters (ListFilter Nothing Nothing [KindPrompt]) mixed
+      map (.entryName) result `shouldBe` ["prompt-a"]
 
     it "unions kinds when several flags are given" $ do
       let result = applyFilters (ListFilter Nothing Nothing [KindModule, KindRecipe]) mixed
@@ -203,6 +208,11 @@ spec = do
           result = formatListOutputEntries False entries ["p1"] noFilterF
       T.isInfixOf "1 recipe found" result `shouldBe` True
 
+    it "uses the prompt noun when all shown entries are prompts" $ do
+      let entries = [mkEntryK KindPrompt "review" Nothing [], mkEntryK KindPrompt "explain" Nothing []]
+          result = formatListOutputEntries False entries ["p1"] noFilterF
+      T.isInfixOf "2 prompts found" result `shouldBe` True
+
     it "falls back to the neutral noun for a mix of kinds" $ do
       let entries = [mkEntryK KindModule "mod-a" Nothing [], mkEntryK KindRecipe "rec-a" Nothing []]
           result = formatListOutputEntries False entries ["p1"] noFilterF
@@ -211,6 +221,10 @@ spec = do
     it "names the kind in the empty message when filtered to one kind" $ do
       let result = formatListOutputEntries False [] ["p1"] (ListFilter Nothing Nothing [KindBlueprint])
       T.isInfixOf "No blueprints found." result `shouldBe` True
+
+    it "names prompts in the empty message when filtered to prompts" $ do
+      let result = formatListOutputEntries False [] ["p1"] (ListFilter Nothing Nothing [KindPrompt])
+      T.isInfixOf "No prompts found." result `shouldBe` True
 
     it "uses the neutral noun in the empty message with no kind filter" $ do
       let result = formatListOutputEntries False [] ["p1"] noFilterF
@@ -233,3 +247,21 @@ spec = do
       entry.entryName `shouldBe` "demo"
       entry.entryIsError `shouldBe` False
       entry.entryKind `shouldBe` KindBlueprint
+
+  describe "runnableToEntryWithOrigin (prompt)" $ do
+    it "tags prompt entries with [prompt] in the source label" $ do
+      let dr =
+            DiscoveredRunnable
+              { drName = "review",
+                drDescription = Just "Review current changes",
+                drKind = KindPrompt,
+                drSource = SourceProject,
+                drDir = "/fake/review",
+                drIsError = False,
+                drError = Nothing
+              }
+          entry = runnableToEntryWithOrigin Map.empty dr
+      entry.entrySource `shouldBe` "project [prompt]"
+      entry.entryName `shouldBe` "review"
+      entry.entryIsError `shouldBe` False
+      entry.entryKind `shouldBe` KindPrompt

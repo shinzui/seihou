@@ -2,6 +2,7 @@ module Seihou.CLI.BrowseFormat
   ( formatBrowseRegistry,
     formatBrowseSingleModule,
     formatBrowseSingleBlueprint,
+    formatBrowseSinglePrompt,
     kindLabel,
   )
 where
@@ -18,6 +19,7 @@ kindLabel :: EntryKind -> Text
 kindLabel ModuleEntry = "[module]   "
 kindLabel RecipeEntry = "[recipe]   "
 kindLabel BlueprintEntry = "[blueprint]"
+kindLabel PromptEntry = "[prompt]   "
 
 -- | Format browse output for a multi-module registry. Each row begins
 -- with a per-kind label so the user can see at a glance whether they are
@@ -75,6 +77,18 @@ formatBrowseSingleBlueprint source name desc =
     <> maybe "" (\d -> "  " <> d <> "\n") desc
     <> "\n"
     <> "Single-blueprint repository. Install with:\n"
+    <> "  seihou install "
+    <> source
+    <> "\n"
+
+-- | Format browse output for a single-prompt repo.
+formatBrowseSinglePrompt :: Text -> Text -> Maybe Text -> Text
+formatBrowseSinglePrompt source name desc =
+  name
+    <> "\n"
+    <> maybe "" (\d -> "  " <> d <> "\n") desc
+    <> "\n"
+    <> "Single-prompt repository. Install with:\n"
     <> "  seihou install "
     <> source
     <> "\n"

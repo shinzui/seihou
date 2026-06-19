@@ -91,6 +91,29 @@ spec = do
             T.isInfixOf "1 module" rendered `shouldBe` True
             T.isInfixOf "0 recipes" rendered `shouldBe` True
             T.isInfixOf "1 blueprint" rendered `shouldBe` True
+            T.isInfixOf "0 prompts" rendered `shouldBe` True
+            T.isInfixOf "all versions in sync" rendered `shouldBe` True
+          other -> expectationFailure ("unexpected outcome: " <> show other)
+
+    it "flags prompt version drift with the prompts. prefix" $ do
+      withDriftedPromptFixture $ \dir -> do
+        outcome <- runValidate (ValidateRegistryOpts (Just dir))
+        case outcome of
+          ValidateOk r -> do
+            let rendered = renderValidationReport r
+            T.isInfixOf "prompts.review-changes:" rendered `shouldBe` True
+          other -> expectationFailure ("unexpected outcome: " <> show other)
+
+    it "renders prompt counts in the success summary" $ do
+      withCleanPromptFixture $ \dir -> do
+        outcome <- runValidate (ValidateRegistryOpts (Just dir))
+        case outcome of
+          ValidateOk r -> do
+            let rendered = renderValidationReport r
+            T.isInfixOf "0 modules" rendered `shouldBe` True
+            T.isInfixOf "0 recipes" rendered `shouldBe` True
+            T.isInfixOf "0 blueprints" rendered `shouldBe` True
+            T.isInfixOf "1 prompt" rendered `shouldBe` True
             T.isInfixOf "all versions in sync" rendered `shouldBe` True
           other -> expectationFailure ("unexpected outcome: " <> show other)
 
@@ -151,6 +174,26 @@ withCleanBlueprintFixture action = withSystemTempDirectory "seihou-validate-bp-c
     (mixedRegistry "alpha" (Just "1.0.0") "payments-service" (Just "0.1.0"))
   action dir
 
+-- | One prompt whose registry version is stale relative to prompt.dhall.
+withDriftedPromptFixture :: (FilePath -> IO ()) -> IO ()
+withDriftedPromptFixture action = withSystemTempDirectory "seihou-validate-prompt-drift" $ \dir -> do
+  createDirectoryIfMissing True (dir </> "prompts" </> "review-changes")
+  writePromptDhall (dir </> "prompts" </> "review-changes" </> "prompt.dhall") "review-changes" "0.2.0"
+  TIO.writeFile
+    (dir </> "seihou-registry.dhall")
+    (promptRegistry "review-changes" (Just "0.1.0"))
+  action dir
+
+-- | One prompt, all versions matching on disk and in the registry.
+withCleanPromptFixture :: (FilePath -> IO ()) -> IO ()
+withCleanPromptFixture action = withSystemTempDirectory "seihou-validate-prompt-clean" $ \dir -> do
+  createDirectoryIfMissing True (dir </> "prompts" </> "review-changes")
+  writePromptDhall (dir </> "prompts" </> "review-changes" </> "prompt.dhall") "review-changes" "0.2.0"
+  TIO.writeFile
+    (dir </> "seihou-registry.dhall")
+    (promptRegistry "review-changes" (Just "0.2.0"))
+  action dir
+
 writeBlueprintDhall :: FilePath -> Text -> Text -> IO ()
 writeBlueprintDhall path name ver =
   TIO.writeFile
@@ -187,6 +230,45 @@ mixedRegistry modName modVer bpName bpVer =
       "  [ { name = \"" <> bpName <> "\"",
       "    , version = " <> optVersion bpVer,
       "    , path = \"blueprints/" <> bpName <> "\"",
+      "    , description = None Text",
+      "    , tags = [] : List Text",
+      "    }",
+      "  ]",
+      "}"
+    ]
+
+writePromptDhall :: FilePath -> Text -> Text -> IO ()
+writePromptDhall path name ver =
+  TIO.writeFile
+    path
+    ( T.unlines
+        [ "{ name = \"" <> name <> "\"",
+          ", version = Some \"" <> ver <> "\"",
+          ", description = None Text",
+          ", prompt = \"Review the current changes.\"",
+          ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+          ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+          ", commandVars = [] : List { name : Text, run : Text, workDir : Optional Text, when : Optional Text, trim : Bool, maxBytes : Optional Natural }",
+          ", files = [] : List { src : Text, description : Optional Text }",
+          ", allowedTools = None (List Text)",
+          ", tags = [] : List Text",
+          ", launch = None { provider : Optional Text, mode : Optional Text, model : Optional Text }",
+          "}"
+        ]
+    )
+
+promptRegistry :: Text -> Maybe Text -> Text
+promptRegistry promptName promptVer =
+  T.unlines
+    [ "{ repoName = \"Prompts\"",
+      ", repoDescription = None Text",
+      ", modules = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }",
+      ", recipes = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }",
+      ", blueprints = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }",
+      ", prompts =",
+      "  [ { name = \"" <> promptName <> "\"",
+      "    , version = " <> optVersion promptVer,
+      "    , path = \"prompts/" <> promptName <> "\"",
       "    , description = None Text",
       "    , tags = [] : List Text",
       "    }",

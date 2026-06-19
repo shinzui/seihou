@@ -37,7 +37,7 @@ An alternative was to extend blueprints with a `purpose = "prompt"` field. That 
 | EP-51 | Add prompt domain and discovery | docs/plans/51-add-prompt-domain-and-discovery.md | EP-50 | None | Complete |
 | EP-52 | Resolve command derived variables | docs/plans/52-resolve-command-derived-variables.md | EP-50 | EP-51 | Complete |
 | EP-53 | Add prompt CLI workflows | docs/plans/53-add-prompt-cli-workflows.md | EP-51, EP-52 | None | Complete |
-| EP-55 | Integrate prompts with registries and discovery surfaces | docs/plans/55-integrate-prompts-with-registries-and-discovery-surfaces.md | EP-51 | EP-53 | Not Started |
+| EP-55 | Integrate prompts with registries and discovery surfaces | docs/plans/55-integrate-prompts-with-registries-and-discovery-surfaces.md | EP-51 | EP-53 | Complete |
 | EP-54 | Document first class prompts | docs/plans/54-document-first-class-prompts.md | EP-53, EP-55 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -78,7 +78,7 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-51: Add Haskell prompt types, Dhall decoder, validation module, and search/discovery support.
 - [x] EP-52: Add safe command-derived variable resolution with process-effect tests and provenance.
 - [x] EP-53: Add `seihou new-prompt`, `seihou validate-prompt`, and `seihou prompt run` workflows.
-- [ ] EP-55: Add prompts to registries, install, browse, list filters, sync, validation, and related tests.
+- [x] EP-55: Add prompts to registries, install, browse, list filters, sync, validation, and related tests.
 - [ ] EP-54: Update CLI help, user guides, generated prompt-authoring guidance, and changelog material.
 
 
@@ -137,6 +137,10 @@ plan.
   Rationale: `new-prompt` must create a directory that `validate-prompt` can evaluate immediately. Repointing the global schema pin to an unpublished commit would break existing module and blueprint scaffolders; a self-contained prompt record keeps the new workflow usable and avoids disturbing older scaffold output.
   Date: 2026-06-19
 
+- Decision: Keep registry prompt selection on the existing `seihou install --module <name>` flag.
+  Rationale: Registry entry selection already accepts modules, recipes, and blueprints through the same flag; adding a parallel `--prompt` selector would be a CLI compatibility expansion outside EP-55's additive registry integration.
+  Date: 2026-06-19
+
 
 ## Outcomes & Retrospective
 
@@ -144,4 +148,7 @@ Summarize outcomes, gaps, and lessons learned at major milestones or at completi
 Compare the result against the original vision.
 
 - Outcome: EP-53 completed local prompt CLI workflows. Users can scaffold prompt directories, validate `prompt.dhall`, and run `seihou prompt run NAME --debug` to render typed variables plus command-derived variables without contacting a provider. Non-debug runs reuse the existing Baikai/agent provider path and do not apply blueprint baselines or write applied-blueprint manifest provenance.
+  Date: 2026-06-19
+
+- Outcome: EP-55 completed registry and discovery integration for prompts. Prompt entries now decode, render, validate, sync versions, browse, install, appear in `seihou list --prompts`, and show prompt labels in fzf selection; a prompt-only registry smoke passed browse/validate/sync/install/list checks.
   Date: 2026-06-19

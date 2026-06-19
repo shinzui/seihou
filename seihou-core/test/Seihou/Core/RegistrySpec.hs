@@ -181,7 +181,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "mod-a") Nothing "mod-a" Nothing []],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
         errs <- validateRegistry tmpDir reg
         errs `shouldBe` []
@@ -196,7 +197,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "Bad_Name") Nothing "Bad_Name" Nothing []],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
         errs <- validateRegistry tmpDir reg
         length errs `shouldSatisfy` (> 0)
@@ -210,7 +212,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "missing") Nothing "nonexistent" Nothing []],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
         errs <- validateRegistry tmpDir reg
         length errs `shouldSatisfy` (> 0)
@@ -224,7 +227,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "bad-path") Nothing "../escape" Nothing []],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("must not contain" `isInfixOf`) (map show errs) `shouldBe` True
@@ -240,7 +244,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "mod-a") (Just "1.0.0") "mod-a" Nothing []],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
@@ -248,6 +253,7 @@ spec = do
         report.reportModuleCount `shouldBe` 1
         report.reportRecipeCount `shouldBe` 0
         report.reportBlueprintCount `shouldBe` 0
+        report.reportPromptCount `shouldBe` 0
 
     it "flags a SyncMissing entry as a single VersionMismatch" $ do
       withSystemTempDirectory "seihou-validate-full" $ \tmpDir -> do
@@ -259,7 +265,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "mod-a") Nothing "mod-a" Nothing []],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
@@ -277,7 +284,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "mod-a") (Just "1.0.0") "mod-a" Nothing []],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "2.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
@@ -295,7 +303,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "Bad_Name") Nothing "Bad_Name" Nothing []],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
             lookups = [(ModuleEntry, ModuleName "Bad_Name", Nothing)]
         report <- validateRegistryFull tmpDir reg lookups
@@ -310,7 +319,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "escape") Nothing "../escape" Nothing []],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
         report <- validateRegistryFull tmpDir reg []
         let structurals = [msg | StructuralError msg <- report.reportIssues]
@@ -332,7 +342,8 @@ spec = do
                       RegistryEntry (ModuleName "stale") (Just "1.0.0") "stale" Nothing []
                     ],
                   recipes = [],
-                  blueprints = []
+                  blueprints = [],
+                  prompts = []
                 }
             lookups =
               [ (ModuleEntry, ModuleName "good", Just "1.0.0"),
@@ -349,10 +360,10 @@ spec = do
               ("expected [StructuralError, VersionMismatch], got: " <> show other)
 
   describe "blueprints in registries" $ do
-    it "decodes a registry with all three entry kinds" $ do
+    it "decodes a registry with all four entry kinds" $ do
       withSystemTempDirectory "seihou-registry-bp" $ \tmpDir -> do
         let dhall =
-              "{ repoName = \"Three Kinds\"\n\
+              "{ repoName = \"Four Kinds\"\n\
               \, repoDescription = None Text\n\
               \, modules =\n\
               \  [ { name = \"mod-one\"\n\
@@ -378,6 +389,14 @@ spec = do
               \    , tags = [ \"agent\" ]\n\
               \    }\n\
               \  ]\n\
+              \, prompts =\n\
+              \  [ { name = \"prompt-one\"\n\
+              \    , version = Some \"0.2.0\"\n\
+              \    , path = \"prompts/prompt-one\"\n\
+              \    , description = Some \"A prompt\"\n\
+              \    , tags = [ \"review\" ]\n\
+              \    }\n\
+              \  ]\n\
               \}"
         writeFile (tmpDir </> "seihou-registry.dhall") dhall
         result <- evalRegistryFromFile (tmpDir </> "seihou-registry.dhall")
@@ -387,12 +406,17 @@ spec = do
             length reg.modules `shouldBe` 1
             length reg.recipes `shouldBe` 1
             length reg.blueprints `shouldBe` 1
+            length reg.prompts `shouldBe` 1
             let (bp : _) = reg.blueprints
             bp.name `shouldBe` ModuleName "bp-one"
             bp.version `shouldBe` Just "0.1.0"
             bp.tags `shouldBe` ["agent"]
+            let (prompt : _) = reg.prompts
+            prompt.name `shouldBe` ModuleName "prompt-one"
+            prompt.version `shouldBe` Just "0.2.0"
+            prompt.tags `shouldBe` ["review"]
 
-    it "decodes a pre-EP-33 registry (no blueprints field) with blueprints = []" $ do
+    it "decodes a pre-EP-33 registry (no blueprints or prompts fields) with empty lists" $ do
       withSystemTempDirectory "seihou-registry-bp-compat" $ \tmpDir -> do
         let dhall =
               "{ repoName = \"Old Registry\"\n\
@@ -413,6 +437,7 @@ spec = do
           Right reg -> do
             reg.recipes `shouldBe` []
             reg.blueprints `shouldBe` []
+            reg.prompts `shouldBe` []
 
     it "rejects an invalid blueprint name" $ do
       withSystemTempDirectory "seihou-validate-bp" $ \tmpDir -> do
@@ -424,7 +449,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [],
                   recipes = [],
-                  blueprints = [RegistryEntry (ModuleName "Bad_Bp") Nothing "Bad_Bp" Nothing []]
+                  blueprints = [RegistryEntry (ModuleName "Bad_Bp") Nothing "Bad_Bp" Nothing []],
+                  prompts = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("blueprint name must match" `isInfixOf`) (map show errs) `shouldBe` True
@@ -437,7 +463,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [],
                   recipes = [],
-                  blueprints = [RegistryEntry (ModuleName "ghost") Nothing "ghost" Nothing []]
+                  blueprints = [RegistryEntry (ModuleName "ghost") Nothing "ghost" Nothing []],
+                  prompts = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("missing blueprint.dhall" `isInfixOf`) (map show errs) `shouldBe` True
@@ -450,7 +477,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [],
                   recipes = [],
-                  blueprints = [RegistryEntry (ModuleName "escape") Nothing "../escape" Nothing []]
+                  blueprints = [RegistryEntry (ModuleName "escape") Nothing "../escape" Nothing []],
+                  prompts = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("blueprint path must not contain" `isInfixOf`) (map show errs) `shouldBe` True
@@ -474,7 +502,8 @@ spec = do
                   blueprints =
                     [ RegistryEntry (ModuleName "duped") Nothing "shared-bp1" Nothing [],
                       RegistryEntry (ModuleName "other") Nothing "shared-bp2" Nothing []
-                    ]
+                    ],
+                  prompts = []
                 }
         errs <- validateRegistry tmpDir reg
         any ("appears as both a module and a blueprint" `isInfixOf`) (map show errs)
@@ -496,7 +525,8 @@ spec = do
                   repoDescription = Nothing,
                   modules = [RegistryEntry (ModuleName "tripled") Nothing "trip-m" Nothing []],
                   recipes = [RegistryEntry (ModuleName "tripled") Nothing "trip-r" Nothing []],
-                  blueprints = [RegistryEntry (ModuleName "tripled") Nothing "trip-b" Nothing []]
+                  blueprints = [RegistryEntry (ModuleName "tripled") Nothing "trip-b" Nothing []],
+                  prompts = []
                 }
         errs <- validateRegistry tmpDir reg
         let messages = map show errs
@@ -513,15 +543,16 @@ spec = do
                 recipes = [],
                 blueprints =
                   [ RegistryEntry (ModuleName "bp-stale") (Just "0.1.0") "blueprints/bp-stale" Nothing []
-                  ]
+                  ],
+                prompts = []
               }
           lookups = [(BlueprintEntry, ModuleName "bp-stale", Just "0.2.0")]
-          SyncReport diffs (Registry _ _ _ _ bpsAfter) = computeRegistrySync reg lookups
+          SyncReport diffs updated = computeRegistrySync reg lookups
           kinds = [diff_ | SyncDiff {diffKind = diff_} <- diffs]
           statuses = [s | SyncDiff {diffStatus = s} <- diffs]
       kinds `shouldBe` [BlueprintEntry]
       statuses `shouldBe` [SyncStale "0.2.0"]
-      let updatedVersion = case bpsAfter of
+      let updatedVersion = case updated.blueprints of
             (RegistryEntry _ v _ _ _ : _) -> v
             _ -> Nothing
       updatedVersion `shouldBe` Just ("0.2.0" :: Text)
@@ -541,7 +572,8 @@ spec = do
                   blueprints =
                     [ RegistryEntry (ModuleName "bp-a") (Just "1.0.0") "bp-a" Nothing [],
                       RegistryEntry (ModuleName "bp-b") (Just "1.0.0") "bp-b" Nothing []
-                    ]
+                    ],
+                  prompts = []
                 }
             lookups =
               [ (BlueprintEntry, ModuleName "bp-a", Just "1.0.0"),
@@ -549,6 +581,133 @@ spec = do
               ]
         report <- validateRegistryFull tmpDir reg lookups
         report.reportBlueprintCount `shouldBe` 2
+        report.reportIssues `shouldBe` []
+
+  describe "prompts in registries" $ do
+    it "rejects an invalid prompt name" $ do
+      withSystemTempDirectory "seihou-validate-prompt" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "Bad_Prompt")
+        writeMinimalPromptDhall (tmpDir </> "Bad_Prompt" </> "prompt.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [],
+                  recipes = [],
+                  blueprints = [],
+                  prompts = [RegistryEntry (ModuleName "Bad_Prompt") Nothing "Bad_Prompt" Nothing []]
+                }
+        errs <- validateRegistry tmpDir reg
+        any ("prompt name must match" `isInfixOf`) (map show errs) `shouldBe` True
+
+    it "reports a missing prompt.dhall at the entry path" $ do
+      withSystemTempDirectory "seihou-validate-prompt-missing" $ \tmpDir -> do
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [],
+                  recipes = [],
+                  blueprints = [],
+                  prompts = [RegistryEntry (ModuleName "ghost") Nothing "ghost" Nothing []]
+                }
+        errs <- validateRegistry tmpDir reg
+        any ("missing prompt.dhall" `isInfixOf`) (map show errs) `shouldBe` True
+
+    it "rejects an unsafe prompt path with .." $ do
+      withSystemTempDirectory "seihou-validate-prompt-path" $ \tmpDir -> do
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [],
+                  recipes = [],
+                  blueprints = [],
+                  prompts = [RegistryEntry (ModuleName "escape") Nothing "../escape" Nothing []]
+                }
+        errs <- validateRegistry tmpDir reg
+        any ("prompt path must not contain" `isInfixOf`) (map show errs) `shouldBe` True
+
+    it "detects cross-kind name collisions involving prompts" $ do
+      withSystemTempDirectory "seihou-collision-prompt" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "shared-mod")
+        writeMinimalModuleDhall (tmpDir </> "shared-mod" </> "module.dhall")
+        createDirectoryIfMissing True (tmpDir </> "shared-rec")
+        writeMinimalRecipeDhall (tmpDir </> "shared-rec" </> "recipe.dhall")
+        createDirectoryIfMissing True (tmpDir </> "shared-bp")
+        writeMinimalBlueprintDhall (tmpDir </> "shared-bp" </> "blueprint.dhall")
+        createDirectoryIfMissing True (tmpDir </> "shared-prompt1")
+        writeMinimalPromptDhall (tmpDir </> "shared-prompt1" </> "prompt.dhall")
+        createDirectoryIfMissing True (tmpDir </> "shared-prompt2")
+        writeMinimalPromptDhall (tmpDir </> "shared-prompt2" </> "prompt.dhall")
+        createDirectoryIfMissing True (tmpDir </> "shared-prompt3")
+        writeMinimalPromptDhall (tmpDir </> "shared-prompt3" </> "prompt.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [RegistryEntry (ModuleName "as-module") Nothing "shared-mod" Nothing []],
+                  recipes = [RegistryEntry (ModuleName "as-recipe") Nothing "shared-rec" Nothing []],
+                  blueprints = [RegistryEntry (ModuleName "as-blueprint") Nothing "shared-bp" Nothing []],
+                  prompts =
+                    [ RegistryEntry (ModuleName "as-module") Nothing "shared-prompt1" Nothing [],
+                      RegistryEntry (ModuleName "as-recipe") Nothing "shared-prompt2" Nothing [],
+                      RegistryEntry (ModuleName "as-blueprint") Nothing "shared-prompt3" Nothing []
+                    ]
+                }
+        errs <- validateRegistry tmpDir reg
+        let messages = map show errs
+        any ("appears as both a module and a prompt" `isInfixOf`) messages `shouldBe` True
+        any ("appears as both a recipe and a prompt" `isInfixOf`) messages `shouldBe` True
+        any ("appears as both a blueprint and a prompt" `isInfixOf`) messages `shouldBe` True
+
+    it "computeRegistrySync classifies prompt entries with diffKind = PromptEntry" $ do
+      let reg =
+            Registry
+              { repoName = "Test",
+                repoDescription = Nothing,
+                modules = [],
+                recipes = [],
+                blueprints = [],
+                prompts =
+                  [ RegistryEntry (ModuleName "prompt-stale") (Just "0.1.0") "prompts/prompt-stale" Nothing []
+                  ]
+              }
+          lookups = [(PromptEntry, ModuleName "prompt-stale", Just "0.2.0")]
+          SyncReport diffs updated = computeRegistrySync reg lookups
+          kinds = [diff_ | SyncDiff {diffKind = diff_} <- diffs]
+          statuses = [s | SyncDiff {diffStatus = s} <- diffs]
+      kinds `shouldBe` [PromptEntry]
+      statuses `shouldBe` [SyncStale "0.2.0"]
+      let updatedVersion = case updated.prompts of
+            (RegistryEntry _ v _ _ _ : _) -> v
+            _ -> Nothing
+      updatedVersion `shouldBe` Just ("0.2.0" :: Text)
+
+    it "validateRegistryFull populates reportPromptCount" $ do
+      withSystemTempDirectory "seihou-validate-prompt-count" $ \tmpDir -> do
+        createDirectoryIfMissing True (tmpDir </> "prompt-a")
+        writeMinimalPromptDhall (tmpDir </> "prompt-a" </> "prompt.dhall")
+        createDirectoryIfMissing True (tmpDir </> "prompt-b")
+        writeMinimalPromptDhall (tmpDir </> "prompt-b" </> "prompt.dhall")
+        let reg =
+              Registry
+                { repoName = "Test",
+                  repoDescription = Nothing,
+                  modules = [],
+                  recipes = [],
+                  blueprints = [],
+                  prompts =
+                    [ RegistryEntry (ModuleName "prompt-a") (Just "1.0.0") "prompt-a" Nothing [],
+                      RegistryEntry (ModuleName "prompt-b") (Just "1.0.0") "prompt-b" Nothing []
+                    ]
+                }
+            lookups =
+              [ (PromptEntry, ModuleName "prompt-a", Just "1.0.0"),
+                (PromptEntry, ModuleName "prompt-b", Just "1.0.0")
+              ]
+        report <- validateRegistryFull tmpDir reg lookups
+        report.reportPromptCount `shouldBe` 2
         report.reportIssues `shouldBe` []
 
   describe "discoverRepoContents and blueprints" $ do
@@ -586,6 +745,51 @@ spec = do
         case result of
           MultiModule _ -> pure ()
           other -> expectationFailure ("Expected MultiModule (registry beats blueprint), got: " <> show other)
+
+  describe "discoverRepoContents and prompts" $ do
+    it "returns SinglePrompt when only prompt.dhall is present" $ do
+      withSystemTempDirectory "seihou-discover-prompt" $ \tmpDir -> do
+        writeMinimalPromptDhall (tmpDir </> "prompt.dhall")
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          SinglePrompt p -> p `shouldBe` tmpDir
+          other -> expectationFailure ("Expected SinglePrompt, got: " <> show other)
+
+    it "prefers SingleModule over SinglePrompt when both are present" $ do
+      withSystemTempDirectory "seihou-discover-prompt-mod" $ \tmpDir -> do
+        writeMinimalModuleDhall (tmpDir </> "module.dhall")
+        writeMinimalPromptDhall (tmpDir </> "prompt.dhall")
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          SingleModule _ -> pure ()
+          other -> expectationFailure ("Expected SingleModule (module beats prompt), got: " <> show other)
+
+    it "prefers SingleRecipe over SinglePrompt when both are present" $ do
+      withSystemTempDirectory "seihou-discover-prompt-rec" $ \tmpDir -> do
+        writeMinimalRecipeDhall (tmpDir </> "recipe.dhall")
+        writeMinimalPromptDhall (tmpDir </> "prompt.dhall")
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          SingleRecipe _ -> pure ()
+          other -> expectationFailure ("Expected SingleRecipe (recipe beats prompt), got: " <> show other)
+
+    it "prefers SingleBlueprint over SinglePrompt when both are present" $ do
+      withSystemTempDirectory "seihou-discover-prompt-bp" $ \tmpDir -> do
+        writeMinimalBlueprintDhall (tmpDir </> "blueprint.dhall")
+        writeMinimalPromptDhall (tmpDir </> "prompt.dhall")
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          SingleBlueprint _ -> pure ()
+          other -> expectationFailure ("Expected SingleBlueprint (blueprint beats prompt), got: " <> show other)
+
+    it "prefers MultiModule over SinglePrompt when both registry and prompt exist" $ do
+      withSystemTempDirectory "seihou-discover-reg-prompt" $ \tmpDir -> do
+        writeRegistryFile tmpDir
+        writeMinimalPromptDhall (tmpDir </> "prompt.dhall")
+        result <- discoverRepoContents evalRegistryFromFile tmpDir
+        case result of
+          MultiModule _ -> pure ()
+          other -> expectationFailure ("Expected MultiModule (registry beats prompt), got: " <> show other)
 
 -- Helper: write a minimal valid seihou-registry.dhall
 writeRegistryFile :: FilePath -> IO ()
@@ -648,5 +852,23 @@ writeMinimalBlueprintDhall path = do
         \, files = [] : List { src : Text, description : Optional Text }\n\
         \, allowedTools = None (List Text)\n\
         \, tags = [] : List Text\n\
+        \}"
+  writeFile path dhall
+
+-- Helper: write a minimal valid prompt.dhall
+writeMinimalPromptDhall :: FilePath -> IO ()
+writeMinimalPromptDhall path = do
+  let dhall =
+        "{ name = \"minimal-prompt\"\n\
+        \, version = Some \"0.1.0\"\n\
+        \, description = None Text\n\
+        \, prompt = \"hello\"\n\
+        \, vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }\n\
+        \, prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }\n\
+        \, commandVars = [] : List { name : Text, run : Text, workDir : Optional Text, when : Optional Text, trim : Bool, maxBytes : Optional Natural }\n\
+        \, files = [] : List { src : Text, description : Optional Text }\n\
+        \, allowedTools = None (List Text)\n\
+        \, tags = [] : List Text\n\
+        \, launch = None { provider : Optional Text, mode : Optional Text, model : Optional Text }\n\
         \}"
   writeFile path dhall

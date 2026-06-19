@@ -1,7 +1,7 @@
 module Seihou.FzfSpec (tests) where
 
 import Data.Text qualified as T
-import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..))
+import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..))
 import Seihou.Core.Types
 import Seihou.Effect.Fzf (selectOne)
 import Seihou.Effect.FzfInterp (runFzfPure)
@@ -17,7 +17,7 @@ import Seihou.Fzf
     withPreview,
     withPrompt,
   )
-import Seihou.Fzf.Selector.Module (formatModuleCandidate)
+import Seihou.Fzf.Selector.Module (formatModuleCandidate, formatRunnableCandidate)
 import Seihou.Prelude
 import Test.Hspec
 import Test.Tasty
@@ -141,6 +141,22 @@ spec = do
           T.isInfixOf "[user]" u.candidateDisplay `shouldBe` True
           T.isInfixOf "[installed]" i.candidateDisplay `shouldBe` True
         _ -> expectationFailure "expected all Just"
+
+  describe "formatRunnableCandidate" $ do
+    it "tags prompt candidates with [prompt]" $ do
+      let dr =
+            DiscoveredRunnable
+              { drName = "review-changes",
+                drDescription = Just "Review current changes",
+                drKind = KindPrompt,
+                drSource = SourceProject,
+                drDir = "/tmp/review-changes",
+                drIsError = False,
+                drError = Nothing
+              }
+      case formatRunnableCandidate dr of
+        Just c -> T.isInfixOf "[prompt]" c.candidateDisplay `shouldBe` True
+        Nothing -> expectationFailure "expected Just"
 
 -- | Helper to create a valid discovered module for testing.
 validModule :: String -> String -> ModuleSource -> DiscoveredModule

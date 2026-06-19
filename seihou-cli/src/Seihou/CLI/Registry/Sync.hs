@@ -27,10 +27,11 @@ import Seihou.Core.Registry
     formatDriftWarning,
     renderRegistryDhall,
   )
-import Seihou.Core.Types (Blueprint, Module, ModuleName (..), Recipe)
+import Seihou.Core.Types (AgentPrompt, Blueprint, Module, ModuleName (..), Recipe)
 import Seihou.Core.Types qualified as Types
 import Seihou.Dhall.Eval
-  ( evalBlueprintFromFile,
+  ( evalAgentPromptFromFile,
+    evalBlueprintFromFile,
     evalModuleFromFile,
     evalRecipeFromFile,
     evalRegistryFromFile,
@@ -104,10 +105,10 @@ runSync opts = do
                 "registry sync-versions requires a seihou-registry.dhall at the target directory"
             )
 
--- | Read each registry entry's @module.dhall@ or @recipe.dhall@ and pair it
--- with the entry's @(kind, name)@. Entries whose file fails to evaluate are
--- omitted from the returned list, which causes 'computeRegistrySync' to
--- classify them as 'SyncOrphan'.
+-- | Read each registry entry's runnable Dhall file and pair it with the
+-- entry's @(kind, name)@. Entries whose file fails to evaluate are omitted
+-- from the returned list, which causes 'computeRegistrySync' to classify them
+-- as 'SyncOrphan'.
 resolveOnDiskVersions ::
   FilePath ->
   Registry ->
@@ -116,7 +117,8 @@ resolveOnDiskVersions repoRoot reg = do
   modulePairs <- mapM (loadModule repoRoot) reg.modules
   recipePairs <- mapM (loadRecipe repoRoot) reg.recipes
   blueprintPairs <- mapM (loadBlueprint repoRoot) reg.blueprints
-  pure (concat modulePairs <> concat recipePairs <> concat blueprintPairs)
+  promptPairs <- mapM (loadPrompt repoRoot) reg.prompts
+  pure (concat modulePairs <> concat recipePairs <> concat blueprintPairs <> concat promptPairs)
   where
     loadModule :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
     loadModule root entry = do
@@ -139,6 +141,13 @@ resolveOnDiskVersions repoRoot reg = do
       case decoded of
         Right b -> pure [(BlueprintEntry, entry.name, blueprintVersion b)]
         Left _ -> pure []
+    loadPrompt :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
+    loadPrompt root entry = do
+      let path = root </> entry.path </> "prompt.dhall"
+      decoded <- evalAgentPromptFromFile path
+      case decoded of
+        Right p -> pure [(PromptEntry, entry.name, promptVersion p)]
+        Left _ -> pure []
 
 -- | Extract the @version@ field from a 'Module' by pattern match. A direct
 -- record-dot access (@m.version@) fails under 'DuplicateRecordFields' +
@@ -154,6 +163,10 @@ recipeVersion Types.Recipe {Types.version = v} = v
 -- | Analogous accessor for 'Blueprint.version'. See 'moduleVersion'.
 blueprintVersion :: Blueprint -> Maybe Text
 blueprintVersion Types.Blueprint {Types.version = v} = v
+
+-- | Analogous accessor for 'AgentPrompt.version'. See 'moduleVersion'.
+promptVersion :: AgentPrompt -> Maybe Text
+promptVersion Types.AgentPrompt {Types.version = v} = v
 
 -- | Handler wired into the CLI command dispatcher. Drives 'runSync', prints a
 -- human-readable diff, and exits with 0 or 1 as appropriate.
@@ -197,7 +210,7 @@ renderSyncReport report
           new = renderVersion diff.diffNew
           arrow = case diff.diffStatus of
             SyncInSync -> " == " <> new <> " (no change)"
-            SyncOrphan -> " ?? " <> old <> " (module.dhall missing)"
+            SyncOrphan -> " ?? " <> old <> " (" <> entryFile diff.diffKind <> " missing)"
             _ -> " -> " <> new
        in padded <> old <> arrow
 
@@ -209,6 +222,13 @@ kindPrefix :: EntryKind -> Text
 kindPrefix ModuleEntry = "modules."
 kindPrefix RecipeEntry = "recipes."
 kindPrefix BlueprintEntry = "blueprints."
+kindPrefix PromptEntry = "prompts."
+
+entryFile :: EntryKind -> Text
+entryFile ModuleEntry = "module.dhall"
+entryFile RecipeEntry = "recipe.dhall"
+entryFile BlueprintEntry = "blueprint.dhall"
+entryFile PromptEntry = "prompt.dhall"
 
 renderVersion :: Maybe Text -> Text
 renderVersion Nothing = "(none)"
