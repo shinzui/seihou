@@ -335,8 +335,8 @@ the result against the original vision.
 EP-60 completed the extension foundation. The main `seihou` executable now supports
 `seihou extension run <name> -- <args...>`, and the new `seihou-okf-extension` package is
 buildable through Cabal and Nix with the OKF dependency scoped to the extension package.
-The command currently exposes a non-zero `docs` placeholder; EP-57, EP-58, and EP-59 remain
-responsible for registry loading, OKF rendering, and the real docs command.
+At that milestone the command exposed a non-zero `docs` placeholder; EP-59 later replaced it
+with the real docs command after EP-57 and EP-58 supplied registry loading and OKF rendering.
 
 EP-57 completed the extension-owned documentation model. `loadDocModel` now loads a registry
 directory into full module, recipe, blueprint, and prompt entries, preserving catalog
