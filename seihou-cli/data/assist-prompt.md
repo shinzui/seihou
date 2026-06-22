@@ -160,8 +160,10 @@ research, planning, repository inspection, or writing an incident summary.
 To scaffold one: `seihou new-prompt NAME` writes `prompt.dhall`, `prompt.md`,
 and `files/`. Validate with `seihou validate-prompt .`. Run or inspect with
 `seihou prompt run NAME --debug`. Prompt definitions can declare normal typed
-variables plus `commandVars` for compact local context such as `git diff --stat`
-or `git branch --show-current`.
+variables, `commandVars` for compact local context such as `git diff --stat`
+or `git branch --show-current`, and conditional `guidance` blocks (each with a
+`title`, `body`, and optional `when`) that adapt the workflow and validation
+choices to the target repository.
 
 
 ## Template Syntax

@@ -139,6 +139,109 @@ Dhall requires type annotations on empty lists. Common patterns:
 - choice: Must match one of the prompt's choices list
 
 
+## Prompt Schema Reference
+
+A first-class prompt is a directory containing a `prompt.dhall` file, a
+`prompt.md` body, and an optional `files/` subdirectory. Prompts are reusable
+agent-session templates — use them for review, release, planning, dependency
+research, or inspection workflows. They render and launch a provider via
+`seihou prompt run NAME`; they do **not** scaffold files or write
+applied-blueprint provenance. Prompt names must match `[a-z][a-z0-9-]*`.
+
+### prompt.dhall format
+
+Fresh prompts are self-contained Dhall records:
+
+```dhall
+{ name = "review-changes"
+, version = Some "0.1.0"
+, description = Some "Review current git changes"
+, prompt = ./prompt.md as Text
+, vars =
+  [ { name = "project.name"
+    , type = "text"
+    , default = None Text
+    , description = Some "Project name for the review header"
+    , required = False
+    , validation = None Text
+    }
+  ]
+, prompts =
+  [ { var = "project.name"
+    , text = "Project name?"
+    , when = None Text
+    , choices = None (List Text)
+    }
+  ]
+, commandVars =
+  [ { name = "git.diff"
+    , run = "git diff --stat"
+    , workDir = None Text
+    , when = None Text
+    , trim = True
+    , maxBytes = Some 20000
+    }
+  ]
+, guidance =
+  [ { title = "Repository workflow"
+    , body = "Inspect the project before editing, keep changes scoped, and run the smallest useful validation command."
+    , when = None Text
+    }
+  ]
+, files =
+  [ { src = "review-checklist.md", description = Some "Team review checklist" } ]
+, allowedTools = None (List Text)
+, tags = [ "review" ]
+, launch = Some { provider = Some "codex-cli", mode = None Text, model = None Text }
+}
+```
+
+### Prompt fields
+
+- **prompt** (required): the task body, usually `./prompt.md as Text`. This is
+  the specific work the prompt performs.
+- **vars** / **prompts**: typed variables and interactive questions, identical
+  in shape to module vars/prompts. Resolved before rendering.
+- **commandVars**: variables filled from local command output (e.g.
+  `git diff --stat`, `git branch --show-current`). They run after ordinary
+  variables resolve. `trim` strips surrounding whitespace; `maxBytes` caps
+  captured output; a non-zero exit fails the render. Use for compact context,
+  not secrets or huge output.
+- **guidance**: Markdown instruction blocks rendered around the prompt body in
+  the provider system prompt. Use guidance for repository/project adaptation,
+  workflow rules, and validation preferences — keep `prompt` as the main task
+  body. Each block has a `title`, a `body`, and an optional `when` expression
+  that uses the same conditional language as `prompts` and `commandVars`. Since
+  `when` is evaluated after `commandVars` resolve, guidance can adapt to the
+  current repository:
+
+  ```dhall
+  , commandVars =
+    [ { name = "repo.kind"
+      , run = "if test -f cabal.project; then echo haskell; else echo unknown; fi"
+      , workDir = None Text, when = None Text, trim = True, maxBytes = Some 100
+      }
+    ]
+  , guidance =
+    [ { title = "Haskell repository"
+      , body = "Prefer `cabal build all` and focused `cabal test` for validation."
+      , when = Some "Eq repo.kind haskell"
+      }
+    ]
+  ```
+
+- **files**: reference files under `files/`. They are not copied or applied —
+  they are context the launched agent can read. Validation fails if a declared
+  file is missing; name them explicitly in the prompt body.
+- **launch**: optional `provider` / `mode` / `model` hints for this prompt.
+- **tags**: discovery tags for registries, browse, install, and list filters.
+
+`seihou new-prompt NAME` generates a prompt in this format, including a sample
+`guidance` block. Validate with `seihou validate-prompt ./PROMPT` and preview
+the full rendered system prompt (identity, reference files, selected guidance
+blocks, and body) with `seihou prompt run PROMPT --debug`.
+
+
 ## Registry Format (for multi-module repos)
 
 A `seihou-registry.dhall` at the repository root lists modules, recipes,
@@ -269,7 +372,10 @@ Suggest these commands when the user needs to run them locally:
    - **Prompt** when the user wants a reusable agent-session workflow rather
      than a project scaffold. Use for review, release, planning, dependency
      research, or inspection prompts. Authored as `prompt.dhall` +
-     `prompt.md` + optional `files/`; run via `seihou prompt run NAME`.
+     `prompt.md` + optional `files/`; run via `seihou prompt run NAME`. A
+     prompt can carry typed `vars`, `commandVars` for compact local context,
+     and conditional `guidance` blocks that adapt the workflow to the current
+     repository (see Prompt Schema Reference above).
 
    Decision tree: if you can list the inputs as typed variables, it's a
    module. If you're composing existing modules without new logic, it's a
@@ -286,7 +392,9 @@ Suggest these commands when the user needs to run them locally:
    immediately customize the generated definition file.
 
 4. **Define variables**: Based on requirements, set up vars with appropriate types,
-   defaults, validation, and descriptions. Add prompts for interactive use.
+   defaults, validation, and descriptions. Add prompts for interactive use. For a
+   prompt artifact, also add `commandVars` for local context and `guidance` blocks
+   (with `when` conditions) to adapt the workflow to the target repository.
 
 5. **Write templates**: Create template files in `files/` with proper placeholder
    syntax. Use the right strategy for each file (template for most, copy for
