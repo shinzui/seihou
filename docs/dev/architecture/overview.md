@@ -181,7 +181,6 @@ seihou/
 │   │       │   ├── Init.hs           # seihou init helpers
 │   │       │   ├── InstallHistory.hs # Install URL history (XDG config)
 │   │       │   ├── InstallShared.hs  # Shared install helpers (cloneRepo, installModuleDir)
-│   │       │   ├── KitPaths.hs       # Provider-native kit install paths and scans
 │   │       │   ├── List.hs           # seihou list formatter
 │   │       │   ├── Migrate.hs        # Migration planning helpers
 │   │       │   ├── PendingMigrations.hs  # Pending-migrations probe
@@ -304,17 +303,13 @@ and model configuration, `Seihou.CLI.AgentLaunch` gathers context and
 formats shared prompt sections, and `Seihou.CLI.AgentLaunchExec`
 starts interactive local CLI providers through Baikai's interactive
 launcher modules. The executable handlers import those modules after
-embedding their command-specific prompt templates. Kit installation is
-split the same way: `Seihou.CLI.Kit` remains in the executable because
-it owns `Options.Applicative` parsing and command IO, while
-`Seihou.CLI.KitPaths` lives in the internal library so provider layout
-rules can be tested. `KitPaths` delegates provider-native asset path and
-Codex custom-agent TOML rules to `Baikai.AgentAssets`, while Seihou
-keeps ownership of its scope-to-base-directory policy. Claude Code kit
-copies are written below Seihou's agent directory in `.claude/skills`
-and `.claude/agents`; Codex kit copies are written to Codex's native
-`.agents/skills` and `.codex/agents` locations for project scope, with
-matching user-scope paths under the user's home directory.
+embedding their command-specific prompt templates. Kit installation
+delegates lifecycle, provider-native layout, sidecar metadata, and
+status reporting to `baikai-kit`. `Seihou.CLI.Kit` remains in the
+executable because it is the small adapter that owns Seihou's tool name,
+kit repository URL, supported providers, and command parser wrapper.
+Agent launch asks `Baikai.Kit.Session` for existing Seihou user/project
+agent directories before starting Claude Code or Codex.
 
 The table below names every module in `executable seihou`'s
 `other-modules` and the trapping reason that keeps it out of the
@@ -338,7 +333,7 @@ the cabal file's `other-modules`.
 | `Seihou.CLI.Context` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.Help` | `Data.FileEmbed` for embedded help-topic content |
 | `Seihou.CLI.Install` | Imports `Seihou.CLI.Commands` (transitively trapped) |
-| `Seihou.CLI.Kit` | `Options.Applicative`; provider path helpers live in library module `Seihou.CLI.KitPaths` |
+| `Seihou.CLI.Kit` | `Options.Applicative`; thin adapter around `Baikai.Kit.Command` |
 | `Seihou.CLI.NewBlueprint` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.NewModule` | Imports `Seihou.CLI.Commands` (transitively trapped) |
 | `Seihou.CLI.NewRecipe` | Imports `Seihou.CLI.Commands` (transitively trapped) |
@@ -379,15 +374,11 @@ wrong fit for `seihou agent`'s interactive workflow.
 
 The kit work reinforced the same boundary from the filesystem side.
 Claude Code and Codex do not share a portable "agent content" layout,
-so `seihou kit` must install provider-native copies instead of assuming
-that `--add-dir` makes one directory tree meaningful to every provider.
-Claude Code kit content remains below Seihou's agent base in
-`.claude/skills` and `.claude/agents`. Codex skills are installed into
-`.agents/skills` for project scope and `$HOME/.agents/skills` for user
-scope; Codex custom agents are installed as TOML files in
-`.codex/agents` or `$HOME/.codex/agents`. The helper module
-`Seihou.CLI.KitPaths` keeps Seihou's install-scope policy in one place
-and delegates provider-native layout details to `Baikai.AgentAssets`.
+so provider-native copies, sidecar metadata, and status aggregation live
+in `baikai-kit`. Seihou supplies `toolName = "seihou"`, its kit
+repository URL, and `[InteractiveClaude, InteractiveCodex]`; the shared
+package maps those settings to Seihou's user/project agent directories
+and Codex's native skill and agent locations.
 
 Validation should match the boundary being tested. `seihou agent
 --debug` proves Seihou rendered the prompt and resolved the provider,

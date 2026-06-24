@@ -33,6 +33,14 @@
       url = "github:shinzui/okf/fb73a013adf7b4c5c65fd55552ea1fa47ed6a165";
       flake = false;
     };
+
+    # Baikai packages used by seihou-cli, including the unreleased baikai-kit
+    # subpackage. Keep this commit in sync with the baikai
+    # source-repository-package entries in cabal.project.
+    baikai-src = {
+      url = "github:shinzui/baikai/a219ace81af9fd8202e1805a16e9ed21356ad214";
+      flake = false;
+    };
   };
 
   nixConfig = {

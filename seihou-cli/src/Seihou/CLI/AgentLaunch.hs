@@ -2,7 +2,6 @@ module Seihou.CLI.AgentLaunch
   ( AgentContext (..),
     BaselineStatus (..),
     gatherAgentContext,
-    agentDirsForSession,
     defaultAllowedTools,
     setupAllowedTools,
     bootstrapAllowedTools,
@@ -18,13 +17,12 @@ module Seihou.CLI.AgentLaunch
   )
 where
 
-import Control.Monad (filterM)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
 import Seihou.Core.Types
 import Seihou.Prelude
-import System.Directory (doesDirectoryExist, doesFileExist, getCurrentDirectory, getHomeDirectory)
+import System.Directory (doesDirectoryExist, doesFileExist, getCurrentDirectory)
 
 -- | Dynamic context gathered from the current directory, shared across agent commands.
 data AgentContext = AgentContext
@@ -59,16 +57,6 @@ gatherAgentContext = do
         localModules = localMods,
         availableModules = available
       }
-
--- | Discover agent directories for kit content (both user and project scope).
--- Returns only directories that exist on disk.
-agentDirsForSession :: IO [FilePath]
-agentDirsForSession = do
-  home <- getHomeDirectory
-  cwd <- getCurrentDirectory
-  let userAgentDir = home </> ".config" </> "seihou" </> "agents"
-      projectAgentDir = cwd </> ".seihou" </> "agents"
-  filterM doesDirectoryExist [userAgentDir, projectAgentDir]
 
 -- | Default allowed tools for agent commands (assist, bootstrap).
 defaultAllowedTools :: [String]

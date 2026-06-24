@@ -2,11 +2,33 @@
 , gitRev
 , seihou-schema-src ? null
 , okf-src ? null
+, baikai-src ? null
 }:
 let
   inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck;
 in
-final: prev: {
+final: prev:
+let
+  baikaiPackage = name: subdir:
+    pkgs.haskell.lib.compose.overrideCabal
+      (drv: {
+        prePatch = (drv.prePatch or "") + ''
+          rm -f LICENSE CHANGELOG.md
+          cp ${baikai-src}/LICENSE LICENSE
+          cp ${baikai-src}/CHANGELOG.md CHANGELOG.md
+        '';
+      })
+      (doJailbreak (final.callCabal2nix name (baikai-src + "/${subdir}") { }));
+in
+{
+  baikai = baikaiPackage "baikai" "baikai";
+
+  baikai-claude = baikaiPackage "baikai-claude" "baikai-claude";
+
+  baikai-openai = baikaiPackage "baikai-openai" "baikai-openai";
+
+  baikai-kit = baikaiPackage "baikai-kit" "baikai-kit";
+
   # OKF core library, built from the pinned okf-src flake input's okf-core/
   # subdirectory. Consumed by the seihou-okf-extension package.
   #

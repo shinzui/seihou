@@ -51,14 +51,14 @@ $HOME/.codex/agents/<name>.toml
 
 If a shared kit contains Markdown agent files for Claude Code, convert those files into Codex custom-agent TOML for Codex. Preserve the kit agent's instructions as `developer_instructions`, and write stable metadata such as `name` and `description`.
 
-Put provider path rules in one testable helper module. Seihou uses `Seihou.CLI.KitPaths` for `skillTargetDir`, `agentTargetFile`, Codex TOML generation, and provider-specific installed scans. That module delegates provider-native path and Codex TOML rules to `Baikai.AgentAssets`, while Seihou still decides which base directory each scope maps to. The command handler calls those helpers for install, update, uninstall, and status instead of duplicating string literals.
+Put provider path rules in one shared implementation. Current Seihou delegates kit lifecycle, provider-native paths, Codex TOML rendering, sidecar metadata, and status scans to `baikai-kit`; Seihou's executable adapter only supplies the tool name, kit repository URL, and supported providers.
 
 Make lifecycle operations symmetric. Install should write every supported provider layout. Update should repair partial installs when one provider copy exists and another is missing. Status should show provider coverage, for example `claude,codex`. Uninstall should remove all provider copies for the selected item and scope without deleting parent provider directories.
 
 
 ## Validation
 
-Use unit tests for provider-independent logic. Test provider parsing, config precedence, Baikai request construction, response extraction, provider path helpers, Codex TOML generation, and installed-item scanning.
+Use unit tests for provider-independent logic. Test provider parsing, config precedence, Baikai request construction, response extraction, and the shared kit package's provider path helpers, Codex TOML generation, and installed-item scanning.
 
 Use command smoke tests for the CLI surface. Verify help output, parser flag positions, debug prompt rendering, kit install/status/uninstall behavior, and build integration.
 
@@ -92,7 +92,7 @@ The Seihou implementation is a concrete example of this pattern:
 - `seihou-cli/src/Seihou/CLI/AgentConfig.hs` resolves provider and model settings.
 - `seihou-cli/src/Seihou/CLI/AgentLaunch.hs` gathers and formats shared prompt context.
 - `seihou-cli/src-exe/Seihou/CLI/AgentLaunchExec.hs` adapts Seihou agent commands to Baikai's interactive Claude Code and Codex launchers.
-- `seihou-cli/src-exe/Seihou/CLI/Kit.hs` owns kit command flow.
-- `seihou-cli/src/Seihou/CLI/KitPaths.hs` applies Seihou scope policy while delegating provider-native layout details to `Baikai.AgentAssets`.
+- `seihou-cli/src-exe/Seihou/CLI/Kit.hs` adapts Seihou's kit config to `Baikai.Kit.Command`.
+- `Baikai.Kit.Session` provides the user/project agent directories passed to interactive sessions.
 - `docs/masterplans/4-baikai-backed-configurable-agent-assistance.md` records the initiative history and decision log.
 - `docs/plans/40-support-codex-kit-skills-and-agents.md` records the Codex kit follow-up implementation.

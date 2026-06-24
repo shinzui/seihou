@@ -11,6 +11,7 @@ import Baikai.Interactive
     InteractiveLaunchResult (..),
     InteractiveSafety (ClaudeAllowedTools, CodexSandbox),
   )
+import Baikai.Kit.Session qualified as KitSession
 import Baikai.Provider.Claude.Interactive
   ( defaultClaudeInteractiveConfig,
     launchClaudeInteractive,
@@ -22,14 +23,14 @@ import Baikai.Provider.OpenAI.Interactive
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentCompletion (AgentModelConfig (..), AgentProvider (..))
-import Seihou.CLI.AgentLaunch (agentDirsForSession)
+import Seihou.CLI.Kit (seihouKitConfig)
 import Seihou.Prelude
 import System.Directory (findExecutable, getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure)
 
 launchConfiguredAgent :: AgentModelConfig -> [String] -> Bool -> Text -> Maybe Text -> IO ExitCode
 launchConfiguredAgent modelConfig tools debug systemPrompt initialPrompt = do
-  addDirs <- agentDirsForSession
+  addDirs <- KitSession.agentDirsForSession seihouKitConfig
   launchConfiguredAgentWith addDirs modelConfig tools debug systemPrompt initialPrompt
 
 launchConfiguredAgentWith :: [FilePath] -> AgentModelConfig -> [String] -> Bool -> Text -> Maybe Text -> IO ExitCode

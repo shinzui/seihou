@@ -13,7 +13,7 @@ COMMANDS
   seihou kit update NAME              Pull latest and re-install one
   seihou kit uninstall NAME           Remove from user scope
   seihou kit uninstall NAME --project Remove from project scope
-  seihou kit status                   Show installed items with scope and providers
+  seihou kit status                   Show installed items with scope, providers, and state
 
 SCOPES
 
@@ -39,6 +39,10 @@ HOW IT WORKS
   A kit.json manifest at the repo root enumerates all available skills
   and agents. The install command copies files from the cache to the
   target scope directory.
+
+  Each installed item writes a .seihou-kit.json sidecar next to the
+  provider-native files so status and update can report whether the
+  installed copy is current, modified, or missing.
 
   When you run seihou agent assist (or bootstrap, setup), installed
   Claude scope directories are passed to Claude Code via --add-dir
