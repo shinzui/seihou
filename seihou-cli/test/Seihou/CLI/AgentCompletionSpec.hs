@@ -94,7 +94,7 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
                       Baikai.usage = Baikai._Usage,
                       Baikai.stopReason = Baikai.Stop,
                       Baikai.errorMessage = Nothing,
-                      Baikai.timestamp = read "2026-05-23 00:00:00 UTC" :: UTCTime
+                      Baikai.timestamp = Just (read "2026-05-23 00:00:00 UTC" :: UTCTime)
                     }
               }
       responseText resp `shouldBe` "hello\nworld"

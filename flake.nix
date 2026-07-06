@@ -38,7 +38,7 @@
     # subpackage. Keep this commit in sync with the baikai
     # source-repository-package entries in cabal.project.
     baikai-src = {
-      url = "github:shinzui/baikai/a219ace81af9fd8202e1805a16e9ed21356ad214";
+      url = "github:shinzui/baikai/5f527d8534074875ac02e47ba61d6755b82aca75";
       flake = false;
     };
   };

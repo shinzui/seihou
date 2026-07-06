@@ -7,9 +7,14 @@ where
 import Baikai.Interactive
   ( CodexApprovalPolicy (CodexApprovalOnRequest),
     CodexSandboxMode (CodexWorkspaceWrite),
-    InteractiveLaunchRequest (..),
     InteractiveLaunchResult (..),
     InteractiveSafety (ClaudeAllowedTools, CodexSandbox),
+    extraDirs,
+    interactiveLaunchRequest,
+    modelId,
+    safety,
+    systemPrompt,
+    workingDir,
   )
 import Baikai.Kit.Session qualified as KitSession
 import Baikai.Provider.Claude.Interactive
@@ -62,14 +67,12 @@ launchClaude addDirs tools model systemPrompt initialPrompt = do
       InteractiveLaunchResult {exitCode} <-
         launchClaudeInteractive
           defaultClaudeInteractiveConfig
-          InteractiveLaunchRequest
+          (interactiveLaunchRequest (promptOrEmpty initialPrompt))
             { systemPrompt = Just systemPrompt,
-              userPrompt = promptOrEmpty initialPrompt,
-              model = model,
+              modelId = model,
               workingDir = Just cwd,
               extraDirs = addDirs,
-              safety = ClaudeAllowedTools (map T.pack tools),
-              extraArgs = []
+              safety = ClaudeAllowedTools (map T.pack tools)
             }
       pure exitCode
 
@@ -86,14 +89,12 @@ launchCodex addDirs model systemPrompt initialPrompt = do
       InteractiveLaunchResult {exitCode} <-
         launchCodexInteractive
           defaultCodexInteractiveConfig
-          InteractiveLaunchRequest
+          (interactiveLaunchRequest (promptOrEmpty initialPrompt))
             { systemPrompt = Just systemPrompt,
-              userPrompt = promptOrEmpty initialPrompt,
-              model = model,
+              modelId = model,
               workingDir = Just cwd,
               extraDirs = addDirs,
-              safety = CodexSandbox CodexWorkspaceWrite CodexApprovalOnRequest,
-              extraArgs = []
+              safety = CodexSandbox CodexWorkspaceWrite CodexApprovalOnRequest
             }
       pure exitCode
 
