@@ -17,21 +17,21 @@ let
       { });
 in
 {
-  # The 0.3.0.0 Hackage sdist omits data/models and
+  # The 0.3.1.0 Hackage sdist omits data/models and
   # test/fixtures/models-dev-sample.json, which ten upstream tests require.
   # Keep building the library from Hackage while skipping that broken suite.
-  baikai = dontCheck (hackagePackage "baikai" "0.3.0.0"
-    "sha256-VwZp50ty0qEOhhg1dIt5jXI7K6yQd9na7mudNMtMdCQ=");
+  baikai = dontCheck (hackagePackage "baikai" "0.3.1.0"
+    "sha256-xcyjJt0+YwlXhxXclAayaJh6i7AFvDGTZRPOgUURXBc=");
 
-  baikai-claude = hackagePackage "baikai-claude" "0.3.0.0"
-    "sha256-eyMwD7rPXW1+sE0ORrhkoUf73IlJAlVhnWlIPepA8Zc=";
+  baikai-claude = hackagePackage "baikai-claude" "0.3.0.1"
+    "sha256-77bDSzeGfYlnKDmjHwpNaXezqOSgQUbO26hDoGYyP8w=";
 
-  baikai-openai = hackagePackage "baikai-openai" "0.3.0.0"
-    "sha256-BCcLlRduPlqrBQkVa+bd8zufzb9ASr/1SdbI4yS6bjU=";
+  baikai-openai = hackagePackage "baikai-openai" "0.3.0.1"
+    "sha256-meDqBNMvjlhTWFHVji0yJmg1381bB6HwQdo3SfWLm/w=";
 
-  # The 0.1.0.1 Hackage sdist omits all three test/fixtures/*.json files.
-  baikai-kit = dontCheck (hackagePackage "baikai-kit" "0.1.0.1"
-    "sha256-NjBDf2Zx3zafMGAM6a660jlcI3jcd+C2RKJOUniiDIY=");
+  # The 0.1.0.2 Hackage sdist omits all three test/fixtures/*.json files.
+  baikai-kit = dontCheck (hackagePackage "baikai-kit" "0.1.0.2"
+    "sha256-kt+CMLJrn1No/reIPwLP6d8hpaxT5O940tGZfQacXNg=");
 
   # The 0.1.2.0 Hackage sdist omits dhall/ and test/fixtures/, which its
   # upstream test suite requires.
