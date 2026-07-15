@@ -43,7 +43,8 @@ the model list is backed by `baikai-0.3.1.0` instead of the Nix build's current
   source and model guide, and availability of the four planned Hackage releases.
 - [x] (2026-07-15 16:17 PDT) Updated all direct Cabal lower bounds and exact Nix pins, then
   passed `cabal build seihou-cli` and `nix build .#seihou-cli --no-link`.
-- [ ] Add the pure 31-model catalog, filtering and rendering helpers, and focused tests.
+- [x] (2026-07-15 16:20 PDT) Added the pure 31-model catalog, provider mapping, filtering,
+  sorting, aligned rendering, and six focused tests; the focused `AgentModelsSpec` passes.
 - [ ] Wire `seihou agent models`, including both provider-filter placements and error paths.
 - [ ] Update user, CLI, packaged-help, architecture, and changelog documentation.
 - [ ] Run smoke tests and all repository-wide validation gates, then complete the retrospective.
@@ -56,6 +57,13 @@ the model list is backed by `baikai-0.3.1.0` instead of the Nix build's current
   `got: sha256-xcyjJt0+YwlXhxXclAayaJh6i7AFvDGTZRPOgUURXBc=` for `baikai-0.3.1.0`, and
   `nix store prefetch-file --json --unpack` reproduced that value and supplied matching
   recursive hashes for the other three releases.
+
+- Observation: Importing selectors from the broad `Baikai` module is ambiguous under GHC
+  9.12 because that module re-exports several records with fields named `provider`, `modelId`,
+  and `name`.
+  Evidence: The first focused build reported `Ambiguous occurrence 'Baikai.provider'` from
+  `Seihou.CLI.AgentModels`; importing `Baikai.Model` directly removed the ambiguity and all
+  six focused tests passed.
 
 ## Decision Log
 

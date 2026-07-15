@@ -54,6 +54,7 @@ library seihou-cli-internal
     Seihou.CLI.AgentCompletion
     Seihou.CLI.AgentConfig
     Seihou.CLI.AgentLaunch
+    Seihou.CLI.AgentModels
     Seihou.CLI.AppliedBlueprint
     Seihou.CLI.BrowseFormat
     Seihou.CLI.CommitMessage
@@ -204,6 +205,7 @@ test-suite seihou-cli-test
     Seihou.CLI.AgentCompletionSpec
     Seihou.CLI.AgentConfigSpec
     Seihou.CLI.AgentLaunchSpec
+    Seihou.CLI.AgentModelsSpec
     Seihou.CLI.AppliedBlueprintSpec
     Seihou.CLI.BrowseFormatSpec
     Seihou.CLI.CommitMessageSpec
