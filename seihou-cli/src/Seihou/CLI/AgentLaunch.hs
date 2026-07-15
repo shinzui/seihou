@@ -15,9 +15,11 @@ module Seihou.CLI.AgentLaunch
     formatBaselineStatus,
     formatReferenceFiles,
     formatReferenceFilesDir,
+    resolveBlueprintTools,
   )
 where
 
+import Data.List (nub)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules)
@@ -249,3 +251,10 @@ formatReferenceFilesDir (Just dir) =
 formatReferenceFilesDir Nothing =
   "These files are not mounted in this session; ask the user to paste any "
     <> "reference you need and never claim to have read one."
+
+-- | Effective pre-approved tools for a blueprint run: the base set every
+-- blueprint needs plus any tools it declares, de-duplicated and base-first.
+-- No declaration yields exactly 'setupAllowedTools'.
+resolveBlueprintTools :: Maybe [Text] -> [String]
+resolveBlueprintTools declared =
+  nub (setupAllowedTools <> map T.unpack (fromMaybe [] declared))

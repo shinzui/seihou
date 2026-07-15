@@ -47,13 +47,14 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [x] (2026-07-15 09:51 PDT) Milestone 1: Delivered `files/` to the running agent (template var, pure helper, IO
+- [x] (2026-07-15 09:47 PDT) Milestone 1: Delivered `files/` to the running agent (template var, pure helper, IO
       wiring, update the shared `runRenderedAgentPrompt` and its second caller `PromptRun.hs`,
       tests). `cabal build seihou-cli` succeeded, all 253 CLI tests passed, and debug smoke
       checks rendered both the absolute mounted path and the no-directory fallback.
-- [ ] Milestone 2: Honor `blueprint.allowedTools` (pure resolver unioned with the base set,
+- [x] (2026-07-15 09:49 PDT) Milestone 2: Honored `blueprint.allowedTools` (pure resolver unioned with the base set,
       thread resolved tools through `runRenderedAgentPrompt`, keep `PromptRun.hs` passing the
-      base set, tests).
+      base set, tests). `cabal build seihou-cli` succeeded and all 256 CLI tests passed,
+      including the three new resolver cases.
 - [ ] Milestone 3: Correct stale docs/comments, update CHANGELOG, run full validation.
 - [x] (2026-07-15 09:43 PDT) Captured a green baseline: `cabal build seihou-cli` succeeded
       and `cabal test seihou-cli-test` passed all 251 tests.
@@ -156,6 +157,12 @@ Compare the result against the original purpose.
   the canonical absolute path. The shared first-class-prompt call site preserves its old
   behavior by passing no extra directory. Unit tests cover mounted and fallback guidance;
   debug smoke checks demonstrated both user-visible branches.
+
+- Milestone 2 outcome: `resolveBlueprintTools` now returns the base setup tools followed by
+  de-duplicated blueprint additions, and the blueprint runner passes that effective set into
+  the interactive launcher. The shared prompt runner explicitly passes `setupAllowedTools`,
+  so its behavior remains unchanged. Three unit tests cover no declaration, a new tool, and a
+  repeated base tool.
 
 
 ## Context and Orientation

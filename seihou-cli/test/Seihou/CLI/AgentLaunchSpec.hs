@@ -1,5 +1,6 @@
 module Seihou.CLI.AgentLaunchSpec (tests) where
 
+import Data.List (nub)
 import Data.Text qualified as T
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
@@ -13,6 +14,8 @@ import Seihou.CLI.AgentLaunch
     formatReferenceFiles,
     formatReferenceFilesDir,
     formatSeihouProjectState,
+    resolveBlueprintTools,
+    setupAllowedTools,
     substitute,
   )
 import Seihou.Core.Types
@@ -123,6 +126,17 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
       let rendered = formatReferenceFilesDir Nothing
       rendered `shouldSatisfy` T.isInfixOf "ask the user"
       rendered `shouldSatisfy` (not . T.isInfixOf "readable at")
+
+  describe "resolveBlueprintTools" $ do
+    it "returns exactly the base set when nothing is declared" $
+      resolveBlueprintTools Nothing `shouldBe` setupAllowedTools
+    it "unions declared tools onto the base set without duplicates" $ do
+      let result = resolveBlueprintTools (Just ["Bash(mori *)"])
+      result `shouldSatisfy` (\tools -> all (`elem` tools) setupAllowedTools)
+      result `shouldSatisfy` (elem "Bash(mori *)")
+      length result `shouldBe` length (nub result)
+    it "does not duplicate a declared base tool" $
+      resolveBlueprintTools (Just ["Read"]) `shouldBe` setupAllowedTools
 
   describe "formatBlueprintIdentity" $ do
     let mk v d =

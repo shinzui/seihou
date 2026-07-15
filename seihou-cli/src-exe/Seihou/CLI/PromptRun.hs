@@ -8,7 +8,7 @@ import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.CLI.AgentCompletion (AgentModelConfig)
-import Seihou.CLI.AgentLaunch (gatherAgentContext)
+import Seihou.CLI.AgentLaunch (gatherAgentContext, setupAllowedTools)
 import Seihou.CLI.AgentRun (runRenderedAgentPrompt)
 import Seihou.CLI.Commands (PromptRunOpts (..))
 import Seihou.CLI.PromptRender (renderPromptBody, renderPromptSystemPrompt)
@@ -137,7 +137,14 @@ handlePromptRun modelConfig opts = do
   ctx <- gatherAgentContext
   let systemPrompt = renderPromptSystemPrompt ctx prompt resolved renderedPrompt opts.runPromptPrompt
 
-  _ <- runRenderedAgentPrompt opts.runPromptDebug modelConfig Nothing systemPrompt opts.runPromptPrompt
+  _ <-
+    runRenderedAgentPrompt
+      opts.runPromptDebug
+      modelConfig
+      setupAllowedTools
+      Nothing
+      systemPrompt
+      opts.runPromptPrompt
   pure ()
 
 relaxCommandVarDecls :: [CommandVar] -> [VarDecl] -> [VarDecl]

@@ -40,7 +40,7 @@ import Seihou.CLI.AgentLaunch
     formatReferenceFilesDir,
     formatSeihouProjectState,
     gatherAgentContext,
-    setupAllowedTools,
+    resolveBlueprintTools,
     substitute,
   )
 import Seihou.CLI.AgentLaunchExec (launchConfiguredAgentAddingDirs)
@@ -191,7 +191,13 @@ handleAgentRun debug modelConfig opts = do
 
   -- (f) Launch.
   launchSucceeded <-
-    runRenderedAgentPrompt debug modelConfig mFilesDir systemPrompt opts.runBlueprintPrompt
+    runRenderedAgentPrompt
+      debug
+      modelConfig
+      (resolveBlueprintTools bp.allowedTools)
+      mFilesDir
+      systemPrompt
+      opts.runBlueprintPrompt
 
   -- (g) Record the applied-blueprint provenance into
   -- .seihou/manifest.json only after a successful provider response. In
@@ -210,8 +216,8 @@ handleAgentRun debug modelConfig opts = do
             "Warning: agent succeeded but recording the applied-blueprint entry failed: "
               <> err
 
-runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
-runRenderedAgentPrompt debug modelConfig mFilesDir systemPrompt initialPrompt
+runRenderedAgentPrompt :: Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
+runRenderedAgentPrompt debug modelConfig tools mFilesDir systemPrompt initialPrompt
   | debug = do
       TIO.putStr systemPrompt
       pure True
@@ -220,7 +226,7 @@ runRenderedAgentPrompt debug modelConfig mFilesDir systemPrompt initialPrompt
         launchConfiguredAgentAddingDirs
           (maybeToList mFilesDir)
           modelConfig
-          setupAllowedTools
+          tools
           debug
           systemPrompt
           initialPrompt
