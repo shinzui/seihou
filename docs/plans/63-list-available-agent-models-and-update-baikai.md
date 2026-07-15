@@ -50,7 +50,9 @@ the model list is backed by `baikai-0.3.1.0` instead of the Nix build's current
   parent `--model`, and free-form custom model parsing.
 - [x] (2026-07-15 16:24 PDT) Updated packaged help, the CLI reference, user guide,
   architecture inventory, and changelog with the discovery and advisory-list contracts.
-- [ ] Run smoke tests and all repository-wide validation gates, then complete the retrospective.
+- [x] (2026-07-15 16:26 PDT) Passed direct command smoke tests,
+  `nix fmt -- --fail-on-change`, `cabal build all`, `cabal test all`,
+  `nix build .#seihou-cli --no-link`, and `git diff --check`; completed the retrospective.
 
 ## Surprises & Discoveries
 
@@ -67,6 +69,12 @@ the model list is backed by `baikai-0.3.1.0` instead of the Nix build's current
   Evidence: The first focused build reported `Ambiguous occurrence 'Baikai.provider'` from
   `Seihou.CLI.AgentModels`; importing `Baikai.Model` directly removed the ambiguity and all
   six focused tests passed.
+
+- Observation: Concurrent Cabal commands that both rebuild `seihou-cli-internal` can race in
+  the shared `dist-newstyle` package database.
+  Evidence: Running packaged-help and focused-test checks concurrently produced
+  `package.conf.inplace already exists`; rerunning the focused test sequentially passed all
+  six specs, and the final sequential full build and test gates passed.
 
 ## Decision Log
 
@@ -124,7 +132,22 @@ the model list is backed by `baikai-0.3.1.0` instead of the Nix build's current
 
 ## Outcomes & Retrospective
 
+Seihou now exposes `seihou agent models` as an offline discovery command backed by the
+31 Anthropic and OpenAI entries in `baikai-0.3.1.0`. The optional provider filter maps API
+and local CLI providers to the same upstream family, both flag placements work, unknown
+providers and irrelevant parent model selections fail clearly, and free-form aliases and
+custom model IDs remain accepted in runnable agent commands.
 
+Cabal bounds and exact Nix pins now agree on the 2026-07-15 Baikai release family. The pure
+catalog has six focused tests for count, uniqueness, newest models, the 9/22 provider split,
+and rendering. Packaged help, CLI and user documentation, architecture inventory, and the
+changelog describe the same advisory-not-validation contract.
+
+All planned validation passed: formatting reported zero changes, every package built, the
+939 core tests, 262 CLI tests, and 16 OKF-extension tests passed, and the reproducible Nix
+CLI build succeeded. No implementation work remains. The main lessons were to prefetch
+`callHackageDirect` sources with `--unpack`, import duplicate Baikai record selectors from
+their defining module, and serialize Cabal commands that write the same build directory.
 
 ## Context and Orientation
 
