@@ -147,23 +147,6 @@
         "type": "github"
       }
     },
-    "okf-src": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1781888417,
-        "narHash": "sha256-G4X6MbF8jS2TkUjk22+DPg+x58e8jGJBKBQi7CFHGss=",
-        "owner": "shinzui",
-        "repo": "okf",
-        "rev": "fb73a013adf7b4c5c65fd55552ea1fa47ed6a165",
-        "type": "github"
-      },
-      "original": {
-        "owner": "shinzui",
-        "repo": "okf",
-        "rev": "fb73a013adf7b4c5c65fd55552ea1fa47ed6a165",
-        "type": "github"
-      }
-    },
     "pre-commit-hooks": {
       "inputs": {
         "flake-compat": "flake-compat",
@@ -195,7 +178,6 @@
           "haskell-nix-dev",
           "nixpkgs"
         ],
-        "okf-src": "okf-src",
         "pre-commit-hooks": "pre-commit-hooks",
         "seihou-schema-src": "seihou-schema-src",
         "treefmt-nix": [
