@@ -82,16 +82,16 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
   describe "responseText" $ do
     it "extracts and joins assistant text blocks only" $ do
       let resp =
-            BaikaiResponse._Response
+            BaikaiResponse.emptyResponse
               { BaikaiResponse.message =
                   Baikai.AssistantPayload
                     { Baikai.content =
                         V.fromList
                           [ Baikai.AssistantText (Baikai.TextContent "hello"),
-                            Baikai.AssistantThinking Baikai._ThinkingContent,
+                            Baikai.AssistantThinking Baikai.emptyThinkingContent,
                             Baikai.AssistantText (Baikai.TextContent "world")
                           ],
-                      Baikai.usage = Baikai._Usage,
+                      Baikai.usage = Baikai.zeroUsage,
                       Baikai.stopReason = Baikai.Stop,
                       Baikai.errorMessage = Nothing,
                       Baikai.timestamp = Just (read "2026-05-23 00:00:00 UTC" :: UTCTime)

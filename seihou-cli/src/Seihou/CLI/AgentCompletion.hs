@@ -96,7 +96,7 @@ buildBaikaiModel config =
           Baikai.provider = "openai"
         }
     AgentProviderAnthropic ->
-      Baikai._Model
+      Baikai.emptyModel
         { Baikai.modelId = maybe "claude-sonnet-4-6" id config.agentModel,
           Baikai.name = maybe "Claude Sonnet 4.6" id config.agentModel,
           Baikai.api = Baikai.AnthropicMessages,
@@ -104,7 +104,7 @@ buildBaikaiModel config =
           Baikai.baseUrl = "https://api.anthropic.com"
         }
     AgentProviderOpenAI ->
-      Baikai._Model
+      Baikai.emptyModel
         { Baikai.modelId = maybe "gpt-4o-mini" id config.agentModel,
           Baikai.name = maybe "GPT-4o Mini" id config.agentModel,
           Baikai.api = Baikai.OpenAIChatCompletions,
@@ -113,7 +113,7 @@ buildBaikaiModel config =
         }
   where
     baseCliModel =
-      Baikai._Model
+      Baikai.emptyModel
         { Baikai.contextWindow = 0,
           Baikai.maxOutputTokens = 0
         }
@@ -128,11 +128,11 @@ runAgentCompletion req = do
       req.completionInitialPrompt
   let model = buildBaikaiModel req.completionModelConfig
       ctx =
-        Baikai._Context
+        Baikai.emptyContext
           { Baikai.systemPrompt = Just req.completionSystemPrompt,
             Baikai.messages = initialMessages
           }
-  result <- try (Baikai.completeRequest model ctx Baikai._Options) :: IO (Either Baikai.BaikaiError Baikai.Response)
+  result <- try (Baikai.completeRequest model ctx Baikai.emptyOptions) :: IO (Either Baikai.BaikaiError Baikai.Response)
   pure $ case result of
     Left err -> Left (Text.pack (show err))
     Right resp ->

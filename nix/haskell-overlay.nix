@@ -2,32 +2,37 @@
 , gitRev
 , seihou-schema-src ? null
 , okf-src ? null
-, baikai-src ? null
 }:
 let
   inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck;
 in
 final: prev:
 let
-  baikaiPackage = name: subdir:
-    pkgs.haskell.lib.compose.overrideCabal
-      (drv: {
-        prePatch = (drv.prePatch or "") + ''
-          rm -f LICENSE CHANGELOG.md
-          cp ${baikai-src}/LICENSE LICENSE
-          cp ${baikai-src}/CHANGELOG.md CHANGELOG.md
-        '';
-      })
-      (doJailbreak (final.callCabal2nix name (baikai-src + "/${subdir}") { }));
+  baikaiPackage = name: version: sha256:
+    doJailbreak (final.callHackageDirect
+      {
+        pkg = name;
+        ver = version;
+        inherit sha256;
+      }
+      { });
 in
 {
-  baikai = baikaiPackage "baikai" "baikai";
+  # The 0.3.0.0 Hackage sdist omits data/models and
+  # test/fixtures/models-dev-sample.json, which ten upstream tests require.
+  # Keep building the library from Hackage while skipping that broken suite.
+  baikai = dontCheck (baikaiPackage "baikai" "0.3.0.0"
+    "sha256-VwZp50ty0qEOhhg1dIt5jXI7K6yQd9na7mudNMtMdCQ=");
 
-  baikai-claude = baikaiPackage "baikai-claude" "baikai-claude";
+  baikai-claude = baikaiPackage "baikai-claude" "0.3.0.0"
+    "sha256-eyMwD7rPXW1+sE0ORrhkoUf73IlJAlVhnWlIPepA8Zc=";
 
-  baikai-openai = baikaiPackage "baikai-openai" "baikai-openai";
+  baikai-openai = baikaiPackage "baikai-openai" "0.3.0.0"
+    "sha256-BCcLlRduPlqrBQkVa+bd8zufzb9ASr/1SdbI4yS6bjU=";
 
-  baikai-kit = baikaiPackage "baikai-kit" "baikai-kit";
+  # The 0.1.0.1 Hackage sdist omits all three test/fixtures/*.json files.
+  baikai-kit = dontCheck (baikaiPackage "baikai-kit" "0.1.0.1"
+    "sha256-NjBDf2Zx3zafMGAM6a660jlcI3jcd+C2RKJOUniiDIY=");
 
   # OKF core library, built from the pinned okf-src flake input's okf-core/
   # subdirectory. Consumed by the seihou-okf-extension package.

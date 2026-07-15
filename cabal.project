@@ -23,27 +23,3 @@ source-repository-package
   location: https://github.com/shinzui/okf
   tag: fb73a013adf7b4c5c65fd55552ea1fa47ed6a165
   subdir: okf-core
-
-source-repository-package
-  type: git
-  location: https://github.com/shinzui/baikai
-  tag: 5f527d8534074875ac02e47ba61d6755b82aca75
-  subdir: baikai
-
-source-repository-package
-  type: git
-  location: https://github.com/shinzui/baikai
-  tag: 5f527d8534074875ac02e47ba61d6755b82aca75
-  subdir: baikai-claude
-
-source-repository-package
-  type: git
-  location: https://github.com/shinzui/baikai
-  tag: 5f527d8534074875ac02e47ba61d6755b82aca75
-  subdir: baikai-openai
-
-source-repository-package
-  type: git
-  location: https://github.com/shinzui/baikai
-  tag: 5f527d8534074875ac02e47ba61d6755b82aca75
-  subdir: baikai-kit
