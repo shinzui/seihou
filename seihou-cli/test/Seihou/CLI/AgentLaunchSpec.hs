@@ -1,5 +1,6 @@
 module Seihou.CLI.AgentLaunchSpec (tests) where
 
+import Data.Text qualified as T
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
     BaselineStatus (..),
@@ -10,6 +11,7 @@ import Seihou.CLI.AgentLaunch
     formatManifestState,
     formatModuleDhallState,
     formatReferenceFiles,
+    formatReferenceFilesDir,
     formatSeihouProjectState,
     substitute,
   )
@@ -111,6 +113,16 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
     it "renders an entry without a description as just the path" $
       formatReferenceFiles [BlueprintFile {src = "y.txt", description = Nothing}]
         `shouldBe` "  - y.txt"
+
+  describe "formatReferenceFilesDir" $ do
+    it "renders the mounted path with read-directly guidance" $ do
+      let rendered = formatReferenceFilesDir (Just "/tmp/bp/files")
+      rendered `shouldSatisfy` T.isInfixOf "/tmp/bp/files"
+      rendered `shouldSatisfy` T.isInfixOf "open them directly"
+    it "renders the ask-the-user fallback when no directory is mounted" $ do
+      let rendered = formatReferenceFilesDir Nothing
+      rendered `shouldSatisfy` T.isInfixOf "ask the user"
+      rendered `shouldSatisfy` (not . T.isInfixOf "readable at")
 
   describe "formatBlueprintIdentity" $ do
     let mk v d =

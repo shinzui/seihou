@@ -14,6 +14,7 @@ module Seihou.CLI.AgentLaunch
     formatBlueprintIdentity,
     formatBaselineStatus,
     formatReferenceFiles,
+    formatReferenceFilesDir,
   )
 where
 
@@ -226,9 +227,9 @@ formatBaselineStatus (BaselineApplied entries) =
     render (n, Nothing) = "  - " <> n.unModuleName <> " (unversioned)"
 
 -- | Render a blueprint's @files@ list as the body of the
--- "## Reference Files" block. The agent runner mounts the blueprint's
--- @files/@ directory via @--add-dir@; this list helps the agent pick
--- the right reference for the user's request.
+-- "## Reference Files" block. When the directory exists, the interactive
+-- runner mounts it via @--add-dir@ and 'formatReferenceFilesDir' prints its
+-- path; this list helps the agent pick the right reference for the request.
 formatReferenceFiles :: [BlueprintFile] -> Text
 formatReferenceFiles [] = "(no reference files)"
 formatReferenceFiles bfs = T.intercalate "\n" (map render bfs)
@@ -236,3 +237,15 @@ formatReferenceFiles bfs = T.intercalate "\n" (map render bfs)
     render bf = case bf.description of
       Just d -> "  - " <> T.pack bf.src <> " — " <> d
       Nothing -> "  - " <> T.pack bf.src
+
+-- | Render guidance for the blueprint's reference-files directory. A
+-- present path means the directory is mounted and readable by the interactive
+-- agent; 'Nothing' means the provider cannot access it in this session.
+formatReferenceFilesDir :: Maybe FilePath -> Text
+formatReferenceFilesDir (Just dir) =
+  "These files are readable at: "
+    <> T.pack dir
+    <> " — open them directly with your file tools before asking the user."
+formatReferenceFilesDir Nothing =
+  "These files are not mounted in this session; ask the user to paste any "
+    <> "reference you need and never claim to have read one."

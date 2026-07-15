@@ -38,11 +38,11 @@ Description: {{blueprint_description}}
 ## Reference Files
 
 The blueprint includes the following reference files in its `files/`
-subdirectory. They may be available to the user beside the blueprint. When
-you need information from a reference that is not shown in this prompt, ask
-the user to provide it rather than claiming to have read it.
+subdirectory.
 
 {{reference_files}}
+
+{{reference_files_dir}}
 
 
 ## Your Task
@@ -53,9 +53,8 @@ the user to provide it rather than claiming to have read it.
 ## Workflow
 
 1. **Account for references.** Use the Reference Files section above to
-   decide which snippets matter. If their contents are not present in this
-   prompt, ask the user to paste the relevant file or run a local command to
-   inspect it.
+   decide which snippets matter. Read them directly from the mounted directory
+   when it is available; otherwise ask the user to paste the relevant file.
 
 2. **Examine the baseline.** If the Baseline section above lists applied
    modules, the project already contains files generated from them. Suggest

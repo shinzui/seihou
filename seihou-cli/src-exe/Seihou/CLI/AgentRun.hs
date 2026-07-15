@@ -15,7 +15,7 @@ where
 import Control.Monad (when)
 import Data.FileEmbed (embedFile)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -37,12 +37,13 @@ import Seihou.CLI.AgentLaunch
     formatManifestState,
     formatModuleDhallState,
     formatReferenceFiles,
+    formatReferenceFilesDir,
     formatSeihouProjectState,
     gatherAgentContext,
     setupAllowedTools,
     substitute,
   )
-import Seihou.CLI.AgentLaunchExec (launchConfiguredAgent)
+import Seihou.CLI.AgentLaunchExec (launchConfiguredAgentAddingDirs)
 import Seihou.CLI.AppliedBlueprint (recordAppliedBlueprint)
 import Seihou.CLI.Commands (BlueprintRunOpts (..))
 import Seihou.CLI.Shared
@@ -76,9 +77,10 @@ import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
 import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import Seihou.Prelude
+import System.Directory (doesDirectoryExist, makeAbsolute)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
-import System.FilePath (takeDirectory)
+import System.FilePath (takeDirectory, (</>))
 
 -- | The prompt template, embedded at compile time from data/blueprint-prompt.md.
 promptTemplate :: Text
@@ -109,6 +111,16 @@ handleAgentRun debug modelConfig opts = do
           <> opts.runBlueprintName.unModuleName
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
+
+  let filesDir = blueprintDir </> "files"
+      providerCanMountFiles =
+        modelConfig.agentProvider == AgentProviderClaudeCli
+          || modelConfig.agentProvider == AgentProviderCodexCli
+  filesExist <- doesDirectoryExist filesDir
+  mFilesDir <-
+    if filesExist && providerCanMountFiles
+      then Just <$> makeAbsolute filesDir
+      else pure Nothing
 
   -- (b) Resolve blueprint variables. Wrap the blueprint's vars/prompts
   -- in a placeholder Module so 'resolveWithPrompts' can run the
@@ -175,11 +187,11 @@ handleAgentRun debug modelConfig opts = do
 
   -- (e) Render the system prompt around the user body.
   ctx <- gatherAgentContext
-  let systemPrompt = renderSystemPrompt ctx bp baseline renderedUser
+  let systemPrompt = renderSystemPrompt ctx bp baseline mFilesDir renderedUser
 
   -- (f) Launch.
   launchSucceeded <-
-    runRenderedAgentPrompt debug modelConfig systemPrompt opts.runBlueprintPrompt
+    runRenderedAgentPrompt debug modelConfig mFilesDir systemPrompt opts.runBlueprintPrompt
 
   -- (g) Record the applied-blueprint provenance into
   -- .seihou/manifest.json only after a successful provider response. In
@@ -198,13 +210,20 @@ handleAgentRun debug modelConfig opts = do
             "Warning: agent succeeded but recording the applied-blueprint entry failed: "
               <> err
 
-runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Text -> Maybe Text -> IO Bool
-runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
+runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
+runRenderedAgentPrompt debug modelConfig mFilesDir systemPrompt initialPrompt
   | debug = do
       TIO.putStr systemPrompt
       pure True
   | modelConfig.agentProvider == AgentProviderClaudeCli || modelConfig.agentProvider == AgentProviderCodexCli = do
-      exitCode <- launchConfiguredAgent modelConfig setupAllowedTools debug systemPrompt initialPrompt
+      exitCode <-
+        launchConfiguredAgentAddingDirs
+          (maybeToList mFilesDir)
+          modelConfig
+          setupAllowedTools
+          debug
+          systemPrompt
+          initialPrompt
       case exitCode of
         ExitSuccess -> pure True
         ExitFailure _ -> exitWith exitCode
@@ -406,8 +425,8 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
 
 -- | Stitch the system-prompt template together. Each block in
 -- @blueprint-prompt.md@ has a @{{key}}@ placeholder filled here.
-renderSystemPrompt :: AgentContext -> Blueprint -> BaselineStatus -> Text -> Text
-renderSystemPrompt ctx bp baseline userPrompt =
+renderSystemPrompt :: AgentContext -> Blueprint -> BaselineStatus -> Maybe FilePath -> Text -> Text
+renderSystemPrompt ctx bp baseline mFilesDir userPrompt =
   substitute
     [ ("cwd", ctx.cwd),
       ("seihou_project_state", formatSeihouProjectState ctx),
@@ -420,6 +439,7 @@ renderSystemPrompt ctx bp baseline userPrompt =
       ("blueprint_description", fromMaybe "(no description)" bp.description),
       ("baseline_status", formatBaselineStatus baseline),
       ("reference_files", formatReferenceFiles bp.files),
+      ("reference_files_dir", formatReferenceFilesDir mFilesDir),
       ("user_prompt", userPrompt)
     ]
     promptTemplate

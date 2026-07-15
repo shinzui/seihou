@@ -1,5 +1,6 @@
 module Seihou.CLI.AgentLaunchExec
   ( launchConfiguredAgent,
+    launchConfiguredAgentAddingDirs,
     launchConfiguredAgentWith,
   )
 where
@@ -34,9 +35,12 @@ import System.Directory (findExecutable, getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure)
 
 launchConfiguredAgent :: AgentModelConfig -> [String] -> Bool -> Text -> Maybe Text -> IO ExitCode
-launchConfiguredAgent modelConfig tools debug systemPrompt initialPrompt = do
-  addDirs <- KitSession.agentDirsForSession seihouKitConfig
-  launchConfiguredAgentWith addDirs modelConfig tools debug systemPrompt initialPrompt
+launchConfiguredAgent = launchConfiguredAgentAddingDirs []
+
+launchConfiguredAgentAddingDirs :: [FilePath] -> AgentModelConfig -> [String] -> Bool -> Text -> Maybe Text -> IO ExitCode
+launchConfiguredAgentAddingDirs extraDirs modelConfig tools debug systemPrompt initialPrompt = do
+  sessionDirs <- KitSession.agentDirsForSession seihouKitConfig
+  launchConfiguredAgentWith (sessionDirs <> extraDirs) modelConfig tools debug systemPrompt initialPrompt
 
 launchConfiguredAgentWith :: [FilePath] -> AgentModelConfig -> [String] -> Bool -> Text -> Maybe Text -> IO ExitCode
 launchConfiguredAgentWith addDirs modelConfig tools debug systemPrompt initialPrompt

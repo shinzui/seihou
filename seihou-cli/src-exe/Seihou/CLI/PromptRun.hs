@@ -137,7 +137,7 @@ handlePromptRun modelConfig opts = do
   ctx <- gatherAgentContext
   let systemPrompt = renderPromptSystemPrompt ctx prompt resolved renderedPrompt opts.runPromptPrompt
 
-  _ <- runRenderedAgentPrompt opts.runPromptDebug modelConfig systemPrompt opts.runPromptPrompt
+  _ <- runRenderedAgentPrompt opts.runPromptDebug modelConfig Nothing systemPrompt opts.runPromptPrompt
   pure ()
 
 relaxCommandVarDecls :: [CommandVar] -> [VarDecl] -> [VarDecl]
