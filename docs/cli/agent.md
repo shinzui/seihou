@@ -15,7 +15,7 @@ seihou agent [--debug] [--provider PROVIDER] [--model MODEL] <SUBCOMMAND> [OPTIO
 |--------|-------------|
 | `--debug` | Print the resolved system prompt and exit without contacting a provider |
 | `--provider PROVIDER` | Use `claude-cli`, `codex-cli`, `anthropic`, or `openai` for this invocation |
-| `--model MODEL` | Use a provider-specific model name or alias for this invocation |
+| `--model MODEL` | Use a provider-specific model name or alias for this invocation; run `seihou agent models` to list known choices |
 
 The default provider is `claude-cli` with no explicit model, which lets the local `claude` command choose its own default. Provider and model options may appear on the parent command or on the subcommand:
 
@@ -37,6 +37,32 @@ Provider and model values are resolved from CLI flags, environment variables, lo
 | `openai` | OpenAI Chat Completions API | `OPENAI_API_KEY` or `OPENAI_KEY` | Defaults to `gpt-4o-mini` when no model is configured |
 
 ## Subcommands
+
+### agent models
+
+List the models in Seihou's compiled Baikai catalog.
+
+```text
+seihou agent models [--provider PROVIDER]
+```
+
+The provider filter may appear on the parent command or after the subcommand:
+
+```sh
+seihou agent --provider claude-cli models
+seihou agent models --provider openai
+```
+
+Anthropic catalog rows are compatible with both `anthropic` and `claude-cli`;
+OpenAI rows are compatible with both `openai` and `codex-cli`. The unfiltered
+table prints each model once with both compatible providers. Listing uses only
+compiled data, so it does not read agent configuration, inspect API keys, or
+contact a provider.
+
+The catalog is a discovery aid rather than a validation list. Provider-native
+aliases and custom model IDs remain accepted by `--model` even when they do not
+appear in the table. Passing a parent `--model` to `agent models` is rejected
+because a model selection is irrelevant to a listing command.
 
 ### agent assist
 

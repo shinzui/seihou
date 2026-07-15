@@ -22,6 +22,7 @@ module Seihou.CLI.Commands
     MigrateOpts (..),
     SchemaUpgradeOpts (..),
     AgentOpts (..),
+    AgentModelsOpts (..),
     AgentCommand (..),
     AssistOpts (..),
     BootstrapOpts (..),
@@ -106,11 +107,17 @@ data AgentOpts = AgentOpts
   }
   deriving stock (Eq, Show, Generic)
 
+data AgentModelsOpts = AgentModelsOpts
+  { modelsProvider :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
 data AgentCommand
   = AgentAssist AssistOpts
   | AgentBootstrap BootstrapOpts
   | AgentSetup SetupOpts
   | AgentRun BlueprintRunOpts
+  | AgentModels AgentModelsOpts
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -1372,6 +1379,7 @@ agentInfo =
                 [ pretty ("Agent subcommands provide AI-assisted workflows powered by" :: String),
                   pretty ("configurable CLI or API providers. Use --provider to select claude-cli, codex-cli," :: String),
                   pretty ("anthropic, or openai, and --model for a provider-specific model." :: String),
+                  pretty ("Run 'seihou agent models' to list known model choices." :: String),
                   line,
                   pretty ("Use --debug with any subcommand to print the resolved system" :: String),
                   pretty ("prompt without contacting the configured provider." :: String),
@@ -1382,7 +1390,8 @@ agentInfo =
                       [ pretty ("assist      AI-assisted template authoring prompt" :: String),
                         pretty ("bootstrap   Bootstrap a new module or multi-module repo" :: String),
                         pretty ("setup       Guided project setup: configure, run, and commit" :: String),
-                        pretty ("run         Run an agent-driven blueprint" :: String)
+                        pretty ("run         Run an agent-driven blueprint" :: String),
+                        pretty ("models      List known agent models" :: String)
                       ]
                 ]
           )
@@ -1406,7 +1415,7 @@ agentParser =
             (T.pack <$> str)
             ( long "model"
                 <> metavar "MODEL"
-                <> help "Agent model name or provider-specific model alias"
+                <> help "Agent model name or provider-specific alias; 'seihou agent models' lists known choices"
             )
         )
       <*> agentCommandParser
@@ -1418,6 +1427,7 @@ agentCommandParser =
         <> command "bootstrap" agentBootstrapInfo
         <> command "setup" agentSetupInfo
         <> command "run" agentRunInfo
+        <> command "models" agentModelsInfo
     )
 
 agentAssistInfo :: ParserInfo AgentCommand
@@ -1584,6 +1594,36 @@ agentRunParser =
       <*> switch (long "force" <> help "Auto-resolve baseline conflicts (accept new files)")
       <*> providerOption
       <*> modelOption
+
+agentModelsInfo :: ParserInfo AgentCommand
+agentModelsInfo =
+  info
+    (agentModelsParser <**> helper)
+    ( fullDesc
+        <> progDesc "List known agent models"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Lists the Anthropic and OpenAI models in Seihou's compiled Baikai catalog." :: String),
+                  pretty ("Use --provider to filter by an API or compatible local CLI provider." :: String),
+                  line,
+                  pretty ("The catalog is a discovery aid, not validation. Provider-native aliases" :: String),
+                  pretty ("and custom model identifiers remain accepted by --model." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou agent models" :: String),
+                        pretty ("seihou agent models --provider openai" :: String),
+                        pretty ("seihou agent --provider claude-cli models" :: String)
+                      ]
+                ]
+          )
+    )
+
+agentModelsParser :: Parser AgentCommand
+agentModelsParser =
+  AgentModels . AgentModelsOpts <$> providerOption
 
 promptInfo :: ParserInfo Command
 promptInfo =
@@ -1778,5 +1818,5 @@ modelOption =
       (T.pack <$> str)
       ( long "model"
           <> metavar "MODEL"
-          <> help "Agent model name or provider-specific model alias"
+          <> help "Agent model name or provider-specific alias; 'seihou agent models' lists known choices"
       )

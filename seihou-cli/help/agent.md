@@ -25,7 +25,7 @@ PARENT OPTIONS
 
   --model MODEL
       Select a provider-specific model name or alias for this
-      invocation.
+      invocation. Run `seihou agent models` to list known choices.
 
 Provider and model options may appear on the parent command or on the
 subcommand:
@@ -80,6 +80,22 @@ Use environment variables for a temporary shell session:
   export SEIHOU_AGENT_MODEL=gpt-4o-mini
 
 SUBCOMMANDS
+
+  seihou agent models [--provider PROVIDER]
+      List the Anthropic and OpenAI models in Seihou's compiled Baikai
+      catalog. Filtering by `anthropic` or `claude-cli` returns the same
+      Claude-family models; filtering by `openai` or `codex-cli` returns
+      the same OpenAI-family models. The filter may appear before or
+      after `models`:
+
+        seihou agent --provider claude-cli models
+        seihou agent models --provider openai
+
+      Listing models requires no provider credentials, network access,
+      or agent configuration. The catalog is a discovery aid, not
+      validation: provider-native aliases and custom model IDs remain
+      accepted by `--model`. Do not pass `--model` to this listing
+      command.
 
   seihou agent assist [PROMPT]
       Render a prompt for creating or modifying Seihou modules. The

@@ -45,8 +45,11 @@ the model list is backed by `baikai-0.3.1.0` instead of the Nix build's current
   passed `cabal build seihou-cli` and `nix build .#seihou-cli --no-link`.
 - [x] (2026-07-15 16:20 PDT) Added the pure 31-model catalog, provider mapping, filtering,
   sorting, aligned rendering, and six focused tests; the focused `AgentModelsSpec` passes.
-- [ ] Wire `seihou agent models`, including both provider-filter placements and error paths.
-- [ ] Update user, CLI, packaged-help, architecture, and changelog documentation.
+- [x] (2026-07-15 16:24 PDT) Wired `seihou agent models`; direct smoke tests passed for
+  unfiltered output, both provider-filter placements, help, invalid providers, irrelevant
+  parent `--model`, and free-form custom model parsing.
+- [x] (2026-07-15 16:24 PDT) Updated packaged help, the CLI reference, user guide,
+  architecture inventory, and changelog with the discovery and advisory-list contracts.
 - [ ] Run smoke tests and all repository-wide validation gates, then complete the retrospective.
 
 ## Surprises & Discoveries

@@ -299,8 +299,9 @@ inline comment naming the reason.
 The agent command path now splits library-visible helpers from
 executable-only handlers. `Seihou.CLI.AgentCompletion` registers and
 calls Baikai API providers, `Seihou.CLI.AgentConfig` resolves provider
-and model configuration, `Seihou.CLI.AgentLaunch` gathers context and
-formats shared prompt sections, and `Seihou.CLI.AgentLaunchExec`
+and model configuration, `Seihou.CLI.AgentModels` exposes and formats
+the compiled Anthropic/OpenAI model catalog, `Seihou.CLI.AgentLaunch`
+gathers context and formats shared prompt sections, and `Seihou.CLI.AgentLaunchExec`
 starts interactive local CLI providers through Baikai's interactive
 launcher modules. The executable handlers import those modules after
 embedding their command-specific prompt templates. Kit installation

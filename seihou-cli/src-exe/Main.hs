@@ -8,6 +8,7 @@ import Data.Text.IO qualified as TIO
 import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
 import Seihou.CLI.AgentCompletion qualified as AgentCompletion
 import Seihou.CLI.AgentConfig (loadAgentModelConfig)
+import Seihou.CLI.AgentModels qualified as AgentModels
 import Seihou.CLI.AgentRun (handleAgentRun)
 import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Bootstrap (handleBootstrap)
@@ -138,6 +139,22 @@ dispatch cmd =
         AgentRun blueprintRunOpts -> do
           modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel
           handleAgentRun agentOpts.agentDebug modelConfig blueprintRunOpts
+        AgentModels modelsOpts ->
+          case agentOpts.agentModel of
+            Just _ -> do
+              TIO.putStrLn "Error: --model does not apply to 'seihou agent models'; omit it to list known choices."
+              exitFailure
+            Nothing ->
+              case modelsOpts.modelsProvider <|> agentOpts.agentProvider of
+                Nothing ->
+                  TIO.putStr (AgentModels.formatAgentModels Nothing AgentModels.availableAgentModels)
+                Just providerText ->
+                  case AgentCompletion.providerFromText providerText of
+                    Left err -> do
+                      TIO.putStrLn $ "Error: " <> err
+                      exitFailure
+                    Right provider ->
+                      TIO.putStr (AgentModels.formatAgentModels (Just provider) AgentModels.availableAgentModels)
     Prompt promptCmd -> do
       case promptCmd of
         PromptRun promptRunOpts -> do

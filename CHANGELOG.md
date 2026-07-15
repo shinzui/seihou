@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `seihou agent models` lists the 31 Anthropic and OpenAI models in the shipped
+  Baikai catalog, with optional API/CLI provider filtering and guidance that
+  provider-native aliases and custom model IDs remain accepted.
+
+### Changed
+
+- Updated `baikai` to 0.3.1.0, `baikai-claude` and `baikai-openai` to 0.3.0.1,
+  and `baikai-kit` to 0.1.0.2 in both Cabal bounds and reproducible Nix pins.
+
 ## [0.4.0.0] - 2026-07-15
 
 ### Added

@@ -46,6 +46,34 @@ Resolution order is:
 5. Global `~/.config/seihou/config.dhall`
 6. Built-in defaults
 
+## Discovering models
+
+List the Anthropic and OpenAI models known to the Baikai catalog compiled into
+Seihou:
+
+```sh
+seihou agent models
+seihou agent models --provider openai
+seihou agent --provider claude-cli models
+```
+
+The API and local CLI providers share catalog families:
+
+| Catalog family | Compatible Seihou providers |
+|----------------|-----------------------------|
+| Anthropic | `anthropic`, `claude-cli` |
+| OpenAI | `openai`, `codex-cli` |
+
+An unfiltered listing prints each model once and names both compatible
+providers. A provider filter may appear before or after `models`. The command
+uses only compiled catalog data, so it requires no credentials or network
+access and does not read configured provider defaults.
+
+The list is advisory. Provider-native aliases such as `sonnet` and custom model
+identifiers remain valid values for `--model` even when they are not listed.
+Seihou does not use the catalog to validate live availability, and provider
+offerings may change independently of a Seihou release.
+
 Agent provider settings are separate from module variable resolution.
 Blueprint variables still use the normal variable precedence chain before the
 blueprint prompt is rendered.
