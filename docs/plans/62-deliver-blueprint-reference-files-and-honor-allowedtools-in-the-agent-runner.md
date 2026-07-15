@@ -33,9 +33,11 @@ After this change an operator gains two concrete, observable behaviors. First, w
 agent can actually open and read the blueprint's `files/*.md` — the rendered prompt now
 prints the absolute directory where those files are mounted and instructs the agent to read
 them directly, and the directory is passed to the provider as an accessible path. Second, a
-blueprint that declares `allowedTools` in its `blueprint.dhall` now has those tools
-pre-approved for the session (added on top of the always-present base set), instead of the
-field being dead metadata. You can see the first working by running `seihou agent --debug run
+blueprint that declares `allowedTools` in its `blueprint.dhall` now has those tools added to
+the always-present base set and passed to the interactive launcher instead of leaving the
+field as dead metadata. Claude Code receives the effective set as pre-approved tools; Codex
+keeps its sandbox and approval policy because it has no per-tool allow-list option. You can
+see the first behavior by running `seihou agent --debug run
 <blueprint>` and reading the new "## Reference Files" block, which names the real on-disk
 directory; and you can see both working through new unit tests that assert the rendered
 directory guidance and the resolved tool list.
@@ -55,7 +57,10 @@ This section must always reflect the actual current state of the work.
       thread resolved tools through `runRenderedAgentPrompt`, keep `PromptRun.hs` passing the
       base set, tests). `cabal build seihou-cli` succeeded and all 256 CLI tests passed,
       including the three new resolver cases.
-- [ ] Milestone 3: Correct stale docs/comments, update CHANGELOG, run full validation.
+- [x] (2026-07-15 09:54 PDT) Milestone 3: Corrected stale docs/comments, updated
+      `CHANGELOG.md`, and completed full validation. `just format`, `cabal build all`,
+      `cabal test all` (256 CLI, 939 core, and 16 OKF extension tests), `just check`, and
+      `git diff --check` all passed.
 - [x] (2026-07-15 09:43 PDT) Captured a green baseline: `cabal build seihou-cli` succeeded
       and `cabal test seihou-cli-test` passed all 251 tests.
 
@@ -77,6 +82,13 @@ implementation. Provide concise evidence.
   Evidence: the first debug smoke check created
   `/tmp/seihou-bp-demo.1JC1k6/.seihou/manifest.json`; the second debug render reported that
   manifest as present. Smoke checks must therefore run in a disposable directory.
+
+- Discovery: Baikai applies `ClaudeAllowedTools` only in its Claude Code command builder;
+  the Codex command builder ignores that safety constructor and uses `CodexSandbox` instead.
+  Evidence: `baikai-claude/src/Baikai/Provider/Claude/Interactive.hs` renders
+  `--allowedTools`, while `baikai-openai/src/Baikai/Provider/OpenAI/Interactive.hs` maps
+  `ClaudeAllowedTools _` to no arguments. The runner can resolve and pass the effective list,
+  but only Claude Code can pre-approve it as a per-tool allow-list.
 
 
 ## Decision Log
@@ -146,6 +158,15 @@ Record every decision made while working on the plan.
   receive the absolute path exactly as intended.
   Date: 2026-07-15
 
+- Decision: Do not invent a Codex translation for blueprint `allowedTools`; document that
+  Claude Code consumes the effective list while Codex retains its existing sandbox and
+  on-request approval policy.
+  Rationale: Codex exposes no equivalent per-tool allow-list in Baikai or the installed CLI.
+  Translating Claude tool strings into sandbox or approval settings would be lossy and could
+  weaken safety. The runner still resolves and passes one effective list through the shared
+  interface, and Claude Code honors it exactly.
+  Date: 2026-07-15
+
 
 ## Outcomes & Retrospective
 
@@ -163,6 +184,15 @@ Compare the result against the original purpose.
   the interactive launcher. The shared prompt runner explicitly passes `setupAllowedTools`,
   so its behavior remains unchanged. Three unit tests cover no declaration, a new tool, and a
   repeated base tool.
+
+- Final outcome: The blueprint runner now delivers existing reference directories to both
+  interactive CLI providers, prints truthful mounted-or-fallback guidance, and resolves
+  blueprint tool additions on top of the required base set. Claude Code consumes that set as
+  pre-approved tools; Codex retains its native sandbox/approval model. The help topic, user
+  guides, changelog, Haddock, prompt template, shared prompt caller, and living plan all match
+  the implemented behavior. No in-scope work remains. Full Cabal and Nix validation passed;
+  the only warnings were pre-existing partial-function and missing-record-field warnings in
+  unrelated tests.
 
 
 ## Context and Orientation
@@ -237,7 +267,7 @@ data Blueprint = Blueprint
     prompts :: [Prompt],
     baseModules :: [Dependency],
     files :: [BlueprintFile],
-    allowedTools :: Maybe [Text],   -- currently ignored by the runner
+    allowedTools :: Maybe [Text],   -- added to the base runner tool set
     tags :: [Text]
   }
 ```
@@ -245,14 +275,14 @@ data Blueprint = Blueprint
 The Dhall schema field already exists: `schema/Blueprint.dhall` declares `allowedTools :
 Optional (List Text)` defaulting to `None (List Text)`. No schema change is required.
 
-Two facts constrain the change. First, `runRenderedAgentPrompt` and `launchConfiguredAgentWith`
-both short-circuit in `--debug` mode: they print the rendered system prompt and return
-without launching a provider. So `--debug` can demonstrate the new *prompt text* (the printed
-directory path) but cannot demonstrate the `--add-dir` wiring; the directory-composition and
-tool-resolution logic must be proven by unit tests instead. Second, the interactive API
-providers `anthropic` and `openai` are rejected for interactive sessions
-(`unsupportedInteractiveProvider`), so only the `claude-cli`/`codex-cli` paths receive
-`extraDirs`; the template must degrade gracefully when no directory is mounted.
+Two facts constrain the change. First, `runRenderedAgentPrompt` short-circuits in `--debug`
+mode: it prints the rendered system prompt without launching a provider, after which
+`handleAgentRun` still records applied-blueprint provenance. So `--debug` can demonstrate the
+new *prompt text* (the printed directory path) but cannot demonstrate the `--add-dir` wiring;
+the directory-composition and tool-resolution logic must be proven by unit tests and source
+inspection instead. Second, `AgentRun` sends `anthropic` and `openai` through one-shot API
+completion, which has no `extraDirs`; only the `claude-cli`/`codex-cli` paths receive mounted
+directories, so the template must degrade gracefully for API providers.
 
 Existing tests to mirror: `seihou-cli/test/Seihou/CLI/AgentLaunchSpec.hs` already unit-tests
 `formatReferenceFiles` (import list, `describe`/`it`/`shouldBe` hspec style, wrapped as a
@@ -367,8 +397,9 @@ blueprint with no `files/` it prints the "not mounted … ask the user" fallback
 
 Scope: stop discarding `blueprint.allowedTools`. Resolve the effective tool list as the base
 `setupAllowedTools` unioned with the blueprint's declared tools, and pass that to the
-launcher. At the end a blueprint declaring extra tools has them pre-approved, proven by a unit
-test.
+launcher. At the end a blueprint declaring extra tools passes the effective set through the
+runner, and Claude Code pre-approves it; unit tests prove the resolution semantics. Codex
+keeps its existing sandbox and approval policy because it has no per-tool allow-list.
 
 Edits:
 
@@ -422,7 +453,8 @@ Edits:
 - `seihou-cli/help/blueprints.md`, `docs/user/blueprints.md`, and
   `docs/user/agent-assistance.md`: state that reference
   files are readable from the mounted `files/` directory during interactive
-  (`claude-cli`/`codex-cli`) runs and that `allowedTools` is honored (added to the base set).
+  (`claude-cli`/`codex-cli`) runs and that `allowedTools` is added to the base set, with the
+  Claude Code pre-approval and Codex sandbox boundary stated explicitly.
 - Confirm the `formatReferenceFiles` Haddock in `AgentLaunch.hs` now matches reality (done in
   M1).
 - `CHANGELOG.md` — add entries under the unreleased section: "blueprint runner now mounts the
@@ -518,11 +550,13 @@ If `just` is unavailable, the equivalent direct commands are `cabal build all` a
 `cabal test all` (the test suites are `seihou-cli-test` and `seihou-core-test`).
 
 Review the diff, update this living document (Progress, Surprises, Decision Log, Outcomes),
-then commit. This repository does not use `ExecPlan:`/`Intention:` trailers by default; follow
-its own commit conventions, using a Conventional Commit subject, for example:
+then commit with a Conventional Commit subject and the active ExecPlan and Intention trailers:
 
 ```text
 feat(agent-run): mount blueprint files/ and honor allowedTools
+
+ExecPlan: docs/plans/62-deliver-blueprint-reference-files-and-honor-allowedtools-in-the-agent-runner.md
+Intention: intention_01kxkabjrge3gtsqff461r7nv5
 ```
 
 
@@ -544,7 +578,8 @@ Acceptance is behavioral, not merely "it compiles."
    full base set; and the union never duplicates. `runRenderedAgentPrompt` passes
    `resolveBlueprintTools bp.allowedTools` (not the bare `setupAllowedTools`) to the launcher,
    so a blueprint declaring `allowedTools = Some [ "Bash(mori *)" ]` gets that tool
-   pre-approved.
+   pre-approved in Claude Code. Codex receives its existing workspace-write sandbox and
+   on-request approval settings because it has no per-tool allow-list option.
 
 3. No regressions. `seihou agent run` for the `assist`, `setup`, and `bootstrap` commands is
    unchanged: they still call `launchConfiguredAgent` with their existing tool sets and gain
@@ -610,8 +645,9 @@ Dependencies used (all already in scope for these packages): `System.Directory
 `Data.Maybe (maybeToList)`, and `Baikai.Kit.Session (agentDirsForSession)` via the existing
 `seihouKitConfig`. No new package dependency and no Dhall schema change (`allowedTools`
 already exists in `schema/Blueprint.dhall`). The interactive providers consume the mounted
-directory through the already-wired `extraDirs` field of the Baikai interactive launch request
-(`ClaudeAllowedTools` / codex sandbox path); no Baikai change is required.
+directory through the already-wired `extraDirs` field of the Baikai interactive launch
+request. Claude Code consumes the resolved tools through `ClaudeAllowedTools`; Codex uses its
+existing `CodexSandbox` settings and has no per-tool allow-list. No Baikai change is required.
 
 Types that must exist at completion: `Blueprint.files :: [BlueprintFile]` and
 `Blueprint.allowedTools :: Maybe [Text]` (already present in
@@ -639,3 +675,11 @@ that `renderSystemPrompt` fills.
   modules define their own local `runRenderedAgentPrompt` and are unaffected. Tightened the
   Milestone 3 docs edit to name the real files (`docs/user/blueprints.md`,
   `docs/user/agent-assistance.md`, `seihou-cli/help/blueprints.md`).
+
+- 2026-07-15 — Implementation pass. Added the requested Intention ID and completed all three
+  milestones. Corrected two assumptions with runtime/source evidence: blueprint debug
+  renders update manifest provenance, and Baikai supports per-tool pre-approval only for
+  Claude Code while Codex retains sandbox/on-request approval semantics. Updated Purpose,
+  Context, Milestone 2, documentation instructions, validation, recovery guidance,
+  dependencies, Surprises, and Decision Log so the plan remains self-contained and does not
+  overpromise provider behavior.

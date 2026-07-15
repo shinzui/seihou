@@ -65,7 +65,9 @@ seihou agent --debug run api-service --var project.name=payments
 ```
 
 Use debug mode to audit what Seihou will send, test provider selection, and
-smoke-check prompts in CI without opening an agent session.
+smoke-check prompts in CI without opening an agent session. A blueprint debug
+run still records applied-blueprint provenance in `.seihou/manifest.json`, so
+use a disposable project when the manifest must remain untouched.
 
 ## Agent commands
 
@@ -107,7 +109,15 @@ seihou agent run api-service "tailor this for payments"
 
 Use `run` for blueprints. The runner resolves blueprint variables, optionally
 applies baseline modules, renders the blueprint prompt, and records the
-successful run in `.seihou/manifest.json`.
+successful run in `.seihou/manifest.json`. For interactive `claude-cli` and
+`codex-cli` sessions, it mounts the blueprint's existing `files/` directory and
+prints the absolute path so the agent can read declared references directly.
+API providers instead receive ask-the-user fallback guidance.
+
+Blueprint `allowedTools` entries are added to the base runner tools with
+duplicates removed. Claude Code receives the effective list through
+`--allowedTools`. Codex continues to use its workspace-write sandbox and
+on-request approval policy because it has no equivalent per-tool allow-list.
 
 See [Agent-Driven Blueprints](blueprints.md) for blueprint authoring and
 publishing details.

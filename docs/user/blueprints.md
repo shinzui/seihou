@@ -34,7 +34,8 @@ api-service/
 - `prompt.md` is the Markdown prompt body imported by `blueprint.dhall` as
   `./prompt.md as Text`.
 - `files/` holds optional examples, snippets, partial templates, or sample
-  configs for the agent to consult.
+  configs for the agent to consult. Interactive CLI runs mount this directory
+  so the agent can read its contents directly.
 
 ## The blueprint.dhall format
 
@@ -66,6 +67,7 @@ in  S.Blueprint::{
       ]
     , baseModules = [] : List S.Dependency.Type
     , files = [] : List S.Blueprint.BlueprintFile.Type
+    , allowedTools = Some [ "Bash(cabal *)" ]
     , tags = [ "api" ]
     }
 ```
@@ -81,7 +83,7 @@ Important fields:
 | `prompts` | Interactive questions for missing variables. |
 | `baseModules` | Modules or recipes to apply before the agent runs. |
 | `files` | Reference files under the blueprint's `files/` directory. |
-| `allowedTools` | Optional runner metadata for tool allow-lists. |
+| `allowedTools` | Extra tools to pre-approve in addition to the runner's base set. |
 | `tags` | Discovery tags for registries, browse, install, and list filters. |
 
 Blueprints share a lookup namespace with modules, recipes, and prompts. If one
@@ -140,7 +142,27 @@ files =
 
 Each `src` is relative to the blueprint's `files/` directory. Validation fails
 if the file is missing. Reference files are not copied automatically; they are
-context for the agent.
+context for the agent. For interactive `claude-cli` and `codex-cli` runs, the
+runner mounts the existing `files/` directory through the provider's extra
+directory mechanism and prints its absolute path in the rendered prompt. The
+agent can then open the declared files directly. API providers cannot access
+local directories, so their prompt tells the agent to ask the user for any
+needed reference.
+
+## Allowed tools
+
+Use `allowedTools` when a blueprint needs commands beyond the base tools that
+every blueprint run receives:
+
+```dhall
+allowedTools = Some [ "Bash(cabal *)", "Bash(mori *)" ]
+```
+
+The runner appends declared entries to its base set, keeps the base entries
+first, and removes duplicates. Claude Code receives the effective set through
+its `--allowedTools` option. Codex keeps its workspace-write sandbox and
+on-request approval policy because Codex has no equivalent per-tool allow-list
+option.
 
 ## Running a blueprint
 
@@ -155,10 +177,12 @@ The runner:
 1. Discovers and validates the named blueprint.
 2. Resolves blueprint variables and prompts for required missing values.
 3. Applies `baseModules`, unless `--no-baseline` is set.
-4. Renders the blueprint prompt and project context.
-5. Starts the configured provider.
-6. Records applied-blueprint provenance in `.seihou/manifest.json` after a
-   successful non-debug run.
+4. Mounts an existing `files/` directory for interactive CLI providers and
+   renders its absolute path into the blueprint prompt.
+5. Resolves the base tool set plus de-duplicated `allowedTools` additions.
+6. Starts the configured provider.
+7. Records applied-blueprint provenance in `.seihou/manifest.json` after a
+   successful run, including a debug render.
 
 `seihou run api-service` refuses when `api-service` resolves to a blueprint.
 That command is reserved for deterministic modules and recipes.

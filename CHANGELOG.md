@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- The blueprint runner now mounts an existing blueprint `files/` directory for
+  interactive Claude Code and Codex sessions and points the agent at its
+  absolute path; providers without local directory access receive explicit
+  fallback guidance.
+- Blueprint `allowedTools` entries are now unioned with the base runner tool
+  set, de-duplicated, and passed to the interactive launcher so Claude Code can
+  pre-approve the effective set.
+
 ## [0.4.0.0] - 2026-07-15
 
 ### Added

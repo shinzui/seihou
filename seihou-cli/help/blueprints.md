@@ -37,7 +37,7 @@ SCHEMA FIELDS
     prompts        Interactive questions for missing required variables.
     baseModules    Modules or recipes to apply before the agent runs.
     files          Reference files under the blueprint's files/ directory.
-    allowedTools   Optional tool allow-list metadata for the runner.
+    allowedTools   Extra tools to pre-approve in addition to the base set.
     tags           Optional discovery tags.
 
   Blueprints share the same name lookup namespace as modules and recipes.
@@ -85,7 +85,23 @@ REFERENCE FILES
 
   Reference files are meant for examples, snippets, partial templates, design
   notes, or sample configs that help the agent produce the right project. They
-  are not copied automatically by the deterministic engine.
+  are not copied automatically by the deterministic engine. During interactive
+  `claude-cli` and `codex-cli` runs, the runner mounts the existing `files/`
+  directory and prints its absolute path in the agent prompt so the agent can
+  read references directly. API providers receive fallback guidance because
+  they cannot access local directories.
+
+ALLOWED TOOLS
+
+  `allowedTools` grants a blueprint extra tools beyond the base set required by
+  every blueprint run. The runner keeps the base tools first and removes
+  duplicates:
+
+    allowedTools = Some [ "Bash(cabal *)", "Bash(mori *)" ]
+
+  Claude Code receives the effective set through `--allowedTools`. Codex keeps
+  its workspace-write sandbox and on-request approval policy because it has no
+  equivalent per-tool allow-list option.
 
 COMMON COMMANDS
 
