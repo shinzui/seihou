@@ -69,9 +69,10 @@ with manifest drift.
 
 ## Window-walker semantics
 
-When a user runs `seihou migrate`, the planner walks every declared
-migration whose `[from, to]` range falls inside `[installed, target]`
-in ascending `from` order:
+The **target** defaults to the installed module's current version; pass
+`--to VERSION` to stop at an intermediate version instead. When a user runs
+`seihou migrate`, the planner walks every declared migration whose `[from, to]`
+range falls inside `[installed, target]` in ascending `from` order:
 
 ```text
 installed: 0.2    target: 0.6
@@ -239,9 +240,14 @@ pass — both safe.
 
 Seihou strongly assumes the project is under version control; if a
 migration leaves the tree in an unrecoverable state, `git restore` is
-the rollback. See [`docs/cli/run.md`](../cli/run.md) for the
-`--commit` flag if you want migrations to land in a dedicated
-commit.
+the rollback. To land a migration in its own commit, pass `--commit`
+(auto-generated message) or `--commit-message MSG` to `seihou migrate`
+itself:
+
+```sh
+seihou migrate haskell-base --commit
+seihou migrate haskell-base --commit-message "chore: migrate haskell-base to 1.5.0"
+```
 
 ## See also
 

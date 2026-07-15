@@ -433,3 +433,11 @@ seihou config unset project.name
 seihou vars my-module --explain
 # Shows [local config] for saved values instead of [prompt]
 ```
+
+## See also
+
+- [`seihou config`](../cli/config.md) — read and write config across scopes
+- [`seihou vars`](../cli/vars.md) — inspect declarations and resolved values
+- [`seihou context`](../cli/context.md) — manage the active context
+- [Module Authoring Reference](module-authoring.md) — the full variable
+  declaration format and export mechanism

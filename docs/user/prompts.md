@@ -222,7 +222,7 @@ named explicitly in the prompt body.
 
 ## Running Prompts
 
-Validate before running:
+Validate before running (add `--lint` for advisory warnings):
 
 ```sh
 seihou validate-prompt review-changes

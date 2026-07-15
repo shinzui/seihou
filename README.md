@@ -1,193 +1,239 @@
 # Seihou (製法)
 
-Composable, type-safe project scaffolding and agent workflow authoring. Define reusable modules in Dhall, compose them with dependency resolution, and generate projects with incremental updates. Four authorable artifact kinds are supported: deterministic *modules*, named compositions called *recipes*, agent-driven *blueprints* for open-ended scaffolding, and reusable *prompts* for agent-session workflows.
+**Composable, type-safe project scaffolding and agent workflow authoring.**
+
+Seihou lets you define reusable scaffolding in [Dhall](https://dhall-lang.org/),
+compose it with automatic dependency resolution, and generate projects that stay
+up to date through an incremental, manifest-tracked workflow. Templates stay
+dumb; Dhall does the computing; a stateful manifest makes regeneration safe.
+
+```sh
+seihou run haskell-base --var project.name=my-app
+```
+
+It supports four authorable artifact kinds:
+
+| Kind | What it is | Run with |
+|------|-----------|----------|
+| **Module** | A deterministic unit of scaffolding — variables, file-generation steps, dependencies. | `seihou run MODULE` |
+| **Recipe** | A named, ordered composition of modules with optional pre-bound parameters. | `seihou run RECIPE` |
+| **Blueprint** | Agent-driven scaffolding for open-ended project shapes — a deterministic baseline handed to an AI provider. | `seihou agent run BLUEPRINT` |
+| **Prompt** | A reusable agent-session template (code review, release prep, planning) with typed variables and command-derived context. | `seihou prompt run PROMPT` |
+
+
+## Why Seihou
+
+- **Type-safe by construction.** Modules are Dhall values validated before a
+  single file is written — misspelled variables, missing sources, and malformed
+  compositions are caught up front.
+- **Composable with real dependency resolution.** Modules declare dependencies
+  and exports; Seihou topologically orders them and passes variables across the
+  boundary.
+- **Incremental and safe to re-run.** A `.seihou/manifest.json` records what was
+  generated. Re-running performs a three-state diff (manifest / plan / disk),
+  detects files you've hand-edited, and never clobbers them without asking.
+- **Reversible and upgradable.** Modules can declare `removal` steps and
+  versioned `migrations`, so you can cleanly undo a module or move a project
+  across module versions.
+- **Agent-native.** Blueprints and prompts bring configurable AI providers
+  (Claude Code, Codex, Anthropic API, OpenAI API) into the same authoring model.
+
+
+## Installation
+
+### From Hackage
+
+```sh
+cabal install seihou-cli
+```
+
+This builds and installs the `seihou` executable. Requires GHC 9.12+ and a
+recent `cabal`.
+
+### From source (Nix)
+
+```sh
+git clone https://github.com/shinzui/seihou.git
+cd seihou
+nix develop            # dev shell with the pinned toolchain
+cabal build all
+cabal run seihou -- --help
+```
+
+Optional: enable shell completion so `Tab` completes commands, subcommands, and
+flags:
+
+```sh
+seihou completions zsh  > ~/.zfunc/_seihou          # zsh
+seihou completions bash > ~/.local/share/bash-completion/completions/seihou
+seihou completions fish > ~/.config/fish/completions/seihou.fish
+```
+
 
 ## Quick Start
 
 ```sh
-# Initialize Seihou configuration
+# 1. Initialize Seihou's config directory (~/.config/seihou/). Safe to re-run.
 seihou init
 
-# Generate a project from a module
+# 2. Generate a project from a module (prompts for anything you don't pass).
 seihou run haskell-base --var project.name=my-app
 
-# Check what was generated
+# 3. See what was generated and its state.
 seihou status
 ```
+
+New to Seihou? The [Getting Started guide](docs/user/getting-started.md) walks
+you from an empty directory through authoring your own module, generating a
+project, and detecting changes.
+
+
+## Concepts at a glance
+
+- **Modules** are directories with a `module.dhall` and a `files/` tree. They
+  declare **variables**, **steps** (four generation strategies: `copy`,
+  `template`, `dhall-text`, `structured`), **dependencies**, **exports**, and
+  optional **prompts**, **commands**, **removal**, and **migrations**. See the
+  [Module Authoring Reference](docs/user/module-authoring.md).
+- **Variables** resolve from a layered hierarchy — CLI flags, environment,
+  local / namespace / context / global config, dependency exports, and module
+  defaults — with `seihou vars --explain` to trace provenance. See
+  [Configuration & Variables](docs/user/config-and-variables.md).
+- **Templates** use `{{var}}` interpolation and inline `{{#if cond}}…{{/if}}`
+  conditionals. See the [Templating Reference](docs/user/templating.md).
+- **Registries** let one git repository publish many modules, recipes,
+  blueprints, and prompts. See
+  [Registries & Multi-Module Repositories](docs/user/registries-and-multi-module-repos.md).
+- **Blueprints** and **prompts** bring AI providers into scaffolding. See the
+  [Blueprints](docs/user/blueprints.md), [Prompts](docs/user/prompts.md), and
+  [AI Agent Assistance](docs/user/agent-assistance.md) guides.
+
 
 ## Commands
 
-### `seihou init`
+Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
+`seihou COMMAND --help`. Overview:
 
-```
-seihou init
-```
+**Core workflow**
 
-Creates the Seihou configuration directory at `~/.config/seihou/` with subdirectories for user modules and installed modules. Safe to run multiple times.
+| Command | Description |
+|---------|-------------|
+| [`init`](docs/cli/init.md) | Create the Seihou config directory (`~/.config/seihou/`). |
+| [`run`](docs/cli/run.md) | Load modules/recipes, resolve variables, and generate into the current directory. |
+| [`remove`](docs/cli/remove.md) | Reverse an applied module via its declared `removal` steps. |
+| [`status`](docs/cli/status.md) | Show applied modules, tracked-file state, and resolved variables. |
+| [`diff`](docs/cli/diff.md) | Show files changed on disk since the last generation. |
 
-### `seihou run`
+**Discovery & lifecycle**
 
-```
-seihou run MODULE [-m MODULE...] [--var KEY=VALUE...] [--dry-run] [--diff] [--force] [--no-commands]
-```
+| Command | Description |
+|---------|-------------|
+| [`list`](docs/cli/list.md) | List available modules, recipes, blueprints, and prompts (with `--modules`/`--recipes`/`--blueprints`/`--prompts`/`--repo`/`--tag` filters). |
+| [`install`](docs/cli/install.md) | Install artifacts from a git repository or registry. |
+| [`browse`](docs/cli/browse.md) | Preview a repository's artifacts without installing. |
+| [`outdated`](docs/cli/outdated.md) | Check installed modules for newer versions. |
+| [`upgrade`](docs/cli/upgrade.md) | Upgrade installed modules to their latest versions. |
+| [`migrate`](docs/cli/migrate.md) | Apply a module's declared migrations to the current project. |
 
-Loads the specified module and its dependencies, resolves variables, compiles a generation plan, and executes it in the current directory.
+**Authoring**
 
-| Flag | Description |
-|------|-------------|
-| `-m, --module MODULE` | Additional module to compose (repeatable) |
-| `--var KEY=VALUE` | Variable override (repeatable) |
-| `--dry-run` | Show plan without executing |
-| `--diff` | Show diff against current disk state |
-| `--force` | Auto-resolve conflicts |
-| `--no-commands` | Skip shell command steps |
+| Command | Description |
+|---------|-------------|
+| [`new-module`](docs/cli/new-module.md) · [`new-recipe`](docs/cli/new-recipe.md) · [`new-blueprint`](docs/cli/new-blueprint.md) · [`new-prompt`](docs/cli/new-prompt.md) | Scaffold each artifact kind. |
+| [`validate-module`](docs/cli/validate-module.md) · [`validate-blueprint`](docs/cli/validate-blueprint.md) · [`validate-prompt`](docs/cli/validate-prompt.md) | Validate an artifact directory (`--lint` for advisories). |
+| [`vars`](docs/cli/vars.md) | Inspect variable declarations and resolved values (`--explain`). |
+| [`schema-upgrade`](docs/cli/schema-upgrade.md) | Upgrade `module.dhall` files to the current schema. |
+| [`registry`](docs/cli/registry.md) | Author `seihou-registry.dhall` files (`sync-versions`, `validate`). |
 
-```sh
-# Compose two modules together
-seihou run haskell-base -m nix-flake --var project.name=my-app
+**Configuration**
 
-# Preview what would happen
-seihou run haskell-base --dry-run
-```
+| Command | Description |
+|---------|-------------|
+| [`config`](docs/cli/config.md) | Read/write config across local, namespace, context, and global scopes (`--effective` for the merged view). |
+| [`context`](docs/cli/context.md) | Manage the active context (e.g. `work` vs `personal`). |
 
-### `seihou vars`
+**AI agent**
 
-```
-seihou vars MODULE [--explain] [--var KEY=VALUE...]
-```
+| Command | Description |
+|---------|-------------|
+| [`agent`](docs/cli/agent.md) | AI-assisted workflows: `assist`, `bootstrap`, `setup`, and `run` (blueprints). |
+| [`prompt`](docs/cli/prompt.md) | Run a first-class agent-session prompt. |
+| [`kit`](docs/cli/kit.md) | Manage Claude Code and Codex skills and subagents. |
 
-Lists variable declarations for a module. With `--explain`, shows resolved values and their provenance (default, CLI override, environment, or dependency export).
+**Help & integration**
 
-```sh
-seihou vars haskell-base --explain --var project.name=my-app
-```
+| Command | Description |
+|---------|-------------|
+| [`help`](docs/cli/help.md) | Built-in help topics (`seihou help modules`, `help migrations`, …). |
+| [`completions`](docs/cli/completions.md) | Generate Bash/Zsh/Fish completion scripts. |
+| [`extension`](docs/cli/extension.md) | Run external `seihou-<name>-extension` executables. |
 
-### `seihou install`
-
-```
-seihou install GIT-URL [--name NAME] [--module NAME...] [--all]
-```
-
-Clones a git repository and installs a module, recipe, blueprint, prompt, or selected entries from a registry to `~/.config/seihou/installed/<name>/`. The name defaults to the repository name for single-artifact repositories.
-
-### `seihou status`
-
-```
-seihou status
-```
-
-Reads `.seihou/manifest.json` in the current directory and displays applied modules, tracked files, and resolved variable values.
-
-### `seihou new-module`
-
-```
-seihou new-module NAME [--path DIR]
-```
-
-Scaffolds a new module directory with a boilerplate `module.dhall` and an example template. Module names must match `[a-z][a-z0-9-]*`. The output directory defaults to `./<name>/`.
-
-### `seihou validate-module`
-
-```
-seihou validate-module [PATH]
-```
-
-Validates that a module directory is well-formed: `module.dhall` evaluates, variable names are unique, prompts reference declared variables, step source files exist, and exports reference declared variables. PATH defaults to the current directory.
-
-### `seihou diff`
-
-```
-seihou diff
-```
-
-Shows files that have changed since the last generation by comparing current content against the manifest.
-
-### `seihou list`
-
-```
-seihou list
-```
-
-Lists available modules, recipes, blueprints, and prompts across the three search paths (project-local, user, installed). Use `--modules`, `--recipes`, `--blueprints`, or `--prompts` to restrict by kind.
-
-### `seihou prompt`
-
-```
-seihou prompt run PROMPT [USER-PROMPT] [--var KEY=VALUE...] [--debug]
-```
-
-Resolves a reusable prompt artifact, runs command-derived variables, selects prompt guidance, renders the prompt body with project context, and launches the configured Claude Code, Codex, Anthropic, or OpenAI provider. `--debug` prints the complete provider prompt without contacting a provider.
-
-### `seihou config`
-
-```
-seihou config COMMAND [-g|--global] [-n|--namespace NS]
-```
-
-Manage configuration values. Subcommands: `set KEY VALUE`, `get KEY`, `unset KEY`, `list`. Default scope is local (`.seihou/config.dhall`). Use `--global` or `--namespace NS` for other scopes.
 
 ## Documentation
 
-- [Getting Started Guide](docs/user/getting-started.md) — End-to-end walkthrough from initialization to project generation
-- [Module Authoring Reference](docs/user/module-authoring.md) — Complete module format, strategies, variables, composition
-- [Blueprints Guide](docs/user/blueprints.md) — Agent-driven scaffolding for open-ended project shapes
-- [Prompts Guide](docs/user/prompts.md) — Reusable agent-session templates with variables and command-derived context
-- [Agent Assistance Guide](docs/user/agent-assistance.md) — Configuring and running Claude Code, Codex, Anthropic, and OpenAI providers
+**Guides** ([`docs/user/`](docs/user/))
 
-## Module Authoring
+- [Getting Started](docs/user/getting-started.md) — end-to-end walkthrough from init to generation.
+- [Module Authoring Reference](docs/user/module-authoring.md) — the complete module format, all four strategies, expression language, composition, recipes, removal, migrations.
+- [Templating Reference](docs/user/templating.md) — `{{var}}` interpolation and inline conditionals.
+- [Configuration & Variables](docs/user/config-and-variables.md) — the resolution hierarchy, scopes, and contexts.
+- [Registries & Multi-Module Repositories](docs/user/registries-and-multi-module-repos.md) — publish many artifacts from one repo.
+- [Migrations](docs/user/migrations.md) — move projects across module versions.
+- [Blueprints](docs/user/blueprints.md) — agent-driven scaffolding.
+- [Prompts](docs/user/prompts.md) — reusable agent-session workflows.
+- [AI Agent Assistance](docs/user/agent-assistance.md) — configure and run Claude Code, Codex, Anthropic, and OpenAI providers.
+- [Changelog](docs/user/CHANGELOG.md) — user-facing release notes.
 
-A Seihou module is a directory containing a `module.dhall` file and a `files/` directory with templates. Modules declare variables, define generation steps (copy, template, dhall-text, structured), and can depend on other modules.
+**Reference** — per-command pages in [`docs/cli/`](docs/cli/).
+
+
+## Authoring a module
 
 ```sh
-# Create a new module
-seihou new-module my-template
-
-# Validate it
-seihou validate-module ./my-template
-
-# Test it
-seihou run my-template --dry-run --var project.name=test
+seihou new-module my-template            # scaffold module.dhall + files/
+seihou validate-module ./my-template     # check it is well-formed
+seihou run my-template --dry-run --var project.name=test   # preview the plan
 ```
 
-See the [Module Authoring Reference](docs/user/module-authoring.md) for the complete specification.
+A module is a `module.dhall` plus a `files/` directory of templates. It declares
+variables, generation steps, and dependencies. See the
+[Module Authoring Reference](docs/user/module-authoring.md) for the full
+specification, and the fixtures under `seihou-core/test/fixtures/` for working
+examples of composition, structured output, shell commands, and recipes.
 
-- **Blueprints** (`seihou agent run BLUEPRINT`) — agent-driven scaffolding for open-ended project shapes. See the [Blueprints Guide](docs/user/blueprints.md), [`seihou new-blueprint`](docs/cli/new-blueprint.md), [`seihou validate-blueprint`](docs/cli/validate-blueprint.md), and [`seihou agent`](docs/cli/agent.md).
-- **Prompts** (`seihou prompt run PROMPT`) — reusable agent-session templates for workflows such as code review, release preparation, and planning. See the [Prompts Guide](docs/user/prompts.md), [`seihou new-prompt`](docs/cli/new-prompt.md), [`seihou validate-prompt`](docs/cli/validate-prompt.md), and [`seihou prompt`](docs/cli/prompt.md).
 
-## Building from Source
+## Building from source
 
-Seihou uses Nix flakes for its development environment and Cabal for building.
+Seihou is a multi-package Cabal workspace built with Nix flakes.
 
 ```sh
-# Enter the dev shell
-nix develop
-
-# Build everything
-cabal build all
-
-# Run the CLI
+nix develop            # enter the dev shell
+cabal build all        # build every package
 cabal run seihou -- --help
-
-# Run tests
-cabal test all
+cabal test all         # run the test suites
+nix flake check        # formatting, module-placement, and CI checks
 ```
 
-## Project Structure
+## Project structure
 
 ```
 seihou/
-├── seihou-core/       # Library: module loading, Dhall evaluation, template
-│                      # rendering, variable resolution, composition, execution
-├── seihou-cli/        # Executable: CLI commands and handlers
+├── seihou-core/            # Library: module loading, Dhall evaluation, template
+│                           # rendering, variable resolution, composition, execution
+├── seihou-cli/             # The `seihou` CLI (library + executable + tests)
+├── seihou-okf-extension/   # External extension: OKF documentation bundles
 ├── docs/
-│   ├── user/          # User guides and release-facing changelog
-│   ├── cli/           # Command reference
-│   ├── dev/           # Architecture, design notes, roadmap
-│   └── plans/         # Execution plans (living implementation documents)
-├── cabal.project      # Multi-package workspace
-└── flake.nix          # Nix development environment
+│   ├── user/               # User guides and the user-facing changelog
+│   ├── cli/                # Per-command reference
+│   ├── dev/                # Architecture, design notes, roadmap
+│   ├── plans/              # Execution plans (living implementation documents)
+│   └── masterplans/        # Multi-plan coordination documents
+├── cabal.project           # Multi-package workspace
+└── flake.nix               # Nix development environment
 ```
+
 
 ## License
 
-Seihou is licensed under the BSD-3-Clause license. See `LICENSE` for details.
+Seihou is licensed under the BSD-3-Clause license. See [`LICENSE`](LICENSE) for
+details.

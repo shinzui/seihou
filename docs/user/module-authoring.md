@@ -504,6 +504,13 @@ seihou config list --global
 # Namespace scope
 seihou config set license BSD-3-Clause --namespace haskell
 seihou config list --namespace haskell
+
+# Context scope (e.g. work vs personal)
+seihou config set user.email me@work.example --context work
+seihou config list --context work
+
+# Merged view across all scopes, with provenance
+seihou config list --effective
 ```
 
 ### Namespaces
@@ -668,10 +675,11 @@ Validation checks:
 
 1. `module.dhall` exists and evaluates as valid Dhall
 2. Module name matches `[a-z][a-z0-9-]*`
-3. Variable names are unique
-4. Prompts reference declared variables
-5. Step source files exist in `files/`
-6. Exports reference declared variables
+3. `version` is declared and non-empty (not `None` or `""`)
+4. Variable names are unique
+5. Prompts reference declared variables
+6. Step source files exist in `files/`
+7. Exports reference declared variables
 
 Add `--lint` for advisory warnings about best practices.
 

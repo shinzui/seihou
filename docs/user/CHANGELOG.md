@@ -1,43 +1,120 @@
 # Changelog
 
-## 0.2.0.0 - 2026-06-06
+User-facing release notes for Seihou. This is a curated summary of
+user-visible changes; the [full engineering changelog](../../CHANGELOG.md) at
+the repository root records every change, including internal refactors and
+packaging.
 
-This release-readiness snapshot prepares Seihou for its first public Hackage
-release. It adds BSD-3-Clause licensing and complete package metadata, packages
-the CLI's embedded help and prompt files in source distributions, and hardens
-filesystem writes and path validation before generation, migration, removal,
-and manifest updates.
+Versions follow the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`). All
+packages in the workspace share a single version.
 
-User-visible documentation now describes the shipped module, recipe, blueprint,
-prompt, agent, migration, registry, and configuration behavior. The detailed historical
-documentation-review log is developer-facing.
+## [0.3.0.0] - 2026-06-12
 
 ### Added
 
-- Prompt guidance blocks for reusable prompts, with conditional selection,
-  complete debug rendering, scaffold examples, and validation checks.
-- BSD-3-Clause license files for the repository and both Cabal packages.
-- Hackage metadata for `seihou-core` and `seihou-cli`.
-- Source distribution packaging for embedded CLI help topics and agent prompt
-  templates.
-- Agent-driven blueprints as the third runnable artifact kind, with user guides
-  and CLI command references.
-- First-class prompts as the fourth runnable artifact kind, with authoring,
-  validation, running, registry, list, and install documentation.
+- **Blueprints — agent-driven scaffolding.** A new runnable artifact kind for
+  open-ended project shapes: Seihou applies a deterministic baseline, then hands
+  the project to a configured AI provider. Author with `seihou new-blueprint`,
+  check with `seihou validate-blueprint`, and run with `seihou agent run
+  BLUEPRINT`. Blueprints are installable from registries, and `seihou status`
+  records which blueprint was applied. See
+  [Blueprints](blueprints.md).
+- **AI provider integration.** Agent commands (`seihou agent`,
+  `seihou prompt run`) now route through a configurable provider —
+  `claude-cli`, `codex-cli`, `anthropic`, or `openai`. See
+  [AI Agent Assistance](agent-assistance.md).
+- **`seihou kit`** installs Claude Code and Codex skills and subagents.
+- **`seihou list` kind filters:** `--modules`, `--recipes`, and
+  `--blueprints` narrow output by artifact kind, and the summary count is
+  kind-aware.
 
 ### Changed
 
-- Manifest persistence now writes through an atomic temp-file-and-rename flow.
-- Recipe expansion now reports invalid recipes as structured errors instead of
-  relying on partial list operations.
-- `seihou migrate` uses a gap-tolerant migration walker that applies declared
-  migrations in range and advances the manifest to the target version.
+- **More robust migrations.** The migration planner is now a gap-tolerant
+  window walker, so migration chains with version gaps apply reliably. See
+  [Migrations](migrations.md).
+
+### Removed
+
+- **Breaking:** the `seihou migrate --bump-only` and `seihou run
+  --bump-blocked` recovery flags were removed — the rewritten migration planner
+  advances through benign version gaps automatically, so the manual escape
+  hatches are no longer needed.
 
 ### Fixed
 
-- Generated file paths and command working directories reject absolute paths,
-  blank paths, and `..` path segments.
-- Migration and removal declarations reject unsafe filesystem paths before disk
-  mutation.
-- Public documentation no longer directs users through internal design docs or
-  internal implementation plans for normal workflows.
+- `seihou migrate` no longer crashes when a chain mixes a file move with a
+  `RunCommand` step that removes the source's parent directory.
+- Manifests are written atomically (write-to-temp-then-rename), avoiding
+  corruption if the process is interrupted mid-write.
+- Malformed or cyclic recipes now surface as structured errors instead of
+  crashing.
+- Generation, migration, and removal paths are constrained to stay within the
+  project tree.
+
+### Packaging
+
+- First public [Hackage](https://hackage.haskell.org/) release preparation:
+  BSD-3-Clause licensing and complete package metadata, with the CLI's embedded
+  help topics and agent prompt templates packaged into source distributions.
+
+## [0.2.0.0] - 2026-04-29
+
+### Added
+
+- **Module migrations.** Modules can declare file-system operations
+  (`MoveFile`, `MoveDir`, `DeleteFile`, `DeleteDir`, `RunCommand`) that move a
+  project across module versions. `seihou migrate` applies the chain, rewrites
+  the manifest, and bumps the recorded version; `seihou run` and `seihou
+  status` are migration-aware. See [Migrations](migrations.md).
+- **Recipes.** Named, ordered compositions of modules with optional pre-bound
+  parameters. Author with `seihou new-recipe`; recipes are first-class in
+  `run`, `list`, `install`, and `browse`.
+- **Registry tooling.** The `seihou registry` command group (`sync-versions`,
+  `validate`) keeps a multi-module repository's `seihou-registry.dhall` in sync
+  with its artifacts, with CI-friendly `--check` and non-zero exit on drift.
+- **Inline template conditionals.** `{{#if cond}} … {{/if}}` blocks in the
+  Template strategy, with unbounded nesting. See
+  [Templating](templating.md).
+- **`seihou run --confirm-defaults`** steps through each defaulted or
+  export-derived variable so you can accept or override it interactively.
+- **`seihou status --check-updates`** surfaces available registry updates
+  alongside status output.
+- **Parameterized-dependency multi-instantiation:** a parent can instantiate
+  the same dependency several times with different parameter sets.
+
+### Changed
+
+- `seihou migrate` fetches the latest module before planning, so no manual
+  `seihou upgrade` is needed first (`--no-fetch` opts out).
+
+## [0.1.0.0] - 2026-04-15
+
+Initial public release of Seihou — a composable, type-safe project scaffolding
+system driven by Dhall modules, with stateful manifests and incremental
+regeneration.
+
+### Added
+
+- **Core pipeline:** Dhall module loading and validation, layered variable
+  resolution with `--explain`, four generation strategies (`Copy`, `Template`,
+  `DhallText`, `Structured`) plus text patching, composition with declared
+  dependencies and topological ordering, and plan compilation with shell-command
+  hooks.
+- **Manifest tracking:** a stateful `.seihou/manifest.json`, a three-state diff
+  engine (manifest / plan / disk), interactive conflict resolution, and
+  reversible module removal.
+- **Module system:** required module versions, `seihou outdated` / `seihou
+  upgrade`, schema evolution, and `seihou schema-upgrade`.
+- **CLI:** `init`, `run`, `vars`, `install`, `browse`, `list`, `status`,
+  `diff`, `validate-module`, `new-module`, `config`, `context`, `remove`,
+  agent workflows, and embedded help topics.
+- **Registries:** multi-module registry support with discovery and validation.
+- **Developer experience:** Bash/Zsh/Fish completions, FZF selection, and a
+  `--verbose` flag wired throughout.
+
+---
+
+[0.3.0.0]: https://github.com/shinzui/seihou/compare/v0.2.0.0...v0.3.0.0
+[0.2.0.0]: https://github.com/shinzui/seihou/compare/v0.1.0.0...v0.2.0.0
+[0.1.0.0]: https://github.com/shinzui/seihou/releases/tag/v0.1.0.0

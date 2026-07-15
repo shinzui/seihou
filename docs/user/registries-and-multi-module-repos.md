@@ -304,19 +304,21 @@ Create `seihou-registry.dhall` at the repository root. List every item with its 
 , repoDescription = Some "Project templates for my team"
 , modules =
   [ { name = "api-service"
+    , version = Some "0.1.0"
     , path = "modules/api-service"
     , description = Some "REST API service scaffold"
     , tags = [ "backend", "api" ]
     }
   , { name = "cli-tool"
+    , version = Some "0.1.0"
     , path = "modules/cli-tool"
     , description = Some "Command-line tool scaffold"
     , tags = [ "cli" ]
     }
-	  ]
-, recipes = [] : List { name : Text, path : Text, description : Optional Text, tags : List Text }
-, blueprints = [] : List { name : Text, path : Text, description : Optional Text, tags : List Text }
-, prompts = [] : List { name : Text, path : Text, description : Optional Text, tags : List Text }
+  ]
+, recipes = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }
+, blueprints = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }
+, prompts = [] : List { name : Text, version : Optional Text, path : Text, description : Optional Text, tags : List Text }
 }
 ```
 

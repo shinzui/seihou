@@ -2,20 +2,32 @@
 
 Seihou (製法) is a composable, type-safe project scaffolding and agent workflow system. You define reusable **modules** — directories containing a Dhall definition and template files — then run `seihou run <module>` to generate projects. You can also define **recipes** — named compositions of modules that bundle multiple modules into a single runnable name — **blueprints**, agent-driven project starters for open-ended scaffolding, and **prompts**, reusable agent-session templates for workflows such as review or release preparation. Seihou resolves variables from multiple sources, compiles a generation plan for deterministic runs, and tracks generated files in a manifest for incremental updates.
 
-This guide walks you through the complete workflow: initializing Seihou, creating a module from scratch, generating a project, and inspecting the results. By the end, you will have used every major CLI command.
+This guide walks you through the complete workflow: initializing Seihou, creating a module from scratch, generating a project, and inspecting the results. By the end, you will have used most of the major CLI commands.
 
 
 ## Prerequisites
 
-Seihou must be installed or built from source. If building from source:
+Install the released CLI from Hackage:
 
 ```sh
-nix develop           # enter the dev shell (if using Nix)
-cabal build all       # build everything
-cabal run seihou -- --help   # verify the CLI works
+cabal install seihou-cli      # installs the `seihou` executable (GHC 9.12+)
+seihou --version              # verify the CLI works
 ```
 
-No other dependencies are required.
+Or build from source with Nix:
+
+```sh
+nix develop                   # enter the dev shell with the pinned toolchain
+cabal build all               # build everything
+cabal run seihou -- --help    # verify the CLI works
+```
+
+The core scaffolding workflow needs nothing else. Two feature areas have extra
+requirements: the `install`, `browse`, `outdated`, and `upgrade` commands need
+`git` and network access, and the agent features (`seihou agent`,
+`seihou prompt run`) need a provider — a `claude`/`codex` CLI on your `PATH` or
+an `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`. See
+[AI Agent Assistance](agent-assistance.md).
 
 
 ## Step 1: Initialize Seihou
@@ -345,7 +357,7 @@ Each tracked file shows its owning module and current state: `unchanged`, `modif
 Edit a generated file — for example, add a line to `README.md`:
 
 ```sh
-echo "\n## Development\n\nNotes" >> README.md
+printf '\n## Development\n\nNotes\n' >> README.md
 ```
 
 Now run `seihou diff`:
@@ -369,7 +381,7 @@ This tells you which generated files have been manually edited since the last ru
 
 ## Step 9: Configure defaults
 
-Instead of passing `--var` flags every time, you can store default values in configuration files. Seihou supports three scopes:
+Instead of passing `--var` flags every time, you can store default values in configuration files. Seihou supports four scopes:
 
 | Scope | File | Flag |
 |-------|------|------|
@@ -425,6 +437,10 @@ Available modules, recipes, blueprints, and prompts:
 
 4 items found (3 sources searched)
 ```
+
+Restrict the output by kind with `--modules`, `--recipes`, `--blueprints`, or
+`--prompts` (combine them to show several kinds), and filter by source with
+`--repo REPO` or `--tag TAG`.
 
 To make your module available everywhere, move it to `~/.config/seihou/modules/`:
 
@@ -532,9 +548,15 @@ provider. See [AI Agent Assistance](agent-assistance.md).
 | `--no-save-prompted` | Do not offer to save prompted values |
 | `--commit` | Stage generated files and commit with an AI-generated message |
 | `--commit-message MSG` | Use `MSG` verbatim as the commit message (implies `--commit`) |
+| `--with-migrations` | Apply any pending module migrations before the run plan |
 | `--namespace NS` | Override namespace for config lookup |
 | `-c, --context CTX` | Override context for config lookup |
 | `-v, --verbose` | Show detailed progress messages |
+
+If an applied module's installed copy has advanced past the manifest and ships
+migrations that move files, `seihou run` refuses to proceed until they are
+applied — run [`seihou migrate`](#migrations) first, or pass `--with-migrations`
+to apply them in the same command.
 
 ### Re-running on an existing project
 
@@ -587,6 +609,35 @@ seihou upgrade haskell-base nix-flake
 ```
 
 Use `--dry-run` to preview what would change without making modifications.
+
+### Migrations
+
+When a newer module version ships **migrations** — declared file operations that
+move a project's tree from one version to another — apply them with
+`seihou migrate`:
+
+```sh
+seihou migrate haskell-base --dry-run   # preview the migration plan
+seihou migrate haskell-base             # apply it
+```
+
+`seihou run` refuses to regenerate while migrations are pending (so it never
+writes templates into paths a migration would move); run `seihou migrate` first
+or pass `seihou run --with-migrations`. See the [Migrations](migrations.md) guide.
+
+### Contexts
+
+A **context** (e.g. `work` vs `personal`) lets variables like `user.email`
+resolve differently depending on where you're working:
+
+```sh
+seihou context show              # show the active context and its source
+seihou context set work          # set the project context
+seihou context default personal  # set the global default
+```
+
+Context config lives at `~/.config/seihou/contexts/<name>/config.dhall`. See
+[Configuration and Variable Resolution](config-and-variables.md).
 
 ### Upgrade module schemas
 

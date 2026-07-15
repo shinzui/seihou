@@ -173,7 +173,8 @@ seihou validate-blueprint api-service
 
 Validation checks that `blueprint.dhall` evaluates, the prompt is non-empty,
 variables are unique, prompts reference declared variables, base modules
-resolve to modules or recipes, and declared reference files exist.
+resolve to modules or recipes, and declared reference files exist. Add
+`--lint` for advisory warnings about best practices.
 
 ## Publishing blueprints
 
@@ -197,7 +198,13 @@ Registries can publish blueprints alongside modules, recipes, and prompts:
 ```
 
 Users can browse, install, list, and filter blueprints with the same registry
-commands used for modules and recipes.
+commands used for modules and recipes:
+
+```sh
+seihou browse https://github.com/team/team-templates.git --tag agent
+seihou install https://github.com/team/team-templates.git --module api-service
+seihou list --blueprints
+```
 
 ## See also
 

@@ -15,8 +15,8 @@ prompt as a completion request and print one response.
 |----------|-------------|----------|
 | `claude-cli` | Local `claude` binary on `PATH` and authenticated | Starts an interactive Claude Code session. |
 | `codex-cli` | Local `codex` binary on `PATH` and authenticated | Starts an interactive Codex session with workspace-write sandboxing and on-request approvals. |
-| `anthropic` | `ANTHROPIC_API_KEY` or `ANTHROPIC_KEY` | Calls the Anthropic Messages API through Baikai. |
-| `openai` | `OPENAI_API_KEY` or `OPENAI_KEY` | Calls the OpenAI Chat Completions API through Baikai. |
+| `anthropic` | `ANTHROPIC_API_KEY` or `ANTHROPIC_KEY` | Calls the Anthropic Messages API directly (non-interactive). |
+| `openai` | `OPENAI_API_KEY` or `OPENAI_KEY` | Calls the OpenAI Chat Completions API directly (non-interactive). |
 
 The default provider is `claude-cli` with no explicit model.
 
