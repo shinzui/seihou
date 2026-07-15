@@ -4,12 +4,75 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.0.0] - 2026-07-15
+
 ### Added
 
-- Prompt guidance blocks: `prompt.dhall` can now declare conditional Markdown
-  guidance that is rendered with project context around `seihou prompt run`
-  provider prompts. `--debug` prints the complete provider prompt, and
-  `validate-prompt` checks guidance titles, bodies, and condition references.
+#### First-class prompts
+- New first-class **`Prompt`** runnable type: a `prompt.dhall` schema,
+  `AgentPrompt` domain types, Dhall decoding, validation, and
+  prompt-aware runnable discovery (with blueprint-over-prompt
+  precedence) (EP-50, EP-51).
+- **Command-derived variables**: `commandVars` resolve shell-command
+  output into variables (`FromCommand` provenance), with precedence,
+  type coercion, validation, trimming, size limits, conditions, and
+  command-failure diagnostics (EP-52).
+- **Prompt CLI workflows**: `seihou new-prompt` scaffolds a prompt,
+  `seihou prompt run` renders and launches a provider prompt, and
+  `seihou validate-prompt` lints prompt definitions (EP-53).
+- **Registry integration**: prompts are discovered, installed, browsed,
+  and listed alongside modules, recipes, and blueprints, and are covered
+  by `seihou registry sync-versions` / `validate` (EP-55).
+- **Prompt guidance blocks**: `prompt.dhall` can declare conditional
+  Markdown guidance rendered with project context around
+  `seihou prompt run` provider prompts. `--debug` prints the complete
+  provider prompt, and `validate-prompt` checks guidance titles, bodies,
+  and condition references. The agent `bootstrap`/`assist` context prompts
+  now teach the full `prompt.dhall` schema (EP-61).
+- New `docs/user/prompts.md`, per-command CLI docs, and a
+  `seihou help prompts` topic (EP-54).
+
+#### OKF documentation extension
+- New **`seihou extension`** host command and an external
+  **`seihou-okf-extension`** package that defines the extension contract
+  and moves OKF usage out of the CLI core (EP-60).
+- OKF **DocModel loader** for Seihou registries: loads modules, recipes,
+  blueprints, and prompts with resolved module references (EP-57).
+- OKF **rendering** of a `DocModel` to a documentation bundle, with
+  concept IDs, frontmatter, module cross-links, and validation (EP-58).
+- **`seihou docs`** (via the OKF extension): turn a registry into an OKF
+  documentation bundle (EP-59).
+- The default Nix package now bundles the OKF extension alongside the CLI
+  so `seihou docs` / `seihou extension run okf` work from a single
+  install.
+
+#### Validation and variables
+- `seihou validate-module --lint` now flags two authoring mistakes: a
+  `when` clause or `{{#if}}` conditional that references an undeclared
+  variable, and an `Eq <var> <literal>` comparison whose literal type
+  cannot match the variable's declared type (EP-49).
+- **Defaulted variables coerce to their declared type**: a `bool`
+  variable with `default = Some "true"` now resolves to `VBool True`
+  (not `VText "true"`), so `Eq` comparisons match from the default
+  source. A malformed default (e.g. `Some "treu"` on a bool) now fails
+  module load with a clear error (EP-49).
+
+### Changed
+
+- The CLI kit is now built on the shared **`baikai-kit`** package;
+  `Seihou.CLI.KitPaths` was removed and `Seihou.CLI.Kit` slimmed
+  accordingly.
+- Agent dependencies (`baikai`, `baikai-claude`, `baikai-openai`,
+  `baikai-kit`) and `okf-core` now resolve from published **Hackage**
+  releases; adapted to baikai interactive API changes (`modelId`,
+  `AssistantPayload.timestamp :: Maybe UTCTime`).
+
+### Packaging
+
+- New third package **`seihou-okf-extension`** (BSD-3-Clause, with
+  `LICENSE` and Hackage metadata).
+- All three packages share version `0.4.0.0`, and intra-repo components
+  pin `seihou-core ^>=0.4.0.0`.
 
 ## [0.3.0.0] - 2026-06-12
 
@@ -321,7 +384,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.3.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.4.0.0...HEAD
+[0.4.0.0]: https://github.com/shinzui/seihou/compare/v0.3.0.0...v0.4.0.0
 [0.3.0.0]: https://github.com/shinzui/seihou/compare/v0.2.0.0...v0.3.0.0
 [0.2.0.0]: https://github.com/shinzui/seihou/compare/v0.1.0.0...v0.2.0.0
 [0.1.0.0]: https://github.com/shinzui/seihou/releases/tag/v0.1.0.0
