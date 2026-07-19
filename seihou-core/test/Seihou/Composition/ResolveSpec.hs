@@ -110,6 +110,60 @@ spec = do
           let baseVars = byName "base" result
           (.value) (baseVars Map.! "project.name") `shouldBe` VText "default"
 
+    it "reuses saved instance values below CLI and above ambient sources" $ do
+      let m = mkModule "base" [] [mkTextVar "project.name" (Just (VText "new-default")) False] []
+          instanceId = primaryInstance "base"
+          modules = [(instanceId, m, "/fake/base")]
+          saved = Map.singleton instanceId (Map.singleton "project.name" "accepted")
+          env = Map.singleton "SEIHOU_VAR_PROJECT_NAME" "ambient"
+      case resolveComposedVariablesWithSaved modules saved Map.empty env "" "" Map.empty Map.empty Map.empty Map.empty of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let resolved = result Map.! instanceId Map.! "project.name"
+          resolved.value `shouldBe` VText "accepted"
+          resolved.source `shouldBe` FromApplication
+      case resolveComposedVariablesWithSaved modules saved (Map.singleton "project.name" "explicit") env "" "" Map.empty Map.empty Map.empty Map.empty of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> (result Map.! instanceId Map.! "project.name").source `shouldBe` FromCLI
+
+    it "re-coerces saved values through changed candidate declarations" $ do
+      let countDecl =
+            VarDecl
+              { name = "project.count",
+                type_ = VTInt,
+                default_ = Nothing,
+                description = Nothing,
+                required = True,
+                validation = Nothing
+              }
+          modul = mkModule "base" [] [countDecl] []
+          instanceId = primaryInstance "base"
+          saved = Map.singleton instanceId (Map.singleton "project.count" "not-an-int")
+      resolveComposedVariablesWithSaved [(instanceId, modul, "/fake/base")] saved Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
+        `shouldBe` Left [CoercionFailed "project.count" VTInt "not-an-int"]
+
+    it "drops removed saved keys while new declarations resolve normally" $ do
+      let modul =
+            mkModule
+              "base"
+              []
+              [ mkTextVar "project.kept" Nothing True,
+                mkTextVar "project.new" (Just (VText "new-default")) False
+              ]
+              []
+          instanceId = primaryInstance "base"
+          saved =
+            Map.singleton
+              instanceId
+              (Map.fromList [("project.kept", "accepted"), ("project.removed", "old")])
+      case resolveComposedVariablesWithSaved [(instanceId, modul, "/fake/base")] saved Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty of
+        Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
+        Right result -> do
+          let resolved = result Map.! instanceId
+          Map.keys resolved `shouldBe` ["project.kept", "project.new"]
+          (resolved Map.! "project.kept").source `shouldBe` FromApplication
+          (resolved Map.! "project.new").source `shouldBe` FromDefault
+
     it "flows exported variable from dependency to dependent" $ do
       let base = mkModule "base" [] [mkTextVar "project.name" (Just (VText "my-app")) False] [mkExport "project.name"]
           app = mkModule "app" ["base"] [mkTextVar "project.name" Nothing True] []

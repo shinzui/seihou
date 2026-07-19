@@ -4,7 +4,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Effectful
 import Seihou.Composition.Instance (primaryInstance)
-import Seihou.Composition.Resolve (resolveWithPrompts)
+import Seihou.Composition.Resolve (PromptPermission (..), resolveWithPromptPermission, resolveWithPrompts)
 import Seihou.Core.Types
 import Seihou.Effect.ConsolePure
 import Seihou.Interaction.Prompt (promptForVar, runPrompts)
@@ -326,6 +326,23 @@ spec = do
           _ -> expectationFailure $ "Expected exactly 1 error, got: " ++ show (length errs)
         Right _ -> expectationFailure "Expected Left (errors), got Right"
       -- No prompts should have been displayed
+      st.consoleOutputs `shouldSatisfy` all (/= "What is the project name?")
+
+    it "forbids prompts even when the Console interpreter is interactive" $ do
+      let m =
+            mkModule
+              "base"
+              []
+              [mkTextVar "project.name" Nothing True]
+              []
+              [mkPrompt "project.name" "What is the project name?"]
+          modules = [(primaryInstance m.name, m, "/fake/base")]
+      (result, st) <-
+        runEff $
+          runConsolePure ["must-not-be-read"] $
+            resolveWithPromptPermission PromptsForbidden modules Map.empty Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
+      result `shouldBe` Left [MissingRequiredVar "project.name"]
+      st.consoleInputs `shouldBe` ["must-not-be-read"]
       st.consoleOutputs `shouldSatisfy` all (/= "What is the project name?")
 
     it "prompts for optional variables after required resolution" $ do

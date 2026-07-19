@@ -257,6 +257,36 @@ spec = do
         readProject projectRoot "file.txt" `shouldReturn` "new\n"
         Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
 
+    it "uses an orchestrator's complete final manifest as the recovery commit marker" $
+      withSystemTempDirectory "seihou-update-final-marker" $ \projectRoot -> do
+        writeProject projectRoot "file.txt" "old\n"
+        let desired = desiredFile "file.txt" "new\n" [appA]
+            plan =
+              ReconciliationPlan
+                (Set.singleton appA)
+                (Map.singleton "file.txt" (FileUpdate desired (plannedState "new\n" "new\n" True) (observed "old\n") Nothing))
+                Set.empty
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        candidate <- expectRight =<< applyReconciliation transaction plan (manifestWithFiles Map.empty)
+        let finalManifest :: Manifest
+            finalManifest =
+              Manifest
+                { version = candidate.version,
+                  genAt = candidate.genAt,
+                  modules = candidate.modules,
+                  vars = Map.singleton "published" "yes",
+                  files = candidate.files,
+                  applications = candidate.applications,
+                  recipe = candidate.recipe,
+                  blueprint = candidate.blueprint
+                }
+        setUpdateTransactionExpectedManifest transaction finalManifest `shouldReturn` Right ()
+        Directory.createDirectoryIfMissing True (projectRoot </> ".seihou")
+        LBS.writeFile (projectRoot </> ".seihou" </> "manifest.json") (manifestToJSON finalManifest)
+        recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
+        readProject projectRoot "file.txt" `shouldReturn` "new\n"
+        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
+
     it "quarantines malformed journal metadata instead of deleting it" $
       withSystemTempDirectory "seihou-update-malformed" $ \projectRoot -> do
         let transactionDirectory = projectRoot </> ".seihou" </> "transactions" </> "broken"

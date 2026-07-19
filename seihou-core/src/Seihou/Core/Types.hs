@@ -418,6 +418,7 @@ data ModuleLoadError
 -- | Tracks where a variable's value came from (for provenance / @--explain@).
 data VarSource
   = FromCLI
+  | FromApplication
   | FromEnv Text
   | FromLocalConfig
   | FromNamespaceConfig Text

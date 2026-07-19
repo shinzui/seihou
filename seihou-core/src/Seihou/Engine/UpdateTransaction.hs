@@ -5,6 +5,7 @@ module Seihou.Engine.UpdateTransaction
     applyReconciliation,
     applyReconciliationWithHook,
     rollbackUpdateTransaction,
+    setUpdateTransactionExpectedManifest,
     completeUpdateTransaction,
     recoverIncompleteTransactions,
   )
@@ -411,6 +412,27 @@ completeUpdateTransaction :: UpdateTransaction -> IO (Either TransactionError ()
 completeUpdateTransaction transaction = do
   result <- try @SomeException (cleanupDirectory transaction.transactionDirectory)
   pure $ first (TransactionCompletionFailed . exceptionText) result
+
+-- | Replace the recovery commit marker with the exact manifest the caller is
+-- about to publish. Reconciliation initially records its files-only candidate;
+-- orchestrators that add application/cache/receipt state must set the complete
+-- candidate before the atomic manifest write.
+setUpdateTransactionExpectedManifest :: UpdateTransaction -> Manifest -> IO (Either TransactionError ())
+setUpdateTransactionExpectedManifest transaction expected = do
+  metadataResult <- readJournal transaction.transactionDirectory
+  case metadataResult of
+    Left err -> pure (Left err)
+    Right metadata -> do
+      let updated =
+            JournalMetadata
+              { journalVersion = metadata.journalVersion,
+                createdAt = metadata.createdAt,
+                entries = metadata.entries,
+                newDirectories = metadata.newDirectories,
+                expectedManifest = Just expected
+              }
+      result <- try @SomeException (writeJournal transaction.transactionDirectory updated)
+      pure $ first (\err -> TransactionApplyFailed (exceptionText err) Nothing) result
 
 recoverIncompleteTransactions :: FilePath -> IO [Either TransactionError ()]
 recoverIncompleteTransactions projectRoot = do

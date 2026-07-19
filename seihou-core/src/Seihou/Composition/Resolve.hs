@@ -1,7 +1,11 @@
 module Seihou.Composition.Resolve
   ( loadComposition,
+    SavedInstanceValues,
+    PromptPermission (..),
     resolveComposedVariables,
+    resolveComposedVariablesWithSaved,
     resolveWithPrompts,
+    resolveWithPromptPermission,
     exportedVars,
     collectParentVars,
   )
@@ -15,11 +19,20 @@ import Seihou.Composition.Graph (buildGraph, topoSort)
 import Seihou.Composition.Instance (ModuleInstance (..), mkInstance, primaryInstance)
 import Seihou.Core.Module (discoverModule, validateModule)
 import Seihou.Core.Types
-import Seihou.Core.Variable (resolveVariables)
+import Seihou.Core.Variable (resolveVariablesWithSaved)
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.Console (Console, isInteractive, putText)
 import Seihou.Interaction.Prompt (runPrompts)
 import Seihou.Prelude
+
+-- | Values captured by a previously accepted composition, kept distinct per
+-- parameterized module instance.
+type SavedInstanceValues = Map ModuleInstance (Map VarName Text)
+
+-- | Whether resolution may consult the Console prompt layer. Even when
+-- allowed, prompts are used only for an interactive Console interpreter.
+data PromptPermission = PromptsAllowed | PromptsForbidden
+  deriving stock (Eq, Show)
 
 -- | Load all modules in a composition: primary + additional + transitive deps.
 -- Additional modules are treated as implicit dependencies of the primary module.
@@ -69,6 +82,23 @@ resolveComposedVariables ::
   Map VarName Text ->
   Either [VarError] (Map ModuleInstance (Map VarName ResolvedVar))
 resolveComposedVariables modulesInOrder cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig =
+  resolveComposedVariablesWithSaved modulesInOrder Map.empty cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig
+
+-- | Resolve a composition while replaying values saved for matching module
+-- instances. Candidate declarations still own coercion and validation.
+resolveComposedVariablesWithSaved ::
+  [(ModuleInstance, Module, FilePath)] ->
+  SavedInstanceValues ->
+  Map VarName Text ->
+  Map Text Text ->
+  Text ->
+  Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Either [VarError] (Map ModuleInstance (Map VarName ResolvedVar))
+resolveComposedVariablesWithSaved modulesInOrder savedValues cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig =
   let allParentVars = collectParentVars modulesInOrder
    in go allParentVars modulesInOrder Map.empty Map.empty
   where
@@ -83,7 +113,8 @@ resolveComposedVariables modulesInOrder cliOverrides envVars namespace context l
       let visibleExports = gatherEdgeExports m allExports
           adjustedDecls = map (injectExportDefault visibleExports) m.vars
           myParentVars = Map.findWithDefault Map.empty inst parentVarsMap
-      resolved <- resolveVariables adjustedDecls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars
+          saved = Map.findWithDefault Map.empty inst savedValues
+      resolved <- resolveVariablesWithSaved adjustedDecls cliOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars
       let declaredNames = Set.fromList (map (.name) m.vars)
           inherited =
             Map.mapWithKey
@@ -115,7 +146,29 @@ resolveWithPrompts ::
   Map VarName Text ->
   Eff es (Either [VarError] (Map ModuleInstance (Map VarName ResolvedVar)))
 resolveWithPrompts modulesInOrder cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig = do
-  interactive <- isInteractive
+  resolveWithPromptPermission PromptsAllowed modulesInOrder Map.empty cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig
+
+-- | Prompt-aware resolver with explicit permission and saved application
+-- values. 'PromptsForbidden' never asks the Console interpreter whether a TTY
+-- is present and therefore remains deterministic in JSON/non-TTY callers.
+resolveWithPromptPermission ::
+  (Console :> es) =>
+  PromptPermission ->
+  [(ModuleInstance, Module, FilePath)] ->
+  SavedInstanceValues ->
+  Map VarName Text ->
+  Map Text Text ->
+  Text ->
+  Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Eff es (Either [VarError] (Map ModuleInstance (Map VarName ResolvedVar)))
+resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig = do
+  interactive <- case permission of
+    PromptsAllowed -> isInteractive
+    PromptsForbidden -> pure False
   let allParentVars = collectParentVars modulesInOrder
   goPrompt interactive allParentVars modulesInOrder Map.empty Map.empty
   where
@@ -132,7 +185,8 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace context localCo
       let visibleExports = gatherEdgeExports m allExports
           adjustedDecls = map (injectExportDefault visibleExports) m.vars
           myParentVars = Map.findWithDefault Map.empty inst parentVarsMap
-      case resolveVariables adjustedDecls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
+          saved = Map.findWithDefault Map.empty inst savedValues
+      case resolveVariablesWithSaved adjustedDecls cliOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
         Right resolved -> do
           let declaredNames = Set.fromList (map (.name) m.vars)
               inherited =
@@ -182,7 +236,7 @@ resolveWithPrompts modulesInOrder cliOverrides envVars namespace context localCo
                       let promptedOverrides =
                             Map.union cliOverrides $
                               Map.map (varValueToText . (.value)) prompted
-                      case resolveVariables adjustedDecls promptedOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
+                      case resolveVariablesWithSaved adjustedDecls promptedOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
                         Left errs' -> pure (Left errs')
                         Right resolved -> do
                           let resolvedWithPromptSource =

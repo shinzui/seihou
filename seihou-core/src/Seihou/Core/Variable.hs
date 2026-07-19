@@ -1,5 +1,6 @@
 module Seihou.Core.Variable
   ( resolveVariables,
+    resolveVariablesWithSaved,
     coerceValue,
     coerceDefault,
     validateVarValue,
@@ -137,13 +138,14 @@ simplePatternMatch pat t
 --
 -- Precedence chain (highest to lowest):
 -- 1. CLI overrides (@--var@ flags)
--- 2. Environment variables (@SEIHOU_VAR_@ prefix)
--- 3. Local project config (@.seihou\/config.dhall@)
--- 4. Namespace config (@~\/.config\/seihou\/namespaces\/\<ns\>\/config.dhall@)
--- 5. Context config (@~\/.config\/seihou\/contexts\/\<ctx\>\/config.dhall@)
--- 6. Global config (@~\/.config\/seihou\/config.dhall@)
--- 7. Parent-supplied vars (from parameterized dependencies)
--- 8. Module defaults
+-- 2. Saved application values (when supplied by the update resolver)
+-- 3. Environment variables (@SEIHOU_VAR_@ prefix)
+-- 4. Local project config (@.seihou\/config.dhall@)
+-- 5. Namespace config (@~\/.config\/seihou\/namespaces\/\<ns\>\/config.dhall@)
+-- 6. Context config (@~\/.config\/seihou\/contexts\/\<ctx\>\/config.dhall@)
+-- 7. Global config (@~\/.config\/seihou\/config.dhall@)
+-- 8. Parent-supplied vars (from parameterized dependencies)
+-- 9. Module defaults
 resolveVariables ::
   [VarDecl] ->
   Map VarName Text -> -- CLI overrides
@@ -157,6 +159,26 @@ resolveVariables ::
   Map VarName (Text, ModuleName) -> -- Parent-supplied vars
   Either [VarError] (Map VarName ResolvedVar)
 resolveVariables decls cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig parentVars =
+  resolveVariablesWithSaved decls cliOverrides Map.empty envVars namespace context localConfig nsConfig ctxConfig globalConfig parentVars
+
+-- | Resolve variables with values saved from a previously accepted application.
+-- Explicit CLI values remain authoritative; saved values are re-coerced through
+-- the candidate declaration before any ambient environment or config layer is
+-- considered.
+resolveVariablesWithSaved ::
+  [VarDecl] ->
+  Map VarName Text -> -- CLI overrides
+  Map VarName Text -> -- Saved application values
+  Map Text Text -> -- Environment variables
+  Text -> -- Namespace name (used in provenance tagging)
+  Text -> -- Context name (used in provenance tagging)
+  Map VarName Text -> -- Local config
+  Map VarName Text -> -- Namespace config
+  Map VarName Text -> -- Context config
+  Map VarName Text -> -- Global config
+  Map VarName (Text, ModuleName) -> -- Parent-supplied vars
+  Either [VarError] (Map VarName ResolvedVar)
+resolveVariablesWithSaved decls cliOverrides savedValues envVars namespace context localConfig nsConfig ctxConfig globalConfig parentVars =
   case partitionResults (map resolveOne decls) of
     ([], resolved) -> Right (Map.fromList (catMaybes resolved))
     (errs, _) -> Left errs
@@ -167,26 +189,37 @@ resolveVariables decls cliOverrides envVars namespace context localConfig nsConf
           ty = decl.type_
        in case lookupCLI name ty of
             Just result -> fmap Just (result >>= validateAndWrap decl)
-            Nothing -> case lookupEnv name ty of
+            Nothing -> case lookupSaved name ty of
               Just result -> fmap Just (result >>= validateAndWrap decl)
-              Nothing -> case lookupConfig name ty localConfig FromLocalConfig of
+              Nothing -> case lookupEnv name ty of
                 Just result -> fmap Just (result >>= validateAndWrap decl)
-                Nothing -> case lookupConfig name ty nsConfig (FromNamespaceConfig namespace) of
+                Nothing -> case lookupConfig name ty localConfig FromLocalConfig of
                   Just result -> fmap Just (result >>= validateAndWrap decl)
-                  Nothing -> case lookupConfig name ty ctxConfig (FromContextConfig context) of
+                  Nothing -> case lookupConfig name ty nsConfig (FromNamespaceConfig namespace) of
                     Just result -> fmap Just (result >>= validateAndWrap decl)
-                    Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
+                    Nothing -> case lookupConfig name ty ctxConfig (FromContextConfig context) of
                       Just result -> fmap Just (result >>= validateAndWrap decl)
-                      Nothing -> case lookupParent name ty of
+                      Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
                         Just result -> fmap Just (result >>= validateAndWrap decl)
-                        Nothing -> case decl.default_ of
-                          Just defVal ->
-                            case coerceDefault name ty defVal of
-                              Left err -> Left err
-                              Right val -> fmap Just (validateAndWrap decl (val, FromDefault))
-                          Nothing
-                            | decl.required -> Left (MissingRequiredVar name)
-                            | otherwise -> Right Nothing
+                        Nothing -> case lookupParent name ty of
+                          Just result -> fmap Just (result >>= validateAndWrap decl)
+                          Nothing -> case decl.default_ of
+                            Just defVal ->
+                              case coerceDefault name ty defVal of
+                                Left err -> Left err
+                                Right val -> fmap Just (validateAndWrap decl (val, FromDefault))
+                            Nothing
+                              | decl.required -> Left (MissingRequiredVar name)
+                              | otherwise -> Right Nothing
+
+    lookupSaved :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
+    lookupSaved name ty =
+      case Map.lookup name savedValues of
+        Nothing -> Nothing
+        Just rawText ->
+          Just $ case coerceValue name ty rawText of
+            Left err -> Left err
+            Right val -> Right (val, FromApplication)
 
     lookupParent :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
     lookupParent name ty =
@@ -274,6 +307,7 @@ formatExplain resolved =
 
     showSource :: VarSource -> Text
     showSource FromCLI = "[--var]"
+    showSource FromApplication = "[application]"
     showSource (FromEnv envKey) = "[env " <> envKey <> "]"
     showSource FromLocalConfig = "[local config]"
     showSource (FromNamespaceConfig ns) = "[namespace: " <> ns <> "]"
