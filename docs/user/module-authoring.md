@@ -838,7 +838,9 @@ in S.Module::{
 Each migration declares a `from` version, a `to` version, and a list
 of operations applied in order. The five operations are `MoveFile`,
 `MoveDir`, `DeleteFile`, `DeleteDir`, and `RunCommand`. Consumers run
-`seihou migrate <module>` to apply them.
+Consumers normally run `seihou update <target>` to apply migrations together
+with the new generated content. `seihou migrate <module>` remains the focused
+recovery tool.
 
 For the full guide — chain semantics, conflict handling, the
 `--with-migrations` upgrade flag, and the manifest path-rewrite

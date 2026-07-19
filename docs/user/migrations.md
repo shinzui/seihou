@@ -139,6 +139,15 @@ network or want to plan against only what's installed locally, pass
 `--no-fetch`. See [`docs/cli/migrate.md`](../cli/migrate.md) for the
 full flag list.
 
+## Integration with `seihou update`
+
+Routine project updates use `seihou update`. It fetches candidates into a
+staging area, plans applicable migrations automatically, then reconciles new
+generated content with user edits before publishing the cache and manifest.
+This keeps the layout transition and template transition in one consent and
+recovery boundary. Use `seihou migrate` directly only for focused recovery or
+an explicitly chosen intermediate `--to` version.
+
 ## Integration with `seihou upgrade`
 
 `seihou upgrade` updates the central installed copy under
@@ -148,7 +157,7 @@ installed copy. Instead, it prints a one-line advisory after each
 upgrade that has migrations pending in the current project:
 
 ```text
-note: haskell-base has 1 migration(s) pending (1.0.0 → 2.0.0); run 'seihou migrate haskell-base'
+note: haskell-base has 1 migration(s) pending (1.0.0 → 2.0.0); run 'seihou update' to reconcile the recorded project application
 ```
 
 Pass `--with-migrations` to run them inline:
@@ -166,11 +175,12 @@ need to clone again.)
 ## Integration with `seihou status`
 
 `seihou status` adds a `Pending migration: <from> -> <to> (<N>
-step(s)). Run: seihou migrate <name>` sub-line under any applied
+step(s)). Run: seihou update <target>` sub-line under any applied
 module whose manifest version trails the installed copy. `<N>` is the
 count of declared migrations that fall in the version window; it may
-be zero (a pure version bump). The line is informational; run
-`seihou migrate <module>` to apply.
+be zero (a pure version bump). Recommendations are deduplicated by recorded
+top-level application. Run `seihou update <target>` normally, or
+`seihou migrate <module>` for focused recovery.
 
 ## Integration with `seihou run`
 
@@ -183,7 +193,8 @@ is pending, the command refuses with an actionable message:
 Pending migrations detected:
   haskell-base: 1.0.0 -> 2.0.0 (3 step(s))
 
-Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run.
+For a recorded project application, run 'seihou update <target>'.
+For focused recovery, run 'seihou migrate <module>' for each, or pass --with-migrations to this explicit reconfiguration run.
 ```
 
 This guards the previous failure mode where re-running `seihou run`

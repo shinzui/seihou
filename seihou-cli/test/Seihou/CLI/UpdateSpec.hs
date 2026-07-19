@@ -1,22 +1,28 @@
-module Seihou.CLI.UpdateSpec (tests) where
+module Seihou.CLI.UpdateSpec
+  ( tests,
+    UpdateFixture (..),
+    prepareUpdateFixture,
+  )
+where
 
 import Control.Exception (bracket)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
-import Data.Maybe (listToMaybe)
+import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime (..), fromGregorian)
 import Seihou.CLI.CommandExecution (CommandPolicy (..))
-import Seihou.CLI.Update (PromptPolicy (..), UpdateRequest (..), UpdateSelection (..), applyProjectUpdate, withProjectUpdate)
+import Seihou.CLI.Update (PromptPolicy (..), UpdateRequest (..), UpdateSelection (..), applyProjectUpdate, isUpdateNoOp, withProjectUpdate)
 import Seihou.CLI.Update.Migrations (StagedMigrations (..), planAndStageMigrations)
 import Seihou.CLI.Update.Selection
 import Seihou.CLI.Update.Source
 import Seihou.CLI.Update.Types
 import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Core.Application (mkApplicationId)
+import Seihou.Core.CommandFingerprint (fingerprintCommand)
 import Seihou.Core.Migration (Migration (..), MigrationOp (..))
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (hashContent)
@@ -42,6 +48,16 @@ spec = do
           manifest :: Manifest
           manifest = manifestForApplications [first, second] Map.empty
       selectApplications (NamedUpdateTargets ["shared"]) manifest
+        `shouldBe` Right (RecordedSelection [first, second])
+
+    it "keeps manifest order for all applications and deduplicates repeated targets" $ do
+      let first = application (AppliedModuleTarget "one") [instanceState "one" "/one"]
+          second = application (AppliedModuleTarget "two") [instanceState "two" "/two"]
+          manifest :: Manifest
+          manifest = manifestForApplications [first, second] Map.empty
+      selectApplications AllRecordedApplications manifest
+        `shouldBe` Right (RecordedSelection [first, second])
+      selectApplications (NamedUpdateTargets ["two", "two", "one"]) manifest
         `shouldBe` Right (RecordedSelection [first, second])
 
     it "rejects a partial selection that shares an owned path" $ do
@@ -149,7 +165,7 @@ spec = do
               Right result -> do
                 result.versions `shouldSatisfy` any (\change -> change.name == "demo" && change.fromVersion == Just "1.0.0" && change.toVersion == Just "2.0.0")
                 result.updatedApplications `shouldBe` [fixture.applicationId]
-            TIO.readFile fixture.projectFile `shouldReturn` "hello accepted\nv2\n"
+            TIO.readFile fixture.projectFile `shouldReturn` "hello accepted\nkeep\nv2\n"
             installedBytes <- TIO.readFile (fixture.installedModule </> "module.dhall")
             installedBytes `shouldSatisfy` T.isInfixOf "Some \"2.0.0\""
             decoded <- manifestFromJSON <$> LBS.readFile fixture.manifestPath
@@ -185,6 +201,24 @@ spec = do
             result `shouldSatisfy` \case
               Left (UpdatePlanStale paths) -> Set.member (".seihou" </> "manifest.json") paths
               _ -> False
+
+    it "plans changed content at the same declared version with an explicit warning" $
+      withSystemTempDirectory "seihou-update-same-version" $ \root -> do
+        fixture <- prepareUpdateFixture root
+        let modulePath = fixture.remote </> "module.dhall"
+        body <- TIO.readFile modulePath
+        TIO.writeFile modulePath (T.replace "Some \"2.0.0\"" "Some \"1.0.0\"" body)
+        callProcess "git" ["-C", fixture.remote, "add", "module.dhall"]
+        callProcess "git" ["-C", fixture.remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "same-version content change"]
+        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
+          withCurrentDirectory fixture.projectRoot $ do
+            result <- withProjectUpdate (updateRequest True) pure
+            case result of
+              Left err -> expectationFailure (show err)
+              Right plan -> do
+                isUpdateNoOp plan `shouldBe` False
+                plan.versionChanges `shouldSatisfy` any (.sameVersionContentChanged)
+                plan.warnings `shouldContain` [SameVersionContentChanged "demo"]
 
     it "re-expands a candidate recipe and removes dependencies dropped by it" $
       withSystemTempDirectory "seihou-update-recipe" $ \root -> do
@@ -265,7 +299,7 @@ spec = do
         TIO.writeFile
           modulePath
           ( T.replace
-              ", commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }"
+              ", commands = [{ run = \"printf should-not-run >> command.log\", workDir = None Text, when = None Text }]"
               ", commands = [{ run = \"exit 7\", workDir = None Text, when = None Text }]"
               body
           )
@@ -379,7 +413,11 @@ prepareUpdateFixture root = do
       remote = root </> "remote"
       xdgHome = root </> "xdg"
       installedModule = xdgHome </> "seihou" </> "installed" </> "demo"
-      baselineContent = "hello accepted\nv1\n"
+      unchangedCommand = "printf should-not-run >> command.log"
+      commandOperation = RunCommandOp unchangedCommand Nothing "demo" 0
+      commandFingerprint = fromMaybe (error "test fixture command fingerprint") (fingerprintCommand commandOperation)
+      commandReceipt = CommandReceipt commandFingerprint "demo" unchangedCommand Nothing testTime
+      baselineContent = "hello accepted\nkeep\nv1\n"
       baselineRef = BaselineRef (hashContent baselineContent)
       target = AppliedModuleTarget "demo"
       applicationId = mkApplicationId target []
@@ -388,6 +426,7 @@ prepareUpdateFixture root = do
           { applicationId,
             targetSource = installedModule,
             targetVersion = Just "1.0.0",
+            commandReceipts = Map.singleton commandFingerprint commandReceipt,
             instances =
               [ (instanceState "demo" installedModule)
                   { resolvedVars = Map.singleton "project.name" "accepted"
@@ -412,10 +451,10 @@ prepareUpdateFixture root = do
           }
   createDirectoryIfMissing True (installedModule </> "files")
   TIO.writeFile (installedModule </> "module.dhall") (moduleDhallWithTemplate "demo" "1.0.0" "old-default")
-  TIO.writeFile (installedModule </> "files" </> "README.tmpl") "hello {{project.name}}\nv1\n"
+  TIO.writeFile (installedModule </> "files" </> "README.tmpl") "hello {{project.name}}\nkeep\nv1\n"
   createDirectoryIfMissing True (remote </> "files")
   TIO.writeFile (remote </> "module.dhall") (moduleDhallWithTemplate "demo" "2.0.0" "new-default")
-  TIO.writeFile (remote </> "files" </> "README.tmpl") "hello {{project.name}}\nv2\n"
+  TIO.writeFile (remote </> "files" </> "README.tmpl") "hello {{project.name}}\nkeep\nv2\n"
   callProcess "git" ["-C", remote, "init", "-q"]
   callProcess "git" ["-C", remote, "add", "."]
   callProcess "git" ["-C", remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "v2"]
@@ -521,7 +560,7 @@ moduleDhallWithTemplate name version defaultValue =
       ", exports = [] : List { var : Text, alias : Optional Text }",
       ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
       ", steps = [{ strategy = \"template\", src = \"README.tmpl\", dest = \"README.md\", when = None Text, patch = None Text }]",
-      ", commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }",
+      ", commands = [{ run = \"printf should-not-run >> command.log\", workDir = None Text, when = None Text }]",
       ", dependencies = [] : List Text",
       ", removal = None { steps : List { action : Text, dest : Text, src : Optional Text }, commands : List { run : Text, workDir : Optional Text, when : Optional Text } }",
       "}"

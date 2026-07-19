@@ -2,6 +2,10 @@
 
 Apply module-declared migrations to the current project.
 
+This is the focused/manual migration tool. Routine application updates should
+use [`seihou update`](update.md), which plans migrations together with template
+reconciliation, command receipts, baselines, and cache publication.
+
 ## Usage
 
 ```

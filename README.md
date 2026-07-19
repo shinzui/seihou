@@ -119,7 +119,8 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 | Command | Description |
 |---------|-------------|
 | [`init`](docs/cli/init.md) | Create the Seihou config directory (`~/.config/seihou/`). |
-| [`run`](docs/cli/run.md) | Load modules/recipes, resolve variables, and generate into the current directory. |
+| [`run`](docs/cli/run.md) | Apply a module or recipe initially, or deliberately reconfigure it. |
+| [`update`](docs/cli/update.md) | Reconcile recorded applications with newer sources while preserving user edits. |
 | [`remove`](docs/cli/remove.md) | Reverse an applied module via its declared `removal` steps. |
 | [`status`](docs/cli/status.md) | Show applied modules, tracked-file state, and resolved variables. |
 | [`diff`](docs/cli/diff.md) | Show files changed on disk since the last generation. |
@@ -132,7 +133,7 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 | [`install`](docs/cli/install.md) | Install artifacts from a git repository or registry. |
 | [`browse`](docs/cli/browse.md) | Preview a repository's artifacts without installing. |
 | [`outdated`](docs/cli/outdated.md) | Check installed modules for newer versions. |
-| [`upgrade`](docs/cli/upgrade.md) | Upgrade installed modules to their latest versions. |
+| [`upgrade`](docs/cli/upgrade.md) | Refresh shared installed-cache sources without reconciling a project. |
 | [`migrate`](docs/cli/migrate.md) | Apply a module's declared migrations to the current project. |
 
 **Authoring**

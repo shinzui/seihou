@@ -88,6 +88,6 @@ stripCodeFence txt =
         _ -> txt
 
 fallbackMessage :: [ModuleName] -> T.Text
-fallbackMessage [] = "seihou: apply modules"
-fallbackMessage [m] = "seihou: apply module " <> m.unModuleName
-fallbackMessage ms = "seihou: apply modules " <> T.intercalate ", " (map (.unModuleName) ms)
+fallbackMessage [] = "chore(seihou): apply modules"
+fallbackMessage [m] = "chore(seihou): apply " <> m.unModuleName
+fallbackMessage ms = "chore(seihou): apply " <> T.intercalate ", " (map (.unModuleName) ms)

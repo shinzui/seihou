@@ -15,10 +15,15 @@ import Seihou.Core.Migration
     MigrationPlan (..),
   )
 import Seihou.Core.Types
-  ( AppliedBlueprint (..),
+  ( ApplicationId (..),
+    AppliedBlueprint (..),
+    AppliedComposition (..),
+    AppliedInstanceState (..),
     AppliedModule (..),
+    AppliedTarget (..),
     Manifest (..),
     ModuleName (..),
+    RecipeName (..),
     emptyParentVars,
   )
 import Seihou.Core.Version qualified
@@ -55,6 +60,30 @@ mkManifest mods =
     { modules = mods,
       files = Map.empty
     }
+
+mkApplication :: Text -> [Text] -> AppliedComposition
+mkApplication target modules =
+  AppliedComposition
+    { applicationId = ApplicationId ("app-" <> target),
+      target = AppliedRecipeTarget (RecipeName target),
+      targetSource = "/installed/" <> T.unpack target,
+      targetVersion = Just "1.0.0",
+      additionalModules = [],
+      namespace = Nothing,
+      context = Nothing,
+      instances = map mkInstance modules,
+      commandReceipts = Map.empty,
+      appliedAt = fixedTime
+    }
+  where
+    mkInstance name =
+      AppliedInstanceState
+        { name = ModuleName name,
+          parentVars = emptyParentVars,
+          source = "/installed/" <> T.unpack name,
+          moduleVersion = Just "1.0.0",
+          resolvedVars = Map.empty
+        }
 
 -- | Build a 'MigrationPlan' fixture for use with formatStatus.
 mkPlan :: Text -> Text -> Text -> Int -> MigrationPlan
@@ -176,29 +205,29 @@ spec = describe "formatStatus" $ do
     out `shouldNotSatisfy` T.isInfixOf "Recommended actions"
     out `shouldNotSatisfy` T.isInfixOf "Pending migration"
 
-  it "outdated only (no migration declared): per-row upgrade hint and summary entry" $ do
+  it "outdated only recommends the project-aware update workflow" $ do
     let am = mkApplied "demo" (Just "0.1.0")
         manifest = mkManifest [am]
         entries = Just [mkEntry "demo" (Just "0.1.0") (Just "0.3.0") OutdatedSt]
         out = formatStatus False manifest [] entries []
     out `shouldSatisfy` T.isInfixOf "outdated: 0.3.0 available"
-    out `shouldSatisfy` T.isInfixOf "Run: seihou upgrade demo"
+    out `shouldSatisfy` T.isInfixOf "Run: seihou update demo"
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
-    out `shouldSatisfy` T.isInfixOf "  seihou upgrade demo"
+    out `shouldSatisfy` T.isInfixOf "  seihou update demo"
     out `shouldNotSatisfy` T.isInfixOf "Pending migration"
 
-  it "pending migration (full chain): per-row migrate hint and summary" $ do
+  it "pending migration keeps detail and recommends update" $ do
     let am = mkApplied "demo" (Just "1.0.0")
         manifest = mkManifest [am]
         plan = mkPlan "demo" "1.0.0" "2.0.0" 1
         out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
     out `shouldSatisfy` T.isInfixOf "Pending migration: 1.0.0 -> 2.0.0 (1 step(s))"
-    out `shouldSatisfy` T.isInfixOf "Run: seihou migrate demo"
+    out `shouldSatisfy` T.isInfixOf "Run: seihou update demo"
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
-    out `shouldSatisfy` T.isInfixOf "  seihou migrate demo"
+    out `shouldSatisfy` T.isInfixOf "  seihou update demo"
     out `shouldNotSatisfy` T.isInfixOf "seihou upgrade"
 
-  it "outdated + pending migration: single migrate hint, no upgrade hint" $ do
+  it "outdated plus pending migration produces one update hint" $ do
     let am = mkApplied "demo" (Just "0.1.0")
         manifest = mkManifest [am]
         plan = mkPlan "demo" "0.1.0" "0.3.0" 6
@@ -206,15 +235,15 @@ spec = describe "formatStatus" $ do
         out = formatStatus False manifest [] entries [(ModuleName "demo", plan)]
     out `shouldSatisfy` T.isInfixOf "outdated: 0.3.0 available"
     out `shouldSatisfy` T.isInfixOf "Pending migration: 0.1.0 -> 0.3.0 (6 step(s))"
-    out `shouldSatisfy` T.isInfixOf "Run: seihou migrate demo"
+    out `shouldSatisfy` T.isInfixOf "Run: seihou update demo"
     out `shouldNotSatisfy` T.isInfixOf "seihou upgrade demo"
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
-    out `shouldSatisfy` T.isInfixOf "  seihou migrate demo"
+    out `shouldSatisfy` T.isInfixOf "  seihou update demo"
 
   -- Master-plan live-tree fixture: manifest=0.1.0, installed=0.3.0,
   -- declared [0.1.0 → 0.2.0]. The chain reaches 0.2 via ops; the
   -- supplied target is 0.3, so planTo = 0.3. Status surfaces the
-  -- single in-window step and points at `seihou migrate demo` as the
+  -- single in-window step and points at `seihou update demo` as the
   -- remediation.
   it "partial-cover plan: chain reaches an intermediate version, target is the user's installed copy" $ do
     let am = mkApplied "demo" (Just "0.1.0")
@@ -222,9 +251,9 @@ spec = describe "formatStatus" $ do
         plan = mkPlan "demo" "0.1.0" "0.3.0" 1
         out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
     out `shouldSatisfy` T.isInfixOf "Pending migration: 0.1.0 -> 0.3.0 (1 step(s))"
-    out `shouldSatisfy` T.isInfixOf "Run: seihou migrate demo"
+    out `shouldSatisfy` T.isInfixOf "Run: seihou update demo"
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
-    out `shouldSatisfy` T.isInfixOf "  seihou migrate demo"
+    out `shouldSatisfy` T.isInfixOf "  seihou update demo"
     -- Doomed vocabulary is gone from status output.
     out `shouldNotSatisfy` T.isInfixOf "Blocked"
     out `shouldNotSatisfy` T.isInfixOf "no migration declared from"
@@ -246,10 +275,49 @@ spec = describe "formatStatus" $ do
             }
         out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
     out `shouldSatisfy` T.isInfixOf "Pending migration: 0.2.0 -> 0.3.0 (0 step(s))"
-    out `shouldSatisfy` T.isInfixOf "Run: seihou migrate demo"
+    out `shouldSatisfy` T.isInfixOf "Run: seihou update demo"
     out `shouldSatisfy` T.isInfixOf "Recommended actions:"
-    out `shouldSatisfy` T.isInfixOf "  seihou migrate demo"
+    out `shouldSatisfy` T.isInfixOf "  seihou update demo"
     -- The doomed vocabulary stays out of the rendered status.
     out `shouldNotSatisfy` T.isInfixOf "Blocked"
     out `shouldNotSatisfy` T.isInfixOf "--bump-only"
     out `shouldNotSatisfy` T.isInfixOf "[blocked]"
+
+  it "deduplicates repeated instances into one recipe application action" $ do
+    let duplicate = mkApplied "demo" (Just "1.0.0")
+        manifest =
+          (mkManifest [duplicate, duplicate])
+            { applications = [mkApplication "stack" ["demo", "demo"]]
+            }
+        plan = mkPlan "demo" "1.0.0" "2.0.0" 1
+        out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
+        recommendationLines = filter (== "  seihou update stack") (T.lines out)
+    recommendationLines `shouldBe` ["  seihou update stack"]
+    T.count "seihou update stack" out `shouldBe` 1
+    out `shouldNotSatisfy` T.isInfixOf "  seihou migrate demo"
+
+  it "recommends each affected application plus the whole-project update" $ do
+    let shared = mkApplied "shared" (Just "1.0.0")
+        manifest =
+          (mkManifest [shared])
+            { applications =
+                [ mkApplication "stack-one" ["shared"],
+                  mkApplication "stack-two" ["shared"]
+                ]
+            }
+        plan = mkPlan "shared" "1.0.0" "2.0.0" 1
+        out = formatStatus False manifest [] Nothing [(ModuleName "shared", plan)]
+        recommendationLines = dropWhile (/= "Recommended actions:") (T.lines out)
+    recommendationLines
+      `shouldBe` [ "Recommended actions:",
+                   "  seihou update stack-one",
+                   "  seihou update stack-two",
+                   "  seihou update"
+                 ]
+
+  it "deduplicates legacy instances by bare module name" $ do
+    let duplicate = mkApplied "demo" (Just "1.0.0")
+        manifest = mkManifest [duplicate, duplicate]
+        plan = mkPlan "demo" "1.0.0" "2.0.0" 1
+        out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
+    T.count "seihou update demo" out `shouldBe` 2

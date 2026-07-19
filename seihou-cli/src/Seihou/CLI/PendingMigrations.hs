@@ -72,7 +72,10 @@ formatRefusalMessage pendings =
   T.unlines $
     "Pending migrations detected:"
       : map renderEntry pendings
-      ++ ["", "Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run."]
+      ++ [ "",
+           "For a recorded project application, run 'seihou update <target>'.",
+           "For focused recovery, run 'seihou migrate <module>' for each, or pass --with-migrations to this explicit reconfiguration run."
+         ]
   where
     renderEntry (name, plan) =
       "  "

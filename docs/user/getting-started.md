@@ -555,8 +555,8 @@ provider. See [AI Agent Assistance](agent-assistance.md).
 
 If an applied module's installed copy has advanced past the manifest and ships
 migrations that move files, `seihou run` refuses to proceed until they are
-applied — run [`seihou migrate`](#migrations) first, or pass `--with-migrations`
-to apply them in the same command.
+applied — run [`seihou update`](../cli/update.md) for the recorded
+application, or pass `--with-migrations` to apply them in the same command.
 
 ### Re-running on an existing project
 
@@ -594,27 +594,33 @@ seihou outdated
 
 This compares installed module versions against their source repositories. Use `--json` for machine-readable output.
 
-### Upgrade installed modules
+### Update this project
 
-Upgrade all installed modules to the latest versions:
-
-```sh
-seihou upgrade
-```
-
-Or upgrade specific modules:
+Preview and reconcile every recorded application against its latest source:
 
 ```sh
-seihou upgrade haskell-base nix-flake
+seihou update --dry-run
+seihou update
 ```
 
-Use `--dry-run` to preview what would change without making modifications.
+Pass a module or recipe name to update only that application:
+
+```sh
+seihou update haskell-base
+```
+
+This single workflow stages candidates, plans migrations, merges template
+changes with local edits, runs newly introduced commands once, and publishes
+the new manifest and cache only after the update succeeds. Use `seihou upgrade`
+only when you intentionally want to refresh the shared installed cache without
+reconciling a project.
 
 ### Migrations
 
 When a newer module version ships **migrations** — declared file operations that
-move a project's tree from one version to another — apply them with
-`seihou migrate`:
+move a project's tree from one version to another — `seihou update` includes
+them automatically. Use `seihou migrate` as a focused recovery tool or to stop
+at an explicitly chosen intermediate version:
 
 ```sh
 seihou migrate haskell-base --dry-run   # preview the migration plan
@@ -622,8 +628,9 @@ seihou migrate haskell-base             # apply it
 ```
 
 `seihou run` refuses to regenerate while migrations are pending (so it never
-writes templates into paths a migration would move); run `seihou migrate` first
-or pass `seihou run --with-migrations`. See the [Migrations](migrations.md) guide.
+writes templates into paths a migration would move); normally run
+`seihou update`, or pass `seihou run --with-migrations`. See the
+[Migrations](migrations.md) guide.
 
 ### Contexts
 
@@ -672,6 +679,32 @@ seihou help blueprints   # learn about agent-driven blueprints
 seihou help prompts      # learn about first-class prompts
 seihou help agent        # learn about AI agent commands
 ```
+
+### Keep an applied project current
+
+The normal deterministic module lifecycle is:
+
+```text
+install source -> run once -> edit project -> update repeatedly
+                       \-> migrate manually only for focused recovery
+upgrade -> refresh shared cache only
+```
+
+After the first `seihou run`, routine changes use `seihou update`. It reuses
+the accepted inputs saved for each module instance, includes migrations,
+three-way merges non-overlapping user edits, and skips unchanged commands.
+
+```sh
+seihou update --dry-run       # preview every recorded application
+seihou update haskell-base    # update one target
+seihou update                 # update the whole recorded project
+```
+
+Use `seihou run` again only when deliberately reconfiguring the composition.
+Use `seihou migrate` for focused migration recovery. `seihou upgrade` refreshes
+the shared installed cache but does not make the current project match it. See
+the [`update` command reference](../cli/update.md) for merge choices, JSON
+automation, recovery, and command policies.
 
 
 ## Next steps

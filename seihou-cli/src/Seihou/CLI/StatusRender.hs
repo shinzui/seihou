@@ -1,13 +1,14 @@
 module Seihou.CLI.StatusRender
   ( formatStatus,
     ModuleAdvice (..),
-    moduleAdvice,
   )
 where
 
-import Data.List (intersperse)
+import Data.List (intersperse, nub)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust, listToMaybe, mapMaybe)
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.Format (defaultTimeLocale, formatTime)
@@ -19,8 +20,11 @@ import Seihou.CLI.VersionCompare
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
   ( AppliedBlueprint (..),
+    AppliedComposition (..),
+    AppliedInstanceState (..),
     AppliedModule (..),
     AppliedRecipe (..),
+    AppliedTarget (..),
     Manifest (..),
     ModuleName (..),
     ParentVars (..),
@@ -31,40 +35,14 @@ import Seihou.Core.Types
   )
 import Seihou.Core.Version (renderVersion)
 
--- | What action a single applied-module row recommends.
---
--- Order of precedence: a pending migration always wins over a bare
--- "outdated" annotation, because @seihou migrate@ (after EP-2) is
--- self-contained and one command suffices to bring the project to the
--- new version. An outdated row with no detected pending plan falls
--- back to @seihou upgrade@.
+-- | What action an applied module or recorded application recommends.
+-- Pending migrations and ordinary version drift both route through the
+-- project-aware update workflow.
 data ModuleAdvice
-  = -- | Nothing pending; do not emit a hint.
-    AdviceNone
-  | -- | Module is outdated and no pending migration was detected. The
-    -- renderer prints @"Run: seihou upgrade <name>"@.
-    AdviceUpgradeOnly Text
-  | -- | A pending migration was detected. The carried 'MigrationPlan'
-    -- describes the version range and the in-window migrations that
-    -- would run; 'planSteps' may be empty (a pure version bump) or
-    -- non-empty. The renderer prints a one-line summary and
-    -- @"Run: seihou migrate <name>"@.
-    AdvicePendingMigration Text MigrationPlan
+  = AdviceNone
+  | AdviceProjectUpdate Text (Maybe MigrationPlan)
+  | AdviceProjectUpdateAll
   deriving stock (Eq, Show)
-
--- | Decide which advice to emit for a single applied module. Any
--- detected pending plan wins over a bare outdated annotation because
--- @seihou migrate@ (after EP-2) is self-contained.
-moduleAdvice ::
-  AppliedModule ->
-  Maybe OutdatedStatus ->
-  Maybe MigrationPlan ->
-  ModuleAdvice
-moduleAdvice am mStatus mPlan = case mPlan of
-  Just plan -> AdvicePendingMigration am.name.unModuleName plan
-  Nothing -> case mStatus of
-    Just OutdatedSt -> AdviceUpgradeOnly am.name.unModuleName
-    _ -> AdviceNone
 
 -- | Render the full @seihou status@ output as a single 'Text' value.
 --
@@ -93,19 +71,7 @@ formatStatus color manifest tracked mEntries pendings =
       Nothing -> Map.empty
     pendingMap =
       Map.fromList [(name.unModuleName, plan) | (name, plan) <- pendings]
-    adviceList = map (rowAdvice entryMap pendingMap) manifest.modules
-
--- | Build a 'ModuleAdvice' for one applied module from the lookup maps.
-rowAdvice ::
-  Map Text OutdatedEntry ->
-  Map Text MigrationPlan ->
-  AppliedModule ->
-  ModuleAdvice
-rowAdvice entryMap pendingMap am =
-  let name = am.name.unModuleName
-      mStatus = (.status) <$> Map.lookup name entryMap
-      mPlan = Map.lookup name pendingMap
-   in moduleAdvice am mStatus mPlan
+    adviceList = projectAdviceList manifest entryMap pendingMap
 
 -- ---------------------------------------------------------------------------
 -- Section renderers
@@ -173,16 +139,17 @@ appliedSection color manifest mEntries pendings =
       Map.fromList [(name.unModuleName, plan) | (name, plan) <- pendings]
     moduleLines
       | null manifest.modules = ["  (none)"]
-      | otherwise =
-          concatMap
-            ( \am ->
-                let advice = rowAdvice entryMap pendingMap am
-                    annotation = lookupEntry mEntries entryMap am
-                    headerLine = formatModuleLine color annotation am
-                    hintLines = formatAdvice color advice
-                 in headerLine : hintLines
-            )
-            manifest.modules
+      | otherwise = renderRows Set.empty manifest.modules
+    renderRows _ [] = []
+    renderRows seen (am : rest) =
+      let name = am.name.unModuleName
+          annotation = lookupEntry mEntries entryMap am
+          headerLine = formatModuleLine color annotation am
+          hintLines
+            | Set.member name seen = []
+            | null manifest.applications = formatAdvice color (rowProjectAdvice entryMap pendingMap am)
+            | otherwise = maybe [] (formatPendingDetail color) (Map.lookup name pendingMap)
+       in headerLine : hintLines <> renderRows (Set.insert name seen) rest
 
 trackedSection :: Bool -> [TrackedFile] -> [Text]
 trackedSection color tracked =
@@ -217,14 +184,14 @@ updateSummarySection (Just entries) =
 -- actionable problem.
 recommendedActionsSection :: [ModuleAdvice] -> [Text]
 recommendedActionsSection advices =
-  case [c | Just c <- map adviceCommand advices] of
+  case nub [c | Just c <- map adviceCommand advices] of
     [] -> []
     cmds -> ["", "Recommended actions:"] ++ map ("  " <>) cmds
 
 adviceCommand :: ModuleAdvice -> Maybe Text
 adviceCommand AdviceNone = Nothing
-adviceCommand (AdviceUpgradeOnly name) = Just ("seihou upgrade " <> name)
-adviceCommand (AdvicePendingMigration name _) = Just ("seihou migrate " <> name)
+adviceCommand (AdviceProjectUpdate target _) = Just ("seihou update " <> target)
+adviceCommand AdviceProjectUpdateAll = Just "seihou update"
 
 -- ---------------------------------------------------------------------------
 -- Per-row formatting
@@ -287,23 +254,81 @@ formatModuleLine color annotation am =
 -- under the module name.
 formatAdvice :: Bool -> ModuleAdvice -> [Text]
 formatAdvice _ AdviceNone = []
-formatAdvice color (AdviceUpgradeOnly name) =
-  ["    " <> applyColor color yellow ("Run: seihou upgrade " <> name)]
-formatAdvice color (AdvicePendingMigration name plan) =
-  ["    " <> applyColor color yellow (planSummary name plan)]
+formatAdvice color (AdviceProjectUpdate target Nothing) =
+  ["    " <> applyColor color yellow ("Run: seihou update " <> target)]
+formatAdvice color (AdviceProjectUpdate target (Just plan)) =
+  ["    " <> applyColor color yellow (projectPlanSummary target plan)]
+formatAdvice color AdviceProjectUpdateAll =
+  ["    " <> applyColor color yellow "Run: seihou update"]
 
--- | Format the "Pending migration: from -> to (N step(s)). Run:
--- seihou migrate <name>" line for a pending-migration advice row.
-planSummary :: Text -> MigrationPlan -> Text
-planSummary name plan =
+projectPlanSummary :: Text -> MigrationPlan -> Text
+projectPlanSummary target plan =
   "Pending migration: "
     <> renderVersion plan.planFrom
     <> " -> "
     <> renderVersion plan.planTo
     <> " ("
     <> T.pack (show (length plan.planSteps))
-    <> " step(s)). Run: seihou migrate "
-    <> name
+    <> " step(s)). Run: seihou update "
+    <> target
+
+formatPendingDetail :: Bool -> MigrationPlan -> [Text]
+formatPendingDetail color plan =
+  [ "    "
+      <> applyColor
+        color
+        yellow
+        ( "Pending migration: "
+            <> renderVersion plan.planFrom
+            <> " -> "
+            <> renderVersion plan.planTo
+            <> " ("
+            <> T.pack (show (length plan.planSteps))
+            <> " step(s))"
+        )
+  ]
+
+rowProjectAdvice ::
+  Map Text OutdatedEntry ->
+  Map Text MigrationPlan ->
+  AppliedModule ->
+  ModuleAdvice
+rowProjectAdvice entryMap pendingMap applied =
+  if actionable
+    then AdviceProjectUpdate name pending
+    else AdviceNone
+  where
+    name = applied.name.unModuleName
+    pending = Map.lookup name pendingMap
+    outdated = maybe False ((== OutdatedSt) . (.status)) (Map.lookup name entryMap)
+    actionable = outdated || isJust pending
+
+projectAdviceList ::
+  Manifest ->
+  Map Text OutdatedEntry ->
+  Map Text MigrationPlan ->
+  [ModuleAdvice]
+projectAdviceList manifest entryMap pendingMap
+  | null manifest.applications =
+      map (rowProjectAdvice entryMap pendingMap) (deduplicateModules manifest.modules)
+  | otherwise =
+      let applicationAdvice = mapMaybe adviceForApplication manifest.applications
+       in applicationAdvice <> [AdviceProjectUpdateAll | length applicationAdvice > 1]
+  where
+    adviceForApplication application =
+      let names = map (.name.unModuleName) application.instances
+          pending = listToMaybe (mapMaybe (`Map.lookup` pendingMap) names)
+          outdated = any (maybe False ((== OutdatedSt) . (.status)) . (`Map.lookup` entryMap)) names
+       in if outdated || isJust pending
+            then Just (AdviceProjectUpdate (targetText application.target) pending)
+            else Nothing
+
+deduplicateModules :: [AppliedModule] -> [AppliedModule]
+deduplicateModules = Map.elems . Map.fromList . map (\applied -> (applied.name.unModuleName, applied))
+
+targetText :: AppliedTarget -> Text
+targetText (AppliedModuleTarget name) = name.unModuleName
+targetText (AppliedRecipeTarget name) = name.unRecipeName
 
 renderEntry :: Bool -> OutdatedEntry -> Text
 renderEntry color e = case e.status of

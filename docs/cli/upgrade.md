@@ -1,6 +1,6 @@
 # seihou upgrade
 
-Upgrade installed modules to latest versions.
+Refresh shared installed-cache sources to their latest versions.
 
 ## Usage
 
@@ -24,7 +24,7 @@ seihou upgrade [MODULE...] [OPTIONS]
 
 ## Description
 
-Upgrades installed modules to the latest version from their source repository. Only modules installed via `seihou install` are eligible. Modules without version info are skipped.
+Refreshes installed modules from their source repository. Only modules installed via `seihou install` are eligible. This is cache maintenance: it does not reconcile templates, migrations, commands, or user edits in the current project. Use [`seihou update`](update.md) for that project-aware workflow.
 
 ## How "outdated" detection works
 
@@ -46,14 +46,13 @@ After a successful upgrade, if the manifest's recorded version still
 trails the freshly-installed copy's declared version, `seihou
 upgrade` prints a one-line advisory naming the next command:
 
-    note: <name> has N migration(s) pending (X → Y); run 'seihou migrate <name>'
+    note: <name> has N migration(s) pending (X → Y); run 'seihou update' to reconcile the recorded project application
 
 `N` is the count of declared migrations whose `[from, to]` range falls
-inside `[manifest.moduleVersion, installed.version]`. It may be zero
-(a "pure version bump" where no migration applies but the manifest
-still advances). In every case, `seihou migrate <name>` is the
-remediation; `seihou upgrade --with-migrations` combines the upgrade
-and migrate steps in one invocation.
+inside `[manifest.moduleVersion, installed.version]`. It may be zero.
+`seihou update` is the normal remediation because it reconciles migrations and
+generated content together. The compatibility flag `--with-migrations` still
+runs the lower-level migration after refreshing the cache.
 
 ## Examples
 

@@ -326,9 +326,7 @@ printAdvisory name plan = do
           <> renderVersion plan.planFrom
           <> " → "
           <> renderVersion plan.planTo
-          <> "); run 'seihou migrate "
-          <> name
-          <> "'"
+          <> "); run 'seihou update' to reconcile the recorded project application"
   TIO.putStrLn $ if colorEnabled then yellow msg else msg
 
 -- | Run a migration for a single module. Reads the manifest fresh so

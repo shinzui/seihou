@@ -15,11 +15,12 @@ module Seihou.CLI.Update
     planProjectUpdate,
     applyProjectUpdate,
     withProjectUpdate,
+    isUpdateNoOp,
   )
 where
 
 import Control.Exception (SomeException, displayException, try)
-import Control.Monad (forM, forM_, when)
+import Control.Monad (foldM, forM, forM_, when)
 import Data.Foldable (traverse_)
 import Data.List (find, isPrefixOf)
 import Data.Map.Strict qualified as Map
@@ -227,43 +228,51 @@ applyAcceptedPlan plan = do
               actualReconciliation <- planActualReconciliation plan migratedManifest
               case actualReconciliation of
                 Left err -> abortUpdate transaction err
-                Right actual
-                  | actual /= plan.reconciliation ->
-                      abortUpdate
-                        transaction
-                        ( UpdateChangedAfterMigrationCommand
-                            (reconciliationSummary plan.reconciliation)
-                            (reconciliationSummary actual)
-                        )
-                  | otherwise -> do
-                      let reconciliationManifest = migratedManifest {genAt = now}
-                      appliedFiles <- applyReconciliation transaction actual reconciliationManifest
-                      case appliedFiles of
-                        Left err -> abortUpdate transaction (UpdateTransactionFailed err)
-                        Right filesManifest -> do
-                          commandResult <-
-                            runEff $
-                              runProcessIO $
-                                executeCommandPlan now plan.commandPlan
-                          case commandResult of
-                            Left err ->
-                              abortUpdate
-                                transaction
-                                (UpdateCommandFailed err [ArbitraryCommandSideEffectsMayRemain])
-                            Right completedReceipts -> do
-                              let finalManifest = buildFinalManifest now plan filesManifest completedReceipts
-                              markerResult <- setCommitMarkers transaction finalManifest
-                              case markerResult of
-                                Left err -> abortUpdate transaction err
-                                Right () -> do
-                                  publication <- publishCandidates plan.candidateArtifacts
-                                  case publication of
-                                    Left err -> abortUpdate transaction err
-                                    Right () -> do
-                                      written <- writeManifestIO plan.snapshot.manifestPath finalManifest
-                                      case written of
-                                        Left err -> abortUpdate transaction err
-                                        Right () -> finishCommitted transaction plan finalManifest completedReceipts
+                Right actual -> case reapplyPlannedResolutions plan.reconciliation actual of
+                  Left _ ->
+                    abortUpdate
+                      transaction
+                      ( UpdateChangedAfterMigrationCommand
+                          (reconciliationSummary plan.reconciliation)
+                          (reconciliationSummary actual)
+                      )
+                  Right resolvedActual
+                    | resolvedActual /= plan.reconciliation ->
+                        abortUpdate
+                          transaction
+                          ( UpdateChangedAfterMigrationCommand
+                              (reconciliationSummary plan.reconciliation)
+                              (reconciliationSummary resolvedActual)
+                          )
+                    | otherwise -> do
+                        let reconciliationManifest = migratedManifest {genAt = now}
+                        appliedFiles <- applyReconciliation transaction resolvedActual reconciliationManifest
+                        case appliedFiles of
+                          Left err -> abortUpdate transaction (UpdateTransactionFailed err)
+                          Right filesManifest -> do
+                            commandResult <-
+                              runEff $
+                                runProcessIO $
+                                  executeCommandPlan now plan.commandPlan
+                            case commandResult of
+                              Left err ->
+                                abortUpdate
+                                  transaction
+                                  (UpdateCommandFailed err [ArbitraryCommandSideEffectsMayRemain])
+                              Right completedReceipts -> do
+                                let finalManifest = buildFinalManifest now plan filesManifest completedReceipts
+                                markerResult <- setCommitMarkers transaction finalManifest
+                                case markerResult of
+                                  Left err -> abortUpdate transaction err
+                                  Right () -> do
+                                    publication <- publishCandidates plan.candidateArtifacts
+                                    case publication of
+                                      Left err -> abortUpdate transaction err
+                                      Right () -> do
+                                        written <- writeManifestIO plan.snapshot.manifestPath finalManifest
+                                        case written of
+                                          Left err -> abortUpdate transaction err
+                                          Right () -> finishCommitted transaction plan finalManifest completedReceipts
 
 planApplication ::
   UpdateRequest ->
@@ -735,6 +744,23 @@ planActualReconciliation plan manifest = do
           planReconciliation plan.snapshot.projectRoot manifest selected operations owners
   pure (first UpdateReconciliationFailed result)
 
+-- | Reapply choices gathered after the initial read-only plan to the
+-- reconciliation rebuilt after real migration commands. Exact equality is
+-- still required afterward, so a command-induced classification or content
+-- change remains a stale-plan failure rather than inheriting an old choice.
+reapplyPlannedResolutions ::
+  ReconciliationPlan ->
+  ReconciliationPlan ->
+  Either ReconciliationError ReconciliationPlan
+reapplyPlannedResolutions planned actual =
+  foldM reapplyOne actual (Map.toAscList planned.files)
+  where
+    reapplyOne actual (path, FileConflict _ _ _ _ _ _ (Just resolved)) =
+      resolveFileConflict path resolved.choice actual
+    reapplyOne actual (path, FileOrphanEdited _ _ _ _ (Just choice)) =
+      resolveEditedOrphan path choice actual
+    reapplyOne actual _ = Right actual
+
 runRealMigrations :: UTCTime -> Manifest -> [PlannedUpdateMigration] -> IO (Either UpdateError Manifest)
 runRealMigrations now manifest migrations =
   runEff $ runFilesystem $ runProcessIO $ go manifest migrations
@@ -935,9 +961,15 @@ finishCommitted transaction plan manifest completedReceipts = do
         Left err -> [BaselinePruneFailed (T.pack (displayException err))]
         Right _ -> []
       summary = summarizeCommandPlan plan.commandPlan
+      originalBaselineRefs = manifestBaselineRefs plan.snapshot.originalManifest
+      finalBaselineRefs = manifestBaselineRefs manifest
+      changedBaselineRefs =
+        (originalBaselineRefs Set.\\ finalBaselineRefs)
+          `Set.union` (finalBaselineRefs Set.\\ originalBaselineRefs)
       baselinePaths =
-        Set.map (\ref -> ".seihou" </> "baselines" </> T.unpack ref.unBaselineRef.unSHA256) $
-          manifestBaselineRefs manifest Set.\\ manifestBaselineRefs plan.snapshot.originalManifest
+        Set.map
+          (\ref -> ".seihou" </> "baselines" </> T.unpack ref.unBaselineRef.unSHA256)
+          changedBaselineRefs
       touched =
         plan.snapshot.transactionTargets
           `Set.union` baselinePaths
@@ -1001,8 +1033,8 @@ commandSummaryForPlan commandPlan =
   let summary = summarizeCommandPlan commandPlan
    in CommandSummary summary.willRun summary.skippedUnchanged summary.skippedDisabled
 
-isStructuredNoOp :: UpdatePlan -> Bool
-isStructuredNoOp plan =
+isUpdateNoOp :: UpdatePlan -> Bool
+isUpdateNoOp plan =
   null plan.versionChanges
     && null plan.migrations
     && plan.inputChanges.overridden == 0
@@ -1023,6 +1055,9 @@ isStructuredNoOp plan =
         && previous.context == candidate.context
         && previous.instances == candidate.instances
         && previous.commandReceipts == candidate.commandReceipts
+
+isStructuredNoOp :: UpdatePlan -> Bool
+isStructuredNoOp = isUpdateNoOp
 
 varValueToText :: VarValue -> Text
 varValueToText (VText value) = value

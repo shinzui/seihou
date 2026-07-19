@@ -8,6 +8,23 @@ packaging.
 Versions follow the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`). All
 packages in the workspace share a single version.
 
+## Unreleased
+
+### Added
+
+- **Project-aware updates.** `seihou update` now stages candidate sources,
+  reuses saved per-instance inputs, applies migrations, three-way merges user
+  edits from content-addressed generated baselines, skips unchanged commands,
+  and publishes cache/manifest state only after success. Human and JSON output,
+  interactive conflict/orphan choices, dry-run, force policies, and optional
+  Git commits are included. See [the update reference](../cli/update.md).
+
+### Changed
+
+- `seihou status` recommends one update per recorded application; `run` is
+  described as initial application/reconfiguration, while `upgrade` is
+  explicitly shared-cache-only maintenance.
+
 ## [0.3.0.0] - 2026-06-12
 
 ### Added

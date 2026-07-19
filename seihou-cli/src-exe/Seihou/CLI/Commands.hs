@@ -1,6 +1,7 @@
 module Seihou.CLI.Commands
   ( Command (..),
     RunOpts (..),
+    UpdateOpts (..),
     RemoveOpts (..),
     VarsOpts (..),
     InstallOpts (..),
@@ -60,6 +61,7 @@ import Seihou.Prelude
 data Command
   = Init
   | Run RunOpts
+  | Update UpdateOpts
   | Remove RemoveOpts
   | Vars VarsOpts
   | Install InstallOpts
@@ -143,6 +145,20 @@ data RunOpts = RunOpts
     -- non-zero exit, so a user never silently writes new templates
     -- into paths a migration would have moved.
     runWithMigrations :: Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
+data UpdateOpts = UpdateOpts
+  { updateTargets :: [Text],
+    updateVars :: [(Text, Text)],
+    updateDryRun :: Bool,
+    updateJson :: Bool,
+    updateReconfigure :: Bool,
+    updateForce :: Bool,
+    updateRunAllCommands :: Bool,
+    updateNoCommands :: Bool,
+    updateCommit :: Bool,
+    updateCommitMessage :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -273,7 +289,7 @@ data UpgradeOpts = UpgradeOpts
     -- 'Seihou.CLI.Migrate.runMigrate' against the *current project*
     -- (cwd), if and only if that module is applied locally. Default
     -- 'False'; the unset path emits a one-line advisory pointing the
-    -- user at @seihou migrate@ when migrations would be pending.
+    -- user at @seihou update@ when migrations would be pending.
     upgradeWithMigrations :: Bool
   }
   deriving stock (Eq, Show, Generic)
@@ -374,6 +390,7 @@ commandParser =
   hsubparser
     ( command "init" initInfo
         <> command "run" runInfo
+        <> command "update" updateInfo
         <> command "remove" removeInfo
         <> command "status" statusInfo
         <> command "diff" diffInfo
@@ -447,12 +464,13 @@ runInfo =
   info
     (runParser <**> helper)
     ( fullDesc
-        <> progDesc "Run modules to generate a project"
+        <> progDesc "Apply a module initially or reconfigure it explicitly"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Loads the specified module and its dependencies, resolves all variables," :: String),
-                  pretty ("compiles a generation plan, and executes it in the current directory." :: String),
+                [ pretty ("Applies the specified module for the first time, or deliberately" :: String),
+                  pretty ("reconfigures it. Variables are resolved and a generation plan executes" :: String),
+                  pretty ("in the current directory." :: String),
                   line,
                   pretty ("Compose multiple modules with -m/--module (repeatable). Override" :: String),
                   pretty ("variables with --var KEY=VALUE (repeatable). Use --dry-run to preview" :: String),
@@ -465,8 +483,9 @@ runInfo =
                   pretty ("If an applied module's installed copy has advanced past the manifest's" :: String),
                   pretty ("recorded version and ships migrations that move project files," :: String),
                   pretty ("'seihou run' refuses to proceed (so it never writes new templates into" :: String),
-                  pretty ("paths a migration would have moved). Run 'seihou migrate <module>'" :: String),
-                  pretty ("first, or pass --with-migrations to apply pending chains in-band." :: String),
+                  pretty ("paths a migration would have moved). For routine source updates, run" :: String),
+                  pretty ("'seihou update <target>'. Use migrate or --with-migrations for focused" :: String),
+                  pretty ("recovery and explicit reconfiguration." :: String),
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
@@ -476,6 +495,33 @@ runInfo =
                         pretty ("seihou run my-module --diff" :: String),
                         pretty ("seihou run haskell-base --confirm-defaults   # review and override default values" :: String),
                         pretty ("seihou run haskell-base --with-migrations    # apply pending migrations before regenerating" :: String)
+                      ]
+                ]
+          )
+    )
+
+updateInfo :: ParserInfo Command
+updateInfo =
+  info
+    (updateParser <**> helper)
+    ( fullDesc
+        <> progDesc "Update recorded project applications safely"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Reconciles recorded module and recipe applications with newer source" :: String),
+                  pretty ("content. Saved inputs are reused, migrations are included automatically," :: String),
+                  pretty ("user edits are three-way merged, and unchanged commands are skipped." :: String),
+                  line,
+                  pretty ("With no TARGET, updates every recorded application in manifest order." :: String),
+                  pretty ("Use --dry-run to preview or --json for a non-interactive machine result." :: String),
+                  pretty ("--force accepts generated conflict content but retains edited orphans." :: String),
+                  line,
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou update" :: String),
+                        pretty ("seihou update master-plan --dry-run" :: String),
+                        pretty ("seihou update master-plan --force --commit" :: String)
                       ]
                 ]
           )
@@ -591,7 +637,8 @@ statusInfo =
                   line,
                   pretty ("When an applied module's installed copy has advanced past the manifest's" :: String),
                   pretty ("recorded version, status reports the pending migration count under that" :: String),
-                  pretty ("module's line; run 'seihou migrate <module>' to apply them." :: String)
+                  pretty ("module's line. Recorded applications recommend 'seihou update <target>';" :: String),
+                  pretty ("manual 'seihou migrate <module>' remains available for focused recovery." :: String)
                 ]
           )
     )
@@ -760,6 +807,42 @@ runParser =
         ( long "with-migrations"
             <> help "Apply any pending module migrations before the run plan; without this, 'seihou run' refuses when migrations are pending"
         )
+
+updateParser :: Parser Command
+updateParser =
+  fmap Update $
+    makeUpdateOpts
+      <$> many (argument (T.pack <$> str) (metavar "TARGET" <> help "Recorded application target or contained module (repeatable; default: all)"))
+      <*> many
+        ( option
+            varPair
+            (long "var" <> metavar "KEY=VALUE" <> help "Variable override (repeatable)")
+        )
+      <*> switch (long "dry-run" <> help "Show the complete update plan without modifying managed state")
+      <*> switch (long "json" <> help "Emit one JSON document and disable prompts")
+      <*> switch (long "reconfigure" <> help "Ignore saved inputs and resolve them again")
+      <*> switch (long "force" <> help "Use generated content for safe conflicts and retain edited orphans")
+      <*> updateCommandFlags
+      <*> switch (long "commit" <> help "Commit successfully updated managed paths")
+      <*> optional (option (T.pack <$> str) (long "commit-message" <> metavar "MSG" <> help "Custom commit message (implies --commit)"))
+  where
+    makeUpdateOpts targets vars dryRun json reconfigure force (runAll, noCommands) commit commitMessage =
+      UpdateOpts
+        { updateTargets = targets,
+          updateVars = vars,
+          updateDryRun = dryRun,
+          updateJson = json,
+          updateReconfigure = reconfigure,
+          updateForce = force,
+          updateRunAllCommands = runAll,
+          updateNoCommands = noCommands,
+          updateCommit = commit,
+          updateCommitMessage = commitMessage
+        }
+    updateCommandFlags =
+      flag' (True, False) (long "run-all-commands" <> help "Run every generated command, including unchanged ones")
+        <|> flag' (False, True) (long "no-commands" <> help "Skip every generated command")
+        <|> pure (False, False)
 
 varsParser :: Parser Command
 varsParser =
@@ -1073,10 +1156,9 @@ outdatedInfo =
                   pretty ("Example:" :: String),
                   indent 2 $ pretty ("seihou outdated" :: String),
                   line,
-                  pretty ("Run 'seihou upgrade' to apply available updates. If a module ships" :: String),
-                  pretty ("migrations, 'seihou upgrade' will surface them via an advisory; run" :: String),
-                  pretty ("'seihou migrate <module>' (or 'seihou upgrade --with-migrations')" :: String),
-                  pretty ("to apply them to the current project." :: String)
+                  pretty ("Run 'seihou update' in an applied project to fetch and reconcile" :: String),
+                  pretty ("available versions. Use 'seihou upgrade' only to refresh the shared" :: String),
+                  pretty ("installed cache, or 'seihou migrate <module>' for focused recovery." :: String)
                 ]
           )
     )
@@ -1092,7 +1174,7 @@ upgradeInfo =
   info
     (upgradeParser <**> helper)
     ( fullDesc
-        <> progDesc "Upgrade installed modules to latest versions"
+        <> progDesc "Refresh shared installed-cache sources only"
         <> footerDoc (Just upgradeFooter)
     )
 
@@ -1112,8 +1194,9 @@ upgradeParser =
 upgradeFooter :: Doc
 upgradeFooter =
   vsep
-    [ pretty ("Upgrades installed modules to the latest version available from their" :: String),
+    [ pretty ("Refreshes installed-cache modules to the latest version available from their" :: String),
       pretty ("source repository. Only modules installed via 'seihou install' are checked." :: String),
+      pretty ("It does not reconcile the current project; use 'seihou update' for that." :: String),
       pretty ("Modules without version information are upgraded by default." :: String),
       pretty ("Use --skip-unversioned to skip them." :: String),
       line,
@@ -1135,7 +1218,7 @@ upgradeFooter =
         vsep
           [ pretty ("Newer module versions may declare migrations that move project files" :: String),
             pretty ("when applied. By default 'seihou upgrade' does not run them — it only" :: String),
-            pretty ("prints an advisory pointing at 'seihou migrate <module>'. Pass" :: String),
+            pretty ("prints an advisory pointing project users at 'seihou update'. Pass" :: String),
             pretty ("--with-migrations to run them as part of the upgrade." :: String)
           ]
     ]

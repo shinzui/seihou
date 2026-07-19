@@ -23,6 +23,9 @@ import Seihou.CLI.RemoteVersionSpec qualified as RemoteVersionSpec
 import Seihou.CLI.RunBlueprintRefusalSpec qualified as RunBlueprintRefusalSpec
 import Seihou.CLI.SavePromptedSpec qualified as SavePromptedSpec
 import Seihou.CLI.StatusSpec qualified as StatusSpec
+import Seihou.CLI.UpdateE2ESpec qualified as UpdateE2ESpec
+import Seihou.CLI.UpdateInteractionSpec qualified as UpdateInteractionSpec
+import Seihou.CLI.UpdateRenderSpec qualified as UpdateRenderSpec
 import Seihou.CLI.UpdateSpec qualified as UpdateSpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
 import Seihou.FzfSpec qualified as FzfSpec
@@ -57,6 +60,9 @@ main = do
         StatusSpec.tests,
         UpgradeSpec.tests,
         UpdateSpec.tests,
+        UpdateInteractionSpec.tests,
+        UpdateE2ESpec.tests,
+        UpdateRenderSpec.tests,
         FzfSpec.tests
       ]
   defaultMain (testGroup "seihou-cli" tests)

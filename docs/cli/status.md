@@ -51,18 +51,20 @@ The row's hint takes one shape regardless of how many migrations the
 planner found:
 
 ```
-    Pending migration: 0.1.0 -> 0.3.0 (6 step(s)). Run: seihou migrate <name>
+    Pending migration: 0.1.0 -> 0.3.0 (6 step(s)). Run: seihou update <target>
 ```
 
 The step count is the number of declared migrations whose `[from, to]`
 range falls inside `[manifest.moduleVersion, installed.version]`. It
 may be zero — a "pure version bump" where no declared migration
 applies but the manifest will still advance to the installed copy's
-version when the user runs `seihou migrate`.
+version when the user runs `seihou update`.
 
-`seihou migrate <name>` is self-contained (it fetches the source repo
-on its own — see `docs/cli/migrate.md`), so one command always
-resolves the row.
+Recommendations are deduplicated by recorded top-level application, so repeated
+parameterized instances and recipe-expanded modules produce one target action.
+Legacy manifests deduplicate by bare module name and use the first successful
+`seihou update <module>` to seed application state. `seihou migrate <name>`
+remains available for focused recovery.
 
 ### Update checking
 
@@ -75,10 +77,8 @@ Each module line is annotated with one of:
 - `up to date` — the locally installed copy is at the same version as
   the remote.
 - `outdated: X.Y.Z available` — the remote declares a newer version
-  than the locally installed copy. A `Run: seihou upgrade <name>`
-  hint is printed under the row, unless a pending migration was also
-  detected (in which case the migration hint takes precedence and
-  fixes both at once).
+  than the locally installed copy. A `Run: seihou update <target>`
+  hint is printed under the row for recorded applications.
 - `unversioned` — the module's `module.dhall` does not declare a
   version field (old or partially populated module).
 - `unreachable` — the source repo could not be cloned (network
@@ -105,11 +105,11 @@ Seihou Status:
 
 Applied modules:
   master-plan  v0.1.0    (applied 2026-04-15)  outdated: 0.3.0 available
-    Pending migration: 0.1.0 -> 0.3.0 (1 step(s)). Run: seihou migrate master-plan
+    Pending migration: 0.1.0 -> 0.3.0 (1 step(s)). Run: seihou update master-plan
   exec-plan  v0.1.3    (applied 2026-04-15)  outdated: 0.3.0 available
-    Pending migration: 0.1.3 -> 0.3.0 (0 step(s)). Run: seihou migrate exec-plan
+    Pending migration: 0.1.3 -> 0.3.0 (0 step(s)). Run: seihou update exec-plan
   example  v0.2.0    (applied 2026-04-15)  outdated: 0.3.0 available
-    Pending migration: 0.2.0 -> 0.3.0 (0 step(s)). Run: seihou migrate example
+    Pending migration: 0.2.0 -> 0.3.0 (0 step(s)). Run: seihou update example
 
 Tracked files: 5
   ...
@@ -119,7 +119,8 @@ Variables: 4 resolved
 7 module(s) checked, 3 outdated.
 
 Recommended actions:
-  seihou migrate master-plan
-  seihou migrate exec-plan
-  seihou migrate example
+  seihou update master-plan
+  seihou update exec-plan
+  seihou update example
+  seihou update
 ```

@@ -82,8 +82,10 @@ library seihou-cli-internal
     Seihou.CLI.StatusRender
     Seihou.CLI.Style
     Seihou.CLI.Update
+    Seihou.CLI.Update.Interaction
     Seihou.CLI.Update.Migrations
     Seihou.CLI.Update.Recovery
+    Seihou.CLI.Update.Render
     Seihou.CLI.Update.Selection
     Seihou.CLI.Update.Source
     Seihou.CLI.Update.Types
@@ -124,6 +126,7 @@ executable seihou
     OverloadedLabels
     OverloadedRecordDot
     OverloadedStrings
+    PackageImports
     TypeFamilies
 
   hs-source-dirs: src-exe
@@ -162,6 +165,7 @@ executable seihou
     Seihou.CLI.SchemaUpgrade
     Seihou.CLI.Setup
     Seihou.CLI.Status
+    Seihou.CLI.Update
     Seihou.CLI.Upgrade
     Seihou.CLI.Validate
     Seihou.CLI.ValidateBlueprint
@@ -232,9 +236,16 @@ test-suite seihou-cli-test
     Seihou.CLI.RunBlueprintRefusalSpec
     Seihou.CLI.SavePromptedSpec
     Seihou.CLI.StatusSpec
+    Seihou.CLI.UpdateE2ESpec
+    Seihou.CLI.UpdateFixture
+    Seihou.CLI.UpdateInteractionSpec
+    Seihou.CLI.UpdateRenderSpec
     Seihou.CLI.UpdateSpec
     Seihou.CLI.UpgradeSpec
     Seihou.FzfSpec
+
+  build-tool-depends:
+    seihou-cli:seihou
 
   build-depends:
     aeson >=2.1 && <3,

@@ -1,6 +1,6 @@
 # seihou run
 
-Run modules to generate a project.
+Apply a module or recipe for the first time, or deliberately reconfigure it.
 
 ## Usage
 
@@ -36,7 +36,7 @@ seihou run [MODULE] [OPTIONS]
 
 ## Description
 
-Loads the specified module (or recipe) and its dependencies, resolves all variables, compiles a generation plan, and executes it in the current directory.
+Loads the specified module (or recipe) and its dependencies, resolves all variables, compiles a generation plan, and executes it in the current directory. For routine updates of a recorded application, use [`seihou update`](update.md); it reuses saved inputs, includes migrations, and three-way merges user edits. Use `run` when the application is new or its configuration should intentionally be resolved again.
 
 If the given name resolves to a **recipe** (a directory containing `recipe.dhall`), Seihou transparently expands it into its constituent modules. The first module in the recipe becomes the primary module, the rest become additional modules, and any variable bindings declared in the recipe are merged with CLI `--var` overrides (CLI wins on conflict). The log shows `Recipe '<name>' expanding to N modules`.
 
@@ -74,7 +74,8 @@ Pending migrations detected:
   master-plan: 0.1.0 -> 0.3.0 (1 step(s))
   exec-plan: 0.1.3 -> 0.3.0 (0 step(s))
 
-Run 'seihou migrate <module>' for each, or pass --with-migrations to apply during this run.
+For a recorded project application, run 'seihou update <target>'.
+For focused recovery, run 'seihou migrate <module>' for each, or pass --with-migrations to this explicit reconfiguration run.
 ```
 
 The step count is the number of declared migrations whose `[from, to]`

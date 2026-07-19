@@ -37,6 +37,7 @@ import Seihou.CLI.Run (handleRun)
 import Seihou.CLI.SchemaUpgrade (handleSchemaUpgrade)
 import Seihou.CLI.Setup (handleSetup)
 import Seihou.CLI.Status (handleStatus)
+import Seihou.CLI.Update (handleUpdate)
 import Seihou.CLI.Upgrade (handleUpgrade)
 import Seihou.CLI.Validate (handleValidateModule)
 import Seihou.CLI.ValidateBlueprint (handleValidateBlueprint)
@@ -76,6 +77,8 @@ dispatch cmd =
       handleInit
     Run runOpts ->
       handleRun runOpts
+    Update updateOpts ->
+      handleUpdate updateOpts
     Remove removeOpts ->
       handleRemove removeOpts
     Vars varsOpts ->
