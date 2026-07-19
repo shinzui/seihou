@@ -89,7 +89,7 @@ spec = do
             applied =
               (application (AppliedRecipeTarget "stack") [instanceState "one" moduleOne, instanceState "two" moduleTwo])
                 { targetSource = recipeDirectory,
-                  additionalModules = ["two"]
+                  additionalModules = []
                 }
         createDirectoryIfMissing True (remote </> "modules" </> "one")
         createDirectoryIfMissing True (remote </> "modules" </> "two")
@@ -204,7 +204,7 @@ spec = do
                 [updated] -> do
                   updated.applicationId `shouldBe` fixture.recipeApplicationId
                   updated.targetVersion `shouldBe` Just "2.0.0"
-                  updated.additionalModules `shouldBe` ["new"]
+                  updated.additionalModules `shouldBe` []
                   Set.fromList (map (.name) updated.instances) `shouldBe` Set.fromList ["one", "new"]
                   Set.fromList (map (.name) manifest.modules) `shouldBe` Set.fromList ["one", "new"]
                 other -> expectationFailure ("expected one updated recipe application, got " <> show other)
@@ -441,14 +441,14 @@ prepareRecipeUpdateFixture root = do
       installedOld = installedRoot </> "old"
       installedRecipe = installedRoot </> "stack"
       target = AppliedRecipeTarget "stack"
-      applicationId = mkApplicationId target ["old"]
+      applicationId = mkApplicationId target []
       app =
         AppliedComposition
           { applicationId,
             target,
             targetSource = installedRecipe,
             targetVersion = Just "1.0.0",
-            additionalModules = ["old"],
+            additionalModules = [],
             namespace = Just "one",
             context = Nothing,
             instances = [instanceState "old" installedOld, instanceState "one" installedOne],
