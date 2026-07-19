@@ -47,6 +47,10 @@ in
           cp -r ${seihou-schema-src} ../schema
         '' else ""
       );
+      # Three-way merge and update-transaction tests shell out to `git`.
+      # Make it available inside the Nix test sandbox so pending tests do not
+      # cause the suite to fail.
+      testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git ];
     })
     (doJailbreak (final.callCabal2nix "seihou-core" ../seihou-core { }));
 
@@ -62,8 +66,8 @@ in
           cp -r ${seihou-schema-src} ../schema
         '' else ""
       );
-      # Migrate fetch-path tests (MigrateSpec) shell out to `git` to set up
-      # fixture remotes; make it available inside the nix sandbox.
+      # Integration tests shell out to `git` for fixture remotes; make it
+      # available inside the Nix test sandbox.
       testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git ];
     })
     (doJailbreak (final.callCabal2nix "seihou-cli" ../seihou-cli { }));

@@ -5,8 +5,9 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.UpdateSpec (UpdateFixture (..), prepareUpdateFixture)
 import System.Directory (doesFileExist)
-import System.Environment (getEnvironment)
+import System.Environment (getEnvironment, getExecutablePath)
 import System.Exit (ExitCode (..))
+import System.FilePath (takeDirectory, (</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (CreateProcess (..), callProcess, proc, readCreateProcessWithExitCode, readProcess)
 import Test.Hspec
@@ -162,7 +163,9 @@ spec = do
       ["bash", "zsh", "fish"]
 
 seihouBinary :: IO FilePath
-seihouBinary = T.unpack . T.strip . T.pack <$> readProcess "cabal" ["list-bin", "seihou"] ""
+seihouBinary = do
+  testBinary <- getExecutablePath
+  pure (takeDirectory (takeDirectory testBinary) </> "seihou" </> "seihou")
 
 runSeihou :: FilePath -> UpdateFixture -> [String] -> IO (ExitCode, T.Text, T.Text)
 runSeihou binary fixture args = do
