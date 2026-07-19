@@ -94,6 +94,7 @@ library
     Seihou.Engine.Remove
     Seihou.Engine.Section
     Seihou.Engine.Template
+    Seihou.Engine.ThreeWayMerge
     Seihou.Engine.TypedDhallText
     Seihou.Engine.Validate
     Seihou.Interaction.Confirm
@@ -118,6 +119,7 @@ library
     generic-lens >=2.2 && <3,
     lens >=5.2 && <6,
     process >=1.6 && <2,
+    temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
     transformers >=0.6 && <1,
@@ -179,6 +181,7 @@ test-suite seihou-core-test
     Seihou.Engine.RemoveSpec
     Seihou.Engine.SectionSpec
     Seihou.Engine.TemplateSpec
+    Seihou.Engine.ThreeWayMergeSpec
     Seihou.Engine.ValidateSpec
     Seihou.Evaluation.ConditionalTemplateSpec
     Seihou.Evaluation.DhallTextFlakeSpec

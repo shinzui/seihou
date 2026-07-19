@@ -38,8 +38,8 @@ files should be updated or deleted; that policy belongs to
 - [x] (2026-07-19T17:52:41Z) M1: Add the `BaselineStore` effect, content-addressed real interpreter, and pure interpreter.
 - [x] (2026-07-19T17:52:41Z) M1: Validate hashes on read and provide safe referenced-set pruning.
 - [x] (2026-07-19T17:52:41Z) M1: Add baseline store unit and real-filesystem tests.
-- [ ] M2: Add pure merge short circuits and the Git diff3 driver.
-- [ ] M2: Cover clean, non-overlapping, overlapping, deletion, missing-Git, and binary cases.
+- [x] (2026-07-19T17:56:36Z) M2: Add pure merge short circuits and the Git diff3 driver.
+- [x] (2026-07-19T17:56:36Z) M2: Cover clean, non-overlapping, overlapping, deletion, missing-Git, and binary cases.
 - [ ] M3: Seed baseline blobs and manifest references during successful ordinary generation.
 - [ ] M3: Preserve generated versus applied hash semantics for downstream reconciliation.
 - [ ] M3: Run focused tests, all tests, formatting, and a real merge smoke demonstration.
@@ -55,6 +55,13 @@ implementation. Provide concise evidence.
   64 hexadecimal digits and normalizes uppercase input before any path is derived.
   Evidence: `Seihou.Manifest.Types` now rejects `"../manifest.json"`, while the focused
   storage and manifest tests pass as part of all 955 `seihou-core-test` examples.
+
+- Observation: Git deliberately treats adjacent user insertions and generated deletions as
+  one conflict hunk even when their intent can look distinct to a human. The engine must
+  preserve that conservative result instead of attempting to reinterpret Git's hunk.
+  Evidence: an initial generated-deletion test produced a complete labeled diff3 body;
+  moving the edits apart with an unchanged context line produced `MergeClean`. All 13 merge
+  examples and all 968 core examples now pass with Git 2.54.0.
 
 
 ## Decision Log
@@ -101,6 +108,13 @@ implementation. Provide concise evidence.
   applied. The first observed post-patch file is the only truthful ancestor available; EP-66
   will apply later patch sequences to that stored ancestor before merging with new disk
   edits.
+  Date: 2026-07-19.
+
+- Decision: Export `threeWayMergeWithGit` as a driver-level test seam while keeping
+  `threeWayMerge` as the production API.
+  Rationale: Supplying a deliberately missing or failing executable proves conservative
+  fallback behavior without mutating process-wide `PATH`, which could race the parallel
+  test suite. EP-66 continues to consume only `threeWayMerge`.
   Date: 2026-07-19.
 
 
