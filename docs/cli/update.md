@@ -1,6 +1,7 @@
 # seihou update
 
 Reconcile recorded project applications with newer module or recipe sources.
+For the condensed in-binary guide, run `seihou help update`.
 
 ## Usage
 

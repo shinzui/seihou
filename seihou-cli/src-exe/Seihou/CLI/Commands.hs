@@ -379,6 +379,7 @@ topLevelFooter =
         vsep
           [ pretty ("seihou help          # list all help topics" :: String),
             pretty ("seihou help modules  # how modules work" :: String),
+            pretty ("seihou help update   # safely update recorded project applications" :: String),
             pretty ("seihou help migrations  # apply author-declared migrations between versions" :: String)
           ],
       mempty,

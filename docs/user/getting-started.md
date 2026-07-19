@@ -678,6 +678,7 @@ seihou help contexts     # learn about context-based config
 seihou help blueprints   # learn about agent-driven blueprints
 seihou help prompts      # learn about first-class prompts
 seihou help agent        # learn about AI agent commands
+seihou help update       # safely update recorded applications
 ```
 
 ### Keep an applied project current

@@ -13,9 +13,9 @@ WHEN TO AUTHOR A MIGRATION
   Add a migration when a new version of your module changes the *layout*
   of the files it generates: a directory rename, a file removal, a path
   pattern shift. You do not need a migration for content-only changes;
-  re-running `seihou run <module>` already updates file content. Use
-  migrations specifically for things that `seihou run` cannot infer on
-  its own.
+  `seihou update <target>` already reconciles newly generated content with
+  the project. Use migrations specifically for layout changes that template
+  regeneration cannot infer on its own.
 
 THE MIGRATION RECORD
 
@@ -135,28 +135,41 @@ DRY RUN
   For a machine-readable form, pass `--json` (works alongside
   `--dry-run`).
 
-UPGRADE INTEGRATION
+PROJECT UPDATE INTEGRATION
+
+  Routine project updates use `seihou update`. It fetches candidate sources
+  into a staging area, plans applicable migrations automatically, and then
+  reconciles the newly generated content with user edits. The migration and
+  template transitions therefore share one preview, confirmation, recovery,
+  and manifest-publication boundary.
+
+  Use `seihou migrate <module>` directly for focused recovery or when you
+  deliberately need its lower-level controls, such as an intermediate
+  `--to VERSION`. See `seihou help update` for the routine workflow.
+
+CACHE UPGRADE INTEGRATION
 
   `seihou upgrade` updates the central installed copy under
   ~/.config/seihou/installed/<name>/ but does *not* rewrite project
-  trees by default. After an upgrade that brings new migrations,
-  `seihou upgrade` prints a one-line advisory:
+  trees by default. After an upgrade that leaves a recorded project behind,
+  `seihou upgrade` points the user at `seihou update` so migrations and
+  generated content advance together:
 
     note: haskell-base has 1 migration(s) pending (1.0.0 → 2.0.0);
-          run 'seihou migrate haskell-base'
+          run 'seihou update' to reconcile the recorded project application
 
-  Pass `--with-migrations` to skip the advisory and run migrations
-  for each upgraded module against the current project in one shot.
+  `--with-migrations` remains available for compatibility when only the
+  lower-level migration should run after refreshing the cache.
 
 STATUS INTEGRATION
 
   `seihou status` shows a `Pending migration: <from> -> <to> (<N>
-  step(s)). Run: seihou migrate <name>` sub-line under any applied
+  step(s)). Run: seihou update <target>` sub-line under any applied
   module whose installed copy has advanced past the manifest's
   recorded version. `<N>` is the count of in-window declared
   migrations that will run; it may be zero (the version range has no
   applicable migrations and the run will only advance the manifest).
-  The line is informational — use `seihou migrate <module>` to apply.
+  Recommendations are deduplicated by recorded top-level application.
 
 MANIFEST GUARANTEE
 
@@ -171,6 +184,8 @@ MANIFEST GUARANTEE
 
 SEE ALSO
 
+  seihou update --help
+  seihou help update
   seihou migrate --help
   seihou upgrade --help
   docs/user/migrations.md

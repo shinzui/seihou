@@ -165,7 +165,7 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 
 | Command | Description |
 |---------|-------------|
-| [`help`](docs/cli/help.md) | Built-in help topics (`seihou help modules`, `help migrations`, …). |
+| [`help`](docs/cli/help.md) | Built-in help topics (`seihou help modules`, `seihou help update`, …). |
 | [`completions`](docs/cli/completions.md) | Generate Bash/Zsh/Fish completion scripts. |
 | [`extension`](docs/cli/extension.md) | Run external `seihou-<name>-extension` executables. |
 

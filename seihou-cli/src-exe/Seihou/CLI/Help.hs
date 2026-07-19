@@ -38,7 +38,8 @@ helpTopics =
     HelpTopic "kit" "Manage Claude Code and Codex skills and subagents" kitContent,
     HelpTopic "migrations" "Migrating a project between module versions" migrationsContent,
     HelpTopic "prompts" "Reusable agent-session prompt artifacts" promptsContent,
-    HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent
+    HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent,
+    HelpTopic "update" "Safely update recorded project applications" updateContent
   ]
 
 agentContent :: Text
@@ -73,6 +74,9 @@ promptsContent = $(embedStringFile "help/prompts.md")
 
 templatingContent :: Text
 templatingContent = $(embedStringFile "help/templating.md")
+
+updateContent :: Text
+updateContent = $(embedStringFile "help/update.md")
 
 helpCommandParser :: Parser HelpCommand
 helpCommandParser =

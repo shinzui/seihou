@@ -79,10 +79,14 @@ BOOTSTRAPPING A NEW REPOSITORY
     seihou agent bootstrap                    # single module
     seihou agent bootstrap --repo             # multi-module with registry
 
-UPGRADE WORKFLOW
+PROJECT UPDATE AND CACHE UPGRADE
 
-  Once installed, modules can be upgraded with `seihou upgrade`. If a newer
-  module version ships migrations (for renames,
-  deletions, etc.), the upgrade command surfaces them via an advisory; running
-  `seihou migrate <module>` is the post-upgrade step that applies them
-  to the current project. See `seihou help migrations`.
+  After a module or recipe has been applied to a project, use `seihou update`
+  for routine source updates. It stages the newer repository content, reuses
+  saved inputs, applies migrations, reconciles generated files with user
+  edits, and publishes the installed cache only after the project succeeds.
+
+  `seihou upgrade` is a lower-level cache-maintenance command. It refreshes
+  the shared installed copy but does not reconcile templates or user edits in
+  the current project. Use it when cache-only maintenance is intentional.
+  See `seihou help update` and `seihou help migrations`.

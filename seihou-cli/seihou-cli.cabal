@@ -32,6 +32,7 @@ extra-source-files:
   help/modules.md
   help/prompts.md
   help/templating.md
+  help/update.md
   help/variables.md
 
 source-repository head

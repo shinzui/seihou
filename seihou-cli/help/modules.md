@@ -80,6 +80,7 @@ COMMON COMMANDS
   seihou validate-module ./my-module   Check a module is well-formed
   seihou install <git-url>             Install modules, recipes, or blueprints from git
   seihou run <module> --var k=v        Run a module to generate files
+  seihou update [target]                Update a recorded application and preserve user edits
   seihou remove <module>               Remove an applied module and its files
   seihou schema-upgrade ./my-module    Upgrade module.dhall to current schema
 
@@ -88,5 +89,8 @@ VERSIONING AND MIGRATIONS
   Modules carry a `version` field that follows dotted-version semantics
   (1.0.0, 1.2.3, etc.). When an author bumps a module's version and
   changes its file layout, they can ship migrations alongside the new
-  version that move existing project files into the new shape. Run
-  `seihou help migrations` for the full reference.
+  version that move existing project files into the new shape. For a
+  recorded application, `seihou update` fetches the newer source, applies
+  its migrations, regenerates files, and preserves user edits in one
+  operation. Run `seihou help update` for the project workflow or
+  `seihou help migrations` for the authoring reference.

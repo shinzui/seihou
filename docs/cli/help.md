@@ -19,6 +19,7 @@ seihou help [TOPIC]
 | Topic | Description |
 |-------|-------------|
 | `agent` | Configurable AI assistance commands |
+| `blueprints` | Agent-driven project blueprints |
 | `modules` | How Seihou modules work |
 | `variables` | Variable declaration, resolution, and overrides |
 | `contexts` | Using contexts for environment-specific config |
@@ -26,7 +27,9 @@ seihou help [TOPIC]
 | `git-repository` | Sharing and installing items from git |
 | `kit` | Manage Claude Code and Codex skills and subagents |
 | `migrations` | Migrating a project between module versions |
+| `prompts` | Reusable agent-session prompt artifacts |
 | `templating` | Placeholder substitution, `{{#if}}` blocks, and patterns |
+| `update` | Safely update recorded project applications |
 
 ## Examples
 
@@ -39,4 +42,7 @@ seihou help variables
 
 # Read about agent providers and commands
 seihou help agent
+
+# Keep a recorded project current while preserving user edits
+seihou help update
 ```
