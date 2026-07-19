@@ -384,7 +384,9 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
                         { hash = c.diskHash,
                           moduleName = c.moduleName,
                           strategy = Template,
-                          generatedAt = now
+                          generatedAt = now,
+                          baseline = Nothing,
+                          applicationIds = mempty
                         }
                 )
               | (c, KeepCurrent) <- conflictResolved
@@ -408,6 +410,7 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
                   modules = allModuleEntries,
                   vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
                   files = Map.unions [recs, keepRecords, cleanedFiles],
+                  applications = manifest.applications,
                   recipe = manifest.recipe,
                   blueprint = manifest.blueprint
                 }

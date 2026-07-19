@@ -31,6 +31,7 @@ import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
+import Seihou.Core.Application (attachApplication, buildAppliedComposition, replaceAppliedComposition)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
@@ -91,10 +92,10 @@ handleRun runOpts = do
 
   -- 0b. Recipe detection: check if the name resolves to a recipe or a module
   searchPaths <- defaultSearchPaths
-  (primaryName, allAdditional, recipeOverrides, recipeInfo) <- do
+  (primaryName, allAdditional, recipeOverrides, recipeInfo, targetInfo) <- do
     runnableResult <- discoverRunnable searchPaths modName
     case runnableResult of
-      Right (RunnableRecipe recipe _recipeDir) -> do
+      Right (RunnableRecipe recipe recipeDir) -> do
         case expandRecipe recipe of
           Left errs -> do
             logIO level $
@@ -108,9 +109,21 @@ handleRun runOpts = do
             logIO level $
               logInfo $
                 "Recipe '" <> recipe.name.unRecipeName <> "' expanding to " <> T.pack (show (length recipe.modules)) <> " modules"
-            pure (primary, recipeAdditional ++ additional, overrides, Just (recipe.name, recipe.version))
-      Right (RunnableModule _ _) ->
-        pure (modName, additional, Map.empty, Nothing)
+            pure
+              ( primary,
+                recipeAdditional ++ additional,
+                overrides,
+                Just (recipe.name, recipe.version),
+                (AppliedRecipeTarget recipe.name, recipeDir, recipe.version)
+              )
+      Right (RunnableModule modul moduleDir) ->
+        pure
+          ( modName,
+            additional,
+            Map.empty,
+            Nothing,
+            (AppliedModuleTarget modName, moduleDir, modul.version)
+          )
       Right (RunnableBlueprint _b _blueprintDir) -> do
         -- Use the user-typed name (modName) rather than the blueprint's
         -- declared name. Discovery resolves by directory name; the
@@ -120,7 +133,13 @@ handleRun runOpts = do
         exitFailure
       Left _ ->
         -- Discovery failed — let loadComposition handle the error with its detailed message
-        pure (modName, additional, Map.empty, Nothing)
+        pure
+          ( modName,
+            additional,
+            Map.empty,
+            Nothing,
+            (AppliedModuleTarget modName, "", Nothing)
+          )
 
   -- 1. Load all modules in the composition (primary + additional + transitive deps)
   compositionResult <- loadComposition searchPaths primaryName allAdditional
@@ -301,7 +320,9 @@ handleRun runOpts = do
                                 { hash = c.diskHash,
                                   moduleName = c.moduleName,
                                   strategy = Template,
-                                  generatedAt = now
+                                  generatedAt = now,
+                                  baseline = Nothing,
+                                  applicationIds = mempty
                                 }
                         )
                       | (c, KeepCurrent) <- conflictResolved
@@ -325,13 +346,37 @@ handleRun runOpts = do
                       Just (rName, rVersion) ->
                         Just AppliedRecipe {name = rName, recipeVersion = rVersion, appliedAt = now}
                       Nothing -> manifest.recipe
+                    (appliedTarget, targetSource, targetVersion) = targetInfo
+                    appliedComposition =
+                      buildAppliedComposition
+                        appliedTarget
+                        targetSource
+                        targetVersion
+                        additional
+                        (Just namespace)
+                        context
+                        modulesInOrder
+                        resolved
+                        now
+                    applicationDestinations =
+                      Set.fromList [path | Just path <- map operationDestination opsFiltered]
+                    combinedFiles = Map.unions [recs, keepRecords, cleanedFiles]
+                    ownedFiles =
+                      Map.mapWithKey
+                        ( \path record ->
+                            if Set.member path applicationDestinations
+                              then attachApplication appliedComposition.applicationId (Map.lookup path manifest.files) record
+                              else record
+                        )
+                        combinedFiles
                     newManifest =
                       Manifest
                         { version = currentManifestVersion,
                           genAt = now,
                           modules = allModuleEntries,
                           vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
-                          files = Map.unions [recs, keepRecords, cleanedFiles],
+                          files = ownedFiles,
+                          applications = replaceAppliedComposition appliedComposition manifest.applications,
                           recipe = appliedRecipe,
                           blueprint = manifest.blueprint
                         }
@@ -462,6 +507,13 @@ opTargetsPath :: Set.Set FilePath -> Operation -> Bool
 opTargetsPath paths (WriteFileOp dest _ _) = Set.member dest paths
 opTargetsPath paths (PatchFileOp dest _ _ _ _) = Set.member dest paths
 opTargetsPath _ _ = False
+
+-- | Return the tracked destination produced by a file operation.
+operationDestination :: Operation -> Maybe FilePath
+operationDestination (WriteFileOp dest _ _) = Just dest
+operationDestination (CopyFileOp _ dest) = Just dest
+operationDestination (PatchFileOp dest _ _ _ _) = Just dest
+operationDestination _ = Nothing
 
 -- | Execute a shell command via @sh -c@, printing output and halting on failure.
 executeCommand :: LogLevel -> (Text, Maybe FilePath) -> IO ()

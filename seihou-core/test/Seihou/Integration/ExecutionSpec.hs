@@ -62,7 +62,10 @@ manifestWithFiles t recs =
           genAt = base.genAt,
           modules = base.modules,
           vars = base.vars,
-          files = recs
+          files = recs,
+          applications = base.applications,
+          recipe = base.recipe,
+          blueprint = base.blueprint
         }
 
 -- | Extract planned files from operations for computeDiff.

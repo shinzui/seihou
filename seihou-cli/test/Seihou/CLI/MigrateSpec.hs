@@ -129,7 +129,9 @@ mkManifest version installedDir entries =
                 { hash = hashContent content,
                   moduleName = modName,
                   strategy = Template,
-                  generatedAt = fixedTime
+                  generatedAt = fixedTime,
+                  baseline = Nothing,
+                  applicationIds = mempty
                 }
             )
           | (path, content) <- entries
@@ -269,7 +271,9 @@ mkManifestAt fix version entries =
                 { hash = hashContent content,
                   moduleName = ModuleName fix.modName,
                   strategy = Template,
-                  generatedAt = fixedTime
+                  generatedAt = fixedTime,
+                  baseline = Nothing,
+                  applicationIds = mempty
                 }
             )
           | (path, content) <- entries

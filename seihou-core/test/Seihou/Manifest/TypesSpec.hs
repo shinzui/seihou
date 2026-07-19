@@ -2,6 +2,7 @@ module Seihou.Manifest.TypesSpec (tests) where
 
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
 import Seihou.Core.Types
@@ -24,7 +25,7 @@ fixedTime2 = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-
 -- | Helper to set modules on a Manifest without ambiguous record update.
 withManifestModules :: [AppliedModule] -> Manifest -> Manifest
 withManifestModules mods m =
-  Manifest m.version m.genAt mods m.vars m.files m.recipe m.blueprint
+  Manifest m.version m.genAt mods m.vars m.files m.applications m.recipe m.blueprint
 
 spec :: Spec
 spec = do
@@ -32,7 +33,7 @@ spec = do
     it "creates a manifest with the current version" $ do
       let m = emptyManifest fixedTime
       m.version `shouldBe` currentManifestVersion
-      m.version `shouldBe` 3
+      m.version `shouldBe` 4
 
     it "creates a manifest with no modules, vars, or files" $ do
       let m = emptyManifest fixedTime
@@ -73,6 +74,7 @@ spec = do
                       (VarName "license", "MIT")
                     ],
                 files = base.files,
+                applications = base.applications,
                 recipe = Nothing,
                 blueprint = Nothing
               }
@@ -89,7 +91,9 @@ spec = do
                           { hash = SHA256 "abc123",
                             moduleName = ModuleName "haskell-base",
                             strategy = Template,
-                            generatedAt = fixedTime
+                            generatedAt = fixedTime,
+                            baseline = Nothing,
+                            applicationIds = mempty
                           }
                       ),
                       ( "my-app.cabal",
@@ -97,7 +101,9 @@ spec = do
                           { hash = SHA256 "def456",
                             moduleName = ModuleName "haskell-base",
                             strategy = DhallText,
-                            generatedAt = fixedTime
+                            generatedAt = fixedTime,
+                            baseline = Nothing,
+                            applicationIds = mempty
                           }
                       )
                     ]
@@ -121,12 +127,13 @@ spec = do
                 files =
                   Map.fromList
                     [ ( "README.md",
-                        FileRecord (SHA256 "aaa") (ModuleName "haskell-base") Template fixedTime
+                        FileRecord (SHA256 "aaa") (ModuleName "haskell-base") Template fixedTime Nothing mempty
                       ),
                       ( "LICENSE",
-                        FileRecord (SHA256 "bbb") (ModuleName "haskell-base") Copy fixedTime
+                        FileRecord (SHA256 "bbb") (ModuleName "haskell-base") Copy fixedTime Nothing mempty
                       )
                     ],
+                applications = [],
                 recipe = Nothing,
                 blueprint = Nothing
               }
@@ -135,7 +142,7 @@ spec = do
     it "roundtrips all strategy types" $ do
       let strategies = [Copy, Template, DhallText, Structured]
           makeRecord s =
-            FileRecord (SHA256 "hash") (ModuleName "mod") s fixedTime
+            FileRecord (SHA256 "hash") (ModuleName "mod") s fixedTime Nothing mempty
           m :: Manifest
           m =
             (emptyManifest fixedTime)
@@ -199,6 +206,65 @@ spec = do
               ]
               (emptyManifest fixedTime)
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
+
+    it "roundtrips all version-4 application and update state" $ do
+      let appId1 = ApplicationId "application-one"
+          appId2 = ApplicationId "application-two"
+          fingerprint = CommandFingerprint (SHA256 "command-hash")
+          receipt =
+            CommandReceipt
+              { fingerprint = fingerprint,
+                moduleName = ModuleName "master-plan",
+                command = "cabal test all",
+                workDir = Just "cli",
+                completedAt = fixedTime2
+              }
+          pv1 = ParentVars (Map.singleton (VarName "skill.name") "exec-plan")
+          pv2 = ParentVars (Map.singleton (VarName "skill.name") "master-plan")
+          application1 =
+            AppliedComposition
+              { applicationId = appId1,
+                target = AppliedModuleTarget (ModuleName "master-plan"),
+                targetSource = "/modules/master-plan",
+                targetVersion = Just "0.7.0",
+                additionalModules = [ModuleName "docs"],
+                namespace = Just "planning",
+                context = Just "work",
+                instances =
+                  [ AppliedInstanceState (ModuleName "link-skill") pv1 "/modules/link-skill" (Just "1") (Map.singleton (VarName "skill.name") "exec-plan"),
+                    AppliedInstanceState (ModuleName "link-skill") pv2 "/modules/link-skill" (Just "1") (Map.singleton (VarName "skill.name") "master-plan")
+                  ],
+                commandReceipts = Map.singleton fingerprint receipt,
+                appliedAt = fixedTime
+              }
+          application2 =
+            AppliedComposition
+              { applicationId = appId2,
+                target = AppliedRecipeTarget (RecipeName "service"),
+                targetSource = "/recipes/service",
+                targetVersion = Nothing,
+                additionalModules = [],
+                namespace = Nothing,
+                context = Nothing,
+                instances = [],
+                commandReceipts = Map.empty,
+                appliedAt = fixedTime2
+              }
+          fileRecord =
+            FileRecord
+              { hash = SHA256 "applied-hash",
+                moduleName = ModuleName "master-plan",
+                strategy = Template,
+                generatedAt = fixedTime,
+                baseline = Just (BaselineRef (SHA256 "baseline-hash")),
+                applicationIds = Set.fromList [appId1, appId2]
+              }
+          manifest =
+            (emptyManifest fixedTime)
+              { applications = [application1, application2],
+                files = Map.singleton "README.md" fileRecord
+              }
+      manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
 
   describe "AppliedBlueprint" $ do
     it "round-trips a fully populated entry through JSON" $ do
@@ -271,6 +337,20 @@ spec = do
         Right manifest -> manifest.blueprint `shouldBe` Nothing
         Left err -> expectationFailure ("failed to parse: " <> err)
 
+    it "decodes a v3 manifest with empty defaults for every version-4 field" $ do
+      let json =
+            "{\"version\":3,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},"
+              <> "\"files\":{\"README.md\":{\"hash\":\"abc\",\"module\":\"legacy\",\"strategy\":\"template\",\"generatedAt\":\"2026-03-01T10:30:00Z\"}}}"
+      case manifestFromJSON json of
+        Right manifest -> do
+          manifest.applications `shouldBe` []
+          case Map.lookup "README.md" manifest.files of
+            Just record -> do
+              record.baseline `shouldBe` Nothing
+              record.applicationIds `shouldBe` Set.empty
+            Nothing -> expectationFailure "expected legacy file record"
+        Left err -> expectationFailure ("failed to parse: " <> err)
+
     it "decodes a v3 manifest with a populated blueprint object" $ do
       let json =
             "{\"version\":3,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},"
@@ -307,7 +387,7 @@ spec = do
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
       let base = emptyManifest fixedTime
-          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files, recipe = Nothing, blueprint = Nothing}
+          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files, applications = base.applications, recipe = Nothing, blueprint = Nothing}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"

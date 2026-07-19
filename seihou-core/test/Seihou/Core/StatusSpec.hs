@@ -28,7 +28,9 @@ mkRecord content =
     { hash = hashContent content,
       moduleName = modName,
       strategy = Template,
-      generatedAt = fixedTime
+      generatedAt = fixedTime,
+      baseline = Nothing,
+      applicationIds = mempty
     }
 
 runStatus :: PureFS -> Manifest -> [TrackedFile]

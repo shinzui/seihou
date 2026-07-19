@@ -36,7 +36,7 @@ sampleManifest =
       files =
         Map.fromList
           [ ( "README.md",
-              FileRecord (SHA256 "abc123") (ModuleName "haskell-base") Template fixedTime
+              FileRecord (SHA256 "abc123") (ModuleName "haskell-base") Template fixedTime Nothing mempty
             )
           ]
     }
@@ -94,7 +94,7 @@ spec = do
                 runManifestStore manifestPath (writeManifest sampleManifest)
                 c <- readFileText manifestPath
                 pure ((), c)
-      T.isInfixOf "\"version\":3" content `shouldBe` True
+      T.isInfixOf "\"version\":4" content `shouldBe` True
       T.isInfixOf "haskell-base" content `shouldBe` True
       T.isInfixOf "my-app" content `shouldBe` True
 

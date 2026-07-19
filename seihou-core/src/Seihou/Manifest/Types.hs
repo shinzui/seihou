@@ -12,6 +12,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Core.Types
@@ -28,8 +29,13 @@ import Seihou.Prelude hiding ((.=))
 -- field (see docs/plans/32-blueprint-manifest-and-status.md).
 -- Schema-2 manifests remain readable because the decoder treats a
 -- missing @blueprint@ key as 'Nothing'.
+--
+-- Bumped from 3 to 4 when 'Manifest' gained reproducible applications
+-- and 'FileRecord' gained generated-baseline and application ownership.
+-- Older manifests remain readable because every new field has an empty
+-- or absent default.
 currentManifestVersion :: Int
-currentManifestVersion = 3
+currentManifestVersion = 4
 
 -- | Create an empty manifest with the given timestamp.
 emptyManifest :: UTCTime -> Manifest
@@ -40,6 +46,7 @@ emptyManifest now =
       modules = [],
       vars = Map.empty,
       files = Map.empty,
+      applications = [],
       recipe = Nothing,
       blueprint = Nothing
     }
@@ -56,6 +63,7 @@ writeAppliedBlueprint ab m =
       modules = m.modules,
       vars = m.vars,
       files = m.files,
+      applications = m.applications,
       recipe = m.recipe,
       blueprint = Just ab
     }
@@ -77,7 +85,8 @@ instance ToJSON Manifest where
         "generatedAt" .= m.genAt,
         "modules" .= m.modules,
         "variables" .= varsToJSON m.vars,
-        "files" .= filesToJSON m.files
+        "files" .= filesToJSON m.files,
+        "applications" .= m.applications
       ]
         ++ maybe [] (\r -> ["recipe" .= r]) m.recipe
         ++ maybe [] (\b -> ["blueprint" .= b]) m.blueprint
@@ -88,13 +97,109 @@ instance FromJSON Manifest where
     if v > currentManifestVersion
       then fail "manifest was created by a newer version of seihou"
       else
-        Manifest v
-          <$> o .: "generatedAt"
+        Manifest
+          <$> pure v
+          <*> o .: "generatedAt"
           <*> o .: "modules"
           <*> (varsFromJSON =<< o .: "variables")
           <*> (filesFromJSON =<< o .: "files")
+          <*> o Aeson..:? "applications" Aeson..!= []
           <*> o Aeson..:? "recipe"
           <*> o Aeson..:? "blueprint"
+
+instance ToJSON AppliedTarget where
+  toJSON (AppliedModuleTarget name) =
+    Aeson.object ["kind" .= ("module" :: Text), "name" .= name.unModuleName]
+  toJSON (AppliedRecipeTarget name) =
+    Aeson.object ["kind" .= ("recipe" :: Text), "name" .= name.unRecipeName]
+
+instance FromJSON AppliedTarget where
+  parseJSON = Aeson.withObject "AppliedTarget" $ \o -> do
+    kind <- o .: "kind" :: Aeson.Parser Text
+    name <- o .: "name"
+    case kind of
+      "module" -> pure (AppliedModuleTarget (ModuleName name))
+      "recipe" -> pure (AppliedRecipeTarget (RecipeName name))
+      other -> fail ("unknown applied target kind: " <> T.unpack other)
+
+instance ToJSON AppliedInstanceState where
+  toJSON state =
+    Aeson.object $
+      [ "name" .= state.name.unModuleName,
+        "source" .= state.source,
+        "resolvedVars" .= varsToJSON state.resolvedVars
+      ]
+        ++ parentVarsField state.parentVars
+        ++ maybe [] (\v -> ["version" .= v]) state.moduleVersion
+    where
+      parentVarsField (ParentVars m)
+        | Map.null m = []
+        | otherwise = ["parentVars" .= parentVarsMapToJSON m]
+
+instance FromJSON AppliedInstanceState where
+  parseJSON = Aeson.withObject "AppliedInstanceState" $ \o -> do
+    mParentVars <- o Aeson..:? "parentVars"
+    pv <- case mParentVars of
+      Nothing -> pure emptyParentVars
+      Just value -> ParentVars <$> parentVarsMapFromJSON value
+    AppliedInstanceState
+      <$> (ModuleName <$> o .: "name")
+      <*> pure pv
+      <*> o .: "source"
+      <*> o Aeson..:? "version"
+      <*> (varsFromJSON =<< o Aeson..:? "resolvedVars" Aeson..!= Aeson.object [])
+
+instance ToJSON AppliedComposition where
+  toJSON composition =
+    Aeson.object $
+      [ "applicationId" .= composition.applicationId.unApplicationId,
+        "target" .= composition.target,
+        "targetSource" .= composition.targetSource,
+        "additionalModules" .= map (.unModuleName) composition.additionalModules,
+        "instances" .= composition.instances,
+        "appliedAt" .= composition.appliedAt
+      ]
+        ++ maybe [] (\v -> ["targetVersion" .= v]) composition.targetVersion
+        ++ maybe [] (\v -> ["namespace" .= v]) composition.namespace
+        ++ maybe [] (\v -> ["context" .= v]) composition.context
+        ++ commandReceiptsField composition.commandReceipts
+    where
+      commandReceiptsField receipts
+        | Map.null receipts = []
+        | otherwise = ["commandReceipts" .= commandReceiptsToJSON receipts]
+
+instance FromJSON AppliedComposition where
+  parseJSON = Aeson.withObject "AppliedComposition" $ \o ->
+    AppliedComposition
+      <$> (ApplicationId <$> o .: "applicationId")
+      <*> o .: "target"
+      <*> o .: "targetSource"
+      <*> o Aeson..:? "targetVersion"
+      <*> (map ModuleName <$> o Aeson..:? "additionalModules" Aeson..!= [])
+      <*> o Aeson..:? "namespace"
+      <*> o Aeson..:? "context"
+      <*> o Aeson..:? "instances" Aeson..!= []
+      <*> (commandReceiptsFromJSON =<< o Aeson..:? "commandReceipts" Aeson..!= Aeson.object [])
+      <*> o .: "appliedAt"
+
+instance ToJSON CommandReceipt where
+  toJSON receipt =
+    Aeson.object $
+      [ "fingerprint" .= commandFingerprintText receipt.fingerprint,
+        "module" .= receipt.moduleName.unModuleName,
+        "command" .= receipt.command,
+        "completedAt" .= receipt.completedAt
+      ]
+        ++ maybe [] (\path -> ["workDir" .= path]) receipt.workDir
+
+instance FromJSON CommandReceipt where
+  parseJSON = Aeson.withObject "CommandReceipt" $ \o ->
+    CommandReceipt
+      <$> (CommandFingerprint . SHA256 <$> o .: "fingerprint")
+      <*> (ModuleName <$> o .: "module")
+      <*> o .: "command"
+      <*> o Aeson..:? "workDir"
+      <*> o .: "completedAt"
 
 instance ToJSON AppliedRecipe where
   toJSON ar =
@@ -237,12 +342,18 @@ parseRemovalCommandJSON = Aeson.withObject "RemovalCommand" $ \o ->
 
 instance ToJSON FileRecord where
   toJSON fr =
-    Aeson.object
+    Aeson.object $
       [ "hash" .= fr.hash.unSHA256,
         "module" .= fr.moduleName.unModuleName,
         "strategy" .= strategyToText fr.strategy,
         "generatedAt" .= fr.generatedAt
       ]
+        ++ maybe [] (\ref -> ["baseline" .= ref.unBaselineRef.unSHA256]) fr.baseline
+        ++ applicationIdsField fr.applicationIds
+    where
+      applicationIdsField ids
+        | Set.null ids = []
+        | otherwise = ["applications" .= map (.unApplicationId) (Set.toAscList ids)]
 
 instance FromJSON FileRecord where
   parseJSON = Aeson.withObject "FileRecord" $ \o ->
@@ -251,12 +362,25 @@ instance FromJSON FileRecord where
       <*> (ModuleName <$> o .: "module")
       <*> (strategyFromText =<< o .: "strategy")
       <*> o .: "generatedAt"
+      <*> (fmap (BaselineRef . SHA256) <$> o Aeson..:? "baseline")
+      <*> (Set.fromList . map ApplicationId <$> o Aeson..:? "applications" Aeson..!= [])
 
 instance ToJSON SHA256 where
   toJSON (SHA256 t) = toJSON t
 
 instance FromJSON SHA256 where
   parseJSON v = SHA256 <$> parseJSON v
+
+commandFingerprintText :: CommandFingerprint -> Text
+commandFingerprintText (CommandFingerprint (SHA256 value)) = value
+
+commandReceiptsToJSON :: Map CommandFingerprint CommandReceipt -> Aeson.Value
+commandReceiptsToJSON = toJSON . Map.mapKeys commandFingerprintText
+
+commandReceiptsFromJSON :: Aeson.Value -> Aeson.Parser (Map CommandFingerprint CommandReceipt)
+commandReceiptsFromJSON value = do
+  receipts <- parseJSON value :: Aeson.Parser (Map Text CommandReceipt)
+  pure (Map.mapKeys (CommandFingerprint . SHA256) receipts)
 
 -- Helpers for VarName-keyed maps
 

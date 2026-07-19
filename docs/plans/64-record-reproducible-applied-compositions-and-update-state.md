@@ -41,14 +41,14 @@ per-instance resolved values. Two instances of the same dependency with differen
 
 ## Progress
 
-- [ ] M1: Add the application/update state types and version-4 JSON contract.
-- [ ] M1: Decode manifest versions 1-3 with empty application state and absent baseline ownership.
-- [ ] M1: Update existing constructors and fixtures through named helpers so the repository builds.
-- [ ] M2: Add stable application identity and pure build/replace helpers.
-- [ ] M2: Record successful module and recipe runs with per-instance resolved values and file ownership.
-- [ ] M2: Preserve the legacy flat `variables` map for compatibility while treating applications as authoritative for future updates.
-- [ ] M3: Add manifest, identity, multi-instance, and successful-run regression coverage.
-- [ ] M3: Run focused tests, `cabal test all`, formatting, and the manifest inspection smoke test.
+- [x] (2026-07-19 17:41Z) M1: Add the application/update state types and version-4 JSON contract.
+- [x] (2026-07-19 17:41Z) M1: Decode manifest versions 1-3 with empty application state and absent baseline ownership.
+- [x] (2026-07-19 17:41Z) M1: Update existing constructors and fixtures through named helpers so the repository builds.
+- [x] (2026-07-19 17:41Z) M2: Add stable application identity and pure build/replace helpers.
+- [x] (2026-07-19 17:41Z) M2: Record successful module and recipe runs with per-instance resolved values and file ownership.
+- [x] (2026-07-19 17:41Z) M2: Preserve the legacy flat `variables` map for compatibility while treating applications as authoritative for future updates.
+- [x] (2026-07-19 17:41Z) M3: Add manifest, identity, multi-instance, and successful-run regression coverage.
+- [x] (2026-07-19 17:41Z) M3: Run focused tests, `cabal test all`, formatting, and module/recipe manifest inspection smoke tests.
 
 
 ## Surprises & Discoveries
@@ -56,7 +56,20 @@ per-instance resolved values. Two instances of the same dependency with differen
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- `executePlan` returns records only for operations that physically write a file. An
+  unchanged or interactively kept destination would therefore lose application ownership
+  if recording used only its result map. The run handler now derives the complete
+  destination set from composed file operations and attaches ownership after combining
+  written, kept, and prior records.
+
+- Recipe expansion roots cannot participate in stable application identity. They are the
+  recipe's versioned contents and may change during an update; including them would turn a
+  recipe upgrade into a second application. Only user-supplied ordered `--module` roots are
+  stored in `additionalModules` and hashed with the requested recipe target.
+
+- A real non-interactive rerun proved that application replacement and unchanged-file
+  ownership work together: the manifest retained one application and the unchanged
+  `README.md` retained the same application ID.
 
 
 ## Decision Log
@@ -96,13 +109,33 @@ implementation. Provide concise evidence.
   needlessly breaking.
   Date: 2026-07-19.
 
+- Decision: For a recipe application, hash and store only user-supplied additional roots,
+  not modules introduced by recipe expansion.
+  Rationale: Recipe membership is versioned recipe content. It must be allowed to change
+  while the stable application is replaced in place; explicit `--module` roots remain part
+  of user-selected composition identity and preserve their order.
+  Date: 2026-07-19.
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-64 is complete. Manifest schema version 4 now round-trips top-level applications,
+per-instance resolved values, baseline references, file application ownership, and command
+receipts while versions 1-3 decode with safe defaults. `Seihou.Core.Application` owns
+stable identity, record construction, replacement, and ownership attachment. Ordinary
+module and recipe runs now retain their requested target and provenance, replace repeated
+applications, preserve the legacy flat variable map, and attribute unchanged as well as
+written tracked destinations.
+
+Focused tests passed with 949 `seihou-core` tests and 262 `seihou-cli` tests. `cabal test
+all` also passed the 16 extension tests, for 1,227 tests total. `nix fmt` completed and
+`git diff --check` reported no errors. Disposable module and recipe smoke projects both
+wrote version-4 manifests; the module rerun retained one application and ownership on its
+unchanged file. Baseline bytes and command receipts remain intentionally unpopulated until
+EP-65 and EP-67.
 
 
 ## Context and Orientation
@@ -395,3 +428,7 @@ The version-4 JSON keys are `applications` at manifest level, `baseline` and `ap
 inside each file record, and `commandReceipts` inside an application. Optional/default
 fields may be omitted when empty to keep manifests readable, but the decoder must accept
 both omitted and explicit-empty forms.
+
+Revision note (2026-07-19): Recorded completed implementation, validation evidence, the
+operation-derived ownership requirement, and the recipe identity rule discovered while
+implementing EP-64.

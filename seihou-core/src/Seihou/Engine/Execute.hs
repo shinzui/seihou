@@ -50,7 +50,9 @@ executeOp targetDir ownerFor now op = case op of
             { hash = hashContent content,
               moduleName = ownerFor dest,
               strategy = strat,
-              generatedAt = now
+              generatedAt = now,
+              baseline = Nothing,
+              applicationIds = mempty
             }
     pure (Just (dest, record))
   CreateDirOp path -> do
@@ -66,7 +68,9 @@ executeOp targetDir ownerFor now op = case op of
             { hash = hashContent content,
               moduleName = ownerFor dest,
               strategy = Copy,
-              generatedAt = now
+              generatedAt = now,
+              baseline = Nothing,
+              applicationIds = mempty
             }
     pure (Just (dest, record))
   RunCommandOp _ _ -> do
@@ -90,7 +94,9 @@ executeOp targetDir ownerFor now op = case op of
                 { hash = hashContent merged,
                   moduleName = ownerFor dest,
                   strategy = strat,
-                  generatedAt = now
+                  generatedAt = now,
+                  baseline = Nothing,
+                  applicationIds = mempty
                 }
         pure (Just (dest, record))
 

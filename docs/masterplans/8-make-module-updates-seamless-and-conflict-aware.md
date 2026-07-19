@@ -160,7 +160,7 @@ acceptance tests and distinct failure modes.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 64 | Record reproducible applied compositions and update state | docs/plans/64-record-reproducible-applied-compositions-and-update-state.md | None | None | Not Started |
+| 64 | Record reproducible applied compositions and update state | docs/plans/64-record-reproducible-applied-compositions-and-update-state.md | None | None | Complete |
 | 65 | Store generated baselines and perform three-way merges | docs/plans/65-store-generated-baselines-and-perform-three-way-merges.md | EP-64 | None | Not Started |
 | 66 | Plan conflict-aware file reconciliation and safe orphan handling | docs/plans/66-plan-conflict-aware-file-reconciliation-and-safe-orphan-handling.md | EP-64, EP-65 | None | Not Started |
 | 67 | Track generated commands and skip unchanged executions | docs/plans/67-track-generated-commands-and-skip-unchanged-executions.md | EP-64 | EP-66 | Not Started |
@@ -241,9 +241,9 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
 
 ## Progress
 
-- [ ] EP-64 M1: Define application/update state and bump the manifest schema with backward decoding.
-- [ ] EP-64 M2: Record successful module and recipe compositions with per-instance resolved values.
-- [ ] EP-64 M3: Prove stable identity, legacy fallback, and round-trip behavior with fixtures.
+- [x] EP-64 M1: Define application/update state and bump the manifest schema with backward decoding.
+- [x] EP-64 M2: Record successful module and recipe compositions with per-instance resolved values.
+- [x] EP-64 M3: Prove stable identity, legacy fallback, and round-trip behavior with fixtures.
 - [ ] EP-65 M1: Add the content-addressed baseline store and pure/real interpreters.
 - [ ] EP-65 M2: Add and verify the Git-backed three-way merge engine and conservative fallback.
 - [ ] EP-65 M3: Seed and maintain baseline references during ordinary generation.
@@ -298,6 +298,17 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
   three-way merge dependency. The local Git 2.54.0 exposes `git merge-file --stdout
   --diff3`, so EP-65 can use a mature available implementation without adding an unverified
   package bound.
+
+- EP-64 confirmed that `executePlan` cannot be the source of file application ownership
+  because it returns only physically written records. Ordinary generation must attribute
+  the complete composed-operation destination set after written, kept, and unchanged
+  records are combined. EP-65 must use the same complete set when seeding baselines so an
+  unchanged generated file does not remain baseline-free.
+
+- Recipe-expanded modules are versioned contents of the recipe rather than stable
+  application identity. EP-64 stores and hashes only ordered `--module` roots supplied by
+  the user alongside the requested recipe target. EP-68 must preserve this distinction
+  when it loads a newer recipe and expands its possibly changed module list.
 
 
 ## Decision Log
@@ -373,10 +384,25 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
   interfaces remain owned by one early plan.
   Date: 2026-07-19.
 
+- Decision: Keep recipe-expanded module roots out of `ApplicationId` and
+  `AppliedComposition.additionalModules`.
+  Rationale: Recipe membership may change when the recipe version changes. Treating those
+  expanded roots as identity would append a new application during update; only ordered
+  user-supplied `--module` roots represent identity-level layering choices.
+  Date: 2026-07-19.
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original vision.
 
-(To be filled during and after implementation.)
+EP-64 completed the persistent-state foundation. Version-4 manifests now preserve stable
+top-level applications, distinct per-instance values, baseline and command-receipt slots,
+and application-scoped file ownership while retaining versions 1-3 and the flat legacy
+variable map. Real module and recipe smoke runs demonstrated the recorded target and
+provenance, replacement of a repeated application, and ownership of unchanged files. EP-65
+and EP-67 can now proceed from the shared schema contract.
+
+Revision note (2026-07-19): Marked EP-64 complete and recorded its operation-derived file
+ownership and recipe identity discoveries for EP-65 and EP-68.

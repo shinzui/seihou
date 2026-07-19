@@ -35,6 +35,13 @@ module Seihou.Core.Types
     Operation (..),
     ModuleLoadError (..),
     Manifest (..),
+    ApplicationId (..),
+    AppliedTarget (..),
+    BaselineRef (..),
+    CommandFingerprint (..),
+    CommandReceipt (..),
+    AppliedInstanceState (..),
+    AppliedComposition (..),
     AppliedModule (..),
     AppliedRecipe (..),
     AppliedBlueprint (..),
@@ -60,6 +67,7 @@ module Seihou.Core.Types
 where
 
 import Data.Map.Strict (Map)
+import Data.Set (Set)
 import Data.String (IsString)
 import Data.Text (Text)
 import Data.Time (UTCTime)
@@ -457,8 +465,62 @@ data Manifest = Manifest
     modules :: [AppliedModule],
     vars :: Map VarName Text,
     files :: Map FilePath FileRecord,
+    applications :: [AppliedComposition],
     recipe :: Maybe AppliedRecipe,
     blueprint :: Maybe AppliedBlueprint
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Stable identity for one top-level module or recipe application.
+newtype ApplicationId = ApplicationId {unApplicationId :: Text}
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | The deterministic artifact originally requested by the user.
+data AppliedTarget
+  = AppliedModuleTarget ModuleName
+  | AppliedRecipeTarget RecipeName
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | Content-addressed reference to generated baseline bytes.
+newtype BaselineRef = BaselineRef {unBaselineRef :: SHA256}
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | Stable identity for a rendered command invocation.
+newtype CommandFingerprint = CommandFingerprint {unCommandFingerprint :: SHA256}
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | Evidence that one rendered command completed successfully.
+data CommandReceipt = CommandReceipt
+  { fingerprint :: CommandFingerprint,
+    moduleName :: ModuleName,
+    command :: Text,
+    workDir :: Maybe FilePath,
+    completedAt :: UTCTime
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Reproducible state for one module instance in an application.
+data AppliedInstanceState = AppliedInstanceState
+  { name :: ModuleName,
+    parentVars :: ParentVars,
+    source :: FilePath,
+    moduleVersion :: Maybe Text,
+    resolvedVars :: Map VarName Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A complete, re-runnable top-level module or recipe composition.
+data AppliedComposition = AppliedComposition
+  { applicationId :: ApplicationId,
+    target :: AppliedTarget,
+    targetSource :: FilePath,
+    targetVersion :: Maybe Text,
+    additionalModules :: [ModuleName],
+    namespace :: Maybe Text,
+    context :: Maybe Text,
+    instances :: [AppliedInstanceState],
+    commandReceipts :: Map CommandFingerprint CommandReceipt,
+    appliedAt :: UTCTime
   }
   deriving stock (Eq, Show, Generic)
 
@@ -516,7 +578,9 @@ data FileRecord = FileRecord
   { hash :: SHA256,
     moduleName :: ModuleName,
     strategy :: Strategy,
-    generatedAt :: UTCTime
+    generatedAt :: UTCTime,
+    baseline :: Maybe BaselineRef,
+    applicationIds :: Set ApplicationId
   }
   deriving stock (Eq, Show, Generic)
 

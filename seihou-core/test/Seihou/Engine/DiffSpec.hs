@@ -36,7 +36,9 @@ mkRecord content =
     { hash = hashContent content,
       moduleName = modName,
       strategy = Template,
-      generatedAt = fixedTime
+      generatedAt = fixedTime,
+      baseline = Nothing,
+      applicationIds = mempty
     }
 
 -- | Helper to create a manifest with file records (avoids ambiguous record update).
@@ -48,7 +50,10 @@ manifestWithFiles recs =
           genAt = base.genAt,
           modules = base.modules,
           vars = base.vars,
-          files = recs
+          files = recs,
+          applications = base.applications,
+          recipe = base.recipe,
+          blueprint = base.blueprint
         }
 
 spec :: Spec
@@ -202,7 +207,9 @@ spec = do
               { hash = hashContent content,
                 moduleName = otherMod,
                 strategy = Template,
-                generatedAt = fixedTime
+                generatedAt = fixedTime,
+                baseline = Nothing,
+                applicationIds = mempty
               }
           manifest = manifestWithFiles (Map.singleton "other.txt" record)
           planned = [("new.txt", "new content", modName, Nothing)]
@@ -229,7 +236,9 @@ spec = do
               { hash = hashContent "other content",
                 moduleName = otherMod,
                 strategy = Copy,
-                generatedAt = fixedTime
+                generatedAt = fixedTime,
+                baseline = Nothing,
+                applicationIds = mempty
               }
           manifest =
             manifestWithFiles
@@ -260,7 +269,9 @@ spec = do
               { hash = hashContent "other content",
                 moduleName = otherMod,
                 strategy = Template,
-                generatedAt = fixedTime
+                generatedAt = fixedTime,
+                baseline = Nothing,
+                applicationIds = mempty
               }
           manifest = manifestWithFiles (Map.singleton "shared.txt" otherRecord)
           -- active module wants to write to same path owned by inactive module
@@ -281,7 +292,9 @@ spec = do
               { hash = hashContent content,
                 moduleName = m,
                 strategy = Template,
-                generatedAt = fixedTime
+                generatedAt = fixedTime,
+                baseline = Nothing,
+                applicationIds = mempty
               }
           manifest =
             manifestWithFiles

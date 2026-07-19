@@ -72,7 +72,9 @@ mkManifest entries =
                 { hash = hashContent content,
                   moduleName = modName,
                   strategy = Template,
-                  generatedAt = fixedTime
+                  generatedAt = fixedTime,
+                  baseline = Nothing,
+                  applicationIds = mempty
                 }
             )
           | (path, content) <- entries

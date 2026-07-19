@@ -50,7 +50,9 @@ mkManifest isRemovable fileContents =
                 { hash = hashContent content,
                   moduleName = modName,
                   strategy = Template,
-                  generatedAt = fixedTime
+                  generatedAt = fixedTime,
+                  baseline = Nothing,
+                  applicationIds = mempty
                 }
             )
           | (path, content) <- fileContents
@@ -64,6 +66,7 @@ mkManifestWithRemoval removal fileContents =
     { modules =
         [ AppliedModule
             { name = modName,
+              parentVars = emptyParentVars,
               source = "/path/to/test-module",
               moduleVersion = Nothing,
               appliedAt = fixedTime,
@@ -77,7 +80,9 @@ mkManifestWithRemoval removal fileContents =
                 { hash = hashContent content,
                   moduleName = modName,
                   strategy = Template,
-                  generatedAt = fixedTime
+                  generatedAt = fixedTime,
+                  baseline = Nothing,
+                  applicationIds = mempty
                 }
             )
           | (path, content) <- fileContents
@@ -197,14 +202,17 @@ spec = do
 
     it "preserves files from other modules in manifest" $ do
       let base = mkManifest True [("mine.txt", "mine")]
-          otherRec = FileRecord (hashContent "other") otherMod Template fixedTime
+          otherRec = FileRecord (hashContent "other") otherMod Template fixedTime Nothing mempty
           manifest =
             Manifest
               { version = base.version,
                 genAt = base.genAt,
                 modules = base.modules,
                 vars = base.vars,
-                files = Map.insert "other.txt" otherRec base.files
+                files = Map.insert "other.txt" otherRec base.files,
+                applications = base.applications,
+                recipe = base.recipe,
+                blueprint = base.blueprint
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]
           plan = RemovalPlan {targetModule = modName, files = [RemovalSafe "mine.txt"]}
@@ -376,14 +384,17 @@ spec = do
 
     it "preserves other modules' files in manifest" $ do
       let base = mkManifest True [("mine.txt", "mine")]
-          otherRec = FileRecord (hashContent "other") otherMod Template fixedTime
+          otherRec = FileRecord (hashContent "other") otherMod Template fixedTime Nothing mempty
           manifest =
             Manifest
               { version = base.version,
                 genAt = base.genAt,
                 modules = base.modules,
                 vars = base.vars,
-                files = Map.insert "other.txt" otherRec base.files
+                files = Map.insert "other.txt" otherRec base.files,
+                applications = base.applications,
+                recipe = base.recipe,
+                blueprint = base.blueprint
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "mine.txt" RFSafe]
