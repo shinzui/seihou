@@ -84,6 +84,7 @@ library
     Seihou.Effect.Process
     Seihou.Effect.ProcessInterp
     Seihou.Effect.ProcessPure
+    Seihou.Engine.Baseline
     Seihou.Engine.Conflict
     Seihou.Engine.DhallJSON
     Seihou.Engine.Diff
@@ -172,6 +173,7 @@ test-suite seihou-core-test
     Seihou.Effect.FilesystemSpec
     Seihou.Effect.LoggerSpec
     Seihou.Effect.ManifestStoreSpec
+    Seihou.Engine.BaselineSpec
     Seihou.Engine.ConflictSpec
     Seihou.Engine.DiffSpec
     Seihou.Engine.ExecuteSpec

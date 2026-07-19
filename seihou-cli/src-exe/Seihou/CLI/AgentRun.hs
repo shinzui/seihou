@@ -12,6 +12,7 @@ module Seihou.CLI.AgentRun
   )
 where
 
+import Control.Exception (IOException, displayException, try)
 import Control.Monad (when)
 import Data.FileEmbed (embedFile)
 import Data.Map.Strict qualified as Map
@@ -59,6 +60,8 @@ import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
+import Seihou.Effect.BaselineStore (pruneBaselines)
+import Seihou.Effect.BaselineStoreInterp (runBaselineStore)
 import Seihou.Effect.ConfigReader
   ( readContextConfig,
     readGlobalConfig,
@@ -69,9 +72,10 @@ import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
-import Seihou.Effect.Logger (logError, logInfo)
+import Seihou.Effect.Logger (logError, logInfo, logWarn)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import Seihou.Engine.Baseline (manifestBaselineRefs, recordGeneratedBaselines)
 import Seihou.Engine.Conflict (resolveConflicts)
 import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
@@ -347,6 +351,7 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
   -- write the manifest. Mirrors Seihou.CLI.Run.handleRun.
   now <- getCurrentTime
   let manifestPath = ".seihou" </> "manifest.json"
+      baselineDir = ".seihou" </> "baselines"
       planned =
         [(dest, content, primary, Nothing) | WriteFileOp dest content _ <- ops]
           ++ [(dest, content, mName, Just pOp) | PatchFileOp dest content pOp _ mName <- ops]
@@ -395,26 +400,55 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
           excludePaths = Set.fromList (Map.keys keepRecords ++ skipPaths)
           opsForExec = filter (not . opTargetsPath excludePaths) ops
 
-      runEff $ runFilesystem $ runManifestStore manifestPath $ do
-        recs <- executePlan "" opsForExec ownerMap primary now
+      generationAttempt <-
+        try @IOException $
+          runEff $
+            runFilesystem $
+              runBaselineStore baselineDir $
+                runManifestStore manifestPath $ do
+                  recs <- executePlan "" opsForExec ownerMap primary now
+                  baselineResult <- recordGeneratedBaselines "" recs
+                  case baselineResult of
+                    Left err -> pure (Left err)
+                    Right baselineRecords -> do
+                      let orphanedPaths = map (.path) diff.orphaned
+                          cleanedFiles = foldr Map.delete manifest.files orphanedPaths
+                          allModuleEntries = updateAllModules manifest.modules modulesInOrder now
+                          allResolvedVals =
+                            Map.unions [Map.map (.value) vs | vs <- Map.elems baseResolved]
+                          newManifest =
+                            Manifest
+                              { version = currentManifestVersion,
+                                genAt = now,
+                                modules = allModuleEntries,
+                                vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
+                                files = Map.unions [baselineRecords, keepRecords, cleanedFiles],
+                                applications = manifest.applications,
+                                recipe = manifest.recipe,
+                                blueprint = manifest.blueprint
+                              }
+                      writeManifest newManifest
+                      pure (Right newManifest)
 
-        let orphanedPaths = map (.path) diff.orphaned
-            cleanedFiles = foldr Map.delete manifest.files orphanedPaths
-            allModuleEntries = updateAllModules manifest.modules modulesInOrder now
-            allResolvedVals =
-              Map.unions [Map.map (.value) vs | vs <- Map.elems baseResolved]
-            newManifest =
-              Manifest
-                { version = currentManifestVersion,
-                  genAt = now,
-                  modules = allModuleEntries,
-                  vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
-                  files = Map.unions [recs, keepRecords, cleanedFiles],
-                  applications = manifest.applications,
-                  recipe = manifest.recipe,
-                  blueprint = manifest.blueprint
-                }
-        writeManifest newManifest
+      newManifest <- case generationAttempt of
+        Left err -> do
+          logIO level $ logError $ "Error applying baseline files or storing generated baselines: " <> T.pack (displayException err)
+          exitFailure
+        Right (Left err) -> do
+          logIO level $ logError $ "Error storing generated baselines: " <> T.pack (show err)
+          exitFailure
+        Right (Right saved) -> pure saved
+
+      pruneAttempt <-
+        try @IOException $
+          runEff $
+            runFilesystem $
+              runBaselineStore baselineDir $
+                pruneBaselines (manifestBaselineRefs newManifest)
+      case pruneAttempt of
+        Left err ->
+          logIO level $ logWarn $ "Warning: could not prune generated baselines: " <> T.pack (displayException err)
+        Right _ -> pure ()
 
       let nNew = length diff.new
           nMod = length diff.modified

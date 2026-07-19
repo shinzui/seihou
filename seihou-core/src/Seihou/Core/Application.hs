@@ -84,13 +84,12 @@ replaceAppliedComposition replacement existing
 
 -- | Attribute the current file result to an application while retaining
 -- ownership from the prior record and any ownership already on the result.
--- Baseline population starts in EP-65, so ordinary records remain baseline-free
--- in this plan.
+-- The current record's baseline is preserved: EP-65 captures the exact
+-- post-execution generated content before ownership is attached.
 attachApplication :: ApplicationId -> Maybe FileRecord -> FileRecord -> FileRecord
 attachApplication applicationId previous current =
   current
-    { baseline = Nothing,
-      applicationIds = Set.insert applicationId (Set.union current.applicationIds priorApplications)
+    { applicationIds = Set.insert applicationId (Set.union current.applicationIds priorApplications)
     }
   where
     priorApplications = maybe Set.empty (.applicationIds) previous

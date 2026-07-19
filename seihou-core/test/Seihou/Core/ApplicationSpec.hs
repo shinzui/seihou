@@ -150,11 +150,11 @@ spec = do
       replaceAppliedComposition third [first, second] `shouldBe` [first, second, third]
 
   describe "attachApplication" $ do
-    it "unions prior and current ownership and leaves no baseline" $ do
+    it "unions prior and current ownership and preserves the generated baseline" $ do
       let priorId = ApplicationId "prior"
           currentId = ApplicationId "current"
           prior = FileRecord (hashContent "old") "module" Template fixedTime Nothing (Set.singleton priorId)
           current = FileRecord (hashContent "new") "module" Template fixedTime (Just (BaselineRef (hashContent "generated"))) Set.empty
           attached = attachApplication currentId (Just prior) current
       attached.applicationIds `shouldBe` Set.fromList [priorId, currentId]
-      attached.baseline `shouldBe` Nothing
+      attached.baseline `shouldBe` Just (BaselineRef (hashContent "generated"))

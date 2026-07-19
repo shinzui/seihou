@@ -3,6 +3,7 @@ module Seihou.CLI.Run
   )
 where
 
+import Control.Exception (IOException, displayException, try)
 import Control.Monad (foldM, unless, when)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
@@ -38,6 +39,8 @@ import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution)
 import Seihou.Core.Version (renderVersion)
+import Seihou.Effect.BaselineStore (pruneBaselines)
+import Seihou.Effect.BaselineStoreInterp (runBaselineStore)
 import Seihou.Effect.ConfigReader (readContextConfig, readGlobalConfig, readLocalConfig, readNamespaceConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConfigWriterInterp (runConfigWriter)
@@ -50,6 +53,7 @@ import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.Process (runProcess)
 import Seihou.Effect.ProcessInterp (runProcessIO)
+import Seihou.Engine.Baseline (manifestBaselineRefs, recordGeneratedBaselines)
 import Seihou.Engine.Conflict (resolveConflicts)
 import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
@@ -233,6 +237,7 @@ handleRun runOpts = do
   -- 6. Compute diff (shared by dry-run, --diff, and execution paths)
   now <- getCurrentTime
   let manifestPath = ".seihou" </> "manifest.json"
+      baselineDir = ".seihou" </> "baselines"
       planned =
         [(dest, content, modName, Nothing) | WriteFileOp dest content _ <- opsFiltered]
           ++ [(dest, content, mName, Just pOp) | PatchFileOp dest content pOp _ mName <- opsFiltered]
@@ -331,58 +336,89 @@ handleRun runOpts = do
                   excludePaths = Set.fromList (Map.keys keepRecords ++ skipPaths)
                   opsForExec = filter (not . opTargetsPath excludePaths) opsFiltered
 
-              -- Execute the plan (excluding kept/skipped files)
-              runEff $ runFilesystem $ runManifestStore manifestPath $ do
-                recs <- executePlan "" opsForExec ownerMap modName now
+              -- Execute the plan (excluding kept/skipped files), capture the
+              -- exact post-execution baselines, and only then publish the
+              -- manifest that references those blobs.
+              generationAttempt <-
+                try @IOException $
+                  runEff $
+                    runFilesystem $
+                      runBaselineStore baselineDir $
+                        runManifestStore manifestPath $ do
+                          recs <- executePlan "" opsForExec ownerMap modName now
+                          baselineResult <- recordGeneratedBaselines "" recs
+                          case baselineResult of
+                            Left err -> pure (Left err)
+                            Right baselineRecords -> do
+                              -- Build updated manifest with all composed modules.
+                              let orphanedPaths = map (.path) diff.orphaned
+                                  cleanedFiles = foldr Map.delete manifest.files orphanedPaths
+                                  allModuleEntries = updateAllModules manifest.modules modulesInOrder now
+                                  allResolvedVals =
+                                    Map.unions
+                                      [Map.map (.value) vs | vs <- Map.elems resolved]
+                                  appliedRecipe = case recipeInfo of
+                                    Just (rName, rVersion) ->
+                                      Just AppliedRecipe {name = rName, recipeVersion = rVersion, appliedAt = now}
+                                    Nothing -> manifest.recipe
+                                  (appliedTarget, targetSource, targetVersion) = targetInfo
+                                  appliedComposition =
+                                    buildAppliedComposition
+                                      appliedTarget
+                                      targetSource
+                                      targetVersion
+                                      additional
+                                      (Just namespace)
+                                      context
+                                      modulesInOrder
+                                      resolved
+                                      now
+                                  applicationDestinations =
+                                    Set.fromList [path | Just path <- map operationDestination opsFiltered]
+                                  combinedFiles = Map.unions [baselineRecords, keepRecords, cleanedFiles]
+                                  ownedFiles =
+                                    Map.mapWithKey
+                                      ( \path record ->
+                                          if Set.member path applicationDestinations
+                                            then attachApplication appliedComposition.applicationId (Map.lookup path manifest.files) record
+                                            else record
+                                      )
+                                      combinedFiles
+                                  newManifest =
+                                    Manifest
+                                      { version = currentManifestVersion,
+                                        genAt = now,
+                                        modules = allModuleEntries,
+                                        vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
+                                        files = ownedFiles,
+                                        applications = replaceAppliedComposition appliedComposition manifest.applications,
+                                        recipe = appliedRecipe,
+                                        blueprint = manifest.blueprint
+                                      }
+                              writeManifest newManifest
+                              pure (Right newManifest)
 
-                -- Build updated manifest with all composed modules
-                let orphanedPaths = map (.path) diff.orphaned
-                    cleanedFiles = foldr Map.delete manifest.files orphanedPaths
-                    allModuleEntries = updateAllModules manifest.modules modulesInOrder now
-                    allResolvedVals =
-                      Map.unions
-                        [Map.map (.value) vs | vs <- Map.elems resolved]
-                    appliedRecipe = case recipeInfo of
-                      Just (rName, rVersion) ->
-                        Just AppliedRecipe {name = rName, recipeVersion = rVersion, appliedAt = now}
-                      Nothing -> manifest.recipe
-                    (appliedTarget, targetSource, targetVersion) = targetInfo
-                    appliedComposition =
-                      buildAppliedComposition
-                        appliedTarget
-                        targetSource
-                        targetVersion
-                        additional
-                        (Just namespace)
-                        context
-                        modulesInOrder
-                        resolved
-                        now
-                    applicationDestinations =
-                      Set.fromList [path | Just path <- map operationDestination opsFiltered]
-                    combinedFiles = Map.unions [recs, keepRecords, cleanedFiles]
-                    ownedFiles =
-                      Map.mapWithKey
-                        ( \path record ->
-                            if Set.member path applicationDestinations
-                              then attachApplication appliedComposition.applicationId (Map.lookup path manifest.files) record
-                              else record
-                        )
-                        combinedFiles
-                    newManifest =
-                      Manifest
-                        { version = currentManifestVersion,
-                          genAt = now,
-                          modules = allModuleEntries,
-                          vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
-                          files = ownedFiles,
-                          applications = replaceAppliedComposition appliedComposition manifest.applications,
-                          recipe = appliedRecipe,
-                          blueprint = manifest.blueprint
-                        }
+              newManifest <- case generationAttempt of
+                Left err -> do
+                  logIO level $ logError $ "Error applying files or storing generated baselines: " <> T.pack (displayException err)
+                  exitFailure
+                Right (Left err) -> do
+                  logIO level $ logError $ "Error storing generated baselines: " <> T.pack (show err)
+                  exitFailure
+                Right (Right saved) -> pure saved
 
-                -- Save manifest
-                writeManifest newManifest
+              -- Pruning is safe only after the new manifest is durable. A
+              -- pruning failure cannot invalidate the successful generation.
+              pruneAttempt <-
+                try @IOException $
+                  runEff $
+                    runFilesystem $
+                      runBaselineStore baselineDir $
+                        pruneBaselines (manifestBaselineRefs newManifest)
+              case pruneAttempt of
+                Left err ->
+                  logIO level $ logWarn $ "Warning: could not prune generated baselines: " <> T.pack (displayException err)
+                Right _ -> pure ()
 
               -- Report results
               let nNew = length diff.new
@@ -401,7 +437,7 @@ handleRun runOpts = do
                 let filesToStage =
                       map (.path) diff.new
                         ++ map (.path) diff.modified
-                        ++ [manifestPath]
+                        ++ [manifestPath, baselineDir]
                 inGit <- runEff $ runProcessIO $ isGitRepo
                 if inGit
                   then do

@@ -161,7 +161,7 @@ acceptance tests and distinct failure modes.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 64 | Record reproducible applied compositions and update state | docs/plans/64-record-reproducible-applied-compositions-and-update-state.md | None | None | Complete |
-| 65 | Store generated baselines and perform three-way merges | docs/plans/65-store-generated-baselines-and-perform-three-way-merges.md | EP-64 | None | In Progress |
+| 65 | Store generated baselines and perform three-way merges | docs/plans/65-store-generated-baselines-and-perform-three-way-merges.md | EP-64 | None | Complete |
 | 66 | Plan conflict-aware file reconciliation and safe orphan handling | docs/plans/66-plan-conflict-aware-file-reconciliation-and-safe-orphan-handling.md | EP-64, EP-65 | None | Not Started |
 | 67 | Track generated commands and skip unchanged executions | docs/plans/67-track-generated-commands-and-skip-unchanged-executions.md | EP-64 | EP-66 | Not Started |
 | 68 | Build a staged project update service | docs/plans/68-build-a-staged-project-update-service.md | EP-64, EP-65, EP-66, EP-67 | None | Not Started |
@@ -244,9 +244,9 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
 - [x] EP-64 M1: Define application/update state and bump the manifest schema with backward decoding.
 - [x] EP-64 M2: Record successful module and recipe compositions with per-instance resolved values.
 - [x] EP-64 M3: Prove stable identity, legacy fallback, and round-trip behavior with fixtures.
-- [ ] EP-65 M1: Add the content-addressed baseline store and pure/real interpreters.
-- [ ] EP-65 M2: Add and verify the Git-backed three-way merge engine and conservative fallback.
-- [ ] EP-65 M3: Seed and maintain baseline references during ordinary generation.
+- [x] EP-65 M1: Add the content-addressed baseline store and pure/real interpreters.
+- [x] EP-65 M2: Add and verify the Git-backed three-way merge engine and conservative fallback.
+- [x] EP-65 M3: Seed and maintain baseline references during ordinary generation.
 - [ ] EP-66 M1: Fold generation operations into one desired file state per path.
 - [ ] EP-66 M2: Classify automatic merges, true conflicts, and safe/edited orphans.
 - [ ] EP-66 M3: Apply resolved file plans with rollback and manifest/baseline updates.
@@ -309,6 +309,20 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
   application identity. EP-64 stores and hashes only ordered `--module` roots supplied by
   the user alongside the requested recipe target. EP-68 must preserve this distinction
   when it loads a newer recipe and expands its possibly changed module list.
+
+- EP-65 found that generated baseline references must be validated before they become blob
+  filenames. Version-4 manifest decoding now accepts only 64 hexadecimal digits and
+  normalizes uppercase input. EP-66 and EP-68 may rely on every decoded `BaselineRef` being
+  path-safe, while the store still revalidates constructed references defensively.
+
+- Git's diff3 driver conservatively groups some adjacent insertion/deletion edits into one
+  conflict hunk. EP-66 must render and resolve the returned `MergeConflicted` result as-is;
+  it must not attempt a second heuristic merge that could overwrite user intent.
+
+- EP-64's ownership helper contained an intentional pre-baseline reset. EP-65 now captures
+  final disk bytes before ownership attachment, and `attachApplication` preserves the
+  baseline. Downstream code must keep the distinct meanings: `baseline` names generated
+  ancestor bytes, while `hash` names the applied disk bytes.
 
 
 ## Decision Log
@@ -404,5 +418,15 @@ variable map. Real module and recipe smoke runs demonstrated the recorded target
 provenance, replacement of a repeated application, and ownership of unchanged files. EP-65
 and EP-67 can now proceed from the shared schema contract.
 
+EP-65 completed baseline and merge infrastructure. Generated ancestors are stored as
+validated content-addressed blobs, ordinary module and deterministic blueprint-baseline
+runs seed and prune references around an atomic manifest publication boundary, and the Git
+diff3 engine distinguishes clean merges, labeled conflicts, and unavailable/binary cases.
+A disposable CLI run verified five manifest/blob/disk triples byte-for-byte, and the full
+test suite passed. EP-66 can now build file reconciliation directly on these stable APIs.
+
 Revision note (2026-07-19): Marked EP-64 complete and recorded its operation-derived file
 ownership and recipe identity discoveries for EP-65 and EP-68.
+
+Revision note (2026-07-19): Marked EP-65 complete and recorded its validated baseline-path,
+merge-driver, and generated-versus-applied hash contracts for EP-66 and EP-68.

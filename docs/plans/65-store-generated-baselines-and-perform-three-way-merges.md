@@ -40,9 +40,9 @@ files should be updated or deleted; that policy belongs to
 - [x] (2026-07-19T17:52:41Z) M1: Add baseline store unit and real-filesystem tests.
 - [x] (2026-07-19T17:56:36Z) M2: Add pure merge short circuits and the Git diff3 driver.
 - [x] (2026-07-19T17:56:36Z) M2: Cover clean, non-overlapping, overlapping, deletion, missing-Git, and binary cases.
-- [ ] M3: Seed baseline blobs and manifest references during successful ordinary generation.
-- [ ] M3: Preserve generated versus applied hash semantics for downstream reconciliation.
-- [ ] M3: Run focused tests, all tests, formatting, and a real merge smoke demonstration.
+- [x] (2026-07-19T18:04:39Z) M3: Seed baseline blobs and manifest references during successful ordinary generation.
+- [x] (2026-07-19T18:04:39Z) M3: Preserve generated versus applied hash semantics for downstream reconciliation.
+- [x] (2026-07-19T18:04:39Z) M3: Run focused tests, all tests, formatting, and a real merge smoke demonstration.
 
 
 ## Surprises & Discoveries
@@ -62,6 +62,13 @@ implementation. Provide concise evidence.
   Evidence: an initial generated-deletion test produced a complete labeled diff3 body;
   moving the edits apart with an unchanged context line produced `MergeClean`. All 13 merge
   examples and all 968 core examples now pass with Git 2.54.0.
+
+- Observation: EP-64's `attachApplication` helper intentionally cleared `FileRecord.baseline`
+  as a temporary pre-EP-65 behavior. Baseline capture therefore has to precede ownership
+  attachment, and the helper must preserve the captured reference.
+  Evidence: the updated application test retains both prior/current ownership and the new
+  baseline; the disposable `seihou run` manifest retained application ownership on all five
+  baseline-bearing file records.
 
 
 ## Decision Log
@@ -117,13 +124,44 @@ implementation. Provide concise evidence.
   test suite. EP-66 continues to consume only `threeWayMerge`.
   Date: 2026-07-19.
 
+- Decision: Capture baselines after `executePlan` and before the atomic manifest write, then
+  attach application ownership without changing the baseline.
+  Rationale: write, copy, and especially patch operations are only truthful once their final
+  disk bytes exist. If capture fails, the prior manifest remains durable and cannot claim a
+  missing blob.
+  Date: 2026-07-19.
+
+- Decision: Prune only after manifest publication, downgrade pruning failures to warnings,
+  and include `.seihou/baselines` in ordinary `--commit` staging.
+  Rationale: the durable manifest defines the protected reference set. Garbage collection
+  is recoverable maintenance, while a commit containing manifest references without their
+  blobs would not be reproducible in another checkout.
+  Date: 2026-07-19.
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-65 completed all three milestones. Seihou now has content-addressed real and pure
+baseline stores with atomic writes, integrity validation, safe pruning, and strict manifest
+reference decoding. The three-way merge engine handles equality identities without Git,
+rejects binary/NUL content, cleanly combines non-overlapping text edits, emits labeled diff3
+conflicts for overlapping edits, and returns a conservative unavailable result for missing
+or failed drivers.
+
+Ordinary module generation and deterministic blueprint baselines now capture the exact
+post-execution content before publishing the manifest, recompute the applied hash from those
+same bytes, preserve application ownership, prune only after publication, and stage baseline
+blobs with `--commit`. A disposable real CLI run created five files and five blobs; every
+manifest hash matched its project file, every baseline digest matched its blob, and each blob
+was byte-identical to the generated file. Re-running reported five unchanged files and kept
+five deduplicated blobs.
+
+Validation finished with `nix fmt`, `git diff --check`, 972 core tests, 262 CLI tests, and 16
+extension tests passing. EP-66 can consume `BaselineStore`, `recordGeneratedBaselines`,
+`MergeOutcome`, and `threeWayMerge` without further schema work.
 
 
 ## Context and Orientation
@@ -358,3 +396,6 @@ EP-66 consumes `readBaseline`, `putBaseline`, `MergeOutcome`, and `threeWayMerge
 uses `pruneBaselines` only after it publishes a successful update manifest. The argument
 ordering of `threeWayMerge`—baseline, current, new generated—is a coordination contract and
 must be documented at the definition site to prevent accidental side reversal.
+
+Revision note (2026-07-19): Completed all milestones, recorded the validated storage/merge
+contracts and generation ordering, and added implementation evidence for downstream plans.
