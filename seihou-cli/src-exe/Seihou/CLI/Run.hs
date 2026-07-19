@@ -4,7 +4,7 @@ module Seihou.CLI.Run
 where
 
 import Control.Exception (IOException, displayException, try)
-import Control.Monad (foldM, unless, when)
+import Control.Monad (foldM, forM_, unless, when)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Set qualified as Set
@@ -12,6 +12,16 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
+import Seihou.CLI.CommandExecution
+  ( CommandDisposition (..),
+    CommandExecutionError (..),
+    CommandPlan (..),
+    CommandPolicy (..),
+    PlannedCommand (..),
+    executeCommandPlanWithOutput,
+    finalizeCommandReceipts,
+    planCommands,
+  )
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
@@ -32,7 +42,7 @@ import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
-import Seihou.Core.Application (attachApplication, buildAppliedComposition, replaceAppliedComposition)
+import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
@@ -51,7 +61,6 @@ import Seihou.Effect.FzfInterp (runFzfIO)
 import Seihou.Effect.Logger (logDebug, logError, logInfo, logWarn)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
-import Seihou.Effect.Process (runProcess)
 import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Baseline (manifestBaselineRefs, recordGeneratedBaselines)
 import Seihou.Engine.Conflict (resolveConflicts)
@@ -264,6 +273,26 @@ handleRun runOpts = do
   manifest <-
     handlePendingMigrations level runOpts manifestPath initialManifest pendings
 
+  -- Commands are planned against the previously accepted receipts for this
+  -- exact top-level application. Ordinary run deliberately remains run-all;
+  -- --no-commands disables execution while retaining matching old receipts.
+  let (appliedTarget, targetSource, targetVersion) = targetInfo
+      currentApplicationId = mkApplicationId appliedTarget additional
+      priorCommandReceipts =
+        case [ application.commandReceipts
+             | application <- manifest.applications,
+               application.applicationId == currentApplicationId
+             ] of
+          receipts : _ -> receipts
+          [] -> Map.empty
+      commandPolicy =
+        if runOpts.runNoCommands
+          then DisableCommands
+          else RunAllCommands
+      commandPlan = planCommands commandPolicy priorCommandReceipts ops
+      candidateCommandReceipts =
+        finalizeCommandReceipts commandPlan [] priorCommandReceipts
+
   -- 6c. Compute the diff against the (possibly post-migration) manifest.
   diff <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     -- Diff needs every name that could own a manifest file. Each
@@ -361,8 +390,7 @@ handleRun runOpts = do
                                     Just (rName, rVersion) ->
                                       Just AppliedRecipe {name = rName, recipeVersion = rVersion, appliedAt = now}
                                     Nothing -> manifest.recipe
-                                  (appliedTarget, targetSource, targetVersion) = targetInfo
-                                  appliedComposition =
+                                  appliedCompositionWithoutReceipts =
                                     buildAppliedComposition
                                       appliedTarget
                                       targetSource
@@ -373,6 +401,10 @@ handleRun runOpts = do
                                       modulesInOrder
                                       resolved
                                       now
+                                  appliedComposition =
+                                    appliedCompositionWithoutReceipts
+                                      { commandReceipts = candidateCommandReceipts
+                                      }
                                   applicationDestinations =
                                     Set.fromList [path | Just path <- map operationDestination opsFiltered]
                                   combinedFiles = Map.unions [baselineRecords, keepRecords, cleanedFiles]
@@ -432,6 +464,54 @@ handleRun runOpts = do
                   <> T.pack (show nUnch)
                   <> " unchanged."
 
+              -- Execute commands after file generation. The command library
+              -- returns candidate receipts only when the entire phase
+              -- succeeds, so a failed run leaves the candidate manifest with
+              -- no newly-minted success evidence.
+              forM_ commandPlan.commands $ \planned ->
+                when (planned.disposition == CommandWillRun) $
+                  logIO level (logDebug $ "  run  " <> plannedCommandText planned)
+              commandResult <-
+                runEff $
+                  runProcessIO $
+                    executeCommandPlanWithOutput
+                      now
+                      ( \_ commandStdout _ ->
+                          when (not (T.null commandStdout)) (liftIO $ TIO.putStr commandStdout)
+                      )
+                      commandPlan
+              completedReceipts <- case commandResult of
+                Right receipts -> pure receipts
+                Left commandError -> do
+                  when (not (T.null commandError.stdout)) $ TIO.putStr commandError.stdout
+                  when (not (T.null commandError.stderr)) $ TIO.putStr commandError.stderr
+                  logIO level $
+                    logError $
+                      "Command failed (exit "
+                        <> T.pack (show commandError.exitCode)
+                        <> "): "
+                        <> plannedCommandText commandError.command
+                  exitFailure
+
+              let finalCommandReceipts =
+                    finalizeCommandReceipts commandPlan completedReceipts priorCommandReceipts
+                  receiptManifest =
+                    setApplicationCommandReceipts
+                      currentApplicationId
+                      finalCommandReceipts
+                      newManifest
+              receiptWriteAttempt <-
+                try @IOException $
+                  runEff $
+                    runFilesystem $
+                      runManifestStore manifestPath $
+                        writeManifest receiptManifest
+              case receiptWriteAttempt of
+                Left err -> do
+                  logIO level $ logError $ "Commands succeeded but their receipts could not be recorded: " <> T.pack (displayException err)
+                  exitFailure
+                Right () -> pure ()
+
               -- Commit generated files if --commit or --commit-message
               when (runOpts.runCommit || isJust runOpts.runCommitMessage) $ do
                 let filesToStage =
@@ -461,10 +541,6 @@ handleRun runOpts = do
                               ExitFailure _ -> logIO level (logWarn $ "git commit failed: " <> commitErr)
                   else
                     logIO level (logDebug "--commit: not inside a git repository, skipping.")
-
-              -- Execute commands after file generation
-              let commandOps = [(cmd, wd) | RunCommandOp {command = cmd, workDir = wd} <- opsForExec]
-              mapM_ (executeCommand level) commandOps
 
               -- Offer to save prompted values to local config
               let prompted = collectPromptedValues resolved localMap
@@ -551,18 +627,25 @@ operationDestination (CopyFileOp _ dest) = Just dest
 operationDestination (PatchFileOp dest _ _ _ _) = Just dest
 operationDestination _ = Nothing
 
--- | Execute a shell command via @sh -c@, printing output and halting on failure.
-executeCommand :: LogLevel -> (Text, Maybe FilePath) -> IO ()
-executeCommand level (cmd, workDir) = do
-  logIO level (logDebug $ "  run  " <> cmd)
-  (exitCode, cmdOut, cmdErr) <- runEff $ runProcessIO $ runProcess "sh" ["-c", cmd] workDir
-  when (not (T.null cmdOut)) $ TIO.putStr cmdOut
-  case exitCode of
-    ExitSuccess -> pure ()
-    ExitFailure code -> do
-      when (not (T.null cmdErr)) $ TIO.putStr cmdErr
-      logIO level (logError $ "Command failed (exit " <> T.pack (show code) <> "): " <> cmd)
-      exitFailure
+plannedCommandText :: PlannedCommand -> Text
+plannedCommandText planned = case planned.operation of
+  RunCommandOp {command} -> command
+  _ -> "<non-command operation>"
+
+setApplicationCommandReceipts ::
+  ApplicationId ->
+  Map CommandFingerprint CommandReceipt ->
+  Manifest ->
+  Manifest
+setApplicationCommandReceipts applicationId receipts manifest =
+  manifest
+    { applications = map updateApplication manifest.applications
+    }
+  where
+    updateApplication application
+      | application.applicationId == applicationId =
+          application {commandReceipts = receipts}
+      | otherwise = application
 
 -- | Apply the pending-migration policy.
 --

@@ -163,7 +163,7 @@ acceptance tests and distinct failure modes.
 | 64 | Record reproducible applied compositions and update state | docs/plans/64-record-reproducible-applied-compositions-and-update-state.md | None | None | Complete |
 | 65 | Store generated baselines and perform three-way merges | docs/plans/65-store-generated-baselines-and-perform-three-way-merges.md | EP-64 | None | Complete |
 | 66 | Plan conflict-aware file reconciliation and safe orphan handling | docs/plans/66-plan-conflict-aware-file-reconciliation-and-safe-orphan-handling.md | EP-64, EP-65 | None | Complete |
-| 67 | Track generated commands and skip unchanged executions | docs/plans/67-track-generated-commands-and-skip-unchanged-executions.md | EP-64 | EP-66 | In Progress |
+| 67 | Track generated commands and skip unchanged executions | docs/plans/67-track-generated-commands-and-skip-unchanged-executions.md | EP-64 | EP-66 | Complete |
 | 68 | Build a staged project update service | docs/plans/68-build-a-staged-project-update-service.md | EP-64, EP-65, EP-66, EP-67 | None | Not Started |
 | 69 | Ship the `seihou update` workflow and ecosystem guidance | docs/plans/69-ship-the-seihou-update-workflow-and-ecosystem-guidance.md | EP-68 | EP-64, EP-65, EP-66, EP-67 | Not Started |
 
@@ -250,9 +250,9 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
 - [x] EP-66 M1: Fold generation operations into one desired file state per path.
 - [x] EP-66 M2: Classify automatic merges, true conflicts, and safe/edited orphans.
 - [x] EP-66 M3: Apply resolved file plans with rollback and manifest/baseline updates.
-- [ ] EP-67 M1: Preserve command ownership and compute stable rendered-command fingerprints.
-- [ ] EP-67 M2: Plan changed-only, run-all, and disabled command policies and persist successes.
-- [ ] EP-67 M3: Integrate receipt recording without changing existing `seihou run` run-all behavior.
+- [x] EP-67 M1: Preserve command ownership and compute stable rendered-command fingerprints.
+- [x] EP-67 M2: Plan changed-only, run-all, and disabled command policies and persist successes.
+- [x] EP-67 M3: Integrate receipt recording without changing existing `seihou run` run-all behavior.
 - [ ] EP-68 M1: Select recorded applications and stage remote candidate module repositories.
 - [ ] EP-68 M2: Reuse saved inputs and produce a unified post-migration update plan.
 - [ ] EP-68 M3: Apply managed migrations, files, commands, cache, baselines, and manifest with recovery.
@@ -338,6 +338,17 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
   mutation. EP-68 may publish that candidate and then complete the transaction; if it
   crashes between those calls, startup recovery compares the durable manifest and keeps
   committed files instead of restoring the old tree beneath new metadata.
+
+- EP-67 confirmed that command receipt finalization must see the complete rendered command
+  declaration set even when execution is disabled. Filtering commands before planning would
+  either discard still-valid receipts or retain removed declarations. EP-68 should therefore
+  build one `CommandPlan` from staged rendered operations and apply policy through
+  dispositions, not by removing command operations first.
+
+- The reusable executor returns receipts only when the entire command phase succeeds, while
+  an optional success-output callback preserves existing terminal output. EP-68 can discard
+  the `Left CommandExecutionError` without leaking partial receipts; it should publish the
+  finalized map only at its transaction success boundary.
 
 
 ## Decision Log
@@ -448,6 +459,14 @@ published candidate manifest. A real Git-backed disposable fixture produced one 
 safe deletion, one retained edited orphan, and no remaining journal; all 1,274 repository
 tests passed.
 
+EP-67 completed incremental command lifecycle support. Composed commands now retain
+qualified owners and duplicate occurrences, stable fingerprints ignore version-only churn,
+and the library plans run-all, changed-only, or disabled execution with success-only receipt
+finalization. Ordinary `seihou run` still executes unchanged commands every time while
+recording receipts only after total command success. A disposable counter/failure fixture
+and all 1,289 repository tests passed. EP-68 can now embed `RunChangedCommands` without
+reimplementing shell execution or receipt policy.
+
 Revision note (2026-07-19): Marked EP-64 complete and recorded its operation-derived file
 ownership and recipe identity discoveries for EP-65 and EP-68.
 
@@ -456,3 +475,6 @@ merge-driver, and generated-versus-applied hash contracts for EP-66 and EP-68.
 
 Revision note (2026-07-19): Marked EP-66 complete and recorded its path-specific ownership,
 target-collision, and candidate-manifest recovery contracts for EP-68 and EP-69.
+
+Revision note (2026-07-19): Marked EP-67 complete and recorded its unfiltered declaration-set,
+success-only receipt, and output-preserving command execution contracts for EP-68 and EP-69.

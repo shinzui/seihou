@@ -8,6 +8,7 @@ module Seihou.CLI.CommandExecution
     planCommands,
     summarizeCommandPlan,
     executeCommandPlan,
+    executeCommandPlanWithOutput,
     finalizeCommandReceipts,
   )
 where
@@ -108,6 +109,30 @@ executeCommandPlan ::
   Eff es (Either CommandExecutionError [CommandReceipt])
 executeCommandPlan completedAt commandPlan = go [] commandPlan.commands
   where
+    go = executeCommands completedAt (\_ _ _ -> pure ())
+
+-- | Execute a command plan while exposing successful captured output to an
+-- effectful callback. The executable uses this to preserve its historical
+-- stdout behavior; library callers that only need receipts use
+-- 'executeCommandPlan'.
+executeCommandPlanWithOutput ::
+  (Process :> es) =>
+  UTCTime ->
+  (PlannedCommand -> Text -> Text -> Eff es ()) ->
+  CommandPlan ->
+  Eff es (Either CommandExecutionError [CommandReceipt])
+executeCommandPlanWithOutput completedAt onSuccess commandPlan =
+  executeCommands completedAt onSuccess [] commandPlan.commands
+
+executeCommands ::
+  (Process :> es) =>
+  UTCTime ->
+  (PlannedCommand -> Text -> Text -> Eff es ()) ->
+  [CommandReceipt] ->
+  [PlannedCommand] ->
+  Eff es (Either CommandExecutionError [CommandReceipt])
+executeCommands completedAt onSuccess = go
+  where
     go completed [] = pure (Right (reverse completed))
     go completed (planned : remaining) = case planned.disposition of
       CommandSkippedUnchanged -> go completed remaining
@@ -116,7 +141,8 @@ executeCommandPlan completedAt commandPlan = go [] commandPlan.commands
         RunCommandOp {command, workDir, moduleName} -> do
           (processExit, stdout, stderr) <- runProcess "sh" ["-c", command] workDir
           case processExit of
-            ExitSuccess ->
+            ExitSuccess -> do
+              onSuccess planned stdout stderr
               let receipt =
                     CommandReceipt
                       { fingerprint = planned.fingerprint,
@@ -125,7 +151,7 @@ executeCommandPlan completedAt commandPlan = go [] commandPlan.commands
                         workDir,
                         completedAt
                       }
-               in go (receipt : completed) remaining
+              go (receipt : completed) remaining
             ExitFailure exitCode ->
               pure
                 ( Left

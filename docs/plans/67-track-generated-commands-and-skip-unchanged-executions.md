@@ -35,9 +35,9 @@ fingerprint and runs. Failed commands never receive a success receipt.
 - [x] (2026-07-19 18:59Z) M1: Compute stable command fingerprints and update operation/preview tests.
 - [x] (2026-07-19 19:03Z) M2: Add command planning policies, summary data, execution results, and receipt finalization.
 - [x] (2026-07-19 19:03Z) M2: Prove unchanged, changed, duplicate, removed, failed, run-all, and disabled behavior.
-- [ ] M3: Record successful receipts from ordinary `seihou run` without changing its run-all default.
-- [ ] M3: Ensure failed runs and dry runs do not record receipts.
-- [ ] M3: Run focused/full tests, formatting, and a temporary command-count smoke test.
+- [x] (2026-07-19 19:12Z) M3: Record successful receipts from ordinary `seihou run` without changing its run-all default.
+- [x] (2026-07-19 19:12Z) M3: Ensure failed runs and dry runs do not record receipts.
+- [x] (2026-07-19 19:13Z) M3: Run focused/full tests, formatting, and a temporary command-count smoke test.
 
 
 ## Surprises & Discoveries
@@ -45,7 +45,24 @@ fingerprint and runs. Failed commands never receive a success receipt.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- The executable's existing command loop printed captured stdout after every successful
+  command, while the planned reusable API returned only receipts. The library now offers an
+  output callback around the same executor so `seihou run` preserves that observable output
+  without duplicating process execution.
+
+- `--no-commands` must plan against the complete unfiltered operation list. Filtering command
+  operations first would make the current declaration set invisible and either clear valid
+  prior receipts or retain receipts for removed commands. The file preview remains filtered
+  for backward compatibility, but receipt finalization sees every rendered command.
+
+- A disposable real CLI fixture confirmed run-all and failure behavior:
+
+  ```text
+  after dry-run: manifest absent, counter absent
+  after two ordinary runs: counter lines = 2, receipts = 2
+  after --no-commands: counter lines = 2, receipts = 2 with unchanged timestamps
+  after changing the first command to exit 7: exit = 1, counter lines = 2, receipts = 0
+  ```
 
 
 ## Decision Log
@@ -97,13 +114,36 @@ implementation. Provide concise evidence.
   established single-owner `run` preview stays unchanged.
   Date: 2026-07-19.
 
+- Decision: Publish finalized command receipts before handling `seihou run --commit`.
+  Rationale: Staging and committing the pre-command candidate manifest would leave the
+  successful receipt update dirty and outside the generated-files commit. Deferring the
+  existing commit block until commands and the second atomic manifest write succeed keeps the
+  commit self-consistent; failed commands leave generated files uncommitted for inspection.
+  Date: 2026-07-19.
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Rendered module commands now carry qualified instance ownership and stable duplicate
+occurrences, and `Seihou.Core.CommandFingerprint` hashes the rendered behavior without
+coupling it to module versions or checkout locations. `Seihou.CLI.CommandExecution`
+provides ordered run-all, changed-only, and disabled plans; structured summaries and
+failures; success-only receipts; and finalization that prunes removed declarations.
+
+Ordinary `seihou run` remains run-all. It publishes a receipt-free candidate before enabled
+commands, replaces that candidate with finalized receipts only after the whole command phase
+succeeds, preserves matching receipts for `--no-commands`, and leaves failed or dry runs
+without new evidence. Successful command stdout remains visible, and `--commit` now includes
+the finalized receipt-bearing manifest.
+
+Validation passed after formatting: 1,002 core tests, 271 CLI tests, and 16 extension tests
+(1,289 total). A disposable real module appended two counter lines across two ordinary runs,
+preserved both receipts without execution under `--no-commands`, and cleared candidate
+receipts when a changed command failed. Changed-only execution is intentionally not exposed
+through `run`; EP-68 consumes it as the default policy for project updates.
 
 
 ## Context and Orientation
@@ -354,3 +394,7 @@ EP-68 consumes `CommandPolicy`, `CommandPlan`, `planCommands`, `executeCommandPl
 `--run-all-commands`/`--no-commands` to policies. The update default is
 `RunChangedCommands`; that default belongs at the EP-68/EP-69 boundary, not inside the pure
 planner.
+
+Revision note (2026-07-19): Completed all three milestones, recorded the output-preservation
+and unfiltered-planning discoveries, and captured focused, full-suite, and disposable CLI
+validation evidence.
