@@ -37,17 +37,17 @@ interaction and documentation around this service.
 
 ## Progress
 
-- [ ] M1: Define update selection, request, plan, result, warning, and error types.
-- [ ] M1: Select recorded applications and provide a safe legacy-manifest seeding path.
-- [ ] M1: Group origins, clone each source once, and build a validated candidate artifact catalog.
-- [ ] M2: Resolve candidate compositions with saved per-instance inputs and explicit reconfiguration behavior.
-- [ ] M2: Deduplicate and stage migration plans, including honest command caveats.
-- [ ] M2: Produce one unified version/input/migration/file/command `UpdatePlan` without mutating cache or project.
-- [ ] M3: Apply accepted plans under recovery/rollback protection and revalidate after real migrations.
-- [ ] M3: Publish installed artifacts, applications, receipts, baselines, and manifest only on success.
-- [ ] M3: Report limits around arbitrary command side effects and prune unreferenced baselines after durability.
-- [ ] M4: Add local-remote, multi-instance, recipe, legacy, dry-run, conflict, and failure-injection tests.
-- [ ] M4: Run all repository gates and record the service-level end-to-end evidence.
+- [x] M1: Define update selection, request, plan, result, warning, and error types.
+- [x] M1: Select recorded applications and provide a safe legacy-manifest seeding path.
+- [x] M1: Group origins, clone each source once, and build a validated candidate artifact catalog.
+- [x] M2: Resolve candidate compositions with saved per-instance inputs and explicit reconfiguration behavior.
+- [x] M2: Deduplicate and stage migration plans, including honest command caveats.
+- [x] M2: Produce one unified version/input/migration/file/command `UpdatePlan` without mutating cache or project.
+- [x] M3: Apply accepted plans under recovery/rollback protection and revalidate after real migrations.
+- [x] M3: Publish installed artifacts, applications, receipts, baselines, and manifest only on success.
+- [x] M3: Report limits around arbitrary command side effects and prune unreferenced baselines after durability.
+- [x] M4: Add local-remote, multi-instance, recipe, legacy, dry-run, conflict, and failure-injection tests.
+- [x] M4: Run all repository gates and record the service-level end-to-end evidence.
 
 
 ## Surprises & Discoveries
@@ -55,7 +55,27 @@ interaction and documentation around this service.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- EP-66's journal initially records the files-only reconciliation candidate, but EP-68 adds
+  applications, receipts, variables, and recipe state before publication. Recovery therefore
+  needed a supported way to replace the expected manifest with the complete final value.
+
+- Installed-cache artifacts and whole directories affected by migrations do not fit EP-66's
+  text-file journal. A small service journal inside the same transaction directory can protect
+  those byte trees while sharing the final-manifest commit marker and recovery lifecycle.
+
+- Candidate search directories contain copied, name-keyed artifacts and may combine discovery
+  concerns. Staleness checks and cache publication must use the original staged artifact
+  directory, while independent content hashes must ignore `.git` and `.seihou-origin.json`.
+
+- Recipe-expanded roots are deliberately absent from `AppliedComposition.additionalModules`;
+  that field stores only explicit user additions. Planning must load candidate recipe roots
+  alongside those explicit additions but keep only the explicit list in the replacement
+  record. The candidate also retains the prior `ApplicationId` so an internal recipe change
+  replaces the same recorded application.
+
+- Deduplicating shared migrations through `Map.elems` reordered them by key and lost
+  dependency order. Stable first-occurrence deduplication preserves the composition's
+  dependency-first order while still executing one transition for parameterized instances.
 
 
 ## Decision Log
@@ -138,13 +158,49 @@ implementation. Provide concise evidence.
   letting the user reconcile deliberately.
   Date: 2026-07-19.
 
+- Decision: Store service-level directory/cache backups beside EP-66's journal and give both
+  journals the same complete expected manifest before publication.
+  Rationale: A durable manifest is the single observable commit boundary. Sharing it lets
+  recovery distinguish rollback from committed cleanup without inventing a second phase flag.
+  Date: 2026-07-19.
+
+- Decision: Use original staged artifact directories for staleness and publication, reserving
+  the name-keyed search root only for composition loading.
+  Rationale: The original directory is the independently validated/hashable unit and cannot
+  be contaminated by another artifact with the same discovery name.
+  Date: 2026-07-19.
+
+- Decision: Preserve a recorded recipe application's identity while replacing its expanded
+  recipe roots and retaining only explicit additional roots.
+  Rationale: Recipe dependency changes are updates to one user-requested application, not new
+  top-level applications, and removed dependencies must disappear from active instance state.
+  Date: 2026-07-19.
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-68 now exposes a renderer-neutral staged update service from `seihou-cli-internal`.
+`withProjectUpdate` owns candidate lifetimes; planning selects recorded applications, clones
+each origin once, reloads module or recipe candidates, replays per-instance values, stages
+migrations in `PureFS`, and combines reconciliation and command plans without publishing the
+project or shared cache. Apply rejects stale snapshots and unresolved conflicts, protects
+managed files/directories/cache entries, revalidates after real migration commands, and
+publishes cache, manifest, receipts, and baselines behind one manifest commit boundary.
+
+The end-to-end fixtures prove byte-identical dry-run behavior, coherent saved-input upgrade,
+structured no-op, single-clone multi-artifact discovery, candidate recipe dependency
+replacement, explicit legacy seeding, stale-manifest refusal, three-way conflict refusal,
+shared parameterized-instance migration deduplication, command-failure rollback, and
+cache-publication rollback. `cabal test all` passes 1,308 tests (1,007 core, 285 CLI, 16 OKF
+extension); `nix fmt`, `git diff --check`, and `nix flake check` also pass.
+
+Arbitrary migration/module command effects outside managed paths remain intentionally
+non-reversible and are represented by structured warnings/errors. EP-69 can now add parsing,
+interaction, rendering, commit integration, and user guidance without rebuilding service
+semantics in the executable layer.
 
 
 ## Context and Orientation

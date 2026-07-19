@@ -164,7 +164,7 @@ acceptance tests and distinct failure modes.
 | 65 | Store generated baselines and perform three-way merges | docs/plans/65-store-generated-baselines-and-perform-three-way-merges.md | EP-64 | None | Complete |
 | 66 | Plan conflict-aware file reconciliation and safe orphan handling | docs/plans/66-plan-conflict-aware-file-reconciliation-and-safe-orphan-handling.md | EP-64, EP-65 | None | Complete |
 | 67 | Track generated commands and skip unchanged executions | docs/plans/67-track-generated-commands-and-skip-unchanged-executions.md | EP-64 | EP-66 | Complete |
-| 68 | Build a staged project update service | docs/plans/68-build-a-staged-project-update-service.md | EP-64, EP-65, EP-66, EP-67 | None | Not Started |
+| 68 | Build a staged project update service | docs/plans/68-build-a-staged-project-update-service.md | EP-64, EP-65, EP-66, EP-67 | None | Complete |
 | 69 | Ship the `seihou update` workflow and ecosystem guidance | docs/plans/69-ship-the-seihou-update-workflow-and-ecosystem-guidance.md | EP-68 | EP-64, EP-65, EP-66, EP-67 | Not Started |
 
 
@@ -253,10 +253,10 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
 - [x] EP-67 M1: Preserve command ownership and compute stable rendered-command fingerprints.
 - [x] EP-67 M2: Plan changed-only, run-all, and disabled command policies and persist successes.
 - [x] EP-67 M3: Integrate receipt recording without changing existing `seihou run` run-all behavior.
-- [ ] EP-68 M1: Select recorded applications and stage remote candidate module repositories.
-- [ ] EP-68 M2: Reuse saved inputs and produce a unified post-migration update plan.
-- [ ] EP-68 M3: Apply managed migrations, files, commands, cache, baselines, and manifest with recovery.
-- [ ] EP-68 M4: Verify the service against local remotes, duplicate module instances, and failure injection.
+- [x] EP-68 M1: Select recorded applications and stage remote candidate module repositories.
+- [x] EP-68 M2: Reuse saved inputs and produce a unified post-migration update plan.
+- [x] EP-68 M3: Apply managed migrations, files, commands, cache, baselines, and manifest with recovery.
+- [x] EP-68 M4: Verify the service against local remotes, duplicate module instances, and failure injection.
 - [ ] EP-69 M1: Add `seihou update` parsing, dispatch, human/JSON rendering, and interaction.
 - [ ] EP-69 M2: Point status, run, and upgrade guidance at the project-aware workflow.
 - [ ] EP-69 M3: Publish CLI/user/design documentation and completion coverage.
@@ -350,6 +350,21 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
   the `Left CommandExecutionError` without leaking partial receipts; it should publish the
   finalized map only at its transaction success boundary.
 
+- EP-68's final manifest contains application, receipt, variable, recipe, and cache state
+  beyond EP-66's files-only reconciliation candidate. The core transaction therefore exposes
+  a final-marker replacement, and a colocated service journal protects whole migration
+  directories and installed-cache artifacts against the same durable manifest boundary.
+
+- Candidate repository revision is too coarse for no-op behavior, while name-keyed search
+  copies are not the independent publication unit. EP-68 hashes each original artifact while
+  excluding Git/origin metadata, uses the search copy only for composition loading, and uses
+  the original staged directory for stale checks and cache publication.
+
+- Recipe-expanded roots remain outside `AppliedComposition.additionalModules` and
+  `ApplicationId`, exactly as the master contract requires. EP-68 combines candidate recipe
+  roots with the recorded explicit additions for loading, then persists only the explicit
+  additions while replacing the prior application identity.
+
 
 ## Decision Log
 
@@ -431,6 +446,12 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
   user-supplied `--module` roots represent identity-level layering choices.
   Date: 2026-07-19.
 
+- Decision: Make `withProjectUpdate` the lifetime-safe EP-68/EP-69 boundary.
+  Rationale: An update plan intentionally contains temporary candidate paths. A bracketed
+  callback prevents terminal handlers from retaining or serializing a plan after its staged
+  sources have been removed.
+  Date: 2026-07-19.
+
 
 ## Outcomes & Retrospective
 
@@ -467,6 +488,18 @@ recording receipts only after total command success. A disposable counter/failur
 and all 1,289 repository tests passed. EP-68 can now embed `RunChangedCommands` without
 reimplementing shell execution or receipt policy.
 
+EP-68 completed the staged project-update service. Recorded module/recipe applications are
+selected conservatively, each remote origin is cloned once, saved per-instance inputs are
+re-coerced through candidate declarations, and declarative migrations, file reconciliation,
+and command dispositions form one read-only `UpdatePlan`. Apply rejects stale snapshots and
+unresolved conflicts, revalidates after real migration commands, rolls managed files,
+directories, and cache entries back on failure, and publishes cache/manifest/baseline/receipt
+state behind one final-manifest commit marker. Local-git fixtures cover coherent upgrade,
+no-op/dry-run, multi-artifact registry discovery, recipe dependency replacement, explicit
+legacy seeding, shared parameterized migration deduplication, conflict/staleness refusal,
+and command/cache failure injection. All 1,308 repository tests and `nix flake check` pass;
+EP-69 can remain a thin parser, interaction, renderer, commit, and documentation layer.
+
 Revision note (2026-07-19): Marked EP-64 complete and recorded its operation-derived file
 ownership and recipe identity discoveries for EP-65 and EP-68.
 
@@ -478,3 +511,7 @@ target-collision, and candidate-manifest recovery contracts for EP-68 and EP-69.
 
 Revision note (2026-07-19): Marked EP-67 complete and recorded its unfiltered declaration-set,
 success-only receipt, and output-preserving command execution contracts for EP-68 and EP-69.
+
+Revision note (2026-07-19): Marked EP-68 complete and recorded its bracketed candidate
+lifetime, artifact-level no-op, shared recovery-marker, and recipe-root identity contracts
+for EP-69.
