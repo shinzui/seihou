@@ -132,7 +132,7 @@ spec = do
       op.src `shouldBe` "a.txt"
 
     it "supports RunCommandOp" $ do
-      let op = RunCommandOp {command = "git init", workDir = Nothing}
+      let op = RunCommandOp {command = "git init", workDir = Nothing, moduleName = "test", occurrence = 0}
       op.command `shouldBe` "git init"
 
   describe "Expr" $ do

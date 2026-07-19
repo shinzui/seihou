@@ -391,7 +391,9 @@ data Operation
       }
   | RunCommandOp
       { command :: Text,
-        workDir :: Maybe FilePath
+        workDir :: Maybe FilePath,
+        moduleName :: ModuleName,
+        occurrence :: Int
       }
   | PatchFileOp
       { dest :: FilePath,

@@ -31,8 +31,8 @@ fingerprint and runs. Failed commands never receive a success receipt.
 
 ## Progress
 
-- [ ] M1: Preserve qualified module-instance ownership and duplicate occurrence on rendered commands.
-- [ ] M1: Compute stable command fingerprints and update operation/preview tests.
+- [x] (2026-07-19 18:59Z) M1: Preserve qualified module-instance ownership and duplicate occurrence on rendered commands.
+- [x] (2026-07-19 18:59Z) M1: Compute stable command fingerprints and update operation/preview tests.
 - [ ] M2: Add command planning policies, summary data, execution results, and receipt finalization.
 - [ ] M2: Prove unchanged, changed, duplicate, removed, failed, run-all, and disabled behavior.
 - [ ] M3: Record successful receipts from ordinary `seihou run` without changing its run-all default.
@@ -89,6 +89,12 @@ implementation. Provide concise evidence.
   Rationale: A migration is already selected once by its version window and advances the
   manifest version on success. Treating it as a recurring module command would mix two
   independent lifecycle models.
+  Date: 2026-07-19.
+
+- Decision: Show a command's qualified owner in ordinary previews only when the same rendered
+  command text belongs to more than one module instance in that plan.
+  Rationale: Ownership remains available when it disambiguates identical commands, while the
+  established single-owner `run` preview stays unchanged.
   Date: 2026-07-19.
 
 

@@ -122,12 +122,27 @@ spec = do
         _ -> expectationFailure "Expected DirPreview"
 
     it "produces CommandPreview for RunCommandOp" $ do
-      let ops = [RunCommandOp "cabal build" Nothing]
+      let ops = [RunCommandOp "cabal build" Nothing modName 0]
           result = buildPreview ops Nothing Map.empty
       length result `shouldBe` 1
       case head result of
-        CommandPreview cmd -> cmd `shouldBe` "cabal build"
+        CommandPreview cmd owner -> do
+          cmd `shouldBe` "cabal build"
+          owner `shouldBe` Nothing
         _ -> expectationFailure "Expected CommandPreview"
+
+    it "shows command ownership only when identical text has multiple owners" $ do
+      let ops =
+            [ RunCommandOp "cabal build" Nothing modName 0,
+              RunCommandOp "cabal build" Nothing modName2 0,
+              RunCommandOp "cabal test" Nothing modName 0
+            ]
+          result = buildPreview ops Nothing Map.empty
+      result
+        `shouldBe` [ CommandPreview "cabal build" (Just modName),
+                     CommandPreview "cabal build" (Just modName2),
+                     CommandPreview "cabal test" Nothing
+                   ]
 
     it "maps PatchFileOp to FilePreview with patch annotation" $ do
       let ops = [PatchFileOp "README.md" "extra content" AppendSection Template modName]
@@ -186,7 +201,7 @@ spec = do
     it "renders DirPreview, CommandPreview, and OrphanPreview" $ do
       let lines' =
             [ DirPreview "src",
-              CommandPreview "cabal build",
+              CommandPreview "cabal build" Nothing,
               OrphanPreview "gone.txt" modName
             ]
           rendered = renderPreviewPlain lines'

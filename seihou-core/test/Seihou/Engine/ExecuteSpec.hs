@@ -88,7 +88,7 @@ spec = do
       Map.lookup "/project/src/Main.hs" (fs.files) `shouldBe` Just "module Main where"
 
     it "skips RunCommandOp" $ do
-      let ops = [RunCommandOp "echo hello" Nothing]
+      let ops = [RunCommandOp "echo hello" Nothing modName 0]
           (records, _) = runExecFS emptyFS ops
       Map.size records `shouldBe` 0
 
@@ -190,7 +190,7 @@ spec = do
       T.isInfixOf "copy" result `shouldBe` True
 
     it "formats RunCommandOp" $ do
-      let result = dryRunPlan [RunCommandOp "echo hello" Nothing]
+      let result = dryRunPlan [RunCommandOp "echo hello" Nothing modName 0]
       T.isInfixOf "run" result `shouldBe` True
 
     it "returns message for empty plan" $ do

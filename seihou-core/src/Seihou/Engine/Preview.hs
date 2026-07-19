@@ -32,7 +32,7 @@ data PreviewLine
         previewModule :: Maybe ModuleName
       }
   | DirPreview FilePath
-  | CommandPreview Text
+  | CommandPreview Text (Maybe ModuleName)
   | OrphanPreview FilePath ModuleName
   deriving stock (Eq, Show)
 
@@ -42,7 +42,15 @@ data PreviewLine
 -- operations are treated as new.
 buildPreview :: [Operation] -> Maybe DiffResult -> Map FilePath ModuleName -> [PreviewLine]
 buildPreview ops mDiff ownerMap =
-  let opLines = map (opToPreview mDiff ownerMap) ops
+  let commandOwners =
+        Map.fromListWith
+          Set.union
+          [ (command, Set.singleton moduleName)
+          | RunCommandOp {command, moduleName} <- ops
+          ]
+      commandsNeedingOwner =
+        Map.keysSet (Map.filter ((> 1) . Set.size) commandOwners)
+      opLines = map (opToPreview mDiff ownerMap commandsNeedingOwner) ops
       orphanLines = case mDiff of
         Nothing -> []
         Just diff ->
@@ -55,24 +63,27 @@ buildPreview ops mDiff ownerMap =
    in opLines ++ orphanLines
 
 -- | Convert a single operation to a preview line.
-opToPreview :: Maybe DiffResult -> Map FilePath ModuleName -> Operation -> PreviewLine
-opToPreview mDiff ownerMap (WriteFileOp dest _ strat) =
+opToPreview :: Maybe DiffResult -> Map FilePath ModuleName -> Set Text -> Operation -> PreviewLine
+opToPreview mDiff ownerMap _ (WriteFileOp dest _ strat) =
   FilePreview
     { previewStatus = lookupStatus dest mDiff,
       previewPath = dest,
       previewAnnotation = strategyName strat,
       previewModule = Map.lookup dest ownerMap
     }
-opToPreview _ _ (CreateDirOp path) = DirPreview path
-opToPreview mDiff ownerMap (CopyFileOp _ dest) =
+opToPreview _ _ _ (CreateDirOp path) = DirPreview path
+opToPreview mDiff ownerMap _ (CopyFileOp _ dest) =
   FilePreview
     { previewStatus = lookupStatus dest mDiff,
       previewPath = dest,
       previewAnnotation = "copy",
       previewModule = Map.lookup dest ownerMap
     }
-opToPreview _ _ (RunCommandOp cmd _) = CommandPreview cmd
-opToPreview mDiff ownerMap (PatchFileOp dest _ _patchOp' _ modName') =
+opToPreview _ _ commandsNeedingOwner RunCommandOp {command, moduleName} =
+  CommandPreview
+    command
+    (if Set.member command commandsNeedingOwner then Just moduleName else Nothing)
+opToPreview mDiff ownerMap _ (PatchFileOp dest _ _patchOp' _ modName') =
   FilePreview
     { previewStatus = lookupStatus dest mDiff,
       previewPath = dest,
@@ -115,8 +126,10 @@ renderPlainLine _ other = renderNonFileLine other
 renderNonFileLine :: PreviewLine -> Text
 renderNonFileLine (DirPreview path) =
   "    mkdir  " <> T.pack path
-renderNonFileLine (CommandPreview cmd) =
-  "    run    " <> cmd
+renderNonFileLine (CommandPreview cmd mOwner) =
+  "    run    " <> cmd <> ownerSuffix mOwner
+  where
+    ownerSuffix = maybe "" (\owner -> "  (" <> owner.unModuleName <> ")")
 renderNonFileLine (OrphanPreview path modName') =
   "    [orphaned]  " <> T.pack path <> "  (orphaned from " <> modName'.unModuleName <> ")"
 renderNonFileLine _ = ""

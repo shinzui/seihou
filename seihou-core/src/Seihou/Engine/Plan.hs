@@ -7,6 +7,7 @@ where
 import Control.Exception (IOException, SomeException, catch, try)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -39,7 +40,7 @@ compilePlan baseDir modul vars = do
   results <- mapM (compileStep baseDir modName vars) modul.steps
   let (allErrors, allOps) = partitionResults results
   if null allErrors
-    then case compileCommands vars modul.commands of
+    then case compileCommands modName vars modul.commands of
       Left cmdErrs -> pure (Left cmdErrs)
       Right cmdOps -> pure (Right (deduplicateDirs (concat allOps) ++ cmdOps))
     else pure (Left (concat allErrors))
@@ -47,39 +48,48 @@ compilePlan baseDir modul vars = do
 -- | Compile commands into 'RunCommandOp' operations, interpolating
 -- @{{var}}@ placeholders in the @run@ and @workDir@ fields.
 -- Commands whose @when@ condition evaluates to False are skipped.
-compileCommands :: Map VarName VarValue -> [Command] -> Either [Text] [Operation]
-compileCommands vars = foldl' go (Right [])
+compileCommands :: ModuleName -> Map VarName VarValue -> [Command] -> Either [Text] [Operation]
+compileCommands modName vars commands =
+  case foldl' go (Map.empty, [], []) commands of
+    (_, ops, []) -> Right ops
+    (_, _, errs) -> Left errs
   where
-    go (Left errs) cmd = Left (errs ++ compileErrors cmd)
-    go (Right ops) cmd =
-      let shouldRun = case cmd.condition of
-            Nothing -> True
-            Just expr -> evalExpr vars expr
-       in if shouldRun
-            then case compileOneCommand vars cmd of
-              Left cmdErrs -> Left cmdErrs
-              Right op -> Right (ops ++ [op])
-            else Right ops
+    go state@(_, _, errs) cmd
+      | not (shouldRun cmd) = state
+      | otherwise = case compileOneCommand vars cmd of
+          Left cmdErrs -> let (counts, ops, _) = state in (counts, ops, errs ++ cmdErrs)
+          Right (runText, commandWorkDir) ->
+            let (counts, ops, _) = state
+                key = (runText, commandWorkDir)
+                occurrence = Map.findWithDefault 0 key counts
+                operation =
+                  RunCommandOp
+                    { command = runText,
+                      workDir = commandWorkDir,
+                      moduleName = modName,
+                      occurrence = occurrence
+                    }
+             in (Map.insert key (occurrence + 1) counts, ops ++ [operation], errs)
 
-    compileErrors cmd = case compileOneCommand vars cmd of
-      Left es -> es
-      Right _ -> []
+    shouldRun cmd = case cmd.condition of
+      Nothing -> True
+      Just expr -> evalExpr vars expr
 
 -- | Compile a single command, interpolating placeholders in @run@ and @workDir@.
-compileOneCommand :: Map VarName VarValue -> Command -> Either [Text] Operation
+compileOneCommand :: Map VarName VarValue -> Command -> Either [Text] (Text, Maybe FilePath)
 compileOneCommand vars cmd =
   case renderCommand cmd.run vars of
     Left placeholderErrors -> Left (map formatPlaceholderError placeholderErrors)
     Right runText ->
       case cmd.workDir of
-        Nothing -> Right (RunCommandOp runText Nothing)
+        Nothing -> Right (runText, Nothing)
         Just wd ->
           case renderCommand wd vars of
             Left placeholderErrors -> Left (map formatPlaceholderError placeholderErrors)
             Right renderedWd ->
               case validateRenderedCommandWorkDir renderedWd of
                 Left err -> Left [err]
-                Right safeWd -> Right (RunCommandOp runText (Just (T.unpack safeWd)))
+                Right safeWd -> Right (runText, Just (T.unpack safeWd))
 
 -- | Compile a single step into operations (or skip it).
 -- If the step has a patch operation, it produces a 'PatchFileOp'; otherwise

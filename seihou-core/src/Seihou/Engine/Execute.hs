@@ -73,7 +73,7 @@ executeOp targetDir ownerFor now op = case op of
               applicationIds = mempty
             }
     pure (Just (dest, record))
-  RunCommandOp _ _ -> do
+  RunCommandOp {} -> do
     -- Command execution is deferred to the CLI layer.
     pure Nothing
   PatchFileOp dest newContent patchOp' strat modName -> do
@@ -111,7 +111,7 @@ dryRunPlan ops =
     formatOp (WriteFileOp dest _ _) = "  write " <> T.pack dest
     formatOp (CreateDirOp path) = "  mkdir " <> T.pack path
     formatOp (CopyFileOp src dest) = "  copy  " <> T.pack src <> " -> " <> T.pack dest
-    formatOp (RunCommandOp cmd _) = "  run   " <> cmd
+    formatOp RunCommandOp {command = cmd} = "  run   " <> cmd
     formatOp (PatchFileOp dest _ patchOp' _ modName) =
       "  patch " <> T.pack dest <> " (" <> formatPatchOp patchOp' <> " from " <> modName.unModuleName <> ")"
     formatPatchOp AppendFile = "append-file"

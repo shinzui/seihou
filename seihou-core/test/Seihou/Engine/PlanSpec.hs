@@ -557,7 +557,7 @@ spec = do
               -- Should have CreateDirOp for src/
               dirOps `shouldSatisfy` any (\op -> op.path == "src")
               -- Should have RunCommandOp for the command
-              let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+              let cmdOps = [op | op@RunCommandOp {} <- ops]
               length cmdOps `shouldBe` 1
               (cmdOps !! 0).command `shouldBe` "echo 'Project generated'"
 
@@ -747,10 +747,40 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            let cmdOps = [op | op@RunCommandOp {} <- ops]
             length cmdOps `shouldBe` 1
             (cmdOps !! 0).command `shouldBe` "echo hello"
             (cmdOps !! 0).workDir `shouldBe` Nothing
+            (cmdOps !! 0).moduleName `shouldBe` "test"
+            (cmdOps !! 0).occurrence `shouldBe` 0
+          Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
+
+    it "numbers only identical rendered commands from the same module" $ do
+      withFixture [] $ \baseDir -> do
+        let modul =
+              Module
+                { name = "test",
+                  version = Nothing,
+                  description = Nothing,
+                  vars = [],
+                  exports = [],
+                  prompts = [],
+                  steps = [],
+                  commands =
+                    [ Command "echo same" Nothing Nothing,
+                      Command "echo other" Nothing Nothing,
+                      Command "echo same" Nothing Nothing
+                    ],
+                  dependencies = [],
+                  removal = Nothing,
+                  migrations = []
+                }
+        result <- compilePlan baseDir modul Map.empty
+        case result of
+          Right ops -> do
+            let commandOccurrences = [(op.command, op.occurrence) | op@RunCommandOp {} <- ops]
+            commandOccurrences
+              `shouldBe` [("echo same", 0), ("echo other", 0), ("echo same", 1)]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "skips command when condition is false" $ do
@@ -773,7 +803,7 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            let cmdOps = [op | op@RunCommandOp {} <- ops]
             length cmdOps `shouldBe` 0
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
@@ -797,7 +827,7 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            let cmdOps = [op | op@RunCommandOp {} <- ops]
             length cmdOps `shouldBe` 1
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
@@ -854,7 +884,7 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            let cmdOps = [op | op@RunCommandOp {} <- ops]
             length cmdOps `shouldBe` 1
             (cmdOps !! 0).workDir `shouldBe` Just "subdir"
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
@@ -879,7 +909,7 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            let cmdOps = [op | op@RunCommandOp {} <- ops]
             length cmdOps `shouldBe` 1
             (cmdOps !! 0).command `shouldBe` "echo my-app"
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
@@ -904,7 +934,7 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@(RunCommandOp _ _) <- ops]
+            let cmdOps = [op | op@RunCommandOp {} <- ops]
             length cmdOps `shouldBe` 1
             (cmdOps !! 0).workDir `shouldBe` Just "my-app"
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)

@@ -463,7 +463,7 @@ handleRun runOpts = do
                     logIO level (logDebug "--commit: not inside a git repository, skipping.")
 
               -- Execute commands after file generation
-              let commandOps = [(cmd, wd) | RunCommandOp cmd wd <- opsForExec]
+              let commandOps = [(cmd, wd) | RunCommandOp {command = cmd, workDir = wd} <- opsForExec]
               mapM_ (executeCommand level) commandOps
 
               -- Offer to save prompted values to local config
@@ -535,7 +535,7 @@ varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
 
 -- | Whether an operation is a command (RunCommandOp).
 isCommandOp :: Operation -> Bool
-isCommandOp (RunCommandOp _ _) = True
+isCommandOp RunCommandOp {} = True
 isCommandOp _ = False
 
 -- | Check whether an operation targets a file in the given path set.

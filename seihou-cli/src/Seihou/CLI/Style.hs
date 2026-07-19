@@ -87,8 +87,10 @@ renderColorLine _ other = renderNonFileColor other
 renderNonFileColor :: PreviewLine -> Text
 renderNonFileColor (DirPreview path) =
   "    " <> cyan "mkdir" <> "  " <> cyan (T.pack path)
-renderNonFileColor (CommandPreview cmd) =
-  "    " <> dim "run" <> "    " <> dim cmd
+renderNonFileColor (CommandPreview cmd mOwner) =
+  "    " <> dim "run" <> "    " <> dim cmd <> ownerSuffix mOwner
+  where
+    ownerSuffix = maybe "" (\owner -> "  " <> dim ("(" <> owner.unModuleName <> ")"))
 renderNonFileColor (OrphanPreview path modName') =
   "    " <> magenta "[orphaned]" <> "  " <> magenta (T.pack path) <> "  " <> dim ("(orphaned from " <> modName'.unModuleName <> ")")
 renderNonFileColor _ = ""

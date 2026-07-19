@@ -46,8 +46,8 @@ spec = do
       warnings `shouldBe` []
 
     it "keeps all RunCommandOp operations" $ do
-      let aOps = [RunCommandOp "echo hello" Nothing]
-          bOps = [RunCommandOp "echo world" Nothing]
+      let aOps = [RunCommandOp "echo hello" Nothing "module-a" 0]
+          bOps = [RunCommandOp "echo world" Nothing "module-b" 0]
           (ops, warnings, _) = mergeOperations [("mod-a", aOps), ("mod-b", bOps)]
       length ops `shouldBe` 2
       warnings `shouldBe` []
