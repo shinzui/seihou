@@ -35,9 +35,9 @@ files should be updated or deleted; that policy belongs to
 
 ## Progress
 
-- [ ] M1: Add the `BaselineStore` effect, content-addressed real interpreter, and pure interpreter.
-- [ ] M1: Validate hashes on read and provide safe referenced-set pruning.
-- [ ] M1: Add baseline store unit and real-filesystem tests.
+- [x] (2026-07-19T17:52:41Z) M1: Add the `BaselineStore` effect, content-addressed real interpreter, and pure interpreter.
+- [x] (2026-07-19T17:52:41Z) M1: Validate hashes on read and provide safe referenced-set pruning.
+- [x] (2026-07-19T17:52:41Z) M1: Add baseline store unit and real-filesystem tests.
 - [ ] M2: Add pure merge short circuits and the Git diff3 driver.
 - [ ] M2: Cover clean, non-overlapping, overlapping, deletion, missing-Git, and binary cases.
 - [ ] M3: Seed baseline blobs and manifest references during successful ordinary generation.
@@ -50,7 +50,11 @@ files should be updated or deleted; that policy belongs to
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Observation: EP-64's JSON decoder wrapped any text in `BaselineRef`, even though a
+  reference becomes a blob filename in this plan. Baseline decoding now requires exactly
+  64 hexadecimal digits and normalizes uppercase input before any path is derived.
+  Evidence: `Seihou.Manifest.Types` now rejects `"../manifest.json"`, while the focused
+  storage and manifest tests pass as part of all 955 `seihou-core-test` examples.
 
 
 ## Decision Log

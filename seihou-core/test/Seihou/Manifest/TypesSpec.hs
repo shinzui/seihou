@@ -256,7 +256,7 @@ spec = do
                 moduleName = ModuleName "master-plan",
                 strategy = Template,
                 generatedAt = fixedTime,
-                baseline = Just (BaselineRef (SHA256 "baseline-hash")),
+                baseline = Just (BaselineRef (hashContent "generated baseline")),
                 applicationIds = Set.fromList [appId1, appId2]
               }
           manifest =
@@ -265,6 +265,13 @@ spec = do
                 files = Map.singleton "README.md" fileRecord
               }
       manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
+
+    it "rejects malformed baseline references" $ do
+      let json =
+            "{\"version\":4,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},"
+              <> "\"files\":{\"README.md\":{\"hash\":\"abc\",\"module\":\"legacy\",\"strategy\":\"template\","
+              <> "\"generatedAt\":\"2026-03-01T10:30:00Z\",\"baseline\":\"../manifest.json\"}}}"
+      manifestFromJSON json `shouldSatisfy` either (const True) (const False)
 
   describe "AppliedBlueprint" $ do
     it "round-trips a fully populated entry through JSON" $ do

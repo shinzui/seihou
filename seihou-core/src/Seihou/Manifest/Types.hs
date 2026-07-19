@@ -16,6 +16,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Core.Types
+import Seihou.Manifest.Hash (baselineRefFromText)
 import Seihou.Prelude hiding ((.=))
 
 -- | Current manifest schema version.
@@ -356,14 +357,20 @@ instance ToJSON FileRecord where
         | otherwise = ["applications" .= map (.unApplicationId) (Set.toAscList ids)]
 
 instance FromJSON FileRecord where
-  parseJSON = Aeson.withObject "FileRecord" $ \o ->
+  parseJSON = Aeson.withObject "FileRecord" $ \o -> do
+    baselineText <- o Aeson..:? "baseline"
+    baseline <- traverse parseBaselineRef baselineText
     FileRecord
       <$> (SHA256 <$> o .: "hash")
       <*> (ModuleName <$> o .: "module")
       <*> (strategyFromText =<< o .: "strategy")
       <*> o .: "generatedAt"
-      <*> (fmap (BaselineRef . SHA256) <$> o Aeson..:? "baseline")
+      <*> pure baseline
       <*> (Set.fromList . map ApplicationId <$> o Aeson..:? "applications" Aeson..!= [])
+    where
+      parseBaselineRef value = case baselineRefFromText value of
+        Just ref -> pure ref
+        Nothing -> fail "baseline must be a 64-character hexadecimal SHA-256 digest"
 
 instance ToJSON SHA256 where
   toJSON (SHA256 t) = toJSON t
