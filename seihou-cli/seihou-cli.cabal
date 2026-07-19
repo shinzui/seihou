@@ -81,6 +81,12 @@ library seihou-cli-internal
     Seihou.CLI.Shared
     Seihou.CLI.StatusRender
     Seihou.CLI.Style
+    Seihou.CLI.Update
+    Seihou.CLI.Update.Migrations
+    Seihou.CLI.Update.Recovery
+    Seihou.CLI.Update.Selection
+    Seihou.CLI.Update.Source
+    Seihou.CLI.Update.Types
     Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
     Seihou.Effect.FzfInterp
@@ -226,6 +232,7 @@ test-suite seihou-cli-test
     Seihou.CLI.RunBlueprintRefusalSpec
     Seihou.CLI.SavePromptedSpec
     Seihou.CLI.StatusSpec
+    Seihou.CLI.UpdateSpec
     Seihou.CLI.UpgradeSpec
     Seihou.FzfSpec
 

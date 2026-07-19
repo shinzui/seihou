@@ -23,6 +23,7 @@ import Seihou.CLI.RemoteVersionSpec qualified as RemoteVersionSpec
 import Seihou.CLI.RunBlueprintRefusalSpec qualified as RunBlueprintRefusalSpec
 import Seihou.CLI.SavePromptedSpec qualified as SavePromptedSpec
 import Seihou.CLI.StatusSpec qualified as StatusSpec
+import Seihou.CLI.UpdateSpec qualified as UpdateSpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
 import Seihou.FzfSpec qualified as FzfSpec
 import Test.Tasty
@@ -55,6 +56,7 @@ main = do
         SavePromptedSpec.tests,
         StatusSpec.tests,
         UpgradeSpec.tests,
+        UpdateSpec.tests,
         FzfSpec.tests
       ]
   defaultMain (testGroup "seihou-cli" tests)
