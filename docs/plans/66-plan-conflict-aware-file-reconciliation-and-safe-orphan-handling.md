@@ -35,11 +35,11 @@ resolve variables, or add CLI flags; EP-68 and EP-69 compose and expose it.
 
 ## Progress
 
-- [ ] M1: Define desired-file and reconciliation domain types.
-- [ ] M1: Materialize writes, copies, and ordered patches into one generated result per path.
-- [ ] M1: Backfill a missing legacy baseline only when the current disk hash is trustworthy.
-- [ ] M2: Classify creates, updates, automatic merges, true conflicts, shared ownership, and orphans.
-- [ ] M2: Add explicit merge-conflict and orphan resolution functions and summary counts.
+- [x] (2026-07-19 20:25Z) M1: Define desired-file and reconciliation domain types.
+- [x] (2026-07-19 20:25Z) M1: Materialize writes, copies, and ordered patches into one generated result per path.
+- [x] (2026-07-19 20:25Z) M1: Backfill a missing legacy baseline only when the current disk hash is trustworthy.
+- [x] (2026-07-19 20:25Z) M2: Classify creates, updates, automatic merges, true conflicts, shared ownership, and orphans.
+- [x] (2026-07-19 20:25Z) M2: Add explicit merge-conflict and orphan resolution functions and summary counts.
 - [ ] M3: Apply a fully resolved plan with atomic per-file writes and a recovery journal.
 - [ ] M3: Update applied hashes, new baseline references, and application ownership consistently.
 - [ ] M3: Add pure, real-filesystem, interruption-recovery, and multi-application tests.
@@ -51,7 +51,17 @@ resolve variables, or add CLI flags; EP-68 and EP-69 compose and expose it.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Observation: A selected batch needs path-specific application ownership, not only the
+  batch-wide selected set. Otherwise a batch containing two applications would falsely
+  attribute every generated path to both applications.
+  Evidence: `DesiredFileOwner` carries the exact contributing application set for each
+  destination while `ReconciliationPlan.applicationIds` retains the selected batch for
+  shared-owner preflight and orphan release.
+
+- Observation: A user-only edit must not refresh `FileRecord.hash` merely because the
+  module output is unchanged.
+  Evidence: `preserves a user-only edit without advancing its applied hash` proves the
+  prior applied hash remains, so a later orphan cannot be misclassified as safe to delete.
 
 
 ## Decision Log
@@ -107,6 +117,14 @@ implementation. Provide concise evidence.
   Rationale: Atomic rename protects one file, not a multi-file update. A journal lets the
   next invocation restore already-mutated managed paths after process failure. Shell
   command side effects remain outside this guarantee and are documented separately.
+  Date: 2026-07-19.
+
+- Decision: Make desired ownership path-specific and keep observed disk hashes in every
+  reconciliation action.
+  Rationale: A multi-application batch has paths with different contributing owners, and a
+  resolution is safe only while the files it inspected remain unchanged. These fields let
+  EP-68 batch applications correctly and let the apply layer reject stale plans before its
+  first mutation.
   Date: 2026-07-19.
 
 

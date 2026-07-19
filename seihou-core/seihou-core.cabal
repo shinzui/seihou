@@ -92,6 +92,7 @@ library
     Seihou.Engine.Migrate
     Seihou.Engine.Plan
     Seihou.Engine.Preview
+    Seihou.Engine.Reconcile
     Seihou.Engine.Remove
     Seihou.Engine.Section
     Seihou.Engine.Template
@@ -180,6 +181,7 @@ test-suite seihou-core-test
     Seihou.Engine.MigrateSpec
     Seihou.Engine.PlanSpec
     Seihou.Engine.PreviewSpec
+    Seihou.Engine.ReconcileSpec
     Seihou.Engine.RemoveSpec
     Seihou.Engine.SectionSpec
     Seihou.Engine.TemplateSpec

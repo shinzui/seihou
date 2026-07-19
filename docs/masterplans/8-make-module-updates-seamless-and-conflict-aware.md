@@ -162,7 +162,7 @@ acceptance tests and distinct failure modes.
 |---|-------|------|-----------|-----------|--------|
 | 64 | Record reproducible applied compositions and update state | docs/plans/64-record-reproducible-applied-compositions-and-update-state.md | None | None | Complete |
 | 65 | Store generated baselines and perform three-way merges | docs/plans/65-store-generated-baselines-and-perform-three-way-merges.md | EP-64 | None | Complete |
-| 66 | Plan conflict-aware file reconciliation and safe orphan handling | docs/plans/66-plan-conflict-aware-file-reconciliation-and-safe-orphan-handling.md | EP-64, EP-65 | None | Not Started |
+| 66 | Plan conflict-aware file reconciliation and safe orphan handling | docs/plans/66-plan-conflict-aware-file-reconciliation-and-safe-orphan-handling.md | EP-64, EP-65 | None | In Progress |
 | 67 | Track generated commands and skip unchanged executions | docs/plans/67-track-generated-commands-and-skip-unchanged-executions.md | EP-64 | EP-66 | Not Started |
 | 68 | Build a staged project update service | docs/plans/68-build-a-staged-project-update-service.md | EP-64, EP-65, EP-66, EP-67 | None | Not Started |
 | 69 | Ship the `seihou update` workflow and ecosystem guidance | docs/plans/69-ship-the-seihou-update-workflow-and-ecosystem-guidance.md | EP-68 | EP-64, EP-65, EP-66, EP-67 | Not Started |
