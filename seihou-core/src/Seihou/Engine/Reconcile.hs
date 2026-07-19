@@ -35,7 +35,7 @@ import Seihou.Engine.Section (applyTextPatch)
 import Seihou.Engine.ThreeWayMerge (MergeOutcome (..), threeWayMerge)
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Prelude
-import System.FilePath (normalise, splitDirectories, takeDirectory)
+import System.FilePath (takeDirectory)
 
 -- | Ownership supplied by the update orchestrator for one desired path.
 -- The application set is path-specific: a batch may update several
@@ -267,9 +267,8 @@ validateOwner selected ownerMap manifest path = case Map.lookup path ownerMap of
     | otherwise -> case Map.lookup path manifest.files of
         Nothing -> Right ()
         Just record ->
-          let selectedOwners = Set.intersection selected record.applicationIds
-              unselectedOwners = record.applicationIds Set.\\ selected
-           in if Set.null selectedOwners || Set.null unselectedOwners
+          let unselectedOwners = record.applicationIds Set.\\ selected
+           in if Set.null unselectedOwners
                 then Right ()
                 else Left (SharedPathRequiresApplications path record.applicationIds)
 
@@ -277,14 +276,21 @@ validateManagedPath :: FilePath -> Either ReconciliationError ()
 validateManagedPath rawPath = case validateProjectRelativePath (T.pack rawPath) of
   Left err -> Left (InvalidReconciliationPath rawPath err)
   Right safePath
+    | safePath /= rawPath ->
+        Left (InvalidReconciliationPath rawPath "path must not contain surrounding whitespace")
+    | safePath == "." ->
+        Left (InvalidReconciliationPath rawPath "path must name a project file or directory")
     | targetsControlPath safePath ->
         Left (InvalidReconciliationPath rawPath "path targets Seihou or Git control data")
     | otherwise -> Right ()
 
 targetsControlPath :: FilePath -> Bool
-targetsControlPath path = case splitDirectories (normalise path) of
+targetsControlPath path = case pathSegments path of
   firstSegment : _ -> firstSegment == ".seihou" || firstSegment == ".git"
   [] -> False
+
+pathSegments :: FilePath -> [Text]
+pathSegments = filter (not . T.null) . T.split (\character -> character == '/' || character == '\\') . T.pack
 
 groupFileOperations :: [Operation] -> Map FilePath [Operation]
 groupFileOperations = foldl' addOperation Map.empty

@@ -120,6 +120,20 @@ spec = do
               cleanMerge
       result `shouldBe` Left (SharedPathRequiresApplications "shared.txt" (Set.fromList [appA, appB]))
 
+    it "rejects a newly colliding path owned only by an unselected application" $ do
+      let manifest = withFile "shared.txt" (record "old\n" Nothing [appB]) empty
+          result =
+            planWith
+              (Map.singleton "shared.txt" "old\n")
+              Map.empty
+              Map.empty
+              manifest
+              [appA]
+              [WriteFileOp "shared.txt" "new\n" Template]
+              (owners "shared.txt" [appA])
+              cleanMerge
+      result `shouldBe` Left (SharedPathRequiresApplications "shared.txt" (Set.singleton appB))
+
     it "rejects control paths before reading or planning" $ do
       let result =
             planWith

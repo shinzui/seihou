@@ -98,6 +98,7 @@ library
     Seihou.Engine.Template
     Seihou.Engine.ThreeWayMerge
     Seihou.Engine.TypedDhallText
+    Seihou.Engine.UpdateTransaction
     Seihou.Engine.Validate
     Seihou.Interaction.Confirm
     Seihou.Interaction.Prompt
@@ -186,6 +187,7 @@ test-suite seihou-core-test
     Seihou.Engine.SectionSpec
     Seihou.Engine.TemplateSpec
     Seihou.Engine.ThreeWayMergeSpec
+    Seihou.Engine.UpdateTransactionSpec
     Seihou.Engine.ValidateSpec
     Seihou.Evaluation.ConditionalTemplateSpec
     Seihou.Evaluation.DhallTextFlakeSpec

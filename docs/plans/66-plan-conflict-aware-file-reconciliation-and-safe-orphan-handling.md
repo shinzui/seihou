@@ -35,14 +35,14 @@ resolve variables, or add CLI flags; EP-68 and EP-69 compose and expose it.
 
 ## Progress
 
-- [x] (2026-07-19 20:25Z) M1: Define desired-file and reconciliation domain types.
-- [x] (2026-07-19 20:25Z) M1: Materialize writes, copies, and ordered patches into one generated result per path.
-- [x] (2026-07-19 20:25Z) M1: Backfill a missing legacy baseline only when the current disk hash is trustworthy.
-- [x] (2026-07-19 20:25Z) M2: Classify creates, updates, automatic merges, true conflicts, shared ownership, and orphans.
-- [x] (2026-07-19 20:25Z) M2: Add explicit merge-conflict and orphan resolution functions and summary counts.
-- [ ] M3: Apply a fully resolved plan with atomic per-file writes and a recovery journal.
-- [ ] M3: Update applied hashes, new baseline references, and application ownership consistently.
-- [ ] M3: Add pure, real-filesystem, interruption-recovery, and multi-application tests.
+- [x] (2026-07-19 18:26Z) M1: Define desired-file and reconciliation domain types.
+- [x] (2026-07-19 18:26Z) M1: Materialize writes, copies, and ordered patches into one generated result per path.
+- [x] (2026-07-19 18:26Z) M1: Backfill a missing legacy baseline only when the current disk hash is trustworthy.
+- [x] (2026-07-19 18:26Z) M2: Classify creates, updates, automatic merges, true conflicts, shared ownership, and orphans.
+- [x] (2026-07-19 18:26Z) M2: Add explicit merge-conflict and orphan resolution functions and summary counts.
+- [x] (2026-07-19 18:38Z) M3: Apply a fully resolved plan with atomic per-file writes and a recovery journal.
+- [x] (2026-07-19 18:38Z) M3: Update applied hashes, new baseline references, and application ownership consistently.
+- [x] (2026-07-19 18:38Z) M3: Add pure, real-filesystem, interruption-recovery, and multi-application tests.
 - [ ] M3: Run all validation and record a temporary-project reconciliation transcript.
 
 
@@ -62,6 +62,17 @@ implementation. Provide concise evidence.
   module output is unchanged.
   Evidence: `preserves a user-only edit without advancing its applied hash` proves the
   prior applied hash remains, so a later orphan cannot be misclassified as safe to delete.
+
+- Observation: The manifest-publication crash gap can be recovered without another commit
+  marker when the journal stores the exact candidate manifest before its first file mutation.
+  Evidence: startup recovery rolls back when the current manifest differs, but keeps the
+  new files and removes only the journal when `.seihou/manifest.json` decodes to the stored
+  candidate.
+
+- Observation: Explicit empty `CreateDirOp` destinations need their own journal entries in
+  addition to the parent directories inferred from file targets.
+  Evidence: the interruption test initially restored the file but left `empty/generated/`;
+  journaling the explicit directory and every missing parent made recovery remove both.
 
 
 ## Decision Log
@@ -125,6 +136,13 @@ implementation. Provide concise evidence.
   resolution is safe only while the files it inspected remain unchanged. These fields let
   EP-68 batch applications correctly and let the apply layer reject stale plans before its
   first mutation.
+  Date: 2026-07-19.
+
+- Decision: Store the candidate manifest in the recovery journal before mutating project
+  files.
+  Rationale: A crash after durable manifest publication but before journal cleanup must not
+  restore the old files underneath the new manifest. Equality with the stored candidate is
+  an unambiguous committed-state signal; every other state restores the backups.
   Date: 2026-07-19.
 
 
