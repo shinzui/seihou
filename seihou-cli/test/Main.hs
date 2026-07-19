@@ -6,6 +6,7 @@ import Seihou.CLI.AgentLaunchSpec qualified as AgentLaunchSpec
 import Seihou.CLI.AgentModelsSpec qualified as AgentModelsSpec
 import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
 import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
+import Seihou.CLI.CommandExecutionSpec qualified as CommandExecutionSpec
 import Seihou.CLI.CommitMessageSpec qualified as CommitMessageSpec
 import Seihou.CLI.DiffSpec qualified as DiffSpec
 import Seihou.CLI.ExtensionSpec qualified as ExtensionSpec
@@ -37,6 +38,7 @@ main = do
         AppliedBlueprintSpec.tests,
         BrowseFormatSpec.tests,
         CommitMessageSpec.tests,
+        CommandExecutionSpec.tests,
         DiffSpec.tests,
         ExtensionSpec.tests,
         GitSpec.tests,

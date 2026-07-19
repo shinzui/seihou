@@ -57,6 +57,7 @@ library seihou-cli-internal
     Seihou.CLI.AgentModels
     Seihou.CLI.AppliedBlueprint
     Seihou.CLI.BrowseFormat
+    Seihou.CLI.CommandExecution
     Seihou.CLI.CommitMessage
     Seihou.CLI.Completions.Bash
     Seihou.CLI.Completions.Fish
@@ -208,6 +209,7 @@ test-suite seihou-cli-test
     Seihou.CLI.AgentModelsSpec
     Seihou.CLI.AppliedBlueprintSpec
     Seihou.CLI.BrowseFormatSpec
+    Seihou.CLI.CommandExecutionSpec
     Seihou.CLI.CommitMessageSpec
     Seihou.CLI.DiffSpec
     Seihou.CLI.ExtensionSpec

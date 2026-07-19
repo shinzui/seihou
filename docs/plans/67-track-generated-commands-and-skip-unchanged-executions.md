@@ -33,8 +33,8 @@ fingerprint and runs. Failed commands never receive a success receipt.
 
 - [x] (2026-07-19 18:59Z) M1: Preserve qualified module-instance ownership and duplicate occurrence on rendered commands.
 - [x] (2026-07-19 18:59Z) M1: Compute stable command fingerprints and update operation/preview tests.
-- [ ] M2: Add command planning policies, summary data, execution results, and receipt finalization.
-- [ ] M2: Prove unchanged, changed, duplicate, removed, failed, run-all, and disabled behavior.
+- [x] (2026-07-19 19:03Z) M2: Add command planning policies, summary data, execution results, and receipt finalization.
+- [x] (2026-07-19 19:03Z) M2: Prove unchanged, changed, duplicate, removed, failed, run-all, and disabled behavior.
 - [ ] M3: Record successful receipts from ordinary `seihou run` without changing its run-all default.
 - [ ] M3: Ensure failed runs and dry runs do not record receipts.
 - [ ] M3: Run focused/full tests, formatting, and a temporary command-count smoke test.
