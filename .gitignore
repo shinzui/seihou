@@ -16,3 +16,4 @@ result
 .seihou/manifest.json.tmp
 CLAUDE.local.md
 .agents/
+.mina/
