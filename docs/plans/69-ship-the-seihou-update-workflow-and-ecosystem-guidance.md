@@ -34,16 +34,17 @@ and see unchanged commands skipped.
 
 ## Progress
 
-- [ ] M1: Add `UpdateOpts`, the `update` parser, dispatcher, and thin executable handler.
-- [ ] M1: Render stable human and JSON plans/results with stdout/stderr separation.
-- [ ] M1: Add interactive file-conflict and edited-orphan resolution plus non-interactive safety.
-- [ ] M1: Wire changed-only defaults, command escape hatches, reconfiguration, force, and commit flags.
-- [ ] M2: Deduplicate status rows and recommend `seihou update` for recorded applications.
-- [ ] M2: Clarify `run`, `migrate`, and cache-only `upgrade` help and diagnostics.
-- [ ] M3: Add the update command reference and revise lifecycle, migration, and authoring guides.
-- [ ] M3: Cover parser help, completions, renderers, conflict input, JSON, and commit integration.
-- [ ] M4: Add the executable local-remote end-to-end scenario, including a successful three-way merge.
-- [ ] M4: Run repository formatting, build, test, package, and documentation-link gates.
+- [x] M1: Add `UpdateOpts`, the `update` parser, dispatcher, and thin executable handler.
+- [x] M1: Render stable human and JSON plans/results with stdout/stderr separation.
+- [x] M1: Add interactive file-conflict and edited-orphan resolution plus non-interactive safety.
+- [x] M1: Wire changed-only defaults, command escape hatches, reconfiguration, force, and commit flags.
+- [x] M2: Deduplicate status rows and recommend `seihou update` for recorded applications.
+- [x] M2: Clarify `run`, `migrate`, and cache-only `upgrade` help and diagnostics.
+- [x] M3: Add the update command reference and revise lifecycle, migration, and authoring guides.
+- [x] M3: Cover parser help, completions, renderers, conflict input, JSON, and commit integration.
+- [x] M4: Add the executable local-remote end-to-end scenario, including a successful three-way merge.
+- [x] M4: Run repository formatting, build, test, package, and documentation-link gates. The final
+  run passed 1,007 core, 304 CLI, and 16 OKF tests (1,327 total), plus all three flake checks.
 
 
 ## Surprises & Discoveries
@@ -51,7 +52,34 @@ and see unchanged commands skipped.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- The executable handler and private service intentionally share the module name
+  `Seihou.CLI.Update`. The trapped handler therefore needs a package-qualified import and the
+  executable's `PackageImports` extension. The direct placement checker still reports all 31
+  executable modules justified.
+
+- Git's diff3 driver can combine nearby edits into one conflict hunk. The executable fixture
+  needed an unchanged separator line between the user edit and candidate edit to demonstrate a
+  genuinely non-overlapping merge.
+
+- Rebuilding reconciliation after real migration commands initially discarded file and orphan
+  choices collected by the handler. The summaries looked identical, but structural equality
+  failed because one plan was resolved and the rebuilt plan was not. Apply now replays the
+  collected choices onto the rebuilt plan and still requires exact equality before mutation;
+  executable `--force` conflict and orphan cases prove both paths.
+
+- The first commit integration test left a pruned baseline deletion unstaged. `UpdateResult`
+  reported only newly reachable blobs, so it now reports the symmetric difference between the
+  old and final baseline-reference sets. The acceptance test finishes with a clean Git worktree.
+
+- The repository test runner is Tasty: `--match` from the original concrete commands is invalid,
+  and `Update|Status` is not a valid single Tasty pattern. The working focused gates use separate
+  `--pattern Update` and `--pattern Status` invocations. The test suite also declares the `seihou`
+  executable as a build tool so focused executable tests cannot accidentally use a stale binary.
+
+- No repository documentation-link checker exists. `rg` was used to enumerate the changed
+  relative links and explicit file-existence checks covered every newly referenced guide. New
+  untracked files also had to be staged before `nix flake check`, because Git-backed flakes omit
+  untracked paths from their source.
 
 
 ## Decision Log
@@ -100,13 +128,61 @@ implementation. Provide concise evidence.
   status guidance can remove ambiguity without breaking that legitimate behavior.
   Date: 2026-07-19.
 
+- Decision: A non-dry-run `--json` invocation applies without a final terminal confirmation once
+  all conflicts and required inputs are unambiguous.
+  Rationale: JSON mode must emit exactly one machine document and cannot safely interleave a
+  prompt. Callers that want observation only have `--dry-run --json`; unresolved automation still
+  fails unless a permitted `--force` rule resolves it.
+  Date: 2026-07-19.
+
+- Decision: Keep merge-driver-unavailable conflicts unresolved under `--force`.
+  Rationale: EP-66 does not mark those replacements safe. Treating force as permission to guess
+  across binary data or a failed merge backend would violate the initiative's conservative
+  non-text policy.
+  Date: 2026-07-19.
+
+- Decision: Reapply collected resolutions to the post-migration reconciliation and compare the
+  fully resolved plans exactly before writing.
+  Rationale: User choices are part of the accepted plan, while migration commands may still alter
+  project bytes. Replaying followed by exact equality preserves the choice without weakening the
+  stale-plan guard.
+  Date: 2026-07-19.
+
+- Decision: Reuse optparse-applicative's shared completion protocol without adding target
+  filesystem scanning.
+  Rationale: Bash, Zsh, and Fish already derive commands and option descriptions from the parser.
+  The protocol does not expose project-aware dynamic targets here, and the plan explicitly avoids
+  adding a second scanner solely for completion.
+  Date: 2026-07-19.
+
 
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+EP-69 shipped the public `seihou update [TARGET...]` workflow on top of EP-68's bracketed
+service. The command supports saved-value reuse and explicit reconfiguration, automatic
+migrations, changed-only/run-all/disabled command policies, dry-run, stable JSON, conservative
+force rules, one final human confirmation, and scoped optional commits. Human output groups the
+plan by versions, inputs, migrations, files, and commands; JSON carries schema version 1, stable
+outcomes, file resolutions, command fingerprints, warnings, and error codes.
+
+Status now recommends one update per recorded application, adds the whole-project form when
+several applications are affected, and deduplicates legacy instances. Run, outdated, pending
+migration, upgrade, README, CLI references, user guides, changelog, and the implemented design
+note all teach the same lifecycle: run once, edit, update repeatedly; use migrate for focused
+recovery and upgrade for shared-cache maintenance.
+
+The isolated executable suite proves a clean three-way merge that preserves a user edit, skips an
+unchanged command, publishes v2, reports a later no-op without mutation, keeps JSON dry-run
+byte-identical, applies ordinary conflicts and edited-orphan retention under `--force`, refuses an
+unresolved overlap before publication, commits exactly the managed paths, and exposes the parser
+through Bash/Zsh/Fish completion. Lower-level service tests retain multi-application selection,
+legacy seeding, recipe replacement, migration deduplication, stale-plan refusal, and rollback
+failure injection. Final validation passed `nix fmt -- --fail-on-change`, `cabal build all`, all
+1,327 tests, `nix flake check`, the direct CLI module-placement check, and changed-link existence
+checks. The implementation is commit `a8e9a5c`.
 
 
 ## Context and Orientation
@@ -358,7 +434,7 @@ Run all commands from the repository root
 After Milestone 1, run focused update and CLI tests:
 
 ```bash
-cabal test seihou-cli-test --test-options='--match "Update|command parser|completion"'
+cabal test seihou-cli-test --test-options='--pattern Update'
 ```
 
 The focused transcript should end with no failures and include renderer, interaction, and
@@ -371,7 +447,10 @@ parser examples:
 After Milestone 2, run status, pending-migration, upgrade, and update tests:
 
 ```bash
-cabal test seihou-cli-test --test-options='--match "Status|PendingMigration|Upgrade|Update"'
+cabal test seihou-cli-test --test-options='--pattern Status'
+cabal test seihou-cli-test --test-options='--pattern PendingMigration'
+cabal test seihou-cli-test --test-options='--pattern Upgrade'
+cabal test seihou-cli-test --test-options='--pattern Update'
 ```
 
 Verify the public help and a non-mutating JSON plan against the isolated fixture created by
@@ -406,7 +485,7 @@ relative documentation path exists and record that limitation in Surprises & Dis
 Finally run the isolated executable acceptance spec without a name filter:
 
 ```bash
-cabal test seihou-cli-test --test-options='--match "Update end-to-end"'
+cabal test seihou-cli-test --test-options='--pattern "Update end-to-end"'
 ```
 
 Record the successful test counts and the representative update transcript in Progress.
@@ -514,3 +593,7 @@ target selection rules, but it does not fetch or apply updates. `Commands.hs` ow
 parsing and help. `Main.hs` owns only dispatch. The executable `Update.hs` owns terminal IO,
 confirmation, exit status, and optional commit glue; all semantic update work stays in the
 private library.
+
+Revision note (2026-07-19): Completed EP-69, corrected its Tasty commands, and recorded the
+post-migration resolution replay, baseline-deletion commit coverage, executable acceptance
+evidence, documentation limitation, and final repository gates.

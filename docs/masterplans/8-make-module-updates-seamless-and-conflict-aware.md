@@ -165,7 +165,7 @@ acceptance tests and distinct failure modes.
 | 66 | Plan conflict-aware file reconciliation and safe orphan handling | docs/plans/66-plan-conflict-aware-file-reconciliation-and-safe-orphan-handling.md | EP-64, EP-65 | None | Complete |
 | 67 | Track generated commands and skip unchanged executions | docs/plans/67-track-generated-commands-and-skip-unchanged-executions.md | EP-64 | EP-66 | Complete |
 | 68 | Build a staged project update service | docs/plans/68-build-a-staged-project-update-service.md | EP-64, EP-65, EP-66, EP-67 | None | Complete |
-| 69 | Ship the `seihou update` workflow and ecosystem guidance | docs/plans/69-ship-the-seihou-update-workflow-and-ecosystem-guidance.md | EP-68 | EP-64, EP-65, EP-66, EP-67 | Not Started |
+| 69 | Ship the `seihou update` workflow and ecosystem guidance | docs/plans/69-ship-the-seihou-update-workflow-and-ecosystem-guidance.md | EP-68 | EP-64, EP-65, EP-66, EP-67 | Complete |
 
 
 ## Dependency Graph
@@ -257,10 +257,10 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
 - [x] EP-68 M2: Reuse saved inputs and produce a unified post-migration update plan.
 - [x] EP-68 M3: Apply managed migrations, files, commands, cache, baselines, and manifest with recovery.
 - [x] EP-68 M4: Verify the service against local remotes, duplicate module instances, and failure injection.
-- [ ] EP-69 M1: Add `seihou update` parsing, dispatch, human/JSON rendering, and interaction.
-- [ ] EP-69 M2: Point status, run, and upgrade guidance at the project-aware workflow.
-- [ ] EP-69 M3: Publish CLI/user/design documentation and completion coverage.
-- [ ] EP-69 M4: Run full automated gates and the conflict-aware end-to-end update demonstration.
+- [x] EP-69 M1: Add `seihou update` parsing, dispatch, human/JSON rendering, and interaction.
+- [x] EP-69 M2: Point status, run, and upgrade guidance at the project-aware workflow.
+- [x] EP-69 M3: Publish CLI/user/design documentation and completion coverage.
+- [x] EP-69 M4: Run full automated gates and the conflict-aware end-to-end update demonstration.
 
 
 ## Surprises & Discoveries
@@ -365,6 +365,26 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
   roots with the recorded explicit additions for loading, then persists only the explicit
   additions while replacing the prior application identity.
 
+- EP-69 found that post-migration reconciliation revalidation rebuilt unresolved file states
+  and therefore rejected every previously accepted interactive or force resolution despite
+  identical summaries. The service now replays the accepted choices onto the rebuilt plan and
+  still requires exact equality before mutation, preserving both consent and stale-plan safety.
+
+- Optional Git commits need the symmetric difference of old and new baseline references, not
+  only newly reachable blobs. Otherwise pruning an obsolete tracked baseline leaves an unstaged
+  deletion after the requested update commit. The executable acceptance fixture now asserts a
+  clean worktree after commit.
+
+- Status advice cannot be derived directly from repeated `AppliedModule` rows once application
+  identity exists. EP-69 keeps module rows for diagnostics, shows migration detail once per bare
+  module, and derives deduplicated commands from recorded module/recipe applications, including a
+  whole-project action when several applications are affected.
+
+- The repository's Tasty runner accepts `--pattern`, not the initially planned `--match`, and its
+  pattern grammar is not a regular-expression alternation. EP-69 uses separate focused patterns
+  and declares the CLI executable as a test build tool so executable acceptance tests cannot
+  accidentally run an older binary.
+
 
 ## Decision Log
 
@@ -452,6 +472,18 @@ the dispatcher in `seihou-cli/src-exe/Main.hs`, and thin terminal interaction/re
   sources have been removed.
   Date: 2026-07-19.
 
+- Decision: Make JSON update mode non-interactive and apply without a final prompt after every
+  input and file choice is unambiguous.
+  Rationale: Automation needs exactly one stdout document. `--dry-run --json` is the observation
+  form, while unresolved conflicts still fail unless the conservative force policy applies.
+  Date: 2026-07-19.
+
+- Decision: Carry accepted reconciliation choices through the post-migration revalidation, then
+  require the resulting resolved plan to equal the accepted plan exactly.
+  Rationale: This preserves user consent while continuing to detect any project effect from a
+  migration command that would invalidate the plan.
+  Date: 2026-07-19.
+
 
 ## Outcomes & Retrospective
 
@@ -500,6 +532,24 @@ legacy seeding, shared parameterized migration deduplication, conflict/staleness
 and command/cache failure injection. All 1,308 repository tests and `nix flake check` pass;
 EP-69 can remain a thin parser, interaction, renderer, commit, and documentation layer.
 
+EP-69 completed the public workflow and ecosystem rollout. `seihou update` now selects recorded
+applications, reuses or deliberately re-resolves inputs, includes migrations, presents grouped
+human and stable JSON plans, gathers conservative conflict/orphan choices, defaults to changed-only
+commands, and optionally commits only managed paths. Status, run, outdated, pending-migration,
+upgrade, README, CLI/user guides, changelog, completions, and the implemented design note now teach
+one project lifecycle. The isolated executable fixture proves clean three-way merging with a user
+edit, unchanged-command skipping, no-op and JSON dry-run behavior, conflict/orphan force rules,
+pre-publication refusal, scoped commits, and shell completion discovery. All 1,327 tests, formatting,
+build, direct module placement, and all three flake checks pass.
+
+The initiative therefore meets its original vision: project updates are a single staged operation
+rather than an upgrade/migrate/run sequence; generated ancestors and applied hashes preserve user
+customization; unsafe ambiguity stops before publication; command receipts reduce repeated setup;
+and the shared cache and manifest advance only behind the managed success boundary. The explicit
+limits remain unchanged: binary and semantic-language merges are not inferred, arbitrary command
+side effects cannot be undone, blueprints/prompts are outside deterministic updates, and identical
+root compositions do not yet support user-assigned application names.
+
 Revision note (2026-07-19): Marked EP-64 complete and recorded its operation-derived file
 ownership and recipe identity discoveries for EP-65 and EP-68.
 
@@ -515,3 +565,7 @@ success-only receipt, and output-preserving command execution contracts for EP-6
 Revision note (2026-07-19): Marked EP-68 complete and recorded its bracketed candidate
 lifetime, artifact-level no-op, shared recovery-marker, and recipe-root identity contracts
 for EP-69.
+
+Revision note (2026-07-19): Marked EP-69 and the initiative complete; recorded public CLI,
+status/documentation, resolution-revalidation, baseline-commit, executable acceptance, and final
+1,327-test evidence.
