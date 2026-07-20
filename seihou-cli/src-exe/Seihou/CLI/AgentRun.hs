@@ -37,15 +37,18 @@ import Seihou.CLI.AgentLaunch
     formatLocalModules,
     formatManifestState,
     formatModuleDhallState,
-    formatReferenceFiles,
-    formatReferenceFilesDir,
     formatSeihouProjectState,
     gatherAgentContext,
-    resolveBlueprintTools,
     substitute,
   )
 import Seihou.CLI.AgentLaunchExec (launchConfiguredAgentAddingDirs)
 import Seihou.CLI.AppliedBlueprint (recordAppliedBlueprint)
+import Seihou.CLI.BlueprintExecution
+  ( BlueprintExecutionRequest (..),
+    PreparedBlueprintExecution (..),
+    prepareBlueprintExecution,
+    varValueToText,
+  )
 import Seihou.CLI.Commands (BlueprintRunOpts (..))
 import Seihou.CLI.Shared
   ( deriveNamespace,
@@ -54,7 +57,7 @@ import Seihou.CLI.Shared
     toVarNameMap,
     unwrapConfig,
   )
-import Seihou.Composition.Instance (ModuleInstance (..), primaryInstance, qualifiedName)
+import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Context (resolveContext)
@@ -81,7 +84,6 @@ import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
 import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import Seihou.Prelude
-import System.Directory (doesDirectoryExist, makeAbsolute)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory, (</>))
@@ -116,66 +118,29 @@ handleAgentRun debug modelConfig opts = do
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
 
-  let filesDir = blueprintDir </> "files"
-      providerCanMountFiles =
+  let providerCanMountFiles =
         modelConfig.agentProvider == AgentProviderClaudeCli
           || modelConfig.agentProvider == AgentProviderCodexCli
-  filesExist <- doesDirectoryExist filesDir
-  mFilesDir <-
-    if filesExist && providerCanMountFiles
-      then Just <$> makeAbsolute filesDir
-      else pure Nothing
-
-  -- (b) Resolve blueprint variables. Wrap the blueprint's vars/prompts
-  -- in a placeholder Module so 'resolveWithPrompts' can run the
-  -- standard precedence chain (CLI > env > local > namespace > context
-  -- > global > defaults > interactive prompts).
-  let placeholderModule =
-        Module
-          { name = bp.name,
-            version = bp.version,
-            description = bp.description,
-            vars = bp.vars,
-            exports = [],
-            prompts = bp.prompts,
-            steps = [],
-            commands = [],
-            dependencies = [],
-            removal = Nothing,
-            migrations = []
-          }
-      placeholderInst = primaryInstance bp.name
-      placeholderTriple = (placeholderInst, placeholderModule, blueprintDir)
-
-  envPairs <- getEnvironment
-  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts.runBlueprintVars]
-      envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace bp.name) opts.runBlueprintNamespace
-  context <- resolveContext opts.runBlueprintContext envVars
-  let contextName = fromMaybe "" context
-
-  resolveResult <- runEff $ runConfigReader $ runConsole $ do
-    localCfg <- readLocalConfig >>= unwrapConfig level
-    nsCfg <- readNamespaceConfig namespace >>= unwrapConfig level
-    ctxCfg <- readContextConfig contextName >>= unwrapConfig level
-    gCfg <- readGlobalConfig >>= unwrapConfig level
-    resolveWithPrompts
-      [placeholderTriple]
-      cliOverrides
-      envVars
-      namespace
-      contextName
-      (toVarNameMap localCfg)
-      (toVarNameMap nsCfg)
-      (toVarNameMap ctxCfg)
-      (toVarNameMap gCfg)
-
-  resolved <- case resolveResult of
+  -- (b) Resolve variables and prepare the shared prompt/reference/tool state.
+  preparedResult <-
+    prepareBlueprintExecution
+      BlueprintExecutionRequest
+        { executionBlueprint = bp,
+          executionBlueprintDir = blueprintDir,
+          executionVariableOverrides = opts.runBlueprintVars,
+          executionNamespaceOverride = opts.runBlueprintNamespace,
+          executionContextOverride = opts.runBlueprintContext,
+          executionCanMountFiles = providerCanMountFiles,
+          executionLogLevel = level
+        }
+  prepared <- case preparedResult of
     Left errs -> do
       logIO level $ logError "Error resolving blueprint variables:"
       mapM_ (logIO level . logError . ("  " <>) . formatVarError) errs
       exitFailure
-    Right r -> pure (Map.findWithDefault Map.empty placeholderInst r)
+    Right result -> pure result
+  let resolved = prepared.preparedResolvedVariables
+      cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts.runBlueprintVars]
 
   -- (c) Baseline.
   baseline <-
@@ -186,20 +151,17 @@ handleAgentRun debug modelConfig opts = do
           then pure BaselineEmpty
           else applyBaseline level opts bp.baseModules cliOverrides resolved
 
-  -- (d) Render the user prompt: substitute resolved vars into bp.prompt.
-  let renderedUser = renderUserPrompt resolved bp.prompt
-
-  -- (e) Render the system prompt around the user body.
+  -- (d) Render the system prompt around the prepared shared body.
   ctx <- gatherAgentContext
-  let systemPrompt = renderSystemPrompt ctx bp baseline mFilesDir renderedUser
+  let systemPrompt = renderSystemPrompt ctx prepared baseline
 
   -- (f) Launch.
   launchSucceeded <-
     runRenderedAgentPrompt
       debug
       modelConfig
-      (resolveBlueprintTools bp.allowedTools)
-      mFilesDir
+      prepared.preparedAllowedTools
+      prepared.preparedMountedFilesDir
       systemPrompt
       opts.runBlueprintPrompt
 
@@ -469,40 +431,25 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
 
 -- | Stitch the system-prompt template together. Each block in
 -- @blueprint-prompt.md@ has a @{{key}}@ placeholder filled here.
-renderSystemPrompt :: AgentContext -> Blueprint -> BaselineStatus -> Maybe FilePath -> Text -> Text
-renderSystemPrompt ctx bp baseline mFilesDir userPrompt =
-  substitute
-    [ ("cwd", ctx.cwd),
-      ("seihou_project_state", formatSeihouProjectState ctx),
-      ("manifest_state", formatManifestState ctx),
-      ("module_dhall_state", formatModuleDhallState ctx),
-      ("local_modules", formatLocalModules ctx),
-      ("available_modules", formatAvailableModules ctx),
-      ("blueprint_name", bp.name.unModuleName),
-      ("blueprint_version", fromMaybe "(unspecified)" bp.version),
-      ("blueprint_description", fromMaybe "(no description)" bp.description),
-      ("baseline_status", formatBaselineStatus baseline),
-      ("reference_files", formatReferenceFiles bp.files),
-      ("reference_files_dir", formatReferenceFilesDir mFilesDir),
-      ("user_prompt", userPrompt)
-    ]
-    promptTemplate
-
--- | Substitute resolved blueprint variables into the user prompt body.
-renderUserPrompt :: Map VarName ResolvedVar -> Text -> Text
-renderUserPrompt resolved tpl =
-  substitute
-    [(vn.unVarName, varValueToText rv.value) | (vn, rv) <- Map.toList resolved]
-    tpl
-
--- | Local copy of @Seihou.CLI.Run.varValueToText@. Kept in sync with the
--- original; if a third caller appears, lift it into Seihou.CLI.Shared.
-varValueToText :: VarValue -> Text
-varValueToText (VText t) = t
-varValueToText (VBool True) = "true"
-varValueToText (VBool False) = "false"
-varValueToText (VInt n) = T.pack (show n)
-varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
+renderSystemPrompt :: AgentContext -> PreparedBlueprintExecution -> BaselineStatus -> Text
+renderSystemPrompt ctx prepared baseline =
+  let bp = prepared.preparedBlueprint
+   in substitute
+        [ ("cwd", ctx.cwd),
+          ("seihou_project_state", formatSeihouProjectState ctx),
+          ("manifest_state", formatManifestState ctx),
+          ("module_dhall_state", formatModuleDhallState ctx),
+          ("local_modules", formatLocalModules ctx),
+          ("available_modules", formatAvailableModules ctx),
+          ("blueprint_name", bp.name.unModuleName),
+          ("blueprint_version", fromMaybe "(unspecified)" bp.version),
+          ("blueprint_description", fromMaybe "(no description)" bp.description),
+          ("baseline_status", formatBaselineStatus baseline),
+          ("reference_files", prepared.preparedReferenceFiles),
+          ("reference_files_dir", prepared.preparedReferenceFilesAccess),
+          ("user_prompt", prepared.preparedSharedPrompt)
+        ]
+        promptTemplate
 
 -- | Whether an operation targets a file in the given path set. Local
 -- copy of @Seihou.CLI.Run.opTargetsPath@.

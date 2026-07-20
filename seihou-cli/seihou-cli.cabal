@@ -59,6 +59,8 @@ library seihou-cli-internal
     Seihou.CLI.AgentModels
     Seihou.CLI.AppliedBlueprint
     Seihou.CLI.AppliedBlueprintMigration
+    Seihou.CLI.BlueprintExecution
+    Seihou.CLI.BlueprintMigration
     Seihou.CLI.BrowseFormat
     Seihou.CLI.CommandExecution
     Seihou.CLI.CommitMessage
@@ -223,6 +225,7 @@ test-suite seihou-cli-test
     Seihou.CLI.AgentModelsSpec
     Seihou.CLI.AppliedBlueprintMigrationSpec
     Seihou.CLI.AppliedBlueprintSpec
+    Seihou.CLI.BlueprintMigrationSpec
     Seihou.CLI.BrowseFormatSpec
     Seihou.CLI.CommandExecutionSpec
     Seihou.CLI.CommitMessageSpec

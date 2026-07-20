@@ -7,6 +7,7 @@ import Seihou.CLI.AgentLaunchSpec qualified as AgentLaunchSpec
 import Seihou.CLI.AgentModelsSpec qualified as AgentModelsSpec
 import Seihou.CLI.AppliedBlueprintMigrationSpec qualified as AppliedBlueprintMigrationSpec
 import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
+import Seihou.CLI.BlueprintMigrationSpec qualified as BlueprintMigrationSpec
 import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
 import Seihou.CLI.CommandExecutionSpec qualified as CommandExecutionSpec
 import Seihou.CLI.CommitMessageSpec qualified as CommitMessageSpec
@@ -44,6 +45,7 @@ main = do
         AgentModelsSpec.tests,
         AppliedBlueprintSpec.tests,
         AppliedBlueprintMigrationSpec.tests,
+        BlueprintMigrationSpec.tests,
         BrowseFormatSpec.tests,
         CommitMessageSpec.tests,
         CommandExecutionSpec.tests,

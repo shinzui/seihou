@@ -61,9 +61,10 @@ second on the next invocation.
 - [x] (2026-07-20 14:29Z) Milestone 2: added the manifest-v5 applied-blueprint-migration ledger, pure
   upsert/query functions, JSON compatibility, and status formatting with core and
   CLI tests. `cabal test seihou-core-test seihou-cli-test` passed both suites.
-- [ ] Milestone 3: extract the reusable blueprint variable/reference preparation
-  from the existing runner and add testable pending-step selection and sequential
-  orchestration to `seihou-cli-internal`.
+- [x] (2026-07-20 14:40Z) Milestone 3: extracted reusable blueprint variable/reference preparation
+  from the existing runner and added pure pending-step selection plus injected
+  sequential orchestration to `seihou-cli-internal`. `cabal test seihou-cli-test`
+  passed all 330 tests and `cabal build all` succeeded.
 - [ ] Milestone 4: add `seihou agent migrate`, its migration-specific system prompt,
   provider/model configuration, debug behavior, resumable execution, executable
   wiring, and command-level tests.
@@ -97,6 +98,14 @@ second on the next invocation.
   carries plan-70's ExecPlan and Intention trailers. Rewriting that user-owned
   commit would be more disruptive, so the remaining Milestone 2 implementation,
   tests, and this provenance note are committed under ExecPlan 71.
+
+- Observation: Baikai's interactive launch result exposes a real process
+  `ExitCode`, while Seihou's existing API completion path exposes provider error
+  text.
+  Evidence: Mori located `Baikai.Interactive.InteractiveLaunchResult` with its
+  `exitCode` field and the local `runAgentCompletion` facade returning
+  `Either Text Text`. The migration orchestrator therefore preserves both failure
+  forms instead of inventing an API exit code.
 
 
 ## Decision Log
@@ -222,6 +231,15 @@ second on the next invocation.
   ledger until a receipt is actually recorded.
   Date: 2026-07-20.
 
+- Decision: Keep `gatherAgentContext` in the executable normal runner after its
+  optional baseline phase, while moving variable resolution, reference access,
+  tool selection, and shared-prompt rendering into `BlueprintExecution`.
+  Rationale: Gathering project state during the shared preparation call would run
+  before baseline application and could make the existing normal prompt describe
+  stale workspace state. Migration mode can gather the same context after its
+  preparation because it never applies a baseline.
+  Date: 2026-07-20.
+
 
 ## Outcomes & Retrospective
 
@@ -244,6 +262,15 @@ Compare the result against the original purpose.
   survives receipt writes. Both core and CLI suites pass. Two foundational source
   files landed in concurrent commit `08c84f3`; the remaining milestone work lands
   in the dedicated ExecPlan 71 commit.
+
+- Milestone 3 moved the existing resolution precedence, reference mounting and
+  fallback text, tool policy, and variable substitution behind an importable
+  request/result pair without changing the normal runner's baseline or provider
+  behavior. The new migration runner filters exact receipts, keeps planner order,
+  and enforces launch-then-record sequencing. Fake callbacks prove that a failure
+  on the second of three edges records only the first and that the next invocation
+  resumes at the failed edge. All 330 CLI tests and the full workspace build pass
+  without contacting a provider.
 
 
 ## Context and Orientation
