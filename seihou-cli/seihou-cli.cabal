@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: seihou-cli
-version: 0.4.0.0
+version: 0.5.0.0
 synopsis: CLI for Seihou project scaffolding
 description:
   Command-line interface for Seihou, a composable project scaffolding
@@ -117,7 +117,7 @@ library seihou-cli-internal
     file-embed >=0.0.15 && <1,
     filepath >=1.4 && <2,
     process >=1.6 && <2,
-    seihou-core ^>=0.4.0.0,
+    seihou-core ^>=0.5.0.0,
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
@@ -199,7 +199,7 @@ executable seihou
     optparse-applicative >=0.18 && <1,
     process >=1.6 && <2,
     seihou-cli-internal,
-    seihou-core ^>=0.4.0.0,
+    seihou-core ^>=0.5.0.0,
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
@@ -270,7 +270,7 @@ test-suite seihou-cli-test
     hspec >=2.11 && <3,
     process >=1.6 && <2,
     seihou-cli-internal,
-    seihou-core ^>=0.4.0.0,
+    seihou-core ^>=0.5.0.0,
     tasty >=1.4 && <2,
     tasty-hspec >=1.2 && <2,
     temporary >=1.3 && <2,
