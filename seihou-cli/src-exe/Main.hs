@@ -9,6 +9,7 @@ import Data.Text.IO qualified as TIO
 import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
 import Seihou.CLI.AgentCompletion qualified as AgentCompletion
 import Seihou.CLI.AgentConfig (AgentCommandName (..), loadAgentModelConfigFor)
+import Seihou.CLI.AgentConfigShow (handleAgentConfigShow)
 import Seihou.CLI.AgentModels qualified as AgentModels
 import Seihou.CLI.AgentRun (handleAgentRun)
 import Seihou.CLI.Assist (handleAssist)
@@ -159,6 +160,8 @@ dispatch cmd =
                       exitFailure
                     Right provider ->
                       TIO.putStr (AgentModels.formatAgentModels (Just provider) AgentModels.availableAgentModels)
+        AgentConfigShow ->
+          handleAgentConfigShow
     Prompt promptCmd -> do
       case promptCmd of
         PromptRun promptRunOpts -> do

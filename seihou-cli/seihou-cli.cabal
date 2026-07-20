@@ -54,6 +54,7 @@ library seihou-cli-internal
   exposed-modules:
     Seihou.CLI.AgentCompletion
     Seihou.CLI.AgentConfig
+    Seihou.CLI.AgentConfigShow
     Seihou.CLI.AgentLaunch
     Seihou.CLI.AgentModels
     Seihou.CLI.AppliedBlueprint
@@ -215,6 +216,7 @@ test-suite seihou-cli-test
 
   other-modules:
     Seihou.CLI.AgentCompletionSpec
+    Seihou.CLI.AgentConfigShowSpec
     Seihou.CLI.AgentConfigSpec
     Seihou.CLI.AgentLaunchSpec
     Seihou.CLI.AgentModelsSpec

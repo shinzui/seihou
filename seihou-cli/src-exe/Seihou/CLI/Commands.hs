@@ -120,6 +120,7 @@ data AgentCommand
   | AgentSetup SetupOpts
   | AgentRun BlueprintRunOpts
   | AgentModels AgentModelsOpts
+  | AgentConfigShow
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
@@ -1512,6 +1513,7 @@ agentCommandParser =
         <> command "setup" agentSetupInfo
         <> command "run" agentRunInfo
         <> command "models" agentModelsInfo
+        <> command "config" agentConfigInfo
     )
 
 agentAssistInfo :: ParserInfo AgentCommand
@@ -1708,6 +1710,31 @@ agentModelsInfo =
 agentModelsParser :: Parser AgentCommand
 agentModelsParser =
   AgentModels . AgentModelsOpts <$> providerOption
+
+agentConfigInfo :: ParserInfo AgentCommand
+agentConfigInfo =
+  info
+    (pure AgentConfigShow <**> helper)
+    ( fullDesc
+        <> progDesc "Show the resolved provider and model for each agent command"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Prints the provider and model that each agent command resolves to," :: String),
+                  pretty ("labelling the source of every value: a config scope and key, an" :: String),
+                  pretty ("environment variable, or the built-in default. Read-only; set values" :: String),
+                  pretty ("with `seihou config set agent.<command>.model ...`." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou agent config" :: String),
+                        pretty ("seihou config set agent.assist.model gpt-5-mini --global" :: String),
+                        pretty ("seihou config set agent.run.model claude-opus-4-8" :: String)
+                      ]
+                ]
+          )
+    )
 
 promptInfo :: ParserInfo Command
 promptInfo =

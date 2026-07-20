@@ -104,11 +104,14 @@ This section must always reflect the actual current state of the work.
   `seihou-cli/src-exe/Main.hs`. Completed 2026-07-20; verified with a scratch `HOME` that
   `seihou agent assist` reads `agent.assist.provider` (errors on an invalid value) while
   `seihou agent setup` falls through to the default and renders normally.
-- [ ] Milestone 3: Add the `seihou agent config` inspection command. Library-side
-  `loadResolvedAgentConfig` + `formatResolvedAgentConfig`; parser + `AgentCommand`
-  constructor in `seihou-cli/src-exe/Seihou/CLI/Commands.hs`; a thin handler in
-  `seihou-cli/src-exe/Seihou/CLI/AgentConfigShow.hs`; dispatch in `Main.hs`. Format unit
-  tests in the library.
+- [x] Milestone 3: Add the `seihou agent config` inspection command. Library-side
+  `loadResolvedAgentConfig` + `formatResolvedAgentConfig` and handler
+  `handleAgentConfigShow` in the new library module
+  `seihou-cli/src/Seihou/CLI/AgentConfigShow.hs`; `AgentConfigShow` constructor + parser
+  (`command "config"`) in `seihou-cli/src-exe/Seihou/CLI/Commands.hs`; dispatch in
+  `Main.hs`. Five format unit cases in `seihou-cli/test/Seihou/CLI/AgentConfigShowSpec.hs`.
+  Completed 2026-07-20; the live `seihou agent config` output matches the Purpose
+  transcript exactly (all 18 AgentConfig* tests pass).
 - [ ] Milestone 4: Documentation and full validation. Update
   `docs/user/agent-assistance.md`, `docs/user/config-and-variables.md`, `docs/cli/agent.md`,
   and `docs/user/CHANGELOG.md`. Run the full test suite and record the transcript.
@@ -119,6 +122,13 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
+- Milestone 3: The handler `handleAgentConfigShow` imports no executable-only dependency,
+  so per the placement convention it lives in the library
+  (`seihou-cli/src/Seihou/CLI/AgentConfigShow.hs`), not `src-exe/` as the plan's prose
+  first sketched; only the `AgentCommand` constructor and its `command "config"` parser sit
+  in the executable. The rendered table prints the command label on the provider row only
+  and blanks the label column on the model row (matching the Purpose transcript), so the
+  format tests assert model rows by their unique value + source rather than by command name.
 - Milestone 1: Rather than the `agentConfigSourceLabel :: AgentConfigSource -> Text -> Text`
   signature sketched in the plan, the implemented label function is
   `agentConfigSourceLabel :: AgentCommandName -> AgentField -> AgentConfigSource -> Text`
