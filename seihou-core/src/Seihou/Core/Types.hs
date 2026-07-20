@@ -73,7 +73,7 @@ import Data.Text (Text)
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
-import Seihou.Core.Migration (Migration)
+import Seihou.Core.Migration (BlueprintMigration, Migration)
 
 -- | A module identifier such as @"haskell-base"@.
 newtype ModuleName = ModuleName {unModuleName :: Text}
@@ -308,7 +308,8 @@ data Blueprint = Blueprint
     baseModules :: [Dependency],
     files :: [BlueprintFile],
     allowedTools :: Maybe [Text],
-    tags :: [Text]
+    tags :: [Text],
+    migrations :: [BlueprintMigration]
   }
   deriving stock (Eq, Show, Generic)
 

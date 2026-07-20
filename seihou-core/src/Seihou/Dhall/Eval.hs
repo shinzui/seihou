@@ -29,6 +29,7 @@ module Seihou.Dhall.Eval
     removalActionDecoder,
     migrationDecoder,
     migrationOpDecoder,
+    blueprintMigrationDecoder,
   )
 where
 
@@ -46,7 +47,7 @@ import Dhall.Map qualified as DhallMap
 import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, field, maybe, natural, string, union)
 import Dhall.Src (Src)
 import Seihou.Core.Expr (parseExpr)
-import Seihou.Core.Migration (Migration (..), MigrationOp (..))
+import Seihou.Core.Migration (BlueprintMigration (..), Migration (..), MigrationOp (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
 import Seihou.Core.Variable (coerceDefault)
@@ -208,6 +209,16 @@ migrationDecoder =
         <*> field "ops" (list migrationOpDecoder)
     )
 
+-- | Decoder for one agent-guided blueprint migration edge.
+blueprintMigrationDecoder :: Decoder BlueprintMigration
+blueprintMigrationDecoder =
+  record
+    ( BlueprintMigration
+        <$> field "from" strictText
+        <*> field "to" strictText
+        <*> field "prompt" strictText
+    )
+
 -- | Decoder for a 'MigrationOp' from a Dhall union value.
 -- The union variants must match @schema/MigrationOp.dhall@.
 migrationOpDecoder :: Decoder MigrationOp
@@ -267,19 +278,21 @@ blueprintFileDecoder =
 -- | Decoder for the top-level Blueprint type from Dhall.
 blueprintDecoder :: Decoder Blueprint
 blueprintDecoder =
-  record
-    ( Blueprint
-        <$> field "name" moduleNameDecoder
-        <*> field "version" (maybe strictText)
-        <*> field "description" (maybe strictText)
-        <*> field "prompt" strictText
-        <*> field "vars" (list varDeclDecoder)
-        <*> field "prompts" (list promptDecoder)
-        <*> field "baseModules" (list dependencyDecoder)
-        <*> field "files" (list blueprintFileDecoder)
-        <*> field "allowedTools" (maybe (list strictText))
-        <*> field "tags" (list strictText)
-    )
+  withDefaults [("migrations", emptyMigrationList)] $
+    record
+      ( Blueprint
+          <$> field "name" moduleNameDecoder
+          <*> field "version" (maybe strictText)
+          <*> field "description" (maybe strictText)
+          <*> field "prompt" strictText
+          <*> field "vars" (list varDeclDecoder)
+          <*> field "prompts" (list promptDecoder)
+          <*> field "baseModules" (list dependencyDecoder)
+          <*> field "files" (list blueprintFileDecoder)
+          <*> field "allowedTools" (maybe (list strictText))
+          <*> field "tags" (list strictText)
+          <*> field "migrations" (list blueprintMigrationDecoder)
+      )
 
 -- | Evaluate a @blueprint.dhall@ file and decode it into a 'Blueprint'.
 -- Returns 'Left' with a 'ModuleLoadError' if evaluation or decoding fails.

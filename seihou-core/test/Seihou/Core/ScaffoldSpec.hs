@@ -103,6 +103,7 @@ spec = do
       let content = blueprintDhall "test-bp" schemaPath ""
       T.isInfixOf "let S =" content `shouldBe` True
       T.isInfixOf "S.Blueprint::" content `shouldBe` True
+      T.isInfixOf "migrations = [] : List S.BlueprintMigration.Type" content `shouldBe` True
 
     it "imports prompt.md as Text rather than inlining the body" $ do
       schemaPath <- resolveSchemaPath
@@ -160,6 +161,7 @@ spec = do
             length (b.baseModules) `shouldBe` 0
             length (b.files) `shouldBe` 0
             length (b.tags) `shouldBe` 0
+            length (b.migrations) `shouldBe` 0
 
   describe "examplePromptMarkdown" $ do
     it "contains the {{project.name}} placeholder so authors see substitution" $ do

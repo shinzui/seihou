@@ -2,7 +2,8 @@ module Seihou.Core.BlueprintSpec (tests) where
 
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Seihou.Core.Blueprint (validateBlueprintWith)
+import Seihou.Core.Blueprint (checkBlueprintMigrations, validateBlueprintWith)
+import Seihou.Core.Migration (BlueprintMigration (..))
 import Seihou.Core.Module (discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalBlueprintFromFile)
@@ -44,6 +45,7 @@ goodBlueprint =
     []
     Nothing
     []
+    []
 
 -- | Helpers to update individual 'Blueprint' fields without ambiguous
 -- record updates. Several @Blueprint@ fields collide by name with
@@ -51,39 +53,43 @@ goodBlueprint =
 -- the ambiguity once and for all.
 withBlueprintName :: ModuleName -> Blueprint -> Blueprint
 withBlueprintName n b =
-  Blueprint n b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags
+  Blueprint n b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations
 
 withBlueprintVersion :: Maybe T.Text -> Blueprint -> Blueprint
 withBlueprintVersion v b =
-  Blueprint b.name v b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags
+  Blueprint b.name v b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations
 
 withBlueprintPrompt :: T.Text -> Blueprint -> Blueprint
 withBlueprintPrompt p b =
-  Blueprint b.name b.version b.description p b.vars b.prompts b.baseModules b.files b.allowedTools b.tags
+  Blueprint b.name b.version b.description p b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations
 
 withBlueprintVars :: [VarDecl] -> Blueprint -> Blueprint
 withBlueprintVars vs b =
-  Blueprint b.name b.version b.description b.prompt vs b.prompts b.baseModules b.files b.allowedTools b.tags
+  Blueprint b.name b.version b.description b.prompt vs b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations
 
 withBlueprintPrompts :: [Prompt] -> Blueprint -> Blueprint
 withBlueprintPrompts ps b =
-  Blueprint b.name b.version b.description b.prompt b.vars ps b.baseModules b.files b.allowedTools b.tags
+  Blueprint b.name b.version b.description b.prompt b.vars ps b.baseModules b.files b.allowedTools b.tags b.migrations
 
 withBlueprintBaseModules :: [Dependency] -> Blueprint -> Blueprint
 withBlueprintBaseModules ds b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts ds b.files b.allowedTools b.tags
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts ds b.files b.allowedTools b.tags b.migrations
 
 withBlueprintFiles :: [BlueprintFile] -> Blueprint -> Blueprint
 withBlueprintFiles fs b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules fs b.allowedTools b.tags
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules fs b.allowedTools b.tags b.migrations
 
 withBlueprintAllowedTools :: Maybe [T.Text] -> Blueprint -> Blueprint
 withBlueprintAllowedTools at b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files at b.tags
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files at b.tags b.migrations
 
 withBlueprintTags :: [T.Text] -> Blueprint -> Blueprint
 withBlueprintTags ts b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools ts
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools ts b.migrations
+
+withBlueprintMigrations :: [BlueprintMigration] -> Blueprint -> Blueprint
+withBlueprintMigrations migrations b =
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags migrations
 
 spec :: Spec
 spec = do
@@ -101,6 +107,20 @@ spec = do
           b.tags `shouldBe` ["demo"]
           b.baseModules `shouldBe` []
           length b.files `shouldBe` 1
+          b.migrations `shouldBe` []
+
+    it "decodes declared blueprint migrations in declaration order" $ do
+      withSystemTempDirectory "seihou-blueprint-migration-decode" $ \tmpDir -> do
+        let path = tmpDir </> "blueprint.dhall"
+        writeFile path (sampleBlueprintWithMigrationsDhall "migration-bp")
+        result <- evalBlueprintFromFile path
+        case result of
+          Right b ->
+            b.migrations
+              `shouldBe` [ BlueprintMigration "1.0.0" "2.0.0" "first edge",
+                           BlueprintMigration "2.5.0" "3.0.0" "second edge"
+                         ]
+          Left err -> expectationFailure ("Expected migrations to decode, got: " <> show err)
 
   describe "validateBlueprintWith (sample fixture)" $ do
     it "accepts the sample-blueprint fixture" $ do
@@ -195,6 +215,31 @@ spec = do
           Left (ValidationError _ errs) ->
             hasError "allowedTools entry must not be empty" errs `shouldBe` True
           other -> expectationFailure ("Expected ValidationError, got: " <> show other)
+
+    it "rejects an empty migration prompt" $ do
+      let bad = withBlueprintMigrations [BlueprintMigration "1.0.0" "2.0.0" "  "] goodBlueprint
+      checkBlueprintMigrations bad `shouldSatisfy` hasError "prompt must not be empty"
+
+    it "rejects malformed migration versions" $ do
+      let bad = withBlueprintMigrations [BlueprintMigration "release-1" "next" "change"] goodBlueprint
+          errors = checkBlueprintMigrations bad
+      errors `shouldSatisfy` hasError "from version is not dotted numeric"
+      errors `shouldSatisfy` hasError "to version is not dotted numeric"
+
+    it "rejects migration edges that do not advance" $ do
+      let equalEdge = withBlueprintMigrations [BlueprintMigration "2.0.0" "2.0.0" "change"] goodBlueprint
+          reverseEdge = withBlueprintMigrations [BlueprintMigration "3.0.0" "2.0.0" "change"] goodBlueprint
+      checkBlueprintMigrations equalEdge `shouldSatisfy` hasError "must advance versions"
+      checkBlueprintMigrations reverseEdge `shouldSatisfy` hasError "must advance versions"
+
+    it "rejects duplicate migration starts" $ do
+      let bad =
+            withBlueprintMigrations
+              [ BlueprintMigration "1.0.0" "2.0.0" "first",
+                BlueprintMigration "1.0.0" "3.0.0" "second"
+              ]
+              goodBlueprint
+      checkBlueprintMigrations bad `shouldSatisfy` hasError "duplicate blueprint migration from version"
 
     it "rejects a missing referenced file" $ do
       withSystemTempDirectory "seihou-test" $ \tmpDir -> do
@@ -342,3 +387,14 @@ sampleBlueprintDhall n =
       ", tags = [] : List Text",
       "}"
     ]
+
+sampleBlueprintWithMigrationsDhall :: T.Text -> String
+sampleBlueprintWithMigrationsDhall n =
+  unlines $
+    init (lines (sampleBlueprintDhall n))
+      <> [ ", migrations =",
+           "    [ { from = \"1.0.0\", to = \"2.0.0\", prompt = \"first edge\" }",
+           "    , { from = \"2.5.0\", to = \"3.0.0\", prompt = \"second edge\" }",
+           "    ]",
+           "}"
+         ]

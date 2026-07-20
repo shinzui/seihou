@@ -11,14 +11,17 @@ module Seihou.Core.Blueprint
     checkBlueprintFiles,
     checkBlueprintTags,
     checkBlueprintAllowedTools,
+    checkBlueprintMigrations,
   )
 where
 
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Seihou.Core.Migration (BlueprintMigration (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable, isValidModuleName)
 import Seihou.Core.Types
+import Seihou.Core.Version (parseVersion)
 import Seihou.Prelude
 import System.Directory (doesFileExist)
 
@@ -65,6 +68,7 @@ validateBlueprintWith searchPaths baseDir b = do
           <> checkBlueprintPromptRefs b
           <> checkBlueprintTags b
           <> checkBlueprintAllowedTools b
+          <> checkBlueprintMigrations b
       allErrs = pureErrs <> fileErrs <> baseErrs
   pure $
     if null allErrs
@@ -203,3 +207,46 @@ checkBlueprintAllowedTools b = case b.allowedTools of
     | t <- xs,
       T.null (T.strip t)
     ]
+
+-- Rule 10: every migration is a forward dotted-numeric version edge with a
+-- non-empty prompt, and each starting version occurs at most once.
+checkBlueprintMigrations :: Blueprint -> [Text]
+checkBlueprintMigrations b =
+  concatMap checkOne b.migrations <> duplicateErrors
+  where
+    checkOne :: BlueprintMigration -> [Text]
+    checkOne migration =
+      promptErrors migration
+        <> versionErrors "from" migration.from
+        <> versionErrors "to" migration.to
+        <> orderErrors migration
+
+    promptErrors :: BlueprintMigration -> [Text]
+    promptErrors migration =
+      [ "blueprint migration "
+          <> migration.from
+          <> " -> "
+          <> migration.to
+          <> " prompt must not be empty"
+      | T.null (T.strip migration.prompt)
+      ]
+
+    versionErrors label versionText = case parseVersion versionText of
+      Nothing -> ["blueprint migration " <> label <> " version is not dotted numeric: " <> versionText]
+      Just _ -> []
+
+    orderErrors :: BlueprintMigration -> [Text]
+    orderErrors migration = case (parseVersion migration.from, parseVersion migration.to) of
+      (Just fromVersion, Just toVersion)
+        | fromVersion >= toVersion ->
+            [ "blueprint migration must advance versions: "
+                <> migration.from
+                <> " -> "
+                <> migration.to
+            ]
+      _ -> []
+
+    duplicateErrors =
+      map
+        ("duplicate blueprint migration from version: " <>)
+        (findDupes Set.empty Set.empty (map (.from) b.migrations))

@@ -85,6 +85,7 @@ blueprintDhall name url hash =
       "      ]",
       "    , baseModules = [] : List S.Dependency.Type",
       "    , files = [] : List S.Blueprint.BlueprintFile.Type",
+      "    , migrations = [] : List S.BlueprintMigration.Type",
       "    , tags = [] : List Text",
       "    }"
     ]

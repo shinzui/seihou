@@ -68,8 +68,8 @@ handleBrowse bopts = do
             logIO LogNormal (logError $ "failed to load blueprint: " <> T.pack (show err))
             exitFailure
           Right b -> do
-            let bpName = case b of Blueprint nm _ _ _ _ _ _ _ _ _ -> nm
-                bpDesc = case b of Blueprint _ _ d _ _ _ _ _ _ _ -> d
+            let bpName = case b of Blueprint nm _ _ _ _ _ _ _ _ _ _ -> nm
+                bpDesc = case b of Blueprint _ _ d _ _ _ _ _ _ _ _ -> d
             TIO.putStr $ formatBrowseSingleBlueprint source bpName.unModuleName bpDesc
       SinglePrompt rootDir -> do
         let dhallFile = rootDir </> "prompt.dhall"

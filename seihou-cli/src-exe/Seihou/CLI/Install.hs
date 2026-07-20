@@ -229,7 +229,7 @@ installSingleBlueprint iopts rootDir source = do
     Right _ -> pure ()
   TIO.putStrLn "  Validated blueprint definition"
 
-  let bpVersion = case bp of Blueprint _ v _ _ _ _ _ _ _ _ -> v
+  let bpVersion = case bp of Blueprint _ v _ _ _ _ _ _ _ _ _ -> v
   installModuleDir rootDir name source Nothing bpVersion []
   TIO.putStrLn ""
   TIO.putStrLn $ "Blueprint available as: " <> T.pack name
@@ -458,7 +458,7 @@ installRegistryEntry cloneDir source repoName entry = do
                     logError $ "  failed to load " <> entry.name.unModuleName <> ": " <> T.pack (show err)
                   pure False
                 Right bp -> do
-                  let bpVersion = case bp of Blueprint _ v _ _ _ _ _ _ _ _ -> v
+                  let bpVersion = case bp of Blueprint _ v _ _ _ _ _ _ _ _ _ -> v
                       ver = entry.version <|> bpVersion
                   installModuleDir entryDir name source (Just repoName) ver entry.tags
                   TIO.putStrLn $ "    Installed blueprint as: " <> T.pack name

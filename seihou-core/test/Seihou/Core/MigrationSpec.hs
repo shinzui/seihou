@@ -2,10 +2,13 @@ module Seihou.Core.MigrationSpec (tests) where
 
 import Data.Text (Text)
 import Seihou.Core.Migration
-  ( Migration (..),
+  ( BlueprintMigration (..),
+    BlueprintMigrationPlan (..),
+    Migration (..),
     MigrationOp (..),
     MigrationPlan (..),
     MigrationPlanError (..),
+    planBlueprintMigrationChain,
     planMigrationChain,
   )
 import Seihou.Core.Version (Version, parseVersion)
@@ -154,6 +157,47 @@ spec = do
         Right (Just plan) ->
           plan.planSteps `shouldBe` [m]
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
+
+  describe "planBlueprintMigrationChain" $ do
+    it "orders in-window migrations while allowing intentional gaps" $ do
+      let early = BlueprintMigration "1.0.0" "2.0.0" "first"
+          late = BlueprintMigration "2.5.0" "3.0.0" "second"
+          result = planBlueprintMigrationChain "demo" [late, early] (mkV "1.0.0") (mkV "3.0.0")
+      case result of
+        Right (Just plan) -> do
+          plan.blueprintPlanName `shouldBe` "demo"
+          plan.blueprintPlanFrom `shouldBe` mkV "1.0.0"
+          plan.blueprintPlanTo `shouldBe` mkV "3.0.0"
+          plan.blueprintPlanSteps `shouldBe` [early, late]
+        other -> expectationFailure ("Expected ordered blueprint plan, got: " <> show other)
+
+    it "returns Nothing for an equal version window" $ do
+      planBlueprintMigrationChain "demo" [] (mkV "1.0.0") (mkV "1.0.0")
+        `shouldBe` Right Nothing
+
+    it "rejects a downgrade" $ do
+      planBlueprintMigrationChain "demo" [] (mkV "3.0.0") (mkV "2.0.0")
+        `shouldBe` Left (MigrationDowngradeNotSupported (mkV "3.0.0") (mkV "2.0.0"))
+
+    it "rejects an unparseable declared version" $ do
+      let migration = BlueprintMigration "release-1" "2.0.0" "change"
+      planBlueprintMigrationChain "demo" [migration] (mkV "1.0.0") (mkV "2.0.0")
+        `shouldBe` Left (MigrationVersionUnparseable "release-1")
+
+    it "rejects duplicate starts" $ do
+      let first = BlueprintMigration "1.0.0" "2.0.0" "first"
+          second = BlueprintMigration "1.0.0" "1.5.0" "second"
+          result = planBlueprintMigrationChain "demo" [first, second] (mkV "1.0.0") (mkV "2.0.0")
+      case result of
+        Left (MigrationDuplicateEdge fromVersion _) -> fromVersion `shouldBe` mkV "1.0.0"
+        other -> expectationFailure ("Expected duplicate blueprint edge error, got: " <> show other)
+
+    it "skips an edge that overshoots the target" $ do
+      let migration = BlueprintMigration "1.0.0" "3.0.0" "too far"
+          result = planBlueprintMigrationChain "demo" [migration] (mkV "1.0.0") (mkV "2.0.0")
+      case result of
+        Right (Just plan) -> plan.blueprintPlanSteps `shouldBe` []
+        other -> expectationFailure ("Expected empty blueprint plan, got: " <> show other)
 
 -- ---------------------------------------------------------------------------
 -- Helpers
