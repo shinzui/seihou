@@ -65,9 +65,11 @@ second on the next invocation.
   from the existing runner and added pure pending-step selection plus injected
   sequential orchestration to `seihou-cli-internal`. `cabal test seihou-cli-test`
   passed all 330 tests and `cabal build all` succeeded.
-- [ ] Milestone 4: add `seihou agent migrate`, its migration-specific system prompt,
-  provider/model configuration, debug behavior, resumable execution, executable
-  wiring, and command-level tests.
+- [x] (2026-07-20 14:56Z) Milestone 4: added `seihou agent migrate`, its migration-specific system
+  prompt, provider/model configuration, debug behavior, resumable execution,
+  executable wiring, and command-level tests. `cabal test seihou-cli-test` passed
+  all 337 tests, `cabal build all` succeeded, and parser help matches the planned
+  usage.
 - [ ] Milestone 5: publish and pin the updated schema, update author/user/CLI/help
   documentation and changelogs, run every build/test/check gate, and record the
   end-to-end debug transcript.
@@ -106,6 +108,14 @@ second on the next invocation.
   `exitCode` field and the local `runAgentCompletion` facade returning
   `Either Text Text`. The migration orchestrator therefore preserves both failure
   forms instead of inventing an API exit code.
+
+- Observation: `discoverRunnable` evaluates and decodes a blueprint but does not
+  call `validateBlueprint`, despite the older `AgentRun` comment describing its
+  discovery phase as validation.
+  Evidence: `Seihou.Core.Module.discoverRunnable` returns
+  `RunnableBlueprint` immediately after `evalBlueprintFromFile`. The new migrate
+  handler therefore calls `validateBlueprint` explicitly before planning or
+  preparing a session.
 
 
 ## Decision Log
@@ -240,6 +250,14 @@ second on the next invocation.
   preparation because it never applies a baseline.
   Date: 2026-07-20.
 
+- Decision: Implement migration debug as a render-only branch using the pure
+  `formatBlueprintMigrationDebugOutput`; do not route debug steps through the
+  sequential runner with fake successful callbacks.
+  Rationale: The debug call path then has no launcher or recorder in scope, which
+  enforces the dry-run invariant structurally. An executable-level test confirms
+  two gap-tolerant prompts render in order while no manifest is created.
+  Date: 2026-07-20.
+
 
 ## Outcomes & Retrospective
 
@@ -271,6 +289,14 @@ Compare the result against the original purpose.
   on the second of three edges records only the first and that the next invocation
   resumes at the failed edge. All 330 CLI tests and the full workspace build pass
   without contacting a provider.
+
+- Milestone 4 delivered the complete command surface with explicit dotted
+  `--from`/`--to`, per-command provider/model resolution, migration-only prompt
+  policy, one session per edge, immediate receipts, `--rerun`, and true parent
+  debug behavior. Pure formatting/config tests cover prompt identity and command
+  keys. Executable tests prove the planned help, ordered gap rendering without a
+  manifest write, and two successful fake-CLI launches followed by two durable
+  receipts and a no-launch resume. All 337 CLI tests and the workspace build pass.
 
 
 ## Context and Orientation

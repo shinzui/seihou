@@ -10,6 +10,7 @@ import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
 import Seihou.CLI.AgentCompletion qualified as AgentCompletion
 import Seihou.CLI.AgentConfig (AgentCommandName (..), loadAgentModelConfigFor)
 import Seihou.CLI.AgentConfigShow (handleAgentConfigShow)
+import Seihou.CLI.AgentMigrate (handleAgentMigrate)
 import Seihou.CLI.AgentModels qualified as AgentModels
 import Seihou.CLI.AgentRun (handleAgentRun)
 import Seihou.CLI.Assist (handleAssist)
@@ -144,6 +145,9 @@ dispatch cmd =
         AgentRun blueprintRunOpts -> do
           modelConfig <- resolveAgentModelConfigFor AgentCmdRun agentOpts.agentProvider agentOpts.agentModel blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel
           handleAgentRun agentOpts.agentDebug modelConfig blueprintRunOpts
+        AgentMigrate migrationOpts -> do
+          modelConfig <- resolveAgentModelConfigFor AgentCmdMigrate agentOpts.agentProvider agentOpts.agentModel migrationOpts.migrateBlueprintProvider migrationOpts.migrateBlueprintModel
+          handleAgentMigrate agentOpts.agentDebug modelConfig migrationOpts
         AgentModels modelsOpts ->
           case agentOpts.agentModel of
             Just _ -> do

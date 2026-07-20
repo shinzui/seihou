@@ -18,6 +18,7 @@ category: Development
 build-type: Simple
 extra-source-files:
   data/assist-prompt.md
+  data/blueprint-migration-prompt.md
   data/blueprint-prompt.md
   data/bootstrap-prompt.md
   data/prompt-run-prompt.md
@@ -148,6 +149,7 @@ executable seihou
   other-modules:
     Paths_seihou_cli
     Seihou.CLI.AgentLaunchExec
+    Seihou.CLI.AgentMigrate
     Seihou.CLI.AgentRun
     Seihou.CLI.Assist
     Seihou.CLI.Bootstrap
@@ -222,6 +224,7 @@ test-suite seihou-cli-test
     Seihou.CLI.AgentConfigShowSpec
     Seihou.CLI.AgentConfigSpec
     Seihou.CLI.AgentLaunchSpec
+    Seihou.CLI.AgentMigrateE2ESpec
     Seihou.CLI.AgentModelsSpec
     Seihou.CLI.AppliedBlueprintMigrationSpec
     Seihou.CLI.AppliedBlueprintSpec

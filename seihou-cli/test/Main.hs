@@ -4,6 +4,7 @@ import Seihou.CLI.AgentCompletionSpec qualified as AgentCompletionSpec
 import Seihou.CLI.AgentConfigShowSpec qualified as AgentConfigShowSpec
 import Seihou.CLI.AgentConfigSpec qualified as AgentConfigSpec
 import Seihou.CLI.AgentLaunchSpec qualified as AgentLaunchSpec
+import Seihou.CLI.AgentMigrateE2ESpec qualified as AgentMigrateE2ESpec
 import Seihou.CLI.AgentModelsSpec qualified as AgentModelsSpec
 import Seihou.CLI.AppliedBlueprintMigrationSpec qualified as AppliedBlueprintMigrationSpec
 import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
@@ -39,6 +40,7 @@ main = do
   tests <-
     sequence
       [ AgentLaunchSpec.tests,
+        AgentMigrateE2ESpec.tests,
         AgentCompletionSpec.tests,
         AgentConfigSpec.tests,
         AgentConfigShowSpec.tests,

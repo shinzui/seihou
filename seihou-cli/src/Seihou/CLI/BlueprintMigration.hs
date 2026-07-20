@@ -4,19 +4,36 @@ module Seihou.CLI.BlueprintMigration
   ( BlueprintMigrationLaunchFailure (..),
     BlueprintMigrationRunResult (..),
     renderBlueprintMigrationInstruction,
+    renderBlueprintMigrationSystemPrompt,
+    formatBlueprintMigrationDebugOutput,
     pendingBlueprintMigrations,
     runBlueprintMigrationsWith,
   )
 where
 
-import Seihou.CLI.BlueprintExecution (renderBlueprintText)
+import Data.Maybe (fromMaybe)
+import Data.Text qualified as T
+import Seihou.CLI.AgentLaunch
+  ( AgentContext (..),
+    formatAvailableModules,
+    formatLocalModules,
+    formatManifestState,
+    formatModuleDhallState,
+    formatSeihouProjectState,
+    substitute,
+  )
+import Seihou.CLI.BlueprintExecution
+  ( PreparedBlueprintExecution (..),
+    renderBlueprintText,
+  )
 import Seihou.Core.Migration
   ( BlueprintMigration (..),
     BlueprintMigrationPlan (..),
   )
 import Seihou.Core.Types
   ( AppliedBlueprintMigration (..),
-    ModuleName,
+    Blueprint (..),
+    ModuleName (..),
     ResolvedVar,
     VarName,
   )
@@ -46,6 +63,69 @@ renderBlueprintMigrationInstruction ::
   Text
 renderBlueprintMigrationInstruction resolved migration =
   renderBlueprintText resolved migration.prompt
+
+-- | Fill the migration-specific embedded template. The template itself stays
+-- in the executable target because @Data.FileEmbed@ traps it there; accepting
+-- it as an argument keeps all rendering policy pure and unit-testable here.
+renderBlueprintMigrationSystemPrompt ::
+  Text ->
+  AgentContext ->
+  PreparedBlueprintExecution ->
+  Int ->
+  Int ->
+  BlueprintMigration ->
+  Text
+renderBlueprintMigrationSystemPrompt template ctx prepared position total migration =
+  let blueprint = prepared.preparedBlueprint
+      renderedInstruction =
+        renderBlueprintMigrationInstruction prepared.preparedResolvedVariables migration
+   in substitute
+        [ ("cwd", ctx.cwd),
+          ("seihou_project_state", formatSeihouProjectState ctx),
+          ("manifest_state", formatManifestState ctx),
+          ("module_dhall_state", formatModuleDhallState ctx),
+          ("local_modules", formatLocalModules ctx),
+          ("available_modules", formatAvailableModules ctx),
+          ("blueprint_name", blueprint.name.unModuleName),
+          ("blueprint_version", fromMaybe "(unspecified)" blueprint.version),
+          ("blueprint_description", fromMaybe "(no description)" blueprint.description),
+          ("migration_from", migration.from),
+          ("migration_to", migration.to),
+          ("migration_position", T.pack (show position)),
+          ("migration_total", T.pack (show total)),
+          ("reference_files", prepared.preparedReferenceFiles),
+          ("reference_files_dir", prepared.preparedReferenceFilesAccess),
+          ("shared_prompt", prepared.preparedSharedPrompt),
+          ("migration_prompt", renderedInstruction)
+        ]
+        template
+
+-- | Clearly delimit every pending prompt for parent debug mode. This pure
+-- function cannot launch a provider or receive a recorder, which makes the
+-- migration debug path structurally read-only.
+formatBlueprintMigrationDebugOutput ::
+  (Int -> Int -> BlueprintMigration -> Text) ->
+  [BlueprintMigration] ->
+  Text
+formatBlueprintMigrationDebugOutput render migrations =
+  T.intercalate
+    "\n\n"
+    [ T.unlines
+        [ "===== Blueprint migration "
+            <> T.pack (show position)
+            <> "/"
+            <> T.pack (show total)
+            <> ": "
+            <> migration.from
+            <> " -> "
+            <> migration.to
+            <> " =====",
+          render position total migration
+        ]
+    | (position, migration) <- zip [1 ..] migrations
+    ]
+  where
+    total = length migrations
 
 -- | Remove exact-edge receipts while retaining planner order. Artifact
 -- versions and timestamps are intentionally not part of the completion key.

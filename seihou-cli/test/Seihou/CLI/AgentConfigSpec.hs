@@ -141,6 +141,20 @@ spec = do
               }
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "gpt-5", SourceEnv)
 
+    it "resolves migrate from its own per-command keys" $ do
+      let inputs =
+            baseInputs
+              { localConfig =
+                  Map.fromList
+                    [ (agentCommandProviderConfigKey AgentCmdMigrate, "openai"),
+                      (agentCommandModelConfigKey AgentCmdMigrate, "gpt-5-mini"),
+                      (agentCommandModelConfigKey AgentCmdRun, "claude-opus-4-8")
+                    ]
+              }
+      providerOf AgentCmdMigrate inputs `shouldBe` Right (AgentProviderOpenAI, SourceLocalCommand)
+      modelOf AgentCmdMigrate inputs `shouldBe` Right (Just "gpt-5-mini", SourceLocalCommand)
+      modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-opus-4-8", SourceLocalCommand)
+
 providerOf :: AgentCommandName -> AgentConfigInputs -> Either Text (AgentProvider, AgentConfigSource)
 providerOf c inputs =
   (\(p, _) -> (p.resolvedValue, p.resolvedSource)) <$> resolveAgentModelConfigFor c inputs

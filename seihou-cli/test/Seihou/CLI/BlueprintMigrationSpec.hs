@@ -5,6 +5,8 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)
+import Seihou.CLI.AgentLaunch (AgentContext (..))
+import Seihou.CLI.BlueprintExecution (PreparedBlueprintExecution (..))
 import Seihou.CLI.BlueprintMigration
 import Seihou.Core.Migration
 import Seihou.Core.Types
@@ -53,6 +55,29 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
               (ResolvedVar (VText "baikai") FromDefault declaration)
       renderBlueprintMigrationInstruction resolved (migrationWithPrompt "1" "2" "Upgrade {{library.name}}.")
         `shouldBe` "Upgrade baikai."
+
+  describe "renderBlueprintMigrationSystemPrompt" $ do
+    it "renders identity, position, shared guidance, edge instructions, and reference access" $ do
+      let edge = migrationWithPrompt "1.0.0" "2.0.0" "Upgrade {{library.name}} now."
+          rendered =
+            renderBlueprintMigrationSystemPrompt
+              "{{blueprint_name}} {{blueprint_version}} | {{migration_position}}/{{migration_total}} | {{migration_from}} -> {{migration_to}} | {{shared_prompt}} | {{migration_prompt}} | {{reference_files_dir}} | {{cwd}}"
+              sampleContext
+              samplePrepared
+              1
+              2
+              edge
+      rendered
+        `shouldBe` "payments 4.2.0 | 1/2 | 1.0.0 -> 2.0.0 | Shared guidance for baikai. | Upgrade baikai now. | mounted at /tmp/payments/files | /tmp/project"
+
+    it "delimits debug prompts in pending order without any execution callback" $ do
+      let output =
+            formatBlueprintMigrationDebugOutput
+              (\position total edge -> "prompt " <> tshow position <> "/" <> tshow total <> " " <> edge.from)
+              [first, second]
+      output `shouldSatisfy` T.isInfixOf "===== Blueprint migration 1/2: 1.0.0 -> 2.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "===== Blueprint migration 2/2: 2.0.0 -> 3.0.0 ====="
+      T.breakOn "2.0.0 -> 3.0.0" output `shouldSatisfy` (not . T.null . snd)
 
   describe "runBlueprintMigrationsWith" $ do
     it "reports no work without invoking either callback" $ do
@@ -178,3 +203,46 @@ version raw =
 
 tshow :: (Show a) => a -> Text
 tshow = T.pack . show
+
+sampleContext :: AgentContext
+sampleContext =
+  AgentContext
+    { cwd = "/tmp/project",
+      seihouInitialized = True,
+      hasManifest = False,
+      localModuleDhall = False,
+      localModules = [],
+      availableModules = []
+    }
+
+samplePrepared :: PreparedBlueprintExecution
+samplePrepared =
+  let declaration = VarDecl "library.name" VTText Nothing Nothing False Nothing
+      resolved =
+        Map.singleton
+          "library.name"
+          (ResolvedVar (VText "baikai") FromDefault declaration)
+      blueprint =
+        Blueprint
+          { name = blueprintName,
+            version = Just "4.2.0",
+            description = Just "Payments upgrade",
+            prompt = "Shared guidance for {{library.name}}.",
+            vars = [declaration],
+            prompts = [],
+            baseModules = [],
+            files = [],
+            allowedTools = Nothing,
+            tags = [],
+            migrations = [first, second]
+          }
+   in PreparedBlueprintExecution
+        { preparedBlueprint = blueprint,
+          preparedBlueprintDir = "/tmp/payments",
+          preparedResolvedVariables = resolved,
+          preparedMountedFilesDir = Just "/tmp/payments/files",
+          preparedReferenceFiles = "  - guide.md",
+          preparedReferenceFilesAccess = "mounted at /tmp/payments/files",
+          preparedSharedPrompt = "Shared guidance for baikai.",
+          preparedAllowedTools = ["Read"]
+        }

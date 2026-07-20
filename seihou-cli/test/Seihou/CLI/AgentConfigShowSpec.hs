@@ -40,6 +40,9 @@ spec =
     it "labels a global per-command provider with its command key on the labelled row" $
       hasLine ["assist", "provider", "codex-cli", "[global: agent.assist.provider]"] `shouldBe` True
 
+    it "renders the migrate command and its concrete config key" $
+      hasLine ["migrate", "model", "gpt-5-mini", "[local: agent.migrate.model]"] `shouldBe` True
+
     it "includes the precedence legend" $
       ("Precedence, highest first:" `Text.isInfixOf` rendered) `shouldBe` True
 
@@ -56,5 +59,9 @@ sample =
     ResolvedCommandConfig
       AgentCmdRun
       (ResolvedAgentField AgentProviderClaudeCli SourceBuiltinDefault)
-      (ResolvedAgentField (Just "claude-opus-4-8") SourceLocalCommand)
+      (ResolvedAgentField (Just "claude-opus-4-8") SourceLocalCommand),
+    ResolvedCommandConfig
+      AgentCmdMigrate
+      (ResolvedAgentField AgentProviderOpenAI SourceLocalCommand)
+      (ResolvedAgentField (Just "gpt-5-mini") SourceLocalCommand)
   ]

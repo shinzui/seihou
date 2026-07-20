@@ -29,6 +29,7 @@ module Seihou.CLI.Commands
     BootstrapOpts (..),
     SetupOpts (..),
     BlueprintRunOpts (..),
+    BlueprintMigrationOpts (..),
     PromptCommand (..),
     PromptRunOpts (..),
     CompletionsCommand (..),
@@ -119,6 +120,7 @@ data AgentCommand
   | AgentBootstrap BootstrapOpts
   | AgentSetup SetupOpts
   | AgentRun BlueprintRunOpts
+  | AgentMigrate BlueprintMigrationOpts
   | AgentModels AgentModelsOpts
   | AgentConfigShow
   deriving stock (Eq, Show, Generic)
@@ -335,6 +337,21 @@ data BlueprintRunOpts = BlueprintRunOpts
     runBlueprintForce :: Bool,
     runBlueprintProvider :: Maybe Text,
     runBlueprintModel :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+data BlueprintMigrationOpts = BlueprintMigrationOpts
+  { migrateBlueprintName :: ModuleName,
+    migrateBlueprintFrom :: Text,
+    migrateBlueprintTo :: Text,
+    migrateBlueprintPrompt :: Maybe Text,
+    migrateBlueprintVars :: [(Text, Text)],
+    migrateBlueprintNamespace :: Maybe Text,
+    migrateBlueprintContext :: Maybe Text,
+    migrateBlueprintVerbose :: Bool,
+    migrateBlueprintRerun :: Bool,
+    migrateBlueprintProvider :: Maybe Text,
+    migrateBlueprintModel :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -1476,6 +1493,7 @@ agentInfo =
                         pretty ("bootstrap   Bootstrap a new module or multi-module repo" :: String),
                         pretty ("setup       Guided project setup: configure, run, and commit" :: String),
                         pretty ("run         Run an agent-driven blueprint" :: String),
+                        pretty ("migrate     Run ordered library-upgrade blueprint migrations" :: String),
                         pretty ("models      List known agent models" :: String)
                       ]
                 ]
@@ -1512,6 +1530,7 @@ agentCommandParser =
         <> command "bootstrap" agentBootstrapInfo
         <> command "setup" agentSetupInfo
         <> command "run" agentRunInfo
+        <> command "migrate" agentMigrateInfo
         <> command "models" agentModelsInfo
         <> command "config" agentConfigInfo
     )
@@ -1678,6 +1697,54 @@ agentRunParser =
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
       <*> switch (long "force" <> help "Auto-resolve baseline conflicts (accept new files)")
+      <*> providerOption
+      <*> modelOption
+
+agentMigrateInfo :: ParserInfo AgentCommand
+agentMigrateInfo =
+  info
+    (agentMigrateParser <**> helper)
+    ( fullDesc
+        <> progDesc "Run ordered agent-guided migrations declared by a blueprint"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Selects the blueprint migrations inside the explicit version window," :: String),
+                  pretty ("runs one provider interaction per edge, and records each successful" :: String),
+                  pretty ("edge so an interrupted chain resumes without repeating completed work." :: String),
+                  line,
+                  pretty ("Versions must be dotted numeric values. Gaps are allowed. Pass --rerun" :: String),
+                  pretty ("to ignore matching receipts. Parent --debug prints every pending prompt" :: String),
+                  pretty ("without contacting a provider or changing the manifest." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou agent migrate my-library --from 1.0.0 --to 3.0.0" :: String),
+                        pretty ("seihou agent migrate my-library --from 1 --to 3 --rerun" :: String),
+                        pretty ("seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0" :: String)
+                      ]
+                ]
+          )
+    )
+
+agentMigrateParser :: Parser AgentCommand
+agentMigrateParser =
+  fmap AgentMigrate $
+    BlueprintMigrationOpts
+      <$> argument moduleNameReader (metavar "BLUEPRINT" <> help "Name of the blueprint containing migrations")
+      <*> option (T.pack <$> str) (long "from" <> metavar "VERSION" <> help "Currently used library version (dotted numeric)")
+      <*> option (T.pack <$> str) (long "to" <> metavar "VERSION" <> help "Desired library version (dotted numeric)")
+      <*> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Optional initial user instruction for each migration session"))
+      <*> many
+        ( option
+            varPair
+            (long "var" <> metavar "KEY=VALUE" <> help "Variable override (repeatable)")
+        )
+      <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
+      <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
+      <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
+      <*> switch (long "rerun" <> help "Run matching migrations even when a receipt already exists")
       <*> providerOption
       <*> modelOption
 
