@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "baikai-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784565401,
+        "narHash": "sha256-h4bTdTBgOMNxv8PaEO7q3m6P4BZimIntGrY0rF/E8ag=",
+        "owner": "shinzui",
+        "repo": "baikai",
+        "rev": "d6d53b81b69bb4bd79e8cf19bc4eb86900180059",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "baikai",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -77,16 +93,25 @@
     },
     "haskell-nix": {
       "inputs": {
+        "baikai-src": "baikai-src",
+        "keiro-src": "keiro-src",
+        "kioku-src": "kioku-src",
+        "kiroku-src": "kiroku-src",
         "nixpkgs": [
           "nixpkgs"
-        ]
+        ],
+        "pg-migrate-src": "pg-migrate-src",
+        "pgmq-hs-src": "pgmq-hs-src",
+        "settei-src": "settei-src",
+        "shibuya-src": "shibuya-src",
+        "shikumi-src": "shikumi-src"
       },
       "locked": {
-        "lastModified": 1781742888,
-        "narHash": "sha256-qjZl+1K8YXVfWnhdiBcpIACMwXLt2U6wJ65oFiw1S/E=",
+        "lastModified": 1784567879,
+        "narHash": "sha256-XDjF3SYzJgS0ImWDr8TDwqqRVGZ8I30zImDkqfZwNiA=",
         "owner": "shinzui",
         "repo": "haskell-nix",
-        "rev": "92a0b051f169d2dfe166cae891330a916d5b6cad",
+        "rev": "ab4f2c3538488659f94ea1616228ee65f4a190c4",
         "type": "github"
       },
       "original": {
@@ -112,6 +137,54 @@
       "original": {
         "owner": "shinzui",
         "repo": "haskell-nix-dev",
+        "type": "github"
+      }
+    },
+    "keiro-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784079325,
+        "narHash": "sha256-OzayfuZCyOW6KCndP75BN+koRDdMXWiDqoUET0wYVXo=",
+        "owner": "shinzui",
+        "repo": "keiro",
+        "rev": "29bd7952fa5201adf789bbb21427b2cffe228d4b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "keiro",
+        "type": "github"
+      }
+    },
+    "kioku-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784050025,
+        "narHash": "sha256-yBu8wQ0H5J58i2gyZI7ZQctDg5Mc78UE3iqw+gptJyE=",
+        "owner": "shinzui",
+        "repo": "kioku",
+        "rev": "a99aa369701a76278ca33d83f8416dee443fa645",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "kioku",
+        "type": "github"
+      }
+    },
+    "kiroku-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784038159,
+        "narHash": "sha256-XAFfhYHPcv/wbYxxXO77A5My7/saha289HsJO5/QnqQ=",
+        "owner": "shinzui",
+        "repo": "kiroku",
+        "rev": "58aff77b3a6d6093e3613753a0543aab62db9fac",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "kiroku",
         "type": "github"
       }
     },
@@ -144,6 +217,38 @@
         "owner": "nixos",
         "ref": "nixpkgs-unstable",
         "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "pg-migrate-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783976259,
+        "narHash": "sha256-gtSy0iWe+pe6wEHqm8OgvwMI13jNVul+5p7q36LV64E=",
+        "owner": "shinzui",
+        "repo": "pg-migrate",
+        "rev": "f39d64e354818999667d345a1452f33eb4857fc1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "pg-migrate",
+        "type": "github"
+      }
+    },
+    "pgmq-hs-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784054261,
+        "narHash": "sha256-2UEv+L7kMLrAojU9yNf7FGxgeffPrZnwyZ1YJ9M9gvI=",
+        "owner": "shinzui",
+        "repo": "pgmq-hs",
+        "rev": "f4a101843ea6f5c055277fd84859ece02865eff4",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "pgmq-hs",
         "type": "github"
       }
     },
@@ -189,17 +294,65 @@
     "seihou-schema-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1781903221,
-        "narHash": "sha256-7MH19p7J8JDKUfX20aB+ESXQBCE16XZIOjaQtZJk1yc=",
+        "lastModified": 1784559532,
+        "narHash": "sha256-aeFH8Rrr2qcFq+jch+XVuIpeQ1AZI49Z5t1jV0wsGX8=",
         "ref": "refs/heads/master",
-        "rev": "aee22d73fe76e7b1fbfac08dc98f0acc13d4088b",
-        "revCount": 8,
+        "rev": "2dffa0592be47835a60784b89a289226ba990aa8",
+        "revCount": 10,
         "type": "git",
         "url": "file:./schema"
       },
       "original": {
         "type": "git",
         "url": "file:./schema"
+      }
+    },
+    "settei-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784521789,
+        "narHash": "sha256-bXMbbCerfobJHs45KQrjyp2H9VS4tKuK7EEFySYgJqQ=",
+        "owner": "shinzui",
+        "repo": "settei",
+        "rev": "1bf62b0af110b4f42fe2528e9d459e0ccf12d626",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "settei",
+        "type": "github"
+      }
+    },
+    "shibuya-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783204727,
+        "narHash": "sha256-b1NoMQDlz876+H8zJ/KUgb+9cWWZXy04jGgXX3GfDpA=",
+        "owner": "shinzui",
+        "repo": "shibuya",
+        "rev": "172df245f40a454af46dd7f4cde855eaa4414c5a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "shibuya",
+        "type": "github"
+      }
+    },
+    "shikumi-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1783222763,
+        "narHash": "sha256-NhsJUfH8Zw0VHL9xZQUGJOJ1CQhibvi9BCuqULEUrbs=",
+        "owner": "shinzui",
+        "repo": "shikumi",
+        "rev": "0df4d85928c79cbfe78d7880a263fc0b9696ddc2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "shikumi",
+        "type": "github"
       }
     },
     "systems": {
