@@ -99,9 +99,11 @@ This section must always reflect the actual current state of the work.
   backward-compatible reimplementation of `resolveAgentModelConfig`. Pure unit tests in
   `seihou-cli/test/Seihou/CLI/AgentConfigSpec.hs`. Completed 2026-07-20; all 13
   `AgentConfig` cases pass (7 pre-existing + 6 new).
-- [ ] Milestone 2: Thread the command name into resolution so each handler picks up its
+- [x] Milestone 2: Thread the command name into resolution so each handler picks up its
   per-command keys. Add `loadAgentModelConfigFor` to the library; update the dispatch in
-  `seihou-cli/src-exe/Main.hs`. Behavior verified with `cabal run seihou -- agent ...`.
+  `seihou-cli/src-exe/Main.hs`. Completed 2026-07-20; verified with a scratch `HOME` that
+  `seihou agent assist` reads `agent.assist.provider` (errors on an invalid value) while
+  `seihou agent setup` falls through to the default and renders normally.
 - [ ] Milestone 3: Add the `seihou agent config` inspection command. Library-side
   `loadResolvedAgentConfig` + `formatResolvedAgentConfig`; parser + `AgentCommand`
   constructor in `seihou-cli/src-exe/Seihou/CLI/Commands.hs`; a thin handler in

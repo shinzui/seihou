@@ -2,12 +2,13 @@ module Main (main) where
 
 import Control.Applicative ((<|>))
 import Data.List (isPrefixOf)
+import Data.Maybe (isJust)
 import Data.String (fromString)
 import Data.Text (Text)
 import Data.Text.IO qualified as TIO
 import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
 import Seihou.CLI.AgentCompletion qualified as AgentCompletion
-import Seihou.CLI.AgentConfig (loadAgentModelConfig)
+import Seihou.CLI.AgentConfig (AgentCommandName (..), loadAgentModelConfigFor)
 import Seihou.CLI.AgentModels qualified as AgentModels
 import Seihou.CLI.AgentRun (handleAgentRun)
 import Seihou.CLI.Assist (handleAssist)
@@ -131,16 +132,16 @@ dispatch cmd =
     Agent agentOpts -> do
       case agentOpts.agentCommand of
         AgentAssist assistOpts -> do
-          modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel assistOpts.assistProvider assistOpts.assistModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdAssist agentOpts.agentProvider agentOpts.agentModel assistOpts.assistProvider assistOpts.assistModel
           handleAssist agentOpts.agentDebug modelConfig assistOpts
         AgentBootstrap bootstrapOpts -> do
-          modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel bootstrapOpts.bootstrapProvider bootstrapOpts.bootstrapModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdBootstrap agentOpts.agentProvider agentOpts.agentModel bootstrapOpts.bootstrapProvider bootstrapOpts.bootstrapModel
           handleBootstrap agentOpts.agentDebug modelConfig bootstrapOpts
         AgentSetup setupOpts -> do
-          modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel setupOpts.setupProvider setupOpts.setupModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdSetup agentOpts.agentProvider agentOpts.agentModel setupOpts.setupProvider setupOpts.setupModel
           handleSetup agentOpts.agentDebug modelConfig setupOpts
         AgentRun blueprintRunOpts -> do
-          modelConfig <- resolveAgentModelConfig agentOpts.agentProvider agentOpts.agentModel blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdRun agentOpts.agentProvider agentOpts.agentModel blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel
           handleAgentRun agentOpts.agentDebug modelConfig blueprintRunOpts
         AgentModels modelsOpts ->
           case agentOpts.agentModel of
@@ -161,7 +162,7 @@ dispatch cmd =
     Prompt promptCmd -> do
       case promptCmd of
         PromptRun promptRunOpts -> do
-          modelConfig <- resolveAgentModelConfig Nothing Nothing promptRunOpts.runPromptProvider promptRunOpts.runPromptModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdPromptRun Nothing Nothing promptRunOpts.runPromptProvider promptRunOpts.runPromptModel
           handlePromptRun modelConfig promptRunOpts
     Extension extensionCmd -> do
       case extensionCmd of
@@ -172,9 +173,24 @@ dispatch cmd =
     Completions completionsCmd ->
       handleCompletionsCommand completionsCmd
 
-resolveAgentModelConfig :: Maybe Text -> Maybe Text -> Maybe Text -> Maybe Text -> IO AgentCompletion.AgentModelConfig
-resolveAgentModelConfig parentProvider parentModel commandProvider commandModel = do
-  configResult <- loadAgentModelConfig (commandProvider <|> parentProvider) (commandModel <|> parentModel)
+-- | Resolve the effective provider/model for one agent command. The subcommand
+-- flag wins over the parent @seihou agent@ flag; that combined flag then feeds
+-- the per-command config resolution, which also consults the command's own
+-- @agent.<command>.*@ keys before the shared @agent.*@ defaults.
+resolveAgentModelConfigFor ::
+  AgentCommandName ->
+  -- | parent @seihou agent@ provider, model
+  Maybe Text ->
+  Maybe Text ->
+  -- | subcommand provider, model
+  Maybe Text ->
+  Maybe Text ->
+  IO AgentCompletion.AgentModelConfig
+resolveAgentModelConfigFor cmd parentProvider parentModel commandProvider commandModel = do
+  let provider = commandProvider <|> parentProvider
+      model = commandModel <|> parentModel
+  configResult <-
+    loadAgentModelConfigFor cmd provider model (isJust commandProvider) (isJust commandModel)
   case configResult of
     Left err -> do
       TIO.putStrLn $ "Error: " <> err
