@@ -112,9 +112,11 @@ This section must always reflect the actual current state of the work.
   `Main.hs`. Five format unit cases in `seihou-cli/test/Seihou/CLI/AgentConfigShowSpec.hs`.
   Completed 2026-07-20; the live `seihou agent config` output matches the Purpose
   transcript exactly (all 18 AgentConfig* tests pass).
-- [ ] Milestone 4: Documentation and full validation. Update
-  `docs/user/agent-assistance.md`, `docs/user/config-and-variables.md`, `docs/cli/agent.md`,
-  and `docs/user/CHANGELOG.md`. Run the full test suite and record the transcript.
+- [x] Milestone 4: Documentation and full validation. Updated
+  `docs/user/agent-assistance.md` (per-command config + inspection subsections, 8-tier
+  precedence), `docs/user/config-and-variables.md` (per-command keys + project-over-global
+  example), `docs/cli/agent.md` (`agent config` subcommand), and `docs/user/CHANGELOG.md`.
+  Full suite green: 315 CLI + 1007 core + 16 extension tests pass. Completed 2026-07-20.
 
 
 ## Surprises & Discoveries
@@ -204,7 +206,36 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+The plan delivered exactly the three user-visible capabilities from Purpose. Agent
+commands now read per-command config keys `agent.<command>.{provider,model}` for `assist`,
+`bootstrap`, `setup`, `run`, and `prompt-run`, falling back to the shared
+`agent.{provider,model}` defaults. Resolution is hierarchical and additive: the eight-tier
+precedence chain inserts local then global per-command tiers around the pre-existing default
+tiers, so any project-local value overrides any global value, and within a scope the
+per-command key beats the shared default. The new read-only `seihou agent config` command
+prints the resolved provider and model for every command with the winning source labelled;
+its live output matches the Purpose transcript, including `run` resolving to a local
+`agent.run.model` while other commands fall back to a global `agent.model`.
+
+Backward compatibility held: the flat `resolveAgentModelConfig`/`loadAgentModelConfig`
+retain their exact behavior, every pre-existing `AgentConfig` test passes unchanged, and a
+user who set only `agent.provider`/`agent.model` sees no difference.
+
+Validation: 18 `AgentConfig`/`AgentConfigShow` unit cases pass; a scratch-`HOME`
+behavioral check confirmed `agent assist` reads `agent.assist.provider` while `agent setup`
+does not; and the full suite (315 CLI + 1007 core + 16 extension) is green.
+
+Lessons: (1) `NoFieldSelectors` is enabled repo-wide, so record fields cannot be used as
+bare functions — use `\r -> r.field` in point-free positions. (2) The `UpdateE2ESpec` and
+completion E2E tests spawn the built `seihou` binary via `build-tool-depends`, which is not
+staged under a bare `cabal test all` outside the nix sandbox; they fail with
+`posix_spawnp: does not exist` for reasons unrelated to source changes and pass once the
+binary is staged (or under `nix flake check`). This is expected given the preceding
+`fix(nix): provide test tools in build sandbox` commit.
+
+Gaps / future work: environment variables remain cross-command by design; if a concrete
+need arises, per-command environment variables (e.g. `SEIHOU_AGENT_RUN_MODEL`) could be
+added as a new tier. Namespace/context scopes are still out of scope for agent resolution.
 
 
 ## Context and Orientation

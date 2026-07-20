@@ -25,7 +25,7 @@ seihou agent assist --provider codex-cli --model gpt-5 "create a module"
 seihou agent --debug --provider openai setup "show the prompt only"
 ```
 
-Provider and model values are resolved from CLI flags, environment variables, local config, global config, and defaults. See [Configuration and Variable Resolution](../user/config-and-variables.md#agent-provider-defaults) for the full precedence chain.
+Provider and model values are resolved from CLI flags, environment variables, per-command and shared config keys (local then global), and defaults. Each command can be configured independently with `agent.<command>.provider` / `agent.<command>.model`, falling back to the shared `agent.provider` / `agent.model` defaults; a local project value always overrides a global one. See [Configuration and Variable Resolution](../user/config-and-variables.md#agent-provider-defaults) for the full precedence chain, and run `seihou agent config` (below) to inspect what resolves for each command.
 
 ## Providers
 
@@ -63,6 +63,22 @@ The catalog is a discovery aid rather than a validation list. Provider-native
 aliases and custom model IDs remain accepted by `--model` even when they do not
 appear in the table. Passing a parent `--model` to `agent models` is rejected
 because a model selection is irrelevant to a listing command.
+
+### agent config
+
+Show the resolved provider and model for every agent command.
+
+```text
+seihou agent config
+```
+
+Prints one entry per command (`assist`, `bootstrap`, `setup`, `run`, and
+`prompt run`) with its resolved provider and model, each labelled by the source
+that supplied the value — a config scope and key (for example
+`[local: agent.run.model]` or `[global: agent.model]`), an environment variable,
+or `[built-in default]` — followed by the precedence legend. The command is
+read-only: it reflects the current environment and config but never changes
+them. Set values with `seihou config set agent.<command>.model ...`.
 
 ### agent assist
 

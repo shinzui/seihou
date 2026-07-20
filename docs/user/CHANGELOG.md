@@ -12,6 +12,18 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **Per-command agent provider and model.** Each agent command can now use a
+  different provider and model through configuration. Set
+  `agent.<command>.provider` / `agent.<command>.model` (for `assist`,
+  `bootstrap`, `setup`, `run`, or `prompt-run`) to override the shared
+  `agent.provider` / `agent.model` defaults for that command only. Resolution
+  is hierarchical: a project's local config overrides the user's global config,
+  and within a scope a per-command key overrides the shared default. The new
+  read-only `seihou agent config` command prints the resolved provider and model
+  for every command, labelling the source of each value. See
+  [AI Agent Assistance](agent-assistance.md) and the
+  [agent reference](../cli/agent.md).
+
 - **Project-aware updates.** `seihou update` now stages candidate sources,
   reuses saved per-instance inputs, applies migrations, three-way merges user
   edits from content-addressed generated baselines, skips unchanged commands,

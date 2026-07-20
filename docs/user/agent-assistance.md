@@ -37,14 +37,70 @@ seihou config set agent.provider codex-cli --global
 seihou config set agent.model gpt-5 --global
 ```
 
-Resolution order is:
+### Per-command provider and model
+
+Each agent command can use a different provider and model. Set
+`agent.<command>.provider` or `agent.<command>.model`, where `<command>` is one
+of `assist`, `bootstrap`, `setup`, `run`, or `prompt-run`. A per-command key
+overrides the shared `agent.provider` / `agent.model` default for that command
+only; commands without a per-command key keep using the shared default.
+
+```sh
+# Shared default for every agent command:
+seihou config set agent.model claude-sonnet-5 --global
+
+# Fast, cheap model just for `assist`:
+seihou config set agent.assist.provider codex-cli --global
+seihou config set agent.assist.model gpt-5-mini --global
+
+# A strong model just for `run`, in this project only:
+seihou config set agent.run.model claude-opus-4-8
+```
+
+Configuration is hierarchical: a project's local `.seihou/config.dhall`
+overrides the user's global `~/.config/seihou/config.dhall`. A local value wins
+over any global value even when the global value is more specific — a local
+`agent.model` beats a global `agent.run.model`. Within a single scope, the more
+specific per-command key wins over the shared default key.
+
+Resolution order is (highest precedence first):
 
 1. Subcommand `--provider` / `--model`
 2. Parent `--provider` / `--model`
 3. `SEIHOU_AGENT_PROVIDER` / `SEIHOU_AGENT_MODEL`
-4. Local `.seihou/config.dhall`
-5. Global `~/.config/seihou/config.dhall`
-6. Built-in defaults
+4. Local `agent.<command>.provider` / `agent.<command>.model`
+5. Local `agent.provider` / `agent.model`
+6. Global `agent.<command>.provider` / `agent.<command>.model`
+7. Global `agent.provider` / `agent.model`
+8. Built-in defaults: provider `claude-cli`, no explicit model
+
+### Inspecting resolved configuration
+
+`seihou agent config` prints the provider and model each agent command resolves
+to, labelling the source of every value so you can see exactly why a command
+uses what it does:
+
+```text
+$ seihou agent config
+Resolved agent provider and model per command
+(highest-precedence source wins; see precedence list below)
+
+  assist      provider  codex-cli        [global: agent.assist.provider]
+              model     gpt-5-mini       [global: agent.assist.model]
+  bootstrap   provider  claude-cli       [built-in default]
+              model     claude-sonnet-5  [global: agent.model]
+  setup       provider  claude-cli       [built-in default]
+              model     claude-sonnet-5  [global: agent.model]
+  run         provider  claude-cli       [built-in default]
+              model     claude-opus-4-8  [local: agent.run.model]
+  prompt run  provider  claude-cli       [built-in default]
+              model     claude-sonnet-5  [global: agent.model]
+```
+
+The command is read-only; it never changes configuration. Set values with
+`seihou config set agent.<command>.model ...`. Because it reflects the live
+environment, `SEIHOU_AGENT_*` variables set in your shell also appear in the
+resolved output.
 
 ## Discovering models
 

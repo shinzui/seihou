@@ -142,14 +142,35 @@ seihou run haskell-base
 | `agent.provider` | `SEIHOU_AGENT_PROVIDER` | `claude-cli`, `codex-cli`, `anthropic`, `openai` |
 | `agent.model` | `SEIHOU_AGENT_MODEL` | Any provider-specific model name or alias |
 
+Each command can also override the provider and model independently with a
+per-command key, `agent.<command>.provider` or `agent.<command>.model`, where
+`<command>` is one of `assist`, `bootstrap`, `setup`, `run`, or `prompt-run`.
+For example, `agent.assist.model` applies only to `seihou agent assist`, while
+`agent.model` remains the shared default for any command without its own key.
+
 Agent provider resolution uses this order, with the first non-blank value winning:
 
 1. Subcommand CLI flag: `seihou agent assist --provider ... --model ...`
 2. Parent CLI flag: `seihou agent --provider ... --model ... assist`
 3. Environment variables: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`
-4. Local project config: `.seihou/config.dhall`
-5. Global config: `~/.config/seihou/config.dhall`
-6. Built-in defaults: provider `claude-cli`, no explicit model
+4. Local project config: `agent.<command>.provider` / `agent.<command>.model`
+5. Local project config: `agent.provider` / `agent.model`
+6. Global config: `agent.<command>.provider` / `agent.<command>.model`
+7. Global config: `agent.provider` / `agent.model`
+8. Built-in defaults: provider `claude-cli`, no explicit model
+
+The hierarchy is scope-first: any value from the local project config
+(`.seihou/config.dhall`) overrides any value from the global config
+(`~/.config/seihou/config.dhall`), so a project can always override a global
+default — even a local shared `agent.model` beats a global per-command
+`agent.run.model`. Within a single scope, the more specific per-command key
+wins over the shared default key.
+
+For example, with global `agent.model = claude-sonnet-5` and local
+`agent.run.model = claude-opus-4-8`, `seihou agent run` uses `claude-opus-4-8`
+(local per-command) while `seihou agent setup` uses `claude-sonnet-5` (global
+default). Run `seihou agent config` to see the resolved provider and model for
+every command with the winning source labelled.
 
 Namespace config, context config, parent bindings, module defaults, and interactive variable prompts are not part of agent provider resolution. They still apply to blueprint variables and module variables that `seihou agent run` resolves before rendering its prompt.
 
