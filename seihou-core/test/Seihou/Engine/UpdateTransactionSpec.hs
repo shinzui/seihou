@@ -278,7 +278,8 @@ spec = do
                   files = candidate.files,
                   applications = candidate.applications,
                   recipe = candidate.recipe,
-                  blueprint = candidate.blueprint
+                  blueprint = candidate.blueprint,
+                  blueprintMigrations = candidate.blueprintMigrations
                 }
         setUpdateTransactionExpectedManifest transaction finalManifest `shouldReturn` Right ()
         Directory.createDirectoryIfMissing True (projectRoot </> ".seihou")
@@ -373,7 +374,8 @@ manifestWithFiles fileRecords =
           files = fileRecords,
           applications = manifest.applications,
           recipe = manifest.recipe,
-          blueprint = manifest.blueprint
+          blueprint = manifest.blueprint,
+          blueprintMigrations = manifest.blueprintMigrations
         }
 
 fileRecord :: Text -> Maybe BaselineRef -> [ApplicationId] -> FileRecord

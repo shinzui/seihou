@@ -17,6 +17,7 @@ import Seihou.Core.Migration
 import Seihou.Core.Types
   ( ApplicationId (..),
     AppliedBlueprint (..),
+    AppliedBlueprintMigration (..),
     AppliedComposition (..),
     AppliedInstanceState (..),
     AppliedModule (..),
@@ -130,6 +131,17 @@ mkBlueprint name mver baselines noBL prompt =
 withManifestBlueprint :: Maybe AppliedBlueprint -> Manifest -> Manifest
 withManifestBlueprint mb m = m {blueprint = mb}
 
+mkBlueprintMigrationReceipt :: Text -> Maybe Text -> Text -> Text -> AppliedBlueprintMigration
+mkBlueprintMigrationReceipt blueprintName artifactVersion fromVersion toVersion =
+  AppliedBlueprintMigration
+    { name = ModuleName blueprintName,
+      blueprintVersion = artifactVersion,
+      fromVersion = fromVersion,
+      toVersion = toVersion,
+      appliedAt = fixedTime,
+      agentSessionId = Nothing
+    }
+
 spec :: Spec
 spec = describe "formatStatus" $ do
   describe "blueprint provenance" $ do
@@ -193,6 +205,19 @@ spec = describe "formatStatus" $ do
           out = formatStatus False manifest [] Nothing []
       out `shouldSatisfy` T.isInfixOf "Blueprint: pure-prompt (applied"
       out `shouldSatisfy` T.isInfixOf "  Baseline: (none declared)"
+
+  describe "blueprint migration receipts" $ do
+    it "omits the section for an empty ledger" $ do
+      let out = formatStatus False (mkManifest []) [] Nothing []
+      out `shouldNotSatisfy` T.isInfixOf "Blueprint migrations:"
+
+    it "renders blueprint name, artifact version, exact edge, and timestamp" $ do
+      let receipt = mkBlueprintMigrationReceipt "payments" (Just "0.4.0") "1.0.0" "2.0.0"
+          manifest = (mkManifest []) {blueprintMigrations = [receipt]}
+          out = formatStatus False manifest [] Nothing []
+      out `shouldSatisfy` T.isInfixOf "Blueprint migrations:"
+      out `shouldSatisfy` T.isInfixOf "payments v0.4.0: 1.0.0 -> 2.0.0"
+      out `shouldSatisfy` T.isInfixOf "2026-04-15 10:00 UTC"
 
   it "all modules clean: no remediation, no Recommended actions block" $ do
     let am = mkApplied "demo" (Just "1.0.0")

@@ -786,7 +786,8 @@ buildFinalManifest now plan filesManifest completedReceipts =
       files = filesManifest.files,
       applications = foldl' (flip replaceAppliedComposition) filesManifest.applications finalApplications,
       recipe = updatedRecipe,
-      blueprint = filesManifest.blueprint
+      blueprint = filesManifest.blueprint,
+      blueprintMigrations = filesManifest.blueprintMigrations
     }
   where
     finalApplications = map finalizeApplication plan.plannedApplications

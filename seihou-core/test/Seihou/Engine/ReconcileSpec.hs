@@ -267,7 +267,8 @@ withFile path fileRecord manifest =
       files = Map.insert path fileRecord manifest.files,
       applications = manifest.applications,
       recipe = manifest.recipe,
-      blueprint = manifest.blueprint
+      blueprint = manifest.blueprint,
+      blueprintMigrations = manifest.blueprintMigrations
     }
 
 record :: Text -> Maybe BaselineRef -> [ApplicationId] -> FileRecord

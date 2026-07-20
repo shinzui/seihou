@@ -1,5 +1,6 @@
 module Seihou.CLI.StatusRender
   ( formatStatus,
+    formatBlueprintMigrations,
     ModuleAdvice (..),
   )
 where
@@ -20,6 +21,7 @@ import Seihou.CLI.VersionCompare
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
   ( AppliedBlueprint (..),
+    AppliedBlueprintMigration (..),
     AppliedComposition (..),
     AppliedInstanceState (..),
     AppliedModule (..),
@@ -60,6 +62,7 @@ formatStatus color manifest tracked mEntries pendings =
     ["Seihou Status:", ""]
       ++ recipeSection manifest
       ++ blueprintSection manifest
+      ++ formatBlueprintMigrations manifest.blueprintMigrations
       ++ appliedSection color manifest mEntries pendings
       ++ trackedSection color tracked
       ++ varsSection manifest
@@ -110,6 +113,27 @@ blueprintSection manifest = case manifest.blueprint of
           Nothing -> []
           Just p -> ["  Prompt: \"" <> p <> "\""]
      in [header, baselineLine] ++ promptLines ++ [""]
+
+-- | Render durable agent-guided migration receipts. An empty ledger adds no
+-- output; each populated row includes the artifact, exact edge, and timestamp.
+formatBlueprintMigrations :: [AppliedBlueprintMigration] -> [Text]
+formatBlueprintMigrations [] = []
+formatBlueprintMigrations receipts =
+  "Blueprint migrations:"
+    : map renderReceipt receipts
+      <> [""]
+  where
+    renderReceipt receipt =
+      "  "
+        <> receipt.name.unModuleName
+        <> maybe "" (\version -> " v" <> version) receipt.blueprintVersion
+        <> ": "
+        <> receipt.fromVersion
+        <> " -> "
+        <> receipt.toVersion
+        <> " (applied "
+        <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" receipt.appliedAt)
+        <> ")"
 
 -- | Render the baseline body for the blueprint section. Three cases:
 -- @--no-baseline@ was passed, the blueprint declared no baseline at

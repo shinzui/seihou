@@ -302,7 +302,8 @@ replaceManifestFiles manifest nextFiles =
       files = nextFiles,
       applications = manifest.applications,
       recipe = manifest.recipe,
-      blueprint = manifest.blueprint
+      blueprint = manifest.blueprint,
+      blueprintMigrations = manifest.blueprintMigrations
     }
 
 writeBaselineBlob :: FilePath -> Text -> IO BaselineRef

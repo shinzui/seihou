@@ -375,7 +375,8 @@ spec = do
                   files = Map.empty,
                   applications = [previous],
                   recipe = Nothing,
-                  blueprint = Nothing
+                  blueprint = Nothing,
+                  blueprintMigrations = []
                 }
             catalog = CandidateCatalog (projectRoot </> "search") Map.empty Map.empty
             candidates = [(instanceOne, candidate, "/candidate/shared"), (instanceTwo, candidate, "/candidate/shared")]
@@ -507,7 +508,8 @@ prepareRecipeUpdateFixture root = do
             files = Map.empty,
             applications = [app],
             recipe = Just (AppliedRecipe "stack" (Just "1.0.0") testTime),
-            blueprint = Nothing
+            blueprint = Nothing,
+            blueprintMigrations = []
           }
       sourceUrl = T.pack remote
   createDirectoryIfMissing True installedOne
@@ -682,7 +684,8 @@ manifestForApplications applicationRecords fileRecords =
           files = fileRecords,
           applications = applicationRecords,
           recipe = base.recipe,
-          blueprint = base.blueprint
+          blueprint = base.blueprint,
+          blueprintMigrations = base.blueprintMigrations
         }
 
 breakCandidatePublication :: UpdatePlan -> UpdatePlan
@@ -727,7 +730,8 @@ withoutApplications manifest =
       files = manifest.files,
       applications = [],
       recipe = manifest.recipe,
-      blueprint = manifest.blueprint
+      blueprint = manifest.blueprint,
+      blueprintMigrations = manifest.blueprintMigrations
     }
 
 testTime :: UTCTime

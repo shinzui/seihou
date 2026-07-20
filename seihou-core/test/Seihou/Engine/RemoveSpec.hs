@@ -212,7 +212,8 @@ spec = do
                 files = Map.insert "other.txt" otherRec base.files,
                 applications = base.applications,
                 recipe = base.recipe,
-                blueprint = base.blueprint
+                blueprint = base.blueprint,
+                blueprintMigrations = base.blueprintMigrations
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]
           plan = RemovalPlan {targetModule = modName, files = [RemovalSafe "mine.txt"]}
@@ -394,7 +395,8 @@ spec = do
                 files = Map.insert "other.txt" otherRec base.files,
                 applications = base.applications,
                 recipe = base.recipe,
-                blueprint = base.blueprint
+                blueprint = base.blueprint,
+                blueprintMigrations = base.blueprintMigrations
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "mine.txt" RFSafe]

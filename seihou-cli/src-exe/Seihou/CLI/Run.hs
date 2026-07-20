@@ -425,7 +425,8 @@ handleRun runOpts = do
                                         files = ownedFiles,
                                         applications = replaceAppliedComposition appliedComposition manifest.applications,
                                         recipe = appliedRecipe,
-                                        blueprint = manifest.blueprint
+                                        blueprint = manifest.blueprint,
+                                        blueprintMigrations = manifest.blueprintMigrations
                                       }
                               writeManifest newManifest
                               pure (Right newManifest)

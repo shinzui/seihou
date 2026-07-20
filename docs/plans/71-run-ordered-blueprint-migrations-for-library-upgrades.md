@@ -58,9 +58,9 @@ second on the next invocation.
   output, and core tests. `cabal test seihou-core-test` passed all 1,018 tests;
   `cabal build all` and local evaluation of `schema/BlueprintMigration.dhall` also
   succeeded.
-- [ ] Milestone 2: add the manifest-v5 applied-blueprint-migration ledger, pure
+- [x] (2026-07-20 14:29Z) Milestone 2: added the manifest-v5 applied-blueprint-migration ledger, pure
   upsert/query functions, JSON compatibility, and status formatting with core and
-  CLI tests.
+  CLI tests. `cabal test seihou-core-test seihou-cli-test` passed both suites.
 - [ ] Milestone 3: extract the reusable blueprint variable/reference preparation
   from the existing runner and add testable pending-step selection and sequential
   orchestration to `seihou-cli-internal`.
@@ -88,6 +88,15 @@ second on the next invocation.
   Evidence: those paths were clean in the initial `git status --short`, then
   acquired functional diffs unrelated to blueprint migrations. They remain
   unstaged and must be preserved.
+
+- Observation: The concurrent plan-70 commit `08c84f3` unintentionally included
+  Milestone 2's already-written `seihou-core/src/Seihou/Core/Types.hs` and
+  `seihou-core/src/Seihou/Manifest/Types.hs` changes alongside its own agent-model
+  work.
+  Evidence: `git log -1 --stat 08c84f3` lists both core files, while the commit
+  carries plan-70's ExecPlan and Intention trailers. Rewriting that user-owned
+  commit would be more disruptive, so the remaining Milestone 2 implementation,
+  tests, and this provenance note are committed under ExecPlan 71.
 
 
 ## Decision Log
@@ -205,6 +214,14 @@ second on the next invocation.
   Dhall integrity proof still occur together in Milestone 5 as planned.
   Date: 2026-07-20.
 
+- Decision: `writeAppliedBlueprintMigration` upgrades an older decoded manifest's
+  `version` to `currentManifestVersion` when adding the first v5 receipt.
+  Rationale: Writing the v5-only `blueprintMigrations` key while retaining a v4
+  version number would mislabel the persisted schema. Reads remain non-mutating:
+  a v4 manifest without receipts still decodes with `version = 4` and an empty
+  ledger until a receipt is actually recorded.
+  Date: 2026-07-20.
+
 
 ## Outcomes & Retrospective
 
@@ -219,6 +236,14 @@ Compare the result against the original purpose.
   new entries decode and validate, and generated blueprints expose the typed empty
   authoring surface. The complete core suite and full workspace build pass. The
   schema commit is local pending publication and pinning in Milestone 5.
+
+- Milestone 2 added a version-5 exact-edge receipt ledger with in-place upsert,
+  a query helper, backwards-compatible v4 decoding, filesystem-backed recording,
+  and status output that disappears when the ledger is empty. Tests prove that
+  normal blueprint provenance plus module, application, file, and recipe state
+  survives receipt writes. Both core and CLI suites pass. Two foundational source
+  files landed in concurrent commit `08c84f3`; the remaining milestone work lands
+  in the dedicated ExecPlan 71 commit.
 
 
 ## Context and Orientation

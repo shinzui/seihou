@@ -22,10 +22,21 @@ fixedTime = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-0
 fixedTime2 :: UTCTime
 fixedTime2 = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-03-01T11:00:00Z"
 
+mkBlueprintMigrationReceipt :: Text -> Text -> Text -> UTCTime -> AppliedBlueprintMigration
+mkBlueprintMigrationReceipt blueprintName fromVersion toVersion appliedAt =
+  AppliedBlueprintMigration
+    { name = ModuleName blueprintName,
+      blueprintVersion = Just "0.4.0",
+      fromVersion = fromVersion,
+      toVersion = toVersion,
+      appliedAt = appliedAt,
+      agentSessionId = Nothing
+    }
+
 -- | Helper to set modules on a Manifest without ambiguous record update.
 withManifestModules :: [AppliedModule] -> Manifest -> Manifest
 withManifestModules mods m =
-  Manifest m.version m.genAt mods m.vars m.files m.applications m.recipe m.blueprint
+  Manifest m.version m.genAt mods m.vars m.files m.applications m.recipe m.blueprint m.blueprintMigrations
 
 spec :: Spec
 spec = do
@@ -33,13 +44,14 @@ spec = do
     it "creates a manifest with the current version" $ do
       let m = emptyManifest fixedTime
       m.version `shouldBe` currentManifestVersion
-      m.version `shouldBe` 4
+      m.version `shouldBe` 5
 
     it "creates a manifest with no modules, vars, or files" $ do
       let m = emptyManifest fixedTime
       m.modules `shouldBe` []
       m.vars `shouldBe` Map.empty
       m.files `shouldBe` Map.empty
+      m.blueprintMigrations `shouldBe` []
 
   describe "JSON roundtrip" $ do
     it "roundtrips an empty manifest" $ do
@@ -76,7 +88,8 @@ spec = do
                 files = base.files,
                 applications = base.applications,
                 recipe = Nothing,
-                blueprint = Nothing
+                blueprint = Nothing,
+                blueprintMigrations = []
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -135,7 +148,8 @@ spec = do
                     ],
                 applications = [],
                 recipe = Nothing,
-                blueprint = Nothing
+                blueprint = Nothing,
+                blueprintMigrations = []
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -325,7 +339,75 @@ spec = do
       m1.blueprint `shouldBe` Just ab1
       m2.blueprint `shouldBe` Just ab2
 
+  describe "AppliedBlueprintMigration" $ do
+    it "round-trips a fully populated receipt through JSON" $ do
+      let receipt =
+            (mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime)
+              { agentSessionId = Just "session-123"
+              }
+      Aeson.eitherDecode (Aeson.encode receipt) `shouldBe` Right receipt
+
+    it "round-trips a version-5 manifest containing a receipt" $ do
+      let receipt = mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime
+          manifest = (emptyManifest fixedTime) {blueprintMigrations = [receipt]}
+      manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
+
+    it "replaces the same exact edge in place and appends a different edge" $ do
+      let first = mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime
+          unrelated = mkBlueprintMigrationReceipt "payments" "2.5.0" "3.0.0" fixedTime
+          replacement =
+            (mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime2)
+              { blueprintVersion = Just "0.5.0",
+                agentSessionId = Just "rerun"
+              }
+          manifest1 = writeAppliedBlueprintMigration unrelated (writeAppliedBlueprintMigration first (emptyManifest fixedTime))
+          manifest2 = writeAppliedBlueprintMigration replacement manifest1
+      manifest2.blueprintMigrations `shouldBe` [replacement, unrelated]
+      hasAppliedBlueprintMigration "payments" "1.0.0" "2.0.0" manifest2 `shouldBe` True
+      hasAppliedBlueprintMigration "payments" "2.0.0" "3.0.0" manifest2 `shouldBe` False
+
+    it "preserves modules, applications, files, recipe, and normal blueprint provenance" $ do
+      let appliedModule = AppliedModule "base" emptyParentVars "/installed/base" (Just "1.0.0") fixedTime Nothing
+          application =
+            AppliedComposition
+              { applicationId = ApplicationId "app-base",
+                target = AppliedModuleTarget "base",
+                targetSource = "/installed/base",
+                targetVersion = Just "1.0.0",
+                additionalModules = [],
+                namespace = Nothing,
+                context = Nothing,
+                instances = [],
+                commandReceipts = Map.empty,
+                appliedAt = fixedTime
+              }
+          fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty
+          recipe = AppliedRecipe "recipe" (Just "1.0.0") fixedTime
+          normalBlueprint = AppliedBlueprint "payments" (Just "0.4.0") fixedTime [] False Nothing Nothing
+          seed =
+            (emptyManifest fixedTime)
+              { modules = [appliedModule],
+                applications = [application],
+                files = Map.singleton "README.md" fileRecord,
+                recipe = Just recipe,
+                blueprint = Just normalBlueprint
+              }
+          updated = writeAppliedBlueprintMigration (mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime) seed
+      updated.modules `shouldBe` seed.modules
+      updated.applications `shouldBe` seed.applications
+      updated.files `shouldBe` seed.files
+      updated.recipe `shouldBe` seed.recipe
+      updated.blueprint `shouldBe` seed.blueprint
+
   describe "schema back-compat" $ do
+    it "decodes a v4 manifest with no blueprintMigrations key as an empty ledger" $ do
+      let json = "{\"version\":4,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},\"applications\":[]}"
+      case manifestFromJSON json of
+        Right manifest -> do
+          manifest.version `shouldBe` 4
+          manifest.blueprintMigrations `shouldBe` []
+        Left err -> expectationFailure ("failed to parse v4 manifest: " <> err)
+
     -- A pre-EP-32 (schema v2) manifest has no @blueprint@ key. The
     -- decoder must read it as 'Nothing' regardless of the version
     -- field, so a pre-bump project does not refuse to load after the
@@ -394,7 +476,7 @@ spec = do
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
       let base = emptyManifest fixedTime
-          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files, applications = base.applications, recipe = Nothing, blueprint = Nothing}
+          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files, applications = base.applications, recipe = Nothing, blueprint = Nothing, blueprintMigrations = []}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"

@@ -65,7 +65,8 @@ manifestWithFiles t recs =
           files = recs,
           applications = base.applications,
           recipe = base.recipe,
-          blueprint = base.blueprint
+          blueprint = base.blueprint,
+          blueprintMigrations = base.blueprintMigrations
         }
 
 -- | Extract planned files from operations for computeDiff.
