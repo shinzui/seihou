@@ -94,5 +94,6 @@ precedenceLegend =
       "  5. local  .seihou/config.dhall          agent.{provider,model}",
       "  6. global ~/.config/seihou/config.dhall  agent.<command>.{provider,model}",
       "  7. global ~/.config/seihou/config.dhall  agent.{provider,model}",
-      "  8. built-in default: provider claude-cli, model unset"
+      "  8. built-in default: provider claude-cli; model pinned per provider",
+      "     (claude-cli -> claude-opus-4-8, codex-cli -> gpt-5.6-terra)"
     ]

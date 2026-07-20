@@ -4,6 +4,8 @@ module Seihou.Manifest.Types
     manifestToJSON,
     manifestFromJSON,
     writeAppliedBlueprint,
+    writeAppliedBlueprintMigration,
+    hasAppliedBlueprintMigration,
   )
 where
 
@@ -35,8 +37,11 @@ import Seihou.Prelude hiding ((.=))
 -- and 'FileRecord' gained generated-baseline and application ownership.
 -- Older manifests remain readable because every new field has an empty
 -- or absent default.
+--
+-- Bumped from 4 to 5 when 'Manifest' gained the durable
+-- @blueprintMigrations@ receipt ledger. A missing ledger decodes as empty.
 currentManifestVersion :: Int
-currentManifestVersion = 4
+currentManifestVersion = 5
 
 -- | Create an empty manifest with the given timestamp.
 emptyManifest :: UTCTime -> Manifest
@@ -49,7 +54,8 @@ emptyManifest now =
       files = Map.empty,
       applications = [],
       recipe = Nothing,
-      blueprint = Nothing
+      blueprint = Nothing,
+      blueprintMigrations = []
     }
 
 -- | Record an applied-blueprint provenance on a manifest, replacing any
@@ -66,8 +72,46 @@ writeAppliedBlueprint ab m =
       files = m.files,
       applications = m.applications,
       recipe = m.recipe,
-      blueprint = Just ab
+      blueprint = Just ab,
+      blueprintMigrations = m.blueprintMigrations
     }
+
+-- | Insert or replace one exact blueprint migration receipt. Replacement is
+-- performed in place, while adding a v5-only receipt upgrades the manifest
+-- version and preserves every unrelated field.
+writeAppliedBlueprintMigration :: AppliedBlueprintMigration -> Manifest -> Manifest
+writeAppliedBlueprintMigration receipt manifest =
+  Manifest
+    { version = currentManifestVersion,
+      genAt = manifest.genAt,
+      modules = manifest.modules,
+      vars = manifest.vars,
+      files = manifest.files,
+      applications = manifest.applications,
+      recipe = manifest.recipe,
+      blueprint = manifest.blueprint,
+      blueprintMigrations = upsert manifest.blueprintMigrations
+    }
+  where
+    sameEdge existing =
+      existing.name == receipt.name
+        && existing.fromVersion == receipt.fromVersion
+        && existing.toVersion == receipt.toVersion
+
+    upsert receipts
+      | any sameEdge receipts = map (\existing -> if sameEdge existing then receipt else existing) receipts
+      | otherwise = receipts <> [receipt]
+
+-- | Whether one exact blueprint migration edge already has a receipt.
+hasAppliedBlueprintMigration :: ModuleName -> Text -> Text -> Manifest -> Bool
+hasAppliedBlueprintMigration blueprintName fromVersion toVersion manifest =
+  any
+    ( \receipt ->
+        receipt.name == blueprintName
+          && receipt.fromVersion == fromVersion
+          && receipt.toVersion == toVersion
+    )
+    manifest.blueprintMigrations
 
 -- | Encode a manifest to JSON bytes.
 manifestToJSON :: Manifest -> LBS.ByteString
@@ -87,7 +131,8 @@ instance ToJSON Manifest where
         "modules" .= m.modules,
         "variables" .= varsToJSON m.vars,
         "files" .= filesToJSON m.files,
-        "applications" .= m.applications
+        "applications" .= m.applications,
+        "blueprintMigrations" .= m.blueprintMigrations
       ]
         ++ maybe [] (\r -> ["recipe" .= r]) m.recipe
         ++ maybe [] (\b -> ["blueprint" .= b]) m.blueprint
@@ -107,6 +152,7 @@ instance FromJSON Manifest where
           <*> o Aeson..:? "applications" Aeson..!= []
           <*> o Aeson..:? "recipe"
           <*> o Aeson..:? "blueprint"
+          <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
 
 instance ToJSON AppliedTarget where
   toJSON (AppliedModuleTarget name) =
@@ -238,6 +284,27 @@ instance FromJSON AppliedBlueprint where
       <*> (map ModuleName <$> o Aeson..:? "baselineModules" Aeson..!= [])
       <*> o Aeson..:? "noBaseline" Aeson..!= False
       <*> o Aeson..:? "userPrompt"
+      <*> o Aeson..:? "agentSessionId"
+
+instance ToJSON AppliedBlueprintMigration where
+  toJSON receipt =
+    Aeson.object $
+      [ "name" .= receipt.name.unModuleName,
+        "from" .= receipt.fromVersion,
+        "to" .= receipt.toVersion,
+        "appliedAt" .= receipt.appliedAt
+      ]
+        ++ maybe [] (\version -> ["version" .= version]) receipt.blueprintVersion
+        ++ maybe [] (\sessionId -> ["agentSessionId" .= sessionId]) receipt.agentSessionId
+
+instance FromJSON AppliedBlueprintMigration where
+  parseJSON = Aeson.withObject "AppliedBlueprintMigration" $ \o ->
+    AppliedBlueprintMigration
+      <$> (ModuleName <$> o .: "name")
+      <*> o Aeson..:? "version"
+      <*> o .: "from"
+      <*> o .: "to"
+      <*> o .: "appliedAt"
       <*> o Aeson..:? "agentSessionId"
 
 instance ToJSON AppliedModule where

@@ -18,7 +18,14 @@ prompt as a completion request and print one response.
 | `anthropic` | `ANTHROPIC_API_KEY` or `ANTHROPIC_KEY` | Calls the Anthropic Messages API directly (non-interactive). |
 | `openai` | `OPENAI_API_KEY` or `OPENAI_KEY` | Calls the OpenAI Chat Completions API directly (non-interactive). |
 
-The default provider is `claude-cli` with no explicit model.
+The default provider is `claude-cli`. When you configure no model, Seihou pins a
+deterministic default per provider so it always passes an explicit model to the
+local CLI rather than inheriting whatever model the ambient `claude` or `codex`
+session happens to have active: `claude-cli` defaults to `claude-opus-4-8` and
+`codex-cli` defaults to `gpt-5.6-terra`. This keeps CLI runs reproducible and
+avoids accidentally launching a different, possibly token-hungry model that
+another session selected. Override either default with a `--model` flag or an
+`agent.model` / `agent.<command>.model` config key.
 
 ## Selecting a provider
 
@@ -72,7 +79,7 @@ Resolution order is (highest precedence first):
 5. Local `agent.provider` / `agent.model`
 6. Global `agent.<command>.provider` / `agent.<command>.model`
 7. Global `agent.provider` / `agent.model`
-8. Built-in defaults: provider `claude-cli`, no explicit model
+8. Built-in defaults: provider `claude-cli`; model pinned per provider (`claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`)
 
 ### Inspecting resolved configuration
 

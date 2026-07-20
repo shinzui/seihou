@@ -17,7 +17,7 @@ seihou agent [--debug] [--provider PROVIDER] [--model MODEL] <SUBCOMMAND> [OPTIO
 | `--provider PROVIDER` | Use `claude-cli`, `codex-cli`, `anthropic`, or `openai` for this invocation |
 | `--model MODEL` | Use a provider-specific model name or alias for this invocation; run `seihou agent models` to list known choices |
 
-The default provider is `claude-cli` with no explicit model, which lets the local `claude` command choose its own default. Provider and model options may appear on the parent command or on the subcommand:
+The default provider is `claude-cli`. When no model is configured, Seihou pins a deterministic per-provider default (`claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`) and always passes it explicitly, so a CLI session never inherits whatever model another `claude`/`codex` session left active. Provider and model options may appear on the parent command or on the subcommand:
 
 ```sh
 seihou agent --provider codex-cli --model gpt-5 assist "create a module"
@@ -31,8 +31,8 @@ Provider and model values are resolved from CLI flags, environment variables, pe
 
 | Provider | Backing implementation | Requirements | Notes |
 |----------|-------------------------|--------------|-------|
-| `claude-cli` | interactive `claude` | `claude` installed, on `PATH`, and authenticated | Starts a Claude Code session with the rendered Seihou prompt and allowed tool flags |
-| `codex-cli` | interactive `codex` | `codex` installed, on `PATH`, and authenticated | Starts a Codex session with the rendered Seihou prompt, workspace-write sandboxing, and on-request approvals |
+| `claude-cli` | interactive `claude` | `claude` installed, on `PATH`, and authenticated | Starts a Claude Code session with the rendered Seihou prompt and allowed tool flags. Defaults to `claude-opus-4-8` when no model is configured; the model is always passed explicitly so the session is deterministic |
+| `codex-cli` | interactive `codex` | `codex` installed, on `PATH`, and authenticated | Starts a Codex session with the rendered Seihou prompt, workspace-write sandboxing, and on-request approvals. Defaults to `gpt-5.6-terra` when no model is configured; the model is always passed explicitly so the session is deterministic |
 | `anthropic` | Anthropic Messages API | `ANTHROPIC_API_KEY` or `ANTHROPIC_KEY` | Defaults to `claude-sonnet-4-6` when no model is configured |
 | `openai` | OpenAI Chat Completions API | `OPENAI_API_KEY` or `OPENAI_KEY` | Defaults to `gpt-4o-mini` when no model is configured |
 

@@ -12,6 +12,14 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **Deterministic CLI provider defaults.** When no model is configured, the
+  local CLI providers now pin a specific model instead of deferring to the
+  ambient `claude` / `codex` session: `claude-cli` defaults to `claude-opus-4-8`
+  and `codex-cli` defaults to `gpt-5.6-terra`. Seihou always passes the model
+  explicitly, so an agent run never accidentally inherits a different model
+  another session selected. Override with `--model` or an `agent.model` /
+  `agent.<command>.model` config key.
+
 - **Per-command agent provider and model.** Each agent command can now use a
   different provider and model through configuration. Set
   `agent.<command>.provider` / `agent.<command>.model` (for `assist`,

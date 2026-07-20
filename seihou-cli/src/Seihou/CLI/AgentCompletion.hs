@@ -5,6 +5,7 @@ module Seihou.CLI.AgentCompletion
     AgentModelConfig (..),
     AgentCompletionRequest (..),
     defaultAgentModelConfig,
+    defaultModelForProvider,
     providerFromText,
     providerToText,
     buildAgentCompletionRequest,
@@ -58,6 +59,19 @@ defaultAgentModelConfig =
     { agentProvider = AgentProviderClaudeCli,
       agentModel = Nothing
     }
+
+-- | The deterministic default model for a provider when the user has configured
+-- none. The two local CLI providers pin a specific model so a @seihou agent@
+-- session never inherits whatever model the ambient @claude@ or @codex@ session
+-- happens to have active — that would be non-deterministic and could silently
+-- run a token-hungry model another session left selected. The API providers
+-- return 'Nothing' here; they already send an explicit model chosen in
+-- 'buildBaikaiModel', so they are deterministic without a pinned default.
+defaultModelForProvider :: AgentProvider -> Maybe Text
+defaultModelForProvider AgentProviderClaudeCli = Just "claude-opus-4-8"
+defaultModelForProvider AgentProviderCodexCli = Just "gpt-5.6-terra"
+defaultModelForProvider AgentProviderAnthropic = Nothing
+defaultModelForProvider AgentProviderOpenAI = Nothing
 
 providerFromText :: Text -> Either Text AgentProvider
 providerFromText raw =

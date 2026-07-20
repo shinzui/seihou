@@ -45,6 +45,7 @@ module Seihou.Core.Types
     AppliedModule (..),
     AppliedRecipe (..),
     AppliedBlueprint (..),
+    AppliedBlueprintMigration (..),
     FileRecord (..),
     SHA256 (..),
     DiffResult (..),
@@ -471,7 +472,8 @@ data Manifest = Manifest
     files :: Map FilePath FileRecord,
     applications :: [AppliedComposition],
     recipe :: Maybe AppliedRecipe,
-    blueprint :: Maybe AppliedBlueprint
+    blueprint :: Maybe AppliedBlueprint,
+    blueprintMigrations :: [AppliedBlueprintMigration]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -556,6 +558,19 @@ data AppliedBlueprint = AppliedBlueprint
     baselineModules :: [ModuleName],
     noBaseline :: Bool,
     userPrompt :: Maybe Text,
+    agentSessionId :: Maybe Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A durable receipt for one successfully completed agent-guided blueprint
+-- migration edge. Exact-edge identity is the blueprint 'name' together with
+-- 'fromVersion' and 'toVersion'; the remaining fields are audit metadata.
+data AppliedBlueprintMigration = AppliedBlueprintMigration
+  { name :: ModuleName,
+    blueprintVersion :: Maybe Text,
+    fromVersion :: Text,
+    toVersion :: Text,
+    appliedAt :: UTCTime,
     agentSessionId :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)

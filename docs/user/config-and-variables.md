@@ -157,7 +157,7 @@ Agent provider resolution uses this order, with the first non-blank value winnin
 5. Local project config: `agent.provider` / `agent.model`
 6. Global config: `agent.<command>.provider` / `agent.<command>.model`
 7. Global config: `agent.provider` / `agent.model`
-8. Built-in defaults: provider `claude-cli`, no explicit model
+8. Built-in defaults: provider `claude-cli`; model pinned per provider so the local CLI providers are deterministic — `claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`
 
 The hierarchy is scope-first: any value from the local project config
 (`.seihou/config.dhall`) overrides any value from the global config

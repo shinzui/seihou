@@ -79,12 +79,16 @@ Precedence, highest first:
   5. local  .seihou/config.dhall        agent.{provider,model}
   6. global ~/.config/seihou/config.dhall agent.<command>.{provider,model}
   7. global ~/.config/seihou/config.dhall agent.{provider,model}
-  8. built-in default: provider claude-cli, model unset
+  8. built-in default: provider claude-cli; model pinned per provider
+     (claude-cli -> claude-opus-4-8, codex-cli -> gpt-5.6-terra)
 ```
 
 Existing users who set only `agent.provider`/`agent.model`, or who pass only CLI flags,
-see no behavior change: those paths continue to resolve exactly as before. This plan is
-purely additive.
+see no behavior change in resolution order: those paths continue to resolve as before. The
+one intentional default change (see the 2026-07-20 follow-up in the Decision Log) is that
+the two local CLI providers now pin a deterministic default model instead of leaving it
+unset, so a `claude-cli`/`codex-cli` agent session never inherits whatever model the
+ambient `claude`/`codex` session has active.
 
 
 ## Progress
@@ -189,6 +193,22 @@ Record every decision made while working on the plan.
   resolution or provenance. `seihou agent config` is a read-only, agent-specific
   *resolution* view, discoverable alongside the commands it describes. It does not accept
   `set`; users still write values with `seihou config set`.
+  Date: 2026-07-20
+
+- Decision (2026-07-20 follow-up): For the two local CLI providers, the built-in default
+  model is no longer "unset" but a pinned value — `claude-cli` → `claude-opus-4-8`,
+  `codex-cli` → `gpt-5.6-terra`. Resolution now substitutes this pinned default whenever a
+  CLI provider resolves with no configured model, so `AgentModelConfig.agentModel` is never
+  `Nothing` for those providers and the interactive launcher always passes an explicit
+  `--model`.
+  Rationale: The user requires `claude-cli`/`codex-cli` runs to be deterministic. Without an
+  explicit model, the `claude`/`codex` binaries use whatever model the ambient session or
+  their own config has active, which risks silently running a different, possibly
+  token-hungry model that another session selected. The API providers (`anthropic`,
+  `openai`) already send an explicit model via `buildBaikaiModel`, so they keep their
+  existing defaults and `defaultModelForProvider` returns `Nothing` for them. Implemented as
+  `defaultModelForProvider` in `Seihou.CLI.AgentCompletion`, applied by
+  `applyProviderDefaultModel` in both resolvers in `Seihou.CLI.AgentConfig`.
   Date: 2026-07-20
 
 - Decision: Put the pure resolution and formatting logic in the library
@@ -917,3 +937,15 @@ The CLI module placement check `nix/check-cli-module-placement.sh` must still pa
 `Seihou.CLI.AgentConfigShow` is library-eligible (no `Options.Applicative`,
 `Data.FileEmbed`, `GitHash`, or `Paths_seihou_cli` import, and it does not import
 `Seihou.CLI.Commands`), so it belongs in the library, not the executable.
+
+Revision Note 2026-07-20 (post-completion follow-up): Added deterministic default models
+for the local CLI providers. `Seihou.CLI.AgentCompletion.defaultModelForProvider` pins
+`claude-cli` → `claude-opus-4-8` and `codex-cli` → `gpt-5.6-terra`; `applyProviderDefaultModel`
+in `Seihou.CLI.AgentConfig` substitutes it whenever a CLI provider resolves with no
+configured model, so those providers always resolve to a concrete model and the interactive
+launcher always passes an explicit `--model`. The API providers are unchanged. Updated the
+built-in-default legend (Purpose and `AgentConfigShow`), the Decision Log, the four user
+docs, and the CHANGELOG; added resolver tests asserting the pinned defaults and that the CLI
+providers never resolve to `Nothing`. Reason: the user requires `claude-cli`/`codex-cli`
+sessions to be deterministic so an agent run never inherits a token-hungry model left active
+by another session.

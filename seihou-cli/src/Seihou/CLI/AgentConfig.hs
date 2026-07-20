@@ -41,6 +41,7 @@ import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
     AgentProvider (..),
     defaultAgentModelConfig,
+    defaultModelForProvider,
     providerFromText,
   )
 import Seihou.CLI.Shared (formatConfigError)
@@ -218,12 +219,13 @@ resolveAgentModelConfig inputs = do
         candidate (Map.lookup agentProviderConfigKey inputs.globalConfig) SourceGlobalDefault
       ]
   let modelField =
-        resolveModel
-          [ candidate inputs.cliModel SourceCliSubcommand,
-            candidate inputs.envModel SourceEnv,
-            candidate (Map.lookup agentModelConfigKey inputs.localConfig) SourceLocalDefault,
-            candidate (Map.lookup agentModelConfigKey inputs.globalConfig) SourceGlobalDefault
-          ]
+        applyProviderDefaultModel provider.resolvedValue $
+          resolveModel
+            [ candidate inputs.cliModel SourceCliSubcommand,
+              candidate inputs.envModel SourceEnv,
+              candidate (Map.lookup agentModelConfigKey inputs.localConfig) SourceLocalDefault,
+              candidate (Map.lookup agentModelConfigKey inputs.globalConfig) SourceGlobalDefault
+            ]
   pure
     AgentModelConfig
       { agentProvider = provider.resolvedValue,
@@ -245,7 +247,20 @@ resolveAgentModelConfigFor c inputs = do
   provider <-
     (\p -> ResolvedAgentField p.resolvedValue p.resolvedSource)
       <$> resolveProvider (providerCandidates c inputs)
-  pure (provider, resolveModel (modelCandidates c inputs))
+  let model = applyProviderDefaultModel provider.resolvedValue (resolveModel (modelCandidates c inputs))
+  pure (provider, model)
+
+-- | When no model was configured (source is the built-in default), substitute
+-- the provider's deterministic default so the two local CLI providers always
+-- resolve to a concrete model instead of 'Nothing'. The source stays
+-- 'SourceBuiltinDefault' — the value is a built-in, just a non-empty one.
+applyProviderDefaultModel :: AgentProvider -> ResolvedAgentField (Maybe Text) -> ResolvedAgentField (Maybe Text)
+applyProviderDefaultModel prov field =
+  case field.resolvedValue of
+    Just _ -> field
+    Nothing -> case defaultModelForProvider prov of
+      Just m -> field {resolvedValue = Just m}
+      Nothing -> field
 
 providerCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentConfigSource)]
 providerCandidates c inputs =

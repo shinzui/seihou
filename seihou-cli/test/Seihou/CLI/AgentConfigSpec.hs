@@ -42,8 +42,21 @@ spec = do
               agentModel = Just "claude-opus-4-1"
             }
 
-    it "falls back to the Claude CLI default" $
-      resolveAgentModelConfig baseInputs `shouldBe` Right defaultAgentModelConfig
+    it "pins the deterministic claude-cli default model when nothing is set" $
+      resolveAgentModelConfig baseInputs
+        `shouldBe` Right
+          AgentModelConfig
+            { agentProvider = AgentProviderClaudeCli,
+              agentModel = Just "claude-opus-4-8"
+            }
+
+    it "pins the deterministic codex-cli default model when only the provider is set" $
+      resolveAgentModelConfig (baseInputs {cliProvider = Just "codex-cli"})
+        `shouldBe` Right
+          AgentModelConfig
+            { agentProvider = AgentProviderCodexCli,
+              agentModel = Just "gpt-5.6-terra"
+            }
 
     it "returns provider diagnostics for invalid provider text" $
       resolveAgentModelConfig (baseInputs {cliProvider = Just "llama"}) `shouldSatisfy` \case
@@ -109,9 +122,16 @@ spec = do
       providerOf AgentCmdAssist (baseInputs {cliProvider = Just "codex-cli", cliProviderFromSubcommand = False})
         `shouldBe` Right (AgentProviderCodexCli, SourceCliParent)
 
-    it "falls back to the built-in default with built-in provenance" $ do
+    it "falls back to the pinned CLI default model with built-in provenance" $ do
       providerOf AgentCmdRun baseInputs `shouldBe` Right (AgentProviderClaudeCli, SourceBuiltinDefault)
-      modelOf AgentCmdRun baseInputs `shouldBe` Right (Nothing, SourceBuiltinDefault)
+      modelOf AgentCmdRun baseInputs `shouldBe` Right (Just "claude-opus-4-8", SourceBuiltinDefault)
+
+    it "keeps claude-cli and codex-cli deterministic: model is never Nothing" $ do
+      -- With nothing configured, every command resolves to a concrete model for
+      -- both local CLI providers, so seihou always passes an explicit --model.
+      modelOf AgentCmdAssist baseInputs `shouldBe` Right (Just "claude-opus-4-8", SourceBuiltinDefault)
+      modelOf AgentCmdAssist (baseInputs {cliProvider = Just "codex-cli", cliProviderFromSubcommand = True})
+        `shouldBe` Right (Just "gpt-5.6-terra", SourceBuiltinDefault)
 
     it "keeps environment variables above per-command config" $ do
       let inputs =
