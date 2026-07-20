@@ -12,6 +12,16 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **Configurable reasoning effort.** Each agent command (and `seihou prompt
+  run`) can now set the model's reasoning effort — how hard it thinks — with the
+  same hierarchy as provider and model. Use `agent.effort` /
+  `agent.<command>.effort` (levels `minimal`, `low`, `medium`, `high`, `xhigh`,
+  `max`), `SEIHOU_AGENT_EFFORT`, or the `--effort LEVEL` flag. Effort flows to
+  the local CLIs (`claude --effort` / `codex -c model_reasoning_effort`) and to
+  the API providers, and appears as a new row in `seihou agent config`. Unset by
+  default, so the CLI/provider picks its own. Requires Baikai 0.4. See
+  [AI Agent Assistance](agent-assistance.md#reasoning-effort).
+
 - **Ordered blueprint migrations.** Blueprint authors can declare versioned,
   agent-driven upgrade steps in `blueprint.dhall`, and users can run the exact
   requested window with `seihou agent migrate BLUEPRINT --from VERSION --to

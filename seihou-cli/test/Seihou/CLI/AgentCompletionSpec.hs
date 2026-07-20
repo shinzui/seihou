@@ -40,7 +40,8 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
       defaultAgentModelConfig
         `shouldBe` AgentModelConfig
           { agentProvider = AgentProviderClaudeCli,
-            agentModel = Nothing
+            agentModel = Nothing,
+            agentEffort = Nothing
           }
 
     it "builds a Claude CLI model using the CLI API tag" $ do
@@ -48,7 +49,8 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
             buildBaikaiModel
               AgentModelConfig
                 { agentProvider = AgentProviderClaudeCli,
-                  agentModel = Just "sonnet"
+                  agentModel = Just "sonnet",
+                  agentEffort = Nothing
                 }
       BaikaiModel.api model `shouldBe` Baikai.AnthropicMessagesCli
       BaikaiModel.provider model `shouldBe` "anthropic"
@@ -59,7 +61,8 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
             buildBaikaiModel
               AgentModelConfig
                 { agentProvider = AgentProviderCodexCli,
-                  agentModel = Just "gpt-5"
+                  agentModel = Just "gpt-5",
+                  agentEffort = Nothing
                 }
       BaikaiModel.api model `shouldBe` Baikai.OpenAICompletionsCli
       BaikaiModel.provider model `shouldBe` "openai"
@@ -70,7 +73,8 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
       let config =
             AgentModelConfig
               { agentProvider = AgentProviderCodexCli,
-                agentModel = Just "gpt-5"
+                agentModel = Just "gpt-5",
+                agentEffort = Nothing
               }
       buildAgentCompletionRequest config "system" (Just "user")
         `shouldBe` AgentCompletionRequest

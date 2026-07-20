@@ -44,6 +44,15 @@ spec =
     it "renders the migrate command and its concrete config key" $
       hasLine ["migrate", "model", "gpt-5-mini", "[local: agent.migrate.model]"] `shouldBe` True
 
+    it "labels a per-command local effort with its concrete key" $
+      hasLine ["effort", "max", "[local: agent.run.effort]"] `shouldBe` True
+
+    it "labels a global default effort with the shared key" $
+      hasLine ["effort", "high", "[global: agent.effort]"] `shouldBe` True
+
+    it "shows an unset effort as (default) with built-in provenance" $
+      hasLine ["effort", "(default)", "[built-in default]"] `shouldBe` True
+
     it "includes the precedence legend" $
       ("Precedence, highest first:" `Text.isInfixOf` rendered) `shouldBe` True
 

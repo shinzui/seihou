@@ -6,7 +6,7 @@ where
 
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.CLI.AgentCompletion (providerToText)
+import Seihou.CLI.AgentCompletion (effortToText, providerToText)
 import Seihou.CLI.AgentConfig
   ( AgentField (..),
     ResolvedAgentField (..),
@@ -19,8 +19,9 @@ import Seihou.Prelude
 import System.Exit (exitFailure)
 
 -- | @seihou agent config@: read the real environment and config, resolve the
--- provider and model for every agent command, and print a table labelling the
--- source that supplied each value, followed by the precedence legend.
+-- provider, model, and reasoning effort for every agent command, and print a
+-- table labelling the source that supplied each value, followed by the
+-- precedence legend.
 handleAgentConfigShow :: IO ()
 handleAgentConfigShow = do
   result <- loadResolvedAgentConfig
@@ -35,7 +36,7 @@ handleAgentConfigShow = do
 formatResolvedAgentConfig :: [ResolvedCommandConfig] -> Text
 formatResolvedAgentConfig resolved =
   T.unlines $
-    [ "Resolved agent provider and model per command",
+    [ "Resolved agent provider, model, and effort per command",
       "(highest-precedence source wins; see precedence list below)",
       ""
     ]
@@ -47,11 +48,13 @@ formatResolvedAgentConfig resolved =
 
     commandValueWidths rcc =
       [ T.length (providerValue rcc),
-        T.length (modelValue rcc)
+        T.length (modelValue rcc),
+        T.length (effortValue rcc)
       ]
 
     providerValue rcc = providerToText rcc.rccProvider.resolvedValue
     modelValue rcc = maybe "(default)" id rcc.rccModel.resolvedValue
+    effortValue rcc = maybe "(default)" effortToText rcc.rccEffort.resolvedValue
 
     renderCommand rcc =
       let cmd = rcc.rccCommand
@@ -65,7 +68,12 @@ formatResolvedAgentConfig resolved =
               (padRight labelWidth "")
               "model   "
               (modelValue rcc)
-              (agentConfigSourceLabel cmd ModelField rcc.rccModel.resolvedSource)
+              (agentConfigSourceLabel cmd ModelField rcc.rccModel.resolvedSource),
+            row
+              (padRight labelWidth "")
+              "effort  "
+              (effortValue rcc)
+              (agentConfigSourceLabel cmd EffortField rcc.rccEffort.resolvedSource)
           ]
 
     row label field value sourceLabel =
@@ -87,13 +95,14 @@ precedenceLegend =
   T.intercalate
     "\n"
     [ "Precedence, highest first:",
-      "  1. --provider / --model flag on the subcommand",
-      "  2. --provider / --model flag on `seihou agent`",
-      "  3. SEIHOU_AGENT_PROVIDER / SEIHOU_AGENT_MODEL environment variables",
-      "  4. local  .seihou/config.dhall          agent.<command>.{provider,model}",
-      "  5. local  .seihou/config.dhall          agent.{provider,model}",
-      "  6. global ~/.config/seihou/config.dhall  agent.<command>.{provider,model}",
-      "  7. global ~/.config/seihou/config.dhall  agent.{provider,model}",
+      "  1. --provider / --model / --effort flag on the subcommand",
+      "  2. --provider / --model / --effort flag on `seihou agent`",
+      "  3. SEIHOU_AGENT_PROVIDER / SEIHOU_AGENT_MODEL / SEIHOU_AGENT_EFFORT environment variables",
+      "  4. local  .seihou/config.dhall          agent.<command>.{provider,model,effort}",
+      "  5. local  .seihou/config.dhall          agent.{provider,model,effort}",
+      "  6. global ~/.config/seihou/config.dhall  agent.<command>.{provider,model,effort}",
+      "  7. global ~/.config/seihou/config.dhall  agent.{provider,model,effort}",
       "  8. built-in default: provider claude-cli; model pinned per provider",
-      "     (claude-cli -> claude-opus-4-8, codex-cli -> gpt-5.6-terra)"
+      "     (claude-cli -> claude-opus-4-8, codex-cli -> gpt-5.6-terra); effort unset",
+      "     (the CLI/provider chooses its own reasoning effort)"
     ]

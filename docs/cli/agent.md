@@ -16,6 +16,7 @@ seihou agent [--debug] [--provider PROVIDER] [--model MODEL] <SUBCOMMAND> [OPTIO
 | `--debug` | Print the resolved system prompt and exit without contacting a provider |
 | `--provider PROVIDER` | Use `claude-cli`, `codex-cli`, `anthropic`, or `openai` for this invocation |
 | `--model MODEL` | Use a provider-specific model name or alias for this invocation; run `seihou agent models` to list known choices |
+| `--effort LEVEL` | Reasoning effort for this invocation: `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
 
 The default provider is `claude-cli`. When no model is configured, Seihou pins a deterministic per-provider default (`claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`) and always passes it explicitly, so a CLI session never inherits whatever model another `claude`/`codex` session left active. Provider and model options may appear on the parent command or on the subcommand:
 
@@ -73,12 +74,13 @@ seihou agent config
 ```
 
 Prints one entry per command (`assist`, `bootstrap`, `setup`, `run`, `migrate`, and
-`prompt run`) with its resolved provider and model, each labelled by the source
-that supplied the value — a config scope and key (for example
-`[local: agent.run.model]` or `[global: agent.model]`), an environment variable,
-or `[built-in default]` — followed by the precedence legend. The command is
-read-only: it reflects the current environment and config but never changes
-them. Set values with `seihou config set agent.<command>.model ...`.
+`prompt run`) with its resolved provider, model, and reasoning effort, each
+labelled by the source that supplied the value — a config scope and key (for
+example `[local: agent.run.model]` or `[global: agent.effort]`), an environment
+variable, or `[built-in default]` — followed by the precedence legend. An
+`effort` of `(default)` means none is configured. The command is read-only: it
+reflects the current environment and config but never changes them. Set values
+with `seihou config set agent.<command>.{provider,model,effort} ...`.
 
 ### agent assist
 

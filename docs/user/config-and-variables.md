@@ -141,23 +141,27 @@ seihou run haskell-base
 |---------|----------------------|-----------------|
 | `agent.provider` | `SEIHOU_AGENT_PROVIDER` | `claude-cli`, `codex-cli`, `anthropic`, `openai` |
 | `agent.model` | `SEIHOU_AGENT_MODEL` | Any provider-specific model name or alias |
+| `agent.effort` | `SEIHOU_AGENT_EFFORT` | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
 
-Each command can also override the provider and model independently with a
-per-command key, `agent.<command>.provider` or `agent.<command>.model`, where
-`<command>` is one of `assist`, `bootstrap`, `setup`, `run`, or `prompt-run`.
-For example, `agent.assist.model` applies only to `seihou agent assist`, while
+Each command can also override the provider, model, and reasoning effort
+independently with a per-command key, `agent.<command>.provider`,
+`agent.<command>.model`, or `agent.<command>.effort`, where `<command>` is one
+of `assist`, `bootstrap`, `setup`, `run`, `migrate`, or `prompt-run`. For
+example, `agent.assist.model` applies only to `seihou agent assist`, while
 `agent.model` remains the shared default for any command without its own key.
+`agent.effort` controls how hard the model thinks; unlike the model it has no
+pinned default, so when unset the CLI/provider uses its own.
 
 Agent provider resolution uses this order, with the first non-blank value winning:
 
-1. Subcommand CLI flag: `seihou agent assist --provider ... --model ...`
-2. Parent CLI flag: `seihou agent --provider ... --model ... assist`
-3. Environment variables: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`
-4. Local project config: `agent.<command>.provider` / `agent.<command>.model`
-5. Local project config: `agent.provider` / `agent.model`
-6. Global config: `agent.<command>.provider` / `agent.<command>.model`
-7. Global config: `agent.provider` / `agent.model`
-8. Built-in defaults: provider `claude-cli`; model pinned per provider so the local CLI providers are deterministic — `claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`
+1. Subcommand CLI flag: `seihou agent assist --provider ... --model ... --effort ...`
+2. Parent CLI flag: `seihou agent --provider ... --model ... --effort ... assist`
+3. Environment variables: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`, `SEIHOU_AGENT_EFFORT`
+4. Local project config: `agent.<command>.{provider,model,effort}`
+5. Local project config: `agent.{provider,model,effort}`
+6. Global config: `agent.<command>.{provider,model,effort}`
+7. Global config: `agent.{provider,model,effort}`
+8. Built-in defaults: provider `claude-cli`; model pinned per provider so the local CLI providers are deterministic — `claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`; effort unset
 
 The hierarchy is scope-first: any value from the local project config
 (`.seihou/config.dhall`) overrides any value from the global config

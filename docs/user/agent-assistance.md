@@ -81,33 +81,56 @@ Resolution order is (highest precedence first):
 7. Global `agent.provider` / `agent.model`
 8. Built-in defaults: provider `claude-cli`; model pinned per provider (`claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`)
 
+### Reasoning effort
+
+Each command can also configure the model's **reasoning effort** — how hard the
+model thinks before acting — with the same hierarchy. Effort is one of six
+levels: `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Use the shared key
+`agent.effort`, the per-command key `agent.<command>.effort`, the environment
+variable `SEIHOU_AGENT_EFFORT`, or the `--effort LEVEL` flag (on the parent
+`agent` command, any subcommand, or `seihou prompt run`).
+
+```sh
+seihou config set agent.effort medium --global   # shared default
+seihou config set agent.run.effort max            # blueprint runs think hard
+seihou prompt run review-changes --effort low     # one-off, cheaper
+```
+
+For the local CLI providers this becomes `claude --effort <level>` /
+`codex -c model_reasoning_effort=<level>`; for the API providers it maps to the
+provider's native reasoning-effort setting. Unlike the model, effort has **no**
+built-in default: when unset, Seihou passes no effort flag and the CLI/provider
+uses its own default. Higher effort generally means better answers but more
+latency and token cost. The full precedence chain is identical to provider and
+model, with `agent.<command>.effort` / `agent.effort` occupying the same tiers.
+
 ### Inspecting resolved configuration
 
-`seihou agent config` prints the provider and model each agent command resolves
-to, labelling the source of every value so you can see exactly why a command
-uses what it does:
+`seihou agent config` prints the provider, model, and reasoning effort each
+agent command resolves to, labelling the source of every value so you can see
+exactly why a command uses what it does:
 
 ```text
 $ seihou agent config
-Resolved agent provider and model per command
+Resolved agent provider, model, and effort per command
 (highest-precedence source wins; see precedence list below)
 
   assist      provider  codex-cli        [global: agent.assist.provider]
               model     gpt-5-mini       [global: agent.assist.model]
-  bootstrap   provider  claude-cli       [built-in default]
-              model     claude-sonnet-5  [global: agent.model]
-  setup       provider  claude-cli       [built-in default]
-              model     claude-sonnet-5  [global: agent.model]
+              effort    high             [global: agent.effort]
   run         provider  claude-cli       [built-in default]
               model     claude-opus-4-8  [local: agent.run.model]
+              effort    max              [local: agent.run.effort]
   prompt run  provider  claude-cli       [built-in default]
-              model     claude-sonnet-5  [global: agent.model]
+              model     claude-opus-4-8  [built-in default]
+              effort    (default)        [built-in default]
 ```
 
 The command is read-only; it never changes configuration. Set values with
-`seihou config set agent.<command>.model ...`. Because it reflects the live
-environment, `SEIHOU_AGENT_*` variables set in your shell also appear in the
-resolved output.
+`seihou config set agent.<command>.{provider,model,effort} ...`. Because it
+reflects the live environment, `SEIHOU_AGENT_*` variables set in your shell also
+appear in the resolved output. An `effort` of `(default)` means none is
+configured, so the CLI/provider picks its own.
 
 ## Discovering models
 

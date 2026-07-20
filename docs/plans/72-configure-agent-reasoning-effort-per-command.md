@@ -100,8 +100,12 @@ This section must always reflect the actual current state of the work.
   a diagnostic; a valid value parses and resolves. **Note:** M2 changed the arity/return type
   of `loadAgentModelConfigFor`/`resolveAgentModelConfigFor`, which the executable dispatch
   consumes, so M2 and M3 were committed together to keep every commit's build green.
-- [ ] Milestone 4: Show the resolved effort in `seihou agent config`; update user docs and
-  the CHANGELOG; run the full suite.
+- [x] Milestone 4: Show the resolved effort in `seihou agent config` (a third row per
+  command); update `docs/user/agent-assistance.md`, `docs/user/config-and-variables.md`,
+  `docs/cli/agent.md`, and `docs/user/CHANGELOG.md`; run the full suite. Completed
+  2026-07-20. Live `seihou agent config` shows the effort row (e.g. `run` → `max [local:
+  agent.run.effort]`, others → `high [global: agent.effort]`, unset → `(default) [built-in
+  default]`). Full suite green: 347 CLI + core + extension tests pass.
 
 
 ## Surprises & Discoveries
@@ -159,7 +163,35 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Delivered exactly the Purpose. Reasoning effort is now configurable per agent command with
+the same hierarchy and provenance as provider/model: `agent.effort` /
+`agent.<command>.effort`, `SEIHOU_AGENT_EFFORT`, and a `--effort LEVEL` flag on the parent
+`agent`, every subcommand, and `seihou prompt run`. The `seihou prompt run` gap was closed
+explicitly — its separate parser option, dispatch arm, and handler all thread effort, and
+`seihou prompt run --help` lists `--effort`. Effort reaches both launch paths (interactive
+`effort` field for the CLIs, `Options.thinking` for the API providers), and `seihou agent
+config` shows a labelled effort row per command. The built-in default is unset, so any
+project that does not configure effort behaves exactly as before.
+
+Validation: 29 `AgentConfig` + 9 `AgentConfigShow` unit cases pass (16 new across effort
+resolution and display); a scratch-`HOME` run confirmed the flag, the precedence, the
+diagnostic on an invalid value, and the `agent config` effort rows; the full suite (347 CLI +
+core + extension) is green.
+
+Lessons: (1) Adding a field to the exported `AgentModelConfig` record made every
+missing-field literal in the test suite a runtime bottom that only surfaced under an `Eq`
+comparison (`shouldBe`) — `AgentCompletionSpec` had four such literals; a `cfg` smart
+constructor in `AgentConfigSpec` avoided the same trap there. (2) Baikai's `Options.thinking`
+field name collides with `ThinkingContent.thinking`, so the record update had to be qualified
+via `Baikai.Options`. (3) Because M2 changed `loadAgentModelConfigFor`'s arity/return type
+(now a provider/model/effort triple), M2 and M3 had to land in one commit to keep the build
+green.
+
+Gaps / future work: effort remains unpinned by default (a deliberate cost/latency choice —
+users opt in). The baikai coordinated release (0.4.0.0) was done by the user before this
+work; seihou's bound was widened to `^>=0.4.0.0`. `seihou agent models` still ignores a
+parent `--effort` silently (as it does `--model` filtering nuances); not worth a rejection
+path.
 
 
 ## Context and Orientation
