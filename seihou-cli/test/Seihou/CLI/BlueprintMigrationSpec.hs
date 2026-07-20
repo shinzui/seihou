@@ -75,8 +75,8 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
             formatBlueprintMigrationDebugOutput
               (\position total edge -> "prompt " <> tshow position <> "/" <> tshow total <> " " <> edge.from)
               [first, second]
-      output `shouldSatisfy` T.isInfixOf "===== Blueprint migration 1/2: 1.0.0 -> 2.0.0 ====="
-      output `shouldSatisfy` T.isInfixOf "===== Blueprint migration 2/2: 2.0.0 -> 3.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "===== [1/2] 1.0.0 -> 2.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "===== [2/2] 2.0.0 -> 3.0.0 ====="
       T.breakOn "2.0.0 -> 3.0.0" output `shouldSatisfy` (not . T.null . snd)
 
   describe "runBlueprintMigrationsWith" $ do

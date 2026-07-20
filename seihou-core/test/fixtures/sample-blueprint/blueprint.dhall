@@ -34,4 +34,14 @@
 , files = [ { src = "example.md", description = Some "Example reference snippet" } ]
 , allowedTools = None (List Text)
 , tags = [ "demo" ]
+, migrations =
+  [ { from = "1.0.0"
+    , to = "2.0.0"
+    , prompt = "Update {{project.name}} for the first library release."
+    }
+  , { from = "2.5.0"
+    , to = "3.0.0"
+    , prompt = "Update {{project.name}} for the second library release."
+    }
+  ]
 }

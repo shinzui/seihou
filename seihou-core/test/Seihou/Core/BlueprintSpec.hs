@@ -107,7 +107,10 @@ spec = do
           b.tags `shouldBe` ["demo"]
           b.baseModules `shouldBe` []
           length b.files `shouldBe` 1
-          b.migrations `shouldBe` []
+          b.migrations
+            `shouldBe` [ BlueprintMigration "1.0.0" "2.0.0" "Update {{project.name}} for the first library release.",
+                         BlueprintMigration "2.5.0" "3.0.0" "Update {{project.name}} for the second library release."
+                       ]
 
     it "decodes declared blueprint migrations in declaration order" $ do
       withSystemTempDirectory "seihou-blueprint-migration-decode" $ \tmpDir -> do

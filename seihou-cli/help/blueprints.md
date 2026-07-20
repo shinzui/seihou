@@ -3,7 +3,8 @@ BLUEPRINTS
 A blueprint is an agent-driven runnable artifact. Modules and recipes use
 Seihou's deterministic execution engine to write files from declared steps.
 Blueprints instead package a prompt, optional baseline modules, variables,
-and reference files for `seihou agent run`.
+and reference files for `seihou agent run`. They can also package ordered
+library-upgrade prompts for `seihou agent migrate`.
 
 Use a blueprint when the desired output needs judgement, iteration, or
 project-specific design decisions that do not fit a fixed module template.
@@ -39,6 +40,7 @@ SCHEMA FIELDS
     files          Reference files under the blueprint's files/ directory.
     allowedTools   Extra tools to pre-approve in addition to the base set.
     tags           Optional discovery tags.
+    migrations     Agent-guided library version edges (from, to, prompt).
 
   Blueprints share the same name lookup namespace as modules and recipes.
   If a directory contains more than one runnable definition, lookup prefers
@@ -103,6 +105,37 @@ ALLOWED TOOLS
   its workspace-write sandbox and on-request approval policy because it has no
   equivalent per-tool allow-list option.
 
+LIBRARY UPGRADE MIGRATIONS
+
+  A blueprint migration describes one forward dotted-numeric version edge:
+
+    migrations =
+      [ S.BlueprintMigration::{
+        , from = "1.0.0"
+        , to = "2.0.0"
+        , prompt = ./migrations/1-to-2.md as Text
+        }
+      , S.BlueprintMigration::{
+        , from = "2.5.0"
+        , to = "3.0.0"
+        , prompt = ./migrations/2-5-to-3.md as Text
+        }
+      ]
+
+  Run an installed library blueprint with explicit versions:
+
+    seihou agent migrate my-library --from 1.0.0 --to 3.0.0
+
+  Edges run in ascending `from` order and gaps are allowed. Duplicate starts
+  are invalid; overlaps already passed by the cursor and edges overshooting the
+  target are skipped. Each successful provider interaction writes an exact-edge
+  receipt before the next session. Rerunning resumes; --rerun repeats matching
+  receipts. Parent --debug prints pending prompts without launching or writing.
+
+  Migration mode reuses variables, shared prompt, references, and allowed tools,
+  but never applies baseModules. A receipt records agent completion, not proof
+  that a package manager now reports the target version.
+
 COMMON COMMANDS
 
   seihou new-blueprint api-service       Scaffold a blueprint
@@ -110,6 +143,7 @@ COMMON COMMANDS
   seihou list                            List modules, recipes, blueprints, and prompts
   seihou vars api-service                Show blueprint variables
   seihou agent run api-service           Run the blueprint with an agent
+  seihou agent migrate my-library --from 1.0.0 --to 3.0.0
 
   `seihou run api-service` refuses when `api-service` resolves to a blueprint.
   That command is reserved for deterministic modules and recipes; use
@@ -126,6 +160,7 @@ VALIDATION
     - prompts reference declared variables
     - baseModules resolve to modules or recipes
     - declared reference files exist under files/
+    - migrations have dotted forward versions, unique starts, and non-empty prompts
 
   If validation fails, fix the reported check before publishing or running
   the blueprint.

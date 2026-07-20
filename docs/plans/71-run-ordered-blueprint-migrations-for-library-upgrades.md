@@ -70,9 +70,12 @@ second on the next invocation.
   executable wiring, and command-level tests. `cabal test seihou-cli-test` passed
   all 337 tests, `cabal build all` succeeded, and parser help matches the planned
   usage.
-- [ ] Milestone 5: publish and pin the updated schema, update author/user/CLI/help
-  documentation and changelogs, run every build/test/check gate, and record the
-  end-to-end debug transcript.
+- [x] (2026-07-20 15:14Z) Milestone 5: published and pinned schema commit
+  `2dffa0592be47835a60784b89a289226ba990aa8` with its frozen Dhall hash, updated
+  author/user/CLI/help/architecture/changelog documentation, and completed the
+  isolated debug/no-op/downgrade demo. Final `nix fmt`, `cabal build all`,
+  `cabal test all` (1,023 core, 337 CLI, and 16 extension tests), and
+  `nix flake check` all passed.
 
 
 ## Surprises & Discoveries
@@ -116,6 +119,33 @@ second on the next invocation.
   `RunnableBlueprint` immediately after `evalBlueprintFromFile`. The new migrate
   handler therefore calls `validateBlueprint` explicitly before planning or
   preparing a session.
+
+- Observation: The first repository-wide test run exposed two stale test-only
+  assumptions that the milestone-focused runs had not recompiled: a new receipt
+  helper used unqualified `Text`, and a manifest-store assertion still expected
+  schema version 4. The acceptance demo also revealed that the checked-in sample
+  blueprint still had no migration entries.
+  Evidence: `cabal test all` first failed to compile
+  `Seihou.Manifest.TypesSpec`, then the focused core rerun reported the literal
+  `"version":4` assertion; the first isolated debug invocation reported no
+  declared migrations. Qualifying the helper type, expecting v5, and adding the
+  two planned fixture edges made all three suites and the demo pass.
+
+- Observation: Publishing the schema implementation commit was not the final
+  immutable authoring surface because `schema/README.md` also needed migration
+  documentation.
+  Evidence: the schema code was first published at `91b8bf2`; the follow-up docs
+  commit `2dffa0592be47835a60784b89a289226ba990aa8` is now both local `HEAD` and
+  remote `master`. Freezing and evaluating its remote `package.dhall` produced
+  `sha256:01b6f873520459f3958baa34d3f97a49a4263b9a7225a758cddca5ab3a911f61`.
+
+- Observation: The initial debug delimiter was unambiguous to tests but did not
+  reproduce the plan's human-observable range heading and `[position/total]`
+  transcript.
+  Evidence: the first demo printed `===== Blueprint migration 1/2 ...` with no
+  range heading. The formatter and executable E2E test now require
+  `Blueprint migrations for NAME: FROM -> TO` followed by `===== [1/2] ...` and
+  `===== [2/2] ...`.
 
 
 ## Decision Log
@@ -258,13 +288,16 @@ second on the next invocation.
   two gap-tolerant prompts render in order while no manifest is created.
   Date: 2026-07-20.
 
+- Decision: Pin the parent repository to the schema documentation commit
+  `2dffa0592be47835a60784b89a289226ba990aa8`, not the earlier schema-code-only
+  commit.
+  Rationale: The immutable URL should identify the complete published authoring
+  surface. Dhall freezing proved the final remote package independently, and the
+  parent pin records its generated integrity hash rather than a hand-written one.
+  Date: 2026-07-20.
+
 
 ## Outcomes & Retrospective
-
-Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
-Compare the result against the original purpose.
-
-(To be filled during and after implementation.)
 
 - Milestone 1 established one shared gap-tolerant planner for deterministic module
   migrations and agent-guided blueprint migrations without changing the existing
@@ -297,6 +330,23 @@ Compare the result against the original purpose.
   keys. Executable tests prove the planned help, ordered gap rendering without a
   manifest write, and two successful fake-CLI launches followed by two durable
   receipts and a no-launch resume. All 337 CLI tests and the workspace build pass.
+
+- Milestone 5 published the schema and author guide at immutable commit
+  `2dffa0592be47835a60784b89a289226ba990aa8`, pinned the verified Dhall hash, and
+  documented authoring, registry publication, CLI behavior, architecture, release
+  notes, resume semantics, and the package-verification boundary. The isolated
+  fixture demo rendered `1.0.0 -> 2.0.0` and `2.5.0 -> 3.0.0` in order across the
+  intentional gap, left `.seihou/manifest.json` absent, returned a zero-status
+  no-work message for `3.0.0 -> 3.0.0`, and rejected `3.0.0 -> 2.0.0` before any
+  write.
+
+The implemented result matches the original purpose: a library can publish one
+blueprint containing ordered upgrade knowledge, and a consumer can execute an
+explicit version window with durable, exact-edge resume state. Deterministic
+module migrations remain separate. The main lesson was that a dry-run acceptance
+fixture is valuable beyond unit coverage: it caught both missing fixture data and
+a human-facing transcript mismatch before completion. Automatic package-manager
+version discovery and verification remain intentionally out of scope.
 
 
 ## Context and Orientation

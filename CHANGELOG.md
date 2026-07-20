@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Ordered, agent-driven blueprint upgrade migrations: the Dhall schema and
+  Haskell domain now carry migration edges; shared version-window planning
+  rejects malformed chains; validation checks migration metadata; legacy
+  manifests still decode while manifest v5 records exact-edge receipts;
+  `status` reports pending work; and `seihou agent migrate` shares blueprint
+  preparation, resumes after each durable receipt, supports `--rerun`, and
+  offers a side-effect-free `--debug` prompt preview (EP-71).
+
 - `seihou agent models` lists the 31 Anthropic and OpenAI models in the shipped
   Baikai catalog, with optional API/CLI provider filtering and guidance that
   provider-native aliases and custom model IDs remain accepted.

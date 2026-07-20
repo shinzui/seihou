@@ -111,11 +111,11 @@ formatBlueprintMigrationDebugOutput render migrations =
   T.intercalate
     "\n\n"
     [ T.unlines
-        [ "===== Blueprint migration "
+        [ "===== ["
             <> T.pack (show position)
             <> "/"
             <> T.pack (show total)
-            <> ": "
+            <> "] "
             <> migration.from
             <> " -> "
             <> migration.to

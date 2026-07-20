@@ -75,8 +75,9 @@ tests = testSpec "Agent migrate end-to-end" $ do
               <> T.unpack output
               <> "\nstderr:\n"
               <> T.unpack errorOutput
-      output `shouldSatisfy` T.isInfixOf "===== Blueprint migration 1/2: 1.0.0 -> 2.0.0 ====="
-      output `shouldSatisfy` T.isInfixOf "===== Blueprint migration 2/2: 2.5.0 -> 3.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "Blueprint migrations for payments: 1.0.0 -> 3.0.0"
+      output `shouldSatisfy` T.isInfixOf "===== [1/2] 1.0.0 -> 2.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "===== [2/2] 2.5.0 -> 3.0.0 ====="
       output `shouldSatisfy` T.isInfixOf "Shared upgrade guidance for baikai."
       output `shouldSatisfy` T.isInfixOf "Replace baikai legacy calls."
       let (_, afterFirst) = T.breakOn "1.0.0 -> 2.0.0" output

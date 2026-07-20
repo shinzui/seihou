@@ -2,8 +2,8 @@ AGENT COMMANDS
 
 `seihou agent` renders Seihou-aware prompts and starts a configured
 provider. The agent commands are for AI-assisted
-module authoring, bootstrapping, project setup, and running
-agent-driven blueprints.
+module authoring, bootstrapping, project setup, running agent-driven
+blueprints, and applying ordered blueprint library migrations.
 
 CLI providers open interactive local Claude Code or Codex sessions.
 API providers send one rendered prompt as a batch completion and print
@@ -118,6 +118,17 @@ SUBCOMMANDS
       provider. A successful non-debug run records applied-blueprint
       provenance in `.seihou/manifest.json`.
 
+  seihou agent migrate BLUEPRINT --from VERSION --to VERSION [PROMPT]
+      Run one agent session per in-window migration declared by the blueprint.
+      Versions are explicit dotted numbers; gaps are allowed. Successful edges
+      are recorded immediately so a later invocation resumes at the first
+      unrecorded edge. `--rerun` ignores matching receipts. Migration mode does
+      not apply baseModules and exposes neither --no-baseline nor --force.
+
+      Parent --debug prints every pending migration prompt in order without
+      contacting a provider or writing receipts. A receipt records provider
+      completion, not package-manager verification.
+
   seihou prompt run PROMPT [USER-PROMPT] [--var KEY=VALUE] [--debug]
       Resolve a reusable prompt, run command-derived variables, render
       the prompt body, and send it to the configured provider. Prompts
@@ -129,6 +140,7 @@ DEBUG EXAMPLES
   seihou agent --debug --provider codex-cli bootstrap --repo "inspect this prompt"
   seihou agent --debug --provider openai setup "inspect this prompt"
   seihou agent --debug run my-blueprint --var project.name=demo
+  seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
 
 SEE ALSO
 

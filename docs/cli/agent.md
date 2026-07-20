@@ -72,7 +72,7 @@ Show the resolved provider and model for every agent command.
 seihou agent config
 ```
 
-Prints one entry per command (`assist`, `bootstrap`, `setup`, `run`, and
+Prints one entry per command (`assist`, `bootstrap`, `setup`, `run`, `migrate`, and
 `prompt run`) with its resolved provider and model, each labelled by the source
 that supplied the value — a config scope and key (for example
 `[local: agent.run.model]` or `[global: agent.model]`), an environment variable,
@@ -131,6 +131,40 @@ seihou agent run BLUEPRINT [PROMPT] [OPTIONS]
 | `--verbose`, `-v` | Show detailed progress messages |
 
 Resolves the named blueprint, prompts for required variables, optionally applies its baseline modules, renders the blueprint prompt, and starts the configured provider. A successful non-debug run records applied-blueprint provenance in `.seihou/manifest.json`.
+
+### agent migrate
+
+Run ordered library-upgrade prompts declared by a blueprint.
+
+```text
+seihou agent migrate BLUEPRINT --from VERSION --to VERSION [PROMPT] [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--from VERSION` | Current library version; required dotted numeric value |
+| `--to VERSION` | Target library version; required dotted numeric value |
+| `--var KEY=VALUE` | Variable override; repeatable |
+| `--namespace NS` | Override namespace for config lookup |
+| `--context CTX`, `-c CTX` | Override context for config lookup |
+| `--verbose`, `-v` | Show detailed progress messages |
+| `--rerun` | Ignore matching exact-edge receipts and run the selected steps again |
+
+The command plans matching blueprint edges in ascending version order, permitting
+undeclared gaps, and starts one provider interaction per edge. It writes a
+receipt after each successful interaction, so an interrupted invocation resumes
+at its first unrecorded edge. Migration mode does not apply blueprint baselines
+and has no `--force` option.
+
+```sh
+seihou agent migrate my-library --from 1.0.0 --to 3.0.0
+seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
+```
+
+For this subcommand, parent `--debug` is a true dry run: it prints every pending
+prompt in order, never contacts a provider, and never writes a migration receipt.
+Receipts report provider completion rather than package-manager verification.
+See [Agent-Driven Blueprints](../user/blueprints.md#library-upgrade-migrations).
 
 ## Requirements
 

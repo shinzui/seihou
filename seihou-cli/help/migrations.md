@@ -1,5 +1,27 @@
 MIGRATIONS
 
+Seihou has two migration systems. Deterministic module migrations use typed
+filesystem operations and `seihou migrate`. Agent-guided blueprint migrations
+use one library-upgrade prompt per version edge and `seihou agent migrate`.
+
+BLUEPRINT MIGRATIONS
+
+  A library blueprint declares entries with `from`, `to`, and a Markdown
+  `prompt`. Consumers always supply explicit dotted numeric versions:
+
+    seihou agent migrate my-library --from 1.0.0 --to 3.0.0
+
+  The planner orders in-window entries by `from` and permits gaps. Each entry
+  runs in its own provider session, then receives an exact-edge receipt before
+  the next starts. A normal rerun resumes after receipts; --rerun repeats them.
+  Parent --debug renders pending prompts in order without launching a provider
+  or changing the manifest. Migration mode never applies blueprint baseModules.
+
+  A receipt means the agent interaction completed successfully. It does not
+  verify that Cabal, npm, Cargo, or another package manager reports the target.
+
+DETERMINISTIC MODULE MIGRATIONS
+
 A migration is an author-declared sequence of file-system operations that
 moves a project's working tree from one module version to another. When a
 module is upgraded — say, from haskell-base 1.0.0 to 2.0.0 — the project

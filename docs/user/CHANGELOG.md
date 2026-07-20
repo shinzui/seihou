@@ -12,6 +12,15 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **Ordered blueprint migrations.** Blueprint authors can declare versioned,
+  agent-driven upgrade steps in `blueprint.dhall`, and users can run the exact
+  requested window with `seihou agent migrate BLUEPRINT --from VERSION --to
+  VERSION`. Seihou rejects gaps, overlaps, and overshoots; writes a durable
+  receipt after every successful step; resumes interrupted chains by default;
+  and supports `--rerun` plus a side-effect-free `--debug` preview. See
+  [Blueprints](blueprints.md), [Migrations](migrations.md), and the
+  [`agent migrate` reference](../cli/agent.md#seihou-agent-migrate).
+
 - **Deterministic CLI provider defaults.** When no model is configured, the
   local CLI providers now pin a specific model instead of deferring to the
   ambient `claude` / `codex` session: `claude-cli` defaults to `claude-opus-4-8`
@@ -23,7 +32,7 @@ packages in the workspace share a single version.
 - **Per-command agent provider and model.** Each agent command can now use a
   different provider and model through configuration. Set
   `agent.<command>.provider` / `agent.<command>.model` (for `assist`,
-  `bootstrap`, `setup`, `run`, or `prompt-run`) to override the shared
+  `bootstrap`, `setup`, `run`, `migrate`, or `prompt-run`) to override the shared
   `agent.provider` / `agent.model` defaults for that command only. Resolution
   is hierarchical: a project's local config overrides the user's global config,
   and within a scope a per-command key overrides the shared default. The new

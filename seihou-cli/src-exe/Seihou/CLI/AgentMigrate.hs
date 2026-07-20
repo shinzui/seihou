@@ -107,7 +107,16 @@ handleAgentMigrate debug modelConfig opts = do
                     opts.migrateBlueprintPrompt
 
           if debug
-            then TIO.putStrLn (formatBlueprintMigrationDebugOutput renderDebugStep pending)
+            then
+              TIO.putStrLn $
+                "Blueprint migrations for "
+                  <> blueprint.name.unModuleName
+                  <> ": "
+                  <> renderVersion migrationPlan.blueprintPlanFrom
+                  <> " -> "
+                  <> renderVersion migrationPlan.blueprintPlanTo
+                  <> "\n"
+                  <> formatBlueprintMigrationDebugOutput renderDebugStep pending
             else do
               result <-
                 runBlueprintMigrationsWith

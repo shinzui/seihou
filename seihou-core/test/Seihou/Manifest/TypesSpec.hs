@@ -22,7 +22,7 @@ fixedTime = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-0
 fixedTime2 :: UTCTime
 fixedTime2 = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-03-01T11:00:00Z"
 
-mkBlueprintMigrationReceipt :: Text -> Text -> Text -> UTCTime -> AppliedBlueprintMigration
+mkBlueprintMigrationReceipt :: T.Text -> T.Text -> T.Text -> UTCTime -> AppliedBlueprintMigration
 mkBlueprintMigrationReceipt blueprintName fromVersion toVersion appliedAt =
   AppliedBlueprintMigration
     { name = ModuleName blueprintName,
@@ -342,9 +342,13 @@ spec = do
   describe "AppliedBlueprintMigration" $ do
     it "round-trips a fully populated receipt through JSON" $ do
       let receipt =
-            (mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime)
-              { agentSessionId = Just "session-123"
-              }
+            AppliedBlueprintMigration
+              (ModuleName "payments")
+              (Just "0.4.0")
+              "1.0.0"
+              "2.0.0"
+              fixedTime
+              (Just "session-123")
       Aeson.eitherDecode (Aeson.encode receipt) `shouldBe` Right receipt
 
     it "round-trips a version-5 manifest containing a receipt" $ do
@@ -356,10 +360,13 @@ spec = do
       let first = mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime
           unrelated = mkBlueprintMigrationReceipt "payments" "2.5.0" "3.0.0" fixedTime
           replacement =
-            (mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime2)
-              { blueprintVersion = Just "0.5.0",
-                agentSessionId = Just "rerun"
-              }
+            AppliedBlueprintMigration
+              (ModuleName "payments")
+              (Just "0.5.0")
+              "1.0.0"
+              "2.0.0"
+              fixedTime2
+              (Just "rerun")
           manifest1 = writeAppliedBlueprintMigration unrelated (writeAppliedBlueprintMigration first (emptyManifest fixedTime))
           manifest2 = writeAppliedBlueprintMigration replacement manifest1
       manifest2.blueprintMigrations `shouldBe` [replacement, unrelated]

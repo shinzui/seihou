@@ -178,7 +178,8 @@ blueprintEntry =
               baseModules = [simpleDep "base"],
               files = [],
               allowedTools = Nothing,
-              tags = ["blueprint"]
+              tags = ["blueprint"],
+              migrations = []
             },
       entryModuleRefs = [ModuleRef "base" True]
     }

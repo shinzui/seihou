@@ -1,5 +1,14 @@
 # Migrations
 
+Seihou has two deliberately separate migration systems:
+
+- **Module migrations** are deterministic `MigrationOp` sequences declared in
+  `module.dhall` and applied by `seihou migrate` or `seihou update`. They own
+  tracked filesystem and module-version state.
+- **Blueprint migrations** are agent-guided source-code upgrade prompts declared
+  in `blueprint.dhall` and run by `seihou agent migrate`. They adapt arbitrary
+  consumer code and record one completion receipt per version edge.
+
 A **migration** is an author-declared sequence of file-system operations
 that moves a project's working tree from one module version to another.
 When a module is upgraded — say, from `haskell-base` 1.0.0 to 2.0.0 —
@@ -11,6 +20,33 @@ have to read a CHANGELOG and reconcile by hand.
 This guide covers authoring migrations. For the command reference, see
 [`docs/cli/migrate.md`](../cli/migrate.md). For the in-binary topic,
 run `seihou help migrations`.
+
+## Agent-guided blueprint migrations
+
+A library repository can publish upgrade knowledge through an ordinary installed
+blueprint. Each `S.BlueprintMigration` has `from`, `to`, and `prompt`; both
+versions use the same dotted numeric parser as module migrations. The consumer
+supplies the version window explicitly:
+
+```sh
+seihou agent migrate my-library --from 1.0.0 --to 3.0.0
+```
+
+Blueprint migrations share the gap-tolerant window walker described below, but
+not the deterministic filesystem engine. Seihou runs one provider session per
+selected edge, writes an exact `(blueprint, from, to)` receipt after success,
+and stops before the next edge on provider or receipt-write failure. A rerun
+skips completed edges and resumes; `--rerun` intentionally repeats them. Parent
+`--debug` prints all pending sessions without contacting a provider or changing
+the manifest.
+
+Migration mode reuses blueprint variables, shared prompt, references, and allowed
+tools, but never applies `baseModules`. A receipt records successful agent
+completion, not proof that a language package manager reports the target version.
+See [Agent-Driven Blueprints](blueprints.md#library-upgrade-migrations) for the
+Dhall shape, registry publication, overlap behavior, and authoring guidance.
+
+The rest of this guide describes deterministic module migrations.
 
 ## When to author a migration
 

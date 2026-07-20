@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Status** | Implemented |
-| **Updated** | 2026-04-16 |
+| **Updated** | 2026-07-20 |
 | **Created** | 2026-03-01 |
 | **Subsystem** | Core |
 
@@ -63,7 +63,7 @@ CLI input
 
 **Config Resolution** merges configuration from seven sources (CLI flags, environment variables, local project config, namespace config, context config, global config, module defaults) into a single resolved configuration map. Each value retains provenance metadata for the `--explain` feature. The active context is resolved from `--context` flag, `SEIHOU_CONTEXT` env var, `.seihou/context` file, or `~/.config/seihou/default-context`.
 
-**Module Loading** evaluates Dhall module definitions into typed Haskell values. When multiple modules are composed, their dependency graph is resolved via topological sort to determine execution order. If the name resolves to a recipe (`recipe.dhall`), it is expanded into its constituent modules before entering the composition pipeline. If the name resolves to a blueprint (`blueprint.dhall`), the loader hands control to `seihou agent run` rather than the deterministic pipeline; the blueprint is not plan-compiled (see [Blueprints](../design/proposed/blueprints.md)).
+**Module Loading** evaluates Dhall module definitions into typed Haskell values. When multiple modules are composed, their dependency graph is resolved via topological sort to determine execution order. If the name resolves to a recipe (`recipe.dhall`), it is expanded into its constituent modules before entering the composition pipeline. If the name resolves to a blueprint (`blueprint.dhall`), the loader hands control to `seihou agent run` for an initial application or to `seihou agent migrate` for an ordered library-upgrade migration; blueprints do not enter the deterministic module plan compiler (see [Blueprints](../../user/blueprints.md)).
 
 **Variable Resolution** walks each module's variable declarations and resolves values from the merged config. Type checking and validation (required, pattern, range) happen here. Cross-module variable references are resolved through explicit exports.
 
@@ -125,6 +125,7 @@ seihou/
 │           │   ├── Module.hs      # Loading, validation, discovery (discoverRunnable)
 │           │   ├── Recipe.hs      # Recipe validation (validateRecipe)
 │           │   ├── Blueprint.hs   # Blueprint validation, discovery (validateBlueprint, discoverBlueprint)
+│           │   ├── Migration.hs   # Shared module/blueprint version-window planners
 │           │   ├── Expr.hs        # Expression language AST and evaluator
 │           │   ├── Registry.hs    # Multi-module repository support (modules + recipes + blueprints)
 │           │   ├── Version.hs     # Semantic version parsing and comparison
@@ -173,6 +174,9 @@ seihou/
 │   │       │   ├── AgentConfig.hs    # Agent provider/model config resolution
 │   │       │   ├── AgentLaunch.hs    # Shared agent prompt context and formatters
 │   │       │   ├── AppliedBlueprint.hs # Manifest writer for AppliedBlueprint provenance
+│   │       │   ├── AppliedBlueprintMigration.hs # Durable exact-edge migration receipts
+│   │       │   ├── BlueprintExecution.hs # Shared blueprint execution preparation
+│   │       │   ├── BlueprintMigration.hs # Migration prompt/rendering helpers
 │   │       │   ├── BrowseFormat.hs   # Module/recipe/blueprint browsing output formatter
 │   │       │   ├── CommitMessage.hs  # AI-generated commit messages (claude CLI)
 │   │       │   ├── Completions/      # Bash/Fish/Zsh completion emitters
@@ -202,6 +206,7 @@ seihou/
 │   │   ├── Main.hs                # Entry point + command dispatcher
 │   │   └── Seihou/
 │   │       └── CLI/
+│   │           ├── AgentMigrate.hs   # seihou agent migrate BLUEPRINT handler
 │   │           ├── AgentRun.hs       # seihou agent run BLUEPRINT handler
 │   │           ├── Assist.hs         # seihou agent assist handler (embedded prompt + Baikai completion)
 │   │           ├── Bootstrap.hs      # seihou agent bootstrap handler (embedded prompt + Baikai completion)
@@ -230,13 +235,15 @@ seihou/
 │   └── data/                      # Embedded prompt templates (Data.FileEmbed)
 │       ├── assist-prompt.md
 │       ├── bootstrap-prompt.md
+│       ├── blueprint-migration-prompt.md
 │       ├── setup-prompt.md
 │       └── blueprint-prompt.md
 ├── schema/                        # Dhall schema (mirrored into seihou-schema)
 │   ├── package.dhall
 │   ├── Module.dhall
 │   ├── Recipe.dhall
-│   └── Blueprint.dhall
+│   ├── Blueprint.dhall
+│   └── BlueprintMigration.dhall
 └── docs/                          # Documentation (this directory)
 ```
 
@@ -303,8 +310,10 @@ and model configuration, `Seihou.CLI.AgentModels` exposes and formats
 the compiled Anthropic/OpenAI model catalog, `Seihou.CLI.AgentLaunch`
 gathers context and formats shared prompt sections, and `Seihou.CLI.AgentLaunchExec`
 starts interactive local CLI providers through Baikai's interactive
-launcher modules. The executable handlers import those modules after
-embedding their command-specific prompt templates. Kit installation
+launcher modules. `BlueprintExecution` centralizes shared baseline,
+variable, file, tool, and context preparation for blueprint application and
+migration. The executable handlers import the launcher modules after embedding
+their command-specific prompt templates. Kit installation
 delegates lifecycle, provider-native layout, sidecar metadata, and
 status reporting to `baikai-kit`. `Seihou.CLI.Kit` remains in the
 executable because it is the small adapter that owns Seihou's tool name,
@@ -320,6 +329,7 @@ the cabal file's `other-modules`.
 | Module | Trapping reason |
 |---|---|
 | `Paths_seihou_cli` | Generated by Cabal; lives in the executable |
+| `Seihou.CLI.AgentMigrate` | `Data.FileEmbed` for the embedded `blueprint-migration-prompt.md` template |
 | `Seihou.CLI.AgentRun` | `Data.FileEmbed` for the embedded `blueprint-prompt.md` template |
 | `Seihou.CLI.AgentLaunchExec` | Executable-side adapter from Seihou agent commands to Baikai interactive launchers |
 | `Seihou.CLI.Assist` | `Data.FileEmbed` for the embedded prompt template |
@@ -438,6 +448,8 @@ A manifest (`.seihou/manifest.json`) tracks what was generated, enabling:
 - Incremental re-generation (only changed files)
 - "Which module generated this file?" queries
 - Conflict detection when users edit generated files
+- Durable exact-edge receipts for completed blueprint migrations, so interrupted
+  chains resume without rerunning successful steps unless `--rerun` is given
 - Undo/rollback capability (future)
 
 ### Three-State Diff Model
