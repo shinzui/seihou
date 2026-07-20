@@ -134,19 +134,19 @@ dispatch cmd =
     Agent agentOpts -> do
       case agentOpts.agentCommand of
         AgentAssist assistOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdAssist agentOpts.agentProvider agentOpts.agentModel assistOpts.assistProvider assistOpts.assistModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdAssist agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort assistOpts.assistProvider assistOpts.assistModel assistOpts.assistEffort
           handleAssist agentOpts.agentDebug modelConfig assistOpts
         AgentBootstrap bootstrapOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdBootstrap agentOpts.agentProvider agentOpts.agentModel bootstrapOpts.bootstrapProvider bootstrapOpts.bootstrapModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdBootstrap agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort bootstrapOpts.bootstrapProvider bootstrapOpts.bootstrapModel bootstrapOpts.bootstrapEffort
           handleBootstrap agentOpts.agentDebug modelConfig bootstrapOpts
         AgentSetup setupOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdSetup agentOpts.agentProvider agentOpts.agentModel setupOpts.setupProvider setupOpts.setupModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdSetup agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort setupOpts.setupProvider setupOpts.setupModel setupOpts.setupEffort
           handleSetup agentOpts.agentDebug modelConfig setupOpts
         AgentRun blueprintRunOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdRun agentOpts.agentProvider agentOpts.agentModel blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdRun agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel blueprintRunOpts.runBlueprintEffort
           handleAgentRun agentOpts.agentDebug modelConfig blueprintRunOpts
         AgentMigrate migrationOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdMigrate agentOpts.agentProvider agentOpts.agentModel migrationOpts.migrateBlueprintProvider migrationOpts.migrateBlueprintModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdMigrate agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort migrationOpts.migrateBlueprintProvider migrationOpts.migrateBlueprintModel migrationOpts.migrateBlueprintEffort
           handleAgentMigrate agentOpts.agentDebug modelConfig migrationOpts
         AgentModels modelsOpts ->
           case agentOpts.agentModel of
@@ -169,7 +169,7 @@ dispatch cmd =
     Prompt promptCmd -> do
       case promptCmd of
         PromptRun promptRunOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdPromptRun Nothing Nothing promptRunOpts.runPromptProvider promptRunOpts.runPromptModel
+          modelConfig <- resolveAgentModelConfigFor AgentCmdPromptRun Nothing Nothing Nothing promptRunOpts.runPromptProvider promptRunOpts.runPromptModel promptRunOpts.runPromptEffort
           handlePromptRun modelConfig promptRunOpts
     Extension extensionCmd -> do
       case extensionCmd of
@@ -180,24 +180,27 @@ dispatch cmd =
     Completions completionsCmd ->
       handleCompletionsCommand completionsCmd
 
--- | Resolve the effective provider/model for one agent command. The subcommand
--- flag wins over the parent @seihou agent@ flag; that combined flag then feeds
--- the per-command config resolution, which also consults the command's own
--- @agent.<command>.*@ keys before the shared @agent.*@ defaults.
+-- | Resolve the effective provider/model/effort for one agent command. The
+-- subcommand flag wins over the parent @seihou agent@ flag; that combined flag
+-- then feeds the per-command config resolution, which also consults the
+-- command's own @agent.<command>.*@ keys before the shared @agent.*@ defaults.
 resolveAgentModelConfigFor ::
   AgentCommandName ->
-  -- | parent @seihou agent@ provider, model
+  -- | parent @seihou agent@ provider, model, effort
   Maybe Text ->
   Maybe Text ->
-  -- | subcommand provider, model
+  Maybe Text ->
+  -- | subcommand provider, model, effort
+  Maybe Text ->
   Maybe Text ->
   Maybe Text ->
   IO AgentCompletion.AgentModelConfig
-resolveAgentModelConfigFor cmd parentProvider parentModel commandProvider commandModel = do
+resolveAgentModelConfigFor cmd parentProvider parentModel parentEffort commandProvider commandModel commandEffort = do
   let provider = commandProvider <|> parentProvider
       model = commandModel <|> parentModel
+      effort = commandEffort <|> parentEffort
   configResult <-
-    loadAgentModelConfigFor cmd provider model (isJust commandProvider) (isJust commandModel)
+    loadAgentModelConfigFor cmd provider model effort (isJust commandProvider) (isJust commandModel) (isJust commandEffort)
   case configResult of
     Left err -> do
       TIO.putStrLn $ "Error: " <> err

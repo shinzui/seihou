@@ -8,6 +8,8 @@ module Seihou.CLI.AgentCompletion
     defaultModelForProvider,
     providerFromText,
     providerToText,
+    effortFromText,
+    effortToText,
     buildAgentCompletionRequest,
     buildBaikaiModel,
     runAgentCompletion,
@@ -16,10 +18,12 @@ module Seihou.CLI.AgentCompletion
 where
 
 import Baikai qualified
+import Baikai.Options qualified as BaikaiOptions
 import Baikai.Provider.Claude.Api qualified as ClaudeApi
 import Baikai.Provider.Claude.Cli qualified as ClaudeCli
 import Baikai.Provider.OpenAI.Api qualified as OpenAIApi
 import Baikai.Provider.OpenAI.Cli qualified as CodexCli
+import Baikai.ThinkingLevel (ThinkingLevel (..), renderThinkingLevel)
 import Control.Exception (try)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -34,7 +38,9 @@ data AgentProvider
 
 data AgentModelConfig = AgentModelConfig
   { agentProvider :: AgentProvider,
-    agentModel :: Maybe Text
+    agentModel :: Maybe Text,
+    -- | Reasoning effort. 'Nothing' leaves the provider/CLI default alone.
+    agentEffort :: Maybe ThinkingLevel
   }
   deriving stock (Eq, Show)
 
@@ -57,8 +63,30 @@ defaultAgentModelConfig :: AgentModelConfig
 defaultAgentModelConfig =
   AgentModelConfig
     { agentProvider = AgentProviderClaudeCli,
-      agentModel = Nothing
+      agentModel = Nothing,
+      agentEffort = Nothing
     }
+
+-- | Parse a reasoning-effort level name (case-insensitive) into a Baikai
+-- 'ThinkingLevel'. Accepts the six canonical Baikai level names.
+effortFromText :: Text -> Either Text ThinkingLevel
+effortFromText raw =
+  case Text.toLower (Text.strip raw) of
+    "minimal" -> Right ThinkingMinimal
+    "low" -> Right ThinkingLow
+    "medium" -> Right ThinkingMedium
+    "high" -> Right ThinkingHigh
+    "xhigh" -> Right ThinkingXHigh
+    "max" -> Right ThinkingMax
+    other ->
+      Left $
+        "Unknown reasoning effort '"
+          <> other
+          <> "'. Expected one of: minimal, low, medium, high, xhigh, max."
+
+-- | Render a 'ThinkingLevel' to its canonical name (via Baikai).
+effortToText :: ThinkingLevel -> Text
+effortToText = renderThinkingLevel
 
 -- | The deterministic default model for a provider when the user has configured
 -- none. The two local CLI providers pin a specific model so a @seihou agent@
@@ -146,7 +174,8 @@ runAgentCompletion req = do
           { Baikai.systemPrompt = Just req.completionSystemPrompt,
             Baikai.messages = initialMessages
           }
-  result <- try (Baikai.completeRequest model ctx Baikai.emptyOptions) :: IO (Either Baikai.BaikaiError Baikai.Response)
+      options = Baikai.emptyOptions {BaikaiOptions.thinking = req.completionModelConfig.agentEffort}
+  result <- try (Baikai.completeRequest model ctx options) :: IO (Either Baikai.BaikaiError Baikai.Response)
   pure $ case result of
     Left err -> Left (Text.pack (show err))
     Right resp ->

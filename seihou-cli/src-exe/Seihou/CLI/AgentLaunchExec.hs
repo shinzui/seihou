@@ -10,6 +10,7 @@ import Baikai.Interactive
     CodexSandboxMode (CodexWorkspaceWrite),
     InteractiveLaunchResult (..),
     InteractiveSafety (ClaudeAllowedTools, CodexSandbox),
+    effort,
     extraDirs,
     interactiveLaunchRequest,
     modelId,
@@ -26,6 +27,7 @@ import Baikai.Provider.OpenAI.Interactive
   ( defaultCodexInteractiveConfig,
     launchCodexInteractive,
   )
+import Baikai.ThinkingLevel (ThinkingLevel)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentCompletion (AgentModelConfig (..), AgentProvider (..))
@@ -50,16 +52,16 @@ launchConfiguredAgentWith addDirs modelConfig tools debug systemPrompt initialPr
   | otherwise =
       case modelConfig.agentProvider of
         AgentProviderClaudeCli ->
-          launchClaude addDirs tools modelConfig.agentModel systemPrompt initialPrompt
+          launchClaude addDirs tools modelConfig.agentModel modelConfig.agentEffort systemPrompt initialPrompt
         AgentProviderCodexCli ->
-          launchCodex addDirs modelConfig.agentModel systemPrompt initialPrompt
+          launchCodex addDirs modelConfig.agentModel modelConfig.agentEffort systemPrompt initialPrompt
         AgentProviderAnthropic ->
           unsupportedInteractiveProvider "anthropic"
         AgentProviderOpenAI ->
           unsupportedInteractiveProvider "openai"
 
-launchClaude :: [FilePath] -> [String] -> Maybe Text -> Text -> Maybe Text -> IO ExitCode
-launchClaude addDirs tools model systemPrompt initialPrompt = do
+launchClaude :: [FilePath] -> [String] -> Maybe Text -> Maybe ThinkingLevel -> Text -> Maybe Text -> IO ExitCode
+launchClaude addDirs tools model effortLevel systemPrompt initialPrompt = do
   claudePath <- findExecutable "claude"
   case claudePath of
     Nothing -> do
@@ -74,14 +76,15 @@ launchClaude addDirs tools model systemPrompt initialPrompt = do
           (interactiveLaunchRequest (promptOrEmpty initialPrompt))
             { systemPrompt = Just systemPrompt,
               modelId = model,
+              effort = effortLevel,
               workingDir = Just cwd,
               extraDirs = addDirs,
               safety = ClaudeAllowedTools (map T.pack tools)
             }
       pure exitCode
 
-launchCodex :: [FilePath] -> Maybe Text -> Text -> Maybe Text -> IO ExitCode
-launchCodex addDirs model systemPrompt initialPrompt = do
+launchCodex :: [FilePath] -> Maybe Text -> Maybe ThinkingLevel -> Text -> Maybe Text -> IO ExitCode
+launchCodex addDirs model effortLevel systemPrompt initialPrompt = do
   codexPath <- findExecutable "codex"
   case codexPath of
     Nothing -> do
@@ -96,6 +99,7 @@ launchCodex addDirs model systemPrompt initialPrompt = do
           (interactiveLaunchRequest (promptOrEmpty initialPrompt))
             { systemPrompt = Just systemPrompt,
               modelId = model,
+              effort = effortLevel,
               workingDir = Just cwd,
               extraDirs = addDirs,
               safety = CodexSandbox CodexWorkspaceWrite CodexApprovalOnRequest

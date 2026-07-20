@@ -12,10 +12,13 @@ module Seihou.CLI.AgentConfig
     -- * Config keys and environment variables
     agentProviderConfigKey,
     agentModelConfigKey,
+    agentEffortConfigKey,
     agentCommandProviderConfigKey,
     agentCommandModelConfigKey,
+    agentCommandEffortConfigKey,
     agentProviderEnvVar,
     agentModelEnvVar,
+    agentEffortEnvVar,
 
     -- * Provenance
     AgentConfigSource (..),
@@ -35,6 +38,7 @@ module Seihou.CLI.AgentConfig
   )
 where
 
+import Baikai.ThinkingLevel (ThinkingLevel)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.CLI.AgentCompletion
@@ -42,6 +46,7 @@ import Seihou.CLI.AgentCompletion
     AgentProvider (..),
     defaultAgentModelConfig,
     defaultModelForProvider,
+    effortFromText,
     providerFromText,
   )
 import Seihou.CLI.Shared (formatConfigError)
@@ -62,10 +67,13 @@ import System.Environment (lookupEnv)
 data AgentConfigInputs = AgentConfigInputs
   { cliProvider :: Maybe Text,
     cliModel :: Maybe Text,
+    cliEffort :: Maybe Text,
     cliProviderFromSubcommand :: Bool,
     cliModelFromSubcommand :: Bool,
+    cliEffortFromSubcommand :: Bool,
     envProvider :: Maybe Text,
     envModel :: Maybe Text,
+    envEffort :: Maybe Text,
     localConfig :: Map Text Text,
     globalConfig :: Map Text Text
   }
@@ -79,10 +87,13 @@ baseAgentConfigInputs =
   AgentConfigInputs
     { cliProvider = Nothing,
       cliModel = Nothing,
+      cliEffort = Nothing,
       cliProviderFromSubcommand = False,
       cliModelFromSubcommand = False,
+      cliEffortFromSubcommand = False,
       envProvider = Nothing,
       envModel = Nothing,
+      envEffort = Nothing,
       localConfig = Map.empty,
       globalConfig = Map.empty
     }
@@ -126,6 +137,10 @@ agentProviderConfigKey = "agent.provider"
 agentModelConfigKey :: Text
 agentModelConfigKey = "agent.model"
 
+-- | The cross-command default reasoning-effort key, @agent.effort@.
+agentEffortConfigKey :: Text
+agentEffortConfigKey = "agent.effort"
+
 -- | The per-command provider key, e.g. @agent.assist.provider@.
 agentCommandProviderConfigKey :: AgentCommandName -> Text
 agentCommandProviderConfigKey c = "agent." <> agentCommandSegment c <> ".provider"
@@ -134,15 +149,22 @@ agentCommandProviderConfigKey c = "agent." <> agentCommandSegment c <> ".provide
 agentCommandModelConfigKey :: AgentCommandName -> Text
 agentCommandModelConfigKey c = "agent." <> agentCommandSegment c <> ".model"
 
+-- | The per-command reasoning-effort key, e.g. @agent.run.effort@.
+agentCommandEffortConfigKey :: AgentCommandName -> Text
+agentCommandEffortConfigKey c = "agent." <> agentCommandSegment c <> ".effort"
+
 agentProviderEnvVar :: String
 agentProviderEnvVar = "SEIHOU_AGENT_PROVIDER"
 
 agentModelEnvVar :: String
 agentModelEnvVar = "SEIHOU_AGENT_MODEL"
 
--- | Which of the two resolvable fields a value belongs to. Used only to build
+agentEffortEnvVar :: String
+agentEffortEnvVar = "SEIHOU_AGENT_EFFORT"
+
+-- | Which of the resolvable fields a value belongs to. Used only to build
 -- provenance labels.
-data AgentField = ProviderField | ModelField
+data AgentField = ProviderField | ModelField | EffortField
   deriving stock (Eq, Show)
 
 -- | Where a resolved value came from, highest precedence first.
@@ -190,21 +212,25 @@ agentConfigSourceLabel c field src =
 envVarName :: AgentField -> String
 envVarName ProviderField = agentProviderEnvVar
 envVarName ModelField = agentModelEnvVar
+envVarName EffortField = agentEffortEnvVar
 
 defaultKey :: AgentField -> Text
 defaultKey ProviderField = agentProviderConfigKey
 defaultKey ModelField = agentModelConfigKey
+defaultKey EffortField = agentEffortConfigKey
 
 commandKey :: AgentField -> AgentCommandName -> Text
 commandKey ProviderField = agentCommandProviderConfigKey
 commandKey ModelField = agentCommandModelConfigKey
+commandKey EffortField = agentCommandEffortConfigKey
 
 -- | The full result of resolving one command's provider and model, with
 -- provenance, used by the @seihou agent config@ inspection command.
 data ResolvedCommandConfig = ResolvedCommandConfig
   { rccCommand :: AgentCommandName,
     rccProvider :: ResolvedAgentField AgentProvider,
-    rccModel :: ResolvedAgentField (Maybe Text)
+    rccModel :: ResolvedAgentField (Maybe Text),
+    rccEffort :: ResolvedAgentField (Maybe ThinkingLevel)
   }
   deriving stock (Eq, Show)
 
@@ -231,12 +257,13 @@ resolveAgentModelConfig inputs = do
   pure
     AgentModelConfig
       { agentProvider = provider.resolvedValue,
-        agentModel = modelField.resolvedValue
+        agentModel = modelField.resolvedValue,
+        agentEffort = Nothing
       }
 
--- | Resolve the provider and model for a specific command, honoring the full
--- precedence chain including the per-command config tiers, and reporting the
--- source of each value.
+-- | Resolve the provider, model, and reasoning effort for a specific command,
+-- honoring the full precedence chain including the per-command config tiers, and
+-- reporting the source of each value.
 --
 -- Precedence, highest first: subcommand flag, parent @agent@ flag, environment
 -- variable, local @agent.<command>.<field>@, local @agent.<field>@, global
@@ -244,13 +271,19 @@ resolveAgentModelConfig inputs = do
 resolveAgentModelConfigFor ::
   AgentCommandName ->
   AgentConfigInputs ->
-  Either Text (ResolvedAgentField AgentProvider, ResolvedAgentField (Maybe Text))
+  Either
+    Text
+    ( ResolvedAgentField AgentProvider,
+      ResolvedAgentField (Maybe Text),
+      ResolvedAgentField (Maybe ThinkingLevel)
+    )
 resolveAgentModelConfigFor c inputs = do
   provider <-
     (\p -> ResolvedAgentField p.resolvedValue p.resolvedSource)
       <$> resolveProvider (providerCandidates c inputs)
   let model = applyProviderDefaultModel provider.resolvedValue (resolveModel (modelCandidates c inputs))
-  pure (provider, model)
+  effort <- resolveEffort (effortCandidates c inputs)
+  pure (provider, model, effort)
 
 -- | When no model was configured (source is the built-in default), substitute
 -- the provider's deterministic default so the two local CLI providers always
@@ -284,6 +317,16 @@ modelCandidates c inputs =
     candidate (Map.lookup agentModelConfigKey inputs.globalConfig) SourceGlobalDefault
   ]
 
+effortCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentConfigSource)]
+effortCandidates c inputs =
+  [ candidate inputs.cliEffort (cliSource inputs.cliEffortFromSubcommand),
+    candidate inputs.envEffort SourceEnv,
+    candidate (Map.lookup (agentCommandEffortConfigKey c) inputs.localConfig) SourceLocalCommand,
+    candidate (Map.lookup agentEffortConfigKey inputs.localConfig) SourceLocalDefault,
+    candidate (Map.lookup (agentCommandEffortConfigKey c) inputs.globalConfig) SourceGlobalCommand,
+    candidate (Map.lookup agentEffortConfigKey inputs.globalConfig) SourceGlobalDefault
+  ]
+
 cliSource :: Bool -> AgentConfigSource
 cliSource True = SourceCliSubcommand
 cliSource False = SourceCliParent
@@ -304,6 +347,16 @@ resolveModel candidates =
     Just (txt, src) -> ResolvedAgentField (Just txt) src
     Nothing -> ResolvedAgentField Nothing SourceBuiltinDefault
 
+-- | Resolve a reasoning effort from an ordered candidate list. The winning text
+-- is parsed with 'effortFromText'; a parse failure returns 'Left'. An unset
+-- effort resolves to 'Nothing' with source 'SourceBuiltinDefault', which leaves
+-- the provider/CLI default untouched.
+resolveEffort :: [(Maybe Text, AgentConfigSource)] -> Either Text (ResolvedAgentField (Maybe ThinkingLevel))
+resolveEffort candidates =
+  case firstNonBlankWithSource candidates of
+    Just (txt, src) -> (\lvl -> ResolvedAgentField (Just lvl) src) <$> effortFromText txt
+    Nothing -> Right (ResolvedAgentField Nothing SourceBuiltinDefault)
+
 candidate :: Maybe Text -> AgentConfigSource -> (Maybe Text, AgentConfigSource)
 candidate value src = (value, src)
 
@@ -323,57 +376,72 @@ firstNonBlankWithSource =
 -- the flat resolver. Preserved for backward compatibility.
 loadAgentModelConfig :: Maybe Text -> Maybe Text -> IO (Either Text AgentModelConfig)
 loadAgentModelConfig cliProvider cliModel = do
-  (inputsOrErr) <- gatherAgentConfigInputs cliProvider cliModel False False
+  inputsOrErr <- gatherAgentConfigInputs cliProvider cliModel Nothing False False False
   pure (inputsOrErr >>= resolveAgentModelConfig)
 
--- | Read the environment and config, then resolve provider/model for a specific
--- command, projecting away the provenance the command handler does not need.
+-- | Read the environment and config, then resolve provider/model/effort for a
+-- specific command, projecting away the provenance the command handler does not
+-- need.
 loadAgentModelConfigFor ::
   AgentCommandName ->
   -- | winning provider flag (subcommand @<|>@ parent)
   Maybe Text ->
   -- | winning model flag
   Maybe Text ->
+  -- | winning effort flag
+  Maybe Text ->
   -- | provider flag came from the subcommand?
   Bool ->
   -- | model flag came from the subcommand?
   Bool ->
+  -- | effort flag came from the subcommand?
+  Bool ->
   IO (Either Text AgentModelConfig)
-loadAgentModelConfigFor c cliProvider cliModel providerFromSub modelFromSub = do
-  inputsOrErr <- gatherAgentConfigInputs cliProvider cliModel providerFromSub modelFromSub
+loadAgentModelConfigFor c cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub = do
+  inputsOrErr <- gatherAgentConfigInputs cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub
   pure $ do
     inputs <- inputsOrErr
-    (provider, model) <- resolveAgentModelConfigFor c inputs
+    (provider, model, effort) <- resolveAgentModelConfigFor c inputs
     pure
       AgentModelConfig
         { agentProvider = provider.resolvedValue,
-          agentModel = model.resolvedValue
+          agentModel = model.resolvedValue,
+          agentEffort = effort.resolvedValue
         }
 
 -- | Resolve every configurable command from the real environment and config,
 -- with no CLI flags, for the @seihou agent config@ inspection view.
 loadResolvedAgentConfig :: IO (Either Text [ResolvedCommandConfig])
 loadResolvedAgentConfig = do
-  inputsOrErr <- gatherAgentConfigInputs Nothing Nothing False False
+  inputsOrErr <- gatherAgentConfigInputs Nothing Nothing Nothing False False False
   pure $ do
     inputs <- inputsOrErr
     traverse (resolveOne inputs) allAgentCommands
   where
     resolveOne inputs c = do
-      (provider, model) <- resolveAgentModelConfigFor c inputs
+      (provider, model, effort) <- resolveAgentModelConfigFor c inputs
       pure
         ResolvedCommandConfig
           { rccCommand = c,
             rccProvider = provider,
-            rccModel = model
+            rccModel = model,
+            rccEffort = effort
           }
 
 -- | Shared IO: read @SEIHOU_AGENT_*@ and the local + global config maps into an
 -- 'AgentConfigInputs'. Any config read error surfaces as 'Left'.
-gatherAgentConfigInputs :: Maybe Text -> Maybe Text -> Bool -> Bool -> IO (Either Text AgentConfigInputs)
-gatherAgentConfigInputs cliProvider cliModel providerFromSub modelFromSub = do
+gatherAgentConfigInputs ::
+  Maybe Text ->
+  Maybe Text ->
+  Maybe Text ->
+  Bool ->
+  Bool ->
+  Bool ->
+  IO (Either Text AgentConfigInputs)
+gatherAgentConfigInputs cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub = do
   envProvider <- fmap T.pack <$> lookupEnv agentProviderEnvVar
   envModel <- fmap T.pack <$> lookupEnv agentModelEnvVar
+  envEffort <- fmap T.pack <$> lookupEnv agentEffortEnvVar
   (localResult, globalResult) <- runEff $ runConfigReader $ do
     local <- readLocalConfig
     global <- readGlobalConfig
@@ -385,10 +453,13 @@ gatherAgentConfigInputs cliProvider cliModel providerFromSub modelFromSub = do
       AgentConfigInputs
         { cliProvider = cliProvider,
           cliModel = cliModel,
+          cliEffort = cliEffort,
           cliProviderFromSubcommand = providerFromSub,
           cliModelFromSubcommand = modelFromSub,
+          cliEffortFromSubcommand = effortFromSub,
           envProvider = envProvider,
           envModel = envModel,
+          envEffort = envEffort,
           localConfig = local,
           globalConfig = global
         }

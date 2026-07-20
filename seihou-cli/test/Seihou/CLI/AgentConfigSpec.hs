@@ -1,5 +1,6 @@
 module Seihou.CLI.AgentConfigSpec (tests) where
 
+import Baikai.ThinkingLevel (ThinkingLevel (..))
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -15,48 +16,28 @@ tests = testSpec "Seihou.CLI.AgentConfig" spec
 spec :: Spec
 spec = do
   describe "resolveAgentModelConfig" $ do
-    it "uses CLI flags before environment variables" $ do
+    it "uses CLI flags before environment variables" $
       resolveAgentModelConfig
         (baseInputs {cliProvider = Just "codex-cli", cliModel = Just "gpt-5", envProvider = Just "anthropic", envModel = Just "claude-sonnet-4-6"})
-        `shouldBe` Right
-          AgentModelConfig
-            { agentProvider = AgentProviderCodexCli,
-              agentModel = Just "gpt-5"
-            }
+        `shouldBe` Right (cfg AgentProviderCodexCli (Just "gpt-5"))
 
-    it "uses environment variables before local config" $ do
+    it "uses environment variables before local config" $
       resolveAgentModelConfig
         (baseInputs {envProvider = Just "openai", envModel = Just "gpt-4o", localConfig = config "anthropic" "claude-sonnet-4-6"})
-        `shouldBe` Right
-          AgentModelConfig
-            { agentProvider = AgentProviderOpenAI,
-              agentModel = Just "gpt-4o"
-            }
+        `shouldBe` Right (cfg AgentProviderOpenAI (Just "gpt-4o"))
 
-    it "uses local config before global config" $ do
+    it "uses local config before global config" $
       resolveAgentModelConfig
         (baseInputs {localConfig = config "anthropic" "claude-opus-4-1", globalConfig = config "openai" "gpt-4o-mini"})
-        `shouldBe` Right
-          AgentModelConfig
-            { agentProvider = AgentProviderAnthropic,
-              agentModel = Just "claude-opus-4-1"
-            }
+        `shouldBe` Right (cfg AgentProviderAnthropic (Just "claude-opus-4-1"))
 
     it "pins the deterministic claude-cli default model when nothing is set" $
       resolveAgentModelConfig baseInputs
-        `shouldBe` Right
-          AgentModelConfig
-            { agentProvider = AgentProviderClaudeCli,
-              agentModel = Just "claude-opus-4-8"
-            }
+        `shouldBe` Right (cfg AgentProviderClaudeCli (Just "claude-opus-4-8"))
 
     it "pins the deterministic codex-cli default model when only the provider is set" $
       resolveAgentModelConfig (baseInputs {cliProvider = Just "codex-cli"})
-        `shouldBe` Right
-          AgentModelConfig
-            { agentProvider = AgentProviderCodexCli,
-              agentModel = Just "gpt-5.6-terra"
-            }
+        `shouldBe` Right (cfg AgentProviderCodexCli (Just "gpt-5.6-terra"))
 
     it "returns provider diagnostics for invalid provider text" $
       resolveAgentModelConfig (baseInputs {cliProvider = Just "llama"}) `shouldSatisfy` \case
@@ -68,20 +49,12 @@ spec = do
 
     it "allows a model-only override while keeping the default provider" $
       resolveAgentModelConfig (baseInputs {cliModel = Just "sonnet"})
-        `shouldBe` Right
-          AgentModelConfig
-            { agentProvider = AgentProviderClaudeCli,
-              agentModel = Just "sonnet"
-            }
+        `shouldBe` Right (cfg AgentProviderClaudeCli (Just "sonnet"))
 
     it "ignores blank higher-precedence values" $
       resolveAgentModelConfig
         (baseInputs {cliProvider = Just "  ", envProvider = Just "codex-cli", cliModel = Just "", envModel = Just "gpt-5"})
-        `shouldBe` Right
-          AgentModelConfig
-            { agentProvider = AgentProviderCodexCli,
-              agentModel = Just "gpt-5"
-            }
+        `shouldBe` Right (cfg AgentProviderCodexCli (Just "gpt-5"))
 
   describe "resolveAgentModelConfigFor (per-command)" $ do
     it "prefers a per-command model over the default in the same scope" $ do
@@ -155,13 +128,69 @@ spec = do
       modelOf AgentCmdMigrate inputs `shouldBe` Right (Just "gpt-5-mini", SourceLocalCommand)
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-opus-4-8", SourceLocalCommand)
 
+  describe "resolveAgentModelConfigFor (reasoning effort)" $ do
+    it "defaults to unset effort when nothing is configured" $
+      effortOf AgentCmdRun baseInputs `shouldBe` Right (Nothing, SourceBuiltinDefault)
+
+    it "prefers a per-command effort over the shared default in the same scope" $ do
+      let inputs =
+            baseInputs
+              { localConfig =
+                  Map.fromList
+                    [ (agentEffortConfigKey, "medium"),
+                      (agentCommandEffortConfigKey AgentCmdRun, "max")
+                    ]
+              }
+      effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingMax, SourceLocalCommand)
+      effortOf AgentCmdAssist inputs `shouldBe` Right (Just ThinkingMedium, SourceLocalDefault)
+
+    it "lets a local default effort override a global per-command effort" $ do
+      let inputs =
+            baseInputs
+              { localConfig = Map.fromList [(agentEffortConfigKey, "low")],
+                globalConfig = Map.fromList [(agentCommandEffortConfigKey AgentCmdRun, "max")]
+              }
+      effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingLow, SourceLocalDefault)
+
+    it "keeps the effort environment variable above config" $ do
+      let inputs =
+            baseInputs
+              { envEffort = Just "high",
+                localConfig = Map.fromList [(agentCommandEffortConfigKey AgentCmdRun, "minimal")]
+              }
+      effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingHigh, SourceEnv)
+
+    it "prefers the subcommand effort flag over everything" $
+      effortOf
+        AgentCmdRun
+        (baseInputs {cliEffort = Just "xhigh", cliEffortFromSubcommand = True, envEffort = Just "low"})
+        `shouldBe` Right (Just ThinkingXHigh, SourceCliSubcommand)
+
+    it "parses effort case-insensitively" $
+      effortOf AgentCmdRun (baseInputs {cliEffort = Just "  MAX  "}) `shouldBe` Right (Just ThinkingMax, SourceCliParent)
+
+    it "returns a diagnostic for an invalid effort value" $
+      resolveAgentModelConfigFor AgentCmdRun (baseInputs {cliEffort = Just "ultra"}) `shouldSatisfy` \case
+        Left err -> "Unknown reasoning effort" `Text.isInfixOf` err && "xhigh" `Text.isInfixOf` err
+        Right _ -> False
+
 providerOf :: AgentCommandName -> AgentConfigInputs -> Either Text (AgentProvider, AgentConfigSource)
 providerOf c inputs =
-  (\(p, _) -> (p.resolvedValue, p.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+  (\(p, _, _) -> (p.resolvedValue, p.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
 
 modelOf :: AgentCommandName -> AgentConfigInputs -> Either Text (Maybe Text, AgentConfigSource)
 modelOf c inputs =
-  (\(_, m) -> (m.resolvedValue, m.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+  (\(_, m, _) -> (m.resolvedValue, m.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+
+effortOf :: AgentCommandName -> AgentConfigInputs -> Either Text (Maybe ThinkingLevel, AgentConfigSource)
+effortOf c inputs =
+  (\(_, _, e) -> (e.resolvedValue, e.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+
+-- | Build an expected 'AgentModelConfig' with effort unset (the flat resolver
+-- never sets effort).
+cfg :: AgentProvider -> Maybe Text -> AgentModelConfig
+cfg provider model =
+  AgentModelConfig {agentProvider = provider, agentModel = model, agentEffort = Nothing}
 
 baseInputs :: AgentConfigInputs
 baseInputs = baseAgentConfigInputs

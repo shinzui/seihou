@@ -106,6 +106,7 @@ data AgentOpts = AgentOpts
   { agentDebug :: Bool,
     agentProvider :: Maybe Text,
     agentModel :: Maybe Text,
+    agentEffort :: Maybe Text,
     agentCommand :: AgentCommand
   }
   deriving stock (Eq, Show, Generic)
@@ -307,7 +308,8 @@ data SchemaUpgradeOpts = SchemaUpgradeOpts
 data AssistOpts = AssistOpts
   { assistPrompt :: Maybe Text,
     assistProvider :: Maybe Text,
-    assistModel :: Maybe Text
+    assistModel :: Maybe Text,
+    assistEffort :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -315,14 +317,16 @@ data BootstrapOpts = BootstrapOpts
   { bootstrapPrompt :: Maybe Text,
     bootstrapRepo :: Bool,
     bootstrapProvider :: Maybe Text,
-    bootstrapModel :: Maybe Text
+    bootstrapModel :: Maybe Text,
+    bootstrapEffort :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
 data SetupOpts = SetupOpts
   { setupPrompt :: Maybe Text,
     setupProvider :: Maybe Text,
-    setupModel :: Maybe Text
+    setupModel :: Maybe Text,
+    setupEffort :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -336,7 +340,8 @@ data BlueprintRunOpts = BlueprintRunOpts
     runBlueprintVerbose :: Bool,
     runBlueprintForce :: Bool,
     runBlueprintProvider :: Maybe Text,
-    runBlueprintModel :: Maybe Text
+    runBlueprintModel :: Maybe Text,
+    runBlueprintEffort :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -351,7 +356,8 @@ data BlueprintMigrationOpts = BlueprintMigrationOpts
     migrateBlueprintVerbose :: Bool,
     migrateBlueprintRerun :: Bool,
     migrateBlueprintProvider :: Maybe Text,
-    migrateBlueprintModel :: Maybe Text
+    migrateBlueprintModel :: Maybe Text,
+    migrateBlueprintEffort :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -368,7 +374,8 @@ data PromptRunOpts = PromptRunOpts
     runPromptVerbose :: Bool,
     runPromptDebug :: Bool,
     runPromptProvider :: Maybe Text,
-    runPromptModel :: Maybe Text
+    runPromptModel :: Maybe Text,
+    runPromptEffort :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -1521,6 +1528,7 @@ agentParser =
                 <> help "Agent model name or provider-specific alias; 'seihou agent models' lists known choices"
             )
         )
+      <*> effortOption
       <*> agentCommandParser
 
 agentCommandParser :: Parser AgentCommand
@@ -1572,6 +1580,7 @@ agentAssistParser =
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Initial prompt describing what you want to do"))
       <*> providerOption
       <*> modelOption
+      <*> effortOption
 
 agentBootstrapInfo :: ParserInfo AgentCommand
 agentBootstrapInfo =
@@ -1609,6 +1618,7 @@ agentBootstrapParser =
       <*> switch (long "repo" <> help "Bootstrap a multi-module repository with registry")
       <*> providerOption
       <*> modelOption
+      <*> effortOption
 
 agentSetupInfo :: ParserInfo AgentCommand
 agentSetupInfo =
@@ -1645,6 +1655,7 @@ agentSetupParser =
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Description of what you want to set up"))
       <*> providerOption
       <*> modelOption
+      <*> effortOption
 
 agentRunInfo :: ParserInfo AgentCommand
 agentRunInfo =
@@ -1699,6 +1710,7 @@ agentRunParser =
       <*> switch (long "force" <> help "Auto-resolve baseline conflicts (accept new files)")
       <*> providerOption
       <*> modelOption
+      <*> effortOption
 
 agentMigrateInfo :: ParserInfo AgentCommand
 agentMigrateInfo =
@@ -1747,6 +1759,7 @@ agentMigrateParser =
       <*> switch (long "rerun" <> help "Run matching migrations even when a receipt already exists")
       <*> providerOption
       <*> modelOption
+      <*> effortOption
 
 agentModelsInfo :: ParserInfo AgentCommand
 agentModelsInfo =
@@ -1882,6 +1895,7 @@ promptRunParser =
       <*> switch (long "debug" <> help "Print the rendered prompt and exit")
       <*> providerOption
       <*> modelOption
+      <*> effortOption
 
 helpCmdInfo :: ParserInfo Command
 helpCmdInfo =
@@ -1997,4 +2011,14 @@ modelOption =
       ( long "model"
           <> metavar "MODEL"
           <> help "Agent model name or provider-specific alias; 'seihou agent models' lists known choices"
+      )
+
+effortOption :: Parser (Maybe Text)
+effortOption =
+  optional $
+    option
+      (T.pack <$> str)
+      ( long "effort"
+          <> metavar "LEVEL"
+          <> help "Reasoning effort: minimal, low, medium, high, xhigh, or max"
       )

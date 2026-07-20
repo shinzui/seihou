@@ -86,15 +86,20 @@ This section must always reflect the actual current state of the work.
 
 - [ ] Milestone 1: Upgrade the Baikai dependency bounds in `seihou-cli/seihou-cli.cabal` to
   admit `baikai 0.4`, `baikai-claude`/`baikai-openai` at their current release; rebuild.
-- [ ] Milestone 2: Add reasoning-effort to the config vocabulary and resolver in the library
+- [x] Milestone 2: Add reasoning-effort to the config vocabulary and resolver in the library
   (`seihou-cli/src/Seihou/CLI/AgentConfig.hs` and `Seihou.CLI.AgentCompletion`): an
-  `agentEffort` field on `AgentModelConfig`, an effort text↔`ThinkingLevel` parser/renderer,
+  `agentEffort` field on `AgentModelConfig`, `effortFromText`/`effortToText`,
   `agent.effort` / `agent.<command>.effort` keys, `SEIHOU_AGENT_EFFORT`, provenance-aware
-  resolution; unit tests.
-- [ ] Milestone 3: Add the `--effort` CLI flag (parent `agent`, every agent subcommand, and
+  resolution (the resolver now returns a provider/model/effort triple); unit tests.
+  Completed 2026-07-20 (landed together with Milestone 3 — see note).
+- [x] Milestone 3: Add the `--effort` CLI flag (parent `agent`, every agent subcommand, and
   `prompt run`), thread it through the `Main.hs` dispatch **including the prompt-run arm**,
   and into both launch paths — the interactive request's `effort` field and the API path's
-  `Options.thinking`.
+  `Options.thinking`. Completed 2026-07-20. Verified with a scratch `HOME`: `--effort` is
+  listed on the parent, every subcommand, and `prompt run`; an invalid value is rejected with
+  a diagnostic; a valid value parses and resolves. **Note:** M2 changed the arity/return type
+  of `loadAgentModelConfigFor`/`resolveAgentModelConfigFor`, which the executable dispatch
+  consumes, so M2 and M3 were committed together to keep every commit's build green.
 - [ ] Milestone 4: Show the resolved effort in `seihou agent config`; update user docs and
   the CHANGELOG; run the full suite.
 

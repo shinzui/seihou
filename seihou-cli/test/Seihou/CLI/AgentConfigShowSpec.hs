@@ -1,5 +1,6 @@
 module Seihou.CLI.AgentConfigShowSpec (tests) where
 
+import Baikai.ThinkingLevel (ThinkingLevel (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Seihou.CLI.AgentCompletion (AgentProvider (..))
@@ -51,17 +52,21 @@ sample =
   [ ResolvedCommandConfig
       AgentCmdAssist
       (ResolvedAgentField AgentProviderCodexCli SourceGlobalCommand)
-      (ResolvedAgentField Nothing SourceBuiltinDefault),
+      (ResolvedAgentField Nothing SourceBuiltinDefault)
+      (ResolvedAgentField (Just ThinkingHigh) SourceGlobalDefault),
     ResolvedCommandConfig
       AgentCmdBootstrap
       (ResolvedAgentField AgentProviderClaudeCli SourceBuiltinDefault)
-      (ResolvedAgentField (Just "claude-sonnet-5") SourceGlobalDefault),
+      (ResolvedAgentField (Just "claude-sonnet-5") SourceGlobalDefault)
+      (ResolvedAgentField Nothing SourceBuiltinDefault),
     ResolvedCommandConfig
       AgentCmdRun
       (ResolvedAgentField AgentProviderClaudeCli SourceBuiltinDefault)
-      (ResolvedAgentField (Just "claude-opus-4-8") SourceLocalCommand),
+      (ResolvedAgentField (Just "claude-opus-4-8") SourceLocalCommand)
+      (ResolvedAgentField (Just ThinkingMax) SourceLocalCommand),
     ResolvedCommandConfig
       AgentCmdMigrate
       (ResolvedAgentField AgentProviderOpenAI SourceLocalCommand)
       (ResolvedAgentField (Just "gpt-5-mini") SourceLocalCommand)
+      (ResolvedAgentField Nothing SourceBuiltinDefault)
   ]
