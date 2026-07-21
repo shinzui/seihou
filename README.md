@@ -107,6 +107,9 @@ project, and detecting changes.
 - **Blueprints** and **prompts** bring AI providers into scaffolding. See the
   [Blueprints](docs/user/blueprints.md), [Prompts](docs/user/prompts.md), and
   [AI Agent Assistance](docs/user/agent-assistance.md) guides.
+- **Blueprint migrations** let a library ship ordered, agent-guided upgrade steps
+  that consumers run across an explicit version window, with per-edge receipts
+  for resume. See [Blueprint Migrations](docs/user/blueprint-migrations.md).
 
 
 ## Commands
@@ -181,6 +184,7 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 - [Registries & Multi-Module Repositories](docs/user/registries-and-multi-module-repos.md) — publish many artifacts from one repo.
 - [Migrations](docs/user/migrations.md) — move projects across module versions.
 - [Blueprints](docs/user/blueprints.md) — agent-driven scaffolding.
+- [Blueprint Migrations](docs/user/blueprint-migrations.md) — publish and run agent-guided library upgrades.
 - [Prompts](docs/user/prompts.md) — reusable agent-session workflows.
 - [AI Agent Assistance](docs/user/agent-assistance.md) — configure and run Claude Code, Codex, Anthropic, and OpenAI providers.
 - [Changelog](docs/user/CHANGELOG.md) — user-facing release notes.

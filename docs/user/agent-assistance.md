@@ -283,6 +283,7 @@ native discovery paths.
 
 - [Configuration and Variable Resolution](config-and-variables.md#agent-provider-defaults)
 - [Agent-Driven Blueprints](blueprints.md)
+- [Blueprint Migrations](blueprint-migrations.md)
 - [First-Class Prompts](prompts.md)
 - [`seihou agent`](../cli/agent.md)
 - [`seihou prompt`](../cli/prompt.md)

@@ -43,8 +43,9 @@ the manifest.
 Migration mode reuses blueprint variables, shared prompt, references, and allowed
 tools, but never applies `baseModules`. A receipt records successful agent
 completion, not proof that a language package manager reports the target version.
-See [Agent-Driven Blueprints](blueprints.md#library-upgrade-migrations) for the
-Dhall shape, registry publication, overlap behavior, and authoring guidance.
+See [Blueprint Migrations](blueprint-migrations.md) for the complete workflow, and
+[Agent-Driven Blueprints](blueprints.md#library-upgrade-migrations) for the Dhall
+shape and registry publication.
 
 The rest of this guide describes deterministic module migrations.
 
@@ -298,6 +299,8 @@ seihou migrate haskell-base --commit-message "chore: migrate haskell-base to 1.5
 
 ## See also
 
+- [`docs/user/blueprint-migrations.md`](blueprint-migrations.md) —
+  agent-guided library upgrades
 - [`docs/cli/migrate.md`](../cli/migrate.md) — command reference
 - [`docs/user/module-authoring.md`](module-authoring.md#migrations) —
   authoring section

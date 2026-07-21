@@ -166,7 +166,9 @@ seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
 For this subcommand, parent `--debug` is a true dry run: it prints every pending
 prompt in order, never contacts a provider, and never writes a migration receipt.
 Receipts report provider completion rather than package-manager verification.
-See [Agent-Driven Blueprints](../user/blueprints.md#library-upgrade-migrations).
+See [Blueprint Migrations](../user/blueprint-migrations.md) for the full workflow
+and [Agent-Driven Blueprints](../user/blueprints.md#library-upgrade-migrations)
+for the Dhall shape.
 
 ## Requirements
 

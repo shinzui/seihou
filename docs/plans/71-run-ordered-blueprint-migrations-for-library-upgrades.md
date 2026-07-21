@@ -50,6 +50,14 @@ library-level fake-launcher test must additionally prove that a failure in the
 second step records only the first, stops before the third, and resumes at the
 second on the next invocation.
 
+The feature must also be *findable*. Reference-level coverage lives beside the
+concepts it extends — the blueprint format, the module-migration guide, and the
+`agent` command reference — but a reader who has been told "run our library's
+Seihou migration" has no single page to open. `docs/user/blueprint-migrations.md`
+is that page: one task-ordered guide covering both audiences (the library author
+publishing upgrade knowledge and the consumer executing a version window), listed
+in the repository README's guide index alongside the other user guides.
+
 
 ## Progress
 
@@ -76,6 +84,14 @@ second on the next invocation.
   isolated debug/no-op/downgrade demo. Final `nix fmt`, `cabal build all`,
   `cabal test all` (1,023 core, 337 CLI, and 16 extension tests), and
   `nix flake check` all passed.
+- [x] (2026-07-20 16:35Z) Milestone 6: added the dedicated user guide
+  `docs/user/blueprint-migrations.md`, indexed it in `README.md`, linked it from
+  `docs/user/blueprints.md`, `docs/user/migrations.md`,
+  `docs/user/agent-assistance.md`, and `docs/cli/agent.md`, and corrected two
+  inaccurate documentation claims found while verifying transcripts against the
+  built binary. All quoted output was captured from
+  `dist-newstyle/.../seihou` at v0.5.0.0; every relative link resolves and
+  `git diff --check` is clean.
 
 
 ## Surprises & Discoveries
@@ -138,6 +154,27 @@ second on the next invocation.
   commit `2dffa0592be47835a60784b89a289226ba990aa8` is now both local `HEAD` and
   remote `master`. Freezing and evaluating its remote `package.dhall` produced
   `sha256:01b6f873520459f3958baa34d3f97a49a4263b9a7225a758cddca5ab3a911f61`.
+
+- Observation: Writing the consolidated guide against the built binary rather
+  than against this plan exposed three defects that the Milestone 5 documentation
+  pass had missed: `docs/user/CHANGELOG.md` claimed Seihou "rejects gaps,
+  overlaps, and overshoots" (the planner tolerates gaps, skips overlaps, and
+  defers overshoots), that same entry linked to a nonexistent
+  `../cli/agent.md#seihou-agent-migrate` anchor when the heading renders as
+  `#agent-migrate`, and `docs/user/blueprints.md` listed `migrations/` in the
+  `seihou new-blueprint` scaffold output.
+  Evidence: `seihou new-blueprint my-library` produced only `blueprint.dhall`,
+  `prompt.md`, and `files/`; `rg -n "^### agent migrate" docs/cli/agent.md`
+  confirmed the heading text. All three are corrected in Milestone 6.
+
+- Observation: Parent `--debug` filters already-recorded edges rather than
+  rendering the whole declared window, so a dry run after a partial chain shows
+  only what would actually run next.
+  Evidence: with a `1.0.0 -> 2.0.0` receipt present, the debug run of
+  `--from 1.0.0 --to 3.0.0` printed a single `===== [1/1] 2.5.0 -> 3.0.0 =====`
+  step; adding `--rerun` restored both steps. This follows from `pending` being
+  computed before the debug branch in `handleAgentMigrate`, and is now documented
+  as consumer-visible behavior.
 
 - Observation: The initial debug delimiter was unambiguous to tests but did not
   reproduce the plan's human-observable range heading and `[position/total]`
@@ -296,6 +333,27 @@ second on the next invocation.
   parent pin records its generated integrity hash rather than a hand-written one.
   Date: 2026-07-20.
 
+- Decision: Add a dedicated `docs/user/blueprint-migrations.md` guide instead of
+  further expanding the existing "Library upgrade migrations" section of
+  `docs/user/blueprints.md`.
+  Rationale: The two audiences differ. `blueprints.md` is read by someone
+  authoring a scaffolding artifact, and `migrations.md` is read by someone
+  reasoning about deterministic module upgrades; neither is where a consumer told
+  to "run the library's migration" starts. The other user guides are already
+  task-scoped and indexed individually in `README.md`, so a peer guide matches the
+  established shape better than a growing subsection would.
+  Date: 2026-07-20.
+
+- Decision: Keep the existing migration subsections and their headings in
+  `docs/user/blueprints.md`, `docs/user/migrations.md`, and `docs/cli/agent.md`;
+  link them to the new guide rather than replacing them with pointers.
+  Rationale: `blueprints.md#library-upgrade-migrations` is linked from two docs
+  and two in-binary help topics, so deleting the heading would break anchors that
+  are already published. Each existing section also answers a question local to
+  its own page — the Dhall field, the contrast with module migrations, the flag
+  table — which is worth keeping where the reader already is.
+  Date: 2026-07-20.
+
 
 ## Outcomes & Retrospective
 
@@ -339,6 +397,18 @@ second on the next invocation.
   intentional gap, left `.seihou/manifest.json` absent, returned a zero-status
   no-work message for `3.0.0 -> 3.0.0`, and rejected `3.0.0 -> 2.0.0` before any
   write.
+
+- Milestone 6 gave the feature a single entry point. `docs/user/blueprint-migrations.md`
+  walks the author path (lay out `migrations/`, declare edges, write an edge
+  prompt against the framing Seihou already supplies, validate, publish through a
+  registry) and the consumer path (preview with `--debug`, run the window,
+  read `seihou status`, resume, `--rerun`), then states the planner rules,
+  what a receipt does and does not prove, and a troubleshooting table keyed to
+  the exact strings `AgentMigrate.hs` prints. Verifying every transcript against
+  the built binary — rather than trusting the plan text — corrected three
+  inaccurate claims left by Milestone 5. The existing
+  `blueprints.md#library-upgrade-migrations` anchor was deliberately preserved,
+  so the two in-binary help topics and both reference pages still resolve.
 
 The implemented result matches the original purpose: a library can publish one
 blueprint containing ordered upgrade knowledge, and a consumer can execute an
@@ -573,6 +643,43 @@ build, test, and Nix gates, then perform the debug demo in Validation and
 Acceptance. Update the living sections of this plan after every milestone and
 fill Outcomes & Retrospective when the work is complete.
 
+Milestone 6 makes the shipped feature discoverable as a single task-ordered guide.
+Milestone 5 documented blueprint migrations correctly but distributed them across
+`docs/user/blueprints.md` (Dhall shape and registry publication),
+`docs/user/migrations.md` (how they differ from deterministic module migrations),
+and `docs/cli/agent.md` (flags). A reader told "run our library's Seihou
+migration" has no single entry point, and the repository README's guide index does
+not mention the capability at all.
+
+Add `docs/user/blueprint-migrations.md` as the consolidated guide. Organize it by
+task, not by module: what a blueprint migration is and when to prefer it over a
+module migration; the library-author path (declare edges, write one Markdown prompt
+per edge, validate, publish through the existing registry); the consumer path
+(install, preview with `seihou agent --debug migrate`, run, inspect
+`seihou status`); the ordering rules stated as consumer-visible outcomes (gaps
+allowed, duplicate `from` rejected, overlapping edge skipped once the cursor has
+advanced, overshooting edge deferred); resume, `--rerun`, and what a receipt does
+and does not prove; and a troubleshooting section keyed to the messages the command
+actually prints. Every command, message, and Dhall snippet must be copied from
+observed behavior or current source — the message strings live in
+`seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs` and the receipt rendering in
+`seihou-cli/src/Seihou/CLI/StatusRender.hs` — never invented.
+
+Keep the existing sections in place rather than deleting them, because
+`docs/user/migrations.md`, `docs/cli/agent.md`, and `seihou-cli/help/*.md` link to
+`blueprints.md#library-upgrade-migrations`; removing that heading would break
+published anchors. Leave each existing section owning its local concern and add a
+link to the new guide, add the guide to the `README.md` guide index and its
+blueprint feature bullet, and add "See also" links from `docs/user/blueprints.md`,
+`docs/user/migrations.md`, `docs/user/agent-assistance.md`, and `docs/cli/agent.md`.
+
+While auditing, correct the `docs/user/CHANGELOG.md` "Ordered blueprint migrations"
+entry: it currently states that Seihou "rejects gaps, overlaps, and overshoots",
+which contradicts the implemented gap-tolerant planner. The corrected sentence must
+match shipped behavior and point at the new guide. This milestone changes no
+Haskell, Dhall, or Cabal file, so its gate is the documentation review in
+Validation and Acceptance rather than a new test run.
+
 
 ## Concrete Steps
 
@@ -680,6 +787,19 @@ git diff --check
 git status --short
 ```
 
+For Milestone 6, re-read the shipped behavior before writing the guide instead of
+paraphrasing this plan, then confirm no relative link or anchor was broken:
+
+```bash
+rg -n "putStrLn|logError" seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs
+rg -n "library-upgrade-migrations" docs seihou-cli/help README.md
+rg -no "\]\(([^)]+\.md)[^)]*\)" -r '$1' docs/user/blueprint-migrations.md
+```
+
+Every path printed by the third command must exist relative to `docs/user/`.
+Milestone 6 touches only Markdown, so `cabal build all` and `cabal test all` are
+unaffected; `git diff --check` and `nix flake check` remain the gate.
+
 All implementation commits must use Conventional Commits and end with the two
 trailers shown above. Commit after each milestone only when the repository is in a
 working state. Do not fold unrelated plan-70 work or other unrelated files into
@@ -751,6 +871,26 @@ nonzero before variable prompts, provider launch, or manifest creation. Finally,
 `cabal build all`, `cabal test all`, `nix flake check`, and `git diff --check` must
 all succeed. Record the actual transcripts and dates in Progress or Surprises &
 Discoveries during implementation.
+
+Milestone 6 is accepted by documentation review rather than by a test. The new
+`docs/user/blueprint-migrations.md` must let a reader who knows nothing about the
+feature complete both paths end to end: an author can copy its Dhall snippet into
+`blueprint.dhall`, add `migrations/*.md`, run `seihou validate-blueprint`, and
+publish through a registry entry; a consumer can install, preview with
+`seihou agent --debug migrate`, run the window, and read the receipts back out of
+`seihou status`. Every quoted CLI message must match a string that
+`seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs` actually prints, and the receipt
+line must match `formatBlueprintMigrations` in
+`seihou-cli/src/Seihou/CLI/StatusRender.hs`. The guide must state that gaps are
+allowed and that an overshooting edge is deferred, because the previous release
+note asserted the opposite.
+
+The existing `blueprints.md#library-upgrade-migrations` anchor must still exist and
+still be reachable from `docs/user/migrations.md`, `docs/cli/agent.md`,
+`seihou-cli/help/blueprints.md`, and `seihou-cli/help/migrations.md`. `README.md`
+must list the new guide in its `docs/user/` index. Every relative Markdown link in
+the new file must resolve to a real path, and `git diff --check` must report no
+whitespace errors.
 
 
 ## Idempotence and Recovery
@@ -917,3 +1057,29 @@ Codex retains workspace-write/on-request safety. API providers receive rendered
 text and the existing explanation that local reference files cannot be mounted.
 No registry schema change is needed: the existing blueprint registry entry points
 to the one blueprint artifact, whose internal `migrations` list travels with it.
+
+Milestone 6 adds one user-facing documentation surface,
+`docs/user/blueprint-migrations.md`, and no code interface. It depends only on
+already-shipped behavior: the message strings in
+`seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`, the debug delimiters in
+`seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`, the receipt rendering in
+`seihou-cli/src/Seihou/CLI/StatusRender.hs`, and the `agent.migrate.*`
+configuration keys derived from `agentCommandSegment` in
+`seihou-cli/src/Seihou/CLI/AgentConfig.hs`. Changing any of those strings makes
+the guide stale; treat it as part of the command's observable surface.
+
+
+## Revision Notes
+
+- 2026-07-20: Added Milestone 6 after the feature had shipped. Milestone 5's
+  documentation was accurate but distributed across `docs/user/blueprints.md`,
+  `docs/user/migrations.md`, and `docs/cli/agent.md`, leaving no single page for a
+  consumer told to "run the library's Seihou migration" and no mention of the
+  capability in the `README.md` guide index. The new milestone adds
+  `docs/user/blueprint-migrations.md` as a task-ordered guide for both audiences,
+  preserves the existing `blueprints.md#library-upgrade-migrations` anchor because
+  four other files link to it, and corrects the release note that wrongly claimed
+  gaps and overshoots are rejected. Purpose / Big Picture, Progress, Surprises &
+  Discoveries, Decision Log, Outcomes & Retrospective, Plan of Work, Concrete
+  Steps, Validation and Acceptance, and Interfaces and Dependencies were all
+  updated to reflect it.

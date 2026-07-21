@@ -27,7 +27,6 @@ The command creates:
 api-service/
 ├── blueprint.dhall
 ├── prompt.md
-├── migrations/          # optional per-version upgrade prompts
 └── files/
 ```
 
@@ -38,6 +37,10 @@ api-service/
 - `files/` holds optional examples, snippets, partial templates, or sample
   configs for the agent to consult. Interactive CLI runs mount this directory
   so the agent can read its contents directly.
+
+Blueprints that publish library upgrades conventionally add a `migrations/`
+directory holding one Markdown prompt per version edge. It is not scaffolded;
+see [Blueprint Migrations](blueprint-migrations.md).
 
 ## The blueprint.dhall format
 
@@ -110,6 +113,10 @@ Resolved values are substituted into `prompt.md` with `{{variable.name}}`
 placeholders before the prompt is sent to the configured provider.
 
 ## Library upgrade migrations
+
+This section covers the blueprint side of the feature. For the full workflow —
+authoring edge prompts, publishing, running a window, resuming, and reading
+receipts — see [Blueprint Migrations](blueprint-migrations.md).
 
 Use blueprint migrations when a library release requires judgement across a
 consumer's arbitrary source code: renamed APIs, changed configuration shapes,
@@ -303,6 +310,7 @@ files, and references. Consumers install that blueprint, then invoke
 
 ## See also
 
+- [Blueprint Migrations](blueprint-migrations.md)
 - [AI Agent Assistance](agent-assistance.md)
 - [Configuration and Variable Resolution](config-and-variables.md)
 - [First-Class Prompts](prompts.md)

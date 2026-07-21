@@ -25,11 +25,14 @@ packages in the workspace share a single version.
 - **Ordered blueprint migrations.** Blueprint authors can declare versioned,
   agent-driven upgrade steps in `blueprint.dhall`, and users can run the exact
   requested window with `seihou agent migrate BLUEPRINT --from VERSION --to
-  VERSION`. Seihou rejects gaps, overlaps, and overshoots; writes a durable
+  VERSION`. Seihou runs the declared edges inside that window in ascending order,
+  tolerating undeclared gaps, skipping an edge that overlaps one already selected,
+  and deferring an edge whose target overshoots the window; it writes a durable
   receipt after every successful step; resumes interrupted chains by default;
   and supports `--rerun` plus a side-effect-free `--debug` preview. See
+  [Blueprint Migrations](blueprint-migrations.md) for the full workflow, plus
   [Blueprints](blueprints.md), [Migrations](migrations.md), and the
-  [`agent migrate` reference](../cli/agent.md#seihou-agent-migrate).
+  [`agent migrate` reference](../cli/agent.md#agent-migrate).
 
 - **Deterministic CLI provider defaults.** When no model is configured, the
   local CLI providers now pin a specific model instead of deferring to the
