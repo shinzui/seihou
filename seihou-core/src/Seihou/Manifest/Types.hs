@@ -358,8 +358,8 @@ parentVarsMapFromJSON v = do
 removalToJSON :: Removal -> Aeson.Value
 removalToJSON r =
   Aeson.object
-    [ "steps" .= map removalStepToJSON r.removalSteps,
-      "commands" .= map removalCommandToJSON r.removalCommands
+    [ "steps" .= map removalStepToJSON r.steps,
+      "commands" .= map removalCommandToJSON r.commands
     ]
 
 removalStepToJSON :: RemovalStep -> Aeson.Value

@@ -12,10 +12,10 @@ import Seihou.Prelude
 -- | State capturing all log messages by severity.
 -- Messages are appended in order within each field.
 data LoggerState = LoggerState
-  { logDebugMsgs :: ![Text],
-    logInfoMsgs :: ![Text],
-    logWarnMsgs :: ![Text],
-    logErrorMsgs :: ![Text]
+  { debugMsgs :: ![Text],
+    infoMsgs :: ![Text],
+    warnMsgs :: ![Text],
+    errorMsgs :: ![Text]
   }
   deriving stock (Eq, Generic, Show)
 
@@ -31,7 +31,7 @@ runLoggerPure = reinterpret (runState emptyLoggerState) handler
   where
     handler :: (State LoggerState :> es') => EffectHandler Logger es'
     handler _ = \case
-      LogDebug msg -> modify @LoggerState (\s -> s {logDebugMsgs = s.logDebugMsgs ++ [msg]})
-      LogInfo msg -> modify @LoggerState (\s -> s {logInfoMsgs = s.logInfoMsgs ++ [msg]})
-      LogWarn msg -> modify @LoggerState (\s -> s {logWarnMsgs = s.logWarnMsgs ++ [msg]})
-      LogError msg -> modify @LoggerState (\s -> s {logErrorMsgs = s.logErrorMsgs ++ [msg]})
+      LogDebug msg -> modify @LoggerState (\s -> s {debugMsgs = s.debugMsgs ++ [msg]})
+      LogInfo msg -> modify @LoggerState (\s -> s {infoMsgs = s.infoMsgs ++ [msg]})
+      LogWarn msg -> modify @LoggerState (\s -> s {warnMsgs = s.warnMsgs ++ [msg]})
+      LogError msg -> modify @LoggerState (\s -> s {errorMsgs = s.errorMsgs ++ [msg]})

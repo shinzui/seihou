@@ -84,20 +84,20 @@ data BlueprintMigration = BlueprintMigration
 --
 -- The plan carries the module name for rendering, the start and end
 -- versions of the user-visible "X → Y" header, and the ordered list of
--- migrations that will run. A plan with @planSteps == []@ means the
--- manifest will advance from @planFrom@ to @planTo@ without running
+-- migrations that will run. A plan with @steps == []@ means the
+-- manifest will advance from @from@ to @to@ without running
 -- any migration ops (a pure version bump).
 data MigrationPlan = MigrationPlan
-  { planModule :: !Text,
+  { module_ :: !Text,
     -- | Installed (manifest) version at the start.
-    planFrom :: !Version,
+    from :: !Version,
     -- | Target version. The manifest will land here after the plan
     -- runs, regardless of whether any of the declared migrations
-    -- bridge every gap inside @[planFrom, planTo]@.
-    planTo :: !Version,
+    -- bridge every gap inside @[from, to]@.
+    to :: !Version,
     -- | The migrations that actually apply, in ascending @from@
     -- order. May be empty.
-    planSteps :: ![Migration]
+    steps :: ![Migration]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -105,10 +105,10 @@ data MigrationPlan = MigrationPlan
 -- window. A non-trivial window may have no selected steps when the author
 -- declared no agent intervention for that range.
 data BlueprintMigrationPlan = BlueprintMigrationPlan
-  { blueprintPlanName :: !Text,
-    blueprintPlanFrom :: !Version,
-    blueprintPlanTo :: !Version,
-    blueprintPlanSteps :: ![BlueprintMigration]
+  { name :: !Text,
+    from :: !Version,
+    to :: !Version,
+    steps :: ![BlueprintMigration]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -167,10 +167,10 @@ planMigrationChain modName migrations installed target =
     ( fmap
         ( \steps ->
             MigrationPlan
-              { planModule = modName,
-                planFrom = installed,
-                planTo = target,
-                planSteps = steps
+              { module_ = modName,
+                from = installed,
+                to = target,
+                steps = steps
               }
         )
     )
@@ -189,10 +189,10 @@ planBlueprintMigrationChain blueprintName migrations current target =
     ( fmap
         ( \steps ->
             BlueprintMigrationPlan
-              { blueprintPlanName = blueprintName,
-                blueprintPlanFrom = current,
-                blueprintPlanTo = target,
-                blueprintPlanSteps = steps
+              { name = blueprintName,
+                from = current,
+                to = target,
+                steps = steps
               }
         )
     )

@@ -22,7 +22,7 @@ spec = do
         let registryDir = tmpDir </> "registry"
             outDir = tmpDir </> "out"
         writeFixtureRegistry registryDir
-        result <- runDocs DocsOpts {docsDir = registryDir, docsOut = outDir, docsForce = False}
+        result <- runDocs DocsOpts {dir = registryDir, out = outDir, force = False}
         result `shouldBe` Right ("Wrote 2 concepts to " <> T.pack outDir)
         doesFileExist (outDir </> "modules" </> "base.md") `shouldReturn` True
         doesFileExist (outDir </> "recipes" </> "base-recipe.md") `shouldReturn` True
@@ -36,17 +36,17 @@ spec = do
         let registryDir = tmpDir </> "registry"
             outDir = tmpDir </> "out"
         writeFixtureRegistry registryDir
-        first <- runDocs DocsOpts {docsDir = registryDir, docsOut = outDir, docsForce = False}
+        first <- runDocs DocsOpts {dir = registryDir, out = outDir, force = False}
         first `shouldBe` Right ("Wrote 2 concepts to " <> T.pack outDir)
-        second <- runDocs DocsOpts {docsDir = registryDir, docsOut = outDir, docsForce = False}
+        second <- runDocs DocsOpts {dir = registryDir, out = outDir, force = False}
         second `shouldBe` Left ("output directory is not empty: " <> T.pack outDir <> "; pass --force to overwrite")
-        forced <- runDocs DocsOpts {docsDir = registryDir, docsOut = outDir, docsForce = True}
+        forced <- runDocs DocsOpts {dir = registryDir, out = outDir, force = True}
         forced `shouldBe` Right ("Wrote 2 concepts to " <> T.pack outDir)
 
     it "reports a missing registry file" $ do
       withSystemTempDirectory "seihou-okf-docs-missing" $ \tmpDir -> do
         let registryDir = tmpDir </> "missing"
-        result <- runDocs DocsOpts {docsDir = registryDir, docsOut = tmpDir </> "out", docsForce = False}
+        result <- runDocs DocsOpts {dir = registryDir, out = tmpDir </> "out", force = False}
         result `shouldBe` Left ("registry file not found: " <> T.pack (registryDir </> "seihou-registry.dhall"))
 
 writeFixtureRegistry :: FilePath -> IO ()

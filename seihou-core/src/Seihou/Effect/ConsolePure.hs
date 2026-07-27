@@ -13,9 +13,9 @@ import Prelude hiding (getLine)
 
 -- | State for the pure Console interpreter.
 data ConsoleState = ConsoleState
-  { consoleInputs :: ![Text],
-    consoleOutputs :: ![Text],
-    consoleErrors :: ![Text]
+  { inputs :: ![Text],
+    outputs :: ![Text],
+    errors :: ![Text]
   }
   deriving stock (Eq, Generic, Show)
 
@@ -30,8 +30,8 @@ runConsolePure inputs = reinterpret (runState (ConsoleState inputs [] [])) handl
   where
     handler :: (State ConsoleState :> es') => EffectHandler Console es'
     handler _ = \case
-      PutText msg -> modify @ConsoleState (\s -> s {consoleOutputs = s.consoleOutputs ++ [msg]})
-      PutError msg -> modify @ConsoleState (\s -> s {consoleErrors = s.consoleErrors ++ [msg]})
+      PutText msg -> modify @ConsoleState (\s -> s {outputs = s.outputs ++ [msg]})
+      PutError msg -> modify @ConsoleState (\s -> s {errors = s.errors ++ [msg]})
       GetLine -> popInput
       Confirm _prompt -> (`elem` ["y", "yes"]) <$> popInput
       IsInteractive -> pure True
@@ -39,10 +39,10 @@ runConsolePure inputs = reinterpret (runState (ConsoleState inputs [] [])) handl
     popInput :: (State ConsoleState :> es') => Eff es' Text
     popInput = do
       s <- get @ConsoleState
-      case s.consoleInputs of
+      case s.inputs of
         [] -> pure ""
         (x : xs) -> do
-          modify @ConsoleState (\st -> st {consoleInputs = xs})
+          modify @ConsoleState (\st -> st {inputs = xs})
           pure x
 
 -- | Pure interpreter for non-interactive mode. IsInteractive returns False.
@@ -51,8 +51,8 @@ runConsolePureNonInteractive = reinterpret (runState emptyConsoleState) handler
   where
     handler :: (State ConsoleState :> es') => EffectHandler Console es'
     handler _ = \case
-      PutText msg -> modify @ConsoleState (\s -> s {consoleOutputs = s.consoleOutputs ++ [msg]})
-      PutError msg -> modify @ConsoleState (\s -> s {consoleErrors = s.consoleErrors ++ [msg]})
+      PutText msg -> modify @ConsoleState (\s -> s {outputs = s.outputs ++ [msg]})
+      PutError msg -> modify @ConsoleState (\s -> s {errors = s.errors ++ [msg]})
       GetLine -> pure ""
       Confirm _prompt -> pure False
       IsInteractive -> pure False

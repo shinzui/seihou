@@ -43,9 +43,9 @@ import System.IO (hPutStrLn, stderr)
 
 -- | Flags parsed for the @seihou registry sync-versions@ subcommand.
 data SyncVersionsOpts = SyncVersionsOpts
-  { syncVersionsDir :: !(Maybe FilePath),
-    syncVersionsDryRun :: !Bool,
-    syncVersionsCheck :: !Bool
+  { dir :: !(Maybe FilePath),
+    dryRun :: !Bool,
+    check :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -74,7 +74,7 @@ data SyncOutcome
 -- when appropriate, and returns a structured outcome.
 runSync :: SyncVersionsOpts -> IO SyncOutcome
 runSync opts = do
-  let targetDir = maybe "." id opts.syncVersionsDir
+  let targetDir = maybe "." id opts.dir
   dirExists <- doesDirectoryExist targetDir
   if not dirExists
     then pure (SyncFailure ("target directory does not exist: " <> T.pack targetDir))
@@ -84,13 +84,13 @@ runSync opts = do
         MultiModule reg -> do
           lookups <- resolveOnDiskVersions targetDir reg
           let report = computeRegistrySync reg lookups
-          let checkMode = opts.syncVersionsCheck
-              dryRun = opts.syncVersionsDryRun && not checkMode
+          let checkMode = opts.check
+              dryRun = opts.dryRun && not checkMode
               writeMode = not checkMode && not dryRun
           action <-
             if writeMode
               then do
-                let rendered = renderRegistryDhall report.syncUpdated
+                let rendered = renderRegistryDhall report.updated
                 TIO.writeFile (targetDir </> "seihou-registry.dhall") rendered
                 pure Wrote
               else
@@ -190,7 +190,7 @@ handleSyncVersions opts = do
 -- The first entry in 'syncDiffs' appears first, preserving registry order.
 renderSyncReport :: SyncReport -> Text
 renderSyncReport report
-  | null report.syncDiffs =
+  | null report.diffs =
       "Registry is empty.\n"
   | otherwise =
       T.unlines $
@@ -199,23 +199,23 @@ renderSyncReport report
             <> ["", summary report]
   where
     header = "Updated seihou-registry.dhall:"
-    rows = map renderRow report.syncDiffs
+    rows = map renderRow report.diffs
 
     renderRow :: SyncDiff -> Text
     renderRow diff =
-      let label = kindPrefix diff.diffKind <> diff.diffName.unModuleName <> ":"
+      let label = kindPrefix diff.kind <> diff.name.unModuleName <> ":"
           padded = padRight labelWidth label
-          old = renderVersion diff.diffOld
-          new = renderVersion diff.diffNew
-          arrow = case diff.diffStatus of
+          old = renderVersion diff.old
+          new = renderVersion diff.new
+          arrow = case diff.status of
             SyncInSync -> " == " <> new <> " (no change)"
-            SyncOrphan -> " ?? " <> old <> " (" <> entryFile diff.diffKind <> " missing)"
+            SyncOrphan -> " ?? " <> old <> " (" <> entryFile diff.kind <> " missing)"
             _ -> " -> " <> new
        in padded <> old <> arrow
 
-    labelWidth = maximum (24 : map diffLabelWidth report.syncDiffs)
+    labelWidth = maximum (24 : map diffLabelWidth report.diffs)
     diffLabelWidth d =
-      T.length (kindPrefix d.diffKind <> d.diffName.unModuleName) + 2
+      T.length (kindPrefix d.kind <> d.name.unModuleName) + 2
 
 kindPrefix :: EntryKind -> Text
 kindPrefix ModuleEntry = "modules."
@@ -240,9 +240,9 @@ padRight w t =
 
 summary :: SyncReport -> Text
 summary report =
-  let updated = length [d | d <- report.syncDiffs, changesVersion d.diffStatus]
-      orphans = length [d | d <- report.syncDiffs, d.diffStatus == SyncOrphan]
-      unchanged = length [d | d <- report.syncDiffs, d.diffStatus == SyncInSync]
+  let updated = length [d | d <- report.diffs, changesVersion d.status]
+      orphans = length [d | d <- report.diffs, d.status == SyncOrphan]
+      unchanged = length [d | d <- report.diffs, d.status == SyncInSync]
       base =
         T.pack (show updated)
           <> " "
@@ -265,11 +265,11 @@ summary report =
 anyDrift :: SyncReport -> Bool
 anyDrift report =
   any
-    ( \d -> case d.diffStatus of
+    ( \d -> case d.status of
         SyncInSync -> False
         _ -> True
     )
-    report.syncDiffs
+    report.diffs
 
 -- | Soft-warning pass: compare each registry entry's 'version' with the
 -- on-disk module.dhall / recipe.dhall and return one warning per out-of-sync
@@ -283,4 +283,4 @@ checkRegistryVersionDrift :: FilePath -> Registry -> IO [Text]
 checkRegistryVersionDrift repoRoot reg = do
   lookups <- resolveOnDiskVersions repoRoot reg
   let report = computeRegistrySync reg lookups
-  pure (mapMaybe formatDriftWarning report.syncDiffs)
+  pure (mapMaybe formatDriftWarning report.diffs)

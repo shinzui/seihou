@@ -47,7 +47,7 @@ checkNonEmptyModules recipe
 -- Rule 3: No duplicate module names
 checkNoDuplicateModules :: Recipe -> [Text]
 checkNoDuplicateModules recipe =
-  let names = map (.depModule.unModuleName) recipe.modules
+  let names = map (.module_.unModuleName) recipe.modules
    in map (\n -> "duplicate module in recipe: " <> n) (findDupes Set.empty Set.empty names)
 
 findDupes :: Set.Set Text -> Set.Set Text -> [Text] -> [Text]
@@ -66,9 +66,9 @@ checkVarBindingNames recipe =
         ( \(VarName vn) ->
             if isValidVarBindingName vn
               then []
-              else ["invalid var binding name '" <> vn <> "' in module '" <> dep.depModule.unModuleName <> "'"]
+              else ["invalid var binding name '" <> vn <> "' in module '" <> dep.module_.unModuleName <> "'"]
         )
-        (Map.keys dep.depVars)
+        (Map.keys dep.vars)
 
     isValidVarBindingName :: Text -> Bool
     isValidVarBindingName t = case T.uncons t of

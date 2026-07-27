@@ -286,8 +286,8 @@ spec = do
           Right m -> do
             length m.dependencies `shouldBe` 1
             let dep = head m.dependencies
-            dep.depModule `shouldBe` ModuleName "base"
-            Map.null dep.depVars `shouldBe` True
+            dep.module_ `shouldBe` ModuleName "base"
+            Map.null dep.vars `shouldBe` True
 
     it "decodes a parameterized record dependency" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -298,8 +298,8 @@ spec = do
           Right m -> do
             length m.dependencies `shouldBe` 1
             let dep = head m.dependencies
-            dep.depModule `shouldBe` ModuleName "base"
-            Map.lookup (VarName "x") dep.depVars `shouldBe` Just "y"
+            dep.module_ `shouldBe` ModuleName "base"
+            Map.lookup (VarName "x") dep.vars `shouldBe` Just "y"
 
     it "decodes a parameterized dependency with empty vars" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -310,8 +310,8 @@ spec = do
           Right m -> do
             length m.dependencies `shouldBe` 1
             let dep = head m.dependencies
-            dep.depModule `shouldBe` ModuleName "base"
-            Map.null dep.depVars `shouldBe` True
+            dep.module_ `shouldBe` ModuleName "base"
+            Map.null dep.vars `shouldBe` True
 
     it "decodes a module.dhall with parameterized dependencies" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -322,8 +322,8 @@ spec = do
           Right m -> do
             length m.dependencies `shouldBe` 1
             let dep = head m.dependencies
-            dep.depModule `shouldBe` ModuleName "child-mod"
-            Map.lookup (VarName "skill.name") dep.depVars `shouldBe` Just "exec-plan"
+            dep.module_ `shouldBe` ModuleName "child-mod"
+            Map.lookup (VarName "skill.name") dep.vars `shouldBe` Just "exec-plan"
 
   describe "evalRecipeFromFile" $ do
     it "decodes the haskell-with-nix-recipe fixture" $ do
@@ -336,10 +336,10 @@ spec = do
           r.description `shouldBe` Just "Haskell project with Nix integration"
           length r.modules `shouldBe` 2
           let (m1 : m2 : _) = r.modules
-          m1.depModule `shouldBe` ModuleName "haskell-base"
-          Map.null m1.depVars `shouldBe` True
-          m2.depModule `shouldBe` ModuleName "nix-flake"
-          Map.null m2.depVars `shouldBe` True
+          m1.module_ `shouldBe` ModuleName "haskell-base"
+          Map.null m1.vars `shouldBe` True
+          m2.module_ `shouldBe` ModuleName "nix-flake"
+          Map.null m2.vars `shouldBe` True
           r.vars `shouldBe` []
           r.prompts `shouldBe` []
 
@@ -351,10 +351,10 @@ spec = do
           r.name `shouldBe` RecipeName "haskell-pinned"
           length r.modules `shouldBe` 2
           let (m1 : m2 : _) = r.modules
-          m1.depModule `shouldBe` ModuleName "haskell-base"
-          Map.null m1.depVars `shouldBe` True
-          m2.depModule `shouldBe` ModuleName "nix-flake"
-          Map.lookup (VarName "nix.system") m2.depVars `shouldBe` Just "aarch64-darwin"
+          m1.module_ `shouldBe` ModuleName "haskell-base"
+          Map.null m1.vars `shouldBe` True
+          m2.module_ `shouldBe` ModuleName "nix-flake"
+          Map.lookup (VarName "nix.system") m2.vars `shouldBe` Just "aarch64-darwin"
 
     it "returns DhallEvalError for nonexistent recipe file" $ do
       result <- evalRecipeFromFile "/nonexistent/path/recipe.dhall"

@@ -143,21 +143,21 @@ checkBlueprintBaseModulesWith searchPaths b =
   where
     checkOne :: [FilePath] -> Dependency -> IO [Text]
     checkOne paths dep = do
-      let n = dep.depModule.unModuleName
+      let n = dep.module_.unModuleName
           nameErrs =
             [ "invalid baseModule name: " <> n
             | not (isValidModuleName n)
             ]
           bindingErrs =
             [ "baseModule '" <> n <> "' has invalid var binding name: " <> vn
-            | (VarName vn) <- Map.keys dep.depVars,
+            | (VarName vn) <- Map.keys dep.vars,
               not (isValidVarBindingName vn)
             ]
       resolveErrs <-
         if not (isValidModuleName n)
           then pure []
           else do
-            result <- discoverRunnable paths dep.depModule
+            result <- discoverRunnable paths dep.module_
             pure $ case result of
               Right (RunnableModule _ _) -> []
               Right (RunnableRecipe _ _) -> []

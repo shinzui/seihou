@@ -31,18 +31,18 @@ import System.Directory (doesFileExist, getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 
 data PromptReport = PromptReport
-  { prPrompt :: !(Maybe AgentPrompt),
-    prName :: !Text,
-    prPath :: !FilePath,
-    prDhallOk :: !Bool,
-    prDhallError :: !(Maybe Text),
-    prChecks :: ![DiagCheck]
+  { prompt :: !(Maybe AgentPrompt),
+    name :: !Text,
+    path :: !FilePath,
+    dhallOk :: !Bool,
+    dhallError :: !(Maybe Text),
+    checks :: ![DiagCheck]
   }
   deriving stock (Generic)
 
 handleValidatePrompt :: ValidatePromptOpts -> IO ()
 handleValidatePrompt vopts = do
-  promptDir <- case vopts.validatePromptPath of
+  promptDir <- case vopts.path of
     Just p -> pure p
     Nothing -> getCurrentDirectory
 
@@ -62,12 +62,12 @@ handleValidatePrompt vopts = do
     Left err -> do
       let report =
             PromptReport
-              { prPrompt = Nothing,
-                prName = "<unknown>",
-                prPath = promptDir,
-                prDhallOk = False,
-                prDhallError = Just (T.pack (show err)),
-                prChecks = []
+              { prompt = Nothing,
+                name = "<unknown>",
+                path = promptDir,
+                dhallOk = False,
+                dhallError = Just (T.pack (show err)),
+                checks = []
               }
       TIO.putStr (renderPromptReport colorEnabled report)
       exitFailure
@@ -103,23 +103,23 @@ buildPromptReport baseDir p = do
         ]
   pure
     PromptReport
-      { prPrompt = Just p,
-        prName = p.name.unModuleName,
-        prPath = baseDir,
-        prDhallOk = True,
-        prDhallError = Nothing,
-        prChecks = checks
+      { prompt = Just p,
+        name = p.name.unModuleName,
+        path = baseDir,
+        dhallOk = True,
+        dhallError = Nothing,
+        checks = checks
       }
 
 promptReportHasErrors :: PromptReport -> Bool
 promptReportHasErrors r =
-  not r.prDhallOk
-    || any (\c -> c.diagSeverity == DiagError && not (null c.diagDetails)) r.prChecks
+  not r.dhallOk
+    || any (\c -> c.severity == DiagError && not (null c.details)) r.checks
 
 renderPromptReport :: Bool -> PromptReport -> Text
 renderPromptReport color report =
   T.unlines $
-    [ "Validating prompt at " <> T.pack report.prPath <> "...",
+    [ "Validating prompt at " <> T.pack report.path <> "...",
       ""
     ]
       ++ dhallLine
@@ -137,15 +137,15 @@ renderPromptReport color report =
     labelWarn t = if color then yellow t else t
 
     dhallLine =
-      if report.prDhallOk
+      if report.dhallOk
         then ["  " <> okMark <> " prompt.dhall evaluates successfully"]
         else
           ["  " <> errMark <> " prompt.dhall failed to evaluate"]
-            ++ case report.prDhallError of
+            ++ case report.dhallError of
               Just errText -> ["      " <> detailStyle errText]
               Nothing -> []
 
-    summaryLines = case report.prPrompt of
+    summaryLines = case report.prompt of
       Nothing -> []
       Just p ->
         [ "  " <> okMark <> " Prompt name: " <> nameStyle p.name.unModuleName,
@@ -156,27 +156,27 @@ renderPromptReport color report =
           "  " <> okMark <> " " <> T.pack (show (length p.files)) <> " reference files declared"
         ]
 
-    checkLines = concatMap renderCheck report.prChecks
+    checkLines = concatMap renderCheck report.checks
 
     renderCheck c
-      | null c.diagDetails =
-          ["  " <> okMark <> " " <> c.diagLabel]
-      | c.diagSeverity == DiagWarning =
-          ("  " <> warnMark <> " " <> labelWarn c.diagLabel)
-            : map (\d -> "      " <> detailStyle d) c.diagDetails
+      | null c.details =
+          ["  " <> okMark <> " " <> c.label]
+      | c.severity == DiagWarning =
+          ("  " <> warnMark <> " " <> labelWarn c.label)
+            : map (\d -> "      " <> detailStyle d) c.details
       | otherwise =
-          ("  " <> errMark <> " " <> labelErr c.diagLabel)
-            : map (\d -> "      " <> detailStyle d) c.diagDetails
+          ("  " <> errMark <> " " <> labelErr c.label)
+            : map (\d -> "      " <> detailStyle d) c.details
 
     errorCount =
       length
         [ ()
-        | c <- report.prChecks,
-          c.diagSeverity == DiagError,
-          not (null c.diagDetails)
+        | c <- report.checks,
+          c.severity == DiagError,
+          not (null c.details)
         ]
 
-    dhallFailed = not report.prDhallOk
+    dhallFailed = not report.dhallOk
     totalErrors = errorCount + (if dhallFailed then 1 else 0)
 
     resultLine
@@ -184,5 +184,5 @@ renderPromptReport color report =
           let msg = T.pack (show totalErrors) <> " error(s) found."
            in (if color then bold (red msg) else msg) <> " Prompt is invalid."
       | otherwise =
-          let msg = "Prompt '" <> report.prName <> "' is valid."
+          let msg = "Prompt '" <> report.name <> "' is valid."
            in if color then green msg else msg

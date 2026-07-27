@@ -18,8 +18,8 @@ import Seihou.Prelude
 -- 'ParentVars' have independent edges, so the topological sort
 -- produces one node per distinct invocation.
 data CompositionGraph = CompositionGraph
-  { cgModules :: !(Map ModuleInstance Module),
-    cgEdges :: !(Map ModuleInstance [ModuleInstance])
+  { modules :: !(Map ModuleInstance Module),
+    edges :: !(Map ModuleInstance [ModuleInstance])
   }
   deriving stock (Eq, Generic, Show)
 
@@ -27,8 +27,8 @@ data CompositionGraph = CompositionGraph
 --
 -- Each module's dependencies are resolved to the corresponding
 -- 'ModuleInstance' present in the input. A dependency edge with
--- @depVars@ selects the instance created with those exact bindings;
--- a bare dependency (no @depVars@) selects the 'emptyParentVars'
+-- @vars@ selects the instance created with those exact bindings;
+-- a bare dependency (no @vars@) selects the 'emptyParentVars'
 -- instance. If the instance set does not contain the child the edge
 -- points to, the edge is silently dropped — the loader is
 -- responsible for ensuring every referenced child is loaded first.
@@ -36,18 +36,18 @@ buildGraph :: [(ModuleInstance, Module)] -> CompositionGraph
 buildGraph entries =
   let present = Set.fromList (map fst entries)
       edgesFor m =
-        -- Dedupe edges: if a parent lists the same @(depModule, depVars)@
+        -- Dedupe edges: if a parent lists the same @(module_, vars)@
         -- twice, the two edges resolve to the same child instance and
         -- must count as one for the topological sort's in-degree.
         Set.toAscList . Set.fromList $
           [ child
           | dep <- m.dependencies,
-            let child = mkInstance dep.depModule (parentVarsFromDep dep),
+            let child = mkInstance dep.module_ (parentVarsFromDep dep),
             Set.member child present
           ]
    in CompositionGraph
-        { cgModules = Map.fromList entries,
-          cgEdges = Map.fromList [(inst, edgesFor m) | (inst, m) <- entries]
+        { modules = Map.fromList entries,
+          edges = Map.fromList [(inst, edgesFor m) | (inst, m) <- entries]
         }
 
 -- | Topological sort using Kahn's algorithm, operating on
@@ -62,12 +62,12 @@ topoSort :: CompositionGraph -> Either ModuleLoadError [ModuleInstance]
 topoSort graph = kahn initialReady initialInDegree [] allNodes
   where
     allNodes :: Set ModuleInstance
-    allNodes = Map.keysSet graph.cgEdges
+    allNodes = Map.keysSet graph.edges
 
     initialInDegree :: Map ModuleInstance Int
     initialInDegree =
       Map.fromList
-        [ (n, length [d | d <- Map.findWithDefault [] n graph.cgEdges, Set.member d allNodes])
+        [ (n, length [d | d <- Map.findWithDefault [] n graph.edges, Set.member d allNodes])
         | n <- Set.toList allNodes
         ]
 
@@ -82,7 +82,7 @@ topoSort graph = kahn initialReady initialInDegree [] allNodes
     kahn [] _ result remaining
       | Set.null remaining = Right (reverse result)
       | otherwise =
-          Left (CircularDependency (map (.instanceModule) (Set.toList remaining)))
+          Left (CircularDependency (map (.module_) (Set.toList remaining)))
     kahn (node : rest) inDeg result remaining =
       let remaining' = Set.delete node remaining
           (newReady, inDeg') = foldl (decrementDep node) ([], inDeg) (Set.toList remaining')
@@ -90,7 +90,7 @@ topoSort graph = kahn initialReady initialInDegree [] allNodes
 
     decrementDep :: ModuleInstance -> ([ModuleInstance], Map ModuleInstance Int) -> ModuleInstance -> ([ModuleInstance], Map ModuleInstance Int)
     decrementDep processed (ready, inDeg) candidate =
-      let deps = Map.findWithDefault [] candidate graph.cgEdges
+      let deps = Map.findWithDefault [] candidate graph.edges
        in if processed `elem` deps
             then
               let newDeg = Map.findWithDefault 0 candidate inDeg - 1

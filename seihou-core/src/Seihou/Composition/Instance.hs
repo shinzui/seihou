@@ -27,15 +27,15 @@ import Seihou.Prelude
 -- one instance. See @docs/plans/10-parameterized-dep-multi-instantiation.md@
 -- for the full rationale.
 data ModuleInstance = ModuleInstance
-  { instanceModule :: !ModuleName,
-    instanceParentVars :: !ParentVars
+  { module_ :: !ModuleName,
+    parentVars :: !ParentVars
   }
   deriving stock (Eq, Generic, Ord, Show)
 
 -- | Build a 'ModuleInstance' from a module name and the parent-supplied
 -- bindings along the edge that reached it.
 mkInstance :: ModuleName -> ParentVars -> ModuleInstance
-mkInstance n pv = ModuleInstance {instanceModule = n, instanceParentVars = pv}
+mkInstance n pv = ModuleInstance {module_ = n, parentVars = pv}
 
 -- | The 'ModuleInstance' for a top-level (primary / CLI-additional /
 -- recipe-expanded) module, which receives no parent-supplied bindings.
@@ -59,13 +59,13 @@ primaryInstance n = mkInstance n emptyParentVars
 -- 'ModuleName' alongside the bindings so output stays readable.
 qualifiedName :: ModuleInstance -> ModuleName
 qualifiedName inst =
-  case Map.null inst.instanceParentVars.unParentVars of
-    True -> inst.instanceModule
+  case Map.null inst.parentVars.unParentVars of
+    True -> inst.module_
     False ->
       ModuleName $
-        inst.instanceModule.unModuleName
+        inst.module_.unModuleName
           <> "#"
-          <> stableHash inst.instanceParentVars
+          <> stableHash inst.parentVars
 
 -- | Compute the disambiguating hash for a 'ParentVars' set.
 --

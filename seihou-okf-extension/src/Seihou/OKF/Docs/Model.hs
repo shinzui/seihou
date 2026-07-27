@@ -48,27 +48,27 @@ data DocArtifact
   deriving stock (Eq, Show)
 
 data DocEntry = DocEntry
-  { entryName :: !T.Text,
-    entryKind :: !DocKind,
-    entryVersion :: !(Maybe T.Text),
-    entryDescription :: !(Maybe T.Text),
-    entryTags :: ![T.Text],
-    entryPath :: !FilePath,
-    entryArtifact :: !DocArtifact,
-    entryModuleRefs :: ![ModuleRef]
+  { name :: !T.Text,
+    kind :: !DocKind,
+    version :: !(Maybe T.Text),
+    description :: !(Maybe T.Text),
+    tags :: ![T.Text],
+    path :: !FilePath,
+    artifact :: !DocArtifact,
+    moduleRefs :: ![ModuleRef]
   }
   deriving stock (Eq, Generic, Show)
 
 data ModuleRef = ModuleRef
-  { refName :: !T.Text,
-    refResolved :: !Bool
+  { name :: !T.Text,
+    resolved :: !Bool
   }
   deriving stock (Eq, Generic, Show)
 
 data DocModel = DocModel
-  { docRepoName :: !T.Text,
-    docRepoDescription :: !(Maybe T.Text),
-    docEntries :: ![DocEntry]
+  { repoName :: !T.Text,
+    repoDescription :: !(Maybe T.Text),
+    entries :: ![DocEntry]
   }
   deriving stock (Eq, Generic, Show)
 
@@ -103,13 +103,13 @@ buildDocModel registryDir Registry {repoName, repoDescription, modules, recipes,
       ]
   pure $ do
     entries <- entriesResult
-    let moduleNames = [entry.entryName | entry <- entries, entry.entryKind == DocModuleKind]
+    let moduleNames = [entry.name | entry <- entries, entry.kind == DocModuleKind]
         resolvedEntries = map (resolveEntryRefs moduleNames) entries
     Right
       DocModel
-        { docRepoName = repoName,
-          docRepoDescription = repoDescription,
-          docEntries = resolvedEntries
+        { repoName = repoName,
+          repoDescription = repoDescription,
+          entries = resolvedEntries
         }
 
 loadEntries :: (RegistryEntry -> IO (Either DocLoadError DocEntry)) -> [RegistryEntry] -> IO (Either DocLoadError [DocEntry])
@@ -191,28 +191,28 @@ loadPromptEntry registryDir entry = do
 docEntryFromRegistry :: RegistryEntry -> DocKind -> DocArtifact -> [ModuleRef] -> DocEntry
 docEntryFromRegistry entry kind artifact refs =
   DocEntry
-    { entryName = entry.name.unModuleName,
-      entryKind = kind,
-      entryVersion = entry.version,
-      entryDescription = entry.description,
-      entryTags = entry.tags,
-      entryPath = entry.path,
-      entryArtifact = artifact,
-      entryModuleRefs = refs
+    { name = entry.name.unModuleName,
+      kind = kind,
+      version = entry.version,
+      description = entry.description,
+      tags = entry.tags,
+      path = entry.path,
+      artifact = artifact,
+      moduleRefs = refs
     }
 
 moduleRefs :: [Dependency] -> [ModuleRef]
 moduleRefs dependencies =
-  [ ModuleRef {refName = moduleName.unModuleName, refResolved = False}
+  [ ModuleRef {name = moduleName.unModuleName, resolved = False}
   | moduleName <- depModuleNames dependencies
   ]
 
 resolveEntryRefs :: [T.Text] -> DocEntry -> DocEntry
 resolveEntryRefs moduleNames entry =
   entry
-    { entryModuleRefs =
-        [ ref {refResolved = ref.refName `elem` moduleNames}
-        | ref <- entry.entryModuleRefs
+    { moduleRefs =
+        [ ref {resolved = ref.name `elem` moduleNames}
+        | ref <- entry.moduleRefs
         ]
     }
 

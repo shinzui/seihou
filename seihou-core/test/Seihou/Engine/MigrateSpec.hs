@@ -89,10 +89,10 @@ mkFS entries = PureFS (Map.fromList entries) Set.empty
 chain1 :: Text -> Text -> [MigrationOp] -> MigrationPlan
 chain1 fromV toV ops =
   MigrationPlan
-    { planModule = "demo",
-      planFrom = mkV fromV,
-      planTo = mkV toV,
-      planSteps = [Migration {from = fromV, to = toV, ops}]
+    { module_ = "demo",
+      from = mkV fromV,
+      to = mkV toV,
+      steps = [Migration {from = fromV, to = toV, ops}]
     }
 
 runClassifyResult :: PureFS -> Manifest -> MigrationPlan -> Either MigrationExecError ExecutedMigrationPlan
@@ -132,21 +132,21 @@ spec = do
           fs = mkFS [("app/Main.hs", "module Main where")]
           c = chain1 "1.0.0" "2.0.0" [MoveFile "app/Main.hs" "src/Main.hs"]
           plan = runClassify fs manifest c
-      plan.planOps `shouldBe` [MoveFileInst "app/Main.hs" "src/Main.hs" MFSafe]
+      plan.ops `shouldBe` [MoveFileInst "app/Main.hs" "src/Main.hs" MFSafe]
 
     it "marks a move-file as conflict when disk content differs" $ do
       let manifest = mkManifest [("app/Main.hs", "original")]
           fs = mkFS [("app/Main.hs", "user-edited")]
           c = chain1 "1.0.0" "2.0.0" [MoveFile "app/Main.hs" "src/Main.hs"]
           plan = runClassify fs manifest c
-      plan.planOps `shouldBe` [MoveFileInst "app/Main.hs" "src/Main.hs" MFConflict]
+      plan.ops `shouldBe` [MoveFileInst "app/Main.hs" "src/Main.hs" MFConflict]
 
     it "marks a delete-file as gone when the file is absent" $ do
       let manifest = mkManifest [("Setup.hs", "boring")]
           fs = mkFS [] -- file already deleted on disk
           c = chain1 "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]
           plan = runClassify fs manifest c
-      plan.planOps `shouldBe` [DeleteFileInst "Setup.hs" MFGone]
+      plan.ops `shouldBe` [DeleteFileInst "Setup.hs" MFGone]
 
     it "rejects a delete-dir path with a parent directory segment" $ do
       let manifest = mkManifest []
@@ -270,10 +270,10 @@ spec = do
           fs = mkFS [("app/Main.hs", "x")]
           chain =
             MigrationPlan
-              { planModule = "demo",
-                planFrom = mkV "1.0.0",
-                planTo = mkV "3.0.0",
-                planSteps =
+              { module_ = "demo",
+                from = mkV "1.0.0",
+                to = mkV "3.0.0",
+                steps =
                   [ Migration "1.0.0" "2.0.0" [MoveDir "app" "src"],
                     Migration "2.0.0" "3.0.0" [DeleteFile "src/Main.hs"]
                   ]

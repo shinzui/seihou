@@ -113,10 +113,10 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
       let third = migration "3.0.0" "4.0.0"
           migrationPlan =
             BlueprintMigrationPlan
-              { blueprintPlanName = "payments",
-                blueprintPlanFrom = version "1.0.0",
-                blueprintPlanTo = version "4.0.0",
-                blueprintPlanSteps = [first, second, third]
+              { name = "payments",
+                from = version "1.0.0",
+                to = version "4.0.0",
+                steps = [first, second, third]
               }
           launch _ _ edge = do
             modifyIORef' calls (<> ["launch " <> edge.from])
@@ -178,10 +178,10 @@ migrationWithPrompt fromVersion toVersion instructions =
 plan :: [BlueprintMigration] -> BlueprintMigrationPlan
 plan steps =
   BlueprintMigrationPlan
-    { blueprintPlanName = "payments",
-      blueprintPlanFrom = version "1.0.0",
-      blueprintPlanTo = version "3.0.0",
-      blueprintPlanSteps = steps
+    { name = "payments",
+      from = version "1.0.0",
+      to = version "3.0.0",
+      steps = steps
     }
 
 receipt :: ModuleName -> Text -> Text -> AppliedBlueprintMigration
@@ -238,12 +238,12 @@ samplePrepared =
             launch = Nothing
           }
    in PreparedBlueprintExecution
-        { preparedBlueprint = blueprint,
-          preparedBlueprintDir = "/tmp/payments",
-          preparedResolvedVariables = resolved,
-          preparedMountedFilesDir = Just "/tmp/payments/files",
-          preparedReferenceFiles = "  - guide.md",
-          preparedReferenceFilesAccess = "mounted at /tmp/payments/files",
-          preparedSharedPrompt = "Shared guidance for baikai.",
-          preparedAllowedTools = ["Read"]
+        { blueprint = blueprint,
+          blueprintDir = "/tmp/payments",
+          resolvedVariables = resolved,
+          mountedFilesDir = Just "/tmp/payments/files",
+          referenceFiles = "  - guide.md",
+          referenceFilesAccess = "mounted at /tmp/payments/files",
+          sharedPrompt = "Shared guidance for baikai.",
+          allowedTools = ["Read"]
         }

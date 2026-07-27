@@ -69,22 +69,22 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
     it "defaults to the Claude CLI provider with no explicit model" $
       defaultAgentModelConfig
         `shouldBe` AgentModelConfig
-          { agentProvider = AgentProviderClaudeCli,
-            agentModel = Nothing,
-            agentEffort = Nothing,
-            agentTrace = TraceOff,
-            agentTracePath = Nothing
+          { provider = AgentProviderClaudeCli,
+            model = Nothing,
+            effort = Nothing,
+            trace = TraceOff,
+            tracePath = Nothing
           }
 
     it "builds a Claude CLI model using the CLI API tag" $ do
       let model =
             buildBaikaiModel
               AgentModelConfig
-                { agentProvider = AgentProviderClaudeCli,
-                  agentModel = Just "sonnet",
-                  agentEffort = Nothing,
-                  agentTrace = TraceOff,
-                  agentTracePath = Nothing
+                { provider = AgentProviderClaudeCli,
+                  model = Just "sonnet",
+                  effort = Nothing,
+                  trace = TraceOff,
+                  tracePath = Nothing
                 }
       BaikaiModel.api model `shouldBe` Baikai.AnthropicMessagesCli
       BaikaiModel.provider model `shouldBe` "anthropic"
@@ -94,11 +94,11 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
       let model =
             buildBaikaiModel
               AgentModelConfig
-                { agentProvider = AgentProviderCodexCli,
-                  agentModel = Just "gpt-5",
-                  agentEffort = Nothing,
-                  agentTrace = TraceOff,
-                  agentTracePath = Nothing
+                { provider = AgentProviderCodexCli,
+                  model = Just "gpt-5",
+                  effort = Nothing,
+                  trace = TraceOff,
+                  tracePath = Nothing
                 }
       BaikaiModel.api model `shouldBe` Baikai.OpenAICompletionsCli
       BaikaiModel.provider model `shouldBe` "openai"
@@ -108,18 +108,18 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
     it "preserves rendered prompts and resolved model configuration" $ do
       let config =
             AgentModelConfig
-              { agentProvider = AgentProviderCodexCli,
-                agentModel = Just "gpt-5",
-                agentEffort = Nothing,
-                agentTrace = TraceOff,
-                agentTracePath = Nothing
+              { provider = AgentProviderCodexCli,
+                model = Just "gpt-5",
+                effort = Nothing,
+                trace = TraceOff,
+                tracePath = Nothing
               }
           req = buildAgentCompletionRequest config "system" (Just "user")
       -- AgentCompletionRequest has no Eq: it carries a TraceSink, which wraps a
       -- streamly fold. Compare the inspectable fields instead.
-      req.completionSystemPrompt `shouldBe` "system"
-      req.completionInitialPrompt `shouldBe` Just "user"
-      req.completionModelConfig `shouldBe` config
+      req.systemPrompt `shouldBe` "system"
+      req.initialPrompt `shouldBe` Just "user"
+      req.modelConfig `shouldBe` config
 
   -- These drive the real Baikai.Trace.withTrace path against a stub provider
   -- registered under the anthropic-messages tag. They exist because withTrace
@@ -234,11 +234,11 @@ runStub respond sink =
       buildAgentCompletionRequestWith
         (maybe silent id sink)
         AgentModelConfig
-          { agentProvider = AgentProviderAnthropic,
-            agentModel = Just "stub-model",
-            agentEffort = Nothing,
-            agentTrace = maybe TraceOff (const TraceFile) sink,
-            agentTracePath = Nothing
+          { provider = AgentProviderAnthropic,
+            model = Just "stub-model",
+            effort = Nothing,
+            trace = maybe TraceOff (const TraceFile) sink,
+            tracePath = Nothing
           }
         "system"
         (Just "user")

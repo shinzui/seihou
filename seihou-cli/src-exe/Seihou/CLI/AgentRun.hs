@@ -101,29 +101,29 @@ promptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-prompt.md")
 
 handleAgentRun :: Bool -> PendingAgentConfig -> BlueprintRunOpts -> IO ()
 handleAgentRun debug pending opts = do
-  let level = if opts.runBlueprintVerbose then LogVerbose else LogNormal
+  let level = if opts.verbose then LogVerbose else LogNormal
   stdinIsTerminal <- hIsTerminalDevice stdin
-  let batch = opts.runBlueprintBatch || not stdinIsTerminal
+  let batch = opts.batch || not stdinIsTerminal
 
   -- (a) Discover and validate. discoverRunnable resolves by directory
   -- name (priority: module > recipe > blueprint).
   searchPaths <- defaultSearchPaths
-  runnableResult <- discoverRunnable searchPaths opts.runBlueprintName
+  runnableResult <- discoverRunnable searchPaths opts.name
   (bp, blueprintDir) <- case runnableResult of
     Right (RunnableBlueprint b dir) -> pure (b, dir)
     Right (RunnableModule _ _) ->
       exitErr level $
         "'"
-          <> opts.runBlueprintName.unModuleName
+          <> opts.name.unModuleName
           <> "' is a module, not a blueprint. Did you mean 'seihou run "
-          <> opts.runBlueprintName.unModuleName
+          <> opts.name.unModuleName
           <> "'?"
     Right (RunnableRecipe _ _) ->
       exitErr level $
         "'"
-          <> opts.runBlueprintName.unModuleName
+          <> opts.name.unModuleName
           <> "' is a recipe, not a blueprint. Did you mean 'seihou run "
-          <> opts.runBlueprintName.unModuleName
+          <> opts.name.unModuleName
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
 
@@ -139,19 +139,19 @@ handleAgentRun debug pending opts = do
       (agentLaunchDeclaration bp.launch)
 
   let providerCanMountFiles =
-        modelConfig.agentProvider == AgentProviderClaudeCli
-          || modelConfig.agentProvider == AgentProviderCodexCli
+        modelConfig.provider == AgentProviderClaudeCli
+          || modelConfig.provider == AgentProviderCodexCli
   -- (b) Resolve variables and prepare the shared prompt/reference/tool state.
   preparedResult <-
     prepareBlueprintExecution
       BlueprintExecutionRequest
-        { executionBlueprint = bp,
-          executionBlueprintDir = blueprintDir,
-          executionVariableOverrides = opts.runBlueprintVars,
-          executionNamespaceOverride = opts.runBlueprintNamespace,
-          executionContextOverride = opts.runBlueprintContext,
-          executionCanMountFiles = providerCanMountFiles,
-          executionLogLevel = level
+        { blueprint = bp,
+          blueprintDir = blueprintDir,
+          variableOverrides = opts.vars,
+          namespaceOverride = opts.namespace,
+          contextOverride = opts.context,
+          canMountFiles = providerCanMountFiles,
+          logLevel = level
         }
   prepared <- case preparedResult of
     Left errs -> do
@@ -159,12 +159,12 @@ handleAgentRun debug pending opts = do
       mapM_ (logIO level . logError . ("  " <>) . formatVarError) errs
       exitFailure
     Right result -> pure result
-  let resolved = prepared.preparedResolvedVariables
-      cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts.runBlueprintVars]
+  let resolved = prepared.resolvedVariables
+      cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts.vars]
 
   -- (c) Baseline.
   baseline <-
-    if opts.runBlueprintNoBaseline
+    if opts.noBaseline
       then pure BaselineSkipped
       else
         if null bp.baseModules
@@ -181,10 +181,10 @@ handleAgentRun debug pending opts = do
       debug
       batch
       modelConfig
-      prepared.preparedAllowedTools
-      prepared.preparedMountedFilesDir
+      prepared.allowedTools
+      prepared.mountedFilesDir
       systemPrompt
-      opts.runBlueprintPrompt
+      opts.prompt
 
   -- (g) Record the applied-blueprint provenance into
   -- .seihou/manifest.json only after a successful provider response. In
@@ -211,7 +211,7 @@ runRenderedAgentPromptMode debug batch modelConfig tools mFilesDir systemPrompt 
   | debug = do
       TIO.putStr systemPrompt
       pure True
-  | not batch && (modelConfig.agentProvider == AgentProviderClaudeCli || modelConfig.agentProvider == AgentProviderCodexCli) = do
+  | not batch && (modelConfig.provider == AgentProviderClaudeCli || modelConfig.provider == AgentProviderCodexCli) = do
       exitCode <-
         launchConfiguredAgentAddingDirs
           (maybeToList mFilesDir)
@@ -256,7 +256,7 @@ appliedBlueprintFromOutcome bp baseline opts now =
       noBaseline = case baseline of
         BaselineSkipped -> True
         _ -> False,
-      userPrompt = opts.runBlueprintPrompt,
+      userPrompt = opts.prompt,
       agentSessionId = Nothing
     }
 
@@ -279,7 +279,7 @@ applyBaseline ::
 applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
   searchPaths <- defaultSearchPaths
   (primary, additionals) <- case baseModules of
-    d : rs -> pure (d.depModule, map (.depModule) rs)
+    d : rs -> pure (d.module_, map (.module_) rs)
     [] -> exitErr level "internal error: applyBaseline called with empty baseModules"
   compositionResult <- loadComposition searchPaths primary additionals
   modulesInOrder <- case compositionResult of
@@ -298,8 +298,8 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
 
   envPairs <- getEnvironment
   let envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace primary) opts.runBlueprintNamespace
-  context <- resolveContext opts.runBlueprintContext envVars
+      namespace = fromMaybe (deriveNamespace primary) opts.namespace
+  context <- resolveContext opts.context envVars
   let contextName = fromMaybe "" context
 
   baseResolveResult <- runEff $ runConfigReader $ runConsole $ do
@@ -359,11 +359,11 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
   diff <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     let composedNames =
           Set.fromList $
-            concatMap (\(inst, _, _) -> [inst.instanceModule, qualifiedName inst]) modulesInOrder
+            concatMap (\(inst, _, _) -> [inst.module_, qualifiedName inst]) modulesInOrder
     computeDiff manifest composedNames planned
 
   resolutions <-
-    runEff $ runConsole $ resolveConflicts opts.runBlueprintForce diff.conflicts
+    runEff $ runConsole $ resolveConflicts opts.force diff.conflicts
   case resolutions of
     Nothing -> do
       logIO level $ logError "Baseline conflicts detected (use --force to overwrite):"
@@ -462,7 +462,7 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
 -- @blueprint-prompt.md@ has a @{{key}}@ placeholder filled here.
 renderSystemPrompt :: AgentContext -> PreparedBlueprintExecution -> BaselineStatus -> Text
 renderSystemPrompt ctx prepared baseline =
-  let bp = prepared.preparedBlueprint
+  let bp = prepared.blueprint
    in substitute
         [ ("cwd", ctx.cwd),
           ("seihou_project_state", formatSeihouProjectState ctx),
@@ -474,9 +474,9 @@ renderSystemPrompt ctx prepared baseline =
           ("blueprint_version", fromMaybe "(unspecified)" bp.version),
           ("blueprint_description", fromMaybe "(no description)" bp.description),
           ("baseline_status", formatBaselineStatus baseline),
-          ("reference_files", prepared.preparedReferenceFiles),
-          ("reference_files_dir", prepared.preparedReferenceFilesAccess),
-          ("user_prompt", prepared.preparedSharedPrompt)
+          ("reference_files", prepared.referenceFiles),
+          ("reference_files_dir", prepared.referenceFilesAccess),
+          ("user_prompt", prepared.sharedPrompt)
         ]
         promptTemplate
 
@@ -497,15 +497,15 @@ updateAllModules ::
 updateAllModules existing modulesInOrder now =
   let composedKeys =
         Set.fromList
-          [ (inst.instanceModule, inst.instanceParentVars)
+          [ (inst.module_, inst.parentVars)
           | (inst, _, _) <- modulesInOrder
           ]
       filtered =
         filter (\am -> not (Set.member (am.name, am.parentVars) composedKeys)) existing
       new =
         [ AppliedModule
-            { name = inst.instanceModule,
-              parentVars = inst.instanceParentVars,
+            { name = inst.module_,
+              parentVars = inst.parentVars,
               source = dir,
               moduleVersion = m.version,
               appliedAt = now,

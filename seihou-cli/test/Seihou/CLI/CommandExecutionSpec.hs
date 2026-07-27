@@ -44,9 +44,9 @@ receiptFor _ _ = error "receiptFor requires RunCommandOp"
 successMock :: Text -> ProcessMock
 successMock command =
   ProcessMock
-    { mockCommand = "sh",
-      mockArgs = ["-c", command],
-      mockResult = (ExitSuccess, "output", "")
+    { command = "sh",
+      args = ["-c", command],
+      result = (ExitSuccess, "output", "")
     }
 
 spec :: Spec
@@ -112,9 +112,9 @@ spec = do
           plan = planCommands RunAllCommands Map.empty [failing, neverReached]
           mocks =
             [ ProcessMock
-                { mockCommand = "sh",
-                  mockArgs = ["-c", "exit 7"],
-                  mockResult = (ExitFailure 7, "partial", "boom")
+                { command = "sh",
+                  args = ["-c", "exit 7"],
+                  result = (ExitFailure 7, "partial", "boom")
                 },
               successMock "echo later"
             ]

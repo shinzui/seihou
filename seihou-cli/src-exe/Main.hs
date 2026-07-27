@@ -65,8 +65,8 @@ extensionRunFromRawArgs ("extension" : "run" : name : rest)
   | not ("-" `isPrefixOf` name) =
       Just
         ExtensionRunOpts
-          { extensionName = fromString name,
-            extensionArgs =
+          { name = fromString name,
+            args =
               case rest of
                 "--" : forwarded -> forwarded
                 forwarded -> forwarded
@@ -94,11 +94,11 @@ dispatch cmd =
       handleDiff
     List listOpts ->
       let kinds =
-            [KindModule | listOpts.listModulesOnly]
-              <> [KindRecipe | listOpts.listRecipesOnly]
-              <> [KindBlueprint | listOpts.listBlueprintsOnly]
-              <> [KindPrompt | listOpts.listPromptsOnly]
-       in handleList (ListFilter listOpts.listRepo listOpts.listTag kinds)
+            [KindModule | listOpts.modulesOnly]
+              <> [KindRecipe | listOpts.recipesOnly]
+              <> [KindBlueprint | listOpts.blueprintsOnly]
+              <> [KindPrompt | listOpts.promptsOnly]
+       in handleList (ListFilter listOpts.repo listOpts.tag kinds)
     NewModule newModOpts ->
       handleNewModule newModOpts
     NewRecipe newRecOpts ->
@@ -132,29 +132,29 @@ dispatch cmd =
     Kit kitCmd ->
       runKit kitCmd
     Agent agentOpts -> do
-      case agentOpts.agentCommand of
+      case agentOpts.command of
         AgentAssist assistOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdAssist (parentAgentFlags agentOpts) (AgentSettingFlags assistOpts.assistProvider assistOpts.assistModel assistOpts.assistEffort assistOpts.assistTrace)
-          handleAssist agentOpts.agentDebug modelConfig assistOpts
+          modelConfig <- resolveAgentModelConfigFor AgentCmdAssist (parentAgentFlags agentOpts) (AgentSettingFlags assistOpts.provider assistOpts.model assistOpts.effort assistOpts.trace)
+          handleAssist agentOpts.debug modelConfig assistOpts
         AgentBootstrap bootstrapOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdBootstrap (parentAgentFlags agentOpts) (AgentSettingFlags bootstrapOpts.bootstrapProvider bootstrapOpts.bootstrapModel bootstrapOpts.bootstrapEffort bootstrapOpts.bootstrapTrace)
-          handleBootstrap agentOpts.agentDebug modelConfig bootstrapOpts
+          modelConfig <- resolveAgentModelConfigFor AgentCmdBootstrap (parentAgentFlags agentOpts) (AgentSettingFlags bootstrapOpts.provider bootstrapOpts.model bootstrapOpts.effort bootstrapOpts.trace)
+          handleBootstrap agentOpts.debug modelConfig bootstrapOpts
         AgentSetup setupOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdSetup (parentAgentFlags agentOpts) (AgentSettingFlags setupOpts.setupProvider setupOpts.setupModel setupOpts.setupEffort setupOpts.setupTrace)
-          handleSetup agentOpts.agentDebug modelConfig setupOpts
+          modelConfig <- resolveAgentModelConfigFor AgentCmdSetup (parentAgentFlags agentOpts) (AgentSettingFlags setupOpts.provider setupOpts.model setupOpts.effort setupOpts.trace)
+          handleSetup agentOpts.debug modelConfig setupOpts
         AgentRun blueprintRunOpts -> do
-          pending <- pendingAgentConfigFor AgentCmdRun (parentAgentFlags agentOpts) (AgentSettingFlags blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel blueprintRunOpts.runBlueprintEffort blueprintRunOpts.runBlueprintTrace)
-          handleAgentRun agentOpts.agentDebug pending blueprintRunOpts
+          pending <- pendingAgentConfigFor AgentCmdRun (parentAgentFlags agentOpts) (AgentSettingFlags blueprintRunOpts.provider blueprintRunOpts.model blueprintRunOpts.effort blueprintRunOpts.trace)
+          handleAgentRun agentOpts.debug pending blueprintRunOpts
         AgentMigrate migrationOpts -> do
-          pending <- pendingAgentConfigFor AgentCmdMigrate (parentAgentFlags agentOpts) (AgentSettingFlags migrationOpts.migrateBlueprintProvider migrationOpts.migrateBlueprintModel migrationOpts.migrateBlueprintEffort migrationOpts.migrateBlueprintTrace)
-          handleAgentMigrate agentOpts.agentDebug pending migrationOpts
+          pending <- pendingAgentConfigFor AgentCmdMigrate (parentAgentFlags agentOpts) (AgentSettingFlags migrationOpts.provider migrationOpts.model migrationOpts.effort migrationOpts.trace)
+          handleAgentMigrate agentOpts.debug pending migrationOpts
         AgentModels modelsOpts ->
-          case agentOpts.agentModel of
+          case agentOpts.model of
             Just _ -> do
               TIO.putStrLn "Error: --model does not apply to 'seihou agent models'; omit it to list known choices."
               exitFailure
             Nothing ->
-              case modelsOpts.modelsProvider <|> agentOpts.agentProvider of
+              case modelsOpts.modelsProvider <|> agentOpts.provider of
                 Nothing ->
                   TIO.putStr (AgentModels.formatAgentModels Nothing AgentModels.availableAgentModels)
                 Just providerText ->
@@ -169,7 +169,7 @@ dispatch cmd =
     Prompt promptCmd -> do
       case promptCmd of
         PromptRun promptRunOpts -> do
-          pending <- pendingAgentConfigFor AgentCmdPromptRun noAgentSettingFlags (AgentSettingFlags promptRunOpts.runPromptProvider promptRunOpts.runPromptModel promptRunOpts.runPromptEffort promptRunOpts.runPromptTrace)
+          pending <- pendingAgentConfigFor AgentCmdPromptRun noAgentSettingFlags (AgentSettingFlags promptRunOpts.provider promptRunOpts.model promptRunOpts.effort promptRunOpts.trace)
           handlePromptRun pending promptRunOpts
     Extension extensionCmd -> do
       case extensionCmd of
@@ -184,10 +184,10 @@ dispatch cmd =
 parentAgentFlags :: AgentOpts -> AgentSettingFlags
 parentAgentFlags agentOpts =
   AgentSettingFlags
-    { flagProvider = agentOpts.agentProvider,
-      flagModel = agentOpts.agentModel,
-      flagEffort = agentOpts.agentEffort,
-      flagTrace = agentOpts.agentTrace
+    { provider = agentOpts.provider,
+      model = agentOpts.model,
+      effort = agentOpts.effort,
+      trace = agentOpts.trace
     }
 
 -- | Resolve the effective provider/model/effort/trace for one agent command.

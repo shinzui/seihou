@@ -67,15 +67,15 @@ data TraceSetting
   deriving stock (Eq, Show)
 
 data AgentModelConfig = AgentModelConfig
-  { agentProvider :: !AgentProvider,
-    agentModel :: !(Maybe Text),
+  { provider :: !AgentProvider,
+    model :: !(Maybe Text),
     -- | Reasoning effort. 'Nothing' leaves the provider/CLI default alone.
-    agentEffort :: !(Maybe ThinkingLevel),
+    effort :: !(Maybe ThinkingLevel),
     -- | Where call traces go. 'TraceOff' emits nothing.
-    agentTrace :: !TraceSetting,
+    trace :: !TraceSetting,
     -- | The configured @agent.tracePath@, when set. 'Nothing' means the
     -- built-in default path is used by the file sink.
-    agentTracePath :: !(Maybe FilePath)
+    tracePath :: !(Maybe FilePath)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -83,12 +83,12 @@ data AgentModelConfig = AgentModelConfig
 -- which is a function and so has neither. Tests compare the inspectable fields
 -- individually.
 data AgentCompletionRequest = AgentCompletionRequest
-  { completionSystemPrompt :: !Text,
-    completionInitialPrompt :: !(Maybe Text),
-    completionModelConfig :: !AgentModelConfig,
+  { systemPrompt :: !Text,
+    initialPrompt :: !(Maybe Text),
+    modelConfig :: !AgentModelConfig,
     -- | Where this call's trace events go. Baikai's 'silent' sink when tracing
     -- is off, which is the default and costs nothing.
-    completionTraceSink :: !TraceSink
+    traceSink :: !TraceSink
   }
   deriving stock (Generic)
 
@@ -108,20 +108,20 @@ buildAgentCompletionRequestWith ::
   AgentCompletionRequest
 buildAgentCompletionRequestWith sink modelConfig systemPrompt initialPrompt =
   AgentCompletionRequest
-    { completionSystemPrompt = systemPrompt,
-      completionInitialPrompt = initialPrompt,
-      completionModelConfig = modelConfig,
-      completionTraceSink = sink
+    { systemPrompt = systemPrompt,
+      initialPrompt = initialPrompt,
+      modelConfig = modelConfig,
+      traceSink = sink
     }
 
 defaultAgentModelConfig :: AgentModelConfig
 defaultAgentModelConfig =
   AgentModelConfig
-    { agentProvider = AgentProviderClaudeCli,
-      agentModel = Nothing,
-      agentEffort = Nothing,
-      agentTrace = TraceOff,
-      agentTracePath = Nothing
+    { provider = AgentProviderClaudeCli,
+      model = Nothing,
+      effort = Nothing,
+      trace = TraceOff,
+      tracePath = Nothing
     }
 
 -- | Parse a reasoning-effort level name (case-insensitive) into a Baikai
@@ -200,33 +200,33 @@ providerToText AgentProviderOpenAI = "openai"
 
 buildBaikaiModel :: AgentModelConfig -> Baikai.Model
 buildBaikaiModel config =
-  case config.agentProvider of
+  case config.provider of
     AgentProviderClaudeCli ->
       baseCliModel
-        { Baikai.modelId = maybe "" id config.agentModel,
-          Baikai.name = maybe "Claude CLI default" id config.agentModel,
+        { Baikai.modelId = maybe "" id config.model,
+          Baikai.name = maybe "Claude CLI default" id config.model,
           Baikai.api = Baikai.AnthropicMessagesCli,
           Baikai.provider = "anthropic"
         }
     AgentProviderCodexCli ->
       baseCliModel
-        { Baikai.modelId = maybe "" id config.agentModel,
-          Baikai.name = maybe "Codex CLI default" id config.agentModel,
+        { Baikai.modelId = maybe "" id config.model,
+          Baikai.name = maybe "Codex CLI default" id config.model,
           Baikai.api = Baikai.OpenAICompletionsCli,
           Baikai.provider = "openai"
         }
     AgentProviderAnthropic ->
       Baikai.emptyModel
-        { Baikai.modelId = maybe "claude-sonnet-4-6" id config.agentModel,
-          Baikai.name = maybe "Claude Sonnet 4.6" id config.agentModel,
+        { Baikai.modelId = maybe "claude-sonnet-4-6" id config.model,
+          Baikai.name = maybe "Claude Sonnet 4.6" id config.model,
           Baikai.api = Baikai.AnthropicMessages,
           Baikai.provider = "anthropic",
           Baikai.baseUrl = "https://api.anthropic.com"
         }
     AgentProviderOpenAI ->
       Baikai.emptyModel
-        { Baikai.modelId = maybe "gpt-4o-mini" id config.agentModel,
-          Baikai.name = maybe "GPT-4o Mini" id config.agentModel,
+        { Baikai.modelId = maybe "gpt-4o-mini" id config.model,
+          Baikai.name = maybe "GPT-4o Mini" id config.model,
           Baikai.api = Baikai.OpenAIChatCompletions,
           Baikai.provider = "openai",
           Baikai.baseUrl = "https://api.openai.com"
@@ -260,16 +260,16 @@ runAgentCompletionWith registerProviders req = do
     maybe
       (pure V.empty)
       (fmap V.singleton . Baikai.userNow)
-      req.completionInitialPrompt
-  let model = buildBaikaiModel req.completionModelConfig
+      req.initialPrompt
+  let model = buildBaikaiModel req.modelConfig
       ctx =
         Baikai.emptyContext
-          { Baikai.systemPrompt = Just req.completionSystemPrompt,
+          { Baikai.systemPrompt = Just req.systemPrompt,
             Baikai.messages = initialMessages
           }
-      options = Baikai.emptyOptions {BaikaiOptions.thinking = req.completionModelConfig.agentEffort}
+      options = Baikai.emptyOptions {BaikaiOptions.thinking = req.modelConfig.effort}
   result <-
-    try (BaikaiTrace.withTrace req.completionTraceSink model ctx options) ::
+    try (BaikaiTrace.withTrace req.traceSink model ctx options) ::
       IO (Either Baikai.BaikaiError Baikai.Response)
   pure $ case result of
     -- Retained deliberately. 'withTrace' does not throw for provider failures,

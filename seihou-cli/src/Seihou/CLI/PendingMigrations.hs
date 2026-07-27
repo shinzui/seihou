@@ -81,9 +81,9 @@ formatRefusalMessage pendings =
       "  "
         <> name.unModuleName
         <> ": "
-        <> renderVersion plan.planFrom
+        <> renderVersion plan.from
         <> " -> "
-        <> renderVersion plan.planTo
+        <> renderVersion plan.to
         <> " ("
-        <> T.pack (show (length plan.planSteps))
+        <> T.pack (show (length plan.steps))
         <> " step(s))"

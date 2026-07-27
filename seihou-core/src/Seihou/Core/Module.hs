@@ -261,7 +261,7 @@ checkDependencyNames :: Module -> [Text]
 checkDependencyNames m =
   concatMap
     ( \dep ->
-        let n = dep.depModule.unModuleName
+        let n = dep.module_.unModuleName
          in if isValidModuleName n
               then []
               else ["invalid dependency name: " <> n]
@@ -276,10 +276,10 @@ checkDependencyVarBindings m =
         concatMap
           ( \(VarName vn) ->
               if T.null vn
-                then ["dependency '" <> dep.depModule.unModuleName <> "' has empty var binding name"]
+                then ["dependency '" <> dep.module_.unModuleName <> "' has empty var binding name"]
                 else []
           )
-          (Map.keys dep.depVars)
+          (Map.keys dep.vars)
     )
     m.dependencies
 
@@ -351,9 +351,9 @@ data ModuleSource = SourceProject | SourceUser | SourceInstalled
 
 -- | A module discovered during enumeration, with its load result and source.
 data DiscoveredModule = DiscoveredModule
-  { discoveredResult :: !(Either ModuleLoadError Module),
-    discoveredSource :: !ModuleSource,
-    discoveredDir :: !FilePath
+  { result :: !(Either ModuleLoadError Module),
+    source :: !ModuleSource,
+    dir :: !FilePath
   }
   deriving stock (Generic, Show)
 
@@ -398,7 +398,7 @@ discoverAllModules searchPaths = do
       result <- case decoded of
         Left err -> pure (Left err)
         Right m -> validateModule moduleDir m
-      pure DiscoveredModule {discoveredResult = result, discoveredSource = src, discoveredDir = moduleDir}
+      pure DiscoveredModule {result = result, source = src, dir = moduleDir}
 
 -- | Whether a discovered item is a module, recipe, blueprint, or prompt.
 data RunnableKind = KindModule | KindRecipe | KindBlueprint | KindPrompt
@@ -406,13 +406,13 @@ data RunnableKind = KindModule | KindRecipe | KindBlueprint | KindPrompt
 
 -- | A runnable discovered during enumeration, with its load result, kind, and source.
 data DiscoveredRunnable = DiscoveredRunnable
-  { drName :: !Text,
-    drDescription :: !(Maybe Text),
-    drKind :: !RunnableKind,
-    drSource :: !ModuleSource,
-    drDir :: !FilePath,
-    drIsError :: !Bool,
-    drError :: !(Maybe Text)
+  { name :: !Text,
+    description :: !(Maybe Text),
+    kind :: !RunnableKind,
+    source :: !ModuleSource,
+    dir :: !FilePath,
+    isError :: !Bool,
+    error :: !(Maybe Text)
   }
   deriving stock (Generic, Show)
 
@@ -452,23 +452,23 @@ discoverAllRunnables searchPaths = do
             [ case decoded of
                 Left err ->
                   DiscoveredRunnable
-                    { drName = T.pack entry,
-                      drDescription = Nothing,
-                      drKind = KindModule,
-                      drSource = src,
-                      drDir = entryDir,
-                      drIsError = True,
-                      drError = Just (briefLoadError err)
+                    { name = T.pack entry,
+                      description = Nothing,
+                      kind = KindModule,
+                      source = src,
+                      dir = entryDir,
+                      isError = True,
+                      error = Just (briefLoadError err)
                     }
                 Right m ->
                   DiscoveredRunnable
-                    { drName = m.name.unModuleName,
-                      drDescription = m.description,
-                      drKind = KindModule,
-                      drSource = src,
-                      drDir = entryDir,
-                      drIsError = False,
-                      drError = Nothing
+                    { name = m.name.unModuleName,
+                      description = m.description,
+                      kind = KindModule,
+                      source = src,
+                      dir = entryDir,
+                      isError = False,
+                      error = Nothing
                     }
             ]
         else
@@ -479,23 +479,23 @@ discoverAllRunnables searchPaths = do
                 [ case decoded of
                     Left err ->
                       DiscoveredRunnable
-                        { drName = T.pack entry,
-                          drDescription = Nothing,
-                          drKind = KindRecipe,
-                          drSource = src,
-                          drDir = entryDir,
-                          drIsError = True,
-                          drError = Just (briefLoadError err)
+                        { name = T.pack entry,
+                          description = Nothing,
+                          kind = KindRecipe,
+                          source = src,
+                          dir = entryDir,
+                          isError = True,
+                          error = Just (briefLoadError err)
                         }
                     Right r ->
                       DiscoveredRunnable
-                        { drName = r.name.unRecipeName,
-                          drDescription = r.description,
-                          drKind = KindRecipe,
-                          drSource = src,
-                          drDir = entryDir,
-                          drIsError = False,
-                          drError = Nothing
+                        { name = r.name.unRecipeName,
+                          description = r.description,
+                          kind = KindRecipe,
+                          source = src,
+                          dir = entryDir,
+                          isError = False,
+                          error = Nothing
                         }
                 ]
             else
@@ -506,23 +506,23 @@ discoverAllRunnables searchPaths = do
                     [ case decoded of
                         Left err ->
                           DiscoveredRunnable
-                            { drName = T.pack entry,
-                              drDescription = Nothing,
-                              drKind = KindBlueprint,
-                              drSource = src,
-                              drDir = entryDir,
-                              drIsError = True,
-                              drError = Just (briefLoadError err)
+                            { name = T.pack entry,
+                              description = Nothing,
+                              kind = KindBlueprint,
+                              source = src,
+                              dir = entryDir,
+                              isError = True,
+                              error = Just (briefLoadError err)
                             }
                         Right b ->
                           DiscoveredRunnable
-                            { drName = b.name.unModuleName,
-                              drDescription = b.description,
-                              drKind = KindBlueprint,
-                              drSource = src,
-                              drDir = entryDir,
-                              drIsError = False,
-                              drError = Nothing
+                            { name = b.name.unModuleName,
+                              description = b.description,
+                              kind = KindBlueprint,
+                              source = src,
+                              dir = entryDir,
+                              isError = False,
+                              error = Nothing
                             }
                     ]
                 else
@@ -533,23 +533,23 @@ discoverAllRunnables searchPaths = do
                         [ case decoded of
                             Left err ->
                               DiscoveredRunnable
-                                { drName = T.pack entry,
-                                  drDescription = Nothing,
-                                  drKind = KindPrompt,
-                                  drSource = src,
-                                  drDir = entryDir,
-                                  drIsError = True,
-                                  drError = Just (briefLoadError err)
+                                { name = T.pack entry,
+                                  description = Nothing,
+                                  kind = KindPrompt,
+                                  source = src,
+                                  dir = entryDir,
+                                  isError = True,
+                                  error = Just (briefLoadError err)
                                 }
                             Right p ->
                               DiscoveredRunnable
-                                { drName = p.name.unModuleName,
-                                  drDescription = p.description,
-                                  drKind = KindPrompt,
-                                  drSource = src,
-                                  drDir = entryDir,
-                                  drIsError = False,
-                                  drError = Nothing
+                                { name = p.name.unModuleName,
+                                  description = p.description,
+                                  kind = KindPrompt,
+                                  source = src,
+                                  dir = entryDir,
+                                  isError = False,
+                                  error = Nothing
                                 }
                         ]
                     else pure []

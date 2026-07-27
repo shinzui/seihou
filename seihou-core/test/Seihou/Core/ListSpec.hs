@@ -44,7 +44,7 @@ spec = do
         let paths = [tmp </> "project", userDir, tmp </> "installed"]
         result <- discoverAllModules paths
         length result `shouldBe` 1
-        (head result).discoveredSource `shouldBe` SourceUser
+        (head result).source `shouldBe` SourceUser
 
     it "tags sources correctly across paths" $ do
       withSystemTempDirectory "seihou-list-test" $ \tmp -> do
@@ -57,7 +57,7 @@ spec = do
         let paths = [projectDir, tmp </> "user", installedDir]
         result <- discoverAllModules paths
         length result `shouldBe` 2
-        let srcs = map (.discoveredSource) result
+        let srcs = map (.source) result
         SourceProject `elem` srcs `shouldBe` True
         SourceInstalled `elem` srcs `shouldBe` True
 
@@ -70,7 +70,7 @@ spec = do
         let paths = [tmp </> "project", userDir, tmp </> "installed"]
         result <- discoverAllModules paths
         length result `shouldBe` 1
-        case (head result).discoveredResult of
+        case (head result).result of
           Left _ -> pure ()
           Right _ -> expectationFailure "Expected Left for broken module"
 

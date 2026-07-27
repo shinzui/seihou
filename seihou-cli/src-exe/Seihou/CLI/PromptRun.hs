@@ -46,32 +46,32 @@ import System.Exit (exitFailure)
 
 handlePromptRun :: PendingAgentConfig -> PromptRunOpts -> IO ()
 handlePromptRun pending opts = do
-  let level = if opts.runPromptVerbose then LogVerbose else LogNormal
+  let level = if opts.verbose then LogVerbose else LogNormal
 
   searchPaths <- defaultSearchPaths
-  runnableResult <- discoverRunnable searchPaths opts.runPromptName
+  runnableResult <- discoverRunnable searchPaths opts.name
   (prompt, promptDir) <- case runnableResult of
     Right (RunnableAgentPrompt p dir) -> pure (p, dir)
     Right (RunnableModule _ _) ->
       exitErr level $
         "'"
-          <> opts.runPromptName.unModuleName
+          <> opts.name.unModuleName
           <> "' is a module, not a prompt. Did you mean 'seihou run "
-          <> opts.runPromptName.unModuleName
+          <> opts.name.unModuleName
           <> "'?"
     Right (RunnableRecipe _ _) ->
       exitErr level $
         "'"
-          <> opts.runPromptName.unModuleName
+          <> opts.name.unModuleName
           <> "' is a recipe, not a prompt. Did you mean 'seihou run "
-          <> opts.runPromptName.unModuleName
+          <> opts.name.unModuleName
           <> "'?"
     Right (RunnableBlueprint _ _) ->
       exitErr level $
         "'"
-          <> opts.runPromptName.unModuleName
+          <> opts.name.unModuleName
           <> "' is a blueprint, not a prompt. Did you mean 'seihou agent run "
-          <> opts.runPromptName.unModuleName
+          <> opts.name.unModuleName
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
 
@@ -107,10 +107,10 @@ handlePromptRun pending opts = do
       placeholderTriple = (placeholderInst, placeholderModule, promptDir)
 
   envPairs <- getEnvironment
-  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts.runPromptVars]
+  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts.vars]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace prompt.name) opts.runPromptNamespace
-  context <- resolveContext opts.runPromptContext envVars
+      namespace = fromMaybe (deriveNamespace prompt.name) opts.namespace
+  context <- resolveContext opts.context envVars
   let contextName = fromMaybe "" context
 
   resolveResult <- runEff $ runConfigReader $ runConsole $ do
@@ -148,16 +148,16 @@ handlePromptRun pending opts = do
 
   let renderedPrompt = renderPromptBody resolved prompt.prompt
   ctx <- gatherAgentContext
-  let systemPrompt = renderPromptSystemPrompt ctx prompt resolved renderedPrompt opts.runPromptPrompt
+  let systemPrompt = renderPromptSystemPrompt ctx prompt resolved renderedPrompt opts.prompt
 
   _ <-
     runRenderedAgentPrompt
-      opts.runPromptDebug
+      opts.debug
       modelConfig
       setupAllowedTools
       Nothing
       systemPrompt
-      opts.runPromptPrompt
+      opts.prompt
   pure ()
 
 relaxCommandVarDecls :: [CommandVar] -> [VarDecl] -> [VarDecl]

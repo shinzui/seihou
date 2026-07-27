@@ -498,7 +498,7 @@ dependencyDecoder = Decoder extractDep expectedDep
         )
 
     mkDep :: ModuleName -> [(VarName, Text)] -> Dependency
-    mkDep name bindings = Dependency {depModule = name, depVars = Map.fromList bindings}
+    mkDep name bindings = Dependency {module_ = name, vars = Map.fromList bindings}
 
 -- | Decoder for VarType from a Dhall Text string.
 -- Dhall does not support recursive types, so VarType is represented as a

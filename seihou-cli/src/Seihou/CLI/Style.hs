@@ -71,7 +71,7 @@ renderPreviewColor True lines' =
   where
     fileLines = [l | l@(FilePreview {}) <- lines']
     nonFileLines = [l | l <- lines', not (isFilePreview' l)]
-    maxPathLen = maximum (0 : map (T.length . T.pack . (.previewPath)) fileLines)
+    maxPathLen = maximum (0 : map (T.length . T.pack . (.path)) fileLines)
 
 renderColorLine :: Int -> PreviewLine -> Text
 renderColorLine maxPath (FilePreview status path annotation mMod) =
@@ -172,7 +172,7 @@ renderReportColor :: Bool -> ValidateReport -> Text
 renderReportColor False report = renderReportPlain report
 renderReportColor True report =
   T.unlines $
-    [ "Validating module at " <> T.pack report.reportPath <> "...",
+    [ "Validating module at " <> T.pack report.path <> "...",
       ""
     ]
       ++ dhallLine'
@@ -181,19 +181,19 @@ renderReportColor True report =
       ++ [""]
       ++ [resultLine']
   where
-    m = report.reportModule
+    m = report.module_
 
     dhallLine' =
-      if report.reportDhallOk
+      if report.dhallOk
         then ["  " <> green "\x2713" <> " module.dhall evaluates successfully"]
         else
           ["  " <> bold (red "\x2717") <> " module.dhall failed to evaluate"]
-            ++ case report.reportDhallError of
+            ++ case report.dhallError of
               Just errText -> ["      " <> dim errText]
               Nothing -> []
 
     summaryLines' =
-      if report.reportDhallOk
+      if report.dhallOk
         then
           [ "  " <> green "\x2713" <> " Module name: " <> cyan m.name.unModuleName,
             "  " <> green "\x2713" <> " " <> T.pack (show (length m.vars)) <> " variables declared",
@@ -202,27 +202,27 @@ renderReportColor True report =
           ]
         else []
 
-    checkLines' = concatMap renderCheckColor (report.reportChecks)
+    checkLines' = concatMap renderCheckColor (report.checks)
 
     renderCheckColor c
-      | null (c.diagDetails) =
-          ["  " <> green "\x2713" <> " " <> c.diagLabel]
-      | c.diagSeverity == DiagWarning =
-          ("  " <> yellow "\x26A0" <> " " <> yellow (c.diagLabel))
-            : map (\d -> "      " <> dim d) (c.diagDetails)
+      | null (c.details) =
+          ["  " <> green "\x2713" <> " " <> c.label]
+      | c.severity == DiagWarning =
+          ("  " <> yellow "\x26A0" <> " " <> yellow (c.label))
+            : map (\d -> "      " <> dim d) (c.details)
       | otherwise =
-          ("  " <> bold (red "\x2717") <> " " <> red (c.diagLabel))
-            : map (\d -> "      " <> dim d) (c.diagDetails)
+          ("  " <> bold (red "\x2717") <> " " <> red (c.label))
+            : map (\d -> "      " <> dim d) (c.details)
 
     errorCount =
       length
         [ ()
-        | c <- report.reportChecks,
-          c.diagSeverity == DiagError,
-          not (null (c.diagDetails))
+        | c <- report.checks,
+          c.severity == DiagError,
+          not (null (c.details))
         ]
 
-    dhallFailed = not (report.reportDhallOk)
+    dhallFailed = not (report.dhallOk)
     totalErrors = errorCount + (if dhallFailed then 1 else 0)
 
     resultLine'

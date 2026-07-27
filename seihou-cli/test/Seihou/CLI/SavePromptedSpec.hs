@@ -138,7 +138,7 @@ spec = do
               offerSavePrompted (Just True) True entries
       (cwState ^. #local) `shouldBe` Map.fromList [("project.name", "my-app"), ("license", "MIT")]
       -- Should not contain the confirmation prompt
-      any (T.isInfixOf "Save prompted values") consoleSt.consoleOutputs `shouldBe` False
+      any (T.isInfixOf "Save prompted values") consoleSt.outputs `shouldBe` False
 
     it "skips entirely when --no-save-prompted (Just False)" $ do
       (((), cwState), consoleSt) <-
@@ -147,7 +147,7 @@ spec = do
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted (Just False) True entries
       (cwState ^. #local) `shouldBe` Map.empty
-      consoleSt.consoleOutputs `shouldBe` []
+      consoleSt.outputs `shouldBe` []
 
     it "skips in non-interactive mode when no flag given" $ do
       (((), cwState), _consoleSt) <-
@@ -166,7 +166,7 @@ spec = do
           runConsolePure ["y"] $
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted Nothing True entriesWithOverwrite
-      any (T.isInfixOf "overwrites current") consoleSt.consoleOutputs `shouldBe` True
+      any (T.isInfixOf "overwrites current") consoleSt.outputs `shouldBe` True
 
     it "does nothing when entries list is empty" $ do
       (((), cwState), consoleSt) <-
@@ -175,7 +175,7 @@ spec = do
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted Nothing True []
       (cwState ^. #local) `shouldBe` Map.empty
-      consoleSt.consoleOutputs `shouldBe` []
+      consoleSt.outputs `shouldBe` []
 
     it "displays confirmation message after saving" $ do
       (((), _cwState), consoleSt) <-
@@ -183,4 +183,4 @@ spec = do
           runConsolePure ["y"] $
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted Nothing True entries
-      any (T.isInfixOf "Saved 2 value(s)") consoleSt.consoleOutputs `shouldBe` True
+      any (T.isInfixOf "Saved 2 value(s)") consoleSt.outputs `shouldBe` True

@@ -73,7 +73,7 @@ planAndStageMigrations projectRoot manifest catalog applications = do
     let warnings =
           [ MigrationCommandNotSimulated plannedMigration.moduleName command
           | plannedMigration <- stagedPlans,
-            RunCommandInst command _ <- plannedMigration.stagedPlan.planOps
+            RunCommandInst command _ <- plannedMigration.stagedPlan.ops
           ]
     Right
       StagedMigrations
@@ -99,7 +99,7 @@ stageAll manifest completed ((transition, sourcePlan) : rest) = do
                     sourceDirectory = transition.sourceDirectory,
                     sourcePlan,
                     stagedPlan,
-                    containsCommands = any isCommand stagedPlan.planOps
+                    containsCommands = any isCommand stagedPlan.ops
                   }
            in stageAll nextManifest (planned : completed) rest
   where
@@ -146,8 +146,8 @@ collectTransitions catalog applications = do
           }
 
     matches instanceId state =
-      state.name == instanceId.instanceModule
-        && state.parentVars == instanceId.instanceParentVars
+      state.name == instanceId.module_
+        && state.parentVars == instanceId.parentVars
 
 deduplicateTransitions :: [Transition] -> [Transition]
 deduplicateTransitions = go Set.empty
@@ -187,11 +187,11 @@ planTransition transition = do
 commandMocks :: (Transition, MigrationPlan) -> [ProcessMock]
 commandMocks (_, sourcePlan) =
   [ ProcessMock
-      { mockCommand = "/bin/sh",
-        mockArgs = ["-c", command],
-        mockResult = (ExitSuccess, "", "")
+      { command = "/bin/sh",
+        args = ["-c", command],
+        result = (ExitSuccess, "", "")
       }
-  | migration <- sourcePlan.planSteps,
+  | migration <- sourcePlan.steps,
     RunCommand command _ <- migration.ops
   ]
 
@@ -218,7 +218,7 @@ snapshotTrackedFiles projectRoot manifest = do
     parents path = takeWhile (\directory -> directory /= "." && directory /= "") (iterate takeDirectory (takeDirectory path))
 
 migrationTouchedPaths :: [PlannedUpdateMigration] -> Set FilePath
-migrationTouchedPaths = Set.fromList . concatMap (concatMap touched . (.stagedPlan.planOps))
+migrationTouchedPaths = Set.fromList . concatMap (concatMap touched . (.stagedPlan.ops))
   where
     touched (MoveFileInst source destination _) = [source, destination]
     touched (MoveDirInst source destination) = [source, destination]
@@ -227,7 +227,7 @@ migrationTouchedPaths = Set.fromList . concatMap (concatMap touched . (.stagedPl
     touched RunCommandInst {} = []
 
 migrationTouchesDirectories :: PlannedUpdateMigration -> Bool
-migrationTouchesDirectories migration = any touchesDirectory migration.stagedPlan.planOps
+migrationTouchesDirectories migration = any touchesDirectory migration.stagedPlan.ops
   where
     touchesDirectory MoveDirInst {} = True
     touchesDirectory DeleteDirInst {} = True

@@ -36,19 +36,19 @@ import System.Exit (ExitCode (..), exitFailure, exitWith)
 -- and a 'files/' integrity check).
 data BlueprintReport = BlueprintReport
   { -- | 'Nothing' when Dhall evaluation failed; otherwise the decoded record
-    brBlueprint :: !(Maybe Blueprint),
+    blueprint :: !(Maybe Blueprint),
     -- | Display name; equals the decoded blueprint's name when available
-    brName :: !Text,
-    brPath :: !FilePath,
-    brDhallOk :: !Bool,
-    brDhallError :: !(Maybe Text),
-    brChecks :: ![DiagCheck]
+    name :: !Text,
+    path :: !FilePath,
+    dhallOk :: !Bool,
+    dhallError :: !(Maybe Text),
+    checks :: ![DiagCheck]
   }
   deriving stock (Generic)
 
 handleValidateBlueprint :: ValidateBlueprintOpts -> IO ()
 handleValidateBlueprint vopts = do
-  blueprintDir <- case vopts.validateBlueprintPath of
+  blueprintDir <- case vopts.path of
     Just p -> pure p
     Nothing -> getCurrentDirectory
 
@@ -68,12 +68,12 @@ handleValidateBlueprint vopts = do
     Left err -> do
       let report =
             BlueprintReport
-              { brBlueprint = Nothing,
-                brName = "<unknown>",
-                brPath = blueprintDir,
-                brDhallOk = False,
-                brDhallError = Just (T.pack (show err)),
-                brChecks = []
+              { blueprint = Nothing,
+                name = "<unknown>",
+                path = blueprintDir,
+                dhallOk = False,
+                dhallError = Just (T.pack (show err)),
+                checks = []
               }
       TIO.putStr (renderBlueprintReport colorEnabled report)
       exitFailure
@@ -114,23 +114,23 @@ buildBlueprintReport baseDir b = do
         ]
   pure
     BlueprintReport
-      { brBlueprint = Just b,
-        brName = b.name.unModuleName,
-        brPath = baseDir,
-        brDhallOk = True,
-        brDhallError = Nothing,
-        brChecks = checks
+      { blueprint = Just b,
+        name = b.name.unModuleName,
+        path = baseDir,
+        dhallOk = True,
+        dhallError = Nothing,
+        checks = checks
       }
 
 blueprintReportHasErrors :: BlueprintReport -> Bool
 blueprintReportHasErrors r =
-  not r.brDhallOk
-    || any (\c -> c.diagSeverity == DiagError && not (null c.diagDetails)) r.brChecks
+  not r.dhallOk
+    || any (\c -> c.severity == DiagError && not (null c.details)) r.checks
 
 renderBlueprintReport :: Bool -> BlueprintReport -> Text
 renderBlueprintReport color report =
   T.unlines $
-    [ "Validating blueprint at " <> T.pack report.brPath <> "...",
+    [ "Validating blueprint at " <> T.pack report.path <> "...",
       ""
     ]
       ++ dhallLine
@@ -148,15 +148,15 @@ renderBlueprintReport color report =
     labelWarn t = if color then yellow t else t
 
     dhallLine =
-      if report.brDhallOk
+      if report.dhallOk
         then ["  " <> okMark <> " blueprint.dhall evaluates successfully"]
         else
           ["  " <> errMark <> " blueprint.dhall failed to evaluate"]
-            ++ case report.brDhallError of
+            ++ case report.dhallError of
               Just errText -> ["      " <> detailStyle errText]
               Nothing -> []
 
-    summaryLines = case report.brBlueprint of
+    summaryLines = case report.blueprint of
       Nothing -> []
       Just b ->
         [ "  " <> okMark <> " Blueprint name: " <> nameStyle b.name.unModuleName,
@@ -166,27 +166,27 @@ renderBlueprintReport color report =
           "  " <> okMark <> " " <> T.pack (show (length b.files)) <> " reference files declared"
         ]
 
-    checkLines = concatMap renderCheck report.brChecks
+    checkLines = concatMap renderCheck report.checks
 
     renderCheck c
-      | null c.diagDetails =
-          ["  " <> okMark <> " " <> c.diagLabel]
-      | c.diagSeverity == DiagWarning =
-          ("  " <> warnMark <> " " <> labelWarn c.diagLabel)
-            : map (\d -> "      " <> detailStyle d) c.diagDetails
+      | null c.details =
+          ["  " <> okMark <> " " <> c.label]
+      | c.severity == DiagWarning =
+          ("  " <> warnMark <> " " <> labelWarn c.label)
+            : map (\d -> "      " <> detailStyle d) c.details
       | otherwise =
-          ("  " <> errMark <> " " <> labelErr c.diagLabel)
-            : map (\d -> "      " <> detailStyle d) c.diagDetails
+          ("  " <> errMark <> " " <> labelErr c.label)
+            : map (\d -> "      " <> detailStyle d) c.details
 
     errorCount =
       length
         [ ()
-        | c <- report.brChecks,
-          c.diagSeverity == DiagError,
-          not (null c.diagDetails)
+        | c <- report.checks,
+          c.severity == DiagError,
+          not (null c.details)
         ]
 
-    dhallFailed = not report.brDhallOk
+    dhallFailed = not report.dhallOk
     totalErrors = errorCount + (if dhallFailed then 1 else 0)
 
     resultLine
@@ -194,5 +194,5 @@ renderBlueprintReport color report =
           let msg = T.pack (show totalErrors) <> " error(s) found."
            in (if color then bold (red msg) else msg) <> " Blueprint is invalid."
       | otherwise =
-          let msg = "Blueprint '" <> report.brName <> "' is valid."
+          let msg = "Blueprint '" <> report.name <> "' is valid."
            in if color then green msg else msg

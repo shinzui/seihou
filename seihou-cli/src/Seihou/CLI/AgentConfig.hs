@@ -154,10 +154,10 @@ baseAgentConfigInputs =
 -- @Maybe Text@ values in a row, twice over, are trivial to transpose by
 -- accident, and the compiler would not notice.
 data AgentSettingFlags = AgentSettingFlags
-  { flagProvider :: !(Maybe Text),
-    flagModel :: !(Maybe Text),
-    flagEffort :: !(Maybe Text),
-    flagTrace :: !(Maybe Text)
+  { provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    trace :: !(Maybe Text)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -165,10 +165,10 @@ data AgentSettingFlags = AgentSettingFlags
 noAgentSettingFlags :: AgentSettingFlags
 noAgentSettingFlags =
   AgentSettingFlags
-    { flagProvider = Nothing,
-      flagModel = Nothing,
-      flagEffort = Nothing,
-      flagTrace = Nothing
+    { provider = Nothing,
+      model = Nothing,
+      effort = Nothing,
+      trace = Nothing
     }
 
 -- | Fold the parent and subcommand flag tiers into gathered inputs. The
@@ -177,14 +177,14 @@ noAgentSettingFlags =
 applyAgentSettingFlags :: AgentSettingFlags -> AgentSettingFlags -> AgentConfigInputs -> AgentConfigInputs
 applyAgentSettingFlags parent command inputs =
   inputs
-    { cliProvider = command.flagProvider <|> parent.flagProvider,
-      cliModel = command.flagModel <|> parent.flagModel,
-      cliEffort = command.flagEffort <|> parent.flagEffort,
-      cliTrace = command.flagTrace <|> parent.flagTrace,
-      cliProviderFromSubcommand = isJust command.flagProvider,
-      cliModelFromSubcommand = isJust command.flagModel,
-      cliEffortFromSubcommand = isJust command.flagEffort,
-      cliTraceFromSubcommand = isJust command.flagTrace
+    { cliProvider = command.provider <|> parent.provider,
+      cliModel = command.model <|> parent.model,
+      cliEffort = command.effort <|> parent.effort,
+      cliTrace = command.trace <|> parent.trace,
+      cliProviderFromSubcommand = isJust command.provider,
+      cliModelFromSubcommand = isJust command.model,
+      cliEffortFromSubcommand = isJust command.effort,
+      cliTraceFromSubcommand = isJust command.trace
     }
 
 -- | The agent-driven commands whose provider/model can be configured
@@ -296,8 +296,8 @@ data AgentConfigSource
 
 -- | A resolved value paired with the source that supplied it.
 data ResolvedAgentField a = ResolvedAgentField
-  { resolvedValue :: !a,
-    resolvedSource :: !AgentConfigSource
+  { value :: !a,
+    source :: !AgentConfigSource
   }
   deriving stock (Eq, Generic, Show)
 
@@ -350,15 +350,15 @@ commandKey TraceField = agentCommandTraceConfigKey
 -- | The full result of resolving one command's provider and model, with
 -- provenance, used by the @seihou agent config@ inspection command.
 data ResolvedCommandConfig = ResolvedCommandConfig
-  { rccCommand :: !AgentCommandName,
-    rccProvider :: !(ResolvedAgentField AgentProvider),
-    rccModel :: !(ResolvedAgentField (Maybe Text)),
-    rccEffort :: !(ResolvedAgentField (Maybe ThinkingLevel)),
-    rccTrace :: !(ResolvedAgentField TraceSetting),
+  { command :: !AgentCommandName,
+    provider :: !(ResolvedAgentField AgentProvider),
+    model :: !(ResolvedAgentField (Maybe Text)),
+    effort :: !(ResolvedAgentField (Maybe ThinkingLevel)),
+    trace :: !(ResolvedAgentField TraceSetting),
     -- | The configured @agent.tracePath@, if any. Carried without provenance:
     -- it is free-form, has no CLI flag and no per-command variant, so there is
     -- no precedence story worth displaying.
-    rccTracePath :: !(Maybe FilePath)
+    tracePath :: !(Maybe FilePath)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -375,7 +375,7 @@ resolveAgentModelConfig inputs = do
         candidate (Map.lookup agentProviderConfigKey inputs.globalConfig) SourceGlobalDefault
       ]
   let modelField =
-        applyProviderDefaultModel provider.resolvedValue $
+        applyProviderDefaultModel provider.value $
           resolveModel
             [ candidate inputs.cliModel SourceCliSubcommand,
               candidate inputs.envModel SourceEnv,
@@ -384,11 +384,11 @@ resolveAgentModelConfig inputs = do
             ]
   pure
     AgentModelConfig
-      { agentProvider = provider.resolvedValue,
-        agentModel = modelField.resolvedValue,
-        agentEffort = Nothing,
-        agentTrace = TraceOff,
-        agentTracePath = Nothing
+      { provider = provider.value,
+        model = modelField.value,
+        effort = Nothing,
+        trace = TraceOff,
+        tracePath = Nothing
       }
 
 -- | Resolve the provider, model, and reasoning effort for a specific command,
@@ -416,9 +416,9 @@ resolveAgentModelConfigFor ::
     )
 resolveAgentModelConfigFor c inputs = do
   provider <-
-    (\p -> ResolvedAgentField p.resolvedValue p.resolvedSource)
+    (\p -> ResolvedAgentField p.value p.source)
       <$> resolveProvider (providerCandidates c inputs)
-  let model = applyProviderDefaultModel provider.resolvedValue (resolveModel (modelCandidates c inputs))
+  let model = applyProviderDefaultModel provider.value (resolveModel (modelCandidates c inputs))
   effort <- resolveEffort (effortCandidates c inputs)
   trace <- resolveTrace (traceCandidates c inputs)
   pure (provider, model, effort, trace)
@@ -441,10 +441,10 @@ resolveTracePath inputs =
 -- 'SourceBuiltinDefault' — the value is a built-in, just a non-empty one.
 applyProviderDefaultModel :: AgentProvider -> ResolvedAgentField (Maybe Text) -> ResolvedAgentField (Maybe Text)
 applyProviderDefaultModel prov field =
-  case field.resolvedValue of
+  case field.value of
     Just _ -> field
     Nothing -> case defaultModelForProvider prov of
-      Just m -> field {resolvedValue = Just m}
+      Just m -> field {value = Just m}
       Nothing -> field
 
 providerCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentConfigSource)]
@@ -501,7 +501,7 @@ resolveProvider :: [(Maybe Text, AgentConfigSource)] -> Either Text (ResolvedAge
 resolveProvider candidates =
   case firstNonBlankWithSource candidates of
     Just (txt, src) -> (\p -> ResolvedAgentField p src) <$> providerFromText txt
-    Nothing -> Right (ResolvedAgentField defaultAgentModelConfig.agentProvider SourceBuiltinDefault)
+    Nothing -> Right (ResolvedAgentField defaultAgentModelConfig.provider SourceBuiltinDefault)
 
 -- | Resolve a model from an ordered candidate list. An unset model resolves to
 -- 'Nothing' with source 'SourceBuiltinDefault', letting the provider pick.
@@ -553,7 +553,7 @@ loadAgentModelConfig cliProvider cliModel = do
   inputsOrErr <-
     gatherAgentConfigInputs
       noAgentSettingFlags
-      noAgentSettingFlags {flagProvider = cliProvider, flagModel = cliModel}
+      noAgentSettingFlags {provider = cliProvider, model = cliModel}
   pure (inputsOrErr >>= resolveAgentModelConfig)
 
 -- | Read the environment and config, then resolve provider/model/effort for a
@@ -573,11 +573,11 @@ loadAgentModelConfigFor c parentFlags commandFlags = do
     (provider, model, effort, trace) <- resolveAgentModelConfigFor c inputs
     pure
       AgentModelConfig
-        { agentProvider = provider.resolvedValue,
-          agentModel = model.resolvedValue,
-          agentEffort = effort.resolvedValue,
-          agentTrace = trace.resolvedValue,
-          agentTracePath = resolveTracePath inputs
+        { provider = provider.value,
+          model = model.value,
+          effort = effort.value,
+          trace = trace.value,
+          tracePath = resolveTracePath inputs
         }
 
 -- | Resolve every configurable command from the real environment and config,
@@ -593,12 +593,12 @@ loadResolvedAgentConfig = do
       (provider, model, effort, trace) <- resolveAgentModelConfigFor c inputs
       pure
         ResolvedCommandConfig
-          { rccCommand = c,
-            rccProvider = provider,
-            rccModel = model,
-            rccEffort = effort,
-            rccTrace = trace,
-            rccTracePath = resolveTracePath inputs
+          { command = c,
+            provider = provider,
+            model = model,
+            effort = effort,
+            trace = trace,
+            tracePath = resolveTracePath inputs
           }
 
 -- | Shared IO: read @SEIHOU_AGENT_*@ and the local + global config maps into an
@@ -638,9 +638,9 @@ gatherAgentConfigInputs parentFlags commandFlags = do
 -- artifact's @launch@ record. @mode@ is deliberately absent: it is reserved
 -- and no part of the resolution path.
 data AgentLaunchDeclaration = AgentLaunchDeclaration
-  { declarationProvider :: !(Maybe Text),
-    declarationModel :: !(Maybe Text),
-    declarationEffort :: !(Maybe Text)
+  { provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -649,9 +649,9 @@ data AgentLaunchDeclaration = AgentLaunchDeclaration
 noAgentLaunchDeclaration :: AgentLaunchDeclaration
 noAgentLaunchDeclaration =
   AgentLaunchDeclaration
-    { declarationProvider = Nothing,
-      declarationModel = Nothing,
-      declarationEffort = Nothing
+    { provider = Nothing,
+      model = Nothing,
+      effort = Nothing
     }
 
 -- | Project a decoded artifact's launch record into the resolver's declaration
@@ -660,9 +660,9 @@ agentLaunchDeclaration :: Maybe AgentLaunch -> AgentLaunchDeclaration
 agentLaunchDeclaration Nothing = noAgentLaunchDeclaration
 agentLaunchDeclaration (Just l) =
   AgentLaunchDeclaration
-    { declarationProvider = l.provider,
-      declarationModel = l.model,
-      declarationEffort = l.effort
+    { provider = l.provider,
+      model = l.model,
+      effort = l.effort
     }
 
 -- | Parse-check a declared launch record, returning one message per invalid
@@ -672,8 +672,8 @@ agentLaunchDeclaration (Just l) =
 -- aliases and custom model IDs.
 validateAgentLaunchDeclaration :: AgentLaunchDeclaration -> [Text]
 validateAgentLaunchDeclaration decl =
-  check "launch.provider" providerFromText decl.declarationProvider
-    <> check "launch.effort" effortFromText decl.declarationEffort
+  check "launch.provider" providerFromText decl.provider
+    <> check "launch.effort" effortFromText decl.effort
   where
     check :: Text -> (Text -> Either Text a) -> Maybe Text -> [Text]
     check key parse value =
@@ -692,8 +692,8 @@ validateAgentLaunchDeclaration decl =
 -- after the handler loads it, but resolution must still be a single pass over
 -- one ordered precedence list.
 data PendingAgentConfig = PendingAgentConfig
-  { pendingCommand :: !AgentCommandName,
-    pendingInputs :: !AgentConfigInputs
+  { command :: !AgentCommandName,
+    inputs :: !AgentConfigInputs
   }
   deriving stock (Eq, Generic, Show)
 
@@ -718,20 +718,20 @@ resolvePendingAgentConfig ::
   Either Text ResolvedCommandConfig
 resolvePendingAgentConfig pending decl = do
   let inputs =
-        pending.pendingInputs
-          { declaredProvider = decl.declarationProvider,
-            declaredModel = decl.declarationModel,
-            declaredEffort = decl.declarationEffort
+        pending.inputs
+          { declaredProvider = decl.provider,
+            declaredModel = decl.model,
+            declaredEffort = decl.effort
           }
-  (provider, model, effort, trace) <- resolveAgentModelConfigFor pending.pendingCommand inputs
+  (provider, model, effort, trace) <- resolveAgentModelConfigFor pending.command inputs
   pure
     ResolvedCommandConfig
-      { rccCommand = pending.pendingCommand,
-        rccProvider = provider,
-        rccModel = model,
-        rccEffort = effort,
-        rccTrace = trace,
-        rccTracePath = resolveTracePath inputs
+      { command = pending.command,
+        provider = provider,
+        model = model,
+        effort = effort,
+        trace = trace,
+        tracePath = resolveTracePath inputs
       }
 
 -- | Project a resolved command config down to what the launch layer needs,
@@ -739,11 +739,11 @@ resolvePendingAgentConfig pending decl = do
 resolvedAgentModelConfig :: ResolvedCommandConfig -> AgentModelConfig
 resolvedAgentModelConfig rcc =
   AgentModelConfig
-    { agentProvider = rcc.rccProvider.resolvedValue,
-      agentModel = rcc.rccModel.resolvedValue,
-      agentEffort = rcc.rccEffort.resolvedValue,
-      agentTrace = rcc.rccTrace.resolvedValue,
-      agentTracePath = rcc.rccTracePath
+    { provider = rcc.provider.value,
+      model = rcc.model.value,
+      effort = rcc.effort.value,
+      trace = rcc.trace.value,
+      tracePath = rcc.tracePath
     }
 
 -- | A one-line provenance summary for a verbose log line, e.g.
@@ -753,14 +753,14 @@ formatResolvedAgentProvenance :: ResolvedCommandConfig -> Text
 formatResolvedAgentProvenance rcc =
   T.intercalate
     ", "
-    [ part "provider" (providerToText rcc.rccProvider.resolvedValue) ProviderField rcc.rccProvider.resolvedSource,
-      part "model" (fromMaybe "<provider default>" rcc.rccModel.resolvedValue) ModelField rcc.rccModel.resolvedSource,
-      part "effort" (maybe "<unset>" effortToText rcc.rccEffort.resolvedValue) EffortField rcc.rccEffort.resolvedSource,
-      part "trace" (traceToText rcc.rccTrace.resolvedValue) TraceField rcc.rccTrace.resolvedSource
+    [ part "provider" (providerToText rcc.provider.value) ProviderField rcc.provider.source,
+      part "model" (fromMaybe "<provider default>" rcc.model.value) ModelField rcc.model.source,
+      part "effort" (maybe "<unset>" effortToText rcc.effort.value) EffortField rcc.effort.source,
+      part "trace" (traceToText rcc.trace.value) TraceField rcc.trace.source
     ]
   where
     part label value field src =
-      label <> " " <> value <> " [" <> agentConfigSourceLabel rcc.rccCommand field src <> "]"
+      label <> " " <> value <> " [" <> agentConfigSourceLabel rcc.command field src <> "]"
 
 -- | Finish resolution with the artifact's declaration, logging the resolved
 -- provenance at verbose level and exiting with an actionable message when the

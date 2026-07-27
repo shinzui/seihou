@@ -90,10 +90,10 @@ mkApplication target modules =
 mkPlan :: Text -> Text -> Text -> Int -> MigrationPlan
 mkPlan modName from to nSteps =
   MigrationPlan
-    { planModule = modName,
-      planFrom = parseV from,
-      planTo = parseV to,
-      planSteps = replicate nSteps (Migration from to [DeleteFile "x"])
+    { module_ = modName,
+      from = parseV from,
+      to = parseV to,
+      steps = replicate nSteps (Migration from to [DeleteFile "x"])
     }
 
 parseV :: Text -> Seihou.Core.Version.Version
@@ -267,7 +267,7 @@ spec = describe "formatStatus" $ do
 
   -- Master-plan live-tree fixture: manifest=0.1.0, installed=0.3.0,
   -- declared [0.1.0 → 0.2.0]. The chain reaches 0.2 via ops; the
-  -- supplied target is 0.3, so planTo = 0.3. Status surfaces the
+  -- supplied target is 0.3, so to = 0.3. Status surfaces the
   -- single in-window step and points at `seihou update demo` as the
   -- remediation.
   it "partial-cover plan: chain reaches an intermediate version, target is the user's installed copy" $ do
@@ -293,10 +293,10 @@ spec = describe "formatStatus" $ do
         manifest = mkManifest [am]
         plan =
           MigrationPlan
-            { planModule = "demo",
-              planFrom = parseV "0.2.0",
-              planTo = parseV "0.3.0",
-              planSteps = []
+            { module_ = "demo",
+              from = parseV "0.2.0",
+              to = parseV "0.3.0",
+              steps = []
             }
         out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
     out `shouldSatisfy` T.isInfixOf "Pending migration: 0.2.0 -> 0.3.0 (0 step(s))"

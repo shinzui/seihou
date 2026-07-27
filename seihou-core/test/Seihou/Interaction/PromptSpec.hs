@@ -106,7 +106,7 @@ spec = do
       rv.value `shouldBe` VText "my-app"
       rv.source `shouldBe` FromPrompt
       -- The prompt text should have been output
-      st.consoleOutputs `shouldSatisfy` any (== "What is the project name?")
+      st.outputs `shouldSatisfy` any (== "What is the project name?")
 
     it "fills a prompt with choices via selection number" $ do
       let decl = mkTextVar "license" Nothing True
@@ -132,7 +132,7 @@ spec = do
       -- Prompt was skipped, so the variable is not resolved
       Map.member "extra.flag" result `shouldBe` False
       -- No prompt text was output
-      st.consoleOutputs `shouldSatisfy` all (/= "Extra flag?")
+      st.outputs `shouldSatisfy` all (/= "Extra flag?")
 
     it "shows a prompt whose when condition evaluates to True" $ do
       let decl = mkTextVar "extra.flag" Nothing True
@@ -156,7 +156,7 @@ spec = do
           runConsolePure ["anything"] $
             runPrompts [prompt] [decl] bindings
       Map.null result `shouldBe` True
-      st.consoleOutputs `shouldSatisfy` all (/= "Other?")
+      st.outputs `shouldSatisfy` all (/= "Other?")
 
   describe "default value display" $ do
     it "shows default value in prompt text and accepts Enter" $ do
@@ -172,7 +172,7 @@ spec = do
           rv.value `shouldBe` VText "0.1.0.0"
           rv.source `shouldBe` FromPrompt
       -- Prompt text should include the default in brackets
-      st.consoleOutputs `shouldSatisfy` any (== "Project version [0.1.0.0]:")
+      st.outputs `shouldSatisfy` any (== "Project version [0.1.0.0]:")
 
     it "accepts user input over default when provided" $ do
       let decl = mkTextVar "project.version" (Just (VText "0.1.0.0")) True
@@ -185,7 +185,7 @@ spec = do
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right rv ->
           rv.value `shouldBe` VText "1.0.0"
-      st.consoleOutputs `shouldSatisfy` any (== "Project version [0.1.0.0]:")
+      st.outputs `shouldSatisfy` any (== "Project version [0.1.0.0]:")
 
     it "shows [skip] for optional variable without default" $ do
       let decl = mkTextVar "license" Nothing False
@@ -194,7 +194,7 @@ spec = do
         runEff $
           runConsolePure [""] $
             promptForVar prompt decl Map.empty
-      st.consoleOutputs `shouldSatisfy` any (== "License [skip]:")
+      st.outputs `shouldSatisfy` any (== "License [skip]:")
 
     it "shows bool default as yes/no" $ do
       let decl = mkBoolVar "enable.ci" (Just (VBool True)) False
@@ -207,7 +207,7 @@ spec = do
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
         Right rv ->
           rv.value `shouldBe` VBool True
-      st.consoleOutputs `shouldSatisfy` any (== "Enable CI? [yes]:")
+      st.outputs `shouldSatisfy` any (== "Enable CI? [yes]:")
 
   describe "promptForVar" $ do
     it "coerces boolean input correctly" $ do
@@ -247,7 +247,7 @@ spec = do
         Right rv ->
           rv.value `shouldBe` VText "my-app"
       -- Should have output a retry message
-      st.consoleOutputs `shouldSatisfy` any (== "Value cannot be empty. Please try again.")
+      st.outputs `shouldSatisfy` any (== "Value cannot be empty. Please try again.")
 
     it "fails after exhausting retries on empty input" $ do
       let decl = mkTextVar "project.name" Nothing True
@@ -281,7 +281,7 @@ spec = do
           let baseVars = resolved Map.! primaryInstance "base"
           (baseVars Map.! "project.name").value `shouldBe` VText "my-app"
           (baseVars Map.! "project.name").source `shouldBe` FromPrompt
-      st.consoleOutputs `shouldSatisfy` any (== "What is the project name?")
+      st.outputs `shouldSatisfy` any (== "What is the project name?")
 
     it "does not prompt when all variables are provided via CLI" $ do
       let m =
@@ -304,7 +304,7 @@ spec = do
           (baseVars Map.! "project.name").value `shouldBe` VText "from-cli"
           (baseVars Map.! "project.name").source `shouldBe` FromCLI
       -- No prompts should have been displayed
-      st.consoleOutputs `shouldSatisfy` all (/= "What is the project name?")
+      st.outputs `shouldSatisfy` all (/= "What is the project name?")
 
     it "skips prompts and errors in non-interactive mode" $ do
       let m =
@@ -326,7 +326,7 @@ spec = do
           _ -> expectationFailure $ "Expected exactly 1 error, got: " ++ show (length errs)
         Right _ -> expectationFailure "Expected Left (errors), got Right"
       -- No prompts should have been displayed
-      st.consoleOutputs `shouldSatisfy` all (/= "What is the project name?")
+      st.outputs `shouldSatisfy` all (/= "What is the project name?")
 
     it "forbids prompts even when the Console interpreter is interactive" $ do
       let m =
@@ -342,8 +342,8 @@ spec = do
           runConsolePure ["must-not-be-read"] $
             resolveWithPromptPermission PromptsForbidden modules Map.empty Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
       result `shouldBe` Left [MissingRequiredVar "project.name"]
-      st.consoleInputs `shouldBe` ["must-not-be-read"]
-      st.consoleOutputs `shouldSatisfy` all (/= "What is the project name?")
+      st.inputs `shouldBe` ["must-not-be-read"]
+      st.outputs `shouldSatisfy` all (/= "What is the project name?")
 
     it "prompts for optional variables after required resolution" $ do
       let m =
@@ -370,7 +370,7 @@ spec = do
           (baseVars Map.! "project.name").source `shouldBe` FromPrompt
           (baseVars Map.! "license").value `shouldBe` VText "MIT"
           (baseVars Map.! "license").source `shouldBe` FromPrompt
-      st.consoleOutputs `shouldSatisfy` any (== "Optional configuration:")
+      st.outputs `shouldSatisfy` any (== "Optional configuration:")
 
     it "skips optional variable when user presses Enter" $ do
       let m =
@@ -414,7 +414,7 @@ spec = do
         Right resolved -> do
           let baseVars = resolved Map.! primaryInstance "base"
           (baseVars Map.! "license").value `shouldBe` VText "MIT"
-      st.consoleOutputs `shouldSatisfy` any (== "Optional configuration:")
+      st.outputs `shouldSatisfy` any (== "Optional configuration:")
 
     it "does not show optional prompts in non-interactive mode" $ do
       let m =
@@ -434,7 +434,7 @@ spec = do
         Right resolved -> do
           let baseVars = resolved Map.! primaryInstance "base"
           Map.member "license" baseVars `shouldBe` False
-      st.consoleOutputs `shouldSatisfy` all (/= "Optional configuration:")
+      st.outputs `shouldSatisfy` all (/= "Optional configuration:")
 
     it "respects when condition on optional prompts" $ do
       let m =
@@ -460,7 +460,7 @@ spec = do
           Map.member "extra" baseVars `shouldBe` False
       -- The condition was false so Optional configuration header should not appear
       -- (no optional prompts actually fired)
-      st.consoleOutputs `shouldSatisfy` all (/= "Extra?")
+      st.outputs `shouldSatisfy` all (/= "Extra?")
 
     it "does not prompt for optional variables already resolved via config" $ do
       let m =
@@ -482,7 +482,7 @@ spec = do
           let baseVars = resolved Map.! primaryInstance "base"
           (baseVars Map.! "license").value `shouldBe` VText "MIT"
           (baseVars Map.! "license").source `shouldBe` FromGlobalConfig
-      st.consoleOutputs `shouldSatisfy` all (/= "Optional configuration:")
+      st.outputs `shouldSatisfy` all (/= "Optional configuration:")
 
     it "flows prompted value from first module to second via exports" $ do
       let base =
@@ -515,5 +515,5 @@ spec = do
           let appVars = resolved Map.! primaryInstance "app"
           (appVars Map.! "project.name").value `shouldBe` VText "my-app"
       -- Only one prompt should have fired (for base), not two
-      let promptOutputs = filter (== "What is the project name?") (st.consoleOutputs)
+      let promptOutputs = filter (== "What is the project name?") (st.outputs)
       length promptOutputs `shouldBe` 1

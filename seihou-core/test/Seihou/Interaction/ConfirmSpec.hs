@@ -70,7 +70,7 @@ spec = do
           runConsolePure [] $
             confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
       result `shouldBe` resolved
-      st.consoleOutputs `shouldSatisfy` all (/= "Confirm default values:")
+      st.outputs `shouldSatisfy` all (/= "Confirm default values:")
 
     it "prompts for FromDefault variables and accepts Enter as keeping the default" $ do
       let decl = mkTextVar "project.version" (Just (VText "0.1.0.0"))
@@ -86,8 +86,8 @@ spec = do
       let rv = (result Map.! primaryInstance "base") Map.! "project.version"
       rv.value `shouldBe` VText "0.1.0.0"
       rv.source `shouldBe` FromDefault
-      st.consoleOutputs `shouldSatisfy` any (== "Confirm default values:")
-      st.consoleOutputs `shouldSatisfy` any (== "project.version [0.1.0.0]:")
+      st.outputs `shouldSatisfy` any (== "Confirm default values:")
+      st.outputs `shouldSatisfy` any (== "project.version [0.1.0.0]:")
 
     it "replaces the value and marks source as FromPrompt when user types a new value" $ do
       let decl = mkTextVar "project.version" (Just (VText "0.1.0.0"))
@@ -149,7 +149,7 @@ spec = do
           runConsolePureNonInteractive $
             confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
       result `shouldBe` resolved
-      st.consoleOutputs `shouldBe` []
+      st.outputs `shouldBe` []
 
     it "uses authored Prompt text when available" $ do
       let decl = mkTextVar "license" (Just (VText "MIT"))
@@ -169,4 +169,4 @@ spec = do
         runEff $
           runConsolePure [""] $
             confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
-      st.consoleOutputs `shouldSatisfy` any (== "Choose a license [MIT]:")
+      st.outputs `shouldSatisfy` any (== "Choose a license [MIT]:")

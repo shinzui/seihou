@@ -81,37 +81,37 @@ handleValidate opts = do
 -- line on failure.
 renderValidationReport :: RegistryValidationReport -> Text
 renderValidationReport r
-  | null r.reportIssues =
+  | null r.issues =
       T.unlines
         [ "OK: "
-            <> T.pack (show r.reportModuleCount)
+            <> T.pack (show r.moduleCount)
             <> " "
-            <> pluralize r.reportModuleCount "module" "modules"
+            <> pluralize r.moduleCount "module" "modules"
             <> ", "
-            <> T.pack (show r.reportRecipeCount)
+            <> T.pack (show r.recipeCount)
             <> " "
-            <> pluralize r.reportRecipeCount "recipe" "recipes"
+            <> pluralize r.recipeCount "recipe" "recipes"
             <> ", "
-            <> T.pack (show r.reportBlueprintCount)
+            <> T.pack (show r.blueprintCount)
             <> " "
-            <> pluralize r.reportBlueprintCount "blueprint" "blueprints"
+            <> pluralize r.blueprintCount "blueprint" "blueprints"
             <> ", "
-            <> T.pack (show r.reportPromptCount)
+            <> T.pack (show r.promptCount)
             <> " "
-            <> pluralize r.reportPromptCount "prompt" "prompts"
+            <> pluralize r.promptCount "prompt" "prompts"
             <> ", all versions in sync."
         ]
   | otherwise =
       T.unlines $
         ["errors:"]
-          <> map (("  " <>) . formatValidationIssue) r.reportIssues
+          <> map (("  " <>) . formatValidationIssue) r.issues
           <> [""]
           <> [summary r]
 
 summary :: RegistryValidationReport -> Text
 summary r =
-  let n = length r.reportIssues
-      hasVersionDrift = any isVersionMismatch r.reportIssues
+  let n = length r.issues
+      hasVersionDrift = any isVersionMismatch r.issues
       base = T.pack (show n) <> " " <> pluralize n "error" "errors"
       tail_ =
         if hasVersionDrift

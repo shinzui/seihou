@@ -18,7 +18,7 @@ import System.Exit (exitFailure)
 
 handleNewPrompt :: NewPromptOpts -> IO ()
 handleNewPrompt nopts = do
-  let name = nopts.newPromptName
+  let name = nopts.name
 
   if not (isValidModuleName name)
     then do
@@ -28,7 +28,7 @@ handleNewPrompt nopts = do
       exitFailure
     else pure ()
 
-  let outputDir = case nopts.newPromptPath of
+  let outputDir = case nopts.path of
         Just p -> p
         Nothing -> T.unpack name
 

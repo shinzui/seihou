@@ -17,7 +17,7 @@ import System.Exit (exitFailure)
 
 handleNewBlueprint :: NewBlueprintOpts -> IO ()
 handleNewBlueprint nopts = do
-  let name = nopts.newBlueprintName
+  let name = nopts.name
 
   -- Validate blueprint name format
   if not (isValidBlueprintName name)
@@ -29,7 +29,7 @@ handleNewBlueprint nopts = do
     else pure ()
 
   -- Determine output directory
-  let outputDir = case nopts.newBlueprintPath of
+  let outputDir = case nopts.path of
         Just p -> p
         Nothing -> T.unpack name
 

@@ -39,7 +39,7 @@ data PromptPermission = PromptsAllowed | PromptsForbidden
 -- Returns modules with their directories in execution order (dependencies first).
 --
 -- Each entry carries a 'ModuleInstance' identifying the exact invocation.
--- Two dependency edges to the same module with different @depVars@ produce
+-- Two dependency edges to the same module with different @vars@ produce
 -- two distinct entries; identical edges dedupe.
 loadComposition ::
   [FilePath] ->
@@ -49,10 +49,10 @@ loadComposition ::
 loadComposition searchPaths primary additional = runExceptT $ do
   (primaryMod, primaryDir) <- ExceptT $ loadModuleWithDir searchPaths primary
   let effectiveDeps = primaryMod.dependencies ++ map simpleDep additional
-      effectivePrimary = primaryMod {dependencies = nubOrdBy (.depModule) effectiveDeps}
+      effectivePrimary = primaryMod {dependencies = nubOrdBy (.module_) effectiveDeps}
       primaryInst = primaryInstance primary
       loaded = Map.singleton primaryInst (effectivePrimary, primaryDir)
-      seeds = [(mkInstance dep.depModule (parentVarsFromDep dep)) | dep <- effectivePrimary.dependencies]
+      seeds = [(mkInstance dep.module_ (parentVarsFromDep dep)) | dep <- effectivePrimary.dependencies]
   allInstances <- ExceptT $ loadTransitive searchPaths loaded seeds
   let entries = [(inst, m) | (inst, (m, _)) <- Map.toList allInstances]
       graph = buildGraph entries
@@ -281,7 +281,7 @@ resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides e
 -- | Collect the exports visible along a module's dependency edges.
 --
 -- Each dependency edge is resolved to the exact child instance
--- @(depModule, depVars)@, not just the module name, so that two
+-- @(module_, vars)@, not just the module name, so that two
 -- sibling instances of the same module contribute their own
 -- per-instance exports without interference.
 gatherEdgeExports ::
@@ -292,7 +292,7 @@ gatherEdgeExports m allExports =
   Map.unions
     [ Map.findWithDefault Map.empty childInst allExports
     | dep <- m.dependencies,
-      let childInst = mkInstance dep.depModule (parentVarsFromDep dep)
+      let childInst = mkInstance dep.module_ (parentVarsFromDep dep)
     ]
 
 -- | Extract the variable name from a MissingRequiredVar error.
@@ -365,13 +365,13 @@ loadTransitive _ loaded [] = pure (Right loaded)
 loadTransitive searchPaths loaded (inst : rest)
   | Map.member inst loaded = loadTransitive searchPaths loaded rest
   | otherwise = do
-      result <- loadModuleWithDir searchPaths inst.instanceModule
+      result <- loadModuleWithDir searchPaths inst.module_
       case result of
         Left err -> pure (Left err)
         Right (m, dir) -> do
           let loaded' = Map.insert inst (m, dir) loaded
               newInstances =
-                [ mkInstance dep.depModule (parentVarsFromDep dep)
+                [ mkInstance dep.module_ (parentVarsFromDep dep)
                 | dep <- m.dependencies
                 ]
           loadTransitive searchPaths loaded' (rest ++ newInstances)
@@ -415,7 +415,7 @@ inferType (VList (v : _)) = VTList (inferType v)
 -- Returns a map keyed by 'ModuleInstance' — not by bare 'ModuleName' —
 -- so two sibling invocations of the same child, each supplied with
 -- different bindings by different parents, carry their own edge
--- decorations independently. A child edge's @depVars@ uniquely
+-- decorations independently. A child edge's @vars@ uniquely
 -- identifies the target instance, so no merging of overlapping
 -- bindings is required: each @(ModuleInstance, edgeVars)@ pair is
 -- distinct by construction.
@@ -424,11 +424,11 @@ collectParentVars ::
   Map ModuleInstance (Map VarName (Text, ModuleName))
 collectParentVars modules =
   Map.fromList
-    [ (childInst, Map.map (,m.name) dep.depVars)
+    [ (childInst, Map.map (,m.name) dep.vars)
     | (_, m, _) <- modules,
       dep <- m.dependencies,
-      not (Map.null dep.depVars),
-      let childInst = mkInstance dep.depModule (parentVarsFromDep dep)
+      not (Map.null dep.vars),
+      let childInst = mkInstance dep.module_ (parentVarsFromDep dep)
     ]
 
 -- | Remove duplicates from a list while preserving order, using a key function.

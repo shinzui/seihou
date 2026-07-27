@@ -37,7 +37,7 @@ handleOutdated :: OutdatedOpts -> IO ()
 handleOutdated oopts = do
   searchPaths <- defaultSearchPaths
   modules <- discoverAllModules searchPaths
-  let installed = filter (\dm -> dm.discoveredSource == SourceInstalled) modules
+  let installed = filter (\dm -> dm.source == SourceInstalled) modules
 
   if null installed
     then TIO.putStrLn "No installed modules found."
@@ -63,7 +63,7 @@ checkInstalledModulesForUpdates ::
   [DiscoveredModule] ->
   IO ([OutdatedEntry], CheckStats)
 checkInstalledModulesForUpdates modules = do
-  let installed = filter (\dm -> dm.discoveredSource == SourceInstalled) modules
+  let installed = filter (\dm -> dm.source == SourceInstalled) modules
   originsWithModules <- mapM readOriginWithModule installed
   let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
       skipped = length installed - length withOrigins
@@ -89,7 +89,7 @@ checkInstalledModulesForUpdates modules = do
 -- | Read origin info from a discovered module's directory.
 readOriginWithModule :: DiscoveredModule -> IO (DiscoveredModule, Maybe OriginInfo)
 readOriginWithModule dm = do
-  let originFile = dm.discoveredDir </> ".seihou-origin.json"
+  let originFile = dm.dir </> ".seihou-origin.json"
   exists <- doesFileExist originFile
   if exists
     then do
@@ -155,9 +155,9 @@ fetchAvailable cloneDir name = do
 -- | Compare installed and available version strings.
 -- | Extract the module name text from a DiscoveredModule.
 moduleNameFromDm :: DiscoveredModule -> Text
-moduleNameFromDm dm = case dm.discoveredResult of
+moduleNameFromDm dm = case dm.result of
   Right m -> m.name.unModuleName
-  Left _ -> dirName dm.discoveredDir
+  Left _ -> dirName dm.dir
 
 -- | Extract the last path component as a name.
 dirName :: FilePath -> Text

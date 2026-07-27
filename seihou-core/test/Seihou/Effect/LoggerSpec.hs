@@ -21,10 +21,10 @@ spec = do
             logInfo "i1"
             logWarn "w1"
             logError "e1"
-      st.logDebugMsgs `shouldBe` ["d1"]
-      st.logInfoMsgs `shouldBe` ["i1"]
-      st.logWarnMsgs `shouldBe` ["w1"]
-      st.logErrorMsgs `shouldBe` ["e1"]
+      st.debugMsgs `shouldBe` ["d1"]
+      st.infoMsgs `shouldBe` ["i1"]
+      st.warnMsgs `shouldBe` ["w1"]
+      st.errorMsgs `shouldBe` ["e1"]
 
     it "preserves message order within each field" $ do
       let ((), st) = runPureEff $ runLoggerPure $ do
@@ -33,22 +33,22 @@ spec = do
             logInfo "third"
             logDebug "a"
             logDebug "b"
-      st.logInfoMsgs `shouldBe` ["first", "second", "third"]
-      st.logDebugMsgs `shouldBe` ["a", "b"]
+      st.infoMsgs `shouldBe` ["first", "second", "third"]
+      st.debugMsgs `shouldBe` ["a", "b"]
 
     it "produces empty state when no messages are logged" $ do
       let ((), st) = runPureEff $ runLoggerPure $ pure ()
-      st.logDebugMsgs `shouldBe` []
-      st.logInfoMsgs `shouldBe` []
-      st.logWarnMsgs `shouldBe` []
-      st.logErrorMsgs `shouldBe` []
+      st.debugMsgs `shouldBe` []
+      st.infoMsgs `shouldBe` []
+      st.warnMsgs `shouldBe` []
+      st.errorMsgs `shouldBe` []
 
     it "returns the computation result alongside state" $ do
       let (result, st) = runPureEff $ runLoggerPure $ do
             logInfo "hello"
             pure (42 :: Int)
       result `shouldBe` 42
-      st.logInfoMsgs `shouldBe` ["hello"]
+      st.infoMsgs `shouldBe` ["hello"]
 
   describe "shouldLog" $ do
     it "LogVerbose configured shows all levels" $ do

@@ -224,26 +224,26 @@ spec = do
     it "re-expands a candidate recipe and removes dependencies dropped by it" $
       withSystemTempDirectory "seihou-update-recipe" $ \root -> do
         fixture <- prepareRecipeUpdateFixture root
-        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.recipeXdgHome) $
-          withCurrentDirectory fixture.recipeProjectRoot $ do
+        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
+          withCurrentDirectory fixture.projectRoot $ do
             result <- withProjectUpdate (updateRequest False) $ \case
               Left err -> pure (Left err)
               Right plan -> applyProjectUpdate plan
             case result of
               Left err -> expectationFailure (show err)
-              Right updateResult -> updateResult.updatedApplications `shouldBe` [fixture.recipeApplicationId]
-            decoded <- manifestFromJSON <$> LBS.readFile fixture.recipeManifestPath
+              Right updateResult -> updateResult.updatedApplications `shouldBe` [fixture.applicationId]
+            decoded <- manifestFromJSON <$> LBS.readFile fixture.manifestPath
             case decoded of
               Left err -> expectationFailure err
               Right manifest -> case manifest.applications of
                 [updated] -> do
-                  updated.applicationId `shouldBe` fixture.recipeApplicationId
+                  updated.applicationId `shouldBe` fixture.applicationId
                   updated.targetVersion `shouldBe` Just "2.0.0"
                   updated.additionalModules `shouldBe` []
                   Set.fromList (map (.name) updated.instances) `shouldBe` Set.fromList ["one", "new"]
                   Set.fromList (map (.name) manifest.modules) `shouldBe` Set.fromList ["one", "new"]
                 other -> expectationFailure ("expected one updated recipe application, got " <> show other)
-            doesFileExist (fixture.recipeXdgHome </> "seihou" </> "installed" </> "new" </> "module.dhall") `shouldReturn` True
+            doesFileExist (fixture.xdgHome </> "seihou" </> "installed" </> "new" </> "module.dhall") `shouldReturn` True
 
     it "refuses an unresolved three-way conflict without mutating durable state" $
       withSystemTempDirectory "seihou-update-conflict" $ \root -> do
@@ -402,10 +402,10 @@ data UpdateFixture = UpdateFixture
   deriving stock (Generic)
 
 data RecipeUpdateFixture = RecipeUpdateFixture
-  { recipeProjectRoot :: !FilePath,
-    recipeManifestPath :: !FilePath,
-    recipeXdgHome :: !FilePath,
-    recipeApplicationId :: !ApplicationId
+  { projectRoot :: !FilePath,
+    manifestPath :: !FilePath,
+    xdgHome :: !FilePath,
+    applicationId :: !ApplicationId
   }
   deriving stock (Generic)
 
@@ -538,10 +538,10 @@ prepareRecipeUpdateFixture root = do
   LBS.writeFile manifestPath (manifestToJSON manifest)
   pure
     RecipeUpdateFixture
-      { recipeProjectRoot = projectRoot,
-        recipeManifestPath = manifestPath,
-        recipeXdgHome = xdgHome,
-        recipeApplicationId = applicationId
+      { projectRoot = projectRoot,
+        manifestPath = manifestPath,
+        xdgHome = xdgHome,
+        applicationId = applicationId
       }
 
 updateRequest :: Bool -> UpdateRequest

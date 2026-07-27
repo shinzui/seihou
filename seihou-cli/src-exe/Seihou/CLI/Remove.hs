@@ -22,7 +22,7 @@ import System.IO (hFlush, hIsTerminalDevice, stdin, stdout)
 handleRemove :: RemoveOpts -> IO ()
 handleRemove opts = do
   let manifestPath = ".seihou" </> "manifest.json"
-      modName = opts.removeModule
+      modName = opts.module_
 
   -- Read the manifest
   manifestResult <- runEff $ runFilesystem $ runManifestStore manifestPath readManifest
@@ -82,7 +82,7 @@ handleRemove opts = do
           else mapM_ (displayOp colorEnabled) plan.ops
 
         -- Dry run exits here
-        when opts.removeDryRun $ do
+        when opts.dryRun $ do
           TIO.putStrLn ""
           TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
           exitWith ExitSuccess
@@ -92,7 +92,7 @@ handleRemove opts = do
 
         -- Resolve conflicts
         keepSet <-
-          if null conflictFiles || opts.removeForce
+          if null conflictFiles || opts.force
             then pure Set.empty
             else do
               isInteractive <- hIsTerminalDevice stdin

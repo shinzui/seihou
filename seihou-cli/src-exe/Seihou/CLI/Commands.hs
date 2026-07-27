@@ -102,12 +102,12 @@ data CompletionsCommand
   deriving stock (Eq, Show, Generic)
 
 data AgentOpts = AgentOpts
-  { agentDebug :: !Bool,
-    agentProvider :: !(Maybe Text),
-    agentModel :: !(Maybe Text),
-    agentEffort :: !(Maybe Text),
-    agentTrace :: !(Maybe Text),
-    agentCommand :: !AgentCommand
+  { debug :: !Bool,
+    provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    trace :: !(Maybe Text),
+    command :: !AgentCommand
   }
   deriving stock (Eq, Show, Generic)
 
@@ -127,20 +127,20 @@ data AgentCommand
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
-  { runModule :: !(Maybe ModuleName),
-    runAdditional :: ![ModuleName],
-    runVars :: ![(Text, Text)],
-    runDryRun :: !Bool,
-    runDiff :: !Bool,
-    runForce :: !Bool,
-    runNoCommands :: !Bool,
-    runNamespace :: !(Maybe Text),
-    runContext :: !(Maybe Text),
-    runVerbose :: !Bool,
-    runSavePrompted :: !(Maybe Bool),
-    runConfirmDefaults :: !Bool,
-    runCommit :: !Bool,
-    runCommitMessage :: !(Maybe Text),
+  { module_ :: !(Maybe ModuleName),
+    additional :: ![ModuleName],
+    vars :: ![(Text, Text)],
+    dryRun :: !Bool,
+    diff :: !Bool,
+    force :: !Bool,
+    noCommands :: !Bool,
+    namespace :: !(Maybe Text),
+    context :: !(Maybe Text),
+    verbose :: !Bool,
+    savePrompted :: !(Maybe Bool),
+    confirmDefaults :: !Bool,
+    commit :: !Bool,
+    commitMessage :: !(Maybe Text),
     -- | When 'True', a pre-flight pending-migration check that finds
     -- any chain for one of the composed modules will apply that chain
     -- to the project (and the manifest) before the run plan is
@@ -148,89 +148,89 @@ data RunOpts = RunOpts
     -- 'seihou run' to refuse with an actionable message and a
     -- non-zero exit, so a user never silently writes new templates
     -- into paths a migration would have moved.
-    runWithMigrations :: !Bool
+    withMigrations :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data UpdateOpts = UpdateOpts
-  { updateTargets :: ![Text],
-    updateVars :: ![(Text, Text)],
-    updateDryRun :: !Bool,
-    updateJson :: !Bool,
-    updateReconfigure :: !Bool,
-    updateForce :: !Bool,
-    updateRunAllCommands :: !Bool,
-    updateNoCommands :: !Bool,
-    updateCommit :: !Bool,
-    updateCommitMessage :: !(Maybe Text)
+  { targets :: ![Text],
+    vars :: ![(Text, Text)],
+    dryRun :: !Bool,
+    json :: !Bool,
+    reconfigure :: !Bool,
+    force :: !Bool,
+    runAllCommands :: !Bool,
+    noCommands :: !Bool,
+    commit :: !Bool,
+    commitMessage :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data RemoveOpts = RemoveOpts
-  { removeModule :: !ModuleName,
-    removeDryRun :: !Bool,
-    removeForce :: !Bool,
-    removeVerbose :: !Bool
+  { module_ :: !ModuleName,
+    dryRun :: !Bool,
+    force :: !Bool,
+    verbose :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data VarsOpts = VarsOpts
-  { varsModule :: !(Maybe ModuleName),
-    varsExplain :: !Bool,
-    varsVars :: ![(Text, Text)],
-    varsNamespace :: !(Maybe Text),
-    varsContext :: !(Maybe Text)
+  { module_ :: !(Maybe ModuleName),
+    explain :: !Bool,
+    vars :: ![(Text, Text)],
+    namespace :: !(Maybe Text),
+    context :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data InstallOpts = InstallOpts
-  { installSource :: !(Maybe Text),
-    installName :: !(Maybe Text),
-    installModules :: ![Text],
-    installAll :: !Bool
+  { source :: !(Maybe Text),
+    name :: !(Maybe Text),
+    modules :: ![Text],
+    all :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data NewModuleOpts = NewModuleOpts
-  { newModuleName :: !Text,
-    newModulePath :: !(Maybe FilePath)
+  { name :: !Text,
+    path :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
 data NewRecipeOpts = NewRecipeOpts
-  { newRecipeName :: !Text,
-    newRecipeModules :: ![Text],
-    newRecipePath :: !(Maybe FilePath)
+  { name :: !Text,
+    modules :: ![Text],
+    path :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
 data NewBlueprintOpts = NewBlueprintOpts
-  { newBlueprintName :: !Text,
-    newBlueprintPath :: !(Maybe FilePath)
+  { name :: !Text,
+    path :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
 data NewPromptOpts = NewPromptOpts
-  { newPromptName :: !Text,
-    newPromptPath :: !(Maybe FilePath)
+  { name :: !Text,
+    path :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
 data ValidateOpts = ValidateOpts
-  { validatePath :: !(Maybe FilePath),
-    validateLint :: !Bool
+  { path :: !(Maybe FilePath),
+    lint :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data ValidateBlueprintOpts = ValidateBlueprintOpts
-  { validateBlueprintPath :: !(Maybe FilePath),
-    validateBlueprintLint :: !Bool
+  { path :: !(Maybe FilePath),
+    lint :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data ValidatePromptOpts = ValidatePromptOpts
-  { validatePromptPath :: !(Maybe FilePath),
-    validatePromptLint :: !Bool
+  { path :: !(Maybe FilePath),
+    lint :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -242,11 +242,11 @@ data ConfigAction
   deriving stock (Eq, Show, Generic)
 
 data ConfigOpts = ConfigOpts
-  { configAction :: !ConfigAction,
-    configGlobal :: !Bool,
-    configNamespace :: !(Maybe Text),
-    configContext :: !(Maybe Text),
-    configEffective :: !Bool
+  { action :: !ConfigAction,
+    global :: !Bool,
+    namespace :: !(Maybe Text),
+    context :: !(Maybe Text),
+    effective :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -259,18 +259,18 @@ data ContextAction
   deriving stock (Eq, Show, Generic)
 
 data ListOpts = ListOpts
-  { listRepo :: !(Maybe Text),
-    listTag :: !(Maybe Text),
-    listModulesOnly :: !Bool,
-    listRecipesOnly :: !Bool,
-    listBlueprintsOnly :: !Bool,
-    listPromptsOnly :: !Bool
+  { repo :: !(Maybe Text),
+    tag :: !(Maybe Text),
+    modulesOnly :: !Bool,
+    recipesOnly :: !Bool,
+    blueprintsOnly :: !Bool,
+    promptsOnly :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data BrowseOpts = BrowseOpts
-  { browseSource :: !Text,
-    browseTag :: !(Maybe Text)
+  { source :: !Text,
+    tag :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -285,85 +285,85 @@ data OutdatedOpts = OutdatedOpts
   deriving stock (Eq, Show, Generic)
 
 data UpgradeOpts = UpgradeOpts
-  { upgradeModules :: ![Text],
-    upgradeDryRun :: !Bool,
-    upgradeJson :: !Bool,
-    upgradeSkipUnversioned :: !Bool,
+  { modules :: ![Text],
+    dryRun :: !Bool,
+    json :: !Bool,
+    skipUnversioned :: !Bool,
     -- | If 'True', after each successful per-module upgrade, also run
     -- 'Seihou.CLI.Migrate.runMigrate' against the *current project*
     -- (cwd), if and only if that module is applied locally. Default
     -- 'False'; the unset path emits a one-line advisory pointing the
     -- user at @seihou update@ when migrations would be pending.
-    upgradeWithMigrations :: !Bool
+    withMigrations :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data SchemaUpgradeOpts = SchemaUpgradeOpts
-  { schemaUpgradePath :: !(Maybe FilePath),
-    schemaUpgradeDryRun :: !Bool,
-    schemaUpgradeAll :: !Bool
+  { path :: !(Maybe FilePath),
+    dryRun :: !Bool,
+    all :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data AssistOpts = AssistOpts
-  { assistPrompt :: !(Maybe Text),
-    assistProvider :: !(Maybe Text),
-    assistModel :: !(Maybe Text),
-    assistEffort :: !(Maybe Text),
-    assistTrace :: !(Maybe Text)
+  { prompt :: !(Maybe Text),
+    provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    trace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data BootstrapOpts = BootstrapOpts
-  { bootstrapPrompt :: !(Maybe Text),
-    bootstrapRepo :: !Bool,
-    bootstrapProvider :: !(Maybe Text),
-    bootstrapModel :: !(Maybe Text),
-    bootstrapEffort :: !(Maybe Text),
-    bootstrapTrace :: !(Maybe Text)
+  { prompt :: !(Maybe Text),
+    repo :: !Bool,
+    provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    trace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data SetupOpts = SetupOpts
-  { setupPrompt :: !(Maybe Text),
-    setupProvider :: !(Maybe Text),
-    setupModel :: !(Maybe Text),
-    setupEffort :: !(Maybe Text),
-    setupTrace :: !(Maybe Text)
+  { prompt :: !(Maybe Text),
+    provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    trace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data BlueprintRunOpts = BlueprintRunOpts
-  { runBlueprintName :: !ModuleName,
-    runBlueprintPrompt :: !(Maybe Text),
-    runBlueprintVars :: ![(Text, Text)],
-    runBlueprintNoBaseline :: !Bool,
-    runBlueprintNamespace :: !(Maybe Text),
-    runBlueprintContext :: !(Maybe Text),
-    runBlueprintVerbose :: !Bool,
-    runBlueprintForce :: !Bool,
-    runBlueprintBatch :: !Bool,
-    runBlueprintProvider :: !(Maybe Text),
-    runBlueprintModel :: !(Maybe Text),
-    runBlueprintEffort :: !(Maybe Text),
-    runBlueprintTrace :: !(Maybe Text)
+  { name :: !ModuleName,
+    prompt :: !(Maybe Text),
+    vars :: ![(Text, Text)],
+    noBaseline :: !Bool,
+    namespace :: !(Maybe Text),
+    context :: !(Maybe Text),
+    verbose :: !Bool,
+    force :: !Bool,
+    batch :: !Bool,
+    provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    trace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data BlueprintMigrationOpts = BlueprintMigrationOpts
-  { migrateBlueprintName :: !ModuleName,
-    migrateBlueprintFrom :: !Text,
-    migrateBlueprintTo :: !Text,
-    migrateBlueprintPrompt :: !(Maybe Text),
-    migrateBlueprintVars :: ![(Text, Text)],
-    migrateBlueprintNamespace :: !(Maybe Text),
-    migrateBlueprintContext :: !(Maybe Text),
-    migrateBlueprintVerbose :: !Bool,
-    migrateBlueprintRerun :: !Bool,
-    migrateBlueprintProvider :: !(Maybe Text),
-    migrateBlueprintModel :: !(Maybe Text),
-    migrateBlueprintEffort :: !(Maybe Text),
-    migrateBlueprintTrace :: !(Maybe Text)
+  { name :: !ModuleName,
+    from :: !Text,
+    to :: !Text,
+    prompt :: !(Maybe Text),
+    vars :: ![(Text, Text)],
+    namespace :: !(Maybe Text),
+    context :: !(Maybe Text),
+    verbose :: !Bool,
+    rerun :: !Bool,
+    provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    trace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -372,17 +372,17 @@ data PromptCommand
   deriving stock (Eq, Show, Generic)
 
 data PromptRunOpts = PromptRunOpts
-  { runPromptName :: !ModuleName,
-    runPromptPrompt :: !(Maybe Text),
-    runPromptVars :: ![(Text, Text)],
-    runPromptNamespace :: !(Maybe Text),
-    runPromptContext :: !(Maybe Text),
-    runPromptVerbose :: !Bool,
-    runPromptDebug :: !Bool,
-    runPromptProvider :: !(Maybe Text),
-    runPromptModel :: !(Maybe Text),
-    runPromptEffort :: !(Maybe Text),
-    runPromptTrace :: !(Maybe Text)
+  { name :: !ModuleName,
+    prompt :: !(Maybe Text),
+    vars :: ![(Text, Text)],
+    namespace :: !(Maybe Text),
+    context :: !(Maybe Text),
+    verbose :: !Bool,
+    debug :: !Bool,
+    provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    trace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -861,16 +861,16 @@ updateParser =
   where
     makeUpdateOpts targets vars dryRun json reconfigure force (runAll, noCommands) commit commitMessage =
       UpdateOpts
-        { updateTargets = targets,
-          updateVars = vars,
-          updateDryRun = dryRun,
-          updateJson = json,
-          updateReconfigure = reconfigure,
-          updateForce = force,
-          updateRunAllCommands = runAll,
-          updateNoCommands = noCommands,
-          updateCommit = commit,
-          updateCommitMessage = commitMessage
+        { targets = targets,
+          vars = vars,
+          dryRun = dryRun,
+          json = json,
+          reconfigure = reconfigure,
+          force = force,
+          runAllCommands = runAll,
+          noCommands = noCommands,
+          commit = commit,
+          commitMessage = commitMessage
         }
     updateCommandFlags =
       flag' (True, False) (long "run-all-commands" <> help "Run every generated command, including unchanged ones")

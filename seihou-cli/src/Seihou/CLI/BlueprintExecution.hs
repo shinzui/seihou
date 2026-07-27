@@ -46,13 +46,13 @@ import System.Environment (getEnvironment)
 -- Provider capability is represented as a boolean so this library module does
 -- not need to know about Baikai or the executable command model.
 data BlueprintExecutionRequest = BlueprintExecutionRequest
-  { executionBlueprint :: !Blueprint,
-    executionBlueprintDir :: !FilePath,
-    executionVariableOverrides :: ![(Text, Text)],
-    executionNamespaceOverride :: !(Maybe Text),
-    executionContextOverride :: !(Maybe Text),
-    executionCanMountFiles :: !Bool,
-    executionLogLevel :: !LogLevel
+  { blueprint :: !Blueprint,
+    blueprintDir :: !FilePath,
+    variableOverrides :: ![(Text, Text)],
+    namespaceOverride :: !(Maybe Text),
+    contextOverride :: !(Maybe Text),
+    canMountFiles :: !Bool,
+    logLevel :: !LogLevel
   }
   deriving stock (Eq, Generic, Show)
 
@@ -60,14 +60,14 @@ data BlueprintExecutionRequest = BlueprintExecutionRequest
 -- absolute when present; the access text preserves the existing API-provider
 -- explanation when local files cannot be mounted.
 data PreparedBlueprintExecution = PreparedBlueprintExecution
-  { preparedBlueprint :: !Blueprint,
-    preparedBlueprintDir :: !FilePath,
-    preparedResolvedVariables :: !(Map VarName ResolvedVar),
-    preparedMountedFilesDir :: !(Maybe FilePath),
-    preparedReferenceFiles :: !Text,
-    preparedReferenceFilesAccess :: !Text,
-    preparedSharedPrompt :: !Text,
-    preparedAllowedTools :: ![String]
+  { blueprint :: !Blueprint,
+    blueprintDir :: !FilePath,
+    resolvedVariables :: !(Map VarName ResolvedVar),
+    mountedFilesDir :: !(Maybe FilePath),
+    referenceFiles :: !Text,
+    referenceFilesAccess :: !Text,
+    sharedPrompt :: !Text,
+    allowedTools :: ![String]
   }
   deriving stock (Eq, Generic, Show)
 
@@ -77,12 +77,12 @@ prepareBlueprintExecution ::
   BlueprintExecutionRequest ->
   IO (Either [VarError] PreparedBlueprintExecution)
 prepareBlueprintExecution request = do
-  let bp = request.executionBlueprint
-      blueprintDir = request.executionBlueprintDir
+  let bp = request.blueprint
+      blueprintDir = request.blueprintDir
       filesDir = blueprintDir </> "files"
   filesExist <- doesDirectoryExist filesDir
   mountedFilesDir <-
-    if filesExist && request.executionCanMountFiles
+    if filesExist && request.canMountFiles
       then Just <$> makeAbsolute filesDir
       else pure Nothing
 
@@ -106,18 +106,18 @@ prepareBlueprintExecution request = do
   envPairs <- getEnvironment
   let cliOverrides =
         Map.fromList
-          [(VarName key, value) | (key, value) <- request.executionVariableOverrides]
+          [(VarName key, value) | (key, value) <- request.variableOverrides]
       envVars = Map.fromList [(T.pack key, T.pack value) | (key, value) <- envPairs]
       namespace =
-        fromMaybe (deriveNamespace bp.name) request.executionNamespaceOverride
-  context <- resolveContext request.executionContextOverride envVars
+        fromMaybe (deriveNamespace bp.name) request.namespaceOverride
+  context <- resolveContext request.contextOverride envVars
   let contextName = fromMaybe "" context
 
   resolveResult <- runEff $ runConfigReader $ runConsole $ do
-    localCfg <- readLocalConfig >>= unwrapConfig request.executionLogLevel
-    nsCfg <- readNamespaceConfig namespace >>= unwrapConfig request.executionLogLevel
-    ctxCfg <- readContextConfig contextName >>= unwrapConfig request.executionLogLevel
-    globalCfg <- readGlobalConfig >>= unwrapConfig request.executionLogLevel
+    localCfg <- readLocalConfig >>= unwrapConfig request.logLevel
+    nsCfg <- readNamespaceConfig namespace >>= unwrapConfig request.logLevel
+    ctxCfg <- readContextConfig contextName >>= unwrapConfig request.logLevel
+    globalCfg <- readGlobalConfig >>= unwrapConfig request.logLevel
     resolveWithPrompts
       [placeholderTriple]
       cliOverrides
@@ -134,14 +134,14 @@ prepareBlueprintExecution request = do
     let resolved = Map.findWithDefault Map.empty placeholderInst allResolved
     Right
       PreparedBlueprintExecution
-        { preparedBlueprint = bp,
-          preparedBlueprintDir = blueprintDir,
-          preparedResolvedVariables = resolved,
-          preparedMountedFilesDir = mountedFilesDir,
-          preparedReferenceFiles = formatReferenceFiles bp.files,
-          preparedReferenceFilesAccess = formatReferenceFilesDir mountedFilesDir,
-          preparedSharedPrompt = renderBlueprintText resolved bp.prompt,
-          preparedAllowedTools = resolveBlueprintTools bp.allowedTools
+        { blueprint = bp,
+          blueprintDir = blueprintDir,
+          resolvedVariables = resolved,
+          mountedFilesDir = mountedFilesDir,
+          referenceFiles = formatReferenceFiles bp.files,
+          referenceFilesAccess = formatReferenceFilesDir mountedFilesDir,
+          sharedPrompt = renderBlueprintText resolved bp.prompt,
+          allowedTools = resolveBlueprintTools bp.allowedTools
         }
 
 -- | Substitute resolved blueprint variables into any blueprint-owned text.

@@ -75,9 +75,9 @@ isDanglingReference _ = False
 wellFormedModel :: DocModel
 wellFormedModel =
   DocModel
-    { docRepoName = "fixture",
-      docRepoDescription = Just "Fixture",
-      docEntries =
+    { repoName = "fixture",
+      repoDescription = Just "Fixture",
+      entries =
         [ moduleEntry "base" [] "modules/base",
           moduleEntry "app" [ModuleRef "base" True] "modules/app",
           recipeEntry,
@@ -89,9 +89,9 @@ wellFormedModel =
 danglingModel :: DocModel
 danglingModel =
   DocModel
-    { docRepoName = "fixture",
-      docRepoDescription = Nothing,
-      docEntries =
+    { repoName = "fixture",
+      repoDescription = Nothing,
+      entries =
         [ moduleEntry "app" [ModuleRef "missing" False] "modules/app"
         ]
     }
@@ -99,9 +99,9 @@ danglingModel =
 invalidIdModel :: DocModel
 invalidIdModel =
   DocModel
-    { docRepoName = "fixture",
-      docRepoDescription = Nothing,
-      docEntries =
+    { repoName = "fixture",
+      repoDescription = Nothing,
+      entries =
         [ moduleEntry "-bad" [] "modules/bad"
         ]
     }
@@ -109,14 +109,14 @@ invalidIdModel =
 moduleEntry :: T.Text -> [ModuleRef] -> FilePath -> DocEntry
 moduleEntry name refs path =
   DocEntry
-    { entryName = name,
-      entryKind = DocModuleKind,
-      entryVersion = Just "1.0.0",
-      entryDescription = Just (name <> " module"),
-      entryTags = ["module"],
-      entryPath = path,
-      entryArtifact = DocModuleArtifact (moduleArtifact name refs),
-      entryModuleRefs = refs
+    { name = name,
+      kind = DocModuleKind,
+      version = Just "1.0.0",
+      description = Just (name <> " module"),
+      tags = ["module"],
+      path = path,
+      artifact = DocModuleArtifact (moduleArtifact name refs),
+      moduleRefs = refs
     }
 
 moduleArtifact :: T.Text -> [ModuleRef] -> Module
@@ -130,7 +130,7 @@ moduleArtifact name refs =
       prompts = [],
       steps = [],
       commands = [],
-      dependencies = [Dependency (ModuleName ref.refName) Map.empty | ref <- refs],
+      dependencies = [Dependency (ModuleName ref.name) Map.empty | ref <- refs],
       removal = Nothing,
       migrations = []
     }
@@ -138,13 +138,13 @@ moduleArtifact name refs =
 recipeEntry :: DocEntry
 recipeEntry =
   DocEntry
-    { entryName = "app-recipe",
-      entryKind = DocRecipeKind,
-      entryVersion = Just "0.1.0",
-      entryDescription = Just "Recipe",
-      entryTags = ["recipe"],
-      entryPath = "recipes/app-recipe",
-      entryArtifact =
+    { name = "app-recipe",
+      kind = DocRecipeKind,
+      version = Just "0.1.0",
+      description = Just "Recipe",
+      tags = ["recipe"],
+      path = "recipes/app-recipe",
+      artifact =
         DocRecipeArtifact
           Recipe
             { name = RecipeName "app-recipe",
@@ -154,19 +154,19 @@ recipeEntry =
               vars = [],
               prompts = []
             },
-      entryModuleRefs = [ModuleRef "base" True, ModuleRef "app" True]
+      moduleRefs = [ModuleRef "base" True, ModuleRef "app" True]
     }
 
 blueprintEntry :: DocEntry
 blueprintEntry =
   DocEntry
-    { entryName = "app-blueprint",
-      entryKind = DocBlueprintKind,
-      entryVersion = Just "0.1.0",
-      entryDescription = Just "Blueprint",
-      entryTags = ["blueprint"],
-      entryPath = "blueprints/app-blueprint",
-      entryArtifact =
+    { name = "app-blueprint",
+      kind = DocBlueprintKind,
+      version = Just "0.1.0",
+      description = Just "Blueprint",
+      tags = ["blueprint"],
+      path = "blueprints/app-blueprint",
+      artifact =
         DocBlueprintArtifact
           Blueprint
             { name = ModuleName "app-blueprint",
@@ -182,19 +182,19 @@ blueprintEntry =
               migrations = [],
               launch = Nothing
             },
-      entryModuleRefs = [ModuleRef "base" True]
+      moduleRefs = [ModuleRef "base" True]
     }
 
 promptEntry :: DocEntry
 promptEntry =
   DocEntry
-    { entryName = "review",
-      entryKind = DocPromptKind,
-      entryVersion = Just "0.1.0",
-      entryDescription = Just "Review prompt",
-      entryTags = ["prompt"],
-      entryPath = "prompts/review",
-      entryArtifact =
+    { name = "review",
+      kind = DocPromptKind,
+      version = Just "0.1.0",
+      description = Just "Review prompt",
+      tags = ["prompt"],
+      path = "prompts/review",
+      artifact =
         DocPromptArtifact
           AgentPrompt
             { name = ModuleName "review",
@@ -210,5 +210,5 @@ promptEntry =
               launch = Nothing,
               guidance = []
             },
-      entryModuleRefs = []
+      moduleRefs = []
     }

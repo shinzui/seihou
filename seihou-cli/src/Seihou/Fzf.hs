@@ -43,8 +43,8 @@ import Text.Read (readMaybe)
 
 -- | Runtime configuration for fzf, detected once at CLI startup.
 data FzfConfig = FzfConfig
-  { fzfBinary :: !FilePath,
-    fzfAvailable :: !Bool,
+  { binary :: !FilePath,
+    available :: !Bool,
     stdinIsTerminal :: !Bool,
     ttyAvailable :: !Bool
   }
@@ -58,8 +58,8 @@ detectFzfConfig = do
   ttyOk <- checkTtyAvailable
   pure
     FzfConfig
-      { fzfBinary = maybe "fzf" id mFzf,
-        fzfAvailable = case mFzf of Nothing -> False; Just _ -> True,
+      { binary = maybe "fzf" id mFzf,
+        available = case mFzf of Nothing -> False; Just _ -> True,
         stdinIsTerminal = stdinTerm,
         ttyAvailable = ttyOk
       }
@@ -74,28 +74,28 @@ checkTtyAvailable = do
 
 -- | Whether fzf can be used for interactive selection.
 isFzfUsable :: FzfConfig -> Bool
-isFzfUsable cfg = cfg.fzfAvailable && (cfg.stdinIsTerminal || cfg.ttyAvailable)
+isFzfUsable cfg = cfg.available && (cfg.stdinIsTerminal || cfg.ttyAvailable)
 
 -- | Composable fzf options. Combine with '<>'.
 data FzfOpts = FzfOpts
-  { fzfPrompt :: !(Maybe Text),
-    fzfHeader :: !(Maybe Text),
-    fzfPreview :: !(Maybe Text),
-    fzfHeight :: !(Maybe Text),
-    fzfAnsi :: !Bool,
-    fzfNoSort :: !Bool
+  { prompt :: !(Maybe Text),
+    header :: !(Maybe Text),
+    preview :: !(Maybe Text),
+    height :: !(Maybe Text),
+    ansi :: !Bool,
+    noSort :: !Bool
   }
   deriving stock (Eq, Generic, Show)
 
 instance Semigroup FzfOpts where
   a <> b =
     FzfOpts
-      { fzfPrompt = b.fzfPrompt <|> a.fzfPrompt,
-        fzfHeader = b.fzfHeader <|> a.fzfHeader,
-        fzfPreview = b.fzfPreview <|> a.fzfPreview,
-        fzfHeight = b.fzfHeight <|> a.fzfHeight,
-        fzfAnsi = a.fzfAnsi || b.fzfAnsi,
-        fzfNoSort = a.fzfNoSort || b.fzfNoSort
+      { prompt = b.prompt <|> a.prompt,
+        header = b.header <|> a.header,
+        preview = b.preview <|> a.preview,
+        height = b.height <|> a.height,
+        ansi = a.ansi || b.ansi,
+        noSort = a.noSort || b.noSort
       }
     where
       (<|>) :: Maybe a -> Maybe a -> Maybe a
@@ -106,39 +106,39 @@ instance Monoid FzfOpts where
   mempty = FzfOpts Nothing Nothing Nothing Nothing False False
 
 withPrompt :: Text -> FzfOpts
-withPrompt p = mempty {fzfPrompt = Just p}
+withPrompt p = mempty {prompt = Just p}
 
 withHeader :: Text -> FzfOpts
-withHeader h = mempty {fzfHeader = Just h}
+withHeader h = mempty {header = Just h}
 
 withHeight :: Text -> FzfOpts
-withHeight h = mempty {fzfHeight = Just h}
+withHeight h = mempty {height = Just h}
 
 withAnsi :: FzfOpts
-withAnsi = mempty {fzfAnsi = True}
+withAnsi = mempty {ansi = True}
 
 withNoSort :: FzfOpts
-withNoSort = mempty {fzfNoSort = True}
+withNoSort = mempty {noSort = True}
 
 withPreview :: Text -> FzfOpts
-withPreview p = mempty {fzfPreview = Just p}
+withPreview p = mempty {preview = Just p}
 
 -- | Convert options to fzf CLI arguments.
 optsToArgs :: FzfOpts -> [String]
 optsToArgs opts =
   concat
-    [ maybe [] (\p -> ["--prompt", T.unpack p]) opts.fzfPrompt,
-      maybe [] (\h -> ["--header", T.unpack h]) opts.fzfHeader,
-      maybe [] (\p -> ["--preview", T.unpack p]) opts.fzfPreview,
-      maybe [] (\h -> ["--height", T.unpack h]) opts.fzfHeight,
-      ["--ansi" | opts.fzfAnsi],
-      ["--no-sort" | opts.fzfNoSort]
+    [ maybe [] (\p -> ["--prompt", T.unpack p]) opts.prompt,
+      maybe [] (\h -> ["--header", T.unpack h]) opts.header,
+      maybe [] (\p -> ["--preview", T.unpack p]) opts.preview,
+      maybe [] (\h -> ["--height", T.unpack h]) opts.height,
+      ["--ansi" | opts.ansi],
+      ["--no-sort" | opts.noSort]
     ]
 
 -- | A selectable candidate with display text and an associated value.
 data Candidate a = Candidate
-  { candidateDisplay :: !Text,
-    candidateValue :: !a
+  { display :: !Text,
+    value :: !a
   }
   deriving stock (Functor, Generic)
 
@@ -161,12 +161,12 @@ runFzf cfg opts candidates
   | not (isFzfUsable cfg) = pure (FzfError "fzf is not available")
   | otherwise = do
       let indexed = zip [0 :: Int ..] candidates
-          valueMap = Map.fromList [(i, c.candidateValue) | (i, c) <- indexed]
-          inputLines = [show i <> "\t" <> T.unpack c.candidateDisplay | (i, c) <- indexed]
+          valueMap = Map.fromList [(i, c.value) | (i, c) <- indexed]
+          inputLines = [show i <> "\t" <> T.unpack c.display | (i, c) <- indexed]
           args = ["-1", "--with-nth=2.."] ++ optsToArgs opts
 
       let processSpec =
-            (proc cfg.fzfBinary args)
+            (proc cfg.binary args)
               { std_in = CreatePipe,
                 std_out = CreatePipe,
                 std_err = Inherit,

@@ -366,9 +366,9 @@ spec = do
       agentLaunchDeclaration
         (Just AgentLaunch {provider = Just "codex-cli", model = Just "gpt-5", effort = Just "max", mode = Just "ignored"})
         `shouldBe` AgentLaunchDeclaration
-          { declarationProvider = Just "codex-cli",
-            declarationModel = Just "gpt-5",
-            declarationEffort = Just "max"
+          { provider = Just "codex-cli",
+            model = Just "gpt-5",
+            effort = Just "max"
           }
 
   describe "validateAgentLaunchDeclaration" $ do
@@ -413,20 +413,20 @@ spec = do
       fmap resolvedAgentModelConfig (resolvePendingAgentConfig pending (decl (Just "codex-cli") Nothing (Just "high")))
         `shouldBe` Right
           AgentModelConfig
-            { agentProvider = AgentProviderCodexCli,
-              agentModel = Just "gpt-5.6-terra",
-              agentEffort = Just ThinkingHigh,
-              agentTrace = TraceOff,
-              agentTracePath = Nothing
+            { provider = AgentProviderCodexCli,
+              model = Just "gpt-5.6-terra",
+              effort = Just ThinkingHigh,
+              trace = TraceOff,
+              tracePath = Nothing
             }
 
 -- | Build an 'AgentLaunchDeclaration' from the three resolvable fields.
 decl :: Maybe Text -> Maybe Text -> Maybe Text -> AgentLaunchDeclaration
 decl provider model effort =
   AgentLaunchDeclaration
-    { declarationProvider = provider,
-      declarationModel = model,
-      declarationEffort = effort
+    { provider = provider,
+      model = model,
+      effort = effort
     }
 
 -- | Fold a declaration into an inputs record, the way
@@ -434,37 +434,37 @@ decl provider model effort =
 declaring :: AgentLaunchDeclaration -> AgentConfigInputs -> AgentConfigInputs
 declaring d inputs =
   inputs
-    { declaredProvider = d.declarationProvider,
-      declaredModel = d.declarationModel,
-      declaredEffort = d.declarationEffort
+    { declaredProvider = d.provider,
+      declaredModel = d.model,
+      declaredEffort = d.effort
     }
 
 providerOf :: AgentCommandName -> AgentConfigInputs -> Either Text (AgentProvider, AgentConfigSource)
 providerOf c inputs =
-  (\(p, _, _, _) -> (p.resolvedValue, p.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+  (\(p, _, _, _) -> (p.value, p.source)) <$> resolveAgentModelConfigFor c inputs
 
 modelOf :: AgentCommandName -> AgentConfigInputs -> Either Text (Maybe Text, AgentConfigSource)
 modelOf c inputs =
-  (\(_, m, _, _) -> (m.resolvedValue, m.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+  (\(_, m, _, _) -> (m.value, m.source)) <$> resolveAgentModelConfigFor c inputs
 
 effortOf :: AgentCommandName -> AgentConfigInputs -> Either Text (Maybe ThinkingLevel, AgentConfigSource)
 effortOf c inputs =
-  (\(_, _, e, _) -> (e.resolvedValue, e.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+  (\(_, _, e, _) -> (e.value, e.source)) <$> resolveAgentModelConfigFor c inputs
 
 traceOf :: AgentCommandName -> AgentConfigInputs -> Either Text (TraceSetting, AgentConfigSource)
 traceOf c inputs =
-  (\(_, _, _, t) -> (t.resolvedValue, t.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+  (\(_, _, _, t) -> (t.value, t.source)) <$> resolveAgentModelConfigFor c inputs
 
 -- | Build an expected 'AgentModelConfig' with effort unset (the flat resolver
 -- never sets effort).
 cfg :: AgentProvider -> Maybe Text -> AgentModelConfig
 cfg provider model =
   AgentModelConfig
-    { agentProvider = provider,
-      agentModel = model,
-      agentEffort = Nothing,
-      agentTrace = TraceOff,
-      agentTracePath = Nothing
+    { provider = provider,
+      model = model,
+      effort = Nothing,
+      trace = TraceOff,
+      tracePath = Nothing
     }
 
 baseInputs :: AgentConfigInputs

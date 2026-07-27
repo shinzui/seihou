@@ -19,7 +19,7 @@ import System.Exit (ExitCode (..), exitFailure, exitWith)
 handleValidateModule :: ValidateOpts -> IO ()
 handleValidateModule vopts = do
   -- Determine module path
-  moduleDir <- case vopts.validatePath of
+  moduleDir <- case vopts.path of
     Just p -> pure p
     Nothing -> getCurrentDirectory
 
@@ -39,7 +39,7 @@ handleValidateModule vopts = do
 
   case decoded of
     Left err -> do
-      -- Dhall failed: build a report with reportDhallOk = False
+      -- Dhall failed: build a report with dhallOk = False
       let dummyModule =
             Module
               { name = ModuleName "<unknown>",
@@ -56,17 +56,17 @@ handleValidateModule vopts = do
               }
           report =
             ValidateReport
-              { reportModule = dummyModule,
-                reportPath = moduleDir,
-                reportDhallOk = False,
-                reportDhallError = Just (T.pack (show err)),
-                reportChecks = []
+              { module_ = dummyModule,
+                path = moduleDir,
+                dhallOk = False,
+                dhallError = Just (T.pack (show err)),
+                checks = []
               }
       TIO.putStr (renderReportColor colorEnabled report)
       exitFailure
     Right modul -> do
       -- Build the structured report
-      report <- buildReport vopts.validateLint moduleDir modul
+      report <- buildReport vopts.lint moduleDir modul
       TIO.putStr (renderReportColor colorEnabled report)
       if reportHasErrors report
         then exitFailure

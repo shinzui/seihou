@@ -16,8 +16,8 @@ import System.IO (hPutStrLn, stderr)
 import System.Process (rawSystem)
 
 data ExtensionRunOpts = ExtensionRunOpts
-  { extensionName :: !Text,
-    extensionArgs :: ![String]
+  { name :: !Text,
+    args :: ![String]
   }
   deriving stock (Eq, Generic, Show)
 
@@ -32,16 +32,16 @@ extensionExecutableName name =
 
 runExtension :: ExtensionRunOpts -> IO (Either ExtensionRunError ())
 runExtension opts = do
-  let exeName = extensionExecutableName opts.extensionName
+  let exeName = extensionExecutableName opts.name
   found <- findExecutable exeName
   case found of
     Nothing ->
-      pure (Left (ExtensionNotFound opts.extensionName exeName))
+      pure (Left (ExtensionNotFound opts.name exeName))
     Just exePath -> do
-      code <- rawSystem exePath opts.extensionArgs
+      code <- rawSystem exePath opts.args
       pure $ case code of
         ExitSuccess -> Right ()
-        failure -> Left (ExtensionExited opts.extensionName failure)
+        failure -> Left (ExtensionExited opts.name failure)
 
 handleExtensionRun :: ExtensionRunOpts -> IO ()
 handleExtensionRun opts = do

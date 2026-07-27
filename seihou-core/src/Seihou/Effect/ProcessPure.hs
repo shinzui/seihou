@@ -9,9 +9,9 @@ import Seihou.Prelude
 import System.Exit (ExitCode (..))
 
 data ProcessMock = ProcessMock
-  { mockCommand :: !Text,
-    mockArgs :: ![Text],
-    mockResult :: !(ExitCode, Text, Text)
+  { command :: !Text,
+    args :: ![Text],
+    result :: !(ExitCode, Text, Text)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -25,5 +25,5 @@ runProcessPure mocks = interpret $ \_ -> \case
 findMock :: Text -> [Text] -> [ProcessMock] -> Maybe (ExitCode, Text, Text)
 findMock _ _ [] = Nothing
 findMock cmd args (m : ms)
-  | m.mockCommand == cmd && m.mockArgs == args = Just m.mockResult
+  | m.command == cmd && m.args == args = Just m.result
   | otherwise = findMock cmd args ms

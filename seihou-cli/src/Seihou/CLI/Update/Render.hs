@@ -238,9 +238,9 @@ migrationValue :: PlannedUpdateMigration -> Value
 migrationValue migration =
   object
     [ "module" .= migration.moduleName.unModuleName,
-      "from" .= showText migration.sourcePlan.planFrom,
-      "to" .= showText migration.sourcePlan.planTo,
-      "steps" .= length migration.sourcePlan.planSteps,
+      "from" .= showText migration.sourcePlan.from,
+      "to" .= showText migration.sourcePlan.to,
+      "steps" .= length migration.sourcePlan.steps,
       "containsCommands" .= migration.containsCommands
     ]
 

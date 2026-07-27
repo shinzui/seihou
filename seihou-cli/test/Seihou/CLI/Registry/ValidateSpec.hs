@@ -35,9 +35,9 @@ spec = do
         outcome <- runValidate (ValidateRegistryOpts (Just dir))
         case outcome of
           ValidateOk r -> do
-            r.reportIssues `shouldBe` []
-            r.reportModuleCount `shouldBe` 2
-            r.reportRecipeCount `shouldBe` 0
+            r.issues `shouldBe` []
+            r.moduleCount `shouldBe` 2
+            r.recipeCount `shouldBe` 0
           other -> expectationFailure ("expected ValidateOk, got " <> show other)
 
     it "flags both stale and missing version entries" $ do
@@ -46,8 +46,8 @@ spec = do
         case outcome of
           ValidateOk r -> do
             let statuses =
-                  [ d.diffStatus
-                  | VersionMismatch d <- r.reportIssues
+                  [ d.status
+                  | VersionMismatch d <- r.issues
                   ]
             statuses `shouldBe` [SyncMissing, SyncStale "2.0.0"]
           other -> expectationFailure ("unexpected outcome: " <> show other)
@@ -59,7 +59,7 @@ spec = do
           ValidateOk r -> do
             let structurals =
                   [ msg
-                  | StructuralError msg <- r.reportIssues
+                  | StructuralError msg <- r.issues
                   ]
             any ("missing module.dhall" `T.isInfixOf`) structurals
               `shouldBe` True

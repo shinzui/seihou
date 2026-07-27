@@ -18,15 +18,15 @@ import Seihou.Prelude
 import System.Exit (exitFailure)
 
 handleConfig :: ConfigOpts -> IO ()
-handleConfig ConfigOpts {configAction, configGlobal, configNamespace, configContext, configEffective} = do
-  let scope = resolveScope configGlobal configNamespace configContext
-  case configAction of
+handleConfig ConfigOpts {action, global, namespace, context, effective} = do
+  let scope = resolveScope global namespace context
+  case action of
     ConfigSet key value -> handleSet scope key value
     ConfigGet key -> handleGet scope key
     ConfigUnset key -> handleUnset scope key
     ConfigList
-      | configEffective -> handleListEffective configNamespace configContext
-      | otherwise -> handleList configGlobal configNamespace configContext
+      | effective -> handleListEffective namespace context
+      | otherwise -> handleList global namespace context
 
 resolveScope :: Bool -> Maybe Text -> Maybe Text -> ConfigScope
 resolveScope True _ _ = ScopeGlobal

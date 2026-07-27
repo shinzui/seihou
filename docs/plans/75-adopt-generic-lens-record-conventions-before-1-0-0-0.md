@@ -73,9 +73,11 @@ This section must always reflect the actual current state of the work.
 - [x] M1 — Add `DeriveAnyClass` to all eight Cabal `default-extensions` blocks (2026-07-27)
 - [x] M1 — Merge the duplicated `default-extensions` block in `test-suite seihou-cli-test` (2026-07-27)
 - [x] M1 — Verify `cabal build all` and `cabal test all` still pass unchanged (2026-07-27)
-- [ ] M2 — Add `deriving stock (Generic)` to the 79 record types that lack it
-- [ ] M2 — Add `!` strictness annotations to every record field in `src/` and `src-exe/`
-- [ ] M2 — Add `!` strictness annotations to every record field in the three `test/` trees
+- [x] M2 — Add `deriving stock (Generic)` to the 81 record types that lack it (2026-07-27)
+- [x] M2 — Add `!` strictness annotations to every record field in `src/` and `src-exe/` (2026-07-27)
+- [x] M2 — Add `!` strictness annotations to every record field in the three `test/` trees (2026-07-27)
+- [x] M2 — Fill in the four record literals that omitted a now-strict field (2026-07-27)
+- [x] M2 — Add `import GHC.Generics (Generic)` to the 7 modules that skip the prelude (2026-07-27)
 - [ ] M3 — Remove per-type field name prefixes from the affected record types
 - [ ] M4 — Convert field reads in `seihou-core` (`src/` and `test/`) to `^. #field`
 - [ ] M5 — Convert field reads in `seihou-cli` and `seihou-okf-extension` to `^. #field`
@@ -229,6 +231,39 @@ finalState ^. #local `shouldBe` Map.fromList [("local.key", "l")]
 than everything. Every converted read that is an operand of a backticked function — which is
 most reads in the 1,927-site test trees, since Hspec assertions are all backticked — needs
 wrapping. Any conversion script must handle this or the test trees will not parse.
+
+### `newtype` fields cannot be strict, so they are permanently exempt
+
+The plan's strictness rule reads "every record field carries a `!` annotation", with no
+exception. GHC does not allow one:
+
+```text
+src/Seihou/CLI/CommandExecution.hs:50:23: error: [GHC-04049]
+    • A newtype constructor must not have a strictness annotation
+    • In the definition of data constructor ‘CommandPlan’
+```
+
+This is not a limitation to work around — a `newtype` is a compile-time coercion with no
+runtime box, so its single field is already as strict as its contents. Eleven record fields
+in the repository belong to `newtype` declarations and stay lazy-looking forever. Milestone
+8's enforcement script must skip `newtype` blocks, or it will flag correct code.
+
+### Strict fields turn omitted record fields from a warning into an error
+
+The plan anticipated that strictness could change runtime behavior at construction sites
+supplying a diverging value. The actual effect was more useful: GHC refuses a record literal
+that *omits* a strict field, where before it merely warned and filled the gap with a bottom.
+
+```text
+test/Seihou/OKF/Docs/RenderSpec.hs:171:11: error: [GHC-95909]
+    • Constructor ‘Blueprint’ does not have the required strict field(s):
+        launch :: Maybe AgentLaunch
+```
+
+Four test fixtures were building `Blueprint` and `AgentPrompt` values with a bottom sitting
+in `launch` or `guidance` — harmless only for as long as no test demanded those fields. They
+now pass `Nothing` and `[]` explicitly. No production code was affected, and no test changed
+behavior: all 1,471 tests pass with identical counts.
 
 ### Compile time is not measurably worse
 

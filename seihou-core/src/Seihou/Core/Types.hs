@@ -187,26 +187,26 @@ data Command = Command
   deriving stock (Eq, Show, Generic)
 
 -- | A dependency on another module, optionally supplying variable bindings.
--- When @depVars@ is non-empty, the listed variables are pre-supplied to the
+-- When @vars@ is non-empty, the listed variables are pre-supplied to the
 -- dependency during resolution, sitting between global config and module
 -- defaults in the precedence chain.
 data Dependency = Dependency
-  { depModule :: !ModuleName,
-    depVars :: !(Map VarName Text)
+  { module_ :: !ModuleName,
+    vars :: !(Map VarName Text)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | Create a bare dependency with no variable bindings.
 simpleDep :: ModuleName -> Dependency
-simpleDep name = Dependency {depModule = name, depVars = mempty}
+simpleDep name = Dependency {module_ = name, vars = mempty}
 
 -- | Extract module names from a list of dependencies.
 depModuleNames :: [Dependency] -> [ModuleName]
-depModuleNames = map (.depModule)
+depModuleNames = map (.module_)
 
 -- | The variable bindings supplied by a dependent module along a specific
 -- dependency edge. This is the "edge decoration" — the identity of a
--- 'ModuleInstance' is determined by the @depVars@ the parent supplied,
+-- 'ModuleInstance' is determined by the @vars@ the parent supplied,
 -- not by anything resolved downstream.
 --
 -- The underlying 'Data.Map.Strict' @Ord@ instance gives structural equality:
@@ -221,9 +221,9 @@ newtype ParentVars = ParentVars {unParentVars :: Map VarName Text}
 emptyParentVars :: ParentVars
 emptyParentVars = ParentVars mempty
 
--- | Build 'ParentVars' from a 'Dependency' record's @depVars@ field.
+-- | Build 'ParentVars' from a 'Dependency' record's @vars@ field.
 parentVarsFromDep :: Dependency -> ParentVars
-parentVarsFromDep dep = ParentVars dep.depVars
+parentVarsFromDep dep = ParentVars dep.vars
 
 -- | The type of removal action for a removal step.
 data RemovalAction
@@ -245,8 +245,8 @@ data RemovalStep = RemovalStep
 
 -- | Removal specification for a module.
 data Removal = Removal
-  { removalSteps :: ![RemovalStep],
-    removalCommands :: ![Command]
+  { steps :: ![RemovalStep],
+    commands :: ![Command]
   }
   deriving stock (Eq, Show, Generic)
 

@@ -145,8 +145,8 @@ buildRemovalOps manifest modName removal = do
   case findApplied manifest modName of
     Nothing -> pure (Left (ModuleNotApplied modName))
     Just _ -> do
-      stepResults <- mapM (buildStepOp manifest modName) removal.removalSteps
-      let cmdResults = map buildCommandOp removal.removalCommands
+      stepResults <- mapM (buildStepOp manifest modName) removal.steps
+      let cmdResults = map buildCommandOp removal.commands
       pure $ do
         stepOps <- sequence stepResults
         cmdOps <- sequence cmdResults

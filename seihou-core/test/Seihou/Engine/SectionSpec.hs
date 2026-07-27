@@ -14,7 +14,7 @@ modName :: ModuleName
 modName = ModuleName "nix-flake"
 
 marker :: SectionMarker
-marker = SectionMarker {sectionPrefix = "#", sectionModule = modName}
+marker = SectionMarker {prefix = "#", module_ = modName}
 
 spec :: Spec
 spec = do
@@ -23,7 +23,7 @@ spec = do
       renderSectionOpen marker `shouldBe` "# --- seihou:nix-flake ---\n"
 
     it "produces correct format with -- prefix" $ do
-      let hsMarker = marker {sectionPrefix = "--"}
+      let hsMarker = marker {prefix = "--"}
       renderSectionOpen hsMarker `shouldBe` "-- --- seihou:nix-flake ---\n"
 
   describe "renderSectionClose" $ do
@@ -31,7 +31,7 @@ spec = do
       renderSectionClose marker `shouldBe` "# --- /seihou:nix-flake ---\n"
 
     it "produces correct format with -- prefix" $ do
-      let hsMarker = marker {sectionPrefix = "--"}
+      let hsMarker = marker {prefix = "--"}
       renderSectionClose hsMarker `shouldBe` "-- --- /seihou:nix-flake ---\n"
 
   describe "wrapInSection" $ do

@@ -180,11 +180,11 @@ findLocalModuleDirs dir = do
     else pure []
 
 toModuleInfo :: DiscoveredModule -> [(Text, Text, Text)]
-toModuleInfo dm = case dm.discoveredResult of
+toModuleInfo dm = case dm.result of
   Right m ->
     [ ( m.name.unModuleName,
         maybe "(no description)" id m.description,
-        sourceLabel dm.discoveredSource
+        sourceLabel dm.source
       )
     ]
   Left _ -> []

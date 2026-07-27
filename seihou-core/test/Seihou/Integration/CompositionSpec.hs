@@ -223,7 +223,7 @@ spec = do
               haveSkill vn =
                 any
                   ( \inst ->
-                      Map.lookup "skill.name" inst.instanceParentVars.unParentVars == Just vn
+                      Map.lookup "skill.name" inst.parentVars.unParentVars == Just vn
                   )
                   helperInstances
           all haveSkill (Map.keys bindings) `shouldBe` True

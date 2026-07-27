@@ -579,7 +579,7 @@ versionEvidence catalog previousApplications plannedApplications = do
       pure (targetEvidence : instanceEvidence)
 
     instanceVersionEvidence previous (instanceId, candidateModule, _) = do
-      let prior = find (\state -> state.name == instanceId.instanceModule && state.parentVars == instanceId.instanceParentVars) previous.instances
+      let prior = find (\state -> state.name == instanceId.module_ && state.parentVars == instanceId.parentVars) previous.instances
       case prior of
         Nothing -> pure (Right (VersionChange candidateModule.name.unModuleName Nothing candidateModule.version False))
         Just old -> compareArtifact old.name.unModuleName old.moduleVersion candidateModule.version old.source CandidateModule
@@ -687,7 +687,7 @@ transactionTargetPaths :: Manifest -> ReconciliationPlan -> [PlannedUpdateMigrat
 transactionTargetPaths manifest reconciliation migrations =
   Map.keysSet reconciliation.files `Set.union` Set.fromList (concatMap migrationTargets migrations)
   where
-    migrationTargets migration = concatMap targets migration.stagedPlan.planOps
+    migrationTargets migration = concatMap targets migration.stagedPlan.ops
     targets (MoveFileInst source destination _) = [source, destination]
     targets (DeleteFileInst path _) = [path]
     targets (MoveDirInst source destination) =
@@ -811,7 +811,7 @@ buildFinalManifest now plan filesManifest completedReceipts =
 updateAppliedModules :: [AppliedModule] -> [AppliedComposition] -> [PlannedApplication] -> UTCTime -> [AppliedModule]
 updateAppliedModules existing recordedApplications applications now =
   let modulesInOrder = concatMap (.modulesInOrder) applications
-      candidateKeys = Set.fromList [(instanceId.instanceModule, instanceId.instanceParentVars) | (instanceId, _, _) <- modulesInOrder]
+      candidateKeys = Set.fromList [(instanceId.module_, instanceId.parentVars) | (instanceId, _, _) <- modulesInOrder]
       selectedIds = Set.fromList (map (.candidate.applicationId) applications)
       priorSelectedKeys =
         Set.fromList
@@ -833,8 +833,8 @@ updateAppliedModules existing recordedApplications applications now =
       retained = filter (not . replacedOrRemoved . (\applied -> (applied.name, applied.parentVars))) existing
       updated =
         [ AppliedModule
-            { name = instanceId.instanceModule,
-              parentVars = instanceId.instanceParentVars,
+            { name = instanceId.module_,
+              parentVars = instanceId.parentVars,
               source = publishInstanceDirectory application instanceId,
               moduleVersion = modul.version,
               appliedAt = now,
@@ -855,10 +855,10 @@ updateAppliedModules existing recordedApplications applications now =
           | Set.member key seen = go seen rest
           | otherwise = entry : go (Set.insert key seen) rest
           where
-            key = (instanceId.instanceModule, instanceId.instanceParentVars)
+            key = (instanceId.module_, instanceId.parentVars)
 
     publishInstanceDirectory application instanceId =
-      case find (\state -> state.name == instanceId.instanceModule && state.parentVars == instanceId.instanceParentVars) application.candidate.instances of
+      case find (\state -> state.name == instanceId.module_ && state.parentVars == instanceId.parentVars) application.candidate.instances of
         Just state -> state.source
         Nothing -> error "candidate application lost a loaded module instance"
 

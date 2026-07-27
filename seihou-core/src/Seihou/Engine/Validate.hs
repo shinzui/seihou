@@ -40,19 +40,19 @@ data DiagSeverity
 
 -- | A single diagnostic check with its result.
 data DiagCheck = DiagCheck
-  { diagLabel :: !Text,
-    diagSeverity :: !DiagSeverity,
-    diagDetails :: ![Text]
+  { label :: !Text,
+    severity :: !DiagSeverity,
+    details :: ![Text]
   }
   deriving stock (Eq, Generic, Show)
 
 -- | A complete validation report for a module.
 data ValidateReport = ValidateReport
-  { reportModule :: !Module,
-    reportPath :: !FilePath,
-    reportDhallOk :: !Bool,
-    reportDhallError :: !(Maybe Text),
-    reportChecks :: ![DiagCheck]
+  { module_ :: !Module,
+    path :: !FilePath,
+    dhallOk :: !Bool,
+    dhallError :: !(Maybe Text),
+    checks :: ![DiagCheck]
   }
   deriving stock (Eq, Generic, Show)
 
@@ -94,24 +94,24 @@ buildReport lint baseDir m = do
           else []
   pure
     ValidateReport
-      { reportModule = m,
-        reportPath = baseDir,
-        reportDhallOk = True,
-        reportDhallError = Nothing,
-        reportChecks = coreChecks ++ lintChecks
+      { module_ = m,
+        path = baseDir,
+        dhallOk = True,
+        dhallError = Nothing,
+        checks = coreChecks ++ lintChecks
       }
 
 -- | Whether the report contains any errors (DiagError with non-empty details).
 reportHasErrors :: ValidateReport -> Bool
 reportHasErrors report =
-  not report.reportDhallOk
-    || any (\c -> c.diagSeverity == DiagError && not (null c.diagDetails)) report.reportChecks
+  not report.dhallOk
+    || any (\c -> c.severity == DiagError && not (null c.details)) report.checks
 
 -- | Render the report as plain text (no ANSI codes).
 renderReportPlain :: ValidateReport -> Text
 renderReportPlain report =
   T.unlines $
-    [ "Validating module at " <> T.pack report.reportPath <> "...",
+    [ "Validating module at " <> T.pack report.path <> "...",
       ""
     ]
       ++ dhallLine
@@ -120,19 +120,19 @@ renderReportPlain report =
       ++ [""]
       ++ [resultLine]
   where
-    m = report.reportModule
+    m = report.module_
 
     dhallLine =
-      if report.reportDhallOk
+      if report.dhallOk
         then ["  \x2713 module.dhall evaluates successfully"]
         else
           ["  \x2717 module.dhall failed to evaluate"]
-            ++ case report.reportDhallError of
+            ++ case report.dhallError of
               Just errText -> ["      " <> errText]
               Nothing -> []
 
     summaryLines =
-      if report.reportDhallOk
+      if report.dhallOk
         then
           [ "  \x2713 Module name: " <> m.name.unModuleName,
             "  \x2713 " <> T.pack (show (length m.vars)) <> " variables declared",
@@ -141,25 +141,25 @@ renderReportPlain report =
           ]
         else []
 
-    checkLines = concatMap renderCheck report.reportChecks
+    checkLines = concatMap renderCheck report.checks
 
     renderCheck c
-      | null c.diagDetails =
-          ["  \x2713 " <> c.diagLabel]
-      | c.diagSeverity == DiagWarning =
-          ("  \x26A0 " <> c.diagLabel) : map (\d -> "      " <> d) c.diagDetails
+      | null c.details =
+          ["  \x2713 " <> c.label]
+      | c.severity == DiagWarning =
+          ("  \x26A0 " <> c.label) : map (\d -> "      " <> d) c.details
       | otherwise =
-          ("  \x2717 " <> c.diagLabel) : map (\d -> "      " <> d) c.diagDetails
+          ("  \x2717 " <> c.label) : map (\d -> "      " <> d) c.details
 
     errorCount =
       length
         [ ()
-        | c <- report.reportChecks,
-          c.diagSeverity == DiagError,
-          not (null c.diagDetails)
+        | c <- report.checks,
+          c.severity == DiagError,
+          not (null c.details)
         ]
 
-    dhallFailed = not report.reportDhallOk
+    dhallFailed = not report.dhallOk
 
     totalErrors = errorCount + (if dhallFailed then 1 else 0)
 

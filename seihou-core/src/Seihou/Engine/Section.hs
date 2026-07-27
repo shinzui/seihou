@@ -14,8 +14,8 @@ import Seihou.Prelude
 
 -- | A section marker identifies content contributed by a module.
 data SectionMarker = SectionMarker
-  { sectionPrefix :: !Text,
-    sectionModule :: !ModuleName
+  { prefix :: !Text,
+    module_ :: !ModuleName
   }
   deriving stock (Eq, Generic, Show)
 
@@ -23,13 +23,13 @@ data SectionMarker = SectionMarker
 -- Result: @"# --- seihou:haskell-base ---\\n"@
 renderSectionOpen :: SectionMarker -> Text
 renderSectionOpen marker =
-  marker.sectionPrefix <> " --- seihou:" <> marker.sectionModule.unModuleName <> " ---\n"
+  marker.prefix <> " --- seihou:" <> marker.module_.unModuleName <> " ---\n"
 
 -- | Render a closing section marker line.
 -- Result: @"# --- /seihou:haskell-base ---\\n"@
 renderSectionClose :: SectionMarker -> Text
 renderSectionClose marker =
-  marker.sectionPrefix <> " --- /seihou:" <> marker.sectionModule.unModuleName <> " ---\n"
+  marker.prefix <> " --- /seihou:" <> marker.module_.unModuleName <> " ---\n"
 
 -- | Wrap content in section markers.
 wrapInSection :: SectionMarker -> Text -> Text
@@ -49,7 +49,7 @@ wrapInSection marker content =
 -- unchanged. Cleans up resulting double blank lines.
 removeSection :: ModuleName -> Text -> Text -> Text
 removeSection modName prefix content =
-  let marker = SectionMarker {sectionPrefix = prefix, sectionModule = modName}
+  let marker = SectionMarker {prefix = prefix, module_ = modName}
       openTag = T.stripEnd (renderSectionOpen marker)
       closeTag = T.stripEnd (renderSectionClose marker)
       ls = T.lines content
@@ -85,7 +85,7 @@ applyTextPatch AppendFile _ _ existing new =
 applyTextPatch PrependFile _ _ existing new =
   Right (ensureTrailingNewline new <> existing)
 applyTextPatch AppendSection modName prefix existing new =
-  let marker = SectionMarker {sectionPrefix = prefix, sectionModule = modName}
+  let marker = SectionMarker {prefix = prefix, module_ = modName}
    in Right (ensureTrailingNewline existing <> wrapInSection marker new)
 applyTextPatch AppendLineIfAbsent _ _ existing new =
   let existingLines = map T.stripEnd (T.lines existing)

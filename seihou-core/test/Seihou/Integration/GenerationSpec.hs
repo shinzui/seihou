@@ -1,5 +1,7 @@
 module Seihou.Integration.GenerationSpec (tests) where
 
+import Control.Lens ((&), (.~))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Module (loadModule)
@@ -97,7 +99,7 @@ spec = do
           -- The real scenario: license has a default so it's always set.
           -- To test the conditional, we use a stripped-down module with only the LICENSE step.
           let licenseStep = Step Copy "LICENSE" "LICENSE" (Just (ExprIsSet "license")) Nothing
-              smallModule = modul {steps = [licenseStep]}
+              smallModule = modul & #steps .~ [licenseStep]
               vars = Map.empty -- no license variable set
           planResult <- compilePlan (fixtures </> "haskell-base") smallModule vars
           case planResult of

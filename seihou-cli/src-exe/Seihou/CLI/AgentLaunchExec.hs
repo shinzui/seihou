@@ -50,11 +50,11 @@ launchConfiguredAgentWith addDirs modelConfig tools debug systemPrompt initialPr
       TIO.putStr systemPrompt
       pure ExitSuccess
   | otherwise =
-      case modelConfig.agentProvider of
+      case modelConfig.provider of
         AgentProviderClaudeCli ->
-          launchClaude addDirs tools modelConfig.agentModel modelConfig.agentEffort systemPrompt initialPrompt
+          launchClaude addDirs tools modelConfig.model modelConfig.effort systemPrompt initialPrompt
         AgentProviderCodexCli ->
-          launchCodex addDirs modelConfig.agentModel modelConfig.agentEffort systemPrompt initialPrompt
+          launchCodex addDirs modelConfig.model modelConfig.effort systemPrompt initialPrompt
         AgentProviderAnthropic ->
           unsupportedInteractiveProvider "anthropic"
         AgentProviderOpenAI ->

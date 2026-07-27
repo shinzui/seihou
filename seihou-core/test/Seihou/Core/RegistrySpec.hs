@@ -249,11 +249,11 @@ spec = do
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
-        report.reportIssues `shouldBe` []
-        report.reportModuleCount `shouldBe` 1
-        report.reportRecipeCount `shouldBe` 0
-        report.reportBlueprintCount `shouldBe` 0
-        report.reportPromptCount `shouldBe` 0
+        report.issues `shouldBe` []
+        report.moduleCount `shouldBe` 1
+        report.recipeCount `shouldBe` 0
+        report.blueprintCount `shouldBe` 0
+        report.promptCount `shouldBe` 0
 
     it "flags a SyncMissing entry as a single VersionMismatch" $ do
       withSystemTempDirectory "seihou-validate-full" $ \tmpDir -> do
@@ -270,8 +270,8 @@ spec = do
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
-        case report.reportIssues of
-          [VersionMismatch d] -> d.diffStatus `shouldBe` SyncMissing
+        case report.issues of
+          [VersionMismatch d] -> d.status `shouldBe` SyncMissing
           other -> expectationFailure ("expected one VersionMismatch SyncMissing, got: " <> show other)
 
     it "flags a SyncStale entry as a single VersionMismatch carrying the new version" $ do
@@ -289,8 +289,8 @@ spec = do
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "2.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
-        case report.reportIssues of
-          [VersionMismatch d] -> d.diffStatus `shouldBe` SyncStale "2.0.0"
+        case report.issues of
+          [VersionMismatch d] -> d.status `shouldBe` SyncStale "2.0.0"
           other -> expectationFailure ("expected one VersionMismatch SyncStale, got: " <> show other)
 
     it "flags an invalid module name as a StructuralError" $ do
@@ -308,7 +308,7 @@ spec = do
                 }
             lookups = [(ModuleEntry, ModuleName "Bad_Name", Nothing)]
         report <- validateRegistryFull tmpDir reg lookups
-        let structurals = [msg | StructuralError msg <- report.reportIssues]
+        let structurals = [msg | StructuralError msg <- report.issues]
         any ("must match" `isInfixOf`) (map show structurals) `shouldBe` True
 
     it "flags an unsafe path with .. as a StructuralError" $ do
@@ -323,7 +323,7 @@ spec = do
                   prompts = []
                 }
         report <- validateRegistryFull tmpDir reg []
-        let structurals = [msg | StructuralError msg <- report.reportIssues]
+        let structurals = [msg | StructuralError msg <- report.issues]
         any ("must not contain" `isInfixOf`) (map show structurals) `shouldBe` True
 
     it "lists structural issues before version issues when both are present" $ do
@@ -350,11 +350,11 @@ spec = do
                 (ModuleEntry, ModuleName "stale", Just "2.0.0")
               ]
         report <- validateRegistryFull tmpDir reg lookups
-        length report.reportIssues `shouldBe` 2
-        case report.reportIssues of
+        length report.issues `shouldBe` 2
+        case report.issues of
           [StructuralError msg, VersionMismatch d] -> do
             ("missing module.dhall" `isInfixOf` show msg) `shouldBe` True
-            d.diffStatus `shouldBe` SyncStale "2.0.0"
+            d.status `shouldBe` SyncStale "2.0.0"
           other ->
             expectationFailure
               ("expected [StructuralError, VersionMismatch], got: " <> show other)
@@ -534,7 +534,7 @@ spec = do
         any ("appears as both a module and a blueprint" `isInfixOf`) messages `shouldBe` True
         any ("appears as both a recipe and a blueprint" `isInfixOf`) messages `shouldBe` True
 
-    it "computeRegistrySync classifies blueprint entries with diffKind = BlueprintEntry" $ do
+    it "computeRegistrySync classifies blueprint entries with kind = BlueprintEntry" $ do
       let reg =
             Registry
               { repoName = "Test",
@@ -548,8 +548,8 @@ spec = do
               }
           lookups = [(BlueprintEntry, ModuleName "bp-stale", Just "0.2.0")]
           SyncReport diffs updated = computeRegistrySync reg lookups
-          kinds = [diff_ | SyncDiff {diffKind = diff_} <- diffs]
-          statuses = [s | SyncDiff {diffStatus = s} <- diffs]
+          kinds = [diff_ | SyncDiff {kind = diff_} <- diffs]
+          statuses = [s | SyncDiff {status = s} <- diffs]
       kinds `shouldBe` [BlueprintEntry]
       statuses `shouldBe` [SyncStale "0.2.0"]
       let updatedVersion = case updated.blueprints of
@@ -557,7 +557,7 @@ spec = do
             _ -> Nothing
       updatedVersion `shouldBe` Just ("0.2.0" :: Text)
 
-    it "validateRegistryFull populates reportBlueprintCount" $ do
+    it "validateRegistryFull populates blueprintCount" $ do
       withSystemTempDirectory "seihou-validate-bp-count" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "bp-a")
         writeMinimalBlueprintDhall (tmpDir </> "bp-a" </> "blueprint.dhall")
@@ -580,8 +580,8 @@ spec = do
                 (BlueprintEntry, ModuleName "bp-b", Just "1.0.0")
               ]
         report <- validateRegistryFull tmpDir reg lookups
-        report.reportBlueprintCount `shouldBe` 2
-        report.reportIssues `shouldBe` []
+        report.blueprintCount `shouldBe` 2
+        report.issues `shouldBe` []
 
   describe "prompts in registries" $ do
     it "rejects an invalid prompt name" $ do
@@ -661,7 +661,7 @@ spec = do
         any ("appears as both a recipe and a prompt" `isInfixOf`) messages `shouldBe` True
         any ("appears as both a blueprint and a prompt" `isInfixOf`) messages `shouldBe` True
 
-    it "computeRegistrySync classifies prompt entries with diffKind = PromptEntry" $ do
+    it "computeRegistrySync classifies prompt entries with kind = PromptEntry" $ do
       let reg =
             Registry
               { repoName = "Test",
@@ -675,8 +675,8 @@ spec = do
               }
           lookups = [(PromptEntry, ModuleName "prompt-stale", Just "0.2.0")]
           SyncReport diffs updated = computeRegistrySync reg lookups
-          kinds = [diff_ | SyncDiff {diffKind = diff_} <- diffs]
-          statuses = [s | SyncDiff {diffStatus = s} <- diffs]
+          kinds = [diff_ | SyncDiff {kind = diff_} <- diffs]
+          statuses = [s | SyncDiff {status = s} <- diffs]
       kinds `shouldBe` [PromptEntry]
       statuses `shouldBe` [SyncStale "0.2.0"]
       let updatedVersion = case updated.prompts of
@@ -684,7 +684,7 @@ spec = do
             _ -> Nothing
       updatedVersion `shouldBe` Just ("0.2.0" :: Text)
 
-    it "validateRegistryFull populates reportPromptCount" $ do
+    it "validateRegistryFull populates promptCount" $ do
       withSystemTempDirectory "seihou-validate-prompt-count" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "prompt-a")
         writeMinimalPromptDhall (tmpDir </> "prompt-a" </> "prompt.dhall")
@@ -707,8 +707,8 @@ spec = do
                 (PromptEntry, ModuleName "prompt-b", Just "1.0.0")
               ]
         report <- validateRegistryFull tmpDir reg lookups
-        report.reportPromptCount `shouldBe` 2
-        report.reportIssues `shouldBe` []
+        report.promptCount `shouldBe` 2
+        report.issues `shouldBe` []
 
   describe "discoverRepoContents and blueprints" $ do
     it "returns SingleBlueprint when only blueprint.dhall is present" $ do

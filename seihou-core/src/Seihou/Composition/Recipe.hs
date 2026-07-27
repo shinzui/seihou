@@ -17,14 +17,14 @@ type ExpandedRecipe = (ModuleName, [ModuleName], Map VarName Text, [VarDecl], [P
 --
 -- The first module in the recipe's list becomes the primary module (used for
 -- config namespace derivation). All remaining modules become additional modules.
--- Variable overrides are collected from each module entry's @depVars@ bindings.
+-- Variable overrides are collected from each module entry's @vars@ bindings.
 expandRecipe :: Recipe -> Either [Text] ExpandedRecipe
 expandRecipe recipe = do
   validated <- validateRecipe recipe
   case validated.modules of
     [] -> Left ["recipe must list at least one module"]
     primary : additional ->
-      let primaryName = primary.depModule
-          additionalNames = map (.depModule) additional
-          overrides = Map.unions (map (.depVars) validated.modules)
+      let primaryName = primary.module_
+          additionalNames = map (.module_) additional
+          overrides = Map.unions (map (.vars) validated.modules)
        in Right (primaryName, additionalNames, overrides, validated.vars, validated.prompts)

@@ -1,8 +1,10 @@
 module Seihou.CLI.MigrateSpec (tests) where
 
 import Control.Exception (bracket_)
+import Control.Lens ((&), (.~))
 import Data.Aeson (encode, object, (.=))
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -142,15 +144,15 @@ mkManifest version installedDir entries =
 defaultOpts :: MigrateOpts
 defaultOpts =
   MigrateOpts
-    { migrateModule = modName,
-      migrateTo = Nothing,
-      migrateDryRun = False,
-      migrateForce = False,
-      migrateJson = False,
-      migrateVerbose = False,
-      migrateNoFetch = True,
-      migrateCommit = False,
-      migrateCommitMessage = Nothing
+    { module_ = modName,
+      to = Nothing,
+      dryRun = False,
+      force = False,
+      json = False,
+      verbose = False,
+      noFetch = True,
+      commit = False,
+      commitMessage = Nothing
     }
 
 -- ----------------------------------------------------------------------------
@@ -355,7 +357,7 @@ spec = do
         createDirectoryIfMissing True (dir </> "app")
         TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
-            opts = defaultOpts {migrateDryRun = True}
+            opts = defaultOpts {dryRun = True}
         result <-
           withCurrentDirectory dir $
             runMigrate opts manifest installed
@@ -408,7 +410,7 @@ spec = do
         createDirectoryIfMissing True (dir </> "app")
         TIO.writeFile (dir </> "app" </> "Main.hs") "user-edited"
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "original")]
-            opts = defaultOpts {migrateForce = True}
+            opts = defaultOpts {force = True}
         result <-
           withCurrentDirectory dir $
             runMigrate opts manifest installed
@@ -427,7 +429,7 @@ spec = do
       withFetchFixture "1.0.0" "2.0.0" moveOldToNewLit $ \fix -> do
         TIO.writeFile (fix.projectDir </> "old.txt") "x"
         let manifest = mkManifestAt fix "1.0.0" [("old.txt", "x")]
-            opts = (defaultOpts {migrateNoFetch = False}) {migrateModule = ModuleName fix.modName}
+            opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName fix.modName
         result <-
           withCurrentDirectory fix.projectDir $
             runMigrate opts manifest fix.installedDir
@@ -448,7 +450,7 @@ spec = do
     it "is a no-op when the remote and installed versions match" $
       withFetchFixture "1.0.0" "1.0.0" emptyMigrationsLit $ \fix -> do
         let manifest = mkManifestAt fix "1.0.0" []
-            opts = (defaultOpts {migrateNoFetch = False}) {migrateModule = ModuleName fix.modName}
+            opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName fix.modName
         result <-
           withCurrentDirectory fix.projectDir $
             runMigrate opts manifest fix.installedDir
@@ -459,7 +461,7 @@ spec = do
     it "ignores a newer remote when --no-fetch is set" $
       withFetchFixture "1.0.0" "2.0.0" moveOldToNewLit $ \fix -> do
         let manifest = mkManifestAt fix "1.0.0" []
-            opts = (defaultOpts {migrateNoFetch = True}) {migrateModule = ModuleName fix.modName}
+            opts = defaultOpts & #noFetch .~ True & #module_ .~ ModuleName fix.modName
         result <-
           withCurrentDirectory fix.projectDir $
             runMigrate opts manifest fix.installedDir
@@ -489,7 +491,7 @@ spec = do
         writeInstalledModule installed "2.0.0" twoStepLit
         TIO.writeFile (dir </> "a.txt") "x"
         let manifest = mkManifest "1.0.0" installed [("a.txt", "x")]
-            opts = defaultOpts {migrateTo = Just "1.5.0"}
+            opts = defaultOpts & #to .~ Just "1.5.0"
         result <-
           withCurrentDirectory dir $
             runMigrate opts manifest installed
@@ -549,7 +551,7 @@ spec = do
         case result of
           Right (MigrateApplied execPlan manifest' _ toV) -> do
             renderVersion toV `shouldBe` "0.3.0"
-            null execPlan.planSource.planSteps `shouldBe` True
+            null execPlan.source.steps `shouldBe` True
             (head manifest'.modules).moduleVersion `shouldBe` Just "0.3.0"
           other -> expectationFailure ("expected MigrateApplied (pure bump), got: " <> show other)
 
@@ -575,7 +577,7 @@ spec = do
         case result of
           Right (MigrateApplied execPlan manifest' _ toV) -> do
             renderVersion toV `shouldBe` "0.3.0"
-            null execPlan.planSource.planSteps `shouldBe` True
+            null execPlan.source.steps `shouldBe` True
             (head manifest'.modules).moduleVersion `shouldBe` Just "0.3.0"
           other -> expectationFailure ("expected MigrateApplied (orphan-edge skip), got: " <> show other)
 
@@ -611,7 +613,7 @@ spec = do
         case result of
           Right (MigrateApplied execPlan manifest' _ toV) -> do
             renderVersion toV `shouldBe` "0.6"
-            length execPlan.planSource.planSteps `shouldBe` 2
+            length execPlan.source.steps `shouldBe` 2
             (head manifest'.modules).moduleVersion `shouldBe` Just "0.6"
             doesFileExist (dir </> "v3.txt") `shouldReturn` True
             doesFileExist (dir </> "v6.txt") `shouldReturn` True
@@ -633,8 +635,8 @@ spec = do
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
             opts =
               defaultOpts
-                { migrateCommit = True,
-                  migrateCommitMessage = Just "chore: migrate"
+                { commit = True,
+                  commitMessage = Just "chore: migrate"
                 }
         withCurrentDirectory dir $ do
           createDirectoryIfMissing True (dir </> ".seihou")
@@ -675,7 +677,7 @@ spec = do
         createDirectoryIfMissing True (dir </> "app")
         TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
-            opts = defaultOpts {migrateCommitMessage = Just "chore: migrate"}
+            opts = defaultOpts {commitMessage = Just "chore: migrate"}
         withCurrentDirectory dir $ do
           createDirectoryIfMissing True (dir </> ".seihou")
           result <- runMigrate opts manifest installed
@@ -700,9 +702,9 @@ spec = do
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
             opts =
               defaultOpts
-                { migrateDryRun = True,
-                  migrateCommit = True,
-                  migrateCommitMessage = Just "chore: migrate"
+                { dryRun = True,
+                  commit = True,
+                  commitMessage = Just "chore: migrate"
                 }
         withCurrentDirectory dir $ do
           initProjectRepo dir
@@ -739,14 +741,14 @@ spec = do
             writeOriginJson fix.installedDir (T.pack fix.remoteDir)
             TIO.writeFile (fix.projectDir </> "old.txt") "tracked\n"
             let manifest = mkManifestAt fix "0.1" [("old.txt", "tracked\n")]
-                opts = (defaultOpts {migrateNoFetch = False}) {migrateModule = ModuleName fix.modName}
+                opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName fix.modName
             result <-
               withCurrentDirectory fix.projectDir $
                 runMigrate opts manifest fix.installedDir
             case result of
               Right (MigrateApplied execPlan manifest' _ toV) -> do
                 renderVersion toV `shouldBe` "0.3"
-                length execPlan.planSource.planSteps `shouldBe` 1
+                length execPlan.source.steps `shouldBe` 1
                 case manifest'.modules of
                   (am : _) -> am.moduleVersion `shouldBe` Just "0.3"
                   [] -> expectationFailure "manifest has no modules"
@@ -759,14 +761,14 @@ spec = do
     it "fetch fallback: clone-based plan stands when neither side declares applicable edges" $
       withFetchFixture "0.3" "0.3" emptyMigrationsLit $ \fix -> do
         let manifest = mkManifestAt fix "0.1" []
-            opts = (defaultOpts {migrateNoFetch = False}) {migrateModule = ModuleName fix.modName}
+            opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName fix.modName
         result <-
           withCurrentDirectory fix.projectDir $
             runMigrate opts manifest fix.installedDir
         case result of
           Right (MigrateApplied execPlan manifest' _ toV) -> do
             renderVersion toV `shouldBe` "0.3"
-            null execPlan.planSource.planSteps `shouldBe` True
+            null execPlan.source.steps `shouldBe` True
             case manifest'.modules of
               (am : _) -> am.moduleVersion `shouldBe` Just "0.3"
               [] -> expectationFailure "manifest has no modules"

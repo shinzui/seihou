@@ -35,10 +35,10 @@ spec = do
           r = planMigrationChain "demo" [m] (mkV "1.0.0") (mkV "2.0.0")
       case r of
         Right (Just plan) -> do
-          plan.planModule `shouldBe` "demo"
-          plan.planFrom `shouldBe` mkV "1.0.0"
-          plan.planTo `shouldBe` mkV "2.0.0"
-          plan.planSteps `shouldBe` [m]
+          plan.module_ `shouldBe` "demo"
+          plan.from `shouldBe` mkV "1.0.0"
+          plan.to `shouldBe` mkV "2.0.0"
+          plan.steps `shouldBe` [m]
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     it "builds a two-edge plan in order regardless of declaration order" $ do
@@ -47,8 +47,8 @@ spec = do
           r = planMigrationChain "demo" [m2, m1] (mkV "1.0.0") (mkV "3.0.0")
       case r of
         Right (Just plan) -> do
-          plan.planSteps `shouldBe` [m1, m2]
-          plan.planTo `shouldBe` mkV "3.0.0"
+          plan.steps `shouldBe` [m1, m2]
+          plan.to `shouldBe` mkV "3.0.0"
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     -- Live-tree master-plan fixture (manifest=0.1.0, target=0.3.0,
@@ -59,18 +59,18 @@ spec = do
           r = planMigrationChain "demo" [m] (mkV "0.1.0") (mkV "0.3.0")
       case r of
         Right (Just plan) -> do
-          plan.planSteps `shouldBe` [m]
-          plan.planFrom `shouldBe` mkV "0.1.0"
-          plan.planTo `shouldBe` mkV "0.3.0"
+          plan.steps `shouldBe` [m]
+          plan.from `shouldBe` mkV "0.1.0"
+          plan.to `shouldBe` mkV "0.3.0"
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     it "yields an empty-steps plan when no declared migration falls in the window" $ do
       let r = planMigrationChain "demo" [] (mkV "0.1.3") (mkV "0.3.0")
       case r of
         Right (Just plan) -> do
-          plan.planSteps `shouldBe` []
-          plan.planFrom `shouldBe` mkV "0.1.3"
-          plan.planTo `shouldBe` mkV "0.3.0"
+          plan.steps `shouldBe` []
+          plan.from `shouldBe` mkV "0.1.3"
+          plan.to `shouldBe` mkV "0.3.0"
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     it "reports MigrationVersionUnparseable when a from string is malformed" $ do
@@ -98,8 +98,8 @@ spec = do
           r = planMigrationChain "demo" [stale, live] (mkV "1.0.0") (mkV "2.0.0")
       case r of
         Right (Just plan) -> do
-          plan.planSteps `shouldBe` [live]
-          plan.planTo `shouldBe` mkV "2.0.0"
+          plan.steps `shouldBe` [live]
+          plan.to `shouldBe` mkV "2.0.0"
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     it "treats version equality with trailing zeros consistently" $ do
@@ -118,9 +118,9 @@ spec = do
           r = planMigrationChain "foo" [early, late] (mkV "0.2") (mkV "0.6")
       case r of
         Right (Just plan) -> do
-          plan.planFrom `shouldBe` mkV "0.2"
-          plan.planTo `shouldBe` mkV "0.6"
-          plan.planSteps `shouldBe` [early, late]
+          plan.from `shouldBe` mkV "0.2"
+          plan.to `shouldBe` mkV "0.6"
+          plan.steps `shouldBe` [early, late]
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     it "skips migrations that overshoot the supplied target" $ do
@@ -128,8 +128,8 @@ spec = do
           r = planMigrationChain "demo" [m] (mkV "0.4") (mkV "0.6")
       case r of
         Right (Just plan) -> do
-          plan.planSteps `shouldBe` []
-          plan.planTo `shouldBe` mkV "0.6"
+          plan.steps `shouldBe` []
+          plan.to `shouldBe` mkV "0.6"
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     it "skips overlapping migrations once the cursor has advanced past them" $ do
@@ -138,16 +138,16 @@ spec = do
           r = planMigrationChain "demo" [big, small] (mkV "0.2") (mkV "0.5")
       case r of
         Right (Just plan) ->
-          plan.planSteps `shouldBe` [big]
+          plan.steps `shouldBe` [big]
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     it "empty migrations list with installed != target yields empty-steps plan with target" $ do
       let r = planMigrationChain "demo" [] (mkV "0.1") (mkV "0.3")
       case r of
         Right (Just plan) -> do
-          plan.planSteps `shouldBe` []
-          plan.planFrom `shouldBe` mkV "0.1"
-          plan.planTo `shouldBe` mkV "0.3"
+          plan.steps `shouldBe` []
+          plan.from `shouldBe` mkV "0.1"
+          plan.to `shouldBe` mkV "0.3"
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
     it "edges with `to == target` are picked" $ do
@@ -155,7 +155,7 @@ spec = do
           r = planMigrationChain "demo" [m] (mkV "0.2") (mkV "0.3")
       case r of
         Right (Just plan) ->
-          plan.planSteps `shouldBe` [m]
+          plan.steps `shouldBe` [m]
         other -> expectationFailure ("Expected Right (Just ...), got: " <> show other)
 
   describe "planBlueprintMigrationChain" $ do
@@ -165,10 +165,10 @@ spec = do
           result = planBlueprintMigrationChain "demo" [late, early] (mkV "1.0.0") (mkV "3.0.0")
       case result of
         Right (Just plan) -> do
-          plan.blueprintPlanName `shouldBe` "demo"
-          plan.blueprintPlanFrom `shouldBe` mkV "1.0.0"
-          plan.blueprintPlanTo `shouldBe` mkV "3.0.0"
-          plan.blueprintPlanSteps `shouldBe` [early, late]
+          plan.name `shouldBe` "demo"
+          plan.from `shouldBe` mkV "1.0.0"
+          plan.to `shouldBe` mkV "3.0.0"
+          plan.steps `shouldBe` [early, late]
         other -> expectationFailure ("Expected ordered blueprint plan, got: " <> show other)
 
     it "returns Nothing for an equal version window" $ do
@@ -196,7 +196,7 @@ spec = do
       let migration = BlueprintMigration "1.0.0" "3.0.0" "too far"
           result = planBlueprintMigrationChain "demo" [migration] (mkV "1.0.0") (mkV "2.0.0")
       case result of
-        Right (Just plan) -> plan.blueprintPlanSteps `shouldBe` []
+        Right (Just plan) -> plan.steps `shouldBe` []
         other -> expectationFailure ("Expected empty blueprint plan, got: " <> show other)
 
 -- ---------------------------------------------------------------------------

@@ -76,11 +76,11 @@ traceSinkFor setting configuredPath =
 -- migration edge — reports one destination and appends every call to it.
 traceSinkForConfig :: LogLevel -> AgentModelConfig -> IO TraceSink
 traceSinkForConfig level config = do
-  case config.agentTrace of
+  case config.trace of
     TraceOff -> pure ()
     TraceFile ->
       logIO level $
-        logInfo ("Trace: writing call traces to " <> T.pack (resolveTraceFilePath config.agentTracePath))
+        logInfo ("Trace: writing call traces to " <> T.pack (resolveTraceFilePath config.tracePath))
     other ->
       logIO level (logInfo ("Trace: writing call traces to " <> traceToText other))
-  traceSinkFor config.agentTrace config.agentTracePath
+  traceSinkFor config.trace config.tracePath

@@ -77,9 +77,9 @@ data MigrationOpInstance
 -- 'MigrationPlan' it was built from, and the linearized list of
 -- concrete op instances in execution order.
 data ExecutedMigrationPlan = ExecutedMigrationPlan
-  { planModule :: !ModuleName,
-    planSource :: !MigrationPlan,
-    planOps :: ![MigrationOpInstance]
+  { module_ :: !ModuleName,
+    source :: !MigrationPlan,
+    ops :: ![MigrationOpInstance]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -106,14 +106,14 @@ classifyMigration ::
   MigrationPlan ->
   Eff es (Either MigrationExecError ExecutedMigrationPlan)
 classifyMigration manifest plan = do
-  opsResult <- traverse (classifyOp manifest) (concatMap (.ops) plan.planSteps)
+  opsResult <- traverse (classifyOp manifest) (concatMap (.ops) plan.steps)
   pure $ do
     ops <- sequence opsResult
     Right
       ExecutedMigrationPlan
-        { planModule = ModuleName plan.planModule,
-          planSource = plan,
-          planOps = ops
+        { module_ = ModuleName plan.module_,
+          source = plan,
+          ops = ops
         }
 
 -- | Classify a single 'MigrationOp' against the manifest and disk.
@@ -190,9 +190,9 @@ classifyFile manifest path = do
 -- Otherwise runs every op in declaration order, rewrites the manifest's
 -- @files@ map to reflect new paths, bumps @genAt@ to the supplied
 -- timestamp, and updates the named 'AppliedModule''s @moduleVersion@ to
--- @planTo@ (the user's supplied target). When the source plan has an
+-- @to@ (the user's supplied target). When the source plan has an
 -- empty 'planSteps' list, no file ops run but the manifest still
--- advances to @planTo@ — this is the "pure version bump" path.
+-- advances to @to@ — this is the "pure version bump" path.
 executeMigration ::
   (Filesystem :> es, Process :> es) =>
   -- | If 'True', proceed even when files are 'MFConflict'. Mirrors the
@@ -206,13 +206,13 @@ executeMigration ::
 executeMigration force plan manifest now = do
   let conflicts =
         [ p
-        | inst <- plan.planOps,
+        | inst <- plan.ops,
           (p, MFConflict) <- toFileStatus inst
         ]
   if not force && not (null conflicts)
     then pure (Left (MigrationConflict conflicts))
     else do
-      result <- runOps plan.planOps manifest []
+      result <- runOps plan.ops manifest []
       case result of
         Left err -> pure (Left err)
         Right (man', removedDirs) -> do
@@ -220,7 +220,7 @@ executeMigration force plan manifest now = do
           let bumped =
                 man'
                   { genAt = now,
-                    modules = map (bumpVersion plan.planModule plan.planSource) man'.modules
+                    modules = map (bumpVersion plan.module_ plan.source) man'.modules
                   }
           pure (Right bumped)
 
@@ -324,7 +324,7 @@ dropDirFromManifest path manifest =
 bumpVersion :: ModuleName -> MigrationPlan -> AppliedModule -> AppliedModule
 bumpVersion modName plan am
   | am.name == modName =
-      am {moduleVersion = Just (renderVersion plan.planTo)}
+      am {moduleVersion = Just (renderVersion plan.to)}
   | otherwise = am
 
 -- ----------------------------------------------------------------------------

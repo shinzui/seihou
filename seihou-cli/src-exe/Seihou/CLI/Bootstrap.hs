@@ -41,7 +41,7 @@ handleBootstrap :: Bool -> AgentModelConfig -> BootstrapOpts -> IO ()
 handleBootstrap debug modelConfig bootstrapOpts = do
   ctx <- gatherAgentContext
   let systemPrompt = renderPrompt ctx bootstrapOpts
-  runRenderedAgentPrompt debug modelConfig systemPrompt bootstrapOpts.bootstrapPrompt
+  runRenderedAgentPrompt debug modelConfig systemPrompt bootstrapOpts.prompt
 
 renderPrompt :: AgentContext -> BootstrapOpts -> Text
 renderPrompt ctx bootstrapOpts =
@@ -59,7 +59,7 @@ renderPrompt ctx bootstrapOpts =
 runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Text -> Maybe Text -> IO ()
 runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
   | debug = TIO.putStr systemPrompt
-  | modelConfig.agentProvider == AgentProviderClaudeCli || modelConfig.agentProvider == AgentProviderCodexCli = do
+  | modelConfig.provider == AgentProviderClaudeCli || modelConfig.provider == AgentProviderCodexCli = do
       exitCode <- launchConfiguredAgent modelConfig bootstrapAllowedTools debug systemPrompt initialPrompt
       exitWith exitCode
   | otherwise = do
@@ -73,7 +73,7 @@ runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
 
 bootstrapMode :: BootstrapOpts -> Text
 bootstrapMode opts
-  | opts.bootstrapRepo =
+  | opts.repo =
       T.unlines
         [ "**Mode: Multi-module repository**",
           "",

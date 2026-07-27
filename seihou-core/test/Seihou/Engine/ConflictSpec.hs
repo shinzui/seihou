@@ -52,7 +52,7 @@ spec = do
     it "does not produce console output when force is True" $ do
       let conflicts = [mkConflict "a.txt"]
           (_result, st) = runPureEff $ runConsolePure [] $ resolveConflicts True conflicts
-      st.consoleOutputs `shouldBe` []
+      st.outputs `shouldBe` []
 
   describe "resolveConflictsInteractive" $ do
     it "resolves accept with 'a'" $ do
@@ -87,7 +87,7 @@ spec = do
       case result of
         Just [(_, res)] -> res `shouldBe` AcceptNew
         _ -> expectationFailure "Expected Just with one AcceptNew resolution"
-      any (T.isInfixOf "Invalid choice") (st.consoleOutputs) `shouldBe` True
+      any (T.isInfixOf "Invalid choice") (st.outputs) `shouldBe` True
 
     it "resolves multiple files in order" $ do
       let conflicts = [mkConflict "a.txt", mkConflict "b.txt", mkConflict "c.txt"]
@@ -104,7 +104,7 @@ spec = do
           (result, st) = runPureEff $ runConsolePure ["a", "A"] $ resolveConflictsInteractive conflicts
       result `shouldBe` Nothing
       -- Should have prompted for a.txt and b.txt, but not c.txt
-      let outputs = T.unlines (st.consoleOutputs)
+      let outputs = T.unlines (st.outputs)
       T.isInfixOf "a.txt" outputs `shouldBe` True
       T.isInfixOf "b.txt" outputs `shouldBe` True
       T.isInfixOf "c.txt" outputs `shouldBe` False
@@ -112,7 +112,7 @@ spec = do
     it "outputs file paths in prompt messages" $ do
       let conflict = mkConflict "src/Main.hs"
           (_result, st) = runPureEff $ runConsolePure ["a"] $ resolveConflictsInteractive [conflict]
-          outputs = T.unlines (st.consoleOutputs)
+          outputs = T.unlines (st.outputs)
       T.isInfixOf "src/Main.hs" outputs `shouldBe` True
       T.isInfixOf "modified since last generation" outputs `shouldBe` True
 
@@ -131,14 +131,14 @@ spec = do
           map snd resolved `shouldBe` [KeepCurrent, AcceptNew]
         Nothing -> expectationFailure "Expected Just, got Nothing"
       -- Verify prompt output was produced
-      let outputs = T.unlines (st.consoleOutputs)
+      let outputs = T.unlines (st.outputs)
       T.isInfixOf "config.yaml" outputs `shouldBe` True
       T.isInfixOf "Makefile" outputs `shouldBe` True
 
     it "non-interactive mode produces no console output" $ do
       let conflicts = [mkConflict "a.txt"]
           (_result, st) = runPureEff $ runConsolePureNonInteractive $ resolveConflicts False conflicts
-      st.consoleOutputs `shouldBe` []
+      st.outputs `shouldBe` []
 
     it "force mode preserves conflict file references in resolution" $ do
       let c = mkConflict "important.txt"
@@ -153,14 +153,14 @@ spec = do
           (result, st) = runPureEff $ runConsolePure ["A"] $ resolveConflicts False conflicts
       result `shouldBe` Nothing
       -- Only first.txt was prompted before abort
-      let outputs = T.unlines (st.consoleOutputs)
+      let outputs = T.unlines (st.outputs)
       T.isInfixOf "first.txt" outputs `shouldBe` True
       T.isInfixOf "second.txt" outputs `shouldBe` False
 
     it "choice prompt text includes all four options" $ do
       let conflict = mkConflict "test.txt"
           (_result, st) = runPureEff $ runConsolePure ["s"] $ resolveConflicts False [conflict]
-          outputs = T.unlines (st.consoleOutputs)
+          outputs = T.unlines (st.outputs)
       T.isInfixOf "[a]ccept" outputs `shouldBe` True
       T.isInfixOf "[k]eep" outputs `shouldBe` True
       T.isInfixOf "[s]kip" outputs `shouldBe` True

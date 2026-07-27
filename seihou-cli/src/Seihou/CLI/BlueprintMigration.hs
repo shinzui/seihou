@@ -76,9 +76,9 @@ renderBlueprintMigrationSystemPrompt ::
   BlueprintMigration ->
   Text
 renderBlueprintMigrationSystemPrompt template ctx prepared position total migration =
-  let blueprint = prepared.preparedBlueprint
+  let blueprint = prepared.blueprint
       renderedInstruction =
-        renderBlueprintMigrationInstruction prepared.preparedResolvedVariables migration
+        renderBlueprintMigrationInstruction prepared.resolvedVariables migration
    in substitute
         [ ("cwd", ctx.cwd),
           ("seihou_project_state", formatSeihouProjectState ctx),
@@ -93,9 +93,9 @@ renderBlueprintMigrationSystemPrompt template ctx prepared position total migrat
           ("migration_to", migration.to),
           ("migration_position", T.pack (show position)),
           ("migration_total", T.pack (show total)),
-          ("reference_files", prepared.preparedReferenceFiles),
-          ("reference_files_dir", prepared.preparedReferenceFilesAccess),
-          ("shared_prompt", prepared.preparedSharedPrompt),
+          ("reference_files", prepared.referenceFiles),
+          ("reference_files_dir", prepared.referenceFilesAccess),
+          ("shared_prompt", prepared.sharedPrompt),
           ("migration_prompt", renderedInstruction)
         ]
         template
@@ -136,8 +136,8 @@ pendingBlueprintMigrations ::
   BlueprintMigrationPlan ->
   [BlueprintMigration]
 pendingBlueprintMigrations rerun blueprintName receipts plan
-  | rerun = plan.blueprintPlanSteps
-  | otherwise = filter (not . alreadyApplied) plan.blueprintPlanSteps
+  | rerun = plan.steps
+  | otherwise = filter (not . alreadyApplied) plan.steps
   where
     alreadyApplied migration =
       any

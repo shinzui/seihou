@@ -17,37 +17,37 @@ import Seihou.Prelude
 -- | Format a discovered module as an fzf candidate.
 -- Returns 'Nothing' for modules that failed to load.
 formatModuleCandidate :: DiscoveredModule -> Maybe (Candidate ModuleName)
-formatModuleCandidate dm = case dm.discoveredResult of
+formatModuleCandidate dm = case dm.result of
   Left _ -> Nothing
   Right m ->
     let nameText = m.name.unModuleName
         descText = maybe "" (\d -> "  " <> d) m.description
-        sourceTag = case dm.discoveredSource of
+        sourceTag = case dm.source of
           SourceProject -> "[project]"
           SourceUser -> "[user]"
           SourceInstalled -> "[installed]"
         display = nameText <> descText <> "  " <> sourceTag
-     in Just Candidate {candidateDisplay = display, candidateValue = m.name}
+     in Just Candidate {display = display, value = m.name}
 
 -- | Format a discovered runnable (module or recipe) as an fzf candidate.
 -- Returns 'Nothing' for items that failed to load.
 formatRunnableCandidate :: DiscoveredRunnable -> Maybe (Candidate ModuleName)
 formatRunnableCandidate dr
-  | dr.drIsError = Nothing
+  | dr.isError = Nothing
   | otherwise =
-      let nameText = dr.drName
-          descText = maybe "" (\d -> "  " <> d) dr.drDescription
-          kindTag = case dr.drKind of
+      let nameText = dr.name
+          descText = maybe "" (\d -> "  " <> d) dr.description
+          kindTag = case dr.kind of
             KindModule -> ""
             KindRecipe -> " [recipe]"
             KindBlueprint -> " [blueprint]"
             KindPrompt -> " [prompt]"
-          sourceTag = case dr.drSource of
+          sourceTag = case dr.source of
             SourceProject -> "[project]"
             SourceUser -> "[user]"
             SourceInstalled -> "[installed]"
           display = nameText <> descText <> kindTag <> "  " <> sourceTag
-       in Just Candidate {candidateDisplay = display, candidateValue = ModuleName nameText}
+       in Just Candidate {display = display, value = ModuleName nameText}
 
 -- | Default fzf options for module selection.
 defaultModuleOpts :: FzfOpts

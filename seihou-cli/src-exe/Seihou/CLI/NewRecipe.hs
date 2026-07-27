@@ -15,7 +15,7 @@ import System.Exit (exitFailure)
 
 handleNewRecipe :: NewRecipeOpts -> IO ()
 handleNewRecipe ropts = do
-  let name = ropts.newRecipeName
+  let name = ropts.name
 
   -- Validate recipe name format
   if not (isValidRecipeName name)
@@ -27,7 +27,7 @@ handleNewRecipe ropts = do
     else pure ()
 
   -- Determine output directory
-  let outputDir = case ropts.newRecipePath of
+  let outputDir = case ropts.path of
         Just p -> p
         Nothing -> T.unpack name
 
@@ -43,7 +43,7 @@ handleNewRecipe ropts = do
   createDirectoryIfMissing True outputDir
 
   -- Write recipe.dhall
-  let dhallContent = recipeDhall name ropts.newRecipeModules
+  let dhallContent = recipeDhall name ropts.modules
   writeFile (outputDir </> "recipe.dhall") (T.unpack dhallContent)
   TIO.putStrLn $ "Created " <> T.pack (outputDir </> "recipe.dhall")
 

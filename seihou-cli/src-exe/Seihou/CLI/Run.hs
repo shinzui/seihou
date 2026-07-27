@@ -79,11 +79,11 @@ import System.IO (hFlush, hIsTerminalDevice, stdin, stdout)
 
 handleRun :: RunOpts -> IO ()
 handleRun runOpts = do
-  let additional = runOpts.runAdditional
-      level = if runOpts.runVerbose then LogVerbose else LogNormal
+  let additional = runOpts.additional
+      level = if runOpts.verbose then LogVerbose else LogNormal
 
   -- 0. Resolve module name (from argument or fzf picker)
-  modName <- case runOpts.runModule of
+  modName <- case runOpts.module_ of
     Just name -> pure name
     Nothing -> do
       fzfCfg <- detectFzfConfig
@@ -180,10 +180,10 @@ handleRun runOpts = do
   -- 2. Resolve variables with export visibility and interactive prompts
   envPairs <- getEnvironment
   -- Merge recipe overrides with CLI overrides (CLI wins on conflict)
-  let cliOverrides = Map.union (Map.fromList [(VarName k, v) | (k, v) <- runOpts.runVars]) recipeOverrides
+  let cliOverrides = Map.union (Map.fromList [(VarName k, v) | (k, v) <- runOpts.vars]) recipeOverrides
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace primaryName) runOpts.runNamespace
-  context <- resolveContext runOpts.runContext envVars
+      namespace = fromMaybe (deriveNamespace primaryName) runOpts.namespace
+  context <- resolveContext runOpts.context envVars
   let contextName = fromMaybe "" context
   (resolveResult, localMap, nsMap, ctxMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
     localCfg <- readLocalConfig >>= unwrapConfig level
@@ -206,7 +206,7 @@ handleRun runOpts = do
 
   -- 2a. Optionally confirm default-sourced values.
   resolved <-
-    if runOpts.runConfirmDefaults
+    if runOpts.confirmDefaults
       then runEff $ runConsole $ confirmDefaults modulesInOrder resolvedInitial
       else pure resolvedInitial
 
@@ -236,7 +236,7 @@ handleRun runOpts = do
 
   -- 4. Filter out command ops if --no-commands
   let opsFiltered =
-        if runOpts.runNoCommands
+        if runOpts.noCommands
           then filter (not . isCommandOp) ops
           else ops
 
@@ -286,7 +286,7 @@ handleRun runOpts = do
           receipts : _ -> receipts
           [] -> Map.empty
       commandPolicy =
-        if runOpts.runNoCommands
+        if runOpts.noCommands
           then DisableCommands
           else RunAllCommands
       commandPlan = planCommands commandPolicy priorCommandReceipts ops
@@ -300,7 +300,7 @@ handleRun runOpts = do
     -- matched to cover manifest entries written before the schema bump.
     let composedNames =
           Set.fromList $
-            concatMap (\(inst, _, _) -> [inst.instanceModule, qualifiedName inst]) modulesInOrder
+            concatMap (\(inst, _, _) -> [inst.module_, qualifiedName inst]) modulesInOrder
     computeDiff manifest composedNames planned
 
   colorEnabled <- useColor
@@ -312,11 +312,11 @@ handleRun runOpts = do
       preview = buildPreview opsFiltered (Just diff) ownerMap
 
   -- 6. Handle --dry-run: show plan view and exit
-  if runOpts.runDryRun
+  if runOpts.dryRun
     then
       TIO.putStr (formatPlanViewColor colorEnabled modNames allVarValues preview diff)
     else
-      if runOpts.runDiff
+      if runOpts.diff
         then TIO.putStr (formatDiff colorEnabled diff ownerMap)
         else do
           -- Show plan view
@@ -324,7 +324,7 @@ handleRun runOpts = do
 
           -- Prompt for confirmation (skip if --force or non-interactive)
           interactive <- hIsTerminalDevice stdin
-          when (interactive && not runOpts.runForce) $ do
+          when (interactive && not runOpts.force) $ do
             TIO.putStr "\n  Proceed? [Y/n] "
             hFlush stdout
             response <- T.strip . T.pack <$> getLine
@@ -335,7 +335,7 @@ handleRun runOpts = do
           resolutions <-
             runEff $
               runConsole $
-                resolveConflicts runOpts.runForce diff.conflicts
+                resolveConflicts runOpts.force diff.conflicts
           case resolutions of
             Nothing -> do
               TIO.putStrLn "Conflicts detected (use --force to overwrite):"
@@ -514,7 +514,7 @@ handleRun runOpts = do
                 Right () -> pure ()
 
               -- Commit generated files if --commit or --commit-message
-              when (runOpts.runCommit || isJust runOpts.runCommitMessage) $ do
+              when (runOpts.commit || isJust runOpts.commitMessage) $ do
                 let filesToStage =
                       map (.path) diff.new
                         ++ map (.path) diff.modified
@@ -531,7 +531,7 @@ handleRun runOpts = do
                         case addExit of
                           ExitFailure _ -> logIO level (logWarn $ "git add failed: " <> addErr)
                           ExitSuccess -> do
-                            commitMsg <- case runOpts.runCommitMessage of
+                            commitMsg <- case runOpts.commitMessage of
                               Just msg -> pure msg
                               Nothing -> do
                                 diffText <- runEff $ runProcessIO $ gitDiffCached
@@ -549,7 +549,7 @@ handleRun runOpts = do
                 runEff $
                   runConfigWriter $
                     runConsole $
-                      offerSavePrompted runOpts.runSavePrompted interactive prompted
+                      offerSavePrompted runOpts.savePrompted interactive prompted
 
 -- Helpers
 
@@ -669,10 +669,10 @@ handlePendingMigrations ::
   IO Manifest
 handlePendingMigrations _ _ _ manifest [] = pure manifest
 handlePendingMigrations level runOpts manifestPath manifest pendings
-  | not runOpts.runWithMigrations = do
+  | not runOpts.withMigrations = do
       TIO.putStr (formatRefusalMessage pendings)
       exitFailure
-  | runOpts.runDryRun = do
+  | runOpts.dryRun = do
       TIO.putStrLn "Pending migrations detected (--with-migrations + --dry-run):"
       mapM_ (TIO.putStrLn . renderPendingSummary) pendings
       TIO.putStrLn ""
@@ -693,15 +693,15 @@ renderPendingSummary (name, plan) =
   "  "
     <> name.unModuleName
     <> ": "
-    <> renderVersion plan.planFrom
+    <> renderVersion plan.from
     <> " -> "
-    <> renderVersion plan.planTo
+    <> renderVersion plan.to
     <> " ("
-    <> T.pack (show (length plan.planSteps))
+    <> T.pack (show (length plan.steps))
     <> " step(s))"
 
 -- | Apply one pending plan in-band. Reuses 'runMigrate' with
--- @migrateNoFetch=True@ since 'detectPendingMigrations' already
+-- @noFetch=True@ since 'detectPendingMigrations' already
 -- compared against the locally installed copy: there is no need to
 -- clone the source repo a second time. Migration conflicts (a tracked
 -- file the user has edited since generation) propagate as a hard
@@ -725,15 +725,15 @@ applyOneMigration level manifest (modName, _) =
     Just am -> do
       let opts =
             MigrateOpts
-              { migrateModule = modName,
-                migrateTo = Nothing,
-                migrateDryRun = False,
-                migrateForce = False,
-                migrateJson = False,
-                migrateVerbose = False,
-                migrateNoFetch = True,
-                migrateCommit = False,
-                migrateCommitMessage = Nothing
+              { module_ = modName,
+                to = Nothing,
+                dryRun = False,
+                force = False,
+                json = False,
+                verbose = False,
+                noFetch = True,
+                commit = False,
+                commitMessage = Nothing
               }
       result <- runMigrate opts manifest am.source
       case result of
@@ -787,14 +787,14 @@ updateAllModules ::
 updateAllModules existing modulesInOrder now =
   let composedKeys =
         Set.fromList
-          [ (inst.instanceModule, inst.instanceParentVars)
+          [ (inst.module_, inst.parentVars)
           | (inst, _, _) <- modulesInOrder
           ]
       filtered = filter (\am -> not (Set.member (am.name, am.parentVars) composedKeys)) existing
       new =
         [ AppliedModule
-            { name = inst.instanceModule,
-              parentVars = inst.instanceParentVars,
+            { name = inst.module_,
+              parentVars = inst.parentVars,
               source = dir,
               moduleVersion = m.version,
               appliedAt = now,

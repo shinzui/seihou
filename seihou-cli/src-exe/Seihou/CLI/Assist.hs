@@ -40,7 +40,7 @@ handleAssist :: Bool -> AgentModelConfig -> AssistOpts -> IO ()
 handleAssist debug modelConfig assistOpts = do
   ctx <- gatherAgentContext
   let systemPrompt = renderPrompt ctx
-  runRenderedAgentPrompt debug modelConfig systemPrompt assistOpts.assistPrompt
+  runRenderedAgentPrompt debug modelConfig systemPrompt assistOpts.prompt
 
 renderPrompt :: AgentContext -> Text
 renderPrompt ctx =
@@ -57,7 +57,7 @@ renderPrompt ctx =
 runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Text -> Maybe Text -> IO ()
 runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
   | debug = TIO.putStr systemPrompt
-  | modelConfig.agentProvider == AgentProviderClaudeCli || modelConfig.agentProvider == AgentProviderCodexCli = do
+  | modelConfig.provider == AgentProviderClaudeCli || modelConfig.provider == AgentProviderCodexCli = do
       exitCode <- launchConfiguredAgent modelConfig defaultAllowedTools debug systemPrompt initialPrompt
       exitWith exitCode
   | otherwise = do

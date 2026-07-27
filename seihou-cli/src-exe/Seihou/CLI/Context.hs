@@ -64,7 +64,7 @@ selectContextFzf fzfCfg = do
     else do
       entries <- listDirectory contextsDir
       dirs <- filterM (doesDirectoryExist . (contextsDir </>)) entries
-      let candidates = [Candidate {candidateDisplay = T.pack d, candidateValue = T.pack d} | d <- dirs]
+      let candidates = [Candidate {display = T.pack d, value = T.pack d} | d <- dirs]
           opts = withPrompt "context> " <> withHeight "40%" <> withAnsi <> withNoSort
       runEff $ runFzfIO fzfCfg $ selectOne opts candidates
   where

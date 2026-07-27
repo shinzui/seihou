@@ -30,7 +30,7 @@ import System.Exit (ExitCode (..), exitFailure, exitWith)
 handleVars :: VarsOpts -> IO ()
 handleVars vopts = do
   -- Resolve module name (from argument or fzf picker)
-  modName <- case vopts.varsModule of
+  modName <- case vopts.module_ of
     Just name -> pure name
     Nothing -> do
       fzfCfg <- detectFzfConfig
@@ -69,15 +69,15 @@ handleVars vopts = do
       logIO LogNormal (logError $ T.pack (show err))
       exitFailure
     Right (RunnableModule m _) ->
-      if vopts.varsExplain
+      if vopts.explain
         then explainMode modName vopts
         else declarationModeModule m
     Right (RunnableRecipe r _) ->
-      if vopts.varsExplain
+      if vopts.explain
         then explainMode modName vopts
         else declarationModeRecipe r
     Right (RunnableBlueprint b _) ->
-      if vopts.varsExplain
+      if vopts.explain
         then do
           logIO LogNormal $ do
             logError $ "'" <> modName.unModuleName <> "' is a blueprint; --explain is not supported in this release."
@@ -157,10 +157,10 @@ explainMode modName vopts = do
 
   -- Resolve variables with the full composition pipeline
   envPairs <- getEnvironment
-  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- vopts.varsVars]
+  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- vopts.vars]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace modName) vopts.varsNamespace
-  context <- resolveContext vopts.varsContext envVars
+      namespace = fromMaybe (deriveNamespace modName) vopts.namespace
+  context <- resolveContext vopts.context envVars
   let contextName = fromMaybe "" context
   (resolveResult, localMap, nsMap, ctxMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
     localCfg <- readLocalConfig >>= unwrapConfig LogNormal
@@ -188,7 +188,7 @@ explainMode modName vopts = do
             Map.unions
               [ vs
               | (inst, vs) <- Map.toList resolved,
-                inst.instanceModule == modName
+                inst.module_ == modName
               ]
       TIO.putStrLn $ "Variables for " <> modName.unModuleName <> ":"
       TIO.putStrLn ""

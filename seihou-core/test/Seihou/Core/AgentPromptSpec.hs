@@ -295,7 +295,7 @@ spec = do
         writeFile (promptDir </> "prompt.dhall") (samplePromptDhall "review-changes")
         found <- discoverAllRunnables [tmpDir]
         case found of
-          [DiscoveredRunnable {drKind = kind}] -> kind `shouldBe` KindPrompt
+          [DiscoveredRunnable {kind = kind}] -> kind `shouldBe` KindPrompt
           other -> expectationFailure ("Expected one discovered prompt, got: " <> show other)
 
     it "prefers blueprint.dhall over prompt.dhall in the same directory" $ do

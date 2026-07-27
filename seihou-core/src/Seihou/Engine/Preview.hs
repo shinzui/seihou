@@ -26,10 +26,10 @@ data FileStatus
 -- | One line in the dry-run preview.
 data PreviewLine
   = FilePreview
-      { previewStatus :: !FileStatus,
-        previewPath :: !FilePath,
-        previewAnnotation :: !Text,
-        previewModule :: !(Maybe ModuleName)
+      { status :: !FileStatus,
+        path :: !FilePath,
+        annotation :: !Text,
+        module_ :: !(Maybe ModuleName)
       }
   | DirPreview FilePath
   | CommandPreview Text (Maybe ModuleName)
@@ -66,18 +66,18 @@ buildPreview ops mDiff ownerMap =
 opToPreview :: Maybe DiffResult -> Map FilePath ModuleName -> Set Text -> Operation -> PreviewLine
 opToPreview mDiff ownerMap _ (WriteFileOp dest _ strat) =
   FilePreview
-    { previewStatus = lookupStatus dest mDiff,
-      previewPath = dest,
-      previewAnnotation = strategyName strat,
-      previewModule = Map.lookup dest ownerMap
+    { status = lookupStatus dest mDiff,
+      path = dest,
+      annotation = strategyName strat,
+      module_ = Map.lookup dest ownerMap
     }
 opToPreview _ _ _ (CreateDirOp path) = DirPreview path
 opToPreview mDiff ownerMap _ (CopyFileOp _ dest) =
   FilePreview
-    { previewStatus = lookupStatus dest mDiff,
-      previewPath = dest,
-      previewAnnotation = "copy",
-      previewModule = Map.lookup dest ownerMap
+    { status = lookupStatus dest mDiff,
+      path = dest,
+      annotation = "copy",
+      module_ = Map.lookup dest ownerMap
     }
 opToPreview _ _ commandsNeedingOwner RunCommandOp {command, moduleName} =
   CommandPreview
@@ -85,10 +85,10 @@ opToPreview _ _ commandsNeedingOwner RunCommandOp {command, moduleName} =
     (if Set.member command commandsNeedingOwner then Just moduleName else Nothing)
 opToPreview mDiff ownerMap _ (PatchFileOp dest _ _patchOp' _ modName') =
   FilePreview
-    { previewStatus = lookupStatus dest mDiff,
-      previewPath = dest,
-      previewAnnotation = "patch",
-      previewModule = Just modName'
+    { status = lookupStatus dest mDiff,
+      path = dest,
+      annotation = "patch",
+      module_ = Just modName'
     }
 
 -- | Look up a file's status in the diff result.
@@ -111,7 +111,7 @@ renderPreviewPlain lines' =
   where
     fileLines = [l | l@(FilePreview {}) <- lines']
     nonFileLines = [l | l <- lines', not (isFileLine l)]
-    maxPathLen = maximum (0 : map (T.length . T.pack . (.previewPath)) fileLines)
+    maxPathLen = maximum (0 : map (T.length . T.pack . (.path)) fileLines)
 
 renderPlainLine :: Int -> PreviewLine -> Text
 renderPlainLine maxPath (FilePreview status path annotation mMod) =

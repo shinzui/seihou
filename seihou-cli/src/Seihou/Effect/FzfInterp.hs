@@ -22,6 +22,6 @@ runFzfPure idx = interpret $ \_ -> \case
   SelectOne _ candidates ->
     pure $
       if idx >= 0 && idx < length candidates
-        then FzfSelected (candidates !! idx).candidateValue
+        then FzfSelected (candidates !! idx).value
         else FzfNoMatch
   IsFzfAvailable -> pure True

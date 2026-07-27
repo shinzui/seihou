@@ -38,9 +38,9 @@ spec = do
         outcome <-
           runSync
             SyncVersionsOpts
-              { syncVersionsDir = Just dir,
-                syncVersionsDryRun = False,
-                syncVersionsCheck = False
+              { dir = Just dir,
+                dryRun = False,
+                check = False
               }
         case outcome of
           SyncFailure msg ->
@@ -58,9 +58,9 @@ spec = do
         outcome <-
           runSync
             SyncVersionsOpts
-              { syncVersionsDir = Just dir,
-                syncVersionsDryRun = True,
-                syncVersionsCheck = False
+              { dir = Just dir,
+                dryRun = True,
+                check = False
               }
         case outcome of
           SyncSuccess _ WouldWrite -> pure ()
@@ -74,14 +74,14 @@ spec = do
         outcome <-
           runSync
             SyncVersionsOpts
-              { syncVersionsDir = Just dir,
-                syncVersionsDryRun = False,
-                syncVersionsCheck = True
+              { dir = Just dir,
+                dryRun = False,
+                check = True
               }
         case outcome of
           SyncSuccess report Checked -> do
             -- first entry missing, second entry stale
-            map (.diffStatus) report.syncDiffs
+            map (.status) report.diffs
               `shouldBe` [SyncMissing, SyncStale "2.0.0"]
           other -> expectationFailure ("expected Checked, got " <> show other)
         after <- TIO.readFile (dir </> "seihou-registry.dhall")
@@ -92,9 +92,9 @@ spec = do
         outcome <-
           runSync
             SyncVersionsOpts
-              { syncVersionsDir = Just dir,
-                syncVersionsDryRun = False,
-                syncVersionsCheck = False
+              { dir = Just dir,
+                dryRun = False,
+                check = False
               }
         case outcome of
           SyncFailure _ -> pure ()
@@ -105,9 +105,9 @@ spec = do
         outcome <-
           runSync
             SyncVersionsOpts
-              { syncVersionsDir = Just dir,
-                syncVersionsDryRun = False,
-                syncVersionsCheck = False
+              { dir = Just dir,
+                dryRun = False,
+                check = False
               }
         case outcome of
           SyncFailure msg -> expectationFailure ("expected success, got: " <> T.unpack msg)
@@ -122,9 +122,9 @@ spec = do
         outcome <-
           runSync
             SyncVersionsOpts
-              { syncVersionsDir = Just dir,
-                syncVersionsDryRun = True,
-                syncVersionsCheck = False
+              { dir = Just dir,
+                dryRun = True,
+                check = False
               }
         case outcome of
           SyncSuccess report _ -> do
@@ -137,9 +137,9 @@ spec = do
         outcome <-
           runSync
             SyncVersionsOpts
-              { syncVersionsDir = Just dir,
-                syncVersionsDryRun = False,
-                syncVersionsCheck = False
+              { dir = Just dir,
+                dryRun = False,
+                check = False
               }
         case outcome of
           SyncFailure msg -> expectationFailure ("expected success, got: " <> T.unpack msg)
@@ -154,9 +154,9 @@ spec = do
         outcome <-
           runSync
             SyncVersionsOpts
-              { syncVersionsDir = Just dir,
-                syncVersionsDryRun = True,
-                syncVersionsCheck = False
+              { dir = Just dir,
+                dryRun = True,
+                check = False
               }
         case outcome of
           SyncSuccess report _ -> do

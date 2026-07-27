@@ -64,10 +64,10 @@ migrationPromptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-migration-pr
 
 handleAgentMigrate :: Bool -> PendingAgentConfig -> BlueprintMigrationOpts -> IO ()
 handleAgentMigrate debug pendingConfig opts = do
-  let level = if opts.migrateBlueprintVerbose then LogVerbose else LogNormal
+  let level = if opts.verbose then LogVerbose else LogNormal
       manifestPath = ".seihou" </> "manifest.json"
 
-  (blueprint, blueprintDir) <- discoverMigrationBlueprint level opts.migrateBlueprintName
+  (blueprint, blueprintDir) <- discoverMigrationBlueprint level opts.name
   validationResult <- validateBlueprint blueprintDir blueprint
   case validationResult of
     Left err -> exitErr level (renderModuleLoadError err)
@@ -83,8 +83,8 @@ handleAgentMigrate debug pendingConfig opts = do
       pendingConfig
       (agentLaunchDeclaration blueprint.launch)
 
-  current <- parseRequestedVersion level "--from" opts.migrateBlueprintFrom
-  target <- parseRequestedVersion level "--to" opts.migrateBlueprintTo
+  current <- parseRequestedVersion level "--from" opts.from
+  target <- parseRequestedVersion level "--to" opts.to
   planned <-
     case planBlueprintMigrationChain blueprint.name.unModuleName blueprint.migrations current target of
       Left err -> exitErr level (renderPlanError err)
@@ -99,7 +99,7 @@ handleAgentMigrate debug pendingConfig opts = do
       receipts <- readMigrationReceipts level manifestPath
       let pending =
             pendingBlueprintMigrations
-              opts.migrateBlueprintRerun
+              opts.rerun
               blueprint.name
               receipts
               migrationPlan
@@ -122,7 +122,7 @@ handleAgentMigrate debug pendingConfig opts = do
                   <> maybe
                     ""
                     ("\n\n===== Initial user instruction =====\n" <>)
-                    opts.migrateBlueprintPrompt
+                    opts.prompt
 
           if debug
             then
@@ -130,9 +130,9 @@ handleAgentMigrate debug pendingConfig opts = do
                 "Blueprint migrations for "
                   <> blueprint.name.unModuleName
                   <> ": "
-                  <> renderVersion migrationPlan.blueprintPlanFrom
+                  <> renderVersion migrationPlan.from
                   <> " -> "
-                  <> renderVersion migrationPlan.blueprintPlanTo
+                  <> renderVersion migrationPlan.to
                   <> "\n"
                   <> formatBlueprintMigrationDebugOutput renderDebugStep pending
             else do
@@ -180,18 +180,18 @@ prepare ::
   IO PreparedBlueprintExecution
 prepare level modelConfig opts blueprint blueprintDir = do
   let providerCanMountFiles =
-        modelConfig.agentProvider == AgentProviderClaudeCli
-          || modelConfig.agentProvider == AgentProviderCodexCli
+        modelConfig.provider == AgentProviderClaudeCli
+          || modelConfig.provider == AgentProviderCodexCli
   result <-
     prepareBlueprintExecution
       BlueprintExecutionRequest
-        { executionBlueprint = blueprint,
-          executionBlueprintDir = blueprintDir,
-          executionVariableOverrides = opts.migrateBlueprintVars,
-          executionNamespaceOverride = opts.migrateBlueprintNamespace,
-          executionContextOverride = opts.migrateBlueprintContext,
-          executionCanMountFiles = providerCanMountFiles,
-          executionLogLevel = level
+        { blueprint = blueprint,
+          blueprintDir = blueprintDir,
+          variableOverrides = opts.vars,
+          namespaceOverride = opts.namespace,
+          contextOverride = opts.context,
+          canMountFiles = providerCanMountFiles,
+          logLevel = level
         }
   case result of
     Left errs -> do
@@ -222,7 +222,7 @@ launchMigration traceSink modelConfig opts prepared renderStep position total mi
       <> " -> "
       <> migration.to
   let systemPrompt = renderStep position total migration
-  case modelConfig.agentProvider of
+  case modelConfig.provider of
     AgentProviderClaudeCli -> launchInteractive systemPrompt
     AgentProviderCodexCli -> launchInteractive systemPrompt
     AgentProviderAnthropic -> launchCompletion systemPrompt
@@ -231,12 +231,12 @@ launchMigration traceSink modelConfig opts prepared renderStep position total mi
     launchInteractive systemPrompt = do
       exitCode <-
         launchConfiguredAgentAddingDirs
-          (maybeToList prepared.preparedMountedFilesDir)
+          (maybeToList prepared.mountedFilesDir)
           modelConfig
-          prepared.preparedAllowedTools
+          prepared.allowedTools
           False
           systemPrompt
-          opts.migrateBlueprintPrompt
+          opts.prompt
       pure $ case exitCode of
         ExitSuccess -> Right ()
         failure -> Left (BlueprintMigrationProcessFailure failure)
@@ -244,7 +244,7 @@ launchMigration traceSink modelConfig opts prepared renderStep position total mi
     launchCompletion systemPrompt = do
       result <-
         runAgentCompletion
-          (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt opts.migrateBlueprintPrompt)
+          (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt opts.prompt)
       case result of
         Left err -> pure (Left (BlueprintMigrationProviderFailure err))
         Right assistantText -> do
@@ -309,7 +309,7 @@ handleRunResult level blueprintName = \case
 
 reportNoPending :: BlueprintMigrationPlan -> IO ()
 reportNoPending migrationPlan
-  | null migrationPlan.blueprintPlanSteps =
+  | null migrationPlan.steps =
       TIO.putStrLn "No blueprint migrations are declared inside the requested version window."
   | otherwise =
       TIO.putStrLn "All blueprint migrations in the requested version window already have receipts."

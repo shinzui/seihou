@@ -109,17 +109,17 @@ spec = do
       let dm = validModule "test-mod" "A test module" SourceUser
       case formatModuleCandidate dm of
         Just c -> do
-          c.candidateValue `shouldBe` ModuleName "test-mod"
-          T.isInfixOf "test-mod" c.candidateDisplay `shouldBe` True
-          T.isInfixOf "[user]" c.candidateDisplay `shouldBe` True
+          c.value `shouldBe` ModuleName "test-mod"
+          T.isInfixOf "test-mod" c.display `shouldBe` True
+          T.isInfixOf "[user]" c.display `shouldBe` True
         Nothing -> expectationFailure "expected Just"
 
     it "returns Nothing for a failed module" $ do
       let dm =
             DiscoveredModule
-              { discoveredResult = Left (ModuleNotFound (ModuleName "bad") []),
-                discoveredSource = SourceProject,
-                discoveredDir = "/tmp/bad"
+              { result = Left (ModuleNotFound (ModuleName "bad") []),
+                source = SourceProject,
+                dir = "/tmp/bad"
               }
       case formatModuleCandidate dm of
         Nothing -> pure ()
@@ -128,7 +128,7 @@ spec = do
     it "includes description when present" $ do
       let dm = validModule "mod" "My description" SourceInstalled
       case formatModuleCandidate dm of
-        Just c -> T.isInfixOf "My description" c.candidateDisplay `shouldBe` True
+        Just c -> T.isInfixOf "My description" c.display `shouldBe` True
         Nothing -> expectationFailure "expected Just"
 
     it "tags source correctly" $ do
@@ -137,32 +137,32 @@ spec = do
           dmInstalled = validModule "m" "d" SourceInstalled
       case (formatModuleCandidate dmProject, formatModuleCandidate dmUser, formatModuleCandidate dmInstalled) of
         (Just p, Just u, Just i) -> do
-          T.isInfixOf "[project]" p.candidateDisplay `shouldBe` True
-          T.isInfixOf "[user]" u.candidateDisplay `shouldBe` True
-          T.isInfixOf "[installed]" i.candidateDisplay `shouldBe` True
+          T.isInfixOf "[project]" p.display `shouldBe` True
+          T.isInfixOf "[user]" u.display `shouldBe` True
+          T.isInfixOf "[installed]" i.display `shouldBe` True
         _ -> expectationFailure "expected all Just"
 
   describe "formatRunnableCandidate" $ do
     it "tags prompt candidates with [prompt]" $ do
       let dr =
             DiscoveredRunnable
-              { drName = "review-changes",
-                drDescription = Just "Review current changes",
-                drKind = KindPrompt,
-                drSource = SourceProject,
-                drDir = "/tmp/review-changes",
-                drIsError = False,
-                drError = Nothing
+              { name = "review-changes",
+                description = Just "Review current changes",
+                kind = KindPrompt,
+                source = SourceProject,
+                dir = "/tmp/review-changes",
+                isError = False,
+                error = Nothing
               }
       case formatRunnableCandidate dr of
-        Just c -> T.isInfixOf "[prompt]" c.candidateDisplay `shouldBe` True
+        Just c -> T.isInfixOf "[prompt]" c.display `shouldBe` True
         Nothing -> expectationFailure "expected Just"
 
 -- | Helper to create a valid discovered module for testing.
 validModule :: String -> String -> ModuleSource -> DiscoveredModule
 validModule name desc src =
   DiscoveredModule
-    { discoveredResult =
+    { result =
         Right
           Module
             { name = ModuleName (T.pack name),
@@ -177,6 +177,6 @@ validModule name desc src =
               removal = Nothing,
               migrations = []
             },
-      discoveredSource = src,
-      discoveredDir = "/tmp/" ++ name
+      source = src,
+      dir = "/tmp/" ++ name
     }

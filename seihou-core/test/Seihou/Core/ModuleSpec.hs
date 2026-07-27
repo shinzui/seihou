@@ -1,5 +1,7 @@
 module Seihou.Core.ModuleSpec (tests) where
 
+import Control.Lens ((&), (.~))
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Module (discoverModule, loadModule, validateModule)
 import Seihou.Core.Types
@@ -177,9 +179,8 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
               goodModule
-                { steps =
-                    [Step Template "README.md.tpl" "../etc/passwd" Nothing Nothing]
-                }
+                & #steps
+                  .~ [Step Template "README.md.tpl" "../etc/passwd" Nothing Nothing]
         result <- validateModule tmpDir bad
         case result of
           Left (ValidationError _ errs) ->
@@ -193,9 +194,8 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
               goodModule
-                { steps =
-                    [Step Template "README.md.tpl" "/etc/passwd" Nothing Nothing]
-                }
+                & #steps
+                  .~ [Step Template "README.md.tpl" "/etc/passwd" Nothing Nothing]
         result <- validateModule tmpDir bad
         case result of
           Left (ValidationError _ errs) ->
@@ -209,9 +209,8 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let dotted =
               goodModule
-                { steps =
-                    [Step Template "README.md.tpl" "docs/README.v2.md" Nothing Nothing]
-                }
+                & #steps
+                  .~ [Step Template "README.md.tpl" "docs/README.v2.md" Nothing Nothing]
         result <- validateModule tmpDir dotted
         case result of
           Right m -> m.name `shouldBe` "test-module"
@@ -223,9 +222,8 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
               goodModule
-                { steps =
-                    [Step Template "README.md.tpl" "src/{{unknown}}/Main.hs" Nothing Nothing]
-                }
+                & #steps
+                  .~ [Step Template "README.md.tpl" "src/{{unknown}}/Main.hs" Nothing Nothing]
         result <- validateModule tmpDir bad
         case result of
           Left (ValidationError _ errs) ->

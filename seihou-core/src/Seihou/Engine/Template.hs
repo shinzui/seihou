@@ -198,9 +198,9 @@ data NextBlock
     -- (i.e. the body plus whatever follows the matching @{{/if}}@);
     -- @expr@ is the raw expression text.
     FoundIf
-      { foundBefore :: !Text,
-        foundAfter :: !Text,
-        foundExpr :: !Text
+      { before :: !Text,
+        after :: !Text,
+        expr :: !Text
       }
   | -- | A @{{#else}}@ or @{{/if}}@ encountered before any matching
     -- @{{#if}}@ at the current depth. The 'Int' is the line offset
@@ -226,9 +226,9 @@ splitNextBlock input = scan 0 input
                   let expr = T.strip exprRaw
                       afterCloseTag = T.drop 2 rest -- skip "}}"
                    in FoundIf
-                        { foundBefore = before,
-                          foundAfter = afterCloseTag,
-                          foundExpr = expr
+                        { before = before,
+                          after = afterCloseTag,
+                          expr = expr
                         }
       | "{{/if}}" `T.isPrefixOf` t =
           FoundOrphan "{{/if}}" (lineOffset (T.take pos input))

@@ -85,15 +85,15 @@ withVarsAndPrompts v p m = Module m.name m.version m.description v m.exports p m
 
 -- | Helper: check if any DiagCheck has the given label and non-empty details.
 hasFailedCheck :: T.Text -> [DiagCheck] -> Bool
-hasFailedCheck label = any (\c -> c.diagLabel == label && not (null (c.diagDetails)))
+hasFailedCheck label = any (\c -> c.label == label && not (null (c.details)))
 
 -- | Helper: check if any DiagCheck has the given label and empty details (pass).
 hasPassedCheck :: T.Text -> [DiagCheck] -> Bool
-hasPassedCheck label = any (\c -> c.diagLabel == label && null (c.diagDetails))
+hasPassedCheck label = any (\c -> c.label == label && null (c.details))
 
 -- | Helper: count checks with non-empty details of a given severity.
 countFailures :: DiagSeverity -> [DiagCheck] -> Int
-countFailures sev = length . filter (\c -> c.diagSeverity == sev && not (null (c.diagDetails)))
+countFailures sev = length . filter (\c -> c.severity == sev && not (null (c.details)))
 
 spec :: Spec
 spec = do
@@ -103,64 +103,64 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport False tmpDir goodModule
-        report.reportDhallOk `shouldBe` True
+        report.dhallOk `shouldBe` True
         reportHasErrors report `shouldBe` False
-        countFailures DiagError report.reportChecks `shouldBe` 0
+        countFailures DiagError report.checks `shouldBe` 0
 
     it "detects module name format errors" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Module name format" report.reportChecks `shouldBe` True
+        hasFailedCheck "Module name format" report.checks `shouldBe` True
 
     it "detects duplicate variable names" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Unique variable names" report.reportChecks `shouldBe` True
+        hasFailedCheck "Unique variable names" report.checks `shouldBe` True
 
     it "detects export referencing undeclared variable" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Export references" report.reportChecks `shouldBe` True
+        hasFailedCheck "Export references" report.checks `shouldBe` True
 
     it "detects prompt referencing undeclared variable" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Prompt references" report.reportChecks `shouldBe` True
+        hasFailedCheck "Prompt references" report.checks `shouldBe` True
 
     it "detects missing source files" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Source file existence" report.reportChecks `shouldBe` True
+        hasFailedCheck "Source file existence" report.checks `shouldBe` True
 
     it "detects unsafe step destinations" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Safe step destinations" report.reportChecks `shouldBe` True
+        hasFailedCheck "Safe step destinations" report.checks `shouldBe` True
 
     it "detects missing module version" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
-        hasFailedCheck "Module version declared" report.reportChecks `shouldBe` True
+        hasFailedCheck "Module version declared" report.checks `shouldBe` True
 
     it "passes when module has a version" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport False tmpDir goodModule
-        hasPassedCheck "Module version declared" report.reportChecks `shouldBe` True
+        hasPassedCheck "Module version declared" report.checks `shouldBe` True
 
     it "reports multiple errors at once" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         report <- buildReport False tmpDir badModule
         reportHasErrors report `shouldBe` True
-        countFailures DiagError report.reportChecks `shouldSatisfy` (>= 5)
+        countFailures DiagError report.checks `shouldSatisfy` (>= 5)
 
     it "does not include lint checks when lint is False" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport False tmpDir goodModule
-        let hasWarning = any (\c -> c.diagSeverity == DiagWarning) report.reportChecks
+        let hasWarning = any (\c -> c.severity == DiagWarning) report.checks
         hasWarning `shouldBe` False
 
     it "includes lint checks when lint is True" $ do
@@ -168,7 +168,7 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport True tmpDir goodModule
-        let hasWarning = any (\c -> c.diagSeverity == DiagWarning) report.reportChecks
+        let hasWarning = any (\c -> c.severity == DiagWarning) report.checks
         hasWarning `shouldBe` True
 
   describe "lint checks" $ do
@@ -183,8 +183,8 @@ spec = do
                 ]
                 goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Unused variables" report.reportChecks `shouldBe` True
-        let details = concatMap (.diagDetails) $ filter (\c -> c.diagLabel == "Unused variables") report.reportChecks
+        hasFailedCheck "Unused variables" report.checks `shouldBe` True
+        let details = concatMap (.details) $ filter (\c -> c.label == "Unused variables") report.checks
         any (T.isInfixOf "unused.var") details `shouldBe` True
 
     it "does not flag used variables as unused" $ do
@@ -192,7 +192,7 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport True tmpDir goodModule
-        hasFailedCheck "Unused variables" report.reportChecks `shouldBe` False
+        hasFailedCheck "Unused variables" report.checks `shouldBe` False
 
     it "detects required variables without prompts" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -204,14 +204,14 @@ spec = do
                 []
                 goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Required variables without prompts" report.reportChecks `shouldBe` True
+        hasFailedCheck "Required variables without prompts" report.checks `shouldBe` True
 
     it "does not flag required variables that have prompts" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport True tmpDir goodModule
-        hasFailedCheck "Required variables without prompts" report.reportChecks `shouldBe` False
+        hasFailedCheck "Required variables without prompts" report.checks `shouldBe` False
 
     it "detects duplicate step destinations" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -225,7 +225,7 @@ spec = do
                 ]
                 goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Duplicate step destinations" report.reportChecks `shouldBe` True
+        hasFailedCheck "Duplicate step destinations" report.checks `shouldBe` True
 
     it "does not flag patch ops as duplicate destinations" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -239,7 +239,7 @@ spec = do
                 ]
                 goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Duplicate step destinations" report.reportChecks `shouldBe` False
+        hasFailedCheck "Duplicate step destinations" report.checks `shouldBe` False
 
     it "detects empty choice lists" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -250,7 +250,7 @@ spec = do
                 [VarDecl "pick" (VTChoice []) Nothing (Just "Pick") True Nothing]
                 goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Empty choice lists" report.reportChecks `shouldBe` True
+        hasFailedCheck "Empty choice lists" report.checks `shouldBe` True
 
     it "detects missing variable descriptions" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -261,14 +261,14 @@ spec = do
                 [VarDecl "project.name" VTText Nothing Nothing True Nothing]
                 goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Missing variable descriptions" report.reportChecks `shouldBe` True
+        hasFailedCheck "Missing variable descriptions" report.checks `shouldBe` True
 
     it "does not flag variables with descriptions" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         report <- buildReport True tmpDir goodModule
-        hasFailedCheck "Missing variable descriptions" report.reportChecks `shouldBe` False
+        hasFailedCheck "Missing variable descriptions" report.checks `shouldBe` False
 
   describe "conditional lint" $ do
     -- Base vars: keep project.name (referenced by goodModule's export/prompt)
@@ -288,11 +288,11 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m = stepWithCondition (Just (ExprEq "feature.on" (VText "true")))
         report <- buildReport True tmpDir m
-        hasFailedCheck "Conditional comparison types" report.reportChecks `shouldBe` True
+        hasFailedCheck "Conditional comparison types" report.checks `shouldBe` True
         reportHasErrors report `shouldBe` True
         let details =
-              concatMap (.diagDetails) $
-                filter (\c -> c.diagLabel == "Conditional comparison types") report.reportChecks
+              concatMap (.details) $
+                filter (\c -> c.label == "Conditional comparison types") report.checks
         any (T.isInfixOf "feature.on") details `shouldBe` True
         any (T.isInfixOf "bareword true") details `shouldBe` True
 
@@ -302,8 +302,8 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m = stepWithCondition (Just (ExprEq "feature.on" (VBool True)))
         report <- buildReport True tmpDir m
-        hasFailedCheck "Conditional comparison types" report.reportChecks `shouldBe` False
-        hasPassedCheck "Conditional comparison types" report.reportChecks `shouldBe` True
+        hasFailedCheck "Conditional comparison types" report.checks `shouldBe` False
+        hasPassedCheck "Conditional comparison types" report.checks `shouldBe` True
 
     it "flags a when clause referencing an undeclared variable" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -311,10 +311,10 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m = stepWithCondition (Just (ExprIsSet "nix.treefmtt"))
         report <- buildReport True tmpDir m
-        hasFailedCheck "Conditional variable references" report.reportChecks `shouldBe` True
+        hasFailedCheck "Conditional variable references" report.checks `shouldBe` True
         let details =
-              concatMap (.diagDetails) $
-                filter (\c -> c.diagLabel == "Conditional variable references") report.reportChecks
+              concatMap (.details) $
+                filter (\c -> c.label == "Conditional variable references") report.checks
         any (T.isInfixOf "nix.treefmtt") details `shouldBe` True
 
     it "passes both conditional checks for a correct module" $ do
@@ -323,8 +323,8 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m = stepWithCondition (Just (ExprEq "feature.on" (VBool True)))
         report <- buildReport True tmpDir m
-        hasPassedCheck "Conditional variable references" report.reportChecks `shouldBe` True
-        hasPassedCheck "Conditional comparison types" report.reportChecks `shouldBe` True
+        hasPassedCheck "Conditional variable references" report.checks `shouldBe` True
+        hasPassedCheck "Conditional comparison types" report.checks `shouldBe` True
 
     it "does not run conditional checks when lint is False" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -332,7 +332,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m = stepWithCondition (Just (ExprEq "feature.on" (VText "true")))
         report <- buildReport False tmpDir m
-        any (\c -> c.diagLabel == "Conditional comparison types") report.reportChecks
+        any (\c -> c.label == "Conditional comparison types") report.checks
           `shouldBe` False
         reportHasErrors report `shouldBe` False
 
@@ -344,10 +344,10 @@ spec = do
           "{{#if Eq ghost true}}\nhi\n{{/if}}\n"
         let m = withVars baseVars goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Conditional variable references" report.reportChecks `shouldBe` True
+        hasFailedCheck "Conditional variable references" report.checks `shouldBe` True
         let details =
-              concatMap (.diagDetails) $
-                filter (\c -> c.diagLabel == "Conditional variable references") report.reportChecks
+              concatMap (.details) $
+                filter (\c -> c.label == "Conditional variable references") report.checks
         any (T.isInfixOf "ghost") details `shouldBe` True
         any (T.isInfixOf "README.md.tpl") details `shouldBe` True
 
@@ -359,7 +359,7 @@ spec = do
           "{{#if Eq feature.on \"true\"}}\nhi\n{{/if}}\n"
         let m = withVars baseVars goodModule
         report <- buildReport True tmpDir m
-        hasFailedCheck "Conditional comparison types" report.reportChecks `shouldBe` True
+        hasFailedCheck "Conditional comparison types" report.checks `shouldBe` True
 
   describe "renderReportPlain" $ do
     it "renders a valid module report with check marks" $ do
@@ -382,11 +382,11 @@ spec = do
     it "renders a Dhall-failure report" $ do
       let report =
             ValidateReport
-              { reportModule = goodModule,
-                reportPath = "/some/path",
-                reportDhallOk = False,
-                reportDhallError = Just "test error message",
-                reportChecks = []
+              { module_ = goodModule,
+                path = "/some/path",
+                dhallOk = False,
+                dhallError = Just "test error message",
+                checks = []
               }
           rendered = renderReportPlain report
       T.isInfixOf "\x2717 module.dhall failed to evaluate" rendered `shouldBe` True
@@ -396,11 +396,11 @@ spec = do
     it "renders a Dhall-failure report without error details when absent" $ do
       let report =
             ValidateReport
-              { reportModule = goodModule,
-                reportPath = "/some/path",
-                reportDhallOk = False,
-                reportDhallError = Nothing,
-                reportChecks = []
+              { module_ = goodModule,
+                path = "/some/path",
+                dhallOk = False,
+                dhallError = Nothing,
+                checks = []
               }
           rendered = renderReportPlain report
       T.isInfixOf "\x2717 module.dhall failed to evaluate" rendered `shouldBe` True
@@ -449,11 +449,11 @@ spec = do
     it "returns True when Dhall failed" $ do
       let report =
             ValidateReport
-              { reportModule = goodModule,
-                reportPath = "/some/path",
-                reportDhallOk = False,
-                reportDhallError = Just "some dhall error",
-                reportChecks = []
+              { module_ = goodModule,
+                path = "/some/path",
+                dhallOk = False,
+                dhallError = Just "some dhall error",
+                checks = []
               }
       reportHasErrors report `shouldBe` True
 
@@ -464,7 +464,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m = withCommands [Command "echo hello" Nothing Nothing] goodModule
         report <- buildReport False tmpDir m
-        hasPassedCheck "Command safety" report.reportChecks `shouldBe` True
+        hasPassedCheck "Command safety" report.checks `shouldBe` True
 
     it "fails for empty command text" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -472,7 +472,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m = withCommands [Command "  " Nothing Nothing] goodModule
         report <- buildReport False tmpDir m
-        hasFailedCheck "Command safety" report.reportChecks `shouldBe` True
+        hasFailedCheck "Command safety" report.checks `shouldBe` True
 
     it "fails for absolute workDir" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -480,7 +480,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m = withCommands [Command "echo hi" (Just "/usr/local") Nothing] goodModule
         report <- buildReport False tmpDir m
-        hasFailedCheck "Command safety" report.reportChecks `shouldBe` True
+        hasFailedCheck "Command safety" report.checks `shouldBe` True
 
     it "fails for workDir containing .." $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
@@ -488,4 +488,4 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let m = withCommands [Command "echo hi" (Just "../escape") Nothing] goodModule
         report <- buildReport False tmpDir m
-        hasFailedCheck "Command safety" report.reportChecks `shouldBe` True
+        hasFailedCheck "Command safety" report.checks `shouldBe` True

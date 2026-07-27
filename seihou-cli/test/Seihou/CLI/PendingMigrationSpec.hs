@@ -142,8 +142,8 @@ spec = do
           installed = mkInstalled (Just "2.0.0") [mig]
       case pendingChainFor am installed of
         Just plan -> do
-          plan.planSteps `shouldBe` [mig]
-          plan.planTo `shouldBe` parseV "2.0.0"
+          plan.steps `shouldBe` [mig]
+          plan.to `shouldBe` parseV "2.0.0"
         Nothing -> expectationFailure "expected Just plan"
 
     it "returns Nothing for downgrade (manifest > installed)" $ do
@@ -154,16 +154,16 @@ spec = do
     it "returns a partial-cover plan when the chain reaches some intermediate version" $ do
       -- master-plan live-tree fixture: manifest=0.1.0, installed=0.3.0,
       -- edges=[0.1.0 -> 0.2.0]. Under the gap-tolerant walker the plan
-      -- always carries the supplied target as planTo, regardless of
+      -- always carries the supplied target as to, regardless of
       -- whether the steps reach it.
       let am = mkApplied (Just "0.1.0")
           mig = Migration "0.1.0" "0.2.0" [DeleteFile "x"]
           installed = mkInstalled (Just "0.3.0") [mig]
       case pendingChainFor am installed of
         Just plan -> do
-          plan.planSteps `shouldBe` [mig]
-          plan.planFrom `shouldBe` parseV "0.1.0"
-          plan.planTo `shouldBe` parseV "0.3.0"
+          plan.steps `shouldBe` [mig]
+          plan.from `shouldBe` parseV "0.1.0"
+          plan.to `shouldBe` parseV "0.3.0"
         Nothing -> expectationFailure "expected Just plan with partial cover"
 
     it "returns an empty-steps plan when no edge starts at the manifest version" $ do
@@ -171,9 +171,9 @@ spec = do
           installed = mkInstalled (Just "0.3.0") []
       case pendingChainFor am installed of
         Just plan -> do
-          plan.planSteps `shouldBe` []
-          plan.planFrom `shouldBe` parseV "0.1.3"
-          plan.planTo `shouldBe` parseV "0.3.0"
+          plan.steps `shouldBe` []
+          plan.from `shouldBe` parseV "0.1.3"
+          plan.to `shouldBe` parseV "0.3.0"
         Nothing -> expectationFailure "expected Just plan with empty steps"
 
     it "[] vs [orphanEdge] both yield empty-steps plans (window walker)" $ do
@@ -186,10 +186,10 @@ spec = do
             mkInstalled (Just "0.3.0") [Migration "0.5.0" "0.6.0" []]
       case (pendingChainFor am emptyInstalled, pendingChainFor am orphanInstalled) of
         (Just pEmpty, Just pOrphan) -> do
-          pEmpty.planSteps `shouldBe` []
-          pOrphan.planSteps `shouldBe` []
-          pEmpty.planFrom `shouldBe` pOrphan.planFrom
-          pEmpty.planTo `shouldBe` pOrphan.planTo
+          pEmpty.steps `shouldBe` []
+          pOrphan.steps `shouldBe` []
+          pEmpty.from `shouldBe` pOrphan.from
+          pEmpty.to `shouldBe` pOrphan.to
         other ->
           expectationFailure
             ("expected two Just plans, got: " <> show other)
@@ -279,10 +279,10 @@ spec = do
     it "lists each module's plan summary and the actionable next step" $ do
       let plan =
             MigrationPlan
-              { planModule = "demo",
-                planFrom = parseV "1.0.0",
-                planTo = parseV "2.0.0",
-                planSteps =
+              { module_ = "demo",
+                from = parseV "1.0.0",
+                to = parseV "2.0.0",
+                steps =
                   [Migration "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]]
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
@@ -294,10 +294,10 @@ spec = do
     it "reports a 0-step pure version-bump entry without doomed vocabulary" $ do
       let plan =
             MigrationPlan
-              { planModule = "demo",
-                planFrom = parseV "0.2.0",
-                planTo = parseV "0.3.0",
-                planSteps = []
+              { module_ = "demo",
+                from = parseV "0.2.0",
+                to = parseV "0.3.0",
+                steps = []
               }
           msg = formatRefusalMessage [(ModuleName "demo", plan)]
       msg `shouldSatisfy` T.isInfixOf "demo: 0.2.0 -> 0.3.0 (0 step(s))"

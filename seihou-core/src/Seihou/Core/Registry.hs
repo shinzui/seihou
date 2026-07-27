@@ -264,11 +264,11 @@ data SyncStatus
 
 -- | One row of a sync diff, preserving registry order.
 data SyncDiff = SyncDiff
-  { diffKind :: !EntryKind,
-    diffName :: !ModuleName,
-    diffOld :: !(Maybe Text),
-    diffNew :: !(Maybe Text),
-    diffStatus :: !SyncStatus
+  { kind :: !EntryKind,
+    name :: !ModuleName,
+    old :: !(Maybe Text),
+    new :: !(Maybe Text),
+    status :: !SyncStatus
   }
   deriving stock (Eq, Show, Generic)
 
@@ -276,8 +276,8 @@ data SyncDiff = SyncDiff
 -- and a 'Registry' with each entry's @version@ field updated to the on-disk
 -- value (except 'SyncOrphan' entries, which are preserved as-is).
 data SyncReport = SyncReport
-  { syncDiffs :: ![SyncDiff],
-    syncUpdated :: !Registry
+  { diffs :: ![SyncDiff],
+    updated :: !Registry
   }
   deriving stock (Eq, Show, Generic)
 
@@ -294,8 +294,8 @@ computeRegistrySync ::
   SyncReport
 computeRegistrySync reg lookups =
   SyncReport
-    { syncDiffs = moduleDiffs <> recipeDiffs <> blueprintDiffs <> promptDiffs,
-      syncUpdated =
+    { diffs = moduleDiffs <> recipeDiffs <> blueprintDiffs <> promptDiffs,
+      updated =
         reg
           { modules = zipWith applyDiff moduleDiffs reg.modules,
             recipes = zipWith applyDiff recipeDiffs reg.recipes,
@@ -324,17 +324,17 @@ computeRegistrySync reg lookups =
             OnDiskMissing -> entry.version
             OnDiskValue v -> v
        in SyncDiff
-            { diffKind = kind,
-              diffName = entry.name,
-              diffOld = entry.version,
-              diffNew = newVersion,
-              diffStatus = status
+            { kind = kind,
+              name = entry.name,
+              old = entry.version,
+              new = newVersion,
+              status = status
             }
 
     applyDiff :: SyncDiff -> RegistryEntry -> RegistryEntry
-    applyDiff diff entry = case diff.diffStatus of
+    applyDiff diff entry = case diff.status of
       SyncOrphan -> entry
-      _ -> entry {version = diff.diffNew}
+      _ -> entry {version = diff.new}
 
     lookupOnDisk :: EntryKind -> ModuleName -> OnDiskVersion
     lookupOnDisk kind name =
@@ -351,28 +351,28 @@ data OnDiskVersion = OnDiskMissing | OnDiskValue (Maybe Text)
 -- 'Nothing' if the entry is already in sync. Used by @seihou browse@ and
 -- @seihou install@ to surface stale registry versions without blocking.
 formatDriftWarning :: SyncDiff -> Maybe Text
-formatDriftWarning diff = case diff.diffStatus of
+formatDriftWarning diff = case diff.status of
   SyncInSync -> Nothing
   SyncOrphan -> Nothing
   SyncMissing ->
     Just $
-      kindWord diff.diffKind
+      kindWord diff.kind
         <> " '"
-        <> diff.diffName.unModuleName
+        <> diff.name.unModuleName
         <> "' registry version is missing; "
-        <> entryFile diff.diffKind
+        <> entryFile diff.kind
         <> " declares "
-        <> renderVersion diff.diffNew
+        <> renderVersion diff.new
         <> " — run `seihou registry sync-versions`"
   SyncStale newVer ->
     Just $
-      kindWord diff.diffKind
+      kindWord diff.kind
         <> " '"
-        <> diff.diffName.unModuleName
+        <> diff.name.unModuleName
         <> "' registry version "
-        <> renderVersion diff.diffOld
+        <> renderVersion diff.old
         <> " differs from "
-        <> entryFile diff.diffKind
+        <> entryFile diff.kind
         <> " version "
         <> newVer
         <> " — run `seihou registry sync-versions`"
@@ -399,17 +399,17 @@ data RegistryValidationIssue
 -- | Whole-registry validation outcome, carrying every issue plus the
 -- entry counts used by the human-readable summary line.
 data RegistryValidationReport = RegistryValidationReport
-  { reportIssues :: ![RegistryValidationIssue],
-    reportModuleCount :: !Int,
-    reportRecipeCount :: !Int,
-    reportBlueprintCount :: !Int,
-    reportPromptCount :: !Int
+  { issues :: ![RegistryValidationIssue],
+    moduleCount :: !Int,
+    recipeCount :: !Int,
+    blueprintCount :: !Int,
+    promptCount :: !Int
   }
   deriving stock (Eq, Show, Generic)
 
 -- | True iff the report has at least one issue.
 reportHasIssues :: RegistryValidationReport -> Bool
-reportHasIssues r = not (null r.reportIssues)
+reportHasIssues r = not (null r.issues)
 
 -- | Combine the existing structural checks with version classification.
 -- The third argument is the same shape 'computeRegistrySync' takes —
@@ -425,16 +425,16 @@ validateRegistryFull repoRoot reg lookups = do
   let report = computeRegistrySync reg lookups
       versionIssues =
         [ VersionMismatch d
-        | d <- report.syncDiffs,
-          isVersionDrift d.diffStatus
+        | d <- report.diffs,
+          isVersionDrift d.status
         ]
   pure
     RegistryValidationReport
-      { reportIssues = map StructuralError structuralErrs <> versionIssues,
-        reportModuleCount = length reg.modules,
-        reportRecipeCount = length reg.recipes,
-        reportBlueprintCount = length reg.blueprints,
-        reportPromptCount = length reg.prompts
+      { issues = map StructuralError structuralErrs <> versionIssues,
+        moduleCount = length reg.modules,
+        recipeCount = length reg.recipes,
+        blueprintCount = length reg.blueprints,
+        promptCount = length reg.prompts
       }
   where
     isVersionDrift SyncMissing = True
@@ -449,14 +449,14 @@ validateRegistryFull repoRoot reg lookups = do
 formatValidationIssue :: RegistryValidationIssue -> Text
 formatValidationIssue (StructuralError msg) = msg
 formatValidationIssue (VersionMismatch diff) =
-  validationKindPrefix diff.diffKind
-    <> diff.diffName.unModuleName
+  validationKindPrefix diff.kind
+    <> diff.name.unModuleName
     <> ": registry version "
-    <> validationRenderVersion diff.diffOld
+    <> validationRenderVersion diff.old
     <> " does not match "
-    <> entryFile diff.diffKind
+    <> entryFile diff.kind
     <> " version "
-    <> validationRenderVersion diff.diffNew
+    <> validationRenderVersion diff.new
   where
     entryFile ModuleEntry = "module.dhall"
     entryFile RecipeEntry = "recipe.dhall"

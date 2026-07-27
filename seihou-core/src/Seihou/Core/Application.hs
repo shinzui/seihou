@@ -64,8 +64,8 @@ buildAppliedComposition target targetSource targetVersion additional namespace c
   where
     buildInstance (inst, modul, source) =
       AppliedInstanceState
-        { name = inst.instanceModule,
-          parentVars = inst.instanceParentVars,
+        { name = inst.module_,
+          parentVars = inst.parentVars,
           source = source,
           moduleVersion = modul.version,
           resolvedVars = Map.map (varValueToText . (.value)) (Map.findWithDefault Map.empty inst resolved)

@@ -59,9 +59,9 @@ commandVarRun cv = cv.run
 mock :: T.Text -> ExitCode -> T.Text -> T.Text -> ProcessMock
 mock run exitCode stdoutText stderrText =
   ProcessMock
-    { mockCommand = "sh",
-      mockArgs = ["-c", run],
-      mockResult = (exitCode, stdoutText, stderrText)
+    { command = "sh",
+      args = ["-c", run],
+      result = (exitCode, stdoutText, stderrText)
     }
 
 runResolve ::

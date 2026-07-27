@@ -214,7 +214,7 @@ targetsControlPath path = case splitDirectories path of
   [] -> False
 
 migrationDirectories :: PlannedUpdateMigration -> [FilePath]
-migrationDirectories migration = concatMap directories migration.stagedPlan.planOps
+migrationDirectories migration = concatMap directories migration.stagedPlan.ops
   where
     directories (MoveDirInst source destination) = [source, destination]
     directories (DeleteDirInst path) = [path]

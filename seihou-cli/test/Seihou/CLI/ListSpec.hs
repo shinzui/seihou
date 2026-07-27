@@ -16,7 +16,7 @@ tests = testSpec "Seihou.CLI.List" spec
 validModule :: String -> String -> ModuleSource -> DiscoveredModule
 validModule name desc src =
   DiscoveredModule
-    { discoveredResult =
+    { result =
         Right
           Module
             { name = ModuleName (T.pack name),
@@ -31,17 +31,17 @@ validModule name desc src =
               removal = Nothing,
               migrations = []
             },
-      discoveredSource = src,
-      discoveredDir = "/fake/" ++ name
+      source = src,
+      dir = "/fake/" ++ name
     }
 
 -- | A broken discovered module for testing.
 brokenModule :: String -> ModuleSource -> DiscoveredModule
 brokenModule name src =
   DiscoveredModule
-    { discoveredResult = Left (DhallEvalError (ModuleName (T.pack name)) "parse error"),
-      discoveredSource = src,
-      discoveredDir = "/fake/" ++ name
+    { result = Left (DhallEvalError (ModuleName (T.pack name)) "parse error"),
+      source = src,
+      dir = "/fake/" ++ name
     }
 
 -- | Helper to build an Entry for filter tests.  Defaults the kind to a module.
@@ -52,13 +52,13 @@ mkEntry = mkEntryK KindModule
 mkEntryK :: RunnableKind -> T.Text -> Maybe T.Text -> [T.Text] -> Entry
 mkEntryK kind name repo tags =
   Entry
-    { entryName = name,
-      entryDesc = "desc",
-      entrySource = "installed",
-      entryIsError = False,
-      entryRepoName = repo,
-      entryTags = tags,
-      entryKind = kind
+    { name = name,
+      desc = "desc",
+      source = "installed",
+      isError = False,
+      repoName = repo,
+      tags = tags,
+      kind = kind
     }
 
 noFilter :: ListFilter
@@ -125,19 +125,19 @@ spec = do
       let opts = ListFilter (Just "repo-x") Nothing []
           result = applyFilters opts entries
       length result `shouldBe` 2
-      map (.entryName) result `shouldBe` ["mod-a", "mod-b"]
+      map (.name) result `shouldBe` ["mod-a", "mod-b"]
 
     it "filters by tag" $ do
       let opts = ListFilter Nothing (Just "haskell") []
           result = applyFilters opts entries
       length result `shouldBe` 2
-      map (.entryName) result `shouldBe` ["mod-a", "mod-c"]
+      map (.name) result `shouldBe` ["mod-a", "mod-c"]
 
     it "combines repo and tag filters with AND" $ do
       let opts = ListFilter (Just "repo-x") (Just "haskell") []
           result = applyFilters opts entries
       length result `shouldBe` 1
-      map (.entryName) result `shouldBe` ["mod-a"]
+      map (.name) result `shouldBe` ["mod-a"]
 
     it "returns empty list when repo filter matches nothing" $ do
       let opts = ListFilter (Just "nonexistent") Nothing []
@@ -152,7 +152,7 @@ spec = do
     it "excludes modules without origin metadata when repo filter is active" $ do
       let opts = ListFilter (Just "repo-x") Nothing []
           result = applyFilters opts entries
-      all (\e -> e.entryRepoName == Just "repo-x") result `shouldBe` True
+      all (\e -> e.repoName == Just "repo-x") result `shouldBe` True
 
   describe "applyFilters (by kind)" $ do
     let mixed =
@@ -163,35 +163,35 @@ spec = do
             mkEntryK KindModule "mod-b" (Just "repo-x") ["haskell"]
           ]
 
-    it "keeps all kinds when filterKinds is empty" $ do
+    it "keeps all kinds when kinds is empty" $ do
       length (applyFilters (ListFilter Nothing Nothing []) mixed) `shouldBe` 5
 
     it "keeps only modules with --modules" $ do
       let result = applyFilters (ListFilter Nothing Nothing [KindModule]) mixed
-      map (.entryName) result `shouldBe` ["mod-a", "mod-b"]
+      map (.name) result `shouldBe` ["mod-a", "mod-b"]
 
     it "keeps only recipes with --recipes" $ do
       let result = applyFilters (ListFilter Nothing Nothing [KindRecipe]) mixed
-      map (.entryName) result `shouldBe` ["rec-a"]
+      map (.name) result `shouldBe` ["rec-a"]
 
     it "keeps only blueprints with --blueprints" $ do
       let result = applyFilters (ListFilter Nothing Nothing [KindBlueprint]) mixed
-      map (.entryName) result `shouldBe` ["bp-a"]
+      map (.name) result `shouldBe` ["bp-a"]
 
     it "keeps only prompts with --prompts" $ do
       let result = applyFilters (ListFilter Nothing Nothing [KindPrompt]) mixed
-      map (.entryName) result `shouldBe` ["prompt-a"]
+      map (.name) result `shouldBe` ["prompt-a"]
 
     it "unions kinds when several flags are given" $ do
       let result = applyFilters (ListFilter Nothing Nothing [KindModule, KindRecipe]) mixed
-      map (.entryName) result `shouldBe` ["mod-a", "rec-a", "mod-b"]
+      map (.name) result `shouldBe` ["mod-a", "rec-a", "mod-b"]
 
     it "combines kind and repo with AND" $ do
       let result = applyFilters (ListFilter (Just "repo-x") Nothing [KindModule]) mixed
-      map (.entryName) result `shouldBe` ["mod-b"]
+      map (.name) result `shouldBe` ["mod-b"]
 
     it "returns empty when kind matches nothing in the set" $ do
-      let onlyRecipes = filter (\e -> e.entryKind == KindRecipe) mixed
+      let onlyRecipes = filter (\e -> e.kind == KindRecipe) mixed
           result = applyFilters (ListFilter Nothing Nothing [KindBlueprint]) onlyRecipes
       result `shouldBe` []
 
@@ -234,34 +234,34 @@ spec = do
     it "tags blueprint entries with [blueprint] in the source label" $ do
       let dr =
             DiscoveredRunnable
-              { drName = "demo",
-                drDescription = Just "A new seihou blueprint",
-                drKind = KindBlueprint,
-                drSource = SourceProject,
-                drDir = "/fake/demo",
-                drIsError = False,
-                drError = Nothing
+              { name = "demo",
+                description = Just "A new seihou blueprint",
+                kind = KindBlueprint,
+                source = SourceProject,
+                dir = "/fake/demo",
+                isError = False,
+                error = Nothing
               }
           entry = runnableToEntryWithOrigin Map.empty dr
-      entry.entrySource `shouldBe` "project [blueprint]"
-      entry.entryName `shouldBe` "demo"
-      entry.entryIsError `shouldBe` False
-      entry.entryKind `shouldBe` KindBlueprint
+      entry.source `shouldBe` "project [blueprint]"
+      entry.name `shouldBe` "demo"
+      entry.isError `shouldBe` False
+      entry.kind `shouldBe` KindBlueprint
 
   describe "runnableToEntryWithOrigin (prompt)" $ do
     it "tags prompt entries with [prompt] in the source label" $ do
       let dr =
             DiscoveredRunnable
-              { drName = "review",
-                drDescription = Just "Review current changes",
-                drKind = KindPrompt,
-                drSource = SourceProject,
-                drDir = "/fake/review",
-                drIsError = False,
-                drError = Nothing
+              { name = "review",
+                description = Just "Review current changes",
+                kind = KindPrompt,
+                source = SourceProject,
+                dir = "/fake/review",
+                isError = False,
+                error = Nothing
               }
           entry = runnableToEntryWithOrigin Map.empty dr
-      entry.entrySource `shouldBe` "project [prompt]"
-      entry.entryName `shouldBe` "review"
-      entry.entryIsError `shouldBe` False
-      entry.entryKind `shouldBe` KindPrompt
+      entry.source `shouldBe` "project [prompt]"
+      entry.name `shouldBe` "review"
+      entry.isError `shouldBe` False
+      entry.kind `shouldBe` KindPrompt

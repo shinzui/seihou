@@ -36,7 +36,7 @@ import System.IO.Temp (withSystemTempDirectory)
 
 handleInstall :: InstallOpts -> IO ()
 handleInstall iopts = do
-  source <- resolveSource iopts.installSource
+  source <- resolveSource iopts.source
 
   TIO.putStrLn $ "Installing from " <> source <> "..."
 
@@ -59,19 +59,19 @@ handleInstall iopts = do
         logIO LogNormal (logError "repository contains neither seihou-registry.dhall nor a supported runnable Dhall file.")
         exitFailure
       SingleModule rootDir -> do
-        when (not (null iopts.installModules) || iopts.installAll) $
+        when (not (null iopts.modules) || iopts.all) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-module repositories.")
         installSingleModule iopts rootDir source Nothing
       SingleRecipe rootDir -> do
-        when (not (null iopts.installModules) || iopts.installAll) $
+        when (not (null iopts.modules) || iopts.all) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-recipe repositories.")
         installSingleRecipe iopts rootDir source
       SingleBlueprint rootDir -> do
-        when (not (null iopts.installModules) || iopts.installAll) $
+        when (not (null iopts.modules) || iopts.all) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-blueprint repositories.")
         installSingleBlueprint iopts rootDir source
       SinglePrompt rootDir -> do
-        when (not (null iopts.installModules) || iopts.installAll) $
+        when (not (null iopts.modules) || iopts.all) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-prompt repositories.")
         installSinglePrompt iopts rootDir source
       MultiModule registry -> do
@@ -111,8 +111,8 @@ fzfUrlSelection :: FzfConfig -> [HistoryEntry] -> IO Text
 fzfUrlSelection fzfCfg entries = do
   let candidates =
         [ Candidate
-            { candidateDisplay = entry.url,
-              candidateValue = entry.url
+            { display = entry.url,
+              value = entry.url
             }
         | entry <- entries
         ]
@@ -154,7 +154,7 @@ promptUrlSelection entries = do
 -- | Install a single-module repo (legacy behavior).
 installSingleModule :: InstallOpts -> FilePath -> Text -> Maybe Text -> IO ()
 installSingleModule iopts rootDir source registryName = do
-  let name = case iopts.installName of
+  let name = case iopts.name of
         Just n -> T.unpack n
         Nothing -> parseModuleName source
 
@@ -188,7 +188,7 @@ installSingleModule iopts rootDir source registryName = do
 -- | Install a single-recipe repo.
 installSingleRecipe :: InstallOpts -> FilePath -> Text -> IO ()
 installSingleRecipe iopts rootDir source = do
-  let name = case iopts.installName of
+  let name = case iopts.name of
         Just n -> T.unpack n
         Nothing -> parseModuleName source
 
@@ -202,7 +202,7 @@ installSingleRecipe iopts rootDir source = do
 -- | Install a single-blueprint repo.
 installSingleBlueprint :: InstallOpts -> FilePath -> Text -> IO ()
 installSingleBlueprint iopts rootDir source = do
-  let name = case iopts.installName of
+  let name = case iopts.name of
         Just n -> T.unpack n
         Nothing -> parseModuleName source
 
@@ -237,7 +237,7 @@ installSingleBlueprint iopts rootDir source = do
 -- | Install a single-prompt repo.
 installSinglePrompt :: InstallOpts -> FilePath -> Text -> IO ()
 installSinglePrompt iopts rootDir source = do
-  let name = case iopts.installName of
+  let name = case iopts.name of
         Just n -> T.unpack n
         Nothing -> parseModuleName source
 
@@ -306,8 +306,8 @@ labelledEntries registry =
 -- | Select which modules to install from a registry.
 selectModules :: InstallOpts -> Registry -> IO [RegistryEntry]
 selectModules iopts registry
-  | iopts.installAll = pure (allEntries registry)
-  | not (null iopts.installModules) = do
+  | iopts.all = pure (allEntries registry)
+  | not (null iopts.modules) = do
       let entries = allEntries registry
           findEntry name = filter (\e -> e.name.unModuleName == name) entries
           (found, missing) =
@@ -317,7 +317,7 @@ selectModules iopts registry
                   [] -> (f, name : m)
               )
               ([], [])
-              iopts.installModules
+              iopts.modules
       if not (null missing)
         then do
           logIO LogNormal $ do
@@ -337,13 +337,13 @@ fzfModuleSelection fzfCfg registry = do
   let entries = labelledEntries registry
       candidates =
         [ Candidate
-            { candidateDisplay =
+            { display =
                 kindLabel kind
                   <> "  "
                   <> entry.name.unModuleName
                   <> maybe "" (\d -> "  " <> d) entry.description
                   <> if null entry.tags then "" else "  [" <> T.intercalate ", " entry.tags <> "]",
-              candidateValue = entry
+              value = entry
             }
         | (kind, entry) <- entries
         ]

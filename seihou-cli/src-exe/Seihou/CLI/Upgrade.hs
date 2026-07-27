@@ -77,7 +77,7 @@ handleUpgrade :: UpgradeOpts -> IO ()
 handleUpgrade uopts = do
   searchPaths <- defaultSearchPaths
   modules <- discoverAllModules searchPaths
-  let installed = filter (\dm -> dm.discoveredSource == SourceInstalled) modules
+  let installed = filter (\dm -> dm.source == SourceInstalled) modules
 
   if null installed
     then TIO.putStrLn "No installed modules found."
@@ -85,7 +85,7 @@ handleUpgrade uopts = do
       originsWithModules <- mapM readOriginWithModule installed
       let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
 
-      filtered <- case uopts.upgradeModules of
+      filtered <- case uopts.modules of
         [] -> pure withOrigins
         names -> do
           let result = [(dm, origin) | (dm, origin) <- withOrigins, moduleNameFromDm dm `elem` names]
@@ -101,13 +101,13 @@ handleUpgrade uopts = do
         else do
           let grouped = Map.toList $ Map.fromListWith (++) [(origin.sourceUrl, [(dm, origin)]) | (dm, origin) <- filtered]
 
-          if uopts.upgradeDryRun
+          if uopts.dryRun
             then TIO.putStrLn "Checking installed modules for updates (dry run)..."
             else TIO.putStrLn "Upgrading installed modules..."
 
           entries <- concat <$> mapM (upgradeSource uopts) grouped
 
-          if uopts.upgradeJson
+          if uopts.json
             then LBS.putStr (encodePretty entries)
             else renderUpgradeTable entries
 
@@ -115,7 +115,7 @@ handleUpgrade uopts = do
           -- migrations pending for any module that was upgraded just
           -- now. Either run them (--with-migrations) or print a
           -- one-line advisory per module.
-          unless uopts.upgradeDryRun $
+          unless uopts.dryRun $
             handlePostUpgradeMigrations uopts entries
 
 upgradeSource :: UpgradeOpts -> (Text, [(DiscoveredModule, OriginInfo)]) -> IO [UpgradeEntry]
@@ -158,16 +158,16 @@ upgradeModule uopts cloneDir contents sourceUrl (dm, origin) = do
 
   case status of
     OutdatedSt
-      | uopts.upgradeDryRun ->
+      | uopts.dryRun ->
           pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
       | otherwise ->
           doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer
     UpToDate ->
       pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = AlreadyUpToDate}
     Unversioned
-      | uopts.upgradeSkipUnversioned ->
+      | uopts.skipUnversioned ->
           pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Skipped}
-      | uopts.upgradeDryRun ->
+      | uopts.dryRun ->
           pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
       | otherwise ->
           doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer
@@ -207,12 +207,12 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
               -- docs/plans/14-fix-outdated-version-detection.md). Tags are
               -- still sourced from the registry entry since module.dhall
               -- has no equivalent field.
-              let (ver, entryTags) = case contents of
+              let (ver, tags) = case contents of
                     MultiModule registry -> case filter (\e -> e.name.unModuleName == name) registry.modules of
                       (entry : _) -> (modul.version <|> entry.version, entry.tags)
                       [] -> (modul.version, [])
                     _ -> (modul.version, [])
-              installModuleDir moduleDir (T.unpack name) sourceUrl registryName ver entryTags
+              installModuleDir moduleDir (T.unpack name) sourceUrl registryName ver tags
               TIO.putStrLn $ "    Upgraded " <> name
               pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
 
@@ -305,7 +305,7 @@ handleOneModule uopts manifest name =
           case pendingChainFor am installed of
             Nothing -> pure ()
             Just plan
-              | uopts.upgradeWithMigrations -> runOnePostUpgradeMigration am.source name
+              | uopts.withMigrations -> runOnePostUpgradeMigration am.source name
               | otherwise -> printAdvisory name plan
 
 findAppliedByName :: Manifest -> Text -> Maybe AppliedModule
@@ -321,11 +321,11 @@ printAdvisory name plan = do
         "note: "
           <> name
           <> " has "
-          <> T.pack (show (length plan.planSteps))
+          <> T.pack (show (length plan.steps))
           <> " migration(s) pending ("
-          <> renderVersion plan.planFrom
+          <> renderVersion plan.from
           <> " → "
-          <> renderVersion plan.planTo
+          <> renderVersion plan.to
           <> "); run 'seihou update' to reconcile the recorded project application"
   TIO.putStrLn $ if colorEnabled then yellow msg else msg
 
@@ -340,18 +340,18 @@ runOnePostUpgradeMigration installedDir name = do
     Right (Just manifest) -> do
       let opts =
             MigrateOpts
-              { migrateModule = ModuleName name,
-                migrateTo = Nothing,
-                migrateDryRun = False,
-                migrateForce = False,
-                migrateJson = False,
-                migrateVerbose = False,
+              { module_ = ModuleName name,
+                to = Nothing,
+                dryRun = False,
+                force = False,
+                json = False,
+                verbose = False,
                 -- The post-upgrade hook has already refreshed the
                 -- installed copy via 'seihou upgrade'; skip the
                 -- redundant fetch in 'runMigrate'.
-                migrateNoFetch = True,
-                migrateCommit = False,
-                migrateCommitMessage = Nothing
+                noFetch = True,
+                commit = False,
+                commitMessage = Nothing
               }
       result <- runMigrate opts manifest installedDir
       case result of

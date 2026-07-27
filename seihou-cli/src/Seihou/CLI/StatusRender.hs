@@ -288,11 +288,11 @@ formatAdvice color AdviceProjectUpdateAll =
 projectPlanSummary :: Text -> MigrationPlan -> Text
 projectPlanSummary target plan =
   "Pending migration: "
-    <> renderVersion plan.planFrom
+    <> renderVersion plan.from
     <> " -> "
-    <> renderVersion plan.planTo
+    <> renderVersion plan.to
     <> " ("
-    <> T.pack (show (length plan.planSteps))
+    <> T.pack (show (length plan.steps))
     <> " step(s)). Run: seihou update "
     <> target
 
@@ -303,11 +303,11 @@ formatPendingDetail color plan =
         color
         yellow
         ( "Pending migration: "
-            <> renderVersion plan.planFrom
+            <> renderVersion plan.from
             <> " -> "
-            <> renderVersion plan.planTo
+            <> renderVersion plan.to
             <> " ("
-            <> T.pack (show (length plan.planSteps))
+            <> T.pack (show (length plan.steps))
             <> " step(s))"
         )
   ]

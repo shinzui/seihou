@@ -42,7 +42,7 @@ conceptIdFor kind name =
 
 renderDocBundle :: DocModel -> Either [DocRenderError] ([Concept], [BundleValidationError])
 renderDocBundle model =
-  case partitionEithers (conceptFor model.docRepoName <$> model.docEntries) of
+  case partitionEithers (conceptFor model.repoName <$> model.entries) of
     ([], concepts) ->
       Right (concepts, validateBundle PermissiveConformance concepts)
     (errors, _) ->
@@ -62,9 +62,9 @@ writeDocBundle outDir model =
 
 conceptFor :: T.Text -> DocEntry -> Either DocRenderError Concept
 conceptFor repoName entry =
-  case conceptIdFor entry.entryKind entry.entryName of
+  case conceptIdFor entry.kind entry.name of
     Left err ->
-      Left (InvalidDocConceptId entry.entryKind entry.entryName err)
+      Left (InvalidDocConceptId entry.kind entry.name err)
     Right conceptId ->
       Right (conceptFromDocument conceptId (documentFor repoName entry))
 
@@ -77,22 +77,22 @@ documentFor repoName entry =
 frontmatterFor :: T.Text -> DocEntry -> Okf.Frontmatter
 frontmatterFor repoName entry =
   maybeSetVersion
-    . Okf.setTags entry.entryTags
+    . Okf.setTags entry.tags
     . Okf.setResource (resourceFor repoName entry)
     $ Okf.okfCommon
       Okf.OkfCommon
-        { Okf.commonType = typeFor entry.entryKind,
-          Okf.commonTitle = Just entry.entryName,
-          Okf.commonDescription = entry.entryDescription,
+        { Okf.commonType = typeFor entry.kind,
+          Okf.commonTitle = Just entry.name,
+          Okf.commonDescription = entry.description,
           Okf.commonTimestamp = Nothing
         }
   where
     maybeSetVersion =
-      maybe id (\version -> Okf.setField "version" (String version)) entry.entryVersion
+      maybe id (\version -> Okf.setField "version" (String version)) entry.version
 
 resourceFor :: T.Text -> DocEntry -> T.Text
 resourceFor repoName entry =
-  "seihou://" <> repoName <> "/" <> T.pack entry.entryPath
+  "seihou://" <> repoName <> "/" <> T.pack entry.path
 
 bodyFor :: DocEntry -> T.Text
 bodyFor entry =
@@ -105,23 +105,23 @@ bodyFor entry =
 
 baseSections :: DocEntry -> [T.Text]
 baseSections entry =
-  [ "# " <> entry.entryName,
-    maybe "No description provided." id entry.entryDescription
+  [ "# " <> entry.name,
+    maybe "No description provided." id entry.description
   ]
-    <> foldMap (\version -> ["**Version:** " <> version]) entry.entryVersion
+    <> foldMap (\version -> ["**Version:** " <> version]) entry.version
 
 kindSections :: DocEntry -> [T.Text]
 kindSections entry =
-  case entry.entryArtifact of
+  case entry.artifact of
     DocModuleArtifact Module {vars, exports} ->
-      [ "## Dependencies\n\n" <> renderModuleRefs "This module has no dependencies." entry.entryModuleRefs,
+      [ "## Dependencies\n\n" <> renderModuleRefs "This module has no dependencies." entry.moduleRefs,
         "## Variables\n\n" <> renderVarDecls vars,
         "## Exports\n\n" <> renderExports exports
       ]
     DocRecipeArtifact _ ->
-      ["## Composes\n\n" <> renderModuleRefs "This recipe does not compose any modules." entry.entryModuleRefs]
+      ["## Composes\n\n" <> renderModuleRefs "This recipe does not compose any modules." entry.moduleRefs]
     DocBlueprintArtifact Blueprint {prompt, files} ->
-      [ "## Base modules\n\n" <> renderModuleRefs "This blueprint declares no base modules." entry.entryModuleRefs,
+      [ "## Base modules\n\n" <> renderModuleRefs "This blueprint declares no base modules." entry.moduleRefs,
         "## Agent prompt\n\n" <> firstParagraph prompt,
         "## Reference files\n\n" <> renderBlueprintFiles files
       ]
@@ -135,7 +135,7 @@ renderModuleRefs :: T.Text -> [ModuleRef] -> T.Text
 renderModuleRefs emptyMessage refs =
   case refs of
     [] -> emptyMessage
-    _ -> T.unlines ["- " <> moduleLink ref.refName | ref <- refs]
+    _ -> T.unlines ["- " <> moduleLink ref.name | ref <- refs]
 
 moduleLink :: T.Text -> T.Text
 moduleLink name =

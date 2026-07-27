@@ -21,7 +21,7 @@ import System.Process (readProcessWithExitCode)
 
 handleBrowse :: BrowseOpts -> IO ()
 handleBrowse bopts = do
-  let source = bopts.browseSource
+  let source = bopts.source
 
   withSystemTempDirectory "seihou-browse" $ \tmpDir -> do
     let repoName = parseModuleName source
@@ -81,7 +81,7 @@ handleBrowse bopts = do
       MultiModule registry -> do
         driftWarnings <- checkRegistryVersionDrift cloneDir registry
         logIO LogNormal (mapM_ logWarn driftWarnings)
-        let matchTag e = case bopts.browseTag of
+        let matchTag e = case bopts.tag of
               Nothing -> True
               Just tag -> tag `elem` e.tags
             tagged =
@@ -89,4 +89,4 @@ handleBrowse bopts = do
                 ++ [(RecipeEntry, e) | e <- registry.recipes, matchTag e]
                 ++ [(BlueprintEntry, e) | e <- registry.blueprints, matchTag e]
                 ++ [(PromptEntry, e) | e <- registry.prompts, matchTag e]
-        TIO.putStr $ formatBrowseRegistry source registry tagged bopts.browseTag
+        TIO.putStr $ formatBrowseRegistry source registry tagged bopts.tag

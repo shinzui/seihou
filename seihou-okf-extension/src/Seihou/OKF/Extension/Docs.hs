@@ -27,15 +27,15 @@ import System.FilePath ((</>))
 import System.IO (stderr)
 
 data DocsOpts = DocsOpts
-  { docsDir :: !FilePath,
-    docsOut :: !FilePath,
-    docsForce :: !Bool
+  { dir :: !FilePath,
+    out :: !FilePath,
+    force :: !Bool
   }
   deriving stock (Eq, Generic, Show)
 
 runDocs :: DocsOpts -> IO (Either T.Text T.Text)
 runDocs opts = do
-  let registryFile = opts.docsDir </> "seihou-registry.dhall"
+  let registryFile = opts.dir </> "seihou-registry.dhall"
   registryExists <- doesFileExist registryFile
   if not registryExists
     then pure (Left ("registry file not found: " <> T.pack registryFile))
@@ -44,7 +44,7 @@ runDocs opts = do
       case outputCheck of
         Left err -> pure (Left err)
         Right () -> do
-          modelResult <- loadDocModel opts.docsDir
+          modelResult <- loadDocModel opts.dir
           case modelResult of
             Left err -> pure (Left (renderDocLoadError err))
             Right model ->
@@ -55,11 +55,11 @@ runDocs opts = do
                   | not (null validationProblems) ->
                       pure (Left (renderMany renderBundleValidationError validationProblems))
                   | otherwise -> do
-                      prepareOutputDirectory opts.docsOut
-                      writeResult <- writeDocBundle opts.docsOut model
+                      prepareOutputDirectory opts.out
+                      writeResult <- writeDocBundle opts.out model
                       pure $ case writeResult of
                         Left errors -> Left (renderMany renderDocBundleError errors)
-                        Right () -> Right ("Wrote " <> T.pack (show (length concepts)) <> " concepts to " <> T.pack opts.docsOut)
+                        Right () -> Right ("Wrote " <> T.pack (show (length concepts)) <> " concepts to " <> T.pack opts.out)
 
 handleDocs :: DocsOpts -> IO ()
 handleDocs opts = do
@@ -73,18 +73,18 @@ handleDocs opts = do
 
 checkOutputDirectory :: DocsOpts -> IO (Either T.Text ())
 checkOutputDirectory opts = do
-  pathExists <- doesPathExist opts.docsOut
+  pathExists <- doesPathExist opts.out
   if not pathExists
     then pure (Right ())
     else do
-      isDirectory <- doesDirectoryExist opts.docsOut
+      isDirectory <- doesDirectoryExist opts.out
       if not isDirectory
-        then pure (Left ("output path exists and is not a directory: " <> T.pack opts.docsOut))
+        then pure (Left ("output path exists and is not a directory: " <> T.pack opts.out))
         else do
-          entries <- listDirectory opts.docsOut
-          if null entries || opts.docsForce
+          entries <- listDirectory opts.out
+          if null entries || opts.force
             then pure (Right ())
-            else pure (Left ("output directory is not empty: " <> T.pack opts.docsOut <> "; pass --force to overwrite"))
+            else pure (Left ("output directory is not empty: " <> T.pack opts.out <> "; pass --force to overwrite"))
 
 prepareOutputDirectory :: FilePath -> IO ()
 prepareOutputDirectory outDir = do
