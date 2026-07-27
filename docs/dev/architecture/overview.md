@@ -460,6 +460,79 @@ process's argv — the pattern in
 `seihou-cli/test/Seihou/CLI/AgentMigrateE2ESpec.hs`, which puts a fake `claude`
 on `PATH` that records `"$@"` — and assert it for both modes.
 
+### Call Tracing Is a Sink the Config Chain Selects
+
+`Seihou.CLI.AgentCompletion.runAgentCompletionWith` dispatches through
+`Baikai.Trace.withTrace` rather than `Baikai.completeRequest`, so every model
+call emits a correlated `call_started` plus `call_finished`/`call_failed` into a
+`Baikai.Trace.Sink.TraceSink`. Seihou does not expose that sink type to users: a
+`TraceSink` is a streamly `Fold IO TraceEvent ()`, and its power is composition
+(`Fold.tee` to fan out, `Fold.filter` to drop, `Fold.lmap` to project or
+redact), none of which a Dhall config string can express. Users pick from a
+closed four-value `TraceSetting` — `off`, `file`, `stdout`, `stderr` — resolved
+as a fourth setting through the same ordered chain described above, and
+`Seihou.CLI.AgentTrace.traceSinkFor` turns the winner into a live sink. A future
+`both` setting is `multiSink [fileSink p, stdoutSink]`; the composition surface
+stays available without being in the config vocabulary.
+
+**The swap changed error semantics, and the guard against that is load-bearing.**
+`completeRequest` threw a `BaikaiError` on provider failure and Seihou caught it
+with `try`. `withTrace` reaches the provider through the *streaming* field of
+`ApiProvider` rather than the synchronous `complete` field, and
+`Baikai.Stream.liftCompleteToStream` wraps the call in `trySync`, converting both
+in-band failures and thrown exceptions into a terminal error event. Failures
+therefore arrive as an error-shaped `Response` (`stopReason = ErrorReason`) with
+no assistant text. Without an explicit `Baikai.Response.responseError` check
+*before* the empty-text guard, every bad API key, rate limit, and unknown model
+would be reported as `"Provider returned no assistant text."` The `try` is
+retained, but it now guards sink-side failures only — Baikai's contract says
+downstream-of-the-fold exceptions still propagate, and an unwritable
+`agent.tracePath` is exactly that. Deleting either branch as redundant is a
+mistake; `AgentCompletionSpec` fails three cases if the `responseError` branch
+goes.
+
+Two consequences of routing through the streaming path are benign but worth
+knowing: for the CLI providers the response is reassembled from synthetic
+events, so `Response.responseId` is lost and `Response.latencyMs` is recomputed.
+Seihou reads only assistant text and `responseError`, both of which survive.
+Anyone who starts using `Response.latencyMs` here should read
+`baikai-claude/src/Baikai/Provider/Claude/Cli.hs`, whose comment records exactly
+this trade-off.
+
+Tracing inherits the two-path hazard above: interactive launches emit no trace
+events at all, because a spawned `claude`/`codex` subprocess is not a request
+Baikai can time or price. The user docs say so explicitly, because a blueprint
+run silently crosses to the interactive path when stdin is a terminal and the
+absence of events would otherwise read as a bug.
+
+### Adopting `baikai-trace-otel` Is Packaging Work, Not Seihou Work
+
+Baikai ships an optional `baikai-trace-otel` package that turns the same events
+into OpenTelemetry spans. It was deliberately deferred; this note records what
+adopting it would take so a future contributor does not have to rediscover it.
+
+`Baikai.Trace.Sink.OpenTelemetry` exports `otelSink :: Otel.Tracer -> TraceSink`
+and `otelSinkWith :: Otel.Tracer -> OtelSinkOptions -> TraceSink`. Both are
+ordinary `TraceSink` values, so **no Seihou code beyond `traceSinkFor` would
+change** — it gains one branch, and the setting vocabulary gains one value. The
+work is entirely in three other places:
+
+1. **Packaging.** `baikai-trace-otel` 0.3.0.2 depends on `hs-opentelemetry-api
+   >=1.0 && <1.1` and `hs-opentelemetry-semantic-conventions >=1.40 && <2`,
+   neither of which is in this repository's dependency closure. The shared
+   `shinzui/haskell-nix` registry overlay supplies `baikai`, `baikai-claude`,
+   `baikai-openai`, and `baikai-kit` — **not** `baikai-trace-otel` (see the
+   comment at the top of `nix/haskell-overlay.nix`). Adopting it means either
+   registering it upstream or adding a local pin here, in the manner of the
+   existing `okf-core` Hackage pin in that file.
+2. **Tracer lifecycle.** The file and stream sinks need no setup or teardown,
+   which is why `traceSinkFor` can simply return a sink. A `Tracer` must be
+   created and shut down around the call, so `traceSinkFor` would need to become
+   bracket-shaped — `(TraceSink -> IO a) -> IO a` — or gain a companion that is.
+   That reshapes all six call sites, which currently bind a sink and use it.
+3. **Opt-out.** Decide whether it belongs behind a cabal flag, so users who do
+   not want the OTel dependency tree can build without it.
+
 ## Technology Stack
 
 | Component | Choice | Rationale |

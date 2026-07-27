@@ -109,8 +109,11 @@ This section must always reflect the actual current state of the work.
       section, and `docs/user/config-and-variables.md`, `docs/cli/agent.md`,
       `docs/cli/prompt.md`, and both changelogs are updated. `cabal test all`: 1034 + 421 + 16
       pass (2026-07-27).
-- [ ] Milestone 5 — OTel hand-off note: document precisely what adopting `baikai-trace-otel`
-      requires. No code.
+- [x] Milestone 5 — OTel hand-off note: `docs/dev/architecture/overview.md` gains two
+      subsections — one recording how tracing is wired and why the `responseError` guard is
+      load-bearing, one naming exactly what adopting `baikai-trace-otel` requires (package
+      versions, the registry gap, the tracer-lifecycle reshape, the cabal-flag question)
+      (2026-07-27).
 
 
 ## Surprises & Discoveries
