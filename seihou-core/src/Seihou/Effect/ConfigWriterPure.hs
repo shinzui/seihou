@@ -5,6 +5,7 @@ module Seihou.Effect.ConfigWriterPure
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Effectful.State.Static.Local (State, get, modify, runState)
 import Seihou.Core.Types (ConfigScope (..))
@@ -13,19 +14,19 @@ import Seihou.Prelude
 
 -- | In-memory state for the pure ConfigWriter interpreter.
 data ConfigWriterState = ConfigWriterState
-  { cwLocal :: Map Text Text,
-    cwNamespaces :: Map Text (Map Text Text),
-    cwGlobal :: Map Text Text
+  { local :: !(Map Text Text),
+    namespaces :: !(Map Text (Map Text Text)),
+    global :: !(Map Text Text)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Empty initial state with no config values in any scope.
 emptyConfigWriterState :: ConfigWriterState
 emptyConfigWriterState =
   ConfigWriterState
-    { cwLocal = Map.empty,
-      cwNamespaces = Map.empty,
-      cwGlobal = Map.empty
+    { local = Map.empty,
+      namespaces = Map.empty,
+      global = Map.empty
     }
 
 -- | Pure interpreter for the ConfigWriter effect using in-memory state.
@@ -46,22 +47,22 @@ runConfigWriterPure initial = reinterpret (runState initial) handler
         pure (Right (readScope scope st))
 
 writeToScope :: ConfigScope -> Text -> Text -> ConfigWriterState -> ConfigWriterState
-writeToScope ScopeLocal key val st = st {cwLocal = Map.insert key val st.cwLocal}
+writeToScope ScopeLocal key val st = st & #local . at key ?~ val
 writeToScope (ScopeNamespace ns) key val st =
-  let nsMap = Map.findWithDefault Map.empty ns st.cwNamespaces
+  let nsMap = Map.findWithDefault Map.empty ns (st ^. #namespaces)
       updated = Map.insert key val nsMap
-   in st {cwNamespaces = Map.insert ns updated st.cwNamespaces}
-writeToScope ScopeGlobal key val st = st {cwGlobal = Map.insert key val st.cwGlobal}
+   in st & #namespaces . at ns ?~ updated
+writeToScope ScopeGlobal key val st = st & #global . at key ?~ val
 
 deleteFromScope :: ConfigScope -> Text -> ConfigWriterState -> ConfigWriterState
-deleteFromScope ScopeLocal key st = st {cwLocal = Map.delete key st.cwLocal}
+deleteFromScope ScopeLocal key st = st & #local . at key .~ Nothing
 deleteFromScope (ScopeNamespace ns) key st =
-  let nsMap = Map.findWithDefault Map.empty ns st.cwNamespaces
+  let nsMap = Map.findWithDefault Map.empty ns (st ^. #namespaces)
       updated = Map.delete key nsMap
-   in st {cwNamespaces = Map.insert ns updated st.cwNamespaces}
-deleteFromScope ScopeGlobal key st = st {cwGlobal = Map.delete key st.cwGlobal}
+   in st & #namespaces . at ns ?~ updated
+deleteFromScope ScopeGlobal key st = st & #global . at key .~ Nothing
 
 readScope :: ConfigScope -> ConfigWriterState -> Map Text Text
-readScope ScopeLocal st = st.cwLocal
-readScope (ScopeNamespace ns) st = Map.findWithDefault Map.empty ns st.cwNamespaces
-readScope ScopeGlobal st = st.cwGlobal
+readScope ScopeLocal st = st ^. #local
+readScope (ScopeNamespace ns) st = Map.findWithDefault Map.empty ns (st ^. #namespaces)
+readScope ScopeGlobal st = st ^. #global

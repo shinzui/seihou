@@ -62,14 +62,17 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M0 — Spike: prove `#label` compiles in this codebase alongside `OverloadedRecordDot`
-- [ ] M0 — Spike: measure clean-build wall time before and after, on one module
-- [ ] M0 — Spike: confirm `module Control.Lens` re-export introduces no ambiguity errors
-- [ ] M1 — Rewrite `seihou-core/src/Seihou/Prelude.hs` to re-export `module Control.Lens`
-- [ ] M1 — Remove `import "generic-lens" Data.Generics.Labels ()` from the prelude
-- [ ] M1 — Add `generic-lens` and `lens` to `seihou-cli` and `seihou-okf-extension` deps
-- [ ] M1 — Add `DeriveAnyClass` to the six Cabal `default-extensions` blocks
-- [ ] M1 — Verify `cabal build all` and `cabal test all` still pass unchanged
+- [x] M0 — Re-measure the baseline counts and test totals (2026-07-27)
+- [x] M0 — Spike: prove `#label` compiles in this codebase alongside `OverloadedRecordDot` (2026-07-27)
+- [x] M0 — Spike: measure clean-build wall time before and after, on one module (2026-07-27)
+- [x] M0 — Spike: confirm `module Control.Lens` re-export introduces no ambiguity errors (2026-07-27) — it *does*; four names hidden, see Surprises
+- [x] M1 — Rewrite `seihou-core/src/Seihou/Prelude.hs` to re-export `module Control.Lens` (2026-07-27)
+- [x] M1 — Remove `import "generic-lens" Data.Generics.Labels ()` from the prelude (2026-07-27)
+- [x] M1 — Re-export `Generic` from the prelude (2026-07-27) — discovered during the spike
+- [x] M1 — Add `generic-lens` and `lens` to `seihou-cli` and `seihou-okf-extension` deps (2026-07-27)
+- [x] M1 — Add `DeriveAnyClass` to all eight Cabal `default-extensions` blocks (2026-07-27)
+- [x] M1 — Merge the duplicated `default-extensions` block in `test-suite seihou-cli-test` (2026-07-27)
+- [x] M1 — Verify `cabal build all` and `cabal test all` still pass unchanged (2026-07-27)
 - [ ] M2 — Add `deriving stock (Generic)` to the 79 record types that lack it
 - [ ] M2 — Add `!` strictness annotations to every record field in `src/` and `src-exe/`
 - [ ] M2 — Add `!` strictness annotations to every record field in the three `test/` trees
@@ -90,8 +93,156 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet. The findings recorded in Context and Orientation below were gathered during plan
-authoring, before any code was changed; they are baseline measurements, not surprises.)
+### Re-measured baseline (2026-07-27, before any change)
+
+The plan-authoring counts had drifted slightly. Actual baseline on the tree at commit
+`ff78410`:
+
+```text
+dot-access src:          2818   (plan said 2810)
+dot-access test:         1927   (plan said 1917)
+accessor sections src:    114   (unchanged)
+record updates src:        48   (plan said 47)
+record updates test:       62   (plan said 61)
+.hs files:                261
+```
+
+Test totals, which must be identical at the end:
+
+```text
+seihou-core-test            1034 tests
+seihou-cli-test              421 tests
+seihou-okf-extension-test     16 tests
+```
+
+The toolchain is GHC **9.12.4**, not 9.12.2 as the plan states, and `lens` resolves to
+`5.3.6` rather than the `5.4` the plan expected from the local corpus. Both are inside the
+declared bounds, so no bound change was needed.
+
+### The wholesale `Control.Lens` re-export *does* collide — four names
+
+The plan's authoring analysis concluded "the intersection was empty in both directions" and
+predicted the wholesale re-export would be safe. That analysis was wrong, in two ways that
+are worth naming because they explain why a grep-based prediction cannot substitute for a
+compile.
+
+First, it compared `Control.Lens`'s exports only against names seihou imports through
+*explicit import lists*. It therefore missed `Options.Applicative`, which
+`seihou-cli/src-exe/Seihou/CLI/Commands.hs` imports openly with no list at all.
+
+Second, it compared against "the 1,311 top-level names seihou defines", which was derived
+from top-level type signatures. Data constructors have no type signature, so the whole
+constructor namespace was invisible to it.
+
+The four actual collisions, all found by GHC:
+
+```text
+(.=)      Data.Aeson.(.=) vs Control.Lens.Setter.(.=)
+          11 modules, in hand-written ToJSON instances.
+argument  Options.Applicative.argument vs Control.Lens.Setter.argument
+          Seihou.CLI.Commands, 8 use sites.
+List      Seihou.CLI.Commands's `Command` constructor vs lens's
+          `pattern List` (Control.Lens.Iso).
+Context   Seihou.CLI.Commands's `Command` constructor vs lens's
+          `Context(..)` (Control.Lens.Lens).
+```
+
+Evidence, from `cabal build all` with a bare `import "lens" Control.Lens`:
+
+```text
+src/Seihou/Engine/UpdateTransaction.hs:77:16: error: [GHC-87543]
+    Ambiguous occurrence ‘.=’.
+    It could refer to
+       either ‘Data.Aeson..=’, ...
+           or ‘Seihou.Prelude..=’, ...
+              (and originally defined in ‘Control.Lens.Setter’).
+```
+
+```text
+src-exe/Seihou/CLI/Commands.hs:729:8: error: [GHC-87543]
+    Ambiguous occurrence ‘List’.
+    It could refer to
+       either ‘Seihou.Prelude.List’,
+              (and originally defined in ‘lens-5.3.6:Control.Lens.Iso’),
+           or ‘Seihou.CLI.Commands.List’,
+              defined at src-exe/Seihou/CLI/Commands.hs:71:5.
+```
+
+Resolved with the plan's documented fallback — a targeted `hiding` clause on the prelude's
+lens import, with an inline comment naming each name and why seihou does not need it. None
+of the four is a combinator this refactor uses. See the Decision Log.
+
+A precise re-run of the collision analysis, this time covering seihou's constructors, type
+names, record fields and value bindings, found exactly five candidate names. Two
+(`Context`, `List`) are the constructors above. The other three — `from`, `to`, `op` — are
+*record fields*, and are harmless: `NoFieldSelectors` means a record field creates no
+top-level selector function, so a field named `to` cannot be ambiguous with
+`Control.Lens.Getter.to`. This is a small unadvertised benefit of keeping
+`NoFieldSelectors` enabled, and it matters because `to` is a combinator the plan does
+intend to use.
+
+### `Generic` was not in scope anywhere
+
+`Seihou.Prelude` re-exported no part of `GHC.Generics`, and the 166 existing `Generic`
+derives each carry their own `import GHC.Generics (Generic)`. Adding `deriving stock
+(Generic)` to the spike module failed with:
+
+```text
+src/Seihou/Effect/ConfigWriterPure.hs:21:23: error: [GHC-76037]
+    Not in scope: type constructor or class ‘Generic’
+```
+
+Since the house style requires `Generic` on every record, `Generic` is now re-exported from
+the prelude. Milestone 2 can then add derives without touching import lists.
+
+### Only 4 of 102 test modules import `Seihou.Prelude`
+
+This is the single biggest correction to the plan's shape. The plan assumed the test trees
+would pick up the lens vocabulary the same way library modules do — through the shared
+prelude. They do not: 98 of the 102 test modules import `Effectful`, `Test.Hspec`,
+`Test.Tasty` and the module under test directly, and never touch `Seihou.Prelude`. The
+spike's first test build failed with:
+
+```text
+test/Seihou/Effect/ConfigWriterSpec.hs:28:44: error: [GHC-88464]
+    Variable not in scope: (&) :: ConfigWriterState -> t0 -> t1
+```
+
+So Milestones 4 through 6 must add a lens import to each converted test module, not only
+the labels import. See the Decision Log for why that import is an explicit list rather than
+an open `import Control.Lens`.
+
+### `(^.)` binds looser than backtick application
+
+`(^.)` is `infixl 8`; a backticked function defaults to `infixl 9`. So the natural
+mechanical rewrite of an Hspec assertion is a parse error waiting to happen:
+
+```haskell
+-- WRONG: parses as  finalState ^. (#local `shouldBe` ...)
+finalState ^. #local `shouldBe` Map.fromList [("local.key", "l")]
+
+-- RIGHT
+(finalState ^. #local) `shouldBe` Map.fromList [("local.key", "l")]
+```
+
+`record.field` needed no such parenthesis, because `OverloadedRecordDot`'s dot binds tighter
+than everything. Every converted read that is an operand of a backticked function — which is
+most reads in the 1,927-site test trees, since Hspec assertions are all backticked — needs
+wrapping. Any conversion script must handle this or the test trees will not parse.
+
+### Compile time is not measurably worse
+
+The plan flagged generic-lens compile cost as a risk worth measuring before committing to
+~4,700 sites. On the spike module, three incremental rebuilds each way:
+
+```text
+converted (generic-lens):  2.84s  2.60s  2.72s
+original  (record dot):    3.61s  2.65s  2.55s
+```
+
+The two are indistinguishable at this scale. This is weak evidence — one small module with
+nine lens sites — so a full `seihou-core` library rebuild will be timed again at the end of
+Milestone 4, where the sample is large enough to mean something.
 
 
 ## Decision Log
@@ -149,6 +300,67 @@ Record every decision made while working on the plan.
   stock and anyclass strategies; seihou has zero bare deriving clauses (all 245 are
   `deriving stock`), and Milestone 8's enforcement check keeps it that way, so the hazard
   does not apply here.
+  Date: 2026-07-27
+
+- Decision: Hide four names — `(.=)`, `argument`, `pattern List`, and `Context (..)` — on the
+  prelude's `import "lens" Control.Lens`, rather than renaming seihou's own names or
+  qualifying the colliding imports at their use sites.
+  Rationale: These are the four real collisions the wholesale re-export produces (see
+  Surprises & Discoveries). None is a combinator this refactor needs: lens's `(.=)` is the
+  `MonadState` assignment operator and seihou uses effectful's `State` with `modify`;
+  `argument` is a `Setter` over a `Profunctor`'s argument position; `List` is an `IsList`
+  pattern synonym; `Context` is the indexed store comonad. The alternatives are worse — the
+  `(.=)` collision alone would mean qualifying every JSON object literal in eleven modules,
+  and the `List`/`Context` collisions would mean renaming two constructors of the CLI's
+  public `Command` type for the convenience of names nothing uses. This is the fallback the
+  plan's Idempotence and Recovery section already sanctions; each hidden name carries an
+  inline comment in the prelude naming the collision and the reason.
+  Date: 2026-07-27
+
+- Decision: Re-export `Generic` from `Seihou.Prelude`.
+  Rationale: The house style requires `deriving stock (Generic)` on every record, and
+  `generic-lens` synthesises `#label` from the `Generic` representation, so `Generic` is now
+  needed in essentially every module that defines a type. The prelude already exists to carry
+  exactly this kind of project-wide vocabulary, and re-exporting it means Milestone 2 adds
+  derives without also editing 79 import lists. This is an addition to the house style's
+  stated prelude contents, not a deviation from it — the style is silent on `Generic`.
+  Date: 2026-07-27
+
+- Decision: In test modules, import the lens vocabulary as an explicit list
+  (`import Control.Lens ((&), (.~), (^.), ...)`) rather than opening `Control.Lens` or
+  importing `Seihou.Prelude`.
+  Rationale: Only 4 of the 102 test modules import `Seihou.Prelude`; the other 98 import
+  `Test.Hspec`, `Test.Tasty`, and `Effectful` openly. Dragging ~800 lens names into those
+  modules invites exactly the class of collision that Milestone 0 just found in the library
+  (Hspec and QuickCheck both export names that lens also exports — `elements` and `example`
+  among them), and each such collision would have to be chased down one test module at a
+  time. An explicit list is collision-proof by construction and states at the top of each
+  file which optics that file uses. The house style's "prelude re-exports all of
+  `Control.Lens`" rule is about the *shared prelude*, which is unchanged; it says nothing
+  about modules that do not use the prelude.
+  Date: 2026-07-27
+
+- Decision: Keep the Milestone 0 spike rather than reverting it.
+  Rationale: The plan called for reverting the spike so that Milestones 1 through 6 could
+  redo the same edits in their proper order. But the spike converted
+  `seihou-core/src/Seihou/Effect/ConfigWriterPure.hs` *completely* — `Generic`, strictness,
+  prefix removal, reads, and updates — and left the tree building with all 1,471 tests
+  passing. Reverting a complete, verified conversion in order to reproduce it identically
+  later is pure waste, and the ordering hygiene the revert was meant to protect only matters
+  for partial conversions. The two spec files the spike also touched
+  (`seihou-core/test/Seihou/Effect/ConfigWriterSpec.hs` and
+  `seihou-cli/test/Seihou/CLI/SavePromptedSpec.hs`) are likewise fully converted for the
+  fields they touch.
+  Date: 2026-07-27
+
+- Decision: Merge the duplicated `default-extensions` block in `test-suite seihou-cli-test`.
+  Rationale: `seihou-cli/seihou-cli.cabal` carried two `default-extensions` fields in the
+  same stanza — one before `hs-source-dirs` listing five extensions, one after `main-is`
+  listing only `TypeFamilies`. Cabal concatenates repeated list fields so the effective set
+  was correct, but the split makes the stanza's extension set invisible to any reader or
+  checker that stops at the first block, and Milestone 8's enforcement script must read
+  these blocks. Merged into one sorted block. This is why the plan's "six blocks" became
+  eight stanzas and nine blocks.
   Date: 2026-07-27
 
 - Decision: Convert the test suites too, in the same plan.

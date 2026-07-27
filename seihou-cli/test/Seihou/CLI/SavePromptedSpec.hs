@@ -1,5 +1,7 @@
 module Seihou.CLI.SavePromptedSpec (tests) where
 
+import Control.Lens ((&), (.~), (^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -118,7 +120,7 @@ spec = do
           runConsolePure ["y"] $
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted Nothing True entries
-      cwState.cwLocal `shouldBe` Map.fromList [("project.name", "my-app"), ("license", "MIT")]
+      (cwState ^. #local) `shouldBe` Map.fromList [("project.name", "my-app"), ("license", "MIT")]
 
     it "does not save when user declines with 'n'" $ do
       (((), cwState), _consoleSt) <-
@@ -126,7 +128,7 @@ spec = do
           runConsolePure ["n"] $
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted Nothing True entries
-      cwState.cwLocal `shouldBe` Map.empty
+      (cwState ^. #local) `shouldBe` Map.empty
 
     it "saves without asking when --save-prompted (Just True)" $ do
       (((), cwState), consoleSt) <-
@@ -134,7 +136,7 @@ spec = do
           runConsolePure [] $
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted (Just True) True entries
-      cwState.cwLocal `shouldBe` Map.fromList [("project.name", "my-app"), ("license", "MIT")]
+      (cwState ^. #local) `shouldBe` Map.fromList [("project.name", "my-app"), ("license", "MIT")]
       -- Should not contain the confirmation prompt
       any (T.isInfixOf "Save prompted values") consoleSt.consoleOutputs `shouldBe` False
 
@@ -144,7 +146,7 @@ spec = do
           runConsolePure [] $
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted (Just False) True entries
-      cwState.cwLocal `shouldBe` Map.empty
+      (cwState ^. #local) `shouldBe` Map.empty
       consoleSt.consoleOutputs `shouldBe` []
 
     it "skips in non-interactive mode when no flag given" $ do
@@ -153,7 +155,7 @@ spec = do
           runConsolePure [] $
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted Nothing False entries
-      cwState.cwLocal `shouldBe` Map.empty
+      (cwState ^. #local) `shouldBe` Map.empty
 
     it "shows overwrite note for existing values" $ do
       let entriesWithOverwrite =
@@ -172,7 +174,7 @@ spec = do
           runConsolePure [] $
             runConfigWriterPure emptyConfigWriterState $
               offerSavePrompted Nothing True []
-      cwState.cwLocal `shouldBe` Map.empty
+      (cwState ^. #local) `shouldBe` Map.empty
       consoleSt.consoleOutputs `shouldBe` []
 
     it "displays confirmation message after saving" $ do

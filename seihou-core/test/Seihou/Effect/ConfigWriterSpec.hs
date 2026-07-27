@@ -1,5 +1,7 @@
 module Seihou.Effect.ConfigWriterSpec (tests) where
 
+import Control.Lens ((&), (.~), (^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Effectful
 import Seihou.Core.Types (ConfigScope (..))
@@ -25,14 +27,14 @@ spec = do
       result `shouldBe` Right (Map.fromList [("project.name", "my-app")])
 
     it "overwrites an existing value" $ do
-      let initial = emptyConfigWriterState {cwLocal = Map.fromList [("key", "old")]}
+      let initial = emptyConfigWriterState & #local .~ Map.fromList [("key", "old")]
           (result, _) = run initial $ do
             writeConfigValue ScopeLocal "key" "new"
             listConfigValues ScopeLocal
       result `shouldBe` Right (Map.fromList [("key", "new")])
 
     it "preserves other keys when writing" $ do
-      let initial = emptyConfigWriterState {cwLocal = Map.fromList [("existing", "keep")]}
+      let initial = emptyConfigWriterState & #local .~ Map.fromList [("existing", "keep")]
           (result, _) = run initial $ do
             writeConfigValue ScopeLocal "new-key" "added"
             listConfigValues ScopeLocal
@@ -68,21 +70,21 @@ spec = do
 
   describe "deleteConfigValue" $ do
     it "removes an existing value" $ do
-      let initial = emptyConfigWriterState {cwLocal = Map.fromList [("key", "val")]}
+      let initial = emptyConfigWriterState & #local .~ Map.fromList [("key", "val")]
           (result, _) = run initial $ do
             deleteConfigValue ScopeLocal "key"
             listConfigValues ScopeLocal
       result `shouldBe` Right Map.empty
 
     it "is a no-op for nonexistent key" $ do
-      let initial = emptyConfigWriterState {cwLocal = Map.fromList [("keep", "me")]}
+      let initial = emptyConfigWriterState & #local .~ Map.fromList [("keep", "me")]
           (result, _) = run initial $ do
             deleteConfigValue ScopeLocal "nonexistent"
             listConfigValues ScopeLocal
       result `shouldBe` Right (Map.fromList [("keep", "me")])
 
     it "deletes from global scope" $ do
-      let initial = emptyConfigWriterState {cwGlobal = Map.fromList [("license", "MIT")]}
+      let initial = emptyConfigWriterState & #global .~ Map.fromList [("license", "MIT")]
           (result, _) = run initial $ do
             deleteConfigValue ScopeGlobal "license"
             listConfigValues ScopeGlobal
@@ -94,6 +96,6 @@ spec = do
             writeConfigValue ScopeLocal "local.key" "l"
             writeConfigValue ScopeGlobal "global.key" "g"
             writeConfigValue (ScopeNamespace "ns") "ns.key" "n"
-      finalState.cwLocal `shouldBe` Map.fromList [("local.key", "l")]
-      finalState.cwGlobal `shouldBe` Map.fromList [("global.key", "g")]
-      Map.lookup "ns" (finalState.cwNamespaces) `shouldBe` Just (Map.fromList [("ns.key", "n")])
+      (finalState ^. #local) `shouldBe` Map.fromList [("local.key", "l")]
+      (finalState ^. #global) `shouldBe` Map.fromList [("global.key", "g")]
+      Map.lookup "ns" (finalState ^. #namespaces) `shouldBe` Just (Map.fromList [("ns.key", "n")])
