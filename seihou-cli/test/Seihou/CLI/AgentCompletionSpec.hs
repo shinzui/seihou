@@ -35,13 +35,35 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
             && "openai" `Text.isInfixOf` err
         Right _ -> False
 
+  describe "trace setting text helpers" $ do
+    it "parses every accepted setting case-insensitively" $ do
+      traceFromText "off" `shouldBe` Right TraceOff
+      traceFromText "FILE" `shouldBe` Right TraceFile
+      traceFromText "  stdout  " `shouldBe` Right TraceStdout
+      traceFromText "StdErr" `shouldBe` Right TraceStderr
+
+    it "names every accepted setting in the failure message" $
+      traceFromText "syslog" `shouldSatisfy` \case
+        Left err ->
+          "off" `Text.isInfixOf` err
+            && "file" `Text.isInfixOf` err
+            && "stdout" `Text.isInfixOf` err
+            && "stderr" `Text.isInfixOf` err
+        Right _ -> False
+
+    it "round-trips through traceToText" $
+      traverse (traceFromText . traceToText) [TraceOff, TraceFile, TraceStdout, TraceStderr]
+        `shouldBe` Right [TraceOff, TraceFile, TraceStdout, TraceStderr]
+
   describe "model construction" $ do
     it "defaults to the Claude CLI provider with no explicit model" $
       defaultAgentModelConfig
         `shouldBe` AgentModelConfig
           { agentProvider = AgentProviderClaudeCli,
             agentModel = Nothing,
-            agentEffort = Nothing
+            agentEffort = Nothing,
+            agentTrace = TraceOff,
+            agentTracePath = Nothing
           }
 
     it "builds a Claude CLI model using the CLI API tag" $ do
@@ -74,7 +96,9 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
             AgentModelConfig
               { agentProvider = AgentProviderCodexCli,
                 agentModel = Just "gpt-5",
-                agentEffort = Nothing
+                agentEffort = Nothing,
+                agentTrace = TraceOff,
+                agentTracePath = Nothing
               }
       buildAgentCompletionRequest config "system" (Just "user")
         `shouldBe` AgentCompletionRequest

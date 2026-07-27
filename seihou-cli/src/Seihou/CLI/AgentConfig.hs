@@ -2,6 +2,8 @@ module Seihou.CLI.AgentConfig
   ( -- * Inputs
     AgentConfigInputs (..),
     baseAgentConfigInputs,
+    AgentSettingFlags (..),
+    noAgentSettingFlags,
 
     -- * Command identity
     AgentCommandName (..),
@@ -13,12 +15,16 @@ module Seihou.CLI.AgentConfig
     agentProviderConfigKey,
     agentModelConfigKey,
     agentEffortConfigKey,
+    agentTraceConfigKey,
+    agentTracePathConfigKey,
     agentCommandProviderConfigKey,
     agentCommandModelConfigKey,
     agentCommandEffortConfigKey,
+    agentCommandTraceConfigKey,
     agentProviderEnvVar,
     agentModelEnvVar,
     agentEffortEnvVar,
+    agentTraceEnvVar,
 
     -- * Provenance
     AgentConfigSource (..),
@@ -29,6 +35,7 @@ module Seihou.CLI.AgentConfig
     -- * Resolution
     resolveAgentModelConfig,
     resolveAgentModelConfigFor,
+    resolveTracePath,
     loadAgentModelConfig,
     loadAgentModelConfigFor,
 
@@ -51,18 +58,22 @@ module Seihou.CLI.AgentConfig
 where
 
 import Baikai.ThinkingLevel (ThinkingLevel)
+import Control.Applicative ((<|>))
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
 import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
     AgentProvider (..),
+    TraceSetting (..),
     defaultAgentModelConfig,
     defaultModelForProvider,
     effortFromText,
     effortToText,
     providerFromText,
     providerToText,
+    traceFromText,
+    traceToText,
   )
 import Seihou.CLI.Shared (formatConfigError, logIO)
 import Seihou.Core.Types (AgentLaunch (..), LogLevel)
@@ -86,18 +97,25 @@ data AgentConfigInputs = AgentConfigInputs
   { cliProvider :: Maybe Text,
     cliModel :: Maybe Text,
     cliEffort :: Maybe Text,
+    cliTrace :: Maybe Text,
     cliProviderFromSubcommand :: Bool,
     cliModelFromSubcommand :: Bool,
     cliEffortFromSubcommand :: Bool,
+    cliTraceFromSubcommand :: Bool,
     envProvider :: Maybe Text,
     envModel :: Maybe Text,
     envEffort :: Maybe Text,
+    envTrace :: Maybe Text,
     -- | Declared by the blueprint or prompt being run, when the command has
     -- one. Only populated once the artifact has been loaded; see
     -- 'resolvePendingAgentConfig'.
     declaredProvider :: Maybe Text,
     declaredModel :: Maybe Text,
     declaredEffort :: Maybe Text,
+    -- | Reserved: no schema field feeds this yet. It exists so all four
+    -- settings are structurally identical, making a future @launch.trace@ an
+    -- insertion rather than a redesign.
+    declaredTrace :: Maybe Text,
     localConfig :: Map Text Text,
     globalConfig :: Map Text Text
   }
@@ -112,17 +130,61 @@ baseAgentConfigInputs =
     { cliProvider = Nothing,
       cliModel = Nothing,
       cliEffort = Nothing,
+      cliTrace = Nothing,
       cliProviderFromSubcommand = False,
       cliModelFromSubcommand = False,
       cliEffortFromSubcommand = False,
+      cliTraceFromSubcommand = False,
       envProvider = Nothing,
       envModel = Nothing,
       envEffort = Nothing,
+      envTrace = Nothing,
       declaredProvider = Nothing,
       declaredModel = Nothing,
       declaredEffort = Nothing,
+      declaredTrace = Nothing,
       localConfig = Map.empty,
       globalConfig = Map.empty
+    }
+
+-- | The four agent settings as supplied on one command-line tier — either the
+-- parent @seihou agent@ command or the subcommand itself.
+--
+-- Grouping them keeps the loader signatures honest: four same-typed
+-- @Maybe Text@ values in a row, twice over, are trivial to transpose by
+-- accident, and the compiler would not notice.
+data AgentSettingFlags = AgentSettingFlags
+  { flagProvider :: Maybe Text,
+    flagModel :: Maybe Text,
+    flagEffort :: Maybe Text,
+    flagTrace :: Maybe Text
+  }
+  deriving stock (Eq, Show)
+
+-- | No flags supplied on this tier.
+noAgentSettingFlags :: AgentSettingFlags
+noAgentSettingFlags =
+  AgentSettingFlags
+    { flagProvider = Nothing,
+      flagModel = Nothing,
+      flagEffort = Nothing,
+      flagTrace = Nothing
+    }
+
+-- | Fold the parent and subcommand flag tiers into gathered inputs. The
+-- subcommand's own flag wins over the parent @seihou agent@ flag; which tier
+-- supplied the winner only affects the provenance label, never the value.
+applyAgentSettingFlags :: AgentSettingFlags -> AgentSettingFlags -> AgentConfigInputs -> AgentConfigInputs
+applyAgentSettingFlags parent command inputs =
+  inputs
+    { cliProvider = command.flagProvider <|> parent.flagProvider,
+      cliModel = command.flagModel <|> parent.flagModel,
+      cliEffort = command.flagEffort <|> parent.flagEffort,
+      cliTrace = command.flagTrace <|> parent.flagTrace,
+      cliProviderFromSubcommand = isJust command.flagProvider,
+      cliModelFromSubcommand = isJust command.flagModel,
+      cliEffortFromSubcommand = isJust command.flagEffort,
+      cliTraceFromSubcommand = isJust command.flagTrace
     }
 
 -- | The agent-driven commands whose provider/model can be configured
@@ -168,6 +230,15 @@ agentModelConfigKey = "agent.model"
 agentEffortConfigKey :: Text
 agentEffortConfigKey = "agent.effort"
 
+-- | The cross-command default trace-destination key, @agent.trace@.
+agentTraceConfigKey :: Text
+agentTraceConfigKey = "agent.trace"
+
+-- | The trace file path key, @agent.tracePath@. Free-form (any path) and
+-- deliberately not per-command: one project writes one trace file.
+agentTracePathConfigKey :: Text
+agentTracePathConfigKey = "agent.tracePath"
+
 -- | The per-command provider key, e.g. @agent.assist.provider@.
 agentCommandProviderConfigKey :: AgentCommandName -> Text
 agentCommandProviderConfigKey c = "agent." <> agentCommandSegment c <> ".provider"
@@ -180,6 +251,10 @@ agentCommandModelConfigKey c = "agent." <> agentCommandSegment c <> ".model"
 agentCommandEffortConfigKey :: AgentCommandName -> Text
 agentCommandEffortConfigKey c = "agent." <> agentCommandSegment c <> ".effort"
 
+-- | The per-command trace-destination key, e.g. @agent.run.trace@.
+agentCommandTraceConfigKey :: AgentCommandName -> Text
+agentCommandTraceConfigKey c = "agent." <> agentCommandSegment c <> ".trace"
+
 agentProviderEnvVar :: String
 agentProviderEnvVar = "SEIHOU_AGENT_PROVIDER"
 
@@ -189,9 +264,12 @@ agentModelEnvVar = "SEIHOU_AGENT_MODEL"
 agentEffortEnvVar :: String
 agentEffortEnvVar = "SEIHOU_AGENT_EFFORT"
 
+agentTraceEnvVar :: String
+agentTraceEnvVar = "SEIHOU_AGENT_TRACE"
+
 -- | Which of the resolvable fields a value belongs to. Used only to build
 -- provenance labels.
-data AgentField = ProviderField | ModelField | EffortField
+data AgentField = ProviderField | ModelField | EffortField | TraceField
   deriving stock (Eq, Show)
 
 -- | Where a resolved value came from, highest precedence first.
@@ -249,21 +327,25 @@ fieldName :: AgentField -> Text
 fieldName ProviderField = "provider"
 fieldName ModelField = "model"
 fieldName EffortField = "effort"
+fieldName TraceField = "trace"
 
 envVarName :: AgentField -> String
 envVarName ProviderField = agentProviderEnvVar
 envVarName ModelField = agentModelEnvVar
 envVarName EffortField = agentEffortEnvVar
+envVarName TraceField = agentTraceEnvVar
 
 defaultKey :: AgentField -> Text
 defaultKey ProviderField = agentProviderConfigKey
 defaultKey ModelField = agentModelConfigKey
 defaultKey EffortField = agentEffortConfigKey
+defaultKey TraceField = agentTraceConfigKey
 
 commandKey :: AgentField -> AgentCommandName -> Text
 commandKey ProviderField = agentCommandProviderConfigKey
 commandKey ModelField = agentCommandModelConfigKey
 commandKey EffortField = agentCommandEffortConfigKey
+commandKey TraceField = agentCommandTraceConfigKey
 
 -- | The full result of resolving one command's provider and model, with
 -- provenance, used by the @seihou agent config@ inspection command.
@@ -271,7 +353,12 @@ data ResolvedCommandConfig = ResolvedCommandConfig
   { rccCommand :: AgentCommandName,
     rccProvider :: ResolvedAgentField AgentProvider,
     rccModel :: ResolvedAgentField (Maybe Text),
-    rccEffort :: ResolvedAgentField (Maybe ThinkingLevel)
+    rccEffort :: ResolvedAgentField (Maybe ThinkingLevel),
+    rccTrace :: ResolvedAgentField TraceSetting,
+    -- | The configured @agent.tracePath@, if any. Carried without provenance:
+    -- it is free-form, has no CLI flag and no per-command variant, so there is
+    -- no precedence story worth displaying.
+    rccTracePath :: Maybe FilePath
   }
   deriving stock (Eq, Show)
 
@@ -299,7 +386,9 @@ resolveAgentModelConfig inputs = do
     AgentModelConfig
       { agentProvider = provider.resolvedValue,
         agentModel = modelField.resolvedValue,
-        agentEffort = Nothing
+        agentEffort = Nothing,
+        agentTrace = TraceOff,
+        agentTracePath = Nothing
       }
 
 -- | Resolve the provider, model, and reasoning effort for a specific command,
@@ -322,7 +411,8 @@ resolveAgentModelConfigFor ::
     Text
     ( ResolvedAgentField AgentProvider,
       ResolvedAgentField (Maybe Text),
-      ResolvedAgentField (Maybe ThinkingLevel)
+      ResolvedAgentField (Maybe ThinkingLevel),
+      ResolvedAgentField TraceSetting
     )
 resolveAgentModelConfigFor c inputs = do
   provider <-
@@ -330,7 +420,20 @@ resolveAgentModelConfigFor c inputs = do
       <$> resolveProvider (providerCandidates c inputs)
   let model = applyProviderDefaultModel provider.resolvedValue (resolveModel (modelCandidates c inputs))
   effort <- resolveEffort (effortCandidates c inputs)
-  pure (provider, model, effort)
+  trace <- resolveTrace (traceCandidates c inputs)
+  pure (provider, model, effort, trace)
+
+-- | Resolve the trace file path: local @agent.tracePath@ beats global, and a
+-- blank value counts as absent. There is no CLI flag and no per-command
+-- variant — 'agentTracePathConfigKey' is free-form, so it stays outside the
+-- validated four-value 'TraceSetting' vocabulary.
+resolveTracePath :: AgentConfigInputs -> Maybe FilePath
+resolveTracePath inputs =
+  T.unpack . fst
+    <$> firstNonBlankWithSource
+      [ candidate (Map.lookup agentTracePathConfigKey inputs.localConfig) SourceLocalDefault,
+        candidate (Map.lookup agentTracePathConfigKey inputs.globalConfig) SourceGlobalDefault
+      ]
 
 -- | When no model was configured (source is the built-in default), substitute
 -- the provider's deterministic default so the two local CLI providers always
@@ -377,6 +480,17 @@ effortCandidates c inputs =
     candidate (Map.lookup agentEffortConfigKey inputs.globalConfig) SourceGlobalDefault
   ]
 
+traceCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentConfigSource)]
+traceCandidates c inputs =
+  [ candidate inputs.cliTrace (cliSource inputs.cliTraceFromSubcommand),
+    candidate inputs.envTrace SourceEnv,
+    candidate inputs.declaredTrace SourceArtifactDeclaration,
+    candidate (Map.lookup (agentCommandTraceConfigKey c) inputs.localConfig) SourceLocalCommand,
+    candidate (Map.lookup agentTraceConfigKey inputs.localConfig) SourceLocalDefault,
+    candidate (Map.lookup (agentCommandTraceConfigKey c) inputs.globalConfig) SourceGlobalCommand,
+    candidate (Map.lookup agentTraceConfigKey inputs.globalConfig) SourceGlobalDefault
+  ]
+
 cliSource :: Bool -> AgentConfigSource
 cliSource True = SourceCliSubcommand
 cliSource False = SourceCliParent
@@ -407,6 +521,16 @@ resolveEffort candidates =
     Just (txt, src) -> (\lvl -> ResolvedAgentField (Just lvl) src) <$> effortFromText txt
     Nothing -> Right (ResolvedAgentField Nothing SourceBuiltinDefault)
 
+-- | Resolve a trace destination from an ordered candidate list. Unlike the
+-- model and effort resolvers there is no \"unset\" state: an unconfigured trace
+-- resolves to 'TraceOff' with source 'SourceBuiltinDefault', which emits
+-- nothing.
+resolveTrace :: [(Maybe Text, AgentConfigSource)] -> Either Text (ResolvedAgentField TraceSetting)
+resolveTrace candidates =
+  case firstNonBlankWithSource candidates of
+    Just (txt, src) -> (\t -> ResolvedAgentField t src) <$> traceFromText txt
+    Nothing -> Right (ResolvedAgentField TraceOff SourceBuiltinDefault)
+
 candidate :: Maybe Text -> AgentConfigSource -> (Maybe Text, AgentConfigSource)
 candidate value src = (value, src)
 
@@ -426,7 +550,10 @@ firstNonBlankWithSource =
 -- the flat resolver. Preserved for backward compatibility.
 loadAgentModelConfig :: Maybe Text -> Maybe Text -> IO (Either Text AgentModelConfig)
 loadAgentModelConfig cliProvider cliModel = do
-  inputsOrErr <- gatherAgentConfigInputs cliProvider cliModel Nothing False False False
+  inputsOrErr <-
+    gatherAgentConfigInputs
+      noAgentSettingFlags
+      noAgentSettingFlags {flagProvider = cliProvider, flagModel = cliModel}
   pure (inputsOrErr >>= resolveAgentModelConfig)
 
 -- | Read the environment and config, then resolve provider/model/effort for a
@@ -434,64 +561,59 @@ loadAgentModelConfig cliProvider cliModel = do
 -- need.
 loadAgentModelConfigFor ::
   AgentCommandName ->
-  -- | winning provider flag (subcommand @<|>@ parent)
-  Maybe Text ->
-  -- | winning model flag
-  Maybe Text ->
-  -- | winning effort flag
-  Maybe Text ->
-  -- | provider flag came from the subcommand?
-  Bool ->
-  -- | model flag came from the subcommand?
-  Bool ->
-  -- | effort flag came from the subcommand?
-  Bool ->
+  -- | flags on the parent @seihou agent@ command
+  AgentSettingFlags ->
+  -- | flags on the subcommand itself
+  AgentSettingFlags ->
   IO (Either Text AgentModelConfig)
-loadAgentModelConfigFor c cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub = do
-  inputsOrErr <- gatherAgentConfigInputs cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub
+loadAgentModelConfigFor c parentFlags commandFlags = do
+  inputsOrErr <- gatherAgentConfigInputs parentFlags commandFlags
   pure $ do
     inputs <- inputsOrErr
-    (provider, model, effort) <- resolveAgentModelConfigFor c inputs
+    (provider, model, effort, trace) <- resolveAgentModelConfigFor c inputs
     pure
       AgentModelConfig
         { agentProvider = provider.resolvedValue,
           agentModel = model.resolvedValue,
-          agentEffort = effort.resolvedValue
+          agentEffort = effort.resolvedValue,
+          agentTrace = trace.resolvedValue,
+          agentTracePath = resolveTracePath inputs
         }
 
 -- | Resolve every configurable command from the real environment and config,
 -- with no CLI flags, for the @seihou agent config@ inspection view.
 loadResolvedAgentConfig :: IO (Either Text [ResolvedCommandConfig])
 loadResolvedAgentConfig = do
-  inputsOrErr <- gatherAgentConfigInputs Nothing Nothing Nothing False False False
+  inputsOrErr <- gatherAgentConfigInputs noAgentSettingFlags noAgentSettingFlags
   pure $ do
     inputs <- inputsOrErr
     traverse (resolveOne inputs) allAgentCommands
   where
     resolveOne inputs c = do
-      (provider, model, effort) <- resolveAgentModelConfigFor c inputs
+      (provider, model, effort, trace) <- resolveAgentModelConfigFor c inputs
       pure
         ResolvedCommandConfig
           { rccCommand = c,
             rccProvider = provider,
             rccModel = model,
-            rccEffort = effort
+            rccEffort = effort,
+            rccTrace = trace,
+            rccTracePath = resolveTracePath inputs
           }
 
 -- | Shared IO: read @SEIHOU_AGENT_*@ and the local + global config maps into an
 -- 'AgentConfigInputs'. Any config read error surfaces as 'Left'.
 gatherAgentConfigInputs ::
-  Maybe Text ->
-  Maybe Text ->
-  Maybe Text ->
-  Bool ->
-  Bool ->
-  Bool ->
+  -- | flags on the parent @seihou agent@ command
+  AgentSettingFlags ->
+  -- | flags on the subcommand itself
+  AgentSettingFlags ->
   IO (Either Text AgentConfigInputs)
-gatherAgentConfigInputs cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub = do
+gatherAgentConfigInputs parentFlags commandFlags = do
   envProvider <- fmap T.pack <$> lookupEnv agentProviderEnvVar
   envModel <- fmap T.pack <$> lookupEnv agentModelEnvVar
   envEffort <- fmap T.pack <$> lookupEnv agentEffortEnvVar
+  envTrace <- fmap T.pack <$> lookupEnv agentTraceEnvVar
   (localResult, globalResult) <- runEff $ runConfigReader $ do
     local <- readLocalConfig
     global <- readGlobalConfig
@@ -499,23 +621,18 @@ gatherAgentConfigInputs cliProvider cliModel cliEffort providerFromSub modelFrom
   pure $ do
     local <- first formatConfigError localResult
     global <- first formatConfigError globalResult
-    pure
-      AgentConfigInputs
-        { cliProvider = cliProvider,
-          cliModel = cliModel,
-          cliEffort = cliEffort,
-          cliProviderFromSubcommand = providerFromSub,
-          cliModelFromSubcommand = modelFromSub,
-          cliEffortFromSubcommand = effortFromSub,
-          envProvider = envProvider,
-          envModel = envModel,
-          envEffort = envEffort,
-          declaredProvider = Nothing,
-          declaredModel = Nothing,
-          declaredEffort = Nothing,
-          localConfig = local,
-          globalConfig = global
-        }
+    pure $
+      applyAgentSettingFlags
+        parentFlags
+        commandFlags
+        baseAgentConfigInputs
+          { envProvider = envProvider,
+            envModel = envModel,
+            envEffort = envEffort,
+            envTrace = envTrace,
+            localConfig = local,
+            globalConfig = global
+          }
 
 -- | The three launch fields the resolver understands, projected out of an
 -- artifact's @launch@ record. @mode@ is deliberately absent: it is reserved
@@ -584,21 +701,13 @@ data PendingAgentConfig = PendingAgentConfig
 -- its own launch settings, stopping short of resolution.
 loadPendingAgentConfig ::
   AgentCommandName ->
-  -- | winning provider flag (subcommand @<|>@ parent)
-  Maybe Text ->
-  -- | winning model flag
-  Maybe Text ->
-  -- | winning effort flag
-  Maybe Text ->
-  -- | provider flag came from the subcommand?
-  Bool ->
-  -- | model flag came from the subcommand?
-  Bool ->
-  -- | effort flag came from the subcommand?
-  Bool ->
+  -- | flags on the parent @seihou agent@ command
+  AgentSettingFlags ->
+  -- | flags on the subcommand itself
+  AgentSettingFlags ->
   IO (Either Text PendingAgentConfig)
-loadPendingAgentConfig c cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub = do
-  inputsOrErr <- gatherAgentConfigInputs cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub
+loadPendingAgentConfig c parentFlags commandFlags = do
+  inputsOrErr <- gatherAgentConfigInputs parentFlags commandFlags
   pure (PendingAgentConfig c <$> inputsOrErr)
 
 -- | Finish resolution by folding the artifact's declaration into the gathered
@@ -614,13 +723,15 @@ resolvePendingAgentConfig pending decl = do
             declaredModel = decl.declarationModel,
             declaredEffort = decl.declarationEffort
           }
-  (provider, model, effort) <- resolveAgentModelConfigFor pending.pendingCommand inputs
+  (provider, model, effort, trace) <- resolveAgentModelConfigFor pending.pendingCommand inputs
   pure
     ResolvedCommandConfig
       { rccCommand = pending.pendingCommand,
         rccProvider = provider,
         rccModel = model,
-        rccEffort = effort
+        rccEffort = effort,
+        rccTrace = trace,
+        rccTracePath = resolveTracePath inputs
       }
 
 -- | Project a resolved command config down to what the launch layer needs,
@@ -630,7 +741,9 @@ resolvedAgentModelConfig rcc =
   AgentModelConfig
     { agentProvider = rcc.rccProvider.resolvedValue,
       agentModel = rcc.rccModel.resolvedValue,
-      agentEffort = rcc.rccEffort.resolvedValue
+      agentEffort = rcc.rccEffort.resolvedValue,
+      agentTrace = rcc.rccTrace.resolvedValue,
+      agentTracePath = rcc.rccTracePath
     }
 
 -- | A one-line provenance summary for a verbose log line, e.g.
@@ -642,7 +755,8 @@ formatResolvedAgentProvenance rcc =
     ", "
     [ part "provider" (providerToText rcc.rccProvider.resolvedValue) ProviderField rcc.rccProvider.resolvedSource,
       part "model" (fromMaybe "<provider default>" rcc.rccModel.resolvedValue) ModelField rcc.rccModel.resolvedSource,
-      part "effort" (maybe "<unset>" effortToText rcc.rccEffort.resolvedValue) EffortField rcc.rccEffort.resolvedSource
+      part "effort" (maybe "<unset>" effortToText rcc.rccEffort.resolvedValue) EffortField rcc.rccEffort.resolvedSource,
+      part "trace" (traceToText rcc.rccTrace.resolvedValue) TraceField rcc.rccTrace.resolvedSource
     ]
   where
     part label value field src =

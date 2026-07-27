@@ -3,7 +3,7 @@ module Seihou.CLI.AgentConfigShowSpec (tests) where
 import Baikai.ThinkingLevel (ThinkingLevel (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Seihou.CLI.AgentCompletion (AgentProvider (..))
+import Seihou.CLI.AgentCompletion (AgentProvider (..), TraceSetting (..))
 import Seihou.CLI.AgentConfig
   ( AgentCommandName (..),
     AgentConfigSource (..),
@@ -53,8 +53,23 @@ spec =
     it "shows an unset effort as (default) with built-in provenance" $
       hasLine ["effort", "(default)", "[built-in default]"] `shouldBe` True
 
+    it "labels a per-command local trace with its concrete key" $
+      hasLine ["trace", "file", "[local: agent.run.trace]"] `shouldBe` True
+
+    it "labels a global default trace with the shared key" $
+      hasLine ["trace", "stderr", "[global: agent.trace]"] `shouldBe` True
+
+    it "shows an unconfigured trace as off with built-in provenance" $
+      hasLine ["trace", "off", "[built-in default]"] `shouldBe` True
+
     it "includes the precedence legend" $
       ("Precedence, highest first:" `Text.isInfixOf` rendered) `shouldBe` True
+
+    it "names the trace environment variable in the legend" $
+      ("SEIHOU_AGENT_TRACE" `Text.isInfixOf` rendered) `shouldBe` True
+
+    it "names the trace path key in the legend" $
+      ("agent.tracePath" `Text.isInfixOf` rendered) `shouldBe` True
 
 sample :: [ResolvedCommandConfig]
 sample =
@@ -62,20 +77,28 @@ sample =
       AgentCmdAssist
       (ResolvedAgentField AgentProviderCodexCli SourceGlobalCommand)
       (ResolvedAgentField Nothing SourceBuiltinDefault)
-      (ResolvedAgentField (Just ThinkingHigh) SourceGlobalDefault),
+      (ResolvedAgentField (Just ThinkingHigh) SourceGlobalDefault)
+      (ResolvedAgentField TraceStderr SourceGlobalDefault)
+      Nothing,
     ResolvedCommandConfig
       AgentCmdBootstrap
       (ResolvedAgentField AgentProviderClaudeCli SourceBuiltinDefault)
       (ResolvedAgentField (Just "claude-sonnet-5") SourceGlobalDefault)
-      (ResolvedAgentField Nothing SourceBuiltinDefault),
+      (ResolvedAgentField Nothing SourceBuiltinDefault)
+      (ResolvedAgentField TraceOff SourceBuiltinDefault)
+      Nothing,
     ResolvedCommandConfig
       AgentCmdRun
       (ResolvedAgentField AgentProviderClaudeCli SourceBuiltinDefault)
       (ResolvedAgentField (Just "claude-opus-4-8") SourceLocalCommand)
-      (ResolvedAgentField (Just ThinkingMax) SourceLocalCommand),
+      (ResolvedAgentField (Just ThinkingMax) SourceLocalCommand)
+      (ResolvedAgentField TraceFile SourceLocalCommand)
+      (Just "/tmp/trace.jsonl"),
     ResolvedCommandConfig
       AgentCmdMigrate
       (ResolvedAgentField AgentProviderOpenAI SourceLocalCommand)
       (ResolvedAgentField (Just "gpt-5-mini") SourceLocalCommand)
       (ResolvedAgentField Nothing SourceBuiltinDefault)
+      (ResolvedAgentField TraceOff SourceBuiltinDefault)
+      Nothing
   ]

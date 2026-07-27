@@ -4,12 +4,15 @@ module Seihou.CLI.AgentCompletion
   ( AgentProvider (..),
     AgentModelConfig (..),
     AgentCompletionRequest (..),
+    TraceSetting (..),
     defaultAgentModelConfig,
     defaultModelForProvider,
     providerFromText,
     providerToText,
     effortFromText,
     effortToText,
+    traceFromText,
+    traceToText,
     buildAgentCompletionRequest,
     buildBaikaiModel,
     runAgentCompletion,
@@ -38,11 +41,35 @@ data AgentProvider
   | AgentProviderOpenAI
   deriving stock (Eq, Show)
 
+-- | Where trace events for a model call should go.
+--
+-- Baikai emits a small stream of 'Baikai.Trace.Event.TraceEvent' values per
+-- call — one when the call starts, one when it finishes or fails — carrying
+-- the provider, model, elapsed milliseconds, token counts, and dollar cost.
+-- This closed vocabulary names the four destinations Seihou exposes, rather
+-- than exposing Baikai's composable @TraceSink@ surface (a streamly fold),
+-- which no config string could express.
+data TraceSetting
+  = -- | Emit nothing. The default, and byte-for-byte the historical behavior.
+    TraceOff
+  | -- | Append one JSON object per line to the resolved trace file.
+    TraceFile
+  | -- | Print one human-readable line per event to stdout.
+    TraceStdout
+  | -- | Print one human-readable line per event to stderr.
+    TraceStderr
+  deriving stock (Eq, Show)
+
 data AgentModelConfig = AgentModelConfig
   { agentProvider :: AgentProvider,
     agentModel :: Maybe Text,
     -- | Reasoning effort. 'Nothing' leaves the provider/CLI default alone.
-    agentEffort :: Maybe ThinkingLevel
+    agentEffort :: Maybe ThinkingLevel,
+    -- | Where call traces go. 'TraceOff' emits nothing.
+    agentTrace :: TraceSetting,
+    -- | The configured @agent.tracePath@, when set. 'Nothing' means the
+    -- built-in default path is used by the file sink.
+    agentTracePath :: Maybe FilePath
   }
   deriving stock (Eq, Show)
 
@@ -66,7 +93,9 @@ defaultAgentModelConfig =
   AgentModelConfig
     { agentProvider = AgentProviderClaudeCli,
       agentModel = Nothing,
-      agentEffort = Nothing
+      agentEffort = Nothing,
+      agentTrace = TraceOff,
+      agentTracePath = Nothing
     }
 
 -- | Parse a reasoning-effort level name (case-insensitive) into a Baikai
@@ -89,6 +118,27 @@ effortFromText raw =
 -- | Render a 'ThinkingLevel' to its canonical name (via Baikai).
 effortToText :: ThinkingLevel -> Text
 effortToText = renderThinkingLevel
+
+-- | Parse a trace-destination name (case-insensitive) into a 'TraceSetting'.
+traceFromText :: Text -> Either Text TraceSetting
+traceFromText raw =
+  case Text.toLower (Text.strip raw) of
+    "off" -> Right TraceOff
+    "file" -> Right TraceFile
+    "stdout" -> Right TraceStdout
+    "stderr" -> Right TraceStderr
+    other ->
+      Left $
+        "Unknown trace setting '"
+          <> other
+          <> "'. Expected one of: off, file, stdout, stderr."
+
+-- | Render a 'TraceSetting' to its canonical name.
+traceToText :: TraceSetting -> Text
+traceToText TraceOff = "off"
+traceToText TraceFile = "file"
+traceToText TraceStdout = "stdout"
+traceToText TraceStderr = "stderr"
 
 -- | The deterministic default model for a provider when the user has configured
 -- none. The two local CLI providers pin a specific model so a @seihou agent@

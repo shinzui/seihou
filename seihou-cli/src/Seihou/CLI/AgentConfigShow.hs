@@ -6,7 +6,7 @@ where
 
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.CLI.AgentCompletion (effortToText, providerToText)
+import Seihou.CLI.AgentCompletion (effortToText, providerToText, traceToText)
 import Seihou.CLI.AgentConfig
   ( AgentField (..),
     ResolvedAgentField (..),
@@ -19,9 +19,9 @@ import Seihou.Prelude
 import System.Exit (exitFailure)
 
 -- | @seihou agent config@: read the real environment and config, resolve the
--- provider, model, and reasoning effort for every agent command, and print a
--- table labelling the source that supplied each value, followed by the
--- precedence legend.
+-- provider, model, reasoning effort, and trace destination for every agent
+-- command, and print a table labelling the source that supplied each value,
+-- followed by the precedence legend.
 handleAgentConfigShow :: IO ()
 handleAgentConfigShow = do
   result <- loadResolvedAgentConfig
@@ -36,7 +36,7 @@ handleAgentConfigShow = do
 formatResolvedAgentConfig :: [ResolvedCommandConfig] -> Text
 formatResolvedAgentConfig resolved =
   T.unlines $
-    [ "Resolved agent provider, model, and effort per command",
+    [ "Resolved agent provider, model, effort, and trace per command",
       "(highest-precedence source wins; see precedence list below)",
       ""
     ]
@@ -49,12 +49,14 @@ formatResolvedAgentConfig resolved =
     commandValueWidths rcc =
       [ T.length (providerValue rcc),
         T.length (modelValue rcc),
-        T.length (effortValue rcc)
+        T.length (effortValue rcc),
+        T.length (traceValue rcc)
       ]
 
     providerValue rcc = providerToText rcc.rccProvider.resolvedValue
     modelValue rcc = maybe "(default)" id rcc.rccModel.resolvedValue
     effortValue rcc = maybe "(default)" effortToText rcc.rccEffort.resolvedValue
+    traceValue rcc = traceToText rcc.rccTrace.resolvedValue
 
     renderCommand rcc =
       let cmd = rcc.rccCommand
@@ -73,7 +75,12 @@ formatResolvedAgentConfig resolved =
               (padRight labelWidth "")
               "effort  "
               (effortValue rcc)
-              (agentConfigSourceLabel cmd EffortField rcc.rccEffort.resolvedSource)
+              (agentConfigSourceLabel cmd EffortField rcc.rccEffort.resolvedSource),
+            row
+              (padRight labelWidth "")
+              "trace   "
+              (traceValue rcc)
+              (agentConfigSourceLabel cmd TraceField rcc.rccTrace.resolvedSource)
           ]
 
     row label field value sourceLabel =
@@ -95,19 +102,25 @@ precedenceLegend =
   T.intercalate
     "\n"
     [ "Precedence, highest first:",
-      "  1. --provider / --model / --effort flag on the subcommand",
-      "  2. --provider / --model / --effort flag on `seihou agent`",
-      "  3. SEIHOU_AGENT_PROVIDER / SEIHOU_AGENT_MODEL / SEIHOU_AGENT_EFFORT environment variables",
+      "  1. --provider / --model / --effort / --trace flag on the subcommand",
+      "  2. --provider / --model / --effort / --trace flag on `seihou agent`",
+      "  3. SEIHOU_AGENT_PROVIDER / SEIHOU_AGENT_MODEL / SEIHOU_AGENT_EFFORT /",
+      "     SEIHOU_AGENT_TRACE environment variables",
       "  4. blueprint.dhall / prompt.dhall       launch.{provider,model,effort}",
-      "  5. local  .seihou/config.dhall          agent.<command>.{provider,model,effort}",
-      "  6. local  .seihou/config.dhall          agent.{provider,model,effort}",
-      "  7. global ~/.config/seihou/config.dhall  agent.<command>.{provider,model,effort}",
-      "  8. global ~/.config/seihou/config.dhall  agent.{provider,model,effort}",
+      "  5. local  .seihou/config.dhall          agent.<command>.{provider,model,effort,trace}",
+      "  6. local  .seihou/config.dhall          agent.{provider,model,effort,trace}",
+      "  7. global ~/.config/seihou/config.dhall  agent.<command>.{provider,model,effort,trace}",
+      "  8. global ~/.config/seihou/config.dhall  agent.{provider,model,effort,trace}",
       "  9. built-in default: provider claude-cli; model pinned per provider",
       "     (claude-cli -> claude-opus-4-8, codex-cli -> gpt-5.6-terra); effort unset",
-      "     (the CLI/provider chooses its own reasoning effort)",
+      "     (the CLI/provider chooses its own reasoning effort); trace off",
       "",
       "Tier 4 is per-artifact: it depends on which blueprint or prompt you run, so",
       "the table above cannot show it. Run with --verbose to see the resolved",
-      "settings and their sources for a specific run."
+      "settings and their sources for a specific run. `trace` has no tier-4",
+      "declaration: no blueprint or prompt schema field feeds it.",
+      "",
+      "The trace file path is set with agent.tracePath (local, then global). It is",
+      "free-form and has no flag, environment variable, or per-command variant;",
+      "unset means .seihou/trace.jsonl."
     ]

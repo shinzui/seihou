@@ -86,9 +86,11 @@ This section must always reflect the actual current state of the work.
       is absent from the shared registry (2026-07-27).
 - [x] Recorded the scoping decisions (sink vocabulary, config surface, error-semantics change,
       OTel deferral, intention) in the Decision Log (2026-07-27).
-- [ ] Milestone 1 — Trace configuration: a `TraceSetting` type, `agent.trace` /
-      `agent.<command>.trace` config keys, `SEIHOU_AGENT_TRACE`, and a `--trace` flag, all
-      resolved through the existing precedence chain, with unit tests. Nothing emits yet.
+- [x] Milestone 1 — Trace configuration: a `TraceSetting` type, `agent.trace` /
+      `agent.<command>.trace` config keys, `agent.tracePath`, `SEIHOU_AGENT_TRACE`, and a
+      `--trace` flag, all resolved through the existing precedence chain, with unit tests.
+      Nothing emits yet. `cabal test seihou-cli`: 396 tests pass. `seihou agent config` shows a
+      trace row per command; `--trace bogus` exits 1 naming all four settings (2026-07-27).
 - [ ] Milestone 2 — Sink construction: turn a resolved `TraceSetting` into a `Baikai.TraceSink`,
       including path resolution for the file sink and directory creation, with unit tests.
 - [ ] Milestone 3 — The swap: `runAgentCompletionWith` calls `Baikai.Trace.withTrace` instead of
@@ -133,6 +135,23 @@ implementation. Provide concise evidence.
   see. Milestone 3 exists specifically to handle this, using
   `Baikai.Response.responseError :: Response -> Maybe BaikaiError`, which returns `Just` exactly
   when the response is error-shaped.
+
+- **Discovery (2026-07-27, during Milestone 1 research): `withTrace` reaches the provider by a
+  different route than `completeRequest`, which sharpens — and partly explains — the
+  error-semantics hazard above.** `Baikai.Provider.Registry.ApiProvider` has two fields:
+  `complete` (synchronous) and `stream`. `completeRequest` calls `complete`; `withTrace` drains
+  `withTraceStream`, which calls `stream`. For the two CLI providers those are *not* the same
+  code path — `baikai-claude/src/Baikai/Provider/Claude/Cli.hs:102` sets
+  `stream = liftCompleteToStream (runClaudeCli cfg)` and `complete = runClaudeCli cfg` directly,
+  and the comment there records that the direct path is kept precisely because a streaming
+  round trip "would lose the former [`responseId`] and recompute the latter [`latencyMs`] from
+  synthetic events". Two consequences for Milestone 3: (a) `Baikai.Stream.liftCompleteToStream`
+  wraps the batch call in `trySync` and converts a synchronous exception into an `EventError`,
+  which is *why* the provider failures Seihou's `try` catches today will arrive as error-shaped
+  responses tomorrow — the `responseError` branch is not optional; (b) Seihou reads only
+  assistant text blocks (`responseText`) and, after this change, `responseError`, both of which
+  survive the round trip, so losing `responseId` and the directly-measured `latencyMs` costs
+  Seihou nothing. Worth knowing before anyone tries to use `Response.latencyMs` here.
 
 - **Discovery (2026-07-27): all six commands funnel through one function, so the swap is a
   one-place change.** `seihou-cli/src/Seihou/CLI/AgentCompletion.hs` exposes `runAgentCompletion`
@@ -218,6 +237,27 @@ Record every decision made while working on the plan.
   ordered resolution path for one setting would be gratuitous. A blueprint declaring
   `launch.trace` is not part of this plan — the schema is not extended — but routing through the
   same resolver means adding it later is an insertion, not a redesign.
+  Date: 2026-07-27
+
+- Decision (2026-07-27, Milestone 1): group the four per-tier CLI flags into an
+  `AgentSettingFlags` record rather than extending the positional argument lists of
+  `loadAgentModelConfigFor`, `loadPendingAgentConfig`, and `gatherAgentConfigInputs`.
+  Rationale: the plan's literal instruction — thread a fourth flag through the existing
+  positional signatures — would have produced eight-argument functions carrying four
+  same-typed `Maybe Text` values in a row, twice over, plus four `Bool`s. Any transposition
+  would type-check and silently mis-resolve a setting. The record also lets the
+  `commandFlag <|> parentFlag` combination and the `isJust commandFlag` provenance marker live
+  in one place (`applyAgentSettingFlags`) instead of being duplicated in both `Main.hs`
+  helpers. Net effect on the precedence chain: none — the same nine tiers in the same order.
+  Date: 2026-07-27
+
+- Decision (2026-07-27, Milestone 1): carry the resolved trace path on
+  `ResolvedCommandConfig` as `rccTracePath :: Maybe FilePath`, without provenance.
+  Rationale: `resolvedAgentModelConfig` projects a `ResolvedCommandConfig` into the
+  `AgentModelConfig` the launch layer consumes, and that record now needs `agentTracePath`.
+  Provenance is omitted deliberately: `agent.tracePath` is free-form, has no flag, no
+  environment variable, and no per-command variant, so there is no precedence story worth
+  displaying — only local-beats-global, which the legend states in prose.
   Date: 2026-07-27
 
 - Decision: link the work to Intention `intention_01kyj8dbxde3zta5zyt0y1srxq`, minted with

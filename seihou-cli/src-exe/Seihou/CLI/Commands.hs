@@ -107,6 +107,7 @@ data AgentOpts = AgentOpts
     agentProvider :: Maybe Text,
     agentModel :: Maybe Text,
     agentEffort :: Maybe Text,
+    agentTrace :: Maybe Text,
     agentCommand :: AgentCommand
   }
   deriving stock (Eq, Show, Generic)
@@ -309,7 +310,8 @@ data AssistOpts = AssistOpts
   { assistPrompt :: Maybe Text,
     assistProvider :: Maybe Text,
     assistModel :: Maybe Text,
-    assistEffort :: Maybe Text
+    assistEffort :: Maybe Text,
+    assistTrace :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -318,7 +320,8 @@ data BootstrapOpts = BootstrapOpts
     bootstrapRepo :: Bool,
     bootstrapProvider :: Maybe Text,
     bootstrapModel :: Maybe Text,
-    bootstrapEffort :: Maybe Text
+    bootstrapEffort :: Maybe Text,
+    bootstrapTrace :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -326,7 +329,8 @@ data SetupOpts = SetupOpts
   { setupPrompt :: Maybe Text,
     setupProvider :: Maybe Text,
     setupModel :: Maybe Text,
-    setupEffort :: Maybe Text
+    setupEffort :: Maybe Text,
+    setupTrace :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -342,7 +346,8 @@ data BlueprintRunOpts = BlueprintRunOpts
     runBlueprintBatch :: Bool,
     runBlueprintProvider :: Maybe Text,
     runBlueprintModel :: Maybe Text,
-    runBlueprintEffort :: Maybe Text
+    runBlueprintEffort :: Maybe Text,
+    runBlueprintTrace :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -358,7 +363,8 @@ data BlueprintMigrationOpts = BlueprintMigrationOpts
     migrateBlueprintRerun :: Bool,
     migrateBlueprintProvider :: Maybe Text,
     migrateBlueprintModel :: Maybe Text,
-    migrateBlueprintEffort :: Maybe Text
+    migrateBlueprintEffort :: Maybe Text,
+    migrateBlueprintTrace :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -376,7 +382,8 @@ data PromptRunOpts = PromptRunOpts
     runPromptDebug :: Bool,
     runPromptProvider :: Maybe Text,
     runPromptModel :: Maybe Text,
-    runPromptEffort :: Maybe Text
+    runPromptEffort :: Maybe Text,
+    runPromptTrace :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -1530,6 +1537,7 @@ agentParser =
             )
         )
       <*> effortOption
+      <*> traceOption
       <*> agentCommandParser
 
 agentCommandParser :: Parser AgentCommand
@@ -1582,6 +1590,7 @@ agentAssistParser =
       <*> providerOption
       <*> modelOption
       <*> effortOption
+      <*> traceOption
 
 agentBootstrapInfo :: ParserInfo AgentCommand
 agentBootstrapInfo =
@@ -1620,6 +1629,7 @@ agentBootstrapParser =
       <*> providerOption
       <*> modelOption
       <*> effortOption
+      <*> traceOption
 
 agentSetupInfo :: ParserInfo AgentCommand
 agentSetupInfo =
@@ -1657,6 +1667,7 @@ agentSetupParser =
       <*> providerOption
       <*> modelOption
       <*> effortOption
+      <*> traceOption
 
 agentRunInfo :: ParserInfo AgentCommand
 agentRunInfo =
@@ -1716,6 +1727,7 @@ agentRunParser =
       <*> providerOption
       <*> modelOption
       <*> effortOption
+      <*> traceOption
 
 agentMigrateInfo :: ParserInfo AgentCommand
 agentMigrateInfo =
@@ -1765,6 +1777,7 @@ agentMigrateParser =
       <*> providerOption
       <*> modelOption
       <*> effortOption
+      <*> traceOption
 
 agentModelsInfo :: ParserInfo AgentCommand
 agentModelsInfo =
@@ -1901,6 +1914,7 @@ promptRunParser =
       <*> providerOption
       <*> modelOption
       <*> effortOption
+      <*> traceOption
 
 helpCmdInfo :: ParserInfo Command
 helpCmdInfo =
@@ -2026,4 +2040,14 @@ effortOption =
       ( long "effort"
           <> metavar "LEVEL"
           <> help "Reasoning effort: minimal, low, medium, high, xhigh, or max"
+      )
+
+traceOption :: Parser (Maybe Text)
+traceOption =
+  optional $
+    option
+      (T.pack <$> str)
+      ( long "trace"
+          <> metavar "SETTING"
+          <> help "Record model calls: off, file, stdout, or stderr (file path: agent.tracePath)"
       )

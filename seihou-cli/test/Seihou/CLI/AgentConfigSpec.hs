@@ -175,6 +175,110 @@ spec = do
         Left err -> "Unknown reasoning effort" `Text.isInfixOf` err && "xhigh" `Text.isInfixOf` err
         Right _ -> False
 
+  describe "resolveAgentModelConfigFor (call tracing)" $ do
+    it "defaults to tracing off when nothing is configured" $
+      traceOf AgentCmdRun baseInputs `shouldBe` Right (TraceOff, SourceBuiltinDefault)
+
+    it "prefers a per-command trace over the shared default in the same scope" $ do
+      let inputs =
+            baseInputs
+              { localConfig =
+                  Map.fromList
+                    [ (agentTraceConfigKey, "stderr"),
+                      (agentCommandTraceConfigKey AgentCmdRun, "file")
+                    ]
+              }
+      traceOf AgentCmdRun inputs `shouldBe` Right (TraceFile, SourceLocalCommand)
+      traceOf AgentCmdAssist inputs `shouldBe` Right (TraceStderr, SourceLocalDefault)
+
+    it "lets a local default trace override a global per-command trace" $ do
+      let inputs =
+            baseInputs
+              { localConfig = Map.fromList [(agentTraceConfigKey, "stdout")],
+                globalConfig = Map.fromList [(agentCommandTraceConfigKey AgentCmdRun, "file")]
+              }
+      traceOf AgentCmdRun inputs `shouldBe` Right (TraceStdout, SourceLocalDefault)
+
+    it "lets a global per-command trace beat a global default" $ do
+      let inputs =
+            baseInputs
+              { globalConfig =
+                  Map.fromList
+                    [ (agentTraceConfigKey, "stdout"),
+                      (agentCommandTraceConfigKey AgentCmdRun, "file")
+                    ]
+              }
+      traceOf AgentCmdRun inputs `shouldBe` Right (TraceFile, SourceGlobalCommand)
+
+    it "keeps the trace environment variable above config" $ do
+      let inputs =
+            baseInputs
+              { envTrace = Just "stderr",
+                localConfig = Map.fromList [(agentCommandTraceConfigKey AgentCmdRun, "file")]
+              }
+      traceOf AgentCmdRun inputs `shouldBe` Right (TraceStderr, SourceEnv)
+
+    it "keeps a declared trace above config but below the environment" $ do
+      let declared = baseInputs {declaredTrace = Just "file"}
+      traceOf AgentCmdRun (declared {localConfig = Map.fromList [(agentTraceConfigKey, "stdout")]})
+        `shouldBe` Right (TraceFile, SourceArtifactDeclaration)
+      traceOf AgentCmdRun (declared {envTrace = Just "stderr"})
+        `shouldBe` Right (TraceStderr, SourceEnv)
+
+    it "prefers the subcommand trace flag over everything" $
+      traceOf
+        AgentCmdRun
+        (baseInputs {cliTrace = Just "off", cliTraceFromSubcommand = True, envTrace = Just "file"})
+        `shouldBe` Right (TraceOff, SourceCliSubcommand)
+
+    it "attributes a parent `seihou agent` trace flag to that tier" $
+      traceOf AgentCmdRun (baseInputs {cliTrace = Just "file", cliTraceFromSubcommand = False})
+        `shouldBe` Right (TraceFile, SourceCliParent)
+
+    it "parses trace settings case-insensitively" $
+      traceOf AgentCmdRun (baseInputs {cliTrace = Just "  STDERR  "})
+        `shouldBe` Right (TraceStderr, SourceCliParent)
+
+    it "skips a blank trace value in favor of the next tier" $
+      traceOf
+        AgentCmdRun
+        (baseInputs {cliTrace = Just "   ", localConfig = Map.fromList [(agentTraceConfigKey, "file")]})
+        `shouldBe` Right (TraceFile, SourceLocalDefault)
+
+    it "returns a diagnostic naming every accepted trace setting" $
+      resolveAgentModelConfigFor AgentCmdRun (baseInputs {cliTrace = Just "syslog"}) `shouldSatisfy` \case
+        Left err ->
+          "Unknown trace setting" `Text.isInfixOf` err
+            && "off" `Text.isInfixOf` err
+            && "file" `Text.isInfixOf` err
+            && "stdout" `Text.isInfixOf` err
+            && "stderr" `Text.isInfixOf` err
+        Right _ -> False
+
+  describe "resolveTracePath" $ do
+    it "is unset when no agent.tracePath is configured" $
+      resolveTracePath baseInputs `shouldBe` Nothing
+
+    it "reads the local key before the global key" $
+      resolveTracePath
+        baseInputs
+          { localConfig = Map.fromList [(agentTracePathConfigKey, "/tmp/local.jsonl")],
+            globalConfig = Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]
+          }
+        `shouldBe` Just "/tmp/local.jsonl"
+
+    it "falls back to the global key" $
+      resolveTracePath baseInputs {globalConfig = Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]}
+        `shouldBe` Just "/tmp/global.jsonl"
+
+    it "treats a blank local path as absent" $
+      resolveTracePath
+        baseInputs
+          { localConfig = Map.fromList [(agentTracePathConfigKey, "   ")],
+            globalConfig = Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]
+          }
+        `shouldBe` Just "/tmp/global.jsonl"
+
   describe "artifact-declared launch settings" $ do
     it "beats a per-command local config key" $ do
       let inputs =
@@ -295,13 +399,13 @@ spec = do
       let pending = PendingAgentConfig AgentCmdRun baseInputs
       fmap formatResolvedAgentProvenance (resolvePendingAgentConfig pending (decl Nothing (Just "claude-sonnet-5") (Just "max")))
         `shouldBe` Right
-          "provider claude-cli [built-in default], model claude-sonnet-5 [blueprint: launch.model], effort max [blueprint: launch.effort]"
+          "provider claude-cli [built-in default], model claude-sonnet-5 [blueprint: launch.model], effort max [blueprint: launch.effort], trace off [built-in default]"
 
     it "reports an unset effort rather than omitting it" $ do
       let pending = PendingAgentConfig AgentCmdPromptRun baseInputs
       fmap formatResolvedAgentProvenance (resolvePendingAgentConfig pending noAgentLaunchDeclaration)
         `shouldBe` Right
-          "provider claude-cli [built-in default], model claude-opus-4-8 [built-in default], effort <unset> [built-in default]"
+          "provider claude-cli [built-in default], model claude-opus-4-8 [built-in default], effort <unset> [built-in default], trace off [built-in default]"
 
   describe "resolvePendingAgentConfig" $ do
     it "projects down to the config the launch layer consumes" $ do
@@ -311,7 +415,9 @@ spec = do
           AgentModelConfig
             { agentProvider = AgentProviderCodexCli,
               agentModel = Just "gpt-5.6-terra",
-              agentEffort = Just ThinkingHigh
+              agentEffort = Just ThinkingHigh,
+              agentTrace = TraceOff,
+              agentTracePath = Nothing
             }
 
 -- | Build an 'AgentLaunchDeclaration' from the three resolvable fields.
@@ -335,21 +441,31 @@ declaring d inputs =
 
 providerOf :: AgentCommandName -> AgentConfigInputs -> Either Text (AgentProvider, AgentConfigSource)
 providerOf c inputs =
-  (\(p, _, _) -> (p.resolvedValue, p.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+  (\(p, _, _, _) -> (p.resolvedValue, p.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
 
 modelOf :: AgentCommandName -> AgentConfigInputs -> Either Text (Maybe Text, AgentConfigSource)
 modelOf c inputs =
-  (\(_, m, _) -> (m.resolvedValue, m.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+  (\(_, m, _, _) -> (m.resolvedValue, m.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
 
 effortOf :: AgentCommandName -> AgentConfigInputs -> Either Text (Maybe ThinkingLevel, AgentConfigSource)
 effortOf c inputs =
-  (\(_, _, e) -> (e.resolvedValue, e.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+  (\(_, _, e, _) -> (e.resolvedValue, e.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
+
+traceOf :: AgentCommandName -> AgentConfigInputs -> Either Text (TraceSetting, AgentConfigSource)
+traceOf c inputs =
+  (\(_, _, _, t) -> (t.resolvedValue, t.resolvedSource)) <$> resolveAgentModelConfigFor c inputs
 
 -- | Build an expected 'AgentModelConfig' with effort unset (the flat resolver
 -- never sets effort).
 cfg :: AgentProvider -> Maybe Text -> AgentModelConfig
 cfg provider model =
-  AgentModelConfig {agentProvider = provider, agentModel = model, agentEffort = Nothing}
+  AgentModelConfig
+    { agentProvider = provider,
+      agentModel = model,
+      agentEffort = Nothing,
+      agentTrace = TraceOff,
+      agentTracePath = Nothing
+    }
 
 baseInputs :: AgentConfigInputs
 baseInputs = baseAgentConfigInputs
