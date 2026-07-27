@@ -59,6 +59,7 @@ where
 
 import Baikai.ThinkingLevel (ThinkingLevel)
 import Control.Applicative ((<|>))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Text qualified as T
@@ -177,14 +178,14 @@ noAgentSettingFlags =
 applyAgentSettingFlags :: AgentSettingFlags -> AgentSettingFlags -> AgentConfigInputs -> AgentConfigInputs
 applyAgentSettingFlags parent command inputs =
   inputs
-    { cliProvider = command.provider <|> parent.provider,
-      cliModel = command.model <|> parent.model,
-      cliEffort = command.effort <|> parent.effort,
-      cliTrace = command.trace <|> parent.trace,
-      cliProviderFromSubcommand = isJust command.provider,
-      cliModelFromSubcommand = isJust command.model,
-      cliEffortFromSubcommand = isJust command.effort,
-      cliTraceFromSubcommand = isJust command.trace
+    { cliProvider = command ^. #provider <|> parent ^. #provider,
+      cliModel = command ^. #model <|> parent ^. #model,
+      cliEffort = command ^. #effort <|> parent ^. #effort,
+      cliTrace = command ^. #trace <|> parent ^. #trace,
+      cliProviderFromSubcommand = isJust (command ^. #provider),
+      cliModelFromSubcommand = isJust (command ^. #model),
+      cliEffortFromSubcommand = isJust (command ^. #effort),
+      cliTraceFromSubcommand = isJust (command ^. #trace)
     }
 
 -- | The agent-driven commands whose provider/model can be configured
@@ -369,23 +370,23 @@ resolveAgentModelConfig :: AgentConfigInputs -> Either Text AgentModelConfig
 resolveAgentModelConfig inputs = do
   provider <-
     resolveProvider
-      [ candidate inputs.cliProvider SourceCliSubcommand,
-        candidate inputs.envProvider SourceEnv,
-        candidate (Map.lookup agentProviderConfigKey inputs.localConfig) SourceLocalDefault,
-        candidate (Map.lookup agentProviderConfigKey inputs.globalConfig) SourceGlobalDefault
+      [ candidate (inputs ^. #cliProvider) SourceCliSubcommand,
+        candidate (inputs ^. #envProvider) SourceEnv,
+        candidate (Map.lookup agentProviderConfigKey (inputs ^. #localConfig)) SourceLocalDefault,
+        candidate (Map.lookup agentProviderConfigKey (inputs ^. #globalConfig)) SourceGlobalDefault
       ]
   let modelField =
-        applyProviderDefaultModel provider.value $
+        applyProviderDefaultModel (provider ^. #value) $
           resolveModel
-            [ candidate inputs.cliModel SourceCliSubcommand,
-              candidate inputs.envModel SourceEnv,
-              candidate (Map.lookup agentModelConfigKey inputs.localConfig) SourceLocalDefault,
-              candidate (Map.lookup agentModelConfigKey inputs.globalConfig) SourceGlobalDefault
+            [ candidate (inputs ^. #cliModel) SourceCliSubcommand,
+              candidate (inputs ^. #envModel) SourceEnv,
+              candidate (Map.lookup agentModelConfigKey (inputs ^. #localConfig)) SourceLocalDefault,
+              candidate (Map.lookup agentModelConfigKey (inputs ^. #globalConfig)) SourceGlobalDefault
             ]
   pure
     AgentModelConfig
-      { provider = provider.value,
-        model = modelField.value,
+      { provider = provider ^. #value,
+        model = modelField ^. #value,
         effort = Nothing,
         trace = TraceOff,
         tracePath = Nothing
@@ -416,9 +417,9 @@ resolveAgentModelConfigFor ::
     )
 resolveAgentModelConfigFor c inputs = do
   provider <-
-    (\p -> ResolvedAgentField p.value p.source)
+    (\p -> ResolvedAgentField (p ^. #value) (p ^. #source))
       <$> resolveProvider (providerCandidates c inputs)
-  let model = applyProviderDefaultModel provider.value (resolveModel (modelCandidates c inputs))
+  let model = applyProviderDefaultModel (provider ^. #value) (resolveModel (modelCandidates c inputs))
   effort <- resolveEffort (effortCandidates c inputs)
   trace <- resolveTrace (traceCandidates c inputs)
   pure (provider, model, effort, trace)
@@ -431,8 +432,8 @@ resolveTracePath :: AgentConfigInputs -> Maybe FilePath
 resolveTracePath inputs =
   T.unpack . fst
     <$> firstNonBlankWithSource
-      [ candidate (Map.lookup agentTracePathConfigKey inputs.localConfig) SourceLocalDefault,
-        candidate (Map.lookup agentTracePathConfigKey inputs.globalConfig) SourceGlobalDefault
+      [ candidate (Map.lookup agentTracePathConfigKey (inputs ^. #localConfig)) SourceLocalDefault,
+        candidate (Map.lookup agentTracePathConfigKey (inputs ^. #globalConfig)) SourceGlobalDefault
       ]
 
 -- | When no model was configured (source is the built-in default), substitute
@@ -441,7 +442,7 @@ resolveTracePath inputs =
 -- 'SourceBuiltinDefault' — the value is a built-in, just a non-empty one.
 applyProviderDefaultModel :: AgentProvider -> ResolvedAgentField (Maybe Text) -> ResolvedAgentField (Maybe Text)
 applyProviderDefaultModel prov field =
-  case field.value of
+  case field ^. #value of
     Just _ -> field
     Nothing -> case defaultModelForProvider prov of
       Just m -> field {value = Just m}
@@ -449,46 +450,46 @@ applyProviderDefaultModel prov field =
 
 providerCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentConfigSource)]
 providerCandidates c inputs =
-  [ candidate inputs.cliProvider (cliSource inputs.cliProviderFromSubcommand),
-    candidate inputs.envProvider SourceEnv,
-    candidate inputs.declaredProvider SourceArtifactDeclaration,
-    candidate (Map.lookup (agentCommandProviderConfigKey c) inputs.localConfig) SourceLocalCommand,
-    candidate (Map.lookup agentProviderConfigKey inputs.localConfig) SourceLocalDefault,
-    candidate (Map.lookup (agentCommandProviderConfigKey c) inputs.globalConfig) SourceGlobalCommand,
-    candidate (Map.lookup agentProviderConfigKey inputs.globalConfig) SourceGlobalDefault
+  [ candidate (inputs ^. #cliProvider) (cliSource (inputs ^. #cliProviderFromSubcommand)),
+    candidate (inputs ^. #envProvider) SourceEnv,
+    candidate (inputs ^. #declaredProvider) SourceArtifactDeclaration,
+    candidate (Map.lookup (agentCommandProviderConfigKey c) (inputs ^. #localConfig)) SourceLocalCommand,
+    candidate (Map.lookup agentProviderConfigKey (inputs ^. #localConfig)) SourceLocalDefault,
+    candidate (Map.lookup (agentCommandProviderConfigKey c) (inputs ^. #globalConfig)) SourceGlobalCommand,
+    candidate (Map.lookup agentProviderConfigKey (inputs ^. #globalConfig)) SourceGlobalDefault
   ]
 
 modelCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentConfigSource)]
 modelCandidates c inputs =
-  [ candidate inputs.cliModel (cliSource inputs.cliModelFromSubcommand),
-    candidate inputs.envModel SourceEnv,
-    candidate inputs.declaredModel SourceArtifactDeclaration,
-    candidate (Map.lookup (agentCommandModelConfigKey c) inputs.localConfig) SourceLocalCommand,
-    candidate (Map.lookup agentModelConfigKey inputs.localConfig) SourceLocalDefault,
-    candidate (Map.lookup (agentCommandModelConfigKey c) inputs.globalConfig) SourceGlobalCommand,
-    candidate (Map.lookup agentModelConfigKey inputs.globalConfig) SourceGlobalDefault
+  [ candidate (inputs ^. #cliModel) (cliSource (inputs ^. #cliModelFromSubcommand)),
+    candidate (inputs ^. #envModel) SourceEnv,
+    candidate (inputs ^. #declaredModel) SourceArtifactDeclaration,
+    candidate (Map.lookup (agentCommandModelConfigKey c) (inputs ^. #localConfig)) SourceLocalCommand,
+    candidate (Map.lookup agentModelConfigKey (inputs ^. #localConfig)) SourceLocalDefault,
+    candidate (Map.lookup (agentCommandModelConfigKey c) (inputs ^. #globalConfig)) SourceGlobalCommand,
+    candidate (Map.lookup agentModelConfigKey (inputs ^. #globalConfig)) SourceGlobalDefault
   ]
 
 effortCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentConfigSource)]
 effortCandidates c inputs =
-  [ candidate inputs.cliEffort (cliSource inputs.cliEffortFromSubcommand),
-    candidate inputs.envEffort SourceEnv,
-    candidate inputs.declaredEffort SourceArtifactDeclaration,
-    candidate (Map.lookup (agentCommandEffortConfigKey c) inputs.localConfig) SourceLocalCommand,
-    candidate (Map.lookup agentEffortConfigKey inputs.localConfig) SourceLocalDefault,
-    candidate (Map.lookup (agentCommandEffortConfigKey c) inputs.globalConfig) SourceGlobalCommand,
-    candidate (Map.lookup agentEffortConfigKey inputs.globalConfig) SourceGlobalDefault
+  [ candidate (inputs ^. #cliEffort) (cliSource (inputs ^. #cliEffortFromSubcommand)),
+    candidate (inputs ^. #envEffort) SourceEnv,
+    candidate (inputs ^. #declaredEffort) SourceArtifactDeclaration,
+    candidate (Map.lookup (agentCommandEffortConfigKey c) (inputs ^. #localConfig)) SourceLocalCommand,
+    candidate (Map.lookup agentEffortConfigKey (inputs ^. #localConfig)) SourceLocalDefault,
+    candidate (Map.lookup (agentCommandEffortConfigKey c) (inputs ^. #globalConfig)) SourceGlobalCommand,
+    candidate (Map.lookup agentEffortConfigKey (inputs ^. #globalConfig)) SourceGlobalDefault
   ]
 
 traceCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentConfigSource)]
 traceCandidates c inputs =
-  [ candidate inputs.cliTrace (cliSource inputs.cliTraceFromSubcommand),
-    candidate inputs.envTrace SourceEnv,
-    candidate inputs.declaredTrace SourceArtifactDeclaration,
-    candidate (Map.lookup (agentCommandTraceConfigKey c) inputs.localConfig) SourceLocalCommand,
-    candidate (Map.lookup agentTraceConfigKey inputs.localConfig) SourceLocalDefault,
-    candidate (Map.lookup (agentCommandTraceConfigKey c) inputs.globalConfig) SourceGlobalCommand,
-    candidate (Map.lookup agentTraceConfigKey inputs.globalConfig) SourceGlobalDefault
+  [ candidate (inputs ^. #cliTrace) (cliSource (inputs ^. #cliTraceFromSubcommand)),
+    candidate (inputs ^. #envTrace) SourceEnv,
+    candidate (inputs ^. #declaredTrace) SourceArtifactDeclaration,
+    candidate (Map.lookup (agentCommandTraceConfigKey c) (inputs ^. #localConfig)) SourceLocalCommand,
+    candidate (Map.lookup agentTraceConfigKey (inputs ^. #localConfig)) SourceLocalDefault,
+    candidate (Map.lookup (agentCommandTraceConfigKey c) (inputs ^. #globalConfig)) SourceGlobalCommand,
+    candidate (Map.lookup agentTraceConfigKey (inputs ^. #globalConfig)) SourceGlobalDefault
   ]
 
 cliSource :: Bool -> AgentConfigSource
@@ -501,7 +502,7 @@ resolveProvider :: [(Maybe Text, AgentConfigSource)] -> Either Text (ResolvedAge
 resolveProvider candidates =
   case firstNonBlankWithSource candidates of
     Just (txt, src) -> (\p -> ResolvedAgentField p src) <$> providerFromText txt
-    Nothing -> Right (ResolvedAgentField defaultAgentModelConfig.provider SourceBuiltinDefault)
+    Nothing -> Right (ResolvedAgentField (defaultAgentModelConfig ^. #provider) SourceBuiltinDefault)
 
 -- | Resolve a model from an ordered candidate list. An unset model resolves to
 -- 'Nothing' with source 'SourceBuiltinDefault', letting the provider pick.
@@ -573,10 +574,10 @@ loadAgentModelConfigFor c parentFlags commandFlags = do
     (provider, model, effort, trace) <- resolveAgentModelConfigFor c inputs
     pure
       AgentModelConfig
-        { provider = provider.value,
-          model = model.value,
-          effort = effort.value,
-          trace = trace.value,
+        { provider = provider ^. #value,
+          model = model ^. #value,
+          effort = effort ^. #value,
+          trace = trace ^. #value,
           tracePath = resolveTracePath inputs
         }
 
@@ -660,9 +661,9 @@ agentLaunchDeclaration :: Maybe AgentLaunch -> AgentLaunchDeclaration
 agentLaunchDeclaration Nothing = noAgentLaunchDeclaration
 agentLaunchDeclaration (Just l) =
   AgentLaunchDeclaration
-    { provider = l.provider,
-      model = l.model,
-      effort = l.effort
+    { provider = l ^. #provider,
+      model = l ^. #model,
+      effort = l ^. #effort
     }
 
 -- | Parse-check a declared launch record, returning one message per invalid
@@ -672,8 +673,8 @@ agentLaunchDeclaration (Just l) =
 -- aliases and custom model IDs.
 validateAgentLaunchDeclaration :: AgentLaunchDeclaration -> [Text]
 validateAgentLaunchDeclaration decl =
-  check "launch.provider" providerFromText decl.provider
-    <> check "launch.effort" effortFromText decl.effort
+  check "launch.provider" providerFromText (decl ^. #provider)
+    <> check "launch.effort" effortFromText (decl ^. #effort)
   where
     check :: Text -> (Text -> Either Text a) -> Maybe Text -> [Text]
     check key parse value =
@@ -718,15 +719,15 @@ resolvePendingAgentConfig ::
   Either Text ResolvedCommandConfig
 resolvePendingAgentConfig pending decl = do
   let inputs =
-        pending.inputs
-          { declaredProvider = decl.provider,
-            declaredModel = decl.model,
-            declaredEffort = decl.effort
+        (pending ^. #inputs)
+          { declaredProvider = decl ^. #provider,
+            declaredModel = decl ^. #model,
+            declaredEffort = decl ^. #effort
           }
-  (provider, model, effort, trace) <- resolveAgentModelConfigFor pending.command inputs
+  (provider, model, effort, trace) <- resolveAgentModelConfigFor (pending ^. #command) inputs
   pure
     ResolvedCommandConfig
-      { command = pending.command,
+      { command = pending ^. #command,
         provider = provider,
         model = model,
         effort = effort,
@@ -739,11 +740,11 @@ resolvePendingAgentConfig pending decl = do
 resolvedAgentModelConfig :: ResolvedCommandConfig -> AgentModelConfig
 resolvedAgentModelConfig rcc =
   AgentModelConfig
-    { provider = rcc.provider.value,
-      model = rcc.model.value,
-      effort = rcc.effort.value,
-      trace = rcc.trace.value,
-      tracePath = rcc.tracePath
+    { provider = rcc ^. #provider . #value,
+      model = rcc ^. #model . #value,
+      effort = rcc ^. #effort . #value,
+      trace = rcc ^. #trace . #value,
+      tracePath = rcc ^. #tracePath
     }
 
 -- | A one-line provenance summary for a verbose log line, e.g.
@@ -753,14 +754,14 @@ formatResolvedAgentProvenance :: ResolvedCommandConfig -> Text
 formatResolvedAgentProvenance rcc =
   T.intercalate
     ", "
-    [ part "provider" (providerToText rcc.provider.value) ProviderField rcc.provider.source,
-      part "model" (fromMaybe "<provider default>" rcc.model.value) ModelField rcc.model.source,
-      part "effort" (maybe "<unset>" effortToText rcc.effort.value) EffortField rcc.effort.source,
-      part "trace" (traceToText rcc.trace.value) TraceField rcc.trace.source
+    [ part "provider" (providerToText (rcc ^. #provider . #value)) ProviderField (rcc ^. #provider . #source),
+      part "model" (fromMaybe "<provider default>" (rcc ^. #model . #value)) ModelField (rcc ^. #model . #source),
+      part "effort" (maybe "<unset>" effortToText (rcc ^. #effort . #value)) EffortField (rcc ^. #effort . #source),
+      part "trace" (traceToText (rcc ^. #trace . #value)) TraceField (rcc ^. #trace . #source)
     ]
   where
     part label value field src =
-      label <> " " <> value <> " [" <> agentConfigSourceLabel rcc.command field src <> "]"
+      label <> " " <> value <> " [" <> agentConfigSourceLabel (rcc ^. #command) field src <> "]"
 
 -- | Finish resolution with the artifact's declaration, logging the resolved
 -- provenance at verbose level and exiting with an actionable message when the

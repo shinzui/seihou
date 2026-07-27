@@ -1,6 +1,8 @@
 module Seihou.CLI.AppliedBlueprintSpec (tests) where
 
+import Control.Lens ((^.))
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -60,8 +62,8 @@ spec = do
         res <- recordAppliedBlueprint manifestPath entry
         res `shouldBe` Right ()
         m <- readManifestFile manifestPath
-        m.version `shouldBe` currentManifestVersion
-        m.blueprint `shouldBe` Just entry
+        (m ^. #version) `shouldBe` currentManifestVersion
+        (m ^. #blueprint) `shouldBe` Just entry
 
     it "preserves unrelated manifest fields" $
       withSystemTempDirectory "seihou-ab" $ \dir -> do
@@ -82,8 +84,8 @@ spec = do
         res <- recordAppliedBlueprint manifestPath entry
         res `shouldBe` Right ()
         m <- readManifestFile manifestPath
-        m.recipe `shouldBe` Just seedRecipe
-        m.blueprint `shouldBe` Just entry
+        (m ^. #recipe) `shouldBe` Just seedRecipe
+        (m ^. #blueprint) `shouldBe` Just entry
 
     it "overwrites a prior blueprint entry" $
       withSystemTempDirectory "seihou-ab" $ \dir -> do
@@ -93,7 +95,7 @@ spec = do
         _ <- recordAppliedBlueprint manifestPath ab1
         _ <- recordAppliedBlueprint manifestPath ab2
         m <- readManifestFile manifestPath
-        m.blueprint `shouldBe` Just ab2
+        (m ^. #blueprint) `shouldBe` Just ab2
 
     it "returns Left when the existing manifest is unreadable" $
       withSystemTempDirectory "seihou-ab" $ \dir -> do

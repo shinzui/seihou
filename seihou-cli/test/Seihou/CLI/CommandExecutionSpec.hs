@@ -1,5 +1,6 @@
 module Seihou.CLI.CommandExecutionSpec (tests) where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
@@ -56,15 +57,15 @@ spec = do
       let first = commandOp "echo first" Nothing "app" 0
           second = commandOp "echo second" Nothing "app" 0
           plan = planCommands RunAllCommands Map.empty [first, WriteFileOp "file" "content" Template, second]
-      map (.operation) plan.commands `shouldBe` [first, second]
-      map (.disposition) plan.commands `shouldBe` [CommandWillRun, CommandWillRun]
+      map (^. #operation) (plan ^. #commands) `shouldBe` [first, second]
+      map (^. #disposition) (plan ^. #commands) `shouldBe` [CommandWillRun, CommandWillRun]
 
     it "skips only fingerprints with successful prior receipts in changed-only mode" $ do
       let unchanged = commandOp "echo same" Nothing "app" 0
           changed = commandOp "echo changed" Nothing "app" 0
           prior = Map.singleton (fingerprintOf unchanged) (receiptFor fixedTime unchanged)
           plan = planCommands RunChangedCommands prior [unchanged, changed]
-      map (.disposition) plan.commands
+      map (^. #disposition) (plan ^. #commands)
         `shouldBe` [CommandSkippedUnchanged, CommandWillRun]
       summarizeCommandPlan plan
         `shouldBe` CommandPlanSummary {willRun = 1, skippedUnchanged = 1, skippedDisabled = 0}
@@ -74,13 +75,13 @@ spec = do
           second = commandOp "echo same" Nothing "app" 1
           prior = Map.singleton (fingerprintOf first) (receiptFor fixedTime first)
           plan = planCommands RunChangedCommands prior [first, second]
-      map (.disposition) plan.commands
+      map (^. #disposition) (plan ^. #commands)
         `shouldBe` [CommandSkippedUnchanged, CommandWillRun]
 
     it "marks every command disabled without minting receipts" $ do
       let operations = [commandOp "echo one" Nothing "app" 0, commandOp "echo two" Nothing "app" 0]
           plan = planCommands DisableCommands Map.empty operations
-      map (.disposition) plan.commands
+      map (^. #disposition) (plan ^. #commands)
         `shouldBe` [CommandSkippedDisabled, CommandSkippedDisabled]
 
   describe "executeCommandPlan" $ do
@@ -94,14 +95,14 @@ spec = do
                 executeCommandPlan laterTime plan
       case result of
         Right receipts -> do
-          map (.fingerprint) receipts `shouldBe` map fingerprintOf [first, second]
-          map (.completedAt) receipts `shouldBe` [laterTime, laterTime]
+          map (^. #fingerprint) receipts `shouldBe` map fingerprintOf [first, second]
+          map (^. #completedAt) receipts `shouldBe` [laterTime, laterTime]
         Left err -> expectationFailure ("Expected success, got: " <> show err)
 
     it "does not execute skipped commands" $ do
       let operation = commandOp "echo skipped" Nothing "app" 0
           priorReceipt = receiptFor fixedTime operation
-          prior = Map.singleton priorReceipt.fingerprint priorReceipt
+          prior = Map.singleton (priorReceipt ^. #fingerprint) priorReceipt
           plan = planCommands RunChangedCommands prior [operation]
           result = runPureEff $ runProcessPure [] $ executeCommandPlan laterTime plan
       result `shouldBe` Right []
@@ -121,10 +122,10 @@ spec = do
           result = runPureEff $ runProcessPure mocks $ executeCommandPlan laterTime plan
       case result of
         Left err -> do
-          err.exitCode `shouldBe` 7
-          err.stdout `shouldBe` "partial"
-          err.stderr `shouldBe` "boom"
-          err.command.operation `shouldBe` failing
+          (err ^. #exitCode) `shouldBe` 7
+          (err ^. #stdout) `shouldBe` "partial"
+          (err ^. #stderr) `shouldBe` "boom"
+          (err ^. #command . #operation) `shouldBe` failing
         Right receipts -> expectationFailure ("Expected failure, got receipts: " <> show receipts)
 
   describe "finalizeCommandReceipts" $ do
@@ -137,22 +138,22 @@ spec = do
           newChanged = receiptFor laterTime changed
           prior =
             Map.fromList
-              [ (oldUnchanged.fingerprint, oldUnchanged),
-                (oldRemoved.fingerprint, oldRemoved)
+              [ (oldUnchanged ^. #fingerprint, oldUnchanged),
+                (oldRemoved ^. #fingerprint, oldRemoved)
               ]
           plan = planCommands RunChangedCommands prior [unchanged, changed]
           finalized = finalizeCommandReceipts plan [newChanged] prior
       finalized
         `shouldBe` Map.fromList
-          [ (oldUnchanged.fingerprint, oldUnchanged),
-            (newChanged.fingerprint, newChanged)
+          [ (oldUnchanged ^. #fingerprint, oldUnchanged),
+            (newChanged ^. #fingerprint, newChanged)
           ]
 
     it "retains only matching old receipts when commands are disabled" $ do
       let old = commandOp "echo old" Nothing "app" 0
           new = commandOp "echo new" Nothing "app" 0
           oldReceipt = receiptFor fixedTime old
-          prior = Map.singleton oldReceipt.fingerprint oldReceipt
+          prior = Map.singleton (oldReceipt ^. #fingerprint) oldReceipt
           plan = planCommands DisableCommands prior [old, new]
       finalizeCommandReceipts plan [] prior
-        `shouldBe` Map.singleton oldReceipt.fingerprint oldReceipt
+        `shouldBe` Map.singleton (oldReceipt ^. #fingerprint) oldReceipt

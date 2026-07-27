@@ -6,6 +6,7 @@ where
 import Control.Monad (unless, when)
 import Data.Aeson (encode, object, (.=))
 import Data.ByteString.Lazy.Char8 qualified as LBS
+import Data.Generics.Labels ()
 import Data.Maybe (isJust)
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -45,9 +46,9 @@ handleUpdate opts = do
 
 validateOptions :: UpdateOpts -> IO ()
 validateOptions opts
-  | opts.dryRun && (opts.commit || isJust opts.commitMessage) =
+  | opts ^. #dryRun && (opts ^. #commit || isJust (opts ^. #commitMessage)) =
       failCli opts "invalid_options" "--commit and --commit-message cannot be used with --dry-run"
-  | opts.runAllCommands && opts.noCommands =
+  | opts ^. #runAllCommands && (opts ^. #noCommands) =
       failCli opts "invalid_options" "--run-all-commands and --no-commands are mutually exclusive"
   | otherwise = pure ()
 
@@ -55,50 +56,50 @@ requestFromOptions :: Bool -> UpdateOpts -> Service.UpdateRequest
 requestFromOptions terminal opts =
   Service.UpdateRequest
     { selection =
-        if null opts.targets
+        if null (opts ^. #targets)
           then Service.AllRecordedApplications
-          else Service.NamedUpdateTargets opts.targets,
-      varOverrides = opts.vars,
-      reconfigure = opts.reconfigure,
+          else Service.NamedUpdateTargets (opts ^. #targets),
+      varOverrides = opts ^. #vars,
+      reconfigure = opts ^. #reconfigure,
       promptPolicy =
-        if terminal && not opts.json
+        if terminal && not (opts ^. #json)
           then Service.AllowPrompts
           else Service.ForbidPrompts,
       commandPolicy =
-        if opts.runAllCommands
+        if opts ^. #runAllCommands
           then RunAllCommands
-          else if opts.noCommands then DisableCommands else RunChangedCommands,
-      dryRun = opts.dryRun
+          else if opts ^. #noCommands then DisableCommands else RunChangedCommands,
+      dryRun = opts ^. #dryRun
     }
 
 handlePlanned :: Bool -> UpdateOpts -> Either Service.UpdateError Service.UpdatePlan -> IO ()
 handlePlanned _ opts (Left err) = do
-  if opts.json
+  if opts ^. #json
     then LBS.putStrLn (encodeUpdateOutput (errorOutput err))
     else TIO.hPutStr stderr (renderUpdateHuman False (errorOutput err))
   exitFailure
 handlePlanned terminal opts (Right originalPlan) = do
   forced <-
-    if opts.force
+    if opts ^. #force
       then either (failInteraction opts) pure (forceResolveUpdatePlan originalPlan)
       else pure originalPlan
   resolved <-
     resolveInteractively
-      (if terminal && not opts.json then Interactive else NonInteractive)
+      (if terminal && not (opts ^. #json) then Interactive else NonInteractive)
       forced
       >>= either (failInteraction opts) pure
   color <- useColor
   if Service.isUpdateNoOp resolved
     then
-      if opts.json
+      if opts ^. #json
         then LBS.putStrLn (encodeUpdateOutput (planOutput resolved))
         else TIO.putStrLn "Already up to date."
     else
-      if opts.dryRun
+      if opts ^. #dryRun
         then emitPlan color opts resolved
         else do
-          unless opts.json $ TIO.putStr (renderUpdateHuman color (planOutput resolved))
-          accepted <- if opts.json then pure True else confirmApply terminal
+          unless (opts ^. #json) $ TIO.putStr (renderUpdateHuman color (planOutput resolved))
+          accepted <- if opts ^. #json then pure True else confirmApply terminal
           if not accepted
             then TIO.hPutStrLn stderr "Update cancelled; no managed state was changed."
             else do
@@ -106,10 +107,10 @@ handlePlanned terminal opts (Right originalPlan) = do
               case applied of
                 Left err -> handlePlanned terminal opts (Left err)
                 Right result -> do
-                  if opts.json
+                  if opts ^. #json
                     then LBS.putStrLn (encodeUpdateOutput (resultOutput result))
                     else TIO.putStr (renderUpdateHuman color (resultOutput result))
-                  when (opts.commit || isJust opts.commitMessage) $ do
+                  when (opts ^. #commit || isJust (opts ^. #commitMessage)) $ do
                     committed <- commitUpdate opts result
                     case committed of
                       Left err -> do
@@ -119,7 +120,7 @@ handlePlanned terminal opts (Right originalPlan) = do
 
 emitPlan :: Bool -> UpdateOpts -> Service.UpdatePlan -> IO ()
 emitPlan color opts plan =
-  if opts.json
+  if opts ^. #json
     then LBS.putStrLn (encodeUpdateOutput (planOutput plan))
     else TIO.putStr (renderUpdateHuman color (planOutput plan))
 
@@ -147,7 +148,7 @@ confirmApply True = loop
 
 commitUpdate :: UpdateOpts -> Service.UpdateResult -> IO (Either Text ())
 commitUpdate opts result = do
-  let candidates = filter (not . isAbsolute) (Set.toAscList result.touchedPaths)
+  let candidates = filter (not . isAbsolute) (Set.toAscList (result ^. #touchedPaths))
   inRepo <- runEff $ runProcessIO isGitRepo
   if not inRepo
     then pure (Right ())
@@ -161,11 +162,11 @@ commitUpdate opts result = do
           case addExit of
             ExitFailure _ -> pure (Left (T.strip addErr))
             ExitSuccess -> do
-              message <- case opts.commitMessage of
+              message <- case opts ^. #commitMessage of
                 Just custom -> pure custom
                 Nothing -> do
                   diff <- runEff $ runProcessIO gitDiffCached
-                  let modules = map (ModuleName . (.name)) result.versions
+                  let modules = map (ModuleName . (^. #name)) (result ^. #versions)
                   generateCommitMessage modules diff
               (commitExit, _, commitErr) <- runEff $ runProcessIO $ gitCommit message
               pure $ case commitExit of
@@ -190,7 +191,7 @@ failInteraction opts err = case err of
 
 failCli :: UpdateOpts -> Text -> Text -> IO a
 failCli opts code message = do
-  if opts.json
+  if opts ^. #json
     then
       LBS.putStrLn $
         encode $

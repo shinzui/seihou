@@ -7,7 +7,9 @@ module Seihou.CLI.PromptRender
   )
 where
 
+import Control.Lens ((^.))
 import Data.FileEmbed (embedFile)
+import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
@@ -38,17 +40,17 @@ renderPromptSystemPrompt ::
   T.Text
 renderPromptSystemPrompt ctx prompt resolved renderedPrompt userPrompt =
   substitute
-    [ ("cwd", ctx.cwd),
+    [ ("cwd", ctx ^. #cwd),
       ("seihou_project_state", formatSeihouProjectState ctx),
       ("manifest_state", formatManifestState ctx),
       ("module_dhall_state", formatModuleDhallState ctx),
       ("local_modules", formatLocalModules ctx),
       ("available_modules", formatAvailableModules ctx),
-      ("prompt_name", prompt.name.unModuleName),
-      ("prompt_version", fromMaybe "(unspecified)" prompt.version),
-      ("prompt_description", fromMaybe "(no description)" prompt.description),
-      ("reference_files", formatReferenceFiles prompt.files),
-      ("prompt_guidance", formatPromptGuidance resolved prompt.guidance),
+      ("prompt_name", prompt ^. #name . #unModuleName),
+      ("prompt_version", fromMaybe "(unspecified)" (prompt ^. #version)),
+      ("prompt_description", fromMaybe "(no description)" (prompt ^. #description)),
+      ("reference_files", formatReferenceFiles (prompt ^. #files)),
+      ("prompt_guidance", formatPromptGuidance resolved (prompt ^. #guidance)),
       ("prompt_body", renderedPrompt),
       ("user_prompt", fromMaybe "(no one-off user instruction)" userPrompt)
     ]
@@ -57,7 +59,7 @@ renderPromptSystemPrompt ctx prompt resolved renderedPrompt userPrompt =
 renderPromptBody :: Map VarName ResolvedVar -> T.Text -> T.Text
 renderPromptBody resolved tpl =
   substitute
-    [(vn.unVarName, varValueToText rv.value) | (vn, rv) <- Map.toList resolved]
+    [(vn ^. #unVarName, varValueToText (rv ^. #value)) | (vn, rv) <- Map.toList resolved]
     tpl
 
 formatPromptGuidance :: Map VarName ResolvedVar -> [PromptGuidance] -> T.Text
@@ -66,18 +68,18 @@ formatPromptGuidance resolved guidance =
     [] -> "(no prompt guidance)"
     selectedGuidance -> T.intercalate "\n\n" (map render selectedGuidance)
   where
-    bindings = Map.map (.value) resolved
+    bindings = Map.map (^. #value) resolved
 
     selected g =
-      case g.condition of
+      case g ^. #condition of
         Nothing -> True
         Just cond -> evalExpr bindings cond
 
     render g =
       T.unlines
-        [ "### " <> g.title,
+        [ "### " <> g ^. #title,
           "",
-          g.body
+          g ^. #body
         ]
 
 varValueToText :: VarValue -> T.Text

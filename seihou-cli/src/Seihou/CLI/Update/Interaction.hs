@@ -10,6 +10,7 @@ where
 
 import Control.Exception (IOException, try)
 import Control.Monad (foldM)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -49,7 +50,7 @@ applyResolutionDecisions ::
   UpdatePlan ->
   Either InteractionError UpdatePlan
 applyResolutionDecisions decisions plan = do
-  reconciliation <- foldM applyOne plan.reconciliation decisions
+  reconciliation <- foldM applyOne (plan ^. #reconciliation) decisions
   pure plan {reconciliation}
   where
     applyOne current (ResolveFile path choice) =
@@ -60,7 +61,7 @@ applyResolutionDecisions decisions plan = do
 forceResolveUpdatePlan :: UpdatePlan -> Either InteractionError UpdatePlan
 forceResolveUpdatePlan plan = applyResolutionDecisions decisions plan
   where
-    decisions = concatMap forceOne (Map.toAscList plan.reconciliation.files)
+    decisions = concatMap forceOne (Map.toAscList (plan ^. #reconciliation . #files))
     forceOne (path, FileConflict _ _ _ reason _ _ Nothing) = case reason of
       MergeDriverUnavailable _ -> []
       _ -> [ResolveFile path AcceptGenerated]
@@ -75,9 +76,9 @@ resolveInteractively ::
 resolveInteractively mode plan
   | Set.null remaining = pure (Right plan)
   | mode == NonInteractive = pure (Left (InteractionRequired remaining))
-  | otherwise = go plan (Map.toAscList plan.reconciliation.files)
+  | otherwise = go plan (Map.toAscList (plan ^. #reconciliation . #files))
   where
-    remaining = unresolvedPaths plan.reconciliation
+    remaining = unresolvedPaths (plan ^. #reconciliation)
     go current [] = pure (Right current)
     go current ((path, reconciliation) : rest) = case reconciliation of
       FileConflict _ currentText markers reason _ _ Nothing -> do

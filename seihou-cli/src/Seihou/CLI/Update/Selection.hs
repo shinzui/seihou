@@ -7,6 +7,7 @@ module Seihou.CLI.Update.Selection
 where
 
 import Control.Monad (foldM)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Seihou.CLI.Update.Types
@@ -24,34 +25,34 @@ data SelectedApplications
 selectApplications :: UpdateSelection -> Manifest -> Either UpdateError SelectedApplications
 selectApplications selection manifest = case selection of
   AllRecordedApplications
-    | null manifest.applications -> Left NoRecordedApplications
-    | otherwise -> Right (RecordedSelection manifest.applications)
+    | null (manifest ^. #applications) -> Left NoRecordedApplications
+    | otherwise -> Right (RecordedSelection (manifest ^. #applications))
   NamedUpdateTargets names
-    | null manifest.applications -> case nubOrd names of
+    | null (manifest ^. #applications) -> case nubOrd names of
         [name] -> Right (LegacySelection name)
         _ -> Left LegacyUpdateRequiresOneTarget
     | otherwise -> do
         selectedIds <- foldM selectName Set.empty (nubOrd names)
-        let selected = filter ((`Set.member` selectedIds) . (.applicationId)) manifest.applications
+        let selected = filter ((`Set.member` selectedIds) . (^. #applicationId)) (manifest ^. #applications)
         ensureOwnershipClosure manifest selectedIds
         Right (RecordedSelection selected)
   where
     selectName selected name =
-      let exact = filter ((== name) . targetName) manifest.applications
+      let exact = filter ((== name) . targetName) (manifest ^. #applications)
           matches =
             if null exact
-              then filter (containsModule name) manifest.applications
+              then filter (containsModule name) (manifest ^. #applications)
               else exact
        in if null matches
             then Left (UpdateTargetNotFound name (availableTargets manifest))
-            else Right (foldl' (flip (Set.insert . (.applicationId))) selected matches)
+            else Right (foldl' (flip (Set.insert . (^. #applicationId))) selected matches)
 
 ensureOwnershipClosure :: Manifest -> Set ApplicationId -> Either UpdateError ()
 ensureOwnershipClosure manifest selected =
   case [ (path, selectedOwners, missingOwners)
-       | (path, record) <- Map.toAscList manifest.files,
-         let selectedOwners = Set.intersection selected record.applicationIds,
-         let missingOwners = record.applicationIds Set.\\ selected,
+       | (path, record) <- Map.toAscList (manifest ^. #files),
+         let selectedOwners = Set.intersection selected (record ^. #applicationIds),
+         let missingOwners = (record ^. #applicationIds) Set.\\ selected,
          not (Set.null selectedOwners),
          not (Set.null missingOwners)
        ] of
@@ -60,21 +61,21 @@ ensureOwnershipClosure manifest selected =
     [] -> Right ()
 
 targetName :: AppliedComposition -> Text
-targetName application = case application.target of
-  AppliedModuleTarget name -> name.unModuleName
-  AppliedRecipeTarget name -> name.unRecipeName
+targetName application = case application ^. #target of
+  AppliedModuleTarget name -> (name ^. #unModuleName)
+  AppliedRecipeTarget name -> (name ^. #unRecipeName)
 
 availableTargets :: Manifest -> [Text]
-availableTargets manifest = nubOrd (map targetName manifest.applications <> instanceNames)
+availableTargets manifest = nubOrd (map targetName (manifest ^. #applications) <> instanceNames)
   where
     instanceNames =
-      [ state.name.unModuleName
-      | application <- manifest.applications,
-        state <- application.instances
+      [ state ^. #name . #unModuleName
+      | application <- manifest ^. #applications,
+        state <- application ^. #instances
       ]
 
 containsModule :: Text -> AppliedComposition -> Bool
-containsModule name = any ((== name) . (.name.unModuleName)) . (.instances)
+containsModule name = any ((== name) . (^. #name . #unModuleName)) . (^. #instances)
 
 nubOrd :: (Ord a) => [a] -> [a]
 nubOrd = go Set.empty

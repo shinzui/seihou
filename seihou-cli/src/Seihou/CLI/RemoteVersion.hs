@@ -5,6 +5,7 @@ module Seihou.CLI.RemoteVersion
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
 import Seihou.Core.Types (Module (..), ModuleName (..))
@@ -59,7 +60,7 @@ fetchTrueModuleVersion clonedRepoPath name = do
     MultiModule registry -> case findEntry registry of
       Nothing -> pure (Left (EntryNotFound name))
       Just entry ->
-        readModuleDhallVersion (clonedRepoPath </> entry.path </> "module.dhall")
+        readModuleDhallVersion (clonedRepoPath </> entry ^. #path </> "module.dhall")
     SingleRecipe _ -> pure (Left (RegistryNotFound clonedRepoPath))
     SingleBlueprint _ -> pure (Left (RegistryNotFound clonedRepoPath))
     SinglePrompt _ -> pure (Left (RegistryNotFound clonedRepoPath))
@@ -67,7 +68,7 @@ fetchTrueModuleVersion clonedRepoPath name = do
   where
     findEntry :: Registry -> Maybe RegistryEntry
     findEntry registry =
-      case filter (\e -> e.name == name) registry.modules of
+      case filter (\e -> e ^. #name == name) (registry ^. #modules) of
         (entry : _) -> Just entry
         [] -> Nothing
 
@@ -81,7 +82,7 @@ readModuleDhallVersion path = do
       result <- evalModuleFromFile path
       case result of
         Left err -> pure (Left (ParseFailed (T.pack (show err))))
-        Right modul -> pure (Right modul.version)
+        Right modul -> pure (Right (modul ^. #version))
 
 -- | Render a 'FetchError' as a single-line human-readable message suitable
 -- for printing in CLI output ("could not determine remote version: ...").

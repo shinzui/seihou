@@ -15,6 +15,7 @@ module Seihou.CLI.AgentTrace
 where
 
 import Baikai.Trace.Sink (TraceSink (..), fileSink, renderHuman, silent, stdoutSink)
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentCompletion (AgentModelConfig (..), TraceSetting (..), traceToText)
@@ -76,11 +77,11 @@ traceSinkFor setting configuredPath =
 -- migration edge — reports one destination and appends every call to it.
 traceSinkForConfig :: LogLevel -> AgentModelConfig -> IO TraceSink
 traceSinkForConfig level config = do
-  case config.trace of
+  case config ^. #trace of
     TraceOff -> pure ()
     TraceFile ->
       logIO level $
-        logInfo ("Trace: writing call traces to " <> T.pack (resolveTraceFilePath config.tracePath))
+        logInfo ("Trace: writing call traces to " <> T.pack (resolveTraceFilePath (config ^. #tracePath)))
     other ->
       logIO level (logInfo ("Trace: writing call traces to " <> traceToText other))
-  traceSinkFor config.trace config.tracePath
+  traceSinkFor (config ^. #trace) (config ^. #tracePath)

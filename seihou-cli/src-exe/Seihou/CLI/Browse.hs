@@ -3,6 +3,7 @@ module Seihou.CLI.Browse
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.BrowseFormat (formatBrowseRegistry, formatBrowseSingleBlueprint, formatBrowseSingleModule, formatBrowseSinglePrompt)
@@ -21,7 +22,7 @@ import System.Process (readProcessWithExitCode)
 
 handleBrowse :: BrowseOpts -> IO ()
 handleBrowse bopts = do
-  let source = bopts.source
+  let source = (bopts ^. #source)
 
   withSystemTempDirectory "seihou-browse" $ \tmpDir -> do
     let repoName = parseModuleName source
@@ -50,7 +51,7 @@ handleBrowse bopts = do
             logIO LogNormal (logError $ "failed to load module: " <> T.pack (show err))
             exitFailure
           Right m ->
-            TIO.putStr $ formatBrowseSingleModule source m.name.unModuleName m.description
+            TIO.putStr $ formatBrowseSingleModule source (m ^. #name . #unModuleName) (m ^. #description)
       SingleRecipe rootDir -> do
         let dhallFile = rootDir </> "recipe.dhall"
         decoded <- evalRecipeFromFile dhallFile
@@ -59,7 +60,7 @@ handleBrowse bopts = do
             logIO LogNormal (logError $ "failed to load recipe: " <> T.pack (show err))
             exitFailure
           Right r ->
-            TIO.putStr $ formatBrowseSingleModule source r.name.unRecipeName r.description
+            TIO.putStr $ formatBrowseSingleModule source (r ^. #name . #unRecipeName) (r ^. #description)
       SingleBlueprint rootDir -> do
         let dhallFile = rootDir </> "blueprint.dhall"
         decoded <- evalBlueprintFromFile dhallFile
@@ -68,7 +69,7 @@ handleBrowse bopts = do
             logIO LogNormal (logError $ "failed to load blueprint: " <> T.pack (show err))
             exitFailure
           Right b -> do
-            TIO.putStr $ formatBrowseSingleBlueprint source b.name.unModuleName b.description
+            TIO.putStr $ formatBrowseSingleBlueprint source (b ^. #name . #unModuleName) (b ^. #description)
       SinglePrompt rootDir -> do
         let dhallFile = rootDir </> "prompt.dhall"
         decoded <- evalAgentPromptFromFile dhallFile
@@ -77,16 +78,16 @@ handleBrowse bopts = do
             logIO LogNormal (logError $ "failed to load prompt: " <> T.pack (show err))
             exitFailure
           Right p ->
-            TIO.putStr $ formatBrowseSinglePrompt source p.name.unModuleName p.description
+            TIO.putStr $ formatBrowseSinglePrompt source (p ^. #name . #unModuleName) (p ^. #description)
       MultiModule registry -> do
         driftWarnings <- checkRegistryVersionDrift cloneDir registry
         logIO LogNormal (mapM_ logWarn driftWarnings)
-        let matchTag e = case bopts.tag of
+        let matchTag e = case bopts ^. #tag of
               Nothing -> True
-              Just tag -> tag `elem` e.tags
+              Just tag -> tag `elem` (e ^. #tags)
             tagged =
-              [(ModuleEntry, e) | e <- registry.modules, matchTag e]
-                ++ [(RecipeEntry, e) | e <- registry.recipes, matchTag e]
-                ++ [(BlueprintEntry, e) | e <- registry.blueprints, matchTag e]
-                ++ [(PromptEntry, e) | e <- registry.prompts, matchTag e]
-        TIO.putStr $ formatBrowseRegistry source registry tagged bopts.tag
+              [(ModuleEntry, e) | e <- registry ^. #modules, matchTag e]
+                ++ [(RecipeEntry, e) | e <- registry ^. #recipes, matchTag e]
+                ++ [(BlueprintEntry, e) | e <- registry ^. #blueprints, matchTag e]
+                ++ [(PromptEntry, e) | e <- registry ^. #prompts, matchTag e]
+        TIO.putStr $ formatBrowseRegistry source registry tagged (bopts ^. #tag)

@@ -24,6 +24,8 @@ module Seihou.Fzf
 where
 
 import Control.Exception (SomeException, try)
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -74,7 +76,7 @@ checkTtyAvailable = do
 
 -- | Whether fzf can be used for interactive selection.
 isFzfUsable :: FzfConfig -> Bool
-isFzfUsable cfg = cfg.available && (cfg.stdinIsTerminal || cfg.ttyAvailable)
+isFzfUsable cfg = cfg ^. #available && (cfg ^. #stdinIsTerminal || cfg ^. #ttyAvailable)
 
 -- | Composable fzf options. Combine with '<>'.
 data FzfOpts = FzfOpts
@@ -90,12 +92,15 @@ data FzfOpts = FzfOpts
 instance Semigroup FzfOpts where
   a <> b =
     FzfOpts
-      { prompt = b.prompt <|> a.prompt,
-        header = b.header <|> a.header,
-        preview = b.preview <|> a.preview,
-        height = b.height <|> a.height,
-        ansi = a.ansi || b.ansi,
-        noSort = a.noSort || b.noSort
+      { -- (<|>) below is local to this instance and carries no fixity
+        -- declaration, so it defaults to infixl 9 -- tighter than (^.) at
+        -- infixl 8. Hence the parentheses.
+        prompt = (b ^. #prompt) <|> (a ^. #prompt),
+        header = (b ^. #header) <|> (a ^. #header),
+        preview = (b ^. #preview) <|> (a ^. #preview),
+        height = (b ^. #height) <|> (a ^. #height),
+        ansi = a ^. #ansi || b ^. #ansi,
+        noSort = a ^. #noSort || b ^. #noSort
       }
     where
       (<|>) :: Maybe a -> Maybe a -> Maybe a
@@ -127,12 +132,12 @@ withPreview p = mempty {preview = Just p}
 optsToArgs :: FzfOpts -> [String]
 optsToArgs opts =
   concat
-    [ maybe [] (\p -> ["--prompt", T.unpack p]) opts.prompt,
-      maybe [] (\h -> ["--header", T.unpack h]) opts.header,
-      maybe [] (\p -> ["--preview", T.unpack p]) opts.preview,
-      maybe [] (\h -> ["--height", T.unpack h]) opts.height,
-      ["--ansi" | opts.ansi],
-      ["--no-sort" | opts.noSort]
+    [ maybe [] (\p -> ["--prompt", T.unpack p]) (opts ^. #prompt),
+      maybe [] (\h -> ["--header", T.unpack h]) (opts ^. #header),
+      maybe [] (\p -> ["--preview", T.unpack p]) (opts ^. #preview),
+      maybe [] (\h -> ["--height", T.unpack h]) (opts ^. #height),
+      ["--ansi" | opts ^. #ansi],
+      ["--no-sort" | opts ^. #noSort]
     ]
 
 -- | A selectable candidate with display text and an associated value.
@@ -161,12 +166,12 @@ runFzf cfg opts candidates
   | not (isFzfUsable cfg) = pure (FzfError "fzf is not available")
   | otherwise = do
       let indexed = zip [0 :: Int ..] candidates
-          valueMap = Map.fromList [(i, c.value) | (i, c) <- indexed]
-          inputLines = [show i <> "\t" <> T.unpack c.display | (i, c) <- indexed]
+          valueMap = Map.fromList [(i, c ^. #value) | (i, c) <- indexed]
+          inputLines = [show i <> "\t" <> T.unpack (c ^. #display) | (i, c) <- indexed]
           args = ["-1", "--with-nth=2.."] ++ optsToArgs opts
 
       let processSpec =
-            (proc cfg.binary args)
+            (proc (cfg ^. #binary) args)
               { std_in = CreatePipe,
                 std_out = CreatePipe,
                 std_err = Inherit,

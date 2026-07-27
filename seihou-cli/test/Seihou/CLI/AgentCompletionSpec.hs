@@ -5,10 +5,12 @@ import Baikai.Model qualified as BaikaiModel
 import Baikai.Response qualified as BaikaiResponse
 import Baikai.Trace.Sink (TraceSink, silent)
 import Control.Exception (throwIO)
+import Control.Lens ((^.))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy.Char8 qualified as BL8
+import Data.Generics.Labels ()
 import Data.Text qualified as Text
 import Data.Time (UTCTime)
 import Data.Vector qualified as V
@@ -117,9 +119,9 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
           req = buildAgentCompletionRequest config "system" (Just "user")
       -- AgentCompletionRequest has no Eq: it carries a TraceSink, which wraps a
       -- streamly fold. Compare the inspectable fields instead.
-      req.systemPrompt `shouldBe` "system"
-      req.initialPrompt `shouldBe` Just "user"
-      req.modelConfig `shouldBe` config
+      (req ^. #systemPrompt) `shouldBe` "system"
+      (req ^. #initialPrompt) `shouldBe` Just "user"
+      (req ^. #modelConfig) `shouldBe` config
 
   -- These drive the real Baikai.Trace.withTrace path against a stub provider
   -- registered under the anthropic-messages tag. They exist because withTrace

@@ -1,6 +1,8 @@
 module Seihou.CLI.AgentMigrateE2ESpec (tests) where
 
+import Control.Lens ((^.))
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -235,7 +237,7 @@ tests = testSpec "Agent migrate end-to-end" $ do
         case manifestFromJSON beforeResume of
           Left err -> expectationFailure err >> fail "unreachable"
           Right decoded -> pure decoded
-      map (\receipt -> (receipt.fromVersion, receipt.toVersion)) manifest.blueprintMigrations
+      map (\receipt -> (receipt ^. #fromVersion, receipt ^. #toVersion)) (manifest ^. #blueprintMigrations)
         `shouldBe` [("1.0.0", "2.0.0"), ("2.5.0", "3.0.0")]
 
       (resumeExit, resumeOutput, resumeError) <- runProcessText binary args (Just root) (Just environment)

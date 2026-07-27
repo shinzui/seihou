@@ -1,6 +1,8 @@
 module Seihou.CLI.AppliedBlueprintMigrationSpec (tests) where
 
+import Control.Lens ((^.))
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
 import Seihou.CLI.AppliedBlueprintMigration (recordAppliedBlueprintMigration)
@@ -50,8 +52,8 @@ spec = describe "recordAppliedBlueprintMigration" $ do
       result <- recordAppliedBlueprintMigration manifestPath receipt
       result `shouldBe` Right ()
       manifest <- readManifestFile manifestPath
-      manifest.version `shouldBe` currentManifestVersion
-      manifest.blueprintMigrations `shouldBe` [receipt]
+      (manifest ^. #version) `shouldBe` currentManifestVersion
+      (manifest ^. #blueprintMigrations) `shouldBe` [receipt]
 
   it "upserts the same exact edge and retains unrelated edges" $
     withSystemTempDirectory "seihou-blueprint-migration" $ \dir -> do
@@ -66,7 +68,7 @@ spec = describe "recordAppliedBlueprintMigration" $ do
       recordAppliedBlueprintMigration manifestPath second `shouldReturn` Right ()
       recordAppliedBlueprintMigration manifestPath replacement `shouldReturn` Right ()
       manifest <- readManifestFile manifestPath
-      manifest.blueprintMigrations `shouldBe` [replacement, second]
+      (manifest ^. #blueprintMigrations) `shouldBe` [replacement, second]
 
   it "returns Left and preserves a corrupt existing manifest" $
     withSystemTempDirectory "seihou-blueprint-migration" $ \dir -> do

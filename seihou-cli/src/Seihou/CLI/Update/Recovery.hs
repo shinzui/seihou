@@ -11,6 +11,7 @@ import Control.Monad (forM, forM_, unless, when)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.:?), (.=))
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.List (isPrefixOf, sortOn)
 import Data.Maybe (catMaybes, isJust)
 import Data.Ord (Down (..))
@@ -57,9 +58,9 @@ instance FromJSON BackupScope where
 instance ToJSON ServiceBackup where
   toJSON entry =
     Aeson.object
-      [ "scope" .= entry.scope,
-        "target" .= entry.target,
-        "backup" .= entry.backupName
+      [ "scope" .= (entry ^. #scope),
+        "target" .= (entry ^. #target),
+        "backup" .= (entry ^. #backupName)
       ]
 
 instance FromJSON ServiceBackup where
@@ -69,10 +70,10 @@ instance FromJSON ServiceBackup where
 instance ToJSON ServiceJournal where
   toJSON journal =
     Aeson.object
-      [ "version" .= journal.version,
-        "installedRoot" .= journal.installedRoot,
-        "entries" .= journal.entries,
-        "expectedManifest" .= journal.expectedManifest
+      [ "version" .= (journal ^. #version),
+        "installedRoot" .= (journal ^. #installedRoot),
+        "entries" .= (journal ^. #entries),
+        "expectedManifest" .= (journal ^. #expectedManifest)
       ]
 
 instance FromJSON ServiceJournal where
@@ -99,18 +100,18 @@ prepareServiceBackups transaction installedRoot migrations artifacts = do
   let projectDirectories = normalizeDirectories (concatMap migrationDirectories migrations)
       installedNames =
         Set.toAscList . Set.fromList $
-          [ T.unpack artifact.name
+          [ T.unpack (artifact ^. #name)
           | artifact <- artifacts,
-            isJust artifact.sourceUrl
+            isJust (artifact ^. #sourceUrl)
           ]
       requests =
         map (ProjectDirectory,) projectDirectories
           <> map (InstalledArtifact,) installedNames
-      backupRoot = transaction.transactionDirectory </> "service-backups"
+      backupRoot = transaction ^. #transactionDirectory </> "service-backups"
   result <- try @SomeException $ do
     Directory.createDirectoryIfMissing True backupRoot
     entries <- forM (zip [0 :: Int ..] requests) $ \(index, (scope, target)) -> do
-      fullTarget <- resolveTarget transaction.projectRoot installedRoot scope target
+      fullTarget <- resolveTarget (transaction ^. #projectRoot) installedRoot scope target
       exists <- Directory.doesDirectoryExist fullTarget
       if exists
         then do
@@ -120,7 +121,7 @@ prepareServiceBackups transaction installedRoot migrations artifacts = do
           pure ServiceBackup {scope, target, backupName = Just backupName}
         else pure ServiceBackup {scope, target, backupName = Nothing}
     writeServiceJournal
-      transaction.transactionDirectory
+      (transaction ^. #transactionDirectory)
       ServiceJournal
         { version = 1,
           installedRoot,
@@ -131,7 +132,7 @@ prepareServiceBackups transaction installedRoot migrations artifacts = do
 
 setServiceExpectedManifest :: UpdateTransaction -> Manifest -> IO (Either UpdateError ())
 setServiceExpectedManifest transaction expected = do
-  current <- readServiceJournal transaction.transactionDirectory
+  current <- readServiceJournal (transaction ^. #transactionDirectory)
   case current of
     Left err -> pure (Left err)
     Right Nothing -> pure (Right ())
@@ -139,17 +140,17 @@ setServiceExpectedManifest transaction expected = do
       result <-
         try @SomeException $
           writeServiceJournal
-            transaction.transactionDirectory
+            (transaction ^. #transactionDirectory)
             journal {expectedManifest = Just expected}
       pure $ first (UpdateManifestWriteFailed . T.pack . displayException) result
 
 restoreServiceBackups :: UpdateTransaction -> IO (Either UpdateError ())
 restoreServiceBackups transaction = do
-  current <- readServiceJournal transaction.transactionDirectory
+  current <- readServiceJournal (transaction ^. #transactionDirectory)
   case current of
     Left err -> pure (Left err)
     Right Nothing -> pure (Right ())
-    Right (Just journal) -> restoreJournal transaction.projectRoot transaction.transactionDirectory journal
+    Right (Just journal) -> restoreJournal (transaction ^. #projectRoot) (transaction ^. #transactionDirectory) journal
 
 -- | Restore or accept every service journal before the core transaction
 -- recovery pass. A durable matching manifest means cache/directory publication
@@ -173,7 +174,7 @@ recoverServiceBackups projectRoot = do
               Left err -> pure (Just (Left err))
               Right Nothing -> pure Nothing
               Right (Just journal) -> do
-                committed <- manifestMatches projectRoot journal.expectedManifest
+                committed <- manifestMatches projectRoot (journal ^. #expectedManifest)
                 if committed
                   then pure (Just (Right ()))
                   else Just <$> restoreJournal projectRoot transactionDirectory journal
@@ -181,11 +182,11 @@ recoverServiceBackups projectRoot = do
 restoreJournal :: FilePath -> FilePath -> ServiceJournal -> IO (Either UpdateError ())
 restoreJournal projectRoot transactionDirectory journal = do
   result <- try @SomeException $
-    forM_ (sortOn (Down . pathDepth . (.target)) journal.entries) $ \entry -> do
-      fullTarget <- resolveTarget projectRoot journal.installedRoot entry.scope entry.target
+    forM_ (sortOn (Down . pathDepth . (^. #target)) (journal ^. #entries)) $ \entry -> do
+      fullTarget <- resolveTarget projectRoot (journal ^. #installedRoot) (entry ^. #scope) (entry ^. #target)
       targetExists <- Directory.doesPathExist fullTarget
       when targetExists (Directory.removePathForcibly fullTarget)
-      case entry.backupName of
+      case entry ^. #backupName of
         Nothing -> pure ()
         Just backupName -> do
           validateBackupName backupName
@@ -214,7 +215,7 @@ targetsControlPath path = case splitDirectories path of
   [] -> False
 
 migrationDirectories :: PlannedUpdateMigration -> [FilePath]
-migrationDirectories migration = concatMap directories migration.stagedPlan.ops
+migrationDirectories migration = concatMap directories (migration ^. #stagedPlan . #ops)
   where
     directories (MoveDirInst source destination) = [source, destination]
     directories (DeleteDirInst path) = [path]

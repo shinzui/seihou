@@ -13,6 +13,7 @@ module Seihou.CLI.CommandExecution
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Time (UTCTime)
@@ -92,13 +93,13 @@ planCommands policy priorReceipts =
 -- | Count each command disposition without changing command order.
 summarizeCommandPlan :: CommandPlan -> CommandPlanSummary
 summarizeCommandPlan commandPlan =
-  foldl' count emptySummary commandPlan.commands
+  foldl' count emptySummary (commandPlan ^. #commands)
   where
     emptySummary = CommandPlanSummary {willRun = 0, skippedUnchanged = 0, skippedDisabled = 0}
-    count summary planned = case planned.disposition of
-      CommandWillRun -> summary {willRun = summary.willRun + 1}
-      CommandSkippedUnchanged -> summary {skippedUnchanged = summary.skippedUnchanged + 1}
-      CommandSkippedDisabled -> summary {skippedDisabled = summary.skippedDisabled + 1}
+    count summary planned = case planned ^. #disposition of
+      CommandWillRun -> summary {willRun = summary ^. #willRun + 1}
+      CommandSkippedUnchanged -> summary {skippedUnchanged = summary ^. #skippedUnchanged + 1}
+      CommandSkippedDisabled -> summary {skippedDisabled = summary ^. #skippedDisabled + 1}
 
 -- | Execute runnable commands sequentially with @sh -c@. Stop at the first
 -- failure. The caller receives receipts only if the entire phase succeeds.
@@ -107,7 +108,7 @@ executeCommandPlan ::
   UTCTime ->
   CommandPlan ->
   Eff es (Either CommandExecutionError [CommandReceipt])
-executeCommandPlan completedAt commandPlan = go [] commandPlan.commands
+executeCommandPlan completedAt commandPlan = go [] (commandPlan ^. #commands)
   where
     go = executeCommands completedAt (\_ _ _ -> pure ())
 
@@ -122,7 +123,7 @@ executeCommandPlanWithOutput ::
   CommandPlan ->
   Eff es (Either CommandExecutionError [CommandReceipt])
 executeCommandPlanWithOutput completedAt onSuccess commandPlan =
-  executeCommands completedAt onSuccess [] commandPlan.commands
+  executeCommands completedAt onSuccess [] (commandPlan ^. #commands)
 
 executeCommands ::
   (Process :> es) =>
@@ -134,10 +135,10 @@ executeCommands ::
 executeCommands completedAt onSuccess = go
   where
     go completed [] = pure (Right (reverse completed))
-    go completed (planned : remaining) = case planned.disposition of
+    go completed (planned : remaining) = case planned ^. #disposition of
       CommandSkippedUnchanged -> go completed remaining
       CommandSkippedDisabled -> go completed remaining
-      CommandWillRun -> case planned.operation of
+      CommandWillRun -> case planned ^. #operation of
         RunCommandOp {command, workDir, moduleName} -> do
           (processExit, stdout, stderr) <- runProcess "sh" ["-c", command] workDir
           case processExit of
@@ -145,7 +146,7 @@ executeCommands completedAt onSuccess = go
               onSuccess planned stdout stderr
               let receipt =
                     CommandReceipt
-                      { fingerprint = planned.fingerprint,
+                      { fingerprint = planned ^. #fingerprint,
                         moduleName,
                         command,
                         workDir,
@@ -173,17 +174,17 @@ finalizeCommandReceipts ::
   Map CommandFingerprint CommandReceipt ->
   Map CommandFingerprint CommandReceipt
 finalizeCommandReceipts commandPlan completed priorReceipts =
-  Map.fromList (mapMaybe receiptFor commandPlan.commands)
+  Map.fromList (mapMaybe receiptFor (commandPlan ^. #commands))
   where
-    completedByFingerprint = Map.fromList [(receipt.fingerprint, receipt) | receipt <- completed]
+    completedByFingerprint = Map.fromList [(receipt ^. #fingerprint, receipt) | receipt <- completed]
 
     receiptFor planned =
-      case Map.lookup planned.fingerprint completedByFingerprint of
-        Just receipt -> Just (planned.fingerprint, receipt)
-        Nothing -> case planned.disposition of
+      case Map.lookup (planned ^. #fingerprint) completedByFingerprint of
+        Just receipt -> Just (planned ^. #fingerprint, receipt)
+        Nothing -> case planned ^. #disposition of
           CommandWillRun -> Nothing
           CommandSkippedUnchanged -> retainPrior planned
           CommandSkippedDisabled -> retainPrior planned
 
     retainPrior planned =
-      (planned.fingerprint,) <$> Map.lookup planned.fingerprint priorReceipts
+      (planned ^. #fingerprint,) <$> Map.lookup (planned ^. #fingerprint) priorReceipts

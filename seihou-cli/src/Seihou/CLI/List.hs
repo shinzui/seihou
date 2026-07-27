@@ -12,6 +12,7 @@ where
 import Data.Aeson (FromJSON (..), withObject, (.:?))
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
@@ -62,59 +63,59 @@ handleList listOpts = do
 
 readOrigin :: DiscoveredModule -> IO (FilePath, Maybe OriginInfo)
 readOrigin dm = do
-  let originFile = dm.dir </> ".seihou-origin.json"
+  let originFile = dm ^. #dir </> ".seihou-origin.json"
   exists <- doesFileExist originFile
   if exists
     then do
       bs <- LBS.readFile originFile
       case Aeson.decode bs of
-        Just info -> pure (dm.dir, Just info)
-        Nothing -> pure (dm.dir, Nothing)
-    else pure (dm.dir, Nothing)
+        Just info -> pure (dm ^. #dir, Just info)
+        Nothing -> pure (dm ^. #dir, Nothing)
+    else pure (dm ^. #dir, Nothing)
 
 readRunnableOrigin :: DiscoveredRunnable -> IO (FilePath, Maybe OriginInfo)
 readRunnableOrigin dr = do
-  let originFile = dr.dir </> ".seihou-origin.json"
+  let originFile = dr ^. #dir </> ".seihou-origin.json"
   exists <- doesFileExist originFile
   if exists
     then do
       bs <- LBS.readFile originFile
       case Aeson.decode bs of
-        Just info -> pure (dr.dir, Just info)
-        Nothing -> pure (dr.dir, Nothing)
-    else pure (dr.dir, Nothing)
+        Just info -> pure (dr ^. #dir, Just info)
+        Nothing -> pure (dr ^. #dir, Nothing)
+    else pure (dr ^. #dir, Nothing)
 
 runnableToEntryWithOrigin :: Map FilePath (Maybe OriginInfo) -> DiscoveredRunnable -> Entry
 runnableToEntryWithOrigin origins dr =
-  let (originName, originVer, tags) = case Map.lookup dr.dir origins of
-        Just (Just info) -> (info.repoName, info.version, info.tags)
+  let (originName, originVer, tags) = case Map.lookup (dr ^. #dir) origins of
+        Just (Just info) -> (info ^. #repoName, info ^. #version, info ^. #tags)
         _ -> (Nothing, Nothing, [])
-      srcLabel = sourceLabelWithOrigin dr.source originName originVer
-      kindSuffix = case dr.kind of
+      srcLabel = sourceLabelWithOrigin (dr ^. #source) originName originVer
+      kindSuffix = case dr ^. #kind of
         KindModule -> ""
         KindRecipe -> " [recipe]"
         KindBlueprint -> " [blueprint]"
         KindPrompt -> " [prompt]"
-   in if dr.isError
+   in if dr ^. #isError
         then
           Entry
-            { name = dr.name,
-              desc = "[error: " <> fromMaybe "unknown" dr.error <> "]",
+            { name = dr ^. #name,
+              desc = "[error: " <> fromMaybe "unknown" (dr ^. #error) <> "]",
               source = srcLabel <> kindSuffix,
               isError = True,
               repoName = originName,
               tags = tags,
-              kind = dr.kind
+              kind = dr ^. #kind
             }
         else
           Entry
-            { name = dr.name,
-              desc = fromMaybe "(no description)" dr.description,
+            { name = dr ^. #name,
+              desc = fromMaybe "(no description)" (dr ^. #description),
               source = srcLabel <> kindSuffix,
               isError = False,
               repoName = originName,
               tags = tags,
-              kind = dr.kind
+              kind = dr ^. #kind
             }
 
 -- | Format list output — backward-compatible version without origin info.
@@ -129,21 +130,21 @@ formatListOutputEntries color entries searchPaths listOpts
   | null entries =
       -- With nothing to show, the kind comes from the active filter (if any).
       "No "
-        <> pluralize 0 (summaryNoun listOpts.kinds)
+        <> pluralize 0 (summaryNoun (listOpts ^. #kinds))
         <> " found."
         <> filterSuffix
         <> "\n\nSearched:\n"
         <> T.unlines (map ("  " <>) searchPaths)
   | otherwise =
-      let maxNameLen = maximum (map (T.length . (.name)) entries)
-          maxDescLen = maximum (map (T.length . (.desc)) entries)
+      let maxNameLen = maximum (map (T.length . (^. #name)) entries)
+          maxDescLen = maximum (map (T.length . (^. #desc)) entries)
           header = "Available modules, recipes, blueprints, and prompts:\n"
           fileLines = map (formatEntry color maxNameLen maxDescLen) entries
           n = length entries
           nSources = length searchPaths
           -- The count noun reflects the kinds actually shown: a single shared
           -- kind names that kind; a mix falls back to the neutral "item".
-          noun = pluralize n (summaryNoun (map (.kind) entries))
+          noun = pluralize n (summaryNoun (map (^. #kind) entries))
           summary =
             T.pack (show n)
               <> " "
@@ -182,10 +183,10 @@ pluralize n base = if n == 1 then base else base <> "s"
 formatFilterSuffix :: ListFilter -> Text
 formatFilterSuffix opts =
   let parts =
-        maybe [] (\r -> ["repo=" <> r]) opts.repo
-          <> maybe [] (\t -> ["tag=" <> t]) opts.tag
+        maybe [] (\r -> ["repo=" <> r]) (opts ^. #repo)
+          <> maybe [] (\t -> ["tag=" <> t]) (opts ^. #tag)
           <> kindPart
-      kindPart = case opts.kinds of
+      kindPart = case opts ^. #kinds of
         [] -> []
         ks -> ["kind=" <> T.intercalate "+" (map kindNoun ks)]
    in if null parts
@@ -203,15 +204,15 @@ applyFilters :: ListFilter -> [Entry] -> [Entry]
 applyFilters opts = filter match
   where
     match entry = repoMatch entry && tagMatch entry && kindMatch entry
-    repoMatch entry = case opts.repo of
+    repoMatch entry = case opts ^. #repo of
       Nothing -> True
-      Just r -> entry.repoName == Just r
-    tagMatch entry = case opts.tag of
+      Just r -> entry ^. #repoName == Just r
+    tagMatch entry = case opts ^. #tag of
       Nothing -> True
-      Just t -> t `elem` entry.tags
-    kindMatch entry = case opts.kinds of
+      Just t -> t `elem` (entry ^. #tags)
+    kindMatch entry = case opts ^. #kinds of
       [] -> True
-      ks -> entry.kind `elem` ks
+      ks -> (entry ^. #kind) `elem` ks
 
 data Entry = Entry
   { name :: !Text,
@@ -229,15 +230,15 @@ toEntry = toEntryWithOrigin Map.empty
 
 toEntryWithOrigin :: Map FilePath (Maybe OriginInfo) -> DiscoveredModule -> Entry
 toEntryWithOrigin origins dm =
-  let (originName, originVer, tags) = case Map.lookup dm.dir origins of
-        Just (Just info) -> (info.repoName, info.version, info.tags)
+  let (originName, originVer, tags) = case Map.lookup (dm ^. #dir) origins of
+        Just (Just info) -> (info ^. #repoName, info ^. #version, info ^. #tags)
         _ -> (Nothing, Nothing, [])
-      srcLabel = sourceLabelWithOrigin dm.source originName originVer
-   in case dm.result of
+      srcLabel = sourceLabelWithOrigin (dm ^. #source) originName originVer
+   in case dm ^. #result of
         Right m ->
           Entry
-            { name = m.name.unModuleName,
-              desc = maybe "(no description)" id m.description,
+            { name = m ^. #name . #unModuleName,
+              desc = maybe "(no description)" id (m ^. #description),
               source = srcLabel,
               isError = False,
               repoName = originName,
@@ -246,7 +247,7 @@ toEntryWithOrigin origins dm =
             }
         Left err ->
           Entry
-            { name = dirName dm.dir,
+            { name = dirName (dm ^. #dir),
               desc = "[error: " <> briefError err <> "]",
               source = srcLabel,
               isError = True,
@@ -279,13 +280,13 @@ briefError (RegistryEvalError _ _) = "registry eval failed"
 
 formatEntry :: Bool -> Int -> Int -> Entry -> Text
 formatEntry color maxNameLen maxDescLen entry =
-  let name = entry.name
-      desc = entry.desc
-      src = entry.source
+  let name = (entry ^. #name)
+      desc = (entry ^. #desc)
+      src = (entry ^. #source)
       paddedName = name <> T.replicate (maxNameLen - T.length name + 3) " "
       paddedDesc = desc <> T.replicate (maxDescLen - T.length desc + 3) " "
       srcTag = "(" <> src <> ")"
-      colorDesc = if color && entry.isError then red desc else desc
+      colorDesc = if color && entry ^. #isError then red desc else desc
       colorSrc = if color then dim srcTag else srcTag
       colorPaddedDesc = colorDesc <> T.replicate (maxDescLen - T.length desc + 3) " "
-   in "  " <> paddedName <> (if color && entry.isError then colorPaddedDesc else paddedDesc) <> colorSrc
+   in "  " <> paddedName <> (if color && entry ^. #isError then colorPaddedDesc else paddedDesc) <> colorSrc

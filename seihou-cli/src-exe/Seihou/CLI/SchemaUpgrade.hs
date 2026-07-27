@@ -3,6 +3,7 @@ module Seihou.CLI.SchemaUpgrade
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (SchemaUpgradeOpts (..))
@@ -16,14 +17,14 @@ import System.Exit (exitFailure)
 
 handleSchemaUpgrade :: SchemaUpgradeOpts -> IO ()
 handleSchemaUpgrade opts
-  | opts.all = do
+  | (opts ^. #all) = do
       searchPaths <- defaultSearchPaths
       modules <- discoverAllModules searchPaths
       let paths = [dir </> "module.dhall" | DiscoveredModule {dir = dir} <- modules]
-      results <- mapM (processModule opts.dryRun) paths
+      results <- mapM (processModule (opts ^. #dryRun)) paths
       printSummary results
   | otherwise = do
-      moduleDir <- case opts.path of
+      moduleDir <- case opts ^. #path of
         Just p -> pure p
         Nothing -> getCurrentDirectory
       let dhallFile = moduleDir </> "module.dhall"
@@ -33,7 +34,7 @@ handleSchemaUpgrade opts
           TIO.putStrLn $ "Error: " <> T.pack dhallFile <> " not found."
           exitFailure
         else do
-          results <- sequence [processModule opts.dryRun dhallFile]
+          results <- sequence [processModule (opts ^. #dryRun) dhallFile]
           printSummary results
 
 data ProcessResult

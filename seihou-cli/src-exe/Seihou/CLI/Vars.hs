@@ -4,6 +4,7 @@ module Seihou.CLI.Vars
 where
 
 import Control.Monad (when)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
@@ -30,7 +31,7 @@ import System.Exit (ExitCode (..), exitFailure, exitWith)
 handleVars :: VarsOpts -> IO ()
 handleVars vopts = do
   -- Resolve module name (from argument or fzf picker)
-  modName <- case vopts.module_ of
+  modName <- case vopts ^. #module_ of
     Just name -> pure name
     Nothing -> do
       fzfCfg <- detectFzfConfig
@@ -61,7 +62,7 @@ handleVars vopts = do
   case discResult of
     Left (ModuleNotFound _ searched) -> do
       logIO LogNormal $ do
-        logError $ "Module '" <> modName.unModuleName <> "' not found."
+        logError $ "Module '" <> modName ^. #unModuleName <> "' not found."
         logError "Searched in:"
         mapM_ (\p -> logError $ "  " <> T.pack p) searched
       exitFailure
@@ -69,18 +70,18 @@ handleVars vopts = do
       logIO LogNormal (logError $ T.pack (show err))
       exitFailure
     Right (RunnableModule m _) ->
-      if vopts.explain
+      if vopts ^. #explain
         then explainMode modName vopts
         else declarationModeModule m
     Right (RunnableRecipe r _) ->
-      if vopts.explain
+      if vopts ^. #explain
         then explainMode modName vopts
         else declarationModeRecipe r
     Right (RunnableBlueprint b _) ->
-      if vopts.explain
+      if vopts ^. #explain
         then do
           logIO LogNormal $ do
-            logError $ "'" <> modName.unModuleName <> "' is a blueprint; --explain is not supported in this release."
+            logError $ "'" <> modName ^. #unModuleName <> "' is a blueprint; --explain is not supported in this release."
             logError "Resolving a blueprint's variables requires the agent runner."
             logError "Run `seihou agent run <blueprint>` instead (when EP-31 ships)."
             logError "For a read-only listing of declared variables, omit --explain."
@@ -90,11 +91,11 @@ handleVars vopts = do
 -- | Declaration mode for a module: list declared variables.
 declarationModeModule :: Module -> IO ()
 declarationModeModule modul = do
-  let vs = modul.vars
+  let vs = (modul ^. #vars)
   if null vs
     then TIO.putStrLn "No variables declared."
     else do
-      TIO.putStrLn $ "Variables for " <> modul.name.unModuleName <> ":"
+      TIO.putStrLn $ "Variables for " <> modul ^. #name . #unModuleName <> ":"
       TIO.putStrLn ""
       TIO.putStr (formatDeclarations vs)
 
@@ -103,11 +104,11 @@ declarationModeModule modul = do
 -- compose); this prints those without expanding the recipe.
 declarationModeRecipe :: Recipe -> IO ()
 declarationModeRecipe r = do
-  let vs = r.vars
+  let vs = (r ^. #vars)
   if null vs
     then TIO.putStrLn "No variables declared."
     else do
-      TIO.putStrLn $ "Variables for " <> r.name.unRecipeName <> " (recipe):"
+      TIO.putStrLn $ "Variables for " <> r ^. #name . #unRecipeName <> " (recipe):"
       TIO.putStrLn ""
       TIO.putStr (formatDeclarations vs)
 
@@ -116,11 +117,11 @@ declarationModeRecipe r = do
 -- glance that this is the agent-driven runnable, not a module/recipe.
 declarationModeBlueprint :: Blueprint -> IO ()
 declarationModeBlueprint b = do
-  let vs = b.vars
+  let vs = (b ^. #vars)
   if null vs
     then TIO.putStrLn "No variables declared."
     else do
-      TIO.putStrLn $ "Variables for " <> b.name.unModuleName <> " (blueprint):"
+      TIO.putStrLn $ "Variables for " <> b ^. #name . #unModuleName <> " (blueprint):"
       TIO.putStrLn ""
       TIO.putStr (formatDeclarations vs)
 
@@ -133,14 +134,14 @@ explainMode modName vopts = do
   modulesInOrder <- case compositionResult of
     Left (ModuleNotFound name searched) -> do
       logIO LogNormal $ do
-        logError $ "Module '" <> name.unModuleName <> "' not found."
+        logError $ "Module '" <> name ^. #unModuleName <> "' not found."
         logError "Searched in:"
         mapM_ (\p -> logError $ "  " <> T.pack p) searched
       exitFailure
     Left (CircularDependency names) -> do
       logIO LogNormal $ do
         logError "Circular dependency detected:"
-        logError $ "  " <> T.intercalate " -> " (map (.unModuleName) names)
+        logError $ "  " <> T.intercalate " -> " (map (^. #unModuleName) names)
       exitFailure
     Left err -> do
       logIO LogNormal (logError $ T.pack (show err))
@@ -157,10 +158,10 @@ explainMode modName vopts = do
 
   -- Resolve variables with the full composition pipeline
   envPairs <- getEnvironment
-  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- vopts.vars]
+  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- vopts ^. #vars]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace modName) vopts.namespace
-  context <- resolveContext vopts.context envVars
+      namespace = fromMaybe (deriveNamespace modName) (vopts ^. #namespace)
+  context <- resolveContext (vopts ^. #context) envVars
   let contextName = fromMaybe "" context
   (resolveResult, localMap, nsMap, ctxMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
     localCfg <- readLocalConfig >>= unwrapConfig LogNormal
@@ -188,16 +189,16 @@ explainMode modName vopts = do
             Map.unions
               [ vs
               | (inst, vs) <- Map.toList resolved,
-                inst.module_ == modName
+                inst ^. #module_ == modName
               ]
-      TIO.putStrLn $ "Variables for " <> modName.unModuleName <> ":"
+      TIO.putStrLn $ "Variables for " <> modName ^. #unModuleName <> ":"
       TIO.putStrLn ""
       if Map.null targetResolved
         then TIO.putStrLn "  (no variables resolved)"
         else TIO.putStr (formatExplain targetResolved)
 
       -- Show diagnostics
-      let allDecls = concatMap (\(_, m, _) -> m.vars) modulesInOrder
+      let allDecls = concatMap (\(_, m, _) -> m ^. #vars) modulesInOrder
           allResolved = Map.unions [vs | vs <- Map.elems resolved]
           (unusedKeys, unresolvedOpt) = diagnoseResolution allResolved allDecls localMap nsMap ctxMap globalMap
       when (not (null unusedKeys)) $ do

@@ -5,6 +5,8 @@ module Seihou.CLI.CommitMessage
 where
 
 import Control.Exception (SomeException, try)
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.Core.Types (ModuleName (..))
@@ -69,7 +71,7 @@ buildPrompt modNames diffText =
       "- Do not wrap the output in backticks or code fences"
     ]
   where
-    moduleList = T.intercalate ", " (map (.unModuleName) modNames)
+    moduleList = T.intercalate ", " (map (^. #unModuleName) modNames)
 
 -- | Strip markdown code-fence wrapping (``` ... ```) from text.
 -- Handles optional language tags (e.g., ```text).
@@ -89,5 +91,5 @@ stripCodeFence txt =
 
 fallbackMessage :: [ModuleName] -> T.Text
 fallbackMessage [] = "chore(seihou): apply modules"
-fallbackMessage [m] = "chore(seihou): apply " <> m.unModuleName
-fallbackMessage ms = "chore(seihou): apply " <> T.intercalate ", " (map (.unModuleName) ms)
+fallbackMessage [m] = "chore(seihou): apply " <> (m ^. #unModuleName)
+fallbackMessage ms = "chore(seihou): apply " <> T.intercalate ", " (map (^. #unModuleName) ms)

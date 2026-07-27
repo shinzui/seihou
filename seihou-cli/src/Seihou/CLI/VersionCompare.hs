@@ -6,7 +6,9 @@ module Seihou.CLI.VersionCompare
   )
 where
 
+import Control.Lens ((^.))
 import Data.Aeson (ToJSON (..), object, (.=))
+import Data.Generics.Labels ()
 import Data.Text (Text)
 import GHC.Generics (Generic)
 import Seihou.Core.Version (parseVersion)
@@ -33,10 +35,10 @@ data OutdatedEntry = OutdatedEntry
 instance ToJSON OutdatedEntry where
   toJSON e =
     object
-      [ "module" .= e.moduleName,
-        "installed" .= e.installedVersion,
-        "available" .= e.availableVersion,
-        "status" .= statusText e.status
+      [ "module" .= (e ^. #moduleName),
+        "installed" .= (e ^. #installedVersion),
+        "available" .= (e ^. #availableVersion),
+        "status" .= statusText (e ^. #status)
       ]
     where
       statusText UpToDate = "up to date" :: Text

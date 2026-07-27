@@ -6,7 +6,9 @@ module Seihou.CLI.UpdateSpec
 where
 
 import Control.Exception (bracket)
+import Control.Lens ((^.))
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, listToMaybe)
 import Data.Set qualified as Set
@@ -64,12 +66,12 @@ spec = do
     it "rejects a partial selection that shares an owned path" $ do
       let first = application (AppliedModuleTarget "one") [instanceState "one" "/one"]
           second = application (AppliedModuleTarget "two") [instanceState "two" "/two"]
-          owners = Set.fromList [first.applicationId, second.applicationId]
+          owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
           record = FileRecord (hashContent "old") "one" Template testTime Nothing owners
           manifest :: Manifest
           manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
       selectApplications (NamedUpdateTargets ["one"]) manifest
-        `shouldBe` Left (SharedPathRequiresApplications "shared.txt" (Set.singleton first.applicationId) (Set.singleton second.applicationId))
+        `shouldBe` Left (SharedPathRequiresApplications "shared.txt" (Set.singleton (first ^. #applicationId)) (Set.singleton (second ^. #applicationId)))
 
     it "requires one explicit target to seed a legacy manifest" $ do
       selectApplications AllRecordedApplications (emptyManifest testTime) `shouldBe` Left NoRecordedApplications
@@ -89,10 +91,10 @@ spec = do
           Left err -> expectationFailure (show err)
           Right (catalog, warnings) -> do
             warnings `shouldContain` [LocalArtifactHasNoRemote "demo"]
-            let candidate = catalog.artifacts Map.! (CandidateModule, "demo")
-            candidate.originalDirectory `shouldBe` moduleDirectory
-            candidate.sourceUrl `shouldBe` Nothing
-            doesFileExist (catalog.searchRoot </> "demo" </> "module.dhall") `shouldReturn` True
+            let candidate = (catalog ^. #artifacts) Map.! (CandidateModule, "demo")
+            (candidate ^. #originalDirectory) `shouldBe` moduleDirectory
+            (candidate ^. #sourceUrl) `shouldBe` Nothing
+            doesFileExist (catalog ^. #searchRoot </> "demo" </> "module.dhall") `shouldReturn` True
 
     it "clones one registry origin once for a recipe and all of its modules" $
       withSystemTempDirectory "seihou-update-registry-source" $ \root -> do
@@ -123,8 +125,8 @@ spec = do
         case result of
           Left err -> expectationFailure (show err)
           Right (catalog, _) -> do
-            Map.size catalog.clonedOrigins `shouldBe` 1
-            Map.keysSet catalog.artifacts
+            Map.size (catalog ^. #clonedOrigins) `shouldBe` 1
+            Map.keysSet (catalog ^. #artifacts)
               `shouldBe` Set.fromList [(CandidateModule, "one"), (CandidateModule, "two"), (CandidateRecipe, "stack")]
 
     it "returns a structured clone error before touching the project" $
@@ -142,11 +144,11 @@ spec = do
     it "reuses accepted inputs, keeps dry-run read-only, and publishes one coherent update" $
       withSystemTempDirectory "seihou-update-e2e" $ \root -> do
         fixture <- prepareUpdateFixture root
-        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
-          withCurrentDirectory fixture.projectRoot $ do
-            beforeManifest <- LBS.readFile fixture.manifestPath
-            beforeProject <- TIO.readFile fixture.projectFile
-            beforeInstalled <- TIO.readFile (fixture.installedModule </> "module.dhall")
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
+            beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+            beforeProject <- TIO.readFile (fixture ^. #projectFile)
+            beforeInstalled <- TIO.readFile (fixture ^. #installedModule </> "module.dhall")
             let dryRequest = updateRequest True
             dryResult <- withProjectUpdate dryRequest $ \case
               Left err -> pure (Left err)
@@ -154,9 +156,9 @@ spec = do
             case dryResult of
               Left err -> expectationFailure (show err)
               Right _ -> pure ()
-            LBS.readFile fixture.manifestPath `shouldReturn` beforeManifest
-            TIO.readFile fixture.projectFile `shouldReturn` beforeProject
-            TIO.readFile (fixture.installedModule </> "module.dhall") `shouldReturn` beforeInstalled
+            LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+            TIO.readFile (fixture ^. #projectFile) `shouldReturn` beforeProject
+            TIO.readFile (fixture ^. #installedModule </> "module.dhall") `shouldReturn` beforeInstalled
 
             applied <- withProjectUpdate (updateRequest False) $ \case
               Left err -> pure (Left err)
@@ -164,40 +166,40 @@ spec = do
             case applied of
               Left err -> expectationFailure (show err)
               Right result -> do
-                result.versions `shouldSatisfy` any (\change -> change.name == "demo" && change.fromVersion == Just "1.0.0" && change.toVersion == Just "2.0.0")
-                result.updatedApplications `shouldBe` [fixture.applicationId]
-            TIO.readFile fixture.projectFile `shouldReturn` "hello accepted\nkeep\nv2\n"
-            installedBytes <- TIO.readFile (fixture.installedModule </> "module.dhall")
+                (result ^. #versions) `shouldSatisfy` any (\change -> change ^. #name == "demo" && change ^. #fromVersion == Just "1.0.0" && change ^. #toVersion == Just "2.0.0")
+                (result ^. #updatedApplications) `shouldBe` [fixture ^. #applicationId]
+            TIO.readFile (fixture ^. #projectFile) `shouldReturn` "hello accepted\nkeep\nv2\n"
+            installedBytes <- TIO.readFile (fixture ^. #installedModule </> "module.dhall")
             installedBytes `shouldSatisfy` T.isInfixOf "Some \"2.0.0\""
-            decoded <- manifestFromJSON <$> LBS.readFile fixture.manifestPath
+            decoded <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
             case decoded of
               Left err -> expectationFailure err
-              Right manifest -> case manifest.applications of
-                updated : _ -> case updated.instances of
+              Right manifest -> case manifest ^. #applications of
+                updated : _ -> case updated ^. #instances of
                   instanceState : _ -> do
-                    instanceState.resolvedVars `shouldBe` Map.singleton "project.name" "accepted"
-                    instanceState.moduleVersion `shouldBe` Just "2.0.0"
+                    (instanceState ^. #resolvedVars) `shouldBe` Map.singleton "project.name" "accepted"
+                    (instanceState ^. #moduleVersion) `shouldBe` Just "2.0.0"
                   [] -> expectationFailure "updated application has no instances"
                 [] -> expectationFailure "updated manifest has no applications"
 
-            afterFirstApply <- LBS.readFile fixture.manifestPath
+            afterFirstApply <- LBS.readFile (fixture ^. #manifestPath)
             noOp <- withProjectUpdate (updateRequest False) $ \case
               Left err -> pure (Left err)
               Right plan -> applyProjectUpdate plan
             case noOp of
               Left err -> expectationFailure (show err)
-              Right result -> result.updatedApplications `shouldBe` []
-            LBS.readFile fixture.manifestPath `shouldReturn` afterFirstApply
+              Right result -> (result ^. #updatedApplications) `shouldBe` []
+            LBS.readFile (fixture ^. #manifestPath) `shouldReturn` afterFirstApply
 
     it "rejects a plan when its manifest snapshot changes" $
       withSystemTempDirectory "seihou-update-stale" $ \root -> do
         fixture <- prepareUpdateFixture root
-        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
-          withCurrentDirectory fixture.projectRoot $ do
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
             result <- withProjectUpdate (updateRequest False) $ \case
               Left err -> pure (Left err)
               Right plan -> do
-                TIO.appendFile fixture.manifestPath "\n"
+                TIO.appendFile (fixture ^. #manifestPath) "\n"
                 applyProjectUpdate plan
             result `shouldSatisfy` \case
               Left (UpdatePlanStale paths) -> Set.member (".seihou" </> "manifest.json") paths
@@ -206,96 +208,96 @@ spec = do
     it "plans changed content at the same declared version with an explicit warning" $
       withSystemTempDirectory "seihou-update-same-version" $ \root -> do
         fixture <- prepareUpdateFixture root
-        let modulePath = fixture.remote </> "module.dhall"
+        let modulePath = fixture ^. #remote </> "module.dhall"
         body <- TIO.readFile modulePath
         TIO.writeFile modulePath (T.replace "Some \"2.0.0\"" "Some \"1.0.0\"" body)
-        callProcess "git" ["-C", fixture.remote, "add", "module.dhall"]
-        callProcess "git" ["-C", fixture.remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "same-version content change"]
-        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
-          withCurrentDirectory fixture.projectRoot $ do
+        callProcess "git" ["-C", fixture ^. #remote, "add", "module.dhall"]
+        callProcess "git" ["-C", fixture ^. #remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "same-version content change"]
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
             result <- withProjectUpdate (updateRequest True) pure
             case result of
               Left err -> expectationFailure (show err)
               Right plan -> do
                 isUpdateNoOp plan `shouldBe` False
-                plan.versionChanges `shouldSatisfy` any (.sameVersionContentChanged)
-                plan.warnings `shouldContain` [SameVersionContentChanged "demo"]
+                (plan ^. #versionChanges) `shouldSatisfy` any (^. #sameVersionContentChanged)
+                (plan ^. #warnings) `shouldContain` [SameVersionContentChanged "demo"]
 
     it "re-expands a candidate recipe and removes dependencies dropped by it" $
       withSystemTempDirectory "seihou-update-recipe" $ \root -> do
         fixture <- prepareRecipeUpdateFixture root
-        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
-          withCurrentDirectory fixture.projectRoot $ do
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
             result <- withProjectUpdate (updateRequest False) $ \case
               Left err -> pure (Left err)
               Right plan -> applyProjectUpdate plan
             case result of
               Left err -> expectationFailure (show err)
-              Right updateResult -> updateResult.updatedApplications `shouldBe` [fixture.applicationId]
-            decoded <- manifestFromJSON <$> LBS.readFile fixture.manifestPath
+              Right updateResult -> (updateResult ^. #updatedApplications) `shouldBe` [fixture ^. #applicationId]
+            decoded <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
             case decoded of
               Left err -> expectationFailure err
-              Right manifest -> case manifest.applications of
+              Right manifest -> case manifest ^. #applications of
                 [updated] -> do
-                  updated.applicationId `shouldBe` fixture.applicationId
-                  updated.targetVersion `shouldBe` Just "2.0.0"
-                  updated.additionalModules `shouldBe` []
-                  Set.fromList (map (.name) updated.instances) `shouldBe` Set.fromList ["one", "new"]
-                  Set.fromList (map (.name) manifest.modules) `shouldBe` Set.fromList ["one", "new"]
+                  (updated ^. #applicationId) `shouldBe` (fixture ^. #applicationId)
+                  (updated ^. #targetVersion) `shouldBe` Just "2.0.0"
+                  (updated ^. #additionalModules) `shouldBe` []
+                  Set.fromList (map (^. #name) (updated ^. #instances)) `shouldBe` Set.fromList ["one", "new"]
+                  Set.fromList (map (^. #name) (manifest ^. #modules)) `shouldBe` Set.fromList ["one", "new"]
                 other -> expectationFailure ("expected one updated recipe application, got " <> show other)
-            doesFileExist (fixture.xdgHome </> "seihou" </> "installed" </> "new" </> "module.dhall") `shouldReturn` True
+            doesFileExist (fixture ^. #xdgHome </> "seihou" </> "installed" </> "new" </> "module.dhall") `shouldReturn` True
 
     it "refuses an unresolved three-way conflict without mutating durable state" $
       withSystemTempDirectory "seihou-update-conflict" $ \root -> do
         fixture <- prepareUpdateFixture root
-        TIO.writeFile (fixture.remote </> "files" </> "README.tmpl") "candidate {{project.name}}\nv2\n"
-        callProcess "git" ["-C", fixture.remote, "add", "files/README.tmpl"]
-        callProcess "git" ["-C", fixture.remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "conflicting template"]
-        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
-          withCurrentDirectory fixture.projectRoot $ do
-            TIO.writeFile fixture.projectFile "user accepted\nv1\n"
-            beforeManifest <- LBS.readFile fixture.manifestPath
-            beforeInstalled <- LBS.readFile (fixture.installedModule </> "module.dhall")
+        TIO.writeFile (fixture ^. #remote </> "files" </> "README.tmpl") "candidate {{project.name}}\nv2\n"
+        callProcess "git" ["-C", fixture ^. #remote, "add", "files/README.tmpl"]
+        callProcess "git" ["-C", fixture ^. #remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "conflicting template"]
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
+            TIO.writeFile (fixture ^. #projectFile) "user accepted\nv1\n"
+            beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+            beforeInstalled <- LBS.readFile (fixture ^. #installedModule </> "module.dhall")
             result <- withProjectUpdate (updateRequest False) $ \case
               Left err -> pure (Left err)
               Right plan -> applyProjectUpdate plan
             result `shouldSatisfy` \case
               Left (UpdateHasUnresolvedPaths paths) -> Set.member "README.md" paths
               _ -> False
-            LBS.readFile fixture.manifestPath `shouldReturn` beforeManifest
-            TIO.readFile fixture.projectFile `shouldReturn` "user accepted\nv1\n"
-            LBS.readFile (fixture.installedModule </> "module.dhall") `shouldReturn` beforeInstalled
+            LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+            TIO.readFile (fixture ^. #projectFile) `shouldReturn` "user accepted\nv1\n"
+            LBS.readFile (fixture ^. #installedModule </> "module.dhall") `shouldReturn` beforeInstalled
 
     it "seeds one explicit legacy target and records it only after success" $
       withSystemTempDirectory "seihou-update-legacy" $ \root -> do
         fixture <- prepareUpdateFixture root
-        decoded <- manifestFromJSON <$> LBS.readFile fixture.manifestPath
+        decoded <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
         legacy <- case decoded of
           Left err -> expectationFailure err >> pure (emptyManifest testTime)
           Right manifest -> pure (withoutApplications manifest)
-        LBS.writeFile fixture.manifestPath (manifestToJSON legacy)
+        LBS.writeFile (fixture ^. #manifestPath) (manifestToJSON legacy)
         let request = (updateRequest False) {selection = NamedUpdateTargets ["demo"]}
-        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
-          withCurrentDirectory fixture.projectRoot $ do
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
             result <- withProjectUpdate request $ \case
               Left err -> pure (Left err)
               Right plan -> applyProjectUpdate plan
             case result of
               Left err -> expectationFailure (show err)
-              Right updateResult -> updateResult.updatedApplications `shouldBe` [fixture.applicationId]
-            updated <- manifestFromJSON <$> LBS.readFile fixture.manifestPath
+              Right updateResult -> (updateResult ^. #updatedApplications) `shouldBe` [fixture ^. #applicationId]
+            updated <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
             case updated of
               Left err -> expectationFailure err
-              Right manifest -> case manifest.applications of
-                [applicationState] -> case applicationState.instances of
-                  [moduleState] -> moduleState.resolvedVars `shouldBe` Map.singleton "project.name" "accepted"
+              Right manifest -> case manifest ^. #applications of
+                [applicationState] -> case applicationState ^. #instances of
+                  [moduleState] -> (moduleState ^. #resolvedVars) `shouldBe` Map.singleton "project.name" "accepted"
                   other -> expectationFailure ("expected one legacy module instance, got " <> show other)
                 other -> expectationFailure ("expected one seeded application, got " <> show other)
 
     it "rolls managed project and cache state back when a candidate command fails" $
       withSystemTempDirectory "seihou-update-command-failure" $ \root -> do
         fixture <- prepareUpdateFixture root
-        let modulePath = fixture.remote </> "module.dhall"
+        let modulePath = fixture ^. #remote </> "module.dhall"
         body <- TIO.readFile modulePath
         TIO.writeFile
           modulePath
@@ -304,40 +306,40 @@ spec = do
               ", commands = [{ run = \"exit 7\", workDir = None Text, when = None Text }]"
               body
           )
-        callProcess "git" ["-C", fixture.remote, "add", "module.dhall"]
-        callProcess "git" ["-C", fixture.remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "failing command"]
-        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
-          withCurrentDirectory fixture.projectRoot $ do
-            beforeManifest <- LBS.readFile fixture.manifestPath
-            beforeProject <- TIO.readFile fixture.projectFile
-            beforeInstalled <- LBS.readFile (fixture.installedModule </> "module.dhall")
+        callProcess "git" ["-C", fixture ^. #remote, "add", "module.dhall"]
+        callProcess "git" ["-C", fixture ^. #remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "failing command"]
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
+            beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+            beforeProject <- TIO.readFile (fixture ^. #projectFile)
+            beforeInstalled <- LBS.readFile (fixture ^. #installedModule </> "module.dhall")
             result <- withProjectUpdate (updateRequest False) $ \case
               Left err -> pure (Left err)
               Right plan -> applyProjectUpdate plan
             result `shouldSatisfy` \case
               Left UpdateCommandFailed {} -> True
               _ -> False
-            LBS.readFile fixture.manifestPath `shouldReturn` beforeManifest
-            TIO.readFile fixture.projectFile `shouldReturn` beforeProject
-            LBS.readFile (fixture.installedModule </> "module.dhall") `shouldReturn` beforeInstalled
+            LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+            TIO.readFile (fixture ^. #projectFile) `shouldReturn` beforeProject
+            LBS.readFile (fixture ^. #installedModule </> "module.dhall") `shouldReturn` beforeInstalled
 
     it "rolls managed state back when installed-cache publication fails" $
       withSystemTempDirectory "seihou-update-cache-failure" $ \root -> do
         fixture <- prepareUpdateFixture root
-        withSavedEnv "XDG_CONFIG_HOME" (Just fixture.xdgHome) $
-          withCurrentDirectory fixture.projectRoot $ do
-            beforeManifest <- LBS.readFile fixture.manifestPath
-            beforeProject <- TIO.readFile fixture.projectFile
-            beforeInstalled <- LBS.readFile (fixture.installedModule </> "module.dhall")
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
+            beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+            beforeProject <- TIO.readFile (fixture ^. #projectFile)
+            beforeInstalled <- LBS.readFile (fixture ^. #installedModule </> "module.dhall")
             result <- withProjectUpdate (updateRequest False) $ \case
               Left err -> pure (Left err)
               Right plan -> applyProjectUpdate (breakCandidatePublication plan)
             result `shouldSatisfy` \case
               Left UpdateCachePublicationFailed {} -> True
               _ -> False
-            LBS.readFile fixture.manifestPath `shouldReturn` beforeManifest
-            TIO.readFile fixture.projectFile `shouldReturn` beforeProject
-            LBS.readFile (fixture.installedModule </> "module.dhall") `shouldReturn` beforeInstalled
+            LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+            TIO.readFile (fixture ^. #projectFile) `shouldReturn` beforeProject
+            LBS.readFile (fixture ^. #installedModule </> "module.dhall") `shouldReturn` beforeInstalled
 
   describe "migration staging" $ do
     it "preserves parameterized instances while planning their shared transition once" $
@@ -369,8 +371,8 @@ spec = do
             base = emptyManifest testTime
             manifest =
               Manifest
-                { version = base.version,
-                  genAt = base.genAt,
+                { version = base ^. #version,
+                  genAt = base ^. #genAt,
                   modules = appliedModules,
                   vars = Map.empty,
                   files = Map.empty,
@@ -385,10 +387,10 @@ spec = do
         case staged of
           Left err -> expectationFailure (show err)
           Right migrationStage -> do
-            length migrationStage.plans `shouldBe` 1
-            migrationStage.plans `shouldSatisfy` all (.containsCommands)
-            migrationStage.warnings `shouldBe` [MigrationCommandNotSimulated "shared" "true"]
-            map (.moduleVersion) migrationStage.manifest.modules `shouldBe` [Just "2.0.0", Just "2.0.0"]
+            length (migrationStage ^. #plans) `shouldBe` 1
+            (migrationStage ^. #plans) `shouldSatisfy` all (^. #containsCommands)
+            (migrationStage ^. #warnings) `shouldBe` [MigrationCommandNotSimulated "shared" "true"]
+            map (^. #moduleVersion) (migrationStage ^. #manifest . #modules) `shouldBe` [Just "2.0.0", Just "2.0.0"]
 
 data UpdateFixture = UpdateFixture
   { projectRoot :: !FilePath,
@@ -468,7 +470,7 @@ prepareUpdateFixture root = do
   createDirectoryIfMissing True (projectRoot </> ".seihou" </> "baselines")
   TIO.writeFile projectFile baselineContent
   TIO.writeFile
-    (projectRoot </> ".seihou" </> "baselines" </> T.unpack baselineRef.unBaselineRef.unSHA256)
+    (projectRoot </> ".seihou" </> "baselines" </> T.unpack (baselineRef ^. #unBaselineRef . #unSHA256))
     baselineContent
   LBS.writeFile manifestPath (manifestToJSON manifest)
   pure UpdateFixture {projectRoot, projectFile, manifestPath, xdgHome, installedModule, remote, applicationId}
@@ -501,8 +503,8 @@ prepareRecipeUpdateFixture root = do
       base = emptyManifest testTime
       manifest =
         Manifest
-          { version = base.version,
-            genAt = base.genAt,
+          { version = base ^. #version,
+            genAt = base ^. #genAt,
             modules =
               [ AppliedModule "old" emptyParentVars installedOld (Just "1.0.0") testTime Nothing,
                 AppliedModule "one" emptyParentVars installedOne (Just "1.0.0") testTime Nothing
@@ -586,7 +588,7 @@ application target instances =
   AppliedComposition
     { applicationId = mkApplicationId target [],
       target,
-      targetSource = maybe "" (.source) (listToMaybe instances),
+      targetSource = maybe "" (^. #source) (listToMaybe instances),
       targetVersion = Just "1.0.0",
       additionalModules = [],
       namespace = Nothing,
@@ -680,61 +682,61 @@ manifestForApplications :: [AppliedComposition] -> Map.Map FilePath FileRecord -
 manifestForApplications applicationRecords fileRecords =
   let base = emptyManifest testTime
    in Manifest
-        { version = base.version,
-          genAt = base.genAt,
-          modules = base.modules,
-          vars = base.vars,
+        { version = base ^. #version,
+          genAt = base ^. #genAt,
+          modules = base ^. #modules,
+          vars = base ^. #vars,
           files = fileRecords,
           applications = applicationRecords,
-          recipe = base.recipe,
-          blueprint = base.blueprint,
-          blueprintMigrations = base.blueprintMigrations
+          recipe = base ^. #recipe,
+          blueprint = base ^. #blueprint,
+          blueprintMigrations = base ^. #blueprintMigrations
         }
 
 breakCandidatePublication :: UpdatePlan -> UpdatePlan
 breakCandidatePublication plan =
   UpdatePlan
-    { applications = plan.applications,
-      versionChanges = plan.versionChanges,
-      inputChanges = plan.inputChanges,
-      migrations = plan.migrations,
-      reconciliation = plan.reconciliation,
-      commandPlan = plan.commandPlan,
-      candidateArtifacts = map breakArtifact plan.candidateArtifacts,
-      warnings = plan.warnings,
-      request = plan.request,
-      snapshot = plan.snapshot,
-      plannedApplications = plan.plannedApplications
+    { applications = plan ^. #applications,
+      versionChanges = plan ^. #versionChanges,
+      inputChanges = plan ^. #inputChanges,
+      migrations = plan ^. #migrations,
+      reconciliation = plan ^. #reconciliation,
+      commandPlan = plan ^. #commandPlan,
+      candidateArtifacts = map breakArtifact (plan ^. #candidateArtifacts),
+      warnings = plan ^. #warnings,
+      request = plan ^. #request,
+      snapshot = plan ^. #snapshot,
+      plannedApplications = plan ^. #plannedApplications
     }
   where
     breakArtifact artifact =
       CandidateArtifact
-        { kind = artifact.kind,
-          name = artifact.name,
-          version = artifact.version,
-          originalDirectory = plan.snapshot.sessionDirectory </> "missing-publication-source",
-          sourceDirectory = artifact.sourceDirectory,
-          sourceUrl = artifact.sourceUrl,
-          repoName = artifact.repoName,
-          tags = artifact.tags,
-          sourceRevision = artifact.sourceRevision,
-          contentHash = artifact.contentHash,
-          moduleDefinition = artifact.moduleDefinition,
-          recipeDefinition = artifact.recipeDefinition
+        { kind = artifact ^. #kind,
+          name = artifact ^. #name,
+          version = artifact ^. #version,
+          originalDirectory = plan ^. #snapshot . #sessionDirectory </> "missing-publication-source",
+          sourceDirectory = artifact ^. #sourceDirectory,
+          sourceUrl = artifact ^. #sourceUrl,
+          repoName = artifact ^. #repoName,
+          tags = artifact ^. #tags,
+          sourceRevision = artifact ^. #sourceRevision,
+          contentHash = artifact ^. #contentHash,
+          moduleDefinition = artifact ^. #moduleDefinition,
+          recipeDefinition = artifact ^. #recipeDefinition
         }
 
 withoutApplications :: Manifest -> Manifest
 withoutApplications manifest =
   Manifest
-    { version = manifest.version,
-      genAt = manifest.genAt,
-      modules = manifest.modules,
-      vars = manifest.vars,
-      files = manifest.files,
+    { version = manifest ^. #version,
+      genAt = manifest ^. #genAt,
+      modules = manifest ^. #modules,
+      vars = manifest ^. #vars,
+      files = manifest ^. #files,
       applications = [],
-      recipe = manifest.recipe,
-      blueprint = manifest.blueprint,
-      blueprintMigrations = manifest.blueprintMigrations
+      recipe = manifest ^. #recipe,
+      blueprint = manifest ^. #blueprint,
+      blueprintMigrations = manifest ^. #blueprintMigrations
     }
 
 testTime :: UTCTime

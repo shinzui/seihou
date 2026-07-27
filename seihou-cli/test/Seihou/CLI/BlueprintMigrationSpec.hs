@@ -1,6 +1,7 @@
 module Seihou.CLI.BlueprintMigrationSpec (tests) where
 
-import Control.Lens (to)
+import Control.Lens (to, (^.))
+import Data.Generics.Labels ()
 import Data.IORef
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -74,7 +75,7 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
     it "delimits debug prompts in pending order without any execution callback" $ do
       let output =
             formatBlueprintMigrationDebugOutput
-              (\position total edge -> "prompt " <> tshow position <> "/" <> tshow total <> " " <> edge.from)
+              (\position total edge -> "prompt " <> tshow position <> "/" <> tshow total <> " " <> edge ^. #from)
               [first, second]
       output `shouldSatisfy` T.isInfixOf "===== [1/2] 1.0.0 -> 2.0.0 ====="
       output `shouldSatisfy` T.isInfixOf "===== [2/2] 2.0.0 -> 3.0.0 ====="
@@ -94,10 +95,10 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
     it "launches and records every edge sequentially" $ do
       calls <- newIORef ([] :: [Text])
       let launch position total edge = do
-            modifyIORef' calls (<> ["launch " <> tshow position <> "/" <> tshow total <> " " <> edge.from])
+            modifyIORef' calls (<> ["launch " <> tshow position <> "/" <> tshow total <> " " <> edge ^. #from])
             pure (Right ())
           record edge = do
-            modifyIORef' calls (<> ["record " <> edge.from])
+            modifyIORef' calls (<> ["record " <> edge ^. #from])
             pure (Right ())
       result <- runBlueprintMigrationsWith launch record [first, second]
       result `shouldBe` BlueprintMigrationComplete [first, second]
@@ -120,14 +121,14 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
                 steps = [first, second, third]
               }
           launch _ _ edge = do
-            modifyIORef' calls (<> ["launch " <> edge.from])
+            modifyIORef' calls (<> ["launch " <> edge ^. #from])
             pure $
               if edge == second
                 then Left (BlueprintMigrationProcessFailure (ExitFailure 17))
                 else Right ()
           record edge = do
-            modifyIORef' calls (<> ["record " <> edge.from])
-            modifyIORef' recorded (<> [receipt blueprintName edge.from edge.to])
+            modifyIORef' calls (<> ["record " <> edge ^. #from])
+            modifyIORef' recorded (<> [receipt blueprintName (edge ^. #from) (edge ^. #to)])
             pure (Right ())
       result <- runBlueprintMigrationsWith launch record [first, second, third]
       result
@@ -141,16 +142,16 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
 
       resumedResult <-
         runBlueprintMigrationsWith
-          (\_ _ edge -> modifyIORef' calls (<> ["resume " <> edge.from]) >> pure (Right ()))
+          (\_ _ edge -> modifyIORef' calls (<> ["resume " <> edge ^. #from]) >> pure (Right ()))
           record
           resumed
       resumedResult `shouldBe` BlueprintMigrationComplete [second, third]
-      readIORef recorded `shouldReturn` map (\edge -> receipt blueprintName edge.from edge.to) [first, second, third]
+      readIORef recorded `shouldReturn` map (\edge -> receipt blueprintName (edge ^. #from) (edge ^. #to)) [first, second, third]
 
     it "stops before the next launch when receipt recording fails" $ do
       calls <- newIORef ([] :: [Text])
-      let launch _ _ edge = modifyIORef' calls (<> ["launch " <> edge.from]) >> pure (Right ())
-          record edge = modifyIORef' calls (<> ["record " <> edge.from]) >> pure (Left "disk full")
+      let launch _ _ edge = modifyIORef' calls (<> ["launch " <> edge ^. #from]) >> pure (Right ())
+          record edge = modifyIORef' calls (<> ["record " <> edge ^. #from]) >> pure (Left "disk full")
       result <- runBlueprintMigrationsWith launch record [first, second]
       result `shouldBe` BlueprintMigrationRecordFailed first "disk full"
       readIORef calls `shouldReturn` ["launch 1.0.0", "record 1.0.0"]

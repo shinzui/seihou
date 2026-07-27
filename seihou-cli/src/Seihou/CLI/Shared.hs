@@ -10,6 +10,7 @@ module Seihou.CLI.Shared
   )
 where
 
+import Data.Generics.Labels ()
 import Data.List (isPrefixOf)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -44,9 +45,9 @@ formatBlueprintRefusal :: ModuleName -> Text
 formatBlueprintRefusal name =
   T.intercalate
     "\n"
-    [ "'" <> name.unModuleName <> "' is a blueprint, not a module or recipe.",
+    [ "'" <> name ^. #unModuleName <> "' is a blueprint, not a module or recipe.",
       "Blueprints must be run interactively via:",
-      "  seihou agent run " <> name.unModuleName
+      "  seihou agent run " <> name ^. #unModuleName
     ]
 
 -- | Derive the namespace from a module name by taking the prefix before the first hyphen.

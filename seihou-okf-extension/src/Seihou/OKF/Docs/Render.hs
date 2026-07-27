@@ -7,9 +7,11 @@ module Seihou.OKF.Docs.Render
   )
 where
 
+import Control.Lens ((^.))
 import Data.Aeson (Value (..))
 import Data.Bifunctor (first)
 import Data.Either (partitionEithers)
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Okf.Bundle (Concept, conceptFromDocument, writeBundle)
 import Okf.ConceptId (ConceptId, parseConceptId, renderConceptLink)
@@ -42,7 +44,7 @@ conceptIdFor kind name =
 
 renderDocBundle :: DocModel -> Either [DocRenderError] ([Concept], [BundleValidationError])
 renderDocBundle model =
-  case partitionEithers (conceptFor model.repoName <$> model.entries) of
+  case partitionEithers (conceptFor (model ^. #repoName) <$> model ^. #entries) of
     ([], concepts) ->
       Right (concepts, validateBundle PermissiveConformance concepts)
     (errors, _) ->
@@ -62,9 +64,9 @@ writeDocBundle outDir model =
 
 conceptFor :: T.Text -> DocEntry -> Either DocRenderError Concept
 conceptFor repoName entry =
-  case conceptIdFor entry.kind entry.name of
+  case conceptIdFor (entry ^. #kind) (entry ^. #name) of
     Left err ->
-      Left (InvalidDocConceptId entry.kind entry.name err)
+      Left (InvalidDocConceptId (entry ^. #kind) (entry ^. #name) err)
     Right conceptId ->
       Right (conceptFromDocument conceptId (documentFor repoName entry))
 
@@ -77,22 +79,22 @@ documentFor repoName entry =
 frontmatterFor :: T.Text -> DocEntry -> Okf.Frontmatter
 frontmatterFor repoName entry =
   maybeSetVersion
-    . Okf.setTags entry.tags
+    . Okf.setTags (entry ^. #tags)
     . Okf.setResource (resourceFor repoName entry)
     $ Okf.okfCommon
       Okf.OkfCommon
-        { Okf.commonType = typeFor entry.kind,
-          Okf.commonTitle = Just entry.name,
-          Okf.commonDescription = entry.description,
+        { Okf.commonType = typeFor (entry ^. #kind),
+          Okf.commonTitle = Just (entry ^. #name),
+          Okf.commonDescription = entry ^. #description,
           Okf.commonTimestamp = Nothing
         }
   where
     maybeSetVersion =
-      maybe id (\version -> Okf.setField "version" (String version)) entry.version
+      maybe id (\version -> Okf.setField "version" (String version)) (entry ^. #version)
 
 resourceFor :: T.Text -> DocEntry -> T.Text
 resourceFor repoName entry =
-  "seihou://" <> repoName <> "/" <> T.pack entry.path
+  "seihou://" <> repoName <> "/" <> T.pack (entry ^. #path)
 
 bodyFor :: DocEntry -> T.Text
 bodyFor entry =
@@ -105,23 +107,23 @@ bodyFor entry =
 
 baseSections :: DocEntry -> [T.Text]
 baseSections entry =
-  [ "# " <> entry.name,
-    maybe "No description provided." id entry.description
+  [ "# " <> entry ^. #name,
+    maybe "No description provided." id (entry ^. #description)
   ]
-    <> foldMap (\version -> ["**Version:** " <> version]) entry.version
+    <> foldMap (\version -> ["**Version:** " <> version]) (entry ^. #version)
 
 kindSections :: DocEntry -> [T.Text]
 kindSections entry =
-  case entry.artifact of
+  case entry ^. #artifact of
     DocModuleArtifact Module {vars, exports} ->
-      [ "## Dependencies\n\n" <> renderModuleRefs "This module has no dependencies." entry.moduleRefs,
+      [ "## Dependencies\n\n" <> renderModuleRefs "This module has no dependencies." (entry ^. #moduleRefs),
         "## Variables\n\n" <> renderVarDecls vars,
         "## Exports\n\n" <> renderExports exports
       ]
     DocRecipeArtifact _ ->
-      ["## Composes\n\n" <> renderModuleRefs "This recipe does not compose any modules." entry.moduleRefs]
+      ["## Composes\n\n" <> renderModuleRefs "This recipe does not compose any modules." (entry ^. #moduleRefs)]
     DocBlueprintArtifact Blueprint {prompt, files} ->
-      [ "## Base modules\n\n" <> renderModuleRefs "This blueprint declares no base modules." entry.moduleRefs,
+      [ "## Base modules\n\n" <> renderModuleRefs "This blueprint declares no base modules." (entry ^. #moduleRefs),
         "## Agent prompt\n\n" <> firstParagraph prompt,
         "## Reference files\n\n" <> renderBlueprintFiles files
       ]
@@ -135,7 +137,7 @@ renderModuleRefs :: T.Text -> [ModuleRef] -> T.Text
 renderModuleRefs emptyMessage refs =
   case refs of
     [] -> emptyMessage
-    _ -> T.unlines ["- " <> moduleLink ref.name | ref <- refs]
+    _ -> T.unlines ["- " <> moduleLink (ref ^. #name) | ref <- refs]
 
 moduleLink :: T.Text -> T.Text
 moduleLink name =

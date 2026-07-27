@@ -7,6 +7,7 @@ module Seihou.CLI.Update.Migrations
 where
 
 import Control.Monad (guard)
+import Data.Generics.Labels ()
 import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
@@ -71,9 +72,9 @@ planAndStageMigrations projectRoot manifest catalog applications = do
                 stageAll manifest [] planned
     (finalManifest, stagedPlans) <- stageResult
     let warnings =
-          [ MigrationCommandNotSimulated plannedMigration.moduleName command
+          [ MigrationCommandNotSimulated (plannedMigration ^. #moduleName) command
           | plannedMigration <- stagedPlans,
-            RunCommandInst command _ <- plannedMigration.stagedPlan.ops
+            RunCommandInst command _ <- plannedMigration ^. #stagedPlan . #ops
           ]
     Right
       StagedMigrations
@@ -87,19 +88,19 @@ stageAll manifest completed [] = pure (Right (manifest, reverse completed))
 stageAll manifest completed ((transition, sourcePlan) : rest) = do
   classified <- classifyMigration manifest sourcePlan
   case classified of
-    Left err -> pure (Left (UpdateMigrationStageFailed transition.moduleName err))
+    Left err -> pure (Left (UpdateMigrationStageFailed (transition ^. #moduleName) err))
     Right stagedPlan -> do
-      executed <- executeMigration False stagedPlan manifest manifest.genAt
+      executed <- executeMigration False stagedPlan manifest (manifest ^. #genAt)
       case executed of
-        Left err -> pure (Left (UpdateMigrationStageFailed transition.moduleName err))
+        Left err -> pure (Left (UpdateMigrationStageFailed (transition ^. #moduleName) err))
         Right nextManifest ->
           let planned =
                 PlannedUpdateMigration
-                  { moduleName = transition.moduleName,
-                    sourceDirectory = transition.sourceDirectory,
+                  { moduleName = transition ^. #moduleName,
+                    sourceDirectory = transition ^. #sourceDirectory,
                     sourcePlan,
                     stagedPlan,
-                    containsCommands = any isCommand stagedPlan.ops
+                    containsCommands = any isCommand (stagedPlan ^. #ops)
                   }
            in stageAll nextManifest (planned : completed) rest
   where
@@ -115,7 +116,7 @@ collectTransitions catalog applications = do
       priorByModule =
         Map.fromListWith
           Set.union
-          [ ((transition.moduleName, transition.originUrl), Set.singleton transition.fromVersion)
+          [ ((transition ^. #moduleName, transition ^. #originUrl), Set.singleton (transition ^. #fromVersion))
           | transition <- raw
           ]
   case [ (name, Set.toAscList versions)
@@ -130,15 +131,15 @@ collectTransitions catalog applications = do
       mapMaybe (transitionFor previous) candidates
 
     transitionFor previous (instanceId, candidateModule, sourceDirectory) = do
-      prior <- find (matches instanceId) previous.instances
-      fromVersion <- prior.moduleVersion
-      toVersion <- candidateModule.version
+      prior <- find (matches instanceId) (previous ^. #instances)
+      fromVersion <- (prior ^. #moduleVersion)
+      toVersion <- (candidateModule ^. #version)
       guard (fromVersion /= toVersion)
-      let artifact = Map.lookup (CandidateModule, candidateModule.name.unModuleName) catalog.artifacts
+      let artifact = Map.lookup (CandidateModule, candidateModule ^. #name . #unModuleName) (catalog ^. #artifacts)
       pure
         Transition
-          { moduleName = candidateModule.name,
-            originUrl = artifact >>= (.sourceUrl),
+          { moduleName = candidateModule ^. #name,
+            originUrl = artifact >>= (^. #sourceUrl),
             fromVersion,
             toVersion,
             candidateModule,
@@ -146,8 +147,8 @@ collectTransitions catalog applications = do
           }
 
     matches instanceId state =
-      state.name == instanceId.module_
-        && state.parentVars == instanceId.parentVars
+      state ^. #name == instanceId ^. #module_
+        && state ^. #parentVars == (instanceId ^. #parentVars)
 
 deduplicateTransitions :: [Transition] -> [Transition]
 deduplicateTransitions = go Set.empty
@@ -158,28 +159,28 @@ deduplicateTransitions = go Set.empty
       | otherwise = transition : go (Set.insert (transitionKey transition) seen) rest
 
     transitionKey transition =
-      ( transition.moduleName,
-        transition.originUrl,
-        transition.fromVersion,
-        transition.toVersion
+      ( transition ^. #moduleName,
+        transition ^. #originUrl,
+        transition ^. #fromVersion,
+        transition ^. #toVersion
       )
 
 planTransition :: Transition -> Either UpdateError (Transition, MigrationPlan)
 planTransition transition = do
   fromVersion <-
     maybe
-      (Left (CandidateVersionInvalid transition.moduleName.unModuleName transition.fromVersion))
+      (Left (CandidateVersionInvalid (transition ^. #moduleName . #unModuleName) (transition ^. #fromVersion)))
       Right
-      (parseVersion transition.fromVersion)
+      (parseVersion (transition ^. #fromVersion))
   toVersion <-
     maybe
-      (Left (CandidateVersionInvalid transition.moduleName.unModuleName transition.toVersion))
+      (Left (CandidateVersionInvalid (transition ^. #moduleName . #unModuleName) (transition ^. #toVersion)))
       Right
-      (parseVersion transition.toVersion)
+      (parseVersion (transition ^. #toVersion))
   planned <-
     first
-      (UpdateMigrationPlanFailed transition.moduleName)
-      (planMigrationChain transition.moduleName.unModuleName transition.candidateModule.migrations fromVersion toVersion)
+      (UpdateMigrationPlanFailed (transition ^. #moduleName))
+      (planMigrationChain (transition ^. #moduleName . #unModuleName) (transition ^. #candidateModule . #migrations) fromVersion toVersion)
   case planned of
     Nothing -> error "planTransition received unequal versions but no migration plan"
     Just sourcePlan -> Right (transition, sourcePlan)
@@ -191,13 +192,13 @@ commandMocks (_, sourcePlan) =
         args = ["-c", command],
         result = (ExitSuccess, "", "")
       }
-  | migration <- sourcePlan.steps,
-    RunCommand command _ <- migration.ops
+  | migration <- sourcePlan ^. #steps,
+    RunCommand command _ <- migration ^. #ops
   ]
 
 snapshotTrackedFiles :: FilePath -> Manifest -> IO PureFS
 snapshotTrackedFiles projectRoot manifest = do
-  files <- fmap Map.fromList . fmap concat $ traverse readTracked (Map.keys manifest.files)
+  files <- fmap Map.fromList . fmap concat $ traverse readTracked (Map.keys (manifest ^. #files))
   let directories =
         Set.fromList
           [ directory
@@ -218,7 +219,7 @@ snapshotTrackedFiles projectRoot manifest = do
     parents path = takeWhile (\directory -> directory /= "." && directory /= "") (iterate takeDirectory (takeDirectory path))
 
 migrationTouchedPaths :: [PlannedUpdateMigration] -> Set FilePath
-migrationTouchedPaths = Set.fromList . concatMap (concatMap touched . (.stagedPlan.ops))
+migrationTouchedPaths = Set.fromList . concatMap (concatMap touched . (^. #stagedPlan . #ops))
   where
     touched (MoveFileInst source destination _) = [source, destination]
     touched (MoveDirInst source destination) = [source, destination]
@@ -227,7 +228,7 @@ migrationTouchedPaths = Set.fromList . concatMap (concatMap touched . (.stagedPl
     touched RunCommandInst {} = []
 
 migrationTouchesDirectories :: PlannedUpdateMigration -> Bool
-migrationTouchesDirectories migration = any touchesDirectory migration.stagedPlan.ops
+migrationTouchesDirectories migration = any touchesDirectory (migration ^. #stagedPlan . #ops)
   where
     touchesDirectory MoveDirInst {} = True
     touchesDirectory DeleteDirInst {} = True

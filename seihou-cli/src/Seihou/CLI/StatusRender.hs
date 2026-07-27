@@ -5,6 +5,8 @@ module Seihou.CLI.StatusRender
   )
 where
 
+import Control.Lens (to, (^.))
+import Data.Generics.Labels ()
 import Data.List (intersperse, nub)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -62,7 +64,7 @@ formatStatus color manifest tracked mEntries pendings =
     ["Seihou Status:", ""]
       ++ recipeSection manifest
       ++ blueprintSection manifest
-      ++ formatBlueprintMigrations manifest.blueprintMigrations
+      ++ formatBlueprintMigrations (manifest ^. #blueprintMigrations)
       ++ appliedSection color manifest mEntries pendings
       ++ trackedSection color tracked
       ++ varsSection manifest
@@ -70,10 +72,10 @@ formatStatus color manifest tracked mEntries pendings =
       ++ recommendedActionsSection adviceList
   where
     entryMap = case mEntries of
-      Just es -> Map.fromList [(e.moduleName, e) | e <- es]
+      Just es -> Map.fromList [(e ^. #moduleName, e) | e <- es]
       Nothing -> Map.empty
     pendingMap =
-      Map.fromList [(name.unModuleName, plan) | (name, plan) <- pendings]
+      Map.fromList [(name ^. #unModuleName, plan) | (name, plan) <- pendings]
     adviceList = projectAdviceList manifest entryMap pendingMap
 
 -- ---------------------------------------------------------------------------
@@ -81,12 +83,12 @@ formatStatus color manifest tracked mEntries pendings =
 -- ---------------------------------------------------------------------------
 
 recipeSection :: Manifest -> [Text]
-recipeSection manifest = case manifest.recipe of
+recipeSection manifest = case manifest ^. #recipe of
   Nothing -> []
   Just ar ->
     [ "Recipe: "
-        <> ar.name.unRecipeName
-        <> maybe "" (\v -> " v" <> v) ar.recipeVersion,
+        <> ar ^. #name . #unRecipeName
+        <> maybe "" (\v -> " v" <> v) (ar ^. #recipeVersion),
       ""
     ]
 
@@ -98,18 +100,18 @@ recipeSection manifest = case manifest.recipe of
 -- two empty-baseline placeholders.
 -- Prompt line: present only when the user passed a positional prompt.
 blueprintSection :: Manifest -> [Text]
-blueprintSection manifest = case manifest.blueprint of
+blueprintSection manifest = case manifest ^. #blueprint of
   Nothing -> []
   Just ab ->
     let header =
           "Blueprint: "
-            <> ab.name.unModuleName
-            <> maybe "" (\v -> " v" <> v) ab.blueprintVersion
+            <> ab ^. #name . #unModuleName
+            <> maybe "" (\v -> " v" <> v) (ab ^. #blueprintVersion)
             <> " (applied "
-            <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" ab.appliedAt)
+            <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" (ab ^. #appliedAt))
             <> ")"
         baselineLine = "  Baseline: " <> renderBaseline ab
-        promptLines = case ab.userPrompt of
+        promptLines = case ab ^. #userPrompt of
           Nothing -> []
           Just p -> ["  Prompt: \"" <> p <> "\""]
      in [header, baselineLine] ++ promptLines ++ [""]
@@ -125,14 +127,14 @@ formatBlueprintMigrations receipts =
   where
     renderReceipt receipt =
       "  "
-        <> receipt.name.unModuleName
-        <> maybe "" (\version -> " v" <> version) receipt.blueprintVersion
+        <> receipt ^. #name . #unModuleName
+        <> maybe "" (\version -> " v" <> version) (receipt ^. #blueprintVersion)
         <> ": "
-        <> receipt.fromVersion
+        <> receipt ^. #fromVersion
         <> " -> "
-        <> receipt.toVersion
+        <> receipt ^. #toVersion
         <> " (applied "
-        <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" receipt.appliedAt)
+        <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" (receipt ^. #appliedAt))
         <> ")"
 
 -- | Render the baseline body for the blueprint section. Three cases:
@@ -140,10 +142,10 @@ formatBlueprintMigrations receipts =
 -- all, or one or more baseline modules were applied.
 renderBaseline :: AppliedBlueprint -> Text
 renderBaseline ab
-  | ab.noBaseline = "(none -- --no-baseline)"
-  | null ab.baselineModules = "(none declared)"
+  | (ab ^. #noBaseline) = "(none -- --no-baseline)"
+  | null (ab ^. #baselineModules) = "(none declared)"
   | otherwise =
-      T.intercalate ", " (map (.unModuleName) ab.baselineModules)
+      T.intercalate ", " (map (^. #unModuleName) (ab ^. #baselineModules))
 
 appliedSection ::
   Bool ->
@@ -157,21 +159,21 @@ appliedSection color manifest mEntries pendings =
     ++ [""]
   where
     entryMap = case mEntries of
-      Just es -> Map.fromList [(e.moduleName, e) | e <- es]
+      Just es -> Map.fromList [(e ^. #moduleName, e) | e <- es]
       Nothing -> Map.empty
     pendingMap =
-      Map.fromList [(name.unModuleName, plan) | (name, plan) <- pendings]
+      Map.fromList [(name ^. #unModuleName, plan) | (name, plan) <- pendings]
     moduleLines
-      | null manifest.modules = ["  (none)"]
-      | otherwise = renderRows Set.empty manifest.modules
+      | null (manifest ^. #modules) = ["  (none)"]
+      | otherwise = renderRows Set.empty (manifest ^. #modules)
     renderRows _ [] = []
     renderRows seen (am : rest) =
-      let name = am.name.unModuleName
+      let name = (am ^. #name . #unModuleName)
           annotation = lookupEntry mEntries entryMap am
           headerLine = formatModuleLine color annotation am
           hintLines
             | Set.member name seen = []
-            | null manifest.applications = formatAdvice color (rowProjectAdvice entryMap pendingMap am)
+            | null (manifest ^. #applications) = formatAdvice color (rowProjectAdvice entryMap pendingMap am)
             | otherwise = maybe [] (formatPendingDetail color) (Map.lookup name pendingMap)
        in headerLine : hintLines <> renderRows (Set.insert name seen) rest
 
@@ -184,18 +186,18 @@ trackedSection color tracked =
       )
     ++ [""]
   where
-    maxPathLen = maximum (map (length . (.path)) tracked)
-    maxModLen = maximum (map (T.length . displayModuleName . (.moduleName)) tracked)
+    maxPathLen = maximum (map (length . (^. #path)) tracked)
+    maxModLen = maximum (map (T.length . displayModuleName . (^. #moduleName)) tracked)
 
 varsSection :: Manifest -> [Text]
 varsSection manifest =
-  ["Variables: " <> T.pack (show (Map.size manifest.vars)) <> " resolved"]
+  ["Variables: " <> T.pack (show (Map.size (manifest ^. #vars))) <> " resolved"]
 
 updateSummarySection :: Maybe [OutdatedEntry] -> [Text]
 updateSummarySection Nothing = []
 updateSummarySection (Just entries) =
   let total = length entries
-      outdated = length (filter (\e -> e.status == OutdatedSt) entries)
+      outdated = length (filter (\e -> e ^. #status == OutdatedSt) entries)
    in [ "",
         T.pack (show total)
           <> " module(s) checked, "
@@ -234,21 +236,21 @@ lookupEntry ::
   AppliedModule ->
   UpdateAnnotation
 lookupEntry Nothing _ _ = NoCheck
-lookupEntry (Just _) m am = case Map.lookup am.name.unModuleName m of
+lookupEntry (Just _) m am = case Map.lookup (am ^. #name . #unModuleName) m of
   Just e -> Entry e
   Nothing -> NoOrigin
 
 formatModuleLine :: Bool -> UpdateAnnotation -> AppliedModule -> Text
 formatModuleLine color annotation am =
-  let verText = case am.moduleVersion of
+  let verText = case am ^. #moduleVersion of
         Just v -> "  " <> applyColor color green ("v" <> v)
         Nothing -> ""
       appliedText =
         "    (applied "
-          <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d" am.appliedAt)
+          <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d" (am ^. #appliedAt))
           <> ")"
       parentVarsText =
-        let m = am.parentVars.unParentVars
+        let m = (am ^. #parentVars . #unParentVars)
          in if Map.null m
               then ""
               else
@@ -256,7 +258,7 @@ formatModuleLine color annotation am =
                       T.concat
                         ( intersperse
                             ", "
-                            [ vn.unVarName <> "=" <> v
+                            [ vn ^. #unVarName <> "=" <> v
                             | (vn, v) <- Map.toAscList m
                             ]
                         )
@@ -267,7 +269,7 @@ formatModuleLine color annotation am =
         NoOrigin -> "  " <> applyColor color dim "(no origin)"
         Entry e -> "  " <> renderEntry color e
    in "  "
-        <> am.name.unModuleName
+        <> am ^. #name . #unModuleName
         <> parentVarsText
         <> verText
         <> appliedText
@@ -288,11 +290,11 @@ formatAdvice color AdviceProjectUpdateAll =
 projectPlanSummary :: Text -> MigrationPlan -> Text
 projectPlanSummary target plan =
   "Pending migration: "
-    <> renderVersion plan.from
+    <> renderVersion (plan ^. #from)
     <> " -> "
-    <> renderVersion plan.to
+    <> renderVersion (plan ^. #to)
     <> " ("
-    <> T.pack (show (length plan.steps))
+    <> T.pack (show (length (plan ^. #steps)))
     <> " step(s)). Run: seihou update "
     <> target
 
@@ -303,11 +305,11 @@ formatPendingDetail color plan =
         color
         yellow
         ( "Pending migration: "
-            <> renderVersion plan.from
+            <> renderVersion (plan ^. #from)
             <> " -> "
-            <> renderVersion plan.to
+            <> renderVersion (plan ^. #to)
             <> " ("
-            <> T.pack (show (length plan.steps))
+            <> T.pack (show (length (plan ^. #steps)))
             <> " step(s))"
         )
   ]
@@ -322,9 +324,9 @@ rowProjectAdvice entryMap pendingMap applied =
     then AdviceProjectUpdate name pending
     else AdviceNone
   where
-    name = applied.name.unModuleName
+    name = (applied ^. #name . #unModuleName)
     pending = Map.lookup name pendingMap
-    outdated = maybe False ((== OutdatedSt) . (.status)) (Map.lookup name entryMap)
+    outdated = maybe False ((== OutdatedSt) . (^. #status)) (Map.lookup name entryMap)
     actionable = outdated || isJust pending
 
 projectAdviceList ::
@@ -333,32 +335,32 @@ projectAdviceList ::
   Map Text MigrationPlan ->
   [ModuleAdvice]
 projectAdviceList manifest entryMap pendingMap
-  | null manifest.applications =
-      map (rowProjectAdvice entryMap pendingMap) (deduplicateModules manifest.modules)
+  | null (manifest ^. #applications) =
+      map (rowProjectAdvice entryMap pendingMap) (deduplicateModules (manifest ^. #modules))
   | otherwise =
-      let applicationAdvice = mapMaybe adviceForApplication manifest.applications
+      let applicationAdvice = mapMaybe adviceForApplication (manifest ^. #applications)
        in applicationAdvice <> [AdviceProjectUpdateAll | length applicationAdvice > 1]
   where
     adviceForApplication application =
-      let names = map (.name.unModuleName) application.instances
+      let names = map (^. #name . #unModuleName) (application ^. #instances)
           pending = listToMaybe (mapMaybe (`Map.lookup` pendingMap) names)
-          outdated = any (maybe False ((== OutdatedSt) . (.status)) . (`Map.lookup` entryMap)) names
+          outdated = any (maybe False ((== OutdatedSt) . (^. #status)) . (`Map.lookup` entryMap)) names
        in if outdated || isJust pending
-            then Just (AdviceProjectUpdate (targetText application.target) pending)
+            then Just (AdviceProjectUpdate (targetText (application ^. #target)) pending)
             else Nothing
 
 deduplicateModules :: [AppliedModule] -> [AppliedModule]
-deduplicateModules = Map.elems . Map.fromList . map (\applied -> (applied.name.unModuleName, applied))
+deduplicateModules = Map.elems . Map.fromList . map (\applied -> (applied ^. #name . #unModuleName, applied))
 
 targetText :: AppliedTarget -> Text
-targetText (AppliedModuleTarget name) = name.unModuleName
-targetText (AppliedRecipeTarget name) = name.unRecipeName
+targetText (AppliedModuleTarget name) = (name ^. #unModuleName)
+targetText (AppliedRecipeTarget name) = (name ^. #unRecipeName)
 
 renderEntry :: Bool -> OutdatedEntry -> Text
-renderEntry color e = case e.status of
+renderEntry color e = case e ^. #status of
   UpToDate -> applyColor color dim "up to date"
   OutdatedSt ->
-    let avail = maybe "?" id e.availableVersion
+    let avail = maybe "?" id (e ^. #availableVersion)
         txt = "outdated: " <> avail <> " available"
      in applyColor color red txt
   Unversioned -> applyColor color dim "unversioned"
@@ -366,12 +368,12 @@ renderEntry color e = case e.status of
 
 formatTrackedFile :: Bool -> Int -> Int -> TrackedFile -> Text
 formatTrackedFile color maxPathLen maxModLen tf =
-  let path = T.pack tf.path
-      modName = displayModuleName tf.moduleName
+  let path = T.pack (tf ^. #path)
+      modName = displayModuleName (tf ^. #moduleName)
       paddedPath = path <> T.replicate (maxPathLen - T.length path + 3) " "
       paddedMod = modName <> T.replicate (maxModLen - T.length modName + 3) " "
-      label = statusLabel tf.status
-      colored = applyColor color (statusColor tf.status) label
+      label = statusLabel (tf ^. #status)
+      colored = applyColor color (statusColor (tf ^. #status)) label
    in "  " <> paddedPath <> paddedMod <> colored
 
 displayModuleName :: ModuleName -> Text

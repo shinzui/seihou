@@ -4,6 +4,7 @@ module Seihou.CLI.PendingMigrations
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -48,19 +49,19 @@ detectPendingMigrations manifest mFilter =
     (mapM check candidates)
   where
     candidates = case mFilter of
-      Nothing -> manifest.modules
-      Just names -> filter (\am -> Set.member am.name names) manifest.modules
+      Nothing -> (manifest ^. #modules)
+      Just names -> filter (\am -> Set.member (am ^. #name) names) (manifest ^. #modules)
 
     check am = do
-      let dhallFile = am.source </> "module.dhall"
+      let dhallFile = am ^. #source </> "module.dhall"
       exists <- doesFileExist dhallFile
       if not exists
-        then pure (am.name, Nothing)
+        then pure (am ^. #name, Nothing)
         else do
           r <- evalModuleFromFile dhallFile
           case r of
-            Left _ -> pure (am.name, Nothing)
-            Right installed -> pure (am.name, pendingChainFor am installed)
+            Left _ -> pure (am ^. #name, Nothing)
+            Right installed -> pure (am ^. #name, pendingChainFor am installed)
 
 -- | Format the user-facing refusal message that @seihou run@ prints
 -- when it detects pending migrations and the user has not opted into
@@ -79,11 +80,11 @@ formatRefusalMessage pendings =
   where
     renderEntry (name, plan) =
       "  "
-        <> name.unModuleName
+        <> name ^. #unModuleName
         <> ": "
-        <> renderVersion plan.from
+        <> renderVersion (plan ^. #from)
         <> " -> "
-        <> renderVersion plan.to
+        <> renderVersion (plan ^. #to)
         <> " ("
-        <> T.pack (show (length plan.steps))
+        <> T.pack (show (length (plan ^. #steps)))
         <> " step(s))"

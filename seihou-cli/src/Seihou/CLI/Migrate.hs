@@ -21,6 +21,7 @@ import Data.Aeson (ToJSON, object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy.Char8 qualified as LBS
+import Data.Generics.Labels ()
 import Data.Maybe (isJust)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -165,7 +166,7 @@ data MigrateResult
 handleMigrate :: MigrateOpts -> IO ()
 handleMigrate opts = do
   let manifestPath = ".seihou" </> "manifest.json"
-      modName = opts.module_
+      modName = (opts ^. #module_)
 
   manifestRes <- runEff $ runFilesystem $ runManifestStore manifestPath readManifest
   manifest <- case manifestRes of
@@ -177,13 +178,13 @@ handleMigrate opts = do
     Nothing -> die (MigrateModuleNotApplied modName)
     Just am -> pure am
 
-  _fromV <- case applied.moduleVersion >>= parseVersion of
+  _fromV <- case applied ^. #moduleVersion >>= parseVersion of
     Just v -> pure v
-    Nothing -> case applied.moduleVersion of
+    Nothing -> case applied ^. #moduleVersion of
       Nothing -> die (MigrateNoRecordedVersion modName)
       Just t -> die (MigrateUnparseableManifestVersion t)
 
-  result <- runMigrate opts manifest applied.source
+  result <- runMigrate opts manifest (applied ^. #source)
 
   colorEnabled <- useColor
   case result of
@@ -192,13 +193,13 @@ handleMigrate opts = do
       TIO.putStrLn $
         applyColor colorEnabled green "✓"
           <> " "
-          <> modName.unModuleName
+          <> modName ^. #unModuleName
           <> " is already at version "
           <> renderVersion toV
           <> "; nothing to do."
       exitSuccess
     Right (MigrateDryRunOK plan fromV toV) -> do
-      if opts.json
+      if opts ^. #json
         then LBS.putStr (encodePretty (planToJson plan))
         else do
           renderPlan colorEnabled plan fromV toV
@@ -206,21 +207,21 @@ handleMigrate opts = do
           TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
       exitSuccess
     Right (MigrateApplied plan manifest' fromV toV) -> do
-      if opts.json
+      if opts ^. #json
         then LBS.putStr (encodePretty (planToJson plan))
         else renderPlan colorEnabled plan fromV toV
       runEff $
         runFilesystem $
           runManifestStore manifestPath $
             writeManifest manifest'
-      when (opts.commit || isJust opts.commitMessage) $
+      when (opts ^. #commit || isJust (opts ^. #commitMessage)) $
         commitMigratedFiles opts manifestPath plan
-      unless opts.json $ do
+      unless (opts ^. #json) $ do
         TIO.putStrLn ""
         TIO.putStrLn $
           applyColor colorEnabled green "✓"
             <> " Migrated "
-            <> applyColor colorEnabled bold modName.unModuleName
+            <> applyColor colorEnabled bold (modName ^. #unModuleName)
             <> " "
             <> renderVersion fromV
             <> " → "
@@ -250,7 +251,7 @@ runMigrate ::
   FilePath ->
   IO (Either MigrateError MigrateResult)
 runMigrate opts manifest installedDir
-  | opts.noFetch = runMigrateLocal opts manifest installedDir
+  | (opts ^. #noFetch) = runMigrateLocal opts manifest installedDir
   | otherwise = runMigrateWithFetch opts manifest installedDir
 
 -- | Plan and (optionally) execute a migration chain using @sourceDir@
@@ -264,10 +265,10 @@ runMigrateLocal ::
   FilePath ->
   IO (Either MigrateError MigrateResult)
 runMigrateLocal opts manifest sourceDir = do
-  let modName = opts.module_
+  let modName = (opts ^. #module_)
   case findApplied manifest modName of
     Nothing -> pure (Left (MigrateModuleNotApplied modName))
-    Just applied -> case applied.moduleVersion of
+    Just applied -> case applied ^. #moduleVersion of
       Nothing -> pure (Left (MigrateNoRecordedVersion modName))
       Just fromText ->
         case parseVersion fromText of
@@ -299,8 +300,8 @@ runMigrateLocal opts manifest sourceDir = do
                     Left e -> pure (Left e)
                     Right toV ->
                       case planMigrationChain
-                        modName.unModuleName
-                        sourceModule.migrations
+                        (modName ^. #unModuleName)
+                        (sourceModule ^. #migrations)
                         fromV
                         toV of
                         Left e -> pure (Left (MigratePlanFailed e))
@@ -336,19 +337,19 @@ runMigrateWithFetch opts manifest installedDir = do
       runMigrateLocal opts manifest installedDir
     Just o -> withSystemTempDirectory "seihou-migrate-fetch" $ \tmp -> do
       let cloneDir = tmp </> "clone"
-      note opts ("  Fetching " <> o.sourceUrl <> "...")
-      cloneRes <- cloneRepo o.sourceUrl cloneDir
+      note opts ("  Fetching " <> o ^. #sourceUrl <> "...")
+      cloneRes <- cloneRepo (o ^. #sourceUrl) cloneDir
       case cloneRes of
         Left err -> do
           note opts ("  fetch failed: " <> err <> "; using locally installed copy.")
           runMigrateLocal opts manifest installedDir
         Right () -> do
           contents <- discoverRepoContents evalRegistryFromFile cloneDir
-          case findRemoteModuleDir cloneDir contents opts.module_ of
+          case findRemoteModuleDir cloneDir contents (opts ^. #module_) of
             Nothing -> do
               note opts $
                 "  module '"
-                  <> opts.module_.unModuleName
+                  <> opts ^. #module_ . #unModuleName
                   <> "' not present in remote; using locally installed copy."
               runMigrateLocal opts manifest installedDir
             Just (moduleDir, tags) -> do
@@ -369,7 +370,7 @@ runMigrateWithFetch opts manifest installedDir = do
               -- and no-op outcomes leave it untouched.
               case result of
                 Right (MigrateApplied {})
-                  | not opts.dryRun ->
+                  | not (opts ^. #dryRun) ->
                       refreshInstalledFromClone moduleDir installedDir o tags
                 _ -> pure ()
               pure result
@@ -399,13 +400,13 @@ maybeFallbackToLocal opts manifest installedDir cloneResult = case cloneResult o
 resultStepCount :: MigrateResult -> Int
 resultStepCount = \case
   MigrateNoOp {} -> 0
-  MigrateApplied execPlan _ _ _ -> length execPlan.source.steps
-  MigrateDryRunOK execPlan _ _ -> length execPlan.source.steps
+  MigrateApplied execPlan _ _ _ -> length (execPlan ^. #source . #steps)
+  MigrateDryRunOK execPlan _ _ -> length (execPlan ^. #source . #steps)
 
 -- | Print a one-line note unless JSON output is requested. Using JSON
 -- output requires a clean, parseable stdout.
 note :: MigrateOpts -> Text -> IO ()
-note opts msg = unless opts.json (TIO.putStrLn msg)
+note opts msg = unless (opts ^. #json) (TIO.putStrLn msg)
 
 -- | Locate the module's directory inside a cloned repo and return any
 -- registry-declared tags. Returns 'Nothing' for empty repos or
@@ -419,8 +420,8 @@ findRemoteModuleDir ::
 findRemoteModuleDir cloneDir contents modName = case contents of
   SingleModule rootDir -> Just (rootDir, [])
   MultiModule registry ->
-    case filter (\e -> e.name == modName) registry.modules of
-      (entry : _) -> Just (cloneDir </> entry.path, entry.tags)
+    case filter (\e -> e ^. #name == modName) (registry ^. #modules) of
+      (entry : _) -> Just (cloneDir </> entry ^. #path, entry ^. #tags)
       [] -> Nothing
   SingleRecipe _ -> Nothing
   SingleBlueprint _ -> Nothing
@@ -448,9 +449,9 @@ refreshInstalledFromClone moduleDir installedDir origin tags = do
       installModuleDir
         moduleDir
         installedName
-        origin.sourceUrl
-        origin.repoName
-        modul.version
+        (origin ^. #sourceUrl)
+        (origin ^. #repoName)
+        (modul ^. #version)
         tags
 
 -- ----------------------------------------------------------------------------
@@ -475,13 +476,13 @@ pendingChainFor ::
   Module ->
   Maybe MigrationPlan
 pendingChainFor applied installed = do
-  fromText <- applied.moduleVersion
+  fromText <- (applied ^. #moduleVersion)
   fromV <- parseVersion fromText
-  toText <- installed.version
+  toText <- (installed ^. #version)
   toV <- parseVersion toText
   case planMigrationChain
-    applied.name.unModuleName
-    installed.migrations
+    (applied ^. #name . #unModuleName)
+    (installed ^. #migrations)
     fromV
     toV of
     Right (Just plan) -> Just plan
@@ -506,7 +507,7 @@ dispatchPlan ::
   MigrationPlan ->
   IO (Either MigrateError MigrateResult)
 dispatchPlan opts manifest plan
-  | plan.from == plan.to = pure (Right (MigrateNoOp plan.to))
+  | plan ^. #from == (plan ^. #to) = pure (Right (MigrateNoOp (plan ^. #to)))
   | otherwise = applyOrDryRun opts manifest plan
 
 -- | Classify the plan, optionally execute it, and return the
@@ -526,19 +527,19 @@ applyOrDryRun opts manifest plan = do
   case classifyResult of
     Left err -> pure (Left (MigrateExecFailed err))
     Right executedPlan ->
-      if opts.dryRun
-        then pure (Right (MigrateDryRunOK executedPlan plan.from plan.to))
+      if opts ^. #dryRun
+        then pure (Right (MigrateDryRunOK executedPlan (plan ^. #from) (plan ^. #to)))
         else do
           now <- getCurrentTime
           execRes <-
             runEff $
               runFilesystem $
                 runProcessIO $
-                  executeMigration opts.force executedPlan manifest now
+                  executeMigration (opts ^. #force) executedPlan manifest now
           case execRes of
             Left err -> pure (Left (MigrateExecFailed err))
             Right manifest' ->
-              pure (Right (MigrateApplied executedPlan manifest' plan.from plan.to))
+              pure (Right (MigrateApplied executedPlan manifest' (plan ^. #from) (plan ^. #to)))
 
 -- | Stage and commit the files touched by a successful migration plan.
 -- Mirrors the @seihou run --commit@ post-execution helper. No-op
@@ -554,7 +555,7 @@ commitMigratedFiles ::
   ExecutedMigrationPlan ->
   IO ()
 commitMigratedFiles opts manifestPath plan = do
-  let touched = concatMap pathsForOp plan.ops
+  let touched = concatMap pathsForOp (plan ^. #ops)
       filesToStage = touched ++ [manifestPath]
   inGit <- runEff $ runProcessIO isGitRepo
   when inGit $ do
@@ -565,11 +566,11 @@ commitMigratedFiles opts manifestPath plan = do
       case addExit of
         ExitFailure _ -> TIO.hPutStrLn stderr ("git add failed: " <> addErr)
         ExitSuccess -> do
-          msg <- case opts.commitMessage of
+          msg <- case opts ^. #commitMessage of
             Just m -> pure m
             Nothing -> do
               diffText <- runEff $ runProcessIO gitDiffCached
-              generateCommitMessage [opts.module_] diffText
+              generateCommitMessage [opts ^. #module_] diffText
           (cExit, _, cErr) <- runEff $ runProcessIO $ gitCommit msg
           case cExit of
             ExitSuccess -> pure ()
@@ -586,11 +587,11 @@ commitMigratedFiles opts manifestPath plan = do
 resolveTarget ::
   MigrateOpts -> Module -> ModuleName -> FilePath -> Either MigrateError Version
 resolveTarget opts installedModule modName installedDhall =
-  case opts.to of
+  case opts ^. #to of
     Just t -> case parseVersion t of
       Just v -> Right v
       Nothing -> Left (MigrateUnparseableTargetVersion t)
-    Nothing -> case installedModule.version of
+    Nothing -> case installedModule ^. #version of
       Nothing -> Left (MigrateInstalledModuleHasNoVersion modName installedDhall)
       Just t -> case parseVersion t of
         Just v -> Right v
@@ -598,7 +599,7 @@ resolveTarget opts installedModule modName installedDhall =
 
 findApplied :: Manifest -> ModuleName -> Maybe AppliedModule
 findApplied m name =
-  case filter (\am -> am.name == name) m.modules of
+  case filter (\am -> am ^. #name == name) (m ^. #modules) of
     (am : _) -> Just am
     [] -> Nothing
 
@@ -608,24 +609,24 @@ findApplied m name =
 -- @to@ even when 'planSteps' is empty.
 renderPlan :: Bool -> ExecutedMigrationPlan -> Version -> Version -> IO ()
 renderPlan c plan fromV toV = do
-  let src = plan.source
+  let src = (plan ^. #source)
   TIO.putStrLn $
     "Migration plan: "
-      <> applyColor c bold (src.module_)
+      <> applyColor c bold (src ^. #module_)
       <> "  "
       <> renderVersion fromV
       <> " → "
       <> renderVersion toV
-  if null src.steps
+  if null (src ^. #steps)
     then TIO.putStrLn "  (no migration ops)"
-    else mapM_ (renderStep c) src.steps
+    else mapM_ (renderStep c) (src ^. #steps)
   let conflictCount =
         length
-          [ () | inst <- plan.ops, isConflict inst
+          [ () | inst <- plan ^. #ops, isConflict inst
           ]
       affectedCount =
         length
-          [ () | inst <- plan.ops, touchesFs inst
+          [ () | inst <- plan ^. #ops, touchesFs inst
           ]
   TIO.putStrLn ""
   TIO.putStrLn $
@@ -643,8 +644,8 @@ renderPlan c plan fromV toV = do
 
 renderStep :: Bool -> Migration -> IO ()
 renderStep c step = do
-  TIO.putStrLn $ "  " <> step.from <> " → " <> step.to <> ":"
-  mapM_ (renderOp c) step.ops
+  TIO.putStrLn $ "  " <> step ^. #from <> " → " <> step ^. #to <> ":"
+  mapM_ (renderOp c) (step ^. #ops)
 
 renderOp :: Bool -> MigrationOp -> IO ()
 renderOp c op = case op of
@@ -668,20 +669,20 @@ renderOp c op = case op of
 
 planToJson :: ExecutedMigrationPlan -> Aeson.Value
 planToJson plan =
-  let src = plan.source
+  let src = (plan ^. #source)
    in object
-        [ "module" .= plan.module_.unModuleName,
-          "from" .= renderVersion src.from,
-          "to" .= renderVersion src.to,
+        [ "module" .= (plan ^. #module_ . #unModuleName),
+          "from" .= renderVersion (src ^. #from),
+          "to" .= renderVersion (src ^. #to),
           "steps"
             .= [ object
-                   [ "from" .= step.from,
-                     "to" .= step.to,
-                     "ops" .= map opToJson step.ops
+                   [ "from" .= (step ^. #from),
+                     "to" .= (step ^. #to),
+                     "ops" .= map opToJson (step ^. #ops)
                    ]
-               | step <- src.steps
+               | step <- src ^. #steps
                ],
-          "operations" .= map instToJson plan.ops
+          "operations" .= map instToJson (plan ^. #ops)
         ]
 
 opToJson :: MigrationOp -> Aeson.Value
@@ -746,16 +747,16 @@ renderError :: MigrateError -> Text
 renderError (MigrateNoManifest path) =
   "no Seihou manifest at " <> T.pack path <> "; run from a project that has been initialized."
 renderError (MigrateModuleNotApplied modName) =
-  "module '" <> modName.unModuleName <> "' is not applied in this project."
+  "module '" <> modName ^. #unModuleName <> "' is not applied in this project."
 renderError (MigrateNoRecordedVersion modName) =
   "module '"
-    <> modName.unModuleName
+    <> modName ^. #unModuleName
     <> "' has no version recorded in the manifest. Re-apply the module with 'seihou run' to record one before migrating."
 renderError (MigrateInstalledModuleEvalFailed path msg) =
   "could not evaluate installed module at " <> T.pack path <> ": " <> msg
 renderError (MigrateInstalledModuleHasNoVersion modName path) =
   "installed module '"
-    <> modName.unModuleName
+    <> modName ^. #unModuleName
     <> "' at "
     <> T.pack path
     <> " has no version field; either pass --to or add a version to its module.dhall."

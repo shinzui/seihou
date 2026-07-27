@@ -5,6 +5,7 @@ where
 
 import Control.Exception (IOException, displayException, try)
 import Control.Monad (foldM, forM_, unless, when)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Set qualified as Set
@@ -79,11 +80,11 @@ import System.IO (hFlush, hIsTerminalDevice, stdin, stdout)
 
 handleRun :: RunOpts -> IO ()
 handleRun runOpts = do
-  let additional = runOpts.additional
-      level = if runOpts.verbose then LogVerbose else LogNormal
+  let additional = (runOpts ^. #additional)
+      level = if runOpts ^. #verbose then LogVerbose else LogNormal
 
   -- 0. Resolve module name (from argument or fzf picker)
-  modName <- case runOpts.module_ of
+  modName <- case runOpts ^. #module_ of
     Just name -> pure name
     Nothing -> do
       fzfCfg <- detectFzfConfig
@@ -114,20 +115,20 @@ handleRun runOpts = do
             logIO level $
               logError $
                 "Invalid recipe '"
-                  <> recipe.name.unRecipeName
+                  <> recipe ^. #name . #unRecipeName
                   <> "': "
                   <> T.intercalate "; " errs
             exitFailure
           Right (primary, recipeAdditional, overrides, _recipeVars, _recipePrompts) -> do
             logIO level $
               logInfo $
-                "Recipe '" <> recipe.name.unRecipeName <> "' expanding to " <> T.pack (show (length recipe.modules)) <> " modules"
+                "Recipe '" <> recipe ^. #name . #unRecipeName <> "' expanding to " <> T.pack (show (length (recipe ^. #modules))) <> " modules"
             pure
               ( primary,
                 recipeAdditional ++ additional,
                 overrides,
-                Just (recipe.name, recipe.version),
-                (AppliedRecipeTarget recipe.name, recipeDir, recipe.version)
+                Just (recipe ^. #name, recipe ^. #version),
+                (AppliedRecipeTarget (recipe ^. #name), recipeDir, recipe ^. #version)
               )
       Right (RunnableModule modul moduleDir) ->
         pure
@@ -135,7 +136,7 @@ handleRun runOpts = do
             additional,
             Map.empty,
             Nothing,
-            (AppliedModuleTarget modName, moduleDir, modul.version)
+            (AppliedModuleTarget modName, moduleDir, modul ^. #version)
           )
       Right (RunnableBlueprint _b _blueprintDir) -> do
         -- Use the user-typed name (modName) rather than the blueprint's
@@ -159,14 +160,14 @@ handleRun runOpts = do
   modulesInOrder <- case compositionResult of
     Left (ModuleNotFound name searched) -> do
       logIO level $ do
-        logError $ "Module '" <> name.unModuleName <> "' not found."
+        logError $ "Module '" <> name ^. #unModuleName <> "' not found."
         logError "Searched in:"
         mapM_ (\p -> logError $ "  " <> T.pack p) searched
       exitFailure
     Left (CircularDependency names) -> do
       logIO level $ do
         logError "Circular dependency detected:"
-        logError $ "  " <> T.intercalate " -> " (map (.unModuleName) names)
+        logError $ "  " <> T.intercalate " -> " (map (^. #unModuleName) names)
       exitFailure
     Left err -> exitError level (T.pack (show err))
     Right ms -> pure ms
@@ -175,15 +176,15 @@ handleRun runOpts = do
   when (length modulesInOrder > 1) $
     logIO level $ do
       logInfo $ "Composing " <> T.pack (show (length modulesInOrder)) <> " modules:"
-      mapM_ (\(_, m, _) -> logInfo $ "  " <> m.name.unModuleName) modulesInOrder
+      mapM_ (\(_, m, _) -> logInfo $ "  " <> m ^. #name . #unModuleName) modulesInOrder
 
   -- 2. Resolve variables with export visibility and interactive prompts
   envPairs <- getEnvironment
   -- Merge recipe overrides with CLI overrides (CLI wins on conflict)
-  let cliOverrides = Map.union (Map.fromList [(VarName k, v) | (k, v) <- runOpts.vars]) recipeOverrides
+  let cliOverrides = Map.union (Map.fromList [(VarName k, v) | (k, v) <- runOpts ^. #vars]) recipeOverrides
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace primaryName) runOpts.namespace
-  context <- resolveContext runOpts.context envVars
+      namespace = fromMaybe (deriveNamespace primaryName) (runOpts ^. #namespace)
+  context <- resolveContext (runOpts ^. #context) envVars
   let contextName = fromMaybe "" context
   (resolveResult, localMap, nsMap, ctxMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
     localCfg <- readLocalConfig >>= unwrapConfig level
@@ -206,23 +207,23 @@ handleRun runOpts = do
 
   -- 2a. Optionally confirm default-sourced values.
   resolved <-
-    if runOpts.confirmDefaults
+    if runOpts ^. #confirmDefaults
       then runEff $ runConsole $ confirmDefaults modulesInOrder resolvedInitial
       else pure resolvedInitial
 
   -- 2b. Emit diagnostics for unused config keys
-  let allDecls = concatMap (\(_, m, _) -> m.vars) modulesInOrder
+  let allDecls = concatMap (\(_, m, _) -> m ^. #vars) modulesInOrder
       allResolved = Map.unions [vs | vs <- Map.elems resolved]
       (unusedKeys, _) = diagnoseResolution allResolved allDecls localMap nsMap ctxMap globalMap
   when (not (null unusedKeys)) $
     logIO level $
       logWarn $
         "Config keys not matching any declared variable: "
-          <> T.intercalate ", " (map (.unVarName) unusedKeys)
+          <> T.intercalate ", " (map (^. #unVarName) unusedKeys)
 
   -- 3. Compile composed plan (all modules merged)
   let quads =
-        [ (inst, m, dir, Map.map (.value) (resolved Map.! inst))
+        [ (inst, m, dir, Map.map (^. #value) (resolved Map.! inst))
         | (inst, m, dir) <- modulesInOrder
         ]
   planResult <- compileComposedPlan quads
@@ -236,7 +237,7 @@ handleRun runOpts = do
 
   -- 4. Filter out command ops if --no-commands
   let opsFiltered =
-        if runOpts.noCommands
+        if runOpts ^. #noCommands
           then filter (not . isCommandOp) ops
           else ops
 
@@ -267,7 +268,7 @@ handleRun runOpts = do
   -- the current composition: a pending chain on an unrelated module
   -- must not block this run.
   let composedModuleNames =
-        Set.fromList [m.name | (_, m, _) <- modulesInOrder]
+        Set.fromList [m ^. #name | (_, m, _) <- modulesInOrder]
   pendings <-
     detectPendingMigrations initialManifest (Just composedModuleNames)
   manifest <-
@@ -279,14 +280,14 @@ handleRun runOpts = do
   let (appliedTarget, targetSource, targetVersion) = targetInfo
       currentApplicationId = mkApplicationId appliedTarget additional
       priorCommandReceipts =
-        case [ application.commandReceipts
-             | application <- manifest.applications,
-               application.applicationId == currentApplicationId
+        case [ application ^. #commandReceipts
+             | application <- manifest ^. #applications,
+               application ^. #applicationId == currentApplicationId
              ] of
           receipts : _ -> receipts
           [] -> Map.empty
       commandPolicy =
-        if runOpts.noCommands
+        if runOpts ^. #noCommands
           then DisableCommands
           else RunAllCommands
       commandPlan = planCommands commandPolicy priorCommandReceipts ops
@@ -300,23 +301,23 @@ handleRun runOpts = do
     -- matched to cover manifest entries written before the schema bump.
     let composedNames =
           Set.fromList $
-            concatMap (\(inst, _, _) -> [inst.module_, qualifiedName inst]) modulesInOrder
+            concatMap (\(inst, _, _) -> [inst ^. #module_, qualifiedName inst]) modulesInOrder
     computeDiff manifest composedNames planned
 
   colorEnabled <- useColor
 
-  let modNames = map (\(_, m, _) -> m.name) modulesInOrder
+  let modNames = map (\(_, m, _) -> m ^. #name) modulesInOrder
       allVarValues =
         Map.unions
-          [Map.map (.value) vs | vs <- Map.elems resolved]
+          [Map.map (^. #value) vs | vs <- Map.elems resolved]
       preview = buildPreview opsFiltered (Just diff) ownerMap
 
   -- 6. Handle --dry-run: show plan view and exit
-  if runOpts.dryRun
+  if runOpts ^. #dryRun
     then
       TIO.putStr (formatPlanViewColor colorEnabled modNames allVarValues preview diff)
     else
-      if runOpts.diff
+      if runOpts ^. #diff
         then TIO.putStr (formatDiff colorEnabled diff ownerMap)
         else do
           -- Show plan view
@@ -324,7 +325,7 @@ handleRun runOpts = do
 
           -- Prompt for confirmation (skip if --force or non-interactive)
           interactive <- hIsTerminalDevice stdin
-          when (interactive && not runOpts.force) $ do
+          when (interactive && not (runOpts ^. #force)) $ do
             TIO.putStr "\n  Proceed? [Y/n] "
             hFlush stdout
             response <- T.strip . T.pack <$> getLine
@@ -335,24 +336,24 @@ handleRun runOpts = do
           resolutions <-
             runEff $
               runConsole $
-                resolveConflicts runOpts.force diff.conflicts
+                resolveConflicts (runOpts ^. #force) (diff ^. #conflicts)
           case resolutions of
             Nothing -> do
               TIO.putStrLn "Conflicts detected (use --force to overwrite):"
-              mapM_ (\c -> TIO.putStrLn $ "  ! " <> T.pack c.path) diff.conflicts
+              mapM_ (\c -> TIO.putStrLn $ "  ! " <> T.pack (c ^. #path)) (diff ^. #conflicts)
               exitFailure
             Just conflictResolved -> do
               -- Partition resolutions: accept (overwrite), keep (update manifest only), skip (ignore)
               let keepRecords =
                     Map.fromList
-                      [ ( c.path,
-                          case Map.lookup c.path manifest.files of
+                      [ ( c ^. #path,
+                          case Map.lookup (c ^. #path) (manifest ^. #files) of
                             Just existing ->
-                              existing {hash = c.diskHash, generatedAt = now}
+                              existing {hash = c ^. #diskHash, generatedAt = now}
                             Nothing ->
                               FileRecord
-                                { hash = c.diskHash,
-                                  moduleName = c.moduleName,
+                                { hash = c ^. #diskHash,
+                                  moduleName = c ^. #moduleName,
                                   strategy = Template,
                                   generatedAt = now,
                                   baseline = Nothing,
@@ -361,7 +362,7 @@ handleRun runOpts = do
                         )
                       | (c, KeepCurrent) <- conflictResolved
                       ]
-                  skipPaths = [c.path | (c, Skip) <- conflictResolved]
+                  skipPaths = [c ^. #path | (c, Skip) <- conflictResolved]
                   excludePaths = Set.fromList (Map.keys keepRecords ++ skipPaths)
                   opsForExec = filter (not . opTargetsPath excludePaths) opsFiltered
 
@@ -380,16 +381,16 @@ handleRun runOpts = do
                             Left err -> pure (Left err)
                             Right baselineRecords -> do
                               -- Build updated manifest with all composed modules.
-                              let orphanedPaths = map (.path) diff.orphaned
-                                  cleanedFiles = foldr Map.delete manifest.files orphanedPaths
-                                  allModuleEntries = updateAllModules manifest.modules modulesInOrder now
+                              let orphanedPaths = map (^. #path) (diff ^. #orphaned)
+                                  cleanedFiles = foldr Map.delete (manifest ^. #files) orphanedPaths
+                                  allModuleEntries = updateAllModules (manifest ^. #modules) modulesInOrder now
                                   allResolvedVals =
                                     Map.unions
-                                      [Map.map (.value) vs | vs <- Map.elems resolved]
+                                      [Map.map (^. #value) vs | vs <- Map.elems resolved]
                                   appliedRecipe = case recipeInfo of
                                     Just (rName, rVersion) ->
                                       Just AppliedRecipe {name = rName, recipeVersion = rVersion, appliedAt = now}
-                                    Nothing -> manifest.recipe
+                                    Nothing -> (manifest ^. #recipe)
                                   appliedCompositionWithoutReceipts =
                                     buildAppliedComposition
                                       appliedTarget
@@ -412,7 +413,7 @@ handleRun runOpts = do
                                     Map.mapWithKey
                                       ( \path record ->
                                           if Set.member path applicationDestinations
-                                            then attachApplication appliedComposition.applicationId (Map.lookup path manifest.files) record
+                                            then attachApplication (appliedComposition ^. #applicationId) (Map.lookup path (manifest ^. #files)) record
                                             else record
                                       )
                                       combinedFiles
@@ -421,12 +422,12 @@ handleRun runOpts = do
                                       { version = currentManifestVersion,
                                         genAt = now,
                                         modules = allModuleEntries,
-                                        vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
+                                        vars = Map.union (Map.map varValueToText allResolvedVals) (manifest ^. #vars),
                                         files = ownedFiles,
-                                        applications = replaceAppliedComposition appliedComposition manifest.applications,
+                                        applications = replaceAppliedComposition appliedComposition (manifest ^. #applications),
                                         recipe = appliedRecipe,
-                                        blueprint = manifest.blueprint,
-                                        blueprintMigrations = manifest.blueprintMigrations
+                                        blueprint = manifest ^. #blueprint,
+                                        blueprintMigrations = manifest ^. #blueprintMigrations
                                       }
                               writeManifest newManifest
                               pure (Right newManifest)
@@ -454,9 +455,9 @@ handleRun runOpts = do
                 Right _ -> pure ()
 
               -- Report results
-              let nNew = length diff.new
-                  nMod = length diff.modified
-                  nUnch = length diff.unchanged
+              let nNew = length (diff ^. #new)
+                  nMod = length (diff ^. #modified)
+                  nUnch = length (diff ^. #unchanged)
               TIO.putStrLn $
                 T.pack (show nNew)
                   <> " new, "
@@ -469,8 +470,8 @@ handleRun runOpts = do
               -- returns candidate receipts only when the entire phase
               -- succeeds, so a failed run leaves the candidate manifest with
               -- no newly-minted success evidence.
-              forM_ commandPlan.commands $ \planned ->
-                when (planned.disposition == CommandWillRun) $
+              forM_ (commandPlan ^. #commands) $ \planned ->
+                when (planned ^. #disposition == CommandWillRun) $
                   logIO level (logDebug $ "  run  " <> plannedCommandText planned)
               commandResult <-
                 runEff $
@@ -484,14 +485,14 @@ handleRun runOpts = do
               completedReceipts <- case commandResult of
                 Right receipts -> pure receipts
                 Left commandError -> do
-                  when (not (T.null commandError.stdout)) $ TIO.putStr commandError.stdout
-                  when (not (T.null commandError.stderr)) $ TIO.putStr commandError.stderr
+                  when (not (T.null (commandError ^. #stdout))) $ TIO.putStr (commandError ^. #stdout)
+                  when (not (T.null (commandError ^. #stderr))) $ TIO.putStr (commandError ^. #stderr)
                   logIO level $
                     logError $
                       "Command failed (exit "
-                        <> T.pack (show commandError.exitCode)
+                        <> T.pack (show (commandError ^. #exitCode))
                         <> "): "
-                        <> plannedCommandText commandError.command
+                        <> plannedCommandText (commandError ^. #command)
                   exitFailure
 
               let finalCommandReceipts =
@@ -514,10 +515,10 @@ handleRun runOpts = do
                 Right () -> pure ()
 
               -- Commit generated files if --commit or --commit-message
-              when (runOpts.commit || isJust runOpts.commitMessage) $ do
+              when (runOpts ^. #commit || isJust (runOpts ^. #commitMessage)) $ do
                 let filesToStage =
-                      map (.path) diff.new
-                        ++ map (.path) diff.modified
+                      map (^. #path) (diff ^. #new)
+                        ++ map (^. #path) (diff ^. #modified)
                         ++ [manifestPath, baselineDir]
                 inGit <- runEff $ runProcessIO $ isGitRepo
                 if inGit
@@ -531,7 +532,7 @@ handleRun runOpts = do
                         case addExit of
                           ExitFailure _ -> logIO level (logWarn $ "git add failed: " <> addErr)
                           ExitSuccess -> do
-                            commitMsg <- case runOpts.commitMessage of
+                            commitMsg <- case runOpts ^. #commitMessage of
                               Just msg -> pure msg
                               Nothing -> do
                                 diffText <- runEff $ runProcessIO $ gitDiffCached
@@ -549,7 +550,7 @@ handleRun runOpts = do
                 runEff $
                   runConfigWriter $
                     runConsole $
-                      offerSavePrompted runOpts.savePrompted interactive prompted
+                      offerSavePrompted (runOpts ^. #savePrompted) interactive prompted
 
 -- Helpers
 
@@ -564,43 +565,43 @@ printWarning level (FileOverwritten path overwritten overwriter) =
     "Warning: "
       <> T.pack path
       <> " (from "
-      <> overwritten.unModuleName
+      <> overwritten ^. #unModuleName
       <> ") overwritten by "
-      <> overwriter.unModuleName
+      <> (overwriter ^. #unModuleName)
 printWarning level (ContentMerged path base contributor) =
   logIO level . logWarn $
     "Merged: "
       <> T.pack path
       <> " (base from "
-      <> base.unModuleName
+      <> base ^. #unModuleName
       <> ", patched by "
-      <> contributor.unModuleName
+      <> contributor ^. #unModuleName
       <> ")"
 
 formatDiff :: Bool -> DiffResult -> Map.Map FilePath ModuleName -> Text
 formatDiff color diff ownerMap' =
   T.unlines $
     concat
-      [ if null diff.new
+      [ if null (diff ^. #new)
           then []
-          else "New files:" : map (\f -> "  " <> colorWrap green "[new]" <> "  " <> colorWrap green (T.pack f.path) <> modSuffix f.path) diff.new,
-        if null diff.modified
+          else "New files:" : map (\f -> "  " <> colorWrap green "[new]" <> "  " <> colorWrap green (T.pack (f ^. #path)) <> modSuffix (f ^. #path)) (diff ^. #new),
+        if null (diff ^. #modified)
           then []
-          else "Modified files:" : map (\f -> "  " <> colorWrap yellow "[modified]" <> "  " <> colorWrap yellow (T.pack f.path) <> modSuffix f.path) diff.modified,
-        if null diff.unchanged
+          else "Modified files:" : map (\f -> "  " <> colorWrap yellow "[modified]" <> "  " <> colorWrap yellow (T.pack (f ^. #path)) <> modSuffix (f ^. #path)) (diff ^. #modified),
+        if null (diff ^. #unchanged)
           then []
-          else "Unchanged files:" : map (\f -> "  " <> colorWrap dim "[unchanged]" <> "  " <> colorWrap dim (T.pack f)) diff.unchanged,
-        if null diff.conflicts
+          else "Unchanged files:" : map (\f -> "  " <> colorWrap dim "[unchanged]" <> "  " <> colorWrap dim (T.pack f)) (diff ^. #unchanged),
+        if null (diff ^. #conflicts)
           then []
-          else "Conflicts:" : map (\f -> "  " <> colorWrap (bold . red) "[conflict]" <> "  " <> colorWrap (bold . red) (T.pack f.path) <> modSuffix f.path) diff.conflicts,
-        if null diff.orphaned
+          else "Conflicts:" : map (\f -> "  " <> colorWrap (bold . red) "[conflict]" <> "  " <> colorWrap (bold . red) (T.pack (f ^. #path)) <> modSuffix (f ^. #path)) (diff ^. #conflicts),
+        if null (diff ^. #orphaned)
           then []
-          else "Orphaned files:" : map (\f -> "  " <> colorWrap magenta "[orphaned]" <> "  " <> colorWrap magenta (T.pack f.path)) diff.orphaned
+          else "Orphaned files:" : map (\f -> "  " <> colorWrap magenta "[orphaned]" <> "  " <> colorWrap magenta (T.pack (f ^. #path))) (diff ^. #orphaned)
       ]
   where
     colorWrap fn t = if color then fn t else t
     modSuffix path = case Map.lookup path ownerMap' of
-      Just mn -> "  " <> colorWrap dim ("(" <> mn.unModuleName <> ")")
+      Just mn -> "  " <> colorWrap dim ("(" <> mn ^. #unModuleName <> ")")
       Nothing -> ""
 
 varValueToText :: VarValue -> Text
@@ -629,7 +630,7 @@ operationDestination (PatchFileOp dest _ _ _ _) = Just dest
 operationDestination _ = Nothing
 
 plannedCommandText :: PlannedCommand -> Text
-plannedCommandText planned = case planned.operation of
+plannedCommandText planned = case planned ^. #operation of
   RunCommandOp {command} -> command
   _ -> "<non-command operation>"
 
@@ -640,11 +641,11 @@ setApplicationCommandReceipts ::
   Manifest
 setApplicationCommandReceipts applicationId receipts manifest =
   manifest
-    { applications = map updateApplication manifest.applications
+    { applications = map updateApplication (manifest ^. #applications)
     }
   where
     updateApplication application
-      | application.applicationId == applicationId =
+      | application ^. #applicationId == applicationId =
           application {commandReceipts = receipts}
       | otherwise = application
 
@@ -669,10 +670,10 @@ handlePendingMigrations ::
   IO Manifest
 handlePendingMigrations _ _ _ manifest [] = pure manifest
 handlePendingMigrations level runOpts manifestPath manifest pendings
-  | not runOpts.withMigrations = do
+  | not (runOpts ^. #withMigrations) = do
       TIO.putStr (formatRefusalMessage pendings)
       exitFailure
-  | runOpts.dryRun = do
+  | (runOpts ^. #dryRun) = do
       TIO.putStrLn "Pending migrations detected (--with-migrations + --dry-run):"
       mapM_ (TIO.putStrLn . renderPendingSummary) pendings
       TIO.putStrLn ""
@@ -691,13 +692,13 @@ handlePendingMigrations level runOpts manifestPath manifest pendings
 renderPendingSummary :: (ModuleName, MigrationPlan) -> Text
 renderPendingSummary (name, plan) =
   "  "
-    <> name.unModuleName
+    <> name ^. #unModuleName
     <> ": "
-    <> renderVersion plan.from
+    <> renderVersion (plan ^. #from)
     <> " -> "
-    <> renderVersion plan.to
+    <> renderVersion (plan ^. #to)
     <> " ("
-    <> T.pack (show (length plan.steps))
+    <> T.pack (show (length (plan ^. #steps)))
     <> " step(s))"
 
 -- | Apply one pending plan in-band. Reuses 'runMigrate' with
@@ -719,7 +720,7 @@ applyOneMigration level manifest (modName, _) =
       logIO level $
         logError $
           "internal error: applied module '"
-            <> modName.unModuleName
+            <> modName ^. #unModuleName
             <> "' missing while applying its migration"
       exitFailure
     Just am -> do
@@ -735,10 +736,10 @@ applyOneMigration level manifest (modName, _) =
                 commit = False,
                 commitMessage = Nothing
               }
-      result <- runMigrate opts manifest am.source
+      result <- runMigrate opts manifest (am ^. #source)
       case result of
         Right (MigrateApplied _ manifest' _ _) -> do
-          TIO.putStrLn $ "  Migrated " <> modName.unModuleName
+          TIO.putStrLn $ "  Migrated " <> (modName ^. #unModuleName)
           pure manifest'
         Right (MigrateNoOp _) -> pure manifest
         Right (MigrateDryRunOK {}) -> pure manifest
@@ -746,17 +747,17 @@ applyOneMigration level manifest (modName, _) =
           logIO level $
             logError $
               "Migration failed for "
-                <> modName.unModuleName
+                <> modName ^. #unModuleName
                 <> ": "
                 <> renderMigrateError err
           exitFailure
 
 renderMigrateError :: MigrateError -> Text
 renderMigrateError err = case err of
-  MigrateModuleNotApplied n -> "module " <> n.unModuleName <> " not applied"
-  MigrateNoRecordedVersion n -> "no version recorded for " <> n.unModuleName
+  MigrateModuleNotApplied n -> "module " <> n ^. #unModuleName <> " not applied"
+  MigrateNoRecordedVersion n -> "no version recorded for " <> (n ^. #unModuleName)
   MigrateInstalledModuleEvalFailed _ msg -> msg
-  MigrateInstalledModuleHasNoVersion n _ -> "no version on installed " <> n.unModuleName
+  MigrateInstalledModuleHasNoVersion n _ -> "no version on installed " <> (n ^. #unModuleName)
   MigrateUnparseableInstalledVersion v -> "bad version " <> v
   MigrateUnparseableTargetVersion v -> "bad target version " <> v
   MigrateUnparseableManifestVersion v -> "bad manifest version " <> v
@@ -766,7 +767,7 @@ renderMigrateError err = case err of
 
 findAppliedByName :: Manifest -> ModuleName -> Maybe AppliedModule
 findAppliedByName manifest name =
-  case filter (\am -> am.name == name) manifest.modules of
+  case filter (\am -> am ^. #name == name) (manifest ^. #modules) of
     (am : _) -> Just am
     [] -> Nothing
 
@@ -787,18 +788,18 @@ updateAllModules ::
 updateAllModules existing modulesInOrder now =
   let composedKeys =
         Set.fromList
-          [ (inst.module_, inst.parentVars)
+          [ (inst ^. #module_, inst ^. #parentVars)
           | (inst, _, _) <- modulesInOrder
           ]
-      filtered = filter (\am -> not (Set.member (am.name, am.parentVars) composedKeys)) existing
+      filtered = filter (\am -> not (Set.member (am ^. #name, am ^. #parentVars) composedKeys)) existing
       new =
         [ AppliedModule
-            { name = inst.module_,
-              parentVars = inst.parentVars,
+            { name = inst ^. #module_,
+              parentVars = inst ^. #parentVars,
               source = dir,
-              moduleVersion = m.version,
+              moduleVersion = m ^. #version,
               appliedAt = now,
-              removal = m.removal
+              removal = m ^. #removal
             }
         | (inst, m, dir) <- modulesInOrder
         ]

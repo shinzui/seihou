@@ -11,6 +11,7 @@ module Seihou.CLI.BlueprintMigration
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Seihou.CLI.AgentLaunch
@@ -62,7 +63,7 @@ renderBlueprintMigrationInstruction ::
   BlueprintMigration ->
   Text
 renderBlueprintMigrationInstruction resolved migration =
-  renderBlueprintText resolved migration.prompt
+  renderBlueprintText resolved (migration ^. #prompt)
 
 -- | Fill the migration-specific embedded template. The template itself stays
 -- in the executable target because @Data.FileEmbed@ traps it there; accepting
@@ -76,26 +77,26 @@ renderBlueprintMigrationSystemPrompt ::
   BlueprintMigration ->
   Text
 renderBlueprintMigrationSystemPrompt template ctx prepared position total migration =
-  let blueprint = prepared.blueprint
+  let blueprint = (prepared ^. #blueprint)
       renderedInstruction =
-        renderBlueprintMigrationInstruction prepared.resolvedVariables migration
+        renderBlueprintMigrationInstruction (prepared ^. #resolvedVariables) migration
    in substitute
-        [ ("cwd", ctx.cwd),
+        [ ("cwd", ctx ^. #cwd),
           ("seihou_project_state", formatSeihouProjectState ctx),
           ("manifest_state", formatManifestState ctx),
           ("module_dhall_state", formatModuleDhallState ctx),
           ("local_modules", formatLocalModules ctx),
           ("available_modules", formatAvailableModules ctx),
-          ("blueprint_name", blueprint.name.unModuleName),
-          ("blueprint_version", fromMaybe "(unspecified)" blueprint.version),
-          ("blueprint_description", fromMaybe "(no description)" blueprint.description),
-          ("migration_from", migration.from),
-          ("migration_to", migration.to),
+          ("blueprint_name", blueprint ^. #name . #unModuleName),
+          ("blueprint_version", fromMaybe "(unspecified)" (blueprint ^. #version)),
+          ("blueprint_description", fromMaybe "(no description)" (blueprint ^. #description)),
+          ("migration_from", migration ^. #from),
+          ("migration_to", migration ^. #to),
           ("migration_position", T.pack (show position)),
           ("migration_total", T.pack (show total)),
-          ("reference_files", prepared.referenceFiles),
-          ("reference_files_dir", prepared.referenceFilesAccess),
-          ("shared_prompt", prepared.sharedPrompt),
+          ("reference_files", prepared ^. #referenceFiles),
+          ("reference_files_dir", prepared ^. #referenceFilesAccess),
+          ("shared_prompt", prepared ^. #sharedPrompt),
           ("migration_prompt", renderedInstruction)
         ]
         template
@@ -116,9 +117,9 @@ formatBlueprintMigrationDebugOutput render migrations =
             <> "/"
             <> T.pack (show total)
             <> "] "
-            <> migration.from
+            <> migration ^. #from
             <> " -> "
-            <> migration.to
+            <> migration ^. #to
             <> " =====",
           render position total migration
         ]
@@ -136,15 +137,15 @@ pendingBlueprintMigrations ::
   BlueprintMigrationPlan ->
   [BlueprintMigration]
 pendingBlueprintMigrations rerun blueprintName receipts plan
-  | rerun = plan.steps
-  | otherwise = filter (not . alreadyApplied) plan.steps
+  | rerun = plan ^. #steps
+  | otherwise = filter (not . alreadyApplied) (plan ^. #steps)
   where
     alreadyApplied migration =
       any
         ( \receipt ->
-            receipt.name == blueprintName
-              && receipt.fromVersion == migration.from
-              && receipt.toVersion == migration.to
+            receipt ^. #name == blueprintName
+              && receipt ^. #fromVersion == migration ^. #from
+              && receipt ^. #toVersion == migration ^. #to
         )
         receipts
 

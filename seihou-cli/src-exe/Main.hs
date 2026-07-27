@@ -1,6 +1,8 @@
 module Main (main) where
 
 import Control.Applicative ((<|>))
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.List (isPrefixOf)
 import Data.Maybe (isJust)
 import Data.String (fromString)
@@ -94,11 +96,11 @@ dispatch cmd =
       handleDiff
     List listOpts ->
       let kinds =
-            [KindModule | listOpts.modulesOnly]
-              <> [KindRecipe | listOpts.recipesOnly]
-              <> [KindBlueprint | listOpts.blueprintsOnly]
-              <> [KindPrompt | listOpts.promptsOnly]
-       in handleList (ListFilter listOpts.repo listOpts.tag kinds)
+            [KindModule | listOpts ^. #modulesOnly]
+              <> [KindRecipe | listOpts ^. #recipesOnly]
+              <> [KindBlueprint | listOpts ^. #blueprintsOnly]
+              <> [KindPrompt | listOpts ^. #promptsOnly]
+       in handleList (ListFilter (listOpts ^. #repo) (listOpts ^. #tag) kinds)
     NewModule newModOpts ->
       handleNewModule newModOpts
     NewRecipe newRecOpts ->
@@ -132,29 +134,29 @@ dispatch cmd =
     Kit kitCmd ->
       runKit kitCmd
     Agent agentOpts -> do
-      case agentOpts.command of
+      case agentOpts ^. #command of
         AgentAssist assistOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdAssist (parentAgentFlags agentOpts) (AgentSettingFlags assistOpts.provider assistOpts.model assistOpts.effort assistOpts.trace)
-          handleAssist agentOpts.debug modelConfig assistOpts
+          modelConfig <- resolveAgentModelConfigFor AgentCmdAssist (parentAgentFlags agentOpts) (AgentSettingFlags (assistOpts ^. #provider) (assistOpts ^. #model) (assistOpts ^. #effort) (assistOpts ^. #trace))
+          handleAssist (agentOpts ^. #debug) modelConfig assistOpts
         AgentBootstrap bootstrapOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdBootstrap (parentAgentFlags agentOpts) (AgentSettingFlags bootstrapOpts.provider bootstrapOpts.model bootstrapOpts.effort bootstrapOpts.trace)
-          handleBootstrap agentOpts.debug modelConfig bootstrapOpts
+          modelConfig <- resolveAgentModelConfigFor AgentCmdBootstrap (parentAgentFlags agentOpts) (AgentSettingFlags (bootstrapOpts ^. #provider) (bootstrapOpts ^. #model) (bootstrapOpts ^. #effort) (bootstrapOpts ^. #trace))
+          handleBootstrap (agentOpts ^. #debug) modelConfig bootstrapOpts
         AgentSetup setupOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdSetup (parentAgentFlags agentOpts) (AgentSettingFlags setupOpts.provider setupOpts.model setupOpts.effort setupOpts.trace)
-          handleSetup agentOpts.debug modelConfig setupOpts
+          modelConfig <- resolveAgentModelConfigFor AgentCmdSetup (parentAgentFlags agentOpts) (AgentSettingFlags (setupOpts ^. #provider) (setupOpts ^. #model) (setupOpts ^. #effort) (setupOpts ^. #trace))
+          handleSetup (agentOpts ^. #debug) modelConfig setupOpts
         AgentRun blueprintRunOpts -> do
-          pending <- pendingAgentConfigFor AgentCmdRun (parentAgentFlags agentOpts) (AgentSettingFlags blueprintRunOpts.provider blueprintRunOpts.model blueprintRunOpts.effort blueprintRunOpts.trace)
-          handleAgentRun agentOpts.debug pending blueprintRunOpts
+          pending <- pendingAgentConfigFor AgentCmdRun (parentAgentFlags agentOpts) (AgentSettingFlags (blueprintRunOpts ^. #provider) (blueprintRunOpts ^. #model) (blueprintRunOpts ^. #effort) (blueprintRunOpts ^. #trace))
+          handleAgentRun (agentOpts ^. #debug) pending blueprintRunOpts
         AgentMigrate migrationOpts -> do
-          pending <- pendingAgentConfigFor AgentCmdMigrate (parentAgentFlags agentOpts) (AgentSettingFlags migrationOpts.provider migrationOpts.model migrationOpts.effort migrationOpts.trace)
-          handleAgentMigrate agentOpts.debug pending migrationOpts
+          pending <- pendingAgentConfigFor AgentCmdMigrate (parentAgentFlags agentOpts) (AgentSettingFlags (migrationOpts ^. #provider) (migrationOpts ^. #model) (migrationOpts ^. #effort) (migrationOpts ^. #trace))
+          handleAgentMigrate (agentOpts ^. #debug) pending migrationOpts
         AgentModels modelsOpts ->
-          case agentOpts.model of
+          case agentOpts ^. #model of
             Just _ -> do
               TIO.putStrLn "Error: --model does not apply to 'seihou agent models'; omit it to list known choices."
               exitFailure
             Nothing ->
-              case modelsOpts.modelsProvider <|> agentOpts.provider of
+              case modelsOpts ^. #modelsProvider <|> agentOpts ^. #provider of
                 Nothing ->
                   TIO.putStr (AgentModels.formatAgentModels Nothing AgentModels.availableAgentModels)
                 Just providerText ->
@@ -169,7 +171,7 @@ dispatch cmd =
     Prompt promptCmd -> do
       case promptCmd of
         PromptRun promptRunOpts -> do
-          pending <- pendingAgentConfigFor AgentCmdPromptRun noAgentSettingFlags (AgentSettingFlags promptRunOpts.provider promptRunOpts.model promptRunOpts.effort promptRunOpts.trace)
+          pending <- pendingAgentConfigFor AgentCmdPromptRun noAgentSettingFlags (AgentSettingFlags (promptRunOpts ^. #provider) (promptRunOpts ^. #model) (promptRunOpts ^. #effort) (promptRunOpts ^. #trace))
           handlePromptRun pending promptRunOpts
     Extension extensionCmd -> do
       case extensionCmd of
@@ -184,10 +186,10 @@ dispatch cmd =
 parentAgentFlags :: AgentOpts -> AgentSettingFlags
 parentAgentFlags agentOpts =
   AgentSettingFlags
-    { provider = agentOpts.provider,
-      model = agentOpts.model,
-      effort = agentOpts.effort,
-      trace = agentOpts.trace
+    { provider = agentOpts ^. #provider,
+      model = agentOpts ^. #model,
+      effort = agentOpts ^. #effort,
+      trace = agentOpts ^. #trace
     }
 
 -- | Resolve the effective provider/model/effort/trace for one agent command.

@@ -13,6 +13,7 @@ module Seihou.CLI.BlueprintExecution
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
@@ -77,47 +78,47 @@ prepareBlueprintExecution ::
   BlueprintExecutionRequest ->
   IO (Either [VarError] PreparedBlueprintExecution)
 prepareBlueprintExecution request = do
-  let bp = request.blueprint
-      blueprintDir = request.blueprintDir
+  let bp = (request ^. #blueprint)
+      blueprintDir = (request ^. #blueprintDir)
       filesDir = blueprintDir </> "files"
   filesExist <- doesDirectoryExist filesDir
   mountedFilesDir <-
-    if filesExist && request.canMountFiles
+    if filesExist && request ^. #canMountFiles
       then Just <$> makeAbsolute filesDir
       else pure Nothing
 
   let placeholderModule =
         Module
-          { name = bp.name,
-            version = bp.version,
-            description = bp.description,
-            vars = bp.vars,
+          { name = bp ^. #name,
+            version = bp ^. #version,
+            description = bp ^. #description,
+            vars = bp ^. #vars,
             exports = [],
-            prompts = bp.prompts,
+            prompts = bp ^. #prompts,
             steps = [],
             commands = [],
             dependencies = [],
             removal = Nothing,
             migrations = []
           }
-      placeholderInst = primaryInstance bp.name
+      placeholderInst = primaryInstance (bp ^. #name)
       placeholderTriple = (placeholderInst, placeholderModule, blueprintDir)
 
   envPairs <- getEnvironment
   let cliOverrides =
         Map.fromList
-          [(VarName key, value) | (key, value) <- request.variableOverrides]
+          [(VarName key, value) | (key, value) <- request ^. #variableOverrides]
       envVars = Map.fromList [(T.pack key, T.pack value) | (key, value) <- envPairs]
       namespace =
-        fromMaybe (deriveNamespace bp.name) request.namespaceOverride
-  context <- resolveContext request.contextOverride envVars
+        fromMaybe (deriveNamespace (bp ^. #name)) (request ^. #namespaceOverride)
+  context <- resolveContext (request ^. #contextOverride) envVars
   let contextName = fromMaybe "" context
 
   resolveResult <- runEff $ runConfigReader $ runConsole $ do
-    localCfg <- readLocalConfig >>= unwrapConfig request.logLevel
-    nsCfg <- readNamespaceConfig namespace >>= unwrapConfig request.logLevel
-    ctxCfg <- readContextConfig contextName >>= unwrapConfig request.logLevel
-    globalCfg <- readGlobalConfig >>= unwrapConfig request.logLevel
+    localCfg <- readLocalConfig >>= unwrapConfig (request ^. #logLevel)
+    nsCfg <- readNamespaceConfig namespace >>= unwrapConfig (request ^. #logLevel)
+    ctxCfg <- readContextConfig contextName >>= unwrapConfig (request ^. #logLevel)
+    globalCfg <- readGlobalConfig >>= unwrapConfig (request ^. #logLevel)
     resolveWithPrompts
       [placeholderTriple]
       cliOverrides
@@ -138,10 +139,10 @@ prepareBlueprintExecution request = do
           blueprintDir = blueprintDir,
           resolvedVariables = resolved,
           mountedFilesDir = mountedFilesDir,
-          referenceFiles = formatReferenceFiles bp.files,
+          referenceFiles = formatReferenceFiles (bp ^. #files),
           referenceFilesAccess = formatReferenceFilesDir mountedFilesDir,
-          sharedPrompt = renderBlueprintText resolved bp.prompt,
-          allowedTools = resolveBlueprintTools bp.allowedTools
+          sharedPrompt = renderBlueprintText resolved (bp ^. #prompt),
+          allowedTools = resolveBlueprintTools (bp ^. #allowedTools)
         }
 
 -- | Substitute resolved blueprint variables into any blueprint-owned text.
@@ -150,8 +151,8 @@ renderBlueprintText resolved template =
   foldl'
     ( \rendered (name, value) ->
         T.replace
-          ("{{" <> name.unVarName <> "}}")
-          (varValueToText value.value)
+          ("{{" <> name ^. #unVarName <> "}}")
+          (varValueToText (value ^. #value))
           rendered
     )
     template

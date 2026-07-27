@@ -15,6 +15,7 @@ where
 import Control.Exception (IOException, displayException, try)
 import Control.Monad (when)
 import Data.FileEmbed (embedFile)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, maybeToList)
 import Data.Set qualified as Set
@@ -101,29 +102,29 @@ promptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-prompt.md")
 
 handleAgentRun :: Bool -> PendingAgentConfig -> BlueprintRunOpts -> IO ()
 handleAgentRun debug pending opts = do
-  let level = if opts.verbose then LogVerbose else LogNormal
+  let level = if opts ^. #verbose then LogVerbose else LogNormal
   stdinIsTerminal <- hIsTerminalDevice stdin
-  let batch = opts.batch || not stdinIsTerminal
+  let batch = opts ^. #batch || not stdinIsTerminal
 
   -- (a) Discover and validate. discoverRunnable resolves by directory
   -- name (priority: module > recipe > blueprint).
   searchPaths <- defaultSearchPaths
-  runnableResult <- discoverRunnable searchPaths opts.name
+  runnableResult <- discoverRunnable searchPaths (opts ^. #name)
   (bp, blueprintDir) <- case runnableResult of
     Right (RunnableBlueprint b dir) -> pure (b, dir)
     Right (RunnableModule _ _) ->
       exitErr level $
         "'"
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "' is a module, not a blueprint. Did you mean 'seihou run "
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "'?"
     Right (RunnableRecipe _ _) ->
       exitErr level $
         "'"
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "' is a recipe, not a blueprint. Did you mean 'seihou run "
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
 
@@ -134,22 +135,22 @@ handleAgentRun debug pending opts = do
   modelConfig <-
     resolveDeclaredAgentConfig
       level
-      ("blueprint '" <> bp.name.unModuleName <> "'")
+      ("blueprint '" <> bp ^. #name . #unModuleName <> "'")
       pending
-      (agentLaunchDeclaration bp.launch)
+      (agentLaunchDeclaration (bp ^. #launch))
 
   let providerCanMountFiles =
-        modelConfig.provider == AgentProviderClaudeCli
-          || modelConfig.provider == AgentProviderCodexCli
+        modelConfig ^. #provider == AgentProviderClaudeCli
+          || modelConfig ^. #provider == AgentProviderCodexCli
   -- (b) Resolve variables and prepare the shared prompt/reference/tool state.
   preparedResult <-
     prepareBlueprintExecution
       BlueprintExecutionRequest
         { blueprint = bp,
           blueprintDir = blueprintDir,
-          variableOverrides = opts.vars,
-          namespaceOverride = opts.namespace,
-          contextOverride = opts.context,
+          variableOverrides = opts ^. #vars,
+          namespaceOverride = opts ^. #namespace,
+          contextOverride = opts ^. #context,
           canMountFiles = providerCanMountFiles,
           logLevel = level
         }
@@ -159,17 +160,17 @@ handleAgentRun debug pending opts = do
       mapM_ (logIO level . logError . ("  " <>) . formatVarError) errs
       exitFailure
     Right result -> pure result
-  let resolved = prepared.resolvedVariables
-      cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts.vars]
+  let resolved = (prepared ^. #resolvedVariables)
+      cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts ^. #vars]
 
   -- (c) Baseline.
   baseline <-
-    if opts.noBaseline
+    if opts ^. #noBaseline
       then pure BaselineSkipped
       else
-        if null bp.baseModules
+        if null (bp ^. #baseModules)
           then pure BaselineEmpty
-          else applyBaseline level opts bp.baseModules cliOverrides resolved
+          else applyBaseline level opts (bp ^. #baseModules) cliOverrides resolved
 
   -- (d) Render the system prompt around the prepared shared body.
   ctx <- gatherAgentContext
@@ -181,10 +182,10 @@ handleAgentRun debug pending opts = do
       debug
       batch
       modelConfig
-      prepared.allowedTools
-      prepared.mountedFilesDir
+      (prepared ^. #allowedTools)
+      (prepared ^. #mountedFilesDir)
       systemPrompt
-      opts.prompt
+      (opts ^. #prompt)
 
   -- (g) Record the applied-blueprint provenance into
   -- .seihou/manifest.json only after a successful provider response. In
@@ -211,7 +212,7 @@ runRenderedAgentPromptMode debug batch modelConfig tools mFilesDir systemPrompt 
   | debug = do
       TIO.putStr systemPrompt
       pure True
-  | not batch && (modelConfig.provider == AgentProviderClaudeCli || modelConfig.provider == AgentProviderCodexCli) = do
+  | not batch && (modelConfig ^. #provider == AgentProviderClaudeCli || modelConfig ^. #provider == AgentProviderCodexCli) = do
       exitCode <-
         launchConfiguredAgentAddingDirs
           (maybeToList mFilesDir)
@@ -246,8 +247,8 @@ appliedBlueprintFromOutcome ::
   Blueprint -> BaselineStatus -> BlueprintRunOpts -> UTCTime -> AppliedBlueprint
 appliedBlueprintFromOutcome bp baseline opts now =
   AppliedBlueprint
-    { name = bp.name,
-      blueprintVersion = bp.version,
+    { name = bp ^. #name,
+      blueprintVersion = bp ^. #version,
       appliedAt = now,
       baselineModules = case baseline of
         BaselineApplied entries -> map fst entries
@@ -256,7 +257,7 @@ appliedBlueprintFromOutcome bp baseline opts now =
       noBaseline = case baseline of
         BaselineSkipped -> True
         _ -> False,
-      userPrompt = opts.prompt,
+      userPrompt = opts ^. #prompt,
       agentSessionId = Nothing
     }
 
@@ -279,7 +280,7 @@ applyBaseline ::
 applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
   searchPaths <- defaultSearchPaths
   (primary, additionals) <- case baseModules of
-    d : rs -> pure (d.module_, map (.module_) rs)
+    d : rs -> pure (d ^. #module_, map (^. #module_) rs)
     [] -> exitErr level "internal error: applyBaseline called with empty baseModules"
   compositionResult <- loadComposition searchPaths primary additionals
   modulesInOrder <- case compositionResult of
@@ -293,13 +294,13 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
   -- win over blueprint values, mirroring 'seihou run' semantics.
   let blueprintAsOverrides =
         Map.fromList
-          [(vn, varValueToText rv.value) | (vn, rv) <- Map.toList resolvedBlueprintVars]
+          [(vn, varValueToText (rv ^. #value)) | (vn, rv) <- Map.toList resolvedBlueprintVars]
       cliOverrides = Map.union cliOverridesIn blueprintAsOverrides
 
   envPairs <- getEnvironment
   let envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace primary) opts.namespace
-  context <- resolveContext opts.context envVars
+      namespace = fromMaybe (deriveNamespace primary) (opts ^. #namespace)
+  context <- resolveContext (opts ^. #context) envVars
   let contextName = fromMaybe "" context
 
   baseResolveResult <- runEff $ runConfigReader $ runConsole $ do
@@ -327,7 +328,7 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
 
   -- Compile the plan.
   let quads =
-        [ (inst, m, dir, Map.map (.value) (baseResolved Map.! inst))
+        [ (inst, m, dir, Map.map (^. #value) (baseResolved Map.! inst))
         | (inst, m, dir) <- modulesInOrder
         ]
   planResult <- compileComposedPlan quads
@@ -359,26 +360,26 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
   diff <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     let composedNames =
           Set.fromList $
-            concatMap (\(inst, _, _) -> [inst.module_, qualifiedName inst]) modulesInOrder
+            concatMap (\(inst, _, _) -> [inst ^. #module_, qualifiedName inst]) modulesInOrder
     computeDiff manifest composedNames planned
 
   resolutions <-
-    runEff $ runConsole $ resolveConflicts opts.force diff.conflicts
+    runEff $ runConsole $ resolveConflicts (opts ^. #force) (diff ^. #conflicts)
   case resolutions of
     Nothing -> do
       logIO level $ logError "Baseline conflicts detected (use --force to overwrite):"
-      mapM_ (\c -> logIO level (logError ("  ! " <> T.pack c.path))) diff.conflicts
+      mapM_ (\c -> logIO level (logError ("  ! " <> T.pack (c ^. #path)))) (diff ^. #conflicts)
       exitFailure
     Just conflictResolved -> do
       let keepRecords =
             Map.fromList
-              [ ( c.path,
-                  case Map.lookup c.path manifest.files of
-                    Just existing -> existing {hash = c.diskHash, generatedAt = now}
+              [ ( c ^. #path,
+                  case Map.lookup (c ^. #path) (manifest ^. #files) of
+                    Just existing -> existing {hash = c ^. #diskHash, generatedAt = now}
                     Nothing ->
                       FileRecord
-                        { hash = c.diskHash,
-                          moduleName = c.moduleName,
+                        { hash = c ^. #diskHash,
+                          moduleName = c ^. #moduleName,
                           strategy = Template,
                           generatedAt = now,
                           baseline = Nothing,
@@ -387,7 +388,7 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
                 )
               | (c, KeepCurrent) <- conflictResolved
               ]
-          skipPaths = [c.path | (c, Skip) <- conflictResolved]
+          skipPaths = [c ^. #path | (c, Skip) <- conflictResolved]
           excludePaths = Set.fromList (Map.keys keepRecords ++ skipPaths)
           opsForExec = filter (not . opTargetsPath excludePaths) ops
 
@@ -402,22 +403,22 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
                   case baselineResult of
                     Left err -> pure (Left err)
                     Right baselineRecords -> do
-                      let orphanedPaths = map (.path) diff.orphaned
-                          cleanedFiles = foldr Map.delete manifest.files orphanedPaths
-                          allModuleEntries = updateAllModules manifest.modules modulesInOrder now
+                      let orphanedPaths = map (^. #path) (diff ^. #orphaned)
+                          cleanedFiles = foldr Map.delete (manifest ^. #files) orphanedPaths
+                          allModuleEntries = updateAllModules (manifest ^. #modules) modulesInOrder now
                           allResolvedVals =
-                            Map.unions [Map.map (.value) vs | vs <- Map.elems baseResolved]
+                            Map.unions [Map.map (^. #value) vs | vs <- Map.elems baseResolved]
                           newManifest =
                             Manifest
                               { version = currentManifestVersion,
                                 genAt = now,
                                 modules = allModuleEntries,
-                                vars = Map.union (Map.map varValueToText allResolvedVals) manifest.vars,
+                                vars = Map.union (Map.map varValueToText allResolvedVals) (manifest ^. #vars),
                                 files = Map.unions [baselineRecords, keepRecords, cleanedFiles],
-                                applications = manifest.applications,
-                                recipe = manifest.recipe,
-                                blueprint = manifest.blueprint,
-                                blueprintMigrations = manifest.blueprintMigrations
+                                applications = manifest ^. #applications,
+                                recipe = manifest ^. #recipe,
+                                blueprint = manifest ^. #blueprint,
+                                blueprintMigrations = manifest ^. #blueprintMigrations
                               }
                       writeManifest newManifest
                       pure (Right newManifest)
@@ -442,9 +443,9 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
           logIO level $ logWarn $ "Warning: could not prune generated baselines: " <> T.pack (displayException err)
         Right _ -> pure ()
 
-      let nNew = length diff.new
-          nMod = length diff.modified
-          nUnch = length diff.unchanged
+      let nNew = length (diff ^. #new)
+          nMod = length (diff ^. #modified)
+          nUnch = length (diff ^. #unchanged)
       logIO level $
         logInfo $
           "Baseline applied: "
@@ -456,27 +457,27 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
             <> " unchanged."
       pure $
         BaselineApplied
-          [(m.name, m.version) | (_, m, _) <- modulesInOrder]
+          [(m ^. #name, m ^. #version) | (_, m, _) <- modulesInOrder]
 
 -- | Stitch the system-prompt template together. Each block in
 -- @blueprint-prompt.md@ has a @{{key}}@ placeholder filled here.
 renderSystemPrompt :: AgentContext -> PreparedBlueprintExecution -> BaselineStatus -> Text
 renderSystemPrompt ctx prepared baseline =
-  let bp = prepared.blueprint
+  let bp = (prepared ^. #blueprint)
    in substitute
-        [ ("cwd", ctx.cwd),
+        [ ("cwd", ctx ^. #cwd),
           ("seihou_project_state", formatSeihouProjectState ctx),
           ("manifest_state", formatManifestState ctx),
           ("module_dhall_state", formatModuleDhallState ctx),
           ("local_modules", formatLocalModules ctx),
           ("available_modules", formatAvailableModules ctx),
-          ("blueprint_name", bp.name.unModuleName),
-          ("blueprint_version", fromMaybe "(unspecified)" bp.version),
-          ("blueprint_description", fromMaybe "(no description)" bp.description),
+          ("blueprint_name", bp ^. #name . #unModuleName),
+          ("blueprint_version", fromMaybe "(unspecified)" (bp ^. #version)),
+          ("blueprint_description", fromMaybe "(no description)" (bp ^. #description)),
           ("baseline_status", formatBaselineStatus baseline),
-          ("reference_files", prepared.referenceFiles),
-          ("reference_files_dir", prepared.referenceFilesAccess),
-          ("user_prompt", prepared.sharedPrompt)
+          ("reference_files", prepared ^. #referenceFiles),
+          ("reference_files_dir", prepared ^. #referenceFilesAccess),
+          ("user_prompt", prepared ^. #sharedPrompt)
         ]
         promptTemplate
 
@@ -497,19 +498,19 @@ updateAllModules ::
 updateAllModules existing modulesInOrder now =
   let composedKeys =
         Set.fromList
-          [ (inst.module_, inst.parentVars)
+          [ (inst ^. #module_, inst ^. #parentVars)
           | (inst, _, _) <- modulesInOrder
           ]
       filtered =
-        filter (\am -> not (Set.member (am.name, am.parentVars) composedKeys)) existing
+        filter (\am -> not (Set.member (am ^. #name, am ^. #parentVars) composedKeys)) existing
       new =
         [ AppliedModule
-            { name = inst.module_,
-              parentVars = inst.parentVars,
+            { name = inst ^. #module_,
+              parentVars = inst ^. #parentVars,
               source = dir,
-              moduleVersion = m.version,
+              moduleVersion = m ^. #version,
               appliedAt = now,
-              removal = m.removal
+              removal = m ^. #removal
             }
         | (inst, m, dir) <- modulesInOrder
         ]
@@ -526,24 +527,24 @@ renderModuleLoadError :: ModuleLoadError -> Text
 renderModuleLoadError = \case
   ModuleNotFound name searched ->
     "Module '"
-      <> name.unModuleName
+      <> name ^. #unModuleName
       <> "' not found. Searched in:\n"
       <> T.intercalate "\n" (map (("  " <>) . T.pack) searched)
   DhallEvalError name msg ->
-    "Failed to evaluate '" <> name.unModuleName <> "': " <> msg
+    "Failed to evaluate '" <> name ^. #unModuleName <> "': " <> msg
   DhallDecodeError name msg ->
-    "Failed to decode '" <> name.unModuleName <> "': " <> msg
+    "Failed to decode '" <> name ^. #unModuleName <> "': " <> msg
   ValidationError name msgs ->
     "Validation failed for '"
-      <> name.unModuleName
+      <> name ^. #unModuleName
       <> "':\n"
       <> T.intercalate "\n" (map ("  " <>) msgs)
   CircularDependency names ->
     "Circular dependency detected: "
-      <> T.intercalate " -> " (map (.unModuleName) names)
+      <> T.intercalate " -> " (map (^. #unModuleName) names)
   MissingSourceFile name path ->
     "Missing source file in '"
-      <> name.unModuleName
+      <> name ^. #unModuleName
       <> "': "
       <> T.pack path
   RegistryEvalError path msg ->

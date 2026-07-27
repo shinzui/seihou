@@ -4,6 +4,7 @@ module Seihou.CLI.AgentConfigShow
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentCompletion (effortToText, providerToText, traceToText)
@@ -43,7 +44,7 @@ formatResolvedAgentConfig resolved =
       <> concatMap renderCommand resolved
       <> ["", precedenceLegend]
   where
-    labelWidth = maximum (0 : map (\rcc -> T.length (agentCommandLabel rcc.command)) resolved)
+    labelWidth = maximum (0 : map (\rcc -> T.length (agentCommandLabel (rcc ^. #command))) resolved)
     valueWidth = maximum (0 : concatMap commandValueWidths resolved)
 
     commandValueWidths rcc =
@@ -53,34 +54,34 @@ formatResolvedAgentConfig resolved =
         T.length (traceValue rcc)
       ]
 
-    providerValue rcc = providerToText rcc.provider.value
-    modelValue rcc = maybe "(default)" id rcc.model.value
-    effortValue rcc = maybe "(default)" effortToText rcc.effort.value
-    traceValue rcc = traceToText rcc.trace.value
+    providerValue rcc = providerToText (rcc ^. #provider . #value)
+    modelValue rcc = maybe "(default)" id (rcc ^. #model . #value)
+    effortValue rcc = maybe "(default)" effortToText (rcc ^. #effort . #value)
+    traceValue rcc = traceToText (rcc ^. #trace . #value)
 
     renderCommand rcc =
-      let cmd = rcc.command
+      let cmd = (rcc ^. #command)
           label = agentCommandLabel cmd
        in [ row
               (padRight labelWidth label)
               "provider"
               (providerValue rcc)
-              (agentConfigSourceLabel cmd ProviderField rcc.provider.source),
+              (agentConfigSourceLabel cmd ProviderField (rcc ^. #provider . #source)),
             row
               (padRight labelWidth "")
               "model   "
               (modelValue rcc)
-              (agentConfigSourceLabel cmd ModelField rcc.model.source),
+              (agentConfigSourceLabel cmd ModelField (rcc ^. #model . #source)),
             row
               (padRight labelWidth "")
               "effort  "
               (effortValue rcc)
-              (agentConfigSourceLabel cmd EffortField rcc.effort.source),
+              (agentConfigSourceLabel cmd EffortField (rcc ^. #effort . #source)),
             row
               (padRight labelWidth "")
               "trace   "
               (traceValue rcc)
-              (agentConfigSourceLabel cmd TraceField rcc.trace.source)
+              (agentConfigSourceLabel cmd TraceField (rcc ^. #trace . #source))
           ]
 
     row label field value sourceLabel =

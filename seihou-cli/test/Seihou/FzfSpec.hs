@@ -1,5 +1,6 @@
 module Seihou.FzfSpec (tests) where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..))
 import Seihou.Core.Types
@@ -109,9 +110,9 @@ spec = do
       let dm = validModule "test-mod" "A test module" SourceUser
       case formatModuleCandidate dm of
         Just c -> do
-          c.value `shouldBe` ModuleName "test-mod"
-          T.isInfixOf "test-mod" c.display `shouldBe` True
-          T.isInfixOf "[user]" c.display `shouldBe` True
+          (c ^. #value) `shouldBe` ModuleName "test-mod"
+          T.isInfixOf "test-mod" (c ^. #display) `shouldBe` True
+          T.isInfixOf "[user]" (c ^. #display) `shouldBe` True
         Nothing -> expectationFailure "expected Just"
 
     it "returns Nothing for a failed module" $ do
@@ -128,7 +129,7 @@ spec = do
     it "includes description when present" $ do
       let dm = validModule "mod" "My description" SourceInstalled
       case formatModuleCandidate dm of
-        Just c -> T.isInfixOf "My description" c.display `shouldBe` True
+        Just c -> T.isInfixOf "My description" (c ^. #display) `shouldBe` True
         Nothing -> expectationFailure "expected Just"
 
     it "tags source correctly" $ do
@@ -137,9 +138,9 @@ spec = do
           dmInstalled = validModule "m" "d" SourceInstalled
       case (formatModuleCandidate dmProject, formatModuleCandidate dmUser, formatModuleCandidate dmInstalled) of
         (Just p, Just u, Just i) -> do
-          T.isInfixOf "[project]" p.display `shouldBe` True
-          T.isInfixOf "[user]" u.display `shouldBe` True
-          T.isInfixOf "[installed]" i.display `shouldBe` True
+          T.isInfixOf "[project]" (p ^. #display) `shouldBe` True
+          T.isInfixOf "[user]" (u ^. #display) `shouldBe` True
+          T.isInfixOf "[installed]" (i ^. #display) `shouldBe` True
         _ -> expectationFailure "expected all Just"
 
   describe "formatRunnableCandidate" $ do
@@ -155,7 +156,7 @@ spec = do
                 error = Nothing
               }
       case formatRunnableCandidate dr of
-        Just c -> T.isInfixOf "[prompt]" c.display `shouldBe` True
+        Just c -> T.isInfixOf "[prompt]" (c ^. #display) `shouldBe` True
         Nothing -> expectationFailure "expected Just"
 
 -- | Helper to create a valid discovered module for testing.

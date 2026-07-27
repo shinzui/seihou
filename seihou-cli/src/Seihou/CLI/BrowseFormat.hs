@@ -7,6 +7,7 @@ module Seihou.CLI.BrowseFormat
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Registry (EntryKind (..), Registry (..), RegistryEntry (..))
 import Seihou.Core.Types (ModuleName (..))
@@ -27,9 +28,9 @@ kindLabel PromptEntry = "[prompt]   "
 formatBrowseRegistry :: Text -> Registry -> [(EntryKind, RegistryEntry)] -> Maybe Text -> Text
 formatBrowseRegistry source registry filtered tagFilter =
   let header =
-        registry.repoName
+        registry ^. #repoName
           <> "\n"
-          <> maybe "" (<> "\n") registry.repoDescription
+          <> maybe "" (<> "\n") (registry ^. #repoDescription)
           <> "\n"
    in if null filtered
         then
@@ -39,7 +40,7 @@ formatBrowseRegistry source registry filtered tagFilter =
                    Nothing -> "No entries in registry.\n"
                )
         else
-          let nameOf e = let (ModuleName n) = e.name in n
+          let nameOf e = let (ModuleName n) = (e ^. #name) in n
               maxNameLen = maximum (map (T.length . nameOf . snd) filtered)
               entryLines = T.unlines (map (formatEntry maxNameLen) filtered)
               n = length filtered
@@ -95,11 +96,11 @@ formatBrowseSinglePrompt source name desc =
 
 formatEntry :: Int -> (EntryKind, RegistryEntry) -> Text
 formatEntry maxNameLen (kind, entry) =
-  let (ModuleName name) = entry.name
+  let (ModuleName name) = (entry ^. #name)
       padding = T.replicate (maxNameLen - T.length name + 3) " "
-      desc = maybe "" id entry.description
+      desc = maybe "" id (entry ^. #description)
       tagsText =
-        if null entry.tags
+        if null (entry ^. #tags)
           then ""
-          else "  [" <> T.intercalate ", " entry.tags <> "]"
+          else "  [" <> T.intercalate ", " (entry ^. #tags) <> "]"
    in "  " <> kindLabel kind <> "  " <> name <> padding <> desc <> tagsText

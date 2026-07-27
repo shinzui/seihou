@@ -1,5 +1,7 @@
 module Seihou.OKF.Docs.RenderSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.List (sort)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -130,7 +132,7 @@ moduleArtifact name refs =
       prompts = [],
       steps = [],
       commands = [],
-      dependencies = [Dependency (ModuleName ref.name) Map.empty | ref <- refs],
+      dependencies = [Dependency (ModuleName (ref ^. #name)) Map.empty | ref <- refs],
       removal = Nothing,
       migrations = []
     }

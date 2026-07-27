@@ -15,6 +15,7 @@ import Data.Aeson (FromJSON (..), ToJSON (..), eitherDecodeStrict', object, with
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
@@ -35,7 +36,7 @@ data HistoryEntry = HistoryEntry
   deriving stock (Eq, Generic, Show)
 
 instance ToJSON HistoryEntry where
-  toJSON e = object ["url" .= e.url, "lastUsed" .= e.lastUsed]
+  toJSON e = object ["url" .= (e ^. #url), "lastUsed" .= (e ^. #lastUsed)]
 
 instance FromJSON HistoryEntry where
   parseJSON = withObject "HistoryEntry" $ \o ->
@@ -48,7 +49,7 @@ newtype InstallHistory = InstallHistory
   deriving stock (Eq, Generic, Show)
 
 instance ToJSON InstallHistory where
-  toJSON h = object ["entries" .= h.entries]
+  toJSON h = object ["entries" .= (h ^. #entries)]
 
 instance FromJSON InstallHistory where
   parseJSON = withObject "InstallHistory" $ \o ->
@@ -101,6 +102,6 @@ recordUrlTo path url = do
   history <- readHistoryFrom path
   let timestamp = T.pack (iso8601Show now)
       newEntry = HistoryEntry {url = url, lastUsed = timestamp}
-      filtered = filter (\e -> e.url /= url) history.entries
+      filtered = filter (\e -> e ^. #url /= url) (history ^. #entries)
       updated = take maxHistoryEntries (newEntry : filtered)
   writeHistoryTo path (InstallHistory updated)

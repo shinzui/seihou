@@ -1,6 +1,8 @@
 module Seihou.CLI.AgentConfigSpec (tests) where
 
 import Baikai.ThinkingLevel (ThinkingLevel (..))
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -434,26 +436,26 @@ decl provider model effort =
 declaring :: AgentLaunchDeclaration -> AgentConfigInputs -> AgentConfigInputs
 declaring d inputs =
   inputs
-    { declaredProvider = d.provider,
-      declaredModel = d.model,
-      declaredEffort = d.effort
+    { declaredProvider = d ^. #provider,
+      declaredModel = d ^. #model,
+      declaredEffort = d ^. #effort
     }
 
 providerOf :: AgentCommandName -> AgentConfigInputs -> Either Text (AgentProvider, AgentConfigSource)
 providerOf c inputs =
-  (\(p, _, _, _) -> (p.value, p.source)) <$> resolveAgentModelConfigFor c inputs
+  (\(p, _, _, _) -> (p ^. #value, p ^. #source)) <$> resolveAgentModelConfigFor c inputs
 
 modelOf :: AgentCommandName -> AgentConfigInputs -> Either Text (Maybe Text, AgentConfigSource)
 modelOf c inputs =
-  (\(_, m, _, _) -> (m.value, m.source)) <$> resolveAgentModelConfigFor c inputs
+  (\(_, m, _, _) -> (m ^. #value, m ^. #source)) <$> resolveAgentModelConfigFor c inputs
 
 effortOf :: AgentCommandName -> AgentConfigInputs -> Either Text (Maybe ThinkingLevel, AgentConfigSource)
 effortOf c inputs =
-  (\(_, _, e, _) -> (e.value, e.source)) <$> resolveAgentModelConfigFor c inputs
+  (\(_, _, e, _) -> (e ^. #value, e ^. #source)) <$> resolveAgentModelConfigFor c inputs
 
 traceOf :: AgentCommandName -> AgentConfigInputs -> Either Text (TraceSetting, AgentConfigSource)
 traceOf c inputs =
-  (\(_, _, _, t) -> (t.value, t.source)) <$> resolveAgentModelConfigFor c inputs
+  (\(_, _, _, t) -> (t ^. #value, t ^. #source)) <$> resolveAgentModelConfigFor c inputs
 
 -- | Build an expected 'AgentModelConfig' with effort unset (the flat resolver
 -- never sets effort).

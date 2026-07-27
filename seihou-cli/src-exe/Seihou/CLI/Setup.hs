@@ -6,6 +6,7 @@ module Seihou.CLI.Setup
 where
 
 import Data.FileEmbed (embedFile)
+import Data.Generics.Labels ()
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentCompletion
@@ -40,12 +41,12 @@ handleSetup :: Bool -> AgentModelConfig -> SetupOpts -> IO ()
 handleSetup debug modelConfig setupOpts = do
   ctx <- gatherAgentContext
   let systemPrompt = renderPrompt ctx
-  runRenderedAgentPrompt debug modelConfig systemPrompt setupOpts.prompt
+  runRenderedAgentPrompt debug modelConfig systemPrompt (setupOpts ^. #prompt)
 
 renderPrompt :: AgentContext -> Text
 renderPrompt ctx =
   substitute
-    [ ("cwd", ctx.cwd),
+    [ ("cwd", ctx ^. #cwd),
       ("seihou_project_state", formatSeihouProjectState ctx),
       ("manifest_state", formatManifestState ctx),
       ("module_dhall_state", formatModuleDhallState ctx),
@@ -57,7 +58,7 @@ renderPrompt ctx =
 runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Text -> Maybe Text -> IO ()
 runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
   | debug = TIO.putStr systemPrompt
-  | modelConfig.provider == AgentProviderClaudeCli || modelConfig.provider == AgentProviderCodexCli = do
+  | modelConfig ^. #provider == AgentProviderClaudeCli || modelConfig ^. #provider == AgentProviderCodexCli = do
       exitCode <- launchConfiguredAgent modelConfig setupAllowedTools debug systemPrompt initialPrompt
       exitWith exitCode
   | otherwise = do

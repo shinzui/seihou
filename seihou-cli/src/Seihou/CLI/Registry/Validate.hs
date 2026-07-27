@@ -7,6 +7,7 @@ module Seihou.CLI.Registry.Validate
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Registry.Sync (resolveOnDiskVersions)
@@ -44,7 +45,7 @@ data ValidateOutcome
 -- resolves each entry's on-disk version, and produces the unified report.
 runValidate :: ValidateRegistryOpts -> IO ValidateOutcome
 runValidate opts = do
-  let target = maybe "." id opts.validateRegistryDir
+  let target = maybe "." id (opts ^. #validateRegistryDir)
   dirExists <- doesDirectoryExist target
   if not dirExists
     then pure (ValidateFailed ("target directory does not exist: " <> T.pack target))
@@ -81,37 +82,37 @@ handleValidate opts = do
 -- line on failure.
 renderValidationReport :: RegistryValidationReport -> Text
 renderValidationReport r
-  | null r.issues =
+  | null (r ^. #issues) =
       T.unlines
         [ "OK: "
-            <> T.pack (show r.moduleCount)
+            <> T.pack (show (r ^. #moduleCount))
             <> " "
-            <> pluralize r.moduleCount "module" "modules"
+            <> pluralize (r ^. #moduleCount) "module" "modules"
             <> ", "
-            <> T.pack (show r.recipeCount)
+            <> T.pack (show (r ^. #recipeCount))
             <> " "
-            <> pluralize r.recipeCount "recipe" "recipes"
+            <> pluralize (r ^. #recipeCount) "recipe" "recipes"
             <> ", "
-            <> T.pack (show r.blueprintCount)
+            <> T.pack (show (r ^. #blueprintCount))
             <> " "
-            <> pluralize r.blueprintCount "blueprint" "blueprints"
+            <> pluralize (r ^. #blueprintCount) "blueprint" "blueprints"
             <> ", "
-            <> T.pack (show r.promptCount)
+            <> T.pack (show (r ^. #promptCount))
             <> " "
-            <> pluralize r.promptCount "prompt" "prompts"
+            <> pluralize (r ^. #promptCount) "prompt" "prompts"
             <> ", all versions in sync."
         ]
   | otherwise =
       T.unlines $
         ["errors:"]
-          <> map (("  " <>) . formatValidationIssue) r.issues
+          <> map (("  " <>) . formatValidationIssue) (r ^. #issues)
           <> [""]
           <> [summary r]
 
 summary :: RegistryValidationReport -> Text
 summary r =
-  let n = length r.issues
-      hasVersionDrift = any isVersionMismatch r.issues
+  let n = length (r ^. #issues)
+      hasVersionDrift = any isVersionMismatch (r ^. #issues)
       base = T.pack (show n) <> " " <> pluralize n "error" "errors"
       tail_ =
         if hasVersionDrift

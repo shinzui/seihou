@@ -28,6 +28,7 @@ import Baikai.Provider.OpenAI.Interactive
     launchCodexInteractive,
   )
 import Baikai.ThinkingLevel (ThinkingLevel)
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentCompletion (AgentModelConfig (..), AgentProvider (..))
@@ -50,11 +51,11 @@ launchConfiguredAgentWith addDirs modelConfig tools debug systemPrompt initialPr
       TIO.putStr systemPrompt
       pure ExitSuccess
   | otherwise =
-      case modelConfig.provider of
+      case modelConfig ^. #provider of
         AgentProviderClaudeCli ->
-          launchClaude addDirs tools modelConfig.model modelConfig.effort systemPrompt initialPrompt
+          launchClaude addDirs tools (modelConfig ^. #model) (modelConfig ^. #effort) systemPrompt initialPrompt
         AgentProviderCodexCli ->
-          launchCodex addDirs modelConfig.model modelConfig.effort systemPrompt initialPrompt
+          launchCodex addDirs (modelConfig ^. #model) (modelConfig ^. #effort) systemPrompt initialPrompt
         AgentProviderAnthropic ->
           unsupportedInteractiveProvider "anthropic"
         AgentProviderOpenAI ->

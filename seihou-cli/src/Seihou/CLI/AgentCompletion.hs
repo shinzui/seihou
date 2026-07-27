@@ -34,6 +34,8 @@ import Baikai.ThinkingLevel (ThinkingLevel (..), renderThinkingLevel)
 import Baikai.Trace qualified as BaikaiTrace
 import Baikai.Trace.Sink (TraceSink, silent)
 import Control.Exception (try)
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Vector qualified as V
@@ -200,33 +202,33 @@ providerToText AgentProviderOpenAI = "openai"
 
 buildBaikaiModel :: AgentModelConfig -> Baikai.Model
 buildBaikaiModel config =
-  case config.provider of
+  case config ^. #provider of
     AgentProviderClaudeCli ->
       baseCliModel
-        { Baikai.modelId = maybe "" id config.model,
-          Baikai.name = maybe "Claude CLI default" id config.model,
+        { Baikai.modelId = maybe "" id (config ^. #model),
+          Baikai.name = maybe "Claude CLI default" id (config ^. #model),
           Baikai.api = Baikai.AnthropicMessagesCli,
           Baikai.provider = "anthropic"
         }
     AgentProviderCodexCli ->
       baseCliModel
-        { Baikai.modelId = maybe "" id config.model,
-          Baikai.name = maybe "Codex CLI default" id config.model,
+        { Baikai.modelId = maybe "" id (config ^. #model),
+          Baikai.name = maybe "Codex CLI default" id (config ^. #model),
           Baikai.api = Baikai.OpenAICompletionsCli,
           Baikai.provider = "openai"
         }
     AgentProviderAnthropic ->
       Baikai.emptyModel
-        { Baikai.modelId = maybe "claude-sonnet-4-6" id config.model,
-          Baikai.name = maybe "Claude Sonnet 4.6" id config.model,
+        { Baikai.modelId = maybe "claude-sonnet-4-6" id (config ^. #model),
+          Baikai.name = maybe "Claude Sonnet 4.6" id (config ^. #model),
           Baikai.api = Baikai.AnthropicMessages,
           Baikai.provider = "anthropic",
           Baikai.baseUrl = "https://api.anthropic.com"
         }
     AgentProviderOpenAI ->
       Baikai.emptyModel
-        { Baikai.modelId = maybe "gpt-4o-mini" id config.model,
-          Baikai.name = maybe "GPT-4o Mini" id config.model,
+        { Baikai.modelId = maybe "gpt-4o-mini" id (config ^. #model),
+          Baikai.name = maybe "GPT-4o Mini" id (config ^. #model),
           Baikai.api = Baikai.OpenAIChatCompletions,
           Baikai.provider = "openai",
           Baikai.baseUrl = "https://api.openai.com"
@@ -260,16 +262,16 @@ runAgentCompletionWith registerProviders req = do
     maybe
       (pure V.empty)
       (fmap V.singleton . Baikai.userNow)
-      req.initialPrompt
-  let model = buildBaikaiModel req.modelConfig
+      (req ^. #initialPrompt)
+  let model = buildBaikaiModel (req ^. #modelConfig)
       ctx =
         Baikai.emptyContext
-          { Baikai.systemPrompt = Just req.systemPrompt,
+          { Baikai.systemPrompt = Just (req ^. #systemPrompt),
             Baikai.messages = initialMessages
           }
-      options = Baikai.emptyOptions {BaikaiOptions.thinking = req.modelConfig.effort}
+      options = Baikai.emptyOptions {BaikaiOptions.thinking = req ^. #modelConfig . #effort}
   result <-
-    try (BaikaiTrace.withTrace req.traceSink model ctx options) ::
+    try (BaikaiTrace.withTrace (req ^. #traceSink) model ctx options) ::
       IO (Either Baikai.BaikaiError Baikai.Response)
   pure $ case result of
     -- Retained deliberately. 'withTrace' does not throw for provider failures,

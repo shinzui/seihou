@@ -4,6 +4,7 @@ module Seihou.Effect.FzfInterp
   )
 where
 
+import Data.Generics.Labels ()
 import Seihou.Effect.Fzf (Fzf (..))
 import Seihou.Fzf (FzfConfig, FzfResult (..), isFzfUsable)
 import Seihou.Fzf qualified as Fzf
@@ -22,6 +23,6 @@ runFzfPure idx = interpret $ \_ -> \case
   SelectOne _ candidates ->
     pure $
       if idx >= 0 && idx < length candidates
-        then FzfSelected (candidates !! idx).value
+        then FzfSelected ((candidates !! idx) ^. #value)
         else FzfNoMatch
   IsFzfAvailable -> pure True

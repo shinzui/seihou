@@ -3,6 +3,7 @@ module Seihou.CLI.ValidatePrompt
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentConfig (agentLaunchDeclaration, validateAgentLaunchDeclaration)
@@ -42,7 +43,7 @@ data PromptReport = PromptReport
 
 handleValidatePrompt :: ValidatePromptOpts -> IO ()
 handleValidatePrompt vopts = do
-  promptDir <- case vopts.path of
+  promptDir <- case vopts ^. #path of
     Just p -> pure p
     Nothing -> getCurrentDirectory
 
@@ -98,13 +99,13 @@ buildPromptReport baseDir p = do
             "Launch settings"
             DiagError
             ( checkAgentPromptLaunch p
-                <> validateAgentLaunchDeclaration (agentLaunchDeclaration p.launch)
+                <> validateAgentLaunchDeclaration (agentLaunchDeclaration (p ^. #launch))
             )
         ]
   pure
     PromptReport
       { prompt = Just p,
-        name = p.name.unModuleName,
+        name = p ^. #name . #unModuleName,
         path = baseDir,
         dhallOk = True,
         dhallError = Nothing,
@@ -113,13 +114,13 @@ buildPromptReport baseDir p = do
 
 promptReportHasErrors :: PromptReport -> Bool
 promptReportHasErrors r =
-  not r.dhallOk
-    || any (\c -> c.severity == DiagError && not (null c.details)) r.checks
+  not (r ^. #dhallOk)
+    || any (\c -> c ^. #severity == DiagError && not (null (c ^. #details))) (r ^. #checks)
 
 renderPromptReport :: Bool -> PromptReport -> Text
 renderPromptReport color report =
   T.unlines $
-    [ "Validating prompt at " <> T.pack report.path <> "...",
+    [ "Validating prompt at " <> T.pack (report ^. #path) <> "...",
       ""
     ]
       ++ dhallLine
@@ -137,46 +138,46 @@ renderPromptReport color report =
     labelWarn t = if color then yellow t else t
 
     dhallLine =
-      if report.dhallOk
+      if report ^. #dhallOk
         then ["  " <> okMark <> " prompt.dhall evaluates successfully"]
         else
           ["  " <> errMark <> " prompt.dhall failed to evaluate"]
-            ++ case report.dhallError of
+            ++ case report ^. #dhallError of
               Just errText -> ["      " <> detailStyle errText]
               Nothing -> []
 
-    summaryLines = case report.prompt of
+    summaryLines = case report ^. #prompt of
       Nothing -> []
       Just p ->
-        [ "  " <> okMark <> " Prompt name: " <> nameStyle p.name.unModuleName,
-          "  " <> okMark <> " " <> T.pack (show (length p.vars)) <> " variables declared",
-          "  " <> okMark <> " " <> T.pack (show (length p.prompts)) <> " prompts defined",
-          "  " <> okMark <> " " <> T.pack (show (length p.commandVars)) <> " command variables declared",
-          "  " <> okMark <> " " <> T.pack (show (length p.guidance)) <> " guidance blocks declared",
-          "  " <> okMark <> " " <> T.pack (show (length p.files)) <> " reference files declared"
+        [ "  " <> okMark <> " Prompt name: " <> nameStyle (p ^. #name . #unModuleName),
+          "  " <> okMark <> " " <> T.pack (show (length (p ^. #vars))) <> " variables declared",
+          "  " <> okMark <> " " <> T.pack (show (length (p ^. #prompts))) <> " prompts defined",
+          "  " <> okMark <> " " <> T.pack (show (length (p ^. #commandVars))) <> " command variables declared",
+          "  " <> okMark <> " " <> T.pack (show (length (p ^. #guidance))) <> " guidance blocks declared",
+          "  " <> okMark <> " " <> T.pack (show (length (p ^. #files))) <> " reference files declared"
         ]
 
-    checkLines = concatMap renderCheck report.checks
+    checkLines = concatMap renderCheck (report ^. #checks)
 
     renderCheck c
-      | null c.details =
-          ["  " <> okMark <> " " <> c.label]
-      | c.severity == DiagWarning =
-          ("  " <> warnMark <> " " <> labelWarn c.label)
-            : map (\d -> "      " <> detailStyle d) c.details
+      | null (c ^. #details) =
+          ["  " <> okMark <> " " <> c ^. #label]
+      | c ^. #severity == DiagWarning =
+          ("  " <> warnMark <> " " <> labelWarn (c ^. #label))
+            : map (\d -> "      " <> detailStyle d) (c ^. #details)
       | otherwise =
-          ("  " <> errMark <> " " <> labelErr c.label)
-            : map (\d -> "      " <> detailStyle d) c.details
+          ("  " <> errMark <> " " <> labelErr (c ^. #label))
+            : map (\d -> "      " <> detailStyle d) (c ^. #details)
 
     errorCount =
       length
         [ ()
-        | c <- report.checks,
-          c.severity == DiagError,
-          not (null c.details)
+        | c <- report ^. #checks,
+          c ^. #severity == DiagError,
+          not (null (c ^. #details))
         ]
 
-    dhallFailed = not report.dhallOk
+    dhallFailed = not (report ^. #dhallOk)
     totalErrors = errorCount + (if dhallFailed then 1 else 0)
 
     resultLine
@@ -184,5 +185,5 @@ renderPromptReport color report =
           let msg = T.pack (show totalErrors) <> " error(s) found."
            in (if color then bold (red msg) else msg) <> " Prompt is invalid."
       | otherwise =
-          let msg = "Prompt '" <> report.name <> "' is valid."
+          let msg = "Prompt '" <> report ^. #name <> "' is valid."
            in if color then green msg else msg

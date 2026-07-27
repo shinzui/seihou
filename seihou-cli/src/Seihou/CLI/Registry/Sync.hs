@@ -10,6 +10,7 @@ module Seihou.CLI.Registry.Sync
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -74,7 +75,7 @@ data SyncOutcome
 -- when appropriate, and returns a structured outcome.
 runSync :: SyncVersionsOpts -> IO SyncOutcome
 runSync opts = do
-  let targetDir = maybe "." id opts.dir
+  let targetDir = maybe "." id (opts ^. #dir)
   dirExists <- doesDirectoryExist targetDir
   if not dirExists
     then pure (SyncFailure ("target directory does not exist: " <> T.pack targetDir))
@@ -84,13 +85,13 @@ runSync opts = do
         MultiModule reg -> do
           lookups <- resolveOnDiskVersions targetDir reg
           let report = computeRegistrySync reg lookups
-          let checkMode = opts.check
-              dryRun = opts.dryRun && not checkMode
+          let checkMode = (opts ^. #check)
+              dryRun = opts ^. #dryRun && not checkMode
               writeMode = not checkMode && not dryRun
           action <-
             if writeMode
               then do
-                let rendered = renderRegistryDhall report.updated
+                let rendered = renderRegistryDhall (report ^. #updated)
                 TIO.writeFile (targetDir </> "seihou-registry.dhall") rendered
                 pure Wrote
               else
@@ -113,39 +114,39 @@ resolveOnDiskVersions ::
   Registry ->
   IO [(EntryKind, ModuleName, Maybe Text)]
 resolveOnDiskVersions repoRoot reg = do
-  modulePairs <- mapM (loadModule repoRoot) reg.modules
-  recipePairs <- mapM (loadRecipe repoRoot) reg.recipes
-  blueprintPairs <- mapM (loadBlueprint repoRoot) reg.blueprints
-  promptPairs <- mapM (loadPrompt repoRoot) reg.prompts
+  modulePairs <- mapM (loadModule repoRoot) (reg ^. #modules)
+  recipePairs <- mapM (loadRecipe repoRoot) (reg ^. #recipes)
+  blueprintPairs <- mapM (loadBlueprint repoRoot) (reg ^. #blueprints)
+  promptPairs <- mapM (loadPrompt repoRoot) (reg ^. #prompts)
   pure (concat modulePairs <> concat recipePairs <> concat blueprintPairs <> concat promptPairs)
   where
     loadModule :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
     loadModule root entry = do
-      let path = root </> entry.path </> "module.dhall"
+      let path = root </> entry ^. #path </> "module.dhall"
       decoded <- evalModuleFromFile path
       case decoded of
-        Right m -> pure [(ModuleEntry, entry.name, moduleVersion m)]
+        Right m -> pure [(ModuleEntry, entry ^. #name, moduleVersion m)]
         Left _ -> pure []
     loadRecipe :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
     loadRecipe root entry = do
-      let path = root </> entry.path </> "recipe.dhall"
+      let path = root </> entry ^. #path </> "recipe.dhall"
       decoded <- evalRecipeFromFile path
       case decoded of
-        Right r -> pure [(RecipeEntry, entry.name, recipeVersion r)]
+        Right r -> pure [(RecipeEntry, entry ^. #name, recipeVersion r)]
         Left _ -> pure []
     loadBlueprint :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
     loadBlueprint root entry = do
-      let path = root </> entry.path </> "blueprint.dhall"
+      let path = root </> entry ^. #path </> "blueprint.dhall"
       decoded <- evalBlueprintFromFile path
       case decoded of
-        Right b -> pure [(BlueprintEntry, entry.name, blueprintVersion b)]
+        Right b -> pure [(BlueprintEntry, entry ^. #name, blueprintVersion b)]
         Left _ -> pure []
     loadPrompt :: FilePath -> RegistryEntry -> IO [(EntryKind, ModuleName, Maybe Text)]
     loadPrompt root entry = do
-      let path = root </> entry.path </> "prompt.dhall"
+      let path = root </> entry ^. #path </> "prompt.dhall"
       decoded <- evalAgentPromptFromFile path
       case decoded of
-        Right p -> pure [(PromptEntry, entry.name, promptVersion p)]
+        Right p -> pure [(PromptEntry, entry ^. #name, promptVersion p)]
         Left _ -> pure []
 
 -- | Extract the @version@ field from a 'Module' by pattern match. A direct
@@ -190,7 +191,7 @@ handleSyncVersions opts = do
 -- The first entry in 'syncDiffs' appears first, preserving registry order.
 renderSyncReport :: SyncReport -> Text
 renderSyncReport report
-  | null report.diffs =
+  | null (report ^. #diffs) =
       "Registry is empty.\n"
   | otherwise =
       T.unlines $
@@ -199,23 +200,23 @@ renderSyncReport report
             <> ["", summary report]
   where
     header = "Updated seihou-registry.dhall:"
-    rows = map renderRow report.diffs
+    rows = map renderRow (report ^. #diffs)
 
     renderRow :: SyncDiff -> Text
     renderRow diff =
-      let label = kindPrefix diff.kind <> diff.name.unModuleName <> ":"
+      let label = kindPrefix (diff ^. #kind) <> diff ^. #name . #unModuleName <> ":"
           padded = padRight labelWidth label
-          old = renderVersion diff.old
-          new = renderVersion diff.new
-          arrow = case diff.status of
+          old = renderVersion (diff ^. #old)
+          new = renderVersion (diff ^. #new)
+          arrow = case diff ^. #status of
             SyncInSync -> " == " <> new <> " (no change)"
-            SyncOrphan -> " ?? " <> old <> " (" <> entryFile diff.kind <> " missing)"
+            SyncOrphan -> " ?? " <> old <> " (" <> entryFile (diff ^. #kind) <> " missing)"
             _ -> " -> " <> new
        in padded <> old <> arrow
 
-    labelWidth = maximum (24 : map diffLabelWidth report.diffs)
+    labelWidth = maximum (24 : map diffLabelWidth (report ^. #diffs))
     diffLabelWidth d =
-      T.length (kindPrefix d.kind <> d.name.unModuleName) + 2
+      T.length (kindPrefix (d ^. #kind) <> d ^. #name . #unModuleName) + 2
 
 kindPrefix :: EntryKind -> Text
 kindPrefix ModuleEntry = "modules."
@@ -240,9 +241,9 @@ padRight w t =
 
 summary :: SyncReport -> Text
 summary report =
-  let updated = length [d | d <- report.diffs, changesVersion d.status]
-      orphans = length [d | d <- report.diffs, d.status == SyncOrphan]
-      unchanged = length [d | d <- report.diffs, d.status == SyncInSync]
+  let updated = length [d | d <- report ^. #diffs, changesVersion (d ^. #status)]
+      orphans = length [d | d <- report ^. #diffs, d ^. #status == SyncOrphan]
+      unchanged = length [d | d <- report ^. #diffs, d ^. #status == SyncInSync]
       base =
         T.pack (show updated)
           <> " "
@@ -265,11 +266,11 @@ summary report =
 anyDrift :: SyncReport -> Bool
 anyDrift report =
   any
-    ( \d -> case d.status of
+    ( \d -> case d ^. #status of
         SyncInSync -> False
         _ -> True
     )
-    report.diffs
+    (report ^. #diffs)
 
 -- | Soft-warning pass: compare each registry entry's 'version' with the
 -- on-disk module.dhall / recipe.dhall and return one warning per out-of-sync
@@ -283,4 +284,4 @@ checkRegistryVersionDrift :: FilePath -> Registry -> IO [Text]
 checkRegistryVersionDrift repoRoot reg = do
   lookups <- resolveOnDiskVersions repoRoot reg
   let report = computeRegistrySync reg lookups
-  pure (mapMaybe formatDriftWarning report.diffs)
+  pure (mapMaybe formatDriftWarning (report ^. #diffs))

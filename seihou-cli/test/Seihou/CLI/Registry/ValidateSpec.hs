@@ -2,6 +2,8 @@
 
 module Seihou.CLI.Registry.ValidateSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -35,9 +37,9 @@ spec = do
         outcome <- runValidate (ValidateRegistryOpts (Just dir))
         case outcome of
           ValidateOk r -> do
-            r.issues `shouldBe` []
-            r.moduleCount `shouldBe` 2
-            r.recipeCount `shouldBe` 0
+            (r ^. #issues) `shouldBe` []
+            (r ^. #moduleCount) `shouldBe` 2
+            (r ^. #recipeCount) `shouldBe` 0
           other -> expectationFailure ("expected ValidateOk, got " <> show other)
 
     it "flags both stale and missing version entries" $ do
@@ -46,8 +48,8 @@ spec = do
         case outcome of
           ValidateOk r -> do
             let statuses =
-                  [ d.status
-                  | VersionMismatch d <- r.issues
+                  [ d ^. #status
+                  | VersionMismatch d <- r ^. #issues
                   ]
             statuses `shouldBe` [SyncMissing, SyncStale "2.0.0"]
           other -> expectationFailure ("unexpected outcome: " <> show other)
@@ -59,7 +61,7 @@ spec = do
           ValidateOk r -> do
             let structurals =
                   [ msg
-                  | StructuralError msg <- r.issues
+                  | StructuralError msg <- r ^. #issues
                   ]
             any ("missing module.dhall" `T.isInfixOf`) structurals
               `shouldBe` True

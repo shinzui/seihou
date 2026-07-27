@@ -4,6 +4,7 @@ module Seihou.CLI.Remove
 where
 
 import Control.Monad (foldM, when)
+import Data.Generics.Labels ()
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -22,7 +23,7 @@ import System.IO (hFlush, hIsTerminalDevice, stdin, stdout)
 handleRemove :: RemoveOpts -> IO ()
 handleRemove opts = do
   let manifestPath = ".seihou" </> "manifest.json"
-      modName = opts.module_
+      modName = (opts ^. #module_)
 
   -- Read the manifest
   manifestResult <- runEff $ runFilesystem $ runManifestStore manifestPath readManifest
@@ -39,13 +40,13 @@ handleRemove opts = do
   let mApplied = findAppliedModule manifest modName
   case mApplied of
     Nothing -> do
-      TIO.putStrLn $ "Module '" <> modName.unModuleName <> "' is not applied in this project."
+      TIO.putStrLn $ "Module '" <> modName ^. #unModuleName <> "' is not applied in this project."
       exitFailure
-    Just am -> case am.removal of
+    Just am -> case am ^. #removal of
       Nothing -> do
         TIO.putStrLn $
           "Module '"
-            <> modName.unModuleName
+            <> modName ^. #unModuleName
             <> "' has no removal spec. Add a 'removal' section to its module.dhall to make it removable."
         exitFailure
       Just removal -> do
@@ -53,12 +54,12 @@ handleRemove opts = do
         planResult <- runEff $ runFilesystem $ buildRemovalOps manifest modName removal
         plan <- case planResult of
           Left (ModuleNotApplied name) -> do
-            TIO.putStrLn $ "Module '" <> name.unModuleName <> "' is not applied in this project."
+            TIO.putStrLn $ "Module '" <> name ^. #unModuleName <> "' is not applied in this project."
             exitFailure
           Left (ModuleNotRemovable name) -> do
             TIO.putStrLn $
               "Module '"
-                <> name.unModuleName
+                <> name ^. #unModuleName
                 <> "' has no removal spec."
             exitFailure
           Left (RemovalUnsafePath label path reason) -> do
@@ -75,24 +76,24 @@ handleRemove opts = do
         colorEnabled <- useColor
 
         -- Display plan
-        TIO.putStrLn $ "Removal plan for " <> modName.unModuleName <> ":"
+        TIO.putStrLn $ "Removal plan for " <> modName ^. #unModuleName <> ":"
 
-        if null plan.ops
+        if null (plan ^. #ops)
           then TIO.putStrLn "  (no removal operations)"
-          else mapM_ (displayOp colorEnabled) plan.ops
+          else mapM_ (displayOp colorEnabled) (plan ^. #ops)
 
         -- Dry run exits here
-        when opts.dryRun $ do
+        when (opts ^. #dryRun) $ do
           TIO.putStrLn ""
           TIO.putStrLn $ applyColor colorEnabled dim "(dry run — no changes made)"
           exitWith ExitSuccess
 
         -- Collect conflict files for interactive resolution
-        let conflictFiles = [p | DeleteFileOp p RFConflict <- plan.ops]
+        let conflictFiles = [p | DeleteFileOp p RFConflict <- plan ^. #ops]
 
         -- Resolve conflicts
         keepSet <-
-          if null conflictFiles || opts.force
+          if null conflictFiles || opts ^. #force
             then pure Set.empty
             else do
               isInteractive <- hIsTerminalDevice stdin
@@ -103,7 +104,7 @@ handleRemove opts = do
                 else resolveConflictsInteractively conflictFiles
 
         -- Prompt for confirmation (if there are any actionable ops)
-        let actionableOps = [() | op <- plan.ops, isActionable op]
+        let actionableOps = [() | op <- plan ^. #ops, isActionable op]
         when (not (null actionableOps)) $ do
           TIO.putStr "\n  Proceed? [y/N] "
           hFlush stdout
@@ -119,13 +120,13 @@ handleRemove opts = do
         runEff $ runFilesystem $ runManifestStore manifestPath $ writeManifest updatedManifest
 
         -- Report
-        let deleted = length [() | DeleteFileOp _ s <- plan.ops, s /= RFGone, not (Set.member "" keepSet)]
-            stripped = length [() | StripSectionOp _ <- plan.ops]
-            commands = length [() | RemovalCommandOp _ _ <- plan.ops]
+        let deleted = length [() | DeleteFileOp _ s <- plan ^. #ops, s /= RFGone, not (Set.member "" keepSet)]
+            stripped = length [() | StripSectionOp _ <- plan ^. #ops]
+            commands = length [() | RemovalCommandOp _ _ <- plan ^. #ops]
         TIO.putStrLn $
           applyColor colorEnabled green "✓"
             <> " Removed module "
-            <> applyColor colorEnabled bold modName.unModuleName
+            <> applyColor colorEnabled bold (modName ^. #unModuleName)
             <> "."
             <> formatCounts deleted stripped commands
 
@@ -170,7 +171,7 @@ formatCounts d s c =
 -- | Find an applied module by name in the manifest.
 findAppliedModule :: Manifest -> ModuleName -> Maybe AppliedModule
 findAppliedModule manifest modName =
-  case filter (\am -> am.name == modName) manifest.modules of
+  case filter (\am -> am ^. #name == modName) (manifest ^. #modules) of
     (am : _) -> Just am
     [] -> Nothing
 

@@ -6,6 +6,7 @@ module Seihou.CLI.Bootstrap
 where
 
 import Data.FileEmbed (embedFile)
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
@@ -41,12 +42,12 @@ handleBootstrap :: Bool -> AgentModelConfig -> BootstrapOpts -> IO ()
 handleBootstrap debug modelConfig bootstrapOpts = do
   ctx <- gatherAgentContext
   let systemPrompt = renderPrompt ctx bootstrapOpts
-  runRenderedAgentPrompt debug modelConfig systemPrompt bootstrapOpts.prompt
+  runRenderedAgentPrompt debug modelConfig systemPrompt (bootstrapOpts ^. #prompt)
 
 renderPrompt :: AgentContext -> BootstrapOpts -> Text
 renderPrompt ctx bootstrapOpts =
   substitute
-    [ ("cwd", ctx.cwd),
+    [ ("cwd", ctx ^. #cwd),
       ("seihou_project_state", formatSeihouProjectState ctx),
       ("manifest_state", formatManifestState ctx),
       ("module_dhall_state", formatModuleDhallState ctx),
@@ -59,7 +60,7 @@ renderPrompt ctx bootstrapOpts =
 runRenderedAgentPrompt :: Bool -> AgentModelConfig -> Text -> Maybe Text -> IO ()
 runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
   | debug = TIO.putStr systemPrompt
-  | modelConfig.provider == AgentProviderClaudeCli || modelConfig.provider == AgentProviderCodexCli = do
+  | modelConfig ^. #provider == AgentProviderClaudeCli || modelConfig ^. #provider == AgentProviderCodexCli = do
       exitCode <- launchConfiguredAgent modelConfig bootstrapAllowedTools debug systemPrompt initialPrompt
       exitWith exitCode
   | otherwise = do
@@ -73,7 +74,7 @@ runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
 
 bootstrapMode :: BootstrapOpts -> Text
 bootstrapMode opts
-  | opts.repo =
+  | (opts ^. #repo) =
       T.unlines
         [ "**Mode: Multi-module repository**",
           "",

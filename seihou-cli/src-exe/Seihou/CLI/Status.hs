@@ -4,6 +4,7 @@ module Seihou.CLI.Status
 where
 
 import Control.Exception (SomeException, try)
+import Data.Generics.Labels ()
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (StatusOpts (..))
 import Seihou.CLI.Outdated (checkInstalledModulesForUpdates)
@@ -47,7 +48,7 @@ handleStatus opts = do
       TIO.putStrLn "No Seihou manifest found. Run 'seihou run <module>' to generate a project."
     Right (Just (manifest, tracked)) -> do
       mEntries <-
-        if opts.statusCheckUpdates && not (null manifest.modules)
+        if opts ^. #statusCheckUpdates && not (null (manifest ^. #modules))
           then fetchUpdateEntries
           else pure Nothing
       pendings <- detectPendingMigrations manifest Nothing

@@ -16,6 +16,7 @@ import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.:?), 
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
@@ -80,11 +81,11 @@ data OriginMeta = OriginMeta
 instance ToJSON OriginMeta where
   toJSON m =
     object
-      [ "sourceUrl" .= m.sourceUrl,
-        "repoName" .= m.repoName,
-        "installedAt" .= m.installedAt,
-        "version" .= m.version,
-        "tags" .= m.tags
+      [ "sourceUrl" .= (m ^. #sourceUrl),
+        "repoName" .= (m ^. #repoName),
+        "installedAt" .= (m ^. #installedAt),
+        "version" .= (m ^. #version),
+        "tags" .= (m ^. #tags)
       ]
 
 -- ----------------------------------------------------------------------------

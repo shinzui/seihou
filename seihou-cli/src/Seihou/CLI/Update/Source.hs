@@ -8,6 +8,7 @@ import Control.Exception (SomeException, displayException, try)
 import Control.Monad (foldM, forM)
 import Data.ByteString qualified as BS
 import Data.Foldable (traverse_)
+import Data.Generics.Labels ()
 import Data.List (sort)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -48,9 +49,9 @@ stageCandidateSources sessionRoot selected = do
   requirements <- requirementsFor selected
   let remoteOrigins =
         Map.fromList
-          [ (origin.sourceUrl, origin)
+          [ (origin ^. #sourceUrl, origin)
           | requirement <- requirements,
-            Just origin <- [requirement.origin]
+            Just origin <- [requirement ^. #origin]
           ]
       clonesRoot = sessionRoot </> "clones"
       searchRoot = sessionRoot </> "search"
@@ -77,21 +78,21 @@ requirementsFor :: [AppliedComposition] -> IO [ArtifactRequirement]
 requirementsFor applications = concat <$> mapM applicationRequirements applications
   where
     applicationRequirements application = do
-      targetOrigin <- readOriginInfo application.targetSource
-      instanceRequirements <- forM application.instances $ \state -> do
-        origin <- readOriginInfo state.source
+      targetOrigin <- readOriginInfo (application ^. #targetSource)
+      instanceRequirements <- forM (application ^. #instances) $ \state -> do
+        origin <- readOriginInfo (state ^. #source)
         pure
           ArtifactRequirement
             { kind = CandidateModule,
-              name = state.name.unModuleName,
-              sourceDirectory = state.source,
+              name = state ^. #name . #unModuleName,
+              sourceDirectory = state ^. #source,
               origin
             }
-      let targetRequirement = case application.target of
+      let targetRequirement = case application ^. #target of
             AppliedModuleTarget name ->
-              ArtifactRequirement CandidateModule name.unModuleName application.targetSource targetOrigin
+              ArtifactRequirement CandidateModule (name ^. #unModuleName) (application ^. #targetSource) targetOrigin
             AppliedRecipeTarget name ->
-              ArtifactRequirement CandidateRecipe name.unRecipeName application.targetSource targetOrigin
+              ArtifactRequirement CandidateRecipe (name ^. #unRecipeName) (application ^. #targetSource) targetOrigin
       pure (targetRequirement : instanceRequirements)
 
 stageRemoteOrigins ::
@@ -151,8 +152,8 @@ discoverRegistryArtifacts ::
   Registry ->
   IO (Either UpdateError [CandidateArtifact])
 discoverRegistryArtifacts url revision repoRoot registry = do
-  modules <- traverse (loadRemoteModule url (Just registry.repoName) revision repoRoot) registry.modules
-  recipes <- traverse (loadRemoteRecipe url (Just registry.repoName) revision repoRoot) registry.recipes
+  modules <- traverse (loadRemoteModule url (Just (registry ^. #repoName)) revision repoRoot) (registry ^. #modules)
+  recipes <- traverse (loadRemoteRecipe url (Just (registry ^. #repoName)) revision repoRoot) (registry ^. #recipes)
   pure ((<>) <$> sequence modules <*> sequence recipes)
 
 discoverSingleArtifact ::
@@ -165,21 +166,21 @@ discoverSingleArtifact url origin revision repoRoot = do
   hasModule <- Directory.doesFileExist (repoRoot </> "module.dhall")
   hasRecipe <- Directory.doesFileExist (repoRoot </> "recipe.dhall")
   if hasModule
-    then fmap (fmap (: [])) (loadModuleArtifact (Just url) origin.repoName [] revision repoRoot)
+    then fmap (fmap (: [])) (loadModuleArtifact (Just url) (origin ^. #repoName) [] revision repoRoot)
     else
       if hasRecipe
-        then fmap (fmap (: [])) (loadRecipeArtifact (Just url) origin.repoName [] revision repoRoot)
+        then fmap (fmap (: [])) (loadRecipeArtifact (Just url) (origin ^. #repoName) [] revision repoRoot)
         else pure (Left (CandidateRepositoryInvalid url ["repository contains no module, recipe, or registry"]))
 
 loadRemoteModule ::
   Text -> Maybe Text -> Maybe Text -> FilePath -> RegistryEntry -> IO (Either UpdateError CandidateArtifact)
 loadRemoteModule url repoName revision repoRoot entry =
-  loadModuleArtifact (Just url) repoName entry.tags revision (repoRoot </> entry.path)
+  loadModuleArtifact (Just url) repoName (entry ^. #tags) revision (repoRoot </> entry ^. #path)
 
 loadRemoteRecipe ::
   Text -> Maybe Text -> Maybe Text -> FilePath -> RegistryEntry -> IO (Either UpdateError CandidateArtifact)
 loadRemoteRecipe url repoName revision repoRoot entry =
-  loadRecipeArtifact (Just url) repoName entry.tags revision (repoRoot </> entry.path)
+  loadRecipeArtifact (Just url) repoName (entry ^. #tags) revision (repoRoot </> entry ^. #path)
 
 loadModuleArtifact ::
   Maybe Text -> Maybe Text -> [Text] -> Maybe Text -> FilePath -> IO (Either UpdateError CandidateArtifact)
@@ -190,15 +191,15 @@ loadModuleArtifact sourceUrl repoName tags revision directory = do
     Right modul -> do
       validated <- validateModule directory modul
       case validated of
-        Left err -> pure (Left (CandidateLoadFailed modul.name.unModuleName err))
+        Left err -> pure (Left (CandidateLoadFailed (modul ^. #name . #unModuleName) err))
         Right candidateModule -> do
           contentHash <- hashArtifactDirectory directory
           pure
             ( Right
                 CandidateArtifact
                   { kind = CandidateModule,
-                    name = candidateModule.name.unModuleName,
-                    version = candidateModule.version,
+                    name = candidateModule ^. #name . #unModuleName,
+                    version = candidateModule ^. #version,
                     originalDirectory = directory,
                     sourceDirectory = directory,
                     sourceUrl,
@@ -225,8 +226,8 @@ loadRecipeArtifact sourceUrl repoName tags revision directory = do
           ( Right
               CandidateArtifact
                 { kind = CandidateRecipe,
-                  name = validated.name.unRecipeName,
-                  version = validated.version,
+                  name = validated ^. #name . #unRecipeName,
+                  version = validated ^. #version,
                   originalDirectory = directory,
                   sourceDirectory = directory,
                   sourceUrl,
@@ -247,14 +248,14 @@ stageLocalRequirements ::
 stageLocalRequirements searchRoot initial = go initial []
   where
     go artifacts warnings [] = pure (Right (artifacts, reverse warnings))
-    go artifacts warnings (requirement : rest) = case requirement.origin of
+    go artifacts warnings (requirement : rest) = case requirement ^. #origin of
       Just _ -> go artifacts warnings rest
       Nothing
-        | Map.member (requirement.kind, requirement.name) artifacts -> go artifacts warnings rest
+        | Map.member (requirement ^. #kind, requirement ^. #name) artifacts -> go artifacts warnings rest
         | otherwise -> do
-            loaded <- case requirement.kind of
-              CandidateModule -> loadModuleArtifact Nothing Nothing [] Nothing requirement.sourceDirectory
-              CandidateRecipe -> loadRecipeArtifact Nothing Nothing [] Nothing requirement.sourceDirectory
+            loaded <- case requirement ^. #kind of
+              CandidateModule -> loadModuleArtifact Nothing Nothing [] Nothing (requirement ^. #sourceDirectory)
+              CandidateRecipe -> loadRecipeArtifact Nothing Nothing [] Nothing (requirement ^. #sourceDirectory)
             case loaded of
               Left err -> pure (Left err)
               Right candidate -> do
@@ -262,7 +263,7 @@ stageLocalRequirements searchRoot initial = go initial []
                 case inserted of
                   Left err -> pure (Left err)
                   Right artifacts' ->
-                    go artifacts' (LocalArtifactHasNoRemote requirement.name : warnings) rest
+                    go artifacts' (LocalArtifactHasNoRemote (requirement ^. #name) : warnings) rest
 
 insertCandidate ::
   FilePath ->
@@ -276,17 +277,17 @@ insertCandidate searchRoot (Right artifacts) candidate =
       pure
         ( Left
             ( CandidateArtifactAmbiguous
-                candidate.kind
-                candidate.name
-                (map (maybe "local" id . (.sourceUrl)) [existing, candidate])
+                (candidate ^. #kind)
+                (candidate ^. #name)
+                (map (maybe "local" id . (^. #sourceUrl)) [existing, candidate])
             )
         )
     Nothing -> do
-      let destination = searchRoot </> T.unpack candidate.name
+      let destination = searchRoot </> T.unpack (candidate ^. #name)
       Directory.createDirectoryIfMissing True destination
-      copied <- try @SomeException (copyDirectoryRecursive candidate.sourceDirectory destination)
+      copied <- try @SomeException (copyDirectoryRecursive (candidate ^. #sourceDirectory) destination)
       pure $ case copied of
-        Left err -> Left (CandidateRepositoryInvalid candidate.name [T.pack (displayException err)])
+        Left err -> Left (CandidateRepositoryInvalid (candidate ^. #name) [T.pack (displayException err)])
         Right () ->
           Right
             ( Map.insert
@@ -295,23 +296,23 @@ insertCandidate searchRoot (Right artifacts) candidate =
                 artifacts
             )
   where
-    key = (candidate.kind, candidate.name)
+    key = (candidate ^. #kind, candidate ^. #name)
 
 setCandidateSource :: FilePath -> CandidateArtifact -> CandidateArtifact
 setCandidateSource directory candidate =
   CandidateArtifact
-    { kind = candidate.kind,
-      name = candidate.name,
-      version = candidate.version,
-      originalDirectory = candidate.originalDirectory,
+    { kind = candidate ^. #kind,
+      name = candidate ^. #name,
+      version = candidate ^. #version,
+      originalDirectory = candidate ^. #originalDirectory,
       sourceDirectory = directory,
-      sourceUrl = candidate.sourceUrl,
-      repoName = candidate.repoName,
-      tags = candidate.tags,
-      sourceRevision = candidate.sourceRevision,
-      contentHash = candidate.contentHash,
-      moduleDefinition = candidate.moduleDefinition,
-      recipeDefinition = candidate.recipeDefinition
+      sourceUrl = candidate ^. #sourceUrl,
+      repoName = candidate ^. #repoName,
+      tags = candidate ^. #tags,
+      sourceRevision = candidate ^. #sourceRevision,
+      contentHash = candidate ^. #contentHash,
+      moduleDefinition = candidate ^. #moduleDefinition,
+      recipeDefinition = candidate ^. #recipeDefinition
     }
 
 verifyRemoteRequirements ::
@@ -320,13 +321,13 @@ verifyRemoteRequirements ::
   Either UpdateError ()
 verifyRemoteRequirements requirements artifacts = traverse_ verify requirements
   where
-    verify requirement = case Map.lookup (requirement.kind, requirement.name) artifacts of
-      Nothing -> Left (CandidateArtifactMissing requirement.kind requirement.name)
-      Just candidate -> case requirement.origin of
+    verify requirement = case Map.lookup (requirement ^. #kind, requirement ^. #name) artifacts of
+      Nothing -> Left (CandidateArtifactMissing (requirement ^. #kind) (requirement ^. #name))
+      Just candidate -> case requirement ^. #origin of
         Nothing -> Right ()
         Just origin
-          | candidate.sourceUrl == Just origin.sourceUrl -> Right ()
-          | otherwise -> Left (CandidateArtifactMissing requirement.kind requirement.name)
+          | candidate ^. #sourceUrl == Just (origin ^. #sourceUrl) -> Right ()
+          | otherwise -> Left (CandidateArtifactMissing (requirement ^. #kind) (requirement ^. #name))
 
 gitRevision :: FilePath -> IO (Maybe Text)
 gitRevision directory = do

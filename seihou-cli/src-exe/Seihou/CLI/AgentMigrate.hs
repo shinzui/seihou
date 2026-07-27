@@ -7,6 +7,7 @@ where
 
 import Baikai.Trace.Sink (TraceSink)
 import Data.FileEmbed (embedFile)
+import Data.Generics.Labels ()
 import Data.Maybe (maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -64,10 +65,10 @@ migrationPromptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-migration-pr
 
 handleAgentMigrate :: Bool -> PendingAgentConfig -> BlueprintMigrationOpts -> IO ()
 handleAgentMigrate debug pendingConfig opts = do
-  let level = if opts.verbose then LogVerbose else LogNormal
+  let level = if opts ^. #verbose then LogVerbose else LogNormal
       manifestPath = ".seihou" </> "manifest.json"
 
-  (blueprint, blueprintDir) <- discoverMigrationBlueprint level opts.name
+  (blueprint, blueprintDir) <- discoverMigrationBlueprint level (opts ^. #name)
   validationResult <- validateBlueprint blueprintDir blueprint
   case validationResult of
     Left err -> exitErr level (renderModuleLoadError err)
@@ -79,14 +80,14 @@ handleAgentMigrate debug pendingConfig opts = do
   modelConfig <-
     resolveDeclaredAgentConfig
       level
-      ("blueprint '" <> blueprint.name.unModuleName <> "'")
+      ("blueprint '" <> blueprint ^. #name . #unModuleName <> "'")
       pendingConfig
-      (agentLaunchDeclaration blueprint.launch)
+      (agentLaunchDeclaration (blueprint ^. #launch))
 
-  current <- parseRequestedVersion level "--from" opts.from
-  target <- parseRequestedVersion level "--to" opts.to
+  current <- parseRequestedVersion level "--from" (opts ^. #from)
+  target <- parseRequestedVersion level "--to" (opts ^. #to)
   planned <-
-    case planBlueprintMigrationChain blueprint.name.unModuleName blueprint.migrations current target of
+    case planBlueprintMigrationChain (blueprint ^. #name . #unModuleName) (blueprint ^. #migrations) current target of
       Left err -> exitErr level (renderPlanError err)
       Right Nothing -> do
         TIO.putStrLn "No blueprint migration needed: --from and --to resolve to the same version."
@@ -99,8 +100,8 @@ handleAgentMigrate debug pendingConfig opts = do
       receipts <- readMigrationReceipts level manifestPath
       let pending =
             pendingBlueprintMigrations
-              opts.rerun
-              blueprint.name
+              (opts ^. #rerun)
+              (blueprint ^. #name)
               receipts
               migrationPlan
       if null pending
@@ -122,17 +123,17 @@ handleAgentMigrate debug pendingConfig opts = do
                   <> maybe
                     ""
                     ("\n\n===== Initial user instruction =====\n" <>)
-                    opts.prompt
+                    (opts ^. #prompt)
 
           if debug
             then
               TIO.putStrLn $
                 "Blueprint migrations for "
-                  <> blueprint.name.unModuleName
+                  <> blueprint ^. #name . #unModuleName
                   <> ": "
-                  <> renderVersion migrationPlan.from
+                  <> renderVersion (migrationPlan ^. #from)
                   <> " -> "
-                  <> renderVersion migrationPlan.to
+                  <> renderVersion (migrationPlan ^. #to)
                   <> "\n"
                   <> formatBlueprintMigrationDebugOutput renderDebugStep pending
             else do
@@ -141,7 +142,7 @@ handleAgentMigrate debug pendingConfig opts = do
                   (launchMigration traceSink modelConfig opts prepared renderStep)
                   (recordMigration manifestPath blueprint)
                   pending
-              handleRunResult level blueprint.name result
+              handleRunResult level (blueprint ^. #name) result
 
 discoverMigrationBlueprint :: LogLevel -> ModuleName -> IO (Blueprint, FilePath)
 discoverMigrationBlueprint level requestedName = do
@@ -150,11 +151,11 @@ discoverMigrationBlueprint level requestedName = do
   case runnableResult of
     Right (RunnableBlueprint blueprint dir) -> pure (blueprint, dir)
     Right (RunnableModule _ _) ->
-      exitErr level $ "'" <> requestedName.unModuleName <> "' is a module, not a blueprint."
+      exitErr level $ "'" <> requestedName ^. #unModuleName <> "' is a module, not a blueprint."
     Right (RunnableRecipe _ _) ->
-      exitErr level $ "'" <> requestedName.unModuleName <> "' is a recipe, not a blueprint."
+      exitErr level $ "'" <> requestedName ^. #unModuleName <> "' is a recipe, not a blueprint."
     Right (RunnableAgentPrompt _ _) ->
-      exitErr level $ "'" <> requestedName.unModuleName <> "' is a prompt, not a blueprint."
+      exitErr level $ "'" <> requestedName ^. #unModuleName <> "' is a prompt, not a blueprint."
     Left err -> exitErr level (renderModuleLoadError err)
 
 parseRequestedVersion :: LogLevel -> Text -> Text -> IO Version
@@ -169,7 +170,7 @@ readMigrationReceipts level manifestPath = do
   case result of
     Left err -> exitErr level ("Error reading migration receipts: " <> err)
     Right Nothing -> pure []
-    Right (Just manifest) -> pure manifest.blueprintMigrations
+    Right (Just manifest) -> pure (manifest ^. #blueprintMigrations)
 
 prepare ::
   LogLevel ->
@@ -180,16 +181,16 @@ prepare ::
   IO PreparedBlueprintExecution
 prepare level modelConfig opts blueprint blueprintDir = do
   let providerCanMountFiles =
-        modelConfig.provider == AgentProviderClaudeCli
-          || modelConfig.provider == AgentProviderCodexCli
+        modelConfig ^. #provider == AgentProviderClaudeCli
+          || modelConfig ^. #provider == AgentProviderCodexCli
   result <-
     prepareBlueprintExecution
       BlueprintExecutionRequest
         { blueprint = blueprint,
           blueprintDir = blueprintDir,
-          variableOverrides = opts.vars,
-          namespaceOverride = opts.namespace,
-          contextOverride = opts.context,
+          variableOverrides = opts ^. #vars,
+          namespaceOverride = opts ^. #namespace,
+          contextOverride = opts ^. #context,
           canMountFiles = providerCanMountFiles,
           logLevel = level
         }
@@ -218,11 +219,11 @@ launchMigration traceSink modelConfig opts prepared renderStep position total mi
       <> "/"
       <> T.pack (show total)
       <> ": "
-      <> migration.from
+      <> migration ^. #from
       <> " -> "
-      <> migration.to
+      <> (migration ^. #to)
   let systemPrompt = renderStep position total migration
-  case modelConfig.provider of
+  case modelConfig ^. #provider of
     AgentProviderClaudeCli -> launchInteractive systemPrompt
     AgentProviderCodexCli -> launchInteractive systemPrompt
     AgentProviderAnthropic -> launchCompletion systemPrompt
@@ -231,12 +232,12 @@ launchMigration traceSink modelConfig opts prepared renderStep position total mi
     launchInteractive systemPrompt = do
       exitCode <-
         launchConfiguredAgentAddingDirs
-          (maybeToList prepared.mountedFilesDir)
+          (maybeToList (prepared ^. #mountedFilesDir))
           modelConfig
-          prepared.allowedTools
+          (prepared ^. #allowedTools)
           False
           systemPrompt
-          opts.prompt
+          (opts ^. #prompt)
       pure $ case exitCode of
         ExitSuccess -> Right ()
         failure -> Left (BlueprintMigrationProcessFailure failure)
@@ -244,7 +245,7 @@ launchMigration traceSink modelConfig opts prepared renderStep position total mi
     launchCompletion systemPrompt = do
       result <-
         runAgentCompletion
-          (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt opts.prompt)
+          (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt (opts ^. #prompt))
       case result of
         Left err -> pure (Left (BlueprintMigrationProviderFailure err))
         Right assistantText -> do
@@ -261,10 +262,10 @@ recordMigration manifestPath blueprint migration = do
   recordAppliedBlueprintMigration
     manifestPath
     AppliedBlueprintMigration
-      { name = blueprint.name,
-        blueprintVersion = blueprint.version,
-        fromVersion = migration.from,
-        toVersion = migration.to,
+      { name = blueprint ^. #name,
+        blueprintVersion = blueprint ^. #version,
+        fromVersion = migration ^. #from,
+        toVersion = migration ^. #to,
         appliedAt = now,
         agentSessionId = Nothing
       }
@@ -278,14 +279,14 @@ handleRunResult level blueprintName = \case
       "Completed "
         <> T.pack (show (length completed))
         <> " blueprint migration(s) for '"
-        <> blueprintName.unModuleName
+        <> blueprintName ^. #unModuleName
         <> "'."
   BlueprintMigrationLaunchFailed migration failure -> do
     let prefix =
           "Blueprint migration "
-            <> migration.from
+            <> migration ^. #from
             <> " -> "
-            <> migration.to
+            <> migration ^. #to
             <> " failed; completed earlier edges remain recorded. "
         retry = "Fix the provider error, then rerun the same command to resume."
     case failure of
@@ -299,9 +300,9 @@ handleRunResult level blueprintName = \case
     logIO level $
       logError $
         "Agent completed blueprint migration "
-          <> migration.from
+          <> migration ^. #from
           <> " -> "
-          <> migration.to
+          <> migration ^. #to
           <> ", but its receipt could not be recorded: "
           <> err
           <> ". The next edge was not started; repair manifest access, then rerun the same command."
@@ -309,7 +310,7 @@ handleRunResult level blueprintName = \case
 
 reportNoPending :: BlueprintMigrationPlan -> IO ()
 reportNoPending migrationPlan
-  | null migrationPlan.steps =
+  | null (migrationPlan ^. #steps) =
       TIO.putStrLn "No blueprint migrations are declared inside the requested version window."
   | otherwise =
       TIO.putStrLn "All blueprint migrations in the requested version window already have receipts."
@@ -332,22 +333,22 @@ renderModuleLoadError :: ModuleLoadError -> Text
 renderModuleLoadError = \case
   ModuleNotFound name searched ->
     "Blueprint '"
-      <> name.unModuleName
+      <> name ^. #unModuleName
       <> "' not found. Searched in:\n"
       <> T.intercalate "\n" (map (("  " <>) . T.pack) searched)
   DhallEvalError name msg ->
-    "Failed to evaluate '" <> name.unModuleName <> "': " <> msg
+    "Failed to evaluate '" <> name ^. #unModuleName <> "': " <> msg
   DhallDecodeError name msg ->
-    "Failed to decode '" <> name.unModuleName <> "': " <> msg
+    "Failed to decode '" <> name ^. #unModuleName <> "': " <> msg
   ValidationError name msgs ->
     "Validation failed for '"
-      <> name.unModuleName
+      <> name ^. #unModuleName
       <> "':\n"
       <> T.intercalate "\n" (map ("  " <>) msgs)
   CircularDependency names ->
-    "Circular dependency detected: " <> T.intercalate " -> " (map (.unModuleName) names)
+    "Circular dependency detected: " <> T.intercalate " -> " (map (^. #unModuleName) names)
   MissingSourceFile name path ->
-    "Missing source file in '" <> name.unModuleName <> "': " <> T.pack path
+    "Missing source file in '" <> name ^. #unModuleName <> "': " <> T.pack path
   RegistryEvalError path msg ->
     "Failed to evaluate registry at '" <> path <> "': " <> msg
 

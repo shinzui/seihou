@@ -2,6 +2,8 @@
 
 module Seihou.CLI.Registry.SyncSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -50,7 +52,7 @@ spec = do
         case reloaded of
           Left err -> expectationFailure ("failed to reload: " <> show err)
           Right reg -> do
-            map (.version) reg.modules `shouldBe` [Just "2.0.0", Just "2.0.0"]
+            map (^. #version) (reg ^. #modules) `shouldBe` [Just "2.0.0", Just "2.0.0"]
 
     it "leaves the file untouched under --dry-run" $ do
       withFixture $ \dir -> do
@@ -81,7 +83,7 @@ spec = do
         case outcome of
           SyncSuccess report Checked -> do
             -- first entry missing, second entry stale
-            map (.status) report.diffs
+            map (^. #status) (report ^. #diffs)
               `shouldBe` [SyncMissing, SyncStale "2.0.0"]
           other -> expectationFailure ("expected Checked, got " <> show other)
         after <- TIO.readFile (dir </> "seihou-registry.dhall")
@@ -115,7 +117,7 @@ spec = do
         reloaded <- evalRegistryFromFile (dir </> "seihou-registry.dhall")
         case reloaded of
           Left err -> expectationFailure ("failed to reload: " <> show err)
-          Right reg -> map (.version) reg.blueprints `shouldBe` [Just "0.2.0"]
+          Right reg -> map (^. #version) (reg ^. #blueprints) `shouldBe` [Just "0.2.0"]
 
     it "renderSyncReport prefixes blueprint rows with blueprints." $ do
       withBlueprintFixture $ \dir -> do
@@ -147,7 +149,7 @@ spec = do
         reloaded <- evalRegistryFromFile (dir </> "seihou-registry.dhall")
         case reloaded of
           Left err -> expectationFailure ("failed to reload: " <> show err)
-          Right reg -> map (.version) reg.prompts `shouldBe` [Just "0.2.0"]
+          Right reg -> map (^. #version) (reg ^. #prompts) `shouldBe` [Just "0.2.0"]
 
     it "renderSyncReport prefixes prompt rows with prompts." $ do
       withPromptFixture $ \dir -> do

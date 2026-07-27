@@ -11,6 +11,7 @@ module Seihou.CLI.AppliedBlueprint
   )
 where
 
+import Data.Generics.Labels ()
 import Seihou.Core.Types (AppliedBlueprint (..))
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
@@ -40,6 +41,6 @@ recordAppliedBlueprint manifestPath ab =
         writeManifest (writeAppliedBlueprint ab m)
         pure (Right ())
       Right Nothing -> do
-        writeManifest (writeAppliedBlueprint ab (emptyManifest ab.appliedAt))
+        writeManifest (writeAppliedBlueprint ab (emptyManifest (ab ^. #appliedAt)))
         pure (Right ())
       Left err -> pure (Left err)

@@ -7,6 +7,7 @@ module Seihou.CLI.Extension
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.Prelude
@@ -32,16 +33,16 @@ extensionExecutableName name =
 
 runExtension :: ExtensionRunOpts -> IO (Either ExtensionRunError ())
 runExtension opts = do
-  let exeName = extensionExecutableName opts.name
+  let exeName = extensionExecutableName (opts ^. #name)
   found <- findExecutable exeName
   case found of
     Nothing ->
-      pure (Left (ExtensionNotFound opts.name exeName))
+      pure (Left (ExtensionNotFound (opts ^. #name) exeName))
     Just exePath -> do
-      code <- rawSystem exePath opts.args
+      code <- rawSystem exePath (opts ^. #args)
       pure $ case code of
         ExitSuccess -> Right ()
-        failure -> Left (ExtensionExited opts.name failure)
+        failure -> Left (ExtensionExited (opts ^. #name) failure)
 
 handleExtensionRun :: ExtensionRunOpts -> IO ()
 handleExtensionRun opts = do

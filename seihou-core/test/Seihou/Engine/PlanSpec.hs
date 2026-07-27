@@ -1,6 +1,5 @@
 module Seihou.Engine.PlanSpec (tests) where
 
-import Control.Lens ((^.))
 import Data.Aeson qualified as Aeson
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map

@@ -3,6 +3,7 @@ module Seihou.CLI.NewModule
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (NewModuleOpts (..))
@@ -17,7 +18,7 @@ import System.Exit (exitFailure)
 
 handleNewModule :: NewModuleOpts -> IO ()
 handleNewModule nopts = do
-  let name = nopts.name
+  let name = (nopts ^. #name)
 
   -- Validate module name format
   if not (isValidModuleName name)
@@ -29,7 +30,7 @@ handleNewModule nopts = do
     else pure ()
 
   -- Determine output directory
-  let outputDir = case nopts.path of
+  let outputDir = case nopts ^. #path of
         Just p -> p
         Nothing -> T.unpack name
 

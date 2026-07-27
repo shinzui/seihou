@@ -1,7 +1,7 @@
 module Seihou.CLI.MigrateSpec (tests) where
 
 import Control.Exception (bracket_)
-import Control.Lens (to, (&), (.~))
+import Control.Lens (to, (&), (.~), (^.))
 import Data.Aeson (encode, object, (.=))
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
@@ -260,9 +260,9 @@ mkManifestAt fix version entries =
   (emptyManifest fixedTime)
     { modules =
         [ AppliedModule
-            { name = ModuleName fix.modName,
+            { name = ModuleName (fix ^. #modName),
               parentVars = emptyParentVars,
-              source = fix.installedDir,
+              source = fix ^. #installedDir,
               moduleVersion = Just version,
               appliedAt = fixedTime,
               removal = Nothing
@@ -273,7 +273,7 @@ mkManifestAt fix version entries =
           [ ( path,
               FileRecord
                 { hash = hashContent content,
-                  moduleName = ModuleName fix.modName,
+                  moduleName = ModuleName (fix ^. #modName),
                   strategy = Template,
                   generatedAt = fixedTime,
                   baseline = Nothing,
@@ -381,9 +381,9 @@ spec = do
           Right (MigrateApplied _plan manifest' fromV toV) -> do
             renderVersion fromV `shouldBe` "1.0.0"
             renderVersion toV `shouldBe` "2.0.0"
-            Map.member "src/Main.hs" manifest'.files `shouldBe` True
-            Map.member "app/Main.hs" manifest'.files `shouldBe` False
-            (head manifest'.modules).moduleVersion `shouldBe` Just "2.0.0"
+            Map.member "src/Main.hs" (manifest' ^. #files) `shouldBe` True
+            Map.member "app/Main.hs" (manifest' ^. #files) `shouldBe` False
+            ((head (manifest' ^. #modules)) ^. #moduleVersion) `shouldBe` Just "2.0.0"
             doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` True
             doesFileExist (dir </> "app" </> "Main.hs") `shouldReturn` False
           other -> expectationFailure ("expected MigrateApplied, got: " <> show other)
@@ -418,7 +418,7 @@ spec = do
           Right (MigrateApplied _ manifest' _ _) -> do
             doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` True
             doesFileExist (dir </> "app" </> "Main.hs") `shouldReturn` False
-            Map.member "src/Main.hs" manifest'.files `shouldBe` True
+            Map.member "src/Main.hs" (manifest' ^. #files) `shouldBe` True
           other -> expectationFailure ("expected MigrateApplied, got: " <> show other)
 
     -- ------------------------------------------------------------------
@@ -427,22 +427,22 @@ spec = do
     -- ------------------------------------------------------------------
     it "fetches a newer remote, refreshes the installed copy, and applies the chain" $
       withFetchFixture "1.0.0" "2.0.0" moveOldToNewLit $ \fix -> do
-        TIO.writeFile (fix.projectDir </> "old.txt") "x"
+        TIO.writeFile (fix ^. #projectDir </> "old.txt") "x"
         let manifest = mkManifestAt fix "1.0.0" [("old.txt", "x")]
-            opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName fix.modName
+            opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName (fix ^. #modName)
         result <-
-          withCurrentDirectory fix.projectDir $
-            runMigrate opts manifest fix.installedDir
+          withCurrentDirectory (fix ^. #projectDir) $
+            runMigrate opts manifest (fix ^. #installedDir)
         case result of
           Right (MigrateApplied _ manifest' _ _) -> do
-            doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` False
-            doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` True
-            case manifest'.modules of
-              (am : _) -> am.moduleVersion `shouldBe` Just "2.0.0"
+            doesFileExist (fix ^. #projectDir </> "old.txt") `shouldReturn` False
+            doesFileExist (fix ^. #projectDir </> "new.txt") `shouldReturn` True
+            case manifest' ^. #modules of
+              (am : _) -> (am ^. #moduleVersion) `shouldBe` Just "2.0.0"
               [] -> expectationFailure "manifest has no modules"
-            Map.member "new.txt" manifest'.files `shouldBe` True
-            Map.member "old.txt" manifest'.files `shouldBe` False
-            installedBody <- TIO.readFile (fix.installedDir </> "module.dhall")
+            Map.member "new.txt" (manifest' ^. #files) `shouldBe` True
+            Map.member "old.txt" (manifest' ^. #files) `shouldBe` False
+            installedBody <- TIO.readFile (fix ^. #installedDir </> "module.dhall")
             T.isInfixOf "2.0.0" installedBody `shouldBe` True
           other ->
             expectationFailure ("expected MigrateApplied, got: " <> show other)
@@ -450,10 +450,10 @@ spec = do
     it "is a no-op when the remote and installed versions match" $
       withFetchFixture "1.0.0" "1.0.0" emptyMigrationsLit $ \fix -> do
         let manifest = mkManifestAt fix "1.0.0" []
-            opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName fix.modName
+            opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName (fix ^. #modName)
         result <-
-          withCurrentDirectory fix.projectDir $
-            runMigrate opts manifest fix.installedDir
+          withCurrentDirectory (fix ^. #projectDir) $
+            runMigrate opts manifest (fix ^. #installedDir)
         case result of
           Right (MigrateNoOp _) -> pure ()
           other -> expectationFailure ("expected MigrateNoOp, got: " <> show other)
@@ -461,10 +461,10 @@ spec = do
     it "ignores a newer remote when --no-fetch is set" $
       withFetchFixture "1.0.0" "2.0.0" moveOldToNewLit $ \fix -> do
         let manifest = mkManifestAt fix "1.0.0" []
-            opts = defaultOpts & #noFetch .~ True & #module_ .~ ModuleName fix.modName
+            opts = defaultOpts & #noFetch .~ True & #module_ .~ ModuleName (fix ^. #modName)
         result <-
-          withCurrentDirectory fix.projectDir $
-            runMigrate opts manifest fix.installedDir
+          withCurrentDirectory (fix ^. #projectDir) $
+            runMigrate opts manifest (fix ^. #installedDir)
         case result of
           Right (MigrateNoOp _) -> pure ()
           other -> expectationFailure ("expected MigrateNoOp, got: " <> show other)
@@ -498,9 +498,9 @@ spec = do
         case result of
           Right (MigrateApplied _ manifest' _ toV) -> do
             renderVersion toV `shouldBe` "1.5.0"
-            Map.member "b.txt" manifest'.files `shouldBe` True
-            Map.member "c.txt" manifest'.files `shouldBe` False
-            (head manifest'.modules).moduleVersion `shouldBe` Just "1.5.0"
+            Map.member "b.txt" (manifest' ^. #files) `shouldBe` True
+            Map.member "c.txt" (manifest' ^. #files) `shouldBe` False
+            ((head (manifest' ^. #modules)) ^. #moduleVersion) `shouldBe` Just "1.5.0"
             doesFileExist (dir </> "b.txt") `shouldReturn` True
             doesFileExist (dir </> "c.txt") `shouldReturn` False
           other -> expectationFailure ("expected MigrateApplied, got: " <> show other)
@@ -532,9 +532,9 @@ spec = do
           Right (MigrateApplied _ manifest' fromV toV) -> do
             renderVersion fromV `shouldBe` "1.0.0"
             renderVersion toV `shouldBe` "3.0.0"
-            (head manifest'.modules).moduleVersion `shouldBe` Just "3.0.0"
-            Map.member "src/Main.hs" manifest'.files `shouldBe` True
-            Map.member "app/Main.hs" manifest'.files `shouldBe` False
+            ((head (manifest' ^. #modules)) ^. #moduleVersion) `shouldBe` Just "3.0.0"
+            Map.member "src/Main.hs" (manifest' ^. #files) `shouldBe` True
+            Map.member "app/Main.hs" (manifest' ^. #files) `shouldBe` False
             doesFileExist (dir </> "src" </> "Main.hs") `shouldReturn` True
             doesFileExist (dir </> "app" </> "Main.hs") `shouldReturn` False
           other ->
@@ -551,8 +551,8 @@ spec = do
         case result of
           Right (MigrateApplied execPlan manifest' _ toV) -> do
             renderVersion toV `shouldBe` "0.3.0"
-            null execPlan.source.steps `shouldBe` True
-            (head manifest'.modules).moduleVersion `shouldBe` Just "0.3.0"
+            null (execPlan ^. #source . #steps) `shouldBe` True
+            ((head (manifest' ^. #modules)) ^. #moduleVersion) `shouldBe` Just "0.3.0"
           other -> expectationFailure ("expected MigrateApplied (pure bump), got: " <> show other)
 
     it "Scenario C: orphan-edge entirely outside the window also lands the manifest at target" $
@@ -577,8 +577,8 @@ spec = do
         case result of
           Right (MigrateApplied execPlan manifest' _ toV) -> do
             renderVersion toV `shouldBe` "0.3.0"
-            null execPlan.source.steps `shouldBe` True
-            (head manifest'.modules).moduleVersion `shouldBe` Just "0.3.0"
+            null (execPlan ^. #source . #steps) `shouldBe` True
+            ((head (manifest' ^. #modules)) ^. #moduleVersion) `shouldBe` Just "0.3.0"
           other -> expectationFailure ("expected MigrateApplied (orphan-edge skip), got: " <> show other)
 
     it "User's two-component fixture: 0.2 -> 0.6 with [{0.2->0.3}, {0.5->0.6}]" $
@@ -613,8 +613,8 @@ spec = do
         case result of
           Right (MigrateApplied execPlan manifest' _ toV) -> do
             renderVersion toV `shouldBe` "0.6"
-            length execPlan.source.steps `shouldBe` 2
-            (head manifest'.modules).moduleVersion `shouldBe` Just "0.6"
+            length (execPlan ^. #source . #steps) `shouldBe` 2
+            ((head (manifest' ^. #modules)) ^. #moduleVersion) `shouldBe` Just "0.6"
             doesFileExist (dir </> "v3.txt") `shouldReturn` True
             doesFileExist (dir </> "v6.txt") `shouldReturn` True
             doesFileExist (dir </> "v2.txt") `shouldReturn` False
@@ -737,23 +737,23 @@ spec = do
                 "]"
               ]
        in withFetchFixture "0.3" "0.3" emptyMigrationsLit $ \fix -> do
-            writeInstalledModule fix.installedDir "0.3" partialLit
-            writeOriginJson fix.installedDir (T.pack fix.remoteDir)
-            TIO.writeFile (fix.projectDir </> "old.txt") "tracked\n"
+            writeInstalledModule (fix ^. #installedDir) "0.3" partialLit
+            writeOriginJson (fix ^. #installedDir) (T.pack (fix ^. #remoteDir))
+            TIO.writeFile (fix ^. #projectDir </> "old.txt") "tracked\n"
             let manifest = mkManifestAt fix "0.1" [("old.txt", "tracked\n")]
-                opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName fix.modName
+                opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName (fix ^. #modName)
             result <-
-              withCurrentDirectory fix.projectDir $
-                runMigrate opts manifest fix.installedDir
+              withCurrentDirectory (fix ^. #projectDir) $
+                runMigrate opts manifest (fix ^. #installedDir)
             case result of
               Right (MigrateApplied execPlan manifest' _ toV) -> do
                 renderVersion toV `shouldBe` "0.3"
-                length execPlan.source.steps `shouldBe` 1
-                case manifest'.modules of
-                  (am : _) -> am.moduleVersion `shouldBe` Just "0.3"
+                length (execPlan ^. #source . #steps) `shouldBe` 1
+                case manifest' ^. #modules of
+                  (am : _) -> (am ^. #moduleVersion) `shouldBe` Just "0.3"
                   [] -> expectationFailure "manifest has no modules"
-                doesFileExist (fix.projectDir </> "new.txt") `shouldReturn` True
-                doesFileExist (fix.projectDir </> "old.txt") `shouldReturn` False
+                doesFileExist (fix ^. #projectDir </> "new.txt") `shouldReturn` True
+                doesFileExist (fix ^. #projectDir </> "old.txt") `shouldReturn` False
               other ->
                 expectationFailure
                   ("expected MigrateApplied (local fallback), got: " <> show other)
@@ -761,16 +761,16 @@ spec = do
     it "fetch fallback: clone-based plan stands when neither side declares applicable edges" $
       withFetchFixture "0.3" "0.3" emptyMigrationsLit $ \fix -> do
         let manifest = mkManifestAt fix "0.1" []
-            opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName fix.modName
+            opts = defaultOpts & #noFetch .~ False & #module_ .~ ModuleName (fix ^. #modName)
         result <-
-          withCurrentDirectory fix.projectDir $
-            runMigrate opts manifest fix.installedDir
+          withCurrentDirectory (fix ^. #projectDir) $
+            runMigrate opts manifest (fix ^. #installedDir)
         case result of
           Right (MigrateApplied execPlan manifest' _ toV) -> do
             renderVersion toV `shouldBe` "0.3"
-            null execPlan.source.steps `shouldBe` True
-            case manifest'.modules of
-              (am : _) -> am.moduleVersion `shouldBe` Just "0.3"
+            null (execPlan ^. #source . #steps) `shouldBe` True
+            case manifest' ^. #modules of
+              (am : _) -> (am ^. #moduleVersion) `shouldBe` Just "0.3"
               [] -> expectationFailure "manifest has no modules"
           other ->
             expectationFailure ("expected MigrateApplied (no-op-style bump), got: " <> show other)

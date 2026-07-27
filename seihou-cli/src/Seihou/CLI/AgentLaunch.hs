@@ -19,6 +19,7 @@ module Seihou.CLI.AgentLaunch
   )
 where
 
+import Data.Generics.Labels ()
 import Data.List (nub)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
@@ -141,31 +142,31 @@ substitute vars template = foldl' replaceOne template vars
 
 formatSeihouProjectState :: AgentContext -> Text
 formatSeihouProjectState ctx
-  | ctx.seihouInitialized = "Seihou project: .seihou/ directory exists (this is a seihou-managed project)"
+  | (ctx ^. #seihouInitialized) = "Seihou project: .seihou/ directory exists (this is a seihou-managed project)"
   | otherwise = "Seihou project: No .seihou/ directory (not yet a seihou project in this directory)"
 
 formatManifestState :: AgentContext -> Text
 formatManifestState ctx
-  | ctx.hasManifest = "Manifest: .seihou/manifest.json exists (modules have been applied here)"
+  | (ctx ^. #hasManifest) = "Manifest: .seihou/manifest.json exists (modules have been applied here)"
   | otherwise = "Manifest: No manifest (no modules applied yet)"
 
 formatModuleDhallState :: AgentContext -> Text
 formatModuleDhallState ctx
-  | ctx.localModuleDhall = "Module in cwd: module.dhall found in current directory (user is authoring a module here)"
+  | (ctx ^. #localModuleDhall) = "Module in cwd: module.dhall found in current directory (user is authoring a module here)"
   | otherwise = ""
 
 formatLocalModules :: AgentContext -> Text
 formatLocalModules ctx
-  | null ctx.localModules = ""
-  | otherwise = T.intercalate "\n" $ "Local modules:" : map ("  - " <>) ctx.localModules
+  | null (ctx ^. #localModules) = ""
+  | otherwise = T.intercalate "\n" $ "Local modules:" : map ("  - " <>) (ctx ^. #localModules)
 
 formatAvailableModules :: AgentContext -> Text
 formatAvailableModules ctx
-  | null ctx.availableModules = "Available modules: None discovered"
+  | null (ctx ^. #availableModules) = "Available modules: None discovered"
   | otherwise =
       T.intercalate "\n" $
         "Available modules across search paths:"
-          : map formatMod ctx.availableModules
+          : map formatMod (ctx ^. #availableModules)
   where
     formatMod (name, desc, src) = "  - " <> name <> " — " <> desc <> " (" <> src <> ")"
 
@@ -180,11 +181,11 @@ findLocalModuleDirs dir = do
     else pure []
 
 toModuleInfo :: DiscoveredModule -> [(Text, Text, Text)]
-toModuleInfo dm = case dm.result of
+toModuleInfo dm = case dm ^. #result of
   Right m ->
-    [ ( m.name.unModuleName,
-        maybe "(no description)" id m.description,
-        sourceLabel dm.source
+    [ ( m ^. #name . #unModuleName,
+        maybe "(no description)" id (m ^. #description),
+        sourceLabel (dm ^. #source)
       )
     ]
   Left _ -> []
@@ -212,9 +213,9 @@ formatBlueprintIdentity :: Blueprint -> Text
 formatBlueprintIdentity bp =
   T.intercalate
     "\n"
-    [ "Name: " <> bp.name.unModuleName,
-      "Version: " <> fromMaybe "(unspecified)" bp.version,
-      "Description: " <> fromMaybe "(no description)" bp.description
+    [ "Name: " <> bp ^. #name . #unModuleName,
+      "Version: " <> fromMaybe "(unspecified)" (bp ^. #version),
+      "Description: " <> fromMaybe "(no description)" (bp ^. #description)
     ]
 
 -- | Render the "## Baseline" body for the agent prompt.
@@ -226,8 +227,8 @@ formatBaselineStatus BaselineEmpty =
 formatBaselineStatus (BaselineApplied entries) =
   T.intercalate "\n" (map render entries)
   where
-    render (n, Just v) = "  - " <> n.unModuleName <> " (v" <> v <> ")"
-    render (n, Nothing) = "  - " <> n.unModuleName <> " (unversioned)"
+    render (n, Just v) = "  - " <> n ^. #unModuleName <> " (v" <> v <> ")"
+    render (n, Nothing) = "  - " <> n ^. #unModuleName <> " (unversioned)"
 
 -- | Render a blueprint's @files@ list as the body of the
 -- "## Reference Files" block. When the directory exists, the interactive
@@ -237,9 +238,9 @@ formatReferenceFiles :: [BlueprintFile] -> Text
 formatReferenceFiles [] = "(no reference files)"
 formatReferenceFiles bfs = T.intercalate "\n" (map render bfs)
   where
-    render bf = case bf.description of
-      Just d -> "  - " <> T.pack bf.src <> " — " <> d
-      Nothing -> "  - " <> T.pack bf.src
+    render bf = case bf ^. #description of
+      Just d -> "  - " <> T.pack (bf ^. #src) <> " — " <> d
+      Nothing -> "  - " <> T.pack (bf ^. #src)
 
 -- | Render guidance for the blueprint's reference-files directory. A
 -- present path means the directory is mounted and readable by the interactive

@@ -11,6 +11,7 @@ import Control.Exception (SomeException, try)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -37,7 +38,7 @@ handleOutdated :: OutdatedOpts -> IO ()
 handleOutdated oopts = do
   searchPaths <- defaultSearchPaths
   modules <- discoverAllModules searchPaths
-  let installed = filter (\dm -> dm.source == SourceInstalled) modules
+  let installed = filter (\dm -> dm ^. #source == SourceInstalled) modules
 
   if null installed
     then TIO.putStrLn "No installed modules found."
@@ -46,7 +47,7 @@ handleOutdated oopts = do
       if null entries
         then TIO.putStrLn "No installed modules with origin metadata found."
         else
-          if oopts.outdatedJson
+          if oopts ^. #outdatedJson
             then LBS.putStr (encodePretty entries)
             else renderTable entries
 
@@ -63,7 +64,7 @@ checkInstalledModulesForUpdates ::
   [DiscoveredModule] ->
   IO ([OutdatedEntry], CheckStats)
 checkInstalledModulesForUpdates modules = do
-  let installed = filter (\dm -> dm.source == SourceInstalled) modules
+  let installed = filter (\dm -> dm ^. #source == SourceInstalled) modules
   originsWithModules <- mapM readOriginWithModule installed
   let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
       skipped = length installed - length withOrigins
@@ -78,7 +79,7 @@ checkInstalledModulesForUpdates modules = do
             Map.toList $
               Map.fromListWith
                 (++)
-                [(origin.sourceUrl, [(dm, origin)]) | (dm, origin) <- withOrigins]
+                [(origin ^. #sourceUrl, [(dm, origin)]) | (dm, origin) <- withOrigins]
       TIO.putStrLn "Checking installed modules for updates..."
       entries <- concat <$> mapM checkSource grouped
       pure
@@ -89,7 +90,7 @@ checkInstalledModulesForUpdates modules = do
 -- | Read origin info from a discovered module's directory.
 readOriginWithModule :: DiscoveredModule -> IO (DiscoveredModule, Maybe OriginInfo)
 readOriginWithModule dm = do
-  let originFile = dm.dir </> ".seihou-origin.json"
+  let originFile = dm ^. #dir </> ".seihou-origin.json"
   exists <- doesFileExist originFile
   if exists
     then do
@@ -130,7 +131,7 @@ checkSource (sourceUrl, modulesWithOrigins) = do
 compareModule :: FilePath -> (DiscoveredModule, OriginInfo) -> IO OutdatedEntry
 compareModule cloneDir (dm, origin) = do
   let name = moduleNameFromDm dm
-      installedVer = origin.version
+      installedVer = (origin ^. #version)
   availableVer <- fetchAvailable cloneDir (ModuleName name)
   let status = compareVersions installedVer availableVer
   pure
@@ -155,9 +156,9 @@ fetchAvailable cloneDir name = do
 -- | Compare installed and available version strings.
 -- | Extract the module name text from a DiscoveredModule.
 moduleNameFromDm :: DiscoveredModule -> Text
-moduleNameFromDm dm = case dm.result of
-  Right m -> m.name.unModuleName
-  Left _ -> dirName dm.dir
+moduleNameFromDm dm = case dm ^. #result of
+  Right m -> (m ^. #name . #unModuleName)
+  Left _ -> dirName (dm ^. #dir)
 
 -- | Extract the last path component as a name.
 dirName :: FilePath -> Text
@@ -170,7 +171,7 @@ mkUnreachable :: DiscoveredModule -> OriginInfo -> OutdatedEntry
 mkUnreachable dm origin =
   OutdatedEntry
     { moduleName = moduleNameFromDm dm,
-      installedVersion = origin.version,
+      installedVersion = origin ^. #version,
       availableVersion = Nothing,
       status = Unreachable
     }
@@ -179,9 +180,9 @@ mkUnreachable dm origin =
 renderTable :: [OutdatedEntry] -> IO ()
 renderTable entries = do
   colorEnabled <- useColor
-  let maxNameLen = max 6 (maximum (map (T.length . (.moduleName)) entries))
-      maxInstLen = max 9 (maximum (map (T.length . maybe "(none)" id . (.installedVersion)) entries))
-      maxAvailLen = max 9 (maximum (map (T.length . maybe "(none)" id . (.availableVersion)) entries))
+  let maxNameLen = max 6 (maximum (map (T.length . (^. #moduleName)) entries))
+      maxInstLen = max 9 (maximum (map (T.length . maybe "(none)" id . (^. #installedVersion)) entries))
+      maxAvailLen = max 9 (maximum (map (T.length . maybe "(none)" id . (^. #availableVersion)) entries))
 
       padR n t = t <> T.replicate (n - T.length t + 2) " "
 
@@ -192,14 +193,14 @@ renderTable entries = do
           <> "Status"
 
       formatRow e =
-        let instText = maybe "(none)" id e.installedVersion
-            availText = maybe "(none)" id e.availableVersion
-            statusTxt = case e.status of
+        let instText = maybe "(none)" id (e ^. #installedVersion)
+            availText = maybe "(none)" id (e ^. #availableVersion)
+            statusTxt = case e ^. #status of
               UpToDate -> if colorEnabled then green "up to date" else "up to date"
               OutdatedSt -> if colorEnabled then red "outdated" else "outdated"
               Unversioned -> if colorEnabled then dim "unversioned" else "unversioned"
               Unreachable -> if colorEnabled then yellow "unreachable" else "unreachable"
-         in padR maxNameLen e.moduleName
+         in padR maxNameLen (e ^. #moduleName)
               <> padR maxInstLen instText
               <> padR maxAvailLen availText
               <> statusTxt
@@ -209,7 +210,7 @@ renderTable entries = do
   mapM_ (TIO.putStrLn . formatRow) entries
 
   let total = length entries
-      outdated = length (filter (\e -> e.status == OutdatedSt) entries)
+      outdated = length (filter (\e -> e ^. #status == OutdatedSt) entries)
   TIO.putStrLn ""
   TIO.putStrLn $
     T.pack (show total)

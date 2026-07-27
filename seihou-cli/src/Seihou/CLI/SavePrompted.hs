@@ -5,6 +5,7 @@ module Seihou.CLI.SavePrompted
 where
 
 import Control.Monad (when)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Composition.Instance (ModuleInstance)
@@ -28,8 +29,8 @@ collectPromptedValues resolved localConfig =
             | vs <- Map.elems resolved
             ]
       promptedOnly rv =
-        case rv.source of
-          FromPrompt -> Just (varValueToText rv.value)
+        case rv ^. #source of
+          FromPrompt -> Just (varValueToText (rv ^. #value))
           _ -> Nothing
    in [ (vn, val, existing)
       | (vn, val) <- allPrompted,

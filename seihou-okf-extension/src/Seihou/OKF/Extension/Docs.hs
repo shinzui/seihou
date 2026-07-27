@@ -6,7 +6,9 @@ module Seihou.OKF.Extension.Docs
   )
 where
 
+import Control.Lens ((^.))
 import Control.Monad (when)
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import GHC.Generics (Generic)
@@ -35,7 +37,7 @@ data DocsOpts = DocsOpts
 
 runDocs :: DocsOpts -> IO (Either T.Text T.Text)
 runDocs opts = do
-  let registryFile = opts.dir </> "seihou-registry.dhall"
+  let registryFile = opts ^. #dir </> "seihou-registry.dhall"
   registryExists <- doesFileExist registryFile
   if not registryExists
     then pure (Left ("registry file not found: " <> T.pack registryFile))
@@ -44,7 +46,7 @@ runDocs opts = do
       case outputCheck of
         Left err -> pure (Left err)
         Right () -> do
-          modelResult <- loadDocModel opts.dir
+          modelResult <- loadDocModel (opts ^. #dir)
           case modelResult of
             Left err -> pure (Left (renderDocLoadError err))
             Right model ->
@@ -55,11 +57,11 @@ runDocs opts = do
                   | not (null validationProblems) ->
                       pure (Left (renderMany renderBundleValidationError validationProblems))
                   | otherwise -> do
-                      prepareOutputDirectory opts.out
-                      writeResult <- writeDocBundle opts.out model
+                      prepareOutputDirectory (opts ^. #out)
+                      writeResult <- writeDocBundle (opts ^. #out) model
                       pure $ case writeResult of
                         Left errors -> Left (renderMany renderDocBundleError errors)
-                        Right () -> Right ("Wrote " <> T.pack (show (length concepts)) <> " concepts to " <> T.pack opts.out)
+                        Right () -> Right ("Wrote " <> T.pack (show (length concepts)) <> " concepts to " <> T.pack (opts ^. #out))
 
 handleDocs :: DocsOpts -> IO ()
 handleDocs opts = do
@@ -73,18 +75,18 @@ handleDocs opts = do
 
 checkOutputDirectory :: DocsOpts -> IO (Either T.Text ())
 checkOutputDirectory opts = do
-  pathExists <- doesPathExist opts.out
+  pathExists <- doesPathExist (opts ^. #out)
   if not pathExists
     then pure (Right ())
     else do
-      isDirectory <- doesDirectoryExist opts.out
+      isDirectory <- doesDirectoryExist (opts ^. #out)
       if not isDirectory
-        then pure (Left ("output path exists and is not a directory: " <> T.pack opts.out))
+        then pure (Left ("output path exists and is not a directory: " <> T.pack (opts ^. #out)))
         else do
-          entries <- listDirectory opts.out
-          if null entries || opts.force
+          entries <- listDirectory (opts ^. #out)
+          if null entries || opts ^. #force
             then pure (Right ())
-            else pure (Left ("output directory is not empty: " <> T.pack opts.out <> "; pass --force to overwrite"))
+            else pure (Left ("output directory is not empty: " <> T.pack (opts ^. #out) <> "; pass --force to overwrite"))
 
 prepareOutputDirectory :: FilePath -> IO ()
 prepareOutputDirectory outDir = do

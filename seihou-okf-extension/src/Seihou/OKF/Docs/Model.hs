@@ -9,6 +9,8 @@ module Seihou.OKF.Docs.Model
   )
 where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
@@ -103,7 +105,7 @@ buildDocModel registryDir Registry {repoName, repoDescription, modules, recipes,
       ]
   pure $ do
     entries <- entriesResult
-    let moduleNames = [entry.name | entry <- entries, entry.kind == DocModuleKind]
+    let moduleNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocModuleKind]
         resolvedEntries = map (resolveEntryRefs moduleNames) entries
     Right
       DocModel
@@ -134,10 +136,10 @@ concatResults (action : actions) = do
 
 loadModuleEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
 loadModuleEntry registryDir entry = do
-  let artifactFile = registryDir </> entry.path </> "module.dhall"
+  let artifactFile = registryDir </> entry ^. #path </> "module.dhall"
   result <- evalModuleFromFile artifactFile
   pure $ case result of
-    Left err -> Left (ArtifactLoadFailed entry.name.unModuleName (renderModuleLoadError err))
+    Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
     Right artifact@Module {dependencies} ->
       Right $
         docEntryFromRegistry
@@ -148,10 +150,10 @@ loadModuleEntry registryDir entry = do
 
 loadRecipeEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
 loadRecipeEntry registryDir entry = do
-  let artifactFile = registryDir </> entry.path </> "recipe.dhall"
+  let artifactFile = registryDir </> entry ^. #path </> "recipe.dhall"
   result <- evalRecipeFromFile artifactFile
   pure $ case result of
-    Left err -> Left (ArtifactLoadFailed entry.name.unModuleName (renderModuleLoadError err))
+    Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
     Right artifact@Recipe {modules = recipeModules} ->
       Right $
         docEntryFromRegistry
@@ -162,10 +164,10 @@ loadRecipeEntry registryDir entry = do
 
 loadBlueprintEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
 loadBlueprintEntry registryDir entry = do
-  let artifactFile = registryDir </> entry.path </> "blueprint.dhall"
+  let artifactFile = registryDir </> entry ^. #path </> "blueprint.dhall"
   result <- evalBlueprintFromFile artifactFile
   pure $ case result of
-    Left err -> Left (ArtifactLoadFailed entry.name.unModuleName (renderModuleLoadError err))
+    Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
     Right artifact@Blueprint {baseModules} ->
       Right $
         docEntryFromRegistry
@@ -176,10 +178,10 @@ loadBlueprintEntry registryDir entry = do
 
 loadPromptEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
 loadPromptEntry registryDir entry = do
-  let artifactFile = registryDir </> entry.path </> "prompt.dhall"
+  let artifactFile = registryDir </> entry ^. #path </> "prompt.dhall"
   result <- evalAgentPromptFromFile artifactFile
   pure $ case result of
-    Left err -> Left (ArtifactLoadFailed entry.name.unModuleName (renderModuleLoadError err))
+    Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
     Right artifact ->
       Right $
         docEntryFromRegistry
@@ -191,19 +193,19 @@ loadPromptEntry registryDir entry = do
 docEntryFromRegistry :: RegistryEntry -> DocKind -> DocArtifact -> [ModuleRef] -> DocEntry
 docEntryFromRegistry entry kind artifact refs =
   DocEntry
-    { name = entry.name.unModuleName,
+    { name = entry ^. #name . #unModuleName,
       kind = kind,
-      version = entry.version,
-      description = entry.description,
-      tags = entry.tags,
-      path = entry.path,
+      version = entry ^. #version,
+      description = entry ^. #description,
+      tags = entry ^. #tags,
+      path = entry ^. #path,
       artifact = artifact,
       moduleRefs = refs
     }
 
 moduleRefs :: [Dependency] -> [ModuleRef]
 moduleRefs dependencies =
-  [ ModuleRef {name = moduleName.unModuleName, resolved = False}
+  [ ModuleRef {name = moduleName ^. #unModuleName, resolved = False}
   | moduleName <- depModuleNames dependencies
   ]
 
@@ -211,8 +213,8 @@ resolveEntryRefs :: [T.Text] -> DocEntry -> DocEntry
 resolveEntryRefs moduleNames entry =
   entry
     { moduleRefs =
-        [ ref {resolved = ref.name `elem` moduleNames}
-        | ref <- entry.moduleRefs
+        [ ref {resolved = (ref ^. #name) `elem` moduleNames}
+        | ref <- entry ^. #moduleRefs
         ]
     }
 

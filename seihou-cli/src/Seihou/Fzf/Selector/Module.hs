@@ -6,6 +6,7 @@ module Seihou.Fzf.Selector.Module
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..), defaultSearchPaths, discoverAllModules, discoverAllRunnables)
@@ -17,32 +18,32 @@ import Seihou.Prelude
 -- | Format a discovered module as an fzf candidate.
 -- Returns 'Nothing' for modules that failed to load.
 formatModuleCandidate :: DiscoveredModule -> Maybe (Candidate ModuleName)
-formatModuleCandidate dm = case dm.result of
+formatModuleCandidate dm = case dm ^. #result of
   Left _ -> Nothing
   Right m ->
-    let nameText = m.name.unModuleName
-        descText = maybe "" (\d -> "  " <> d) m.description
-        sourceTag = case dm.source of
+    let nameText = (m ^. #name . #unModuleName)
+        descText = maybe "" (\d -> "  " <> d) (m ^. #description)
+        sourceTag = case dm ^. #source of
           SourceProject -> "[project]"
           SourceUser -> "[user]"
           SourceInstalled -> "[installed]"
         display = nameText <> descText <> "  " <> sourceTag
-     in Just Candidate {display = display, value = m.name}
+     in Just Candidate {display = display, value = m ^. #name}
 
 -- | Format a discovered runnable (module or recipe) as an fzf candidate.
 -- Returns 'Nothing' for items that failed to load.
 formatRunnableCandidate :: DiscoveredRunnable -> Maybe (Candidate ModuleName)
 formatRunnableCandidate dr
-  | dr.isError = Nothing
+  | (dr ^. #isError) = Nothing
   | otherwise =
-      let nameText = dr.name
-          descText = maybe "" (\d -> "  " <> d) dr.description
-          kindTag = case dr.kind of
+      let nameText = (dr ^. #name)
+          descText = maybe "" (\d -> "  " <> d) (dr ^. #description)
+          kindTag = case dr ^. #kind of
             KindModule -> ""
             KindRecipe -> " [recipe]"
             KindBlueprint -> " [blueprint]"
             KindPrompt -> " [prompt]"
-          sourceTag = case dr.source of
+          sourceTag = case dr ^. #source of
             SourceProject -> "[project]"
             SourceUser -> "[user]"
             SourceInstalled -> "[installed]"

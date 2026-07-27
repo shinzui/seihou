@@ -3,6 +3,7 @@ module Seihou.CLI.NewBlueprint
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (NewBlueprintOpts (..))
@@ -17,7 +18,7 @@ import System.Exit (exitFailure)
 
 handleNewBlueprint :: NewBlueprintOpts -> IO ()
 handleNewBlueprint nopts = do
-  let name = nopts.name
+  let name = (nopts ^. #name)
 
   -- Validate blueprint name format
   if not (isValidBlueprintName name)
@@ -29,7 +30,7 @@ handleNewBlueprint nopts = do
     else pure ()
 
   -- Determine output directory
-  let outputDir = case nopts.path of
+  let outputDir = case nopts ^. #path of
         Just p -> p
         Nothing -> T.unpack name
 

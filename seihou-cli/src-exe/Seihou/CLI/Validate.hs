@@ -3,6 +3,7 @@ module Seihou.CLI.Validate
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (ValidateOpts (..))
@@ -19,7 +20,7 @@ import System.Exit (ExitCode (..), exitFailure, exitWith)
 handleValidateModule :: ValidateOpts -> IO ()
 handleValidateModule vopts = do
   -- Determine module path
-  moduleDir <- case vopts.path of
+  moduleDir <- case vopts ^. #path of
     Just p -> pure p
     Nothing -> getCurrentDirectory
 
@@ -66,7 +67,7 @@ handleValidateModule vopts = do
       exitFailure
     Right modul -> do
       -- Build the structured report
-      report <- buildReport vopts.lint moduleDir modul
+      report <- buildReport (vopts ^. #lint) moduleDir modul
       TIO.putStr (renderReportColor colorEnabled report)
       if reportHasErrors report
         then exitFailure

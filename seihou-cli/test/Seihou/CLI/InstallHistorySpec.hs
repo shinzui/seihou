@@ -1,5 +1,7 @@
 module Seihou.CLI.InstallHistorySpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.CLI.InstallHistory
   ( HistoryEntry (..),
@@ -25,14 +27,14 @@ spec = do
     it "returns empty history when file does not exist" $ do
       withSystemTempDirectory "history-test" $ \tmp -> do
         h <- readHistoryFrom (tmp </> "nonexistent.json")
-        h.entries `shouldBe` []
+        (h ^. #entries) `shouldBe` []
 
     it "returns empty history for malformed JSON" $ do
       withSystemTempDirectory "history-test" $ \tmp -> do
         let path = tmp </> "bad.json"
         writeFile path "not json"
         h <- readHistoryFrom path
-        h.entries `shouldBe` []
+        (h ^. #entries) `shouldBe` []
 
   describe "writeHistoryTo / readHistoryFrom round-trip" $ do
     it "round-trips an empty history" $ do
@@ -63,8 +65,8 @@ spec = do
         exists <- doesFileExist path
         exists `shouldBe` True
         h <- readHistoryFrom path
-        length h.entries `shouldBe` 1
-        (head h.entries).url `shouldBe` "https://github.com/foo/bar.git"
+        length (h ^. #entries) `shouldBe` 1
+        ((head (h ^. #entries)) ^. #url) `shouldBe` "https://github.com/foo/bar.git"
 
     it "deduplicates by URL, keeping most recent first" $ do
       withSystemTempDirectory "history-test" $ \tmp -> do
@@ -73,8 +75,8 @@ spec = do
         recordUrlTo path "https://github.com/b/second.git"
         recordUrlTo path "https://github.com/a/first.git"
         h <- readHistoryFrom path
-        length h.entries `shouldBe` 2
-        (head h.entries).url `shouldBe` "https://github.com/a/first.git"
+        length (h ^. #entries) `shouldBe` 2
+        ((head (h ^. #entries)) ^. #url) `shouldBe` "https://github.com/a/first.git"
 
     it "caps history at maxHistoryEntries" $ do
       withSystemTempDirectory "history-test" $ \tmp -> do
@@ -83,4 +85,4 @@ spec = do
           (\i -> recordUrlTo path ("https://example.com/repo-" <> T.pack (show i) <> ".git"))
           [1 .. maxHistoryEntries + 5 :: Int]
         h <- readHistoryFrom path
-        length h.entries `shouldBe` maxHistoryEntries
+        length (h ^. #entries) `shouldBe` maxHistoryEntries

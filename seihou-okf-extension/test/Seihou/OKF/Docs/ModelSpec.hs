@@ -1,5 +1,7 @@
 module Seihou.OKF.Docs.ModelSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.List (find)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
@@ -20,7 +22,7 @@ spec = do
     it "loads all four registry entry kinds from a fixture registry" $ do
       withFixtureRegistry $ \registryDir -> do
         model <- shouldLoad registryDir
-        model.repoName `shouldBe` "fixture-registry"
+        (model ^. #repoName) `shouldBe` "fixture-registry"
         length (entriesByKind DocModuleKind model) `shouldBe` 3
         length (entriesByKind DocRecipeKind model) `shouldBe` 1
         length (entriesByKind DocBlueprintKind model) `shouldBe` 1
@@ -30,30 +32,30 @@ spec = do
       withFixtureRegistry $ \registryDir -> do
         model <- shouldLoad registryDir
         let entry = requireEntry "app" model
-        entry.version `shouldBe` Just "1.2.3"
-        entry.description `shouldBe` Just "Application module"
-        entry.tags `shouldBe` ["haskell", "app"]
-        entry.path `shouldBe` "modules/app"
+        (entry ^. #version) `shouldBe` Just "1.2.3"
+        (entry ^. #description) `shouldBe` Just "Application module"
+        (entry ^. #tags) `shouldBe` ["haskell", "app"]
+        (entry ^. #path) `shouldBe` "modules/app"
 
     it "marks module dependencies that resolve inside the registry" $ do
       withFixtureRegistry $ \registryDir -> do
         model <- shouldLoad registryDir
         let entry = requireEntry "app" model
-        entry.moduleRefs `shouldContain` [ModuleRef "base" True]
+        (entry ^. #moduleRefs) `shouldContain` [ModuleRef "base" True]
 
     it "marks module dependencies that do not resolve inside the registry" $ do
       withFixtureRegistry $ \registryDir -> do
         model <- shouldLoad registryDir
         let entry = requireEntry "dangling" model
-        entry.moduleRefs `shouldBe` [ModuleRef "missing" False]
+        (entry ^. #moduleRefs) `shouldBe` [ModuleRef "missing" False]
 
     it "captures recipe and blueprint module references" $ do
       withFixtureRegistry $ \registryDir -> do
         model <- shouldLoad registryDir
         let recipe = requireEntry "app-recipe" model
             blueprint = requireEntry "app-blueprint" model
-        recipe.moduleRefs `shouldMatchList` [ModuleRef "base" True, ModuleRef "app" True]
-        blueprint.moduleRefs `shouldBe` [ModuleRef "base" True]
+        (recipe ^. #moduleRefs) `shouldMatchList` [ModuleRef "base" True, ModuleRef "app" True]
+        (blueprint ^. #moduleRefs) `shouldBe` [ModuleRef "base" True]
 
     it "returns RegistryNotFound when the registry file is absent" $ do
       withSystemTempDirectory "seihou-doc-model-missing" $ \registryDir -> do
@@ -71,12 +73,12 @@ shouldLoad registryDir = do
 
 entriesByKind :: DocKind -> DocModel -> [DocEntry]
 entriesByKind kind model =
-  filter (\entry -> entry.kind == kind) model.entries
+  filter (\entry -> entry ^. #kind == kind) (model ^. #entries)
 
 requireEntry :: String -> DocModel -> DocEntry
 requireEntry name model =
   fromMaybe (error ("missing entry " <> name)) $
-    find (\entry -> entry.name == T.pack name) model.entries
+    find (\entry -> entry ^. #name == T.pack name) (model ^. #entries)
 
 withFixtureRegistry :: (FilePath -> IO a) -> IO a
 withFixtureRegistry action =

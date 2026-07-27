@@ -3,6 +3,7 @@ module Seihou.CLI.NewPrompt
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (NewPromptOpts (..))
@@ -18,7 +19,7 @@ import System.Exit (exitFailure)
 
 handleNewPrompt :: NewPromptOpts -> IO ()
 handleNewPrompt nopts = do
-  let name = nopts.name
+  let name = (nopts ^. #name)
 
   if not (isValidModuleName name)
     then do
@@ -28,7 +29,7 @@ handleNewPrompt nopts = do
       exitFailure
     else pure ()
 
-  let outputDir = case nopts.path of
+  let outputDir = case nopts ^. #path of
         Just p -> p
         Nothing -> T.unpack name
 

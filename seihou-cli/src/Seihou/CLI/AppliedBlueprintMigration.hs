@@ -4,6 +4,7 @@ module Seihou.CLI.AppliedBlueprintMigration
   )
 where
 
+import Data.Generics.Labels ()
 import Seihou.Core.Types (AppliedBlueprintMigration (..))
 import Seihou.Effect.Filesystem (createDirectoryIfMissing)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
@@ -26,6 +27,6 @@ recordAppliedBlueprintMigration manifestPath receipt =
         writeManifest (writeAppliedBlueprintMigration receipt manifest)
         pure (Right ())
       Right Nothing -> do
-        writeManifest (writeAppliedBlueprintMigration receipt (emptyManifest receipt.appliedAt))
+        writeManifest (writeAppliedBlueprintMigration receipt (emptyManifest (receipt ^. #appliedAt)))
         pure (Right ())
       Left err -> pure (Left err)

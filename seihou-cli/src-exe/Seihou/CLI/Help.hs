@@ -9,6 +9,7 @@ where
 
 import Data.FileEmbed (embedStringFile)
 import Data.Foldable (forM_)
+import Data.Generics.Labels ()
 import Data.List (find)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -91,7 +92,7 @@ showTopicParser =
           <> help ("Help topic: " <> T.unpack topicList)
       )
   where
-    topicList = T.intercalate ", " (map (.name) helpTopics)
+    topicList = T.intercalate ", " (map (^. #name) helpTopics)
 
 handleHelpCommand :: HelpCommand -> IO ()
 handleHelpCommand = \case
@@ -102,7 +103,7 @@ listTopics :: IO ()
 listTopics = do
   TIO.putStrLn "HELP TOPICS\n"
   forM_ helpTopics $ \t ->
-    TIO.putStrLn $ "  " <> padRight 17 t.name <> t.description
+    TIO.putStrLn $ "  " <> padRight 17 (t ^. #name) <> (t ^. #description)
   TIO.putStrLn "\nUse 'seihou help <topic>' for details."
 
 padRight :: Int -> Text -> Text
@@ -110,8 +111,8 @@ padRight n t = t <> T.replicate (max 0 (n - T.length t)) " "
 
 showTopic :: Text -> IO ()
 showTopic name =
-  case find (\t -> t.name == T.toLower name) helpTopics of
-    Just t -> TIO.putStrLn t.content
+  case find (\t -> t ^. #name == T.toLower name) helpTopics of
+    Just t -> TIO.putStrLn (t ^. #content)
     Nothing -> do
       TIO.putStrLn $ "Unknown topic: " <> name
-      TIO.putStrLn $ "Available: " <> T.intercalate ", " (map (.name) helpTopics)
+      TIO.putStrLn $ "Available: " <> T.intercalate ", " (map (^. #name) helpTopics)

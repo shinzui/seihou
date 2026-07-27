@@ -9,6 +9,7 @@ import Control.Monad (when)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -60,10 +61,10 @@ data UpgradeEntry = UpgradeEntry
 instance ToJSON UpgradeEntry where
   toJSON e =
     object
-      [ "module" .= e.moduleName,
-        "oldVersion" .= e.oldVersion,
-        "newVersion" .= e.newVersion,
-        "status" .= statusText e.upgradeStatus
+      [ "module" .= (e ^. #moduleName),
+        "oldVersion" .= (e ^. #oldVersion),
+        "newVersion" .= (e ^. #newVersion),
+        "status" .= statusText (e ^. #upgradeStatus)
       ]
     where
       statusText :: UpgradeStatus -> Text
@@ -77,7 +78,7 @@ handleUpgrade :: UpgradeOpts -> IO ()
 handleUpgrade uopts = do
   searchPaths <- defaultSearchPaths
   modules <- discoverAllModules searchPaths
-  let installed = filter (\dm -> dm.source == SourceInstalled) modules
+  let installed = filter (\dm -> dm ^. #source == SourceInstalled) modules
 
   if null installed
     then TIO.putStrLn "No installed modules found."
@@ -85,7 +86,7 @@ handleUpgrade uopts = do
       originsWithModules <- mapM readOriginWithModule installed
       let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
 
-      filtered <- case uopts.modules of
+      filtered <- case uopts ^. #modules of
         [] -> pure withOrigins
         names -> do
           let result = [(dm, origin) | (dm, origin) <- withOrigins, moduleNameFromDm dm `elem` names]
@@ -99,15 +100,15 @@ handleUpgrade uopts = do
       if null filtered
         then TIO.putStrLn "No installed modules with origin metadata found."
         else do
-          let grouped = Map.toList $ Map.fromListWith (++) [(origin.sourceUrl, [(dm, origin)]) | (dm, origin) <- filtered]
+          let grouped = Map.toList $ Map.fromListWith (++) [(origin ^. #sourceUrl, [(dm, origin)]) | (dm, origin) <- filtered]
 
-          if uopts.dryRun
+          if uopts ^. #dryRun
             then TIO.putStrLn "Checking installed modules for updates (dry run)..."
             else TIO.putStrLn "Upgrading installed modules..."
 
           entries <- concat <$> mapM (upgradeSource uopts) grouped
 
-          if uopts.json
+          if uopts ^. #json
             then LBS.putStr (encodePretty entries)
             else renderUpgradeTable entries
 
@@ -115,7 +116,7 @@ handleUpgrade uopts = do
           -- migrations pending for any module that was upgraded just
           -- now. Either run them (--with-migrations) or print a
           -- one-line advisory per module.
-          unless uopts.dryRun $
+          unless (uopts ^. #dryRun) $
             handlePostUpgradeMigrations uopts entries
 
 upgradeSource :: UpgradeOpts -> (Text, [(DiscoveredModule, OriginInfo)]) -> IO [UpgradeEntry]
@@ -144,7 +145,7 @@ mkUnreachableEntry :: DiscoveredModule -> OriginInfo -> UpgradeEntry
 mkUnreachableEntry dm origin =
   UpgradeEntry
     { moduleName = moduleNameFromDm dm,
-      oldVersion = origin.version,
+      oldVersion = origin ^. #version,
       newVersion = Nothing,
       upgradeStatus = SourceUnreachable
     }
@@ -152,22 +153,22 @@ mkUnreachableEntry dm origin =
 upgradeModule :: UpgradeOpts -> FilePath -> RepoContents -> Text -> (DiscoveredModule, OriginInfo) -> IO UpgradeEntry
 upgradeModule uopts cloneDir contents sourceUrl (dm, origin) = do
   let name = moduleNameFromDm dm
-      installedVer = origin.version
+      installedVer = (origin ^. #version)
   availableVer <- fetchAvailable cloneDir (ModuleName name)
   let status = compareVersions installedVer availableVer
 
   case status of
     OutdatedSt
-      | uopts.dryRun ->
+      | uopts ^. #dryRun ->
           pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
       | otherwise ->
           doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer
     UpToDate ->
       pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = AlreadyUpToDate}
     Unversioned
-      | uopts.skipUnversioned ->
+      | uopts ^. #skipUnversioned ->
           pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Skipped}
-      | uopts.dryRun ->
+      | uopts ^. #dryRun ->
           pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
       | otherwise ->
           doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer
@@ -177,10 +178,10 @@ upgradeModule uopts cloneDir contents sourceUrl (dm, origin) = do
 doUpgrade :: FilePath -> RepoContents -> Text -> OriginInfo -> Text -> Maybe Text -> Maybe Text -> IO UpgradeEntry
 doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
   let result = case contents of
-        SingleModule rootDir -> Just (rootDir, origin.repoName)
+        SingleModule rootDir -> Just (rootDir, origin ^. #repoName)
         MultiModule registry ->
-          case filter (\e -> e.name.unModuleName == name) registry.modules of
-            (entry : _) -> Just (cloneDir </> entry.path, Just registry.repoName)
+          case filter (\e -> e ^. #name . #unModuleName == name) (registry ^. #modules) of
+            (entry : _) -> Just (cloneDir </> entry ^. #path, Just (registry ^. #repoName))
             [] -> Nothing
         SingleRecipe _ -> Nothing
         SingleBlueprint _ -> Nothing
@@ -208,10 +209,10 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
               -- still sourced from the registry entry since module.dhall
               -- has no equivalent field.
               let (ver, tags) = case contents of
-                    MultiModule registry -> case filter (\e -> e.name.unModuleName == name) registry.modules of
-                      (entry : _) -> (modul.version <|> entry.version, entry.tags)
-                      [] -> (modul.version, [])
-                    _ -> (modul.version, [])
+                    MultiModule registry -> case filter (\e -> e ^. #name . #unModuleName == name) (registry ^. #modules) of
+                      (entry : _) -> (modul ^. #version <|> entry ^. #version, entry ^. #tags)
+                      [] -> (modul ^. #version, [])
+                    _ -> (modul ^. #version, [])
               installModuleDir moduleDir (T.unpack name) sourceUrl registryName ver tags
               TIO.putStrLn $ "    Upgraded " <> name
               pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
@@ -219,9 +220,9 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
 renderUpgradeTable :: [UpgradeEntry] -> IO ()
 renderUpgradeTable entries = do
   colorEnabled <- useColor
-  let maxNameLen = max 6 (maximum (map (T.length . (.moduleName)) entries))
-      maxOldLen = max 3 (maximum (map (T.length . maybe "(none)" id . (.oldVersion)) entries))
-      maxNewLen = max 3 (maximum (map (T.length . maybe "(none)" id . (.newVersion)) entries))
+  let maxNameLen = max 6 (maximum (map (T.length . (^. #moduleName)) entries))
+      maxOldLen = max 3 (maximum (map (T.length . maybe "(none)" id . (^. #oldVersion)) entries))
+      maxNewLen = max 3 (maximum (map (T.length . maybe "(none)" id . (^. #newVersion)) entries))
 
       padR n t = t <> T.replicate (n - T.length t + 2) " "
 
@@ -232,15 +233,15 @@ renderUpgradeTable entries = do
           <> "Status"
 
       formatRow e =
-        let oldText = maybe "(none)" id e.oldVersion
-            newText = maybe "(none)" id e.newVersion
-            statusTxt = case e.upgradeStatus of
+        let oldText = maybe "(none)" id (e ^. #oldVersion)
+            newText = maybe "(none)" id (e ^. #newVersion)
+            statusTxt = case e ^. #upgradeStatus of
               Upgraded -> if colorEnabled then green "upgraded" else "upgraded"
               AlreadyUpToDate -> if colorEnabled then dim "up to date" else "up to date"
               Skipped -> if colorEnabled then yellow "skipped (unversioned)" else "skipped (unversioned)"
               UpgradeFailed reason -> if colorEnabled then red ("failed: " <> reason) else "failed: " <> reason
               SourceUnreachable -> if colorEnabled then yellow "unreachable" else "unreachable"
-         in padR maxNameLen e.moduleName
+         in padR maxNameLen (e ^. #moduleName)
               <> padR maxOldLen oldText
               <> padR maxNewLen newText
               <> statusTxt
@@ -249,9 +250,9 @@ renderUpgradeTable entries = do
   TIO.putStrLn header
   mapM_ (TIO.putStrLn . formatRow) entries
 
-  let upgraded = length (filter (\e -> e.upgradeStatus == Upgraded) entries)
+  let upgraded = length (filter (\e -> e ^. #upgradeStatus == Upgraded) entries)
       failed = length (filter isFailedEntry entries)
-      skipped = length (filter (\e -> e.upgradeStatus == Skipped) entries)
+      skipped = length (filter (\e -> e ^. #upgradeStatus == Skipped) entries)
   TIO.putStrLn ""
   TIO.putStrLn $
     T.pack (show (length entries))
@@ -263,7 +264,7 @@ renderUpgradeTable entries = do
       <> "."
 
 isFailedEntry :: UpgradeEntry -> Bool
-isFailedEntry e = case e.upgradeStatus of
+isFailedEntry e = case e ^. #upgradeStatus of
   UpgradeFailed _ -> True
   SourceUnreachable -> True
   _ -> False
@@ -280,7 +281,7 @@ handlePostUpgradeMigrations :: UpgradeOpts -> [UpgradeEntry] -> IO ()
 handlePostUpgradeMigrations uopts entries = do
   let manifestPath = ".seihou" </> "manifest.json"
       upgraded =
-        [ entry.moduleName | entry <- entries, entry.upgradeStatus == Upgraded
+        [ entry ^. #moduleName | entry <- entries, entry ^. #upgradeStatus == Upgraded
         ]
   if null upgraded
     then pure ()
@@ -297,7 +298,7 @@ handleOneModule uopts manifest name =
   case findAppliedByName manifest name of
     Nothing -> pure ()
     Just am -> do
-      let dhallFile = am.source </> "module.dhall"
+      let dhallFile = am ^. #source </> "module.dhall"
       r <- evalModuleFromFile dhallFile
       case r of
         Left _ -> pure ()
@@ -305,12 +306,12 @@ handleOneModule uopts manifest name =
           case pendingChainFor am installed of
             Nothing -> pure ()
             Just plan
-              | uopts.withMigrations -> runOnePostUpgradeMigration am.source name
+              | uopts ^. #withMigrations -> runOnePostUpgradeMigration (am ^. #source) name
               | otherwise -> printAdvisory name plan
 
 findAppliedByName :: Manifest -> Text -> Maybe AppliedModule
 findAppliedByName manifest name =
-  case filter (\am -> am.name.unModuleName == name) manifest.modules of
+  case filter (\am -> am ^. #name . #unModuleName == name) (manifest ^. #modules) of
     (am : _) -> Just am
     [] -> Nothing
 
@@ -321,11 +322,11 @@ printAdvisory name plan = do
         "note: "
           <> name
           <> " has "
-          <> T.pack (show (length plan.steps))
+          <> T.pack (show (length (plan ^. #steps)))
           <> " migration(s) pending ("
-          <> renderVersion plan.from
+          <> renderVersion (plan ^. #from)
           <> " → "
-          <> renderVersion plan.to
+          <> renderVersion (plan ^. #to)
           <> "); run 'seihou update' to reconcile the recorded project application"
   TIO.putStrLn $ if colorEnabled then yellow msg else msg
 
@@ -369,10 +370,10 @@ runOnePostUpgradeMigration installedDir name = do
 
 renderMigrateError :: MigrateError -> Text
 renderMigrateError err = case err of
-  MigrateModuleNotApplied n -> "module " <> n.unModuleName <> " not applied"
-  MigrateNoRecordedVersion n -> "no version recorded for " <> n.unModuleName
+  MigrateModuleNotApplied n -> "module " <> n ^. #unModuleName <> " not applied"
+  MigrateNoRecordedVersion n -> "no version recorded for " <> (n ^. #unModuleName)
   MigrateInstalledModuleEvalFailed _ msg -> msg
-  MigrateInstalledModuleHasNoVersion n _ -> "no version on installed " <> n.unModuleName
+  MigrateInstalledModuleHasNoVersion n _ -> "no version on installed " <> (n ^. #unModuleName)
   MigrateUnparseableInstalledVersion v -> "bad version " <> v
   MigrateUnparseableTargetVersion v -> "bad target version " <> v
   MigrateUnparseableManifestVersion v -> "bad manifest version " <> v

@@ -3,6 +3,7 @@ module Seihou.CLI.PromptRun
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
@@ -46,32 +47,32 @@ import System.Exit (exitFailure)
 
 handlePromptRun :: PendingAgentConfig -> PromptRunOpts -> IO ()
 handlePromptRun pending opts = do
-  let level = if opts.verbose then LogVerbose else LogNormal
+  let level = if opts ^. #verbose then LogVerbose else LogNormal
 
   searchPaths <- defaultSearchPaths
-  runnableResult <- discoverRunnable searchPaths opts.name
+  runnableResult <- discoverRunnable searchPaths (opts ^. #name)
   (prompt, promptDir) <- case runnableResult of
     Right (RunnableAgentPrompt p dir) -> pure (p, dir)
     Right (RunnableModule _ _) ->
       exitErr level $
         "'"
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "' is a module, not a prompt. Did you mean 'seihou run "
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "'?"
     Right (RunnableRecipe _ _) ->
       exitErr level $
         "'"
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "' is a recipe, not a prompt. Did you mean 'seihou run "
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "'?"
     Right (RunnableBlueprint _ _) ->
       exitErr level $
         "'"
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "' is a blueprint, not a prompt. Did you mean 'seihou agent run "
-          <> opts.name.unModuleName
+          <> opts ^. #name . #unModuleName
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
 
@@ -85,32 +86,32 @@ handlePromptRun pending opts = do
   modelConfig <-
     resolveDeclaredAgentConfig
       level
-      ("prompt '" <> prompt.name.unModuleName <> "'")
+      ("prompt '" <> prompt ^. #name . #unModuleName <> "'")
       pending
-      (agentLaunchDeclaration prompt.launch)
+      (agentLaunchDeclaration (prompt ^. #launch))
 
   let placeholderModule =
         Module
-          { name = prompt.name,
-            version = prompt.version,
-            description = prompt.description,
-            vars = relaxCommandVarDecls prompt.commandVars prompt.vars,
+          { name = prompt ^. #name,
+            version = prompt ^. #version,
+            description = prompt ^. #description,
+            vars = relaxCommandVarDecls (prompt ^. #commandVars) (prompt ^. #vars),
             exports = [],
-            prompts = prompt.prompts,
+            prompts = prompt ^. #prompts,
             steps = [],
             commands = [],
             dependencies = [],
             removal = Nothing,
             migrations = []
           }
-      placeholderInst = primaryInstance prompt.name
+      placeholderInst = primaryInstance (prompt ^. #name)
       placeholderTriple = (placeholderInst, placeholderModule, promptDir)
 
   envPairs <- getEnvironment
-  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts.vars]
+  let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- opts ^. #vars]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace prompt.name) opts.namespace
-  context <- resolveContext opts.context envVars
+      namespace = fromMaybe (deriveNamespace (prompt ^. #name)) (opts ^. #namespace)
+  context <- resolveContext (opts ^. #context) envVars
   let contextName = fromMaybe "" context
 
   resolveResult <- runEff $ runConfigReader $ runConsole $ do
@@ -137,7 +138,7 @@ handlePromptRun pending opts = do
       exitFailure
     Right r -> pure (Map.findWithDefault Map.empty placeholderInst r)
 
-  commandResult <- runEff $ runProcessIO $ resolveCommandVars prompt.vars prompt.commandVars resolvedNormal
+  commandResult <- runEff $ runProcessIO $ resolveCommandVars (prompt ^. #vars) (prompt ^. #commandVars) resolvedNormal
   resolved <- case commandResult of
     Left errs -> do
       logIO level $ do
@@ -146,27 +147,27 @@ handlePromptRun pending opts = do
       exitFailure
     Right r -> pure r
 
-  let renderedPrompt = renderPromptBody resolved prompt.prompt
+  let renderedPrompt = renderPromptBody resolved (prompt ^. #prompt)
   ctx <- gatherAgentContext
-  let systemPrompt = renderPromptSystemPrompt ctx prompt resolved renderedPrompt opts.prompt
+  let systemPrompt = renderPromptSystemPrompt ctx prompt resolved renderedPrompt (opts ^. #prompt)
 
   _ <-
     runRenderedAgentPrompt
-      opts.debug
+      (opts ^. #debug)
       modelConfig
       setupAllowedTools
       Nothing
       systemPrompt
-      opts.prompt
+      (opts ^. #prompt)
   pure ()
 
 relaxCommandVarDecls :: [CommandVar] -> [VarDecl] -> [VarDecl]
 relaxCommandVarDecls commandVars =
   map relaxOne
   where
-    commandNames = Set.fromList (map (.name) commandVars)
+    commandNames = Set.fromList (map (^. #name) commandVars)
     relaxOne decl
-      | Set.member decl.name commandNames = decl {required = False}
+      | Set.member (decl ^. #name) commandNames = decl {required = False}
       | otherwise = decl
 
 exitErr :: LogLevel -> Text -> IO a
@@ -178,24 +179,24 @@ renderModuleLoadError :: ModuleLoadError -> Text
 renderModuleLoadError = \case
   ModuleNotFound name searched ->
     "Prompt '"
-      <> name.unModuleName
+      <> name ^. #unModuleName
       <> "' not found. Searched in:\n"
       <> T.intercalate "\n" (map (("  " <>) . T.pack) searched)
   DhallEvalError name msg ->
-    "Failed to evaluate '" <> name.unModuleName <> "': " <> msg
+    "Failed to evaluate '" <> name ^. #unModuleName <> "': " <> msg
   DhallDecodeError name msg ->
-    "Failed to decode '" <> name.unModuleName <> "': " <> msg
+    "Failed to decode '" <> name ^. #unModuleName <> "': " <> msg
   ValidationError name msgs ->
     "Validation failed for '"
-      <> name.unModuleName
+      <> name ^. #unModuleName
       <> "':\n"
       <> T.intercalate "\n" (map ("  " <>) msgs)
   CircularDependency names ->
     "Circular dependency detected: "
-      <> T.intercalate " -> " (map (.unModuleName) names)
+      <> T.intercalate " -> " (map (^. #unModuleName) names)
   MissingSourceFile name path ->
     "Missing source file in '"
-      <> name.unModuleName
+      <> name ^. #unModuleName
       <> "': "
       <> T.pack path
   RegistryEvalError path msg ->

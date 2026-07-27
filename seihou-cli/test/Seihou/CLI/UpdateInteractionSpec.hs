@@ -1,5 +1,7 @@
 module Seihou.CLI.UpdateInteractionSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Seihou.CLI.Update (UpdatePlan (..))
@@ -35,30 +37,30 @@ spec = do
 
   it "force accepts ordinary generated conflicts" $ do
     resolved <- expectResolved conflictPlan (forceResolveUpdatePlan conflictPlan)
-    unresolvedPaths resolved.reconciliation `shouldBe` Set.empty
-    case Map.lookup "README.md" resolved.reconciliation.files of
+    unresolvedPaths (resolved ^. #reconciliation) `shouldBe` Set.empty
+    case Map.lookup "README.md" (resolved ^. #reconciliation . #files) of
       Just (FileConflict _ _ _ _ _ _ (Just choice)) ->
-        choice.choice `shouldBe` AcceptGenerated
+        (choice ^. #choice) `shouldBe` AcceptGenerated
       other -> expectationFailure ("expected resolved conflict, got " <> show other)
 
   it "force retains edited orphans as tracked state" $ do
     resolved <- expectResolved orphanPlan (forceResolveUpdatePlan orphanPlan)
-    case Map.lookup "README.md" resolved.reconciliation.files of
+    case Map.lookup "README.md" (resolved ^. #reconciliation . #files) of
       Just (FileOrphanEdited _ _ _ _ (Just choice)) ->
         choice `shouldBe` RetainTrackedOrphan
       other -> expectationFailure ("expected resolved orphan, got " <> show other)
 
   it "force leaves merge-driver failures unresolved" $ do
     resolved <- expectResolved unavailableConflictPlan (forceResolveUpdatePlan unavailableConflictPlan)
-    unresolvedPaths resolved.reconciliation `shouldBe` Set.singleton "README.md"
+    unresolvedPaths (resolved ^. #reconciliation) `shouldBe` Set.singleton "README.md"
 
   it "applies explicit keep-current and detach-orphan choices without writing" $ do
     kept <- expectResolved conflictPlan (applyResolutionDecisions [ResolveFile "README.md" KeepCurrent] conflictPlan)
-    case Map.lookup "README.md" kept.reconciliation.files of
-      Just (FileConflict _ _ _ _ _ _ (Just choice)) -> choice.choice `shouldBe` KeepCurrent
+    case Map.lookup "README.md" (kept ^. #reconciliation . #files) of
+      Just (FileConflict _ _ _ _ _ _ (Just choice)) -> (choice ^. #choice) `shouldBe` KeepCurrent
       other -> expectationFailure ("expected keep-current conflict resolution, got " <> show other)
     detached <- expectResolved orphanPlan (applyResolutionDecisions [ResolveOrphan "README.md" DetachAndKeepOrphan] orphanPlan)
-    case Map.lookup "README.md" detached.reconciliation.files of
+    case Map.lookup "README.md" (detached ^. #reconciliation . #files) of
       Just (FileOrphanEdited _ _ _ _ (Just choice)) -> choice `shouldBe` DetachAndKeepOrphan
       other -> expectationFailure ("expected detached orphan resolution, got " <> show other)
 

@@ -3,6 +3,7 @@ module Seihou.CLI.ValidateBlueprint
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentConfig (agentLaunchDeclaration, validateAgentLaunchDeclaration)
@@ -48,7 +49,7 @@ data BlueprintReport = BlueprintReport
 
 handleValidateBlueprint :: ValidateBlueprintOpts -> IO ()
 handleValidateBlueprint vopts = do
-  blueprintDir <- case vopts.path of
+  blueprintDir <- case vopts ^. #path of
     Just p -> pure p
     Nothing -> getCurrentDirectory
 
@@ -109,13 +110,13 @@ buildBlueprintReport baseDir b = do
             "Launch settings"
             DiagError
             ( checkBlueprintLaunch b
-                <> validateAgentLaunchDeclaration (agentLaunchDeclaration b.launch)
+                <> validateAgentLaunchDeclaration (agentLaunchDeclaration (b ^. #launch))
             )
         ]
   pure
     BlueprintReport
       { blueprint = Just b,
-        name = b.name.unModuleName,
+        name = b ^. #name . #unModuleName,
         path = baseDir,
         dhallOk = True,
         dhallError = Nothing,
@@ -124,13 +125,13 @@ buildBlueprintReport baseDir b = do
 
 blueprintReportHasErrors :: BlueprintReport -> Bool
 blueprintReportHasErrors r =
-  not r.dhallOk
-    || any (\c -> c.severity == DiagError && not (null c.details)) r.checks
+  not (r ^. #dhallOk)
+    || any (\c -> c ^. #severity == DiagError && not (null (c ^. #details))) (r ^. #checks)
 
 renderBlueprintReport :: Bool -> BlueprintReport -> Text
 renderBlueprintReport color report =
   T.unlines $
-    [ "Validating blueprint at " <> T.pack report.path <> "...",
+    [ "Validating blueprint at " <> T.pack (report ^. #path) <> "...",
       ""
     ]
       ++ dhallLine
@@ -148,45 +149,45 @@ renderBlueprintReport color report =
     labelWarn t = if color then yellow t else t
 
     dhallLine =
-      if report.dhallOk
+      if report ^. #dhallOk
         then ["  " <> okMark <> " blueprint.dhall evaluates successfully"]
         else
           ["  " <> errMark <> " blueprint.dhall failed to evaluate"]
-            ++ case report.dhallError of
+            ++ case report ^. #dhallError of
               Just errText -> ["      " <> detailStyle errText]
               Nothing -> []
 
-    summaryLines = case report.blueprint of
+    summaryLines = case report ^. #blueprint of
       Nothing -> []
       Just b ->
-        [ "  " <> okMark <> " Blueprint name: " <> nameStyle b.name.unModuleName,
-          "  " <> okMark <> " " <> T.pack (show (length b.vars)) <> " variables declared",
-          "  " <> okMark <> " " <> T.pack (show (length b.prompts)) <> " prompts defined",
-          "  " <> okMark <> " " <> T.pack (show (length b.baseModules)) <> " base modules declared",
-          "  " <> okMark <> " " <> T.pack (show (length b.files)) <> " reference files declared"
+        [ "  " <> okMark <> " Blueprint name: " <> nameStyle (b ^. #name . #unModuleName),
+          "  " <> okMark <> " " <> T.pack (show (length (b ^. #vars))) <> " variables declared",
+          "  " <> okMark <> " " <> T.pack (show (length (b ^. #prompts))) <> " prompts defined",
+          "  " <> okMark <> " " <> T.pack (show (length (b ^. #baseModules))) <> " base modules declared",
+          "  " <> okMark <> " " <> T.pack (show (length (b ^. #files))) <> " reference files declared"
         ]
 
-    checkLines = concatMap renderCheck report.checks
+    checkLines = concatMap renderCheck (report ^. #checks)
 
     renderCheck c
-      | null c.details =
-          ["  " <> okMark <> " " <> c.label]
-      | c.severity == DiagWarning =
-          ("  " <> warnMark <> " " <> labelWarn c.label)
-            : map (\d -> "      " <> detailStyle d) c.details
+      | null (c ^. #details) =
+          ["  " <> okMark <> " " <> c ^. #label]
+      | c ^. #severity == DiagWarning =
+          ("  " <> warnMark <> " " <> labelWarn (c ^. #label))
+            : map (\d -> "      " <> detailStyle d) (c ^. #details)
       | otherwise =
-          ("  " <> errMark <> " " <> labelErr c.label)
-            : map (\d -> "      " <> detailStyle d) c.details
+          ("  " <> errMark <> " " <> labelErr (c ^. #label))
+            : map (\d -> "      " <> detailStyle d) (c ^. #details)
 
     errorCount =
       length
         [ ()
-        | c <- report.checks,
-          c.severity == DiagError,
-          not (null c.details)
+        | c <- report ^. #checks,
+          c ^. #severity == DiagError,
+          not (null (c ^. #details))
         ]
 
-    dhallFailed = not report.dhallOk
+    dhallFailed = not (report ^. #dhallOk)
     totalErrors = errorCount + (if dhallFailed then 1 else 0)
 
     resultLine
@@ -194,5 +195,5 @@ renderBlueprintReport color report =
           let msg = T.pack (show totalErrors) <> " error(s) found."
            in (if color then bold (red msg) else msg) <> " Blueprint is invalid."
       | otherwise =
-          let msg = "Blueprint '" <> report.name <> "' is valid."
+          let msg = "Blueprint '" <> report ^. #name <> "' is valid."
            in if color then green msg else msg

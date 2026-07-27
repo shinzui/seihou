@@ -2,7 +2,6 @@ module Seihou.CLI.AgentTraceSpec (tests) where
 
 import Baikai.Trace.Event (TraceEvent (..))
 import Baikai.Trace.Sink (TraceSink (..))
-import Control.Lens (at)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
