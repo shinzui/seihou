@@ -32,6 +32,35 @@ and the pre-commit hook. A new module added to `executable seihou`'s
 `other-modules` without a recognised trapping import will fail the
 check.
 
+## Record Conventions
+
+Records are defined with **strict fields** (`!` on every field of a `data`
+record; `newtype` fields are exempt because GHC rejects the annotation
+there), **no type-abbreviation prefixes** on field names, an **explicit
+deriving strategy**, and `Generic` in the derive list.
+
+Fields are read and written through `generic-lens` overloaded labels, never
+through record dot syntax (`OverloadedRecordDot` is disabled everywhere) and
+never through record update syntax:
+
+```haskell
+config ^. #environment            -- read
+state & #status .~ Active         -- set
+state & #banStatus ?~ status      -- set a Maybe to Just
+summary & #willRun %~ (+ 1)       -- apply a function
+fs & #files . at path ?~ content  -- Map.insert (at, not ix)
+```
+
+Record construction and record patterns are fine; only update syntax is out.
+Each module using `#label` adds `import Data.Generics.Labels ()` itself —
+that import must never go in `Seihou.Prelude`, because the instance is an
+orphan and would propagate to every module.
+
+Full convention and its rationale: `docs/dev/architecture/overview.md`,
+section "Record Conventions"; mirrored in `docs/dev/contributing.md`.
+Mechanically enforced by `nix/check-record-conventions.sh`, wired into both
+`nix flake check` and the pre-commit hook.
+
 ## Commit messages
 
 Conventional Commits, per the global guidance.

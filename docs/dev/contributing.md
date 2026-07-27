@@ -66,6 +66,71 @@ canonical home for this convention; this section mirrors it for
 contributors landing on the contributing guide. If the two diverge,
 treat the architecture doc as authoritative.
 
+## Record Conventions
+
+Every seihou record is defined and manipulated the same way.
+
+Define records with **no type-abbreviation prefix** on field names (write
+`name`, not `drName` — `DuplicateRecordFields` is what makes prefixes
+unnecessary), a `!` on **every** field of a `data` record, an explicit
+deriving strategy (`deriving stock (...)`, never a bare `deriving (...)`),
+and `Generic` in the derive list. `newtype` fields are the one strictness
+exception: GHC rejects the annotation there outright. Where an unprefixed
+name collides with a keyword, add a trailing underscore (`module_`).
+
+Read and write fields through `generic-lens` overloaded labels, never
+through record dot syntax or record update syntax:
+
+```haskell
+config ^. #environment                    -- read
+entry ^. #name . #unModuleName            -- nested read
+map (^. #name) modules                    -- as a callback
+state & #status .~ Active                 -- set
+state & #banStatus ?~ status              -- set a Maybe to Just
+summary & #willRun %~ (+ 1)               -- apply a function
+fs & #files . at path ?~ content          -- Map.insert
+fs & #files . at path .~ Nothing          -- Map.delete
+st & #entries . ix k %~ f                 -- Map.adjust
+```
+
+`at` versus `ix` is a semantic choice: `at` focuses a `Maybe` and can insert
+or delete, `ix` only touches a key that already exists.
+
+Record *construction* and record *patterns* are both fine — only record
+*update* syntax is out, because under `DuplicateRecordFields` GHC accepts an
+update only when one datatype in scope has every field being updated, which
+stops being true as soon as field names are shared.
+
+Each module that uses `#label` imports the instance itself:
+
+```haskell
+import Data.Generics.Labels ()
+```
+
+with an empty import list, so only the instance comes through. This import
+must **never** go in `Seihou.Prelude`: the instance is an orphan, and orphan
+instances propagate transitively, so putting it in the shared prelude would
+force the `generic-lens` reading of `#label` onto every module in the project.
+`Seihou.Prelude` does re-export all of `Control.Lens`, so the operators
+themselves need no import in modules that use the prelude.
+
+Two things cannot use labels. `generic-lens` builds a lens only for a field
+present in every constructor, so `Operation`, `MigrationOp` and `PreviewLine`
+are reached by pattern matching. Third-party types (`CreateProcess`,
+`Permissions`, baikai's `InteractiveLaunchRequest`) have no `Generic`
+instance, so those few sites keep record update syntax and carry a comment
+saying why.
+
+`nix/check-record-conventions.sh` enforces this in the pre-commit hook and in
+`nix flake check`. To exempt a third-party type's record update, add its field
+names to `EXEMPT_UPDATE_FIELDS` in that script with an inline comment naming
+the type.
+
+The architecture doc at `docs/dev/architecture/overview.md` is the canonical
+home for this convention; this section mirrors it for contributors landing on
+the contributing guide. If the two diverge, treat the architecture doc as
+authoritative.
+
 ## Commit Messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/):

@@ -368,6 +368,160 @@ unscheduled refactor work, because tests cannot import from the executable
 target. Defaulting to the library prevents the discovery from happening
 mid-implementation.
 
+## Record Conventions
+
+Every seihou record is defined and manipulated the same way. This section is
+the canonical statement of that convention; `docs/dev/contributing.md` mirrors
+a condensed version, and `nix/check-record-conventions.sh` enforces the
+mechanically checkable parts in both the pre-commit hook and `nix flake check`.
+
+### Extensions
+
+Every Cabal stanza's `default-extensions` block enables `DeriveAnyClass`,
+`DuplicateRecordFields`, `NoFieldSelectors`, `OverloadedLabels` and
+`OverloadedStrings`. `GHC2024` already implies `DataKinds`,
+`DerivingStrategies`, `LambdaCase` and `NamedFieldPuns`, so those are not
+listed. `OverloadedRecordDot` is deliberately **absent**: field access goes
+through `generic-lens` labels, and leaving the extension off means the old
+`record.field` idiom cannot silently return.
+
+`NoFieldSelectors` matters more than it looks. It suppresses the top-level
+selector function a record field would otherwise generate, which is what lets
+a field be named `to`, `from` or `op` without colliding with
+`Control.Lens.to`, `Control.Lens.from` or `Control.Lens.Wrapped.op`. All three
+of those field names exist in seihou today.
+
+### Defining a record
+
+Fields carry no type-abbreviation prefix — `DuplicateRecordFields` is what
+makes prefixes unnecessary, so write `name`, not `drName` or `entryName`.
+Where the unprefixed name collides with a Haskell keyword, add a trailing
+underscore: `module_`, `type_`, `default_`.
+
+Every field of a `data` record is strict. `newtype` fields are the one
+exception, and not by choice: GHC rejects a strictness annotation on a
+newtype constructor outright, and a newtype has no runtime box for the
+annotation to affect anyway. For a `Maybe` field, `!(Maybe UTCTime)` makes
+the `Maybe` constructor strict while its contents stay lazy, which is what is
+wanted.
+
+Deriving clauses always name their strategy: `deriving stock (...)` for
+standard classes, `deriving anyclass (...)` for classes derived through
+`Generic`, `deriving newtype (...)` for newtypes. A bare `deriving (...)` is
+ambiguous once `DeriveAnyClass` is on.
+
+Every record derives `Generic`, because that is what `generic-lens`
+synthesises its lenses from. `Generic` is re-exported by `Seihou.Prelude`, so
+modules that use the prelude need no import for it.
+
+```haskell
+data DiscoveredRunnable = DiscoveredRunnable
+  { name :: !Text,
+    dir :: !FilePath,
+    source :: !ModuleSource,
+    description :: !(Maybe Text),
+    isError :: !Bool
+  }
+  deriving stock (Eq, Generic, Show)
+```
+
+### Reading and writing fields
+
+Read with `^.`, set with `.~`, set a `Maybe` field to `Just` with `?~`, apply
+a function to a field with `%~`. Compose labels with `.` for nested access.
+
+```haskell
+config ^. #environment
+entry ^. #name . #unModuleName
+map (^. #name) modules                    -- as a callback
+
+state & #status .~ Active
+state & #banStatus ?~ status              -- not `.~ Just status`
+summary & #willRun %~ (+ 1)
+logs & #outputs %~ (<> [msg])
+```
+
+For `Map`-valued fields, prefer the `at` and `ix` lenses over `Map.insert`,
+`Map.delete` and `Map.adjust`. The distinction is semantic, not stylistic:
+`at` focuses a `Maybe` and can insert or delete, while `ix` only touches a key
+that already exists and silently does nothing otherwise.
+
+```haskell
+fs & #files . at path ?~ content          -- Map.insert
+fs & #files . at path .~ Nothing          -- Map.delete
+st & #entries . ix k %~ f                 -- Map.adjust
+```
+
+Record *construction* and record *patterns* are both fine and used
+throughout. It is only record *update* syntax that is out, and the reason is
+not taste: under `DuplicateRecordFields`, GHC accepts an update only when at
+most one datatype in scope has every field being updated. In a codebase that
+follows the no-prefix rule, shared field names are everywhere, so update
+syntax stops compiling exactly where the convention bites hardest. Label
+access resolves through `Generic` and is unaffected.
+
+Watch the fixities when converting by hand. `(^.)` is `infixl 8`, looser than
+both function application and a backticked function at `infixl 9`, so
+`f rec ^. #x` means `(f rec) ^. #x` and `rec ^. #x \`shouldBe\` y` does not
+parse as intended. `(.~)`, `(?~)` and `(%~)` are `infixr 4`, so a right-hand
+side containing `<|>`, `&&`, `==` or a backticked operator needs parentheses.
+`(&)` is `infixl 1`, looser than everything, so a setter chain used as an
+argument always needs them.
+
+### The labels orphan stays out of the prelude
+
+`Seihou.Prelude` re-exports the whole of `Control.Lens`, pinned to the `lens`
+package with `PackageImports`, minus four names that collide with names seihou
+already has in scope (see the comment on the import for which and why).
+
+It must **not** import `Data.Generics.Labels`. That module supplies the
+`IsLabel` instance that makes `#field` mean "a lens over a `Generic` record",
+and that instance is an *orphan* — defined in a module owning neither the
+class nor the type. Orphan instances propagate transitively, so importing it
+in a shared prelude forces the `generic-lens` reading of `#label` onto all 138
+modules that use the prelude, and permanently breaks any module needing a
+different `IsLabel` instance. Instead, each module that uses `#label` imports
+it itself, with an empty import list so that only the instance comes through:
+
+```haskell
+import Data.Generics.Labels ()
+```
+
+Keep it out of modules that only *define* types and never manipulate them, so
+that label-sensitive consumers can import those types cleanly.
+
+### What cannot use labels
+
+`generic-lens` builds a lens only for a field present in **every**
+constructor. Three seihou sum types carry record fields that are not:
+`Seihou.Core.Types.Operation`, `Seihou.Core.Migration.MigrationOp` and
+`Seihou.Engine.Preview.PreviewLine`. Reach their fields by pattern matching,
+which the convention explicitly permits:
+
+```haskell
+maxPathLen = maximum (0 : [T.length (T.pack p) | FilePreview {path = p} <- lines'])
+```
+
+GHC's own `HasField` is more permissive here — it solves for a partial field
+and hands back a partial selector — which is why these sites compiled under
+`OverloadedRecordDot`. The pattern match is total; the selector was not.
+
+Third-party types are the other exclusion. `System.Process.CreateProcess`,
+`System.Directory.Permissions` and baikai's `InteractiveLaunchRequest` have no
+`Generic` instance, so they have no labels and record update syntax is the
+only option. Those eight sites carry an inline comment saying so, and their
+field names are listed in `EXEMPT_UPDATE_FIELDS` in the enforcement script.
+
+### Enforcement
+
+`nix/check-record-conventions.sh` fails on: `OverloadedRecordDot` in any
+stanza; a stanza missing one of the five required extensions; a non-strict
+`data` record field; a record update expression; a bare `deriving (` clause;
+and `Data.Generics.Labels` in the prelude. It deliberately does not check for
+missing `Generic` derives — the compiler catches those the moment a `#label`
+fails to resolve — nor for field prefixes, which no text match can tell apart
+from a legitimately descriptive name.
+
 ### Agent Provider Lessons
 
 Baikai now provides two separate surfaces that Seihou uses deliberately.

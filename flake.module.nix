@@ -64,5 +64,27 @@
           bash nix/check-cli-module-placement.sh
           touch $out
         '';
+
+      # Enforce the record conventions as a flake check (mirrors the pre-commit
+      # hook in ./nix/pre-commit.nix).
+      checks.record-conventions = pkgs.runCommand "record-conventions-check"
+        {
+          src = inputs.self;
+          nativeBuildInputs = [
+            pkgs.bash
+            pkgs.coreutils
+            pkgs.findutils
+            pkgs.gawk
+            pkgs.gnugrep
+            pkgs.gnused
+          ];
+        }
+        ''
+          cp -r $src ./repo
+          chmod -R u+w ./repo
+          cd ./repo
+          bash nix/check-record-conventions.sh
+          touch $out
+        '';
     };
 }
