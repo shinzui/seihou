@@ -11,7 +11,7 @@ import Data.Text.IO qualified as TIO
 import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
     AgentProvider (..),
-    buildAgentCompletionRequest,
+    buildAgentCompletionRequestWith,
     runAgentCompletion,
   )
 import Seihou.CLI.AgentLaunch
@@ -26,7 +26,9 @@ import Seihou.CLI.AgentLaunch
     substitute,
   )
 import Seihou.CLI.AgentLaunchExec (launchConfiguredAgent)
+import Seihou.CLI.AgentTrace (traceSinkForConfig)
 import Seihou.CLI.Commands (SetupOpts (..))
+import Seihou.Core.Types (LogLevel (..))
 import Seihou.Prelude
 import System.Exit (exitFailure, exitWith)
 
@@ -59,7 +61,8 @@ runRenderedAgentPrompt debug modelConfig systemPrompt initialPrompt
       exitCode <- launchConfiguredAgent modelConfig setupAllowedTools debug systemPrompt initialPrompt
       exitWith exitCode
   | otherwise = do
-      result <- runAgentCompletion (buildAgentCompletionRequest modelConfig systemPrompt initialPrompt)
+      sink <- traceSinkForConfig LogNormal modelConfig
+      result <- runAgentCompletion (buildAgentCompletionRequestWith sink modelConfig systemPrompt initialPrompt)
       case result of
         Right assistantText -> TIO.putStrLn assistantText
         Left err -> do

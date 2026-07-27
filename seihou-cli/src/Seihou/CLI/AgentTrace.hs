@@ -6,7 +6,8 @@
 -- "Seihou.CLI.AgentCompletion" keeps sink construction — which is effectful —
 -- out of the pure resolution path.
 module Seihou.CLI.AgentTrace
-  ( traceSinkFor,
+  ( traceSinkForConfig,
+    traceSinkFor,
     resolveTraceFilePath,
     defaultTraceFileName,
     stderrSink,
@@ -16,7 +17,10 @@ where
 import Baikai.Trace.Sink (TraceSink (..), fileSink, renderHuman, silent, stdoutSink)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.CLI.AgentCompletion (TraceSetting (..))
+import Seihou.CLI.AgentCompletion (AgentModelConfig (..), TraceSetting (..), traceToText)
+import Seihou.CLI.Shared (logIO)
+import Seihou.Core.Types (LogLevel)
+import Seihou.Effect.Logger (logInfo)
 import Seihou.Prelude
 import Streamly.Data.Fold qualified as Fold
 import System.Directory (createDirectoryIfMissing)
@@ -63,3 +67,20 @@ traceSinkFor setting configuredPath =
       let path = resolveTraceFilePath configuredPath
       createDirectoryIfMissing True (takeDirectory path)
       fileSink path
+
+-- | Build the sink a resolved agent configuration asks for, naming the
+-- destination at verbose level.
+--
+-- Call this once per command rather than once per model call, so a command
+-- that makes several calls — @seihou agent migrate@ walks one call per
+-- migration edge — reports one destination and appends every call to it.
+traceSinkForConfig :: LogLevel -> AgentModelConfig -> IO TraceSink
+traceSinkForConfig level config = do
+  case config.agentTrace of
+    TraceOff -> pure ()
+    TraceFile ->
+      logIO level $
+        logInfo ("Trace: writing call traces to " <> T.pack (resolveTraceFilePath config.agentTracePath))
+    other ->
+      logIO level (logInfo ("Trace: writing call traces to " <> traceToText other))
+  traceSinkFor config.agentTrace config.agentTracePath

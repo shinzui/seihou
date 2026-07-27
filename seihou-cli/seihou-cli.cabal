@@ -228,6 +228,7 @@ test-suite seihou-cli-test
     Seihou.CLI.AgentLaunchSpec
     Seihou.CLI.AgentMigrateE2ESpec
     Seihou.CLI.AgentModelsSpec
+    Seihou.CLI.AgentTraceE2ESpec
     Seihou.CLI.AgentTraceSpec
     Seihou.CLI.AppliedBlueprintMigrationSpec
     Seihou.CLI.AppliedBlueprintSpec

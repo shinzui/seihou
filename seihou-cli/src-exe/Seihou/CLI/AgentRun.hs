@@ -26,7 +26,7 @@ import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
     AgentProvider (..),
-    buildAgentCompletionRequest,
+    buildAgentCompletionRequestWith,
     runAgentCompletionWithCliAccess,
   )
 import Seihou.CLI.AgentConfig
@@ -47,6 +47,7 @@ import Seihou.CLI.AgentLaunch
     substitute,
   )
 import Seihou.CLI.AgentLaunchExec (launchConfiguredAgentAddingDirs)
+import Seihou.CLI.AgentTrace (traceSinkForConfig)
 import Seihou.CLI.AppliedBlueprint (recordAppliedBlueprint)
 import Seihou.CLI.BlueprintExecution
   ( BlueprintExecutionRequest (..),
@@ -223,11 +224,12 @@ runRenderedAgentPromptMode debug batch modelConfig tools mFilesDir systemPrompt 
         ExitSuccess -> pure True
         ExitFailure _ -> exitWith exitCode
   | otherwise = do
+      sink <- traceSinkForConfig LogNormal modelConfig
       result <-
         runAgentCompletionWithCliAccess
           (maybeToList mFilesDir)
           tools
-          (buildAgentCompletionRequest modelConfig systemPrompt initialPrompt)
+          (buildAgentCompletionRequestWith sink modelConfig systemPrompt initialPrompt)
       case result of
         Right assistantText -> do
           TIO.putStrLn assistantText

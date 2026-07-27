@@ -5,6 +5,7 @@ module Seihou.CLI.AgentMigrate
   )
 where
 
+import Baikai.Trace.Sink (TraceSink)
 import Data.FileEmbed (embedFile)
 import Data.Maybe (maybeToList)
 import Data.Text qualified as T
@@ -14,7 +15,7 @@ import Data.Time.Clock (getCurrentTime)
 import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
     AgentProvider (..),
-    buildAgentCompletionRequest,
+    buildAgentCompletionRequestWith,
     runAgentCompletion,
   )
 import Seihou.CLI.AgentConfig
@@ -24,6 +25,7 @@ import Seihou.CLI.AgentConfig
   )
 import Seihou.CLI.AgentLaunch (gatherAgentContext)
 import Seihou.CLI.AgentLaunchExec (launchConfiguredAgentAddingDirs)
+import Seihou.CLI.AgentTrace (traceSinkForConfig)
 import Seihou.CLI.AppliedBlueprintMigration (recordAppliedBlueprintMigration)
 import Seihou.CLI.BlueprintExecution
   ( BlueprintExecutionRequest (..),
@@ -105,6 +107,7 @@ handleAgentMigrate debug pendingConfig opts = do
         then reportNoPending migrationPlan
         else do
           prepared <- prepare level modelConfig opts blueprint blueprintDir
+          traceSink <- traceSinkForConfig level modelConfig
           context <- gatherAgentContext
           let renderStep position total migration =
                 renderBlueprintMigrationSystemPrompt
@@ -135,7 +138,7 @@ handleAgentMigrate debug pendingConfig opts = do
             else do
               result <-
                 runBlueprintMigrationsWith
-                  (launchMigration modelConfig opts prepared renderStep)
+                  (launchMigration traceSink modelConfig opts prepared renderStep)
                   (recordMigration manifestPath blueprint)
                   pending
               handleRunResult level blueprint.name result
@@ -198,6 +201,8 @@ prepare level modelConfig opts blueprint blueprintDir = do
     Right prepared -> pure prepared
 
 launchMigration ::
+  -- | built once per command, so every migration edge appends to one destination
+  TraceSink ->
   AgentModelConfig ->
   BlueprintMigrationOpts ->
   PreparedBlueprintExecution ->
@@ -206,7 +211,7 @@ launchMigration ::
   Int ->
   BlueprintMigration ->
   IO (Either BlueprintMigrationLaunchFailure ())
-launchMigration modelConfig opts prepared renderStep position total migration = do
+launchMigration traceSink modelConfig opts prepared renderStep position total migration = do
   TIO.putStrLn $
     "Running blueprint migration "
       <> T.pack (show position)
@@ -239,7 +244,7 @@ launchMigration modelConfig opts prepared renderStep position total migration = 
     launchCompletion systemPrompt = do
       result <-
         runAgentCompletion
-          (buildAgentCompletionRequest modelConfig systemPrompt opts.migrateBlueprintPrompt)
+          (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt opts.migrateBlueprintPrompt)
       case result of
         Left err -> pure (Left (BlueprintMigrationProviderFailure err))
         Right assistantText -> do
