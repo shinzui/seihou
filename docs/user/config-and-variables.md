@@ -142,27 +142,42 @@ seihou run haskell-base
 | `agent.provider` | `SEIHOU_AGENT_PROVIDER` | `claude-cli`, `codex-cli`, `anthropic`, `openai` |
 | `agent.model` | `SEIHOU_AGENT_MODEL` | Any provider-specific model name or alias |
 | `agent.effort` | `SEIHOU_AGENT_EFFORT` | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `agent.trace` | `SEIHOU_AGENT_TRACE` | `off`, `file`, `stdout`, `stderr` |
+| `agent.tracePath` | — | Any file path; defaults to `.seihou/trace.jsonl` |
 
-Each command can also override the provider, model, and reasoning effort
-independently with a per-command key, `agent.<command>.provider`,
-`agent.<command>.model`, or `agent.<command>.effort`, where `<command>` is one
-of `assist`, `bootstrap`, `setup`, `run`, `migrate`, or `prompt-run`. For
-example, `agent.assist.model` applies only to `seihou agent assist`, while
-`agent.model` remains the shared default for any command without its own key.
-`agent.effort` controls how hard the model thinks; unlike the model it has no
-pinned default, so when unset the CLI/provider uses its own.
+Each command can also override the provider, model, reasoning effort, and
+trace destination independently with a per-command key,
+`agent.<command>.provider`, `agent.<command>.model`, `agent.<command>.effort`,
+or `agent.<command>.trace`, where `<command>` is one of `assist`, `bootstrap`,
+`setup`, `run`, `migrate`, or `prompt-run`. For example, `agent.assist.model`
+applies only to `seihou agent assist`, while `agent.model` remains the shared
+default for any command without its own key. `agent.effort` controls how hard
+the model thinks; unlike the model it has no pinned default, so when unset the
+CLI/provider uses its own. `agent.trace` records each model call's provider,
+model, latency, tokens, and cost; it defaults to `off`, so nothing is written
+unless you ask — see
+[Tracing model calls](agent-assistance.md#tracing-model-calls).
+
+`agent.tracePath` is the one exception to the chain below. It is free-form
+rather than a closed set of values, and it has no flag, no environment
+variable, and no per-command variant: local config beats global config, and
+that is all.
 
 Agent provider resolution uses this order, with the first non-blank value winning:
 
-1. Subcommand CLI flag: `seihou agent assist --provider ... --model ... --effort ...`
-2. Parent CLI flag: `seihou agent --provider ... --model ... --effort ... assist`
-3. Environment variables: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`, `SEIHOU_AGENT_EFFORT`
+1. Subcommand CLI flag: `seihou agent assist --provider ... --model ... --effort ... --trace ...`
+2. Parent CLI flag: `seihou agent --provider ... --model ... --effort ... --trace ... assist`
+3. Environment variables: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`, `SEIHOU_AGENT_EFFORT`, `SEIHOU_AGENT_TRACE`
 4. The blueprint's or prompt's own declaration: `launch.{provider,model,effort}` in its `blueprint.dhall` / `prompt.dhall`
-5. Local project config: `agent.<command>.{provider,model,effort}`
-6. Local project config: `agent.{provider,model,effort}`
-7. Global config: `agent.<command>.{provider,model,effort}`
-8. Global config: `agent.{provider,model,effort}`
-9. Built-in defaults: provider `claude-cli`; model pinned per provider so the local CLI providers are deterministic — `claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`; effort unset
+5. Local project config: `agent.<command>.{provider,model,effort,trace}`
+6. Local project config: `agent.{provider,model,effort,trace}`
+7. Global config: `agent.<command>.{provider,model,effort,trace}`
+8. Global config: `agent.{provider,model,effort,trace}`
+9. Built-in defaults: provider `claude-cli`; model pinned per provider so the local CLI providers are deterministic — `claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`; effort unset; trace `off`
+
+Tier 4 covers provider, model, and effort only. No blueprint or prompt schema
+field declares a trace destination — tracing is the operator's choice, not the
+artifact author's.
 
 Tier 4 applies only to the three commands that load an artifact —
 `seihou agent run`, `seihou agent migrate`, and `seihou prompt run`. A

@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Baikai call tracing** (EP-74): `runAgentCompletionWith` now dispatches
+  through `Baikai.Trace.withTrace` instead of `Baikai.completeRequest`, so every
+  model call emits a correlated `call_started` plus `call_finished`/`call_failed`
+  to a `TraceSink`. A new `TraceSetting` vocabulary (`off`, `file`, `stdout`,
+  `stderr`) resolves through the existing `Seihou.CLI.AgentConfig` chain as a
+  fourth setting alongside provider, model, and effort — `--trace`,
+  `SEIHOU_AGENT_TRACE`, `agent.<command>.trace`, `agent.trace` — defaulting to
+  `off`. The free-form file path lives in its own `agent.tracePath` key (local
+  then global, no flag, no per-command variant). A new library module
+  `Seihou.CLI.AgentTrace` turns a resolved setting into a live sink, adding a
+  stderr sink Baikai does not ship and creating the trace file's parent
+  directory. `AgentCompletionRequest` gains a `completionTraceSink` field and
+  loses its `Eq`/`Show` instances, since `TraceSink` wraps a streamly fold; the
+  loaders' positional flag arguments are replaced by an `AgentSettingFlags`
+  record. `streamly-core` becomes a direct dependency of `seihou-cli`.
+
+  **Behavioral note for maintainers:** `withTrace` does not report provider
+  failures the way `completeRequest` did. It reaches the provider through the
+  streaming path, where `liftCompleteToStream` converts both in-band failures
+  and thrown exceptions into a terminal error event, so failures arrive as an
+  error-shaped `Response` rather than as an exception. `runAgentCompletionWith`
+  therefore checks `Response.responseError` before its empty-text guard; without
+  that branch every provider error would be reported as "Provider returned no
+  assistant text." The retained `try` now guards sink-side failures only.
 - **Artifact-declared agent launch settings** (EP-73): a new shared
   `Launch.dhall` record in `seihou-schema`, referenced by both `Blueprint.dhall`
   and `AgentPrompt.dhall` and exported as `S.Launch`, lets a blueprint or prompt

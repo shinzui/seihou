@@ -17,6 +17,7 @@ seihou agent [--debug] [--provider PROVIDER] [--model MODEL] <SUBCOMMAND> [OPTIO
 | `--provider PROVIDER` | Use `claude-cli`, `codex-cli`, `anthropic`, or `openai` for this invocation |
 | `--model MODEL` | Use a provider-specific model name or alias for this invocation; run `seihou agent models` to list known choices |
 | `--effort LEVEL` | Reasoning effort for this invocation: `minimal`, `low`, `medium`, `high`, `xhigh`, or `max` |
+| `--trace SETTING` | Record each model call: `off` (default), `file`, `stdout`, or `stderr`. The file destination is `agent.tracePath`, defaulting to `.seihou/trace.jsonl` |
 
 The default provider is `claude-cli`. When no model is configured, Seihou pins a deterministic per-provider default (`claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`) and always passes it explicitly, so a CLI session never inherits whatever model another `claude`/`codex` session left active. Provider and model options may appear on the parent command or on the subcommand:
 
@@ -26,7 +27,7 @@ seihou agent assist --provider codex-cli --model gpt-5 "create a module"
 seihou agent --debug --provider openai setup "show the prompt only"
 ```
 
-Provider and model values are resolved from CLI flags, environment variables, the artifact's own declaration, per-command and shared config keys (local then global), and defaults. Each command can be configured independently with `agent.<command>.provider` / `agent.<command>.model`, falling back to the shared `agent.provider` / `agent.model` defaults; a local project value always overrides a global one. See [Configuration and Variable Resolution](../user/config-and-variables.md#agent-provider-defaults) for the full precedence chain, and run `seihou agent config` (below) to inspect what resolves for each command.
+Provider, model, effort, and trace values are resolved from CLI flags, environment variables, the artifact's own declaration, per-command and shared config keys (local then global), and defaults. Each command can be configured independently with `agent.<command>.provider` / `agent.<command>.model`, falling back to the shared `agent.provider` / `agent.model` defaults; a local project value always overrides a global one. See [Configuration and Variable Resolution](../user/config-and-variables.md#agent-provider-defaults) for the full precedence chain, and run `seihou agent config` (below) to inspect what resolves for each command.
 
 A blueprint or prompt can also declare the agent it was written for, through a `launch` record in its `blueprint.dhall` or `prompt.dhall`. Those declared values outrank every configured default but still lose to a `--provider`, `--model`, or `--effort` flag and to the `SEIHOU_AGENT_*` environment variables, per field. This applies to `seihou agent run`, `seihou agent migrate`, and `seihou prompt run` — the three commands that load an artifact. Add `--verbose` to a run to see the resolved settings and where each came from:
 
@@ -35,7 +36,9 @@ $ seihou agent run deep-thinker --verbose
 [info]  Agent: provider claude-cli [built-in default], model claude-sonnet-5 [blueprint: launch.model], effort max [blueprint: launch.effort]
 ```
 
-A declaration naming an unknown provider or effort fails the run with an actionable message rather than silently falling back. See [Blueprints](../user/blueprints.md#launch-settings).
+A declaration naming an unknown provider or effort fails the run with an actionable message rather than silently falling back. See [Blueprints](../user/blueprints.md#launch-settings). Note that `launch` does not cover `--trace`: tracing is the operator's choice, not the artifact author's.
+
+`--trace` records what each model call cost in time and money. It is off unless asked for, and it covers batch and API calls only — an interactive `claude`/`codex` session is a spawned subprocess, not a request Seihou can time or price, so it emits no events. See [Tracing model calls](../user/agent-assistance.md#tracing-model-calls).
 
 ## Providers
 
@@ -83,13 +86,15 @@ seihou agent config
 ```
 
 Prints one entry per command (`assist`, `bootstrap`, `setup`, `run`, `migrate`, and
-`prompt run`) with its resolved provider, model, and reasoning effort, each
-labelled by the source that supplied the value — a config scope and key (for
-example `[local: agent.run.model]` or `[global: agent.effort]`), an environment
-variable, or `[built-in default]` — followed by the precedence legend. An
-`effort` of `(default)` means none is configured. The command is read-only: it
-reflects the current environment and config but never changes them. Set values
-with `seihou config set agent.<command>.{provider,model,effort} ...`.
+`prompt run`) with its resolved provider, model, reasoning effort, and trace
+destination, each labelled by the source that supplied the value — a config
+scope and key (for example `[local: agent.run.model]` or
+`[global: agent.effort]`), an environment variable, or `[built-in default]` —
+followed by the precedence legend. An `effort` of `(default)` means none is
+configured; a `trace` of `off` means tracing is not enabled. The command is
+read-only: it reflects the current environment and config but never changes
+them. Set values with
+`seihou config set agent.<command>.{provider,model,effort,trace} ...`.
 
 ### agent assist
 

@@ -12,6 +12,45 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **Call tracing for agent commands.** Seihou can now record what each model
+  call actually did — which provider and model ran, how long it took, how many
+  tokens it used, and what it cost:
+
+  ```sh
+  seihou config set agent.trace file
+  seihou agent assist "add a health check module"
+  cat .seihou/trace.jsonl
+  ```
+
+  ```text
+  {"kind":"call_started","eventId":"a1b2c3","timestamp":"2026-07-27T18:04:11Z","provider":"anthropic","model":"claude-sonnet-4-6","maxTokens":8192,"promptSummary":"add a health check module"}
+  {"kind":"call_finished","eventId":"a1b2c3","timestamp":"2026-07-27T18:04:19Z","provider":"anthropic","model":"claude-sonnet-4-6","latencyMs":7913,"inputTokens":4211,"outputTokens":880,"usd":0.0264}
+  ```
+
+  The file is JSON Lines, one object per line, so ordinary tools answer the
+  questions you actually have — `jq -s 'map(select(.kind == "call_finished") |
+  .usd) | add' .seihou/trace.jsonl` totals what a project has cost you.
+
+  `agent.trace` takes `off`, `file`, `stdout`, or `stderr`, and resolves through
+  the same precedence chain as `provider`, `model`, and `effort`: a `--trace`
+  flag, `SEIHOU_AGENT_TRACE`, then `agent.<command>.trace` and `agent.trace` in
+  local then global config. Use `--trace stderr` to watch a single run without
+  leaving a file behind; trace lines go to stderr precisely so they never
+  corrupt assistant output you are piping. The file destination is
+  `.seihou/trace.jsonl`, changeable with `agent.tracePath`.
+
+  **Tracing is off by default and stays out of your way** — with `agent.trace`
+  unset, nothing is written, nothing extra is printed, and no file is created.
+
+  Two limits worth knowing. Interactive `claude`/`codex` sessions are not
+  traced: they are spawned subprocesses, not requests Seihou can time or price,
+  so tracing covers batch runs (`--batch`, or automatically when stdin is not a
+  terminal) and the API providers. And the subscription-based CLI providers do
+  not report tokens or cost, so their events carry latency only — use
+  `anthropic` or `openai` for cost accounting.
+
+  See [Tracing model calls](agent-assistance.md#tracing-model-calls).
+
 - **Blueprint- and prompt-declared agent settings.** A blueprint or agent
   prompt can now declare the agent it was written for, in its own Dhall file:
 

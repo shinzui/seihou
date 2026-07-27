@@ -70,6 +70,13 @@ environment variables. Add `--verbose` to see what resolved and why. A
 declaration naming an unknown provider or effort fails the run rather than
 silently falling back. See [Prompts](../user/prompts.md#launch-settings).
 
+`--trace SETTING` records each model call — `off` (the default), `file`,
+`stdout`, or `stderr` — so you can see which model ran, how long it took, and
+what it cost. A prompt's `launch` record cannot declare it. Interactive
+sessions emit no events, since they spawn a CLI rather than making a request
+Seihou can time. See
+[Tracing model calls](../user/agent-assistance.md#tracing-model-calls).
+
 ## Examples
 
 ```sh

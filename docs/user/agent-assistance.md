@@ -123,25 +123,131 @@ exactly why a command uses what it does:
 
 ```text
 $ seihou agent config
-Resolved agent provider, model, and effort per command
+Resolved agent provider, model, effort, and trace per command
 (highest-precedence source wins; see precedence list below)
 
   assist      provider  codex-cli        [global: agent.assist.provider]
               model     gpt-5-mini       [global: agent.assist.model]
               effort    high             [global: agent.effort]
+              trace     off              [built-in default]
   run         provider  claude-cli       [built-in default]
               model     claude-opus-4-8  [local: agent.run.model]
               effort    max              [local: agent.run.effort]
+              trace     file             [local: agent.run.trace]
   prompt run  provider  claude-cli       [built-in default]
               model     claude-opus-4-8  [built-in default]
               effort    (default)        [built-in default]
+              trace     off              [built-in default]
 ```
 
 The command is read-only; it never changes configuration. Set values with
-`seihou config set agent.<command>.{provider,model,effort} ...`. Because it
-reflects the live environment, `SEIHOU_AGENT_*` variables set in your shell also
-appear in the resolved output. An `effort` of `(default)` means none is
+`seihou config set agent.<command>.{provider,model,effort,trace} ...`. Because
+it reflects the live environment, `SEIHOU_AGENT_*` variables set in your shell
+also appear in the resolved output. An `effort` of `(default)` means none is
 configured, so the CLI/provider picks its own.
+
+## Tracing model calls
+
+When a model call is slow, expensive, or fails, tracing tells you what actually
+happened. With tracing on, Seihou records two events per call — one when the
+call starts and one when it finishes or fails — each carrying the provider, the
+model, the elapsed milliseconds, and, where the provider reports them, the input
+and output token counts and the dollar cost. A failed call carries the
+provider's error message instead.
+
+Tracing is **off by default**. With it off, nothing is written, nothing extra is
+printed, and no file is created.
+
+### Turning it on
+
+`agent.trace` takes one of four values:
+
+| Value | Effect |
+|-------|--------|
+| `off` | Record nothing. The default. |
+| `file` | Append one JSON object per line to the trace file. |
+| `stdout` | Print one human-readable line per event to stdout. |
+| `stderr` | Print one human-readable line per event to stderr. |
+
+Set it with the shared key `agent.trace`, the per-command key
+`agent.<command>.trace`, the environment variable `SEIHOU_AGENT_TRACE`, or the
+`--trace SETTING` flag (on the parent `agent` command, any subcommand, or
+`seihou prompt run`). The precedence chain is the one provider, model, and
+effort already use.
+
+```sh
+seihou config set agent.trace file        # record every agent command in this project
+seihou config set agent.run.trace file    # ...or only blueprint runs
+seihou agent assist "add a health check" --trace stderr   # watch one run go by
+```
+
+Prefer `stderr` over `stdout` for watching a run: several commands print
+assistant text to stdout, and `--debug` prints the rendered prompt there, so
+trace lines on stdout would corrupt output you pipe. `stdout` exists for the
+cases where you want traces *in* a pipeline.
+
+### The trace file
+
+The file sink writes to `.seihou/trace.jsonl` inside the project, beside the
+manifest and the project config. Point it somewhere else with `agent.tracePath`:
+
+```sh
+seihou config set agent.tracePath /tmp/seihou-trace.jsonl
+```
+
+`agent.tracePath` is free-form and deliberately simple: local config beats
+global config, and that is the whole story. It has no flag, no environment
+variable, and no per-command variant.
+
+The file is **JSON Lines** — one complete JSON object per line — and Seihou
+*appends* to it, so it accumulates history across runs rather than being
+replaced. Delete it when you want a clean slate.
+
+```text
+$ seihou config set agent.trace file
+$ seihou agent assist "add a health check module"
+... normal assistant output ...
+
+$ cat .seihou/trace.jsonl
+{"kind":"call_started","eventId":"a1b2c3","timestamp":"2026-07-27T18:04:11Z","provider":"anthropic","model":"claude-sonnet-4-6","maxTokens":8192,"promptSummary":"add a health check module"}
+{"kind":"call_finished","eventId":"a1b2c3","timestamp":"2026-07-27T18:04:19Z","provider":"anthropic","model":"claude-sonnet-4-6","latencyMs":7913,"inputTokens":4211,"outputTokens":880,"usd":0.0264}
+```
+
+The `kind` tag is `call_started`, `call_finished`, or `call_failed`, and
+`eventId` correlates a start with its matching finish or fail. That makes
+ordinary tools enough to answer questions:
+
+```sh
+# What did this project cost?
+jq -s 'map(select(.kind == "call_finished") | .usd) | add' .seihou/trace.jsonl
+
+# What failed, and why?
+jq -r 'select(.kind == "call_failed") | "\(.model): \(.errorMessage)"' .seihou/trace.jsonl
+
+# Slowest calls first.
+jq -s 'map(select(.kind == "call_finished")) | sort_by(-.latencyMs) | .[0:5]' .seihou/trace.jsonl
+```
+
+Token counts and cost are omitted when the provider does not report them. The
+two local CLI providers (`claude-cli`, `codex-cli`) are subscription-based and
+report neither, so their `call_finished` events carry `latencyMs` but no
+`inputTokens`, `outputTokens`, or `usd`. Use an API provider (`anthropic`,
+`openai`) if you need cost accounting.
+
+### What tracing does not cover
+
+**Interactive sessions are not traced.** When `seihou agent run` hands off to an
+interactive `claude` or `codex` session, it launches that CLI as a subprocess
+rather than making a request Seihou can time or price — there is no call for
+Baikai to observe, so no events are produced. Tracing covers batch runs
+(`--batch`, or automatically when stdin is not a terminal) and the API providers.
+If a run produces no trace events, check whether it took the interactive path.
+
+**Traces record calls, not arguments.** An event names the provider, model,
+latency, tokens, and cost. It does not record the reasoning effort requested or
+the command line a spawned CLI was invoked with, so tracing does not replace
+looking at what Seihou actually passed to `claude` or `codex`. Use `--debug` to
+see the rendered prompt.
 
 ## Discovering models
 

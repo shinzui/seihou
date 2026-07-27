@@ -102,8 +102,13 @@ This section must always reflect the actual current state of the work.
       (error-shaped response, no-empty-text-confusion, and thrown exception) with
       `Left "Provider returned no assistant text."`, then restoring it passes all 416
       (2026-07-27).
-- [ ] Milestone 4 — End-to-end proof and documentation: a test that runs the real binary against
-      a fake provider and asserts on the emitted JSONL; user and CLI docs; both changelogs.
+- [x] Milestone 4 — End-to-end proof and documentation: the sink is built once per command and
+      threaded into all six call sites; `AgentTraceE2ESpec` runs the real binary against a fake
+      `claude` and asserts on the emitted JSONL (including the negative: no file without
+      `SEIHOU_AGENT_TRACE`); `docs/user/agent-assistance.md` gains a "Tracing model calls"
+      section, and `docs/user/config-and-variables.md`, `docs/cli/agent.md`,
+      `docs/cli/prompt.md`, and both changelogs are updated. `cabal test all`: 1034 + 421 + 16
+      pass (2026-07-27).
 - [ ] Milestone 5 — OTel hand-off note: document precisely what adopting `baikai-trace-otel`
       requires. No code.
 
