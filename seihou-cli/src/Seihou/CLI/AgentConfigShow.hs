@@ -98,11 +98,16 @@ precedenceLegend =
       "  1. --provider / --model / --effort flag on the subcommand",
       "  2. --provider / --model / --effort flag on `seihou agent`",
       "  3. SEIHOU_AGENT_PROVIDER / SEIHOU_AGENT_MODEL / SEIHOU_AGENT_EFFORT environment variables",
-      "  4. local  .seihou/config.dhall          agent.<command>.{provider,model,effort}",
-      "  5. local  .seihou/config.dhall          agent.{provider,model,effort}",
-      "  6. global ~/.config/seihou/config.dhall  agent.<command>.{provider,model,effort}",
-      "  7. global ~/.config/seihou/config.dhall  agent.{provider,model,effort}",
-      "  8. built-in default: provider claude-cli; model pinned per provider",
+      "  4. blueprint.dhall / prompt.dhall       launch.{provider,model,effort}",
+      "  5. local  .seihou/config.dhall          agent.<command>.{provider,model,effort}",
+      "  6. local  .seihou/config.dhall          agent.{provider,model,effort}",
+      "  7. global ~/.config/seihou/config.dhall  agent.<command>.{provider,model,effort}",
+      "  8. global ~/.config/seihou/config.dhall  agent.{provider,model,effort}",
+      "  9. built-in default: provider claude-cli; model pinned per provider",
       "     (claude-cli -> claude-opus-4-8, codex-cli -> gpt-5.6-terra); effort unset",
-      "     (the CLI/provider chooses its own reasoning effort)"
+      "     (the CLI/provider chooses its own reasoning effort)",
+      "",
+      "Tier 4 is per-artifact: it depends on which blueprint or prompt you run, so",
+      "the table above cannot show it. Run with --verbose to see the resolved",
+      "settings and their sources for a specific run."
     ]

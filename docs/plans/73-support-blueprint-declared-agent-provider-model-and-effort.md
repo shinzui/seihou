@@ -111,8 +111,11 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 3 — Resolution: new declaration tier in `Seihou.CLI.AgentConfig`, deferred
       resolution API, provenance label, precedence unit tests. Done 2026-07-27, commit `331aa62`;
       25 new cases in `AgentConfigSpec`, `cabal test seihou-cli` green (371 tests).
-- [ ] Milestone 4 — Wiring: `seihou agent run`, `seihou agent migrate`, and `seihou prompt run`
-      resolve after loading the artifact; verbose provenance line; end-to-end argv test.
+- [x] Milestone 4 — Wiring: `seihou agent run`, `seihou agent migrate`, and `seihou prompt run`
+      resolve after loading the artifact; verbose provenance line; end-to-end argv test. Done
+      2026-07-27, commits `988884f` (baikai bump, see Surprises & Discoveries) and `7a26c35`.
+      Acceptance transcripts 1–3 from Validation and Acceptance reproduced by hand verbatim;
+      both new end-to-end cases pass; `cabal test all` green (1034 / 373 / 16).
 - [ ] Milestone 5 — Validation and scaffolding: `validate-blueprint` / `validate-prompt` checks,
       `seihou new-blueprint` template, `seihou agent config` precedence legend.
 - [ ] Milestone 6 — Documentation and distillation: user and CLI docs, both changelogs, schema

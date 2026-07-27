@@ -87,6 +87,10 @@ blueprintDhall name url hash =
       "    , files = [] : List S.Blueprint.BlueprintFile.Type",
       "    , migrations = [] : List S.BlueprintMigration.Type",
       "    , tags = [] : List Text",
+      "      -- Optional: declare the agent this blueprint was written for.",
+      "      -- These override the invoking user's config files but lose to a",
+      "      -- --provider / --model / --effort flag or a SEIHOU_AGENT_* variable.",
+      "      -- , launch = Some S.Launch::{ effort = Some \"max\" }",
       "    }"
     ]
 

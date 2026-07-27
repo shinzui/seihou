@@ -5,6 +5,7 @@ where
 
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.AgentConfig (agentLaunchDeclaration, validateAgentLaunchDeclaration)
 import Seihou.CLI.Commands (ValidateBlueprintOpts (..))
 import Seihou.CLI.Shared (logIO)
 import Seihou.CLI.Style (bold, cyan, dim, green, red, useColor, yellow)
@@ -12,6 +13,7 @@ import Seihou.Core.Blueprint
   ( checkBlueprintAllowedTools,
     checkBlueprintBaseModules,
     checkBlueprintFiles,
+    checkBlueprintLaunch,
     checkBlueprintNameFormat,
     checkBlueprintPromptNonEmpty,
     checkBlueprintPromptRefs,
@@ -99,7 +101,15 @@ buildBlueprintReport baseDir b = do
           DiagCheck "Base modules" DiagError baseErrors,
           DiagCheck "Reference file existence" DiagError fileErrors,
           DiagCheck "Tags" DiagError (checkBlueprintTags b),
-          DiagCheck "Allowed tools" DiagError (checkBlueprintAllowedTools b)
+          DiagCheck "Allowed tools" DiagError (checkBlueprintAllowedTools b),
+          -- Two layers: the core rule rejects blanks, and the CLI parses the
+          -- declared provider and effort against the vocabularies it owns.
+          DiagCheck
+            "Launch settings"
+            DiagError
+            ( checkBlueprintLaunch b
+                <> validateAgentLaunchDeclaration (agentLaunchDeclaration b.launch)
+            )
         ]
   pure
     BlueprintReport

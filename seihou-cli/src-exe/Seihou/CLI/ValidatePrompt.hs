@@ -5,6 +5,7 @@ where
 
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.AgentConfig (agentLaunchDeclaration, validateAgentLaunchDeclaration)
 import Seihou.CLI.Commands (ValidatePromptOpts (..))
 import Seihou.CLI.Shared (logIO)
 import Seihou.CLI.Style (bold, cyan, dim, green, red, useColor, yellow)
@@ -14,6 +15,7 @@ import Seihou.Core.AgentPrompt
     checkAgentPromptCommandVars,
     checkAgentPromptFiles,
     checkAgentPromptGuidance,
+    checkAgentPromptLaunch,
     checkAgentPromptNameFormat,
     checkAgentPromptPromptRefs,
     checkAgentPromptTags,
@@ -88,7 +90,15 @@ buildPromptReport baseDir p = do
           DiagCheck "Prompt guidance" DiagError (checkAgentPromptGuidance p),
           DiagCheck "Reference file existence" DiagError fileErrors,
           DiagCheck "Tags" DiagError (checkAgentPromptTags p),
-          DiagCheck "Allowed tools" DiagError (checkAgentPromptAllowedTools p)
+          DiagCheck "Allowed tools" DiagError (checkAgentPromptAllowedTools p),
+          -- Two layers: the core rule rejects blanks, and the CLI parses the
+          -- declared provider and effort against the vocabularies it owns.
+          DiagCheck
+            "Launch settings"
+            DiagError
+            ( checkAgentPromptLaunch p
+                <> validateAgentLaunchDeclaration (agentLaunchDeclaration p.launch)
+            )
         ]
   pure
     PromptReport
