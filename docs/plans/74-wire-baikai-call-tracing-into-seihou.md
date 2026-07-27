@@ -114,6 +114,14 @@ This section must always reflect the actual current state of the work.
       load-bearing, one naming exactly what adopting `baikai-trace-otel` requires (package
       versions, the registry gap, the tracer-lifecycle reshape, the cabal-flag question)
       (2026-07-27).
+- [x] Walked the manual acceptance transcripts (Validation and Acceptance steps 1-8) against a
+      scratch project with a fake `claude` on `PATH`. All pass. Step 6 additionally established,
+      by rebuilding the pre-plan binary, that the `responseError` branch fixes a pre-existing bug
+      rather than preventing a regression; both changelogs and the Decision Log were corrected
+      (2026-07-27).
+- [x] `nix flake check` green, including the CLI module-placement check (2026-07-27).
+- [x] Distilled durable context into `docs/dev/architecture/overview.md` and filled in
+      Outcomes & Retrospective. Plan complete (2026-07-27).
 
 
 ## Surprises & Discoveries
@@ -348,7 +356,60 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Complete, 2026-07-27.** All five milestones landed in six commits on `master`
+(`8e5c0f0`, `c5d321e`, `68b6d2a`, `b8c59ce`, `5e6f131`, `681401b`, plus the correction
+`78a6970`). `cabal test all` passes 1034 + 421 + 16; `nix flake check` is green, including the
+CLI module-placement check that the new library module had to satisfy.
+
+**Against the original purpose.** The stated outcome was that a user can turn tracing on and see
+where their time and money went, with the off-by-default path byte-for-byte unchanged. Both hold
+and both are asserted mechanically rather than only by hand: `AgentTraceE2ESpec` runs the real
+binary against a fake provider and reads back the JSONL, including the negative case that an
+unconfigured run creates no file at all. The manual transcripts in Validation and Acceptance were
+walked end to end; steps 1–6 all behaved as specified, with the field-level deviations recorded
+in Surprises.
+
+**The one thing the plan got wrong, and it mattered.** The plan's central risk analysis — the
+first Surprises entry, the Milestone 3 rationale, and one Decision Log entry — rested on the
+premise that `completeRequest` throws provider failures and Seihou's `try` catches them. Measuring
+instead of trusting that premise showed the opposite: for the API providers the failure already
+arrived as an error-shaped `Response`, so `"Provider returned no assistant text."` was already
+what users saw for a bad API key. The remedy the plan prescribed was exactly right; only its
+justification was inverted. The lesson is narrow and worth keeping: the plan reasoned from
+`withTrace`'s doc comment about how *it* behaves, and never checked what the *old* path did with
+the same failure. A ten-minute rebuild of the pre-change binary settled it. When a plan says
+"preserve today's behavior", run today's behavior first.
+
+**Deviations from the plan, all recorded in the Decision Log.** Two shape changes were made where
+the plan's literal instruction would have been worse: the four per-tier CLI flags became an
+`AgentSettingFlags` record rather than four more positional arguments (eight same-typed
+parameters, silently transposable), and `ResolvedCommandConfig` gained `rccTracePath` so the
+resolved path travels with the rest of the resolved config. Neither changes the precedence chain.
+
+**Gaps and follow-ups, none blocking.**
+
+- OpenTelemetry is deliberately not adopted; Milestone 5's note in
+  `docs/dev/architecture/overview.md` scopes it.
+- `promptSummary` is empty for the common case, because Seihou sends its rendered prompt as the
+  system prompt and `summarizeContext` reads context *messages*. Nothing here is broken, but a
+  trace reader hoping to identify a call by its prompt will be disappointed. Fixing it means
+  either seeding the context with the prompt or asking baikai to summarize the system prompt when
+  messages are empty — a baikai-side change, not a seihou one.
+- The trace's `provider` field names the upstream vendor (`anthropic`) rather than Seihou's
+  configured provider (`claude-cli`), so a trace cannot distinguish an API call from a CLI call.
+  Documented rather than worked around, since the field is baikai's.
+- `agent.tracePath` pointing somewhere unwritable still surfaces as an error after the model call
+  has been made and paid for, exactly as Idempotence and Recovery predicted. Left as-is: it did
+  not come up in practice, and downgrading to `silent` with a warning would hide a
+  misconfiguration the user asked for.
+
+**Durable context distilled.** Per the Context and Orientation section, this repository has no
+`docs/adr/` corpus and `mori.dhall` declares no ADR bundle, so architectural context goes to
+`docs/dev/architecture/overview.md` — the convention plan 73 established. Two subsections were
+added there: "Call Tracing Is a Sink the Config Chain Selects" (why the setting vocabulary is
+closed, why the `responseError` guard is load-bearing, and the streaming-path consequences for
+`responseId`/`latencyMs`) and "Adopting `baikai-trace-otel` Is Packaging Work, Not Seihou Work".
+Task-local detail stays here.
 
 
 ## Context and Orientation
