@@ -105,8 +105,9 @@ This section must always reflect the actual current state of the work.
       `0e1b875efcf2b4e4b98d93595ea627290459e3ad`, hash
       `sha256:356829d4e2b333ce157615dd7eccd0cd4765f3ef0d94ef637fa8c97398d3b92c`. Verified the
       published pin resolves over HTTPS and `cabal test seihou-core` passes (1023 tests).
-- [ ] Milestone 2 — Core domain and decoder: `AgentLaunch` type, `Blueprint.launch` field,
-      backward-compatible decoders, core validation rule, unit tests.
+- [x] Milestone 2 — Core domain and decoder: `AgentLaunch` type, `Blueprint.launch` field,
+      backward-compatible decoders, core validation rule, unit tests. Done 2026-07-27, commit
+      `9a84885`. `cabal test all` green (seihou-core 1034 tests, up from 1023).
 - [ ] Milestone 3 — Resolution: new declaration tier in `Seihou.CLI.AgentConfig`, deferred
       resolution API, provenance label, precedence unit tests.
 - [ ] Milestone 4 — Wiring: `seihou agent run`, `seihou agent migrate`, and `seihou prompt run`

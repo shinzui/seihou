@@ -32,6 +32,18 @@ module Seihou.CLI.AgentConfig
     loadAgentModelConfig,
     loadAgentModelConfigFor,
 
+    -- * Artifact-declared launch settings
+    AgentLaunchDeclaration (..),
+    noAgentLaunchDeclaration,
+    agentLaunchDeclaration,
+    validateAgentLaunchDeclaration,
+    PendingAgentConfig (..),
+    loadPendingAgentConfig,
+    resolvePendingAgentConfig,
+    resolvedAgentModelConfig,
+    formatResolvedAgentProvenance,
+    resolveDeclaredAgentConfig,
+
     -- * Whole-configuration inspection
     ResolvedCommandConfig (..),
     loadResolvedAgentConfig,
@@ -40,6 +52,7 @@ where
 
 import Baikai.ThinkingLevel (ThinkingLevel)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
@@ -47,13 +60,18 @@ import Seihou.CLI.AgentCompletion
     defaultAgentModelConfig,
     defaultModelForProvider,
     effortFromText,
+    effortToText,
     providerFromText,
+    providerToText,
   )
-import Seihou.CLI.Shared (formatConfigError)
+import Seihou.CLI.Shared (formatConfigError, logIO)
+import Seihou.Core.Types (AgentLaunch (..), LogLevel)
 import Seihou.Effect.ConfigReader (readGlobalConfig, readLocalConfig)
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
+import Seihou.Effect.Logger (logError, logInfo)
 import Seihou.Prelude
 import System.Environment (lookupEnv)
+import System.Exit (exitFailure)
 
 -- | All the raw material provider/model resolution draws on, in one record so
 -- the pure resolver can be unit-tested without touching the filesystem or the
@@ -74,6 +92,12 @@ data AgentConfigInputs = AgentConfigInputs
     envProvider :: Maybe Text,
     envModel :: Maybe Text,
     envEffort :: Maybe Text,
+    -- | Declared by the blueprint or prompt being run, when the command has
+    -- one. Only populated once the artifact has been loaded; see
+    -- 'resolvePendingAgentConfig'.
+    declaredProvider :: Maybe Text,
+    declaredModel :: Maybe Text,
+    declaredEffort :: Maybe Text,
     localConfig :: Map Text Text,
     globalConfig :: Map Text Text
   }
@@ -94,6 +118,9 @@ baseAgentConfigInputs =
       envProvider = Nothing,
       envModel = Nothing,
       envEffort = Nothing,
+      declaredProvider = Nothing,
+      declaredModel = Nothing,
+      declaredEffort = Nothing,
       localConfig = Map.empty,
       globalConfig = Map.empty
     }
@@ -175,6 +202,8 @@ data AgentConfigSource
     SourceCliParent
   | -- | @SEIHOU_AGENT_PROVIDER@/@SEIHOU_AGENT_MODEL@.
     SourceEnv
+  | -- | The blueprint's or prompt's own @launch.<field>@ declaration.
+    SourceArtifactDeclaration
   | -- | Local @agent.<command>.<field>@.
     SourceLocalCommand
   | -- | Local @agent.<field>@.
@@ -203,11 +232,23 @@ agentConfigSourceLabel c field src =
     SourceCliSubcommand -> "flag on subcommand"
     SourceCliParent -> "flag on `seihou agent`"
     SourceEnv -> "env: " <> T.pack (envVarName field)
+    SourceArtifactDeclaration -> artifactKind c <> ": launch." <> fieldName field
     SourceLocalCommand -> "local: " <> commandKey field c
     SourceLocalDefault -> "local: " <> defaultKey field
     SourceGlobalCommand -> "global: " <> commandKey field c
     SourceGlobalDefault -> "global: " <> defaultKey field
     SourceBuiltinDefault -> "built-in default"
+
+-- | Which kind of artifact declares launch settings for a command, so the
+-- provenance label names the thing the user actually ran.
+artifactKind :: AgentCommandName -> Text
+artifactKind AgentCmdPromptRun = "prompt"
+artifactKind _ = "blueprint"
+
+fieldName :: AgentField -> Text
+fieldName ProviderField = "provider"
+fieldName ModelField = "model"
+fieldName EffortField = "effort"
 
 envVarName :: AgentField -> String
 envVarName ProviderField = agentProviderEnvVar
@@ -266,8 +307,14 @@ resolveAgentModelConfig inputs = do
 -- reporting the source of each value.
 --
 -- Precedence, highest first: subcommand flag, parent @agent@ flag, environment
--- variable, local @agent.<command>.<field>@, local @agent.<field>@, global
+-- variable, the artifact's own @launch.<field>@ declaration, local
+-- @agent.<command>.<field>@, local @agent.<field>@, global
 -- @agent.<command>.<field>@, global @agent.<field>@, built-in default.
+--
+-- The declaration tier is only populated for commands that load an artifact
+-- first; see 'resolvePendingAgentConfig'. For every other caller the
+-- @declared*@ inputs are 'Nothing' and this behaves exactly as it did before
+-- the tier existed.
 resolveAgentModelConfigFor ::
   AgentCommandName ->
   AgentConfigInputs ->
@@ -301,6 +348,7 @@ providerCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, Age
 providerCandidates c inputs =
   [ candidate inputs.cliProvider (cliSource inputs.cliProviderFromSubcommand),
     candidate inputs.envProvider SourceEnv,
+    candidate inputs.declaredProvider SourceArtifactDeclaration,
     candidate (Map.lookup (agentCommandProviderConfigKey c) inputs.localConfig) SourceLocalCommand,
     candidate (Map.lookup agentProviderConfigKey inputs.localConfig) SourceLocalDefault,
     candidate (Map.lookup (agentCommandProviderConfigKey c) inputs.globalConfig) SourceGlobalCommand,
@@ -311,6 +359,7 @@ modelCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentC
 modelCandidates c inputs =
   [ candidate inputs.cliModel (cliSource inputs.cliModelFromSubcommand),
     candidate inputs.envModel SourceEnv,
+    candidate inputs.declaredModel SourceArtifactDeclaration,
     candidate (Map.lookup (agentCommandModelConfigKey c) inputs.localConfig) SourceLocalCommand,
     candidate (Map.lookup agentModelConfigKey inputs.localConfig) SourceLocalDefault,
     candidate (Map.lookup (agentCommandModelConfigKey c) inputs.globalConfig) SourceGlobalCommand,
@@ -321,6 +370,7 @@ effortCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, Agent
 effortCandidates c inputs =
   [ candidate inputs.cliEffort (cliSource inputs.cliEffortFromSubcommand),
     candidate inputs.envEffort SourceEnv,
+    candidate inputs.declaredEffort SourceArtifactDeclaration,
     candidate (Map.lookup (agentCommandEffortConfigKey c) inputs.localConfig) SourceLocalCommand,
     candidate (Map.lookup agentEffortConfigKey inputs.localConfig) SourceLocalDefault,
     candidate (Map.lookup (agentCommandEffortConfigKey c) inputs.globalConfig) SourceGlobalCommand,
@@ -460,6 +510,161 @@ gatherAgentConfigInputs cliProvider cliModel cliEffort providerFromSub modelFrom
           envProvider = envProvider,
           envModel = envModel,
           envEffort = envEffort,
+          declaredProvider = Nothing,
+          declaredModel = Nothing,
+          declaredEffort = Nothing,
           localConfig = local,
           globalConfig = global
         }
+
+-- | The three launch fields the resolver understands, projected out of an
+-- artifact's @launch@ record. @mode@ is deliberately absent: it is reserved
+-- and no part of the resolution path.
+data AgentLaunchDeclaration = AgentLaunchDeclaration
+  { declarationProvider :: Maybe Text,
+    declarationModel :: Maybe Text,
+    declarationEffort :: Maybe Text
+  }
+  deriving stock (Eq, Show)
+
+-- | A declaration that states nothing, leaving every field to the user's
+-- flags, environment, and config.
+noAgentLaunchDeclaration :: AgentLaunchDeclaration
+noAgentLaunchDeclaration =
+  AgentLaunchDeclaration
+    { declarationProvider = Nothing,
+      declarationModel = Nothing,
+      declarationEffort = Nothing
+    }
+
+-- | Project a decoded artifact's launch record into the resolver's declaration
+-- tier. An artifact with no @launch@ record declares nothing.
+agentLaunchDeclaration :: Maybe AgentLaunch -> AgentLaunchDeclaration
+agentLaunchDeclaration Nothing = noAgentLaunchDeclaration
+agentLaunchDeclaration (Just l) =
+  AgentLaunchDeclaration
+    { declarationProvider = l.provider,
+      declarationModel = l.model,
+      declarationEffort = l.effort
+    }
+
+-- | Parse-check a declared launch record, returning one message per invalid
+-- value. An empty list means the declaration is usable.
+--
+-- The model is not checked: it is free-form by design, since providers accept
+-- aliases and custom model IDs.
+validateAgentLaunchDeclaration :: AgentLaunchDeclaration -> [Text]
+validateAgentLaunchDeclaration decl =
+  check "launch.provider" providerFromText decl.declarationProvider
+    <> check "launch.effort" effortFromText decl.declarationEffort
+  where
+    check :: Text -> (Text -> Either Text a) -> Maybe Text -> [Text]
+    check key parse value =
+      [ key <> ": " <> err
+      | Just raw <- [value],
+        not (T.null (T.strip raw)),
+        Left err <- [parse (T.strip raw)]
+      ]
+
+-- | Everything needed to finish resolution later: the command identity plus
+-- the flags, environment, and config already gathered. A handler holds one of
+-- these while it discovers and decodes its artifact, then finishes with
+-- 'resolvePendingAgentConfig'.
+--
+-- This two-phase shape exists because the artifact's declaration is only known
+-- after the handler loads it, but resolution must still be a single pass over
+-- one ordered precedence list.
+data PendingAgentConfig = PendingAgentConfig
+  { pendingCommand :: AgentCommandName,
+    pendingInputs :: AgentConfigInputs
+  }
+  deriving stock (Eq, Show)
+
+-- | Read the environment and config for a command whose artifact may declare
+-- its own launch settings, stopping short of resolution.
+loadPendingAgentConfig ::
+  AgentCommandName ->
+  -- | winning provider flag (subcommand @<|>@ parent)
+  Maybe Text ->
+  -- | winning model flag
+  Maybe Text ->
+  -- | winning effort flag
+  Maybe Text ->
+  -- | provider flag came from the subcommand?
+  Bool ->
+  -- | model flag came from the subcommand?
+  Bool ->
+  -- | effort flag came from the subcommand?
+  Bool ->
+  IO (Either Text PendingAgentConfig)
+loadPendingAgentConfig c cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub = do
+  inputsOrErr <- gatherAgentConfigInputs cliProvider cliModel cliEffort providerFromSub modelFromSub effortFromSub
+  pure (PendingAgentConfig c <$> inputsOrErr)
+
+-- | Finish resolution by folding the artifact's declaration into the gathered
+-- inputs and running the ordinary precedence chain.
+resolvePendingAgentConfig ::
+  PendingAgentConfig ->
+  AgentLaunchDeclaration ->
+  Either Text ResolvedCommandConfig
+resolvePendingAgentConfig pending decl = do
+  let inputs =
+        pending.pendingInputs
+          { declaredProvider = decl.declarationProvider,
+            declaredModel = decl.declarationModel,
+            declaredEffort = decl.declarationEffort
+          }
+  (provider, model, effort) <- resolveAgentModelConfigFor pending.pendingCommand inputs
+  pure
+    ResolvedCommandConfig
+      { rccCommand = pending.pendingCommand,
+        rccProvider = provider,
+        rccModel = model,
+        rccEffort = effort
+      }
+
+-- | Project a resolved command config down to what the launch layer needs,
+-- discarding provenance.
+resolvedAgentModelConfig :: ResolvedCommandConfig -> AgentModelConfig
+resolvedAgentModelConfig rcc =
+  AgentModelConfig
+    { agentProvider = rcc.rccProvider.resolvedValue,
+      agentModel = rcc.rccModel.resolvedValue,
+      agentEffort = rcc.rccEffort.resolvedValue
+    }
+
+-- | A one-line provenance summary for a verbose log line, e.g.
+--
+-- > provider claude-cli [built-in default], model claude-sonnet-5 [blueprint: launch.model], effort max [blueprint: launch.effort]
+formatResolvedAgentProvenance :: ResolvedCommandConfig -> Text
+formatResolvedAgentProvenance rcc =
+  T.intercalate
+    ", "
+    [ part "provider" (providerToText rcc.rccProvider.resolvedValue) ProviderField rcc.rccProvider.resolvedSource,
+      part "model" (fromMaybe "<provider default>" rcc.rccModel.resolvedValue) ModelField rcc.rccModel.resolvedSource,
+      part "effort" (maybe "<unset>" effortToText rcc.rccEffort.resolvedValue) EffortField rcc.rccEffort.resolvedSource
+    ]
+  where
+    part label value field src =
+      label <> " " <> value <> " [" <> agentConfigSourceLabel rcc.rccCommand field src <> "]"
+
+-- | Finish resolution with the artifact's declaration, logging the resolved
+-- provenance at verbose level and exiting with an actionable message when the
+-- artifact declares an unusable value.
+--
+-- The label names the artifact in the error message, e.g.
+-- @"blueprint 'payments-service'"@.
+resolveDeclaredAgentConfig ::
+  LogLevel ->
+  Text ->
+  PendingAgentConfig ->
+  AgentLaunchDeclaration ->
+  IO AgentModelConfig
+resolveDeclaredAgentConfig level label pending decl =
+  case resolvePendingAgentConfig pending decl of
+    Left err -> do
+      logIO level (logError $ "Invalid agent settings for " <> label <> ": " <> err)
+      exitFailure
+    Right resolved -> do
+      logIO level (logInfo $ "Agent: " <> formatResolvedAgentProvenance resolved)
+      pure (resolvedAgentModelConfig resolved)

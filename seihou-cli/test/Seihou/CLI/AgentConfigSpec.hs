@@ -6,6 +6,7 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Seihou.CLI.AgentCompletion
 import Seihou.CLI.AgentConfig
+import Seihou.Core.Types (AgentLaunch (..))
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -173,6 +174,164 @@ spec = do
       resolveAgentModelConfigFor AgentCmdRun (baseInputs {cliEffort = Just "ultra"}) `shouldSatisfy` \case
         Left err -> "Unknown reasoning effort" `Text.isInfixOf` err && "xhigh" `Text.isInfixOf` err
         Right _ -> False
+
+  describe "artifact-declared launch settings" $ do
+    it "beats a per-command local config key" $ do
+      let inputs =
+            declaring
+              (decl Nothing (Just "claude-sonnet-5") Nothing)
+              baseInputs
+                { localConfig = Map.fromList [(agentCommandModelConfigKey AgentCmdRun, "claude-haiku-4-5")]
+                }
+      modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-sonnet-5", SourceArtifactDeclaration)
+
+    it "beats both local and global default keys" $ do
+      let inputs =
+            declaring
+              (decl (Just "openai") Nothing (Just "high"))
+              baseInputs
+                { localConfig = Map.fromList [(agentProviderConfigKey, "anthropic")],
+                  globalConfig = Map.fromList [(agentEffortConfigKey, "low")]
+                }
+      providerOf AgentCmdRun inputs `shouldBe` Right (AgentProviderOpenAI, SourceArtifactDeclaration)
+      effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingHigh, SourceArtifactDeclaration)
+
+    it "loses to a subcommand flag" $ do
+      let inputs =
+            declaring
+              (decl Nothing (Just "claude-sonnet-5") Nothing)
+              baseInputs {cliModel = Just "claude-opus-4-8", cliModelFromSubcommand = True}
+      modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-opus-4-8", SourceCliSubcommand)
+
+    it "loses to a parent `seihou agent` flag" $ do
+      let inputs =
+            declaring
+              (decl Nothing (Just "claude-sonnet-5") Nothing)
+              baseInputs {cliModel = Just "claude-opus-4-8", cliModelFromSubcommand = False}
+      modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-opus-4-8", SourceCliParent)
+
+    it "loses to an environment variable" $ do
+      let inputs = declaring (decl Nothing (Just "claude-sonnet-5") (Just "max")) baseInputs {envEffort = Just "low"}
+      effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingLow, SourceEnv)
+      -- ...but only for the field the environment names.
+      modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-sonnet-5", SourceArtifactDeclaration)
+
+    it "skips a blank declared value in favor of the next tier" $ do
+      let inputs =
+            declaring
+              (decl Nothing (Just "   ") Nothing)
+              baseInputs {localConfig = Map.fromList [(agentModelConfigKey, "claude-haiku-4-5")]}
+      modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-haiku-4-5", SourceLocalDefault)
+
+    -- Guards the applyProviderDefaultModel interaction: a declaration that only
+    -- changes the provider must pick up that provider's pinned default model,
+    -- not the previous provider's.
+    it "picks up the declared provider's pinned default model" $ do
+      let inputs = declaring (decl (Just "codex-cli") Nothing Nothing) baseInputs
+      providerOf AgentCmdRun inputs `shouldBe` Right (AgentProviderCodexCli, SourceArtifactDeclaration)
+      modelOf AgentCmdRun inputs `shouldBe` Right (Just "gpt-5.6-terra", SourceBuiltinDefault)
+
+    it "returns a diagnostic naming the accepted providers for a bad declared provider" $
+      resolveAgentModelConfigFor AgentCmdRun (declaring (decl (Just "llama") Nothing Nothing) baseInputs)
+        `shouldSatisfy` \case
+          Left err ->
+            "Unknown agent provider" `Text.isInfixOf` err
+              && "claude-cli" `Text.isInfixOf` err
+              && "openai" `Text.isInfixOf` err
+          Right _ -> False
+
+    it "returns a diagnostic for a bad declared effort" $
+      resolveAgentModelConfigFor AgentCmdRun (declaring (decl Nothing Nothing (Just "ultra")) baseInputs)
+        `shouldSatisfy` \case
+          Left err -> "Unknown reasoning effort" `Text.isInfixOf` err
+          Right _ -> False
+
+    it "labels blueprint-run and migrate declarations as blueprint sources" $ do
+      agentConfigSourceLabel AgentCmdRun ModelField SourceArtifactDeclaration `shouldBe` "blueprint: launch.model"
+      agentConfigSourceLabel AgentCmdMigrate EffortField SourceArtifactDeclaration `shouldBe` "blueprint: launch.effort"
+      agentConfigSourceLabel AgentCmdRun ProviderField SourceArtifactDeclaration `shouldBe` "blueprint: launch.provider"
+
+    it "labels a prompt-run declaration as a prompt source" $
+      agentConfigSourceLabel AgentCmdPromptRun ModelField SourceArtifactDeclaration `shouldBe` "prompt: launch.model"
+
+  describe "agentLaunchDeclaration" $ do
+    it "treats a missing launch record as declaring nothing" $
+      agentLaunchDeclaration Nothing `shouldBe` noAgentLaunchDeclaration
+
+    it "projects the three resolvable fields and drops the reserved mode" $
+      agentLaunchDeclaration
+        (Just AgentLaunch {provider = Just "codex-cli", model = Just "gpt-5", effort = Just "max", mode = Just "ignored"})
+        `shouldBe` AgentLaunchDeclaration
+          { declarationProvider = Just "codex-cli",
+            declarationModel = Just "gpt-5",
+            declarationEffort = Just "max"
+          }
+
+  describe "validateAgentLaunchDeclaration" $ do
+    it "accepts a declaration that states nothing" $
+      validateAgentLaunchDeclaration noAgentLaunchDeclaration `shouldBe` []
+
+    it "accepts valid provider and effort values" $
+      validateAgentLaunchDeclaration (decl (Just "codex-cli") (Just "anything-goes") (Just "max")) `shouldBe` []
+
+    it "reports an unknown provider under its key" $
+      validateAgentLaunchDeclaration (decl (Just "llama") Nothing Nothing) `shouldSatisfy` \case
+        [err] -> "launch.provider: " `Text.isPrefixOf` err && "Unknown agent provider" `Text.isInfixOf` err
+        _ -> False
+
+    it "reports an unknown effort under its key" $
+      validateAgentLaunchDeclaration (decl Nothing Nothing (Just "ultra")) `shouldSatisfy` \case
+        [err] -> "launch.effort: " `Text.isPrefixOf` err && "Unknown reasoning effort" `Text.isInfixOf` err
+        _ -> False
+
+    it "reports both invalid values at once" $
+      length (validateAgentLaunchDeclaration (decl (Just "llama") Nothing (Just "ultra"))) `shouldBe` 2
+
+    it "does not check the model, which is free-form" $
+      validateAgentLaunchDeclaration (decl Nothing (Just "some-private-model-id") Nothing) `shouldBe` []
+
+  describe "formatResolvedAgentProvenance" $ do
+    it "names each field's value and source" $ do
+      let pending = PendingAgentConfig AgentCmdRun baseInputs
+      fmap formatResolvedAgentProvenance (resolvePendingAgentConfig pending (decl Nothing (Just "claude-sonnet-5") (Just "max")))
+        `shouldBe` Right
+          "provider claude-cli [built-in default], model claude-sonnet-5 [blueprint: launch.model], effort max [blueprint: launch.effort]"
+
+    it "reports an unset effort rather than omitting it" $ do
+      let pending = PendingAgentConfig AgentCmdPromptRun baseInputs
+      fmap formatResolvedAgentProvenance (resolvePendingAgentConfig pending noAgentLaunchDeclaration)
+        `shouldBe` Right
+          "provider claude-cli [built-in default], model claude-opus-4-8 [built-in default], effort <unset> [built-in default]"
+
+  describe "resolvePendingAgentConfig" $ do
+    it "projects down to the config the launch layer consumes" $ do
+      let pending = PendingAgentConfig AgentCmdRun baseInputs
+      fmap resolvedAgentModelConfig (resolvePendingAgentConfig pending (decl (Just "codex-cli") Nothing (Just "high")))
+        `shouldBe` Right
+          AgentModelConfig
+            { agentProvider = AgentProviderCodexCli,
+              agentModel = Just "gpt-5.6-terra",
+              agentEffort = Just ThinkingHigh
+            }
+
+-- | Build an 'AgentLaunchDeclaration' from the three resolvable fields.
+decl :: Maybe Text -> Maybe Text -> Maybe Text -> AgentLaunchDeclaration
+decl provider model effort =
+  AgentLaunchDeclaration
+    { declarationProvider = provider,
+      declarationModel = model,
+      declarationEffort = effort
+    }
+
+-- | Fold a declaration into an inputs record, the way
+-- 'resolvePendingAgentConfig' does.
+declaring :: AgentLaunchDeclaration -> AgentConfigInputs -> AgentConfigInputs
+declaring d inputs =
+  inputs
+    { declaredProvider = d.declarationProvider,
+      declaredModel = d.declarationModel,
+      declaredEffort = d.declarationEffort
+    }
 
 providerOf :: AgentCommandName -> AgentConfigInputs -> Either Text (AgentProvider, AgentConfigSource)
 providerOf c inputs =
