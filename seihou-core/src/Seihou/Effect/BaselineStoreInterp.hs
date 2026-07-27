@@ -4,6 +4,7 @@ module Seihou.Effect.BaselineStoreInterp
 where
 
 import Control.Monad (filterM, unless, when)
+import Data.Generics.Labels ()
 import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -33,7 +34,7 @@ runBaselineStore baselineDir = interpret $ \_ -> \case
     finalExists <- doesFileExist finalPath
     reusable <-
       if finalExists
-        then ((== ref.unBaselineRef) . hashContent) <$> readFileText finalPath
+        then ((== ref ^. #unBaselineRef) . hashContent) <$> readFileText finalPath
         else pure False
     unless reusable $ do
       writeFileText tempPath content
@@ -50,7 +51,7 @@ runBaselineStore baselineDir = interpret $ \_ -> \case
           else do
             content <- readFileText path
             let actual = hashContent content
-            if actual == ref.unBaselineRef
+            if actual == ref ^. #unBaselineRef
               then pure (Right content)
               else pure (Left (BaselineCorrupt ref actual))
   PruneBaselines referenced -> do
@@ -71,12 +72,12 @@ runBaselineStore baselineDir = interpret $ \_ -> \case
           isFile <- doesFileExist path
           if not isFile
             then pure False
-            else ((== ref.unBaselineRef) . hashContent) <$> readFileText path
+            else ((== ref ^. #unBaselineRef) . hashContent) <$> readFileText path
 
 baselinePath :: FilePath -> BaselineRef -> Maybe FilePath
 baselinePath root ref = do
-  normalized <- baselineRefFromText ref.unBaselineRef.unSHA256
-  pure (root </> T.unpack normalized.unBaselineRef.unSHA256)
+  normalized <- baselineRefFromText (ref ^. #unBaselineRef . #unSHA256)
+  pure (root </> T.unpack (normalized ^. #unBaselineRef . #unSHA256))
 
 checkedBaselinePath :: FilePath -> BaselineRef -> FilePath
 checkedBaselinePath root ref = case baselinePath root ref of

@@ -1,5 +1,6 @@
 module Seihou.CLI.PendingMigrationSpec (tests) where
 
+import Control.Lens (to)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)

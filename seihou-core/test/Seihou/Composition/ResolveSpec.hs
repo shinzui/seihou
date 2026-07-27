@@ -1,5 +1,7 @@
 module Seihou.Composition.ResolveSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Seihou.Composition.Instance (ModuleInstance (..), mkInstance, primaryInstance)
@@ -71,7 +73,7 @@ mkExportAs name alias' = VarExport {var = name, alias = Just alias'}
 -- using 'emptyParentVars' for every module. Existing single-instance
 -- tests use this to migrate onto the new API without churn.
 asInstances :: [(Module, FilePath)] -> [(ModuleInstance, Module, FilePath)]
-asInstances pairs = [(primaryInstance m.name, m, dir) | (m, dir) <- pairs]
+asInstances pairs = [(primaryInstance (m ^. #name), m, dir) | (m, dir) <- pairs]
 
 -- | Look up the resolved variables for a module by its bare name,
 -- assuming the composition contains a single primary instance of it.
@@ -108,7 +110,7 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let baseVars = byName "base" result
-          (.value) (baseVars Map.! "project.name") `shouldBe` VText "default"
+          (^. #value) (baseVars Map.! "project.name") `shouldBe` VText "default"
 
     it "reuses saved instance values below CLI and above ambient sources" $ do
       let m = mkModule "base" [] [mkTextVar "project.name" (Just (VText "new-default")) False] []
@@ -120,11 +122,11 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let resolved = result Map.! instanceId Map.! "project.name"
-          resolved.value `shouldBe` VText "accepted"
-          resolved.source `shouldBe` FromApplication
+          (resolved ^. #value) `shouldBe` VText "accepted"
+          (resolved ^. #source) `shouldBe` FromApplication
       case resolveComposedVariablesWithSaved modules saved (Map.singleton "project.name" "explicit") env "" "" Map.empty Map.empty Map.empty Map.empty of
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
-        Right result -> (result Map.! instanceId Map.! "project.name").source `shouldBe` FromCLI
+        Right result -> ((result Map.! instanceId Map.! "project.name") ^. #source) `shouldBe` FromCLI
 
     it "re-coerces saved values through changed candidate declarations" $ do
       let countDecl =
@@ -161,8 +163,8 @@ spec = do
         Right result -> do
           let resolved = result Map.! instanceId
           Map.keys resolved `shouldBe` ["project.kept", "project.new"]
-          (resolved Map.! "project.kept").source `shouldBe` FromApplication
-          (resolved Map.! "project.new").source `shouldBe` FromDefault
+          ((resolved Map.! "project.kept") ^. #source) `shouldBe` FromApplication
+          ((resolved Map.! "project.new") ^. #source) `shouldBe` FromDefault
 
     it "flows exported variable from dependency to dependent" $ do
       let base = mkModule "base" [] [mkTextVar "project.name" (Just (VText "my-app")) False] [mkExport "project.name"]
@@ -172,7 +174,7 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let appVars = byName "app" result
-          (.value) (appVars Map.! "project.name") `shouldBe` VText "my-app"
+          (^. #value) (appVars Map.! "project.name") `shouldBe` VText "my-app"
 
     it "export overrides module's own default" $ do
       let base = mkModule "base" [] [mkTextVar "project.name" (Just (VText "from-base")) False] [mkExport "project.name"]
@@ -182,7 +184,7 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let appVars = byName "app" result
-          (.value) (appVars Map.! "project.name") `shouldBe` VText "from-base"
+          (^. #value) (appVars Map.! "project.name") `shouldBe` VText "from-base"
 
     it "CLI override beats exported value" $ do
       let base = mkModule "base" [] [mkTextVar "project.name" (Just (VText "from-base")) False] [mkExport "project.name"]
@@ -193,7 +195,7 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let appVars = byName "app" result
-          (.value) (appVars Map.! "project.name") `shouldBe` VText "from-cli"
+          (^. #value) (appVars Map.! "project.name") `shouldBe` VText "from-cli"
 
     it "inherits non-declared exports from dependency" $ do
       let base = mkModule "base" [] [mkTextVar "project.name" (Just (VText "my-app")) False] [mkExport "project.name"]
@@ -205,9 +207,9 @@ spec = do
         Right result -> do
           let appVars = byName "app" result
           -- app inherits project.name even though it doesn't declare it
-          (.value) (appVars Map.! "project.name") `shouldBe` VText "my-app"
+          (^. #value) (appVars Map.! "project.name") `shouldBe` VText "my-app"
           -- app also has its own variable
-          (.value) (appVars Map.! "app.version") `shouldBe` VText "1.0"
+          (^. #value) (appVars Map.! "app.version") `shouldBe` VText "1.0"
 
     it "handles aliased exports" $ do
       let base = mkModule "base" [] [mkTextVar "project.name" (Just (VText "my-app")) False] [mkExportAs "project.name" "app.name"]
@@ -217,7 +219,7 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let appVars = byName "app" result
-          (.value) (appVars Map.! "app.name") `shouldBe` VText "my-app"
+          (^. #value) (appVars Map.! "app.name") `shouldBe` VText "my-app"
 
     it "handles diamond dependency with shared export" $ do
       let d = mkModule "d" [] [mkTextVar "sys.arch" (Just (VText "x86_64")) False] [mkExport "sys.arch"]
@@ -229,10 +231,10 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           -- All modules should see sys.arch from d
-          (.value) (byName "d" result Map.! "sys.arch") `shouldBe` VText "x86_64"
-          (.value) (byName "b" result Map.! "sys.arch") `shouldBe` VText "x86_64"
-          (.value) (byName "c" result Map.! "sys.arch") `shouldBe` VText "x86_64"
-          (.value) (byName "a" result Map.! "sys.arch") `shouldBe` VText "x86_64"
+          (^. #value) (byName "d" result Map.! "sys.arch") `shouldBe` VText "x86_64"
+          (^. #value) (byName "b" result Map.! "sys.arch") `shouldBe` VText "x86_64"
+          (^. #value) (byName "c" result Map.! "sys.arch") `shouldBe` VText "x86_64"
+          (^. #value) (byName "a" result Map.! "sys.arch") `shouldBe` VText "x86_64"
 
   describe "resolveComposedVariables (with config layers)" $ do
     it "resolves from global config when no other source provides value" $ do
@@ -243,8 +245,8 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let baseVars = byName "base" result
-          (.value) (baseVars Map.! "license") `shouldBe` VText "MIT"
-          (.source) (baseVars Map.! "license") `shouldBe` FromGlobalConfig
+          (^. #value) (baseVars Map.! "license") `shouldBe` VText "MIT"
+          (^. #source) (baseVars Map.! "license") `shouldBe` FromGlobalConfig
 
     it "local config overrides global config in composed resolution" $ do
       let m = mkModule "base" [] [mkTextVar "license" Nothing True] []
@@ -255,8 +257,8 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let baseVars = byName "base" result
-          (.value) (baseVars Map.! "license") `shouldBe` VText "BSD3"
-          (.source) (baseVars Map.! "license") `shouldBe` FromLocalConfig
+          (^. #value) (baseVars Map.! "license") `shouldBe` VText "BSD3"
+          (^. #source) (baseVars Map.! "license") `shouldBe` FromLocalConfig
 
     it "CLI override beats config layers in composed resolution" $ do
       let m = mkModule "base" [] [mkTextVar "license" Nothing True] []
@@ -268,8 +270,8 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let baseVars = byName "base" result
-          (.value) (baseVars Map.! "license") `shouldBe` VText "cli-license"
-          (.source) (baseVars Map.! "license") `shouldBe` FromCLI
+          (^. #value) (baseVars Map.! "license") `shouldBe` VText "cli-license"
+          (^. #source) (baseVars Map.! "license") `shouldBe` FromCLI
 
     it "config layers flow through multi-module composition" $ do
       let base = mkModule "base" [] [mkTextVar "license" Nothing True] [mkExport "license"]
@@ -281,11 +283,11 @@ spec = do
         Right result -> do
           -- base gets license from global config
           let baseVars = byName "base" result
-          (.value) (baseVars Map.! "license") `shouldBe` VText "MIT"
-          (.source) (baseVars Map.! "license") `shouldBe` FromGlobalConfig
+          (^. #value) (baseVars Map.! "license") `shouldBe` VText "MIT"
+          (^. #source) (baseVars Map.! "license") `shouldBe` FromGlobalConfig
           -- app also gets license from global config (it declares the var)
           let appVars = byName "app" result
-          (.value) (appVars Map.! "license") `shouldBe` VText "MIT"
+          (^. #value) (appVars Map.! "license") `shouldBe` VText "MIT"
 
   describe "end-to-end config hierarchy auto-resolution" $ do
     it "resolves all variables from different config layers with correct precedence" $ do
@@ -307,17 +309,17 @@ spec = do
         Right result -> do
           let vars = byName "haskell-app" result
           -- CLI wins for project.name
-          (.value) (vars Map.! "project.name") `shouldBe` VText "my-app"
-          (.source) (vars Map.! "project.name") `shouldBe` FromCLI
+          (^. #value) (vars Map.! "project.name") `shouldBe` VText "my-app"
+          (^. #source) (vars Map.! "project.name") `shouldBe` FromCLI
           -- Env wins over global config for license
-          (.value) (vars Map.! "license") `shouldBe` VText "Apache"
-          (.source) (vars Map.! "license") `shouldBe` FromEnv "SEIHOU_VAR_LICENSE"
+          (^. #value) (vars Map.! "license") `shouldBe` VText "Apache"
+          (^. #source) (vars Map.! "license") `shouldBe` FromEnv "SEIHOU_VAR_LICENSE"
           -- Local config provides haskell.ghc
-          (.value) (vars Map.! "haskell.ghc") `shouldBe` VText "9.12.2"
-          (.source) (vars Map.! "haskell.ghc") `shouldBe` FromLocalConfig
+          (^. #value) (vars Map.! "haskell.ghc") `shouldBe` VText "9.12.2"
+          (^. #source) (vars Map.! "haskell.ghc") `shouldBe` FromLocalConfig
           -- Global config provides author.name
-          (.value) (vars Map.! "author.name") `shouldBe` VText "Jane Doe"
-          (.source) (vars Map.! "author.name") `shouldBe` FromGlobalConfig
+          (^. #value) (vars Map.! "author.name") `shouldBe` VText "Jane Doe"
+          (^. #source) (vars Map.! "author.name") `shouldBe` FromGlobalConfig
 
     it "optional variables without values are omitted, not errors" $ do
       let decls =
@@ -331,7 +333,7 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let vars = byName "test" result
-          (.value) (vars Map.! "project.name") `shouldBe` VText "app"
+          (^. #value) (vars Map.! "project.name") `shouldBe` VText "app"
           Map.member "optional.missing" vars `shouldBe` False
 
     it "diagnostics detect unused config keys and unresolved optional vars" $ do
@@ -347,7 +349,7 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let allResolved = Map.unions (Map.elems result)
-              allDecls = concatMap (\(_, mm, _) -> mm.vars) modules
+              allDecls = concatMap (\(_, mm, _) -> mm ^. #vars) modules
               (unusedKeys, unresolvedOpt) = diagnoseResolution allResolved allDecls Map.empty Map.empty Map.empty globalCfg
           unusedKeys `shouldBe` [VarName "typo.key"]
           unresolvedOpt `shouldBe` [VarName "optional.unset"]
@@ -361,8 +363,8 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let baseVars = byName "base" result
-          (.value) (baseVars Map.! "user.email") `shouldBe` VText "work@example.com"
-          (.source) (baseVars Map.! "user.email") `shouldBe` FromContextConfig "work"
+          (^. #value) (baseVars Map.! "user.email") `shouldBe` VText "work@example.com"
+          (^. #source) (baseVars Map.! "user.email") `shouldBe` FromContextConfig "work"
 
     it "context flows through multi-module composition" $ do
       let base = mkModule "base" [] [mkTextVar "user.email" Nothing True] [mkExport "user.email"]
@@ -373,9 +375,9 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let baseVars = byName "base" result
-          (.value) (baseVars Map.! "user.email") `shouldBe` VText "work@example.com"
+          (^. #value) (baseVars Map.! "user.email") `shouldBe` VText "work@example.com"
           let appVars = byName "app" result
-          (.value) (appVars Map.! "user.email") `shouldBe` VText "work@example.com"
+          (^. #value) (appVars Map.! "user.email") `shouldBe` VText "work@example.com"
 
     it "multi-module composition: config values flow through exports" $ do
       let baseDecls =
@@ -396,14 +398,14 @@ spec = do
         Right result -> do
           -- base: local overrides global for project.name
           let baseVars = byName "base" result
-          (.value) (baseVars Map.! "project.name") `shouldBe` VText "local-app"
-          (.source) (baseVars Map.! "project.name") `shouldBe` FromLocalConfig
-          (.value) (baseVars Map.! "license") `shouldBe` VText "MIT"
-          (.source) (baseVars Map.! "license") `shouldBe` FromGlobalConfig
+          (^. #value) (baseVars Map.! "project.name") `shouldBe` VText "local-app"
+          (^. #source) (baseVars Map.! "project.name") `shouldBe` FromLocalConfig
+          (^. #value) (baseVars Map.! "license") `shouldBe` VText "MIT"
+          (^. #source) (baseVars Map.! "license") `shouldBe` FromGlobalConfig
           -- app: same values, same precedence (declares its own vars, config wins)
           let appVars = byName "app" result
-          (.value) (appVars Map.! "project.name") `shouldBe` VText "local-app"
-          (.value) (appVars Map.! "license") `shouldBe` VText "MIT"
+          (^. #value) (appVars Map.! "project.name") `shouldBe` VText "local-app"
+          (^. #value) (appVars Map.! "license") `shouldBe` VText "MIT"
 
   describe "resolveComposedVariables (parameterized dependencies)" $ do
     it "parent-supplied var resolves in dependency" $ do
@@ -416,8 +418,8 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let childVars = Map.findWithDefault Map.empty childInst result
-          (.value) (childVars Map.! "skill.name") `shouldBe` VText "exec-plan"
-          (.source) (childVars Map.! "skill.name") `shouldBe` FromParent "parent"
+          (^. #value) (childVars Map.! "skill.name") `shouldBe` VText "exec-plan"
+          (^. #source) (childVars Map.! "skill.name") `shouldBe` FromParent "parent"
 
     it "parent-supplied var overrides dependency's default" $ do
       let child = mkModule "child" [] [mkTextVar "skill.name" (Just (VText "old")) False] []
@@ -429,8 +431,8 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let childVars = Map.findWithDefault Map.empty childInst result
-          (.value) (childVars Map.! "skill.name") `shouldBe` VText "new"
-          (.source) (childVars Map.! "skill.name") `shouldBe` FromParent "parent"
+          (^. #value) (childVars Map.! "skill.name") `shouldBe` VText "new"
+          (^. #source) (childVars Map.! "skill.name") `shouldBe` FromParent "parent"
 
     it "CLI override beats parent-supplied var" $ do
       let child = mkModule "child" [] [mkTextVar "skill.name" Nothing True] []
@@ -443,8 +445,8 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let childVars = Map.findWithDefault Map.empty childInst result
-          (.value) (childVars Map.! "skill.name") `shouldBe` VText "from-cli"
-          (.source) (childVars Map.! "skill.name") `shouldBe` FromCLI
+          (^. #value) (childVars Map.! "skill.name") `shouldBe` VText "from-cli"
+          (^. #source) (childVars Map.! "skill.name") `shouldBe` FromCLI
 
     it "config beats parent-supplied var" $ do
       let child = mkModule "child" [] [mkTextVar "skill.name" (Just (VText "default")) False] []
@@ -457,8 +459,8 @@ spec = do
         Left errs -> expectationFailure $ "Expected Right, got: " ++ show errs
         Right result -> do
           let childVars = Map.findWithDefault Map.empty childInst result
-          (.value) (childVars Map.! "skill.name") `shouldBe` VText "global-val"
-          (.source) (childVars Map.! "skill.name") `shouldBe` FromGlobalConfig
+          (^. #value) (childVars Map.! "skill.name") `shouldBe` VText "global-val"
+          (^. #source) (childVars Map.! "skill.name") `shouldBe` FromGlobalConfig
 
     it "two parents supplying different bindings produce two distinct child instances" $ do
       -- The regression case from ExecPlan 10: master-plan and exec-plan both
@@ -498,5 +500,5 @@ spec = do
           Map.size result `shouldBe` 4
           let varsA = Map.findWithDefault Map.empty instA result
               varsB = Map.findWithDefault Map.empty instB result
-          (.value) (varsA Map.! "skill.name") `shouldBe` VText "exec-plan"
-          (.value) (varsB Map.! "skill.name") `shouldBe` VText "master-plan"
+          (^. #value) (varsA Map.! "skill.name") `shouldBe` VText "exec-plan"
+          (^. #value) (varsB Map.! "skill.name") `shouldBe` VText "master-plan"

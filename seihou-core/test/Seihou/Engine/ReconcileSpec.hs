@@ -1,6 +1,8 @@
 module Seihou.Engine.ReconcileSpec (tests) where
 
+import Control.Lens ((^.))
 import Data.Functor.Identity (Identity (..))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -31,9 +33,9 @@ spec = do
           result = planWith (Map.singleton ".gitignore" "root\n") Map.empty Map.empty empty [appA] operations (owners ".gitignore" [appA]) cleanMerge
       case result of
         Right reconciliation -> do
-          Map.size reconciliation.files `shouldBe` 1
-          case reconciliation.files Map.! ".gitignore" of
-            FileUpdate desired _ _ _ -> desired.generatedContent `shouldBe` "root\none\ntwo\nthree\n"
+          Map.size (reconciliation ^. #files) `shouldBe` 1
+          case (reconciliation ^. #files) Map.! ".gitignore" of
+            FileUpdate desired _ _ _ -> (desired ^. #generatedContent) `shouldBe` "root\none\ntwo\nthree\n"
             other -> expectationFailure ("expected one update, got " <> show other)
         Left err -> expectationFailure (show err)
 
@@ -44,8 +46,8 @@ spec = do
             ]
           result = planWith Map.empty Map.empty Map.empty empty [appA] operations (owners "README.md" [appA]) cleanMerge
       case result of
-        Right reconciliation -> case reconciliation.files Map.! "README.md" of
-          FileCreate desired _ _ -> desired.generatedContent `shouldBe` "generated\nadded\n"
+        Right reconciliation -> case (reconciliation ^. #files) Map.! "README.md" of
+          FileCreate desired _ _ -> (desired ^. #generatedContent) `shouldBe` "generated\nadded\n"
           other -> expectationFailure ("expected create, got " <> show other)
         Left err -> expectationFailure (show err)
 
@@ -62,10 +64,10 @@ spec = do
               (owners "copied.txt" [appA])
               cleanMerge
       case result of
-        Right reconciliation -> case reconciliation.files Map.! "copied.txt" of
+        Right reconciliation -> case (reconciliation ^. #files) Map.! "copied.txt" of
           FileCreate desired _ _ -> do
-            desired.generatedContent `shouldBe` "copied\n"
-            desired.strategy `shouldBe` Copy
+            (desired ^. #generatedContent) `shouldBe` "copied\n"
+            (desired ^. #strategy) `shouldBe` Copy
           other -> expectationFailure ("expected create, got " <> show other)
         Left err -> expectationFailure (show err)
 
@@ -83,7 +85,7 @@ spec = do
               (owners "legacy.txt" [appA])
               cleanMerge
       case result of
-        Right reconciliation -> case reconciliation.files Map.! "legacy.txt" of
+        Right reconciliation -> case (reconciliation ^. #files) Map.! "legacy.txt" of
           FileUpdate _ _ _ _ -> pure ()
           other -> expectationFailure ("expected trusted update, got " <> show other)
         Left err -> expectationFailure (show err)
@@ -101,7 +103,7 @@ spec = do
               (owners "legacy.txt" [appA])
               cleanMerge
       case result of
-        Right reconciliation -> case reconciliation.files Map.! "legacy.txt" of
+        Right reconciliation -> case (reconciliation ^. #files) Map.! "legacy.txt" of
           FileConflict _ current _ MissingTrustedBaseline _ _ Nothing -> current `shouldBe` "user edit\n"
           other -> expectationFailure ("expected conservative conflict, got " <> show other)
         Left err -> expectationFailure (show err)
@@ -164,11 +166,11 @@ spec = do
               (owners "file.txt" [appA])
               cleanMerge
       case result of
-        Right reconciliation -> case reconciliation.files Map.! "file.txt" of
+        Right reconciliation -> case (reconciliation ^. #files) Map.! "file.txt" of
           FileUnchanged _ state _ _ -> do
-            state.appliedContent `shouldBe` "user\n"
-            state.recordedHash `shouldBe` oldRecord.hash
-            state.writeToDisk `shouldBe` False
+            (state ^. #appliedContent) `shouldBe` "user\n"
+            (state ^. #recordedHash) `shouldBe` (oldRecord ^. #hash)
+            (state ^. #writeToDisk) `shouldBe` False
           other -> expectationFailure ("expected unchanged user edit, got " <> show other)
         Left err -> expectationFailure (show err)
 
@@ -188,8 +190,8 @@ spec = do
               (\_ _ _ -> MergeClean "user and generated\n")
       case result of
         Right reconciliation -> do
-          case reconciliation.files Map.! "file.txt" of
-            FileAutoMerge _ state _ _ -> state.appliedContent `shouldBe` "user and generated\n"
+          case (reconciliation ^. #files) Map.! "file.txt" of
+            FileAutoMerge _ state _ _ -> (state ^. #appliedContent) `shouldBe` "user and generated\n"
             other -> expectationFailure ("expected automatic merge, got " <> show other)
           reconciliationSummary reconciliation `shouldBe` ReconciliationSummary 0 0 1 0 0 0 0 0
         Left err -> expectationFailure (show err)
@@ -216,10 +218,10 @@ spec = do
           let resolved = resolveFileConflict "file.txt" KeepCurrent reconciliation
           case resolved of
             Left err -> expectationFailure (show err)
-            Right finalPlan -> case finalPlan.files Map.! "file.txt" of
+            Right finalPlan -> case (finalPlan ^. #files) Map.! "file.txt" of
               FileConflict _ _ _ _ _ _ (Just resolution) -> do
-                resolution.state.generatedBaseline `shouldBe` "generated\n"
-                resolution.state.appliedContent `shouldBe` "user\n"
+                (resolution ^. #state . #generatedBaseline) `shouldBe` "generated\n"
+                (resolution ^. #state . #appliedContent) `shouldBe` "user\n"
                 unresolvedPaths finalPlan `shouldBe` Set.empty
               other -> expectationFailure ("expected resolved conflict, got " <> show other)
 
@@ -239,9 +241,9 @@ spec = do
       case result of
         Left err -> expectationFailure (show err)
         Right reconciliation -> do
-          reconciliation.files Map.! "safe.txt" `shouldSatisfy` isSafeDelete
-          reconciliation.files Map.! "edited.txt" `shouldSatisfy` isEditedOrphan
-          reconciliation.files Map.! "shared.txt" `shouldSatisfy` isSharedRelease
+          (reconciliation ^. #files) Map.! "safe.txt" `shouldSatisfy` isSafeDelete
+          (reconciliation ^. #files) Map.! "edited.txt" `shouldSatisfy` isEditedOrphan
+          (reconciliation ^. #files) Map.! "shared.txt" `shouldSatisfy` isSharedRelease
           unresolvedPaths reconciliation `shouldBe` Set.singleton "edited.txt"
           case resolveEditedOrphan "edited.txt" RetainTrackedOrphan reconciliation of
             Left err -> expectationFailure (show err)
@@ -260,15 +262,15 @@ empty = emptyManifest fixedTime
 withFile :: FilePath -> FileRecord -> Manifest -> Manifest
 withFile path fileRecord manifest =
   Manifest
-    { version = manifest.version,
-      genAt = manifest.genAt,
-      modules = manifest.modules,
-      vars = manifest.vars,
-      files = Map.insert path fileRecord manifest.files,
-      applications = manifest.applications,
-      recipe = manifest.recipe,
-      blueprint = manifest.blueprint,
-      blueprintMigrations = manifest.blueprintMigrations
+    { version = manifest ^. #version,
+      genAt = manifest ^. #genAt,
+      modules = manifest ^. #modules,
+      vars = manifest ^. #vars,
+      files = Map.insert path fileRecord (manifest ^. #files),
+      applications = manifest ^. #applications,
+      recipe = manifest ^. #recipe,
+      blueprint = manifest ^. #blueprint,
+      blueprintMigrations = manifest ^. #blueprintMigrations
     }
 
 record :: Text -> Maybe BaselineRef -> [ApplicationId] -> FileRecord

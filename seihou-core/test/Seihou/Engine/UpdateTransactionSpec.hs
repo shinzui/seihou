@@ -1,9 +1,11 @@
 module Seihou.Engine.UpdateTransactionSpec (tests) where
 
 import Control.Exception (throwIO)
+import Control.Lens ((^.))
 import Control.Monad (unless, when)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -73,7 +75,7 @@ spec = do
                       ],
                   requiredDirectories = Set.empty
                 }
-        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Map.keysSet plan.files)
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Map.keysSet (plan ^. #files))
         candidate <- expectRight =<< applyReconciliation transaction plan manifest
 
         readProject projectRoot "merged.txt" `shouldReturn` "user and generated\n"
@@ -81,19 +83,19 @@ spec = do
         readProject projectRoot "edited.txt" `shouldReturn` "user orphan\n"
         readProject projectRoot "shared.txt" `shouldReturn` "shared\n"
 
-        let mergedRecord = candidate.files Map.! "merged.txt"
+        let mergedRecord = (candidate ^. #files) Map.! "merged.txt"
             baseline = baselineRefForContent "generated\n"
-        mergedRecord.hash `shouldBe` hashContent "user and generated\n"
-        mergedRecord.baseline `shouldBe` Just baseline
-        mergedRecord.applicationIds `shouldBe` Set.singleton appA
-        Map.member "safe.txt" candidate.files `shouldBe` False
-        candidate.files Map.! "edited.txt" `shouldBe` oldEdited
-        (candidate.files Map.! "shared.txt").applicationIds `shouldBe` Set.singleton appB
+        (mergedRecord ^. #hash) `shouldBe` hashContent "user and generated\n"
+        (mergedRecord ^. #baseline) `shouldBe` Just baseline
+        (mergedRecord ^. #applicationIds) `shouldBe` Set.singleton appA
+        Map.member "safe.txt" (candidate ^. #files) `shouldBe` False
+        (candidate ^. #files) Map.! "edited.txt" `shouldBe` oldEdited
+        (((candidate ^. #files) Map.! "shared.txt") ^. #applicationIds) `shouldBe` Set.singleton appB
         readProject projectRoot (".seihou/baselines" </> refName baseline) `shouldReturn` "generated\n"
 
-        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` True
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` True
         completeUpdateTransaction transaction `shouldReturn` Right ()
-        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
 
     it "advances the baseline but preserves disk and applied hash for KeepCurrent" $
       withSystemTempDirectory "seihou-update-keep-current" $ \projectRoot -> do
@@ -115,9 +117,9 @@ spec = do
         transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
         candidate <- expectRight =<< applyReconciliation transaction resolvedPlan manifest
         readProject projectRoot "file.txt" `shouldReturn` "user\n"
-        let resultRecord = candidate.files Map.! "file.txt"
-        resultRecord.hash `shouldBe` hashContent "user\n"
-        resultRecord.baseline `shouldBe` Just (baselineRefForContent "generated\n")
+        let resultRecord = (candidate ^. #files) Map.! "file.txt"
+        (resultRecord ^. #hash) `shouldBe` hashContent "user\n"
+        (resultRecord ^. #baseline) `shouldBe` Just (baselineRefForContent "generated\n")
         completeUpdateTransaction transaction `shouldReturn` Right ()
 
     it "rejects a stale plan before its first mutation" $
@@ -133,7 +135,7 @@ spec = do
         result <- applyReconciliation transaction plan (manifestWithFiles Map.empty)
         result `shouldSatisfy` isStale
         readProject projectRoot "file.txt" `shouldReturn` "planned\n"
-        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
 
     it "deletes or detaches edited orphans only after explicit resolution" $
       withSystemTempDirectory "seihou-update-orphan-resolution" $ \projectRoot -> do
@@ -165,11 +167,11 @@ spec = do
                 )
                 Set.empty
             manifest = manifestWithFiles (Map.fromList [("delete.txt", deleteRecord), ("detach.txt", detachRecord)])
-        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Map.keysSet plan.files)
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Map.keysSet (plan ^. #files))
         candidate <- expectRight =<< applyReconciliation transaction plan manifest
         Directory.doesFileExist (projectRoot </> "delete.txt") `shouldReturn` False
         readProject projectRoot "detach.txt" `shouldReturn` "user detach\n"
-        candidate.files `shouldBe` Map.empty
+        (candidate ^. #files) `shouldBe` Map.empty
         completeUpdateTransaction transaction `shouldReturn` Right ()
 
     it "refuses unresolved plans without touching disk" $
@@ -183,7 +185,7 @@ spec = do
         result <- applyReconciliation transaction plan (manifestWithFiles Map.empty)
         result `shouldSatisfy` isUnresolved
         readProject projectRoot "file.txt" `shouldReturn` "user\n"
-        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
 
   describe "rollback and recovery" $ do
     it "rolls every earlier mutation back after an injected failure" $
@@ -201,7 +203,7 @@ spec = do
                     ]
                 )
                 Set.empty
-        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Map.keysSet plan.files)
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Map.keysSet (plan ^. #files))
         result <-
           applyReconciliationWithHook
             (\count -> when (count == 1) (throwIO (userError "injected failure")))
@@ -211,7 +213,7 @@ spec = do
         result `shouldSatisfy` isApplyFailure
         readProject projectRoot "one.txt" `shouldReturn` "old one\n"
         readProject projectRoot "two.txt" `shouldReturn` "old two\n"
-        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
 
     it "restores a well-formed leftover journal on startup" $
       withSystemTempDirectory "seihou-update-recover" $ \projectRoot -> do
@@ -220,7 +222,7 @@ spec = do
         writeProject projectRoot "file.txt" "interrupted\n"
         recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
         readProject projectRoot "file.txt" `shouldReturn` "old\n"
-        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
 
     it "recovers an applied but unpublished candidate and removes its new empty directories" $
       withSystemTempDirectory "seihou-update-unpublished" $ \projectRoot -> do
@@ -238,7 +240,7 @@ spec = do
         recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
         readProject projectRoot "file.txt" `shouldReturn` "old\n"
         Directory.doesDirectoryExist (projectRoot </> "empty") `shouldReturn` False
-        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
 
     it "keeps committed files when the durable manifest matches the journal" $
       withSystemTempDirectory "seihou-update-committed" $ \projectRoot -> do
@@ -255,7 +257,7 @@ spec = do
         LBS.writeFile (projectRoot </> ".seihou" </> "manifest.json") (manifestToJSON candidate)
         recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
         readProject projectRoot "file.txt" `shouldReturn` "new\n"
-        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
 
     it "uses an orchestrator's complete final manifest as the recovery commit marker" $
       withSystemTempDirectory "seihou-update-final-marker" $ \projectRoot -> do
@@ -271,22 +273,22 @@ spec = do
         let finalManifest :: Manifest
             finalManifest =
               Manifest
-                { version = candidate.version,
-                  genAt = candidate.genAt,
-                  modules = candidate.modules,
+                { version = candidate ^. #version,
+                  genAt = candidate ^. #genAt,
+                  modules = candidate ^. #modules,
                   vars = Map.singleton "published" "yes",
-                  files = candidate.files,
-                  applications = candidate.applications,
-                  recipe = candidate.recipe,
-                  blueprint = candidate.blueprint,
-                  blueprintMigrations = candidate.blueprintMigrations
+                  files = candidate ^. #files,
+                  applications = candidate ^. #applications,
+                  recipe = candidate ^. #recipe,
+                  blueprint = candidate ^. #blueprint,
+                  blueprintMigrations = candidate ^. #blueprintMigrations
                 }
         setUpdateTransactionExpectedManifest transaction finalManifest `shouldReturn` Right ()
         Directory.createDirectoryIfMissing True (projectRoot </> ".seihou")
         LBS.writeFile (projectRoot </> ".seihou" </> "manifest.json") (manifestToJSON finalManifest)
         recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
         readProject projectRoot "file.txt" `shouldReturn` "new\n"
-        Directory.doesDirectoryExist transaction.transactionDirectory `shouldReturn` False
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
 
     it "quarantines malformed journal metadata instead of deleting it" $
       withSystemTempDirectory "seihou-update-malformed" $ \projectRoot -> do
@@ -352,8 +354,8 @@ spec = do
           merged `shouldSatisfy` T.isInfixOf "module"
           Directory.doesFileExist (projectRoot </> "safe.txt") `shouldReturn` False
           readProject projectRoot "edited.txt" `shouldReturn` "user orphan\n"
-          Map.member "safe.txt" candidate.files `shouldBe` False
-          Map.member "edited.txt" candidate.files `shouldBe` True
+          Map.member "safe.txt" (candidate ^. #files) `shouldBe` False
+          Map.member "edited.txt" (candidate ^. #files) `shouldBe` True
           Directory.listDirectory (projectRoot </> ".seihou" </> "transactions") `shouldReturn` []
 
 fixedTime :: UTCTime
@@ -367,15 +369,15 @@ manifestWithFiles :: Map.Map FilePath FileRecord -> Manifest
 manifestWithFiles fileRecords =
   let manifest = emptyManifest fixedTime
    in Manifest
-        { version = manifest.version,
-          genAt = manifest.genAt,
-          modules = manifest.modules,
-          vars = manifest.vars,
+        { version = manifest ^. #version,
+          genAt = manifest ^. #genAt,
+          modules = manifest ^. #modules,
+          vars = manifest ^. #vars,
           files = fileRecords,
-          applications = manifest.applications,
-          recipe = manifest.recipe,
-          blueprint = manifest.blueprint,
-          blueprintMigrations = manifest.blueprintMigrations
+          applications = manifest ^. #applications,
+          recipe = manifest ^. #recipe,
+          blueprint = manifest ^. #blueprint,
+          blueprintMigrations = manifest ^. #blueprintMigrations
         }
 
 fileRecord :: Text -> Maybe BaselineRef -> [ApplicationId] -> FileRecord
@@ -420,7 +422,7 @@ readProject :: FilePath -> FilePath -> IO Text
 readProject projectRoot relativePath = TIO.readFile (projectRoot </> relativePath)
 
 refName :: BaselineRef -> FilePath
-refName reference = T.unpack reference.unBaselineRef.unSHA256
+refName reference = T.unpack (reference ^. #unBaselineRef . #unSHA256)
 
 expectRight :: (Show error) => Either error value -> IO value
 expectRight (Right value) = pure value

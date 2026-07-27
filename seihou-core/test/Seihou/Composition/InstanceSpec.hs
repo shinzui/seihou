@@ -1,5 +1,7 @@
 module Seihou.Composition.InstanceSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Composition.Instance
@@ -21,8 +23,8 @@ spec = do
     it "appends a stable hash suffix when parent bindings are present" $ do
       let inst = mkInstance "claude-skill-link" (ParentVars (Map.singleton "skill.name" "exec-plan"))
           qn = qualifiedName inst
-      T.isPrefixOf "claude-skill-link#" (qn.unModuleName) `shouldBe` True
-      T.length (qn.unModuleName) `shouldBe` T.length "claude-skill-link#" + 8
+      T.isPrefixOf "claude-skill-link#" (qn ^. #unModuleName) `shouldBe` True
+      T.length (qn ^. #unModuleName) `shouldBe` T.length "claude-skill-link#" + 8
 
     it "produces a distinct qualified name for each distinct binding" $ do
       let a = mkInstance "claude-skill-link" (ParentVars (Map.singleton "skill.name" "exec-plan"))

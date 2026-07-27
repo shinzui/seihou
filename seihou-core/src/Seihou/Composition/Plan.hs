@@ -9,6 +9,7 @@ where
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
 import Data.Aeson.KeyMap qualified as KM
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -47,16 +48,16 @@ compileComposedPlan modules = do
           instancedModule =
             Module
               { name = qn,
-                version = m.version,
-                description = m.description,
-                vars = m.vars,
-                exports = m.exports,
-                prompts = m.prompts,
-                steps = m.steps,
-                commands = m.commands,
-                dependencies = m.dependencies,
-                removal = m.removal,
-                migrations = m.migrations
+                version = m ^. #version,
+                description = m ^. #description,
+                vars = m ^. #vars,
+                exports = m ^. #exports,
+                prompts = m ^. #prompts,
+                steps = m ^. #steps,
+                commands = m ^. #commands,
+                dependencies = m ^. #dependencies,
+                removal = m ^. #removal,
+                migrations = m ^. #migrations
               }
       result <- compilePlan dir instancedModule vars
       case result of

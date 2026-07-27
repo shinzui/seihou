@@ -3,6 +3,8 @@ module Seihou.Core.CommandFingerprint
   )
 where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (hashContent)
@@ -15,7 +17,7 @@ fingerprintCommand RunCommandOp {command, workDir, moduleName, occurrence} =
   Just . CommandFingerprint . hashContent $
     T.intercalate
       "\n"
-      [ "module=" <> moduleName.unModuleName,
+      [ "module=" <> moduleName ^. #unModuleName,
         "command=" <> command,
         "work-dir=" <> T.pack (normalise (maybe "." id workDir)),
         "occurrence=" <> T.pack (show occurrence)

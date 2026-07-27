@@ -1,6 +1,8 @@
 module Seihou.Manifest.TypesSpec (tests) where
 
+import Control.Lens ((^.))
 import Data.Aeson qualified as Aeson
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -36,22 +38,22 @@ mkBlueprintMigrationReceipt blueprintName fromVersion toVersion appliedAt =
 -- | Helper to set modules on a Manifest without ambiguous record update.
 withManifestModules :: [AppliedModule] -> Manifest -> Manifest
 withManifestModules mods m =
-  Manifest m.version m.genAt mods m.vars m.files m.applications m.recipe m.blueprint m.blueprintMigrations
+  Manifest (m ^. #version) (m ^. #genAt) mods (m ^. #vars) (m ^. #files) (m ^. #applications) (m ^. #recipe) (m ^. #blueprint) (m ^. #blueprintMigrations)
 
 spec :: Spec
 spec = do
   describe "emptyManifest" $ do
     it "creates a manifest with the current version" $ do
       let m = emptyManifest fixedTime
-      m.version `shouldBe` currentManifestVersion
-      m.version `shouldBe` 5
+      (m ^. #version) `shouldBe` currentManifestVersion
+      (m ^. #version) `shouldBe` 5
 
     it "creates a manifest with no modules, vars, or files" $ do
       let m = emptyManifest fixedTime
-      m.modules `shouldBe` []
-      m.vars `shouldBe` Map.empty
-      m.files `shouldBe` Map.empty
-      m.blueprintMigrations `shouldBe` []
+      (m ^. #modules) `shouldBe` []
+      (m ^. #vars) `shouldBe` Map.empty
+      (m ^. #files) `shouldBe` Map.empty
+      (m ^. #blueprintMigrations) `shouldBe` []
 
   describe "JSON roundtrip" $ do
     it "roundtrips an empty manifest" $ do
@@ -77,16 +79,16 @@ spec = do
       let base = emptyManifest fixedTime
           m =
             Manifest
-              { version = base.version,
-                genAt = base.genAt,
-                modules = base.modules,
+              { version = base ^. #version,
+                genAt = base ^. #genAt,
+                modules = base ^. #modules,
                 vars =
                   Map.fromList
                     [ (VarName "project.name", "my-app"),
                       (VarName "license", "MIT")
                     ],
-                files = base.files,
-                applications = base.applications,
+                files = base ^. #files,
+                applications = base ^. #applications,
                 recipe = Nothing,
                 blueprint = Nothing,
                 blueprintMigrations = []
@@ -336,8 +338,8 @@ spec = do
               Nothing
           m1 = writeAppliedBlueprint ab1 m0
           m2 = writeAppliedBlueprint ab2 m1
-      m1.blueprint `shouldBe` Just ab1
-      m2.blueprint `shouldBe` Just ab2
+      (m1 ^. #blueprint) `shouldBe` Just ab1
+      (m2 ^. #blueprint) `shouldBe` Just ab2
 
   describe "AppliedBlueprintMigration" $ do
     it "round-trips a fully populated receipt through JSON" $ do
@@ -369,7 +371,7 @@ spec = do
               (Just "rerun")
           manifest1 = writeAppliedBlueprintMigration unrelated (writeAppliedBlueprintMigration first (emptyManifest fixedTime))
           manifest2 = writeAppliedBlueprintMigration replacement manifest1
-      manifest2.blueprintMigrations `shouldBe` [replacement, unrelated]
+      (manifest2 ^. #blueprintMigrations) `shouldBe` [replacement, unrelated]
       hasAppliedBlueprintMigration "payments" "1.0.0" "2.0.0" manifest2 `shouldBe` True
       hasAppliedBlueprintMigration "payments" "2.0.0" "3.0.0" manifest2 `shouldBe` False
 
@@ -400,19 +402,19 @@ spec = do
                 blueprint = Just normalBlueprint
               }
           updated = writeAppliedBlueprintMigration (mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime) seed
-      updated.modules `shouldBe` seed.modules
-      updated.applications `shouldBe` seed.applications
-      updated.files `shouldBe` seed.files
-      updated.recipe `shouldBe` seed.recipe
-      updated.blueprint `shouldBe` seed.blueprint
+      (updated ^. #modules) `shouldBe` (seed ^. #modules)
+      (updated ^. #applications) `shouldBe` (seed ^. #applications)
+      (updated ^. #files) `shouldBe` (seed ^. #files)
+      (updated ^. #recipe) `shouldBe` (seed ^. #recipe)
+      (updated ^. #blueprint) `shouldBe` (seed ^. #blueprint)
 
   describe "schema back-compat" $ do
     it "decodes a v4 manifest with no blueprintMigrations key as an empty ledger" $ do
       let json = "{\"version\":4,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},\"applications\":[]}"
       case manifestFromJSON json of
         Right manifest -> do
-          manifest.version `shouldBe` 4
-          manifest.blueprintMigrations `shouldBe` []
+          (manifest ^. #version) `shouldBe` 4
+          (manifest ^. #blueprintMigrations) `shouldBe` []
         Left err -> expectationFailure ("failed to parse v4 manifest: " <> err)
 
     -- A pre-EP-32 (schema v2) manifest has no @blueprint@ key. The
@@ -423,14 +425,14 @@ spec = do
       let json = "{\"version\":2,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{}}"
       case manifestFromJSON json of
         Right manifest -> do
-          manifest.blueprint `shouldBe` Nothing
-          manifest.version `shouldBe` 2
+          (manifest ^. #blueprint) `shouldBe` Nothing
+          (manifest ^. #version) `shouldBe` 2
         Left err -> expectationFailure ("failed to parse: " <> err)
 
     it "decodes a v3 manifest with an explicit null blueprint as Nothing" $ do
       let json = "{\"version\":3,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},\"blueprint\":null}"
       case manifestFromJSON json of
-        Right manifest -> manifest.blueprint `shouldBe` Nothing
+        Right manifest -> (manifest ^. #blueprint) `shouldBe` Nothing
         Left err -> expectationFailure ("failed to parse: " <> err)
 
     it "decodes a v3 manifest with empty defaults for every version-4 field" $ do
@@ -439,11 +441,11 @@ spec = do
               <> "\"files\":{\"README.md\":{\"hash\":\"abc\",\"module\":\"legacy\",\"strategy\":\"template\",\"generatedAt\":\"2026-03-01T10:30:00Z\"}}}"
       case manifestFromJSON json of
         Right manifest -> do
-          manifest.applications `shouldBe` []
-          case Map.lookup "README.md" manifest.files of
+          (manifest ^. #applications) `shouldBe` []
+          case Map.lookup "README.md" (manifest ^. #files) of
             Just record -> do
-              record.baseline `shouldBe` Nothing
-              record.applicationIds `shouldBe` Set.empty
+              (record ^. #baseline) `shouldBe` Nothing
+              (record ^. #applicationIds) `shouldBe` Set.empty
             Nothing -> expectationFailure "expected legacy file record"
         Left err -> expectationFailure ("failed to parse: " <> err)
 
@@ -453,14 +455,14 @@ spec = do
               <> "\"blueprint\":{\"name\":\"payments-service\",\"version\":\"0.3.1\",\"appliedAt\":\"2026-03-01T11:00:00Z\","
               <> "\"baselineModules\":[\"nix-flake\"],\"noBaseline\":false,\"userPrompt\":\"set up payments\"}}"
       case manifestFromJSON json of
-        Right manifest -> case manifest.blueprint of
+        Right manifest -> case manifest ^. #blueprint of
           Just ab -> do
-            ab.name `shouldBe` ModuleName "payments-service"
-            ab.blueprintVersion `shouldBe` Just "0.3.1"
-            ab.baselineModules `shouldBe` [ModuleName "nix-flake"]
-            ab.noBaseline `shouldBe` False
-            ab.userPrompt `shouldBe` Just "set up payments"
-            ab.agentSessionId `shouldBe` Nothing
+            (ab ^. #name) `shouldBe` ModuleName "payments-service"
+            (ab ^. #blueprintVersion) `shouldBe` Just "0.3.1"
+            (ab ^. #baselineModules) `shouldBe` [ModuleName "nix-flake"]
+            (ab ^. #noBaseline) `shouldBe` False
+            (ab ^. #userPrompt) `shouldBe` Just "set up payments"
+            (ab ^. #agentSessionId) `shouldBe` Nothing
           Nothing -> expectationFailure "expected populated blueprint"
         Left err -> expectationFailure ("failed to parse: " <> err)
 
@@ -469,21 +471,21 @@ spec = do
       let json = "{\"version\":1,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[{\"name\":\"haskell-base\",\"source\":\"/path\",\"appliedAt\":\"2026-03-01T10:30:00Z\"}],\"variables\":{},\"files\":{}}"
       case manifestFromJSON json of
         Right manifest -> do
-          length manifest.modules `shouldBe` 1
-          (head manifest.modules).parentVars `shouldBe` emptyParentVars
+          length (manifest ^. #modules) `shouldBe` 1
+          ((head (manifest ^. #modules)) ^. #parentVars) `shouldBe` emptyParentVars
         Left err -> expectationFailure ("failed to parse: " <> err)
 
     it "parses old manifest without version key as Nothing" $ do
       let json = "{\"version\":1,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[{\"name\":\"old-mod\",\"source\":\"/path\",\"appliedAt\":\"2026-03-01T10:30:00Z\"}],\"variables\":{},\"files\":{}}"
           result = manifestFromJSON json
       case result of
-        Right manifest -> (head manifest.modules).moduleVersion `shouldBe` Nothing
+        Right manifest -> ((head (manifest ^. #modules)) ^. #moduleVersion) `shouldBe` Nothing
         Left err -> expectationFailure ("failed to parse: " <> err)
 
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
       let base = emptyManifest fixedTime
-          m = Manifest {version = 99, genAt = base.genAt, modules = base.modules, vars = base.vars, files = base.files, applications = base.applications, recipe = Nothing, blueprint = Nothing, blueprintMigrations = []}
+          m = Manifest {version = 99, genAt = base ^. #genAt, modules = base ^. #modules, vars = base ^. #vars, files = base ^. #files, applications = base ^. #applications, recipe = Nothing, blueprint = Nothing, blueprintMigrations = []}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"
@@ -493,7 +495,7 @@ spec = do
     it "produces a hex-encoded SHA256 digest" $ do
       let h = hashContent "hello world"
       -- SHA256 of "hello world" is a well-known value
-      h.unSHA256 `shouldBe` "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+      (h ^. #unSHA256) `shouldBe` "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
 
     it "produces different hashes for different content" $ do
       let h1 = hashContent "hello"
@@ -512,4 +514,4 @@ spec = do
     it "handles empty content" $ do
       let h = hashContent ""
       -- SHA256 of empty string is a well-known value
-      h.unSHA256 `shouldBe` "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      (h ^. #unSHA256) `shouldBe` "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

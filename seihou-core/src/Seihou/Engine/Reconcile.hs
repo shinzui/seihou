@@ -23,6 +23,7 @@ where
 
 import Control.Monad (foldM)
 import Data.Foldable (traverse_)
+import Data.Generics.Labels ()
 import Data.List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -263,15 +264,15 @@ validateOwner ::
 validateOwner selected ownerMap manifest path = case Map.lookup path ownerMap of
   Nothing -> Left (MissingDesiredOwner path)
   Just owner
-    | not (owner.applicationIds `Set.isSubsetOf` selected) ->
-        Left (DesiredOwnerOutsideSelection path (owner.applicationIds Set.\\ selected))
-    | otherwise -> case Map.lookup path manifest.files of
+    | not ((owner ^. #applicationIds) `Set.isSubsetOf` selected) ->
+        Left (DesiredOwnerOutsideSelection path ((owner ^. #applicationIds) Set.\\ selected))
+    | otherwise -> case Map.lookup path (manifest ^. #files) of
         Nothing -> Right ()
         Just record ->
-          let unselectedOwners = record.applicationIds Set.\\ selected
+          let unselectedOwners = (record ^. #applicationIds) Set.\\ selected
            in if Set.null unselectedOwners
                 then Right ()
-                else Left (SharedPathRequiresApplications path record.applicationIds)
+                else Left (SharedPathRequiresApplications path (record ^. #applicationIds))
 
 validateManagedPath :: FilePath -> Either ReconciliationError ()
 validateManagedPath rawPath = case validateProjectRelativePath (T.pack rawPath) of
@@ -317,7 +318,7 @@ materializeOne ::
   m (Either ReconciliationError DesiredContext)
 materializeOne readDisk readCopy readStoredBaseline ownerMap manifest pathOperations = do
   let path = operationPath pathOperations
-      prior = Map.lookup path manifest.files
+      prior = Map.lookup path (manifest ^. #files)
       owner = ownerMap Map.! path
       containsReplacement = any isReplacement pathOperations
   current <- readDisk path
@@ -352,9 +353,9 @@ materializeOne readDisk readCopy readStoredBaseline ownerMap manifest pathOperat
           DesiredFile
             { path = path,
               generatedContent = generated,
-              moduleName = owner.moduleName,
+              moduleName = owner ^. #moduleName,
               strategy = finalStrategy,
-              applicationIds = owner.applicationIds
+              applicationIds = owner ^. #applicationIds
             }
     Right
       DesiredContext
@@ -379,13 +380,13 @@ trustedBaseline ::
   FileRecord ->
   Maybe Text ->
   m BaselineTrust
-trustedBaseline readStored record current = case record.baseline of
+trustedBaseline readStored record current = case record ^. #baseline of
   Just ref -> do
     result <- readStored ref
     pure (either (const Untrusted) (\content -> Trusted content False) result)
   Nothing ->
     pure $ case current of
-      Just content | hashContent content == record.hash -> Trusted content True
+      Just content | hashContent content == record ^. #hash -> Trusted content True
       _ -> Untrusted
 
 applyGenerationOperation ::
@@ -420,20 +421,20 @@ classifyDesired ::
   (Text -> Text -> Text -> m MergeOutcome) ->
   DesiredContext ->
   m (Either ReconciliationError (FilePath, FileReconciliation))
-classifyDesired mergeContents context = case context.current of
+classifyDesired mergeContents context = case context ^. #current of
   Nothing -> pure $ Right (path, classifyMissing)
   Just current
-    | context.missingTrustedBaseline ->
+    | context ^. #missingTrustedBaseline ->
         pure $ Right (path, unresolved current current MissingTrustedBaseline)
-    | otherwise -> case context.baseline of
+    | otherwise -> case context ^. #baseline of
         Nothing -> pure $ Right (path, unresolved current current MissingTrustedBaseline)
         Just baseline -> classifyPresent baseline current
   where
-    desired = context.desired
-    path = desired.path
-    generated = desired.generatedContent
-    prior = context.priorRecord
-    observed = context.observed
+    desired = (context ^. #desired)
+    path = (desired ^. #path)
+    generated = (desired ^. #generatedContent)
+    prior = (context ^. #priorRecord)
+    observed = (context ^. #observed)
 
     classifyMissing = case prior of
       Nothing -> FileCreate desired (automaticState generated True) observed
@@ -445,7 +446,7 @@ classifyDesired mergeContents context = case context.current of
       | current == baseline =
           pure (Right (path, FileUpdate desired (automaticState generated True) observed prior))
       | generated == baseline =
-          let priorHash = maybe (hashContent current) (.hash) prior
+          let priorHash = maybe (hashContent current) (^. #hash) prior
               state = PlannedFileState generated current priorHash False
            in pure (Right (path, FileUnchanged desired state observed prior))
       | current == generated =
@@ -457,7 +458,7 @@ classifyDesired mergeContents context = case context.current of
     fromMerge _ (MergeClean merged) =
       FileAutoMerge
         desired
-        (PlannedFileState generated merged (hashContent merged) (context.current /= Just merged))
+        (PlannedFileState generated merged (hashContent merged) (context ^. #current /= Just merged))
         observed
         prior
     fromMerge current (MergeConflicted markers) = unresolved current markers OverlappingEdits
@@ -483,20 +484,20 @@ classifyOrphans readDisk manifest selected desiredPaths = do
   where
     candidates =
       [ (path, record)
-      | (path, record) <- Map.toList manifest.files,
-        Set.null (Set.intersection selected record.applicationIds) == False,
+      | (path, record) <- Map.toList (manifest ^. #files),
+        Set.null (Set.intersection selected (record ^. #applicationIds)) == False,
         Set.notMember path desiredPaths
       ]
     classify (path, record) = do
       current <- readDisk path
       let observed = observe current
-          remainingOwners = record.applicationIds Set.\\ selected
+          remainingOwners = (record ^. #applicationIds) Set.\\ selected
           action
             | not (Set.null remainingOwners) = FileReleaseSharedOwnership path record observed
             | otherwise = case current of
                 Nothing -> FileAlreadyAbsent path record observed
                 Just content
-                  | hashContent content == record.hash -> FileDeleteSafe path record observed
+                  | hashContent content == record ^. #hash -> FileDeleteSafe path record observed
                   | otherwise -> FileOrphanEdited path record content observed Nothing
       pure (path, action)
 
@@ -508,24 +509,24 @@ resolveFileConflict ::
   FileConflictChoice ->
   ReconciliationPlan ->
   Either ReconciliationError ReconciliationPlan
-resolveFileConflict path choice plan = case Map.lookup path plan.files of
+resolveFileConflict path choice plan = case Map.lookup path (plan ^. #files) of
   Nothing -> Left (ReconciliationPathNotFound path)
   Just (FileConflict _ _ _ _ _ _ _) | choice == AbortUpdate -> Left (UpdateAborted path)
   Just (FileConflict desired current markers reason observed prior _) ->
     let applied = case choice of
-          AcceptGenerated -> desired.generatedContent
+          AcceptGenerated -> (desired ^. #generatedContent)
           KeepCurrent -> current
           WriteConflictMarkers -> markers
           AbortUpdate -> current
         state =
           PlannedFileState
-            { generatedBaseline = desired.generatedContent,
+            { generatedBaseline = desired ^. #generatedContent,
               appliedContent = applied,
               recordedHash = hashContent applied,
-              writeToDisk = applied /= current || not observed.existed
+              writeToDisk = applied /= current || not (observed ^. #existed)
             }
         resolved = FileConflict desired current markers reason observed prior (Just (ResolvedFileConflict choice state))
-     in Right (replacePlanFiles plan (Map.insert path resolved plan.files))
+     in Right (replacePlanFiles plan (Map.insert path resolved (plan ^. #files)))
   Just _ -> Left (NotAFileConflict path)
 
 resolveEditedOrphan ::
@@ -533,7 +534,7 @@ resolveEditedOrphan ::
   OrphanChoice ->
   ReconciliationPlan ->
   Either ReconciliationError ReconciliationPlan
-resolveEditedOrphan path choice plan = case Map.lookup path plan.files of
+resolveEditedOrphan path choice plan = case Map.lookup path (plan ^. #files) of
   Nothing -> Left (ReconciliationPathNotFound path)
   Just (FileOrphanEdited _ _ _ _ _) | choice == AbortOrphanUpdate -> Left (UpdateAborted path)
   Just (FileOrphanEdited orphanPath record content observed _) ->
@@ -543,12 +544,12 @@ resolveEditedOrphan path choice plan = case Map.lookup path plan.files of
         ( Map.insert
             path
             (FileOrphanEdited orphanPath record content observed (Just choice))
-            plan.files
+            (plan ^. #files)
         )
   Just _ -> Left (NotAnEditedOrphan path)
 
 reconciliationSummary :: ReconciliationPlan -> ReconciliationSummary
-reconciliationSummary = foldl' count emptySummary . Map.elems . (.files)
+reconciliationSummary = foldl' count emptySummary . Map.elems . (^. #files)
   where
     emptySummary = ReconciliationSummary 0 0 0 0 0 0 0 0
     count summary reconciliation = case reconciliation of
@@ -557,7 +558,7 @@ reconciliationSummary = foldl' count emptySummary . Map.elems . (.files)
       FileAutoMerge _ _ _ _ -> addMerge summary
       FileUnchanged _ _ _ _ -> addUnchanged summary
       FileConflict _ _ _ _ _ _ Nothing -> addConflict summary
-      FileConflict _ _ _ _ _ _ (Just resolved) -> case resolved.choice of
+      FileConflict _ _ _ _ _ _ (Just resolved) -> case resolved ^. #choice of
         AcceptGenerated -> addUpdate summary
         KeepCurrent -> addMerge summary
         WriteConflictMarkers -> addMerge summary
@@ -579,16 +580,16 @@ reconciliationSummary = foldl' count emptySummary . Map.elems . (.files)
 replacePlanFiles :: ReconciliationPlan -> Map FilePath FileReconciliation -> ReconciliationPlan
 replacePlanFiles plan newFiles =
   ReconciliationPlan
-    { applicationIds = plan.applicationIds,
+    { applicationIds = plan ^. #applicationIds,
       files = newFiles,
-      requiredDirectories = plan.requiredDirectories
+      requiredDirectories = plan ^. #requiredDirectories
     }
 
 reconciliationMutationPaths :: ReconciliationPlan -> Set FilePath
-reconciliationMutationPaths = Map.keysSet . (.files)
+reconciliationMutationPaths = Map.keysSet . (^. #files)
 
 unresolvedPaths :: ReconciliationPlan -> Set FilePath
-unresolvedPaths plan = Map.keysSet (Map.filter unresolved plan.files)
+unresolvedPaths plan = Map.keysSet (Map.filter unresolved (plan ^. #files))
   where
     unresolved (FileConflict _ _ _ _ _ _ Nothing) = True
     unresolved (FileOrphanEdited _ _ _ _ Nothing) = True

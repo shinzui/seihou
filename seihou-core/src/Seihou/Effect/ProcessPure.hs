@@ -4,6 +4,7 @@ module Seihou.Effect.ProcessPure
   )
 where
 
+import Data.Generics.Labels ()
 import Seihou.Effect.Process (Process (..))
 import Seihou.Prelude
 import System.Exit (ExitCode (..))
@@ -25,5 +26,5 @@ runProcessPure mocks = interpret $ \_ -> \case
 findMock :: Text -> [Text] -> [ProcessMock] -> Maybe (ExitCode, Text, Text)
 findMock _ _ [] = Nothing
 findMock cmd args (m : ms)
-  | m.command == cmd && m.args == args = Just m.result
+  | m ^. #command == cmd && m ^. #args == args = Just (m ^. #result)
   | otherwise = findMock cmd args ms

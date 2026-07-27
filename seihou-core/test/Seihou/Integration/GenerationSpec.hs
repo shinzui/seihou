@@ -1,6 +1,6 @@
 module Seihou.Integration.GenerationSpec (tests) where
 
-import Control.Lens ((&), (.~))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -24,7 +24,7 @@ fixtureDir = do
 
 -- | Helper to extract the resolved variable values map.
 resolvedValues :: Map.Map VarName ResolvedVar -> Map.Map VarName VarValue
-resolvedValues = Map.map (.value)
+resolvedValues = Map.map (^. #value)
 
 spec :: Spec
 spec = do
@@ -37,7 +37,7 @@ spec = do
         Right modul -> do
           let cli = Map.fromList [("project.name", "my-app")]
               env = Map.empty
-          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+          case resolveVariables (modul ^. #vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
               planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
@@ -57,7 +57,7 @@ spec = do
         Right modul -> do
           let cli = Map.fromList [("project.name", "my-app")]
               env = Map.empty
-          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+          case resolveVariables (modul ^. #vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
               planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
@@ -79,7 +79,7 @@ spec = do
         Right modul -> do
           let cli = Map.fromList [("project.name", "my-app")]
               env = Map.empty
-          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+          case resolveVariables (modul ^. #vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
               planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
@@ -116,7 +116,7 @@ spec = do
         Right modul -> do
           let cli = Map.fromList [("project.name", "my-app")]
               env = Map.empty
-          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+          case resolveVariables (modul ^. #vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
               planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
@@ -137,12 +137,12 @@ spec = do
           -- CLI overrides project.name, env overrides license
           let cli = Map.fromList [("project.name", "cli-app")]
               env = Map.fromList [("SEIHOU_VAR_LICENSE", "BSD3")]
-          case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+          case resolveVariables (modul ^. #vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
             Left errs -> expectationFailure ("Failed to resolve: " <> show errs)
             Right resolved -> do
-              (.value) (resolved Map.! "project.name") `shouldBe` VText "cli-app"
-              (.source) (resolved Map.! "project.name") `shouldBe` FromCLI
-              (.value) (resolved Map.! "license") `shouldBe` VText "BSD3"
-              (.source) (resolved Map.! "license") `shouldBe` FromEnv "SEIHOU_VAR_LICENSE"
-              (.value) (resolved Map.! "project.version") `shouldBe` VText "0.1.0.0"
-              (.source) (resolved Map.! "project.version") `shouldBe` FromDefault
+              (^. #value) (resolved Map.! "project.name") `shouldBe` VText "cli-app"
+              (^. #source) (resolved Map.! "project.name") `shouldBe` FromCLI
+              (^. #value) (resolved Map.! "license") `shouldBe` VText "BSD3"
+              (^. #source) (resolved Map.! "license") `shouldBe` FromEnv "SEIHOU_VAR_LICENSE"
+              (^. #value) (resolved Map.! "project.version") `shouldBe` VText "0.1.0.0"
+              (^. #source) (resolved Map.! "project.version") `shouldBe` FromDefault

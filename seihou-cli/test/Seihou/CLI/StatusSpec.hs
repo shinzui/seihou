@@ -1,5 +1,6 @@
 module Seihou.CLI.StatusSpec (tests) where
 
+import Control.Lens (to)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T

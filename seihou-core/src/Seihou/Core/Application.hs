@@ -6,6 +6,8 @@ module Seihou.Core.Application
   )
 where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -21,18 +23,18 @@ import Seihou.Manifest.Hash (hashContent)
 -- update replaces the same application record.
 mkApplicationId :: AppliedTarget -> [ModuleName] -> ApplicationId
 mkApplicationId target additional =
-  ApplicationId (hashContent canonical).unSHA256
+  ApplicationId ((hashContent canonical) ^. #unSHA256)
   where
     (kind, targetName) = case target of
-      AppliedModuleTarget name -> ("module", name.unModuleName)
-      AppliedRecipeTarget name -> ("recipe", name.unRecipeName)
+      AppliedModuleTarget name -> ("module", name ^. #unModuleName)
+      AppliedRecipeTarget name -> ("recipe", name ^. #unRecipeName)
     canonical =
       T.intercalate
         "\n"
         ( [ "target-kind=" <> kind,
             "target-name=" <> targetName
           ]
-            ++ map ("additional=" <>) (map (.unModuleName) additional)
+            ++ map ("additional=" <>) (map (^. #unModuleName) additional)
         )
 
 -- | Capture a composition using the already-resolved, instance-scoped
@@ -64,22 +66,22 @@ buildAppliedComposition target targetSource targetVersion additional namespace c
   where
     buildInstance (inst, modul, source) =
       AppliedInstanceState
-        { name = inst.module_,
-          parentVars = inst.parentVars,
+        { name = inst ^. #module_,
+          parentVars = inst ^. #parentVars,
           source = source,
-          moduleVersion = modul.version,
-          resolvedVars = Map.map (varValueToText . (.value)) (Map.findWithDefault Map.empty inst resolved)
+          moduleVersion = modul ^. #version,
+          resolvedVars = Map.map (varValueToText . (^. #value)) (Map.findWithDefault Map.empty inst resolved)
         }
 
 -- | Replace an existing application in place, or append a newly-applied one.
 replaceAppliedComposition :: AppliedComposition -> [AppliedComposition] -> [AppliedComposition]
 replaceAppliedComposition replacement existing
-  | any ((== replacement.applicationId) . (.applicationId)) existing =
+  | any ((== replacement ^. #applicationId) . (^. #applicationId)) existing =
       map replaceMatching existing
   | otherwise = existing ++ [replacement]
   where
     replaceMatching current
-      | current.applicationId == replacement.applicationId = replacement
+      | current ^. #applicationId == (replacement ^. #applicationId) = replacement
       | otherwise = current
 
 -- | Attribute the current file result to an application while retaining
@@ -89,10 +91,10 @@ replaceAppliedComposition replacement existing
 attachApplication :: ApplicationId -> Maybe FileRecord -> FileRecord -> FileRecord
 attachApplication applicationId previous current =
   current
-    { applicationIds = Set.insert applicationId (Set.union current.applicationIds priorApplications)
+    { applicationIds = Set.insert applicationId (Set.union (current ^. #applicationIds) priorApplications)
     }
   where
-    priorApplications = maybe Set.empty (.applicationIds) previous
+    priorApplications = maybe Set.empty (^. #applicationIds) previous
 
 varValueToText :: VarValue -> Text
 varValueToText (VText value) = value

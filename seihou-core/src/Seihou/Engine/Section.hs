@@ -8,6 +8,7 @@ module Seihou.Engine.Section
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Prelude
@@ -23,13 +24,13 @@ data SectionMarker = SectionMarker
 -- Result: @"# --- seihou:haskell-base ---\\n"@
 renderSectionOpen :: SectionMarker -> Text
 renderSectionOpen marker =
-  marker.prefix <> " --- seihou:" <> marker.module_.unModuleName <> " ---\n"
+  marker ^. #prefix <> " --- seihou:" <> marker ^. #module_ . #unModuleName <> " ---\n"
 
 -- | Render a closing section marker line.
 -- Result: @"# --- /seihou:haskell-base ---\\n"@
 renderSectionClose :: SectionMarker -> Text
 renderSectionClose marker =
-  marker.prefix <> " --- /seihou:" <> marker.module_.unModuleName <> " ---\n"
+  marker ^. #prefix <> " --- /seihou:" <> marker ^. #module_ . #unModuleName <> " ---\n"
 
 -- | Wrap content in section markers.
 wrapInSection :: SectionMarker -> Text -> Text

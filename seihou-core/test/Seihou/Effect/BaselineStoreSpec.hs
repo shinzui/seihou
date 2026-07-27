@@ -1,5 +1,7 @@
 module Seihou.Effect.BaselineStoreSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -81,10 +83,10 @@ spec = do
       beforeTamper `shouldBe` Right "kept"
       afterTamper `shouldBe` Left (BaselineCorrupt kept (hashContent "tampered"))
       pruned `shouldBe` [removed]
-      Map.lookup keptPath fs.files `shouldBe` Just "kept"
-      Map.member removedPath fs.files `shouldBe` False
-      Map.lookup unrelated fs.files `shouldBe` Just "leave me"
-      Map.member staleTemp fs.files `shouldBe` False
+      Map.lookup keptPath (fs ^. #files) `shouldBe` Just "kept"
+      Map.member removedPath (fs ^. #files) `shouldBe` False
+      Map.lookup unrelated (fs ^. #files) `shouldBe` Just "leave me"
+      Map.member staleTemp (fs ^. #files) `shouldBe` False
 
     it "round-trips on a real filesystem with one deduplicated blob" $ do
       withSystemTempDirectory "seihou-baselines" $ \tmpDir -> do

@@ -1,5 +1,7 @@
 module Seihou.Integration.ExecutionSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -33,7 +35,7 @@ fixtureDir = do
 
 -- | Helper to extract the resolved variable values map.
 resolvedValues :: Map.Map VarName ResolvedVar -> Map.Map VarName VarValue
-resolvedValues = Map.map (.value)
+resolvedValues = Map.map (^. #value)
 
 -- | Load haskell-base fixture, resolve vars, compile plan.
 compileFixturePlan :: [(Text, Text)] -> IO (Module, [Operation])
@@ -45,7 +47,7 @@ compileFixturePlan vars = do
     Right modul -> do
       let cli = Map.fromList [(VarName k, v) | (k, v) <- vars]
           env = Map.empty
-      case resolveVariables (modul.vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
+      case resolveVariables (modul ^. #vars) cli env "" "" Map.empty Map.empty Map.empty Map.empty Map.empty of
         Left errs -> error ("Failed to resolve: " <> show errs)
         Right resolved -> do
           planResult <- compilePlan (fixtures </> "haskell-base") modul (resolvedValues resolved)
@@ -58,15 +60,15 @@ manifestWithFiles :: UTCTime -> Map.Map FilePath FileRecord -> Manifest
 manifestWithFiles t recs =
   let base = emptyManifest t
    in Manifest
-        { version = base.version,
-          genAt = base.genAt,
-          modules = base.modules,
-          vars = base.vars,
+        { version = base ^. #version,
+          genAt = base ^. #genAt,
+          modules = base ^. #modules,
+          vars = base ^. #vars,
           files = recs,
-          applications = base.applications,
-          recipe = base.recipe,
-          blueprint = base.blueprint,
-          blueprintMigrations = base.blueprintMigrations
+          applications = base ^. #applications,
+          recipe = base ^. #recipe,
+          blueprint = base ^. #blueprint,
+          blueprintMigrations = base ^. #blueprintMigrations
         }
 
 -- | Extract planned files from operations for computeDiff.
@@ -80,27 +82,27 @@ spec = do
   describe "full execution pipeline" $ do
     it "first run creates files and builds file records" $ do
       (modul, ops) <- compileFixturePlan [("project.name", "my-app")]
-      let modName = modul.name
+      let modName = (modul ^. #name)
           (records, fs) =
             runPureEff $
               runFilesystemPure emptyFS $
                 executePlan "" ops Map.empty modName fixedTime
       -- Verify files were created in the filesystem
-      Map.member "README.md" (fs.files) `shouldBe` True
-      Map.member "my-app.cabal" (fs.files) `shouldBe` True
-      Map.member "src/Lib.hs" (fs.files) `shouldBe` True
-      Map.member "LICENSE" (fs.files) `shouldBe` True
-      Map.member "cabal.project" (fs.files) `shouldBe` True
+      Map.member "README.md" (fs ^. #files) `shouldBe` True
+      Map.member "my-app.cabal" (fs ^. #files) `shouldBe` True
+      Map.member "src/Lib.hs" (fs ^. #files) `shouldBe` True
+      Map.member "LICENSE" (fs ^. #files) `shouldBe` True
+      Map.member "cabal.project" (fs ^. #files) `shouldBe` True
       -- Verify FileRecords for manifest
       Map.member "README.md" records `shouldBe` True
       Map.member "my-app.cabal" records `shouldBe` True
       Map.member "src/Lib.hs" records `shouldBe` True
       -- Verify content
-      Map.lookup "README.md" (fs.files) `shouldBe` Just "# my-app\n\nVersion: 0.1.0.0\n"
+      Map.lookup "README.md" (fs ^. #files) `shouldBe` Just "# my-app\n\nVersion: 0.1.0.0\n"
 
     it "re-run with same plan shows all unchanged" $ do
       (modul, ops) <- compileFixturePlan [("project.name", "my-app")]
-      let modName = modul.name
+      let modName = (modul ^. #name)
           planned = extractPlanned modName ops
           -- First run: execute to get filesystem state and records
           (records, fs) =
@@ -115,15 +117,15 @@ spec = do
               runFilesystemPure fs $
                 computeDiff manifest (Set.singleton modName) planned
       -- All files should be unchanged
-      length (diff.new) `shouldBe` 0
-      length (diff.modified) `shouldBe` 0
-      length (diff.conflicts) `shouldBe` 0
-      length (diff.orphaned) `shouldBe` 0
-      length (diff.unchanged) `shouldBe` 5
+      length (diff ^. #new) `shouldBe` 0
+      length (diff ^. #modified) `shouldBe` 0
+      length (diff ^. #conflicts) `shouldBe` 0
+      length (diff ^. #orphaned) `shouldBe` 0
+      length (diff ^. #unchanged) `shouldBe` 5
 
     it "re-run with changed variable shows modified, new, and orphaned" $ do
       (modul, ops1) <- compileFixturePlan [("project.name", "my-app")]
-      let modName = modul.name
+      let modName = (modul ^. #name)
           -- First run
           (records, fs) =
             runPureEff $
@@ -138,17 +140,17 @@ spec = do
               runFilesystemPure fs $
                 computeDiff manifest (Set.singleton modName) planned2
       -- README.md and cabal.project have different content → Modified
-      length (diff.modified) `shouldBe` 2
+      length (diff ^. #modified) `shouldBe` 2
       -- src/Lib.hs and LICENSE have same content → Unchanged
-      length (diff.unchanged) `shouldBe` 2
+      length (diff ^. #unchanged) `shouldBe` 2
       -- my-app.cabal not in new plan → Orphaned
-      length (diff.orphaned) `shouldBe` 1
-      (head diff.orphaned).path `shouldBe` "my-app.cabal"
+      length (diff ^. #orphaned) `shouldBe` 1
+      ((head (diff ^. #orphaned)) ^. #path) `shouldBe` "my-app.cabal"
       -- other-app.cabal is new → New
-      length (diff.new) `shouldBe` 1
-      (head diff.new).path `shouldBe` "other-app.cabal"
+      length (diff ^. #new) `shouldBe` 1
+      ((head (diff ^. #new)) ^. #path) `shouldBe` "other-app.cabal"
       -- No conflicts
-      length (diff.conflicts) `shouldBe` 0
+      length (diff ^. #conflicts) `shouldBe` 0
 
     it "dryRunPlan lists all operations without execution" $ do
       (_, ops) <- compileFixturePlan [("project.name", "my-app")]
@@ -159,7 +161,7 @@ spec = do
 
     it "force mode: re-execute after user edit overwrites the file" $ do
       (modul, ops) <- compileFixturePlan [("project.name", "my-app")]
-      let modName = modul.name
+      let modName = (modul ^. #name)
           planned = extractPlanned modName ops
           -- First run
           (records, fs1) =
@@ -168,37 +170,37 @@ spec = do
                 executePlan "" ops Map.empty modName fixedTime
           manifest = manifestWithFiles fixedTime records
           -- Simulate user editing README.md
-          fs2 = PureFS (Map.insert "README.md" "user edit" fs1.files) fs1.dirs
+          fs2 = PureFS (Map.insert "README.md" "user edit" (fs1 ^. #files)) (fs1 ^. #dirs)
           -- Compute diff → should detect conflict
           (diff, _) =
             runPureEff $
               runFilesystemPure fs2 $
                 computeDiff manifest (Set.singleton modName) planned
       -- README.md is a conflict (user edited, plan unchanged)
-      length (diff.conflicts) `shouldBe` 1
-      (head diff.conflicts).path `shouldBe` "README.md"
+      length (diff ^. #conflicts) `shouldBe` 1
+      ((head (diff ^. #conflicts)) ^. #path) `shouldBe` "README.md"
       -- Force: re-execute (overwrites user changes)
       let (_, fs3) =
             runPureEff $
               runFilesystemPure fs2 $
                 executePlan "" ops Map.empty modName fixedTime
       -- Verify README.md was overwritten with plan content
-      Map.lookup "README.md" fs3.files `shouldBe` Just "# my-app\n\nVersion: 0.1.0.0\n"
+      Map.lookup "README.md" (fs3 ^. #files) `shouldBe` Just "# my-app\n\nVersion: 0.1.0.0\n"
 
     it "records correct strategy per file in FileRecords" $ do
       (modul, ops) <- compileFixturePlan [("project.name", "my-app")]
-      let modName = modul.name
+      let modName = (modul ^. #name)
           (records, _) =
             runPureEff $
               runFilesystemPure emptyFS $
                 executePlan "" ops Map.empty modName fixedTime
       -- README.md → Template
-      (records Map.! "README.md").strategy `shouldBe` Template
+      ((records Map.! "README.md") ^. #strategy) `shouldBe` Template
       -- src/Lib.hs → Template
-      (records Map.! "src/Lib.hs").strategy `shouldBe` Template
+      ((records Map.! "src/Lib.hs") ^. #strategy) `shouldBe` Template
       -- LICENSE → Copy
-      (records Map.! "LICENSE").strategy `shouldBe` Copy
+      ((records Map.! "LICENSE") ^. #strategy) `shouldBe` Copy
       -- my-app.cabal → Template
-      (records Map.! "my-app.cabal").strategy `shouldBe` Template
+      ((records Map.! "my-app.cabal") ^. #strategy) `shouldBe` Template
       -- cabal.project → DhallText
-      (records Map.! "cabal.project").strategy `shouldBe` DhallText
+      ((records Map.! "cabal.project") ^. #strategy) `shouldBe` DhallText

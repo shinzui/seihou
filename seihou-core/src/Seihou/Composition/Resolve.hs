@@ -12,6 +12,7 @@ module Seihou.Composition.Resolve
 where
 
 import Control.Monad.Trans.Except (ExceptT (..), runExceptT)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -48,11 +49,11 @@ loadComposition ::
   IO (Either ModuleLoadError [(ModuleInstance, Module, FilePath)])
 loadComposition searchPaths primary additional = runExceptT $ do
   (primaryMod, primaryDir) <- ExceptT $ loadModuleWithDir searchPaths primary
-  let effectiveDeps = primaryMod.dependencies ++ map simpleDep additional
-      effectivePrimary = primaryMod {dependencies = nubOrdBy (.module_) effectiveDeps}
+  let effectiveDeps = primaryMod ^. #dependencies ++ map simpleDep additional
+      effectivePrimary = primaryMod {dependencies = nubOrdBy (^. #module_) effectiveDeps}
       primaryInst = primaryInstance primary
       loaded = Map.singleton primaryInst (effectivePrimary, primaryDir)
-      seeds = [(mkInstance dep.module_ (parentVarsFromDep dep)) | dep <- effectivePrimary.dependencies]
+      seeds = [(mkInstance (dep ^. #module_) (parentVarsFromDep dep)) | dep <- effectivePrimary ^. #dependencies]
   allInstances <- ExceptT $ loadTransitive searchPaths loaded seeds
   let entries = [(inst, m) | (inst, (m, _)) <- Map.toList allInstances]
       graph = buildGraph entries
@@ -111,11 +112,11 @@ resolveComposedVariablesWithSaved modulesInOrder savedValues cliOverrides envVar
     go _ [] perModule _ = Right perModule
     go parentVarsMap ((inst, m, _dir) : rest) perModule allExports = do
       let visibleExports = gatherEdgeExports m allExports
-          adjustedDecls = map (injectExportDefault visibleExports) m.vars
+          adjustedDecls = map (injectExportDefault visibleExports) (m ^. #vars)
           myParentVars = Map.findWithDefault Map.empty inst parentVarsMap
           saved = Map.findWithDefault Map.empty inst savedValues
       resolved <- resolveVariablesWithSaved adjustedDecls cliOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars
-      let declaredNames = Set.fromList (map (.name) m.vars)
+      let declaredNames = Set.fromList (map (^. #name) (m ^. #vars))
           inherited =
             Map.mapWithKey
               makeInheritedResolved
@@ -183,12 +184,12 @@ resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides e
     goPrompt _ _ [] perModule _ = pure (Right perModule)
     goPrompt interactive parentVarsMap ((inst, m, _dir) : rest) perModule allExports = do
       let visibleExports = gatherEdgeExports m allExports
-          adjustedDecls = map (injectExportDefault visibleExports) m.vars
+          adjustedDecls = map (injectExportDefault visibleExports) (m ^. #vars)
           myParentVars = Map.findWithDefault Map.empty inst parentVarsMap
           saved = Map.findWithDefault Map.empty inst savedValues
       case resolveVariablesWithSaved adjustedDecls cliOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
         Right resolved -> do
-          let declaredNames = Set.fromList (map (.name) m.vars)
+          let declaredNames = Set.fromList (map (^. #name) (m ^. #vars))
               inherited =
                 Map.mapWithKey
                   makeInheritedResolved
@@ -197,18 +198,18 @@ resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides e
           let optionalDecls =
                 [ d
                 | d <- adjustedDecls,
-                  not d.required,
-                  not (Map.member d.name resolvedWithInherited),
-                  any (\p -> p.var == d.name) m.prompts
+                  not (d ^. #required),
+                  not (Map.member (d ^. #name) resolvedWithInherited),
+                  any (\p -> p ^. #var == d ^. #name) (m ^. #prompts)
                 ]
           optionalPrompted <-
             if interactive && not (null optionalDecls)
               then do
-                let currentBindings = Map.map (.value) (Map.unions (Map.elems perModule))
-                    allBindings = Map.union (Map.map (.value) resolvedWithInherited) currentBindings
+                let currentBindings = Map.map (^. #value) (Map.unions (Map.elems perModule))
+                    allBindings = Map.union (Map.map (^. #value) resolvedWithInherited) currentBindings
                 putText ""
                 putText "Optional configuration:"
-                runPrompts m.prompts optionalDecls allBindings
+                runPrompts (m ^. #prompts) optionalDecls allBindings
               else pure Map.empty
           let fullResolved = resolvedWithInherited `Map.union` optionalPrompted
               myExports = exportedVars m fullResolved
@@ -226,16 +227,16 @@ resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides e
               if not interactive || null missing
                 then pure (Left errs)
                 else do
-                  let currentBindings = Map.map (.value) (Map.unions (Map.elems perModule))
-                      missingDecls = [d | d <- adjustedDecls, d.name `elem` map getMissingName missing]
-                  prompted <- runPrompts m.prompts missingDecls currentBindings
+                  let currentBindings = Map.map (^. #value) (Map.unions (Map.elems perModule))
+                      missingDecls = [d | d <- adjustedDecls, (d ^. #name) `elem` map getMissingName missing]
+                  prompted <- runPrompts (m ^. #prompts) missingDecls currentBindings
                   let stillMissing = [e | e <- missing, not (Map.member (getMissingName e) prompted)]
                   if not (null stillMissing)
                     then pure (Left stillMissing)
                     else do
                       let promptedOverrides =
                             Map.union cliOverrides $
-                              Map.map (varValueToText . (.value)) prompted
+                              Map.map (varValueToText . (^. #value)) prompted
                       case resolveVariablesWithSaved adjustedDecls promptedOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
                         Left errs' -> pure (Left errs')
                         Right resolved -> do
@@ -247,7 +248,7 @@ resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides e
                                         Nothing -> rv
                                   )
                                   resolved
-                              declaredNames = Set.fromList (map (.name) m.vars)
+                              declaredNames = Set.fromList (map (^. #name) (m ^. #vars))
                               inherited =
                                 Map.mapWithKey
                                   makeInheritedResolved
@@ -256,18 +257,18 @@ resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides e
                           let optionalDecls' =
                                 [ d
                                 | d <- adjustedDecls,
-                                  not d.required,
-                                  not (Map.member d.name resolvedWithInherited'),
-                                  any (\p -> p.var == d.name) m.prompts
+                                  not (d ^. #required),
+                                  not (Map.member (d ^. #name) resolvedWithInherited'),
+                                  any (\p -> p ^. #var == d ^. #name) (m ^. #prompts)
                                 ]
                           optionalPrompted' <-
                             if not (null optionalDecls')
                               then do
-                                let cb = Map.map (.value) (Map.unions (Map.elems perModule))
-                                    ab = Map.union (Map.map (.value) resolvedWithInherited') cb
+                                let cb = Map.map (^. #value) (Map.unions (Map.elems perModule))
+                                    ab = Map.union (Map.map (^. #value) resolvedWithInherited') cb
                                 putText ""
                                 putText "Optional configuration:"
-                                runPrompts m.prompts optionalDecls' ab
+                                runPrompts (m ^. #prompts) optionalDecls' ab
                               else pure Map.empty
                           let fullResolved = resolvedWithInherited' `Map.union` optionalPrompted'
                               myExports = exportedVars m fullResolved
@@ -291,8 +292,8 @@ gatherEdgeExports ::
 gatherEdgeExports m allExports =
   Map.unions
     [ Map.findWithDefault Map.empty childInst allExports
-    | dep <- m.dependencies,
-      let childInst = mkInstance dep.module_ (parentVarsFromDep dep)
+    | dep <- m ^. #dependencies,
+      let childInst = mkInstance (dep ^. #module_) (parentVarsFromDep dep)
     ]
 
 -- | Extract the variable name from a MissingRequiredVar error.
@@ -320,14 +321,14 @@ varValueToText (VList vs) = T.intercalate "," (map varValueToText vs)
 exportedVars :: Module -> Map VarName ResolvedVar -> Map VarName VarValue
 exportedVars m resolved =
   Map.fromList
-    [ (exportName e, rv.value)
-    | e <- m.exports,
-      Just rv <- [Map.lookup e.var resolved]
+    [ (exportName e, rv ^. #value)
+    | e <- m ^. #exports,
+      Just rv <- [Map.lookup (e ^. #var) resolved]
     ]
   where
-    exportName e = case e.alias of
+    exportName e = case e ^. #alias of
       Just a -> a
-      Nothing -> e.var
+      Nothing -> (e ^. #var)
 
 -- Internal helpers
 
@@ -365,14 +366,14 @@ loadTransitive _ loaded [] = pure (Right loaded)
 loadTransitive searchPaths loaded (inst : rest)
   | Map.member inst loaded = loadTransitive searchPaths loaded rest
   | otherwise = do
-      result <- loadModuleWithDir searchPaths inst.module_
+      result <- loadModuleWithDir searchPaths (inst ^. #module_)
       case result of
         Left err -> pure (Left err)
         Right (m, dir) -> do
           let loaded' = Map.insert inst (m, dir) loaded
               newInstances =
-                [ mkInstance dep.module_ (parentVarsFromDep dep)
-                | dep <- m.dependencies
+                [ mkInstance (dep ^. #module_) (parentVarsFromDep dep)
+                | dep <- m ^. #dependencies
                 ]
           loadTransitive searchPaths loaded' (rest ++ newInstances)
 
@@ -381,7 +382,7 @@ loadTransitive searchPaths loaded (inst : rest)
 -- the module author's default while still being overridable by CLI/env.
 injectExportDefault :: Map VarName VarValue -> VarDecl -> VarDecl
 injectExportDefault exports decl =
-  case Map.lookup decl.name exports of
+  case Map.lookup (decl ^. #name) exports of
     Just val -> decl {default_ = Just val}
     Nothing -> decl
 
@@ -424,11 +425,11 @@ collectParentVars ::
   Map ModuleInstance (Map VarName (Text, ModuleName))
 collectParentVars modules =
   Map.fromList
-    [ (childInst, Map.map (,m.name) dep.vars)
+    [ (childInst, Map.map (,m ^. #name) (dep ^. #vars))
     | (_, m, _) <- modules,
-      dep <- m.dependencies,
-      not (Map.null dep.vars),
-      let childInst = mkInstance dep.module_ (parentVarsFromDep dep)
+      dep <- m ^. #dependencies,
+      not (Map.null (dep ^. #vars)),
+      let childInst = mkInstance (dep ^. #module_) (parentVarsFromDep dep)
     ]
 
 -- | Remove duplicates from a list while preserving order, using a key function.

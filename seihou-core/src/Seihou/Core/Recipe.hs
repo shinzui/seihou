@@ -3,6 +3,8 @@ module Seihou.Core.Recipe
   )
 where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -33,7 +35,7 @@ validateRecipe recipe =
 -- Rule 1: Recipe name must match [a-z][a-z0-9-]*
 checkRecipeNameFormat :: Recipe -> [Text]
 checkRecipeNameFormat recipe =
-  let n = recipe.name.unRecipeName
+  let n = (recipe ^. #name . #unRecipeName)
    in if T.null n || not (isValidModuleName n)
         then ["recipe name must match [a-z][a-z0-9-]*, got: " <> n]
         else []
@@ -41,13 +43,13 @@ checkRecipeNameFormat recipe =
 -- Rule 2: At least one module must be listed
 checkNonEmptyModules :: Recipe -> [Text]
 checkNonEmptyModules recipe
-  | null recipe.modules = ["recipe must list at least one module"]
+  | null (recipe ^. #modules) = ["recipe must list at least one module"]
   | otherwise = []
 
 -- Rule 3: No duplicate module names
 checkNoDuplicateModules :: Recipe -> [Text]
 checkNoDuplicateModules recipe =
-  let names = map (.module_.unModuleName) recipe.modules
+  let names = map (^. #module_ . #unModuleName) (recipe ^. #modules)
    in map (\n -> "duplicate module in recipe: " <> n) (findDupes Set.empty Set.empty names)
 
 findDupes :: Set.Set Text -> Set.Set Text -> [Text] -> [Text]
@@ -59,16 +61,16 @@ findDupes seen reported (x : xs)
 -- Rule 4: Variable binding names must match [a-z][a-z0-9.-]*
 checkVarBindingNames :: Recipe -> [Text]
 checkVarBindingNames recipe =
-  concatMap checkDep recipe.modules
+  concatMap checkDep (recipe ^. #modules)
   where
     checkDep dep =
       concatMap
         ( \(VarName vn) ->
             if isValidVarBindingName vn
               then []
-              else ["invalid var binding name '" <> vn <> "' in module '" <> dep.module_.unModuleName <> "'"]
+              else ["invalid var binding name '" <> vn <> "' in module '" <> dep ^. #module_ . #unModuleName <> "'"]
         )
-        (Map.keys dep.vars)
+        (Map.keys (dep ^. #vars))
 
     isValidVarBindingName :: Text -> Bool
     isValidVarBindingName t = case T.uncons t of

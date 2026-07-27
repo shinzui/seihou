@@ -1,5 +1,7 @@
 module Seihou.Effect.FilesystemSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Effectful
@@ -76,7 +78,7 @@ spec = do
       let (_, fs) = runPure emptyFS $ do
             writeFileText "a.txt" "aaa"
             writeFileText "b.txt" "bbb"
-      Map.size fs.files `shouldBe` 2
+      Map.size (fs ^. #files) `shouldBe` 2
 
     it "getCurrentDirectory returns /pure-fs" $ do
       let (cwd, _) = runPure emptyFS getCurrentDirectory

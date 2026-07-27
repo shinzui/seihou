@@ -1,5 +1,7 @@
 module Seihou.Core.CommandVarSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Effectful (runPureEff)
@@ -40,21 +42,21 @@ cmdVar name run =
 
 withCondition :: Maybe Expr -> CommandVar -> CommandVar
 withCondition condition cv =
-  CommandVar cv.name cv.run cv.workDir condition cv.trim cv.maxBytes
+  CommandVar (cv ^. #name) (cv ^. #run) (cv ^. #workDir) condition (cv ^. #trim) (cv ^. #maxBytes)
 
 withTrim :: Bool -> CommandVar -> CommandVar
 withTrim trim cv =
-  CommandVar cv.name cv.run cv.workDir cv.condition trim cv.maxBytes
+  CommandVar (cv ^. #name) (cv ^. #run) (cv ^. #workDir) (cv ^. #condition) trim (cv ^. #maxBytes)
 
 withMaxBytes :: Maybe Natural -> CommandVar -> CommandVar
 withMaxBytes maxBytes cv =
-  CommandVar cv.name cv.run cv.workDir cv.condition cv.trim maxBytes
+  CommandVar (cv ^. #name) (cv ^. #run) (cv ^. #workDir) (cv ^. #condition) (cv ^. #trim) maxBytes
 
 commandVarName :: CommandVar -> VarName
-commandVarName cv = cv.name
+commandVarName cv = (cv ^. #name)
 
 commandVarRun :: CommandVar -> T.Text
-commandVarRun cv = cv.run
+commandVarRun cv = (cv ^. #run)
 
 mock :: T.Text -> ExitCode -> T.Text -> T.Text -> ProcessMock
 mock run exitCode stdoutText stderrText =
@@ -110,9 +112,9 @@ spec = do
               ]
       case result of
         Right m -> do
-          fmap (.value) (Map.lookup "git.branch" m) `shouldBe` Just (VText "main")
-          fmap (.value) (Map.lookup "release.ready" m) `shouldBe` Just (VBool True)
-          fmap (.source) (Map.lookup "git.branch" m) `shouldBe` Just (FromCommand "git branch --show-current")
+          fmap (^. #value) (Map.lookup "git.branch" m) `shouldBe` Just (VText "main")
+          fmap (^. #value) (Map.lookup "release.ready" m) `shouldBe` Just (VBool True)
+          fmap (^. #source) (Map.lookup "git.branch" m) `shouldBe` Just (FromCommand "git branch --show-current")
         Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "does not override already-resolved config values" $ do
@@ -135,7 +137,7 @@ spec = do
               [count]
               Map.empty
               [mock (commandVarRun count) ExitSuccess "42\n" ""]
-      fmap (fmap (.value) . Map.lookup "change.count") result `shouldBe` Right (Just (VInt 42))
+      fmap (fmap (^. #value) . Map.lookup "change.count") result `shouldBe` Right (Just (VInt 42))
 
     it "uses a text declaration for command-only prompt variables" $ do
       let branch = cmdVar "git.branch" "git branch --show-current"
@@ -145,7 +147,7 @@ spec = do
               [branch]
               Map.empty
               [mock (commandVarRun branch) ExitSuccess "main\n" ""]
-      fmap (fmap (.value) . Map.lookup "git.branch") result `shouldBe` Right (Just (VText "main"))
+      fmap (fmap (^. #value) . Map.lookup "git.branch") result `shouldBe` Right (Just (VText "main"))
 
     it "preserves untrimmed output when trim is false" $ do
       let branch = withTrim False (cmdVar "git.branch" "git branch --show-current")
@@ -155,7 +157,7 @@ spec = do
               [branch]
               Map.empty
               [mock (commandVarRun branch) ExitSuccess "main\n" ""]
-      fmap (fmap (.value) . Map.lookup "git.branch") result `shouldBe` Right (Just (VText "main\n"))
+      fmap (fmap (^. #value) . Map.lookup "git.branch") result `shouldBe` Right (Just (VText "main\n"))
 
     it "rejects output that exceeds maxBytes" $ do
       let branch = withMaxBytes (Just 3) (cmdVar "git.branch" "git branch --show-current")

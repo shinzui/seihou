@@ -12,6 +12,7 @@ module Seihou.Core.Variable
 where
 
 import Data.Char (toUpper)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes)
 import Data.Set qualified as Set
@@ -69,9 +70,9 @@ coerceDefault _ _ v = Right v
 -- | Validate a resolved value against its declaration's validation constraint.
 validateVarValue :: VarDecl -> VarValue -> Either VarError ()
 validateVarValue decl val =
-  case decl.validation of
+  case decl ^. #validation of
     Nothing -> Right ()
-    Just v -> checkValidation decl.name v val
+    Just v -> checkValidation (decl ^. #name) v val
 
 checkValidation :: VarName -> Validation -> VarValue -> Either VarError ()
 checkValidation name (ValPattern pat) (VText t) =
@@ -185,8 +186,8 @@ resolveVariablesWithSaved decls cliOverrides savedValues envVars namespace conte
   where
     resolveOne :: VarDecl -> Either VarError (Maybe (VarName, ResolvedVar))
     resolveOne decl =
-      let name = decl.name
-          ty = decl.type_
+      let name = (decl ^. #name)
+          ty = (decl ^. #type_)
        in case lookupCLI name ty of
             Just result -> fmap Just (result >>= validateAndWrap decl)
             Nothing -> case lookupSaved name ty of
@@ -203,13 +204,13 @@ resolveVariablesWithSaved decls cliOverrides savedValues envVars namespace conte
                         Just result -> fmap Just (result >>= validateAndWrap decl)
                         Nothing -> case lookupParent name ty of
                           Just result -> fmap Just (result >>= validateAndWrap decl)
-                          Nothing -> case decl.default_ of
+                          Nothing -> case decl ^. #default_ of
                             Just defVal ->
                               case coerceDefault name ty defVal of
                                 Left err -> Left err
                                 Right val -> fmap Just (validateAndWrap decl (val, FromDefault))
                             Nothing
-                              | decl.required -> Left (MissingRequiredVar name)
+                              | decl ^. #required -> Left (MissingRequiredVar name)
                               | otherwise -> Right Nothing
 
     lookupSaved :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
@@ -264,7 +265,7 @@ resolveVariablesWithSaved decls cliOverrides savedValues envVars namespace conte
         Left err -> Left err
         Right () ->
           Right
-            ( decl.name,
+            ( decl ^. #name,
               ResolvedVar
                 { value = val,
                   source = source,
@@ -289,14 +290,14 @@ formatExplain resolved =
 
     -- Calculate column widths for alignment
     maxNameLen = maximum (0 : map (\(VarName n, _) -> T.length n) entries)
-    maxValueLen = maximum (0 : map (\(_, rv) -> T.length (showValue rv.value)) entries)
+    maxValueLen = maximum (0 : map (\(_, rv) -> T.length (showValue (rv ^. #value))) entries)
 
     formatOne :: (VarName, ResolvedVar) -> Text
     formatOne (VarName n, rv) =
-      let valText = showValue rv.value
+      let valText = showValue (rv ^. #value)
           namePad = T.replicate (maxNameLen - T.length n) " "
           valPad = T.replicate (maxValueLen - T.length valText) " "
-       in "  " <> n <> namePad <> " = " <> valText <> valPad <> "  " <> showSource rv.source
+       in "  " <> n <> namePad <> " = " <> valText <> valPad <> "  " <> showSource (rv ^. #source)
 
     showValue :: VarValue -> Text
     showValue (VText t) = "\"" <> t <> "\""
@@ -313,7 +314,7 @@ formatExplain resolved =
     showSource (FromNamespaceConfig ns) = "[namespace: " <> ns <> "]"
     showSource (FromContextConfig ctx) = "[context: " <> ctx <> "]"
     showSource FromGlobalConfig = "[global config]"
-    showSource (FromParent mn) = "[parent: " <> mn.unModuleName <> "]"
+    showSource (FromParent mn) = "[parent: " <> mn ^. #unModuleName <> "]"
     showSource FromDefault = "[default]"
     showSource FromPrompt = "[prompt]"
     showSource (FromCommand cmd) = "[command: " <> cmd <> "]"
@@ -324,15 +325,15 @@ formatDeclarations :: [VarDecl] -> Text
 formatDeclarations decls =
   T.unlines (map formatOne decls)
   where
-    maxNameLen = maximum (0 : map (\d -> T.length d.name.unVarName) decls)
+    maxNameLen = maximum (0 : map (\d -> T.length (d ^. #name . #unVarName)) decls)
 
     formatOne :: VarDecl -> Text
     formatOne d =
-      let VarName n = d.name
+      let VarName n = (d ^. #name)
           namePad = T.replicate (maxNameLen - T.length n) " "
-          valText = case d.default_ of
+          valText = case d ^. #default_ of
             Nothing
-              | d.required -> "(required, no default)"
+              | d ^. #required -> "(required, no default)"
               | otherwise -> "(optional, no default)"
             Just v -> showDeclValue v
        in "  " <> n <> namePad <> " = " <> valText
@@ -362,15 +363,15 @@ diagnoseResolution ::
 diagnoseResolution resolved decls localConfig nsConfig ctxConfig globalConfig =
   (unusedConfigKeys, unresolvedOptional)
   where
-    declaredNames = Set.fromList (map (.name) decls)
+    declaredNames = Set.fromList (map (^. #name) decls)
     allConfigKeys =
       Set.fromList $
         Map.keys localConfig ++ Map.keys nsConfig ++ Map.keys ctxConfig ++ Map.keys globalConfig
     unusedConfigKeys =
       Set.toAscList (allConfigKeys `Set.difference` declaredNames)
     unresolvedOptional =
-      [ d.name
+      [ d ^. #name
       | d <- decls,
-        not d.required,
-        not (Map.member d.name resolved)
+        not (d ^. #required),
+        not (Map.member (d ^. #name) resolved)
       ]

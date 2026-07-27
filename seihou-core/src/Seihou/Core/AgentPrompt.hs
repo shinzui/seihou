@@ -14,6 +14,7 @@ module Seihou.Core.AgentPrompt
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Numeric.Natural (Natural)
@@ -44,17 +45,17 @@ validateAgentPrompt baseDir p = do
   pure $
     if null allErrs
       then Right p
-      else Left (ValidationError p.name allErrs)
+      else Left (ValidationError (p ^. #name) allErrs)
 
 checkAgentPromptNameFormat :: AgentPrompt -> [Text]
 checkAgentPromptNameFormat p =
-  let n = p.name.unModuleName
+  let n = (p ^. #name . #unModuleName)
    in if T.null n || not (isValidModuleName n)
         then ["prompt name must match [a-z][a-z0-9-]*, got: " <> n]
         else []
 
 checkAgentPromptVersionPresent :: AgentPrompt -> [Text]
-checkAgentPromptVersionPresent p = case p.version of
+checkAgentPromptVersionPresent p = case p ^. #version of
   Nothing -> []
   Just v
     | T.null (T.strip v) -> ["prompt version, if specified, must not be empty"]
@@ -62,30 +63,30 @@ checkAgentPromptVersionPresent p = case p.version of
 
 checkAgentPromptBodyNonEmpty :: AgentPrompt -> [Text]
 checkAgentPromptBodyNonEmpty p
-  | T.null (T.strip p.prompt) = ["prompt body must not be empty"]
+  | T.null (T.strip (p ^. #prompt)) = ["prompt body must not be empty"]
   | otherwise = []
 
 checkAgentPromptUniqueVars :: AgentPrompt -> [Text]
 checkAgentPromptUniqueVars p =
-  let names = map (\d -> d.name.unVarName) p.vars
+  let names = map (\d -> d ^. #name . #unVarName) (p ^. #vars)
    in map (\n -> "duplicate variable name: " <> n) (findDupes Set.empty Set.empty names)
 
 checkAgentPromptPromptRefs :: AgentPrompt -> [Text]
 checkAgentPromptPromptRefs p =
-  let varNames = Set.fromList (map (.name) p.vars)
+  let varNames = Set.fromList (map (^. #name) (p ^. #vars))
    in concatMap
         ( \prompt ->
-            if Set.member prompt.var varNames
+            if Set.member (prompt ^. #var) varNames
               then []
-              else ["prompt references undeclared variable: " <> prompt.var.unVarName]
+              else ["prompt references undeclared variable: " <> prompt ^. #var . #unVarName]
         )
-        p.prompts
+        (p ^. #prompts)
 
 checkAgentPromptCommandVars :: AgentPrompt -> [Text]
 checkAgentPromptCommandVars p =
-  duplicateCommandVars <> concatMap checkCommandVar p.commandVars
+  duplicateCommandVars <> concatMap checkCommandVar (p ^. #commandVars)
   where
-    commandNames = map (\cv -> cv.name.unVarName) p.commandVars
+    commandNames = map (\cv -> cv ^. #name . #unVarName) (p ^. #commandVars)
 
     duplicateCommandVars =
       map
@@ -93,14 +94,14 @@ checkAgentPromptCommandVars p =
         (findDupes Set.empty Set.empty commandNames)
 
     checkCommandVar cv =
-      checkName cv <> checkRun cv <> checkWorkDir cv.workDir <> checkMaxBytes cv.maxBytes
+      checkName cv <> checkRun cv <> checkWorkDir (cv ^. #workDir) <> checkMaxBytes (cv ^. #maxBytes)
 
     checkName cv
-      | T.null (T.strip cv.name.unVarName) = ["command variable name must not be empty"]
+      | T.null (T.strip (cv ^. #name . #unVarName)) = ["command variable name must not be empty"]
       | otherwise = []
 
     checkRun cv
-      | T.null (T.strip cv.run) = ["command variable '" <> cv.name.unVarName <> "' run must not be empty"]
+      | T.null (T.strip (cv ^. #run)) = ["command variable '" <> cv ^. #name . #unVarName <> "' run must not be empty"]
       | otherwise = []
 
     checkWorkDir Nothing = []
@@ -120,26 +121,26 @@ checkAgentPromptCommandVars p =
 
 checkAgentPromptGuidance :: AgentPrompt -> [Text]
 checkAgentPromptGuidance p =
-  concatMap checkGuidance p.guidance
+  concatMap checkGuidance (p ^. #guidance)
   where
-    knownVars = Set.fromList (map (.name) p.vars <> map (.name) p.commandVars)
+    knownVars = Set.fromList (map (^. #name) (p ^. #vars) <> map (^. #name) (p ^. #commandVars))
 
     checkGuidance g =
       checkTitle g <> checkBody g <> checkConditionRefs g
 
     checkTitle g
-      | T.null (T.strip g.title) = ["guidance title must not be empty"]
+      | T.null (T.strip (g ^. #title)) = ["guidance title must not be empty"]
       | otherwise = []
 
     checkBody g
-      | T.null (T.strip g.body) = ["guidance body must not be empty"]
+      | T.null (T.strip (g ^. #body)) = ["guidance body must not be empty"]
       | otherwise = []
 
     checkConditionRefs g =
-      case g.condition of
+      case g ^. #condition of
         Nothing -> []
         Just cond ->
-          [ "guidance '" <> g.title <> "' references undeclared variable: " <> ref.unVarName
+          [ "guidance '" <> g ^. #title <> "' references undeclared variable: " <> ref ^. #unVarName
           | (ref, _) <- exprRefs cond,
             not (Set.member ref knownVars)
           ]
@@ -149,24 +150,24 @@ checkAgentPromptFiles baseDir p =
   concat
     <$> mapM
       ( \pf -> do
-          let path = baseDir </> "files" </> pf.src
+          let path = baseDir </> "files" </> (pf ^. #src)
           exists <- doesFileExist path
           pure $
             if exists
               then []
-              else ["prompt file not found: " <> T.pack pf.src]
+              else ["prompt file not found: " <> T.pack (pf ^. #src)]
       )
-      p.files
+      (p ^. #files)
 
 checkAgentPromptTags :: AgentPrompt -> [Text]
 checkAgentPromptTags p =
   [ "tag must not be empty"
-  | t <- p.tags,
+  | t <- p ^. #tags,
     T.null (T.strip t)
   ]
 
 checkAgentPromptAllowedTools :: AgentPrompt -> [Text]
-checkAgentPromptAllowedTools p = case p.allowedTools of
+checkAgentPromptAllowedTools p = case p ^. #allowedTools of
   Nothing -> []
   Just xs ->
     [ "allowedTools entry must not be empty"
@@ -178,13 +179,13 @@ checkAgentPromptAllowedTools p = case p.allowedTools of
 -- values themselves (which provider, which effort) are parsed by the CLI
 -- layer, which owns those vocabularies; core only rejects blanks.
 checkAgentPromptLaunch :: AgentPrompt -> [Text]
-checkAgentPromptLaunch p = case p.launch of
+checkAgentPromptLaunch p = case p ^. #launch of
   Nothing -> []
   Just l ->
-    blankErr "provider" l.provider
-      <> blankErr "model" l.model
-      <> blankErr "effort" l.effort
-      <> blankErr "mode" l.mode
+    blankErr "provider" (l ^. #provider)
+      <> blankErr "model" (l ^. #model)
+      <> blankErr "effort" (l ^. #effort)
+      <> blankErr "mode" (l ^. #mode)
   where
     blankErr key value =
       [ "launch." <> key <> ", if specified, must not be empty"

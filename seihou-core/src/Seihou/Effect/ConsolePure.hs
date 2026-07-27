@@ -6,6 +6,7 @@ module Seihou.Effect.ConsolePure
   )
 where
 
+import Data.Generics.Labels ()
 import Effectful.State.Static.Local (State, get, modify, runState)
 import Seihou.Effect.Console (Console (..))
 import Seihou.Prelude
@@ -30,8 +31,8 @@ runConsolePure inputs = reinterpret (runState (ConsoleState inputs [] [])) handl
   where
     handler :: (State ConsoleState :> es') => EffectHandler Console es'
     handler _ = \case
-      PutText msg -> modify @ConsoleState (\s -> s {outputs = s.outputs ++ [msg]})
-      PutError msg -> modify @ConsoleState (\s -> s {errors = s.errors ++ [msg]})
+      PutText msg -> modify @ConsoleState (\s -> s {outputs = s ^. #outputs ++ [msg]})
+      PutError msg -> modify @ConsoleState (\s -> s {errors = s ^. #errors ++ [msg]})
       GetLine -> popInput
       Confirm _prompt -> (`elem` ["y", "yes"]) <$> popInput
       IsInteractive -> pure True
@@ -39,7 +40,7 @@ runConsolePure inputs = reinterpret (runState (ConsoleState inputs [] [])) handl
     popInput :: (State ConsoleState :> es') => Eff es' Text
     popInput = do
       s <- get @ConsoleState
-      case s.inputs of
+      case s ^. #inputs of
         [] -> pure ""
         (x : xs) -> do
           modify @ConsoleState (\st -> st {inputs = xs})
@@ -51,8 +52,8 @@ runConsolePureNonInteractive = reinterpret (runState emptyConsoleState) handler
   where
     handler :: (State ConsoleState :> es') => EffectHandler Console es'
     handler _ = \case
-      PutText msg -> modify @ConsoleState (\s -> s {outputs = s.outputs ++ [msg]})
-      PutError msg -> modify @ConsoleState (\s -> s {errors = s.errors ++ [msg]})
+      PutText msg -> modify @ConsoleState (\s -> s {outputs = s ^. #outputs ++ [msg]})
+      PutError msg -> modify @ConsoleState (\s -> s {errors = s ^. #errors ++ [msg]})
       GetLine -> pure ""
       Confirm _prompt -> pure False
       IsInteractive -> pure False

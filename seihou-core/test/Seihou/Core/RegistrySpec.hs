@@ -1,5 +1,7 @@
 module Seihou.Core.RegistrySpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.List (isInfixOf)
 import Data.Text (Text)
 import Seihou.Core.Registry
@@ -57,16 +59,16 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right reg -> do
-            reg.repoName `shouldBe` "Haskell Templates"
-            reg.repoDescription `shouldBe` Just "A collection of Haskell project templates"
-            length reg.modules `shouldBe` 2
-            let (e1 : e2 : _) = reg.modules
-            e1.name `shouldBe` ModuleName "haskell-base"
-            e1.path `shouldBe` "modules/haskell-base"
-            e1.description `shouldBe` Just "Minimal Haskell project with cabal"
-            e1.tags `shouldBe` ["haskell", "starter"]
-            e2.name `shouldBe` ModuleName "nix-flake"
-            e2.tags `shouldBe` ["nix"]
+            (reg ^. #repoName) `shouldBe` "Haskell Templates"
+            (reg ^. #repoDescription) `shouldBe` Just "A collection of Haskell project templates"
+            length (reg ^. #modules) `shouldBe` 2
+            let (e1 : e2 : _) = (reg ^. #modules)
+            (e1 ^. #name) `shouldBe` ModuleName "haskell-base"
+            (e1 ^. #path) `shouldBe` "modules/haskell-base"
+            (e1 ^. #description) `shouldBe` Just "Minimal Haskell project with cabal"
+            (e1 ^. #tags) `shouldBe` ["haskell", "starter"]
+            (e2 ^. #name) `shouldBe` ModuleName "nix-flake"
+            (e2 ^. #tags) `shouldBe` ["nix"]
 
     it "decodes a registry with an empty module list" $ do
       withSystemTempDirectory "seihou-registry-test" $ \tmpDir -> do
@@ -80,9 +82,9 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right reg -> do
-            reg.repoName `shouldBe` "Empty Collection"
-            reg.repoDescription `shouldBe` Nothing
-            reg.modules `shouldBe` []
+            (reg ^. #repoName) `shouldBe` "Empty Collection"
+            (reg ^. #repoDescription) `shouldBe` Nothing
+            (reg ^. #modules) `shouldBe` []
 
     it "decodes a registry with no description" $ do
       withSystemTempDirectory "seihou-registry-test" $ \tmpDir -> do
@@ -103,10 +105,10 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right reg -> do
-            reg.repoDescription `shouldBe` Nothing
-            let (e1 : _) = reg.modules
-            e1.description `shouldBe` Nothing
-            e1.tags `shouldBe` []
+            (reg ^. #repoDescription) `shouldBe` Nothing
+            let (e1 : _) = (reg ^. #modules)
+            (e1 ^. #description) `shouldBe` Nothing
+            (e1 ^. #tags) `shouldBe` []
 
     it "returns RegistryEvalError for malformed registry (missing required field)" $ do
       withSystemTempDirectory "seihou-registry-test" $ \tmpDir -> do
@@ -134,7 +136,7 @@ spec = do
         writeRegistryFile tmpDir
         result <- discoverRepoContents evalRegistryFromFile tmpDir
         case result of
-          MultiModule reg -> reg.repoName `shouldBe` "Test Registry"
+          MultiModule reg -> (reg ^. #repoName) `shouldBe` "Test Registry"
           other -> expectationFailure ("Expected MultiModule, got: " <> show other)
 
     it "returns SingleModule when only module.dhall exists" $ do
@@ -151,7 +153,7 @@ spec = do
         writeMinimalModuleDhall (tmpDir </> "module.dhall")
         result <- discoverRepoContents evalRegistryFromFile tmpDir
         case result of
-          MultiModule reg -> reg.repoName `shouldBe` "Test Registry"
+          MultiModule reg -> (reg ^. #repoName) `shouldBe` "Test Registry"
           other -> expectationFailure ("Expected MultiModule (registry takes precedence), got: " <> show other)
 
     it "returns EmptyRepo when neither file exists" $ do
@@ -249,11 +251,11 @@ spec = do
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
-        report.issues `shouldBe` []
-        report.moduleCount `shouldBe` 1
-        report.recipeCount `shouldBe` 0
-        report.blueprintCount `shouldBe` 0
-        report.promptCount `shouldBe` 0
+        (report ^. #issues) `shouldBe` []
+        (report ^. #moduleCount) `shouldBe` 1
+        (report ^. #recipeCount) `shouldBe` 0
+        (report ^. #blueprintCount) `shouldBe` 0
+        (report ^. #promptCount) `shouldBe` 0
 
     it "flags a SyncMissing entry as a single VersionMismatch" $ do
       withSystemTempDirectory "seihou-validate-full" $ \tmpDir -> do
@@ -270,8 +272,8 @@ spec = do
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "1.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
-        case report.issues of
-          [VersionMismatch d] -> d.status `shouldBe` SyncMissing
+        case report ^. #issues of
+          [VersionMismatch d] -> (d ^. #status) `shouldBe` SyncMissing
           other -> expectationFailure ("expected one VersionMismatch SyncMissing, got: " <> show other)
 
     it "flags a SyncStale entry as a single VersionMismatch carrying the new version" $ do
@@ -289,8 +291,8 @@ spec = do
                 }
             lookups = [(ModuleEntry, ModuleName "mod-a", Just "2.0.0")]
         report <- validateRegistryFull tmpDir reg lookups
-        case report.issues of
-          [VersionMismatch d] -> d.status `shouldBe` SyncStale "2.0.0"
+        case report ^. #issues of
+          [VersionMismatch d] -> (d ^. #status) `shouldBe` SyncStale "2.0.0"
           other -> expectationFailure ("expected one VersionMismatch SyncStale, got: " <> show other)
 
     it "flags an invalid module name as a StructuralError" $ do
@@ -308,7 +310,7 @@ spec = do
                 }
             lookups = [(ModuleEntry, ModuleName "Bad_Name", Nothing)]
         report <- validateRegistryFull tmpDir reg lookups
-        let structurals = [msg | StructuralError msg <- report.issues]
+        let structurals = [msg | StructuralError msg <- report ^. #issues]
         any ("must match" `isInfixOf`) (map show structurals) `shouldBe` True
 
     it "flags an unsafe path with .. as a StructuralError" $ do
@@ -323,7 +325,7 @@ spec = do
                   prompts = []
                 }
         report <- validateRegistryFull tmpDir reg []
-        let structurals = [msg | StructuralError msg <- report.issues]
+        let structurals = [msg | StructuralError msg <- report ^. #issues]
         any ("must not contain" `isInfixOf`) (map show structurals) `shouldBe` True
 
     it "lists structural issues before version issues when both are present" $ do
@@ -350,11 +352,11 @@ spec = do
                 (ModuleEntry, ModuleName "stale", Just "2.0.0")
               ]
         report <- validateRegistryFull tmpDir reg lookups
-        length report.issues `shouldBe` 2
-        case report.issues of
+        length (report ^. #issues) `shouldBe` 2
+        case report ^. #issues of
           [StructuralError msg, VersionMismatch d] -> do
             ("missing module.dhall" `isInfixOf` show msg) `shouldBe` True
-            d.status `shouldBe` SyncStale "2.0.0"
+            (d ^. #status) `shouldBe` SyncStale "2.0.0"
           other ->
             expectationFailure
               ("expected [StructuralError, VersionMismatch], got: " <> show other)
@@ -403,18 +405,18 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right reg -> do
-            length reg.modules `shouldBe` 1
-            length reg.recipes `shouldBe` 1
-            length reg.blueprints `shouldBe` 1
-            length reg.prompts `shouldBe` 1
-            let (bp : _) = reg.blueprints
-            bp.name `shouldBe` ModuleName "bp-one"
-            bp.version `shouldBe` Just "0.1.0"
-            bp.tags `shouldBe` ["agent"]
-            let (prompt : _) = reg.prompts
-            prompt.name `shouldBe` ModuleName "prompt-one"
-            prompt.version `shouldBe` Just "0.2.0"
-            prompt.tags `shouldBe` ["review"]
+            length (reg ^. #modules) `shouldBe` 1
+            length (reg ^. #recipes) `shouldBe` 1
+            length (reg ^. #blueprints) `shouldBe` 1
+            length (reg ^. #prompts) `shouldBe` 1
+            let (bp : _) = (reg ^. #blueprints)
+            (bp ^. #name) `shouldBe` ModuleName "bp-one"
+            (bp ^. #version) `shouldBe` Just "0.1.0"
+            (bp ^. #tags) `shouldBe` ["agent"]
+            let (prompt : _) = (reg ^. #prompts)
+            (prompt ^. #name) `shouldBe` ModuleName "prompt-one"
+            (prompt ^. #version) `shouldBe` Just "0.2.0"
+            (prompt ^. #tags) `shouldBe` ["review"]
 
     it "decodes a pre-EP-33 registry (no blueprints or prompts fields) with empty lists" $ do
       withSystemTempDirectory "seihou-registry-bp-compat" $ \tmpDir -> do
@@ -435,9 +437,9 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right reg -> do
-            reg.recipes `shouldBe` []
-            reg.blueprints `shouldBe` []
-            reg.prompts `shouldBe` []
+            (reg ^. #recipes) `shouldBe` []
+            (reg ^. #blueprints) `shouldBe` []
+            (reg ^. #prompts) `shouldBe` []
 
     it "rejects an invalid blueprint name" $ do
       withSystemTempDirectory "seihou-validate-bp" $ \tmpDir -> do
@@ -552,7 +554,7 @@ spec = do
           statuses = [s | SyncDiff {status = s} <- diffs]
       kinds `shouldBe` [BlueprintEntry]
       statuses `shouldBe` [SyncStale "0.2.0"]
-      let updatedVersion = case updated.blueprints of
+      let updatedVersion = case updated ^. #blueprints of
             (RegistryEntry _ v _ _ _ : _) -> v
             _ -> Nothing
       updatedVersion `shouldBe` Just ("0.2.0" :: Text)
@@ -580,8 +582,8 @@ spec = do
                 (BlueprintEntry, ModuleName "bp-b", Just "1.0.0")
               ]
         report <- validateRegistryFull tmpDir reg lookups
-        report.blueprintCount `shouldBe` 2
-        report.issues `shouldBe` []
+        (report ^. #blueprintCount) `shouldBe` 2
+        (report ^. #issues) `shouldBe` []
 
   describe "prompts in registries" $ do
     it "rejects an invalid prompt name" $ do
@@ -679,7 +681,7 @@ spec = do
           statuses = [s | SyncDiff {status = s} <- diffs]
       kinds `shouldBe` [PromptEntry]
       statuses `shouldBe` [SyncStale "0.2.0"]
-      let updatedVersion = case updated.prompts of
+      let updatedVersion = case updated ^. #prompts of
             (RegistryEntry _ v _ _ _ : _) -> v
             _ -> Nothing
       updatedVersion `shouldBe` Just ("0.2.0" :: Text)
@@ -707,8 +709,8 @@ spec = do
                 (PromptEntry, ModuleName "prompt-b", Just "1.0.0")
               ]
         report <- validateRegistryFull tmpDir reg lookups
-        report.promptCount `shouldBe` 2
-        report.issues `shouldBe` []
+        (report ^. #promptCount) `shouldBe` 2
+        (report ^. #issues) `shouldBe` []
 
   describe "discoverRepoContents and blueprints" $ do
     it "returns SingleBlueprint when only blueprint.dhall is present" $ do

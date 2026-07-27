@@ -1,5 +1,7 @@
 module Seihou.Dhall.MigrationDecoderSpec (tests) where
 
+import Control.Lens (to, (^.))
+import Data.Generics.Labels ()
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -22,19 +24,19 @@ spec = do
     it "decodes a module with no migrations field as []" $
       withModuleDhall noMigrationsField $ \result ->
         case result of
-          Right m -> m.migrations `shouldBe` []
+          Right m -> (m ^. #migrations) `shouldBe` []
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
     it "decodes a module with an empty migrations list" $
       withModuleDhall emptyMigrations $ \result ->
         case result of
-          Right m -> m.migrations `shouldBe` []
+          Right m -> (m ^. #migrations) `shouldBe` []
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
     it "decodes a single MoveFile migration" $
       withModuleDhall (oneMigration moveFileOp) $ \result ->
         case result of
-          Right m -> case m.migrations of
+          Right m -> case m ^. #migrations of
             [Migration {from = "1.0.0", to = "2.0.0", ops = [op]}] ->
               op `shouldBe` MoveFile {src = "old/Path.hs", dest = "new/Path.hs"}
             other -> expectationFailure ("Unexpected migrations: " <> show other)
@@ -43,7 +45,7 @@ spec = do
     it "decodes a MoveDir migration" $
       withModuleDhall (oneMigration moveDirOp) $ \result ->
         case result of
-          Right m -> case m.migrations of
+          Right m -> case m ^. #migrations of
             [Migration {ops = [op]}] ->
               op `shouldBe` MoveDir {src = "app", dest = "src"}
             other -> expectationFailure ("Unexpected migrations: " <> show other)
@@ -52,7 +54,7 @@ spec = do
     it "decodes a DeleteFile migration" $
       withModuleDhall (oneMigration deleteFileOp) $ \result ->
         case result of
-          Right m -> case m.migrations of
+          Right m -> case m ^. #migrations of
             [Migration {ops = [op]}] ->
               op `shouldBe` DeleteFile {path = "Setup.hs"}
             other -> expectationFailure ("Unexpected migrations: " <> show other)
@@ -61,7 +63,7 @@ spec = do
     it "decodes a DeleteDir migration" $
       withModuleDhall (oneMigration deleteDirOp) $ \result ->
         case result of
-          Right m -> case m.migrations of
+          Right m -> case m ^. #migrations of
             [Migration {ops = [op]}] ->
               op `shouldBe` DeleteDir {path = "obsolete"}
             other -> expectationFailure ("Unexpected migrations: " <> show other)
@@ -70,7 +72,7 @@ spec = do
     it "decodes a RunCommand migration without workDir" $
       withModuleDhall (oneMigration runCommandNoWorkDir) $ \result ->
         case result of
-          Right m -> case m.migrations of
+          Right m -> case m ^. #migrations of
             [Migration {ops = [op]}] ->
               op `shouldBe` RunCommand {run = "echo hi", workDir = Nothing}
             other -> expectationFailure ("Unexpected migrations: " <> show other)
@@ -79,7 +81,7 @@ spec = do
     it "decodes a RunCommand migration with workDir" $
       withModuleDhall (oneMigration runCommandWithWorkDir) $ \result ->
         case result of
-          Right m -> case m.migrations of
+          Right m -> case m ^. #migrations of
             [Migration {ops = [op]}] ->
               op `shouldBe` RunCommand {run = "make clean", workDir = Just "build"}
             other -> expectationFailure ("Unexpected migrations: " <> show other)
@@ -88,7 +90,7 @@ spec = do
     it "decodes multiple ops in a single migration in declaration order" $
       withModuleDhall multiOpMigration $ \result ->
         case result of
-          Right m -> case m.migrations of
+          Right m -> case m ^. #migrations of
             [Migration {ops}] ->
               ops
                 `shouldBe` [ MoveDir {src = "app", dest = "src"},
@@ -101,12 +103,12 @@ spec = do
     it "decodes multiple migrations in declaration order" $
       withModuleDhall twoChainedMigrations $ \result ->
         case result of
-          Right m -> case m.migrations of
+          Right m -> case m ^. #migrations of
             [m1, m2] -> do
-              m1.from `shouldBe` "1.0.0"
-              m1.to `shouldBe` "2.0.0"
-              m2.from `shouldBe` "2.0.0"
-              m2.to `shouldBe` "3.0.0"
+              (m1 ^. #from) `shouldBe` "1.0.0"
+              (m1 ^. #to) `shouldBe` "2.0.0"
+              (m2 ^. #from) `shouldBe` "2.0.0"
+              (m2 ^. #to) `shouldBe` "3.0.0"
             other -> expectationFailure ("Unexpected migrations: " <> show other)
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 

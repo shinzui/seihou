@@ -5,6 +5,7 @@ module Seihou.Composition.Graph
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Seihou.Composition.Instance (ModuleInstance (..), mkInstance)
@@ -41,8 +42,8 @@ buildGraph entries =
         -- must count as one for the topological sort's in-degree.
         Set.toAscList . Set.fromList $
           [ child
-          | dep <- m.dependencies,
-            let child = mkInstance dep.module_ (parentVarsFromDep dep),
+          | dep <- m ^. #dependencies,
+            let child = mkInstance (dep ^. #module_) (parentVarsFromDep dep),
             Set.member child present
           ]
    in CompositionGraph
@@ -62,12 +63,12 @@ topoSort :: CompositionGraph -> Either ModuleLoadError [ModuleInstance]
 topoSort graph = kahn initialReady initialInDegree [] allNodes
   where
     allNodes :: Set ModuleInstance
-    allNodes = Map.keysSet graph.edges
+    allNodes = Map.keysSet (graph ^. #edges)
 
     initialInDegree :: Map ModuleInstance Int
     initialInDegree =
       Map.fromList
-        [ (n, length [d | d <- Map.findWithDefault [] n graph.edges, Set.member d allNodes])
+        [ (n, length [d | d <- Map.findWithDefault [] n (graph ^. #edges), Set.member d allNodes])
         | n <- Set.toList allNodes
         ]
 
@@ -82,7 +83,7 @@ topoSort graph = kahn initialReady initialInDegree [] allNodes
     kahn [] _ result remaining
       | Set.null remaining = Right (reverse result)
       | otherwise =
-          Left (CircularDependency (map (.module_) (Set.toList remaining)))
+          Left (CircularDependency (map (^. #module_) (Set.toList remaining)))
     kahn (node : rest) inDeg result remaining =
       let remaining' = Set.delete node remaining
           (newReady, inDeg') = foldl (decrementDep node) ([], inDeg) (Set.toList remaining')
@@ -90,7 +91,7 @@ topoSort graph = kahn initialReady initialInDegree [] allNodes
 
     decrementDep :: ModuleInstance -> ([ModuleInstance], Map ModuleInstance Int) -> ModuleInstance -> ([ModuleInstance], Map ModuleInstance Int)
     decrementDep processed (ready, inDeg) candidate =
-      let deps = Map.findWithDefault [] candidate graph.edges
+      let deps = Map.findWithDefault [] candidate (graph ^. #edges)
        in if processed `elem` deps
             then
               let newDeg = Map.findWithDefault 0 candidate inDeg - 1

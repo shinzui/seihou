@@ -1,5 +1,7 @@
 module Seihou.Integration.ModuleLoadSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Effectful
 -- Re-use the real loader for end-to-end tests
@@ -30,12 +32,12 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
         Right m -> do
-          m.name `shouldBe` "haskell-base"
-          m.description `shouldBe` Just "A Haskell project template"
-          length (m.vars) `shouldBe` 3
-          length (m.steps) `shouldBe` 5
-          length (m.prompts) `shouldBe` 1
-          m.dependencies `shouldBe` []
+          (m ^. #name) `shouldBe` "haskell-base"
+          (m ^. #description) `shouldBe` Just "A Haskell project template"
+          length (m ^. #vars) `shouldBe` 3
+          length (m ^. #steps) `shouldBe` 5
+          length (m ^. #prompts) `shouldBe` 1
+          (m ^. #dependencies) `shouldBe` []
 
     it "has correct variable declarations" $ do
       fixtures <- fixtureDir
@@ -43,17 +45,17 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
         Right m -> do
-          let vars = m.vars
-          let names = map ((.unVarName) . (.name)) vars
+          let vars = (m ^. #vars)
+          let names = map ((^. #unVarName) . (^. #name)) vars
           names `shouldBe` ["project.name", "project.version", "license"]
 
           let (projectName : projectVersion : license : _) = vars
-          projectName.required `shouldBe` True
-          projectName.default_ `shouldBe` Nothing
+          (projectName ^. #required) `shouldBe` True
+          (projectName ^. #default_) `shouldBe` Nothing
 
-          projectVersion.default_ `shouldBe` Just (VText "0.1.0.0")
+          (projectVersion ^. #default_) `shouldBe` Just (VText "0.1.0.0")
 
-          license.default_ `shouldBe` Just (VText "MIT")
+          (license ^. #default_) `shouldBe` Just (VText "MIT")
 
     it "has a when expression on the LICENSE step" $ do
       fixtures <- fixtureDir
@@ -61,10 +63,10 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
         Right m -> do
-          let steps = m.steps
+          let steps = (m ^. #steps)
           let licenseStep = steps !! 2
-          licenseStep.strategy `shouldBe` Copy
-          licenseStep.condition `shouldBe` Just (ExprIsSet "license")
+          (licenseStep ^. #strategy) `shouldBe` Copy
+          (licenseStep ^. #condition) `shouldBe` Just (ExprIsSet "license")
 
     it "has a dest with placeholder variable" $ do
       fixtures <- fixtureDir
@@ -72,8 +74,8 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
         Right m -> do
-          let cabalStep = m.steps !! 3
-          cabalStep.dest `shouldBe` "{{project.name}}.cabal"
+          let cabalStep = (m ^. #steps) !! 3
+          (cabalStep ^. #dest) `shouldBe` "{{project.name}}.cabal"
 
   describe "invalid-module" $ do
     it "produces ValidationError with multiple violations" $ do
@@ -90,7 +92,7 @@ spec = do
       result <- loadModule ["/nonexistent"] "no-such-module"
       case result of
         Left (ModuleNotFound name _) ->
-          name.unModuleName `shouldBe` "no-such-module"
+          (name ^. #unModuleName) `shouldBe` "no-such-module"
         Left other -> expectationFailure ("Expected ModuleNotFound, got: " <> show other)
         Right _ -> expectationFailure "Expected Left"
 
@@ -115,4 +117,4 @@ spec = do
         evalModuleFile "test/module.dhall"
       case result of
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
-        Right m -> m.name `shouldBe` "test"
+        Right m -> (m ^. #name) `shouldBe` "test"

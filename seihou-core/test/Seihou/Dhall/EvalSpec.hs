@@ -1,5 +1,7 @@
 module Seihou.Dhall.EvalSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Types
@@ -62,61 +64,61 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          m.name `shouldBe` ModuleName "haskell-base"
-          m.description `shouldBe` Just "A Haskell project template"
-          length (m.vars) `shouldBe` 3
-          length (m.prompts) `shouldBe` 1
-          length (m.steps) `shouldBe` 5
-          length (m.exports) `shouldBe` 1
-          m.dependencies `shouldBe` []
+          (m ^. #name) `shouldBe` ModuleName "haskell-base"
+          (m ^. #description) `shouldBe` Just "A Haskell project template"
+          length (m ^. #vars) `shouldBe` 3
+          length (m ^. #prompts) `shouldBe` 1
+          length (m ^. #steps) `shouldBe` 5
+          length (m ^. #exports) `shouldBe` 1
+          (m ^. #dependencies) `shouldBe` []
 
     it "decodes variable declarations correctly" $ do
       result <- evalModuleFromFile (fixtureDir </> "haskell-base" </> "module.dhall")
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          let (projectName : projectVersion : _) = m.vars
-          projectName.name `shouldBe` VarName "project.name"
-          projectName.type_ `shouldBe` VTText
-          projectName.default_ `shouldBe` Nothing
-          projectName.required `shouldBe` True
-          projectName.validation `shouldBe` Just (ValPattern "[a-z][a-z0-9-]*")
+          let (projectName : projectVersion : _) = (m ^. #vars)
+          (projectName ^. #name) `shouldBe` VarName "project.name"
+          (projectName ^. #type_) `shouldBe` VTText
+          (projectName ^. #default_) `shouldBe` Nothing
+          (projectName ^. #required) `shouldBe` True
+          (projectName ^. #validation) `shouldBe` Just (ValPattern "[a-z][a-z0-9-]*")
 
-          projectVersion.name `shouldBe` VarName "project.version"
-          projectVersion.default_ `shouldBe` Just (VText "0.1.0.0")
-          projectVersion.required `shouldBe` False
+          (projectVersion ^. #name) `shouldBe` VarName "project.version"
+          (projectVersion ^. #default_) `shouldBe` Just (VText "0.1.0.0")
+          (projectVersion ^. #required) `shouldBe` False
 
     it "decodes steps with correct strategy" $ do
       result <- evalModuleFromFile (fixtureDir </> "haskell-base" </> "module.dhall")
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          let (readme : libStep : licenseStep : _) = m.steps
-          readme.strategy `shouldBe` Template
-          readme.src `shouldBe` "README.md.tpl"
-          readme.dest `shouldBe` "README.md"
-          readme.condition `shouldBe` Nothing
-          readme.patch `shouldBe` Nothing
+          let (readme : libStep : licenseStep : _) = (m ^. #steps)
+          (readme ^. #strategy) `shouldBe` Template
+          (readme ^. #src) `shouldBe` "README.md.tpl"
+          (readme ^. #dest) `shouldBe` "README.md"
+          (readme ^. #condition) `shouldBe` Nothing
+          (readme ^. #patch) `shouldBe` Nothing
 
-          libStep.strategy `shouldBe` Template
-          libStep.src `shouldBe` "src/Lib.hs.tpl"
-          libStep.dest `shouldBe` "src/Lib.hs"
-          libStep.patch `shouldBe` Nothing
+          (libStep ^. #strategy) `shouldBe` Template
+          (libStep ^. #src) `shouldBe` "src/Lib.hs.tpl"
+          (libStep ^. #dest) `shouldBe` "src/Lib.hs"
+          (libStep ^. #patch) `shouldBe` Nothing
 
-          licenseStep.strategy `shouldBe` Copy
-          licenseStep.src `shouldBe` "LICENSE"
-          licenseStep.dest `shouldBe` "LICENSE"
-          licenseStep.condition `shouldBe` Just (ExprIsSet "license")
-          licenseStep.patch `shouldBe` Nothing
+          (licenseStep ^. #strategy) `shouldBe` Copy
+          (licenseStep ^. #src) `shouldBe` "LICENSE"
+          (licenseStep ^. #dest) `shouldBe` "LICENSE"
+          (licenseStep ^. #condition) `shouldBe` Just (ExprIsSet "license")
+          (licenseStep ^. #patch) `shouldBe` Nothing
 
     it "decodes exports correctly" $ do
       result <- evalModuleFromFile (fixtureDir </> "haskell-base" </> "module.dhall")
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          let (export1 : _) = m.exports
-          export1.var `shouldBe` VarName "project.name"
-          export1.alias `shouldBe` Nothing
+          let (export1 : _) = (m ^. #exports)
+          (export1 ^. #var) `shouldBe` VarName "project.name"
+          (export1 ^. #alias) `shouldBe` Nothing
 
     it "returns DhallEvalError for nonexistent file" $ do
       result <- evalModuleFromFile "/nonexistent/path/module.dhall"
@@ -146,11 +148,11 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right m -> do
-          let (prompt1 : _) = m.prompts
-          prompt1.var `shouldBe` VarName "project.name"
-          prompt1.text `shouldBe` "What is the project name?"
-          prompt1.condition `shouldBe` Nothing
-          prompt1.choices `shouldBe` Nothing
+          let (prompt1 : _) = (m ^. #prompts)
+          (prompt1 ^. #var) `shouldBe` VarName "project.name"
+          (prompt1 ^. #text) `shouldBe` "What is the project name?"
+          (prompt1 ^. #condition) `shouldBe` Nothing
+          (prompt1 ^. #choices) `shouldBe` Nothing
 
     it "decodes step with patch = Some \"append-file\"" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -192,10 +194,10 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right m -> do
-            let (s1 : s2 : s3 : _) = m.steps
-            s1.patch `shouldBe` Just AppendFile
-            s2.patch `shouldBe` Just PrependFile
-            s3.patch `shouldBe` Just AppendSection
+            let (s1 : s2 : s3 : _) = (m ^. #steps)
+            (s1 ^. #patch) `shouldBe` Just AppendFile
+            (s2 ^. #patch) `shouldBe` Just PrependFile
+            (s3 ^. #patch) `shouldBe` Just AppendSection
 
     it "returns Left for unknown patch operation (not a crash)" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -235,9 +237,9 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right m -> do
-            let v = head m.vars
-            v.type_ `shouldBe` VTBool
-            v.default_ `shouldBe` Just (VBool True)
+            let v = head (m ^. #vars)
+            (v ^. #type_) `shouldBe` VTBool
+            (v ^. #default_) `shouldBe` Just (VBool True)
 
     it "coerces an int default to VInt at decode time" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -246,9 +248,9 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right m -> do
-            let v = head m.vars
-            v.type_ `shouldBe` VTInt
-            v.default_ `shouldBe` Just (VInt 3)
+            let v = head (m ^. #vars)
+            (v ^. #type_) `shouldBe` VTInt
+            (v ^. #default_) `shouldBe` Just (VInt 3)
 
     it "fails module load on a malformed bool default" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -284,10 +286,10 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right m -> do
-            length m.dependencies `shouldBe` 1
-            let dep = head m.dependencies
-            dep.module_ `shouldBe` ModuleName "base"
-            Map.null dep.vars `shouldBe` True
+            length (m ^. #dependencies) `shouldBe` 1
+            let dep = head (m ^. #dependencies)
+            (dep ^. #module_) `shouldBe` ModuleName "base"
+            Map.null (dep ^. #vars) `shouldBe` True
 
     it "decodes a parameterized record dependency" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -296,10 +298,10 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right m -> do
-            length m.dependencies `shouldBe` 1
-            let dep = head m.dependencies
-            dep.module_ `shouldBe` ModuleName "base"
-            Map.lookup (VarName "x") dep.vars `shouldBe` Just "y"
+            length (m ^. #dependencies) `shouldBe` 1
+            let dep = head (m ^. #dependencies)
+            (dep ^. #module_) `shouldBe` ModuleName "base"
+            Map.lookup (VarName "x") (dep ^. #vars) `shouldBe` Just "y"
 
     it "decodes a parameterized dependency with empty vars" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -308,10 +310,10 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right m -> do
-            length m.dependencies `shouldBe` 1
-            let dep = head m.dependencies
-            dep.module_ `shouldBe` ModuleName "base"
-            Map.null dep.vars `shouldBe` True
+            length (m ^. #dependencies) `shouldBe` 1
+            let dep = head (m ^. #dependencies)
+            (dep ^. #module_) `shouldBe` ModuleName "base"
+            Map.null (dep ^. #vars) `shouldBe` True
 
     it "decodes a module.dhall with parameterized dependencies" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
@@ -320,10 +322,10 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right m -> do
-            length m.dependencies `shouldBe` 1
-            let dep = head m.dependencies
-            dep.module_ `shouldBe` ModuleName "child-mod"
-            Map.lookup (VarName "skill.name") dep.vars `shouldBe` Just "exec-plan"
+            length (m ^. #dependencies) `shouldBe` 1
+            let dep = head (m ^. #dependencies)
+            (dep ^. #module_) `shouldBe` ModuleName "child-mod"
+            Map.lookup (VarName "skill.name") (dep ^. #vars) `shouldBe` Just "exec-plan"
 
   describe "evalRecipeFromFile" $ do
     it "decodes the haskell-with-nix-recipe fixture" $ do
@@ -331,30 +333,30 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right r -> do
-          r.name `shouldBe` RecipeName "haskell-with-nix"
-          r.version `shouldBe` Just "1.0.0"
-          r.description `shouldBe` Just "Haskell project with Nix integration"
-          length r.modules `shouldBe` 2
-          let (m1 : m2 : _) = r.modules
-          m1.module_ `shouldBe` ModuleName "haskell-base"
-          Map.null m1.vars `shouldBe` True
-          m2.module_ `shouldBe` ModuleName "nix-flake"
-          Map.null m2.vars `shouldBe` True
-          r.vars `shouldBe` []
-          r.prompts `shouldBe` []
+          (r ^. #name) `shouldBe` RecipeName "haskell-with-nix"
+          (r ^. #version) `shouldBe` Just "1.0.0"
+          (r ^. #description) `shouldBe` Just "Haskell project with Nix integration"
+          length (r ^. #modules) `shouldBe` 2
+          let (m1 : m2 : _) = (r ^. #modules)
+          (m1 ^. #module_) `shouldBe` ModuleName "haskell-base"
+          Map.null (m1 ^. #vars) `shouldBe` True
+          (m2 ^. #module_) `shouldBe` ModuleName "nix-flake"
+          Map.null (m2 ^. #vars) `shouldBe` True
+          (r ^. #vars) `shouldBe` []
+          (r ^. #prompts) `shouldBe` []
 
     it "decodes the haskell-pinned-recipe fixture with variable bindings" $ do
       result <- evalRecipeFromFile (fixtureDir </> "haskell-pinned-recipe" </> "recipe.dhall")
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right r -> do
-          r.name `shouldBe` RecipeName "haskell-pinned"
-          length r.modules `shouldBe` 2
-          let (m1 : m2 : _) = r.modules
-          m1.module_ `shouldBe` ModuleName "haskell-base"
-          Map.null m1.vars `shouldBe` True
-          m2.module_ `shouldBe` ModuleName "nix-flake"
-          Map.lookup (VarName "nix.system") m2.vars `shouldBe` Just "aarch64-darwin"
+          (r ^. #name) `shouldBe` RecipeName "haskell-pinned"
+          length (r ^. #modules) `shouldBe` 2
+          let (m1 : m2 : _) = (r ^. #modules)
+          (m1 ^. #module_) `shouldBe` ModuleName "haskell-base"
+          Map.null (m1 ^. #vars) `shouldBe` True
+          (m2 ^. #module_) `shouldBe` ModuleName "nix-flake"
+          Map.lookup (VarName "nix.system") (m2 ^. #vars) `shouldBe` Just "aarch64-darwin"
 
     it "returns DhallEvalError for nonexistent recipe file" $ do
       result <- evalRecipeFromFile "/nonexistent/path/recipe.dhall"
@@ -394,13 +396,13 @@ spec = do
         case result of
           Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
           Right r -> do
-            r.name `shouldBe` RecipeName "prompted-recipe"
-            length r.vars `shouldBe` 1
-            let v = head r.vars
-            v.name `shouldBe` VarName "project.name"
-            v.type_ `shouldBe` VTText
-            v.required `shouldBe` True
-            length r.prompts `shouldBe` 1
-            let p = head r.prompts
-            p.var `shouldBe` VarName "project.name"
-            p.text `shouldBe` "What is the project name?"
+            (r ^. #name) `shouldBe` RecipeName "prompted-recipe"
+            length (r ^. #vars) `shouldBe` 1
+            let v = head (r ^. #vars)
+            (v ^. #name) `shouldBe` VarName "project.name"
+            (v ^. #type_) `shouldBe` VTText
+            (v ^. #required) `shouldBe` True
+            length (r ^. #prompts) `shouldBe` 1
+            let p = head (r ^. #prompts)
+            (p ^. #var) `shouldBe` VarName "project.name"
+            (p ^. #text) `shouldBe` "What is the project name?"

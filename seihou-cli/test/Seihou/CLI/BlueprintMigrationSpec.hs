@@ -1,5 +1,6 @@
 module Seihou.CLI.BlueprintMigrationSpec (tests) where
 
+import Control.Lens (to)
 import Data.IORef
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)

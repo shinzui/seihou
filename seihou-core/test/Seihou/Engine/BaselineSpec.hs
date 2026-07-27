@@ -1,5 +1,7 @@
 module Seihou.Engine.BaselineSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
@@ -48,9 +50,9 @@ spec = do
         Right records -> do
           let enriched = records Map.! path
               expectedRef = baselineRefForContent content
-          enriched.hash `shouldBe` hashContent content
-          enriched.baseline `shouldBe` Just expectedRef
-          enriched.applicationIds `shouldBe` Set.singleton applicationId
+          (enriched ^. #hash) `shouldBe` hashContent content
+          (enriched ^. #baseline) `shouldBe` Just expectedRef
+          (enriched ^. #applicationIds) `shouldBe` Set.singleton applicationId
           Map.lookup expectedRef stored `shouldBe` Just content
 
     it "returns an error and publishes no reference when a generated file is missing" $ do
@@ -74,7 +76,7 @@ spec = do
                   captured <- recordGeneratedBaselines "" (Map.singleton "copy.txt" record)
                   case captured of
                     Left err -> pure (Left err)
-                    Right records -> case (records Map.! "copy.txt").baseline of
+                    Right records -> case (records Map.! "copy.txt") ^. #baseline of
                       Nothing -> pure (Left (BaselineStoreFailure "missing reference"))
                       Just ref -> readBaseline ref
       result `shouldBe` Right "round trip"

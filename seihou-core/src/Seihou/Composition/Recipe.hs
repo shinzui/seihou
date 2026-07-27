@@ -3,6 +3,8 @@ module Seihou.Composition.Recipe
   )
 where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -21,10 +23,10 @@ type ExpandedRecipe = (ModuleName, [ModuleName], Map VarName Text, [VarDecl], [P
 expandRecipe :: Recipe -> Either [Text] ExpandedRecipe
 expandRecipe recipe = do
   validated <- validateRecipe recipe
-  case validated.modules of
+  case validated ^. #modules of
     [] -> Left ["recipe must list at least one module"]
     primary : additional ->
-      let primaryName = primary.module_
-          additionalNames = map (.module_) additional
-          overrides = Map.unions (map (.vars) validated.modules)
-       in Right (primaryName, additionalNames, overrides, validated.vars, validated.prompts)
+      let primaryName = (primary ^. #module_)
+          additionalNames = map (^. #module_) additional
+          overrides = Map.unions (map (^. #vars) (validated ^. #modules))
+       in Right (primaryName, additionalNames, overrides, validated ^. #vars, validated ^. #prompts)

@@ -1,7 +1,7 @@
 module Seihou.CLI.MigrateSpec (tests) where
 
 import Control.Exception (bracket_)
-import Control.Lens ((&), (.~))
+import Control.Lens (to, (&), (.~))
 import Data.Aeson (encode, object, (.=))
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()

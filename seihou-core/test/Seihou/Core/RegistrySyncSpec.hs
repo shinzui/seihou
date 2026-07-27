@@ -1,5 +1,7 @@
 module Seihou.Core.RegistrySyncSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Maybe (isJust, mapMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -27,40 +29,40 @@ spec = describe "computeRegistrySync" $ do
     let entry = mkEntry "alpha" Nothing
         reg = mkReg [entry] []
         report = computeRegistrySync reg [(ModuleEntry, ModuleName "alpha", Just "1.0.0")]
-    map (.status) report.diffs `shouldBe` [SyncMissing]
-    map (.new) report.diffs `shouldBe` [Just "1.0.0"]
-    (head report.updated.modules).version `shouldBe` Just "1.0.0"
+    map (^. #status) (report ^. #diffs) `shouldBe` [SyncMissing]
+    map (^. #new) (report ^. #diffs) `shouldBe` [Just "1.0.0"]
+    ((head (report ^. #updated . #modules)) ^. #version) `shouldBe` Just "1.0.0"
 
   it "classifies SyncStale when registry and disk versions differ" $ do
     let entry = mkEntry "alpha" (Just "0.1.0")
         reg = mkReg [entry] []
         report = computeRegistrySync reg [(ModuleEntry, ModuleName "alpha", Just "1.0.0")]
-    map (.status) report.diffs `shouldBe` [SyncStale "1.0.0"]
-    map (.old) report.diffs `shouldBe` [Just "0.1.0"]
-    map (.new) report.diffs `shouldBe` [Just "1.0.0"]
-    (head report.updated.modules).version `shouldBe` Just "1.0.0"
+    map (^. #status) (report ^. #diffs) `shouldBe` [SyncStale "1.0.0"]
+    map (^. #old) (report ^. #diffs) `shouldBe` [Just "0.1.0"]
+    map (^. #new) (report ^. #diffs) `shouldBe` [Just "1.0.0"]
+    ((head (report ^. #updated . #modules)) ^. #version) `shouldBe` Just "1.0.0"
 
   it "classifies SyncInSync when registry and disk versions match" $ do
     let entry = mkEntry "alpha" (Just "1.0.0")
         reg = mkReg [entry] []
         report = computeRegistrySync reg [(ModuleEntry, ModuleName "alpha", Just "1.0.0")]
-    map (.status) report.diffs `shouldBe` [SyncInSync]
-    (head report.updated.modules).version `shouldBe` Just "1.0.0"
+    map (^. #status) (report ^. #diffs) `shouldBe` [SyncInSync]
+    ((head (report ^. #updated . #modules)) ^. #version) `shouldBe` Just "1.0.0"
 
   it "classifies SyncInSync when registry and disk are both Nothing" $ do
     let entry = mkEntry "alpha" Nothing
         reg = mkReg [entry] []
         report = computeRegistrySync reg [(ModuleEntry, ModuleName "alpha", Nothing)]
-    map (.status) report.diffs `shouldBe` [SyncInSync]
-    (head report.updated.modules).version `shouldBe` Nothing
+    map (^. #status) (report ^. #diffs) `shouldBe` [SyncInSync]
+    ((head (report ^. #updated . #modules)) ^. #version) `shouldBe` Nothing
 
   it "classifies SyncOrphan when the entry has no lookup (module.dhall absent/unreadable)" $ do
     let entry = mkEntry "alpha" (Just "1.0.0")
         reg = mkReg [entry] []
         report = computeRegistrySync reg []
-    map (.status) report.diffs `shouldBe` [SyncOrphan]
+    map (^. #status) (report ^. #diffs) `shouldBe` [SyncOrphan]
     -- Orphan: version left as-is
-    (head report.updated.modules).version `shouldBe` Just "1.0.0"
+    ((head (report ^. #updated . #modules)) ^. #version) `shouldBe` Just "1.0.0"
 
   it "preserves registry order in the diff output" $ do
     let reg =
@@ -81,23 +83,23 @@ spec = describe "computeRegistrySync" $ do
             (PromptEntry, ModuleName "review", Just "0.4.0")
           ]
         report = computeRegistrySync reg lookups
-    map (.name) report.diffs
+    map (^. #name) (report ^. #diffs)
       `shouldBe` [ ModuleName "alpha",
                    ModuleName "beta",
                    ModuleName "gamma",
                    ModuleName "lib-one",
                    ModuleName "review"
                  ]
-    map (.kind) report.diffs
+    map (^. #kind) (report ^. #diffs)
       `shouldBe` [ModuleEntry, ModuleEntry, ModuleEntry, RecipeEntry, PromptEntry]
-    map (.status) report.diffs
+    map (^. #status) (report ^. #diffs)
       `shouldBe` [SyncMissing, SyncStale "0.2.0", SyncInSync, SyncMissing, SyncMissing]
 
   it "returns an empty report for an empty registry" $ do
     let reg = mkReg [] []
         report = computeRegistrySync reg []
-    report.diffs `shouldBe` []
-    report.updated `shouldBe` reg
+    (report ^. #diffs) `shouldBe` []
+    (report ^. #updated) `shouldBe` reg
 
   it "distinguishes module and recipe entries with the same name in lookups" $ do
     -- Module and recipe namespaces share a validation check,
@@ -111,35 +113,35 @@ spec = describe "computeRegistrySync" $ do
             (RecipeEntry, ModuleName "beta", Just "2.0.0")
           ]
         report = computeRegistrySync reg lookups
-    map (.new) report.diffs `shouldBe` [Just "1.0.0", Just "2.0.0"]
+    map (^. #new) (report ^. #diffs) `shouldBe` [Just "1.0.0", Just "2.0.0"]
 
   describe "formatDriftWarning" $ do
     it "produces a warning for a stale entry" $ do
       let reg = mkReg [mkEntry "alpha" (Just "0.1.0")] []
           lookups = [(ModuleEntry, ModuleName "alpha", Just "1.0.0")]
           report = computeRegistrySync reg lookups
-          warnings = mapMaybe formatDriftWarning report.diffs
+          warnings = mapMaybe formatDriftWarning (report ^. #diffs)
       length warnings `shouldBe` 1
-      isJust (formatDriftWarning (head report.diffs)) `shouldBe` True
+      isJust (formatDriftWarning (head (report ^. #diffs))) `shouldBe` True
 
     it "produces no warnings when all entries are in sync" $ do
       let reg = mkReg [mkEntry "alpha" (Just "1.0.0")] []
           lookups = [(ModuleEntry, ModuleName "alpha", Just "1.0.0")]
           report = computeRegistrySync reg lookups
-          warnings = mapMaybe formatDriftWarning report.diffs
+          warnings = mapMaybe formatDriftWarning (report ^. #diffs)
       warnings `shouldBe` []
 
     it "produces no warnings for orphan entries (handled by validateRegistry)" $ do
       let reg = mkReg [mkEntry "alpha" (Just "1.0.0")] []
           report = computeRegistrySync reg []
-          warnings = mapMaybe formatDriftWarning report.diffs
+          warnings = mapMaybe formatDriftWarning (report ^. #diffs)
       warnings `shouldBe` []
 
     it "mentions prompt.dhall in stale prompt warnings" $ do
       let reg = (mkReg [] []) {prompts = [mkEntry "review" (Just "0.1.0")]}
           lookups = [(PromptEntry, ModuleName "review", Just "0.2.0")]
           report = computeRegistrySync reg lookups
-          warnings = mapMaybe formatDriftWarning report.diffs
+          warnings = mapMaybe formatDriftWarning (report ^. #diffs)
       warnings
         `shouldBe` [ "prompt 'review' registry version 0.1.0 differs from prompt.dhall version 0.2.0 — run `seihou registry sync-versions`"
                    ]

@@ -31,6 +31,7 @@ module Seihou.Core.Module
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -46,7 +47,7 @@ import System.Directory (XdgDirectory (..), doesDirectoryExist, doesFileExist, g
 discoverModule :: [FilePath] -> ModuleName -> IO (Either ModuleLoadError FilePath)
 discoverModule searchPaths name = go searchPaths
   where
-    nameStr = T.unpack name.unModuleName
+    nameStr = T.unpack (name ^. #unModuleName)
     go [] = pure $ Left (ModuleNotFound name searchPaths)
     go (dir : rest) = do
       let candidate = dir </> nameStr
@@ -69,7 +70,7 @@ discoverModule searchPaths name = go searchPaths
 discoverRunnable :: [FilePath] -> ModuleName -> IO (Either ModuleLoadError Runnable)
 discoverRunnable searchPaths name = go searchPaths
   where
-    nameStr = T.unpack name.unModuleName
+    nameStr = T.unpack (name ^. #unModuleName)
     go [] = pure $ Left (ModuleNotFound name searchPaths)
     go (dir : rest) = do
       let candidate = dir </> nameStr
@@ -118,7 +119,7 @@ discoverRunnable searchPaths name = go searchPaths
 discoverBlueprint :: [FilePath] -> ModuleName -> IO (Either ModuleLoadError FilePath)
 discoverBlueprint searchPaths name = go searchPaths
   where
-    nameStr = T.unpack name.unModuleName
+    nameStr = T.unpack (name ^. #unModuleName)
     go [] = pure $ Left (ModuleNotFound name searchPaths)
     go (dir : rest) = do
       let candidate = dir </> nameStr
@@ -134,7 +135,7 @@ discoverBlueprint searchPaths name = go searchPaths
 discoverAgentPrompt :: [FilePath] -> ModuleName -> IO (Either ModuleLoadError FilePath)
 discoverAgentPrompt searchPaths name = go searchPaths
   where
-    nameStr = T.unpack name.unModuleName
+    nameStr = T.unpack (name ^. #unModuleName)
     go [] = pure $ Left (ModuleNotFound name searchPaths)
     go (dir : rest) = do
       let candidate = dir </> nameStr
@@ -180,12 +181,12 @@ validateModule baseDir m = do
   pure $
     if null allErrors
       then Right m
-      else Left (ValidationError m.name allErrors)
+      else Left (ValidationError (m ^. #name) allErrors)
 
 -- Rule 1: Module name must be non-empty and match [a-z][a-z0-9-]*
 checkNameFormat :: Module -> [Text]
 checkNameFormat m =
-  let n = m.name.unModuleName
+  let n = (m ^. #name . #unModuleName)
    in if T.null n || not (isValidModuleName n)
         then ["module name must match [a-z][a-z0-9-]*, got: " <> n]
         else []
@@ -199,7 +200,7 @@ isValidModuleName t = case T.uncons t of
 
 -- Rule 1b: Module must declare a version
 checkVersionPresent :: Module -> [Text]
-checkVersionPresent m = case m.version of
+checkVersionPresent m = case m ^. #version of
   Nothing -> ["module must declare a version"]
   Just v
     | T.null (T.strip v) -> ["module must declare a version"]
@@ -208,7 +209,7 @@ checkVersionPresent m = case m.version of
 -- Rule 2: All variable names must be unique
 checkUniqueVars :: Module -> [Text]
 checkUniqueVars m =
-  let names = map (\d -> d.name.unVarName) m.vars
+  let names = map (\d -> d ^. #name . #unVarName) (m ^. #vars)
    in map (\n -> "duplicate variable name: " <> n) (findDupes Set.empty Set.empty names)
 
 findDupes :: Set.Set Text -> Set.Set Text -> [Text] -> [Text]
@@ -220,14 +221,14 @@ findDupes seen reported (x : xs)
 -- Rule 3: Every prompt must reference a declared variable
 checkPromptRefs :: Module -> [Text]
 checkPromptRefs m =
-  let varNames = Set.fromList (map (.name) m.vars)
+  let varNames = Set.fromList (map (^. #name) (m ^. #vars))
    in concatMap
         ( \p ->
-            if Set.member p.var varNames
+            if Set.member (p ^. #var) varNames
               then []
-              else ["prompt references undeclared variable: " <> p.var.unVarName]
+              else ["prompt references undeclared variable: " <> p ^. #var . #unVarName]
         )
-        m.prompts
+        (m ^. #prompts)
 
 -- Rule 4: Every step source file must exist in the module's files/ directory
 checkFileExistence :: FilePath -> Module -> IO [Text]
@@ -235,38 +236,38 @@ checkFileExistence baseDir m =
   concat
     <$> mapM
       ( \s -> do
-          let p = baseDir </> "files" </> s.src
+          let p = baseDir </> "files" </> (s ^. #src)
           exists <- doesFileExist p
           pure $
             if exists
               then []
-              else ["step source file not found: " <> T.pack s.src]
+              else ["step source file not found: " <> T.pack (s ^. #src)]
       )
-      m.steps
+      (m ^. #steps)
 
 -- Rule 5: Every export must reference a declared variable
 checkExportRefs :: Module -> [Text]
 checkExportRefs m =
-  let varNames = Set.fromList (map (.name) m.vars)
+  let varNames = Set.fromList (map (^. #name) (m ^. #vars))
    in concatMap
         ( \e ->
-            if Set.member e.var varNames
+            if Set.member (e ^. #var) varNames
               then []
-              else ["export references undeclared variable: " <> e.var.unVarName]
+              else ["export references undeclared variable: " <> e ^. #var . #unVarName]
         )
-        m.exports
+        (m ^. #exports)
 
 -- Rule 6: Every dependency name must be well-formed
 checkDependencyNames :: Module -> [Text]
 checkDependencyNames m =
   concatMap
     ( \dep ->
-        let n = dep.module_.unModuleName
+        let n = (dep ^. #module_ . #unModuleName)
          in if isValidModuleName n
               then []
               else ["invalid dependency name: " <> n]
     )
-    m.dependencies
+    (m ^. #dependencies)
 
 -- Rule 6b: Dependency var binding names must be non-empty
 checkDependencyVarBindings :: Module -> [Text]
@@ -276,42 +277,42 @@ checkDependencyVarBindings m =
         concatMap
           ( \(VarName vn) ->
               if T.null vn
-                then ["dependency '" <> dep.module_.unModuleName <> "' has empty var binding name"]
+                then ["dependency '" <> dep ^. #module_ . #unModuleName <> "' has empty var binding name"]
                 else []
           )
-          (Map.keys dep.vars)
+          (Map.keys (dep ^. #vars))
     )
-    m.dependencies
+    (m ^. #dependencies)
 
 -- Rule 7: Every step destination must be a safe relative path
 checkSafeDestinations :: Module -> [Text]
-checkSafeDestinations m = concatMap checkDest m.steps
+checkSafeDestinations m = concatMap checkDest (m ^. #steps)
   where
     checkDest s =
-      case validateProjectRelativePath s.dest of
+      case validateProjectRelativePath (s ^. #dest) of
         Left err -> ["step destination " <> err]
         Right _ -> []
 
 -- Rule 8: Variables referenced in step dest placeholders must be declared
 checkDestVarRefs :: Module -> [Text]
 checkDestVarRefs m =
-  let varNames = Set.fromList (map (\d -> d.name.unVarName) m.vars)
-   in concatMap (checkStep varNames) m.steps
+  let varNames = Set.fromList (map (\d -> d ^. #name . #unVarName) (m ^. #vars))
+   in concatMap (checkStep varNames) (m ^. #steps)
   where
     checkStep varNames s =
       [ "step destination references undeclared variable: " <> ref
-      | ref <- extractPlaceholders s.dest,
+      | ref <- extractPlaceholders (s ^. #dest),
         not (Set.member ref varNames)
       ]
 
 -- Rule 9: Command text must be non-empty and workDir must be safe
 checkCommandSafety :: Module -> [Text]
-checkCommandSafety m = concatMap checkCmd m.commands
+checkCommandSafety m = concatMap checkCmd (m ^. #commands)
   where
-    checkCmd c = checkEmptyRun c <> checkWorkDir c.workDir
+    checkCmd c = checkEmptyRun c <> checkWorkDir (c ^. #workDir)
 
     checkEmptyRun c
-      | T.null (T.strip c.run) = ["command text must not be empty"]
+      | T.null (T.strip (c ^. #run)) = ["command text must not be empty"]
       | otherwise = []
 
     checkWorkDir Nothing = []
@@ -462,8 +463,8 @@ discoverAllRunnables searchPaths = do
                     }
                 Right m ->
                   DiscoveredRunnable
-                    { name = m.name.unModuleName,
-                      description = m.description,
+                    { name = m ^. #name . #unModuleName,
+                      description = m ^. #description,
                       kind = KindModule,
                       source = src,
                       dir = entryDir,
@@ -489,8 +490,8 @@ discoverAllRunnables searchPaths = do
                         }
                     Right r ->
                       DiscoveredRunnable
-                        { name = r.name.unRecipeName,
-                          description = r.description,
+                        { name = r ^. #name . #unRecipeName,
+                          description = r ^. #description,
                           kind = KindRecipe,
                           source = src,
                           dir = entryDir,
@@ -516,8 +517,8 @@ discoverAllRunnables searchPaths = do
                             }
                         Right b ->
                           DiscoveredRunnable
-                            { name = b.name.unModuleName,
-                              description = b.description,
+                            { name = b ^. #name . #unModuleName,
+                              description = b ^. #description,
                               kind = KindBlueprint,
                               source = src,
                               dir = entryDir,
@@ -543,8 +544,8 @@ discoverAllRunnables searchPaths = do
                                 }
                             Right p ->
                               DiscoveredRunnable
-                                { name = p.name.unModuleName,
-                                  description = p.description,
+                                { name = p ^. #name . #unModuleName,
+                                  description = p ^. #description,
                                   kind = KindPrompt,
                                   source = src,
                                   dir = entryDir,

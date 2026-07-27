@@ -5,6 +5,7 @@ module Seihou.Effect.FilesystemPure
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Effectful.State.Static.Local (State, get, modify, put, runState)
@@ -31,50 +32,50 @@ runFilesystemPure initial = reinterpret (runState initial) handler
     handler _ = \case
       ReadFileText path -> do
         fs <- get @PureFS
-        case Map.lookup path fs.files of
+        case Map.lookup path (fs ^. #files) of
           Just content -> pure content
           Nothing -> error ("runFilesystemPure: file not found: " <> path)
       WriteFileText path content -> do
-        modify @PureFS (\fs -> fs {files = Map.insert path content fs.files})
+        modify @PureFS (\fs -> fs {files = Map.insert path content (fs ^. #files)})
       CopyFile src dest -> do
         fs <- get @PureFS
-        case Map.lookup src fs.files of
+        case Map.lookup src (fs ^. #files) of
           Just content ->
-            put fs {files = Map.insert dest content fs.files}
+            put fs {files = Map.insert dest content (fs ^. #files)}
           Nothing -> error ("runFilesystemPure: source file not found: " <> src)
       ListDirectory path -> do
         fs <- get @PureFS
         let prefix = if null path then "" else path <> "/"
             filesInDir =
               [ drop (length prefix) fp
-              | fp <- Map.keys fs.files,
+              | fp <- Map.keys (fs ^. #files),
                 isDirectChild prefix fp
               ]
             dirsInDir =
               [ drop (length prefix) d
-              | d <- Set.toList fs.dirs,
+              | d <- Set.toList (fs ^. #dirs),
                 isDirectChild prefix d
               ]
         pure (filesInDir <> dirsInDir)
       CreateDirectoryIfMissing _parents path -> do
-        modify @PureFS (\fs -> fs {dirs = Set.insert path fs.dirs})
+        modify @PureFS (\fs -> fs {dirs = Set.insert path (fs ^. #dirs)})
       DoesFileExist path -> do
         fs <- get @PureFS
-        pure (Map.member path fs.files)
+        pure (Map.member path (fs ^. #files))
       DoesDirectoryExist path -> do
         fs <- get @PureFS
-        pure (Set.member path fs.dirs)
+        pure (Set.member path (fs ^. #dirs))
       GetCurrentDirectory -> pure "/pure-fs"
       RemoveFile path -> do
-        modify @PureFS (\fs -> fs {files = Map.delete path fs.files})
+        modify @PureFS (\fs -> fs {files = Map.delete path (fs ^. #files)})
       RemoveDirectoryIfEmpty path -> do
         fs <- get @PureFS
         let hasChildren =
-              any (\fp -> (path <> "/") `isPrefixOfPath` fp) (Map.keys fs.files)
-                || any (\d -> (path <> "/") `isPrefixOfPath` d) (Set.toList fs.dirs)
+              any (\fp -> (path <> "/") `isPrefixOfPath` fp) (Map.keys (fs ^. #files))
+                || any (\d -> (path <> "/") `isPrefixOfPath` d) (Set.toList (fs ^. #dirs))
         if hasChildren
           then pure ()
-          else modify @PureFS (\fs' -> fs' {dirs = Set.delete path fs'.dirs})
+          else modify @PureFS (\fs' -> fs' {dirs = Set.delete path (fs' ^. #dirs)})
       RenamePath src dest -> do
         modify @PureFS (renameInPureFS src dest)
       RemoveDirectoryRecursive path -> do
@@ -106,8 +107,8 @@ isPrefixOfPath (x : xs) (y : ys)
 -- when callers have already validated existence).
 renameInPureFS :: FilePath -> FilePath -> PureFS -> PureFS
 renameInPureFS src dest fs =
-  let renamedFiles = Map.mapKeys (renameKey src dest) fs.files
-      renamedDirs = Set.map (renameKey src dest) fs.dirs
+  let renamedFiles = Map.mapKeys (renameKey src dest) (fs ^. #files)
+      renamedDirs = Set.map (renameKey src dest) (fs ^. #dirs)
    in fs {files = renamedFiles, dirs = renamedDirs}
   where
     renameKey s d k
@@ -123,6 +124,6 @@ removeRecursivelyFromPureFS path fs =
       keepFile k = k /= path && not (prefix `isPrefixOfPath` k)
       keepDir d = d /= path && not (prefix `isPrefixOfPath` d)
    in fs
-        { files = Map.filterWithKey (\k _ -> keepFile k) fs.files,
-          dirs = Set.filter keepDir fs.dirs
+        { files = Map.filterWithKey (\k _ -> keepFile k) (fs ^. #files),
+          dirs = Set.filter keepDir (fs ^. #dirs)
         }

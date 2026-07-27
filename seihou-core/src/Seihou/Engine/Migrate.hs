@@ -11,6 +11,7 @@ module Seihou.Engine.Migrate
   )
 where
 
+import Data.Generics.Labels ()
 import Data.List (nub, sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Ord (Down (..))
@@ -106,12 +107,12 @@ classifyMigration ::
   MigrationPlan ->
   Eff es (Either MigrationExecError ExecutedMigrationPlan)
 classifyMigration manifest plan = do
-  opsResult <- traverse (classifyOp manifest) (concatMap (.ops) plan.steps)
+  opsResult <- traverse (classifyOp manifest) (concatMap (^. #ops) (plan ^. #steps))
   pure $ do
     ops <- sequence opsResult
     Right
       ExecutedMigrationPlan
-        { module_ = ModuleName plan.module_,
+        { module_ = ModuleName (plan ^. #module_),
           source = plan,
           ops = ops
         }
@@ -172,12 +173,12 @@ classifyFile manifest path = do
   exists <- doesFileExist path
   if not exists
     then pure MFGone
-    else case Map.lookup path (manifest.files :: Map FilePath FileRecord) of
+    else case Map.lookup path (manifest ^. #files :: Map FilePath FileRecord) of
       Nothing -> pure MFSafe
       Just rec -> do
         content <- readFileText path
         let diskHash = hashContent content
-        if diskHash == rec.hash
+        if diskHash == rec ^. #hash
           then pure MFSafe
           else pure MFConflict
 
@@ -206,13 +207,13 @@ executeMigration ::
 executeMigration force plan manifest now = do
   let conflicts =
         [ p
-        | inst <- plan.ops,
+        | inst <- plan ^. #ops,
           (p, MFConflict) <- toFileStatus inst
         ]
   if not force && not (null conflicts)
     then pure (Left (MigrationConflict conflicts))
     else do
-      result <- runOps plan.ops manifest []
+      result <- runOps (plan ^. #ops) manifest []
       case result of
         Left err -> pure (Left err)
         Right (man', removedDirs) -> do
@@ -220,7 +221,7 @@ executeMigration force plan manifest now = do
           let bumped =
                 man'
                   { genAt = now,
-                    modules = map (bumpVersion plan.module_ plan.source) man'.modules
+                    modules = map (bumpVersion (plan ^. #module_) (plan ^. #source)) (man' ^. #modules)
                   }
           pure (Right bumped)
 
@@ -289,11 +290,11 @@ runOps (op : rest) manifest acc = case op of
 -- map. If the key isn't present, the manifest is returned unchanged.
 renameInManifest :: FilePath -> FilePath -> Manifest -> Manifest
 renameInManifest src dest manifest =
-  case Map.lookup src manifest.files of
+  case Map.lookup src (manifest ^. #files) of
     Nothing -> manifest
     Just rec ->
       manifest
-        { files = Map.insert dest rec (Map.delete src manifest.files)
+        { files = Map.insert dest rec (Map.delete src (manifest ^. #files))
         }
 
 -- | Rewrite every @files@ key whose path is @src@ or under @src/@ to
@@ -305,26 +306,26 @@ renameDirInManifest src dest manifest =
         | k == src = dest
         | prefix `isPrefixOfPath` k = dest <> "/" <> drop (length prefix) k
         | otherwise = k
-   in manifest {files = Map.mapKeys rewriteKey manifest.files}
+   in manifest {files = Map.mapKeys rewriteKey (manifest ^. #files)}
 
 -- | Drop a single file entry from the manifest.
 dropFromManifest :: FilePath -> Manifest -> Manifest
 dropFromManifest p manifest =
-  manifest {files = Map.delete p manifest.files}
+  manifest {files = Map.delete p (manifest ^. #files)}
 
 -- | Drop every file entry whose path is @path@ or under @path/@.
 dropDirFromManifest :: FilePath -> Manifest -> Manifest
 dropDirFromManifest path manifest =
   let prefix = path <> "/"
       keep k = k /= path && not (prefix `isPrefixOfPath` k)
-   in manifest {files = Map.filterWithKey (\k _ -> keep k) manifest.files}
+   in manifest {files = Map.filterWithKey (\k _ -> keep k) (manifest ^. #files)}
 
 -- | Update the named applied module's @moduleVersion@ to the plan's
 -- target. Other applied modules are untouched.
 bumpVersion :: ModuleName -> MigrationPlan -> AppliedModule -> AppliedModule
 bumpVersion modName plan am
-  | am.name == modName =
-      am {moduleVersion = Just (renderVersion plan.to)}
+  | am ^. #name == modName =
+      am {moduleVersion = Just (renderVersion (plan ^. #to))}
   | otherwise = am
 
 -- ----------------------------------------------------------------------------

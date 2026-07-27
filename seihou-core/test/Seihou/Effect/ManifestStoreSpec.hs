@@ -1,5 +1,7 @@
 module Seihou.Effect.ManifestStoreSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -104,9 +106,9 @@ spec = do
             runPureEff $
               runFilesystemPure emptyFS $
                 runManifestStore manifestPath (writeManifest sampleManifest)
-      Map.member manifestPath finalFS.files `shouldBe` True
-      Map.member (manifestPath <> ".tmp") finalFS.files `shouldBe` False
-      Set.member ".seihou" finalFS.dirs `shouldBe` True
+      Map.member manifestPath (finalFS ^. #files) `shouldBe` True
+      Map.member (manifestPath <> ".tmp") (finalFS ^. #files) `shouldBe` False
+      Set.member ".seihou" (finalFS ^. #dirs) `shouldBe` True
 
     it "returns Left for corrupt JSON" $ do
       let manifestPath = ".seihou/manifest.json"

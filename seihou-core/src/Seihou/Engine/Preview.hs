@@ -7,6 +7,7 @@ module Seihou.Engine.Preview
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -56,9 +57,9 @@ buildPreview ops mDiff ownerMap =
         Just diff ->
           -- Only include orphans whose path is NOT produced by any operation
           let producedPaths = Set.fromList [p | op <- ops, Just p <- [destOfOp op]]
-           in [ OrphanPreview o.path o.moduleName
-              | o <- diff.orphaned,
-                not (Set.member o.path producedPaths)
+           in [ OrphanPreview (o ^. #path) (o ^. #moduleName)
+              | o <- diff ^. #orphaned,
+                not (Set.member (o ^. #path) producedPaths)
               ]
    in opLines ++ orphanLines
 
@@ -95,11 +96,11 @@ opToPreview mDiff ownerMap _ (PatchFileOp dest _ _patchOp' _ modName') =
 lookupStatus :: FilePath -> Maybe DiffResult -> FileStatus
 lookupStatus _ Nothing = FsNew
 lookupStatus path (Just diff)
-  | any (\f -> f.path == path) diff.new = FsNew
-  | any (\f -> f.path == path) diff.modified = FsModified
-  | path `elem` diff.unchanged = FsUnchanged
-  | any (\f -> f.path == path) diff.conflicts = FsConflict
-  | any (\f -> f.path == path) diff.orphaned = FsOrphaned
+  | any (\f -> f ^. #path == path) (diff ^. #new) = FsNew
+  | any (\f -> f ^. #path == path) (diff ^. #modified) = FsModified
+  | path `elem` (diff ^. #unchanged) = FsUnchanged
+  | any (\f -> f ^. #path == path) (diff ^. #conflicts) = FsConflict
+  | any (\f -> f ^. #path == path) (diff ^. #orphaned) = FsOrphaned
   | otherwise = FsUnknown
 
 -- | Render preview lines as plain text (no ANSI codes).
@@ -111,14 +112,17 @@ renderPreviewPlain lines' =
   where
     fileLines = [l | l@(FilePreview {}) <- lines']
     nonFileLines = [l | l <- lines', not (isFileLine l)]
-    maxPathLen = maximum (0 : map (T.length . T.pack . (.path)) fileLines)
+    -- PreviewLine is a sum type and `path` lives only in FilePreview, so this
+    -- is a pattern match rather than a #path read: generic-lens can only build
+    -- a lens for a field that every constructor has.
+    maxPathLen = maximum (0 : [T.length (T.pack p) | FilePreview {path = p} <- lines'])
 
 renderPlainLine :: Int -> PreviewLine -> Text
 renderPlainLine maxPath (FilePreview status path annotation mMod) =
   let pathText = T.pack path
       pathPad = T.replicate (maxPath - T.length pathText) " "
       modSuffix = case mMod of
-        Just mn -> ", " <> mn.unModuleName
+        Just mn -> ", " <> (mn ^. #unModuleName)
         Nothing -> ""
    in "    " <> statusTag status <> "  " <> pathText <> pathPad <> "  (" <> annotation <> modSuffix <> ")"
 renderPlainLine _ other = renderNonFileLine other
@@ -129,9 +133,9 @@ renderNonFileLine (DirPreview path) =
 renderNonFileLine (CommandPreview cmd mOwner) =
   "    run    " <> cmd <> ownerSuffix mOwner
   where
-    ownerSuffix = maybe "" (\owner -> "  (" <> owner.unModuleName <> ")")
+    ownerSuffix = maybe "" (\owner -> "  (" <> owner ^. #unModuleName <> ")")
 renderNonFileLine (OrphanPreview path modName') =
-  "    [orphaned]  " <> T.pack path <> "  (orphaned from " <> modName'.unModuleName <> ")"
+  "    [orphaned]  " <> T.pack path <> "  (orphaned from " <> modName' ^. #unModuleName <> ")"
 renderNonFileLine _ = ""
 
 isFileLine :: PreviewLine -> Bool
@@ -165,7 +169,7 @@ formatPlanView moduleNames vars preview diff =
   where
     header =
       "Generation Plan ("
-        <> T.intercalate " + " (map (.unModuleName) moduleNames)
+        <> T.intercalate " + " (map (^. #unModuleName) moduleNames)
         <> "):"
 
     varsSection =
@@ -188,8 +192,8 @@ formatPlanView moduleNames vars preview diff =
     showVarValue (VInt n) = T.pack (show n)
     showVarValue (VList vs) = "[" <> T.intercalate ", " (map showVarValue vs) <> "]"
 
-    nFiles = length diff.new + length diff.modified
-    nConflicts = length diff.conflicts
+    nFiles = length (diff ^. #new) + length (diff ^. #modified)
+    nConflicts = length (diff ^. #conflicts)
     summaryText =
       "  "
         <> T.pack (show nFiles)

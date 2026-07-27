@@ -13,6 +13,7 @@ module Seihou.Engine.Remove
 where
 
 import Control.Monad (foldM)
+import Data.Generics.Labels ()
 import Data.List (nub, sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Ord (Down (..))
@@ -108,7 +109,7 @@ computeRemovalPlan manifest modName = do
   case findApplied manifest modName of
     Nothing -> pure (Left (ModuleNotApplied modName))
     Just am
-      | Nothing <- am.removal -> pure (Left (ModuleNotRemovable modName))
+      | Nothing <- am ^. #removal -> pure (Left (ModuleNotRemovable modName))
       | otherwise -> do
           let ownedFiles = moduleFiles manifest modName
           classified <- mapM classifyForRemoval ownedFiles
@@ -127,7 +128,7 @@ executeRemoval manifest plan keepSet now = do
   let toDelete = filesToDelete plan keepSet
   mapM_ removeFile toDelete
   cleanupEmptyDirs toDelete
-  pure (removeFromManifest manifest plan.targetModule now)
+  pure (removeFromManifest manifest (plan ^. #targetModule) now)
 
 -- ============================================================
 -- New step-based removal engine
@@ -145,8 +146,8 @@ buildRemovalOps manifest modName removal = do
   case findApplied manifest modName of
     Nothing -> pure (Left (ModuleNotApplied modName))
     Just _ -> do
-      stepResults <- mapM (buildStepOp manifest modName) removal.steps
-      let cmdResults = map buildCommandOp removal.commands
+      stepResults <- mapM (buildStepOp manifest modName) (removal ^. #steps)
+      let cmdResults = map buildCommandOp (removal ^. #commands)
       pure $ do
         stepOps <- sequence stepResults
         cmdOps <- sequence cmdResults
@@ -163,31 +164,31 @@ buildStepOp ::
   ModuleName ->
   RemovalStep ->
   Eff es (Either RemovalError RemovalOp)
-buildStepOp manifest _modName step = case step.action of
+buildStepOp manifest _modName step = case step ^. #action of
   RemoveFileAction ->
-    case validateRemovalPath "remove-file destination" step.dest of
+    case validateRemovalPath "remove-file destination" (step ^. #dest) of
       Left err -> pure (Left err)
       Right path -> do
         status <- classifyFileStatus manifest path
         pure (Right (DeleteFileOp path status))
   RemoveSectionAction ->
     pure $
-      case validateRemovalPath "remove-section destination" step.dest of
+      case validateRemovalPath "remove-section destination" (step ^. #dest) of
         Left err -> Left err
         Right path -> Right (StripSectionOp path)
   RewriteFileAction ->
     pure $ do
-      dest <- validateRemovalPath "rewrite-file destination" step.dest
-      src <- case step.src of
+      dest <- validateRemovalPath "rewrite-file destination" (step ^. #dest)
+      src <- case step ^. #src of
         Just s -> validateRemovalPath "rewrite-file source" (T.pack s)
         Nothing -> Left (RemovalUnsafePath "rewrite-file source" "" "path must not be empty")
       Right (RewriteOp dest src)
 
 buildCommandOp :: Command -> Either RemovalError RemovalOp
 buildCommandOp command =
-  case traverse (validateRemovalPath "remove-command workDir") command.workDir of
+  case traverse (validateRemovalPath "remove-command workDir") (command ^. #workDir) of
     Left err -> Left err
-    Right safeWorkDir -> Right (RemovalCommandOp command.run (fmap T.pack safeWorkDir))
+    Right safeWorkDir -> Right (RemovalCommandOp (command ^. #run) (fmap T.pack safeWorkDir))
 
 validateRemovalPath :: Text -> Text -> Either RemovalError FilePath
 validateRemovalPath label path =
@@ -205,12 +206,12 @@ classifyFileStatus manifest path = do
   exists <- doesFileExist path
   if not exists
     then pure RFGone
-    else case Map.lookup path manifest.files of
+    else case Map.lookup path (manifest ^. #files) of
       Nothing -> pure RFSafe -- Not in manifest, treat as safe to delete
       Just rec -> do
         content <- readFileText path
         let diskHash = hashContent content
-        if diskHash == rec.hash
+        if diskHash == rec ^. #hash
           then pure RFSafe
           else pure RFConflict
 
@@ -223,8 +224,8 @@ executeRemovalOps ::
   UTCTime ->
   Eff es Manifest
 executeRemovalOps manifest plan keepSet now = do
-  let modName = plan.targetModule
-  deletedPaths <- foldM (execOp modName keepSet) [] plan.ops
+  let modName = (plan ^. #targetModule)
+  deletedPaths <- foldM (execOp modName keepSet) [] (plan ^. #ops)
   cleanupEmptyDirs deletedPaths
   pure (removeFromManifest manifest modName now)
 
@@ -283,7 +284,7 @@ guessCommentPrefix path
 -- | Find an applied module by name.
 findApplied :: Manifest -> ModuleName -> Maybe AppliedModule
 findApplied manifest modName =
-  case filter (\am -> am.name == modName) manifest.modules of
+  case filter (\am -> am ^. #name == modName) (manifest ^. #modules) of
     (am : _) -> Just am
     [] -> Nothing
 
@@ -291,8 +292,8 @@ findApplied manifest modName =
 moduleFiles :: Manifest -> ModuleName -> [(FilePath, FileRecord)]
 moduleFiles manifest modName =
   [ (path, rec)
-  | (path, rec) <- Map.toList manifest.files,
-    rec.moduleName == modName
+  | (path, rec) <- Map.toList (manifest ^. #files),
+    rec ^. #moduleName == modName
   ]
 
 -- | Classify a single file for removal (legacy).
@@ -304,7 +305,7 @@ classifyForRemoval (path, rec) = do
     else do
       content <- readFileText path
       let diskHash = hashContent content
-      if diskHash == rec.hash
+      if diskHash == rec ^. #hash
         then pure (RemovalSafe path)
         else pure (RemovalConflict path)
 
@@ -312,7 +313,7 @@ classifyForRemoval (path, rec) = do
 filesToDelete :: RemovalPlan -> Set FilePath -> [FilePath]
 filesToDelete plan keepSet =
   [ path
-  | rf <- plan.files,
+  | rf <- plan ^. #files,
     let path = removalFilePath rf,
     shouldDelete rf,
     not (Set.member path keepSet)
@@ -350,7 +351,7 @@ allParents path = go (takeDirectory path)
 removeFromManifest :: Manifest -> ModuleName -> UTCTime -> Manifest
 removeFromManifest manifest modName now =
   manifest
-    { modules = filter (\am -> am.name /= modName) manifest.modules,
-      files = Map.filter (\rec -> rec.moduleName /= modName) manifest.files,
+    { modules = filter (\am -> am ^. #name /= modName) (manifest ^. #modules),
+      files = Map.filter (\rec -> rec ^. #moduleName /= modName) (manifest ^. #files),
       genAt = now
     }

@@ -35,6 +35,7 @@ where
 
 import Control.Exception (SomeException, evaluate, throwIO, try)
 import Data.Either.Validation (Validation (..))
+import Data.Generics.Labels ()
 import Data.List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -96,10 +97,10 @@ evalModuleFromFile path = do
     case extract moduleDecoder expr of
       Success m -> do
         -- Force lazy decoder thunks that may contain 'error' calls
-        mapM_ (\v -> evaluate v.type_) m.vars
-        mapM_ (\s -> evaluate s.strategy >> evaluate s.condition >> mapM_ evaluate s.patch) m.steps
-        mapM_ (\c -> mapM_ evaluate c.condition) m.commands
-        mapM_ (\p -> evaluate p.condition) m.prompts
+        mapM_ (\v -> evaluate (v ^. #type_)) (m ^. #vars)
+        mapM_ (\s -> evaluate (s ^. #strategy) >> evaluate (s ^. #condition) >> mapM_ evaluate (s ^. #patch)) (m ^. #steps)
+        mapM_ (\c -> mapM_ evaluate (c ^. #condition)) (m ^. #commands)
+        mapM_ (\p -> evaluate (p ^. #condition)) (m ^. #prompts)
         pure m
       Failure e -> throwIO e
   case result of
@@ -125,8 +126,8 @@ evalRecipeFromFile path = do
     case extract recipeDecoder expr of
       Success r -> do
         -- Force lazy decoder thunks that may contain 'error' calls
-        mapM_ (\v -> evaluate v.type_) r.vars
-        mapM_ (\p -> evaluate p.condition) r.prompts
+        mapM_ (\v -> evaluate (v ^. #type_)) (r ^. #vars)
+        mapM_ (\p -> evaluate (p ^. #condition)) (r ^. #prompts)
         pure r
       Failure e -> throwIO e
   case result of
@@ -314,8 +315,8 @@ evalBlueprintFromFile path = do
     expr <- inputExprWithSettings settings text
     case extract blueprintDecoder expr of
       Success b -> do
-        mapM_ (\v -> evaluate v.type_) b.vars
-        mapM_ (\p -> evaluate p.condition) b.prompts
+        mapM_ (\v -> evaluate (v ^. #type_)) (b ^. #vars)
+        mapM_ (\p -> evaluate (p ^. #condition)) (b ^. #prompts)
         pure b
       Failure e -> throwIO e
   case result of
@@ -412,10 +413,10 @@ evalAgentPromptFromFile path = do
     expr <- inputExprWithSettings settings text
     case extract agentPromptDecoder expr of
       Success p -> do
-        mapM_ (\v -> evaluate v.type_) p.vars
-        mapM_ (\prompt -> evaluate prompt.condition) p.prompts
-        mapM_ (\cv -> evaluate cv.condition) p.commandVars
-        mapM_ (\g -> evaluate g.condition) p.guidance
+        mapM_ (\v -> evaluate (v ^. #type_)) (p ^. #vars)
+        mapM_ (\prompt -> evaluate (prompt ^. #condition)) (p ^. #prompts)
+        mapM_ (\cv -> evaluate (cv ^. #condition)) (p ^. #commandVars)
+        mapM_ (\g -> evaluate (g ^. #condition)) (p ^. #guidance)
         pure p
       Failure e -> throwIO e
   case result of
@@ -567,25 +568,25 @@ varDeclDecoder =
 -- 'evalModuleFromFile' and surfaced as a 'DhallEvalError'.
 coerceDeclDefault :: VarDecl -> VarDecl
 coerceDeclDefault decl =
-  case decl.default_ of
+  case decl ^. #default_ of
     Nothing -> decl
     Just rawDefault ->
-      case coerceDefault decl.name decl.type_ rawDefault of
+      case coerceDefault (decl ^. #name) (decl ^. #type_) rawDefault of
         Right val -> decl {default_ = Just val}
         -- Caught by 'try' in 'evalModuleFromFile'
-        Left err -> error (T.unpack (renderDefaultError decl.name err))
+        Left err -> error (T.unpack (renderDefaultError (decl ^. #name) err))
 
 -- | Render a coercion failure for a module default into a load-time message.
 renderDefaultError :: VarName -> VarError -> Text
 renderDefaultError name (CoercionFailed _ ty raw) =
   "Invalid default for variable '"
-    <> name.unVarName
+    <> name ^. #unVarName
     <> "': cannot coerce "
     <> T.pack (show raw)
     <> " to declared type "
     <> renderVarType ty
 renderDefaultError name err =
-  "Invalid default for variable '" <> name.unVarName <> "': " <> T.pack (show err)
+  "Invalid default for variable '" <> name ^. #unVarName <> "': " <> T.pack (show err)
 
 -- | A short rendering of a declared variable type for error messages.
 renderVarType :: VarType -> Text

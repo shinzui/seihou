@@ -1,6 +1,8 @@
 module Seihou.Composition.GraphSpec (tests) where
 
+import Control.Lens ((^.))
 import Data.Either (isLeft)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Seihou.Composition.Graph
 import Seihou.Composition.Instance (ModuleInstance (..), mkInstance, primaryInstance)
@@ -33,7 +35,7 @@ mkModule name deps =
 -- primary 'ModuleInstance' (no parent bindings). Works for all the
 -- bare-name test scenarios below.
 fromModules :: [Module] -> CompositionGraph
-fromModules ms = buildGraph [(primaryInstance m.name, m) | m <- ms]
+fromModules ms = buildGraph [(primaryInstance (m ^. #name), m) | m <- ms]
 
 spec :: Spec
 spec = do
@@ -41,21 +43,21 @@ spec = do
     it "builds a graph from a single module with no dependencies" $ do
       let m = mkModule "base" []
           g = fromModules [m]
-      length g.modules `shouldBe` 1
-      length g.edges `shouldBe` 1
+      length (g ^. #modules) `shouldBe` 1
+      length (g ^. #edges) `shouldBe` 1
 
     it "builds a graph preserving dependency edges" $ do
       let a = mkModule "a" ["b", "c"]
           b = mkModule "b" []
           c = mkModule "c" []
           g = fromModules [a, b, c]
-      length g.modules `shouldBe` 3
-      length g.edges `shouldBe` 3
+      length (g ^. #modules) `shouldBe` 3
+      length (g ^. #edges) `shouldBe` 3
 
   describe "topoSort" $ do
     it "returns a single module with no dependencies" $ do
       let g = fromModules [mkModule "base" []]
-      fmap (map (.module_)) (topoSort g) `shouldBe` Right ["base"]
+      fmap (map (^. #module_)) (topoSort g) `shouldBe` Right ["base"]
 
     it "orders a linear chain: A -> B -> C" $ do
       let a = mkModule "a" ["b"]
@@ -64,7 +66,7 @@ spec = do
           g = fromModules [a, b, c]
       case topoSort g of
         Right order -> do
-          let names = map (.module_) order
+          let names = map (^. #module_) order
           indexOf "c" names `shouldSatisfy` (< indexOf "b" names)
           indexOf "b" names `shouldSatisfy` (< indexOf "a" names)
         Left err -> expectationFailure $ "Expected Right, got: " ++ show err
@@ -77,7 +79,7 @@ spec = do
           g = fromModules [a, b, c, d]
       case topoSort g of
         Right order -> do
-          let names = map (.module_) order
+          let names = map (^. #module_) order
           length names `shouldBe` 4
           indexOf "d" names `shouldSatisfy` (< indexOf "b" names)
           indexOf "d" names `shouldSatisfy` (< indexOf "c" names)
@@ -115,7 +117,7 @@ spec = do
           g = fromModules [a, b, c, d, e]
       case topoSort g of
         Right order -> do
-          let names = map (.module_) order
+          let names = map (^. #module_) order
           length names `shouldBe` 5
           indexOf "e" names `shouldSatisfy` (< indexOf "d" names)
           indexOf "e" names `shouldSatisfy` (< indexOf "c" names)

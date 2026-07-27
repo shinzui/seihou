@@ -16,6 +16,7 @@ module Seihou.Core.Blueprint
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -80,19 +81,19 @@ validateBlueprintWith searchPaths baseDir b = do
   pure $
     if null allErrs
       then Right b
-      else Left (ValidationError b.name allErrs)
+      else Left (ValidationError (b ^. #name) allErrs)
 
 -- Rule 1: blueprint name must match [a-z][a-z0-9-]*
 checkBlueprintNameFormat :: Blueprint -> [Text]
 checkBlueprintNameFormat b =
-  let n = b.name.unModuleName
+  let n = (b ^. #name . #unModuleName)
    in if T.null n || not (isValidModuleName n)
         then ["blueprint name must match [a-z][a-z0-9-]*, got: " <> n]
         else []
 
 -- Rule 2: if a version is given it must not be empty
 checkBlueprintVersionPresent :: Blueprint -> [Text]
-checkBlueprintVersionPresent b = case b.version of
+checkBlueprintVersionPresent b = case b ^. #version of
   Nothing -> []
   Just v
     | T.null (T.strip v) -> ["blueprint version, if specified, must not be empty"]
@@ -101,13 +102,13 @@ checkBlueprintVersionPresent b = case b.version of
 -- Rule 3: prompt body must not be empty after trimming
 checkBlueprintPromptNonEmpty :: Blueprint -> [Text]
 checkBlueprintPromptNonEmpty b
-  | T.null (T.strip b.prompt) = ["blueprint prompt must not be empty"]
+  | T.null (T.strip (b ^. #prompt)) = ["blueprint prompt must not be empty"]
   | otherwise = []
 
 -- Rule 4: declared variable names must be unique
 checkBlueprintUniqueVars :: Blueprint -> [Text]
 checkBlueprintUniqueVars b =
-  let names = map (\d -> d.name.unVarName) b.vars
+  let names = map (\d -> d ^. #name . #unVarName) (b ^. #vars)
    in map (\n -> "duplicate variable name: " <> n) (findDupes Set.empty Set.empty names)
 
 findDupes :: Set.Set Text -> Set.Set Text -> [Text] -> [Text]
@@ -119,14 +120,14 @@ findDupes seen reported (x : xs)
 -- Rule 5: every prompt references a declared variable
 checkBlueprintPromptRefs :: Blueprint -> [Text]
 checkBlueprintPromptRefs b =
-  let varNames = Set.fromList (map (.name) b.vars)
+  let varNames = Set.fromList (map (^. #name) (b ^. #vars))
    in concatMap
         ( \p ->
-            if Set.member p.var varNames
+            if Set.member (p ^. #var) varNames
               then []
-              else ["prompt references undeclared variable: " <> p.var.unVarName]
+              else ["prompt references undeclared variable: " <> p ^. #var . #unVarName]
         )
-        b.prompts
+        (b ^. #prompts)
 
 -- Rule 6: base modules must be well-formed and resolve to a module or
 -- recipe (not another blueprint). The check uses the same default
@@ -139,25 +140,25 @@ checkBlueprintBaseModules b = do
 
 checkBlueprintBaseModulesWith :: [FilePath] -> Blueprint -> IO [Text]
 checkBlueprintBaseModulesWith searchPaths b =
-  concat <$> mapM (checkOne searchPaths) b.baseModules
+  concat <$> mapM (checkOne searchPaths) (b ^. #baseModules)
   where
     checkOne :: [FilePath] -> Dependency -> IO [Text]
     checkOne paths dep = do
-      let n = dep.module_.unModuleName
+      let n = (dep ^. #module_ . #unModuleName)
           nameErrs =
             [ "invalid baseModule name: " <> n
             | not (isValidModuleName n)
             ]
           bindingErrs =
             [ "baseModule '" <> n <> "' has invalid var binding name: " <> vn
-            | (VarName vn) <- Map.keys dep.vars,
+            | (VarName vn) <- Map.keys (dep ^. #vars),
               not (isValidVarBindingName vn)
             ]
       resolveErrs <-
         if not (isValidModuleName n)
           then pure []
           else do
-            result <- discoverRunnable paths dep.module_
+            result <- discoverRunnable paths (dep ^. #module_)
             pure $ case result of
               Right (RunnableModule _ _) -> []
               Right (RunnableRecipe _ _) -> []
@@ -188,26 +189,26 @@ checkBlueprintFiles baseDir b =
   concat
     <$> mapM
       ( \bf -> do
-          let p = baseDir </> "files" </> bf.src
+          let p = baseDir </> "files" </> (bf ^. #src)
           exists <- doesFileExist p
           pure $
             if exists
               then []
-              else ["blueprint file not found: " <> T.pack bf.src]
+              else ["blueprint file not found: " <> T.pack (bf ^. #src)]
       )
-      b.files
+      (b ^. #files)
 
 -- Rule 8: tags must not be empty strings
 checkBlueprintTags :: Blueprint -> [Text]
 checkBlueprintTags b =
   [ "tag must not be empty"
-  | t <- b.tags,
+  | t <- b ^. #tags,
     T.null (T.strip t)
   ]
 
 -- Rule 9: @allowedTools@, when set, must contain only non-empty entries
 checkBlueprintAllowedTools :: Blueprint -> [Text]
-checkBlueprintAllowedTools b = case b.allowedTools of
+checkBlueprintAllowedTools b = case b ^. #allowedTools of
   Nothing -> []
   Just xs ->
     [ "allowedTools entry must not be empty"
@@ -219,23 +220,23 @@ checkBlueprintAllowedTools b = case b.allowedTools of
 -- non-empty prompt, and each starting version occurs at most once.
 checkBlueprintMigrations :: Blueprint -> [Text]
 checkBlueprintMigrations b =
-  concatMap checkOne b.migrations <> duplicateErrors
+  concatMap checkOne (b ^. #migrations) <> duplicateErrors
   where
     checkOne :: BlueprintMigration -> [Text]
     checkOne migration =
       promptErrors migration
-        <> versionErrors "from" migration.from
-        <> versionErrors "to" migration.to
+        <> versionErrors "from" (migration ^. #from)
+        <> versionErrors "to" (migration ^. #to)
         <> orderErrors migration
 
     promptErrors :: BlueprintMigration -> [Text]
     promptErrors migration =
       [ "blueprint migration "
-          <> migration.from
+          <> migration ^. #from
           <> " -> "
-          <> migration.to
+          <> migration ^. #to
           <> " prompt must not be empty"
-      | T.null (T.strip migration.prompt)
+      | T.null (T.strip (migration ^. #prompt))
       ]
 
     versionErrors label versionText = case parseVersion versionText of
@@ -243,32 +244,32 @@ checkBlueprintMigrations b =
       Just _ -> []
 
     orderErrors :: BlueprintMigration -> [Text]
-    orderErrors migration = case (parseVersion migration.from, parseVersion migration.to) of
+    orderErrors migration = case (parseVersion (migration ^. #from), parseVersion (migration ^. #to)) of
       (Just fromVersion, Just toVersion)
         | fromVersion >= toVersion ->
             [ "blueprint migration must advance versions: "
-                <> migration.from
+                <> migration ^. #from
                 <> " -> "
-                <> migration.to
+                <> migration ^. #to
             ]
       _ -> []
 
     duplicateErrors =
       map
         ("duplicate blueprint migration from version: " <>)
-        (findDupes Set.empty Set.empty (map (.from) b.migrations))
+        (findDupes Set.empty Set.empty (map (^. #from) (b ^. #migrations)))
 
 -- Rule 11: every field the @launch@ record does set must be non-blank. The
 -- declared values themselves (which provider, which effort) are parsed by the
 -- CLI layer, which owns those vocabularies; core only rejects blanks.
 checkBlueprintLaunch :: Blueprint -> [Text]
-checkBlueprintLaunch b = case b.launch of
+checkBlueprintLaunch b = case b ^. #launch of
   Nothing -> []
   Just l ->
-    blankErr "provider" l.provider
-      <> blankErr "model" l.model
-      <> blankErr "effort" l.effort
-      <> blankErr "mode" l.mode
+    blankErr "provider" (l ^. #provider)
+      <> blankErr "model" (l ^. #model)
+      <> blankErr "effort" (l ^. #effort)
+      <> blankErr "mode" (l ^. #mode)
   where
     blankErr key value =
       [ "launch." <> key <> ", if specified, must not be empty"

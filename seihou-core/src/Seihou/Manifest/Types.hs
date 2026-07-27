@@ -13,6 +13,7 @@ import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -65,15 +66,15 @@ emptyManifest now =
 writeAppliedBlueprint :: AppliedBlueprint -> Manifest -> Manifest
 writeAppliedBlueprint ab m =
   Manifest
-    { version = m.version,
-      genAt = m.genAt,
-      modules = m.modules,
-      vars = m.vars,
-      files = m.files,
-      applications = m.applications,
-      recipe = m.recipe,
+    { version = m ^. #version,
+      genAt = m ^. #genAt,
+      modules = m ^. #modules,
+      vars = m ^. #vars,
+      files = m ^. #files,
+      applications = m ^. #applications,
+      recipe = m ^. #recipe,
       blueprint = Just ab,
-      blueprintMigrations = m.blueprintMigrations
+      blueprintMigrations = m ^. #blueprintMigrations
     }
 
 -- | Insert or replace one exact blueprint migration receipt. Replacement is
@@ -83,20 +84,20 @@ writeAppliedBlueprintMigration :: AppliedBlueprintMigration -> Manifest -> Manif
 writeAppliedBlueprintMigration receipt manifest =
   Manifest
     { version = currentManifestVersion,
-      genAt = manifest.genAt,
-      modules = manifest.modules,
-      vars = manifest.vars,
-      files = manifest.files,
-      applications = manifest.applications,
-      recipe = manifest.recipe,
-      blueprint = manifest.blueprint,
-      blueprintMigrations = upsert manifest.blueprintMigrations
+      genAt = manifest ^. #genAt,
+      modules = manifest ^. #modules,
+      vars = manifest ^. #vars,
+      files = manifest ^. #files,
+      applications = manifest ^. #applications,
+      recipe = manifest ^. #recipe,
+      blueprint = manifest ^. #blueprint,
+      blueprintMigrations = upsert (manifest ^. #blueprintMigrations)
     }
   where
     sameEdge existing =
-      existing.name == receipt.name
-        && existing.fromVersion == receipt.fromVersion
-        && existing.toVersion == receipt.toVersion
+      existing ^. #name == receipt ^. #name
+        && existing ^. #fromVersion == receipt ^. #fromVersion
+        && existing ^. #toVersion == (receipt ^. #toVersion)
 
     upsert receipts
       | any sameEdge receipts = map (\existing -> if sameEdge existing then receipt else existing) receipts
@@ -107,11 +108,11 @@ hasAppliedBlueprintMigration :: ModuleName -> Text -> Text -> Manifest -> Bool
 hasAppliedBlueprintMigration blueprintName fromVersion toVersion manifest =
   any
     ( \receipt ->
-        receipt.name == blueprintName
-          && receipt.fromVersion == fromVersion
-          && receipt.toVersion == toVersion
+        receipt ^. #name == blueprintName
+          && receipt ^. #fromVersion == fromVersion
+          && receipt ^. #toVersion == toVersion
     )
-    manifest.blueprintMigrations
+    (manifest ^. #blueprintMigrations)
 
 -- | Encode a manifest to JSON bytes.
 manifestToJSON :: Manifest -> LBS.ByteString
@@ -126,16 +127,16 @@ manifestFromJSON = Aeson.eitherDecode
 instance ToJSON Manifest where
   toJSON m =
     Aeson.object $
-      [ "version" .= m.version,
-        "generatedAt" .= m.genAt,
-        "modules" .= m.modules,
-        "variables" .= varsToJSON m.vars,
-        "files" .= filesToJSON m.files,
-        "applications" .= m.applications,
-        "blueprintMigrations" .= m.blueprintMigrations
+      [ "version" .= (m ^. #version),
+        "generatedAt" .= (m ^. #genAt),
+        "modules" .= (m ^. #modules),
+        "variables" .= varsToJSON (m ^. #vars),
+        "files" .= filesToJSON (m ^. #files),
+        "applications" .= (m ^. #applications),
+        "blueprintMigrations" .= (m ^. #blueprintMigrations)
       ]
-        ++ maybe [] (\r -> ["recipe" .= r]) m.recipe
-        ++ maybe [] (\b -> ["blueprint" .= b]) m.blueprint
+        ++ maybe [] (\r -> ["recipe" .= r]) (m ^. #recipe)
+        ++ maybe [] (\b -> ["blueprint" .= b]) (m ^. #blueprint)
 
 instance FromJSON Manifest where
   parseJSON = Aeson.withObject "Manifest" $ \o -> do
@@ -156,9 +157,9 @@ instance FromJSON Manifest where
 
 instance ToJSON AppliedTarget where
   toJSON (AppliedModuleTarget name) =
-    Aeson.object ["kind" .= ("module" :: Text), "name" .= name.unModuleName]
+    Aeson.object ["kind" .= ("module" :: Text), "name" .= (name ^. #unModuleName)]
   toJSON (AppliedRecipeTarget name) =
-    Aeson.object ["kind" .= ("recipe" :: Text), "name" .= name.unRecipeName]
+    Aeson.object ["kind" .= ("recipe" :: Text), "name" .= (name ^. #unRecipeName)]
 
 instance FromJSON AppliedTarget where
   parseJSON = Aeson.withObject "AppliedTarget" $ \o -> do
@@ -172,12 +173,12 @@ instance FromJSON AppliedTarget where
 instance ToJSON AppliedInstanceState where
   toJSON state =
     Aeson.object $
-      [ "name" .= state.name.unModuleName,
-        "source" .= state.source,
-        "resolvedVars" .= varsToJSON state.resolvedVars
+      [ "name" .= (state ^. #name . #unModuleName),
+        "source" .= (state ^. #source),
+        "resolvedVars" .= varsToJSON (state ^. #resolvedVars)
       ]
-        ++ parentVarsField state.parentVars
-        ++ maybe [] (\v -> ["version" .= v]) state.moduleVersion
+        ++ parentVarsField (state ^. #parentVars)
+        ++ maybe [] (\v -> ["version" .= v]) (state ^. #moduleVersion)
     where
       parentVarsField (ParentVars m)
         | Map.null m = []
@@ -199,17 +200,17 @@ instance FromJSON AppliedInstanceState where
 instance ToJSON AppliedComposition where
   toJSON composition =
     Aeson.object $
-      [ "applicationId" .= composition.applicationId.unApplicationId,
-        "target" .= composition.target,
-        "targetSource" .= composition.targetSource,
-        "additionalModules" .= map (.unModuleName) composition.additionalModules,
-        "instances" .= composition.instances,
-        "appliedAt" .= composition.appliedAt
+      [ "applicationId" .= (composition ^. #applicationId . #unApplicationId),
+        "target" .= (composition ^. #target),
+        "targetSource" .= (composition ^. #targetSource),
+        "additionalModules" .= map (^. #unModuleName) (composition ^. #additionalModules),
+        "instances" .= (composition ^. #instances),
+        "appliedAt" .= (composition ^. #appliedAt)
       ]
-        ++ maybe [] (\v -> ["targetVersion" .= v]) composition.targetVersion
-        ++ maybe [] (\v -> ["namespace" .= v]) composition.namespace
-        ++ maybe [] (\v -> ["context" .= v]) composition.context
-        ++ commandReceiptsField composition.commandReceipts
+        ++ maybe [] (\v -> ["targetVersion" .= v]) (composition ^. #targetVersion)
+        ++ maybe [] (\v -> ["namespace" .= v]) (composition ^. #namespace)
+        ++ maybe [] (\v -> ["context" .= v]) (composition ^. #context)
+        ++ commandReceiptsField (composition ^. #commandReceipts)
     where
       commandReceiptsField receipts
         | Map.null receipts = []
@@ -232,12 +233,12 @@ instance FromJSON AppliedComposition where
 instance ToJSON CommandReceipt where
   toJSON receipt =
     Aeson.object $
-      [ "fingerprint" .= commandFingerprintText receipt.fingerprint,
-        "module" .= receipt.moduleName.unModuleName,
-        "command" .= receipt.command,
-        "completedAt" .= receipt.completedAt
+      [ "fingerprint" .= commandFingerprintText (receipt ^. #fingerprint),
+        "module" .= (receipt ^. #moduleName . #unModuleName),
+        "command" .= (receipt ^. #command),
+        "completedAt" .= (receipt ^. #completedAt)
       ]
-        ++ maybe [] (\path -> ["workDir" .= path]) receipt.workDir
+        ++ maybe [] (\path -> ["workDir" .= path]) (receipt ^. #workDir)
 
 instance FromJSON CommandReceipt where
   parseJSON = Aeson.withObject "CommandReceipt" $ \o ->
@@ -251,10 +252,10 @@ instance FromJSON CommandReceipt where
 instance ToJSON AppliedRecipe where
   toJSON ar =
     Aeson.object $
-      [ "name" .= ar.name.unRecipeName,
-        "appliedAt" .= ar.appliedAt
+      [ "name" .= (ar ^. #name . #unRecipeName),
+        "appliedAt" .= (ar ^. #appliedAt)
       ]
-        ++ maybe [] (\v -> ["version" .= v]) ar.recipeVersion
+        ++ maybe [] (\v -> ["version" .= v]) (ar ^. #recipeVersion)
 
 instance FromJSON AppliedRecipe where
   parseJSON = Aeson.withObject "AppliedRecipe" $ \o ->
@@ -266,14 +267,14 @@ instance FromJSON AppliedRecipe where
 instance ToJSON AppliedBlueprint where
   toJSON ab =
     Aeson.object $
-      [ "name" .= ab.name.unModuleName,
-        "appliedAt" .= ab.appliedAt,
-        "baselineModules" .= map (.unModuleName) ab.baselineModules,
-        "noBaseline" .= ab.noBaseline
+      [ "name" .= (ab ^. #name . #unModuleName),
+        "appliedAt" .= (ab ^. #appliedAt),
+        "baselineModules" .= map (^. #unModuleName) (ab ^. #baselineModules),
+        "noBaseline" .= (ab ^. #noBaseline)
       ]
-        ++ maybe [] (\v -> ["version" .= v]) ab.blueprintVersion
-        ++ maybe [] (\p -> ["userPrompt" .= p]) ab.userPrompt
-        ++ maybe [] (\s -> ["agentSessionId" .= s]) ab.agentSessionId
+        ++ maybe [] (\v -> ["version" .= v]) (ab ^. #blueprintVersion)
+        ++ maybe [] (\p -> ["userPrompt" .= p]) (ab ^. #userPrompt)
+        ++ maybe [] (\s -> ["agentSessionId" .= s]) (ab ^. #agentSessionId)
 
 instance FromJSON AppliedBlueprint where
   parseJSON = Aeson.withObject "AppliedBlueprint" $ \o ->
@@ -289,13 +290,13 @@ instance FromJSON AppliedBlueprint where
 instance ToJSON AppliedBlueprintMigration where
   toJSON receipt =
     Aeson.object $
-      [ "name" .= receipt.name.unModuleName,
-        "from" .= receipt.fromVersion,
-        "to" .= receipt.toVersion,
-        "appliedAt" .= receipt.appliedAt
+      [ "name" .= (receipt ^. #name . #unModuleName),
+        "from" .= (receipt ^. #fromVersion),
+        "to" .= (receipt ^. #toVersion),
+        "appliedAt" .= (receipt ^. #appliedAt)
       ]
-        ++ maybe [] (\version -> ["version" .= version]) receipt.blueprintVersion
-        ++ maybe [] (\sessionId -> ["agentSessionId" .= sessionId]) receipt.agentSessionId
+        ++ maybe [] (\version -> ["version" .= version]) (receipt ^. #blueprintVersion)
+        ++ maybe [] (\sessionId -> ["agentSessionId" .= sessionId]) (receipt ^. #agentSessionId)
 
 instance FromJSON AppliedBlueprintMigration where
   parseJSON = Aeson.withObject "AppliedBlueprintMigration" $ \o ->
@@ -310,13 +311,13 @@ instance FromJSON AppliedBlueprintMigration where
 instance ToJSON AppliedModule where
   toJSON am =
     Aeson.object $
-      [ "name" .= am.name.unModuleName,
-        "source" .= am.source,
-        "appliedAt" .= am.appliedAt
+      [ "name" .= (am ^. #name . #unModuleName),
+        "source" .= (am ^. #source),
+        "appliedAt" .= (am ^. #appliedAt)
       ]
-        ++ parentVarsField am.parentVars
-        ++ maybe [] (\v -> ["version" .= v]) am.moduleVersion
-        ++ maybe [] (\r -> ["removal" .= removalToJSON r]) am.removal
+        ++ parentVarsField (am ^. #parentVars)
+        ++ maybe [] (\v -> ["version" .= v]) (am ^. #moduleVersion)
+        ++ maybe [] (\r -> ["removal" .= removalToJSON r]) (am ^. #removal)
     where
       parentVarsField (ParentVars m)
         | Map.null m = []
@@ -347,7 +348,7 @@ instance FromJSON AppliedModule where
       <*> pure removal
 
 parentVarsMapToJSON :: Map VarName Text -> Aeson.Value
-parentVarsMapToJSON = toJSON . Map.mapKeys (.unVarName)
+parentVarsMapToJSON = toJSON . Map.mapKeys (^. #unVarName)
 
 parentVarsMapFromJSON :: Aeson.Value -> Aeson.Parser (Map VarName Text)
 parentVarsMapFromJSON v = do
@@ -358,17 +359,17 @@ parentVarsMapFromJSON v = do
 removalToJSON :: Removal -> Aeson.Value
 removalToJSON r =
   Aeson.object
-    [ "steps" .= map removalStepToJSON r.steps,
-      "commands" .= map removalCommandToJSON r.commands
+    [ "steps" .= map removalStepToJSON (r ^. #steps),
+      "commands" .= map removalCommandToJSON (r ^. #commands)
     ]
 
 removalStepToJSON :: RemovalStep -> Aeson.Value
 removalStepToJSON s =
   Aeson.object $
-    [ "action" .= removalActionToText s.action,
-      "dest" .= s.dest
+    [ "action" .= removalActionToText (s ^. #action),
+      "dest" .= (s ^. #dest)
     ]
-      ++ maybe [] (\p -> ["src" .= p]) s.src
+      ++ maybe [] (\p -> ["src" .= p]) (s ^. #src)
 
 removalActionToText :: RemovalAction -> Text
 removalActionToText RemoveFileAction = "remove-file"
@@ -378,8 +379,8 @@ removalActionToText RewriteFileAction = "rewrite-file"
 removalCommandToJSON :: Command -> Aeson.Value
 removalCommandToJSON c =
   Aeson.object $
-    ["run" .= c.run]
-      ++ maybe [] (\w -> ["workDir" .= w]) c.workDir
+    ["run" .= (c ^. #run)]
+      ++ maybe [] (\w -> ["workDir" .= w]) (c ^. #workDir)
 
 -- | Parse a Removal from JSON.
 parseRemovalJSON :: Aeson.Value -> Aeson.Parser Removal
@@ -411,17 +412,17 @@ parseRemovalCommandJSON = Aeson.withObject "RemovalCommand" $ \o ->
 instance ToJSON FileRecord where
   toJSON fr =
     Aeson.object $
-      [ "hash" .= fr.hash.unSHA256,
-        "module" .= fr.moduleName.unModuleName,
-        "strategy" .= strategyToText fr.strategy,
-        "generatedAt" .= fr.generatedAt
+      [ "hash" .= (fr ^. #hash . #unSHA256),
+        "module" .= (fr ^. #moduleName . #unModuleName),
+        "strategy" .= strategyToText (fr ^. #strategy),
+        "generatedAt" .= (fr ^. #generatedAt)
       ]
-        ++ maybe [] (\ref -> ["baseline" .= ref.unBaselineRef.unSHA256]) fr.baseline
-        ++ applicationIdsField fr.applicationIds
+        ++ maybe [] (\ref -> ["baseline" .= (ref ^. #unBaselineRef . #unSHA256)]) (fr ^. #baseline)
+        ++ applicationIdsField (fr ^. #applicationIds)
     where
       applicationIdsField ids
         | Set.null ids = []
-        | otherwise = ["applications" .= map (.unApplicationId) (Set.toAscList ids)]
+        | otherwise = ["applications" .= map (^. #unApplicationId) (Set.toAscList ids)]
 
 instance FromJSON FileRecord where
   parseJSON = Aeson.withObject "FileRecord" $ \o -> do
@@ -459,7 +460,7 @@ commandReceiptsFromJSON value = do
 -- Helpers for VarName-keyed maps
 
 varsToJSON :: Map VarName Text -> Aeson.Value
-varsToJSON = toJSON . Map.mapKeys (.unVarName)
+varsToJSON = toJSON . Map.mapKeys (^. #unVarName)
 
 varsFromJSON :: Aeson.Value -> Aeson.Parser (Map VarName Text)
 varsFromJSON v = do

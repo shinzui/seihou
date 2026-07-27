@@ -19,6 +19,7 @@ module Seihou.Core.Registry
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Types (ModuleLoadError, ModuleName (..))
 import Seihou.Prelude
@@ -113,20 +114,20 @@ probeSingleArtifact repoRoot = do
 -- and no name collisions between modules, recipes, blueprints, and prompts.
 validateRegistry :: FilePath -> Registry -> IO [Text]
 validateRegistry repoRoot reg = do
-  modErrs <- concat <$> mapM (validateModuleEntry repoRoot) reg.modules
-  recErrs <- concat <$> mapM (validateRecipeEntry repoRoot) reg.recipes
-  bpErrs <- concat <$> mapM (validateBlueprintEntry repoRoot) reg.blueprints
-  promptErrs <- concat <$> mapM (validatePromptEntry repoRoot) reg.prompts
-  let collisionErrs = checkNameCollisions reg.modules reg.recipes reg.blueprints reg.prompts
+  modErrs <- concat <$> mapM (validateModuleEntry repoRoot) (reg ^. #modules)
+  recErrs <- concat <$> mapM (validateRecipeEntry repoRoot) (reg ^. #recipes)
+  bpErrs <- concat <$> mapM (validateBlueprintEntry repoRoot) (reg ^. #blueprints)
+  promptErrs <- concat <$> mapM (validatePromptEntry repoRoot) (reg ^. #prompts)
+  let collisionErrs = checkNameCollisions (reg ^. #modules) (reg ^. #recipes) (reg ^. #blueprints) (reg ^. #prompts)
   pure (modErrs <> recErrs <> bpErrs <> promptErrs <> collisionErrs)
 
 validateModuleEntry :: FilePath -> RegistryEntry -> IO [Text]
 validateModuleEntry repoRoot entry = do
-  let nameText = entry.name.unModuleName
+  let nameText = (entry ^. #name . #unModuleName)
       nameErrors = checkName nameText
-      pathText = T.pack entry.path
+      pathText = T.pack (entry ^. #path)
       pathErrors = checkPath pathText
-  let moduleDhall = repoRoot </> entry.path </> "module.dhall"
+  let moduleDhall = repoRoot </> entry ^. #path </> "module.dhall"
   fileExists <- doesFileExist moduleDhall
   let fileErrors =
         if fileExists
@@ -145,11 +146,11 @@ validateModuleEntry repoRoot entry = do
 
 validateRecipeEntry :: FilePath -> RegistryEntry -> IO [Text]
 validateRecipeEntry repoRoot entry = do
-  let nameText = entry.name.unModuleName
+  let nameText = (entry ^. #name . #unModuleName)
       nameErrors = checkRecipeName nameText
-      pathText = T.pack entry.path
+      pathText = T.pack (entry ^. #path)
       pathErrors = checkRecipePath pathText
-  let recipeDhall = repoRoot </> entry.path </> "recipe.dhall"
+  let recipeDhall = repoRoot </> entry ^. #path </> "recipe.dhall"
   fileExists <- doesFileExist recipeDhall
   let fileErrors =
         if fileExists
@@ -168,11 +169,11 @@ validateRecipeEntry repoRoot entry = do
 
 validateBlueprintEntry :: FilePath -> RegistryEntry -> IO [Text]
 validateBlueprintEntry repoRoot entry = do
-  let nameText = entry.name.unModuleName
+  let nameText = (entry ^. #name . #unModuleName)
       nameErrors = checkBlueprintName nameText
-      pathText = T.pack entry.path
+      pathText = T.pack (entry ^. #path)
       pathErrors = checkBlueprintPath pathText
-  let blueprintDhall = repoRoot </> entry.path </> "blueprint.dhall"
+  let blueprintDhall = repoRoot </> entry ^. #path </> "blueprint.dhall"
   fileExists <- doesFileExist blueprintDhall
   let fileErrors =
         if fileExists
@@ -191,11 +192,11 @@ validateBlueprintEntry repoRoot entry = do
 
 validatePromptEntry :: FilePath -> RegistryEntry -> IO [Text]
 validatePromptEntry repoRoot entry = do
-  let nameText = entry.name.unModuleName
+  let nameText = (entry ^. #name . #unModuleName)
       nameErrors = checkPromptName nameText
-      pathText = T.pack entry.path
+      pathText = T.pack (entry ^. #path)
       pathErrors = checkPromptPath pathText
-  let promptDhall = repoRoot </> entry.path </> "prompt.dhall"
+  let promptDhall = repoRoot </> entry ^. #path </> "prompt.dhall"
   fileExists <- doesFileExist promptDhall
   let fileErrors =
         if fileExists
@@ -217,10 +218,10 @@ validatePromptEntry repoRoot entry = do
 -- appears in all four kinds produces six messages (one per pair).
 checkNameCollisions :: [RegistryEntry] -> [RegistryEntry] -> [RegistryEntry] -> [RegistryEntry] -> [Text]
 checkNameCollisions mods recs bps prompts =
-  let modNames = map (\e -> e.name.unModuleName) mods
-      recNames = map (\e -> e.name.unModuleName) recs
-      bpNames = map (\e -> e.name.unModuleName) bps
-      promptNames = map (\e -> e.name.unModuleName) prompts
+  let modNames = map (\e -> e ^. #name . #unModuleName) mods
+      recNames = map (\e -> e ^. #name . #unModuleName) recs
+      bpNames = map (\e -> e ^. #name . #unModuleName) bps
+      promptNames = map (\e -> e ^. #name . #unModuleName) prompts
       modRec = [n | n <- modNames, n `elem` recNames]
       modBp = [n | n <- modNames, n `elem` bpNames]
       modPrompt = [n | n <- modNames, n `elem` promptNames]
@@ -297,22 +298,22 @@ computeRegistrySync reg lookups =
     { diffs = moduleDiffs <> recipeDiffs <> blueprintDiffs <> promptDiffs,
       updated =
         reg
-          { modules = zipWith applyDiff moduleDiffs reg.modules,
-            recipes = zipWith applyDiff recipeDiffs reg.recipes,
-            blueprints = zipWith applyDiff blueprintDiffs reg.blueprints,
-            prompts = zipWith applyDiff promptDiffs reg.prompts
+          { modules = zipWith applyDiff moduleDiffs (reg ^. #modules),
+            recipes = zipWith applyDiff recipeDiffs (reg ^. #recipes),
+            blueprints = zipWith applyDiff blueprintDiffs (reg ^. #blueprints),
+            prompts = zipWith applyDiff promptDiffs (reg ^. #prompts)
           }
     }
   where
-    moduleDiffs = map (classify ModuleEntry) reg.modules
-    recipeDiffs = map (classify RecipeEntry) reg.recipes
-    blueprintDiffs = map (classify BlueprintEntry) reg.blueprints
-    promptDiffs = map (classify PromptEntry) reg.prompts
+    moduleDiffs = map (classify ModuleEntry) (reg ^. #modules)
+    recipeDiffs = map (classify RecipeEntry) (reg ^. #recipes)
+    blueprintDiffs = map (classify BlueprintEntry) (reg ^. #blueprints)
+    promptDiffs = map (classify PromptEntry) (reg ^. #prompts)
 
     classify :: EntryKind -> RegistryEntry -> SyncDiff
     classify kind entry =
-      let onDisk = lookupOnDisk kind entry.name
-          status = case (entry.version, onDisk) of
+      let onDisk = lookupOnDisk kind (entry ^. #name)
+          status = case (entry ^. #version, onDisk) of
             (_, OnDiskMissing) -> SyncOrphan
             (Nothing, OnDiskValue Nothing) -> SyncInSync
             (Nothing, OnDiskValue (Just _)) -> SyncMissing
@@ -321,20 +322,20 @@ computeRegistrySync reg lookups =
               | old == new -> SyncInSync
               | otherwise -> SyncStale new
           newVersion = case onDisk of
-            OnDiskMissing -> entry.version
+            OnDiskMissing -> (entry ^. #version)
             OnDiskValue v -> v
        in SyncDiff
             { kind = kind,
-              name = entry.name,
-              old = entry.version,
+              name = entry ^. #name,
+              old = entry ^. #version,
               new = newVersion,
               status = status
             }
 
     applyDiff :: SyncDiff -> RegistryEntry -> RegistryEntry
-    applyDiff diff entry = case diff.status of
+    applyDiff diff entry = case diff ^. #status of
       SyncOrphan -> entry
-      _ -> entry {version = diff.new}
+      _ -> entry {version = diff ^. #new}
 
     lookupOnDisk :: EntryKind -> ModuleName -> OnDiskVersion
     lookupOnDisk kind name =
@@ -351,28 +352,28 @@ data OnDiskVersion = OnDiskMissing | OnDiskValue (Maybe Text)
 -- 'Nothing' if the entry is already in sync. Used by @seihou browse@ and
 -- @seihou install@ to surface stale registry versions without blocking.
 formatDriftWarning :: SyncDiff -> Maybe Text
-formatDriftWarning diff = case diff.status of
+formatDriftWarning diff = case diff ^. #status of
   SyncInSync -> Nothing
   SyncOrphan -> Nothing
   SyncMissing ->
     Just $
-      kindWord diff.kind
+      kindWord (diff ^. #kind)
         <> " '"
-        <> diff.name.unModuleName
+        <> diff ^. #name . #unModuleName
         <> "' registry version is missing; "
-        <> entryFile diff.kind
+        <> entryFile (diff ^. #kind)
         <> " declares "
-        <> renderVersion diff.new
+        <> renderVersion (diff ^. #new)
         <> " — run `seihou registry sync-versions`"
   SyncStale newVer ->
     Just $
-      kindWord diff.kind
+      kindWord (diff ^. #kind)
         <> " '"
-        <> diff.name.unModuleName
+        <> diff ^. #name . #unModuleName
         <> "' registry version "
-        <> renderVersion diff.old
+        <> renderVersion (diff ^. #old)
         <> " differs from "
-        <> entryFile diff.kind
+        <> entryFile (diff ^. #kind)
         <> " version "
         <> newVer
         <> " — run `seihou registry sync-versions`"
@@ -409,7 +410,7 @@ data RegistryValidationReport = RegistryValidationReport
 
 -- | True iff the report has at least one issue.
 reportHasIssues :: RegistryValidationReport -> Bool
-reportHasIssues r = not (null r.issues)
+reportHasIssues r = not (null (r ^. #issues))
 
 -- | Combine the existing structural checks with version classification.
 -- The third argument is the same shape 'computeRegistrySync' takes —
@@ -425,16 +426,16 @@ validateRegistryFull repoRoot reg lookups = do
   let report = computeRegistrySync reg lookups
       versionIssues =
         [ VersionMismatch d
-        | d <- report.diffs,
-          isVersionDrift d.status
+        | d <- report ^. #diffs,
+          isVersionDrift (d ^. #status)
         ]
   pure
     RegistryValidationReport
       { issues = map StructuralError structuralErrs <> versionIssues,
-        moduleCount = length reg.modules,
-        recipeCount = length reg.recipes,
-        blueprintCount = length reg.blueprints,
-        promptCount = length reg.prompts
+        moduleCount = length (reg ^. #modules),
+        recipeCount = length (reg ^. #recipes),
+        blueprintCount = length (reg ^. #blueprints),
+        promptCount = length (reg ^. #prompts)
       }
   where
     isVersionDrift SyncMissing = True
@@ -449,14 +450,14 @@ validateRegistryFull repoRoot reg lookups = do
 formatValidationIssue :: RegistryValidationIssue -> Text
 formatValidationIssue (StructuralError msg) = msg
 formatValidationIssue (VersionMismatch diff) =
-  validationKindPrefix diff.kind
-    <> diff.name.unModuleName
+  validationKindPrefix (diff ^. #kind)
+    <> diff ^. #name . #unModuleName
     <> ": registry version "
-    <> validationRenderVersion diff.old
+    <> validationRenderVersion (diff ^. #old)
     <> " does not match "
-    <> entryFile diff.kind
+    <> entryFile (diff ^. #kind)
     <> " version "
-    <> validationRenderVersion diff.new
+    <> validationRenderVersion (diff ^. #new)
   where
     entryFile ModuleEntry = "module.dhall"
     entryFile RecipeEntry = "recipe.dhall"
@@ -479,16 +480,16 @@ validationRenderVersion (Just v) = v
 renderRegistryDhall :: Registry -> Text
 renderRegistryDhall reg =
   T.unlines
-    [ "{ repoName = " <> renderString reg.repoName,
-      ", repoDescription = " <> renderOptionalText reg.repoDescription,
+    [ "{ repoName = " <> renderString (reg ^. #repoName),
+      ", repoDescription = " <> renderOptionalText (reg ^. #repoDescription),
       ", modules =",
-      renderEntryList reg.modules,
+      renderEntryList (reg ^. #modules),
       ", recipes =",
-      renderEntryList reg.recipes,
+      renderEntryList (reg ^. #recipes),
       ", blueprints =",
-      renderEntryList reg.blueprints,
+      renderEntryList (reg ^. #blueprints),
       ", prompts =",
-      renderEntryList reg.prompts,
+      renderEntryList (reg ^. #prompts),
       "}"
     ]
 
@@ -504,11 +505,11 @@ renderEntry :: Bool -> RegistryEntry -> Text
 renderEntry isFirst entry =
   T.intercalate
     "\n"
-    [ "  " <> opener <> " { name = " <> renderString entry.name.unModuleName,
-      "    , version = " <> renderOptionalText entry.version,
-      "    , path = " <> renderString (T.pack entry.path),
-      "    , description = " <> renderOptionalText entry.description,
-      "    , tags = " <> renderTextList entry.tags,
+    [ "  " <> opener <> " { name = " <> renderString (entry ^. #name . #unModuleName),
+      "    , version = " <> renderOptionalText (entry ^. #version),
+      "    , path = " <> renderString (T.pack (entry ^. #path)),
+      "    , description = " <> renderOptionalText (entry ^. #description),
+      "    , tags = " <> renderTextList (entry ^. #tags),
       "    }"
     ]
   where

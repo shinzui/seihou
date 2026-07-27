@@ -1,5 +1,7 @@
 module Seihou.Engine.DiffSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -46,15 +48,15 @@ manifestWithFiles :: Map.Map FilePath FileRecord -> Manifest
 manifestWithFiles recs =
   let base = emptyManifest fixedTime
    in Manifest
-        { version = base.version,
-          genAt = base.genAt,
-          modules = base.modules,
-          vars = base.vars,
+        { version = base ^. #version,
+          genAt = base ^. #genAt,
+          modules = base ^. #modules,
+          vars = base ^. #vars,
           files = recs,
-          applications = base.applications,
-          recipe = base.recipe,
-          blueprint = base.blueprint,
-          blueprintMigrations = base.blueprintMigrations
+          applications = base ^. #applications,
+          recipe = base ^. #recipe,
+          blueprint = base ^. #blueprint,
+          blueprintMigrations = base ^. #blueprintMigrations
         }
 
 spec :: Spec
@@ -66,25 +68,25 @@ spec = do
       let manifest = emptyManifest fixedTime
           planned = [("README.md", "# Hello", modName, Nothing)]
           result = runDiff emptyFS manifest active planned
-      length (result.new) `shouldBe` 1
-      (head result.new).path `shouldBe` "README.md"
+      length (result ^. #new) `shouldBe` 1
+      ((head (result ^. #new)) ^. #path) `shouldBe` "README.md"
 
     it "classifies file in plan + on disk (not in manifest) as Conflict" $ do
       let manifest = emptyManifest fixedTime
           planned = [("README.md", "# Hello", modName, Nothing)]
           fs = PureFS (Map.singleton "README.md" "existing content") mempty
           result = runDiff fs manifest active planned
-      length (result.conflicts) `shouldBe` 1
-      (head result.conflicts).path `shouldBe` "README.md"
+      length (result ^. #conflicts) `shouldBe` 1
+      ((head (result ^. #conflicts)) ^. #path) `shouldBe` "README.md"
 
     it "classifies patch op on existing file (not in manifest) as New, not Conflict" $ do
       let manifest = emptyManifest fixedTime
           planned = [(".gitignore", ".claude/\n", modName, Just AppendSection)]
           fs = PureFS (Map.singleton ".gitignore" ".seihou/\n") mempty
           result = runDiff fs manifest active planned
-      length (result.conflicts) `shouldBe` 0
-      length (result.new) `shouldBe` 1
-      (head result.new).path `shouldBe` ".gitignore"
+      length (result ^. #conflicts) `shouldBe` 0
+      length (result ^. #new) `shouldBe` 1
+      ((head (result ^. #new)) ^. #path) `shouldBe` ".gitignore"
 
     it "classifies patch op on user-modified file (in manifest) as Modified, not Conflict" $ do
       let originalContent = "original"
@@ -94,9 +96,9 @@ spec = do
           planned = [("config.txt", patchContent, modName, Just AppendSection)]
           fs = PureFS (Map.singleton "config.txt" userContent) mempty
           result = runDiff fs manifest active planned
-      length (result.conflicts) `shouldBe` 0
-      length (result.modified) `shouldBe` 1
-      (head result.modified).path `shouldBe` "config.txt"
+      length (result ^. #conflicts) `shouldBe` 0
+      length (result ^. #modified) `shouldBe` 1
+      ((head (result ^. #modified)) ^. #path) `shouldBe` "config.txt"
 
     it "classifies file in manifest + plan + disk (unchanged) as Unchanged" $ do
       let content = "# Hello World"
@@ -104,8 +106,8 @@ spec = do
           planned = [("README.md", content, modName, Nothing)]
           fs = PureFS (Map.singleton "README.md" content) mempty
           result = runDiff fs manifest active planned
-      length (result.unchanged) `shouldBe` 1
-      head (result.unchanged) `shouldBe` "README.md"
+      length (result ^. #unchanged) `shouldBe` 1
+      head (result ^. #unchanged) `shouldBe` "README.md"
 
     it "classifies file in manifest + plan + disk (plan changed) as Modified" $ do
       let oldContent = "# Hello"
@@ -115,9 +117,9 @@ spec = do
           -- Disk matches manifest (user didn't touch it)
           fs = PureFS (Map.singleton "README.md" oldContent) mempty
           result = runDiff fs manifest active planned
-      length (result.modified) `shouldBe` 1
-      (head result.modified).path `shouldBe` "README.md"
-      (head result.modified).newContent `shouldBe` newContent
+      length (result ^. #modified) `shouldBe` 1
+      ((head (result ^. #modified)) ^. #path) `shouldBe` "README.md"
+      ((head (result ^. #modified)) ^. #newContent) `shouldBe` newContent
 
     it "classifies file in manifest + plan + disk (user modified) as Conflict" $ do
       let originalContent = "# Hello"
@@ -128,9 +130,9 @@ spec = do
           -- Disk was modified by user (doesn't match manifest)
           fs = PureFS (Map.singleton "README.md" userContent) mempty
           result = runDiff fs manifest active planned
-      length (result.conflicts) `shouldBe` 1
-      (head result.conflicts).path `shouldBe` "README.md"
-      (head result.conflicts).planContent `shouldBe` planContent
+      length (result ^. #conflicts) `shouldBe` 1
+      ((head (result ^. #conflicts)) ^. #path) `shouldBe` "README.md"
+      ((head (result ^. #conflicts)) ^. #planContent) `shouldBe` planContent
 
     it "classifies file in manifest only (on disk) as Orphaned" $ do
       let content = "orphaned content"
@@ -141,8 +143,8 @@ spec = do
           planned = [] :: [(FilePath, Text, ModuleName, Maybe PatchOp)] -- module no longer produces this file
           fs = PureFS (Map.singleton "old-file.txt" content) mempty
           result = runDiff fs manifest active planned
-      length (result.orphaned) `shouldBe` 1
-      (head result.orphaned).path `shouldBe` "old-file.txt"
+      length (result ^. #orphaned) `shouldBe` 1
+      ((head (result ^. #orphaned)) ^. #path) `shouldBe` "old-file.txt"
 
     it "classifies file in manifest only (not on disk) as Orphaned" $ do
       let content = "deleted content"
@@ -152,8 +154,8 @@ spec = do
               }
           planned = [] :: [(FilePath, Text, ModuleName, Maybe PatchOp)]
           result = runDiff emptyFS manifest active planned
-      length (result.orphaned) `shouldBe` 1
-      (head result.orphaned).path `shouldBe` "deleted.txt"
+      length (result ^. #orphaned) `shouldBe` 1
+      ((head (result ^. #orphaned)) ^. #path) `shouldBe` "deleted.txt"
 
     it "classifies file in manifest + plan (deleted from disk) as Modified" $ do
       let content = "recreate me"
@@ -163,8 +165,8 @@ spec = do
               }
           planned = [("gone.txt", "new version", modName, Nothing)]
           result = runDiff emptyFS manifest active planned
-      length (result.modified) `shouldBe` 1
-      (head result.modified).path `shouldBe` "gone.txt"
+      length (result ^. #modified) `shouldBe` 1
+      ((head (result ^. #modified)) ^. #path) `shouldBe` "gone.txt"
 
     it "handles mixed classifications" $ do
       let existingContent = "existing"
@@ -185,20 +187,20 @@ spec = do
               (Map.fromList [("unchanged.txt", existingContent), ("orphaned.txt", "orphan")])
               mempty
           result = runDiff fs manifest active planned
-      length (result.new) `shouldBe` 1
-      length (result.unchanged) `shouldBe` 1
-      length (result.orphaned) `shouldBe` 1
-      length (result.modified) `shouldBe` 0
-      length (result.conflicts) `shouldBe` 0
+      length (result ^. #new) `shouldBe` 1
+      length (result ^. #unchanged) `shouldBe` 1
+      length (result ^. #orphaned) `shouldBe` 1
+      length (result ^. #modified) `shouldBe` 0
+      length (result ^. #conflicts) `shouldBe` 0
 
     it "handles empty manifest and empty plan" $ do
       let manifest = emptyManifest fixedTime
           result = runDiff emptyFS manifest Set.empty ([] :: [(FilePath, Text, ModuleName, Maybe PatchOp)])
-      result.new `shouldBe` []
-      result.modified `shouldBe` []
-      result.unchanged `shouldBe` []
-      result.conflicts `shouldBe` []
-      result.orphaned `shouldBe` []
+      (result ^. #new) `shouldBe` []
+      (result ^. #modified) `shouldBe` []
+      (result ^. #unchanged) `shouldBe` []
+      (result ^. #conflicts) `shouldBe` []
+      (result ^. #orphaned) `shouldBe` []
 
     it "does not classify files from inactive modules as orphaned" $ do
       let otherMod = ModuleName "other-module"
@@ -217,8 +219,8 @@ spec = do
           activeModules = Set.singleton modName -- "test-module", NOT "other-module"
           fs = PureFS (Map.singleton "other.txt" content) mempty
           result = runDiff fs manifest activeModules planned
-      length (result.orphaned) `shouldBe` 0
-      length (result.new) `shouldBe` 1
+      length (result ^. #orphaned) `shouldBe` 0
+      length (result ^. #new) `shouldBe` 1
 
     it "classifies files from active modules as orphaned" $ do
       let content = "active module content"
@@ -227,8 +229,8 @@ spec = do
           activeModules = Set.singleton modName -- file belongs to active module
           fs = PureFS (Map.singleton "old.txt" content) mempty
           result = runDiff fs manifest activeModules planned
-      length (result.orphaned) `shouldBe` 1
-      (head result.orphaned).path `shouldBe` "old.txt"
+      length (result ^. #orphaned) `shouldBe` 1
+      ((head (result ^. #orphaned)) ^. #path) `shouldBe` "old.txt"
 
     it "mixed active/inactive: only orphans active module's missing files" $ do
       let otherMod = ModuleName "other-module"
@@ -257,11 +259,11 @@ spec = do
               mempty
           result = runDiff fs manifest activeModules planned
       -- active-old.txt is orphaned (active module no longer produces it)
-      length (result.orphaned) `shouldBe` 1
-      (head result.orphaned).path `shouldBe` "active-old.txt"
+      length (result ^. #orphaned) `shouldBe` 1
+      ((head (result ^. #orphaned)) ^. #path) `shouldBe` "active-old.txt"
       -- other.txt is invisible (inactive module), not orphaned
-      length (result.new) `shouldBe` 1
-      (head result.new).path `shouldBe` "active-new.txt"
+      length (result ^. #new) `shouldBe` 1
+      ((head (result ^. #new)) ^. #path) `shouldBe` "active-new.txt"
 
     it "plan targeting inactive module's file on disk is classified as Conflict" $ do
       let otherMod = ModuleName "other-module"
@@ -281,8 +283,8 @@ spec = do
           fs = PureFS (Map.singleton "shared.txt" "other content") mempty
           result = runDiff fs manifest activeModules planned
       -- File exists on disk but not in active manifest → Conflict
-      length (result.conflicts) `shouldBe` 1
-      (head result.conflicts).path `shouldBe` "shared.txt"
+      length (result ^. #conflicts) `shouldBe` 1
+      ((head (result ^. #conflicts)) ^. #path) `shouldBe` "shared.txt"
 
     it "handles multiple active modules scoping independently" $ do
       let modA = ModuleName "module-a"
@@ -319,10 +321,10 @@ spec = do
               mempty
           result = runDiff fs manifest activeModules planned
       -- from-a.txt unchanged (active, still produced)
-      length (result.unchanged) `shouldBe` 1
+      length (result ^. #unchanged) `shouldBe` 1
       -- from-b.txt orphaned (active module B no longer produces it)
-      length (result.orphaned) `shouldBe` 1
-      (head result.orphaned).path `shouldBe` "from-b.txt"
+      length (result ^. #orphaned) `shouldBe` 1
+      ((head (result ^. #orphaned)) ^. #path) `shouldBe` "from-b.txt"
       -- from-c.txt invisible (inactive module C)
-      length (result.new) `shouldBe` 0
-      length (result.conflicts) `shouldBe` 0
+      length (result ^. #new) `shouldBe` 0
+      length (result ^. #conflicts) `shouldBe` 0

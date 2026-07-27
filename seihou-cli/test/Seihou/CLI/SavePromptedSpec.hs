@@ -1,6 +1,5 @@
 module Seihou.CLI.SavePromptedSpec (tests) where
 
-import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)

@@ -1,5 +1,7 @@
 module Seihou.Core.StatusSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
@@ -49,9 +51,9 @@ spec = do
           fs = PureFS (Map.singleton "README.md" content) mempty
           result = runStatus fs manifest
       length result `shouldBe` 1
-      (head result).path `shouldBe` "README.md"
-      (head result).moduleName `shouldBe` modName
-      (head result).status `shouldBe` TfsUnchanged
+      ((head result) ^. #path) `shouldBe` "README.md"
+      ((head result) ^. #moduleName) `shouldBe` modName
+      ((head result) ^. #status) `shouldBe` TfsUnchanged
 
     it "classifies a file with different disk content as TfsModified" $ do
       let originalContent = "# Hello"
@@ -63,7 +65,7 @@ spec = do
           fs = PureFS (Map.singleton "README.md" modifiedContent) mempty
           result = runStatus fs manifest
       length result `shouldBe` 1
-      (head result).status `shouldBe` TfsModified
+      ((head result) ^. #status) `shouldBe` TfsModified
 
     it "classifies a file missing from disk as TfsDeleted" $ do
       let content = "# Hello"
@@ -73,7 +75,7 @@ spec = do
               }
           result = runStatus emptyFS manifest
       length result `shouldBe` 1
-      (head result).status `shouldBe` TfsDeleted
+      ((head result) ^. #status) `shouldBe` TfsDeleted
 
     it "handles mixed statuses across multiple files" $ do
       let unchangedContent = "unchanged"
@@ -100,12 +102,12 @@ spec = do
           result = runStatus fs manifest
       length result `shouldBe` 3
       -- Results are sorted by path
-      (result !! 0).path `shouldBe` "a.txt"
-      (result !! 0).status `shouldBe` TfsUnchanged
-      (result !! 1).path `shouldBe` "b.txt"
-      (result !! 1).status `shouldBe` TfsModified
-      (result !! 2).path `shouldBe` "c.txt"
-      (result !! 2).status `shouldBe` TfsDeleted
+      ((result !! 0) ^. #path) `shouldBe` "a.txt"
+      ((result !! 0) ^. #status) `shouldBe` TfsUnchanged
+      ((result !! 1) ^. #path) `shouldBe` "b.txt"
+      ((result !! 1) ^. #status) `shouldBe` TfsModified
+      ((result !! 2) ^. #path) `shouldBe` "c.txt"
+      ((result !! 2) ^. #status) `shouldBe` TfsDeleted
 
     it "returns empty list for empty manifest" $ do
       let manifest = emptyManifest fixedTime

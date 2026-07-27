@@ -5,6 +5,7 @@ module Seihou.Engine.Baseline
 where
 
 import Control.Monad (foldM)
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
@@ -51,4 +52,4 @@ recordGeneratedBaselines targetDir records =
 -- set to 'pruneBaselines' only after publishing that manifest.
 manifestBaselineRefs :: Manifest -> Set BaselineRef
 manifestBaselineRefs manifest =
-  Set.fromList (mapMaybe (.baseline) (Map.elems manifest.files))
+  Set.fromList (mapMaybe (^. #baseline) (Map.elems (manifest ^. #files)))

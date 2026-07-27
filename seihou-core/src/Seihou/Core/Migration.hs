@@ -13,6 +13,7 @@ module Seihou.Core.Migration
   )
 where
 
+import Data.Generics.Labels ()
 import Data.List (sortOn)
 import Seihou.Core.Version (Version, parseVersion)
 import Seihou.Prelude
@@ -174,7 +175,7 @@ planMigrationChain modName migrations installed target =
               }
         )
     )
-    (planMigrationWindow (.from) (.to) migrations installed target)
+    (planMigrationWindow (^. #from) (^. #to) migrations installed target)
 
 -- | Compute the ordered agent-guided migrations for a blueprint and version
 -- window. Selection and errors deliberately match 'planMigrationChain'.
@@ -196,7 +197,7 @@ planBlueprintMigrationChain blueprintName migrations current target =
               }
         )
     )
-    (planMigrationWindow (.from) (.to) migrations current target)
+    (planMigrationWindow (^. #from) (^. #to) migrations current target)
 
 -- | Shared gap-tolerant version-window planner. Keeping parsing, duplicate
 -- detection, ordering, overlap handling, and overshoot handling here prevents

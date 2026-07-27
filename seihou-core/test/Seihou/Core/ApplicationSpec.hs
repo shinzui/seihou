@@ -1,5 +1,7 @@
 module Seihou.Core.ApplicationSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -76,7 +78,7 @@ spec = do
       let first = mkApplicationId moduleTarget [ModuleName "docs"]
           second = mkApplicationId moduleTarget [ModuleName "docs"]
       first `shouldBe` second
-      T.length first.unApplicationId `shouldBe` 64
+      T.length (first ^. #unApplicationId) `shouldBe` 64
 
     it "changes when additional-root order changes" $ do
       let first = mkApplicationId moduleTarget [ModuleName "a", ModuleName "b"]
@@ -103,8 +105,8 @@ spec = do
               ]
           composition =
             buildAppliedComposition moduleTarget "/modules/master-plan" (Just "0.7.0") [] (Just "docs") Nothing modulesInOrder resolved fixedTime
-      map (.parentVars) composition.instances `shouldBe` [pv1, pv2]
-      map (.resolvedVars) composition.instances
+      map (^. #parentVars) (composition ^. #instances) `shouldBe` [pv1, pv2]
+      map (^. #resolvedVars) (composition ^. #instances)
         `shouldBe` [Map.singleton "skill.name" "exec-plan", Map.singleton "skill.name" "master-plan"]
 
     it "keeps identity independent of versions, source paths, and resolved values" $ do
@@ -131,14 +133,14 @@ spec = do
               [(inst, mkModule "dep" (Just "2.0.0"), "/new/dep")]
               (Map.singleton inst (Map.singleton "value" (mkResolved "value" (VText "new"))))
               fixedTime
-      first.applicationId `shouldBe` second.applicationId
+      (first ^. #applicationId) `shouldBe` (second ^. #applicationId)
 
     it "preserves the original module or recipe target" $ do
       let moduleComposition = buildAppliedComposition moduleTarget "/module" Nothing [] Nothing Nothing [] Map.empty fixedTime
           recipeTarget = AppliedRecipeTarget "service"
           recipeComposition = buildAppliedComposition recipeTarget "/recipe" (Just "2") [] Nothing Nothing [] Map.empty fixedTime
-      moduleComposition.target `shouldBe` moduleTarget
-      recipeComposition.target `shouldBe` recipeTarget
+      (moduleComposition ^. #target) `shouldBe` moduleTarget
+      (recipeComposition ^. #target) `shouldBe` recipeTarget
 
   describe "replaceAppliedComposition" $ do
     it "replaces in place and appends new applications" $ do
@@ -156,5 +158,5 @@ spec = do
           prior = FileRecord (hashContent "old") "module" Template fixedTime Nothing (Set.singleton priorId)
           current = FileRecord (hashContent "new") "module" Template fixedTime (Just (BaselineRef (hashContent "generated"))) Set.empty
           attached = attachApplication currentId (Just prior) current
-      attached.applicationIds `shouldBe` Set.fromList [priorId, currentId]
-      attached.baseline `shouldBe` Just (BaselineRef (hashContent "generated"))
+      (attached ^. #applicationIds) `shouldBe` Set.fromList [priorId, currentId]
+      (attached ^. #baseline) `shouldBe` Just (BaselineRef (hashContent "generated"))

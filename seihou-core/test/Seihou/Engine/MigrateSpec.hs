@@ -1,5 +1,7 @@
 module Seihou.Engine.MigrateSpec (tests) where
 
+import Control.Lens (to, (^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -132,21 +134,21 @@ spec = do
           fs = mkFS [("app/Main.hs", "module Main where")]
           c = chain1 "1.0.0" "2.0.0" [MoveFile "app/Main.hs" "src/Main.hs"]
           plan = runClassify fs manifest c
-      plan.ops `shouldBe` [MoveFileInst "app/Main.hs" "src/Main.hs" MFSafe]
+      (plan ^. #ops) `shouldBe` [MoveFileInst "app/Main.hs" "src/Main.hs" MFSafe]
 
     it "marks a move-file as conflict when disk content differs" $ do
       let manifest = mkManifest [("app/Main.hs", "original")]
           fs = mkFS [("app/Main.hs", "user-edited")]
           c = chain1 "1.0.0" "2.0.0" [MoveFile "app/Main.hs" "src/Main.hs"]
           plan = runClassify fs manifest c
-      plan.ops `shouldBe` [MoveFileInst "app/Main.hs" "src/Main.hs" MFConflict]
+      (plan ^. #ops) `shouldBe` [MoveFileInst "app/Main.hs" "src/Main.hs" MFConflict]
 
     it "marks a delete-file as gone when the file is absent" $ do
       let manifest = mkManifest [("Setup.hs", "boring")]
           fs = mkFS [] -- file already deleted on disk
           c = chain1 "1.0.0" "2.0.0" [DeleteFile "Setup.hs"]
           plan = runClassify fs manifest c
-      plan.ops `shouldBe` [DeleteFileInst "Setup.hs" MFGone]
+      (plan ^. #ops) `shouldBe` [DeleteFileInst "Setup.hs" MFGone]
 
     it "rejects a delete-dir path with a parent directory segment" $ do
       let manifest = mkManifest []
@@ -178,12 +180,12 @@ spec = do
           (result, fs') = runExecute fs manifest plan False
       case result of
         Right m -> do
-          Map.member "src/Main.hs" m.files `shouldBe` True
-          Map.member "app/Main.hs" m.files `shouldBe` False
-          (head m.modules).moduleVersion `shouldBe` Just "2.0.0"
+          Map.member "src/Main.hs" (m ^. #files) `shouldBe` True
+          Map.member "app/Main.hs" (m ^. #files) `shouldBe` False
+          ((head (m ^. #modules)) ^. #moduleVersion) `shouldBe` Just "2.0.0"
         Left err -> expectationFailure ("expected Right, got: " <> show err)
-      Map.member "src/Main.hs" fs'.files `shouldBe` True
-      Map.member "app/Main.hs" fs'.files `shouldBe` False
+      Map.member "src/Main.hs" (fs' ^. #files) `shouldBe` True
+      Map.member "app/Main.hs" (fs' ^. #files) `shouldBe` False
 
     it "refuses on conflict without --force and leaves disk untouched" $ do
       let manifest = mkManifest [("app/Main.hs", "original")]
@@ -193,8 +195,8 @@ spec = do
           (result, fs') = runExecute fs manifest plan False
       result `shouldBe` Left (MigrationConflict ["app/Main.hs"])
       -- Disk untouched: original src still there, dest absent.
-      Map.member "app/Main.hs" fs'.files `shouldBe` True
-      Map.member "src/Main.hs" fs'.files `shouldBe` False
+      Map.member "app/Main.hs" (fs' ^. #files) `shouldBe` True
+      Map.member "src/Main.hs" (fs' ^. #files) `shouldBe` False
 
     it "executes through a conflict when force is set" $ do
       let manifest = mkManifest [("app/Main.hs", "original")]
@@ -204,12 +206,12 @@ spec = do
           (result, fs') = runExecute fs manifest plan True
       case result of
         Right m -> do
-          Map.member "src/Main.hs" m.files `shouldBe` True
-          Map.member "app/Main.hs" m.files `shouldBe` False
+          Map.member "src/Main.hs" (m ^. #files) `shouldBe` True
+          Map.member "app/Main.hs" (m ^. #files) `shouldBe` False
         Left err -> expectationFailure ("expected Right, got: " <> show err)
       -- The user-edited content rode along: the move is a key rename in
       -- the pure FS, so the bytes follow the rename.
-      Map.lookup "src/Main.hs" fs'.files `shouldBe` Just "user-edited"
+      Map.lookup "src/Main.hs" (fs' ^. #files) `shouldBe` Just "user-edited"
 
     it "moves a directory, rewriting all contained manifest entries" $ do
       let manifest =
@@ -227,9 +229,9 @@ spec = do
           (result, fs') = runExecute fs manifest plan False
       case result of
         Right m -> do
-          Map.keys m.files `shouldMatchList` ["src/Main.hs", "src/Lib.hs"]
+          Map.keys (m ^. #files) `shouldMatchList` ["src/Main.hs", "src/Lib.hs"]
         Left err -> expectationFailure ("expected Right, got: " <> show err)
-      Map.keys fs'.files `shouldMatchList` ["src/Main.hs", "src/Lib.hs"]
+      Map.keys (fs' ^. #files) `shouldMatchList` ["src/Main.hs", "src/Lib.hs"]
 
     it "is a no-op for a delete-file whose target is already gone" $ do
       let manifest = mkManifest [("Setup.hs", "boring")]
@@ -238,9 +240,9 @@ spec = do
           plan = runClassify fs manifest c
           (result, fs') = runExecute fs manifest plan False
       case result of
-        Right m -> Map.member "Setup.hs" m.files `shouldBe` False
+        Right m -> Map.member "Setup.hs" (m ^. #files) `shouldBe` False
         Left err -> expectationFailure ("expected Right, got: " <> show err)
-      Map.null fs'.files `shouldBe` True
+      Map.null (fs' ^. #files) `shouldBe` True
 
     it "deletes a directory and drops every manifest entry under it" $ do
       let manifest =
@@ -259,9 +261,9 @@ spec = do
           plan = runClassify fs manifest c
           (result, fs') = runExecute fs manifest plan False
       case result of
-        Right m -> Map.keys m.files `shouldBe` ["keep.hs"]
+        Right m -> Map.keys (m ^. #files) `shouldBe` ["keep.hs"]
         Left err -> expectationFailure ("expected Right, got: " <> show err)
-      Map.keys fs'.files `shouldBe` ["keep.hs"]
+      Map.keys (fs' ^. #files) `shouldBe` ["keep.hs"]
 
     it "applies a chain of two migrations in declaration order" $ do
       -- 1.0.0 → 2.0.0: move app → src
@@ -282,7 +284,7 @@ spec = do
           (result, fs') = runExecute fs manifest plan False
       case result of
         Right m -> do
-          Map.null m.files `shouldBe` True
-          (head m.modules).moduleVersion `shouldBe` Just "3.0.0"
+          Map.null (m ^. #files) `shouldBe` True
+          ((head (m ^. #modules)) ^. #moduleVersion) `shouldBe` Just "3.0.0"
         Left err -> expectationFailure ("expected Right, got: " <> show err)
-      Map.null fs'.files `shouldBe` True
+      Map.null (fs' ^. #files) `shouldBe` True

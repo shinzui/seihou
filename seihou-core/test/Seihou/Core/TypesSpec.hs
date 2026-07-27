@@ -1,5 +1,7 @@
 module Seihou.Core.TypesSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Seihou.Core.Types
 import Test.Hspec
 import Test.Tasty
@@ -13,7 +15,7 @@ spec = do
   describe "ModuleName" $ do
     it "supports OverloadedStrings" $ do
       let name = "my-module" :: ModuleName
-      name.unModuleName `shouldBe` "my-module"
+      (name ^. #unModuleName) `shouldBe` "my-module"
 
     it "supports Eq" $ do
       ("a" :: ModuleName) `shouldBe` ("a" :: ModuleName)
@@ -25,7 +27,7 @@ spec = do
   describe "VarName" $ do
     it "supports OverloadedStrings" $ do
       let name = "project.name" :: VarName
-      name.unVarName `shouldBe` "project.name"
+      (name ^. #unVarName) `shouldBe` "project.name"
 
   describe "VarType" $ do
     it "has five distinct constructors" $ do
@@ -58,7 +60,7 @@ spec = do
                 required = True,
                 validation = Just (ValPattern "[a-z][a-z0-9-]*")
               }
-      decl.required `shouldBe` True
+      (decl ^. #required) `shouldBe` True
 
   describe "Strategy" $ do
     it "has four distinct constructors" $ do
@@ -82,7 +84,7 @@ spec = do
                 removal = Nothing,
                 migrations = []
               }
-      m.name `shouldBe` "haskell-base"
+      (m ^. #name) `shouldBe` "haskell-base"
 
     it "supports Eq for identical values" $ do
       let m =
@@ -120,20 +122,20 @@ spec = do
 
   describe "Operation" $ do
     it "supports WriteFileOp" $ do
-      let op = WriteFileOp {dest = "README.md", content = "# Hello", strategy = Template}
-      op.dest `shouldBe` "README.md"
+      let WriteFileOp {dest} = WriteFileOp {dest = "README.md", content = "# Hello", strategy = Template}
+      dest `shouldBe` "README.md"
 
     it "supports CreateDirOp" $ do
-      let op = CreateDirOp {path = "src"}
-      op.path `shouldBe` "src"
+      let CreateDirOp {path} = CreateDirOp {path = "src"}
+      path `shouldBe` "src"
 
     it "supports CopyFileOp" $ do
-      let op = CopyFileOp {src = "a.txt", dest = "b.txt"}
-      op.src `shouldBe` "a.txt"
+      let CopyFileOp {src} = CopyFileOp {src = "a.txt", dest = "b.txt"}
+      src `shouldBe` "a.txt"
 
     it "supports RunCommandOp" $ do
-      let op = RunCommandOp {command = "git init", workDir = Nothing, moduleName = "test", occurrence = 0}
-      op.command `shouldBe` "git init"
+      let RunCommandOp {command} = RunCommandOp {command = "git init", workDir = Nothing, moduleName = "test", occurrence = 0}
+      command `shouldBe` "git init"
 
   describe "Expr" $ do
     it "supports ExprIsSet" $ do
@@ -150,4 +152,4 @@ spec = do
     it "has a version field" $ do
       -- Verify the Manifest type is a record with expected fields
       let hash = SHA256 "abc"
-      hash.unSHA256 `shouldBe` "abc"
+      (hash ^. #unSHA256) `shouldBe` "abc"

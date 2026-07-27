@@ -1,5 +1,7 @@
 module Seihou.Interaction.ConfirmSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Effectful
 import Seihou.Composition.Instance (primaryInstance)
@@ -68,9 +70,9 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure [] $
-            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
+            confirmDefaults [(primaryInstance (m ^. #name), m, "/fake/base")] resolved
       result `shouldBe` resolved
-      st.outputs `shouldSatisfy` all (/= "Confirm default values:")
+      (st ^. #outputs) `shouldSatisfy` all (/= "Confirm default values:")
 
     it "prompts for FromDefault variables and accepts Enter as keeping the default" $ do
       let decl = mkTextVar "project.version" (Just (VText "0.1.0.0"))
@@ -82,12 +84,12 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePure [""] $
-            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
+            confirmDefaults [(primaryInstance (m ^. #name), m, "/fake/base")] resolved
       let rv = (result Map.! primaryInstance "base") Map.! "project.version"
-      rv.value `shouldBe` VText "0.1.0.0"
-      rv.source `shouldBe` FromDefault
-      st.outputs `shouldSatisfy` any (== "Confirm default values:")
-      st.outputs `shouldSatisfy` any (== "project.version [0.1.0.0]:")
+      (rv ^. #value) `shouldBe` VText "0.1.0.0"
+      (rv ^. #source) `shouldBe` FromDefault
+      (st ^. #outputs) `shouldSatisfy` any (== "Confirm default values:")
+      (st ^. #outputs) `shouldSatisfy` any (== "project.version [0.1.0.0]:")
 
     it "replaces the value and marks source as FromPrompt when user types a new value" $ do
       let decl = mkTextVar "project.version" (Just (VText "0.1.0.0"))
@@ -99,10 +101,10 @@ spec = do
       (result, _st) <-
         runEff $
           runConsolePure ["1.0.0"] $
-            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
+            confirmDefaults [(primaryInstance (m ^. #name), m, "/fake/base")] resolved
       let rv = (result Map.! primaryInstance "base") Map.! "project.version"
-      rv.value `shouldBe` VText "1.0.0"
-      rv.source `shouldBe` FromPrompt
+      (rv ^. #value) `shouldBe` VText "1.0.0"
+      (rv ^. #source) `shouldBe` FromPrompt
 
     it "retries on invalid input and keeps the default on final failure" $ do
       let decl = mkIntVar "retry.count" (Just (VInt 42))
@@ -114,10 +116,10 @@ spec = do
       (result, _st) <-
         runEff $
           runConsolePure ["not-an-int", "still-bad", "nope"] $
-            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
+            confirmDefaults [(primaryInstance (m ^. #name), m, "/fake/base")] resolved
       let rv = (result Map.! primaryInstance "base") Map.! "retry.count"
-      rv.value `shouldBe` VInt 42
-      rv.source `shouldBe` FromDefault
+      (rv ^. #value) `shouldBe` VInt 42
+      (rv ^. #source) `shouldBe` FromDefault
 
     it "prompts for FromParent variables" $ do
       let decl = mkTextVar "skill.name" (Just (VText "exec-plan"))
@@ -132,10 +134,10 @@ spec = do
       (result, _st) <-
         runEff $
           runConsolePure ["override"] $
-            confirmDefaults [(primaryInstance m.name, m, "/fake/child")] resolved
+            confirmDefaults [(primaryInstance (m ^. #name), m, "/fake/child")] resolved
       let rv = (result Map.! primaryInstance "child") Map.! "skill.name"
-      rv.value `shouldBe` VText "override"
-      rv.source `shouldBe` FromPrompt
+      (rv ^. #value) `shouldBe` VText "override"
+      (rv ^. #source) `shouldBe` FromPrompt
 
     it "is a no-op in non-interactive mode" $ do
       let decl = mkTextVar "project.version" (Just (VText "0.1.0.0"))
@@ -147,9 +149,9 @@ spec = do
       (result, st) <-
         runEff $
           runConsolePureNonInteractive $
-            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
+            confirmDefaults [(primaryInstance (m ^. #name), m, "/fake/base")] resolved
       result `shouldBe` resolved
-      st.outputs `shouldBe` []
+      (st ^. #outputs) `shouldBe` []
 
     it "uses authored Prompt text when available" $ do
       let decl = mkTextVar "license" (Just (VText "MIT"))
@@ -168,5 +170,5 @@ spec = do
       (_result, st) <-
         runEff $
           runConsolePure [""] $
-            confirmDefaults [(primaryInstance m.name, m, "/fake/base")] resolved
-      st.outputs `shouldSatisfy` any (== "Choose a license [MIT]:")
+            confirmDefaults [(primaryInstance (m ^. #name), m, "/fake/base")] resolved
+      (st ^. #outputs) `shouldSatisfy` any (== "Choose a license [MIT]:")

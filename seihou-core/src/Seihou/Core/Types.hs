@@ -67,6 +67,8 @@ module Seihou.Core.Types
   )
 where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
 import Data.Set (Set)
 import Data.String (IsString)
@@ -202,7 +204,7 @@ simpleDep name = Dependency {module_ = name, vars = mempty}
 
 -- | Extract module names from a list of dependencies.
 depModuleNames :: [Dependency] -> [ModuleName]
-depModuleNames = map (.module_)
+depModuleNames = map (^. #module_)
 
 -- | The variable bindings supplied by a dependent module along a specific
 -- dependency edge. This is the "edge decoration" — the identity of a
@@ -223,7 +225,7 @@ emptyParentVars = ParentVars mempty
 
 -- | Build 'ParentVars' from a 'Dependency' record's @vars@ field.
 parentVarsFromDep :: Dependency -> ParentVars
-parentVarsFromDep dep = ParentVars dep.vars
+parentVarsFromDep dep = ParentVars (dep ^. #vars)
 
 -- | The type of removal action for a removal step.
 data RemovalAction

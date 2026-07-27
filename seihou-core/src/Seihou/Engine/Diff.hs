@@ -4,6 +4,7 @@ module Seihou.Engine.Diff
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
 import Data.Set qualified as Set
@@ -38,9 +39,9 @@ computeDiff ::
   [(FilePath, Text, ModuleName, Maybe PatchOp)] ->
   Eff es DiffResult
 computeDiff manifest activeModules planned = do
-  let manifestFiles' = manifest.files
+  let manifestFiles' = (manifest ^. #files)
       activeManifestFiles =
-        Map.filter (\r -> r.moduleName `Set.member` activeModules) manifestFiles'
+        Map.filter (\r -> (r ^. #moduleName) `Set.member` activeModules) manifestFiles'
       planMap = Map.fromList [(p, (content, modName, patchOp)) | (p, content, modName, patchOp) <- planned]
       allPaths =
         Set.toList $
@@ -112,7 +113,7 @@ classifyFile manifestFiles' planMap path = do
     (Just record, Just (content, modName, _), True) -> do
       diskContent <- readFileText path
       let diskHash = hashContent diskContent
-          manifestHash = record.hash
+          manifestHash = (record ^. #hash)
           planHash = hashContent content
       if diskHash /= manifestHash
         then
@@ -159,16 +160,16 @@ classifyFile manifestFiles' planMap path = do
           ( ModifiedFile
               { path = path,
                 moduleName = modName,
-                oldHash = record.hash,
+                oldHash = record ^. #hash,
                 newContent = content
               }
           )
     -- In manifest, not in plan, on disk → Orphaned
     (Just record, Nothing, True) ->
-      pure $ ClassOrphaned (OrphanedFile {path = path, moduleName = record.moduleName})
+      pure $ ClassOrphaned (OrphanedFile {path = path, moduleName = record ^. #moduleName})
     -- In manifest, not in plan, not on disk → Orphaned (already deleted)
     (Just record, Nothing, False) ->
-      pure $ ClassOrphaned (OrphanedFile {path = path, moduleName = record.moduleName})
+      pure $ ClassOrphaned (OrphanedFile {path = path, moduleName = record ^. #moduleName})
     -- Not in manifest, not in plan → shouldn't happen (we only iterate known paths)
     (Nothing, Nothing, _) ->
       pure $ ClassUnchanged path -- unreachable in practice

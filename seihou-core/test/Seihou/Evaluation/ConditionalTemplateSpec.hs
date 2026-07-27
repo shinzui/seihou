@@ -1,5 +1,7 @@
 module Seihou.Evaluation.ConditionalTemplateSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text.IO qualified as TIO
@@ -59,12 +61,12 @@ spec = do
       case planResult of
         Left errs -> expectationFailure ("compilePlan failed: " <> show errs)
         Right ops -> do
-          let writeOps = [op | op@WriteFileOp {} <- ops]
+          let writeOps = [(dest, content) | WriteFileOp {dest, content} <- ops]
           writeOps `shouldSatisfy` (\xs -> length xs == 1)
-          let op = writeOps !! 0
-          op.dest `shouldBe` "flake.nix"
+          let (dest, content) = writeOps !! 0
+          dest `shouldBe` "flake.nix"
           expected <- splitFlakeBaseline "flake.nix.tpl" vars
-          op.content `shouldBe` expected
+          content `shouldBe` expected
 
     it "with nix.postgresql = true, emits bytes identical to the postgres split-flake baseline" $ do
       base <- fixtureDir
@@ -74,9 +76,9 @@ spec = do
       case planResult of
         Left errs -> expectationFailure ("compilePlan failed: " <> show errs)
         Right ops -> do
-          let writeOps = [op | op@WriteFileOp {} <- ops]
+          let writeOps = [(dest, content) | WriteFileOp {dest, content} <- ops]
           writeOps `shouldSatisfy` (\xs -> length xs == 1)
-          let op = writeOps !! 0
-          op.dest `shouldBe` "flake.nix"
+          let (dest, content) = writeOps !! 0
+          dest `shouldBe` "flake.nix"
           expected <- splitFlakeBaseline "flake-with-postgres.nix.tpl" vars
-          op.content `shouldBe` expected
+          content `shouldBe` expected

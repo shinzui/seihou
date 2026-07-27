@@ -4,6 +4,7 @@ module Seihou.Interaction.Prompt
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Expr (evalExpr)
@@ -32,12 +33,12 @@ runPrompts ::
 runPrompts prompts unresolvedDecls currentBindings =
   go prompts Map.empty
   where
-    declMap = Map.fromList [(d.name, d) | d <- unresolvedDecls]
+    declMap = Map.fromList [(d ^. #name, d) | d <- unresolvedDecls]
 
     go :: (Console :> es) => [Prompt] -> Map VarName ResolvedVar -> Eff es (Map VarName ResolvedVar)
     go [] acc = pure acc
     go (p : ps) acc = do
-      let vn = p.var
+      let vn = (p ^. #var)
       -- Skip if variable is not in the unresolved set
       case Map.lookup vn declMap of
         Nothing -> go ps acc
@@ -47,7 +48,7 @@ runPrompts prompts unresolvedDecls currentBindings =
             then go ps acc
             else do
               -- Evaluate when condition
-              let allBindings = Map.union (Map.map (.value) acc) currentBindings
+              let allBindings = Map.union (Map.map (^. #value) acc) currentBindings
               if shouldPrompt p allBindings
                 then do
                   result <- promptForVar p decl allBindings
@@ -59,7 +60,7 @@ runPrompts prompts unresolvedDecls currentBindings =
 -- | Check if a prompt should be displayed based on its @when@ condition.
 shouldPrompt :: Prompt -> Map VarName VarValue -> Bool
 shouldPrompt p bindings =
-  case p.condition of
+  case p ^. #condition of
     Nothing -> True
     Just expr -> evalExpr bindings expr
 
@@ -73,7 +74,7 @@ promptForVar ::
   Map VarName VarValue ->
   Eff es (Either VarError ResolvedVar)
 promptForVar prompt decl _bindings =
-  case prompt.choices of
+  case prompt ^. #choices of
     Just choices -> promptWithChoices prompt decl choices
     Nothing -> promptFreeText prompt decl 3
 
@@ -92,7 +93,7 @@ promptFreeText prompt decl retriesLeft = do
   putText (formatPromptText prompt decl)
   raw <- getLine
   if T.null (T.strip raw)
-    then case decl.default_ of
+    then case decl ^. #default_ of
       Just defVal ->
         -- Accept the default value
         pure
@@ -104,14 +105,14 @@ promptFreeText prompt decl retriesLeft = do
                 }
           )
       Nothing
-        | not decl.required ->
+        | not (decl ^. #required) ->
             -- Optional variable with no default — skip
-            pure (Left (MissingRequiredVar decl.name))
+            pure (Left (MissingRequiredVar (decl ^. #name)))
         | retriesLeft > 1 -> do
             putText "Value cannot be empty. Please try again."
             promptFreeText prompt decl (retriesLeft - 1)
         | otherwise ->
-            pure (Left (MissingRequiredVar decl.name))
+            pure (Left (MissingRequiredVar (decl ^. #name)))
     else case coerceAndValidate decl raw of
       Left err ->
         if retriesLeft > 1
@@ -129,7 +130,7 @@ promptWithChoices ::
   [Text] ->
   Eff es (Either VarError ResolvedVar)
 promptWithChoices prompt decl choices = do
-  putText prompt.text
+  putText (prompt ^. #text)
   mapM_ (\(i, c) -> putText ("  " <> T.pack (show i) <> ") " <> c)) (zip [1 :: Int ..] choices)
   putText "Enter selection number:"
   raw <- getLine
@@ -151,12 +152,12 @@ promptWithChoices prompt decl choices = do
                in case coerceAndValidate decl chosen of
                     Left err -> pure (Left err)
                     Right rv -> pure (Right rv)
-        _ -> pure (Left (MissingRequiredVar decl.name))
+        _ -> pure (Left (MissingRequiredVar (decl ^. #name)))
 
 -- | Coerce raw text to the variable's type and validate.
 coerceAndValidate :: VarDecl -> Text -> Either VarError ResolvedVar
 coerceAndValidate decl raw = do
-  val <- coerceValue decl.name decl.type_ raw
+  val <- coerceValue (decl ^. #name) (decl ^. #type_) raw
   validateVarValue decl val
   pure
     ResolvedVar
@@ -185,11 +186,11 @@ showType (VTChoice _) = "choice"
 -- For optional variables without a default, appends @[skip]@.
 formatPromptText :: Prompt -> VarDecl -> Text
 formatPromptText prompt decl =
-  case decl.default_ of
-    Just defVal -> prompt.text <> " [" <> showDefaultValue defVal <> "]:"
+  case decl ^. #default_ of
+    Just defVal -> prompt ^. #text <> " [" <> showDefaultValue defVal <> "]:"
     Nothing
-      | not decl.required -> prompt.text <> " [skip]:"
-      | otherwise -> prompt.text
+      | not (decl ^. #required) -> prompt ^. #text <> " [skip]:"
+      | otherwise -> (prompt ^. #text)
 
 -- | Render a VarValue for display in a prompt's default hint.
 showDefaultValue :: VarValue -> Text

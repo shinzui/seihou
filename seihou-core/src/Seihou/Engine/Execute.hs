@@ -4,6 +4,7 @@ module Seihou.Engine.Execute
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Time (UTCTime)
@@ -113,7 +114,7 @@ dryRunPlan ops =
     formatOp (CopyFileOp src dest) = "  copy  " <> T.pack src <> " -> " <> T.pack dest
     formatOp RunCommandOp {command = cmd} = "  run   " <> cmd
     formatOp (PatchFileOp dest _ patchOp' _ modName) =
-      "  patch " <> T.pack dest <> " (" <> formatPatchOp patchOp' <> " from " <> modName.unModuleName <> ")"
+      "  patch " <> T.pack dest <> " (" <> formatPatchOp patchOp' <> " from " <> modName ^. #unModuleName <> ")"
     formatPatchOp AppendFile = "append-file"
     formatPatchOp PrependFile = "prepend-file"
     formatPatchOp AppendSection = "append-section"

@@ -78,7 +78,8 @@ This section must always reflect the actual current state of the work.
 - [x] M2 — Add `!` strictness annotations to every record field in the three `test/` trees (2026-07-27)
 - [x] M2 — Fill in the four record literals that omitted a now-strict field (2026-07-27)
 - [x] M2 — Add `import GHC.Generics (Generic)` to the 7 modules that skip the prelude (2026-07-27)
-- [ ] M3 — Remove per-type field name prefixes from the affected record types
+- [x] M3 — Remove per-type field name prefixes from the affected record types (2026-07-27) — 70 types, 306 fields, not the ~24 the plan estimated
+- [x] M3 — Convert the 11 record updates that unprefixing broke (2026-07-27) — pulled forward from M6 by compile failure
 - [ ] M4 — Convert field reads in `seihou-core` (`src/` and `test/`) to `^. #field`
 - [ ] M5 — Convert field reads in `seihou-cli` and `seihou-okf-extension` to `^. #field`
 - [ ] M6 — Convert the 47 `src` and 61 `test` record-update sites to lens setters
@@ -264,6 +265,73 @@ Four test fixtures were building `Blueprint` and `AgentPrompt` values with a bot
 in `launch` or `guidance` — harmless only for as long as no test demanded those fields. They
 now pass `Nothing` and `[]` explicitly. No production code was affected, and no test changed
 behavior: all 1,471 tests pass with identical counts.
+
+### Field prefixes were three times as widespread as the plan estimated
+
+The plan said "about two dozen record types carry field prefixes" and listed fifteen by
+name. A systematic scan — longest common leading camel-word run across every field of a
+record — found **70 types and 306 fields**. The plan's list missed the entire
+`Seihou.CLI.Commands` options family (`RunOpts`, `UpdateOpts`, `BlueprintRunOpts`,
+`BlueprintMigrationOpts`, `PromptRunOpts` and fourteen more, 100+ fields between them), all
+of `Seihou.CLI.AgentConfig`, and both `Seihou.CLI.BlueprintExecution` records.
+
+Nothing about the work changed, only its size. Six unprefixed names collide with Haskell
+keywords and take a trailing underscore (`module_`), matching the existing `type_` and
+`default_` in `Seihou.Core.Types.VarDecl`.
+
+### The rename had to be scoped by declaring package
+
+A naive global identifier rename would have been wrong. Two old field names are also
+*helper function* names elsewhere in the repository: `refName` is a field of
+`Seihou.OKF.Docs.Model.ModuleRef` and also a top-level helper in
+`seihou-core/test/Seihou/Effect/BaselineStoreSpec.hs`; `runDiff` is a field of
+`Seihou.CLI.Commands.RunOpts` and also a top-level helper in
+`seihou-core/test/Seihou/Engine/DiffSpec.hs`.
+
+Scoping fixes it: a type declared in `seihou-core` has its fields renamed across all three
+packages, because both other packages depend on it; a type declared in `seihou-cli` or
+`seihou-okf-extension` is renamed only within its own package, because nothing else can see
+it. Under that rule the collision count is zero.
+
+### Renames are wire-format-safe, because nothing derives its serialization
+
+Renaming a Haskell record field is only safe if no serializer reads the field name. Checked
+before touching anything: the repository has **zero** generic-derived `ToJSON`, `FromJSON`,
+`FromDhall` or `ToDhall` instances — no `deriving anyclass`, no `genericToJSON`, no
+`Dhall.auto`. All 42 JSON instances are hand-written against explicit string keys, and all
+Dhall decoding goes through positional `field "name" decoder` applicative chains. The
+manifest and every other on-disk format is therefore unaffected by the entire milestone.
+The repository also uses neither `NamedFieldPuns` nor `RecordWildCards`, so there are no
+pun sites to update.
+
+### Unprefixing immediately broke eleven record updates — as designed
+
+The house style's argument for preferring lens setters over record update syntax is not
+aesthetic: under `DuplicateRecordFields`, GHC accepts a record update only when at most one
+datatype in scope has *every* field being updated. Removing prefixes made `steps`,
+`module_`, and `to` shared across types, and eleven update sites stopped compiling
+instantly:
+
+```text
+test/Seihou/Core/ModuleSpec.hs:179:15: error: [GHC-99339]
+    • Ambiguous record update with field ‘steps’
+      This field appears in both datatypes ‘Module’ and ‘Removal’
+```
+
+The plan sequenced prefix removal (M3) before update conversion (M6), which cannot work for
+these eleven sites — they had to move to `& #field .~` in the same commit. This is worth
+recording because it means the two rules are not independent: "no prefixes" *forces* "no
+record update syntax", it does not merely recommend it.
+
+### `newtype` unwrappers keep their `un` prefix
+
+Nine `newtype` declarations use the standard Haskell unwrapper convention — `unModuleName`,
+`unVarName`, `unSHA256` and so on. Read literally, the no-prefix rule would rename these,
+but they were left alone: the rule exists because `DuplicateRecordFields` makes
+disambiguating prefixes unnecessary, and a single-field `newtype` has nothing to
+disambiguate. `unSHA256` also has no better name — `value` or `get` would say less. The
+Milestone 8 check does not look for prefixes at all (a descriptive field name and a prefixed
+one are not distinguishable by text matching), so nothing enforces either reading.
 
 ### Compile time is not measurably worse
 

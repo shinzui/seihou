@@ -1,6 +1,6 @@
 module Seihou.Core.ModuleSpec (tests) where
 
-import Control.Lens ((&), (.~))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Module (discoverModule, loadModule, validateModule)
@@ -51,13 +51,13 @@ goodModule =
 
 -- | Helpers to update Module fields without ambiguous record updates.
 withModuleName :: ModuleName -> Module -> Module
-withModuleName n m = Module n m.version m.description m.vars m.exports m.prompts m.steps m.commands m.dependencies m.removal m.migrations
+withModuleName n m = Module n (m ^. #version) (m ^. #description) (m ^. #vars) (m ^. #exports) (m ^. #prompts) (m ^. #steps) (m ^. #commands) (m ^. #dependencies) (m ^. #removal) (m ^. #migrations)
 
 withModuleVars :: [VarDecl] -> Module -> Module
-withModuleVars v m = Module m.name m.version m.description v m.exports m.prompts m.steps m.commands m.dependencies m.removal m.migrations
+withModuleVars v m = Module (m ^. #name) (m ^. #version) (m ^. #description) v (m ^. #exports) (m ^. #prompts) (m ^. #steps) (m ^. #commands) (m ^. #dependencies) (m ^. #removal) (m ^. #migrations)
 
 withModulePrompts :: [Prompt] -> Module -> Module
-withModulePrompts p m = Module m.name m.version m.description m.vars m.exports p m.steps m.commands m.dependencies m.removal m.migrations
+withModulePrompts p m = Module (m ^. #name) (m ^. #version) (m ^. #description) (m ^. #vars) (m ^. #exports) p (m ^. #steps) (m ^. #commands) (m ^. #dependencies) (m ^. #removal) (m ^. #migrations)
 
 hasError :: T.Text -> [T.Text] -> Bool
 hasError needle = any (T.isInfixOf needle)
@@ -77,7 +77,7 @@ spec = do
       result <- discoverModule ["/nonexistent/path"] "no-such-module"
       case result of
         Left (ModuleNotFound name paths) -> do
-          name.unModuleName `shouldBe` "no-such-module"
+          (name ^. #unModuleName) `shouldBe` "no-such-module"
           paths `shouldBe` ["/nonexistent/path"]
         Left other -> expectationFailure ("Expected ModuleNotFound, got: " <> show other)
         Right _ -> expectationFailure "Expected Left, got Right"
@@ -102,7 +102,7 @@ spec = do
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         result <- validateModule tmpDir goodModule
         case result of
-          Right m -> m.name `shouldBe` "test-module"
+          Right m -> (m ^. #name) `shouldBe` "test-module"
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
     it "rejects a bad module name" $ do
@@ -213,7 +213,7 @@ spec = do
                   .~ [Step Template "README.md.tpl" "docs/README.v2.md" Nothing Nothing]
         result <- validateModule tmpDir dotted
         case result of
-          Right m -> m.name `shouldBe` "test-module"
+          Right m -> (m ^. #name) `shouldBe` "test-module"
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
     it "rejects destination referencing undeclared variable" $ do
@@ -261,9 +261,9 @@ spec = do
       result <- loadModule searchPaths "haskell-base"
       case result of
         Right m -> do
-          m.name `shouldBe` "haskell-base"
-          length (m.vars) `shouldBe` 3
-          length (m.steps) `shouldBe` 5
+          (m ^. #name) `shouldBe` "haskell-base"
+          length (m ^. #vars) `shouldBe` 3
+          length (m ^. #steps) `shouldBe` 5
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
 
     it "returns ModuleNotFound for nonexistent module" $ do

@@ -8,6 +8,7 @@ module Seihou.Engine.Validate
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isNothing, mapMaybe)
 import Data.Set qualified as Set
@@ -104,14 +105,14 @@ buildReport lint baseDir m = do
 -- | Whether the report contains any errors (DiagError with non-empty details).
 reportHasErrors :: ValidateReport -> Bool
 reportHasErrors report =
-  not report.dhallOk
-    || any (\c -> c.severity == DiagError && not (null c.details)) report.checks
+  not (report ^. #dhallOk)
+    || any (\c -> c ^. #severity == DiagError && not (null (c ^. #details))) (report ^. #checks)
 
 -- | Render the report as plain text (no ANSI codes).
 renderReportPlain :: ValidateReport -> Text
 renderReportPlain report =
   T.unlines $
-    [ "Validating module at " <> T.pack report.path <> "...",
+    [ "Validating module at " <> T.pack (report ^. #path) <> "...",
       ""
     ]
       ++ dhallLine
@@ -120,46 +121,46 @@ renderReportPlain report =
       ++ [""]
       ++ [resultLine]
   where
-    m = report.module_
+    m = (report ^. #module_)
 
     dhallLine =
-      if report.dhallOk
+      if report ^. #dhallOk
         then ["  \x2713 module.dhall evaluates successfully"]
         else
           ["  \x2717 module.dhall failed to evaluate"]
-            ++ case report.dhallError of
+            ++ case report ^. #dhallError of
               Just errText -> ["      " <> errText]
               Nothing -> []
 
     summaryLines =
-      if report.dhallOk
+      if report ^. #dhallOk
         then
-          [ "  \x2713 Module name: " <> m.name.unModuleName,
-            "  \x2713 " <> T.pack (show (length m.vars)) <> " variables declared",
-            "  \x2713 " <> T.pack (show (length m.prompts)) <> " prompts defined",
-            "  \x2713 " <> T.pack (show (length m.steps)) <> " steps defined"
+          [ "  \x2713 Module name: " <> m ^. #name . #unModuleName,
+            "  \x2713 " <> T.pack (show (length (m ^. #vars))) <> " variables declared",
+            "  \x2713 " <> T.pack (show (length (m ^. #prompts))) <> " prompts defined",
+            "  \x2713 " <> T.pack (show (length (m ^. #steps))) <> " steps defined"
           ]
         else []
 
-    checkLines = concatMap renderCheck report.checks
+    checkLines = concatMap renderCheck (report ^. #checks)
 
     renderCheck c
-      | null c.details =
-          ["  \x2713 " <> c.label]
-      | c.severity == DiagWarning =
-          ("  \x26A0 " <> c.label) : map (\d -> "      " <> d) c.details
+      | null (c ^. #details) =
+          ["  \x2713 " <> c ^. #label]
+      | c ^. #severity == DiagWarning =
+          ("  \x26A0 " <> c ^. #label) : map (\d -> "      " <> d) (c ^. #details)
       | otherwise =
-          ("  \x2717 " <> c.label) : map (\d -> "      " <> d) c.details
+          ("  \x2717 " <> c ^. #label) : map (\d -> "      " <> d) (c ^. #details)
 
     errorCount =
       length
         [ ()
-        | c <- report.checks,
-          c.severity == DiagError,
-          not (null c.details)
+        | c <- report ^. #checks,
+          c ^. #severity == DiagError,
+          not (null (c ^. #details))
         ]
 
-    dhallFailed = not report.dhallOk
+    dhallFailed = not (report ^. #dhallOk)
 
     totalErrors = errorCount + (if dhallFailed then 1 else 0)
 
@@ -167,7 +168,7 @@ renderReportPlain report =
       | totalErrors > 0 =
           T.pack (show totalErrors) <> " error(s) found. Module is invalid."
       | otherwise =
-          "Module '" <> m.name.unModuleName <> "' is valid."
+          "Module '" <> m ^. #name . #unModuleName <> "' is valid."
 
 -- Lint checks
 
@@ -176,40 +177,40 @@ lintUnusedVars :: Module -> [Text]
 lintUnusedVars m =
   let destRefs =
         Set.fromList $
-          concatMap (extractPlaceholders . (.dest)) m.steps
+          concatMap (extractPlaceholders . (^. #dest)) (m ^. #steps)
       exportRefs =
         Set.fromList $
-          map (.var.unVarName) m.exports
+          map (^. #var . #unVarName) (m ^. #exports)
       promptRefs =
         Set.fromList $
-          map (.var.unVarName) m.prompts
+          map (^. #var . #unVarName) (m ^. #prompts)
       allRefs = Set.unions [destRefs, exportRefs, promptRefs]
    in mapMaybe
         ( \v ->
-            let name' = v.name.unVarName
+            let name' = (v ^. #name . #unVarName)
              in if Set.member name' allRefs
                   then Nothing
                   else Just ("variable '" <> name' <> "' is declared but never referenced")
         )
-        m.vars
+        (m ^. #vars)
 
 -- | Required variables that have no corresponding prompt.
 lintRequiredWithoutPrompt :: Module -> [Text]
 lintRequiredWithoutPrompt m =
-  let promptedVars = Set.fromList $ map (.var.unVarName) m.prompts
+  let promptedVars = Set.fromList $ map (^. #var . #unVarName) (m ^. #prompts)
    in mapMaybe
         ( \v ->
-            let name' = v.name.unVarName
-             in if v.required && not (Set.member name' promptedVars)
+            let name' = (v ^. #name . #unVarName)
+             in if v ^. #required && not (Set.member name' promptedVars)
                   then Just ("required variable '" <> name' <> "' has no prompt")
                   else Nothing
         )
-        m.vars
+        (m ^. #vars)
 
 -- | Steps that write to the same destination (excluding patch ops).
 lintDuplicateDestinations :: Module -> [Text]
 lintDuplicateDestinations m =
-  let nonPatchDests = [s.dest | s <- m.steps, isNothing s.patch]
+  let nonPatchDests = [s ^. #dest | s <- m ^. #steps, isNothing (s ^. #patch)]
       dupes = findDuplicates Set.empty Set.empty nonPatchDests
    in map (\d -> "multiple steps write to '" <> d <> "'") dupes
 
@@ -224,22 +225,22 @@ findDuplicates seen reported (x : xs)
 lintEmptyChoices :: Module -> [Text]
 lintEmptyChoices m =
   mapMaybe
-    ( \v -> case v.type_ of
-        VTChoice [] -> Just ("variable '" <> v.name.unVarName <> "' has an empty choice list")
+    ( \v -> case v ^. #type_ of
+        VTChoice [] -> Just ("variable '" <> v ^. #name . #unVarName <> "' has an empty choice list")
         _ -> Nothing
     )
-    m.vars
+    (m ^. #vars)
 
 -- | Variables without a description.
 lintMissingDescriptions :: Module -> [Text]
 lintMissingDescriptions m =
   mapMaybe
     ( \v ->
-        if isNothing v.description
-          then Just ("variable '" <> v.name.unVarName <> "' has no description")
+        if isNothing (v ^. #description)
+          then Just ("variable '" <> v ^. #name . #unVarName <> "' has no description")
           else Nothing
     )
-    m.vars
+    (m ^. #vars)
 
 -- Conditional-expression lint (when clauses + template {{#if}} conditionals)
 
@@ -261,15 +262,15 @@ data CondFinding
 lintConditionals :: FilePath -> Module -> IO ([Text], [Text])
 lintConditionals baseDir m = do
   templateExprs <- collectTemplateExprs baseDir m
-  let declaredTypes = Map.fromList [(d.name, d.type_) | d <- m.vars]
+  let declaredTypes = Map.fromList [(d ^. #name, d ^. #type_) | d <- m ^. #vars]
       stepExprs =
-        [("step '" <> s.dest <> "' when clause", c) | s <- m.steps, Just c <- [s.condition]]
+        [("step '" <> s ^. #dest <> "' when clause", c) | s <- m ^. #steps, Just c <- [s ^. #condition]]
       commandExprs =
-        [("command when clause", c) | c0 <- m.commands, Just c <- [c0.condition]]
+        [("command when clause", c) | c0 <- m ^. #commands, Just c <- [c0 ^. #condition]]
       promptExprs =
-        [ ("prompt for '" <> p.var.unVarName <> "' when clause", c)
-        | p <- m.prompts,
-          Just c <- [p.condition]
+        [ ("prompt for '" <> p ^. #var . #unVarName <> "' when clause", c)
+        | p <- m ^. #prompts,
+          Just c <- [p ^. #condition]
         ]
       allExprs = stepExprs ++ commandExprs ++ promptExprs ++ templateExprs
       findings = concatMap (uncurry (lintExpr declaredTypes)) allExprs
@@ -287,20 +288,20 @@ collectTemplateExprs :: FilePath -> Module -> IO [(Text, Expr)]
 collectTemplateExprs baseDir m =
   concat <$> mapM readStep textBearingSteps
   where
-    textBearingSteps = filter (isTextBearing . (.strategy)) m.steps
+    textBearingSteps = filter (isTextBearing . (^. #strategy)) (m ^. #steps)
 
     isTextBearing Template = True
     isTextBearing DhallText = True
     isTextBearing _ = False
 
     readStep s = do
-      let path = baseDir </> "files" </> s.src
+      let path = baseDir </> "files" </> (s ^. #src)
       exists <- doesFileExist path
       if not exists
         then pure []
         else do
           contents <- TIO.readFile path
-          let label = "template '" <> T.pack s.src <> "' {{#if}} condition"
+          let label = "template '" <> T.pack (s ^. #src) <> "' {{#if}} condition"
           pure [(label, expr) | raw <- extractIfExprs contents, Right expr <- [parseExpr raw]]
 
 -- | Lint a single expression from the given source against the declared types.
@@ -311,7 +312,7 @@ lintExpr declaredTypes srcLabel expr =
     checkRef (name, mLit) =
       case Map.lookup name declaredTypes of
         Nothing ->
-          [CondUndeclared (srcLabel <> " references undeclared variable: " <> name.unVarName)]
+          [CondUndeclared (srcLabel <> " references undeclared variable: " <> name ^. #unVarName)]
         Just ty -> case mLit of
           Just lit
             | not (literalMatchesType ty lit) ->
@@ -337,7 +338,7 @@ describeMismatch :: Text -> VarName -> VarType -> VarValue -> Text
 describeMismatch srcLabel name ty lit =
   srcLabel
     <> " compares variable '"
-    <> name.unVarName
+    <> name ^. #unVarName
     <> "' (declared type "
     <> renderVarType ty
     <> ") against "

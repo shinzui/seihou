@@ -1,5 +1,7 @@
 module Seihou.Engine.PreviewSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Types
@@ -39,30 +41,28 @@ spec = do
             ]
           result = buildPreview ops Nothing Map.empty
       length result `shouldBe` 3
-      (result !! 0).status `shouldBe` FsNew
-      (result !! 1).status `shouldBe` FsNew
-      (result !! 2).status `shouldBe` FsNew
+      [st | FilePreview {status = st} <- result] `shouldBe` [FsNew, FsNew, FsNew]
 
     it "classifies a new file as FsNew" $ do
       let ops = [WriteFileOp "README.md" "# Hello" Template]
           diff = emptyDiff {new = [PlannedFile "README.md" modName "# Hello"]}
           result = buildPreview ops (Just diff) Map.empty
       length result `shouldBe` 1
-      (head result).status `shouldBe` FsNew
+      [st | FilePreview {status = st} <- result] `shouldBe` [FsNew]
 
     it "classifies a modified file as FsModified" $ do
       let ops = [WriteFileOp "README.md" "# Updated" Template]
           diff = emptyDiff {modified = [ModifiedFile "README.md" modName (SHA256 "old") "# Updated"]}
           result = buildPreview ops (Just diff) Map.empty
       length result `shouldBe` 1
-      (head result).status `shouldBe` FsModified
+      [st | FilePreview {status = st} <- result] `shouldBe` [FsModified]
 
     it "classifies an unchanged file as FsUnchanged" $ do
       let ops = [WriteFileOp "README.md" "# Same" Template]
           diff = emptyDiff {unchanged = ["README.md"]}
           result = buildPreview ops (Just diff) Map.empty
       length result `shouldBe` 1
-      (head result).status `shouldBe` FsUnchanged
+      [st | FilePreview {status = st} <- result] `shouldBe` [FsUnchanged]
 
     it "classifies a conflicting file as FsConflict" $ do
       let ops = [WriteFileOp "README.md" "# New" Template]
@@ -80,7 +80,7 @@ spec = do
               }
           result = buildPreview ops (Just diff) Map.empty
       length result `shouldBe` 1
-      (head result).status `shouldBe` FsConflict
+      [st | FilePreview {status = st} <- result] `shouldBe` [FsConflict]
 
     it "classifies an orphaned file as FsOrphaned" $ do
       let ops = [WriteFileOp "other.txt" "content" Template]
@@ -174,7 +174,7 @@ spec = do
               WriteFileOp "d.txt" "" Structured
             ]
           result = buildPreview ops Nothing Map.empty
-      map (.annotation) (filter isFilePreview result)
+      [a | FilePreview {annotation = a} <- result]
         `shouldBe` ["copy", "template", "dhall-text", "structured"]
 
   describe "renderPreviewPlain" $ do

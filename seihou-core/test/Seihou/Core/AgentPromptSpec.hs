@@ -1,5 +1,7 @@
 module Seihou.Core.AgentPromptSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.List (isPrefixOf)
 import Data.Text qualified as T
 import Seihou.Core.AgentPrompt (checkAgentPromptLaunch, validateAgentPrompt)
@@ -34,35 +36,35 @@ goodAgentPrompt =
 
 withAgentPromptName :: ModuleName -> AgentPrompt -> AgentPrompt
 withAgentPromptName n p =
-  AgentPrompt n p.version p.description p.prompt p.vars p.prompts p.commandVars p.guidance p.files p.allowedTools p.tags p.launch
+  AgentPrompt n (p ^. #version) (p ^. #description) (p ^. #prompt) (p ^. #vars) (p ^. #prompts) (p ^. #commandVars) (p ^. #guidance) (p ^. #files) (p ^. #allowedTools) (p ^. #tags) (p ^. #launch)
 
 withAgentPromptPrompt :: T.Text -> AgentPrompt -> AgentPrompt
 withAgentPromptPrompt body p =
-  AgentPrompt p.name p.version p.description body p.vars p.prompts p.commandVars p.guidance p.files p.allowedTools p.tags p.launch
+  AgentPrompt (p ^. #name) (p ^. #version) (p ^. #description) body (p ^. #vars) (p ^. #prompts) (p ^. #commandVars) (p ^. #guidance) (p ^. #files) (p ^. #allowedTools) (p ^. #tags) (p ^. #launch)
 
 withAgentPromptVars :: [VarDecl] -> AgentPrompt -> AgentPrompt
 withAgentPromptVars vars p =
-  AgentPrompt p.name p.version p.description p.prompt vars p.prompts p.commandVars p.guidance p.files p.allowedTools p.tags p.launch
+  AgentPrompt (p ^. #name) (p ^. #version) (p ^. #description) (p ^. #prompt) vars (p ^. #prompts) (p ^. #commandVars) (p ^. #guidance) (p ^. #files) (p ^. #allowedTools) (p ^. #tags) (p ^. #launch)
 
 withAgentPromptPrompts :: [Prompt] -> AgentPrompt -> AgentPrompt
 withAgentPromptPrompts prompts p =
-  AgentPrompt p.name p.version p.description p.prompt p.vars prompts p.commandVars p.guidance p.files p.allowedTools p.tags p.launch
+  AgentPrompt (p ^. #name) (p ^. #version) (p ^. #description) (p ^. #prompt) (p ^. #vars) prompts (p ^. #commandVars) (p ^. #guidance) (p ^. #files) (p ^. #allowedTools) (p ^. #tags) (p ^. #launch)
 
 withAgentPromptCommandVars :: [CommandVar] -> AgentPrompt -> AgentPrompt
 withAgentPromptCommandVars commandVars p =
-  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts commandVars p.guidance p.files p.allowedTools p.tags p.launch
+  AgentPrompt (p ^. #name) (p ^. #version) (p ^. #description) (p ^. #prompt) (p ^. #vars) (p ^. #prompts) commandVars (p ^. #guidance) (p ^. #files) (p ^. #allowedTools) (p ^. #tags) (p ^. #launch)
 
 withAgentPromptGuidance :: [PromptGuidance] -> AgentPrompt -> AgentPrompt
 withAgentPromptGuidance guidance p =
-  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts p.commandVars guidance p.files p.allowedTools p.tags p.launch
+  AgentPrompt (p ^. #name) (p ^. #version) (p ^. #description) (p ^. #prompt) (p ^. #vars) (p ^. #prompts) (p ^. #commandVars) guidance (p ^. #files) (p ^. #allowedTools) (p ^. #tags) (p ^. #launch)
 
 withAgentPromptFiles :: [BlueprintFile] -> AgentPrompt -> AgentPrompt
 withAgentPromptFiles files p =
-  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts p.commandVars p.guidance files p.allowedTools p.tags p.launch
+  AgentPrompt (p ^. #name) (p ^. #version) (p ^. #description) (p ^. #prompt) (p ^. #vars) (p ^. #prompts) (p ^. #commandVars) (p ^. #guidance) files (p ^. #allowedTools) (p ^. #tags) (p ^. #launch)
 
 withAgentPromptLaunch :: Maybe AgentLaunch -> AgentPrompt -> AgentPrompt
 withAgentPromptLaunch launch p =
-  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts p.commandVars p.guidance p.files p.allowedTools p.tags launch
+  AgentPrompt (p ^. #name) (p ^. #version) (p ^. #description) (p ^. #prompt) (p ^. #vars) (p ^. #prompts) (p ^. #commandVars) (p ^. #guidance) (p ^. #files) (p ^. #allowedTools) (p ^. #tags) launch
 
 hasError :: T.Text -> [T.Text] -> Bool
 hasError needle = any (T.isInfixOf needle)
@@ -78,10 +80,10 @@ spec = do
         result <- evalAgentPromptFromFile (promptDir </> "prompt.dhall")
         case result of
           Right p -> do
-            p.name `shouldBe` "review-changes"
-            p.description `shouldBe` Just "Review local changes"
-            length p.commandVars `shouldBe` 1
-            p.guidance
+            (p ^. #name) `shouldBe` "review-changes"
+            (p ^. #description) `shouldBe` Just "Review local changes"
+            length (p ^. #commandVars) `shouldBe` 1
+            (p ^. #guidance)
               `shouldBe` [ PromptGuidance
                              "Repository workflow"
                              "Prefer focused validation commands."
@@ -90,7 +92,7 @@ spec = do
             -- This fixture's launch record predates the effort field, so it
             -- doubles as the regression test that effort is defaulted rather
             -- than required.
-            p.launch
+            (p ^. #launch)
               `shouldBe` Just
                 AgentLaunch
                   { provider = Just "codex-cli",
@@ -108,7 +110,7 @@ spec = do
         result <- evalAgentPromptFromFile (promptDir </> "prompt.dhall")
         case result of
           Right p ->
-            p.launch
+            (p ^. #launch)
               `shouldBe` Just
                 AgentLaunch
                   { provider = Just "claude-cli",
@@ -125,7 +127,7 @@ spec = do
         writeFile (promptDir </> "prompt.dhall") (samplePromptDhallWithoutGuidance "review-changes")
         result <- evalAgentPromptFromFile (promptDir </> "prompt.dhall")
         case result of
-          Right p -> p.guidance `shouldBe` []
+          Right p -> (p ^. #guidance) `shouldBe` []
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
   describe "validateAgentPrompt" $ do
@@ -133,7 +135,7 @@ spec = do
       withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
         result <- validateAgentPrompt tmpDir goodAgentPrompt
         case result of
-          Right p -> p.name `shouldBe` "review-changes"
+          Right p -> (p ^. #name) `shouldBe` "review-changes"
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
     it "rejects an invalid prompt name" $ do
@@ -205,7 +207,7 @@ spec = do
                 goodAgentPrompt
         result <- validateAgentPrompt tmpDir guided
         case result of
-          Right p -> length p.guidance `shouldBe` 2
+          Right p -> length (p ^. #guidance) `shouldBe` 2
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
     it "rejects guidance with blank titles or bodies" $ do
@@ -284,7 +286,7 @@ spec = do
         result <- discoverRunnable [tmpDir] "review-changes"
         case result of
           Right (RunnableAgentPrompt p dir) -> do
-            p.name `shouldBe` "review-changes"
+            (p ^. #name) `shouldBe` "review-changes"
             dir `shouldBe` promptDir
           other -> expectationFailure ("Expected RunnableAgentPrompt, got: " <> show other)
 

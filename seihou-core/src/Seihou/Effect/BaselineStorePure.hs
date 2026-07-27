@@ -3,6 +3,7 @@ module Seihou.Effect.BaselineStorePure
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -32,7 +33,7 @@ runBaselineStorePure initial = reinterpret (runState initial) handler
           Nothing -> Left (BaselineMissing ref)
           Just content ->
             let actual = hashContent content
-             in if actual == ref.unBaselineRef
+             in if actual == ref ^. #unBaselineRef
                   then Right content
                   else Left (BaselineCorrupt ref actual)
       PruneBaselines referenced -> do
@@ -40,7 +41,7 @@ runBaselineStorePure initial = reinterpret (runState initial) handler
         let removable =
               Map.keysSet $
                 Map.filterWithKey
-                  (\ref content -> Set.notMember ref referenced && hashContent content == ref.unBaselineRef)
+                  (\ref content -> Set.notMember ref referenced && hashContent content == ref ^. #unBaselineRef)
                   store
         modify @(Map BaselineRef Text) (`Map.withoutKeys` removable)
         pure (Set.toAscList removable)

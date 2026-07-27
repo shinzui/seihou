@@ -1,5 +1,7 @@
 module Seihou.Engine.RemoveSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text (Text)
@@ -141,7 +143,7 @@ spec = do
           result = runPlan fs manifest modName
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
-        Right plan -> plan.files `shouldBe` [RemovalSafe "README.md"]
+        Right plan -> (plan ^. #files) `shouldBe` [RemovalSafe "README.md"]
 
     it "classifies user-modified files as RemovalConflict" $ do
       let manifest = mkManifest True [("README.md", "original")]
@@ -149,14 +151,14 @@ spec = do
           result = runPlan fs manifest modName
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
-        Right plan -> plan.files `shouldBe` [RemovalConflict "README.md"]
+        Right plan -> (plan ^. #files) `shouldBe` [RemovalConflict "README.md"]
 
     it "classifies deleted files as RemovalGone" $ do
       let manifest = mkManifest True [("README.md", "hello")]
           result = runPlan emptyFS manifest modName
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
-        Right plan -> plan.files `shouldBe` [RemovalGone "README.md"]
+        Right plan -> (plan ^. #files) `shouldBe` [RemovalGone "README.md"]
 
     it "handles mix of safe, conflict, and gone files" $ do
       let manifest = mkManifest True [("a.txt", "aaa"), ("b.txt", "bbb"), ("c.txt", "ccc")]
@@ -165,10 +167,10 @@ spec = do
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
         Right plan -> do
-          length plan.files `shouldBe` 3
-          RemovalSafe "a.txt" `elem` plan.files `shouldBe` True
-          RemovalConflict "b.txt" `elem` plan.files `shouldBe` True
-          RemovalGone "c.txt" `elem` plan.files `shouldBe` True
+          length (plan ^. #files) `shouldBe` 3
+          RemovalSafe "a.txt" `elem` (plan ^. #files) `shouldBe` True
+          RemovalConflict "b.txt" `elem` (plan ^. #files) `shouldBe` True
+          RemovalGone "c.txt" `elem` (plan ^. #files) `shouldBe` True
 
   describe "executeRemoval" $ do
     it "deletes safe files from the filesystem" $ do
@@ -176,7 +178,7 @@ spec = do
           fs = mkFS [("README.md", "hello")]
           plan = RemovalPlan {targetModule = modName, files = [RemovalSafe "README.md"]}
           (_, finalFS) = runExec fs manifest plan Set.empty
-      Map.member "README.md" finalFS.files `shouldBe` False
+      Map.member "README.md" (finalFS ^. #files) `shouldBe` False
 
     it "preserves files in the keep-set" $ do
       let manifest = mkManifest True [("a.txt", "aaa")]
@@ -184,59 +186,59 @@ spec = do
           plan = RemovalPlan {targetModule = modName, files = [RemovalConflict "a.txt"]}
           keepSet = Set.singleton "a.txt"
           (_, finalFS) = runExec fs manifest plan keepSet
-      Map.member "a.txt" finalFS.files `shouldBe` True
+      Map.member "a.txt" (finalFS ^. #files) `shouldBe` True
 
     it "removes the module from manifest.modules" $ do
       let manifest = mkManifest True [("README.md", "hello")]
           fs = mkFS [("README.md", "hello")]
           plan = RemovalPlan {targetModule = modName, files = [RemovalSafe "README.md"]}
           (updated, _) = runExec fs manifest plan Set.empty
-      updated.modules `shouldBe` []
+      (updated ^. #modules) `shouldBe` []
 
     it "removes module's files from manifest.files" $ do
       let manifest = mkManifest True [("a.txt", "aaa"), ("b.txt", "bbb")]
           fs = mkFS [("a.txt", "aaa"), ("b.txt", "bbb")]
           plan = RemovalPlan {targetModule = modName, files = [RemovalSafe "a.txt", RemovalSafe "b.txt"]}
           (updated, _) = runExec fs manifest plan Set.empty
-      Map.null updated.files `shouldBe` True
+      Map.null (updated ^. #files) `shouldBe` True
 
     it "preserves files from other modules in manifest" $ do
       let base = mkManifest True [("mine.txt", "mine")]
           otherRec = FileRecord (hashContent "other") otherMod Template fixedTime Nothing mempty
           manifest =
             Manifest
-              { version = base.version,
-                genAt = base.genAt,
-                modules = base.modules,
-                vars = base.vars,
-                files = Map.insert "other.txt" otherRec base.files,
-                applications = base.applications,
-                recipe = base.recipe,
-                blueprint = base.blueprint,
-                blueprintMigrations = base.blueprintMigrations
+              { version = base ^. #version,
+                genAt = base ^. #genAt,
+                modules = base ^. #modules,
+                vars = base ^. #vars,
+                files = Map.insert "other.txt" otherRec (base ^. #files),
+                applications = base ^. #applications,
+                recipe = base ^. #recipe,
+                blueprint = base ^. #blueprint,
+                blueprintMigrations = base ^. #blueprintMigrations
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]
           plan = RemovalPlan {targetModule = modName, files = [RemovalSafe "mine.txt"]}
           (updated, _) = runExec fs manifest plan Set.empty
-      Map.member "other.txt" updated.files `shouldBe` True
-      Map.member "mine.txt" updated.files `shouldBe` False
+      Map.member "other.txt" (updated ^. #files) `shouldBe` True
+      Map.member "mine.txt" (updated ^. #files) `shouldBe` False
 
     it "updates genAt timestamp in manifest" $ do
       let manifest = mkManifest True [("a.txt", "aaa")]
           fs = mkFS [("a.txt", "aaa")]
           plan = RemovalPlan {targetModule = modName, files = [RemovalSafe "a.txt"]}
           (updated, _) = runExec fs manifest plan Set.empty
-      updated.genAt `shouldBe` removeTime
+      (updated ^. #genAt) `shouldBe` removeTime
 
     it "full round-trip: manifest returns to clean state after removal" $ do
       let manifest = mkManifest True [("a.txt", "aaa"), ("b.txt", "bbb")]
           fs = mkFS [("a.txt", "aaa"), ("b.txt", "bbb")]
           plan = RemovalPlan {targetModule = modName, files = [RemovalSafe "a.txt", RemovalSafe "b.txt"]}
           (updated, finalFS) = runExec fs manifest plan Set.empty
-      updated.modules `shouldBe` []
-      Map.null updated.files `shouldBe` True
-      Map.member "a.txt" finalFS.files `shouldBe` False
-      Map.member "b.txt" finalFS.files `shouldBe` False
+      (updated ^. #modules) `shouldBe` []
+      Map.null (updated ^. #files) `shouldBe` True
+      Map.member "a.txt" (finalFS ^. #files) `shouldBe` False
+      Map.member "b.txt" (finalFS ^. #files) `shouldBe` False
 
   describe "buildRemovalOps" $ do
     it "returns ModuleNotApplied when module is not in manifest" $ do
@@ -252,7 +254,7 @@ spec = do
           result = runBuildOps fs manifest modName removal
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
-        Right plan -> plan.ops `shouldBe` [DeleteFileOp "README.md" RFSafe]
+        Right plan -> (plan ^. #ops) `shouldBe` [DeleteFileOp "README.md" RFSafe]
 
     it "builds DeleteFileOp with RFConflict for modified files" $ do
       let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing] []
@@ -261,7 +263,7 @@ spec = do
           result = runBuildOps fs manifest modName removal
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
-        Right plan -> plan.ops `shouldBe` [DeleteFileOp "README.md" RFConflict]
+        Right plan -> (plan ^. #ops) `shouldBe` [DeleteFileOp "README.md" RFConflict]
 
     it "builds DeleteFileOp with RFGone for already-deleted files" $ do
       let removal = Removal [RemovalStep RemoveFileAction "README.md" Nothing] []
@@ -269,7 +271,7 @@ spec = do
           result = runBuildOps emptyFS manifest modName removal
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
-        Right plan -> plan.ops `shouldBe` [DeleteFileOp "README.md" RFGone]
+        Right plan -> (plan ^. #ops) `shouldBe` [DeleteFileOp "README.md" RFGone]
 
     it "builds StripSectionOp for remove-section steps" $ do
       let removal = Removal [RemovalStep RemoveSectionAction ".gitignore" Nothing] []
@@ -278,7 +280,7 @@ spec = do
           result = runBuildOps fs manifest modName removal
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
-        Right plan -> plan.ops `shouldBe` [StripSectionOp ".gitignore"]
+        Right plan -> (plan ^. #ops) `shouldBe` [StripSectionOp ".gitignore"]
 
     it "builds RemovalCommandOp for removal commands" $ do
       let removal = Removal [] [Command "cabal clean" Nothing Nothing]
@@ -286,7 +288,7 @@ spec = do
           result = runBuildOps emptyFS manifest modName removal
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
-        Right plan -> plan.ops `shouldBe` [RemovalCommandOp "cabal clean" Nothing]
+        Right plan -> (plan ^. #ops) `shouldBe` [RemovalCommandOp "cabal clean" Nothing]
 
     it "rejects a removal step destination with a parent directory segment" $ do
       let removal = Removal [RemovalStep RemoveFileAction "../outside" Nothing] []
@@ -300,7 +302,7 @@ spec = do
               "../outside"
               "path must not contain '..' segment: ../outside"
           )
-      Map.member "../outside" fs.files `shouldBe` True
+      Map.member "../outside" (fs ^. #files) `shouldBe` True
 
     it "rejects a removal command workDir with a parent directory segment" $ do
       let removal = Removal [] [Command "echo unsafe" (Just "../outside") Nothing]
@@ -325,8 +327,8 @@ spec = do
       case result of
         Left err -> expectationFailure ("unexpected error: " <> show err)
         Right plan -> do
-          length plan.ops `shouldBe` 3
-          case plan.ops of
+          length (plan ^. #ops) `shouldBe` 3
+          case plan ^. #ops of
             [DeleteFileOp _ _, StripSectionOp _, RemovalCommandOp _ _] -> pure ()
             other -> expectationFailure ("unexpected ops: " <> show other)
 
@@ -337,7 +339,7 @@ spec = do
           fs = mkFS [("README.md", "hello")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "README.md" RFSafe]
           (_, finalFS) = runExecOps fs manifest plan Set.empty
-      Map.member "README.md" finalFS.files `shouldBe` False
+      Map.member "README.md" (finalFS ^. #files) `shouldBe` False
 
     it "preserves files in keep-set for DeleteFileOp" $ do
       let removal = Removal [RemovalStep RemoveFileAction "a.txt" Nothing] []
@@ -346,13 +348,13 @@ spec = do
           plan = ExecutedRemovalPlan modName [DeleteFileOp "a.txt" RFConflict]
           keepSet = Set.singleton "a.txt"
           (_, finalFS) = runExecOps fs manifest plan keepSet
-      Map.member "a.txt" finalFS.files `shouldBe` True
+      Map.member "a.txt" (finalFS ^. #files) `shouldBe` True
 
     it "skips gone files" $ do
       let manifest = mkManifest True [("a.txt", "aaa")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "a.txt" RFGone]
           (updated, _) = runExecOps emptyFS manifest plan Set.empty
-      updated.modules `shouldBe` []
+      (updated ^. #modules) `shouldBe` []
 
     it "strips section from file with StripSectionOp" $ do
       let content = "before\n# --- seihou:test-module ---\nmodule content\n# --- /seihou:test-module ---\nafter\n"
@@ -360,7 +362,7 @@ spec = do
           fs = mkFS [(".gitignore", content)]
           plan = ExecutedRemovalPlan modName [StripSectionOp ".gitignore"]
           (_, finalFS) = runExecOps fs manifest plan Set.empty
-      case Map.lookup ".gitignore" finalFS.files of
+      case Map.lookup ".gitignore" (finalFS ^. #files) of
         Nothing -> expectationFailure ".gitignore should still exist"
         Just result -> do
           result `shouldSatisfy` \t ->
@@ -372,7 +374,7 @@ spec = do
           fs = mkFS [("file.txt", content)]
           plan = ExecutedRemovalPlan modName [StripSectionOp "file.txt"]
           (_, finalFS) = runExecOps fs manifest plan Set.empty
-      Map.lookup "file.txt" finalFS.files `shouldBe` Just content
+      Map.lookup "file.txt" (finalFS ^. #files) `shouldBe` Just content
 
     it "removes module from manifest after all steps" $ do
       let removal = Removal [RemovalStep RemoveFileAction "a.txt" Nothing] []
@@ -380,26 +382,26 @@ spec = do
           fs = mkFS [("a.txt", "aaa")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "a.txt" RFSafe]
           (updated, _) = runExecOps fs manifest plan Set.empty
-      updated.modules `shouldBe` []
-      Map.null updated.files `shouldBe` True
+      (updated ^. #modules) `shouldBe` []
+      Map.null (updated ^. #files) `shouldBe` True
 
     it "preserves other modules' files in manifest" $ do
       let base = mkManifest True [("mine.txt", "mine")]
           otherRec = FileRecord (hashContent "other") otherMod Template fixedTime Nothing mempty
           manifest =
             Manifest
-              { version = base.version,
-                genAt = base.genAt,
-                modules = base.modules,
-                vars = base.vars,
-                files = Map.insert "other.txt" otherRec base.files,
-                applications = base.applications,
-                recipe = base.recipe,
-                blueprint = base.blueprint,
-                blueprintMigrations = base.blueprintMigrations
+              { version = base ^. #version,
+                genAt = base ^. #genAt,
+                modules = base ^. #modules,
+                vars = base ^. #vars,
+                files = Map.insert "other.txt" otherRec (base ^. #files),
+                applications = base ^. #applications,
+                recipe = base ^. #recipe,
+                blueprint = base ^. #blueprint,
+                blueprintMigrations = base ^. #blueprintMigrations
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]
           plan = ExecutedRemovalPlan modName [DeleteFileOp "mine.txt" RFSafe]
           (updated, _) = runExecOps fs manifest plan Set.empty
-      Map.member "other.txt" updated.files `shouldBe` True
-      Map.member "mine.txt" updated.files `shouldBe` False
+      Map.member "other.txt" (updated ^. #files) `shouldBe` True
+      Map.member "mine.txt" (updated ^. #files) `shouldBe` False

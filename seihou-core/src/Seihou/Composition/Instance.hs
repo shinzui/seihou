@@ -9,6 +9,7 @@ where
 
 import Crypto.Hash.SHA256 qualified as SHA256
 import Data.ByteString.Base16 qualified as Base16
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -59,13 +60,13 @@ primaryInstance n = mkInstance n emptyParentVars
 -- 'ModuleName' alongside the bindings so output stays readable.
 qualifiedName :: ModuleInstance -> ModuleName
 qualifiedName inst =
-  case Map.null inst.parentVars.unParentVars of
-    True -> inst.module_
+  case Map.null (inst ^. #parentVars . #unParentVars) of
+    True -> (inst ^. #module_)
     False ->
       ModuleName $
-        inst.module_.unModuleName
+        inst ^. #module_ . #unModuleName
           <> "#"
-          <> stableHash inst.parentVars
+          <> stableHash (inst ^. #parentVars)
 
 -- | Compute the disambiguating hash for a 'ParentVars' set.
 --

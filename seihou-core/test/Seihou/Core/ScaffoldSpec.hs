@@ -1,5 +1,7 @@
 module Seihou.Core.ScaffoldSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.AgentPrompt (validateAgentPrompt)
 import Seihou.Core.Blueprint (validateBlueprint)
@@ -52,7 +54,7 @@ spec = do
         result <- evalModuleFromFile dhallFile
         case result of
           Left err -> expectationFailure $ "Failed to load generated module: " ++ show err
-          Right m -> m.name `shouldBe` "test-mod"
+          Right m -> (m ^. #name) `shouldBe` "test-mod"
 
     it "generates a module that passes validateModule" $ do
       schemaPath <- resolveSchemaPath
@@ -85,13 +87,13 @@ spec = do
         case result of
           Left err -> expectationFailure $ "Failed to load: " ++ show err
           Right m -> do
-            length (m.vars) `shouldBe` 1
-            map (.name) m.vars `shouldBe` ["project.name"]
-            length (m.steps) `shouldBe` 1
-            length (m.prompts) `shouldBe` 1
-            length (m.commands) `shouldBe` 0
-            length (m.exports) `shouldBe` 0
-            length (m.dependencies) `shouldBe` 0
+            length (m ^. #vars) `shouldBe` 1
+            map (^. #name) (m ^. #vars) `shouldBe` ["project.name"]
+            length (m ^. #steps) `shouldBe` 1
+            length (m ^. #prompts) `shouldBe` 1
+            length (m ^. #commands) `shouldBe` 0
+            length (m ^. #exports) `shouldBe` 0
+            length (m ^. #dependencies) `shouldBe` 0
 
   describe "readmeTemplate" $ do
     it "contains the project.name placeholder" $ do
@@ -122,7 +124,7 @@ spec = do
         result <- evalBlueprintFromFile dhallFile
         case result of
           Left err -> expectationFailure $ "Failed to load generated blueprint: " ++ show err
-          Right b -> b.name `shouldBe` "test-bp"
+          Right b -> (b ^. #name) `shouldBe` "test-bp"
 
     it "produces a blueprint that passes validateBlueprint" $ do
       schemaPath <- resolveSchemaPath
@@ -155,13 +157,13 @@ spec = do
         case result of
           Left err -> expectationFailure $ "Failed to load: " ++ show err
           Right b -> do
-            length (b.vars) `shouldBe` 1
-            map (.name) b.vars `shouldBe` ["project.name"]
-            length (b.prompts) `shouldBe` 1
-            length (b.baseModules) `shouldBe` 0
-            length (b.files) `shouldBe` 0
-            length (b.tags) `shouldBe` 0
-            length (b.migrations) `shouldBe` 0
+            length (b ^. #vars) `shouldBe` 1
+            map (^. #name) (b ^. #vars) `shouldBe` ["project.name"]
+            length (b ^. #prompts) `shouldBe` 1
+            length (b ^. #baseModules) `shouldBe` 0
+            length (b ^. #files) `shouldBe` 0
+            length (b ^. #tags) `shouldBe` 0
+            length (b ^. #migrations) `shouldBe` 0
 
   describe "examplePromptMarkdown" $ do
     it "contains the {{project.name}} placeholder so authors see substitution" $ do
@@ -194,7 +196,7 @@ spec = do
         result <- evalAgentPromptFromFile dhallFile
         case result of
           Left err -> expectationFailure $ "Failed to load generated prompt: " ++ show err
-          Right p -> p.name `shouldBe` "review-changes"
+          Right p -> (p ^. #name) `shouldBe` "review-changes"
 
     it "produces a prompt that passes validateAgentPrompt" $ do
       schemaPath <- resolveSchemaPath
@@ -227,12 +229,12 @@ spec = do
         case result of
           Left err -> expectationFailure $ "Failed to load: " ++ show err
           Right p -> do
-            length (p.vars) `shouldBe` 1
-            map (.name) p.vars `shouldBe` ["project.name"]
-            length (p.prompts) `shouldBe` 0
-            length (p.commandVars) `shouldBe` 0
-            length (p.files) `shouldBe` 0
-            length (p.tags) `shouldBe` 0
+            length (p ^. #vars) `shouldBe` 1
+            map (^. #name) (p ^. #vars) `shouldBe` ["project.name"]
+            length (p ^. #prompts) `shouldBe` 0
+            length (p ^. #commandVars) `shouldBe` 0
+            length (p ^. #files) `shouldBe` 0
+            length (p ^. #tags) `shouldBe` 0
 
   describe "exampleAgentPromptMarkdown" $ do
     it "contains the {{project.name}} placeholder so debug rendering shows substitution" $ do

@@ -1,5 +1,7 @@
 module Seihou.Core.BlueprintSpec (tests) where
 
+import Control.Lens (at, (^.))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Blueprint (checkBlueprintLaunch, checkBlueprintMigrations, validateBlueprintWith)
@@ -54,47 +56,47 @@ goodBlueprint =
 -- the ambiguity once and for all.
 withBlueprintName :: ModuleName -> Blueprint -> Blueprint
 withBlueprintName n b =
-  Blueprint n b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
+  Blueprint n (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
 
 withBlueprintVersion :: Maybe T.Text -> Blueprint -> Blueprint
 withBlueprintVersion v b =
-  Blueprint b.name v b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
+  Blueprint (b ^. #name) v (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
 
 withBlueprintPrompt :: T.Text -> Blueprint -> Blueprint
 withBlueprintPrompt p b =
-  Blueprint b.name b.version b.description p b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) p (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
 
 withBlueprintVars :: [VarDecl] -> Blueprint -> Blueprint
 withBlueprintVars vs b =
-  Blueprint b.name b.version b.description b.prompt vs b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) vs (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
 
 withBlueprintPrompts :: [Prompt] -> Blueprint -> Blueprint
 withBlueprintPrompts ps b =
-  Blueprint b.name b.version b.description b.prompt b.vars ps b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) ps (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
 
 withBlueprintBaseModules :: [Dependency] -> Blueprint -> Blueprint
 withBlueprintBaseModules ds b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts ds b.files b.allowedTools b.tags b.migrations b.launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) ds (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
 
 withBlueprintFiles :: [BlueprintFile] -> Blueprint -> Blueprint
 withBlueprintFiles fs b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules fs b.allowedTools b.tags b.migrations b.launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) fs (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
 
 withBlueprintAllowedTools :: Maybe [T.Text] -> Blueprint -> Blueprint
 withBlueprintAllowedTools at b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files at b.tags b.migrations b.launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) at (b ^. #tags) (b ^. #migrations) (b ^. #launch)
 
 withBlueprintTags :: [T.Text] -> Blueprint -> Blueprint
 withBlueprintTags ts b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools ts b.migrations b.launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) ts (b ^. #migrations) (b ^. #launch)
 
 withBlueprintMigrations :: [BlueprintMigration] -> Blueprint -> Blueprint
 withBlueprintMigrations migrations b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags migrations b.launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) migrations (b ^. #launch)
 
 withBlueprintLaunch :: Maybe AgentLaunch -> Blueprint -> Blueprint
 withBlueprintLaunch launch b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) launch
 
 spec :: Spec
 spec = do
@@ -104,15 +106,15 @@ spec = do
       case result of
         Left err -> expectationFailure ("Expected Right, got Left: " <> show err)
         Right b -> do
-          b.name `shouldBe` ModuleName "sample-blueprint"
-          b.version `shouldBe` Just "0.1.0"
-          b.description `shouldBe` Just "Fixture blueprint for EP-29 tests"
-          T.isInfixOf "{{project.name}}" b.prompt `shouldBe` True
-          length b.vars `shouldBe` 2
-          b.tags `shouldBe` ["demo"]
-          b.baseModules `shouldBe` []
-          length b.files `shouldBe` 1
-          b.migrations
+          (b ^. #name) `shouldBe` ModuleName "sample-blueprint"
+          (b ^. #version) `shouldBe` Just "0.1.0"
+          (b ^. #description) `shouldBe` Just "Fixture blueprint for EP-29 tests"
+          T.isInfixOf "{{project.name}}" (b ^. #prompt) `shouldBe` True
+          length (b ^. #vars) `shouldBe` 2
+          (b ^. #tags) `shouldBe` ["demo"]
+          (b ^. #baseModules) `shouldBe` []
+          length (b ^. #files) `shouldBe` 1
+          (b ^. #migrations)
             `shouldBe` [ BlueprintMigration "1.0.0" "2.0.0" "Update {{project.name}} for the first library release.",
                          BlueprintMigration "2.5.0" "3.0.0" "Update {{project.name}} for the second library release."
                        ]
@@ -124,7 +126,7 @@ spec = do
         result <- evalBlueprintFromFile path
         case result of
           Right b ->
-            b.migrations
+            (b ^. #migrations)
               `shouldBe` [ BlueprintMigration "1.0.0" "2.0.0" "first edge",
                            BlueprintMigration "2.5.0" "3.0.0" "second edge"
                          ]
@@ -137,7 +139,7 @@ spec = do
         result <- evalBlueprintFromFile path
         case result of
           Right b ->
-            b.launch
+            (b ^. #launch)
               `shouldBe` Just
                 AgentLaunch
                   { provider = Just "codex-cli",
@@ -156,7 +158,7 @@ spec = do
         writeFile path (sampleBlueprintDhall "no-launch-bp")
         result <- evalBlueprintFromFile path
         case result of
-          Right b -> b.launch `shouldBe` Nothing
+          Right b -> (b ^. #launch) `shouldBe` Nothing
           Left err -> expectationFailure ("Expected blueprint to decode, got: " <> show err)
 
     -- Regression: a launch record written against the older three-field
@@ -168,7 +170,7 @@ spec = do
         result <- evalBlueprintFromFile path
         case result of
           Right b ->
-            b.launch
+            (b ^. #launch)
               `shouldBe` Just
                 AgentLaunch
                   { provider = Just "claude-cli",
@@ -185,7 +187,7 @@ spec = do
       Right b <- evalBlueprintFromFile (baseDir </> "blueprint.dhall")
       result <- validateBlueprintWith [] baseDir b
       case result of
-        Right b' -> b'.name `shouldBe` "sample-blueprint"
+        Right b' -> (b' ^. #name) `shouldBe` "sample-blueprint"
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
   describe "validateBlueprintWith (rule-by-rule)" $ do
@@ -235,7 +237,7 @@ spec = do
                   required = False,
                   validation = Nothing
                 }
-            bad = withBlueprintVars (goodBlueprint.vars ++ [dup]) goodBlueprint
+            bad = withBlueprintVars (goodBlueprint ^. #vars ++ [dup]) goodBlueprint
         result <- validateBlueprintWith [] tmpDir bad
         case result of
           Left (ValidationError _ errs) ->
@@ -397,7 +399,7 @@ spec = do
         result <- discoverRunnable [tmpDir] "only-bp"
         case result of
           Right (RunnableBlueprint b dir) -> do
-            b.name `shouldBe` "only-bp"
+            (b ^. #name) `shouldBe` "only-bp"
             dir `shouldBe` bpDir
           other -> expectationFailure ("Expected RunnableBlueprint, got: " <> show other)
 

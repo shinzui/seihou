@@ -5,6 +5,7 @@ module Seihou.Core.CommandVar
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Expr (evalExpr)
@@ -24,18 +25,18 @@ planCommandVars commandVars existing bindings =
     conditionBindings = resolvedValues existing <> bindings
 
     shouldRun cv =
-      not (Map.member cv.name existing)
-        && maybe True (evalExpr conditionBindings) cv.condition
+      not (Map.member (cv ^. #name) existing)
+        && maybe True (evalExpr conditionBindings) (cv ^. #condition)
 
 -- | Return the matching declaration for a command variable, or synthesize a
 -- text declaration for prompt-only dynamic context such as @git.branch@.
 commandVarDecl :: [VarDecl] -> CommandVar -> VarDecl
 commandVarDecl decls cv =
-  case filter (\decl -> decl.name == cv.name) decls of
+  case filter (\decl -> decl ^. #name == cv ^. #name) decls of
     decl : _ -> decl
     [] ->
       VarDecl
-        { name = cv.name,
+        { name = cv ^. #name,
           type_ = VTText,
           default_ = Nothing,
           description = Nothing,
@@ -63,15 +64,15 @@ resolveCommandVars decls commandVars existing = do
   where
     go errs resolved _bindings [] = pure (reverse errs, resolved)
     go errs resolved bindings (cv : rest)
-      | Map.member cv.name resolved = go errs resolved bindings rest
-      | maybe False (not . evalExpr bindings) cv.condition = go errs resolved bindings rest
+      | Map.member (cv ^. #name) resolved = go errs resolved bindings rest
+      | maybe False (not . evalExpr bindings) (cv ^. #condition) = go errs resolved bindings rest
       | otherwise = do
           result <- resolveOne bindings cv
           case result of
             Left err -> go (err : errs) resolved bindings rest
             Right rv ->
-              let resolved' = Map.insert cv.name rv resolved
-                  bindings' = Map.insert cv.name rv.value bindings
+              let resolved' = Map.insert (cv ^. #name) rv resolved
+                  bindings' = Map.insert (cv ^. #name) (rv ^. #value) bindings
                in go errs resolved' bindings' rest
 
     resolveOne _bindings cv = do
@@ -79,13 +80,13 @@ resolveCommandVars decls commandVars existing = do
       case validateWorkDir cv of
         Left err -> pure (Left err)
         Right workDir -> do
-          (exitCode, stdoutText, stderrText) <- runProcess "sh" ["-c", cv.run] workDir
+          (exitCode, stdoutText, stderrText) <- runProcess "sh" ["-c", cv ^. #run] workDir
           pure $ case exitCode of
             ExitSuccess -> coerceCommandOutput decl cv stdoutText
             ExitFailure code ->
               Left $
                 ValidationFailed
-                  cv.name
+                  (cv ^. #name)
                   ( "command failed with exit code "
                       <> T.pack (show code)
                       <> ": "
@@ -96,31 +97,31 @@ resolveCommandVars decls commandVars existing = do
     validateWorkDir cv@CommandVar {workDir = Nothing} = Right Nothing
     validateWorkDir cv@CommandVar {workDir = Just wd} =
       case validateProjectRelativePath wd of
-        Left err -> Left (ValidationFailed cv.name ("command variable workDir " <> err))
+        Left err -> Left (ValidationFailed (cv ^. #name) ("command variable workDir " <> err))
         Right _ -> Right (Just (T.unpack wd))
 
 coerceCommandOutput :: VarDecl -> CommandVar -> Text -> Either VarError ResolvedVar
 coerceCommandOutput decl cv stdoutText = do
   let output =
-        if cv.trim
+        if cv ^. #trim
           then T.strip stdoutText
           else stdoutText
-  case cv.maxBytes of
+  case cv ^. #maxBytes of
     Just n
       | fromIntegral (T.length output) > n ->
-          Left (ValidationFailed cv.name ("command output exceeds maxBytes " <> T.pack (show n)))
+          Left (ValidationFailed (cv ^. #name) ("command output exceeds maxBytes " <> T.pack (show n)))
     _ -> do
-      value <- coerceValue decl.name decl.type_ output
+      value <- coerceValue (decl ^. #name) (decl ^. #type_) output
       validateVarValue decl value
       Right
         ResolvedVar
           { value = value,
-            source = FromCommand cv.run,
+            source = FromCommand (cv ^. #run),
             decl = decl
           }
 
 resolvedValues :: Map VarName ResolvedVar -> Map VarName VarValue
-resolvedValues = Map.map (.value)
+resolvedValues = Map.map (^. #value)
 
 summarizeDiagnostic :: Text -> Text
 summarizeDiagnostic t =

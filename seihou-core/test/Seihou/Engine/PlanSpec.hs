@@ -1,6 +1,8 @@
 module Seihou.Engine.PlanSpec (tests) where
 
+import Control.Lens ((^.))
 import Data.Aeson qualified as Aeson
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
@@ -538,28 +540,28 @@ spec = do
             Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
             Right ops -> do
               -- Should have operations for README, src/Lib.hs, LICENSE, my-app.cabal, and cabal.project
-              let writeOps = [op | op@(WriteFileOp _ _ _) <- ops]
-                  dirOps = [op | op@(CreateDirOp _) <- ops]
+              let writeOps = [(dest, content) | WriteFileOp {dest, content} <- ops]
+                  dirPaths = [path | CreateDirOp {path} <- ops]
               length writeOps `shouldBe` 5
               -- README.md with rendered content
-              (writeOps !! 0).dest `shouldBe` "README.md"
-              T.isInfixOf "my-app" ((writeOps !! 0).content) `shouldBe` True
+              fst (writeOps !! 0) `shouldBe` "README.md"
+              T.isInfixOf "my-app" (snd (writeOps !! 0)) `shouldBe` True
               -- src/Lib.hs
-              (writeOps !! 1).dest `shouldBe` "src/Lib.hs"
+              fst (writeOps !! 1) `shouldBe` "src/Lib.hs"
               -- LICENSE (copy)
-              (writeOps !! 2).dest `shouldBe` "LICENSE"
+              fst (writeOps !! 2) `shouldBe` "LICENSE"
               -- my-app.cabal (dest expanded from {{project.name}}.cabal)
-              (writeOps !! 3).dest `shouldBe` "my-app.cabal"
-              T.isInfixOf "my-app" ((writeOps !! 3).content) `shouldBe` True
+              fst (writeOps !! 3) `shouldBe` "my-app.cabal"
+              T.isInfixOf "my-app" (snd (writeOps !! 3)) `shouldBe` True
               -- cabal.project (DhallText)
-              (writeOps !! 4).dest `shouldBe` "cabal.project"
-              T.isInfixOf "my-app" ((writeOps !! 4).content) `shouldBe` True
+              fst (writeOps !! 4) `shouldBe` "cabal.project"
+              T.isInfixOf "my-app" (snd (writeOps !! 4)) `shouldBe` True
               -- Should have CreateDirOp for src/
-              dirOps `shouldSatisfy` any (\op -> op.path == "src")
+              dirPaths `shouldSatisfy` elem "src"
               -- Should have RunCommandOp for the command
-              let cmdOps = [op | op@RunCommandOp {} <- ops]
+              let cmdOps = [command | RunCommandOp {command} <- ops]
               length cmdOps `shouldBe` 1
-              (cmdOps !! 0).command `shouldBe` "echo 'Project generated'"
+              (cmdOps !! 0) `shouldBe` "echo 'Project generated'"
 
     it "compiles a Template step with patch = AppendFile to PatchFileOp" $ do
       withFixture [("section.tpl", "appended content")] $ \baseDir -> do
@@ -747,12 +749,9 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@RunCommandOp {} <- ops]
+            let cmdOps = [(command, workDir, moduleName, occurrence) | RunCommandOp {command, workDir, moduleName, occurrence} <- ops]
             length cmdOps `shouldBe` 1
-            (cmdOps !! 0).command `shouldBe` "echo hello"
-            (cmdOps !! 0).workDir `shouldBe` Nothing
-            (cmdOps !! 0).moduleName `shouldBe` "test"
-            (cmdOps !! 0).occurrence `shouldBe` 0
+            cmdOps `shouldBe` [("echo hello", Nothing, "test", 0)]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "numbers only identical rendered commands from the same module" $ do
@@ -778,7 +777,7 @@ spec = do
         result <- compilePlan baseDir modul Map.empty
         case result of
           Right ops -> do
-            let commandOccurrences = [(op.command, op.occurrence) | op@RunCommandOp {} <- ops]
+            let commandOccurrences = [(command, occurrence) | RunCommandOp {command, occurrence} <- ops]
             commandOccurrences
               `shouldBe` [("echo same", 0), ("echo other", 0), ("echo same", 1)]
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
@@ -884,9 +883,9 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@RunCommandOp {} <- ops]
+            let cmdOps = [workDir | RunCommandOp {workDir} <- ops]
             length cmdOps `shouldBe` 1
-            (cmdOps !! 0).workDir `shouldBe` Just "subdir"
+            (cmdOps !! 0) `shouldBe` Just "subdir"
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "interpolates {{var}} in command run field" $ do
@@ -909,9 +908,9 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@RunCommandOp {} <- ops]
+            let cmdOps = [command | RunCommandOp {command} <- ops]
             length cmdOps `shouldBe` 1
-            (cmdOps !! 0).command `shouldBe` "echo my-app"
+            (cmdOps !! 0) `shouldBe` "echo my-app"
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "interpolates {{var}} in command workDir field" $ do
@@ -934,9 +933,9 @@ spec = do
         result <- compilePlan baseDir modul vars
         case result of
           Right ops -> do
-            let cmdOps = [op | op@RunCommandOp {} <- ops]
+            let cmdOps = [workDir | RunCommandOp {workDir} <- ops]
             length cmdOps `shouldBe` 1
-            (cmdOps !! 0).workDir `shouldBe` Just "my-app"
+            (cmdOps !! 0) `shouldBe` Just "my-app"
           Left errs -> expectationFailure ("Expected Right, got: " <> show errs)
 
     it "rejects a rendered command workDir with a parent directory segment" $ do

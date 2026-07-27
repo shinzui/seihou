@@ -1,5 +1,7 @@
 module Seihou.Core.ListSpec (tests) where
 
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), discoverAllModules)
 import Seihou.Core.Types (ModuleLoadError (..))
@@ -44,7 +46,7 @@ spec = do
         let paths = [tmp </> "project", userDir, tmp </> "installed"]
         result <- discoverAllModules paths
         length result `shouldBe` 1
-        (head result).source `shouldBe` SourceUser
+        ((head result) ^. #source) `shouldBe` SourceUser
 
     it "tags sources correctly across paths" $ do
       withSystemTempDirectory "seihou-list-test" $ \tmp -> do
@@ -57,7 +59,7 @@ spec = do
         let paths = [projectDir, tmp </> "user", installedDir]
         result <- discoverAllModules paths
         length result `shouldBe` 2
-        let srcs = map (.source) result
+        let srcs = map (^. #source) result
         SourceProject `elem` srcs `shouldBe` True
         SourceInstalled `elem` srcs `shouldBe` True
 
@@ -70,7 +72,7 @@ spec = do
         let paths = [tmp </> "project", userDir, tmp </> "installed"]
         result <- discoverAllModules paths
         length result `shouldBe` 1
-        case (head result).result of
+        case (head result) ^. #result of
           Left _ -> pure ()
           Right _ -> expectationFailure "Expected Left for broken module"
 

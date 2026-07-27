@@ -17,6 +17,7 @@ import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.:?), (.=))
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
+import Data.Generics.Labels ()
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -74,8 +75,8 @@ data JournalMetadata = JournalMetadata
 instance ToJSON JournalEntry where
   toJSON entry =
     Aeson.object
-      [ "path" .= entry.targetPath,
-        "backup" .= entry.backupFile
+      [ "path" .= (entry ^. #targetPath),
+        "backup" .= (entry ^. #backupFile)
       ]
 
 instance FromJSON JournalEntry where
@@ -85,11 +86,11 @@ instance FromJSON JournalEntry where
 instance ToJSON JournalMetadata where
   toJSON metadata =
     Aeson.object
-      [ "version" .= metadata.journalVersion,
-        "createdAt" .= metadata.createdAt,
-        "entries" .= metadata.entries,
-        "newDirectories" .= metadata.newDirectories,
-        "expectedManifest" .= metadata.expectedManifest
+      [ "version" .= (metadata ^. #journalVersion),
+        "createdAt" .= (metadata ^. #createdAt),
+        "entries" .= (metadata ^. #entries),
+        "newDirectories" .= (metadata ^. #newDirectories),
+        "expectedManifest" .= (metadata ^. #expectedManifest)
       ]
 
 instance FromJSON JournalMetadata where
@@ -118,10 +119,10 @@ beginUpdateTransaction projectRoot targets = case traverse validateTransactionPa
 
 initializeJournal :: UpdateTransaction -> [FilePath] -> IO ()
 initializeJournal transaction safeTargets = do
-  let backupDirectory = transaction.transactionDirectory </> "backups"
+  let backupDirectory = transaction ^. #transactionDirectory </> "backups"
   Directory.createDirectoryIfMissing True backupDirectory
   entries <- forM (zip [0 :: Int ..] safeTargets) $ \(index, relativePath) -> do
-    let fullPath = transaction.projectRoot </> relativePath
+    let fullPath = transaction ^. #projectRoot </> relativePath
         backupName = show index <> ".txt"
         backupPath = backupDirectory </> backupName
     exists <- Directory.doesFileExist fullPath
@@ -130,10 +131,10 @@ initializeJournal transaction safeTargets = do
         TIO.readFile fullPath >>= TIO.writeFile backupPath
         pure (JournalEntry relativePath (Just backupName))
       else pure (JournalEntry relativePath Nothing)
-  missingDirectories <- missingParentDirectories transaction.projectRoot safeTargets
+  missingDirectories <- missingParentDirectories (transaction ^. #projectRoot) safeTargets
   now <- getCurrentTime
   writeJournal
-    transaction.transactionDirectory
+    (transaction ^. #transactionDirectory)
     JournalMetadata
       { journalVersion = 1,
         createdAt = now,
@@ -188,22 +189,22 @@ applyReconciliationWithHook afterMutation transaction plan manifest = do
                 Right () -> pure (Right candidate)
 
 transactionPreflight :: UpdateTransaction -> ReconciliationPlan -> IO (Either TransactionError ())
-transactionPreflight transaction plan = case traverse validateTransactionPath (Set.toAscList plan.requiredDirectories) of
+transactionPreflight transaction plan = case traverse validateTransactionPath (Set.toAscList (plan ^. #requiredDirectories)) of
   Left err -> pure (Left err)
   Right _
     | not (Set.null unjournaled) -> pure (Left (TransactionUnjournaledPaths unjournaled))
     | not (Set.null unresolved) -> pure (Left (TransactionUnresolvedPaths unresolved))
     | otherwise -> verifyObservedFiles transaction plan
   where
-    unjournaled = Map.keysSet plan.files Set.\\ transaction.targets
+    unjournaled = Map.keysSet (plan ^. #files) Set.\\ (transaction ^. #targets)
     unresolved = unresolvedPaths plan
 
 verifyObservedFiles :: UpdateTransaction -> ReconciliationPlan -> IO (Either TransactionError ())
-verifyObservedFiles transaction plan = go (Map.toAscList plan.files)
+verifyObservedFiles transaction plan = go (Map.toAscList (plan ^. #files))
   where
     go [] = pure (Right ())
     go ((path, reconciliation) : rest) = do
-      current <- observeDiskFile (transaction.projectRoot </> path)
+      current <- observeDiskFile (transaction ^. #projectRoot </> path)
       let planned = reconciliationObservation reconciliation
       if current == planned
         then go rest
@@ -232,23 +233,23 @@ observeDiskFile path = do
 
 prepareCandidateManifest :: UpdateTransaction -> ReconciliationPlan -> Manifest -> IO Manifest
 prepareCandidateManifest transaction plan manifest = do
-  nextFiles <- foldM applyManifestAction manifest.files (Map.toAscList plan.files)
+  nextFiles <- foldM applyManifestAction (manifest ^. #files) (Map.toAscList (plan ^. #files))
   pure (replaceManifestFiles manifest nextFiles)
   where
     applyManifestAction files (path, reconciliation) = case desiredState reconciliation of
       Just (desired, state) -> do
-        baseline <- writeBaselineBlob transaction.projectRoot state.generatedBaseline
+        baseline <- writeBaselineBlob (transaction ^. #projectRoot) (state ^. #generatedBaseline)
         let record =
               FileRecord
-                { hash = state.recordedHash,
-                  moduleName = desired.moduleName,
-                  strategy = desired.strategy,
-                  generatedAt = manifest.genAt,
+                { hash = state ^. #recordedHash,
+                  moduleName = desired ^. #moduleName,
+                  strategy = desired ^. #strategy,
+                  generatedAt = manifest ^. #genAt,
                   baseline = Just baseline,
-                  applicationIds = desired.applicationIds
+                  applicationIds = desired ^. #applicationIds
                 }
         pure (Map.insert path record files)
-      Nothing -> pure (applyOrphanManifestAction plan.applicationIds reconciliation files)
+      Nothing -> pure (applyOrphanManifestAction (plan ^. #applicationIds) reconciliation files)
 
 desiredState :: FileReconciliation -> Maybe (DesiredFile, PlannedFileState)
 desiredState reconciliation = case reconciliation of
@@ -256,7 +257,7 @@ desiredState reconciliation = case reconciliation of
   FileUpdate desired state _ _ -> Just (desired, state)
   FileAutoMerge desired state _ _ -> Just (desired, state)
   FileUnchanged desired state _ _ -> Just (desired, state)
-  FileConflict desired _ _ _ _ _ (Just resolution) -> Just (desired, resolution.state)
+  FileConflict desired _ _ _ _ _ (Just resolution) -> Just (desired, resolution ^. #state)
   _ -> Nothing
 
 applyOrphanManifestAction ::
@@ -268,14 +269,14 @@ applyOrphanManifestAction selected reconciliation files = case reconciliation of
   FileDeleteSafe path _ _ -> Map.delete path files
   FileAlreadyAbsent path _ _ -> Map.delete path files
   FileReleaseSharedOwnership path record _ ->
-    let remaining = record.applicationIds Set.\\ selected
+    let remaining = (record ^. #applicationIds) Set.\\ selected
      in if Set.null remaining
           then Map.delete path files
           else Map.insert path (replaceRecordApplications record remaining) files
   FileOrphanEdited path _ _ _ (Just DeleteEditedOrphan) -> Map.delete path files
   FileOrphanEdited _ _ _ _ (Just RetainTrackedOrphan) -> files
   FileOrphanEdited path record _ _ (Just DetachAndKeepOrphan) ->
-    let remaining = record.applicationIds Set.\\ selected
+    let remaining = (record ^. #applicationIds) Set.\\ selected
      in if Set.null remaining
           then Map.delete path files
           else Map.insert path (replaceRecordApplications record remaining) files
@@ -284,26 +285,26 @@ applyOrphanManifestAction selected reconciliation files = case reconciliation of
 replaceRecordApplications :: FileRecord -> Set ApplicationId -> FileRecord
 replaceRecordApplications record owners =
   FileRecord
-    { hash = record.hash,
-      moduleName = record.moduleName,
-      strategy = record.strategy,
-      generatedAt = record.generatedAt,
-      baseline = record.baseline,
+    { hash = record ^. #hash,
+      moduleName = record ^. #moduleName,
+      strategy = record ^. #strategy,
+      generatedAt = record ^. #generatedAt,
+      baseline = record ^. #baseline,
       applicationIds = owners
     }
 
 replaceManifestFiles :: Manifest -> Map FilePath FileRecord -> Manifest
 replaceManifestFiles manifest nextFiles =
   Manifest
-    { version = manifest.version,
-      genAt = manifest.genAt,
-      modules = manifest.modules,
-      vars = manifest.vars,
+    { version = manifest ^. #version,
+      genAt = manifest ^. #genAt,
+      modules = manifest ^. #modules,
+      vars = manifest ^. #vars,
       files = nextFiles,
-      applications = manifest.applications,
-      recipe = manifest.recipe,
-      blueprint = manifest.blueprint,
-      blueprintMigrations = manifest.blueprintMigrations
+      applications = manifest ^. #applications,
+      recipe = manifest ^. #recipe,
+      blueprint = manifest ^. #blueprint,
+      blueprintMigrations = manifest ^. #blueprintMigrations
     }
 
 writeBaselineBlob :: FilePath -> Text -> IO BaselineRef
@@ -313,50 +314,50 @@ writeBaselineBlob projectRoot content = do
 
 updateJournalForPlan :: UpdateTransaction -> ReconciliationPlan -> Manifest -> IO (Either TransactionError ())
 updateJournalForPlan transaction plan candidate = do
-  metadataResult <- readJournal transaction.transactionDirectory
+  metadataResult <- readJournal (transaction ^. #transactionDirectory)
   case metadataResult of
     Left err -> pure (Left err)
     Right metadata -> do
       missingDirectories <-
         filterMIO
-          (fmap not . Directory.doesDirectoryExist . (transaction.projectRoot </>))
+          (fmap not . Directory.doesDirectoryExist . (transaction ^. #projectRoot </>))
           ( Set.toAscList . Set.fromList $
               concatMap
                 (\path -> path : relativeParents path)
-                (Set.toAscList plan.requiredDirectories)
+                (Set.toAscList (plan ^. #requiredDirectories))
           )
       let updated = setExpectedManifestAndDirectories metadata missingDirectories candidate
-      result <- try @SomeException $ writeJournal transaction.transactionDirectory updated
+      result <- try @SomeException $ writeJournal (transaction ^. #transactionDirectory) updated
       pure $ first (\err -> TransactionApplyFailed (exceptionText err) Nothing) result
 
 setExpectedManifestAndDirectories :: JournalMetadata -> [FilePath] -> Manifest -> JournalMetadata
 setExpectedManifestAndDirectories metadata additionalDirectories candidate =
   JournalMetadata
-    { journalVersion = metadata.journalVersion,
-      createdAt = metadata.createdAt,
-      entries = metadata.entries,
+    { journalVersion = metadata ^. #journalVersion,
+      createdAt = metadata ^. #createdAt,
+      entries = metadata ^. #entries,
       newDirectories =
         sortOn pathDepth . Set.toList $
-          Set.fromList (metadata.newDirectories <> additionalDirectories),
+          Set.fromList (metadata ^. #newDirectories <> additionalDirectories),
       expectedManifest = Just candidate
     }
 
 applyMutations :: (Int -> IO ()) -> UpdateTransaction -> ReconciliationPlan -> IO ()
 applyMutations afterMutation transaction plan = do
-  forM_ (Set.toAscList plan.requiredDirectories) $ \relativePath ->
-    Directory.createDirectoryIfMissing True (transaction.projectRoot </> relativePath)
-  _ <- foldM applyOne (0 :: Int) (Map.toAscList plan.files)
+  forM_ (Set.toAscList (plan ^. #requiredDirectories)) $ \relativePath ->
+    Directory.createDirectoryIfMissing True (transaction ^. #projectRoot </> relativePath)
+  _ <- foldM applyOne (0 :: Int) (Map.toAscList (plan ^. #files))
   pure ()
   where
     applyOne count (path, reconciliation) = case mutationFor reconciliation of
       NoMutation -> pure count
       WriteMutation content -> do
-        atomicWriteText (transaction.projectRoot </> path) content
+        atomicWriteText (transaction ^. #projectRoot </> path) content
         let next = count + 1
         afterMutation next
         pure next
       DeleteMutation -> do
-        let fullPath = transaction.projectRoot </> path
+        let fullPath = transaction ^. #projectRoot </> path
         exists <- Directory.doesFileExist fullPath
         when exists (Directory.removeFile fullPath)
         let next = count + 1
@@ -368,7 +369,7 @@ data FileMutation = NoMutation | WriteMutation Text | DeleteMutation
 mutationFor :: FileReconciliation -> FileMutation
 mutationFor reconciliation = case desiredState reconciliation of
   Just (_, state)
-    | state.writeToDisk -> WriteMutation state.appliedContent
+    | state ^. #writeToDisk -> WriteMutation (state ^. #appliedContent)
     | otherwise -> NoMutation
   Nothing -> case reconciliation of
     FileDeleteSafe _ _ _ -> DeleteMutation
@@ -377,25 +378,25 @@ mutationFor reconciliation = case desiredState reconciliation of
 
 rollbackUpdateTransaction :: UpdateTransaction -> IO (Either TransactionError ())
 rollbackUpdateTransaction transaction = do
-  metadataResult <- readJournal transaction.transactionDirectory
+  metadataResult <- readJournal (transaction ^. #transactionDirectory)
   case metadataResult of
     Left err -> pure (Left err)
     Right metadata -> do
       result <- try @SomeException $ do
-        forM_ metadata.entries (restoreEntry transaction)
-        removeNewDirectories transaction.projectRoot metadata.newDirectories
-        cleanupDirectory transaction.transactionDirectory
+        forM_ (metadata ^. #entries) (restoreEntry transaction)
+        removeNewDirectories (transaction ^. #projectRoot) (metadata ^. #newDirectories)
+        cleanupDirectory (transaction ^. #transactionDirectory)
       pure $ first (TransactionRollbackFailed . exceptionText) result
 
 restoreEntry :: UpdateTransaction -> JournalEntry -> IO ()
 restoreEntry transaction entry = do
-  let target = transaction.projectRoot </> entry.targetPath
-  case entry.backupFile of
+  let target = transaction ^. #projectRoot </> (entry ^. #targetPath)
+  case entry ^. #backupFile of
     Nothing -> do
       exists <- Directory.doesFileExist target
       when exists (Directory.removeFile target)
     Just backupName -> do
-      let backupPath = transaction.transactionDirectory </> "backups" </> backupName
+      let backupPath = transaction ^. #transactionDirectory </> "backups" </> backupName
       content <- TIO.readFile backupPath
       atomicWriteText target content
 
@@ -411,7 +412,7 @@ removeNewDirectories projectRoot = mapM_ removeIfEmpty . reverse . sortOn pathDe
 
 completeUpdateTransaction :: UpdateTransaction -> IO (Either TransactionError ())
 completeUpdateTransaction transaction = do
-  result <- try @SomeException (cleanupDirectory transaction.transactionDirectory)
+  result <- try @SomeException (cleanupDirectory (transaction ^. #transactionDirectory))
   pure $ first (TransactionCompletionFailed . exceptionText) result
 
 -- | Replace the recovery commit marker with the exact manifest the caller is
@@ -420,19 +421,19 @@ completeUpdateTransaction transaction = do
 -- candidate before the atomic manifest write.
 setUpdateTransactionExpectedManifest :: UpdateTransaction -> Manifest -> IO (Either TransactionError ())
 setUpdateTransactionExpectedManifest transaction expected = do
-  metadataResult <- readJournal transaction.transactionDirectory
+  metadataResult <- readJournal (transaction ^. #transactionDirectory)
   case metadataResult of
     Left err -> pure (Left err)
     Right metadata -> do
       let updated =
             JournalMetadata
-              { journalVersion = metadata.journalVersion,
-                createdAt = metadata.createdAt,
-                entries = metadata.entries,
-                newDirectories = metadata.newDirectories,
+              { journalVersion = metadata ^. #journalVersion,
+                createdAt = metadata ^. #createdAt,
+                entries = metadata ^. #entries,
+                newDirectories = metadata ^. #newDirectories,
                 expectedManifest = Just expected
               }
-      result <- try @SomeException (writeJournal transaction.transactionDirectory updated)
+      result <- try @SomeException (writeJournal (transaction ^. #transactionDirectory) updated)
       pure $ first (\err -> TransactionApplyFailed (exceptionText err) Nothing) result
 
 recoverIncompleteTransactions :: FilePath -> IO [Either TransactionError ()]
@@ -460,7 +461,7 @@ recoverOne projectRoot transactionDirectory = do
         Left quarantineError -> Left quarantineError
         Right () -> Left err
     Right metadata -> do
-      committed <- manifestMatches projectRoot metadata.expectedManifest
+      committed <- manifestMatches projectRoot (metadata ^. #expectedManifest)
       if committed
         then do
           result <- try @SomeException (cleanupDirectory transactionDirectory)
@@ -470,7 +471,7 @@ recoverOne projectRoot transactionDirectory = do
             UpdateTransaction
               { projectRoot = projectRoot,
                 transactionDirectory = transactionDirectory,
-                targets = Set.fromList (map (.targetPath) metadata.entries)
+                targets = Set.fromList (map (^. #targetPath) (metadata ^. #entries))
               }
 
 manifestMatches :: FilePath -> Maybe Manifest -> IO Bool
@@ -507,9 +508,9 @@ readJournal transactionDirectory = do
 
 validateJournal :: JournalMetadata -> Either Text JournalMetadata
 validateJournal metadata = do
-  traverse_ (validateJournalEntry . (.targetPath)) metadata.entries
-  traverse_ validateBackupName [name | JournalEntry _ (Just name) <- metadata.entries]
-  traverse_ (first renderTransactionPathError . validateTransactionPath) metadata.newDirectories
+  traverse_ (validateJournalEntry . (^. #targetPath)) (metadata ^. #entries)
+  traverse_ validateBackupName [name | JournalEntry _ (Just name) <- metadata ^. #entries]
+  traverse_ (first renderTransactionPathError . validateTransactionPath) (metadata ^. #newDirectories)
   pure metadata
   where
     validateJournalEntry path = first renderTransactionPathError (validateTransactionPath path)
