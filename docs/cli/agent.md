@@ -26,7 +26,16 @@ seihou agent assist --provider codex-cli --model gpt-5 "create a module"
 seihou agent --debug --provider openai setup "show the prompt only"
 ```
 
-Provider and model values are resolved from CLI flags, environment variables, per-command and shared config keys (local then global), and defaults. Each command can be configured independently with `agent.<command>.provider` / `agent.<command>.model`, falling back to the shared `agent.provider` / `agent.model` defaults; a local project value always overrides a global one. See [Configuration and Variable Resolution](../user/config-and-variables.md#agent-provider-defaults) for the full precedence chain, and run `seihou agent config` (below) to inspect what resolves for each command.
+Provider and model values are resolved from CLI flags, environment variables, the artifact's own declaration, per-command and shared config keys (local then global), and defaults. Each command can be configured independently with `agent.<command>.provider` / `agent.<command>.model`, falling back to the shared `agent.provider` / `agent.model` defaults; a local project value always overrides a global one. See [Configuration and Variable Resolution](../user/config-and-variables.md#agent-provider-defaults) for the full precedence chain, and run `seihou agent config` (below) to inspect what resolves for each command.
+
+A blueprint or prompt can also declare the agent it was written for, through a `launch` record in its `blueprint.dhall` or `prompt.dhall`. Those declared values outrank every configured default but still lose to a `--provider`, `--model`, or `--effort` flag and to the `SEIHOU_AGENT_*` environment variables, per field. This applies to `seihou agent run`, `seihou agent migrate`, and `seihou prompt run` — the three commands that load an artifact. Add `--verbose` to a run to see the resolved settings and where each came from:
+
+```text
+$ seihou agent run deep-thinker --verbose
+[info]  Agent: provider claude-cli [built-in default], model claude-sonnet-5 [blueprint: launch.model], effort max [blueprint: launch.effort]
+```
+
+A declaration naming an unknown provider or effort fails the run with an actionable message rather than silently falling back. See [Blueprints](../user/blueprints.md#launch-settings).
 
 ## Providers
 

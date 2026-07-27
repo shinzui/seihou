@@ -116,10 +116,15 @@ This section must always reflect the actual current state of the work.
       2026-07-27, commits `988884f` (baikai bump, see Surprises & Discoveries) and `7a26c35`.
       Acceptance transcripts 1–3 from Validation and Acceptance reproduced by hand verbatim;
       both new end-to-end cases pass; `cabal test all` green (1034 / 373 / 16).
-- [ ] Milestone 5 — Validation and scaffolding: `validate-blueprint` / `validate-prompt` checks,
-      `seihou new-blueprint` template, `seihou agent config` precedence legend.
-- [ ] Milestone 6 — Documentation and distillation: user and CLI docs, both changelogs, schema
-      README, architecture note.
+- [x] Milestone 5 — Validation and scaffolding: `validate-blueprint` / `validate-prompt` checks,
+      `seihou new-blueprint` template, `seihou agent config` precedence legend. Done 2026-07-27,
+      commit `006c285`. Acceptance case 5 reproduced verbatim (the `✗ Launch settings` line, exit
+      1, and the refusing run); the legend now prints nine tiers; a freshly scaffolded blueprint
+      still decodes against the published pin and validates.
+- [x] Milestone 6 — Documentation and distillation: user and CLI docs, both changelogs, schema
+      README, architecture note. Done 2026-07-27. Acceptance case 6 also verified by hand:
+      `seihou prompt run` labels a declared effort `[prompt: launch.effort]`, and a `prompt.dhall`
+      whose `launch` literal has only the old three fields still loads and is honored.
 
 
 ## Surprises & Discoveries
@@ -293,7 +298,66 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Outcome: delivered in full, and it does more than the plan promised.** A blueprint or prompt
+author can now write `launch = Some S.Launch::{ provider = …, model = …, effort = … }` and have it
+take effect for anyone who runs the artifact. Every acceptance transcript in Validation and
+Acceptance was reproduced by hand, verbatim, against the real binary — including the exact
+provenance strings the Purpose section predicted:
+
+```text
+$ seihou agent run deep-thinker --verbose --debug
+[info]  Agent: provider claude-cli [built-in default], model claude-sonnet-5 [blueprint: launch.model], effort max [blueprint: launch.effort]
+
+$ seihou agent run deep-thinker --model claude-opus-4-8 --verbose --debug
+[info]  Agent: provider claude-cli [built-in default], model claude-opus-4-8 [flag on subcommand], effort max [blueprint: launch.effort]
+
+$ SEIHOU_AGENT_MODEL=claude-haiku-4-5 seihou agent run deep-thinker --verbose --debug
+[info]  Agent: provider claude-cli [env: SEIHOU_AGENT_MODEL] … model claude-haiku-4-5 [env: SEIHOU_AGENT_MODEL]
+```
+
+The end-to-end argv assertion — the acceptance that actually matters, because steps 1–3 only
+inspect Seihou's own accounting — passes as specified: the spawned `claude` receives
+`--model claude-sonnet-5 … --effort max`, and with `--model claude-opus-4-8` it receives that model
+while still receiving `--effort max`. `cabal test all` is green at 1034 / 373 / 16, up from
+1023 / 371 / 16, and `nix flake check` passes.
+
+**What exceeded the plan.** The plan assumed effort already reached the agent process and that this
+work only had to feed the existing pipe. It did not: the pinned `baikai-claude` 0.3.0.2 rendered
+`--effort` for interactive launches but dropped it on the batch `claude -p` path, which is the path
+taken whenever stdin is not a terminal. So *configured* effort — not just declared effort — had
+been silently ignored in CI, pipes, and `--batch` runs since effort shipped. Fixing it took a
+dependency bump (see Surprises & Discoveries and the Decision Log) and is recorded as a **Fixed**
+entry in the user changelog, separate from this plan's feature.
+
+**What changed relative to the plan as written.** Two things, both documented in the Decision Log:
+the Baikai bump described above, which revises the plan's "no new external dependencies" framing
+(none is added; an existing one moves); and, incidentally, the positional `Blueprint` pattern
+matches in `Seihou.CLI.Install` and `Seihou.CLI.Browse` were replaced with field accessors, because
+adding the twelfth field broke them and re-numbering underscores would have left the same trap for
+the next field. Everything else landed as specified — including the `mode` field being kept and
+documented as reserved, validation split across the two layers, and no new modules (so
+`nix/check-cli-module-placement.sh` passed unchanged throughout).
+
+**Lessons worth keeping.** Two, and both are promoted into
+`docs/dev/architecture/overview.md` rather than left here:
+
+1. A single ordered candidate list with the provenance enum's constructor order *as* the
+   precedence order is what made a new tier a three-line insertion instead of a refactor. The
+   temptation to patch an already-resolved value after the artifact loads was real and would have
+   been wrong, because `applyProviderDefaultModel` pins a per-provider default model that must be
+   re-derived whenever the provider changes late.
+
+2. Seihou has two agent launch paths — interactive and completion — and a blueprint run silently
+   crosses from one to the other based on whether stdin is a terminal. A capability present on one
+   is not automatically present on the other, and Seihou's own resolver accounting cannot detect
+   the difference: the `--verbose` line said `effort max [blueprint: launch.effort]` while the
+   spawned process received no effort flag at all. Settings that must reach the agent need an
+   assertion on the spawned process's argv, not on the resolver's output.
+
+**Nothing was left undone.** The one thing a future contributor might pick up is that the
+end-to-end argv coverage exercises the batch path only (that is what the test harness can drive
+without a TTY); the interactive path's `--effort` rendering is covered by Baikai's own tests rather
+than Seihou's.
 
 
 ## Context and Orientation
@@ -1362,3 +1426,26 @@ into an `AgentModelConfig` before it reaches them, so the launch layer needs no 
 
 No new spec modules are introduced, so `seihou-core/test/Main.hs`, `seihou-cli/test/Main.hs`, and
 the two `.cabal` files need no edits.
+
+
+## Revision Note — 2026-07-27
+
+Revised during implementation, after Milestone 4's argv probe showed that a declared reasoning
+effort never reached the spawned `claude` process on the batch path.
+
+What changed and why:
+
+- **Surprises & Discoveries** gained the batch-path effort discovery, with the recorded argv as
+  evidence and the root cause traced to the pinned Baikai revision rather than to any Seihou code.
+- **Decision Log** gained the decision to bump Baikai to `0.4.1.0` / `baikai-claude 0.4.0.0` /
+  `baikai-openai 0.4.0.0` as part of this plan. This revises the plan's original **Interfaces and
+  Dependencies** framing, which stated the work adds "no new external dependencies" and "no new
+  Baikai surface": that remains true — no dependency is added and no new Baikai API is called —
+  but an existing dependency moves, which the original text did not anticipate. Without the bump
+  the plan's headline promise would not have held whenever stdin is not a terminal, and the
+  Milestone 4 acceptance could not have been written as specified.
+- **Progress** records the bump under Milestone 4 alongside the wiring commit.
+- **Outcomes & Retrospective** was written at completion and notes that the bump also fixes a
+  pre-existing bug affecting configured and environment-set effort, independent of this feature.
+
+The plan's design, precedence order, schema shape, and command scope are unchanged.

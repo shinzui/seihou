@@ -75,6 +75,7 @@ in  S.Blueprint::{
     , allowedTools = Some [ "Bash(cabal *)" ]
     , tags = [ "api" ]
     , migrations = [] : List S.BlueprintMigration.Type
+    , launch = Some S.Launch::{ model = Some "claude-opus-4-8", effort = Some "max" }
     }
 ```
 
@@ -92,11 +93,70 @@ Important fields:
 | `allowedTools` | Extra tools to pre-approve in addition to the runner's base set. |
 | `tags` | Discovery tags for registries, browse, install, and list filters. |
 | `migrations` | Ordered agent instructions for explicit library version edges. |
+| `launch` | Optional agent provider, model, and reasoning effort this blueprint expects. See [Launch settings](#launch-settings). |
 
 Blueprints share a lookup namespace with modules, recipes, and prompts. If one
 directory contains more than one runnable file, discovery prefers
 `module.dhall`, then `recipe.dhall`, then `blueprint.dhall`, then
 `prompt.dhall`.
+
+## Launch settings
+
+A blueprint can declare the agent it was written for. This matters when a
+prompt only works well with a particular provider, or genuinely needs deep
+reasoning: rather than hoping whoever runs it has the right settings
+configured, the author states them in the blueprint.
+
+```dhall
+in  S.Blueprint::{
+    , name = "deep-thinker"
+    , prompt = ./prompt.md as Text
+    , launch = Some S.Launch::{
+      , provider = Some "claude-cli"
+      , model = Some "claude-opus-4-8"
+      , effort = Some "max"
+      }
+    }
+```
+
+Every field is optional; an omitted field means "let the invoking user's
+configuration decide".
+
+| Field | Accepted values |
+|-------|-----------------|
+| `provider` | `claude-cli`, `codex-cli`, `anthropic`, `openai` |
+| `model` | Any model name or alias the provider accepts. Free-form. |
+| `effort` | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `mode` | Reserved; currently ignored by the runner. |
+
+Declared values sit in the middle of the precedence chain. They **override
+every config-file tier** — both the project-local `.seihou/config.dhall` and
+the global `~/.config/seihou/config.dhall`, per-command keys included — but
+they **lose to anything you state for a single invocation**: a `--provider`,
+`--model`, or `--effort` flag, or a `SEIHOU_AGENT_*` environment variable. The
+blueprint author sets the sane default; the person at the keyboard keeps the
+last word. See the full ordering in
+[Configuration and variables](config-and-variables.md#agent-provider-defaults).
+
+Precedence is per field. A `--model` flag replaces only the declared model;
+a declared `effort` still applies. To see what won and why, add `--verbose`:
+
+```text
+$ seihou agent run deep-thinker --verbose
+[info]  Agent: provider claude-cli [built-in default], model claude-opus-4-8 [blueprint: launch.model], effort max [blueprint: launch.effort]
+```
+
+An unusable value is caught rather than silently ignored. `seihou
+validate-blueprint` reports it and exits non-zero, and a run refuses instead of
+falling back:
+
+```text
+✗ Launch settings
+    launch.provider: Unknown agent provider 'llama'. Expected one of: claude-cli, codex-cli, anthropic, openai.
+```
+
+Agent prompts declare launch settings the same way; see
+[Prompts](prompts.md).
 
 ## Variables
 

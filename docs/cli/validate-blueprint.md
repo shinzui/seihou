@@ -36,6 +36,9 @@ Checks blueprint well-formedness:
 - Every entry in `baseModules` is well-formed and resolves to a
   module or recipe — not another blueprint
 - Tags and `allowedTools` entries are non-empty
+- The `launch` record, when present, sets no blank field, and its
+  declared `provider` and `effort` name values seihou recognizes
+  (`model` is free-form and is not checked)
 
 If `blueprint.dhall` is missing, `validate-blueprint` exits with code
 4. If any rule above is violated, it exits with code 1 after printing a

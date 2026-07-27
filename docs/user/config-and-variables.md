@@ -157,11 +157,22 @@ Agent provider resolution uses this order, with the first non-blank value winnin
 1. Subcommand CLI flag: `seihou agent assist --provider ... --model ... --effort ...`
 2. Parent CLI flag: `seihou agent --provider ... --model ... --effort ... assist`
 3. Environment variables: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`, `SEIHOU_AGENT_EFFORT`
-4. Local project config: `agent.<command>.{provider,model,effort}`
-5. Local project config: `agent.{provider,model,effort}`
-6. Global config: `agent.<command>.{provider,model,effort}`
-7. Global config: `agent.{provider,model,effort}`
-8. Built-in defaults: provider `claude-cli`; model pinned per provider so the local CLI providers are deterministic — `claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`; effort unset
+4. The blueprint's or prompt's own declaration: `launch.{provider,model,effort}` in its `blueprint.dhall` / `prompt.dhall`
+5. Local project config: `agent.<command>.{provider,model,effort}`
+6. Local project config: `agent.{provider,model,effort}`
+7. Global config: `agent.<command>.{provider,model,effort}`
+8. Global config: `agent.{provider,model,effort}`
+9. Built-in defaults: provider `claude-cli`; model pinned per provider so the local CLI providers are deterministic — `claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`; effort unset
+
+Tier 4 applies only to the three commands that load an artifact —
+`seihou agent run`, `seihou agent migrate`, and `seihou prompt run`. A
+blueprint or prompt author can declare the agent their prompt was written for,
+and that declaration outranks every configured default while still losing to a
+flag or environment variable set for a single invocation. Because it depends on
+which artifact you run, `seihou agent config` cannot show it; add `--verbose` to
+a run to see the resolved settings and their sources. See
+[Blueprints](blueprints.md#launch-settings) and
+[Prompts](prompts.md#launch-settings).
 
 The hierarchy is scope-first: any value from the local project config
 (`.seihou/config.dhall`) overrides any value from the global config

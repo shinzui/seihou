@@ -75,11 +75,22 @@ Resolution order is (highest precedence first):
 1. Subcommand `--provider` / `--model`
 2. Parent `--provider` / `--model`
 3. `SEIHOU_AGENT_PROVIDER` / `SEIHOU_AGENT_MODEL`
-4. Local `agent.<command>.provider` / `agent.<command>.model`
-5. Local `agent.provider` / `agent.model`
-6. Global `agent.<command>.provider` / `agent.<command>.model`
-7. Global `agent.provider` / `agent.model`
-8. Built-in defaults: provider `claude-cli`; model pinned per provider (`claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`)
+4. The blueprint's or prompt's own `launch.provider` / `launch.model` declaration
+5. Local `agent.<command>.provider` / `agent.<command>.model`
+6. Local `agent.provider` / `agent.model`
+7. Global `agent.<command>.provider` / `agent.<command>.model`
+8. Global `agent.provider` / `agent.model`
+9. Built-in defaults: provider `claude-cli`; model pinned per provider (`claude-cli` → `claude-opus-4-8`, `codex-cli` → `gpt-5.6-terra`)
+
+Tier 4 applies only to the commands that load an artifact — `seihou agent run`,
+`seihou agent migrate`, and `seihou prompt run`. A blueprint or prompt author
+can declare the agent their prompt was written for, and that declaration
+outranks every configured default while still losing to a flag or environment
+variable set for one invocation. See
+[Blueprints](blueprints.md#launch-settings) and
+[Prompts](prompts.md#launch-settings), and
+[Configuration and variables](config-and-variables.md#agent-provider-defaults)
+for the same chain including effort.
 
 ### Reasoning effort
 

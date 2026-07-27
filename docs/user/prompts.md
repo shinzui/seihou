@@ -82,7 +82,7 @@ Fresh prompts are self-contained Dhall records:
   ]
 , allowedTools = None (List Text)
 , tags = [ "review" ]
-, launch = Some { provider = Some "codex-cli", mode = None Text, model = None Text }
+, launch = Some S.Launch::{ provider = Some "codex-cli", effort = Some "high" }
 }
 ```
 
@@ -101,11 +101,55 @@ Important fields:
 | `files` | Reference files under `files/`. |
 | `allowedTools` | Optional runner metadata for future tool allow-lists. |
 | `tags` | Discovery tags for registries, browse, install, and list filters. |
-| `launch` | Optional provider, mode, or model hints for this prompt. |
+| `launch` | Optional agent provider, model, and reasoning effort this prompt expects. See [Launch settings](#launch-settings). |
 
 Prompts share a lookup namespace with modules, recipes, and blueprints. If one
 directory contains multiple runnable files, discovery prefers `module.dhall`,
 then `recipe.dhall`, then `blueprint.dhall`, then `prompt.dhall`.
+
+## Launch settings
+
+A prompt can declare the agent it was written for, so it runs with the right
+provider, model, and reasoning effort no matter how the invoking user has
+seihou configured.
+
+```dhall
+, launch = Some S.Launch::{
+  , provider = Some "claude-cli"
+  , model = Some "claude-sonnet-5"
+  , effort = Some "max"
+  }
+```
+
+Every field is optional; an omitted field means "let the invoking user's
+configuration decide".
+
+| Field | Accepted values |
+|-------|-----------------|
+| `provider` | `claude-cli`, `codex-cli`, `anthropic`, `openai` |
+| `model` | Any model name or alias the provider accepts. Free-form. |
+| `effort` | `minimal`, `low`, `medium`, `high`, `xhigh`, `max` |
+| `mode` | Reserved; currently ignored by the runner. |
+
+The `launch` field existed in earlier releases but was inert — nothing read
+it. `seihou prompt run` now honors it, and `effort` is new.
+
+Declared values override every config-file tier (project-local and global,
+per-command keys included) but lose to a `--provider`, `--model`, or `--effort`
+flag and to the `SEIHOU_AGENT_*` environment variables. Precedence applies per
+field, so a `--model` flag replaces only the model while a declared `effort`
+still takes effect. Add `--verbose` to see what won:
+
+```text
+$ seihou prompt run review-changes --verbose
+[info]  Agent: provider codex-cli [prompt: launch.provider], model gpt-5.6-terra [built-in default], effort high [prompt: launch.effort]
+```
+
+An unusable value fails `seihou validate-prompt` and refuses the run rather
+than silently falling back. The full ordering is in
+[Configuration and variables](config-and-variables.md#agent-provider-defaults);
+blueprints declare the same settings the same way, see
+[Blueprints](blueprints.md#launch-settings).
 
 ## Variables From Config
 

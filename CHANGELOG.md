@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Artifact-declared agent launch settings** (EP-73): a new shared
+  `Launch.dhall` record in `seihou-schema`, referenced by both `Blueprint.dhall`
+  and `AgentPrompt.dhall` and exported as `S.Launch`, lets a blueprint or prompt
+  declare the `provider`, `model`, and reasoning `effort` its prompt was written
+  for. `Seihou.CLI.AgentConfig` gains a declaration tier between the
+  `SEIHOU_AGENT_*` environment variables and the config files, plus a two-phase
+  resolution API (`loadPendingAgentConfig` / `resolvePendingAgentConfig`) so the
+  three commands that load an artifact — `agent run`, `agent migrate`,
+  `prompt run` — can resolve after decoding it. `AgentPromptLaunch` is renamed
+  to `AgentLaunch` and gains `effort`; `Blueprint` gains a `launch` field. Both
+  are decoded through `withDefaults`, so artifacts authored against an older
+  schema pin still load. `validate-blueprint` and `validate-prompt` gain a
+  "Launch settings" check, and `agent config` renumbers its precedence legend to
+  nine tiers.
+
+### Changed
+- Bumped the `haskell-nix` registry input to carry **baikai 0.4.1.0** and
+  **baikai-claude / baikai-openai 0.4.0.0**, and widened the cabal bounds to
+  match. The previous `baikai-claude` 0.3.0.2 forwarded `Options.thinking` only
+  to interactive launches, so reasoning effort was dropped on the batch
+  `claude -p` path. Bounds-only change: no seihou module calls the two functions
+  whose signatures changed (`claudeCliCommand`, `codexCliCommand`).
+- Replaced the positional `Blueprint` pattern matches in `Seihou.CLI.Install`
+  and `Seihou.CLI.Browse` with field accessors so future field additions do not
+  break them.
+
 ## [0.5.0.0] - 2026-07-20
 
 ### Added

@@ -12,6 +12,42 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **Blueprint- and prompt-declared agent settings.** A blueprint or agent
+  prompt can now declare the agent it was written for, in its own Dhall file:
+
+  ```dhall
+  , launch = Some S.Launch::{
+    , provider = Some "claude-cli"
+    , model = Some "claude-opus-4-8"
+    , effort = Some "max"
+    }
+  ```
+
+  This matters when a prompt only works well with a particular provider, or
+  genuinely needs deep reasoning: rather than hoping whoever runs it has the
+  right settings configured, the author states them once. Declared values
+  **override every config-file tier** — project-local and global, per-command
+  keys included — but **lose to anything you state for a single invocation**: a
+  `--provider` / `--model` / `--effort` flag, or a `SEIHOU_AGENT_*` environment
+  variable. Precedence is per field, so a `--model` flag replaces only the model
+  while a declared `effort` still applies.
+
+  Honored by `seihou agent run`, `seihou agent migrate`, and `seihou prompt
+  run`. Add `--verbose` to see what resolved and where each value came from
+  (`[blueprint: launch.effort]`, `[flag on subcommand]`, and so on). A
+  declaration naming an unknown provider or effort is reported by `seihou
+  validate-blueprint` / `seihou validate-prompt` and refuses the run instead of
+  silently falling back. `seihou agent config` lists the new tier in its
+  precedence legend, and freshly scaffolded blueprints show the field as a
+  commented example.
+
+  `prompt.dhall` already accepted a `launch` record in earlier releases, but
+  nothing read it; it is now honored, and gains an `effort` field. Existing
+  blueprints and prompts are unaffected — the field is optional, and artifacts
+  authored against an older schema pin still load. See
+  [Blueprints](blueprints.md#launch-settings) and
+  [Prompts](prompts.md#launch-settings).
+
 - **Configurable reasoning effort.** Each agent command (and `seihou prompt
   run`) can now set the model's reasoning effort — how hard it thinks — with the
   same hierarchy as provider and model. Use `agent.effort` /
@@ -66,6 +102,15 @@ packages in the workspace share a single version.
 - `seihou status` recommends one update per recorded application; `run` is
   described as initial application/reconfiguration, while `upgrade` is
   explicitly shared-cache-only maintenance.
+
+### Fixed
+
+- **Reasoning effort now reaches non-interactive agent runs.** Effort was
+  applied to interactive Claude Code and Codex sessions but silently dropped
+  whenever Seihou took the batch path — `claude -p`, used when stdin is not a
+  terminal, such as in CI or through a pipe. Configured, environment-set, and
+  blueprint-declared effort now reach the agent in both modes. Requires Baikai
+  0.4.1 / baikai-claude 0.4.
 
 ## [0.3.0.0] - 2026-06-12
 

@@ -62,6 +62,14 @@ Non-debug runs launch the configured provider. CLI providers start interactive
 Claude Code or Codex sessions. API providers send one rendered completion
 request and print the assistant response.
 
+A prompt can declare the agent it was written for through a `launch` record in
+its `prompt.dhall`, naming a provider, model, and reasoning effort. Those
+declared values outrank every configured default but still lose, per field, to
+a `--provider`, `--model`, or `--effort` flag and to the `SEIHOU_AGENT_*`
+environment variables. Add `--verbose` to see what resolved and why. A
+declaration naming an unknown provider or effort fails the run rather than
+silently falling back. See [Prompts](../user/prompts.md#launch-settings).
+
 ## Examples
 
 ```sh

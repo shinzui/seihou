@@ -402,6 +402,64 @@ target working directory. For a standalone migration guide that other
 projects can reference, see
 [`docs/references/baikai-codex-agent-migration.md`](../../references/baikai-codex-agent-migration.md).
 
+### Agent Launch Settings Resolve Through One Ordered Chain
+
+Every agent-driven command resolves its provider, model, and reasoning effort
+through a single ordered candidate list in
+`seihou-cli/src/Seihou/CLI/AgentConfig.hs`. There is exactly one precedence
+list per field (`providerCandidates`, `modelCandidates`, `effortCandidates`),
+one "leftmost non-blank wins" rule (`firstNonBlankWithSource`), and one
+provenance enum (`AgentConfigSource`) whose constructor order *is* the
+precedence order. New sources are added by inserting a constructor and a
+candidate at the same position, never by patching an already-resolved value
+after the fact.
+
+That discipline is what made the artifact-declaration tier cheap. A blueprint
+or prompt can declare `launch.{provider,model,effort}`, and those declared
+values sit between the `SEIHOU_AGENT_*` environment variables and the
+config-file tiers: they override standing preferences (which is what a config
+file expresses) but lose to anything the invoking user states for one
+invocation. Patching after resolution would have been the obvious shortcut and
+the wrong one, because `applyProviderDefaultModel` pins a per-provider default
+model — so changing the provider late must re-derive the model, which a patch
+step is easy to get wrong.
+
+The complication is timing: `seihou-cli/src-exe/Main.hs` resolves configuration
+*before* dispatching to a handler, but the declaration is only known after the
+handler discovers and decodes its artifact. The resolution is therefore split
+into two phases rather than duplicated. `loadPendingAgentConfig` performs the IO
+(environment plus local and global config) and returns a `PendingAgentConfig`;
+the handler carries it while it loads the blueprint or prompt, then calls
+`resolvePendingAgentConfig`, which folds the declaration into the same inputs
+record and runs the same single pass. Commands with no artifact — `agent
+assist`, `bootstrap`, `setup`, and the `agent config` inspection view — keep
+using the eager entry points, and their declared inputs stay `Nothing`, so the
+tier is inert for them.
+
+Artifact-declared vocabularies are parsed in the CLI layer, not in
+`seihou-core`. The canonical provider and effort vocabularies live in
+`Seihou.CLI.AgentCompletion` (`providerFromText`, `effortFromText`), which
+depends on `baikai`; `seihou-core` does not depend on `baikai` and must not, so
+duplicating the vocabularies there would guarantee drift. `seihou-core`
+therefore validates only that a declared field is non-blank
+(`checkBlueprintLaunch`, `checkAgentPromptLaunch`), and the CLI parses the
+values (`validateAgentLaunchDeclaration`). The two `validate-*` commands run
+both layers in one check row.
+
+One durable gotcha sits underneath all of this: **Seihou has two agent launch
+paths, and a capability present on one is not automatically present on the
+other.** `Seihou.CLI.AgentLaunchExec` drives Baikai's interactive providers;
+`Seihou.CLI.AgentCompletion` drives its completion providers, and blueprint runs
+silently take the completion path whenever stdin is not a terminal. Reasoning
+effort was correctly resolved and correctly handed to Baikai for months while
+being dropped on the batch path alone, because the pinned `baikai-claude`
+rendered `--effort` only for interactive launches. Nothing in Seihou was wrong,
+and no Seihou test caught it, because the resolver's own accounting was right.
+When adding a setting that must reach the agent process, assert on the spawned
+process's argv — the pattern in
+`seihou-cli/test/Seihou/CLI/AgentMigrateE2ESpec.hs`, which puts a fake `claude`
+on `PATH` that records `"$@"` — and assert it for both modes.
+
 ## Technology Stack
 
 | Component | Choice | Rationale |
