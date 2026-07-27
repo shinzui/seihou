@@ -18,10 +18,10 @@ import Seihou.Prelude
 -- 'ParentVars' have independent edges, so the topological sort
 -- produces one node per distinct invocation.
 data CompositionGraph = CompositionGraph
-  { cgModules :: Map ModuleInstance Module,
-    cgEdges :: Map ModuleInstance [ModuleInstance]
+  { cgModules :: !(Map ModuleInstance Module),
+    cgEdges :: !(Map ModuleInstance [ModuleInstance])
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Build a composition graph from a list of module instances.
 --

@@ -29,14 +29,15 @@ import System.Directory (doesDirectoryExist, doesFileExist, getCurrentDirectory)
 
 -- | Dynamic context gathered from the current directory, shared across agent commands.
 data AgentContext = AgentContext
-  { cwd :: Text,
-    seihouInitialized :: Bool,
-    hasManifest :: Bool,
-    localModuleDhall :: Bool,
-    localModules :: [Text],
+  { cwd :: !Text,
+    seihouInitialized :: !Bool,
+    hasManifest :: !Bool,
+    localModuleDhall :: !Bool,
+    localModules :: ![Text],
     -- | (name, description, source)
-    availableModules :: [(Text, Text, Text)]
+    availableModules :: ![(Text, Text, Text)]
   }
+  deriving stock (Generic)
 
 gatherAgentContext :: IO AgentContext
 gatherAgentContext = do

@@ -16,7 +16,6 @@ import Data.Map.Strict qualified as Map
 import Data.Ord (Down (..))
 import Data.Text qualified as T
 import Data.Time (UTCTime)
-import GHC.Generics (Generic)
 import Seihou.Core.Migration
   ( Migration (..),
     MigrationOp (..),
@@ -78,9 +77,9 @@ data MigrationOpInstance
 -- 'MigrationPlan' it was built from, and the linearized list of
 -- concrete op instances in execution order.
 data ExecutedMigrationPlan = ExecutedMigrationPlan
-  { planModule :: ModuleName,
-    planSource :: MigrationPlan,
-    planOps :: [MigrationOpInstance]
+  { planModule :: !ModuleName,
+    planSource :: !MigrationPlan,
+    planOps :: ![MigrationOpInstance]
   }
   deriving stock (Eq, Show, Generic)
 

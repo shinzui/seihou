@@ -40,21 +40,21 @@ data DiagSeverity
 
 -- | A single diagnostic check with its result.
 data DiagCheck = DiagCheck
-  { diagLabel :: Text,
-    diagSeverity :: DiagSeverity,
-    diagDetails :: [Text]
+  { diagLabel :: !Text,
+    diagSeverity :: !DiagSeverity,
+    diagDetails :: ![Text]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | A complete validation report for a module.
 data ValidateReport = ValidateReport
-  { reportModule :: Module,
-    reportPath :: FilePath,
-    reportDhallOk :: Bool,
-    reportDhallError :: Maybe Text,
-    reportChecks :: [DiagCheck]
+  { reportModule :: !Module,
+    reportPath :: !FilePath,
+    reportDhallOk :: !Bool,
+    reportDhallError :: !(Maybe Text),
+    reportChecks :: ![DiagCheck]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Build a structured validation report. When the first argument is True,
 -- lint warnings are included after the core checks.

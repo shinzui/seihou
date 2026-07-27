@@ -50,12 +50,12 @@ data UpgradeStatus
   deriving stock (Eq, Show)
 
 data UpgradeEntry = UpgradeEntry
-  { moduleName :: Text,
-    oldVersion :: Maybe Text,
-    newVersion :: Maybe Text,
-    upgradeStatus :: UpgradeStatus
+  { moduleName :: !Text,
+    oldVersion :: !(Maybe Text),
+    newVersion :: !(Maybe Text),
+    upgradeStatus :: !UpgradeStatus
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 instance ToJSON UpgradeEntry where
   toJSON e =

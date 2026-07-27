@@ -46,30 +46,30 @@ import System.Environment (getEnvironment)
 -- Provider capability is represented as a boolean so this library module does
 -- not need to know about Baikai or the executable command model.
 data BlueprintExecutionRequest = BlueprintExecutionRequest
-  { executionBlueprint :: Blueprint,
-    executionBlueprintDir :: FilePath,
-    executionVariableOverrides :: [(Text, Text)],
-    executionNamespaceOverride :: Maybe Text,
-    executionContextOverride :: Maybe Text,
-    executionCanMountFiles :: Bool,
-    executionLogLevel :: LogLevel
+  { executionBlueprint :: !Blueprint,
+    executionBlueprintDir :: !FilePath,
+    executionVariableOverrides :: ![(Text, Text)],
+    executionNamespaceOverride :: !(Maybe Text),
+    executionContextOverride :: !(Maybe Text),
+    executionCanMountFiles :: !Bool,
+    executionLogLevel :: !LogLevel
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Prepared state that both execution modes consume. The mounted path is
 -- absolute when present; the access text preserves the existing API-provider
 -- explanation when local files cannot be mounted.
 data PreparedBlueprintExecution = PreparedBlueprintExecution
-  { preparedBlueprint :: Blueprint,
-    preparedBlueprintDir :: FilePath,
-    preparedResolvedVariables :: Map VarName ResolvedVar,
-    preparedMountedFilesDir :: Maybe FilePath,
-    preparedReferenceFiles :: Text,
-    preparedReferenceFilesAccess :: Text,
-    preparedSharedPrompt :: Text,
-    preparedAllowedTools :: [String]
+  { preparedBlueprint :: !Blueprint,
+    preparedBlueprintDir :: !FilePath,
+    preparedResolvedVariables :: !(Map VarName ResolvedVar),
+    preparedMountedFilesDir :: !(Maybe FilePath),
+    preparedReferenceFiles :: !Text,
+    preparedReferenceFilesAccess :: !Text,
+    preparedSharedPrompt :: !Text,
+    preparedAllowedTools :: ![String]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Resolve one blueprint through the same CLI/environment/config/prompt
 -- precedence used by @seihou run@ and the existing agent runner.

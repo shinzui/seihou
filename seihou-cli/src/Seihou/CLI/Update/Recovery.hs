@@ -30,19 +30,19 @@ data BackupScope = ProjectDirectory | InstalledArtifact
   deriving stock (Eq, Show)
 
 data ServiceBackup = ServiceBackup
-  { scope :: BackupScope,
-    target :: FilePath,
-    backupName :: Maybe FilePath
+  { scope :: !BackupScope,
+    target :: !FilePath,
+    backupName :: !(Maybe FilePath)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data ServiceJournal = ServiceJournal
-  { version :: Int,
-    installedRoot :: FilePath,
-    entries :: [ServiceBackup],
-    expectedManifest :: Maybe Manifest
+  { version :: !Int,
+    installedRoot :: !FilePath,
+    entries :: ![ServiceBackup],
+    expectedManifest :: !(Maybe Manifest)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 instance ToJSON BackupScope where
   toJSON ProjectDirectory = Aeson.String "project-directory"

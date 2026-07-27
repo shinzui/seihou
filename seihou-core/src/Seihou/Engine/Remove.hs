@@ -44,10 +44,10 @@ data RemovalFile
 
 -- | A plan describing what files to remove for a given module.
 data RemovalPlan = RemovalPlan
-  { targetModule :: ModuleName,
-    files :: [RemovalFile]
+  { targetModule :: !ModuleName,
+    files :: ![RemovalFile]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- ============================================================
 -- New step-based removal types
@@ -77,10 +77,10 @@ data RemovalFileStatus
 
 -- | A removal plan built from declared removal steps.
 data ExecutedRemovalPlan = ExecutedRemovalPlan
-  { targetModule :: ModuleName,
-    ops :: [RemovalOp]
+  { targetModule :: !ModuleName,
+    ops :: ![RemovalOp]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Errors that prevent removal.
 data RemovalError

@@ -34,7 +34,6 @@ where
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
-import GHC.Generics (Generic)
 import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile)
@@ -352,11 +351,11 @@ data ModuleSource = SourceProject | SourceUser | SourceInstalled
 
 -- | A module discovered during enumeration, with its load result and source.
 data DiscoveredModule = DiscoveredModule
-  { discoveredResult :: Either ModuleLoadError Module,
-    discoveredSource :: ModuleSource,
-    discoveredDir :: FilePath
+  { discoveredResult :: !(Either ModuleLoadError Module),
+    discoveredSource :: !ModuleSource,
+    discoveredDir :: !FilePath
   }
-  deriving stock (Show)
+  deriving stock (Generic, Show)
 
 -- | Enumerate all modules across the given search paths.
 -- The search paths must be in the same order as 'defaultSearchPaths':
@@ -407,15 +406,15 @@ data RunnableKind = KindModule | KindRecipe | KindBlueprint | KindPrompt
 
 -- | A runnable discovered during enumeration, with its load result, kind, and source.
 data DiscoveredRunnable = DiscoveredRunnable
-  { drName :: Text,
-    drDescription :: Maybe Text,
-    drKind :: RunnableKind,
-    drSource :: ModuleSource,
-    drDir :: FilePath,
-    drIsError :: Bool,
-    drError :: Maybe Text
+  { drName :: !Text,
+    drDescription :: !(Maybe Text),
+    drKind :: !RunnableKind,
+    drSource :: !ModuleSource,
+    drDir :: !FilePath,
+    drIsError :: !Bool,
+    drError :: !(Maybe Text)
   }
-  deriving stock (Show)
+  deriving stock (Generic, Show)
 
 -- | Enumerate all modules, recipes, blueprints, and prompts across the given search paths.
 -- Returns a unified list of discovered items, each tagged with its kind.

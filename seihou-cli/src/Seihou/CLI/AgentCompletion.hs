@@ -37,6 +37,7 @@ import Control.Exception (try)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Vector qualified as V
+import GHC.Generics (Generic)
 import System.Directory (getCurrentDirectory)
 
 data AgentProvider
@@ -66,29 +67,30 @@ data TraceSetting
   deriving stock (Eq, Show)
 
 data AgentModelConfig = AgentModelConfig
-  { agentProvider :: AgentProvider,
-    agentModel :: Maybe Text,
+  { agentProvider :: !AgentProvider,
+    agentModel :: !(Maybe Text),
     -- | Reasoning effort. 'Nothing' leaves the provider/CLI default alone.
-    agentEffort :: Maybe ThinkingLevel,
+    agentEffort :: !(Maybe ThinkingLevel),
     -- | Where call traces go. 'TraceOff' emits nothing.
-    agentTrace :: TraceSetting,
+    agentTrace :: !TraceSetting,
     -- | The configured @agent.tracePath@, when set. 'Nothing' means the
     -- built-in default path is used by the file sink.
-    agentTracePath :: Maybe FilePath
+    agentTracePath :: !(Maybe FilePath)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Note the absence of 'Eq' and 'Show': 'TraceSink' wraps a streamly fold,
 -- which is a function and so has neither. Tests compare the inspectable fields
 -- individually.
 data AgentCompletionRequest = AgentCompletionRequest
-  { completionSystemPrompt :: Text,
-    completionInitialPrompt :: Maybe Text,
-    completionModelConfig :: AgentModelConfig,
+  { completionSystemPrompt :: !Text,
+    completionInitialPrompt :: !(Maybe Text),
+    completionModelConfig :: !AgentModelConfig,
     -- | Where this call's trace events go. Baikai's 'silent' sink when tracing
     -- is off, which is the default and costs nothing.
-    completionTraceSink :: TraceSink
+    completionTraceSink :: !TraceSink
   }
+  deriving stock (Generic)
 
 -- | Build a request that emits no trace events.
 buildAgentCompletionRequest :: AgentModelConfig -> Text -> Maybe Text -> AgentCompletionRequest

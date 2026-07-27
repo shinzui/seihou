@@ -9,11 +9,11 @@ import Seihou.Prelude
 import System.Exit (ExitCode (..))
 
 data ProcessMock = ProcessMock
-  { mockCommand :: Text,
-    mockArgs :: [Text],
-    mockResult :: (ExitCode, Text, Text)
+  { mockCommand :: !Text,
+    mockArgs :: ![Text],
+    mockResult :: !(ExitCode, Text, Text)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 runProcessPure :: [ProcessMock] -> Eff (Process : es) a -> Eff es a
 runProcessPure mocks = interpret $ \_ -> \case

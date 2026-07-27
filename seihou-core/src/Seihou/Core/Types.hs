@@ -113,28 +113,28 @@ data Validation
 
 -- | A variable declaration within a module.
 data VarDecl = VarDecl
-  { name :: VarName,
-    type_ :: VarType,
-    default_ :: Maybe VarValue,
-    description :: Maybe Text,
-    required :: Bool,
-    validation :: Maybe Validation
+  { name :: !VarName,
+    type_ :: !VarType,
+    default_ :: !(Maybe VarValue),
+    description :: !(Maybe Text),
+    required :: !Bool,
+    validation :: !(Maybe Validation)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A variable export for cross-module visibility.
 data VarExport = VarExport
-  { var :: VarName,
-    alias :: Maybe VarName
+  { var :: !VarName,
+    alias :: !(Maybe VarName)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | An interactive prompt for a variable.
 data Prompt = Prompt
-  { var :: VarName,
-    text :: Text,
-    condition :: Maybe Expr,
-    choices :: Maybe [Text]
+  { var :: !VarName,
+    text :: !Text,
+    condition :: !(Maybe Expr),
+    choices :: !(Maybe [Text])
   }
   deriving stock (Eq, Show, Generic)
 
@@ -170,19 +170,19 @@ data PatchOp
 
 -- | A generation step within a module.
 data Step = Step
-  { strategy :: Strategy,
-    src :: FilePath,
-    dest :: Text,
-    condition :: Maybe Expr,
-    patch :: Maybe PatchOp
+  { strategy :: !Strategy,
+    src :: !FilePath,
+    dest :: !Text,
+    condition :: !(Maybe Expr),
+    patch :: !(Maybe PatchOp)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A shell command to run after file generation.
 data Command = Command
-  { run :: Text,
-    workDir :: Maybe Text,
-    condition :: Maybe Expr
+  { run :: !Text,
+    workDir :: !(Maybe Text),
+    condition :: !(Maybe Expr)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -191,8 +191,8 @@ data Command = Command
 -- dependency during resolution, sitting between global config and module
 -- defaults in the precedence chain.
 data Dependency = Dependency
-  { depModule :: ModuleName,
-    depVars :: Map VarName Text
+  { depModule :: !ModuleName,
+    depVars :: !(Map VarName Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -237,32 +237,32 @@ data RemovalAction
 
 -- | A single removal step describing how to reverse one effect of a module.
 data RemovalStep = RemovalStep
-  { action :: RemovalAction,
-    dest :: Text,
-    src :: Maybe FilePath
+  { action :: !RemovalAction,
+    dest :: !Text,
+    src :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | Removal specification for a module.
 data Removal = Removal
-  { removalSteps :: [RemovalStep],
-    removalCommands :: [Command]
+  { removalSteps :: ![RemovalStep],
+    removalCommands :: ![Command]
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A module definition: the fundamental unit of composition.
 data Module = Module
-  { name :: ModuleName,
-    version :: Maybe Text,
-    description :: Maybe Text,
-    vars :: [VarDecl],
-    exports :: [VarExport],
-    prompts :: [Prompt],
-    steps :: [Step],
-    commands :: [Command],
-    dependencies :: [Dependency],
-    removal :: Maybe Removal,
-    migrations :: [Migration]
+  { name :: !ModuleName,
+    version :: !(Maybe Text),
+    description :: !(Maybe Text),
+    vars :: ![VarDecl],
+    exports :: ![VarExport],
+    prompts :: ![Prompt],
+    steps :: ![Step],
+    commands :: ![Command],
+    dependencies :: ![Dependency],
+    removal :: !(Maybe Removal),
+    migrations :: ![Migration]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -275,12 +275,12 @@ newtype RecipeName = RecipeName {unRecipeName :: Text}
 -- | A recipe: a named, reusable composition of modules with optional
 -- pre-configured variable bindings.
 data Recipe = Recipe
-  { name :: RecipeName,
-    version :: Maybe Text,
-    description :: Maybe Text,
-    modules :: [Dependency],
-    vars :: [VarDecl],
-    prompts :: [Prompt]
+  { name :: !RecipeName,
+    version :: !(Maybe Text),
+    description :: !(Maybe Text),
+    modules :: ![Dependency],
+    vars :: ![VarDecl],
+    prompts :: ![Prompt]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -289,8 +289,8 @@ data Recipe = Recipe
 -- agent's filesystem; @description@ is shown to the agent so it can
 -- pick the right reference for the user's request.
 data BlueprintFile = BlueprintFile
-  { src :: FilePath,
-    description :: Maybe Text
+  { src :: !FilePath,
+    description :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -300,18 +300,18 @@ data BlueprintFile = BlueprintFile
 -- name refuses with an actionable message; the agent runner
 -- @seihou agent run@ (EP-31) consumes them instead.
 data Blueprint = Blueprint
-  { name :: ModuleName,
-    version :: Maybe Text,
-    description :: Maybe Text,
-    prompt :: Text,
-    vars :: [VarDecl],
-    prompts :: [Prompt],
-    baseModules :: [Dependency],
-    files :: [BlueprintFile],
-    allowedTools :: Maybe [Text],
-    tags :: [Text],
-    migrations :: [BlueprintMigration],
-    launch :: Maybe AgentLaunch
+  { name :: !ModuleName,
+    version :: !(Maybe Text),
+    description :: !(Maybe Text),
+    prompt :: !Text,
+    vars :: ![VarDecl],
+    prompts :: ![Prompt],
+    baseModules :: ![Dependency],
+    files :: ![BlueprintFile],
+    allowedTools :: !(Maybe [Text]),
+    tags :: ![Text],
+    migrations :: ![BlueprintMigration],
+    launch :: !(Maybe AgentLaunch)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -319,21 +319,21 @@ data Blueprint = Blueprint
 -- Process execution is implemented outside the core Dhall decoder; this
 -- record only captures the author-declared command and safety metadata.
 data CommandVar = CommandVar
-  { name :: VarName,
-    run :: Text,
-    workDir :: Maybe Text,
-    condition :: Maybe Expr,
-    trim :: Bool,
-    maxBytes :: Maybe Natural
+  { name :: !VarName,
+    run :: !Text,
+    workDir :: !(Maybe Text),
+    condition :: !(Maybe Expr),
+    trim :: !Bool,
+    maxBytes :: !(Maybe Natural)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A Markdown instruction block attached to an agent prompt. The optional
 -- condition is evaluated after normal and command-derived variables resolve.
 data PromptGuidance = PromptGuidance
-  { title :: Text,
-    body :: Text,
-    condition :: Maybe Expr
+  { title :: !Text,
+    body :: !Text,
+    condition :: !(Maybe Expr)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -346,10 +346,10 @@ data PromptGuidance = PromptGuidance
 -- a @--provider@ \/ @--model@ \/ @--effort@ flag and to the @SEIHOU_AGENT_*@
 -- environment variables.
 data AgentLaunch = AgentLaunch
-  { provider :: Maybe Text,
-    model :: Maybe Text,
-    effort :: Maybe Text,
-    mode :: Maybe Text
+  { provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    mode :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -357,18 +357,18 @@ data AgentLaunch = AgentLaunch
 -- does not declare baseline modules and does not imply scaffolding or
 -- manifest provenance.
 data AgentPrompt = AgentPrompt
-  { name :: ModuleName,
-    version :: Maybe Text,
-    description :: Maybe Text,
-    prompt :: Text,
-    vars :: [VarDecl],
-    prompts :: [Prompt],
-    commandVars :: [CommandVar],
-    guidance :: [PromptGuidance],
-    files :: [BlueprintFile],
-    allowedTools :: Maybe [Text],
-    tags :: [Text],
-    launch :: Maybe AgentLaunch
+  { name :: !ModuleName,
+    version :: !(Maybe Text),
+    description :: !(Maybe Text),
+    prompt :: !Text,
+    vars :: ![VarDecl],
+    prompts :: ![Prompt],
+    commandVars :: ![CommandVar],
+    guidance :: ![PromptGuidance],
+    files :: ![BlueprintFile],
+    allowedTools :: !(Maybe [Text]),
+    tags :: ![Text],
+    launch :: !(Maybe AgentLaunch)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -387,29 +387,29 @@ recipeNameToModuleName (RecipeName t) = ModuleName t
 -- | Filesystem operations produced by the generation engine.
 data Operation
   = WriteFileOp
-      { dest :: FilePath,
-        content :: Text,
-        strategy :: Strategy
+      { dest :: !FilePath,
+        content :: !Text,
+        strategy :: !Strategy
       }
   | CreateDirOp
-      { path :: FilePath
+      { path :: !FilePath
       }
   | CopyFileOp
-      { src :: FilePath,
-        dest :: FilePath
+      { src :: !FilePath,
+        dest :: !FilePath
       }
   | RunCommandOp
-      { command :: Text,
-        workDir :: Maybe FilePath,
-        moduleName :: ModuleName,
-        occurrence :: Int
+      { command :: !Text,
+        workDir :: !(Maybe FilePath),
+        moduleName :: !ModuleName,
+        occurrence :: !Int
       }
   | PatchFileOp
-      { dest :: FilePath,
-        content :: Text,
-        op :: PatchOp,
-        strategy :: Strategy,
-        moduleName :: ModuleName
+      { dest :: !FilePath,
+        content :: !Text,
+        op :: !PatchOp,
+        strategy :: !Strategy,
+        moduleName :: !ModuleName
       }
   deriving stock (Eq, Show, Generic)
 
@@ -441,9 +441,9 @@ data VarSource
 
 -- | A variable that has been resolved to a concrete value with provenance.
 data ResolvedVar = ResolvedVar
-  { value :: VarValue,
-    source :: VarSource,
-    decl :: VarDecl
+  { value :: !VarValue,
+    source :: !VarSource,
+    decl :: !VarDecl
   }
   deriving stock (Eq, Show, Generic)
 
@@ -472,15 +472,15 @@ data PlaceholderError
 -- | Tracks the state of generated files for incremental re-generation
 -- and conflict detection. Stored at @.seihou/manifest.json@.
 data Manifest = Manifest
-  { version :: Int,
-    genAt :: UTCTime,
-    modules :: [AppliedModule],
-    vars :: Map VarName Text,
-    files :: Map FilePath FileRecord,
-    applications :: [AppliedComposition],
-    recipe :: Maybe AppliedRecipe,
-    blueprint :: Maybe AppliedBlueprint,
-    blueprintMigrations :: [AppliedBlueprintMigration]
+  { version :: !Int,
+    genAt :: !UTCTime,
+    modules :: ![AppliedModule],
+    vars :: !(Map VarName Text),
+    files :: !(Map FilePath FileRecord),
+    applications :: ![AppliedComposition],
+    recipe :: !(Maybe AppliedRecipe),
+    blueprint :: !(Maybe AppliedBlueprint),
+    blueprintMigrations :: ![AppliedBlueprintMigration]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -504,44 +504,44 @@ newtype CommandFingerprint = CommandFingerprint {unCommandFingerprint :: SHA256}
 
 -- | Evidence that one rendered command completed successfully.
 data CommandReceipt = CommandReceipt
-  { fingerprint :: CommandFingerprint,
-    moduleName :: ModuleName,
-    command :: Text,
-    workDir :: Maybe FilePath,
-    completedAt :: UTCTime
+  { fingerprint :: !CommandFingerprint,
+    moduleName :: !ModuleName,
+    command :: !Text,
+    workDir :: !(Maybe FilePath),
+    completedAt :: !UTCTime
   }
   deriving stock (Eq, Show, Generic)
 
 -- | Reproducible state for one module instance in an application.
 data AppliedInstanceState = AppliedInstanceState
-  { name :: ModuleName,
-    parentVars :: ParentVars,
-    source :: FilePath,
-    moduleVersion :: Maybe Text,
-    resolvedVars :: Map VarName Text
+  { name :: !ModuleName,
+    parentVars :: !ParentVars,
+    source :: !FilePath,
+    moduleVersion :: !(Maybe Text),
+    resolvedVars :: !(Map VarName Text)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A complete, re-runnable top-level module or recipe composition.
 data AppliedComposition = AppliedComposition
-  { applicationId :: ApplicationId,
-    target :: AppliedTarget,
-    targetSource :: FilePath,
-    targetVersion :: Maybe Text,
-    additionalModules :: [ModuleName],
-    namespace :: Maybe Text,
-    context :: Maybe Text,
-    instances :: [AppliedInstanceState],
-    commandReceipts :: Map CommandFingerprint CommandReceipt,
-    appliedAt :: UTCTime
+  { applicationId :: !ApplicationId,
+    target :: !AppliedTarget,
+    targetSource :: !FilePath,
+    targetVersion :: !(Maybe Text),
+    additionalModules :: ![ModuleName],
+    namespace :: !(Maybe Text),
+    context :: !(Maybe Text),
+    instances :: ![AppliedInstanceState],
+    commandReceipts :: !(Map CommandFingerprint CommandReceipt),
+    appliedAt :: !UTCTime
   }
   deriving stock (Eq, Show, Generic)
 
 -- | Recipe provenance recorded in the manifest when a recipe is used.
 data AppliedRecipe = AppliedRecipe
-  { name :: RecipeName,
-    recipeVersion :: Maybe Text,
-    appliedAt :: UTCTime
+  { name :: !RecipeName,
+    recipeVersion :: !(Maybe Text),
+    appliedAt :: !UTCTime
   }
   deriving stock (Eq, Show, Generic)
 
@@ -559,13 +559,13 @@ data AppliedRecipe = AppliedRecipe
 -- in @docs/masterplans/3-agent-driven-blueprints.md@; in v1 it is always
 -- 'Nothing' and the encoder omits the JSON key in that case.
 data AppliedBlueprint = AppliedBlueprint
-  { name :: ModuleName,
-    blueprintVersion :: Maybe Text,
-    appliedAt :: UTCTime,
-    baselineModules :: [ModuleName],
-    noBaseline :: Bool,
-    userPrompt :: Maybe Text,
-    agentSessionId :: Maybe Text
+  { name :: !ModuleName,
+    blueprintVersion :: !(Maybe Text),
+    appliedAt :: !UTCTime,
+    baselineModules :: ![ModuleName],
+    noBaseline :: !Bool,
+    userPrompt :: !(Maybe Text),
+    agentSessionId :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -573,12 +573,12 @@ data AppliedBlueprint = AppliedBlueprint
 -- migration edge. Exact-edge identity is the blueprint 'name' together with
 -- 'fromVersion' and 'toVersion'; the remaining fields are audit metadata.
 data AppliedBlueprintMigration = AppliedBlueprintMigration
-  { name :: ModuleName,
-    blueprintVersion :: Maybe Text,
-    fromVersion :: Text,
-    toVersion :: Text,
-    appliedAt :: UTCTime,
-    agentSessionId :: Maybe Text
+  { name :: !ModuleName,
+    blueprintVersion :: !(Maybe Text),
+    fromVersion :: !Text,
+    toVersion :: !Text,
+    appliedAt :: !UTCTime,
+    agentSessionId :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -590,23 +590,23 @@ data AppliedBlueprintMigration = AppliedBlueprintMigration
 -- instances. Manifests produced before schema version 2 decode with
 -- @parentVars = 'emptyParentVars'@.
 data AppliedModule = AppliedModule
-  { name :: ModuleName,
-    parentVars :: ParentVars,
-    source :: FilePath,
-    moduleVersion :: Maybe Text,
-    appliedAt :: UTCTime,
-    removal :: Maybe Removal
+  { name :: !ModuleName,
+    parentVars :: !ParentVars,
+    source :: !FilePath,
+    moduleVersion :: !(Maybe Text),
+    appliedAt :: !UTCTime,
+    removal :: !(Maybe Removal)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A record of a generated file, stored in the manifest.
 data FileRecord = FileRecord
-  { hash :: SHA256,
-    moduleName :: ModuleName,
-    strategy :: Strategy,
-    generatedAt :: UTCTime,
-    baseline :: Maybe BaselineRef,
-    applicationIds :: Set ApplicationId
+  { hash :: !SHA256,
+    moduleName :: !ModuleName,
+    strategy :: !Strategy,
+    generatedAt :: !UTCTime,
+    baseline :: !(Maybe BaselineRef),
+    applicationIds :: !(Set ApplicationId)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -617,47 +617,47 @@ newtype SHA256 = SHA256 {unSHA256 :: Text}
 
 -- | Result of the three-state diff: manifest vs plan vs disk.
 data DiffResult = DiffResult
-  { new :: [PlannedFile],
-    modified :: [ModifiedFile],
-    unchanged :: [FilePath],
-    conflicts :: [ConflictFile],
-    orphaned :: [OrphanedFile]
+  { new :: ![PlannedFile],
+    modified :: ![ModifiedFile],
+    unchanged :: ![FilePath],
+    conflicts :: ![ConflictFile],
+    orphaned :: ![OrphanedFile]
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A file that exists in the plan but not in the manifest or on disk.
 data PlannedFile = PlannedFile
-  { path :: FilePath,
-    moduleName :: ModuleName,
-    content :: Text
+  { path :: !FilePath,
+    moduleName :: !ModuleName,
+    content :: !Text
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A file that has changed between the manifest and the plan,
 -- but the user has not modified the disk copy.
 data ModifiedFile = ModifiedFile
-  { path :: FilePath,
-    moduleName :: ModuleName,
-    oldHash :: SHA256,
-    newContent :: Text
+  { path :: !FilePath,
+    moduleName :: !ModuleName,
+    oldHash :: !SHA256,
+    newContent :: !Text
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A file where the user has modified the disk copy since it was generated.
 data ConflictFile = ConflictFile
-  { path :: FilePath,
-    moduleName :: ModuleName,
-    manifestHash :: SHA256,
-    diskHash :: SHA256,
-    planContent :: Text
+  { path :: !FilePath,
+    moduleName :: !ModuleName,
+    manifestHash :: !SHA256,
+    diskHash :: !SHA256,
+    planContent :: !Text
   }
   deriving stock (Eq, Show, Generic)
 
 -- | A file that exists in the manifest but not in the current plan
 -- (the module that generated it was removed or no longer produces it).
 data OrphanedFile = OrphanedFile
-  { path :: FilePath,
-    moduleName :: ModuleName
+  { path :: !FilePath,
+    moduleName :: !ModuleName
   }
   deriving stock (Eq, Show, Generic)
 
@@ -712,8 +712,8 @@ data TrackedFileStatus
 
 -- | A tracked file with its path, originating module, and disk status.
 data TrackedFile = TrackedFile
-  { path :: FilePath,
-    moduleName :: ModuleName,
-    status :: TrackedFileStatus
+  { path :: !FilePath,
+    moduleName :: !ModuleName,
+    status :: !TrackedFileStatus
   }
   deriving stock (Eq, Show, Generic)

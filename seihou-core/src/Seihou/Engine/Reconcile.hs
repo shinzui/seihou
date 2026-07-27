@@ -41,20 +41,20 @@ import System.FilePath (takeDirectory)
 -- The application set is path-specific: a batch may update several
 -- applications without every application contributing to every path.
 data DesiredFileOwner = DesiredFileOwner
-  { moduleName :: ModuleName,
-    applicationIds :: Set ApplicationId
+  { moduleName :: !ModuleName,
+    applicationIds :: !(Set ApplicationId)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | The final generated side after all operations for a path are replayed.
 data DesiredFile = DesiredFile
-  { path :: FilePath,
-    generatedContent :: Text,
-    moduleName :: ModuleName,
-    strategy :: Strategy,
-    applicationIds :: Set ApplicationId
+  { path :: !FilePath,
+    generatedContent :: !Text,
+    moduleName :: !ModuleName,
+    strategy :: !Strategy,
+    applicationIds :: !(Set ApplicationId)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data ReconciliationReason
   = MissingTrustedBaseline
@@ -66,28 +66,28 @@ data ReconciliationReason
 -- | The disk snapshot used while planning. Applying verifies every snapshot
 -- before the first mutation, so a resolution cannot overwrite later edits.
 data ObservedFile = ObservedFile
-  { existed :: Bool,
-    contentHash :: Maybe SHA256
+  { existed :: !Bool,
+    contentHash :: !(Maybe SHA256)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | The exact generated ancestor and applied bytes a resolved action will
 -- publish. @writeToDisk@ is false for paths already containing those bytes.
 -- @recordedHash@ may intentionally remain the prior applied hash for a
 -- user-only edit that generation did not change.
 data PlannedFileState = PlannedFileState
-  { generatedBaseline :: Text,
-    appliedContent :: Text,
-    recordedHash :: SHA256,
-    writeToDisk :: Bool
+  { generatedBaseline :: !Text,
+    appliedContent :: !Text,
+    recordedHash :: !SHA256,
+    writeToDisk :: !Bool
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data ResolvedFileConflict = ResolvedFileConflict
-  { choice :: FileConflictChoice,
-    state :: PlannedFileState
+  { choice :: !FileConflictChoice,
+    state :: !PlannedFileState
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data FileReconciliation
   = FileCreate DesiredFile PlannedFileState ObservedFile
@@ -109,11 +109,11 @@ data FileReconciliation
   deriving stock (Eq, Show)
 
 data ReconciliationPlan = ReconciliationPlan
-  { applicationIds :: Set ApplicationId,
-    files :: Map FilePath FileReconciliation,
-    requiredDirectories :: Set FilePath
+  { applicationIds :: !(Set ApplicationId),
+    files :: !(Map FilePath FileReconciliation),
+    requiredDirectories :: !(Set FilePath)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data ReconciliationError
   = InvalidReconciliationPath FilePath Text
@@ -143,16 +143,16 @@ data OrphanChoice
   deriving stock (Eq, Show)
 
 data ReconciliationSummary = ReconciliationSummary
-  { creates :: Int,
-    updates :: Int,
-    merged :: Int,
-    unchanged :: Int,
-    conflicts :: Int,
-    safeDeletes :: Int,
-    editedOrphans :: Int,
-    sharedOwnership :: Int
+  { creates :: !Int,
+    updates :: !Int,
+    merged :: !Int,
+    unchanged :: !Int,
+    conflicts :: !Int,
+    safeDeletes :: !Int,
+    editedOrphans :: !Int,
+    sharedOwnership :: !Int
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Production planner using the repository filesystem and baseline effects,
 -- with EP-65's Git-backed merge driver for dual edits.
@@ -231,13 +231,14 @@ planReconciliationWith readDisk readCopy readStoredBaseline mergeContents manife
                 }
 
 data DesiredContext = DesiredContext
-  { desired :: DesiredFile,
-    current :: Maybe Text,
-    baseline :: Maybe Text,
-    priorRecord :: Maybe FileRecord,
-    observed :: ObservedFile,
-    missingTrustedBaseline :: Bool
+  { desired :: !DesiredFile,
+    current :: !(Maybe Text),
+    baseline :: !(Maybe Text),
+    priorRecord :: !(Maybe FileRecord),
+    observed :: !ObservedFile,
+    missingTrustedBaseline :: !Bool
   }
+  deriving stock (Generic)
 
 validateInputs ::
   Set ApplicationId ->

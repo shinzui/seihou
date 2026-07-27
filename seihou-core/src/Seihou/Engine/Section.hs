@@ -14,10 +14,10 @@ import Seihou.Prelude
 
 -- | A section marker identifies content contributed by a module.
 data SectionMarker = SectionMarker
-  { sectionPrefix :: Text,
-    sectionModule :: ModuleName
+  { sectionPrefix :: !Text,
+    sectionModule :: !ModuleName
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Render an opening section marker line.
 -- Result: @"# --- seihou:haskell-base ---\\n"@

@@ -9,7 +9,6 @@ where
 
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import GHC.Generics (Generic)
 import Seihou.CLI.Registry.Sync (resolveOnDiskVersions)
 import Seihou.Core.Registry
   ( RegistryValidationIssue (..),
@@ -28,7 +27,7 @@ import System.IO (hPutStrLn, stderr)
 
 -- | Flags parsed for the @seihou registry validate@ subcommand.
 data ValidateRegistryOpts = ValidateRegistryOpts
-  { validateRegistryDir :: Maybe FilePath
+  { validateRegistryDir :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 

@@ -38,11 +38,11 @@ import System.IO (hClose, hSetEncoding, utf8)
 import System.IO.Temp (createTempDirectory, openTempFile)
 
 data UpdateTransaction = UpdateTransaction
-  { projectRoot :: FilePath,
-    transactionDirectory :: FilePath,
-    targets :: Set FilePath
+  { projectRoot :: !FilePath,
+    transactionDirectory :: !FilePath,
+    targets :: !(Set FilePath)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data TransactionError
   = InvalidTransactionPath FilePath Text
@@ -57,19 +57,19 @@ data TransactionError
   deriving stock (Eq, Show)
 
 data JournalEntry = JournalEntry
-  { targetPath :: FilePath,
-    backupFile :: Maybe FilePath
+  { targetPath :: !FilePath,
+    backupFile :: !(Maybe FilePath)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data JournalMetadata = JournalMetadata
-  { journalVersion :: Int,
-    createdAt :: UTCTime,
-    entries :: [JournalEntry],
-    newDirectories :: [FilePath],
-    expectedManifest :: Maybe Manifest
+  { journalVersion :: !Int,
+    createdAt :: !UTCTime,
+    entries :: ![JournalEntry],
+    newDirectories :: ![FilePath],
+    expectedManifest :: !(Maybe Manifest)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 instance ToJSON JournalEntry where
   toJSON entry =

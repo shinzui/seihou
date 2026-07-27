@@ -13,11 +13,11 @@ import Prelude hiding (getLine)
 
 -- | State for the pure Console interpreter.
 data ConsoleState = ConsoleState
-  { consoleInputs :: [Text],
-    consoleOutputs :: [Text],
-    consoleErrors :: [Text]
+  { consoleInputs :: ![Text],
+    consoleOutputs :: ![Text],
+    consoleErrors :: ![Text]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Empty console state with no inputs or outputs.
 emptyConsoleState :: ConsoleState

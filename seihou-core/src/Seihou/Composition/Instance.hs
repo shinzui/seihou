@@ -27,10 +27,10 @@ import Seihou.Prelude
 -- one instance. See @docs/plans/10-parameterized-dep-multi-instantiation.md@
 -- for the full rationale.
 data ModuleInstance = ModuleInstance
-  { instanceModule :: ModuleName,
-    instanceParentVars :: ParentVars
+  { instanceModule :: !ModuleName,
+    instanceParentVars :: !ParentVars
   }
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Eq, Generic, Ord, Show)
 
 -- | Build a 'ModuleInstance' from a module name and the parent-supplied
 -- bindings along the edge that reached it.

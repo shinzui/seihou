@@ -151,7 +151,8 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
               files = [],
               allowedTools = Nothing,
               tags = [],
-              migrations = []
+              migrations = [],
+              launch = Nothing
             }
     it "renders name, version, description as a three-line block" $
       formatBlueprintIdentity (mk (Just "0.1") (Just "a thing"))

@@ -31,13 +31,14 @@ import System.Directory (doesFileExist, getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 
 data PromptReport = PromptReport
-  { prPrompt :: Maybe AgentPrompt,
-    prName :: Text,
-    prPath :: FilePath,
-    prDhallOk :: Bool,
-    prDhallError :: Maybe Text,
-    prChecks :: [DiagCheck]
+  { prPrompt :: !(Maybe AgentPrompt),
+    prName :: !Text,
+    prPath :: !FilePath,
+    prDhallOk :: !Bool,
+    prDhallError :: !(Maybe Text),
+    prChecks :: ![DiagCheck]
   }
+  deriving stock (Generic)
 
 handleValidatePrompt :: ValidatePromptOpts -> IO ()
 handleValidatePrompt vopts = do

@@ -12,12 +12,12 @@ import Seihou.Prelude
 -- | State capturing all log messages by severity.
 -- Messages are appended in order within each field.
 data LoggerState = LoggerState
-  { logDebugMsgs :: [Text],
-    logInfoMsgs :: [Text],
-    logWarnMsgs :: [Text],
-    logErrorMsgs :: [Text]
+  { logDebugMsgs :: ![Text],
+    logInfoMsgs :: ![Text],
+    logWarnMsgs :: ![Text],
+    logErrorMsgs :: ![Text]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Empty logger state with no captured messages.
 emptyLoggerState :: LoggerState

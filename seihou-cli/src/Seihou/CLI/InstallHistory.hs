@@ -29,10 +29,10 @@ import System.FilePath (takeDirectory)
 
 -- | A single entry in the install URL history.
 data HistoryEntry = HistoryEntry
-  { url :: Text,
-    lastUsed :: Text
+  { url :: !Text,
+    lastUsed :: !Text
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 instance ToJSON HistoryEntry where
   toJSON e = object ["url" .= e.url, "lastUsed" .= e.lastUsed]
@@ -45,7 +45,7 @@ instance FromJSON HistoryEntry where
 newtype InstallHistory = InstallHistory
   { entries :: [HistoryEntry]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 instance ToJSON InstallHistory where
   toJSON h = object ["entries" .= h.entries]

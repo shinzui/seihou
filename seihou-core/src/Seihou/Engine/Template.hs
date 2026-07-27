@@ -198,14 +198,15 @@ data NextBlock
     -- (i.e. the body plus whatever follows the matching @{{/if}}@);
     -- @expr@ is the raw expression text.
     FoundIf
-      { foundBefore :: Text,
-        foundAfter :: Text,
-        foundExpr :: Text
+      { foundBefore :: !Text,
+        foundAfter :: !Text,
+        foundExpr :: !Text
       }
   | -- | A @{{#else}}@ or @{{/if}}@ encountered before any matching
     -- @{{#if}}@ at the current depth. The 'Int' is the line offset
     -- (0-based) from the start of the scanned region.
     FoundOrphan Text Int
+  deriving stock (Generic)
 
 -- | Scan @input@ for the next block token at the outer level (i.e. for
 -- the purpose of locating the next @{{#if}}@ opener, or an orphan if

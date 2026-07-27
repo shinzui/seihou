@@ -32,21 +32,22 @@ import System.Exit (ExitCode (..))
 import System.FilePath (takeDirectory)
 
 data StagedMigrations = StagedMigrations
-  { plans :: [PlannedUpdateMigration],
-    manifest :: Manifest,
-    filesystem :: PureFS,
-    warnings :: [UpdateWarning]
+  { plans :: ![PlannedUpdateMigration],
+    manifest :: !Manifest,
+    filesystem :: !PureFS,
+    warnings :: ![UpdateWarning]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data Transition = Transition
-  { moduleName :: ModuleName,
-    originUrl :: Maybe Text,
-    fromVersion :: Text,
-    toVersion :: Text,
-    candidateModule :: Module,
-    sourceDirectory :: FilePath
+  { moduleName :: !ModuleName,
+    originUrl :: !(Maybe Text),
+    fromVersion :: !Text,
+    toVersion :: !Text,
+    candidateModule :: !Module,
+    sourceDirectory :: !FilePath
   }
+  deriving stock (Generic)
 
 -- | Deduplicate equal module transitions and simulate them against a complete
 -- snapshot of tracked project text. Shell commands are mocked as successful

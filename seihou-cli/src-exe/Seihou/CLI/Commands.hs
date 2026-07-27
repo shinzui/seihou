@@ -45,7 +45,6 @@ module Seihou.CLI.Commands
 where
 
 import Data.Text qualified as T
-import GHC.Generics (Generic)
 import Options.Applicative
 import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
 import Seihou.CLI.Extension (ExtensionRunOpts (..))
@@ -103,17 +102,17 @@ data CompletionsCommand
   deriving stock (Eq, Show, Generic)
 
 data AgentOpts = AgentOpts
-  { agentDebug :: Bool,
-    agentProvider :: Maybe Text,
-    agentModel :: Maybe Text,
-    agentEffort :: Maybe Text,
-    agentTrace :: Maybe Text,
-    agentCommand :: AgentCommand
+  { agentDebug :: !Bool,
+    agentProvider :: !(Maybe Text),
+    agentModel :: !(Maybe Text),
+    agentEffort :: !(Maybe Text),
+    agentTrace :: !(Maybe Text),
+    agentCommand :: !AgentCommand
   }
   deriving stock (Eq, Show, Generic)
 
 data AgentModelsOpts = AgentModelsOpts
-  { modelsProvider :: Maybe Text
+  { modelsProvider :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -128,20 +127,20 @@ data AgentCommand
   deriving stock (Eq, Show, Generic)
 
 data RunOpts = RunOpts
-  { runModule :: Maybe ModuleName,
-    runAdditional :: [ModuleName],
-    runVars :: [(Text, Text)],
-    runDryRun :: Bool,
-    runDiff :: Bool,
-    runForce :: Bool,
-    runNoCommands :: Bool,
-    runNamespace :: Maybe Text,
-    runContext :: Maybe Text,
-    runVerbose :: Bool,
-    runSavePrompted :: Maybe Bool,
-    runConfirmDefaults :: Bool,
-    runCommit :: Bool,
-    runCommitMessage :: Maybe Text,
+  { runModule :: !(Maybe ModuleName),
+    runAdditional :: ![ModuleName],
+    runVars :: ![(Text, Text)],
+    runDryRun :: !Bool,
+    runDiff :: !Bool,
+    runForce :: !Bool,
+    runNoCommands :: !Bool,
+    runNamespace :: !(Maybe Text),
+    runContext :: !(Maybe Text),
+    runVerbose :: !Bool,
+    runSavePrompted :: !(Maybe Bool),
+    runConfirmDefaults :: !Bool,
+    runCommit :: !Bool,
+    runCommitMessage :: !(Maybe Text),
     -- | When 'True', a pre-flight pending-migration check that finds
     -- any chain for one of the composed modules will apply that chain
     -- to the project (and the manifest) before the run plan is
@@ -149,89 +148,89 @@ data RunOpts = RunOpts
     -- 'seihou run' to refuse with an actionable message and a
     -- non-zero exit, so a user never silently writes new templates
     -- into paths a migration would have moved.
-    runWithMigrations :: Bool
+    runWithMigrations :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data UpdateOpts = UpdateOpts
-  { updateTargets :: [Text],
-    updateVars :: [(Text, Text)],
-    updateDryRun :: Bool,
-    updateJson :: Bool,
-    updateReconfigure :: Bool,
-    updateForce :: Bool,
-    updateRunAllCommands :: Bool,
-    updateNoCommands :: Bool,
-    updateCommit :: Bool,
-    updateCommitMessage :: Maybe Text
+  { updateTargets :: ![Text],
+    updateVars :: ![(Text, Text)],
+    updateDryRun :: !Bool,
+    updateJson :: !Bool,
+    updateReconfigure :: !Bool,
+    updateForce :: !Bool,
+    updateRunAllCommands :: !Bool,
+    updateNoCommands :: !Bool,
+    updateCommit :: !Bool,
+    updateCommitMessage :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data RemoveOpts = RemoveOpts
-  { removeModule :: ModuleName,
-    removeDryRun :: Bool,
-    removeForce :: Bool,
-    removeVerbose :: Bool
+  { removeModule :: !ModuleName,
+    removeDryRun :: !Bool,
+    removeForce :: !Bool,
+    removeVerbose :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data VarsOpts = VarsOpts
-  { varsModule :: Maybe ModuleName,
-    varsExplain :: Bool,
-    varsVars :: [(Text, Text)],
-    varsNamespace :: Maybe Text,
-    varsContext :: Maybe Text
+  { varsModule :: !(Maybe ModuleName),
+    varsExplain :: !Bool,
+    varsVars :: ![(Text, Text)],
+    varsNamespace :: !(Maybe Text),
+    varsContext :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data InstallOpts = InstallOpts
-  { installSource :: Maybe Text,
-    installName :: Maybe Text,
-    installModules :: [Text],
-    installAll :: Bool
+  { installSource :: !(Maybe Text),
+    installName :: !(Maybe Text),
+    installModules :: ![Text],
+    installAll :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data NewModuleOpts = NewModuleOpts
-  { newModuleName :: Text,
-    newModulePath :: Maybe FilePath
+  { newModuleName :: !Text,
+    newModulePath :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
 data NewRecipeOpts = NewRecipeOpts
-  { newRecipeName :: Text,
-    newRecipeModules :: [Text],
-    newRecipePath :: Maybe FilePath
+  { newRecipeName :: !Text,
+    newRecipeModules :: ![Text],
+    newRecipePath :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
 data NewBlueprintOpts = NewBlueprintOpts
-  { newBlueprintName :: Text,
-    newBlueprintPath :: Maybe FilePath
+  { newBlueprintName :: !Text,
+    newBlueprintPath :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
 data NewPromptOpts = NewPromptOpts
-  { newPromptName :: Text,
-    newPromptPath :: Maybe FilePath
+  { newPromptName :: !Text,
+    newPromptPath :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
 data ValidateOpts = ValidateOpts
-  { validatePath :: Maybe FilePath,
-    validateLint :: Bool
+  { validatePath :: !(Maybe FilePath),
+    validateLint :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data ValidateBlueprintOpts = ValidateBlueprintOpts
-  { validateBlueprintPath :: Maybe FilePath,
-    validateBlueprintLint :: Bool
+  { validateBlueprintPath :: !(Maybe FilePath),
+    validateBlueprintLint :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data ValidatePromptOpts = ValidatePromptOpts
-  { validatePromptPath :: Maybe FilePath,
-    validatePromptLint :: Bool
+  { validatePromptPath :: !(Maybe FilePath),
+    validatePromptLint :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -243,11 +242,11 @@ data ConfigAction
   deriving stock (Eq, Show, Generic)
 
 data ConfigOpts = ConfigOpts
-  { configAction :: ConfigAction,
-    configGlobal :: Bool,
-    configNamespace :: Maybe Text,
-    configContext :: Maybe Text,
-    configEffective :: Bool
+  { configAction :: !ConfigAction,
+    configGlobal :: !Bool,
+    configNamespace :: !(Maybe Text),
+    configContext :: !(Maybe Text),
+    configEffective :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -260,111 +259,111 @@ data ContextAction
   deriving stock (Eq, Show, Generic)
 
 data ListOpts = ListOpts
-  { listRepo :: Maybe Text,
-    listTag :: Maybe Text,
-    listModulesOnly :: Bool,
-    listRecipesOnly :: Bool,
-    listBlueprintsOnly :: Bool,
-    listPromptsOnly :: Bool
+  { listRepo :: !(Maybe Text),
+    listTag :: !(Maybe Text),
+    listModulesOnly :: !Bool,
+    listRecipesOnly :: !Bool,
+    listBlueprintsOnly :: !Bool,
+    listPromptsOnly :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data BrowseOpts = BrowseOpts
-  { browseSource :: Text,
-    browseTag :: Maybe Text
+  { browseSource :: !Text,
+    browseTag :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data StatusOpts = StatusOpts
-  { statusCheckUpdates :: Bool
+  { statusCheckUpdates :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data OutdatedOpts = OutdatedOpts
-  { outdatedJson :: Bool
+  { outdatedJson :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data UpgradeOpts = UpgradeOpts
-  { upgradeModules :: [Text],
-    upgradeDryRun :: Bool,
-    upgradeJson :: Bool,
-    upgradeSkipUnversioned :: Bool,
+  { upgradeModules :: ![Text],
+    upgradeDryRun :: !Bool,
+    upgradeJson :: !Bool,
+    upgradeSkipUnversioned :: !Bool,
     -- | If 'True', after each successful per-module upgrade, also run
     -- 'Seihou.CLI.Migrate.runMigrate' against the *current project*
     -- (cwd), if and only if that module is applied locally. Default
     -- 'False'; the unset path emits a one-line advisory pointing the
     -- user at @seihou update@ when migrations would be pending.
-    upgradeWithMigrations :: Bool
+    upgradeWithMigrations :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data SchemaUpgradeOpts = SchemaUpgradeOpts
-  { schemaUpgradePath :: Maybe FilePath,
-    schemaUpgradeDryRun :: Bool,
-    schemaUpgradeAll :: Bool
+  { schemaUpgradePath :: !(Maybe FilePath),
+    schemaUpgradeDryRun :: !Bool,
+    schemaUpgradeAll :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
 data AssistOpts = AssistOpts
-  { assistPrompt :: Maybe Text,
-    assistProvider :: Maybe Text,
-    assistModel :: Maybe Text,
-    assistEffort :: Maybe Text,
-    assistTrace :: Maybe Text
+  { assistPrompt :: !(Maybe Text),
+    assistProvider :: !(Maybe Text),
+    assistModel :: !(Maybe Text),
+    assistEffort :: !(Maybe Text),
+    assistTrace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data BootstrapOpts = BootstrapOpts
-  { bootstrapPrompt :: Maybe Text,
-    bootstrapRepo :: Bool,
-    bootstrapProvider :: Maybe Text,
-    bootstrapModel :: Maybe Text,
-    bootstrapEffort :: Maybe Text,
-    bootstrapTrace :: Maybe Text
+  { bootstrapPrompt :: !(Maybe Text),
+    bootstrapRepo :: !Bool,
+    bootstrapProvider :: !(Maybe Text),
+    bootstrapModel :: !(Maybe Text),
+    bootstrapEffort :: !(Maybe Text),
+    bootstrapTrace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data SetupOpts = SetupOpts
-  { setupPrompt :: Maybe Text,
-    setupProvider :: Maybe Text,
-    setupModel :: Maybe Text,
-    setupEffort :: Maybe Text,
-    setupTrace :: Maybe Text
+  { setupPrompt :: !(Maybe Text),
+    setupProvider :: !(Maybe Text),
+    setupModel :: !(Maybe Text),
+    setupEffort :: !(Maybe Text),
+    setupTrace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data BlueprintRunOpts = BlueprintRunOpts
-  { runBlueprintName :: ModuleName,
-    runBlueprintPrompt :: Maybe Text,
-    runBlueprintVars :: [(Text, Text)],
-    runBlueprintNoBaseline :: Bool,
-    runBlueprintNamespace :: Maybe Text,
-    runBlueprintContext :: Maybe Text,
-    runBlueprintVerbose :: Bool,
-    runBlueprintForce :: Bool,
-    runBlueprintBatch :: Bool,
-    runBlueprintProvider :: Maybe Text,
-    runBlueprintModel :: Maybe Text,
-    runBlueprintEffort :: Maybe Text,
-    runBlueprintTrace :: Maybe Text
+  { runBlueprintName :: !ModuleName,
+    runBlueprintPrompt :: !(Maybe Text),
+    runBlueprintVars :: ![(Text, Text)],
+    runBlueprintNoBaseline :: !Bool,
+    runBlueprintNamespace :: !(Maybe Text),
+    runBlueprintContext :: !(Maybe Text),
+    runBlueprintVerbose :: !Bool,
+    runBlueprintForce :: !Bool,
+    runBlueprintBatch :: !Bool,
+    runBlueprintProvider :: !(Maybe Text),
+    runBlueprintModel :: !(Maybe Text),
+    runBlueprintEffort :: !(Maybe Text),
+    runBlueprintTrace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 data BlueprintMigrationOpts = BlueprintMigrationOpts
-  { migrateBlueprintName :: ModuleName,
-    migrateBlueprintFrom :: Text,
-    migrateBlueprintTo :: Text,
-    migrateBlueprintPrompt :: Maybe Text,
-    migrateBlueprintVars :: [(Text, Text)],
-    migrateBlueprintNamespace :: Maybe Text,
-    migrateBlueprintContext :: Maybe Text,
-    migrateBlueprintVerbose :: Bool,
-    migrateBlueprintRerun :: Bool,
-    migrateBlueprintProvider :: Maybe Text,
-    migrateBlueprintModel :: Maybe Text,
-    migrateBlueprintEffort :: Maybe Text,
-    migrateBlueprintTrace :: Maybe Text
+  { migrateBlueprintName :: !ModuleName,
+    migrateBlueprintFrom :: !Text,
+    migrateBlueprintTo :: !Text,
+    migrateBlueprintPrompt :: !(Maybe Text),
+    migrateBlueprintVars :: ![(Text, Text)],
+    migrateBlueprintNamespace :: !(Maybe Text),
+    migrateBlueprintContext :: !(Maybe Text),
+    migrateBlueprintVerbose :: !Bool,
+    migrateBlueprintRerun :: !Bool,
+    migrateBlueprintProvider :: !(Maybe Text),
+    migrateBlueprintModel :: !(Maybe Text),
+    migrateBlueprintEffort :: !(Maybe Text),
+    migrateBlueprintTrace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -373,17 +372,17 @@ data PromptCommand
   deriving stock (Eq, Show, Generic)
 
 data PromptRunOpts = PromptRunOpts
-  { runPromptName :: ModuleName,
-    runPromptPrompt :: Maybe Text,
-    runPromptVars :: [(Text, Text)],
-    runPromptNamespace :: Maybe Text,
-    runPromptContext :: Maybe Text,
-    runPromptVerbose :: Bool,
-    runPromptDebug :: Bool,
-    runPromptProvider :: Maybe Text,
-    runPromptModel :: Maybe Text,
-    runPromptEffort :: Maybe Text,
-    runPromptTrace :: Maybe Text
+  { runPromptName :: !ModuleName,
+    runPromptPrompt :: !(Maybe Text),
+    runPromptVars :: ![(Text, Text)],
+    runPromptNamespace :: !(Maybe Text),
+    runPromptContext :: !(Maybe Text),
+    runPromptVerbose :: !Bool,
+    runPromptDebug :: !Bool,
+    runPromptProvider :: !(Maybe Text),
+    runPromptModel :: !(Maybe Text),
+    runPromptEffort :: !(Maybe Text),
+    runPromptTrace :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 

@@ -25,10 +25,11 @@ import System.Directory (doesFileExist)
 
 -- | Origin metadata read from @.seihou-origin.json@.
 data OriginInfo = OriginInfo
-  { originRepoName :: Maybe Text,
-    originVersion :: Maybe Text,
-    originTags :: [Text]
+  { originRepoName :: !(Maybe Text),
+    originVersion :: !(Maybe Text),
+    originTags :: ![Text]
   }
+  deriving stock (Generic)
 
 instance FromJSON OriginInfo where
   parseJSON = withObject "OriginInfo" $ \v ->
@@ -38,11 +39,11 @@ instance FromJSON OriginInfo where
 -- imported from Commands) so the internal library does not depend on
 -- optparse-applicative.
 data ListFilter = ListFilter
-  { filterRepo :: Maybe Text,
-    filterTag :: Maybe Text,
-    filterKinds :: [RunnableKind]
+  { filterRepo :: !(Maybe Text),
+    filterTag :: !(Maybe Text),
+    filterKinds :: ![RunnableKind]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 noFilter :: ListFilter
 noFilter = ListFilter Nothing Nothing []
@@ -213,15 +214,15 @@ applyFilters opts = filter match
       ks -> entry.entryKind `elem` ks
 
 data Entry = Entry
-  { entryName :: Text,
-    entryDesc :: Text,
-    entrySource :: Text,
-    entryIsError :: Bool,
-    entryRepoName :: Maybe Text,
-    entryTags :: [Text],
-    entryKind :: RunnableKind
+  { entryName :: !Text,
+    entryDesc :: !Text,
+    entrySource :: !Text,
+    entryIsError :: !Bool,
+    entryRepoName :: !(Maybe Text),
+    entryTags :: ![Text],
+    entryKind :: !RunnableKind
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 toEntry :: DiscoveredModule -> Entry
 toEntry = toEntryWithOrigin Map.empty

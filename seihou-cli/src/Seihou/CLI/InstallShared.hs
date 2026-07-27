@@ -43,11 +43,11 @@ import System.Process (readProcessWithExitCode)
 -- | Read side of @.seihou-origin.json@. Tolerates files written by older
 -- 'seihou install' runs that may have been missing optional fields.
 data OriginInfo = OriginInfo
-  { sourceUrl :: Text,
-    repoName :: Maybe Text,
-    version :: Maybe Text
+  { sourceUrl :: !Text,
+    repoName :: !(Maybe Text),
+    version :: !(Maybe Text)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 instance FromJSON OriginInfo where
   parseJSON = withObject "OriginInfo" $ \v ->
@@ -69,12 +69,13 @@ readOriginInfo installedDir = do
 -- install' / 'seihou upgrade' want to record at install time, including
 -- the timestamp.
 data OriginMeta = OriginMeta
-  { sourceUrl :: Text,
-    repoName :: Maybe Text,
-    installedAt :: Text,
-    version :: Maybe Text,
-    tags :: [Text]
+  { sourceUrl :: !Text,
+    repoName :: !(Maybe Text),
+    installedAt :: !Text,
+    version :: !(Maybe Text),
+    tags :: ![Text]
   }
+  deriving stock (Generic)
 
 instance ToJSON OriginMeta where
   toJSON m =

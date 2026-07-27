@@ -13,10 +13,10 @@ import Seihou.Prelude
 
 -- | In-memory filesystem state for testing.
 data PureFS = PureFS
-  { files :: Map FilePath Text,
-    dirs :: Set FilePath
+  { files :: !(Map FilePath Text),
+    dirs :: !(Set FilePath)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | An empty in-memory filesystem.
 emptyFS :: PureFS

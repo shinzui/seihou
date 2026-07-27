@@ -20,30 +20,29 @@ module Seihou.Core.Registry
 where
 
 import Data.Text qualified as T
-import GHC.Generics (Generic)
 import Seihou.Core.Types (ModuleLoadError, ModuleName (..))
 import Seihou.Prelude
 import System.Directory (doesFileExist)
 
 -- | A single module listing within a registry.
 data RegistryEntry = RegistryEntry
-  { name :: ModuleName,
-    version :: Maybe Text,
-    path :: FilePath,
-    description :: Maybe Text,
-    tags :: [Text]
+  { name :: !ModuleName,
+    version :: !(Maybe Text),
+    path :: !FilePath,
+    description :: !(Maybe Text),
+    tags :: ![Text]
   }
   deriving stock (Eq, Show, Generic)
 
 -- | Registry metadata for a multi-module repository.
 -- Declared in @seihou-registry.dhall@ at the repo root.
 data Registry = Registry
-  { repoName :: Text,
-    repoDescription :: Maybe Text,
-    modules :: [RegistryEntry],
-    recipes :: [RegistryEntry],
-    blueprints :: [RegistryEntry],
-    prompts :: [RegistryEntry]
+  { repoName :: !Text,
+    repoDescription :: !(Maybe Text),
+    modules :: ![RegistryEntry],
+    recipes :: ![RegistryEntry],
+    blueprints :: ![RegistryEntry],
+    prompts :: ![RegistryEntry]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -265,11 +264,11 @@ data SyncStatus
 
 -- | One row of a sync diff, preserving registry order.
 data SyncDiff = SyncDiff
-  { diffKind :: EntryKind,
-    diffName :: ModuleName,
-    diffOld :: Maybe Text,
-    diffNew :: Maybe Text,
-    diffStatus :: SyncStatus
+  { diffKind :: !EntryKind,
+    diffName :: !ModuleName,
+    diffOld :: !(Maybe Text),
+    diffNew :: !(Maybe Text),
+    diffStatus :: !SyncStatus
   }
   deriving stock (Eq, Show, Generic)
 
@@ -277,8 +276,8 @@ data SyncDiff = SyncDiff
 -- and a 'Registry' with each entry's @version@ field updated to the on-disk
 -- value (except 'SyncOrphan' entries, which are preserved as-is).
 data SyncReport = SyncReport
-  { syncDiffs :: [SyncDiff],
-    syncUpdated :: Registry
+  { syncDiffs :: ![SyncDiff],
+    syncUpdated :: !Registry
   }
   deriving stock (Eq, Show, Generic)
 
@@ -400,11 +399,11 @@ data RegistryValidationIssue
 -- | Whole-registry validation outcome, carrying every issue plus the
 -- entry counts used by the human-readable summary line.
 data RegistryValidationReport = RegistryValidationReport
-  { reportIssues :: [RegistryValidationIssue],
-    reportModuleCount :: Int,
-    reportRecipeCount :: Int,
-    reportBlueprintCount :: Int,
-    reportPromptCount :: Int
+  { reportIssues :: ![RegistryValidationIssue],
+    reportModuleCount :: !Int,
+    reportRecipeCount :: !Int,
+    reportBlueprintCount :: !Int,
+    reportPromptCount :: !Int
   }
   deriving stock (Eq, Show, Generic)
 

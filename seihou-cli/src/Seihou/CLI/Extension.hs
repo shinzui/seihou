@@ -16,10 +16,10 @@ import System.IO (hPutStrLn, stderr)
 import System.Process (rawSystem)
 
 data ExtensionRunOpts = ExtensionRunOpts
-  { extensionName :: Text,
-    extensionArgs :: [String]
+  { extensionName :: !Text,
+    extensionArgs :: ![String]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data ExtensionRunError
   = ExtensionNotFound Text String

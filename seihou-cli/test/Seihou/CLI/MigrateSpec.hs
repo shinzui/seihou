@@ -9,6 +9,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
 import Effectful (runEff)
+import GHC.Generics (Generic)
 import Seihou.CLI.Migrate
   ( MigrateError (..),
     MigrateOpts (..),
@@ -157,11 +158,12 @@ defaultOpts =
 -- ----------------------------------------------------------------------------
 
 data FetchFixture = FetchFixture
-  { modName :: Text,
-    remoteDir :: FilePath,
-    installedDir :: FilePath,
-    projectDir :: FilePath
+  { modName :: !Text,
+    remoteDir :: !FilePath,
+    installedDir :: !FilePath,
+    projectDir :: !FilePath
   }
+  deriving stock (Generic)
 
 withFetchFixture :: Text -> Text -> Text -> (FetchFixture -> IO ()) -> IO ()
 withFetchFixture installedVer remoteVer migrationsLit action =

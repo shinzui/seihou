@@ -14,6 +14,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime (..), fromGregorian)
+import GHC.Generics (Generic)
 import Seihou.CLI.CommandExecution (CommandPolicy (..))
 import Seihou.CLI.Update (PromptPolicy (..), UpdateRequest (..), UpdateSelection (..), applyProjectUpdate, isUpdateNoOp, withProjectUpdate)
 import Seihou.CLI.Update.Migrations (StagedMigrations (..), planAndStageMigrations)
@@ -390,21 +391,23 @@ spec = do
             map (.moduleVersion) migrationStage.manifest.modules `shouldBe` [Just "2.0.0", Just "2.0.0"]
 
 data UpdateFixture = UpdateFixture
-  { projectRoot :: FilePath,
-    projectFile :: FilePath,
-    manifestPath :: FilePath,
-    xdgHome :: FilePath,
-    installedModule :: FilePath,
-    remote :: FilePath,
-    applicationId :: ApplicationId
+  { projectRoot :: !FilePath,
+    projectFile :: !FilePath,
+    manifestPath :: !FilePath,
+    xdgHome :: !FilePath,
+    installedModule :: !FilePath,
+    remote :: !FilePath,
+    applicationId :: !ApplicationId
   }
+  deriving stock (Generic)
 
 data RecipeUpdateFixture = RecipeUpdateFixture
-  { recipeProjectRoot :: FilePath,
-    recipeManifestPath :: FilePath,
-    recipeXdgHome :: FilePath,
-    recipeApplicationId :: ApplicationId
+  { recipeProjectRoot :: !FilePath,
+    recipeManifestPath :: !FilePath,
+    recipeXdgHome :: !FilePath,
+    recipeApplicationId :: !ApplicationId
   }
+  deriving stock (Generic)
 
 prepareUpdateFixture :: FilePath -> IO UpdateFixture
 prepareUpdateFixture root = do

@@ -10,6 +10,7 @@ module Seihou.OKF.Docs.Model
 where
 
 import Data.Text qualified as T
+import GHC.Generics (Generic)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
   ( AgentPrompt,
@@ -47,29 +48,29 @@ data DocArtifact
   deriving stock (Eq, Show)
 
 data DocEntry = DocEntry
-  { entryName :: T.Text,
-    entryKind :: DocKind,
-    entryVersion :: Maybe T.Text,
-    entryDescription :: Maybe T.Text,
-    entryTags :: [T.Text],
-    entryPath :: FilePath,
-    entryArtifact :: DocArtifact,
-    entryModuleRefs :: [ModuleRef]
+  { entryName :: !T.Text,
+    entryKind :: !DocKind,
+    entryVersion :: !(Maybe T.Text),
+    entryDescription :: !(Maybe T.Text),
+    entryTags :: ![T.Text],
+    entryPath :: !FilePath,
+    entryArtifact :: !DocArtifact,
+    entryModuleRefs :: ![ModuleRef]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data ModuleRef = ModuleRef
-  { refName :: T.Text,
-    refResolved :: Bool
+  { refName :: !T.Text,
+    refResolved :: !Bool
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data DocModel = DocModel
-  { docRepoName :: T.Text,
-    docRepoDescription :: Maybe T.Text,
-    docEntries :: [DocEntry]
+  { docRepoName :: !T.Text,
+    docRepoDescription :: !(Maybe T.Text),
+    docEntries :: ![DocEntry]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 data DocLoadError
   = RegistryNotFound FilePath

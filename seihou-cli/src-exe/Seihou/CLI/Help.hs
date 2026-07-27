@@ -20,6 +20,7 @@ data HelpTopic = HelpTopic
     topicDescription :: !Text,
     topicContent :: !Text
   }
+  deriving stock (Generic)
 
 data HelpCommand
   = ListTopics

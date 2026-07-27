@@ -13,7 +13,6 @@ where
 import Data.Maybe (mapMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import GHC.Generics (Generic)
 import Seihou.Core.Registry
   ( EntryKind (..),
     Registry (..),
@@ -44,9 +43,9 @@ import System.IO (hPutStrLn, stderr)
 
 -- | Flags parsed for the @seihou registry sync-versions@ subcommand.
 data SyncVersionsOpts = SyncVersionsOpts
-  { syncVersionsDir :: Maybe FilePath,
-    syncVersionsDryRun :: Bool,
-    syncVersionsCheck :: Bool
+  { syncVersionsDir :: !(Maybe FilePath),
+    syncVersionsDryRun :: !Bool,
+    syncVersionsCheck :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 

@@ -39,35 +39,35 @@ data CommandDisposition
 
 -- | A rendered command paired with its stable identity and selected action.
 data PlannedCommand = PlannedCommand
-  { operation :: Operation,
-    fingerprint :: CommandFingerprint,
-    disposition :: CommandDisposition
+  { operation :: !Operation,
+    fingerprint :: !CommandFingerprint,
+    disposition :: !CommandDisposition
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | An ordered command phase. Declaration/composition order is also execution
 -- order.
 newtype CommandPlan = CommandPlan
   { commands :: [PlannedCommand]
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Counts suitable for human or machine-readable previews.
 data CommandPlanSummary = CommandPlanSummary
-  { willRun :: Int,
-    skippedUnchanged :: Int,
-    skippedDisabled :: Int
+  { willRun :: !Int,
+    skippedUnchanged :: !Int,
+    skippedDisabled :: !Int
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | A failed shell command and its captured process result.
 data CommandExecutionError = CommandExecutionError
-  { command :: PlannedCommand,
-    exitCode :: Int,
-    stdout :: Text,
-    stderr :: Text
+  { command :: !PlannedCommand,
+    exitCode :: !Int,
+    stdout :: !Text,
+    stderr :: !Text
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Select command dispositions according to policy and prior successful
 -- receipts. Non-command operations are ignored.

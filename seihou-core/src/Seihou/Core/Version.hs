@@ -6,7 +6,6 @@ module Seihou.Core.Version
 where
 
 import Data.Text qualified as T
-import GHC.Generics (Generic)
 import Numeric.Natural (Natural)
 import Seihou.Prelude
 

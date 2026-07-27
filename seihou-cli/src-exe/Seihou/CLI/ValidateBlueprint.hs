@@ -36,14 +36,15 @@ import System.Exit (ExitCode (..), exitFailure, exitWith)
 -- and a 'files/' integrity check).
 data BlueprintReport = BlueprintReport
   { -- | 'Nothing' when Dhall evaluation failed; otherwise the decoded record
-    brBlueprint :: Maybe Blueprint,
+    brBlueprint :: !(Maybe Blueprint),
     -- | Display name; equals the decoded blueprint's name when available
-    brName :: Text,
-    brPath :: FilePath,
-    brDhallOk :: Bool,
-    brDhallError :: Maybe Text,
-    brChecks :: [DiagCheck]
+    brName :: !Text,
+    brPath :: !FilePath,
+    brDhallOk :: !Bool,
+    brDhallError :: !(Maybe Text),
+    brChecks :: ![DiagCheck]
   }
+  deriving stock (Generic)
 
 handleValidateBlueprint :: ValidateBlueprintOpts -> IO ()
 handleValidateBlueprint vopts = do

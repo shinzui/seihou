@@ -94,32 +94,32 @@ import System.Exit (exitFailure)
 -- provenance label reported for a CLI-sourced value; they never change which
 -- value wins.
 data AgentConfigInputs = AgentConfigInputs
-  { cliProvider :: Maybe Text,
-    cliModel :: Maybe Text,
-    cliEffort :: Maybe Text,
-    cliTrace :: Maybe Text,
-    cliProviderFromSubcommand :: Bool,
-    cliModelFromSubcommand :: Bool,
-    cliEffortFromSubcommand :: Bool,
-    cliTraceFromSubcommand :: Bool,
-    envProvider :: Maybe Text,
-    envModel :: Maybe Text,
-    envEffort :: Maybe Text,
-    envTrace :: Maybe Text,
+  { cliProvider :: !(Maybe Text),
+    cliModel :: !(Maybe Text),
+    cliEffort :: !(Maybe Text),
+    cliTrace :: !(Maybe Text),
+    cliProviderFromSubcommand :: !Bool,
+    cliModelFromSubcommand :: !Bool,
+    cliEffortFromSubcommand :: !Bool,
+    cliTraceFromSubcommand :: !Bool,
+    envProvider :: !(Maybe Text),
+    envModel :: !(Maybe Text),
+    envEffort :: !(Maybe Text),
+    envTrace :: !(Maybe Text),
     -- | Declared by the blueprint or prompt being run, when the command has
     -- one. Only populated once the artifact has been loaded; see
     -- 'resolvePendingAgentConfig'.
-    declaredProvider :: Maybe Text,
-    declaredModel :: Maybe Text,
-    declaredEffort :: Maybe Text,
+    declaredProvider :: !(Maybe Text),
+    declaredModel :: !(Maybe Text),
+    declaredEffort :: !(Maybe Text),
     -- | Reserved: no schema field feeds this yet. It exists so all four
     -- settings are structurally identical, making a future @launch.trace@ an
     -- insertion rather than a redesign.
-    declaredTrace :: Maybe Text,
-    localConfig :: Map Text Text,
-    globalConfig :: Map Text Text
+    declaredTrace :: !(Maybe Text),
+    localConfig :: !(Map Text Text),
+    globalConfig :: !(Map Text Text)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | An 'AgentConfigInputs' with nothing set: no flags, no environment, empty
 -- config maps. Handy as a base for tests and for callers that only populate a
@@ -154,12 +154,12 @@ baseAgentConfigInputs =
 -- @Maybe Text@ values in a row, twice over, are trivial to transpose by
 -- accident, and the compiler would not notice.
 data AgentSettingFlags = AgentSettingFlags
-  { flagProvider :: Maybe Text,
-    flagModel :: Maybe Text,
-    flagEffort :: Maybe Text,
-    flagTrace :: Maybe Text
+  { flagProvider :: !(Maybe Text),
+    flagModel :: !(Maybe Text),
+    flagEffort :: !(Maybe Text),
+    flagTrace :: !(Maybe Text)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | No flags supplied on this tier.
 noAgentSettingFlags :: AgentSettingFlags
@@ -296,10 +296,10 @@ data AgentConfigSource
 
 -- | A resolved value paired with the source that supplied it.
 data ResolvedAgentField a = ResolvedAgentField
-  { resolvedValue :: a,
-    resolvedSource :: AgentConfigSource
+  { resolvedValue :: !a,
+    resolvedSource :: !AgentConfigSource
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | A short human label describing where a value came from, suitable for
 -- bracketed display. For config-file sources it names the concrete key that
@@ -350,17 +350,17 @@ commandKey TraceField = agentCommandTraceConfigKey
 -- | The full result of resolving one command's provider and model, with
 -- provenance, used by the @seihou agent config@ inspection command.
 data ResolvedCommandConfig = ResolvedCommandConfig
-  { rccCommand :: AgentCommandName,
-    rccProvider :: ResolvedAgentField AgentProvider,
-    rccModel :: ResolvedAgentField (Maybe Text),
-    rccEffort :: ResolvedAgentField (Maybe ThinkingLevel),
-    rccTrace :: ResolvedAgentField TraceSetting,
+  { rccCommand :: !AgentCommandName,
+    rccProvider :: !(ResolvedAgentField AgentProvider),
+    rccModel :: !(ResolvedAgentField (Maybe Text)),
+    rccEffort :: !(ResolvedAgentField (Maybe ThinkingLevel)),
+    rccTrace :: !(ResolvedAgentField TraceSetting),
     -- | The configured @agent.tracePath@, if any. Carried without provenance:
     -- it is free-form, has no CLI flag and no per-command variant, so there is
     -- no precedence story worth displaying.
-    rccTracePath :: Maybe FilePath
+    rccTracePath :: !(Maybe FilePath)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Flat resolver, preserved for backward compatibility. It never consults the
 -- per-command config keys, so a caller with only @agent.provider@/@agent.model@
@@ -638,11 +638,11 @@ gatherAgentConfigInputs parentFlags commandFlags = do
 -- artifact's @launch@ record. @mode@ is deliberately absent: it is reserved
 -- and no part of the resolution path.
 data AgentLaunchDeclaration = AgentLaunchDeclaration
-  { declarationProvider :: Maybe Text,
-    declarationModel :: Maybe Text,
-    declarationEffort :: Maybe Text
+  { declarationProvider :: !(Maybe Text),
+    declarationModel :: !(Maybe Text),
+    declarationEffort :: !(Maybe Text)
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | A declaration that states nothing, leaving every field to the user's
 -- flags, environment, and config.
@@ -692,10 +692,10 @@ validateAgentLaunchDeclaration decl =
 -- after the handler loads it, but resolution must still be a single pass over
 -- one ordered precedence list.
 data PendingAgentConfig = PendingAgentConfig
-  { pendingCommand :: AgentCommandName,
-    pendingInputs :: AgentConfigInputs
+  { pendingCommand :: !AgentCommandName,
+    pendingInputs :: !AgentConfigInputs
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Read the environment and config for a command whose artifact may declare
 -- its own launch settings, stopping short of resolution.

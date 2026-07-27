@@ -179,7 +179,8 @@ blueprintEntry =
               files = [],
               allowedTools = Nothing,
               tags = ["blueprint"],
-              migrations = []
+              migrations = [],
+              launch = Nothing
             },
       entryModuleRefs = [ModuleRef "base" True]
     }
@@ -206,7 +207,8 @@ promptEntry =
               files = [],
               allowedTools = Nothing,
               tags = ["prompt"],
-              launch = Nothing
+              launch = Nothing,
+              guidance = []
             },
       entryModuleRefs = []
     }

@@ -28,6 +28,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import GHC.Generics (Generic)
 import System.Directory (findExecutable)
 import System.Exit (ExitCode (..))
 import System.IO (IOMode (..), hClose, hIsTerminalDevice, openFile, stdin)
@@ -47,7 +48,7 @@ data FzfConfig = FzfConfig
     stdinIsTerminal :: !Bool,
     ttyAvailable :: !Bool
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Detect fzf availability and terminal state.
 detectFzfConfig :: IO FzfConfig
@@ -84,7 +85,7 @@ data FzfOpts = FzfOpts
     fzfAnsi :: !Bool,
     fzfNoSort :: !Bool
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 instance Semigroup FzfOpts where
   a <> b =
@@ -139,7 +140,7 @@ data Candidate a = Candidate
   { candidateDisplay :: !Text,
     candidateValue :: !a
   }
-  deriving stock (Functor)
+  deriving stock (Functor, Generic)
 
 -- | Result of an fzf selection.
 data FzfResult a

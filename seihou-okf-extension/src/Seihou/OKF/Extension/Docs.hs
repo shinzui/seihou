@@ -9,6 +9,7 @@ where
 import Control.Monad (when)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import GHC.Generics (Generic)
 import Okf.ConceptId qualified as Okf
 import Okf.Validation (BundleValidationError (..), ValidationError (..))
 import Seihou.OKF.Docs.Model
@@ -26,11 +27,11 @@ import System.FilePath ((</>))
 import System.IO (stderr)
 
 data DocsOpts = DocsOpts
-  { docsDir :: FilePath,
-    docsOut :: FilePath,
-    docsForce :: Bool
+  { docsDir :: !FilePath,
+    docsOut :: !FilePath,
+    docsForce :: !Bool
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 runDocs :: DocsOpts -> IO (Either T.Text T.Text)
 runDocs opts = do

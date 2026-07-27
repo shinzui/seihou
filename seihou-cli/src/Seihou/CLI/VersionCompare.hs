@@ -8,6 +8,7 @@ where
 
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Text (Text)
+import GHC.Generics (Generic)
 import Seihou.Core.Version (parseVersion)
 
 -- | Status of a module with respect to available updates.
@@ -22,12 +23,12 @@ data OutdatedStatus
 -- @seihou outdated@ command (which formats them as a table) and
 -- @seihou status@ (which folds them into per-row annotations).
 data OutdatedEntry = OutdatedEntry
-  { moduleName :: Text,
-    installedVersion :: Maybe Text,
-    availableVersion :: Maybe Text,
-    status :: OutdatedStatus
+  { moduleName :: !Text,
+    installedVersion :: !(Maybe Text),
+    availableVersion :: !(Maybe Text),
+    status :: !OutdatedStatus
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 instance ToJSON OutdatedEntry where
   toJSON e =
@@ -45,10 +46,10 @@ instance ToJSON OutdatedEntry where
 
 -- | Summary statistics for an update check.
 data CheckStats = CheckStats
-  { checkedCount :: Int,
-    skippedNoOrigin :: Int
+  { checkedCount :: !Int,
+    skippedNoOrigin :: !Int
   }
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Compare installed and available version strings.
 compareVersions :: Maybe Text -> Maybe Text -> OutdatedStatus

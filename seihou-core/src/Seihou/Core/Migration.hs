@@ -14,7 +14,6 @@ module Seihou.Core.Migration
 where
 
 import Data.List (sortOn)
-import GHC.Generics (Generic)
 import Seihou.Core.Version (Version, parseVersion)
 import Seihou.Prelude
 
@@ -34,19 +33,19 @@ import Seihou.Prelude
 --     by this op; if the command moves files, the migration author is
 --     responsible for following it with explicit move/delete ops.
 data MigrationOp
-  = MoveFile {src :: FilePath, dest :: FilePath}
-  | MoveDir {src :: FilePath, dest :: FilePath}
-  | DeleteFile {path :: FilePath}
-  | DeleteDir {path :: FilePath}
-  | RunCommand {run :: Text, workDir :: Maybe FilePath}
+  = MoveFile {src :: !FilePath, dest :: !FilePath}
+  | MoveDir {src :: !FilePath, dest :: !FilePath}
+  | DeleteFile {path :: !FilePath}
+  | DeleteDir {path :: !FilePath}
+  | RunCommand {run :: !Text, workDir :: !(Maybe FilePath)}
   deriving stock (Eq, Show, Generic)
 
 -- | A migration that moves a project from module version @from@ to module
 -- version @to@. The 'ops' list is applied in declaration order.
 data Migration = Migration
-  { from :: Text,
-    to :: Text,
-    ops :: [MigrationOp]
+  { from :: !Text,
+    to :: !Text,
+    ops :: ![MigrationOp]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -54,9 +53,9 @@ data Migration = Migration
 -- version strings use the same dotted-numeric format as module migrations,
 -- while 'prompt' describes only the changes needed for this edge.
 data BlueprintMigration = BlueprintMigration
-  { from :: Text,
-    to :: Text,
-    prompt :: Text
+  { from :: !Text,
+    to :: !Text,
+    prompt :: !Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -89,16 +88,16 @@ data BlueprintMigration = BlueprintMigration
 -- manifest will advance from @planFrom@ to @planTo@ without running
 -- any migration ops (a pure version bump).
 data MigrationPlan = MigrationPlan
-  { planModule :: Text,
+  { planModule :: !Text,
     -- | Installed (manifest) version at the start.
-    planFrom :: Version,
+    planFrom :: !Version,
     -- | Target version. The manifest will land here after the plan
     -- runs, regardless of whether any of the declared migrations
     -- bridge every gap inside @[planFrom, planTo]@.
-    planTo :: Version,
+    planTo :: !Version,
     -- | The migrations that actually apply, in ascending @from@
     -- order. May be empty.
-    planSteps :: [Migration]
+    planSteps :: ![Migration]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -106,10 +105,10 @@ data MigrationPlan = MigrationPlan
 -- window. A non-trivial window may have no selected steps when the author
 -- declared no agent intervention for that range.
 data BlueprintMigrationPlan = BlueprintMigrationPlan
-  { blueprintPlanName :: Text,
-    blueprintPlanFrom :: Version,
-    blueprintPlanTo :: Version,
-    blueprintPlanSteps :: [BlueprintMigration]
+  { blueprintPlanName :: !Text,
+    blueprintPlanFrom :: !Version,
+    blueprintPlanTo :: !Version,
+    blueprintPlanSteps :: ![BlueprintMigration]
   }
   deriving stock (Eq, Show, Generic)
 

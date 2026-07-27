@@ -234,7 +234,8 @@ samplePrepared =
             files = [],
             allowedTools = Nothing,
             tags = [],
-            migrations = [first, second]
+            migrations = [first, second],
+            launch = Nothing
           }
    in PreparedBlueprintExecution
         { preparedBlueprint = blueprint,

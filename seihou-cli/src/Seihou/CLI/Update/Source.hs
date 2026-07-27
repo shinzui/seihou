@@ -30,11 +30,12 @@ import System.Exit (ExitCode (..))
 import System.Process (readProcessWithExitCode)
 
 data ArtifactRequirement = ArtifactRequirement
-  { kind :: CandidateArtifactKind,
-    name :: Text,
-    sourceDirectory :: FilePath,
-    origin :: Maybe OriginInfo
+  { kind :: !CandidateArtifactKind,
+    name :: !Text,
+    sourceDirectory :: !FilePath,
+    origin :: !(Maybe OriginInfo)
   }
+  deriving stock (Generic)
 
 -- | Clone every distinct remote once, validate its complete module/recipe
 -- catalog, and materialize a name-keyed temporary search root. Local artifacts

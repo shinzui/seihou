@@ -26,15 +26,15 @@ data FileStatus
 -- | One line in the dry-run preview.
 data PreviewLine
   = FilePreview
-      { previewStatus :: FileStatus,
-        previewPath :: FilePath,
-        previewAnnotation :: Text,
-        previewModule :: Maybe ModuleName
+      { previewStatus :: !FileStatus,
+        previewPath :: !FilePath,
+        previewAnnotation :: !Text,
+        previewModule :: !(Maybe ModuleName)
       }
   | DirPreview FilePath
   | CommandPreview Text (Maybe ModuleName)
   | OrphanPreview FilePath ModuleName
-  deriving stock (Eq, Show)
+  deriving stock (Eq, Generic, Show)
 
 -- | Build a structured preview from operations and an optional diff result.
 -- The ownership map tracks which module produced each file path.
