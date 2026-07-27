@@ -83,13 +83,15 @@ This section must always reflect the actual current state of the work.
 - [x] M4 — Convert field reads in `seihou-core` (`src/` and `test/`) to `^. #field` (2026-07-27) — 2,182 sites
 - [x] M4 — Convert the 19 partial-field reads on `Operation`/`PreviewLine` to pattern matches (2026-07-27)
 - [x] M5 — Convert field reads in `seihou-cli` and `seihou-okf-extension` to `^. #field` (2026-07-27) — 2,183 sites
-- [ ] M6 — Convert the 47 `src` and 61 `test` record-update sites to lens setters
-- [ ] M7 — Remove `OverloadedRecordDot` from all six Cabal `default-extensions` blocks
-- [ ] M7 — Confirm the three sum-typed record types still compile via pattern matching
-- [ ] M8 — Add `nix/check-record-conventions.sh` and wire it into pre-commit and flake check
-- [ ] M8 — Demonstrate the check rejecting a deliberately reintroduced violation
-- [ ] M8 — Document the convention in the architecture overview and contributing guide
-- [ ] M9 — Run the end-to-end scaffold scenario and capture the transcript
+- [x] M6 — Convert the record-update sites to lens setters (2026-07-27) — 162 sites, not the 108 estimated
+- [x] M6 — Annotate the 8 third-party-type updates that cannot be converted (2026-07-27)
+- [x] M7 — Remove `OverloadedRecordDot` from all eight Cabal `default-extensions` blocks (2026-07-27)
+- [x] M7 — Confirm the three sum-typed record types still compile via pattern matching (2026-07-27)
+- [x] M8 — Add `nix/check-record-conventions.sh` and wire it into pre-commit and flake check (2026-07-27)
+- [x] M8 — Demonstrate the check rejecting a deliberately reintroduced violation (2026-07-27) — all six rules
+- [x] M8 — Document the convention in the architecture overview, contributing guide and CLAUDE.md (2026-07-27)
+- [x] M9 — Run the end-to-end scaffold scenario and capture the transcript (2026-07-27)
+- [x] M9 — Audit every string literal in the tree before vs after; repair five mangled fixtures (2026-07-27)
 
 
 ## Surprises & Discoveries
@@ -334,6 +336,38 @@ disambiguate. `unSHA256` also has no better name — `value` or `get` would say 
 Milestone 8 check does not look for prefixes at all (a descriptive field name and a prefixed
 one are not distinguishable by text matching), so nothing enforces either reading.
 
+### A converted read compiled but a converted *update* silently rewrote strings
+
+The record-update converter normalised whitespace across each update
+expression so it could match the expression's shape (`Map.insert k v (r ^. #f)`
+and friends), then built the replacement from the *normalised* text. Inside a
+string literal that is destructive: `Just "  MAX  "` became `?~ " MAX "`.
+
+Five fixtures in `seihou-cli/test/Seihou/CLI/AgentConfigSpec.hs` lost the
+padding they exist to test — `"  MAX  "`, `"  STDERR  "`, and three
+whitespace-only values `"  "` and `"   "`. **All 421 tests still passed**,
+because trimming one space works as well as trimming two. The suite could not
+have caught this.
+
+What caught it was a separate audit: extract every string literal from every
+`.hs` file at the base commit and at HEAD, and compare the multisets. That
+also confirmed the thing most worth confirming — that
+`seihou-core/src/Seihou/Manifest/Types.hs`, which hand-writes all 22 of its
+JSON instances, has **all 71 of its string literals unchanged**, so the
+on-disk manifest format is byte-for-byte unaffected by a refactor that renamed
+306 record fields.
+
+After repair, the only literals that differ across the whole refactor are
+seven intended ones: five Hspec test descriptions that named a field by its
+old prefixed name (`"...populates reportPromptCount"` became
+`"...populates promptCount"`), and the two `PackageImports` package pins in
+the prelude.
+
+The lesson generalises past this plan: for a mechanical refactor, a green test
+suite is evidence about behavior the tests exercise, not about the edit being
+faithful. A literal-level diff of the tree is cheap and checks something the
+suite structurally cannot.
+
 ### Compile time is not measurably worse
 
 The plan flagged generic-lens compile cost as a risk worth measuring before committing to
@@ -482,7 +516,118 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Status: complete, 2026-07-27.** Ten commits, `e57c5a4` through `a2d030c`, on `master`.
+
+### What was achieved
+
+Seihou now has one record idiom. Every record derives `Generic` and has strict fields, no
+field carries a type-abbreviation prefix, every deriving clause names its strategy, every
+field read is `record ^. #field`, and every field write is a lens setter.
+`OverloadedRecordDot` is gone from all eight Cabal stanzas, so the old idiom is not
+expressible. `nix/check-record-conventions.sh` enforces the mechanically checkable parts
+in both the pre-commit hook and `nix flake check`, and the convention is written down in
+`docs/dev/architecture/overview.md`, mirrored in `docs/dev/contributing.md`, and summarised
+in `CLAUDE.md` for coding agents.
+
+By the numbers, against the re-measured baseline:
+
+```text
+field reads converted        4,365   (2,182 core + 2,120 cli + 63 okf)
+record updates converted       162
+record fields made strict      705
+Generic derives added           81
+fields unprefixed              306   across 70 types
+sites that could not convert    27   19 partial sum-type fields, 8 third-party types
+tests                    1034/421/16 identical before and after
+```
+
+All three acceptance criteria the Purpose section named are met and evidenced in
+Validation and Acceptance: the suite is unchanged in outcome, the CLI still performs a real
+end-to-end scaffold, and the new check demonstrably rejects each of its six rules.
+
+### Where the plan was wrong, and what that cost
+
+The plan's estimates were low in three places and its central safety claim was wrong in
+one. None of this changed the approach; all of it changed the size of the work.
+
+Field prefixes were the biggest miss: "about two dozen record types" was actually 70 types
+and 306 fields, because the plan's survey missed the entire `Seihou.CLI.Commands` options
+family. Record updates were 162, not 108. Test-tree dot accesses were 1,927, not 1,917.
+
+The wrong claim was that a wholesale `module Control.Lens` re-export would collide with
+nothing — "the intersection was empty in both directions". It collided with four names,
+and the plan's own grep-based analysis could not have found them, because it looked only at
+explicit import lists (missing the open `import Options.Applicative`) and at top-level type
+signatures (missing the entire constructor namespace). Milestone 0 existed precisely to
+catch this, and did, at the cost of one build.
+
+Three findings had no counterpart in the plan at all and would have blocked a less careful
+run: `newtype` fields cannot be strict; only 4 of 102 test modules use the shared prelude,
+so the test trees need their own lens imports; and `(^.)` at `infixl 8` is looser than
+backtick application, so the natural rewrite of an Hspec assertion silently misparses.
+
+### Lessons worth keeping
+
+**A green test suite is not evidence that a mechanical refactor was faithful.** The
+record-update converter rewrote the insides of five string literals — `"  MAX  "` became
+`" MAX "` — and all 1,471 tests still passed, because trimming one space works as well as
+trimming two. What caught it was diffing every string literal in the tree between the base
+commit and HEAD. That check is cheap, it took one command, and it is the only thing in this
+plan that verified something the suite structurally could not. Any large mechanical edit
+should end with it.
+
+**The house style's rules are not independent.** "No field prefixes" *forces* "no record
+update syntax": the moment prefixes came off in Milestone 3, eleven record updates stopped
+compiling, because `DuplicateRecordFields` only accepts an update when one datatype in
+scope has every field being updated. The plan sequenced these as separate milestones, which
+cannot work — the updates had to move in the same commit as the rename.
+
+**`NoFieldSelectors` is doing more work than it looks.** Seihou has fields named `to`,
+`from` and `op`, all of which are also `Control.Lens` exports. They are safe only because
+no selector function is generated for them. Keeping the extension was recorded as a
+low-stakes decision during planning; it turned out to be load-bearing.
+
+**Prefer the compiler over the reviewer for finding stragglers.** Removing
+`OverloadedRecordDot` last, after every call site was converted, meant Milestone 7 was a
+one-line change that either compiled or named every miss. It compiled first time, because
+the detection scripts had already reported zero — but the ordering is what made that
+verifiable rather than hopeful.
+
+### What remains
+
+Three items are explicitly out of scope and unchanged by this work: the version bump to
+`1.0.0.0` and the release itself (the `seihou-release` skill's job); tidying the
+unqualified `import Seihou.Core.Types` workarounds that existed only to bring GHC's
+`HasField` instances into scope, which are now unnecessary but whose removal is a separate
+verifiable change; and consolidating `Seihou.Manifest.Types`'s 22 hand-written JSON
+instances behind shared Aeson options in the prelude, which carries real wire-format risk
+and does not belong in a record-idiom refactor.
+
+One small item was found and left: `isFilePreview` in
+`seihou-core/test/Seihou/Engine/PreviewSpec.hs` may now be unused after its call site
+became a pattern-matching comprehension. It is harmless and the project does not enable
+`-Wunused-top-binds`.
+
+### ADR distillation
+
+`docs/adr/` does not exist in this repository, and `mori.dhall` declares no OKF bundle at
+that path — the position recorded in Context and Orientation during planning, re-verified
+at completion. Per the ADR workflow, the correct behavior when no profiled bundle exists is
+to preserve the repository's established convention rather than invent one as an incidental
+plan edit. Durable context from this plan was therefore promoted to the two homes this
+repository actually uses for cross-cutting conventions:
+
+- `docs/dev/architecture/overview.md`, new section "Record Conventions" — the canonical
+  statement, carrying the extension baseline, the definition and access rules, the
+  orphan-instance rationale for keeping `Data.Generics.Labels` out of the prelude, the
+  fixity hazards, the two classes of site that cannot use labels, and a pointer to the
+  enforcement script.
+- `docs/dev/contributing.md`, condensed mirror next to the existing "CLI Module Placement
+  Convention", with the same authoritative-source note that section uses.
+- `CLAUDE.md`, so coding agents pick the convention up without reading either document.
+
+Task-local execution detail — the conversion scripts, the per-milestone counts, the
+specific sites repaired — stays here in the plan.
 
 
 ## Context and Orientation
@@ -1461,6 +1606,25 @@ ExecPlan: docs/plans/75-adopt-generic-lens-record-conventions-before-1-0-0-0.md
 
 Acceptance has four parts. All four must hold before the plan is complete.
 
+**All four hold as of 2026-07-27.** The evidence is recorded inline in each
+subsection below, with a fifth check added during execution.
+
+### 0. Results summary
+
+```text
+1. test counts        1034 / 421 / 16   identical to baseline
+2. dot-access sites   0                 (2,818 src + 1,927 test at baseline)
+   record updates     8                 all third-party types, each annotated
+   OverloadedRecordDot 0                in .cabal and .hs alike
+   records w/o Generic 0                (81 at baseline)
+   lazy data fields    0                (705 at baseline; 2 newtype fields exempt)
+3. check script       exit 0 clean, exit 1 on each of its six rules
+   nix flake check    checks.aarch64-darwin.record-conventions PASS
+   pre-commit hook    rejects a commit carrying a violation
+4. end-to-end         init / new-module / validate-module / run / status all work
+5. string literals    only 7 intended changes across the entire refactor
+```
+
 ### 1. The test suite is unchanged in outcome
 
 Capture the example counts at baseline and compare at the end. Behavior must not change, so
@@ -1573,13 +1737,150 @@ references the seihou-schema URL and the machine is offline, `run` will fail at 
 resolution — that is an environment failure, not a regression; note it and rerun with network
 access.
 
-Capture the full transcript into this section when the run succeeds.
+One correction to the recipe above, found while running it: `seihou new-module`
+scaffolds into the *current directory*, but `seihou run` resolves module names only
+against `.seihou/modules/`, `~/.config/seihou/modules/` and
+`~/.config/seihou/installed/`. The module must be moved onto a search path first — which
+`docs/user/getting-started.md` does say, at its "To make your module available
+everywhere" step, but the plan's condensed recipe omitted. Without the move, `run` fails
+with `Module 'my-haskell' not found` and lists the three paths it searched.
+
+Captured transcript, 2026-07-27, against a binary built from `123e88d`:
+
+```text
+$ seihou --version
+seihou v0.5.0.0 (123e88d)
+
+$ seihou init
+Initialized Seihou configuration at ~/.config/seihou/
+  Created: config.dhall (global defaults)
+  Created: modules/ (user modules)
+  Created: installed/ (git-installed modules)
+
+$ seihou new-module my-haskell
+Created my-haskell/module.dhall
+Created my-haskell/files/README.md.tpl
+Module 'my-haskell' created at my-haskell/
+
+$ seihou validate-module my-haskell
+Validating module at my-haskell...
+
+  ✓ module.dhall evaluates successfully
+  ✓ Module name: my-haskell
+  ✓ 1 variables declared
+  ✓ 1 prompts defined
+  ✓ 1 steps defined
+  ✓ Module name format
+  ✓ Module version declared
+  ✓ Unique variable names
+  ✓ Prompt references
+  ✓ Export references
+  ✓ Source file existence
+  ✓ Dependency names
+  ✓ Safe step destinations
+  ✓ Destination variable references
+  ✓ Command safety
+
+Module 'my-haskell' is valid.
+
+$ mv my-haskell "$HOME/.config/seihou/modules/" && mkdir project && cd project
+
+$ seihou run my-haskell --dry-run --var project.name=demo-app
+Generation Plan (my-haskell):
+
+  Variables:
+    project.name = "demo-app"
+
+  Operations:
+      [new]  README.md  (template, my-haskell)
+
+  1 files to write, 0 conflicts
+
+$ seihou run my-haskell --var project.name=demo-app
+Generation Plan (my-haskell):
+
+  Variables:
+    project.name = "demo-app"
+
+  Operations:
+      [new]  README.md  (template, my-haskell)
+
+  1 files to write, 0 conflicts
+1 new, 0 modified, 0 unchanged.
+
+$ find . -type f | sort
+./.seihou/baselines/71f1b170a85d5036c1bad55c18b656fa8e3cc8445a2ed8c66bf5c18810d3b2ab
+./.seihou/manifest.json
+./README.md
+
+$ cat README.md
+# demo-app
+
+A project generated by seihou.
+
+$ seihou status
+Seihou Status:
+
+Applied modules:
+  my-haskell  v0.1.0    (applied 2026-07-27)
+
+Tracked files: 1
+  README.md   my-haskell   unchanged
+
+Variables: 1 resolved
+
+$ seihou diff
+No changes since last generation.
+
+$ seihou vars my-haskell
+Variables for my-haskell:
+
+  project.name = (required, no default)
+```
+
+Every stage of the pipeline this refactor touched is exercised here: Dhall loading and
+validation, variable resolution, plan compilation, template rendering, execution, baseline
+storage, manifest writing, and the three-state diff that `status` and `diff` read back.
 
 Clean up afterwards:
 
 ```bash
 cd / && rm -rf /tmp/seihou-e2e /tmp/seihou-check
 ```
+
+### 5. No string literal changed except where intended
+
+Added during execution, after the record-update converter was found to be rewriting the
+insides of string literals (see Surprises & Discoveries). A green test suite does not prove
+a mechanical refactor was faithful; this does.
+
+Extract every string literal from every `.hs` file at the base commit and at `HEAD`, and
+compare the multisets:
+
+```bash
+for rev in ff78410 HEAD; do
+  git ls-tree -r --name-only $rev | grep '\.hs$' | while read -r f; do
+    git show "$rev:$f" | grep -oE '"[^"]*"'
+  done | sort | uniq -c > "/tmp/lits-$rev.txt"
+done
+diff /tmp/lits-ff78410.txt /tmp/lits-HEAD.txt
+```
+
+Expected: exactly seven differences, all intended — five Hspec test descriptions that
+named a field by its old prefixed name, and the two `PackageImports` package pins in the
+prelude (`"generic-lens"` dropped, `"base"` added).
+
+The narrower and more important form of the same check, over the module that hand-writes
+every one of seihou's JSON instances:
+
+```bash
+for rev in ff78410 HEAD; do
+  git show $rev:seihou-core/src/Seihou/Manifest/Types.hs | grep -oE '"[^"]*"' | sort | uniq -c
+done
+```
+
+Expected: identical output both times — 71 distinct literals, same counts. That is the
+proof that renaming 306 record fields left the on-disk manifest format untouched.
 
 
 ## Idempotence and Recovery
@@ -1702,3 +2003,44 @@ all of its `ToJSON`/`FromJSON` instances rather than deriving them generically, 
 no shared options value to centralize today. Consolidating the manifest's JSON handling is
 real work with real wire-format risk and does not belong in a record-idiom refactor. Record
 it as a follow-up in Outcomes & Retrospective.
+
+
+## Revision Note — 2026-07-27 (implementation)
+
+The plan was executed end to end and revised throughout to match what was actually found.
+Changes, and why:
+
+**Progress** — every item checked with a completion date. Five items were added that the
+plan did not anticipate: re-exporting `Generic` from the prelude, merging the duplicated
+`default-extensions` block in `test-suite seihou-cli-test`, filling in the four record
+literals that omitted a now-strict field, converting the eleven record updates that
+unprefixing broke ahead of their milestone, and auditing every string literal in the tree.
+Three items had their counts corrected upward: 81 records lacking `Generic` (not 79), 70
+prefixed types (not ~24), 162 record updates (not 108).
+
+**Surprises & Discoveries** — nine findings recorded with evidence, the most consequential
+being that the wholesale `Control.Lens` re-export *does* collide (four names, resolved with
+the fallback the plan already sanctioned), that `newtype` fields cannot carry a strictness
+annotation, that only 4 of 102 test modules use the shared prelude, that `(^.)` binds
+looser than backtick application, and that the record-update converter silently rewrote the
+insides of five string literals while leaving all tests green.
+
+**Decision Log** — five decisions added: the four hidden lens names, re-exporting `Generic`,
+the explicit-import-list form for test modules, keeping rather than reverting the Milestone
+0 spike, and merging the duplicated cabal block. Each records the alternatives and why they
+were worse.
+
+**Validation and Acceptance** — a results summary added at the top, the end-to-end
+transcript captured in full (with a correction to the plan's recipe, which omitted moving
+the scaffolded module onto a search path), and a fifth acceptance criterion added for the
+string-literal audit, including the narrower check proving the manifest's 71 JSON literals
+are unchanged.
+
+**Outcomes & Retrospective** — filled in: what was achieved with final numbers, where the
+plan's estimates and its central safety claim were wrong, four lessons worth keeping, what
+remains out of scope, and the ADR distillation record.
+
+The plan's structure, milestone ordering and approach were not changed. The one ordering
+correction is noted in Surprises: prefix removal (M3) and record-update conversion (M6) are
+not independent, because removing prefixes makes `DuplicateRecordFields` reject the updates
+immediately, so eleven sites had to move in M3's commit.
