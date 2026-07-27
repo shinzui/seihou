@@ -50,7 +50,7 @@ loadComposition ::
 loadComposition searchPaths primary additional = runExceptT $ do
   (primaryMod, primaryDir) <- ExceptT $ loadModuleWithDir searchPaths primary
   let effectiveDeps = primaryMod ^. #dependencies ++ map simpleDep additional
-      effectivePrimary = primaryMod {dependencies = nubOrdBy (^. #module_) effectiveDeps}
+      effectivePrimary = (primaryMod & #dependencies .~ nubOrdBy (^. #module_) effectiveDeps)
       primaryInst = primaryInstance primary
       loaded = Map.singleton primaryInst (effectivePrimary, primaryDir)
       seeds = [(mkInstance (dep ^. #module_) (parentVarsFromDep dep)) | dep <- effectivePrimary ^. #dependencies]
@@ -383,7 +383,7 @@ loadTransitive searchPaths loaded (inst : rest)
 injectExportDefault :: Map VarName VarValue -> VarDecl -> VarDecl
 injectExportDefault exports decl =
   case Map.lookup (decl ^. #name) exports of
-    Just val -> decl {default_ = Just val}
+    Just val -> (decl & #default_ ?~ val)
     Nothing -> decl
 
 -- | Create a ResolvedVar for an inherited (non-declared) export variable.

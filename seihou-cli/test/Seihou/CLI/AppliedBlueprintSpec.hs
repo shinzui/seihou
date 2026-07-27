@@ -1,6 +1,6 @@
 module Seihou.CLI.AppliedBlueprintSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -75,10 +75,10 @@ spec = do
                   appliedAt = fixedTime
                 }
             seed =
-              (emptyManifest fixedTime)
-                { recipe = Just seedRecipe,
-                  vars = Map.empty
-                }
+              ( (emptyManifest fixedTime)
+                  & #recipe .~ Just seedRecipe
+                  & #vars .~ Map.empty
+              )
         LBS.writeFile manifestPath (manifestToJSON seed)
         let entry = mkEntry "payments-service" Nothing [] True Nothing
         res <- recordAppliedBlueprint manifestPath entry

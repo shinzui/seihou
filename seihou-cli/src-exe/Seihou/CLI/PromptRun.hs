@@ -167,7 +167,7 @@ relaxCommandVarDecls commandVars =
   where
     commandNames = Set.fromList (map (^. #name) commandVars)
     relaxOne decl
-      | Set.member (decl ^. #name) commandNames = decl {required = False}
+      | Set.member (decl ^. #name) commandNames = decl & #required .~ False
       | otherwise = decl
 
 exitErr :: LogLevel -> Text -> IO a

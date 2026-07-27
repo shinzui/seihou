@@ -9,7 +9,7 @@ module Seihou.OKF.Docs.Model
   )
 where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Text qualified as T
 import GHC.Generics (Generic)
@@ -212,11 +212,7 @@ moduleRefs dependencies =
 resolveEntryRefs :: [T.Text] -> DocEntry -> DocEntry
 resolveEntryRefs moduleNames entry =
   entry
-    { moduleRefs =
-        [ ref {resolved = (ref ^. #name) `elem` moduleNames}
-        | ref <- entry ^. #moduleRefs
-        ]
-    }
+    & #moduleRefs .~ [ref & #resolved .~ ((ref ^. #name) `elem` moduleNames) | ref <- entry ^. #moduleRefs]
 
 renderModuleLoadError :: ModuleLoadError -> T.Text
 renderModuleLoadError = T.pack . show

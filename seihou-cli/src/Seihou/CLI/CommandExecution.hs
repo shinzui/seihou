@@ -97,9 +97,9 @@ summarizeCommandPlan commandPlan =
   where
     emptySummary = CommandPlanSummary {willRun = 0, skippedUnchanged = 0, skippedDisabled = 0}
     count summary planned = case planned ^. #disposition of
-      CommandWillRun -> summary {willRun = summary ^. #willRun + 1}
-      CommandSkippedUnchanged -> summary {skippedUnchanged = summary ^. #skippedUnchanged + 1}
-      CommandSkippedDisabled -> summary {skippedDisabled = summary ^. #skippedDisabled + 1}
+      CommandWillRun -> (summary & #willRun %~ (+ 1))
+      CommandSkippedUnchanged -> (summary & #skippedUnchanged %~ (+ 1))
+      CommandSkippedDisabled -> summary & #skippedDisabled %~ (+ 1)
 
 -- | Execute runnable commands sequentially with @sh -c@. Stop at the first
 -- failure. The caller receives receipts only if the entire phase succeeds.

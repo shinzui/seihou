@@ -1,6 +1,6 @@
 module Seihou.Core.RegistrySyncSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Maybe (isJust, mapMaybe)
 import Data.Text (Text)
@@ -66,15 +66,13 @@ spec = describe "computeRegistrySync" $ do
 
   it "preserves registry order in the diff output" $ do
     let reg =
-          ( mkReg
-              [ mkEntry "alpha" Nothing,
-                mkEntry "beta" (Just "0.1.0"),
-                mkEntry "gamma" (Just "2.0.0")
-              ]
-              [mkEntry "lib-one" Nothing]
-          )
-            { prompts = [mkEntry "review" Nothing]
-            }
+          mkReg
+            [ mkEntry "alpha" Nothing,
+              mkEntry "beta" (Just "0.1.0"),
+              mkEntry "gamma" (Just "2.0.0")
+            ]
+            [mkEntry "lib-one" Nothing]
+            & #prompts .~ [mkEntry "review" Nothing]
         lookups =
           [ (ModuleEntry, ModuleName "alpha", Just "1.0.0"),
             (ModuleEntry, ModuleName "beta", Just "0.2.0"),
@@ -138,7 +136,7 @@ spec = describe "computeRegistrySync" $ do
       warnings `shouldBe` []
 
     it "mentions prompt.dhall in stale prompt warnings" $ do
-      let reg = (mkReg [] []) {prompts = [mkEntry "review" (Just "0.1.0")]}
+      let reg = ((mkReg [] []) & #prompts .~ [mkEntry "review" (Just "0.1.0")])
           lookups = [(PromptEntry, ModuleName "review", Just "0.2.0")]
           report = computeRegistrySync reg lookups
           warnings = mapMaybe formatDriftWarning (report ^. #diffs)

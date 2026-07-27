@@ -141,7 +141,7 @@ setServiceExpectedManifest transaction expected = do
         try @SomeException $
           writeServiceJournal
             (transaction ^. #transactionDirectory)
-            journal {expectedManifest = Just expected}
+            (journal & #expectedManifest ?~ expected)
       pure $ first (UpdateManifestWriteFailed . T.pack . displayException) result
 
 restoreServiceBackups :: UpdateTransaction -> IO (Either UpdateError ())

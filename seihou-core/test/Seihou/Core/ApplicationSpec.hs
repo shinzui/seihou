@@ -1,6 +1,6 @@
 module Seihou.Core.ApplicationSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (?~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -146,7 +146,7 @@ spec = do
     it "replaces in place and appends new applications" $ do
       let first = mkComposition moduleTarget []
           second = mkComposition (AppliedModuleTarget "other") []
-          replacement = first {targetVersion = Just "2.0.0"}
+          replacement = (first & #targetVersion ?~ "2.0.0")
           third = mkComposition (AppliedRecipeTarget "third") []
       replaceAppliedComposition replacement [first, second] `shouldBe` [replacement, second]
       replaceAppliedComposition third [first, second] `shouldBe` [first, second, third]

@@ -80,8 +80,9 @@ This section must always reflect the actual current state of the work.
 - [x] M2 — Add `import GHC.Generics (Generic)` to the 7 modules that skip the prelude (2026-07-27)
 - [x] M3 — Remove per-type field name prefixes from the affected record types (2026-07-27) — 70 types, 306 fields, not the ~24 the plan estimated
 - [x] M3 — Convert the 11 record updates that unprefixing broke (2026-07-27) — pulled forward from M6 by compile failure
-- [ ] M4 — Convert field reads in `seihou-core` (`src/` and `test/`) to `^. #field`
-- [ ] M5 — Convert field reads in `seihou-cli` and `seihou-okf-extension` to `^. #field`
+- [x] M4 — Convert field reads in `seihou-core` (`src/` and `test/`) to `^. #field` (2026-07-27) — 2,182 sites
+- [x] M4 — Convert the 19 partial-field reads on `Operation`/`PreviewLine` to pattern matches (2026-07-27)
+- [x] M5 — Convert field reads in `seihou-cli` and `seihou-okf-extension` to `^. #field` (2026-07-27) — 2,183 sites
 - [ ] M6 — Convert the 47 `src` and 61 `test` record-update sites to lens setters
 - [ ] M7 — Remove `OverloadedRecordDot` from all six Cabal `default-extensions` blocks
 - [ ] M7 — Confirm the three sum-typed record types still compile via pattern matching

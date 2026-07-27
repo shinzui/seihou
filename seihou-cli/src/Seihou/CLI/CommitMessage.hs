@@ -33,6 +33,8 @@ generateCommitMessage modNames diffText = do
 
 callClaude :: [ModuleName] -> T.Text -> IO (Maybe T.Text)
 callClaude modNames diffText = do
+  -- CreateProcess is a third-party type with no Generic instance, so it has
+  -- no #std_out label to set. Record update syntax is the only option here.
   let prompt = buildPrompt modNames diffText
       cp =
         (proc "claude" ["-p", T.unpack prompt])

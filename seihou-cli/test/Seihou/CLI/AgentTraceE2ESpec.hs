@@ -109,6 +109,8 @@ withTraceProject action =
       fakeClaude
       "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf '%s\\n' '{\"result\":\"traced complete\",\"is_error\":false,\"session_id\":\"fake\"}'\n"
     permissions <- getPermissions fakeClaude
+    -- Permissions comes from `directory` and has no Generic instance, so it
+    -- has no #executable label. Record update syntax is the only option.
     setPermissions fakeClaude (permissions {executable = True})
 
     inherited <- getEnvironment

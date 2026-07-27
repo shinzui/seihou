@@ -24,7 +24,7 @@ module Seihou.Fzf
 where
 
 import Control.Exception (SomeException, try)
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (?~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -111,22 +111,22 @@ instance Monoid FzfOpts where
   mempty = FzfOpts Nothing Nothing Nothing Nothing False False
 
 withPrompt :: Text -> FzfOpts
-withPrompt p = mempty {prompt = Just p}
+withPrompt p = mempty & #prompt ?~ p
 
 withHeader :: Text -> FzfOpts
-withHeader h = mempty {header = Just h}
+withHeader h = mempty & #header ?~ h
 
 withHeight :: Text -> FzfOpts
-withHeight h = mempty {height = Just h}
+withHeight h = mempty & #height ?~ h
 
 withAnsi :: FzfOpts
-withAnsi = mempty {ansi = True}
+withAnsi = mempty & #ansi .~ True
 
 withNoSort :: FzfOpts
-withNoSort = mempty {noSort = True}
+withNoSort = mempty & #noSort .~ True
 
 withPreview :: Text -> FzfOpts
-withPreview p = mempty {preview = Just p}
+withPreview p = mempty & #preview ?~ p
 
 -- | Convert options to fzf CLI arguments.
 optsToArgs :: FzfOpts -> [String]

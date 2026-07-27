@@ -42,10 +42,12 @@ recordGeneratedBaselines targetDir records =
           content <- readFileText fullPath
           ref <- putBaseline content
           let enriched =
-                record
-                  { hash = hashContent content,
-                    baseline = Just ref
-                  }
+                ( record
+                    & #hash
+                    .~ hashContent content
+                    & #baseline
+                    ?~ ref
+                )
           pure (Right (Map.insert path enriched captured))
 
 -- | Every blob protected by the currently durable manifest. Callers pass this

@@ -1,7 +1,7 @@
 module Seihou.CLI.MigrateSpec (tests) where
 
 import Control.Exception (bracket_)
-import Control.Lens (to, (&), (.~), (^.))
+import Control.Lens (to, (&), (.~), (?~), (^.))
 import Data.Aeson (encode, object, (.=))
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
@@ -115,31 +115,8 @@ emptyMigrationsLit =
 mkManifest :: Text -> FilePath -> [(FilePath, Text)] -> Manifest
 mkManifest version installedDir entries =
   (emptyManifest fixedTime)
-    { modules =
-        [ AppliedModule
-            { name = modName,
-              parentVars = emptyParentVars,
-              source = installedDir,
-              moduleVersion = Just version,
-              appliedAt = fixedTime,
-              removal = Nothing
-            }
-        ],
-      files =
-        Map.fromList
-          [ ( path,
-              FileRecord
-                { hash = hashContent content,
-                  moduleName = modName,
-                  strategy = Template,
-                  generatedAt = fixedTime,
-                  baseline = Nothing,
-                  applicationIds = mempty
-                }
-            )
-          | (path, content) <- entries
-          ]
-    }
+    & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = installedDir, moduleVersion = Just version, appliedAt = fixedTime, removal = Nothing}]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- entries]
 
 defaultOpts :: MigrateOpts
 defaultOpts =
@@ -258,31 +235,8 @@ writeOriginJson installedDir sourceUrl = do
 mkManifestAt :: FetchFixture -> Text -> [(FilePath, Text)] -> Manifest
 mkManifestAt fix version entries =
   (emptyManifest fixedTime)
-    { modules =
-        [ AppliedModule
-            { name = ModuleName (fix ^. #modName),
-              parentVars = emptyParentVars,
-              source = fix ^. #installedDir,
-              moduleVersion = Just version,
-              appliedAt = fixedTime,
-              removal = Nothing
-            }
-        ],
-      files =
-        Map.fromList
-          [ ( path,
-              FileRecord
-                { hash = hashContent content,
-                  moduleName = ModuleName (fix ^. #modName),
-                  strategy = Template,
-                  generatedAt = fixedTime,
-                  baseline = Nothing,
-                  applicationIds = mempty
-                }
-            )
-          | (path, content) <- entries
-          ]
-    }
+    & #modules .~ [AppliedModule {name = ModuleName (fix ^. #modName), parentVars = emptyParentVars, source = fix ^. #installedDir, moduleVersion = Just version, appliedAt = fixedTime, removal = Nothing}]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = ModuleName (fix ^. #modName), strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- entries]
 
 withSavedEnv :: String -> Maybe String -> IO () -> IO ()
 withSavedEnv key newVal action = do
@@ -306,7 +260,7 @@ spec = do
       withSystemTempDirectory "seihou-migrate-cli" $ \dir -> do
         let installed = dir </> "installed-demo"
         writeInstalledModule installed "2.0.0" emptyMigrationsLit
-        let manifest = (emptyManifest fixedTime) {modules = []}
+        let manifest = ((emptyManifest fixedTime) & #modules .~ [])
         result <-
           withCurrentDirectory dir $
             runMigrate defaultOpts manifest installed
@@ -319,18 +273,9 @@ spec = do
         let installed = dir </> "installed-demo"
         writeInstalledModule installed "2.0.0" emptyMigrationsLit
         let manifest =
-              (emptyManifest fixedTime)
-                { modules =
-                    [ AppliedModule
-                        { name = modName,
-                          parentVars = emptyParentVars,
-                          source = installed,
-                          moduleVersion = Nothing,
-                          appliedAt = fixedTime,
-                          removal = Nothing
-                        }
-                    ]
-                }
+              ( (emptyManifest fixedTime)
+                  & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = installed, moduleVersion = Nothing, appliedAt = fixedTime, removal = Nothing}]
+              )
         result <-
           withCurrentDirectory dir $
             runMigrate defaultOpts manifest installed
@@ -357,7 +302,7 @@ spec = do
         createDirectoryIfMissing True (dir </> "app")
         TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
-            opts = defaultOpts {dryRun = True}
+            opts = (defaultOpts & #dryRun .~ True)
         result <-
           withCurrentDirectory dir $
             runMigrate opts manifest installed
@@ -410,7 +355,7 @@ spec = do
         createDirectoryIfMissing True (dir </> "app")
         TIO.writeFile (dir </> "app" </> "Main.hs") "user-edited"
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "original")]
-            opts = defaultOpts {force = True}
+            opts = (defaultOpts & #force .~ True)
         result <-
           withCurrentDirectory dir $
             runMigrate opts manifest installed
@@ -634,10 +579,10 @@ spec = do
         TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
             opts =
-              defaultOpts
-                { commit = True,
-                  commitMessage = Just "chore: migrate"
-                }
+              ( defaultOpts
+                  & #commit .~ True
+                  & #commitMessage ?~ "chore: migrate"
+              )
         withCurrentDirectory dir $ do
           createDirectoryIfMissing True (dir </> ".seihou")
           runEff $
@@ -677,7 +622,7 @@ spec = do
         createDirectoryIfMissing True (dir </> "app")
         TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
-            opts = defaultOpts {commitMessage = Just "chore: migrate"}
+            opts = (defaultOpts & #commitMessage ?~ "chore: migrate")
         withCurrentDirectory dir $ do
           createDirectoryIfMissing True (dir </> ".seihou")
           result <- runMigrate opts manifest installed
@@ -701,11 +646,11 @@ spec = do
         TIO.writeFile (dir </> "app" </> "Main.hs") "module Main where"
         let manifest = mkManifest "1.0.0" installed [("app/Main.hs", "module Main where")]
             opts =
-              defaultOpts
-                { dryRun = True,
-                  commit = True,
-                  commitMessage = Just "chore: migrate"
-                }
+              ( defaultOpts
+                  & #dryRun .~ True
+                  & #commit .~ True
+                  & #commitMessage ?~ "chore: migrate"
+              )
         withCurrentDirectory dir $ do
           initProjectRepo dir
           result <- runMigrate opts manifest installed

@@ -1,5 +1,6 @@
 module Seihou.Engine.SectionSpec (tests) where
 
+import Control.Lens ((&), (.~))
 import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Engine.Section
@@ -23,7 +24,7 @@ spec = do
       renderSectionOpen marker `shouldBe` "# --- seihou:nix-flake ---\n"
 
     it "produces correct format with -- prefix" $ do
-      let hsMarker = marker {prefix = "--"}
+      let hsMarker = (marker & #prefix .~ "--")
       renderSectionOpen hsMarker `shouldBe` "-- --- seihou:nix-flake ---\n"
 
   describe "renderSectionClose" $ do
@@ -31,7 +32,7 @@ spec = do
       renderSectionClose marker `shouldBe` "# --- /seihou:nix-flake ---\n"
 
     it "produces correct format with -- prefix" $ do
-      let hsMarker = marker {prefix = "--"}
+      let hsMarker = (marker & #prefix .~ "--")
       renderSectionClose hsMarker `shouldBe` "-- --- /seihou:nix-flake ---\n"
 
   describe "wrapInSection" $ do

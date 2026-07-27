@@ -178,15 +178,22 @@ noAgentSettingFlags =
 applyAgentSettingFlags :: AgentSettingFlags -> AgentSettingFlags -> AgentConfigInputs -> AgentConfigInputs
 applyAgentSettingFlags parent command inputs =
   inputs
-    { cliProvider = command ^. #provider <|> parent ^. #provider,
-      cliModel = command ^. #model <|> parent ^. #model,
-      cliEffort = command ^. #effort <|> parent ^. #effort,
-      cliTrace = command ^. #trace <|> parent ^. #trace,
-      cliProviderFromSubcommand = isJust (command ^. #provider),
-      cliModelFromSubcommand = isJust (command ^. #model),
-      cliEffortFromSubcommand = isJust (command ^. #effort),
-      cliTraceFromSubcommand = isJust (command ^. #trace)
-    }
+    & #cliProvider
+    .~ (command ^. #provider <|> parent ^. #provider)
+    & #cliModel
+    .~ (command ^. #model <|> parent ^. #model)
+    & #cliEffort
+    .~ (command ^. #effort <|> parent ^. #effort)
+    & #cliTrace
+    .~ (command ^. #trace <|> parent ^. #trace)
+    & #cliProviderFromSubcommand
+    .~ isJust (command ^. #provider)
+    & #cliModelFromSubcommand
+    .~ isJust (command ^. #model)
+    & #cliEffortFromSubcommand
+    .~ isJust (command ^. #effort)
+    & #cliTraceFromSubcommand
+    .~ isJust (command ^. #trace)
 
 -- | The agent-driven commands whose provider/model can be configured
 -- independently. Each maps to a config-key segment (see 'agentCommandSegment').
@@ -445,7 +452,7 @@ applyProviderDefaultModel prov field =
   case field ^. #value of
     Just _ -> field
     Nothing -> case defaultModelForProvider prov of
-      Just m -> field {value = Just m}
+      Just m -> (field & #value ?~ m)
       Nothing -> field
 
 providerCandidates :: AgentCommandName -> AgentConfigInputs -> [(Maybe Text, AgentConfigSource)]
@@ -554,7 +561,12 @@ loadAgentModelConfig cliProvider cliModel = do
   inputsOrErr <-
     gatherAgentConfigInputs
       noAgentSettingFlags
-      noAgentSettingFlags {provider = cliProvider, model = cliModel}
+      ( noAgentSettingFlags
+          & #provider
+          .~ cliProvider
+          & #model
+          .~ cliModel
+      )
   pure (inputsOrErr >>= resolveAgentModelConfig)
 
 -- | Read the environment and config, then resolve provider/model/effort for a
@@ -626,14 +638,20 @@ gatherAgentConfigInputs parentFlags commandFlags = do
       applyAgentSettingFlags
         parentFlags
         commandFlags
-        baseAgentConfigInputs
-          { envProvider = envProvider,
-            envModel = envModel,
-            envEffort = envEffort,
-            envTrace = envTrace,
-            localConfig = local,
-            globalConfig = global
-          }
+        ( baseAgentConfigInputs
+            & #envProvider
+            .~ envProvider
+            & #envModel
+            .~ envModel
+            & #envEffort
+            .~ envEffort
+            & #envTrace
+            .~ envTrace
+            & #localConfig
+            .~ local
+            & #globalConfig
+            .~ global
+        )
 
 -- | The three launch fields the resolver understands, projected out of an
 -- artifact's @launch@ record. @mode@ is deliberately absent: it is reserved
@@ -719,11 +737,17 @@ resolvePendingAgentConfig ::
   Either Text ResolvedCommandConfig
 resolvePendingAgentConfig pending decl = do
   let inputs =
-        (pending ^. #inputs)
-          { declaredProvider = decl ^. #provider,
-            declaredModel = decl ^. #model,
-            declaredEffort = decl ^. #effort
-          }
+        ( (pending ^. #inputs)
+            & #declaredProvider
+            .~ decl
+            ^. #provider
+            & #declaredModel
+            .~ decl
+            ^. #model
+            & #declaredEffort
+            .~ decl
+            ^. #effort
+        )
   (provider, model, effort, trace) <- resolveAgentModelConfigFor (pending ^. #command) inputs
   pure
     ResolvedCommandConfig

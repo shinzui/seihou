@@ -375,7 +375,14 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
             Map.fromList
               [ ( c ^. #path,
                   case Map.lookup (c ^. #path) (manifest ^. #files) of
-                    Just existing -> existing {hash = c ^. #diskHash, generatedAt = now}
+                    Just existing ->
+                      ( existing
+                          & #hash
+                          .~ c
+                          ^. #diskHash
+                          & #generatedAt
+                          .~ now
+                      )
                     Nothing ->
                       FileRecord
                         { hash = c ^. #diskHash,

@@ -1,6 +1,6 @@
 module Seihou.CLI.PendingMigrationSpec (tests) where
 
-import Control.Lens (to, (^.))
+import Control.Lens (to, (&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -204,13 +204,10 @@ spec = do
         writeInstalledModule aDir "demo-a" "2.0.0" moveOldToNewLit
         writeInstalledModule bDir "demo-b" "2.0.0" moveOldToNewLit
         let manifest =
-              (emptyManifest fixedTime)
-                { modules =
-                    [ mkAppliedAt "demo-a" aDir (Just "1.0.0"),
-                      mkAppliedAt "demo-b" bDir (Just "1.0.0")
-                    ],
-                  files = Map.empty
-                }
+              ( (emptyManifest fixedTime)
+                  & #modules .~ [mkAppliedAt "demo-a" aDir (Just "1.0.0"), mkAppliedAt "demo-b" bDir (Just "1.0.0")]
+                  & #files .~ Map.empty
+              )
         result <- detectPendingMigrations manifest Nothing
         map fst result `shouldMatchList` [ModuleName "demo-a", ModuleName "demo-b"]
 
@@ -221,13 +218,10 @@ spec = do
         writeInstalledModule aDir "demo-a" "2.0.0" moveOldToNewLit
         writeInstalledModule bDir "demo-b" "2.0.0" moveOldToNewLit
         let manifest =
-              (emptyManifest fixedTime)
-                { modules =
-                    [ mkAppliedAt "demo-a" aDir (Just "1.0.0"),
-                      mkAppliedAt "demo-b" bDir (Just "1.0.0")
-                    ],
-                  files = Map.empty
-                }
+              ( (emptyManifest fixedTime)
+                  & #modules .~ [mkAppliedAt "demo-a" aDir (Just "1.0.0"), mkAppliedAt "demo-b" bDir (Just "1.0.0")]
+                  & #files .~ Map.empty
+              )
         result <-
           detectPendingMigrations
             manifest
@@ -238,10 +232,10 @@ spec = do
       withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
         let bogus = dir </> "missing-installed"
         let manifest =
-              (emptyManifest fixedTime)
-                { modules = [mkAppliedAt "demo" bogus (Just "1.0.0")],
-                  files = Map.empty
-                }
+              ( (emptyManifest fixedTime)
+                  & #modules .~ [mkAppliedAt "demo" bogus (Just "1.0.0")]
+                  & #files .~ Map.empty
+              )
         result <- detectPendingMigrations manifest Nothing
         result `shouldBe` []
 
@@ -250,10 +244,10 @@ spec = do
         let modDir = dir </> "demo"
         writeInstalledModule modDir "demo" "1.0.0" emptyMigrationsLit
         let manifest =
-              (emptyManifest fixedTime)
-                { modules = [mkAppliedAt "demo" modDir (Just "1.0.0")],
-                  files = Map.empty
-                }
+              ( (emptyManifest fixedTime)
+                  & #modules .~ [mkAppliedAt "demo" modDir (Just "1.0.0")]
+                  & #files .~ Map.empty
+              )
         result <- detectPendingMigrations manifest Nothing
         result `shouldBe` []
 
@@ -264,13 +258,10 @@ spec = do
         writeInstalledModule withChain "with-chain" "2.0.0" moveOldToNewLit
         writeInstalledModule noChain "no-chain" "1.0.0" emptyMigrationsLit
         let manifest =
-              (emptyManifest fixedTime)
-                { modules =
-                    [ mkAppliedAt "with-chain" withChain (Just "1.0.0"),
-                      mkAppliedAt "no-chain" noChain (Just "1.0.0")
-                    ],
-                  files = Map.empty
-                }
+              ( (emptyManifest fixedTime)
+                  & #modules .~ [mkAppliedAt "with-chain" withChain (Just "1.0.0"), mkAppliedAt "no-chain" noChain (Just "1.0.0")]
+                  & #files .~ Map.empty
+              )
         result <-
           detectPendingMigrations
             manifest

@@ -572,7 +572,7 @@ coerceDeclDefault decl =
     Nothing -> decl
     Just rawDefault ->
       case coerceDefault (decl ^. #name) (decl ^. #type_) rawDefault of
-        Right val -> decl {default_ = Just val}
+        Right val -> decl & #default_ ?~ val
         -- Caught by 'try' in 'evalModuleFromFile'
         Left err -> error (T.unpack (renderDefaultError (decl ^. #name) err))
 

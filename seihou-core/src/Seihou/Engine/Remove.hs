@@ -351,7 +351,9 @@ allParents path = go (takeDirectory path)
 removeFromManifest :: Manifest -> ModuleName -> UTCTime -> Manifest
 removeFromManifest manifest modName now =
   manifest
-    { modules = filter (\am -> am ^. #name /= modName) (manifest ^. #modules),
-      files = Map.filter (\rec -> rec ^. #moduleName /= modName) (manifest ^. #files),
-      genAt = now
-    }
+    & #modules
+    %~ filter (\am -> am ^. #name /= modName)
+    & #files
+    %~ Map.filter (\rec -> rec ^. #moduleName /= modName)
+    & #genAt
+    .~ now

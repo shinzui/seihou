@@ -163,9 +163,9 @@ spec = do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
         let bad =
-              goodModule
-                { exports = [VarExport {var = "nonexistent", alias = Nothing}]
-                }
+              ( goodModule
+                  & #exports .~ [VarExport {var = "nonexistent", alias = Nothing}]
+              )
         result <- validateModule tmpDir bad
         case result of
           Left (ValidationError _ errs) ->

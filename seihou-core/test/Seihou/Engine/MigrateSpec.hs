@@ -1,6 +1,6 @@
 module Seihou.Engine.MigrateSpec (tests) where
 
-import Control.Lens (to, (^.))
+import Control.Lens (to, (&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -57,31 +57,8 @@ mkV t = case parseVersion t of
 mkManifest :: [(FilePath, Text)] -> Manifest
 mkManifest entries =
   (emptyManifest fixedTime)
-    { modules =
-        [ AppliedModule
-            { name = modName,
-              parentVars = emptyParentVars,
-              source = "/installed/demo",
-              moduleVersion = Just "1.0.0",
-              appliedAt = fixedTime,
-              removal = Nothing
-            }
-        ],
-      files =
-        Map.fromList
-          [ ( path,
-              FileRecord
-                { hash = hashContent content,
-                  moduleName = modName,
-                  strategy = Template,
-                  generatedAt = fixedTime,
-                  baseline = Nothing,
-                  applicationIds = mempty
-                }
-            )
-          | (path, content) <- entries
-          ]
-    }
+    & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = "/installed/demo", moduleVersion = Just "1.0.0", appliedAt = fixedTime, removal = Nothing}]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- entries]
 
 -- | Build an in-memory filesystem from (path, content) pairs.
 mkFS :: [(FilePath, Text)] -> PureFS

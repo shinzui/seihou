@@ -1,6 +1,6 @@
 module Seihou.Effect.ManifestStoreSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -31,17 +31,9 @@ fixedTime = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-0
 sampleManifest :: Manifest
 sampleManifest =
   (emptyManifest fixedTime)
-    { modules =
-        [ AppliedModule (ModuleName "haskell-base") emptyParentVars "/path/to/mod" Nothing fixedTime Nothing
-        ],
-      vars = Map.fromList [(VarName "project.name", "my-app")],
-      files =
-        Map.fromList
-          [ ( "README.md",
-              FileRecord (SHA256 "abc123") (ModuleName "haskell-base") Template fixedTime Nothing mempty
-            )
-          ]
-    }
+    & #modules .~ [AppliedModule (ModuleName "haskell-base") emptyParentVars "/path/to/mod" Nothing fixedTime Nothing]
+    & #vars .~ Map.fromList [(VarName "project.name", "my-app")]
+    & #files .~ Map.fromList [("README.md", FileRecord (SHA256 "abc123") (ModuleName "haskell-base") Template fixedTime Nothing mempty)]
 
 spec :: Spec
 spec = do

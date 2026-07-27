@@ -219,10 +219,12 @@ executeMigration force plan manifest now = do
         Right (man', removedDirs) -> do
           cleanupEmptyDirs removedDirs
           let bumped =
-                man'
-                  { genAt = now,
-                    modules = map (bumpVersion (plan ^. #module_) (plan ^. #source)) (man' ^. #modules)
-                  }
+                ( man'
+                    & #genAt
+                    .~ now
+                    & #modules
+                    %~ map (bumpVersion (plan ^. #module_) (plan ^. #source))
+                )
           pure (Right bumped)
 
 -- | Pull (path, status) pairs out of an op for conflict detection. Only
@@ -294,8 +296,8 @@ renameInManifest src dest manifest =
     Nothing -> manifest
     Just rec ->
       manifest
-        { files = Map.insert dest rec (Map.delete src (manifest ^. #files))
-        }
+        & #files
+        .~ Map.insert dest rec (Map.delete src (manifest ^. #files))
 
 -- | Rewrite every @files@ key whose path is @src@ or under @src/@ to
 -- replace the prefix with @dest@.
@@ -306,26 +308,26 @@ renameDirInManifest src dest manifest =
         | k == src = dest
         | prefix `isPrefixOfPath` k = dest <> "/" <> drop (length prefix) k
         | otherwise = k
-   in manifest {files = Map.mapKeys rewriteKey (manifest ^. #files)}
+   in manifest & #files %~ Map.mapKeys rewriteKey
 
 -- | Drop a single file entry from the manifest.
 dropFromManifest :: FilePath -> Manifest -> Manifest
 dropFromManifest p manifest =
-  manifest {files = Map.delete p (manifest ^. #files)}
+  manifest & #files . at p .~ Nothing
 
 -- | Drop every file entry whose path is @path@ or under @path/@.
 dropDirFromManifest :: FilePath -> Manifest -> Manifest
 dropDirFromManifest path manifest =
   let prefix = path <> "/"
       keep k = k /= path && not (prefix `isPrefixOfPath` k)
-   in manifest {files = Map.filterWithKey (\k _ -> keep k) (manifest ^. #files)}
+   in manifest & #files %~ Map.filterWithKey (\k _ -> keep k)
 
 -- | Update the named applied module's @moduleVersion@ to the plan's
 -- target. Other applied modules are untouched.
 bumpVersion :: ModuleName -> MigrationPlan -> AppliedModule -> AppliedModule
 bumpVersion modName plan am
   | am ^. #name == modName =
-      am {moduleVersion = Just (renderVersion (plan ^. #to))}
+      am & #moduleVersion ?~ (renderVersion (plan ^. #to))
   | otherwise = am
 
 -- ----------------------------------------------------------------------------

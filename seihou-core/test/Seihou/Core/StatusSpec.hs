@@ -1,6 +1,6 @@
 module Seihou.Core.StatusSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -45,9 +45,9 @@ spec = do
     it "classifies a file matching its manifest hash as TfsUnchanged" $ do
       let content = "# Hello World"
           manifest =
-            (emptyManifest fixedTime :: Manifest)
-              { files = Map.singleton "README.md" (mkRecord content)
-              }
+            ( (emptyManifest fixedTime :: Manifest)
+                & #files .~ Map.singleton "README.md" (mkRecord content)
+            )
           fs = PureFS (Map.singleton "README.md" content) mempty
           result = runStatus fs manifest
       length result `shouldBe` 1
@@ -59,9 +59,9 @@ spec = do
       let originalContent = "# Hello"
           modifiedContent = "# Hello - edited"
           manifest =
-            (emptyManifest fixedTime :: Manifest)
-              { files = Map.singleton "README.md" (mkRecord originalContent)
-              }
+            ( (emptyManifest fixedTime :: Manifest)
+                & #files .~ Map.singleton "README.md" (mkRecord originalContent)
+            )
           fs = PureFS (Map.singleton "README.md" modifiedContent) mempty
           result = runStatus fs manifest
       length result `shouldBe` 1
@@ -70,9 +70,9 @@ spec = do
     it "classifies a file missing from disk as TfsDeleted" $ do
       let content = "# Hello"
           manifest =
-            (emptyManifest fixedTime :: Manifest)
-              { files = Map.singleton "README.md" (mkRecord content)
-              }
+            ( (emptyManifest fixedTime :: Manifest)
+                & #files .~ Map.singleton "README.md" (mkRecord content)
+            )
           result = runStatus emptyFS manifest
       length result `shouldBe` 1
       ((head result) ^. #status) `shouldBe` TfsDeleted
@@ -83,14 +83,9 @@ spec = do
           modifiedCurrent = "edited"
           deletedContent = "deleted"
           manifest =
-            (emptyManifest fixedTime :: Manifest)
-              { files =
-                  Map.fromList
-                    [ ("a.txt", mkRecord unchangedContent),
-                      ("b.txt", mkRecord modifiedOriginal),
-                      ("c.txt", mkRecord deletedContent)
-                    ]
-              }
+            ( (emptyManifest fixedTime :: Manifest)
+                & #files .~ Map.fromList [("a.txt", mkRecord unchangedContent), ("b.txt", mkRecord modifiedOriginal), ("c.txt", mkRecord deletedContent)]
+            )
           fs =
             PureFS
               ( Map.fromList

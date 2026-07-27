@@ -349,7 +349,13 @@ handleRun runOpts = do
                       [ ( c ^. #path,
                           case Map.lookup (c ^. #path) (manifest ^. #files) of
                             Just existing ->
-                              existing {hash = c ^. #diskHash, generatedAt = now}
+                              ( existing
+                                  & #hash
+                                  .~ c
+                                  ^. #diskHash
+                                  & #generatedAt
+                                  .~ now
+                              )
                             Nothing ->
                               FileRecord
                                 { hash = c ^. #diskHash,
@@ -403,9 +409,10 @@ handleRun runOpts = do
                                       resolved
                                       now
                                   appliedComposition =
-                                    appliedCompositionWithoutReceipts
-                                      { commandReceipts = candidateCommandReceipts
-                                      }
+                                    ( appliedCompositionWithoutReceipts
+                                        & #commandReceipts
+                                        .~ candidateCommandReceipts
+                                    )
                                   applicationDestinations =
                                     Set.fromList [path | Just path <- map operationDestination opsFiltered]
                                   combinedFiles = Map.unions [baselineRecords, keepRecords, cleanedFiles]
@@ -641,12 +648,12 @@ setApplicationCommandReceipts ::
   Manifest
 setApplicationCommandReceipts applicationId receipts manifest =
   manifest
-    { applications = map updateApplication (manifest ^. #applications)
-    }
+    & #applications
+    %~ map updateApplication
   where
     updateApplication application
       | application ^. #applicationId == applicationId =
-          application {commandReceipts = receipts}
+          application & #commandReceipts .~ receipts
       | otherwise = application
 
 -- | Apply the pending-migration policy.

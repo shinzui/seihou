@@ -1,6 +1,6 @@
 module Seihou.Engine.DiffSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set (Set)
@@ -137,9 +137,9 @@ spec = do
     it "classifies file in manifest only (on disk) as Orphaned" $ do
       let content = "orphaned content"
           manifest =
-            (emptyManifest fixedTime :: Manifest)
-              { files = Map.singleton "old-file.txt" (mkRecord content)
-              }
+            ( (emptyManifest fixedTime :: Manifest)
+                & #files .~ Map.singleton "old-file.txt" (mkRecord content)
+            )
           planned = [] :: [(FilePath, Text, ModuleName, Maybe PatchOp)] -- module no longer produces this file
           fs = PureFS (Map.singleton "old-file.txt" content) mempty
           result = runDiff fs manifest active planned
@@ -149,9 +149,9 @@ spec = do
     it "classifies file in manifest only (not on disk) as Orphaned" $ do
       let content = "deleted content"
           manifest =
-            (emptyManifest fixedTime :: Manifest)
-              { files = Map.singleton "deleted.txt" (mkRecord content)
-              }
+            ( (emptyManifest fixedTime :: Manifest)
+                & #files .~ Map.singleton "deleted.txt" (mkRecord content)
+            )
           planned = [] :: [(FilePath, Text, ModuleName, Maybe PatchOp)]
           result = runDiff emptyFS manifest active planned
       length (result ^. #orphaned) `shouldBe` 1
@@ -160,9 +160,9 @@ spec = do
     it "classifies file in manifest + plan (deleted from disk) as Modified" $ do
       let content = "recreate me"
           manifest =
-            (emptyManifest fixedTime :: Manifest)
-              { files = Map.singleton "gone.txt" (mkRecord content)
-              }
+            ( (emptyManifest fixedTime :: Manifest)
+                & #files .~ Map.singleton "gone.txt" (mkRecord content)
+            )
           planned = [("gone.txt", "new version", modName, Nothing)]
           result = runDiff emptyFS manifest active planned
       length (result ^. #modified) `shouldBe` 1
@@ -171,13 +171,9 @@ spec = do
     it "handles mixed classifications" $ do
       let existingContent = "existing"
           manifest =
-            (emptyManifest fixedTime :: Manifest)
-              { files =
-                  Map.fromList
-                    [ ("unchanged.txt", mkRecord existingContent),
-                      ("orphaned.txt", mkRecord "orphan")
-                    ]
-              }
+            ( (emptyManifest fixedTime :: Manifest)
+                & #files .~ Map.fromList [("unchanged.txt", mkRecord existingContent), ("orphaned.txt", mkRecord "orphan")]
+            )
           planned =
             [ ("unchanged.txt", existingContent, modName, Nothing),
               ("new-file.txt", "brand new", modName, Nothing)

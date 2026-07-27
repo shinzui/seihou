@@ -1,6 +1,6 @@
 module Seihou.CLI.AppliedBlueprintMigrationSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Text qualified as T
@@ -61,9 +61,9 @@ spec = describe "recordAppliedBlueprintMigration" $ do
           first = mkReceipt "payments" "1.0.0" "2.0.0" fixedTime
           second = mkReceipt "payments" "2.5.0" "3.0.0" fixedTime
           replacement =
-            (mkReceipt "payments" "1.0.0" "2.0.0" fixedTime2)
-              { blueprintVersion = Just "0.5.0"
-              }
+            ( (mkReceipt "payments" "1.0.0" "2.0.0" fixedTime2)
+                & #blueprintVersion .~ Just "0.5.0"
+            )
       recordAppliedBlueprintMigration manifestPath first `shouldReturn` Right ()
       recordAppliedBlueprintMigration manifestPath second `shouldReturn` Right ()
       recordAppliedBlueprintMigration manifestPath replacement `shouldReturn` Right ()

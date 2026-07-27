@@ -6,7 +6,7 @@ module Seihou.Core.Application
   )
 where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
@@ -91,8 +91,7 @@ replaceAppliedComposition replacement existing
 attachApplication :: ApplicationId -> Maybe FileRecord -> FileRecord -> FileRecord
 attachApplication applicationId previous current =
   current
-    { applicationIds = Set.insert applicationId (Set.union (current ^. #applicationIds) priorApplications)
-    }
+    & #applicationIds .~ Set.insert applicationId (Set.union (current ^. #applicationIds) priorApplications)
   where
     priorApplications = maybe Set.empty (^. #applicationIds) previous
 

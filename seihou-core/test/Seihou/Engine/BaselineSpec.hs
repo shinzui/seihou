@@ -1,6 +1,6 @@
 module Seihou.Engine.BaselineSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -89,15 +89,9 @@ spec = do
           mkRecord ref = FileRecord (hashContent "applied") "module" Template fixedTime ref Set.empty
           manifest :: Manifest
           manifest =
-            (emptyManifest fixedTime)
-              { files =
-                  Map.fromList
-                    [ ("a", mkRecord (Just first)),
-                      ("b", mkRecord (Just first)),
-                      ("c", mkRecord (Just second)),
-                      ("legacy", mkRecord Nothing)
-                    ]
-              }
+            ( (emptyManifest fixedTime)
+                & #files .~ Map.fromList [("a", mkRecord (Just first)), ("b", mkRecord (Just first)), ("c", mkRecord (Just second)), ("legacy", mkRecord Nothing)]
+            )
       manifestBaselineRefs manifest `shouldBe` Set.fromList [first, second]
 
 isStoreFailure :: Either BaselineError a -> Bool

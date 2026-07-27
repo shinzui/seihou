@@ -1,6 +1,6 @@
 module Seihou.Manifest.TypesSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Aeson qualified as Aeson
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -98,31 +98,9 @@ spec = do
     it "roundtrips a manifest with file records" $ do
       let m :: Manifest
           m =
-            (emptyManifest fixedTime)
-              { files =
-                  Map.fromList
-                    [ ( "README.md",
-                        FileRecord
-                          { hash = SHA256 "abc123",
-                            moduleName = ModuleName "haskell-base",
-                            strategy = Template,
-                            generatedAt = fixedTime,
-                            baseline = Nothing,
-                            applicationIds = mempty
-                          }
-                      ),
-                      ( "my-app.cabal",
-                        FileRecord
-                          { hash = SHA256 "def456",
-                            moduleName = ModuleName "haskell-base",
-                            strategy = DhallText,
-                            generatedAt = fixedTime,
-                            baseline = Nothing,
-                            applicationIds = mempty
-                          }
-                      )
-                    ]
-              }
+            ( (emptyManifest fixedTime)
+                & #files .~ Map.fromList [("README.md", FileRecord {hash = SHA256 "abc123", moduleName = ModuleName "haskell-base", strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}), ("my-app.cabal", FileRecord {hash = SHA256 "def456", moduleName = ModuleName "haskell-base", strategy = DhallText, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty})]
+            )
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
     it "roundtrips a full manifest" $ do
@@ -161,11 +139,9 @@ spec = do
             FileRecord (SHA256 "hash") (ModuleName "mod") s fixedTime Nothing mempty
           m :: Manifest
           m =
-            (emptyManifest fixedTime)
-              { files =
-                  Map.fromList
-                    (zipWith (\i s -> ("file" <> show i, makeRecord s)) [(1 :: Int) ..] strategies)
-              }
+            ( (emptyManifest fixedTime)
+                & #files .~ Map.fromList (zipWith (\i s -> ("file" <> show i, makeRecord s)) [(1 :: Int) ..] strategies)
+            )
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
     it "roundtrips a manifest with versioned modules" $ do
@@ -276,10 +252,10 @@ spec = do
                 applicationIds = Set.fromList [appId1, appId2]
               }
           manifest =
-            (emptyManifest fixedTime)
-              { applications = [application1, application2],
-                files = Map.singleton "README.md" fileRecord
-              }
+            ( (emptyManifest fixedTime)
+                & #applications .~ [application1, application2]
+                & #files .~ Map.singleton "README.md" fileRecord
+            )
       manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
 
     it "rejects malformed baseline references" $ do
@@ -355,7 +331,7 @@ spec = do
 
     it "round-trips a version-5 manifest containing a receipt" $ do
       let receipt = mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime
-          manifest = (emptyManifest fixedTime) {blueprintMigrations = [receipt]}
+          manifest = ((emptyManifest fixedTime) & #blueprintMigrations .~ [receipt])
       manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
 
     it "replaces the same exact edge in place and appends a different edge" $ do
@@ -394,13 +370,13 @@ spec = do
           recipe = AppliedRecipe "recipe" (Just "1.0.0") fixedTime
           normalBlueprint = AppliedBlueprint "payments" (Just "0.4.0") fixedTime [] False Nothing Nothing
           seed =
-            (emptyManifest fixedTime)
-              { modules = [appliedModule],
-                applications = [application],
-                files = Map.singleton "README.md" fileRecord,
-                recipe = Just recipe,
-                blueprint = Just normalBlueprint
-              }
+            ( (emptyManifest fixedTime)
+                & #modules .~ [appliedModule]
+                & #applications .~ [application]
+                & #files .~ Map.singleton "README.md" fileRecord
+                & #recipe .~ Just recipe
+                & #blueprint .~ Just normalBlueprint
+            )
           updated = writeAppliedBlueprintMigration (mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime) seed
       (updated ^. #modules) `shouldBe` (seed ^. #modules)
       (updated ^. #applications) `shouldBe` (seed ^. #applications)

@@ -74,6 +74,8 @@ launchClaude addDirs tools model effortLevel systemPrompt initialPrompt = do
       InteractiveLaunchResult {exitCode} <-
         launchClaudeInteractive
           defaultClaudeInteractiveConfig
+          -- InteractiveLaunchRequest comes from baikai and has no Generic instance,
+          -- so these fields have no labels. Record update syntax is the only option.
           (interactiveLaunchRequest (promptOrEmpty initialPrompt))
             { systemPrompt = Just systemPrompt,
               modelId = model,
@@ -97,6 +99,8 @@ launchCodex addDirs model effortLevel systemPrompt initialPrompt = do
       InteractiveLaunchResult {exitCode} <-
         launchCodexInteractive
           defaultCodexInteractiveConfig
+          -- InteractiveLaunchRequest comes from baikai and has no Generic instance,
+          -- so these fields have no labels. Record update syntax is the only option.
           (interactiveLaunchRequest (promptOrEmpty initialPrompt))
             { systemPrompt = Just systemPrompt,
               modelId = model,

@@ -36,12 +36,12 @@ runFilesystemPure initial = reinterpret (runState initial) handler
           Just content -> pure content
           Nothing -> error ("runFilesystemPure: file not found: " <> path)
       WriteFileText path content -> do
-        modify @PureFS (\fs -> fs {files = Map.insert path content (fs ^. #files)})
+        modify @PureFS (\fs -> fs & #files . at path ?~ content)
       CopyFile src dest -> do
         fs <- get @PureFS
         case Map.lookup src (fs ^. #files) of
           Just content ->
-            put fs {files = Map.insert dest content (fs ^. #files)}
+            put (fs & #files . at dest ?~ content)
           Nothing -> error ("runFilesystemPure: source file not found: " <> src)
       ListDirectory path -> do
         fs <- get @PureFS
@@ -58,7 +58,7 @@ runFilesystemPure initial = reinterpret (runState initial) handler
               ]
         pure (filesInDir <> dirsInDir)
       CreateDirectoryIfMissing _parents path -> do
-        modify @PureFS (\fs -> fs {dirs = Set.insert path (fs ^. #dirs)})
+        modify @PureFS (\fs -> fs & #dirs %~ Set.insert path)
       DoesFileExist path -> do
         fs <- get @PureFS
         pure (Map.member path (fs ^. #files))
@@ -67,7 +67,7 @@ runFilesystemPure initial = reinterpret (runState initial) handler
         pure (Set.member path (fs ^. #dirs))
       GetCurrentDirectory -> pure "/pure-fs"
       RemoveFile path -> do
-        modify @PureFS (\fs -> fs {files = Map.delete path (fs ^. #files)})
+        modify @PureFS (\fs -> fs & #files . at path .~ Nothing)
       RemoveDirectoryIfEmpty path -> do
         fs <- get @PureFS
         let hasChildren =
@@ -75,7 +75,7 @@ runFilesystemPure initial = reinterpret (runState initial) handler
                 || any (\d -> (path <> "/") `isPrefixOfPath` d) (Set.toList (fs ^. #dirs))
         if hasChildren
           then pure ()
-          else modify @PureFS (\fs' -> fs' {dirs = Set.delete path (fs' ^. #dirs)})
+          else modify @PureFS (\fs' -> fs' & #dirs %~ Set.delete path)
       RenamePath src dest -> do
         modify @PureFS (renameInPureFS src dest)
       RemoveDirectoryRecursive path -> do
@@ -109,7 +109,11 @@ renameInPureFS :: FilePath -> FilePath -> PureFS -> PureFS
 renameInPureFS src dest fs =
   let renamedFiles = Map.mapKeys (renameKey src dest) (fs ^. #files)
       renamedDirs = Set.map (renameKey src dest) (fs ^. #dirs)
-   in fs {files = renamedFiles, dirs = renamedDirs}
+   in fs
+        & #files
+        .~ renamedFiles
+        & #dirs
+        .~ renamedDirs
   where
     renameKey s d k
       | k == s = d
@@ -124,6 +128,7 @@ removeRecursivelyFromPureFS path fs =
       keepFile k = k /= path && not (prefix `isPrefixOfPath` k)
       keepDir d = d /= path && not (prefix `isPrefixOfPath` d)
    in fs
-        { files = Map.filterWithKey (\k _ -> keepFile k) (fs ^. #files),
-          dirs = Set.filter keepDir (fs ^. #dirs)
-        }
+        & #files
+        %~ Map.filterWithKey (\k _ -> keepFile k)
+        & #dirs
+        %~ Set.filter keepDir

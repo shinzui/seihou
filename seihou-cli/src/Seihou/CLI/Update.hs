@@ -246,7 +246,7 @@ applyAcceptedPlan plan = do
                               (reconciliationSummary resolvedActual)
                           )
                     | otherwise -> do
-                        let reconciliationManifest = migratedManifest {genAt = now}
+                        let reconciliationManifest = (migratedManifest & #genAt .~ now)
                         appliedFiles <- applyReconciliation transaction resolvedActual reconciliationManifest
                         case appliedFiles of
                           Left err -> abortUpdate transaction (UpdateTransactionFailed err)
@@ -311,19 +311,18 @@ planApplication request installedDirectory catalog now previous = do
                 Right (operations, compositionWarnings, rawOwners) -> do
                   let targetSource = publishedArtifactSource installedDirectory targetArtifact
                       candidate0 =
-                        ( buildAppliedComposition
-                            (previous ^. #target)
-                            targetSource
-                            (targetArtifact ^. #version)
-                            (previous ^. #additionalModules)
-                            (Just namespace)
-                            (previous ^. #context)
-                            modulesInOrder
-                            resolvedValues
-                            now
-                        )
-                          { applicationId = previous ^. #applicationId
-                          }
+                        buildAppliedComposition
+                          (previous ^. #target)
+                          targetSource
+                          (targetArtifact ^. #version)
+                          (previous ^. #additionalModules)
+                          (Just namespace)
+                          (previous ^. #context)
+                          modulesInOrder
+                          resolvedValues
+                          now
+                          & #applicationId
+                          .~ (previous ^. #applicationId)
                       candidate =
                         setCompositionState
                           (map (publishInstanceSource installedDirectory catalog) (candidate0 ^. #instances))
@@ -459,7 +458,11 @@ seedLegacyApplication request manifest now requested = do
                 Right resolvedValues -> do
                   let provisional0 =
                         buildAppliedComposition target targetSource targetVersion [] (Just namespace) Nothing modulesInOrder resolvedValues now
-                      provisional = provisional0 {instances = map (restoreLegacyVersion manifest) (provisional0 ^. #instances)}
+                      provisional =
+                        ( provisional0
+                            & #instances
+                            %~ map (restoreLegacyVersion manifest)
+                        )
                   pure (Right ([provisional], warnings))
 
 legacySavedValues ::
@@ -678,11 +681,14 @@ summarizeInputChanges seedWarnings planned =
                 Map.notMember name (Map.findWithDefault Map.empty instanceId candidateValues)
               ]
        in summary
-            { reused = summary ^. #reused + reusedCount,
-              overridden = summary ^. #overridden + overriddenCount,
-              newlyResolved = summary ^. #newlyResolved + newCount,
-              removed = summary ^. #removed + removedCount
-            }
+            & #reused
+            %~ (+ reusedCount)
+            & #overridden
+            %~ (+ overriddenCount)
+            & #newlyResolved
+            %~ (+ newCount)
+            & #removed
+            %~ (+ removedCount)
 
 transactionTargetPaths :: Manifest -> ReconciliationPlan -> [PlannedUpdateMigration] -> Set FilePath
 transactionTargetPaths manifest reconciliation migrations =
@@ -1012,11 +1018,16 @@ standardInstalledDirectory = do
 dryRunResult :: UpdatePlan -> UpdateResult
 dryRunResult plan =
   (noOpResult plan)
-    { versions = plan ^. #versionChanges,
-      fileSummary = reconciliationSummary (plan ^. #reconciliation),
-      commandSummary = commandSummaryForPlan (plan ^. #commandPlan),
-      warnings = plan ^. #warnings
-    }
+    & #versions
+    .~ plan
+    ^. #versionChanges
+    & #fileSummary
+    .~ reconciliationSummary (plan ^. #reconciliation)
+    & #commandSummary
+    .~ commandSummaryForPlan (plan ^. #commandPlan)
+    & #warnings
+    .~ plan
+    ^. #warnings
 
 noOpResult :: UpdatePlan -> UpdateResult
 noOpResult plan =

@@ -1,6 +1,6 @@
 module Seihou.CLI.StatusSpec (tests) where
 
-import Control.Lens (to)
+import Control.Lens (to, (&), (.~))
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -59,9 +59,8 @@ mkApplied name mver =
 mkManifest :: [AppliedModule] -> Manifest
 mkManifest mods =
   (emptyManifest fixedTime)
-    { modules = mods,
-      files = Map.empty
-    }
+    & #modules .~ mods
+    & #files .~ Map.empty
 
 mkApplication :: Text -> [Text] -> AppliedComposition
 mkApplication target modules =
@@ -130,7 +129,7 @@ mkBlueprint name mver baselines noBL prompt =
     }
 
 withManifestBlueprint :: Maybe AppliedBlueprint -> Manifest -> Manifest
-withManifestBlueprint mb m = m {blueprint = mb}
+withManifestBlueprint mb m = m & #blueprint .~ mb
 
 mkBlueprintMigrationReceipt :: Text -> Maybe Text -> Text -> Text -> AppliedBlueprintMigration
 mkBlueprintMigrationReceipt blueprintName artifactVersion fromVersion toVersion =
@@ -214,7 +213,7 @@ spec = describe "formatStatus" $ do
 
     it "renders blueprint name, artifact version, exact edge, and timestamp" $ do
       let receipt = mkBlueprintMigrationReceipt "payments" (Just "0.4.0") "1.0.0" "2.0.0"
-          manifest = (mkManifest []) {blueprintMigrations = [receipt]}
+          manifest = ((mkManifest []) & #blueprintMigrations .~ [receipt])
           out = formatStatus False manifest [] Nothing []
       out `shouldSatisfy` T.isInfixOf "Blueprint migrations:"
       out `shouldSatisfy` T.isInfixOf "payments v0.4.0: 1.0.0 -> 2.0.0"
@@ -312,9 +311,9 @@ spec = describe "formatStatus" $ do
   it "deduplicates repeated instances into one recipe application action" $ do
     let duplicate = mkApplied "demo" (Just "1.0.0")
         manifest =
-          (mkManifest [duplicate, duplicate])
-            { applications = [mkApplication "stack" ["demo", "demo"]]
-            }
+          ( (mkManifest [duplicate, duplicate])
+              & #applications .~ [mkApplication "stack" ["demo", "demo"]]
+          )
         plan = mkPlan "demo" "1.0.0" "2.0.0" 1
         out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
         recommendationLines = filter (== "  seihou update stack") (T.lines out)
@@ -325,12 +324,9 @@ spec = describe "formatStatus" $ do
   it "recommends each affected application plus the whole-project update" $ do
     let shared = mkApplied "shared" (Just "1.0.0")
         manifest =
-          (mkManifest [shared])
-            { applications =
-                [ mkApplication "stack-one" ["shared"],
-                  mkApplication "stack-two" ["shared"]
-                ]
-            }
+          ( (mkManifest [shared])
+              & #applications .~ [mkApplication "stack-one" ["shared"], mkApplication "stack-two" ["shared"]]
+          )
         plan = mkPlan "shared" "1.0.0" "2.0.0" 1
         out = formatStatus False manifest [] Nothing [(ModuleName "shared", plan)]
         recommendationLines = dropWhile (/= "Recommended actions:") (T.lines out)

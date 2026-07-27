@@ -1,7 +1,7 @@
 module Seihou.CLI.AgentConfigSpec (tests) where
 
 import Baikai.ThinkingLevel (ThinkingLevel (..))
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (?~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
@@ -21,17 +21,29 @@ spec = do
   describe "resolveAgentModelConfig" $ do
     it "uses CLI flags before environment variables" $
       resolveAgentModelConfig
-        (baseInputs {cliProvider = Just "codex-cli", cliModel = Just "gpt-5", envProvider = Just "anthropic", envModel = Just "claude-sonnet-4-6"})
+        ( baseInputs
+            & #cliProvider ?~ "codex-cli"
+            & #cliModel ?~ "gpt-5"
+            & #envProvider ?~ "anthropic"
+            & #envModel ?~ "claude-sonnet-4-6"
+        )
         `shouldBe` Right (cfg AgentProviderCodexCli (Just "gpt-5"))
 
     it "uses environment variables before local config" $
       resolveAgentModelConfig
-        (baseInputs {envProvider = Just "openai", envModel = Just "gpt-4o", localConfig = config "anthropic" "claude-sonnet-4-6"})
+        ( baseInputs
+            & #envProvider ?~ "openai"
+            & #envModel ?~ "gpt-4o"
+            & #localConfig .~ config "anthropic" "claude-sonnet-4-6"
+        )
         `shouldBe` Right (cfg AgentProviderOpenAI (Just "gpt-4o"))
 
     it "uses local config before global config" $
       resolveAgentModelConfig
-        (baseInputs {localConfig = config "anthropic" "claude-opus-4-1", globalConfig = config "openai" "gpt-4o-mini"})
+        ( baseInputs
+            & #localConfig .~ config "anthropic" "claude-opus-4-1"
+            & #globalConfig .~ config "openai" "gpt-4o-mini"
+        )
         `shouldBe` Right (cfg AgentProviderAnthropic (Just "claude-opus-4-1"))
 
     it "pins the deterministic claude-cli default model when nothing is set" $
@@ -39,11 +51,11 @@ spec = do
         `shouldBe` Right (cfg AgentProviderClaudeCli (Just "claude-opus-4-8"))
 
     it "pins the deterministic codex-cli default model when only the provider is set" $
-      resolveAgentModelConfig (baseInputs {cliProvider = Just "codex-cli"})
+      resolveAgentModelConfig (baseInputs & #cliProvider ?~ "codex-cli")
         `shouldBe` Right (cfg AgentProviderCodexCli (Just "gpt-5.6-terra"))
 
     it "returns provider diagnostics for invalid provider text" $
-      resolveAgentModelConfig (baseInputs {cliProvider = Just "llama"}) `shouldSatisfy` \case
+      resolveAgentModelConfig (baseInputs & #cliProvider ?~ "llama") `shouldSatisfy` \case
         Left err ->
           "Unknown agent provider" `Text.isInfixOf` err
             && "claude-cli" `Text.isInfixOf` err
@@ -51,51 +63,58 @@ spec = do
         Right _ -> False
 
     it "allows a model-only override while keeping the default provider" $
-      resolveAgentModelConfig (baseInputs {cliModel = Just "sonnet"})
+      resolveAgentModelConfig (baseInputs & #cliModel ?~ "sonnet")
         `shouldBe` Right (cfg AgentProviderClaudeCli (Just "sonnet"))
 
     it "ignores blank higher-precedence values" $
       resolveAgentModelConfig
-        (baseInputs {cliProvider = Just "  ", envProvider = Just "codex-cli", cliModel = Just "", envModel = Just "gpt-5"})
+        ( baseInputs
+            & #cliProvider ?~ " "
+            & #envProvider ?~ "codex-cli"
+            & #cliModel ?~ ""
+            & #envModel ?~ "gpt-5"
+        )
         `shouldBe` Right (cfg AgentProviderCodexCli (Just "gpt-5"))
 
   describe "resolveAgentModelConfigFor (per-command)" $ do
     it "prefers a per-command model over the default in the same scope" $ do
       let inputs =
-            baseInputs
-              { localConfig =
-                  Map.fromList
-                    [ (agentModelConfigKey, "claude-sonnet-5"),
-                      (agentCommandModelConfigKey AgentCmdRun, "claude-opus-4-8")
-                    ]
-              }
+            ( baseInputs
+                & #localConfig .~ Map.fromList [(agentModelConfigKey, "claude-sonnet-5"), (agentCommandModelConfigKey AgentCmdRun, "claude-opus-4-8")]
+            )
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-opus-4-8", SourceLocalCommand)
       modelOf AgentCmdAssist inputs `shouldBe` Right (Just "claude-sonnet-5", SourceLocalDefault)
 
     it "lets a local default override a global per-command key (project over global)" $ do
       let inputs =
-            baseInputs
-              { localConfig = Map.fromList [(agentModelConfigKey, "claude-sonnet-5")],
-                globalConfig = Map.fromList [(agentCommandModelConfigKey AgentCmdRun, "gpt-5")]
-              }
+            ( baseInputs
+                & #localConfig .~ Map.fromList [(agentModelConfigKey, "claude-sonnet-5")]
+                & #globalConfig .~ Map.fromList [(agentCommandModelConfigKey AgentCmdRun, "gpt-5")]
+            )
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-sonnet-5", SourceLocalDefault)
 
     it "prefers a global per-command key over the global default" $ do
       let inputs =
-            baseInputs
-              { globalConfig =
-                  Map.fromList
-                    [ (agentProviderConfigKey, "anthropic"),
-                      (agentCommandProviderConfigKey AgentCmdAssist, "openai")
-                    ]
-              }
+            ( baseInputs
+                & #globalConfig .~ Map.fromList [(agentProviderConfigKey, "anthropic"), (agentCommandProviderConfigKey AgentCmdAssist, "openai")]
+            )
       providerOf AgentCmdAssist inputs `shouldBe` Right (AgentProviderOpenAI, SourceGlobalCommand)
       providerOf AgentCmdSetup inputs `shouldBe` Right (AgentProviderAnthropic, SourceGlobalDefault)
 
     it "labels a subcommand CLI flag distinctly from a parent flag" $ do
-      providerOf AgentCmdAssist (baseInputs {cliProvider = Just "codex-cli", cliProviderFromSubcommand = True})
+      providerOf
+        AgentCmdAssist
+        ( baseInputs
+            & #cliProvider ?~ "codex-cli"
+            & #cliProviderFromSubcommand .~ True
+        )
         `shouldBe` Right (AgentProviderCodexCli, SourceCliSubcommand)
-      providerOf AgentCmdAssist (baseInputs {cliProvider = Just "codex-cli", cliProviderFromSubcommand = False})
+      providerOf
+        AgentCmdAssist
+        ( baseInputs
+            & #cliProvider ?~ "codex-cli"
+            & #cliProviderFromSubcommand .~ False
+        )
         `shouldBe` Right (AgentProviderCodexCli, SourceCliParent)
 
     it "falls back to the pinned CLI default model with built-in provenance" $ do
@@ -106,27 +125,27 @@ spec = do
       -- With nothing configured, every command resolves to a concrete model for
       -- both local CLI providers, so seihou always passes an explicit --model.
       modelOf AgentCmdAssist baseInputs `shouldBe` Right (Just "claude-opus-4-8", SourceBuiltinDefault)
-      modelOf AgentCmdAssist (baseInputs {cliProvider = Just "codex-cli", cliProviderFromSubcommand = True})
+      modelOf
+        AgentCmdAssist
+        ( baseInputs
+            & #cliProvider ?~ "codex-cli"
+            & #cliProviderFromSubcommand .~ True
+        )
         `shouldBe` Right (Just "gpt-5.6-terra", SourceBuiltinDefault)
 
     it "keeps environment variables above per-command config" $ do
       let inputs =
-            baseInputs
-              { envModel = Just "gpt-5",
-                localConfig = Map.fromList [(agentCommandModelConfigKey AgentCmdRun, "claude-opus-4-8")]
-              }
+            ( baseInputs
+                & #envModel ?~ "gpt-5"
+                & #localConfig .~ Map.fromList [(agentCommandModelConfigKey AgentCmdRun, "claude-opus-4-8")]
+            )
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "gpt-5", SourceEnv)
 
     it "resolves migrate from its own per-command keys" $ do
       let inputs =
-            baseInputs
-              { localConfig =
-                  Map.fromList
-                    [ (agentCommandProviderConfigKey AgentCmdMigrate, "openai"),
-                      (agentCommandModelConfigKey AgentCmdMigrate, "gpt-5-mini"),
-                      (agentCommandModelConfigKey AgentCmdRun, "claude-opus-4-8")
-                    ]
-              }
+            ( baseInputs
+                & #localConfig .~ Map.fromList [(agentCommandProviderConfigKey AgentCmdMigrate, "openai"), (agentCommandModelConfigKey AgentCmdMigrate, "gpt-5-mini"), (agentCommandModelConfigKey AgentCmdRun, "claude-opus-4-8")]
+            )
       providerOf AgentCmdMigrate inputs `shouldBe` Right (AgentProviderOpenAI, SourceLocalCommand)
       modelOf AgentCmdMigrate inputs `shouldBe` Right (Just "gpt-5-mini", SourceLocalCommand)
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-opus-4-8", SourceLocalCommand)
@@ -137,43 +156,43 @@ spec = do
 
     it "prefers a per-command effort over the shared default in the same scope" $ do
       let inputs =
-            baseInputs
-              { localConfig =
-                  Map.fromList
-                    [ (agentEffortConfigKey, "medium"),
-                      (agentCommandEffortConfigKey AgentCmdRun, "max")
-                    ]
-              }
+            ( baseInputs
+                & #localConfig .~ Map.fromList [(agentEffortConfigKey, "medium"), (agentCommandEffortConfigKey AgentCmdRun, "max")]
+            )
       effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingMax, SourceLocalCommand)
       effortOf AgentCmdAssist inputs `shouldBe` Right (Just ThinkingMedium, SourceLocalDefault)
 
     it "lets a local default effort override a global per-command effort" $ do
       let inputs =
-            baseInputs
-              { localConfig = Map.fromList [(agentEffortConfigKey, "low")],
-                globalConfig = Map.fromList [(agentCommandEffortConfigKey AgentCmdRun, "max")]
-              }
+            ( baseInputs
+                & #localConfig .~ Map.fromList [(agentEffortConfigKey, "low")]
+                & #globalConfig .~ Map.fromList [(agentCommandEffortConfigKey AgentCmdRun, "max")]
+            )
       effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingLow, SourceLocalDefault)
 
     it "keeps the effort environment variable above config" $ do
       let inputs =
-            baseInputs
-              { envEffort = Just "high",
-                localConfig = Map.fromList [(agentCommandEffortConfigKey AgentCmdRun, "minimal")]
-              }
+            ( baseInputs
+                & #envEffort ?~ "high"
+                & #localConfig .~ Map.fromList [(agentCommandEffortConfigKey AgentCmdRun, "minimal")]
+            )
       effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingHigh, SourceEnv)
 
     it "prefers the subcommand effort flag over everything" $
       effortOf
         AgentCmdRun
-        (baseInputs {cliEffort = Just "xhigh", cliEffortFromSubcommand = True, envEffort = Just "low"})
+        ( baseInputs
+            & #cliEffort ?~ "xhigh"
+            & #cliEffortFromSubcommand .~ True
+            & #envEffort ?~ "low"
+        )
         `shouldBe` Right (Just ThinkingXHigh, SourceCliSubcommand)
 
     it "parses effort case-insensitively" $
-      effortOf AgentCmdRun (baseInputs {cliEffort = Just "  MAX  "}) `shouldBe` Right (Just ThinkingMax, SourceCliParent)
+      effortOf AgentCmdRun (baseInputs & #cliEffort ?~ " MAX ") `shouldBe` Right (Just ThinkingMax, SourceCliParent)
 
     it "returns a diagnostic for an invalid effort value" $
-      resolveAgentModelConfigFor AgentCmdRun (baseInputs {cliEffort = Just "ultra"}) `shouldSatisfy` \case
+      resolveAgentModelConfigFor AgentCmdRun (baseInputs & #cliEffort ?~ "ultra") `shouldSatisfy` \case
         Left err -> "Unknown reasoning effort" `Text.isInfixOf` err && "xhigh" `Text.isInfixOf` err
         Right _ -> False
 
@@ -183,72 +202,80 @@ spec = do
 
     it "prefers a per-command trace over the shared default in the same scope" $ do
       let inputs =
-            baseInputs
-              { localConfig =
-                  Map.fromList
-                    [ (agentTraceConfigKey, "stderr"),
-                      (agentCommandTraceConfigKey AgentCmdRun, "file")
-                    ]
-              }
+            ( baseInputs
+                & #localConfig .~ Map.fromList [(agentTraceConfigKey, "stderr"), (agentCommandTraceConfigKey AgentCmdRun, "file")]
+            )
       traceOf AgentCmdRun inputs `shouldBe` Right (TraceFile, SourceLocalCommand)
       traceOf AgentCmdAssist inputs `shouldBe` Right (TraceStderr, SourceLocalDefault)
 
     it "lets a local default trace override a global per-command trace" $ do
       let inputs =
-            baseInputs
-              { localConfig = Map.fromList [(agentTraceConfigKey, "stdout")],
-                globalConfig = Map.fromList [(agentCommandTraceConfigKey AgentCmdRun, "file")]
-              }
+            ( baseInputs
+                & #localConfig .~ Map.fromList [(agentTraceConfigKey, "stdout")]
+                & #globalConfig .~ Map.fromList [(agentCommandTraceConfigKey AgentCmdRun, "file")]
+            )
       traceOf AgentCmdRun inputs `shouldBe` Right (TraceStdout, SourceLocalDefault)
 
     it "lets a global per-command trace beat a global default" $ do
       let inputs =
-            baseInputs
-              { globalConfig =
-                  Map.fromList
-                    [ (agentTraceConfigKey, "stdout"),
-                      (agentCommandTraceConfigKey AgentCmdRun, "file")
-                    ]
-              }
+            ( baseInputs
+                & #globalConfig .~ Map.fromList [(agentTraceConfigKey, "stdout"), (agentCommandTraceConfigKey AgentCmdRun, "file")]
+            )
       traceOf AgentCmdRun inputs `shouldBe` Right (TraceFile, SourceGlobalCommand)
 
     it "keeps the trace environment variable above config" $ do
       let inputs =
-            baseInputs
-              { envTrace = Just "stderr",
-                localConfig = Map.fromList [(agentCommandTraceConfigKey AgentCmdRun, "file")]
-              }
+            ( baseInputs
+                & #envTrace ?~ "stderr"
+                & #localConfig .~ Map.fromList [(agentCommandTraceConfigKey AgentCmdRun, "file")]
+            )
       traceOf AgentCmdRun inputs `shouldBe` Right (TraceStderr, SourceEnv)
 
     it "keeps a declared trace above config but below the environment" $ do
-      let declared = baseInputs {declaredTrace = Just "file"}
-      traceOf AgentCmdRun (declared {localConfig = Map.fromList [(agentTraceConfigKey, "stdout")]})
+      let declared = (baseInputs & #declaredTrace ?~ "file")
+      traceOf
+        AgentCmdRun
+        ( declared
+            & #localConfig .~ Map.fromList [(agentTraceConfigKey, "stdout")]
+        )
         `shouldBe` Right (TraceFile, SourceArtifactDeclaration)
-      traceOf AgentCmdRun (declared {envTrace = Just "stderr"})
+      traceOf AgentCmdRun (declared & #envTrace ?~ "stderr")
         `shouldBe` Right (TraceStderr, SourceEnv)
 
     it "prefers the subcommand trace flag over everything" $
       traceOf
         AgentCmdRun
-        (baseInputs {cliTrace = Just "off", cliTraceFromSubcommand = True, envTrace = Just "file"})
+        ( baseInputs
+            & #cliTrace ?~ "off"
+            & #cliTraceFromSubcommand .~ True
+            & #envTrace ?~ "file"
+        )
         `shouldBe` Right (TraceOff, SourceCliSubcommand)
 
     it "attributes a parent `seihou agent` trace flag to that tier" $
-      traceOf AgentCmdRun (baseInputs {cliTrace = Just "file", cliTraceFromSubcommand = False})
+      traceOf
+        AgentCmdRun
+        ( baseInputs
+            & #cliTrace ?~ "file"
+            & #cliTraceFromSubcommand .~ False
+        )
         `shouldBe` Right (TraceFile, SourceCliParent)
 
     it "parses trace settings case-insensitively" $
-      traceOf AgentCmdRun (baseInputs {cliTrace = Just "  STDERR  "})
+      traceOf AgentCmdRun (baseInputs & #cliTrace ?~ " STDERR ")
         `shouldBe` Right (TraceStderr, SourceCliParent)
 
     it "skips a blank trace value in favor of the next tier" $
       traceOf
         AgentCmdRun
-        (baseInputs {cliTrace = Just "   ", localConfig = Map.fromList [(agentTraceConfigKey, "file")]})
+        ( baseInputs
+            & #cliTrace ?~ " "
+            & #localConfig .~ Map.fromList [(agentTraceConfigKey, "file")]
+        )
         `shouldBe` Right (TraceFile, SourceLocalDefault)
 
     it "returns a diagnostic naming every accepted trace setting" $
-      resolveAgentModelConfigFor AgentCmdRun (baseInputs {cliTrace = Just "syslog"}) `shouldSatisfy` \case
+      resolveAgentModelConfigFor AgentCmdRun (baseInputs & #cliTrace ?~ "syslog") `shouldSatisfy` \case
         Left err ->
           "Unknown trace setting" `Text.isInfixOf` err
             && "off" `Text.isInfixOf` err
@@ -263,22 +290,25 @@ spec = do
 
     it "reads the local key before the global key" $
       resolveTracePath
-        baseInputs
-          { localConfig = Map.fromList [(agentTracePathConfigKey, "/tmp/local.jsonl")],
-            globalConfig = Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]
-          }
+        ( baseInputs
+            & #localConfig .~ Map.fromList [(agentTracePathConfigKey, "/tmp/local.jsonl")]
+            & #globalConfig .~ Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]
+        )
         `shouldBe` Just "/tmp/local.jsonl"
 
     it "falls back to the global key" $
-      resolveTracePath baseInputs {globalConfig = Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]}
+      resolveTracePath
+        ( baseInputs
+            & #globalConfig .~ Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]
+        )
         `shouldBe` Just "/tmp/global.jsonl"
 
     it "treats a blank local path as absent" $
       resolveTracePath
-        baseInputs
-          { localConfig = Map.fromList [(agentTracePathConfigKey, "   ")],
-            globalConfig = Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]
-          }
+        ( baseInputs
+            & #localConfig .~ Map.fromList [(agentTracePathConfigKey, " ")]
+            & #globalConfig .~ Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]
+        )
         `shouldBe` Just "/tmp/global.jsonl"
 
   describe "artifact-declared launch settings" $ do
@@ -286,19 +316,19 @@ spec = do
       let inputs =
             declaring
               (decl Nothing (Just "claude-sonnet-5") Nothing)
-              baseInputs
-                { localConfig = Map.fromList [(agentCommandModelConfigKey AgentCmdRun, "claude-haiku-4-5")]
-                }
+              ( baseInputs
+                  & #localConfig .~ Map.fromList [(agentCommandModelConfigKey AgentCmdRun, "claude-haiku-4-5")]
+              )
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-sonnet-5", SourceArtifactDeclaration)
 
     it "beats both local and global default keys" $ do
       let inputs =
             declaring
               (decl (Just "openai") Nothing (Just "high"))
-              baseInputs
-                { localConfig = Map.fromList [(agentProviderConfigKey, "anthropic")],
-                  globalConfig = Map.fromList [(agentEffortConfigKey, "low")]
-                }
+              ( baseInputs
+                  & #localConfig .~ Map.fromList [(agentProviderConfigKey, "anthropic")]
+                  & #globalConfig .~ Map.fromList [(agentEffortConfigKey, "low")]
+              )
       providerOf AgentCmdRun inputs `shouldBe` Right (AgentProviderOpenAI, SourceArtifactDeclaration)
       effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingHigh, SourceArtifactDeclaration)
 
@@ -306,18 +336,29 @@ spec = do
       let inputs =
             declaring
               (decl Nothing (Just "claude-sonnet-5") Nothing)
-              baseInputs {cliModel = Just "claude-opus-4-8", cliModelFromSubcommand = True}
+              ( baseInputs
+                  & #cliModel ?~ "claude-opus-4-8"
+                  & #cliModelFromSubcommand .~ True
+              )
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-opus-4-8", SourceCliSubcommand)
 
     it "loses to a parent `seihou agent` flag" $ do
       let inputs =
             declaring
               (decl Nothing (Just "claude-sonnet-5") Nothing)
-              baseInputs {cliModel = Just "claude-opus-4-8", cliModelFromSubcommand = False}
+              ( baseInputs
+                  & #cliModel ?~ "claude-opus-4-8"
+                  & #cliModelFromSubcommand .~ False
+              )
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-opus-4-8", SourceCliParent)
 
     it "loses to an environment variable" $ do
-      let inputs = declaring (decl Nothing (Just "claude-sonnet-5") (Just "max")) baseInputs {envEffort = Just "low"}
+      let inputs =
+            declaring
+              (decl Nothing (Just "claude-sonnet-5") (Just "max"))
+              ( baseInputs
+                  & #envEffort ?~ "low"
+              )
       effortOf AgentCmdRun inputs `shouldBe` Right (Just ThinkingLow, SourceEnv)
       -- ...but only for the field the environment names.
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-sonnet-5", SourceArtifactDeclaration)
@@ -326,7 +367,9 @@ spec = do
       let inputs =
             declaring
               (decl Nothing (Just "   ") Nothing)
-              baseInputs {localConfig = Map.fromList [(agentModelConfigKey, "claude-haiku-4-5")]}
+              ( baseInputs
+                  & #localConfig .~ Map.fromList [(agentModelConfigKey, "claude-haiku-4-5")]
+              )
       modelOf AgentCmdRun inputs `shouldBe` Right (Just "claude-haiku-4-5", SourceLocalDefault)
 
     -- Guards the applyProviderDefaultModel interaction: a declaration that only
@@ -436,10 +479,9 @@ decl provider model effort =
 declaring :: AgentLaunchDeclaration -> AgentConfigInputs -> AgentConfigInputs
 declaring d inputs =
   inputs
-    { declaredProvider = d ^. #provider,
-      declaredModel = d ^. #model,
-      declaredEffort = d ^. #effort
-    }
+    & #declaredProvider .~ d ^. #provider
+    & #declaredModel .~ d ^. #model
+    & #declaredEffort .~ d ^. #effort
 
 providerOf :: AgentCommandName -> AgentConfigInputs -> Either Text (AgentProvider, AgentConfigSource)
 providerOf c inputs =

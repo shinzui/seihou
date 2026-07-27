@@ -1,6 +1,6 @@
 module Seihou.Engine.RemoveSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -35,61 +35,15 @@ otherMod = ModuleName "other-module"
 mkManifest :: Bool -> [(FilePath, Text)] -> Manifest
 mkManifest isRemovable fileContents =
   (emptyManifest fixedTime)
-    { modules =
-        [ AppliedModule
-            { name = modName,
-              parentVars = emptyParentVars,
-              source = "/path/to/test-module",
-              moduleVersion = Nothing,
-              appliedAt = fixedTime,
-              removal = if isRemovable then Just (Removal [] []) else Nothing
-            }
-        ],
-      files =
-        Map.fromList
-          [ ( path,
-              FileRecord
-                { hash = hashContent content,
-                  moduleName = modName,
-                  strategy = Template,
-                  generatedAt = fixedTime,
-                  baseline = Nothing,
-                  applicationIds = mempty
-                }
-            )
-          | (path, content) <- fileContents
-          ]
-    }
+    & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = "/path/to/test-module", moduleVersion = Nothing, appliedAt = fixedTime, removal = if isRemovable then Just (Removal [] []) else Nothing}]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- fileContents]
 
 -- | Helper: create a manifest with a specific removal spec.
 mkManifestWithRemoval :: Removal -> [(FilePath, Text)] -> Manifest
 mkManifestWithRemoval removal fileContents =
   (emptyManifest fixedTime)
-    { modules =
-        [ AppliedModule
-            { name = modName,
-              parentVars = emptyParentVars,
-              source = "/path/to/test-module",
-              moduleVersion = Nothing,
-              appliedAt = fixedTime,
-              removal = Just removal
-            }
-        ],
-      files =
-        Map.fromList
-          [ ( path,
-              FileRecord
-                { hash = hashContent content,
-                  moduleName = modName,
-                  strategy = Template,
-                  generatedAt = fixedTime,
-                  baseline = Nothing,
-                  applicationIds = mempty
-                }
-            )
-          | (path, content) <- fileContents
-          ]
-    }
+    & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = "/path/to/test-module", moduleVersion = Nothing, appliedAt = fixedTime, removal = Just removal}]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- fileContents]
 
 -- | Helper: create a PureFS with files.
 mkFS :: [(FilePath, Text)] -> PureFS

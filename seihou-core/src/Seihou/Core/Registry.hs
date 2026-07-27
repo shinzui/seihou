@@ -298,11 +298,14 @@ computeRegistrySync reg lookups =
     { diffs = moduleDiffs <> recipeDiffs <> blueprintDiffs <> promptDiffs,
       updated =
         reg
-          { modules = zipWith applyDiff moduleDiffs (reg ^. #modules),
-            recipes = zipWith applyDiff recipeDiffs (reg ^. #recipes),
-            blueprints = zipWith applyDiff blueprintDiffs (reg ^. #blueprints),
-            prompts = zipWith applyDiff promptDiffs (reg ^. #prompts)
-          }
+          & #modules
+          %~ zipWith applyDiff moduleDiffs
+          & #recipes
+          %~ zipWith applyDiff recipeDiffs
+          & #blueprints
+          %~ zipWith applyDiff blueprintDiffs
+          & #prompts
+          %~ zipWith applyDiff promptDiffs
     }
   where
     moduleDiffs = map (classify ModuleEntry) (reg ^. #modules)
@@ -335,7 +338,7 @@ computeRegistrySync reg lookups =
     applyDiff :: SyncDiff -> RegistryEntry -> RegistryEntry
     applyDiff diff entry = case diff ^. #status of
       SyncOrphan -> entry
-      _ -> entry {version = diff ^. #new}
+      _ -> entry & #version .~ diff ^. #new
 
     lookupOnDisk :: EntryKind -> ModuleName -> OnDiskVersion
     lookupOnDisk kind name =

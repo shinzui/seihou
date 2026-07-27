@@ -6,7 +6,7 @@ module Seihou.CLI.UpdateSpec
 where
 
 import Control.Exception (bracket)
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -86,7 +86,12 @@ spec = do
             applied = application (AppliedModuleTarget "demo") [instanceState "demo" moduleDirectory]
         createDirectoryIfMissing True moduleDirectory
         TIO.writeFile (moduleDirectory </> "module.dhall") (moduleDhall "demo" "1.0.0")
-        result <- stageCandidateSources sessionDirectory [applied {targetSource = moduleDirectory}]
+        result <-
+          stageCandidateSources
+            sessionDirectory
+            [ applied
+                & #targetSource .~ moduleDirectory
+            ]
         case result of
           Left err -> expectationFailure (show err)
           Right (catalog, warnings) -> do
@@ -106,10 +111,9 @@ spec = do
             sessionDirectory = root </> "session"
             sourceUrl = T.pack remote
             applied =
-              (application (AppliedRecipeTarget "stack") [instanceState "one" moduleOne, instanceState "two" moduleTwo])
-                { targetSource = recipeDirectory,
-                  additionalModules = []
-                }
+              application (AppliedRecipeTarget "stack") [instanceState "one" moduleOne, instanceState "two" moduleTwo]
+                & #targetSource .~ recipeDirectory
+                & #additionalModules .~ []
         createDirectoryIfMissing True (remote </> "modules" </> "one")
         createDirectoryIfMissing True (remote </> "modules" </> "two")
         createDirectoryIfMissing True (remote </> "recipes" </> "stack")
@@ -133,7 +137,7 @@ spec = do
       withSystemTempDirectory "seihou-update-clone-error" $ \root -> do
         let moduleDirectory = root </> "installed" </> "demo"
             missingRemote = T.pack (root </> "missing-remote")
-            applied = (application (AppliedModuleTarget "demo") [instanceState "demo" moduleDirectory]) {targetSource = moduleDirectory}
+            applied = application (AppliedModuleTarget "demo") [instanceState "demo" moduleDirectory] & #targetSource .~ moduleDirectory
         writeOrigin missingRemote moduleDirectory
         result <- stageCandidateSources (root </> "session") [applied]
         result `shouldSatisfy` \case
@@ -276,7 +280,7 @@ spec = do
           Left err -> expectationFailure err >> pure (emptyManifest testTime)
           Right manifest -> pure (withoutApplications manifest)
         LBS.writeFile (fixture ^. #manifestPath) (manifestToJSON legacy)
-        let request = (updateRequest False) {selection = NamedUpdateTargets ["demo"]}
+        let request = ((updateRequest False) & #selection .~ NamedUpdateTargets ["demo"])
         withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
           withCurrentDirectory (fixture ^. #projectRoot) $ do
             result <- withProjectUpdate request $ \case
@@ -435,8 +439,7 @@ prepareUpdateFixture root = do
             commandReceipts = Map.singleton commandFingerprint commandReceipt,
             instances =
               [ (instanceState "demo" installedModule)
-                  { resolvedVars = Map.singleton "project.name" "accepted"
-                  }
+                  & #resolvedVars .~ Map.singleton "project.name" "accepted"
               ]
           }
       appliedModule = AppliedModule "demo" emptyParentVars installedModule (Just "1.0.0") testTime Nothing
@@ -449,12 +452,12 @@ prepareUpdateFixture root = do
           (Just baselineRef)
           (Set.singleton applicationId)
       manifest =
-        (emptyManifest testTime)
-          { modules = [appliedModule],
-            vars = Map.singleton "project.name" "accepted",
-            files = Map.singleton "README.md" fileRecord,
-            applications = [app]
-          }
+        ( (emptyManifest testTime)
+            & #modules .~ [appliedModule]
+            & #vars .~ Map.singleton "project.name" "accepted"
+            & #files .~ Map.singleton "README.md" fileRecord
+            & #applications .~ [app]
+        )
   createDirectoryIfMissing True (installedModule </> "files")
   TIO.writeFile (installedModule </> "module.dhall") (moduleDhallWithTemplate "demo" "1.0.0" "old-default")
   TIO.writeFile (installedModule </> "files" </> "README.tmpl") "hello {{project.name}}\nkeep\nv1\n"

@@ -12,6 +12,8 @@ import System.Process (CreateProcess (..), proc, readCreateProcessWithExitCode)
 runProcessIO :: (IOE :> es) => Eff (Process : es) a -> Eff es a
 runProcessIO = interpret $ \_ -> \case
   RunProcess cmd args workDir -> liftIO $ do
+    -- CreateProcess is a third-party type with no Generic instance, so it has
+    -- no #cwd label to set. Record update syntax is the only option here.
     let cp =
           (proc (T.unpack cmd) (map T.unpack args))
             { cwd = workDir

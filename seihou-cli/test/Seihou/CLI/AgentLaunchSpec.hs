@@ -1,5 +1,6 @@
 module Seihou.CLI.AgentLaunchSpec (tests) where
 
+import Control.Lens ((&), (.~))
 import Data.List (nub)
 import Data.Text qualified as T
 import Seihou.CLI.AgentLaunch
@@ -56,7 +57,7 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
 
     describe "formatSeihouProjectState" $ do
       it "names .seihou/ when initialised" $
-        formatSeihouProjectState (baseCtx {seihouInitialized = True})
+        formatSeihouProjectState (baseCtx & #seihouInitialized .~ True)
           `shouldBe` "Seihou project: .seihou/ directory exists (this is a seihou-managed project)"
       it "states 'No .seihou/' when not initialised" $
         formatSeihouProjectState baseCtx
@@ -64,7 +65,7 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
 
     describe "formatManifestState" $ do
       it "names manifest.json when present" $
-        formatManifestState (baseCtx {hasManifest = True})
+        formatManifestState (baseCtx & #hasManifest .~ True)
           `shouldBe` "Manifest: .seihou/manifest.json exists (modules have been applied here)"
       it "reports no manifest otherwise" $
         formatManifestState baseCtx
@@ -72,7 +73,7 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
 
     describe "formatModuleDhallState" $ do
       it "names module.dhall when present in cwd" $
-        formatModuleDhallState (baseCtx {localModuleDhall = True})
+        formatModuleDhallState (baseCtx & #localModuleDhall .~ True)
           `shouldBe` "Module in cwd: module.dhall found in current directory (user is authoring a module here)"
       it "is empty when module.dhall is absent" $
         formatModuleDhallState baseCtx `shouldBe` ""
@@ -81,7 +82,7 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
       it "is empty when there are no local modules" $
         formatLocalModules baseCtx `shouldBe` ""
       it "lists local modules with bullet prefixes" $
-        formatLocalModules (baseCtx {localModules = ["foo", "bar"]})
+        formatLocalModules (baseCtx & #localModules .~ ["foo", "bar"])
           `shouldBe` "Local modules:\n  - foo\n  - bar"
 
     describe "formatAvailableModules" $ do
@@ -90,7 +91,7 @@ tests = testSpec "Seihou.CLI.AgentLaunch" $ do
           `shouldBe` "Available modules: None discovered"
       it "renders entries as 'name — description (source)' lines" $
         formatAvailableModules
-          (baseCtx {availableModules = [("foo", "the foo module", "user")]})
+          (baseCtx & #availableModules .~ [("foo", "the foo module", "user")])
           `shouldBe` "Available modules across search paths:\n  - foo — the foo module (user)"
 
   describe "formatBaselineStatus" $ do

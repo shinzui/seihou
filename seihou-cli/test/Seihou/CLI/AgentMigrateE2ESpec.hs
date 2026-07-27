@@ -55,6 +55,8 @@ tests = testSpec "Agent migrate end-to-end" $ do
         fakeClaude
         "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf 'edited\\n' > \"$SEIHOU_FAKE_WORKSPACE_FILE\"\nprintf '%s\\n' '{\"result\":\"batch complete\",\"is_error\":false,\"session_id\":\"fake\"}'\n"
       permissions <- getPermissions fakeClaude
+      -- Permissions comes from `directory` and has no Generic instance, so it
+      -- has no #executable label. Record update syntax is the only option.
       setPermissions fakeClaude (permissions {executable = True})
 
       inherited <- getEnvironment
@@ -204,6 +206,8 @@ tests = testSpec "Agent migrate end-to-end" $ do
       TIO.writeFile blueprintPath migrationBlueprintDhall
       TIO.writeFile fakeClaude "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nexit 0\n"
       permissions <- getPermissions fakeClaude
+      -- Permissions comes from `directory` and has no Generic instance, so it
+      -- has no #executable label. Record update syntax is the only option.
       setPermissions fakeClaude (permissions {executable = True})
 
       inherited <- getEnvironment
@@ -310,6 +314,8 @@ withDeclaredLaunchBlueprint action =
       fakeClaude
       "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf '%s\\n' '{\"result\":\"declared complete\",\"is_error\":false,\"session_id\":\"fake\"}'\n"
     permissions <- getPermissions fakeClaude
+    -- Permissions comes from `directory` and has no Generic instance, so it
+    -- has no #executable label. Record update syntax is the only option.
     setPermissions fakeClaude (permissions {executable = True})
 
     inherited <- getEnvironment
