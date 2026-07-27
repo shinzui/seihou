@@ -69,7 +69,7 @@ spec = do
     it "ignores blank higher-precedence values" $
       resolveAgentModelConfig
         ( baseInputs
-            & #cliProvider ?~ " "
+            & #cliProvider ?~ "  "
             & #envProvider ?~ "codex-cli"
             & #cliModel ?~ ""
             & #envModel ?~ "gpt-5"
@@ -189,7 +189,7 @@ spec = do
         `shouldBe` Right (Just ThinkingXHigh, SourceCliSubcommand)
 
     it "parses effort case-insensitively" $
-      effortOf AgentCmdRun (baseInputs & #cliEffort ?~ " MAX ") `shouldBe` Right (Just ThinkingMax, SourceCliParent)
+      effortOf AgentCmdRun (baseInputs & #cliEffort ?~ "  MAX  ") `shouldBe` Right (Just ThinkingMax, SourceCliParent)
 
     it "returns a diagnostic for an invalid effort value" $
       resolveAgentModelConfigFor AgentCmdRun (baseInputs & #cliEffort ?~ "ultra") `shouldSatisfy` \case
@@ -262,14 +262,14 @@ spec = do
         `shouldBe` Right (TraceFile, SourceCliParent)
 
     it "parses trace settings case-insensitively" $
-      traceOf AgentCmdRun (baseInputs & #cliTrace ?~ " STDERR ")
+      traceOf AgentCmdRun (baseInputs & #cliTrace ?~ "  STDERR  ")
         `shouldBe` Right (TraceStderr, SourceCliParent)
 
     it "skips a blank trace value in favor of the next tier" $
       traceOf
         AgentCmdRun
         ( baseInputs
-            & #cliTrace ?~ " "
+            & #cliTrace ?~ "   "
             & #localConfig .~ Map.fromList [(agentTraceConfigKey, "file")]
         )
         `shouldBe` Right (TraceFile, SourceLocalDefault)
@@ -306,7 +306,7 @@ spec = do
     it "treats a blank local path as absent" $
       resolveTracePath
         ( baseInputs
-            & #localConfig .~ Map.fromList [(agentTracePathConfigKey, " ")]
+            & #localConfig .~ Map.fromList [(agentTracePathConfigKey, "   ")]
             & #globalConfig .~ Map.fromList [(agentTracePathConfigKey, "/tmp/global.jsonl")]
         )
         `shouldBe` Just "/tmp/global.jsonl"
