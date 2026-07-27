@@ -91,8 +91,10 @@ This section must always reflect the actual current state of the work.
       `--trace` flag, all resolved through the existing precedence chain, with unit tests.
       Nothing emits yet. `cabal test seihou-cli`: 396 tests pass. `seihou agent config` shows a
       trace row per command; `--trace bogus` exits 1 naming all four settings (2026-07-27).
-- [ ] Milestone 2 — Sink construction: turn a resolved `TraceSetting` into a `Baikai.TraceSink`,
-      including path resolution for the file sink and directory creation, with unit tests.
+- [x] Milestone 2 — Sink construction: `Seihou.CLI.AgentTrace` turns a resolved `TraceSetting`
+      into a `Baikai.TraceSink`, including path resolution for the file sink and parent-directory
+      creation, with a new spec driving real events through each sink. `cabal test seihou-cli`:
+      408 tests pass (2026-07-27).
 - [ ] Milestone 3 — The swap: `runAgentCompletionWith` calls `Baikai.Trace.withTrace` instead of
       `Baikai.completeRequest`, **preserving today's error reporting** across the changed
       exception semantics. This is the milestone with real regression risk; it carries its own

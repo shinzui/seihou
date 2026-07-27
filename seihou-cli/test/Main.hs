@@ -6,6 +6,7 @@ import Seihou.CLI.AgentConfigSpec qualified as AgentConfigSpec
 import Seihou.CLI.AgentLaunchSpec qualified as AgentLaunchSpec
 import Seihou.CLI.AgentMigrateE2ESpec qualified as AgentMigrateE2ESpec
 import Seihou.CLI.AgentModelsSpec qualified as AgentModelsSpec
+import Seihou.CLI.AgentTraceSpec qualified as AgentTraceSpec
 import Seihou.CLI.AppliedBlueprintMigrationSpec qualified as AppliedBlueprintMigrationSpec
 import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
 import Seihou.CLI.BlueprintMigrationSpec qualified as BlueprintMigrationSpec
@@ -45,6 +46,7 @@ main = do
         AgentConfigSpec.tests,
         AgentConfigShowSpec.tests,
         AgentModelsSpec.tests,
+        AgentTraceSpec.tests,
         AppliedBlueprintSpec.tests,
         AppliedBlueprintMigrationSpec.tests,
         BlueprintMigrationSpec.tests,
