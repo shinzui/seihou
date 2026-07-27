@@ -179,6 +179,46 @@ implementation. Provide concise evidence.
   exactly that — but it is now a guard for sink failures, not for provider failures. Anyone
   tempted to delete either branch as redundant should re-run that experiment first.
 
+- **Discovery (2026-07-27, manual acceptance step 6): the `responseError` branch does not
+  preserve today's error text — it *fixes* it. The plan's premise was wrong for the API
+  providers.** The plan assumed `completeRequest` threw a `BaikaiError` that Seihou's `try`
+  caught, so users currently see real provider errors and the risk was losing them. Measured
+  instead of assumed: the API providers' `complete` is `streamingComplete claudeMessagesStream`,
+  and `claudeMessagesStream` wraps `prepareCall` in `trySync` and emits an immediate error event
+  rather than throwing (`baikai-claude/src/Baikai/Provider/Claude/Api.hs:141`). So the pre-plan
+  code path *also* received an error-shaped `Response`, the `try` never fired, and the empty-text
+  guard swallowed the message. Verified by rebuilding the binary with the pre-plan call-site tail
+  and running the same command:
+
+  ```text
+  # pre-plan binary
+  $ env -u ANTHROPIC_API_KEY seihou agent run tracer --batch --provider anthropic
+  Error: Provider returned no assistant text.
+
+  # after this plan
+  $ env -u ANTHROPIC_API_KEY seihou agent run tracer --batch --provider anthropic
+  Error: BaikaiError {category = AuthError, message = "env var ANTHROPIC_API_KEY is not set", ...}
+  ```
+
+  So authentication failures, rate limits, and model-not-found errors on the `anthropic` and
+  `openai` providers were already being reported as `"Provider returned no assistant text."`
+  before this plan. That makes the branch a user-visible bug fix, recorded as such in both
+  changelogs, and it makes the Milestone 3 tests regression tests for a bug that was already
+  present rather than one this plan might have introduced.
+
+- **Discovery (2026-07-27, manual acceptance step 2): trace events name baikai's provider, not
+  Seihou's, and several fields are thinner than the plan's mock transcript.** Running
+  `seihou agent run tracer --batch` with `agent.provider = claude-cli` produces
+  `"provider":"anthropic"`, because `buildBaikaiModel` sets `Baikai.provider = "anthropic"` for
+  the claude-cli path — the trace records the upstream vendor, not Seihou's four-value provider
+  vocabulary. Two more deviations from the plan's illustrative transcript: `maxTokens` is `0` for
+  the CLI providers (`baseCliModel` sets `maxOutputTokens = 0`), and `promptSummary` is empty
+  unless the invocation carries an explicit user prompt, because Seihou puts the rendered prompt
+  in `systemPrompt` and `Baikai.Trace.summarizeContext` reads the context's *messages*. With a
+  prompt argument (`seihou agent run tracer --batch "please greet the repo"`) the summary is
+  populated. Also, the CLI providers report `inputTokens`/`outputTokens` as `0` rather than
+  omitting them; only `usd` is absent. The user docs were corrected to match the measured output.
+
 - **Discovery (2026-07-27): all six commands funnel through one function, so the swap is a
   one-place change.** `seihou-cli/src/Seihou/CLI/AgentCompletion.hs` exposes `runAgentCompletion`
   and `runAgentCompletionWithCliAccess`; both delegate to the private `runAgentCompletionWith`,
@@ -240,12 +280,21 @@ Record every decision made while working on the plan.
   some users will want traces in a pipeline.
   Date: 2026-07-27
 
-- Decision: preserve today's error text exactly across the `withTrace` swap, by checking
+- Decision: handle provider failures across the `withTrace` swap by checking
   `Baikai.Response.responseError` on the returned `Response` instead of relying on the `try`.
   Rationale: see the first Surprises entry. Changing observability must not change what a user
   sees when their API key is wrong. The `try` is retained as a belt-and-braces guard for
   downstream-of-the-fold exceptions, which the doc comment says still propagate.
   Date: 2026-07-27
+
+  **Amended 2026-07-27 after measurement.** This decision was written as "preserve today's error
+  text exactly", on the assumption that the `try` currently catches provider failures. It does
+  not: for the API providers the failure already arrived as an error-shaped `Response`, so users
+  already saw `"Provider returned no assistant text."` The branch is therefore a bug fix, not a
+  regression guard. The implementation is unchanged — `Text.pack (show err)` on both branches is
+  still the right call, because it matches the formatting the `try` branch has always used — but
+  the framing, the changelogs, and the milestone's test rationale were corrected. See the
+  Surprises entry for the before/after transcript.
 
 - Decision: defer OpenTelemetry to a follow-up plan and deliver only a hand-off note here.
   Rationale: user selection. `baikai-trace-otel` is not among the packages the shared

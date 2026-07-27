@@ -144,6 +144,16 @@ packages in the workspace share a single version.
 
 ### Fixed
 
+- **Provider errors on the `anthropic` and `openai` providers are reported
+  properly.** A failing API call — a missing or invalid key, a rate limit, an
+  unknown model — was reported as `Error: Provider returned no assistant text.`,
+  which told you nothing about what went wrong. It now names the actual failure:
+
+  ```text
+  $ seihou agent run my-blueprint --provider anthropic
+  Error: BaikaiError {category = AuthError, message = "env var ANTHROPIC_API_KEY is not set", ...}
+  ```
+
 - **Reasoning effort now reaches non-interactive agent runs.** Effort was
   applied to interactive Claude Code and Codex sessions but silently dropped
   whenever Seihou took the batch path — `claude -p`, used when stdin is not a

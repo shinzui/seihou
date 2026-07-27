@@ -29,6 +29,18 @@ All notable changes to this project will be documented in this file.
   therefore checks `Response.responseError` before its empty-text guard; without
   that branch every provider error would be reported as "Provider returned no
   assistant text." The retained `try` now guards sink-side failures only.
+
+### Fixed
+- **Provider errors on the API providers are no longer swallowed** (EP-74).
+  `runAgentCompletionWith` now checks `Response.responseError` before its
+  empty-text guard, so a failed `anthropic`/`openai` call reports the provider's
+  message instead of `"Provider returned no assistant text."` This predates the
+  tracing work: the API providers' `complete` is
+  `streamingComplete claudeMessagesStream`, and `claudeMessagesStream` wraps
+  `prepareCall` in `trySync` and emits an immediate error event rather than
+  throwing, so the `try` in `runAgentCompletionWith` never fired and the
+  error-shaped `Response` fell through to the empty-text guard. Confirmed by
+  running the pre-change binary against a missing `ANTHROPIC_API_KEY`.
 - **Artifact-declared agent launch settings** (EP-73): a new shared
   `Launch.dhall` record in `seihou-schema`, referenced by both `Blueprint.dhall`
   and `AgentPrompt.dhall` and exported as `S.Launch`, lets a blueprint or prompt

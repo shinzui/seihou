@@ -228,11 +228,22 @@ jq -r 'select(.kind == "call_failed") | "\(.model): \(.errorMessage)"' .seihou/t
 jq -s 'map(select(.kind == "call_finished")) | sort_by(-.latencyMs) | .[0:5]' .seihou/trace.jsonl
 ```
 
-Token counts and cost are omitted when the provider does not report them. The
-two local CLI providers (`claude-cli`, `codex-cli`) are subscription-based and
-report neither, so their `call_finished` events carry `latencyMs` but no
-`inputTokens`, `outputTokens`, or `usd`. Use an API provider (`anthropic`,
-`openai`) if you need cost accounting.
+A few fields are thinner than they look. Cost (`usd`) is omitted entirely when
+the provider does not report one, and the two local CLI providers
+(`claude-cli`, `codex-cli`) are subscription-based, so they report no cost and
+zeroes for `inputTokens`/`outputTokens`. Use an API provider (`anthropic`,
+`openai`) if you need cost accounting. `promptSummary` is empty unless the
+invocation carried an explicit prompt argument, since Seihou sends its rendered
+prompt as the system prompt. And `provider` names the upstream vendor —
+`anthropic` or `openai` — rather than the Seihou provider you configured, so
+`agent.provider = claude-cli` shows up as `"provider":"anthropic"`.
+
+```text
+$ seihou agent run tracer --batch --trace file
+$ cat .seihou/trace.jsonl
+{"kind":"call_started","eventId":"6a679f6c00000000","timestamp":"...","provider":"anthropic","model":"claude-opus-4-8","maxTokens":0,"promptSummary":""}
+{"kind":"call_finished","eventId":"6a679f6c00000000","timestamp":"...","provider":"anthropic","model":"claude-opus-4-8","latencyMs":5,"inputTokens":0,"outputTokens":0}
+```
 
 ### What tracing does not cover
 
