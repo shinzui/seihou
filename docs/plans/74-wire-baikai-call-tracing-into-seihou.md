@@ -95,10 +95,13 @@ This section must always reflect the actual current state of the work.
       into a `Baikai.TraceSink`, including path resolution for the file sink and parent-directory
       creation, with a new spec driving real events through each sink. `cabal test seihou-cli`:
       408 tests pass (2026-07-27).
-- [ ] Milestone 3 — The swap: `runAgentCompletionWith` calls `Baikai.Trace.withTrace` instead of
-      `Baikai.completeRequest`, **preserving today's error reporting** across the changed
-      exception semantics. This is the milestone with real regression risk; it carries its own
-      dedicated tests.
+- [x] Milestone 3 — The swap: `runAgentCompletionWith` calls `Baikai.Trace.withTrace` instead of
+      `Baikai.completeRequest`, preserving today's error reporting across the changed exception
+      semantics. Seven new tests drive the real `withTrace` path against a stub provider.
+      Verified as the plan requires: deleting the `responseError` branch fails three of them
+      (error-shaped response, no-empty-text-confusion, and thrown exception) with
+      `Left "Provider returned no assistant text."`, then restoring it passes all 416
+      (2026-07-27).
 - [ ] Milestone 4 — End-to-end proof and documentation: a test that runs the real binary against
       a fake provider and asserts on the emitted JSONL; user and CLI docs; both changelogs.
 - [ ] Milestone 5 — OTel hand-off note: document precisely what adopting `baikai-trace-otel`
@@ -154,6 +157,19 @@ implementation. Provide concise evidence.
   assistant text blocks (`responseText`) and, after this change, `responseError`, both of which
   survive the round trip, so losing `responseId` and the directly-measured `latencyMs` costs
   Seihou nothing. Worth knowing before anyone tries to use `Response.latencyMs` here.
+
+- **Discovery (2026-07-27, verifying Milestone 3): the retained `try` no longer catches provider
+  failures at all — the `responseError` branch is the *only* thing preserving error reporting.**
+  The plan expected the `try` to keep catching thrown `BaikaiError`s and the new branch to handle
+  the in-band error-shaped responses. In practice `Baikai.Stream.liftCompleteToStream` wraps the
+  provider call in `trySync` and converts a thrown exception into an `EventError`, so a provider
+  that *throws* also arrives as an error-shaped `Response`. Demonstrated by deleting the
+  `responseError` branch and running the suite: three tests fail, including
+  `"reports a thrown provider exception, which withTrace still propagates"`, all with
+  `Left "Provider returned no assistant text."` The `try` is still worth keeping — Baikai's doc
+  comment says downstream-of-the-fold exceptions propagate, and an unwritable trace path is
+  exactly that — but it is now a guard for sink failures, not for provider failures. Anyone
+  tempted to delete either branch as redundant should re-run that experiment first.
 
 - **Discovery (2026-07-27): all six commands funnel through one function, so the swap is a
   one-place change.** `seihou-cli/src/Seihou/CLI/AgentCompletion.hs` exposes `runAgentCompletion`

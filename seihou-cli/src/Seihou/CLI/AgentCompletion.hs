@@ -14,9 +14,11 @@ module Seihou.CLI.AgentCompletion
     traceFromText,
     traceToText,
     buildAgentCompletionRequest,
+    buildAgentCompletionRequestWith,
     buildBaikaiModel,
     runAgentCompletion,
     runAgentCompletionWithCliAccess,
+    runAgentCompletionWith,
     responseText,
   )
 where
@@ -27,7 +29,10 @@ import Baikai.Provider.Claude.Api qualified as ClaudeApi
 import Baikai.Provider.Claude.Cli qualified as ClaudeCli
 import Baikai.Provider.OpenAI.Api qualified as OpenAIApi
 import Baikai.Provider.OpenAI.Cli qualified as CodexCli
+import Baikai.Response qualified as BaikaiResponse
 import Baikai.ThinkingLevel (ThinkingLevel (..), renderThinkingLevel)
+import Baikai.Trace qualified as BaikaiTrace
+import Baikai.Trace.Sink (TraceSink, silent)
 import Control.Exception (try)
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -73,19 +78,38 @@ data AgentModelConfig = AgentModelConfig
   }
   deriving stock (Eq, Show)
 
+-- | Note the absence of 'Eq' and 'Show': 'TraceSink' wraps a streamly fold,
+-- which is a function and so has neither. Tests compare the inspectable fields
+-- individually.
 data AgentCompletionRequest = AgentCompletionRequest
   { completionSystemPrompt :: Text,
     completionInitialPrompt :: Maybe Text,
-    completionModelConfig :: AgentModelConfig
+    completionModelConfig :: AgentModelConfig,
+    -- | Where this call's trace events go. Baikai's 'silent' sink when tracing
+    -- is off, which is the default and costs nothing.
+    completionTraceSink :: TraceSink
   }
-  deriving stock (Eq, Show)
 
+-- | Build a request that emits no trace events.
 buildAgentCompletionRequest :: AgentModelConfig -> Text -> Maybe Text -> AgentCompletionRequest
-buildAgentCompletionRequest modelConfig systemPrompt initialPrompt =
+buildAgentCompletionRequest = buildAgentCompletionRequestWith silent
+
+-- | Build a request whose model call reports to the given sink. Construct the
+-- sink with 'Seihou.CLI.AgentTrace.traceSinkFor'; build it once per command
+-- rather than per call, so a command that makes several calls appends them all
+-- to the same destination.
+buildAgentCompletionRequestWith ::
+  TraceSink ->
+  AgentModelConfig ->
+  Text ->
+  Maybe Text ->
+  AgentCompletionRequest
+buildAgentCompletionRequestWith sink modelConfig systemPrompt initialPrompt =
   AgentCompletionRequest
     { completionSystemPrompt = systemPrompt,
       completionInitialPrompt = initialPrompt,
-      completionModelConfig = modelConfig
+      completionModelConfig = modelConfig,
+      completionTraceSink = sink
     }
 
 defaultAgentModelConfig :: AgentModelConfig
@@ -223,6 +247,10 @@ runAgentCompletionWithCliAccess :: [FilePath] -> [String] -> AgentCompletionRequ
 runAgentCompletionWithCliAccess extraDirs tools =
   runAgentCompletionWith (registerAgentProvidersWithCliAccess extraDirs tools)
 
+-- | The shared implementation behind 'runAgentCompletion' and
+-- 'runAgentCompletionWithCliAccess', parameterised by which providers to
+-- register. Exported so tests can install a stub provider in place of a real
+-- one; production callers should use one of the two wrappers.
 runAgentCompletionWith :: IO () -> AgentCompletionRequest -> IO (Either Text Text)
 runAgentCompletionWith registerProviders req = do
   registerProviders
@@ -238,14 +266,28 @@ runAgentCompletionWith registerProviders req = do
             Baikai.messages = initialMessages
           }
       options = Baikai.emptyOptions {BaikaiOptions.thinking = req.completionModelConfig.agentEffort}
-  result <- try (Baikai.completeRequest model ctx options) :: IO (Either Baikai.BaikaiError Baikai.Response)
+  result <-
+    try (BaikaiTrace.withTrace req.completionTraceSink model ctx options) ::
+      IO (Either Baikai.BaikaiError Baikai.Response)
   pure $ case result of
+    -- Retained deliberately. 'withTrace' does not throw for provider failures,
+    -- but its doc comment states that downstream-of-the-fold exceptions still
+    -- propagate — an unwritable trace path, for instance.
     Left err -> Left (Text.pack (show err))
-    Right resp ->
-      let body = responseText resp
-       in if Text.null (Text.strip body)
-            then Left "Provider returned no assistant text."
-            else Right body
+    Right resp -> case BaikaiResponse.responseError resp of
+      -- 'withTrace' surfaces a provider failure as an error-shaped Response
+      -- rather than an exception, and such a response has no assistant text.
+      -- Without this branch every provider error — a bad API key, a rate
+      -- limit, an unknown model — would fall through to the empty-text guard
+      -- below and be reported as "Provider returned no assistant text.",
+      -- losing the message the user needs. Formatting matches the exception
+      -- branch exactly, so the text a user sees is what it always was.
+      Just err -> Left (Text.pack (show err))
+      Nothing ->
+        let body = responseText resp
+         in if Text.null (Text.strip body)
+              then Left "Provider returned no assistant text."
+              else Right body
 
 responseText :: Baikai.Response -> Text
 responseText =

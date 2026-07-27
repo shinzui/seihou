@@ -3,10 +3,20 @@ module Seihou.CLI.AgentCompletionSpec (tests) where
 import Baikai qualified
 import Baikai.Model qualified as BaikaiModel
 import Baikai.Response qualified as BaikaiResponse
+import Baikai.Trace.Sink (TraceSink, silent)
+import Control.Exception (throwIO)
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Text qualified as Text
 import Data.Time (UTCTime)
 import Data.Vector qualified as V
 import Seihou.CLI.AgentCompletion
+import Seihou.CLI.AgentTrace (traceSinkFor)
+import System.Directory (doesFileExist)
+import System.FilePath ((</>))
+import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
 import Test.Tasty (TestTree)
 import Test.Tasty.Hspec (testSpec)
@@ -72,7 +82,9 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
               AgentModelConfig
                 { agentProvider = AgentProviderClaudeCli,
                   agentModel = Just "sonnet",
-                  agentEffort = Nothing
+                  agentEffort = Nothing,
+                  agentTrace = TraceOff,
+                  agentTracePath = Nothing
                 }
       BaikaiModel.api model `shouldBe` Baikai.AnthropicMessagesCli
       BaikaiModel.provider model `shouldBe` "anthropic"
@@ -84,7 +96,9 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
               AgentModelConfig
                 { agentProvider = AgentProviderCodexCli,
                   agentModel = Just "gpt-5",
-                  agentEffort = Nothing
+                  agentEffort = Nothing,
+                  agentTrace = TraceOff,
+                  agentTracePath = Nothing
                 }
       BaikaiModel.api model `shouldBe` Baikai.OpenAICompletionsCli
       BaikaiModel.provider model `shouldBe` "openai"
@@ -100,12 +114,74 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
                 agentTrace = TraceOff,
                 agentTracePath = Nothing
               }
-      buildAgentCompletionRequest config "system" (Just "user")
-        `shouldBe` AgentCompletionRequest
-          { completionSystemPrompt = "system",
-            completionInitialPrompt = Just "user",
-            completionModelConfig = config
-          }
+          req = buildAgentCompletionRequest config "system" (Just "user")
+      -- AgentCompletionRequest has no Eq: it carries a TraceSink, which wraps a
+      -- streamly fold. Compare the inspectable fields instead.
+      req.completionSystemPrompt `shouldBe` "system"
+      req.completionInitialPrompt `shouldBe` Just "user"
+      req.completionModelConfig `shouldBe` config
+
+  -- These drive the real Baikai.Trace.withTrace path against a stub provider
+  -- registered under the anthropic-messages tag. They exist because withTrace
+  -- reports provider failures as an error-shaped Response rather than by
+  -- throwing, the way completeRequest did: without the responseError branch in
+  -- runAgentCompletionWith, every one of these failures would be reported as
+  -- "Provider returned no assistant text." and the real message would be lost.
+  describe "runAgentCompletionWith" $ do
+    it "returns the assistant text of a successful call" $ do
+      result <- runStub (const (pure (okResponse "hello from the stub"))) Nothing
+      result `shouldBe` Right "hello from the stub"
+
+    -- The regression test for the whole swap. Delete the responseError branch
+    -- in runAgentCompletionWith and this fails with the empty-text message.
+    it "reports the provider's message when the response is error-shaped" $ do
+      result <- runStub (\m -> pure (failedResponse m "invalid x-api-key")) Nothing
+      result `shouldSatisfy` \case
+        Left err -> "invalid x-api-key" `Text.isInfixOf` err
+        Right _ -> False
+
+    it "does not mistake a provider error for missing assistant text" $ do
+      result <- runStub (\m -> pure (failedResponse m "model not found")) Nothing
+      result `shouldSatisfy` \case
+        Left err -> not ("Provider returned no assistant text." `Text.isInfixOf` err)
+        Right _ -> False
+
+    -- ...and the empty-text guard must still fire for a genuinely empty
+    -- success, rather than being shadowed by the new branch.
+    it "still reports a successful but empty response as missing text" $ do
+      result <- runStub (const (pure (okResponse ""))) Nothing
+      result `shouldBe` Left "Provider returned no assistant text."
+
+    it "reports a thrown provider exception, which withTrace still propagates" $ do
+      result <- runStub (const (throwIO (Baikai.providerError "connection reset"))) Nothing
+      result `shouldSatisfy` \case
+        Left err -> "connection reset" `Text.isInfixOf` err
+        Right _ -> False
+
+    it "writes a correlated start/finish pair to a file sink" $
+      withSystemTempDirectory "seihou-completion-trace" $ \root -> do
+        let path = root </> "trace.jsonl"
+        sink <- traceSinkFor TraceFile (Just path)
+        _ <- runStub (const (pure (okResponse "traced"))) (Just sink)
+        events <- traceEvents path
+        map fst events `shouldBe` ["call_started", "call_finished"]
+        case map snd events of
+          [a, b] -> a `shouldBe` b
+          other -> expectationFailure ("expected two events, got " <> show (length other))
+
+    it "writes a start/fail pair when the call fails" $
+      withSystemTempDirectory "seihou-completion-trace-fail" $ \root -> do
+        let path = root </> "trace.jsonl"
+        sink <- traceSinkFor TraceFile (Just path)
+        _ <- runStub (\m -> pure (failedResponse m "rate limited")) (Just sink)
+        events <- traceEvents path
+        map fst events `shouldBe` ["call_started", "call_failed"]
+
+    it "writes nothing when tracing is off" $
+      withSystemTempDirectory "seihou-completion-trace-off" $ \root -> do
+        let path = root </> "trace.jsonl"
+        _ <- runStub (const (pure (okResponse "untraced"))) Nothing
+        doesFileExist path `shouldReturn` False
 
   describe "responseText" $ do
     it "extracts and joins assistant text blocks only" $ do
@@ -126,3 +202,79 @@ tests = testSpec "Seihou.CLI.AgentCompletion" $ do
                     }
               }
       responseText resp `shouldBe` "hello\nworld"
+
+-- | Run a completion against a stub provider that returns whatever the given
+-- action produces, optionally reporting to a trace sink.
+--
+-- The stub registers under the @anthropic-messages@ tag, which is what
+-- 'buildBaikaiModel' selects for 'AgentProviderAnthropic'. It supplies both
+-- provider fields the way the real CLI providers do — a direct @complete@ and
+-- a @stream@ lifted from it — because 'Baikai.Trace.withTrace' dispatches
+-- through @stream@, not @complete@.
+--
+-- Registration mutates Baikai's process-global registry. That is safe here
+-- because the test binary is not built with @-threaded@, so tasty runs these
+-- sequentially; a stub is always registered immediately before the call that
+-- uses it.
+runStub ::
+  (Baikai.Model -> IO BaikaiResponse.Response) ->
+  Maybe TraceSink ->
+  IO (Either Text.Text Text.Text)
+runStub respond sink =
+  runAgentCompletionWith registerStub request
+  where
+    registerStub =
+      Baikai.registerApiProvider
+        Baikai.ApiProvider
+          { Baikai.apiTag = Baikai.AnthropicMessages,
+            Baikai.complete = \m _ _ -> respond m,
+            Baikai.stream = Baikai.liftCompleteToStream (\m _ _ -> respond m)
+          }
+    request =
+      buildAgentCompletionRequestWith
+        (maybe silent id sink)
+        AgentModelConfig
+          { agentProvider = AgentProviderAnthropic,
+            agentModel = Just "stub-model",
+            agentEffort = Nothing,
+            agentTrace = maybe TraceOff (const TraceFile) sink,
+            agentTracePath = Nothing
+          }
+        "system"
+        (Just "user")
+
+-- | A successful response carrying one assistant text block.
+okResponse :: Text.Text -> BaikaiResponse.Response
+okResponse body =
+  BaikaiResponse.emptyResponse
+    { BaikaiResponse.message =
+        Baikai.AssistantPayload
+          { Baikai.content = V.singleton (Baikai.AssistantText (Baikai.TextContent body)),
+            Baikai.usage = Baikai.zeroUsage,
+            Baikai.stopReason = Baikai.Stop,
+            Baikai.errorMessage = Nothing,
+            Baikai.timestamp = Just epoch
+          }
+    }
+
+-- | An error-shaped response, the way a conforming provider reports an in-band
+-- failure: @stopReason = ErrorReason@ plus the provider's message.
+failedResponse :: Baikai.Model -> Text.Text -> BaikaiResponse.Response
+failedResponse m message =
+  BaikaiResponse.errorResponse m epoch 12 (Baikai.providerError message)
+
+epoch :: UTCTime
+epoch = read "2026-07-27 00:00:00 UTC"
+
+-- | The @(kind, eventId)@ of every event in a JSONL trace file, in order.
+traceEvents :: FilePath -> IO [(String, String)]
+traceEvents path = do
+  contents <- BL8.readFile path
+  pure
+    [ (Text.unpack kind, Text.unpack eventId)
+    | line <- BL8.lines contents,
+      not (BL8.null line),
+      Just (Aeson.Object o) <- [Aeson.decode line],
+      Just (Aeson.String kind) <- [KeyMap.lookup (Key.fromString "kind") o],
+      Just (Aeson.String eventId) <- [KeyMap.lookup (Key.fromString "eventId") o]
+    ]
