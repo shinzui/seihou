@@ -28,7 +28,7 @@ module Seihou.Core.Types
     Blueprint (..),
     CommandVar (..),
     PromptGuidance (..),
-    AgentPromptLaunch (..),
+    AgentLaunch (..),
     AgentPrompt (..),
     Runnable (..),
     recipeNameToModuleName,
@@ -310,7 +310,8 @@ data Blueprint = Blueprint
     files :: [BlueprintFile],
     allowedTools :: Maybe [Text],
     tags :: [Text],
-    migrations :: [BlueprintMigration]
+    migrations :: [BlueprintMigration],
+    launch :: Maybe AgentLaunch
   }
   deriving stock (Eq, Show, Generic)
 
@@ -336,13 +337,19 @@ data PromptGuidance = PromptGuidance
   }
   deriving stock (Eq, Show, Generic)
 
--- | Optional launch metadata declared by an agent prompt. The CLI runner may
--- use this as a default provider/model/mode hint, but project or CLI config
--- remains authoritative.
-data AgentPromptLaunch = AgentPromptLaunch
+-- | Optional launch preferences declared by an agent-driven artifact (a
+-- 'Blueprint' or an 'AgentPrompt'). Values are raw text here; the CLI parses
+-- and validates them, because the provider and effort vocabularies live in the
+-- CLI layer. 'mode' is reserved and currently ignored.
+--
+-- Declared values override the invoking user's configuration files but lose to
+-- a @--provider@ \/ @--model@ \/ @--effort@ flag and to the @SEIHOU_AGENT_*@
+-- environment variables.
+data AgentLaunch = AgentLaunch
   { provider :: Maybe Text,
-    mode :: Maybe Text,
-    model :: Maybe Text
+    model :: Maybe Text,
+    effort :: Maybe Text,
+    mode :: Maybe Text
   }
   deriving stock (Eq, Show, Generic)
 
@@ -361,7 +368,7 @@ data AgentPrompt = AgentPrompt
     files :: [BlueprintFile],
     allowedTools :: Maybe [Text],
     tags :: [Text],
-    launch :: Maybe AgentPromptLaunch
+    launch :: Maybe AgentLaunch
   }
   deriving stock (Eq, Show, Generic)
 

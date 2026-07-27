@@ -12,6 +12,7 @@ module Seihou.Core.Blueprint
     checkBlueprintTags,
     checkBlueprintAllowedTools,
     checkBlueprintMigrations,
+    checkBlueprintLaunch,
   )
 where
 
@@ -43,6 +44,11 @@ import System.Directory (doesFileExist)
 --   7. Every @files@ entry exists at @baseDir/files/SRC@.
 --   8. Every tag is non-empty.
 --   9. Every @allowedTools@ entry, when set, is non-empty.
+--  10. Every migration is a forward dotted-numeric edge with a non-empty
+--      prompt, and each starting version occurs at most once.
+--  11. Every field the @launch@ record does set is non-blank. The values
+--      themselves are parsed by the CLI, which owns the provider and effort
+--      vocabularies.
 validateBlueprint :: FilePath -> Blueprint -> IO (Either ModuleLoadError Blueprint)
 validateBlueprint baseDir b = do
   searchPaths <- defaultSearchPaths
@@ -69,6 +75,7 @@ validateBlueprintWith searchPaths baseDir b = do
           <> checkBlueprintTags b
           <> checkBlueprintAllowedTools b
           <> checkBlueprintMigrations b
+          <> checkBlueprintLaunch b
       allErrs = pureErrs <> fileErrs <> baseErrs
   pure $
     if null allErrs
@@ -250,3 +257,21 @@ checkBlueprintMigrations b =
       map
         ("duplicate blueprint migration from version: " <>)
         (findDupes Set.empty Set.empty (map (.from) b.migrations))
+
+-- Rule 11: every field the @launch@ record does set must be non-blank. The
+-- declared values themselves (which provider, which effort) are parsed by the
+-- CLI layer, which owns those vocabularies; core only rejects blanks.
+checkBlueprintLaunch :: Blueprint -> [Text]
+checkBlueprintLaunch b = case b.launch of
+  Nothing -> []
+  Just l ->
+    blankErr "provider" l.provider
+      <> blankErr "model" l.model
+      <> blankErr "effort" l.effort
+      <> blankErr "mode" l.mode
+  where
+    blankErr key value =
+      [ "launch." <> key <> ", if specified, must not be empty"
+      | Just v <- [value],
+        T.null (T.strip v)
+      ]

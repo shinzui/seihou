@@ -98,10 +98,13 @@ This section must always reflect the actual current state of the work.
       the end-to-end test harness (2026-07-27).
 - [x] Recorded the four scoping decisions (schema shape, precedence position, command scope,
       intention) in the Decision Log (2026-07-27).
-- [ ] Milestone 1 — Schema: add `schema/Launch.dhall`, wire it into `Blueprint.dhall` and
+- [x] Milestone 1 — Schema: add `schema/Launch.dhall`, wire it into `Blueprint.dhall` and
       `AgentPrompt.dhall`, export it from `package.dhall`, document it in `schema/README.md`,
       commit and push in the submodule, then bump the pin (`SchemaVersion.hs`, submodule pointer,
-      `flake.lock`).
+      `flake.lock`). Done 2026-07-27, commit `4ac515b`; schema commit
+      `0e1b875efcf2b4e4b98d93595ea627290459e3ad`, hash
+      `sha256:356829d4e2b333ce157615dd7eccd0cd4765f3ef0d94ef637fa8c97398d3b92c`. Verified the
+      published pin resolves over HTTPS and `cabal test seihou-core` passes (1023 tests).
 - [ ] Milestone 2 — Core domain and decoder: `AgentLaunch` type, `Blueprint.launch` field,
       backward-compatible decoders, core validation rule, unit tests.
 - [ ] Milestone 3 — Resolution: new declaration tier in `Seihou.CLI.AgentConfig`, deferred

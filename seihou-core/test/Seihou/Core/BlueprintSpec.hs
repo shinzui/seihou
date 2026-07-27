@@ -2,7 +2,7 @@ module Seihou.Core.BlueprintSpec (tests) where
 
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Seihou.Core.Blueprint (checkBlueprintMigrations, validateBlueprintWith)
+import Seihou.Core.Blueprint (checkBlueprintLaunch, checkBlueprintMigrations, validateBlueprintWith)
 import Seihou.Core.Migration (BlueprintMigration (..))
 import Seihou.Core.Module (discoverRunnable)
 import Seihou.Core.Types
@@ -46,6 +46,7 @@ goodBlueprint =
     Nothing
     []
     []
+    Nothing
 
 -- | Helpers to update individual 'Blueprint' fields without ambiguous
 -- record updates. Several @Blueprint@ fields collide by name with
@@ -53,43 +54,47 @@ goodBlueprint =
 -- the ambiguity once and for all.
 withBlueprintName :: ModuleName -> Blueprint -> Blueprint
 withBlueprintName n b =
-  Blueprint n b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations
+  Blueprint n b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
 
 withBlueprintVersion :: Maybe T.Text -> Blueprint -> Blueprint
 withBlueprintVersion v b =
-  Blueprint b.name v b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations
+  Blueprint b.name v b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
 
 withBlueprintPrompt :: T.Text -> Blueprint -> Blueprint
 withBlueprintPrompt p b =
-  Blueprint b.name b.version b.description p b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations
+  Blueprint b.name b.version b.description p b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
 
 withBlueprintVars :: [VarDecl] -> Blueprint -> Blueprint
 withBlueprintVars vs b =
-  Blueprint b.name b.version b.description b.prompt vs b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations
+  Blueprint b.name b.version b.description b.prompt vs b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
 
 withBlueprintPrompts :: [Prompt] -> Blueprint -> Blueprint
 withBlueprintPrompts ps b =
-  Blueprint b.name b.version b.description b.prompt b.vars ps b.baseModules b.files b.allowedTools b.tags b.migrations
+  Blueprint b.name b.version b.description b.prompt b.vars ps b.baseModules b.files b.allowedTools b.tags b.migrations b.launch
 
 withBlueprintBaseModules :: [Dependency] -> Blueprint -> Blueprint
 withBlueprintBaseModules ds b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts ds b.files b.allowedTools b.tags b.migrations
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts ds b.files b.allowedTools b.tags b.migrations b.launch
 
 withBlueprintFiles :: [BlueprintFile] -> Blueprint -> Blueprint
 withBlueprintFiles fs b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules fs b.allowedTools b.tags b.migrations
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules fs b.allowedTools b.tags b.migrations b.launch
 
 withBlueprintAllowedTools :: Maybe [T.Text] -> Blueprint -> Blueprint
 withBlueprintAllowedTools at b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files at b.tags b.migrations
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files at b.tags b.migrations b.launch
 
 withBlueprintTags :: [T.Text] -> Blueprint -> Blueprint
 withBlueprintTags ts b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools ts b.migrations
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools ts b.migrations b.launch
 
 withBlueprintMigrations :: [BlueprintMigration] -> Blueprint -> Blueprint
 withBlueprintMigrations migrations b =
-  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags migrations
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags migrations b.launch
+
+withBlueprintLaunch :: Maybe AgentLaunch -> Blueprint -> Blueprint
+withBlueprintLaunch launch b =
+  Blueprint b.name b.version b.description b.prompt b.vars b.prompts b.baseModules b.files b.allowedTools b.tags b.migrations launch
 
 spec :: Spec
 spec = do
@@ -124,6 +129,54 @@ spec = do
                            BlueprintMigration "2.5.0" "3.0.0" "second edge"
                          ]
           Left err -> expectationFailure ("Expected migrations to decode, got: " <> show err)
+
+    it "decodes a declared launch record" $ do
+      withSystemTempDirectory "seihou-blueprint-launch-decode" $ \tmpDir -> do
+        let path = tmpDir </> "blueprint.dhall"
+        writeFile path (sampleBlueprintWithLaunchDhall "launch-bp")
+        result <- evalBlueprintFromFile path
+        case result of
+          Right b ->
+            b.launch
+              `shouldBe` Just
+                AgentLaunch
+                  { provider = Just "codex-cli",
+                    model = Just "gpt-5.6-terra",
+                    effort = Just "max",
+                    mode = Just "reserved"
+                  }
+          Left err -> expectationFailure ("Expected launch to decode, got: " <> show err)
+
+    -- Regression: blueprints authored against a schema pin that predates the
+    -- launch field must keep decoding. 'sampleBlueprintDhall' writes no
+    -- @launch@ key at all, so this exercises the decoder's 'withDefaults'.
+    it "decodes a blueprint with no launch field as Nothing" $ do
+      withSystemTempDirectory "seihou-blueprint-nolaunch-decode" $ \tmpDir -> do
+        let path = tmpDir </> "blueprint.dhall"
+        writeFile path (sampleBlueprintDhall "no-launch-bp")
+        result <- evalBlueprintFromFile path
+        case result of
+          Right b -> b.launch `shouldBe` Nothing
+          Left err -> expectationFailure ("Expected blueprint to decode, got: " <> show err)
+
+    -- Regression: a launch record written against the older three-field
+    -- schema (provider/mode/model, no effort) must still decode.
+    it "decodes a launch record that predates the effort field" $ do
+      withSystemTempDirectory "seihou-blueprint-oldlaunch-decode" $ \tmpDir -> do
+        let path = tmpDir </> "blueprint.dhall"
+        writeFile path (sampleBlueprintWithLegacyLaunchDhall "legacy-launch-bp")
+        result <- evalBlueprintFromFile path
+        case result of
+          Right b ->
+            b.launch
+              `shouldBe` Just
+                AgentLaunch
+                  { provider = Just "claude-cli",
+                    model = Just "claude-opus-4-8",
+                    effort = Nothing,
+                    mode = Nothing
+                  }
+          Left err -> expectationFailure ("Expected legacy launch to decode, got: " <> show err)
 
   describe "validateBlueprintWith (sample fixture)" $ do
     it "accepts the sample-blueprint fixture" $ do
@@ -296,6 +349,45 @@ spec = do
             hasError "resolves to a blueprint" errs `shouldBe` True
           other -> expectationFailure ("Expected ValidationError, got: " <> show other)
 
+    it "rejects a blank declared launch field" $ do
+      withSystemTempDirectory "seihou-test" $ \tmpDir -> do
+        let bad =
+              withBlueprintLaunch
+                (Just AgentLaunch {provider = Just "   ", model = Nothing, effort = Nothing, mode = Nothing})
+                goodBlueprint
+        result <- validateBlueprintWith [] tmpDir bad
+        case result of
+          Left (ValidationError _ errs) ->
+            hasError "launch.provider, if specified, must not be empty" errs `shouldBe` True
+          other -> expectationFailure ("Expected ValidationError, got: " <> show other)
+
+    it "reports every blank declared launch field" $ do
+      let bad =
+            withBlueprintLaunch
+              (Just AgentLaunch {provider = Just "", model = Just " ", effort = Just "", mode = Just "\t"})
+              goodBlueprint
+      checkBlueprintLaunch bad
+        `shouldBe` [ "launch.provider, if specified, must not be empty",
+                     "launch.model, if specified, must not be empty",
+                     "launch.effort, if specified, must not be empty",
+                     "launch.mode, if specified, must not be empty"
+                   ]
+
+    it "accepts a fully populated launch record" $ do
+      withSystemTempDirectory "seihou-test" $ \tmpDir -> do
+        let bp =
+              withBlueprintLaunch
+                (Just AgentLaunch {provider = Just "claude-cli", model = Just "claude-opus-4-8", effort = Just "max", mode = Nothing})
+                goodBlueprint
+        checkBlueprintLaunch bp `shouldBe` []
+        result <- validateBlueprintWith [] tmpDir bp
+        case result of
+          Right _ -> pure ()
+          Left err -> expectationFailure ("Expected Right, got: " <> show err)
+
+    it "accepts a blueprint that declares no launch record" $
+      checkBlueprintLaunch goodBlueprint `shouldBe` []
+
   describe "discoverRunnable for blueprints" $ do
     it "finds a blueprint when only blueprint.dhall is present" $ do
       withSystemTempDirectory "seihou-test" $ \tmpDir -> do
@@ -399,5 +491,34 @@ sampleBlueprintWithMigrationsDhall n =
            "    [ { from = \"1.0.0\", to = \"2.0.0\", prompt = \"first edge\" }",
            "    , { from = \"2.5.0\", to = \"3.0.0\", prompt = \"second edge\" }",
            "    ]",
+           "}"
+         ]
+
+-- | A blueprint declaring all four launch fields.
+sampleBlueprintWithLaunchDhall :: T.Text -> String
+sampleBlueprintWithLaunchDhall n =
+  unlines $
+    init (lines (sampleBlueprintDhall n))
+      <> [ ", launch = Some",
+           "    { provider = Some \"codex-cli\"",
+           "    , model = Some \"gpt-5.6-terra\"",
+           "    , effort = Some \"max\"",
+           "    , mode = Some \"reserved\"",
+           "    }",
+           "}"
+         ]
+
+-- | A blueprint whose launch record uses only the three fields that existed
+-- before @effort@ was added, as an artifact authored against an older schema
+-- pin would.
+sampleBlueprintWithLegacyLaunchDhall :: T.Text -> String
+sampleBlueprintWithLegacyLaunchDhall n =
+  unlines $
+    init (lines (sampleBlueprintDhall n))
+      <> [ ", launch = Some",
+           "    { provider = Some \"claude-cli\"",
+           "    , mode = None Text",
+           "    , model = Some \"claude-opus-4-8\"",
+           "    }",
            "}"
          ]

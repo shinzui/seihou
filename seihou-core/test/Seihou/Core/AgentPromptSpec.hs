@@ -1,7 +1,8 @@
 module Seihou.Core.AgentPromptSpec (tests) where
 
+import Data.List (isPrefixOf)
 import Data.Text qualified as T
-import Seihou.Core.AgentPrompt (validateAgentPrompt)
+import Seihou.Core.AgentPrompt (checkAgentPromptLaunch, validateAgentPrompt)
 import Seihou.Core.Module (DiscoveredRunnable (..), RunnableKind (..), discoverAllRunnables, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalAgentPromptFromFile)
@@ -59,6 +60,10 @@ withAgentPromptFiles :: [BlueprintFile] -> AgentPrompt -> AgentPrompt
 withAgentPromptFiles files p =
   AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts p.commandVars p.guidance files p.allowedTools p.tags p.launch
 
+withAgentPromptLaunch :: Maybe AgentLaunch -> AgentPrompt -> AgentPrompt
+withAgentPromptLaunch launch p =
+  AgentPrompt p.name p.version p.description p.prompt p.vars p.prompts p.commandVars p.guidance p.files p.allowedTools p.tags launch
+
 hasError :: T.Text -> [T.Text] -> Bool
 hasError needle = any (T.isInfixOf needle)
 
@@ -82,7 +87,35 @@ spec = do
                              "Prefer focused validation commands."
                              (Just (ExprEq "git.branch" (VText "main")))
                          ]
-            fmap (.provider) p.launch `shouldBe` Just (Just "codex-cli")
+            -- This fixture's launch record predates the effort field, so it
+            -- doubles as the regression test that effort is defaulted rather
+            -- than required.
+            p.launch
+              `shouldBe` Just
+                AgentLaunch
+                  { provider = Just "codex-cli",
+                    model = Nothing,
+                    effort = Nothing,
+                    mode = Nothing
+                  }
+          Left err -> expectationFailure ("Expected Right, got: " <> show err)
+
+    it "decodes a prompt launch record that declares an effort" $ do
+      withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
+        let promptDir = tmpDir </> "deep-review"
+        createDirectoryIfMissing True promptDir
+        writeFile (promptDir </> "prompt.dhall") (samplePromptDhallWithEffort "deep-review")
+        result <- evalAgentPromptFromFile (promptDir </> "prompt.dhall")
+        case result of
+          Right p ->
+            p.launch
+              `shouldBe` Just
+                AgentLaunch
+                  { provider = Just "claude-cli",
+                    model = Just "claude-sonnet-5",
+                    effort = Just "max",
+                    mode = Nothing
+                  }
           Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
     it "decodes prompt.dhall without guidance as an empty list" $ do
@@ -202,6 +235,34 @@ spec = do
             hasError "guidance 'Missing' references undeclared variable: repo.kind" errs `shouldBe` True
           other -> expectationFailure ("Expected ValidationError, got: " <> show other)
 
+    it "rejects a blank declared launch field" $ do
+      withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
+        let bad =
+              withAgentPromptLaunch
+                (Just AgentLaunch {provider = Nothing, model = Just " ", effort = Just "", mode = Nothing})
+                goodAgentPrompt
+        result <- validateAgentPrompt tmpDir bad
+        case result of
+          Left (ValidationError _ errs) -> do
+            hasError "launch.model, if specified, must not be empty" errs `shouldBe` True
+            hasError "launch.effort, if specified, must not be empty" errs `shouldBe` True
+          other -> expectationFailure ("Expected ValidationError, got: " <> show other)
+
+    it "accepts a fully populated launch record" $ do
+      withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
+        let p =
+              withAgentPromptLaunch
+                (Just AgentLaunch {provider = Just "claude-cli", model = Just "claude-sonnet-5", effort = Just "max", mode = Nothing})
+                goodAgentPrompt
+        checkAgentPromptLaunch p `shouldBe` []
+        result <- validateAgentPrompt tmpDir p
+        case result of
+          Right _ -> pure ()
+          Left err -> expectationFailure ("Expected Right, got: " <> show err)
+
+    it "accepts a prompt that declares no launch record" $
+      checkAgentPromptLaunch goodAgentPrompt `shouldBe` []
+
     it "checks referenced prompt files under files/" $ do
       withSystemTempDirectory "seihou-prompt" $ \tmpDir -> do
         let bad =
@@ -292,6 +353,22 @@ samplePromptDhall n =
       ", launch = Some { provider = Some \"codex-cli\", mode = None Text, model = None Text }",
       "}"
     ]
+
+-- | Like 'samplePromptDhall' but its launch record declares a model and an
+-- effort, as an artifact authored against the current schema would.
+samplePromptDhallWithEffort :: T.Text -> String
+samplePromptDhallWithEffort n =
+  unlines $
+    -- drop the closing brace and the fixture's own three-field launch line
+    filter (not . isPrefixOf ", launch =") (init (lines (samplePromptDhall n)))
+      <> [ ", launch = Some",
+           "    { provider = Some \"claude-cli\"",
+           "    , model = Some \"claude-sonnet-5\"",
+           "    , effort = Some \"max\"",
+           "    , mode = None Text",
+           "    }",
+           "}"
+         ]
 
 samplePromptDhallWithoutGuidance :: T.Text -> String
 samplePromptDhallWithoutGuidance n =

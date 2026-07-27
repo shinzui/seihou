@@ -11,7 +11,7 @@ module Seihou.Dhall.Eval
     agentPromptDecoder,
     commandVarDecoder,
     promptGuidanceDecoder,
-    agentPromptLaunchDecoder,
+    agentLaunchDecoder,
     blueprintFileDecoder,
     registryDecoder,
     registryEntryDecoder,
@@ -276,9 +276,11 @@ blueprintFileDecoder =
     )
 
 -- | Decoder for the top-level Blueprint type from Dhall.
+-- Uses 'withDefaults' to handle blueprints that predate the @migrations@ and
+-- @launch@ fields.
 blueprintDecoder :: Decoder Blueprint
 blueprintDecoder =
-  withDefaults [("migrations", emptyMigrationList)] $
+  withDefaults [("migrations", emptyMigrationList), ("launch", noneText)] $
     record
       ( Blueprint
           <$> field "name" moduleNameDecoder
@@ -292,6 +294,7 @@ blueprintDecoder =
           <*> field "allowedTools" (maybe (list strictText))
           <*> field "tags" (list strictText)
           <*> field "migrations" (list blueprintMigrationDecoder)
+          <*> field "launch" (maybe agentLaunchDecoder)
       )
 
 -- | Evaluate a @blueprint.dhall@ file and decode it into a 'Blueprint'.
@@ -344,15 +347,19 @@ commandVarDecoder =
           maxBytes = maxBytes
         }
 
--- | Decoder for optional agent prompt launch metadata.
-agentPromptLaunchDecoder :: Decoder AgentPromptLaunch
-agentPromptLaunchDecoder =
-  record
-    ( AgentPromptLaunch
-        <$> field "provider" (maybe strictText)
-        <*> field "mode" (maybe strictText)
-        <*> field "model" (maybe strictText)
-    )
+-- | Decoder for the shared launch record declared by a 'Blueprint' or an
+-- 'AgentPrompt'. @effort@ and @mode@ are defaulted so artifacts authored
+-- against a schema pin that predates them still decode.
+agentLaunchDecoder :: Decoder AgentLaunch
+agentLaunchDecoder =
+  withDefaults [("effort", noneText), ("mode", noneText)] $
+    record
+      ( AgentLaunch
+          <$> field "provider" (maybe strictText)
+          <*> field "model" (maybe strictText)
+          <*> field "effort" (maybe strictText)
+          <*> field "mode" (maybe strictText)
+      )
 
 -- | Decoder for a prompt guidance block.
 promptGuidanceDecoder :: Decoder PromptGuidance
@@ -388,7 +395,7 @@ agentPromptDecoder =
           <*> field "files" (list blueprintFileDecoder)
           <*> field "allowedTools" (maybe (list strictText))
           <*> field "tags" (list strictText)
-          <*> field "launch" (maybe agentPromptLaunchDecoder)
+          <*> field "launch" (maybe agentLaunchDecoder)
       )
 
 emptyPromptGuidanceList :: Dhall.Expr Src Void

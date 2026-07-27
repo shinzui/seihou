@@ -10,6 +10,7 @@ module Seihou.Core.AgentPrompt
     checkAgentPromptFiles,
     checkAgentPromptTags,
     checkAgentPromptAllowedTools,
+    checkAgentPromptLaunch,
   )
 where
 
@@ -38,6 +39,7 @@ validateAgentPrompt baseDir p = do
           <> checkAgentPromptGuidance p
           <> checkAgentPromptTags p
           <> checkAgentPromptAllowedTools p
+          <> checkAgentPromptLaunch p
       allErrs = pureErrs <> fileErrs
   pure $
     if null allErrs
@@ -171,6 +173,24 @@ checkAgentPromptAllowedTools p = case p.allowedTools of
     | t <- xs,
       T.null (T.strip t)
     ]
+
+-- | Every field the @launch@ record does set must be non-blank. The declared
+-- values themselves (which provider, which effort) are parsed by the CLI
+-- layer, which owns those vocabularies; core only rejects blanks.
+checkAgentPromptLaunch :: AgentPrompt -> [Text]
+checkAgentPromptLaunch p = case p.launch of
+  Nothing -> []
+  Just l ->
+    blankErr "provider" l.provider
+      <> blankErr "model" l.model
+      <> blankErr "effort" l.effort
+      <> blankErr "mode" l.mode
+  where
+    blankErr key value =
+      [ "launch." <> key <> ", if specified, must not be empty"
+      | Just v <- [value],
+        T.null (T.strip v)
+      ]
 
 findDupes :: Set.Set Text -> Set.Set Text -> [Text] -> [Text]
 findDupes _ _ [] = []
