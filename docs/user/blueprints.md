@@ -243,6 +243,17 @@ Run blueprints through the agent command:
 seihou agent run api-service "make this a payments service"
 ```
 
+Pass `--batch` for non-interactive automation. Seihou also selects batch mode
+automatically when stdin is not a terminal:
+
+```sh
+seihou agent run api-service --batch
+```
+
+Batch mode lets module `RunCommand` migrations invoke a blueprint: CLI
+providers use `claude -p` or `codex exec` with workspace access instead of
+opening a terminal UI.
+
 The runner:
 
 1. Discovers the named blueprint.

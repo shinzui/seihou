@@ -13,6 +13,7 @@ module Seihou.CLI.AgentCompletion
     buildAgentCompletionRequest,
     buildBaikaiModel,
     runAgentCompletion,
+    runAgentCompletionWithCliAccess,
     responseText,
   )
 where
@@ -28,6 +29,7 @@ import Control.Exception (try)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Vector qualified as V
+import System.Directory (getCurrentDirectory)
 
 data AgentProvider
   = AgentProviderClaudeCli
@@ -161,8 +163,19 @@ buildBaikaiModel config =
         }
 
 runAgentCompletion :: AgentCompletionRequest -> IO (Either Text Text)
-runAgentCompletion req = do
-  registerAgentProviders
+runAgentCompletion = runAgentCompletionWith registerAgentProviders
+
+-- | Run a completion while granting local CLI providers access to the current
+-- workspace and mounted blueprint references. API providers ignore this local
+-- access configuration. This is the non-interactive counterpart to the
+-- interactive launcher used by normal @seihou agent run@ sessions.
+runAgentCompletionWithCliAccess :: [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
+runAgentCompletionWithCliAccess extraDirs tools =
+  runAgentCompletionWith (registerAgentProvidersWithCliAccess extraDirs tools)
+
+runAgentCompletionWith :: IO () -> AgentCompletionRequest -> IO (Either Text Text)
+runAgentCompletionWith registerProviders req = do
+  registerProviders
   initialMessages <-
     maybe
       (pure V.empty)
@@ -200,3 +213,34 @@ registerAgentProviders = do
   CodexCli.register
   ClaudeApi.register
   OpenAIApi.register
+
+registerAgentProvidersWithCliAccess :: [FilePath] -> [String] -> IO ()
+registerAgentProvidersWithCliAccess extraDirs tools = do
+  cwd <- getCurrentDirectory
+  Baikai.registerApiProvider $
+    ClaudeCli.claudeCliProvider
+      ClaudeCli.defaultClaudeCliConfig
+        { ClaudeCli.workingDir = Just cwd,
+          ClaudeCli.extraArgs = claudeAccessArgs extraDirs tools
+        }
+  Baikai.registerApiProvider $
+    CodexCli.codexCliProvider
+      CodexCli.defaultCodexCliConfig
+        { CodexCli.workingDir = Just cwd,
+          CodexCli.extraArgs = codexAccessArgs extraDirs
+        }
+  ClaudeApi.register
+  OpenAIApi.register
+
+claudeAccessArgs :: [FilePath] -> [String] -> [Text]
+claudeAccessArgs extraDirs tools =
+  ( if null tools
+      then []
+      else ["--allowedTools", Text.intercalate "," (map Text.pack tools)]
+  )
+    <> concatMap (\dir -> ["--add-dir", Text.pack dir]) extraDirs
+
+codexAccessArgs :: [FilePath] -> [Text]
+codexAccessArgs extraDirs =
+  ["--sandbox", "workspace-write"]
+    <> concatMap (\dir -> ["--add-dir", Text.pack dir]) extraDirs

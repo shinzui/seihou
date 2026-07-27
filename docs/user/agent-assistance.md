@@ -13,8 +13,8 @@ prompt as a completion request and print one response.
 
 | Provider | Requirement | Behavior |
 |----------|-------------|----------|
-| `claude-cli` | Local `claude` binary on `PATH` and authenticated | Starts an interactive Claude Code session. |
-| `codex-cli` | Local `codex` binary on `PATH` and authenticated | Starts an interactive Codex session with workspace-write sandboxing and on-request approvals. |
+| `claude-cli` | Local `claude` binary on `PATH` and authenticated | Starts interactive Claude Code by default; `--batch` uses `claude -p`. |
+| `codex-cli` | Local `codex` binary on `PATH` and authenticated | Starts interactive Codex by default; `--batch` uses `codex exec` with workspace-write sandboxing. |
 | `anthropic` | `ANTHROPIC_API_KEY` or `ANTHROPIC_KEY` | Calls the Anthropic Messages API directly (non-interactive). |
 | `openai` | `OPENAI_API_KEY` or `OPENAI_KEY` | Calls the OpenAI Chat Completions API directly (non-interactive). |
 
@@ -227,6 +227,19 @@ successful run in `.seihou/manifest.json`. For interactive `claude-cli` and
 `codex-cli` sessions, it mounts the blueprint's existing `files/` directory and
 prints the absolute path so the agent can read declared references directly.
 API providers instead receive ask-the-user fallback guidance.
+
+Use `--batch` when a blueprint must run without an interactive terminal, such
+as from a module migration command:
+
+```sh
+seihou agent run api-service --batch
+```
+
+Seihou also selects batch mode automatically when stdin is not a terminal.
+Batch CLI runs preserve the working directory, blueprint tool policy, and
+mounted references while using `claude -p` or `codex exec`. Explicit `--batch`
+is recommended in reusable automation because it documents the intended launch
+mode.
 
 Blueprint `allowedTools` entries are added to the base runner tools with
 duplicates removed. Claude Code receives the effective list through

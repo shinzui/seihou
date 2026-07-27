@@ -339,6 +339,7 @@ data BlueprintRunOpts = BlueprintRunOpts
     runBlueprintContext :: Maybe Text,
     runBlueprintVerbose :: Bool,
     runBlueprintForce :: Bool,
+    runBlueprintBatch :: Bool,
     runBlueprintProvider :: Maybe Text,
     runBlueprintModel :: Maybe Text,
     runBlueprintEffort :: Maybe Text
@@ -1678,6 +1679,8 @@ agentRunInfo =
                   pretty ("Pass --no-baseline to skip baseline application; --debug (on the parent" :: String),
                   pretty ("'seihou agent --debug') prints the resolved system prompt without" :: String),
                   pretty ("contacting the configured provider." :: String),
+                  pretty ("Pass --batch to use a non-interactive CLI provider; Seihou selects" :: String),
+                  pretty ("batch mode automatically when stdin is not a terminal." :: String),
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
@@ -1686,6 +1689,7 @@ agentRunInfo =
                         pretty ("seihou agent run my-blueprint \"set this up for billing\"" :: String),
                         pretty ("seihou agent run my-blueprint --var service.name=billing" :: String),
                         pretty ("seihou agent run my-blueprint --no-baseline" :: String),
+                        pretty ("seihou agent run my-blueprint --batch" :: String),
                         pretty ("seihou agent --debug run my-blueprint" :: String)
                       ]
                 ]
@@ -1708,6 +1712,7 @@ agentRunParser =
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
       <*> switch (long "force" <> help "Auto-resolve baseline conflicts (accept new files)")
+      <*> switch (long "batch" <> help "Run a non-interactive CLI provider (automatic when stdin is not a terminal)")
       <*> providerOption
       <*> modelOption
       <*> effortOption

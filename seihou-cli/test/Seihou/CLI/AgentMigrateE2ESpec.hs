@@ -24,6 +24,77 @@ import Test.Tasty.Hspec (testSpec)
 
 tests :: IO TestTree
 tests = testSpec "Agent migrate end-to-end" $ do
+  it "exposes non-interactive blueprint runs in help" $ do
+    binary <- seihouBinary
+    (exitCode, output, _) <- runProcessText binary ["agent", "run", "--help"] Nothing Nothing
+    exitCode `shouldBe` ExitSuccess
+    output `shouldSatisfy` T.isInfixOf "--batch"
+    output `shouldSatisfy` T.isInfixOf "stdin is not a terminal"
+
+  it "automatically uses the batch CLI provider when stdin is not a terminal" $
+    withSystemTempDirectory "seihou-agent-run-batch" $ \root -> do
+      binary <- seihouBinary
+      let blueprintDir = root </> ".seihou" </> "modules" </> "batch-blueprint"
+          blueprintPath = blueprintDir </> "blueprint.dhall"
+          referencePath = blueprintDir </> "files" </> "reference.md"
+          manifestPath = root </> ".seihou" </> "manifest.json"
+          xdgHome = root </> "xdg"
+          fakeBin = root </> "bin"
+          fakeClaude = fakeBin </> "claude"
+          launchLog = root </> "agent-launch.args"
+          workspaceFile = root </> "batch-ran.txt"
+      createDirectoryIfMissing True blueprintDir
+      createDirectoryIfMissing True (takeDirectory referencePath)
+      createDirectoryIfMissing True xdgHome
+      createDirectoryIfMissing True fakeBin
+      TIO.writeFile blueprintPath batchBlueprintDhall
+      TIO.writeFile referencePath "batch reference"
+      TIO.writeFile
+        fakeClaude
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf 'edited\\n' > \"$SEIHOU_FAKE_WORKSPACE_FILE\"\nprintf '%s\\n' '{\"result\":\"batch complete\",\"is_error\":false,\"session_id\":\"fake\"}'\n"
+      permissions <- getPermissions fakeClaude
+      setPermissions fakeClaude (permissions {executable = True})
+
+      inherited <- getEnvironment
+      let inheritedPath = fromMaybe "" (lookup "PATH" inherited)
+          overriddenNames =
+            [ "PATH",
+              "XDG_CONFIG_HOME",
+              "SEIHOU_AGENT_PROVIDER",
+              "SEIHOU_AGENT_MODEL",
+              "SEIHOU_CONTEXT",
+              "SEIHOU_FAKE_AGENT_LOG",
+              "SEIHOU_FAKE_WORKSPACE_FILE"
+            ]
+          environment =
+            ("PATH", fakeBin <> [searchPathSeparator] <> inheritedPath)
+              : ("XDG_CONFIG_HOME", xdgHome)
+              : ("SEIHOU_AGENT_PROVIDER", "claude-cli")
+              : ("SEIHOU_FAKE_AGENT_LOG", launchLog)
+              : ("SEIHOU_FAKE_WORKSPACE_FILE", workspaceFile)
+              : filter (\(key, _) -> key `notElem` overriddenNames) inherited
+
+      (exitCode, output, errorOutput) <-
+        runProcessText binary ["agent", "run", "batch-blueprint"] (Just root) (Just environment)
+      case exitCode of
+        ExitSuccess -> pure ()
+        ExitFailure code ->
+          expectationFailure $
+            "batch run exited "
+              <> show code
+              <> "\nstdout:\n"
+              <> T.unpack output
+              <> "\nstderr:\n"
+              <> T.unpack errorOutput
+      output `shouldSatisfy` T.isInfixOf "batch complete"
+      doesFileExist workspaceFile `shouldReturn` True
+      doesFileExist manifestPath `shouldReturn` True
+      launchArgs <- T.lines <$> TIO.readFile launchLog
+      launchArgs `shouldSatisfy` elem "-p"
+      launchArgs `shouldSatisfy` elem "--allowedTools"
+      launchArgs `shouldSatisfy` elem "--add-dir"
+      launchArgs `shouldSatisfy` elem (T.pack (blueprintDir </> "files"))
+
   it "exposes the required version window and rerun option in help" $ do
     binary <- seihouBinary
     (exitCode, output, _) <- runProcessText binary ["agent", "migrate", "--help"] Nothing Nothing
@@ -187,5 +258,22 @@ migrationBlueprintDhall =
       "  [ { from = \"2.5.0\", to = \"3.0.0\", prompt = \"Finish the baikai upgrade.\" }",
       "  , { from = \"1.0.0\", to = \"2.0.0\", prompt = \"Replace {{library.name}} legacy calls.\" }",
       "  ]",
+      "}"
+    ]
+
+batchBlueprintDhall :: T.Text
+batchBlueprintDhall =
+  T.unlines
+    [ "{ name = \"batch-blueprint\"",
+      ", version = Some \"1.0.0\"",
+      ", description = Some \"Batch blueprint fixture\"",
+      ", prompt = \"Use the mounted reference and update the workspace.\"",
+      ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+      ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+      ", baseModules = [] : List { module : Text, vars : List { name : Text, value : Text } }",
+      ", files = [ { src = \"reference.md\", description = Some \"Batch reference\" } ]",
+      ", allowedTools = Some [ \"Read\", \"Write\" ]",
+      ", tags = [ \"test\" ]",
+      ", migrations = [] : List { from : Text, to : Text, prompt : Text }",
       "}"
     ]

@@ -27,7 +27,7 @@ import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
     AgentProvider (..),
     buildAgentCompletionRequest,
-    runAgentCompletion,
+    runAgentCompletionWithCliAccess,
   )
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
@@ -87,6 +87,7 @@ import Seihou.Prelude
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory, (</>))
+import System.IO (hIsTerminalDevice, stdin)
 
 -- | The prompt template, embedded at compile time from data/blueprint-prompt.md.
 promptTemplate :: Text
@@ -95,6 +96,8 @@ promptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-prompt.md")
 handleAgentRun :: Bool -> AgentModelConfig -> BlueprintRunOpts -> IO ()
 handleAgentRun debug modelConfig opts = do
   let level = if opts.runBlueprintVerbose then LogVerbose else LogNormal
+  stdinIsTerminal <- hIsTerminalDevice stdin
+  let batch = opts.runBlueprintBatch || not stdinIsTerminal
 
   -- (a) Discover and validate. discoverRunnable resolves by directory
   -- name (priority: module > recipe > blueprint).
@@ -157,8 +160,9 @@ handleAgentRun debug modelConfig opts = do
 
   -- (f) Launch.
   launchSucceeded <-
-    runRenderedAgentPrompt
+    runRenderedAgentPromptMode
       debug
+      batch
       modelConfig
       prepared.preparedAllowedTools
       prepared.preparedMountedFilesDir
@@ -183,11 +187,14 @@ handleAgentRun debug modelConfig opts = do
               <> err
 
 runRenderedAgentPrompt :: Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
-runRenderedAgentPrompt debug modelConfig tools mFilesDir systemPrompt initialPrompt
+runRenderedAgentPrompt debug = runRenderedAgentPromptMode debug False
+
+runRenderedAgentPromptMode :: Bool -> Bool -> AgentModelConfig -> [String] -> Maybe FilePath -> Text -> Maybe Text -> IO Bool
+runRenderedAgentPromptMode debug batch modelConfig tools mFilesDir systemPrompt initialPrompt
   | debug = do
       TIO.putStr systemPrompt
       pure True
-  | modelConfig.agentProvider == AgentProviderClaudeCli || modelConfig.agentProvider == AgentProviderCodexCli = do
+  | not batch && (modelConfig.agentProvider == AgentProviderClaudeCli || modelConfig.agentProvider == AgentProviderCodexCli) = do
       exitCode <-
         launchConfiguredAgentAddingDirs
           (maybeToList mFilesDir)
@@ -200,7 +207,11 @@ runRenderedAgentPrompt debug modelConfig tools mFilesDir systemPrompt initialPro
         ExitSuccess -> pure True
         ExitFailure _ -> exitWith exitCode
   | otherwise = do
-      result <- runAgentCompletion (buildAgentCompletionRequest modelConfig systemPrompt initialPrompt)
+      result <-
+        runAgentCompletionWithCliAccess
+          (maybeToList mFilesDir)
+          tools
+          (buildAgentCompletionRequest modelConfig systemPrompt initialPrompt)
       case result of
         Right assistantText -> do
           TIO.putStrLn assistantText
