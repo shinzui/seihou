@@ -3,11 +3,11 @@
     "baikai-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1784565401,
-        "narHash": "sha256-h4bTdTBgOMNxv8PaEO7q3m6P4BZimIntGrY0rF/E8ag=",
+        "lastModified": 1784593450,
+        "narHash": "sha256-KrKZUdRiymrVJ2kfSNcHeZR1agi1/gG6Uxi0xPHTahI=",
         "owner": "shinzui",
         "repo": "baikai",
-        "rev": "d6d53b81b69bb4bd79e8cf19bc4eb86900180059",
+        "rev": "4b2c991246b246c061a62112ce94a96bf2ee76b6",
         "type": "github"
       },
       "original": {
@@ -100,18 +100,22 @@
         "nixpkgs": [
           "nixpkgs"
         ],
+        "okf-src": "okf-src",
+        "openapi-hs-src": "openapi-hs-src",
         "pg-migrate-src": "pg-migrate-src",
         "pgmq-hs-src": "pgmq-hs-src",
+        "relay-pagination-src": "relay-pagination-src",
+        "servant-openapi-hs-src": "servant-openapi-hs-src",
         "settei-src": "settei-src",
         "shibuya-src": "shibuya-src",
         "shikumi-src": "shikumi-src"
       },
       "locked": {
-        "lastModified": 1784567879,
-        "narHash": "sha256-XDjF3SYzJgS0ImWDr8TDwqqRVGZ8I30zImDkqfZwNiA=",
+        "lastModified": 1785088513,
+        "narHash": "sha256-5EgQ7BG0ny3mVS+kocKnkz213l5QrFhAeSRKpCxeAcA=",
         "owner": "shinzui",
         "repo": "haskell-nix",
-        "rev": "ab4f2c3538488659f94ea1616228ee65f4a190c4",
+        "rev": "999e6addda204a4ee435773463eb0e6023c09e26",
         "type": "github"
       },
       "original": {
@@ -220,6 +224,38 @@
         "type": "github"
       }
     },
+    "okf-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1785074902,
+        "narHash": "sha256-t8jWKH6Eg3G77ttingan46fKVvTpqsKTgeKvMWfvlr0=",
+        "owner": "shinzui",
+        "repo": "okf",
+        "rev": "18bcd46b26b79f72f2b2e2becd4582d7e19ccc37",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "okf",
+        "type": "github"
+      }
+    },
+    "openapi-hs-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784666864,
+        "narHash": "sha256-2dgC1aL4L3W5ABzsvaBIT7KLSypZpGihZbdFHFfMrhs=",
+        "owner": "shinzui",
+        "repo": "openapi-hs",
+        "rev": "06fc11713094bf39ac00353b052f4ded5a534567",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "openapi-hs",
+        "type": "github"
+      }
+    },
     "pg-migrate-src": {
       "flake": false,
       "locked": {
@@ -274,6 +310,22 @@
         "type": "github"
       }
     },
+    "relay-pagination-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784243082,
+        "narHash": "sha256-kprMYSNZiexZz7AlBg3srITq6o4QagyrzNZH+OmbQwE=",
+        "owner": "shinzui",
+        "repo": "relay-pagination",
+        "rev": "634ef07eaa27676be0edda330209f0710abb145b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "relay-pagination",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "flake-parts": "flake-parts",
@@ -305,6 +357,22 @@
       "original": {
         "type": "git",
         "url": "file:./schema"
+      }
+    },
+    "servant-openapi-hs-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784670356,
+        "narHash": "sha256-4U2GKooWZyJQlCBPqrbzVrEAFdNStQPoI7ne8M8iwFY=",
+        "owner": "shinzui",
+        "repo": "servant-openapi-hs",
+        "rev": "5eef3d48fc9c6efb5eeae1877e031bbc4e1b7190",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "servant-openapi-hs",
+        "type": "github"
       }
     },
     "settei-src": {
@@ -342,11 +410,11 @@
     "shikumi-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1783222763,
-        "narHash": "sha256-NhsJUfH8Zw0VHL9xZQUGJOJ1CQhibvi9BCuqULEUrbs=",
+        "lastModified": 1784597799,
+        "narHash": "sha256-DC9T4xifsc/i0wMZPTLRwPDUzR0wGGjALKAWqUGLjqg=",
         "owner": "shinzui",
         "repo": "shikumi",
-        "rev": "0df4d85928c79cbfe78d7880a263fc0b9696ddc2",
+        "rev": "580b6c70a58bc96a8d52502c2e7c9376d2c46a15",
         "type": "github"
       },
       "original": {

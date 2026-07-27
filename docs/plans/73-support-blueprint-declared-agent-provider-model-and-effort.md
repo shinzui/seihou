@@ -108,8 +108,9 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 2 — Core domain and decoder: `AgentLaunch` type, `Blueprint.launch` field,
       backward-compatible decoders, core validation rule, unit tests. Done 2026-07-27, commit
       `9a84885`. `cabal test all` green (seihou-core 1034 tests, up from 1023).
-- [ ] Milestone 3 — Resolution: new declaration tier in `Seihou.CLI.AgentConfig`, deferred
-      resolution API, provenance label, precedence unit tests.
+- [x] Milestone 3 — Resolution: new declaration tier in `Seihou.CLI.AgentConfig`, deferred
+      resolution API, provenance label, precedence unit tests. Done 2026-07-27, commit `331aa62`;
+      25 new cases in `AgentConfigSpec`, `cabal test seihou-cli` green (371 tests).
 - [ ] Milestone 4 — Wiring: `seihou agent run`, `seihou agent migrate`, and `seihou prompt run`
       resolve after loading the artifact; verbose provenance line; end-to-end argv test.
 - [ ] Milestone 5 — Validation and scaffolding: `validate-blueprint` / `validate-prompt` checks,
@@ -153,6 +154,42 @@ implementation. Provide concise evidence.
   path, so there is no commit hash to edit and only `flake.lock` needs refreshing. The skill has
   been rewritten to say so, to name the canonical repository and both checkouts, to require
   pushing inside the submodule before re-pinning, and to warn against rewriting a published pin.
+
+- **Discovery (2026-07-27): the pinned Baikai dropped reasoning effort on the batch CLI path, so
+  the plan's argv acceptance could not hold as written.** A scratch run with a fake `claude` on
+  `PATH` recorded the argv Seihou actually spawns for a blueprint declaring
+  `effort = Some "max"`:
+
+  ```text
+  -p
+  --model
+  claude-sonnet-5
+  --output-format
+  json
+  --no-session-persistence
+  --system-prompt
+  ...
+  ```
+
+  `--model claude-sonnet-5` arrived; `--effort` was absent. The same happened with
+  `SEIHOU_AGENT_EFFORT=max` and no declaration at all, which proves the gap predates this plan
+  rather than being introduced by it. Seihou's own accounting was correct throughout — the
+  `--verbose` provenance line read `effort max [blueprint: launch.effort]`, and
+  `Seihou.CLI.AgentCompletion.runAgentCompletionWith` does set
+  `BaikaiOptions.thinking = req.completionModelConfig.agentEffort`.
+
+  The cause was the dependency pin. `flake.lock` pinned baikai at `d6d53b8` (the
+  `baikai 0.4.0.0` / `baikai-claude 0.3.0.2` release). That release renders `--effort` for
+  **interactive** Claude Code launches but not for **batch** `claude -p` calls; the batch
+  forwarding landed later in baikai commit `4d4e110` ("forward Options.thinking as
+  reasoning-effort flags"), released as `baikai-claude 0.4.0.0`. So a blueprint-declared effort
+  already reached the agent for ordinary interactive `seihou agent run`, and was silently dropped
+  only when stdin was not a terminal — which is exactly the mode the end-to-end harness runs in.
+
+  Resolved by bumping the pin (see Decision Log). The `0.4.0.0` bump is labelled breaking only
+  because `claudeCliCommand` and `codexCliCommand` gained an `Options` parameter; a
+  repository-wide grep found no call to either from `seihou-cli` or `seihou-core`, so the bump is
+  bounds-only with no code change.
 
 - **Discovery (2026-07-27): existing prompt fixtures pin the old three-field `launch` record.**
   `seihou-core/test/Seihou/Core/AgentPromptSpec.hs:292`, `RegistrySpec.hs:872`,
@@ -225,6 +262,19 @@ Record every decision made while working on the plan.
   (`seihou-core/seihou-core.cabal` build-depends has no `baikai`), so duplicating the vocabularies
   there would guarantee drift. `seihou-core` therefore only checks that a declared value is not
   blank; the CLI parses it.
+  Date: 2026-07-27
+
+- Decision: bump the Baikai pin to `baikai 0.4.1.0` / `baikai-claude 0.4.0.0` /
+  `baikai-openai 0.4.0.0` as part of this plan, rather than shipping a weaker acceptance test.
+  Rationale: user selection, after the discovery above showed the previously pinned
+  `baikai-claude 0.3.0.2` forwards `--effort` only on the interactive path. Without the bump this
+  plan's headline promise — that a declared effort reaches the agent — would silently not hold
+  whenever stdin is not a terminal (CI, pipes, `--batch`), and the plan's end-to-end argv
+  assertion could not be written as specified. The bump's "breaking" label covers only the
+  `claudeCliCommand` / `codexCliCommand` signatures, which no seihou module calls, so it is a
+  bounds-only change. This revises the plan's original "no new external dependencies, this plan
+  adds no new Baikai surface" framing in Interfaces and Dependencies: no new dependency is added,
+  but an existing one moves.
   Date: 2026-07-27
 
 - Decision: link the work to Intention `intention_01kyhtawwsenmtpjxd7sj1c8xc`, minted with

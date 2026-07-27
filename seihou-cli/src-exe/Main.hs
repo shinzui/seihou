@@ -8,7 +8,7 @@ import Data.Text (Text)
 import Data.Text.IO qualified as TIO
 import Options.Applicative (customExecParser, prefs, showHelpOnEmpty)
 import Seihou.CLI.AgentCompletion qualified as AgentCompletion
-import Seihou.CLI.AgentConfig (AgentCommandName (..), loadAgentModelConfigFor)
+import Seihou.CLI.AgentConfig (AgentCommandName (..), PendingAgentConfig, loadAgentModelConfigFor, loadPendingAgentConfig)
 import Seihou.CLI.AgentConfigShow (handleAgentConfigShow)
 import Seihou.CLI.AgentMigrate (handleAgentMigrate)
 import Seihou.CLI.AgentModels qualified as AgentModels
@@ -143,11 +143,11 @@ dispatch cmd =
           modelConfig <- resolveAgentModelConfigFor AgentCmdSetup agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort setupOpts.setupProvider setupOpts.setupModel setupOpts.setupEffort
           handleSetup agentOpts.agentDebug modelConfig setupOpts
         AgentRun blueprintRunOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdRun agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel blueprintRunOpts.runBlueprintEffort
-          handleAgentRun agentOpts.agentDebug modelConfig blueprintRunOpts
+          pending <- pendingAgentConfigFor AgentCmdRun agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort blueprintRunOpts.runBlueprintProvider blueprintRunOpts.runBlueprintModel blueprintRunOpts.runBlueprintEffort
+          handleAgentRun agentOpts.agentDebug pending blueprintRunOpts
         AgentMigrate migrationOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdMigrate agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort migrationOpts.migrateBlueprintProvider migrationOpts.migrateBlueprintModel migrationOpts.migrateBlueprintEffort
-          handleAgentMigrate agentOpts.agentDebug modelConfig migrationOpts
+          pending <- pendingAgentConfigFor AgentCmdMigrate agentOpts.agentProvider agentOpts.agentModel agentOpts.agentEffort migrationOpts.migrateBlueprintProvider migrationOpts.migrateBlueprintModel migrationOpts.migrateBlueprintEffort
+          handleAgentMigrate agentOpts.agentDebug pending migrationOpts
         AgentModels modelsOpts ->
           case agentOpts.agentModel of
             Just _ -> do
@@ -169,8 +169,8 @@ dispatch cmd =
     Prompt promptCmd -> do
       case promptCmd of
         PromptRun promptRunOpts -> do
-          modelConfig <- resolveAgentModelConfigFor AgentCmdPromptRun Nothing Nothing Nothing promptRunOpts.runPromptProvider promptRunOpts.runPromptModel promptRunOpts.runPromptEffort
-          handlePromptRun modelConfig promptRunOpts
+          pending <- pendingAgentConfigFor AgentCmdPromptRun Nothing Nothing Nothing promptRunOpts.runPromptProvider promptRunOpts.runPromptModel promptRunOpts.runPromptEffort
+          handlePromptRun pending promptRunOpts
     Extension extensionCmd -> do
       case extensionCmd of
         ExtensionRun extensionRunOpts ->
@@ -206,3 +206,33 @@ resolveAgentModelConfigFor cmd parentProvider parentModel parentEffort commandPr
       TIO.putStrLn $ "Error: " <> err
       exitFailure
     Right config -> pure config
+
+-- | Gather flags, environment, and config for a command whose artifact may
+-- declare its own launch settings, stopping one step short of resolution.
+--
+-- The blueprint or prompt is not loaded until the handler runs, so the handler
+-- finishes resolution itself with 'resolveDeclaredAgentConfig' once it knows
+-- what the artifact declares. Flag combination and error reporting match
+-- 'resolveAgentModelConfigFor' exactly.
+pendingAgentConfigFor ::
+  AgentCommandName ->
+  -- | parent @seihou agent@ provider, model, effort
+  Maybe Text ->
+  Maybe Text ->
+  Maybe Text ->
+  -- | subcommand provider, model, effort
+  Maybe Text ->
+  Maybe Text ->
+  Maybe Text ->
+  IO PendingAgentConfig
+pendingAgentConfigFor cmd parentProvider parentModel parentEffort commandProvider commandModel commandEffort = do
+  let provider = commandProvider <|> parentProvider
+      model = commandModel <|> parentModel
+      effort = commandEffort <|> parentEffort
+  pendingResult <-
+    loadPendingAgentConfig cmd provider model effort (isJust commandProvider) (isJust commandModel) (isJust commandEffort)
+  case pendingResult of
+    Left err -> do
+      TIO.putStrLn $ "Error: " <> err
+      exitFailure
+    Right pending -> pure pending

@@ -20,8 +20,10 @@ in
   # baikai, baikai-claude, baikai-openai, and baikai-kit are supplied by the
   # shared haskell-nix registry overlay (composed ahead of this one in
   # ../flake.module.nix), which builds the whole baikai family from its GitHub
-  # source — baikai 0.4.0.0 (reasoning-effort support), baikai-claude/openai
-  # 0.3.0.2, baikai-kit 0.1.0.3 — already wrapped with dontCheck + doJailbreak.
+  # source — baikai 0.4.1.0, baikai-claude/openai 0.4.0.0 (which forward
+  # Options.thinking to the batch `claude -p` / `codex exec` invocations as a
+  # reasoning-effort flag, not just to interactive launches), baikai-kit
+  # 0.1.0.3 — already wrapped with dontCheck + doJailbreak.
   # Only okf-core, which is not registered there, needs a local Hackage pin.
 
   # The 0.1.2.0 Hackage sdist omits dhall/ and test/fixtures/, which its

@@ -7,7 +7,11 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
-import Seihou.CLI.AgentCompletion (AgentModelConfig)
+import Seihou.CLI.AgentConfig
+  ( PendingAgentConfig,
+    agentLaunchDeclaration,
+    resolveDeclaredAgentConfig,
+  )
 import Seihou.CLI.AgentLaunch (gatherAgentContext, setupAllowedTools)
 import Seihou.CLI.AgentRun (runRenderedAgentPrompt)
 import Seihou.CLI.Commands (PromptRunOpts (..))
@@ -40,8 +44,8 @@ import Seihou.Prelude
 import System.Environment (getEnvironment)
 import System.Exit (exitFailure)
 
-handlePromptRun :: AgentModelConfig -> PromptRunOpts -> IO ()
-handlePromptRun modelConfig opts = do
+handlePromptRun :: PendingAgentConfig -> PromptRunOpts -> IO ()
+handlePromptRun pending opts = do
   let level = if opts.runPromptVerbose then LogVerbose else LogNormal
 
   searchPaths <- defaultSearchPaths
@@ -75,6 +79,15 @@ handlePromptRun modelConfig opts = do
   case validation of
     Left err -> exitErr level (renderModuleLoadError err)
     Right _ -> pure ()
+
+  -- Finish provider/model/effort resolution now that the prompt is loaded, so
+  -- an unusable declaration is reported alongside the prompt's other errors.
+  modelConfig <-
+    resolveDeclaredAgentConfig
+      level
+      ("prompt '" <> prompt.name.unModuleName <> "'")
+      pending
+      (agentLaunchDeclaration prompt.launch)
 
   let placeholderModule =
         Module

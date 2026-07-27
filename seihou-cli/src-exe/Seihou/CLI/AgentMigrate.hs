@@ -17,6 +17,11 @@ import Seihou.CLI.AgentCompletion
     buildAgentCompletionRequest,
     runAgentCompletion,
   )
+import Seihou.CLI.AgentConfig
+  ( PendingAgentConfig,
+    agentLaunchDeclaration,
+    resolveDeclaredAgentConfig,
+  )
 import Seihou.CLI.AgentLaunch (gatherAgentContext)
 import Seihou.CLI.AgentLaunchExec (launchConfiguredAgentAddingDirs)
 import Seihou.CLI.AppliedBlueprintMigration (recordAppliedBlueprintMigration)
@@ -55,8 +60,8 @@ import System.Exit (ExitCode (..), exitFailure, exitWith)
 migrationPromptTemplate :: Text
 migrationPromptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-migration-prompt.md")
 
-handleAgentMigrate :: Bool -> AgentModelConfig -> BlueprintMigrationOpts -> IO ()
-handleAgentMigrate debug modelConfig opts = do
+handleAgentMigrate :: Bool -> PendingAgentConfig -> BlueprintMigrationOpts -> IO ()
+handleAgentMigrate debug pendingConfig opts = do
   let level = if opts.migrateBlueprintVerbose then LogVerbose else LogNormal
       manifestPath = ".seihou" </> "manifest.json"
 
@@ -65,6 +70,16 @@ handleAgentMigrate debug modelConfig opts = do
   case validationResult of
     Left err -> exitErr level (renderModuleLoadError err)
     Right _ -> pure ()
+
+  -- Finish provider/model/effort resolution now that the blueprint is loaded:
+  -- `agent migrate` reads the same Blueprint record as `agent run`, so it
+  -- honors the same launch declaration.
+  modelConfig <-
+    resolveDeclaredAgentConfig
+      level
+      ("blueprint '" <> blueprint.name.unModuleName <> "'")
+      pendingConfig
+      (agentLaunchDeclaration blueprint.launch)
 
   current <- parseRequestedVersion level "--from" opts.migrateBlueprintFrom
   target <- parseRequestedVersion level "--to" opts.migrateBlueprintTo

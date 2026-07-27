@@ -29,6 +29,11 @@ import Seihou.CLI.AgentCompletion
     buildAgentCompletionRequest,
     runAgentCompletionWithCliAccess,
   )
+import Seihou.CLI.AgentConfig
+  ( PendingAgentConfig,
+    agentLaunchDeclaration,
+    resolveDeclaredAgentConfig,
+  )
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
     BaselineStatus (..),
@@ -93,8 +98,8 @@ import System.IO (hIsTerminalDevice, stdin)
 promptTemplate :: Text
 promptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-prompt.md")
 
-handleAgentRun :: Bool -> AgentModelConfig -> BlueprintRunOpts -> IO ()
-handleAgentRun debug modelConfig opts = do
+handleAgentRun :: Bool -> PendingAgentConfig -> BlueprintRunOpts -> IO ()
+handleAgentRun debug pending opts = do
   let level = if opts.runBlueprintVerbose then LogVerbose else LogNormal
   stdinIsTerminal <- hIsTerminalDevice stdin
   let batch = opts.runBlueprintBatch || not stdinIsTerminal
@@ -120,6 +125,17 @@ handleAgentRun debug modelConfig opts = do
           <> opts.runBlueprintName.unModuleName
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
+
+  -- Finish provider/model/effort resolution now that the blueprint is loaded
+  -- and its launch declaration is known. This must precede the
+  -- providerCanMountFiles computation below, which depends on the final
+  -- provider.
+  modelConfig <-
+    resolveDeclaredAgentConfig
+      level
+      ("blueprint '" <> bp.name.unModuleName <> "'")
+      pending
+      (agentLaunchDeclaration bp.launch)
 
   let providerCanMountFiles =
         modelConfig.agentProvider == AgentProviderClaudeCli
