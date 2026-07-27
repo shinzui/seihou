@@ -95,6 +95,35 @@ tests = testSpec "Agent migrate end-to-end" $ do
       launchArgs `shouldSatisfy` elem "--add-dir"
       launchArgs `shouldSatisfy` elem (T.pack (blueprintDir </> "files"))
 
+  -- The two cases below are the end-to-end proof that a blueprint's own launch
+  -- declaration reaches the spawned agent process, rather than only reaching
+  -- seihou's internal accounting. They read back the argv the fake `claude`
+  -- script was called with.
+  it "applies a blueprint-declared model and effort to the launched agent" $
+    withDeclaredLaunchBlueprint $ \root blueprintName runDeclared -> do
+      (exitCode, output, errorOutput, launchArgs) <- runDeclared []
+      expectSuccess "declared launch run" exitCode output errorOutput
+      output `shouldSatisfy` T.isInfixOf "declared complete"
+      launchArgs `shouldSatisfy` elem "--model"
+      launchArgs `shouldSatisfy` elem "claude-sonnet-5"
+      launchArgs `shouldSatisfy` elem "--effort"
+      launchArgs `shouldSatisfy` elem "max"
+      -- Sanity: nothing in the environment or config supplied these; they came
+      -- from the blueprint, whose directory is under this temp root.
+      root `shouldSatisfy` (not . null)
+      blueprintName `shouldBe` "declared-launch"
+
+  it "lets a --model flag override the blueprint declaration" $
+    withDeclaredLaunchBlueprint $ \_ _ runDeclared -> do
+      (exitCode, output, errorOutput, launchArgs) <- runDeclared ["--model", "claude-opus-4-8"]
+      expectSuccess "flag override run" exitCode output errorOutput
+      launchArgs `shouldSatisfy` elem "claude-opus-4-8"
+      launchArgs `shouldNotSatisfy` elem "claude-sonnet-5"
+      -- Only the field the flag names moves; effort still comes from the
+      -- blueprint.
+      launchArgs `shouldSatisfy` elem "--effort"
+      launchArgs `shouldSatisfy` elem "max"
+
   it "exposes the required version window and rerun option in help" $ do
     binary <- seihouBinary
     (exitCode, output, _) <- runProcessText binary ["agent", "migrate", "--help"] Nothing Nothing
@@ -232,6 +261,109 @@ runProcessText binary args workingDirectory environment = do
   let command = (proc binary args) {cwd = workingDirectory, env = environment}
   (exitCode, stdoutText, stderrText) <- readCreateProcessWithExitCode command ""
   pure (exitCode, T.pack stdoutText, T.pack stderrText)
+
+-- | Fail with the captured streams when a run that was expected to succeed
+-- did not.
+expectSuccess :: String -> ExitCode -> T.Text -> T.Text -> Expectation
+expectSuccess label exitCode output errorOutput = case exitCode of
+  ExitSuccess -> pure ()
+  ExitFailure code ->
+    expectationFailure $
+      label
+        <> " exited "
+        <> show code
+        <> "\nstdout:\n"
+        <> T.unpack output
+        <> "\nstderr:\n"
+        <> T.unpack errorOutput
+
+-- | Stand up a scratch project holding a blueprint that declares a model and
+-- an effort, with a fake @claude@ first on @PATH@ that records its argv, an
+-- empty @XDG_CONFIG_HOME@ so no real user config leaks in, and every
+-- @SEIHOU_AGENT_*@ variable scrubbed from the inherited environment. Nothing
+-- outside the blueprint supplies a model or effort, so whatever reaches the
+-- recorded argv came from the declaration.
+--
+-- The callback receives the project root, the blueprint's name, and a runner
+-- that takes extra @seihou agent run@ arguments and returns the exit code, the
+-- two output streams, and the recorded argv lines.
+withDeclaredLaunchBlueprint ::
+  (FilePath -> T.Text -> ([String] -> IO (ExitCode, T.Text, T.Text, [T.Text])) -> IO a) ->
+  IO a
+withDeclaredLaunchBlueprint action =
+  withSystemTempDirectory "seihou-agent-run-declared-launch" $ \root -> do
+    binary <- seihouBinary
+    let blueprintDir = root </> ".seihou" </> "modules" </> "declared-launch"
+        blueprintPath = blueprintDir </> "blueprint.dhall"
+        xdgHome = root </> "xdg"
+        fakeBin = root </> "bin"
+        fakeClaude = fakeBin </> "claude"
+        launchLog = root </> "agent-launch.args"
+    createDirectoryIfMissing True blueprintDir
+    createDirectoryIfMissing True xdgHome
+    createDirectoryIfMissing True fakeBin
+    TIO.writeFile blueprintPath declaredLaunchBlueprintDhall
+    -- The batch path parses the JSON line, so the fake must keep printing it.
+    TIO.writeFile
+      fakeClaude
+      "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf '%s\\n' '{\"result\":\"declared complete\",\"is_error\":false,\"session_id\":\"fake\"}'\n"
+    permissions <- getPermissions fakeClaude
+    setPermissions fakeClaude (permissions {executable = True})
+
+    inherited <- getEnvironment
+    let inheritedPath = fromMaybe "" (lookup "PATH" inherited)
+        overriddenNames =
+          [ "PATH",
+            "XDG_CONFIG_HOME",
+            "SEIHOU_AGENT_PROVIDER",
+            "SEIHOU_AGENT_MODEL",
+            "SEIHOU_AGENT_EFFORT",
+            "SEIHOU_CONTEXT",
+            "SEIHOU_FAKE_AGENT_LOG"
+          ]
+        environment =
+          ("PATH", fakeBin <> [searchPathSeparator] <> inheritedPath)
+            : ("XDG_CONFIG_HOME", xdgHome)
+            : ("SEIHOU_FAKE_AGENT_LOG", launchLog)
+            : filter (\(key, _) -> key `notElem` overriddenNames) inherited
+        runDeclared extraArgs = do
+          (exitCode, output, errorOutput) <-
+            runProcessText
+              binary
+              (["agent", "run", "declared-launch"] <> extraArgs)
+              (Just root)
+              (Just environment)
+          launchArgs <-
+            doesFileExist launchLog >>= \case
+              True -> T.lines <$> TIO.readFile launchLog
+              False -> pure []
+          pure (exitCode, output, errorOutput, launchArgs)
+    action root "declared-launch" runDeclared
+
+-- | A blueprint that declares a model and a reasoning effort but no provider,
+-- so the provider still comes from the built-in default.
+declaredLaunchBlueprintDhall :: T.Text
+declaredLaunchBlueprintDhall =
+  T.unlines
+    [ "{ name = \"declared-launch\"",
+      ", version = Some \"1.0.0\"",
+      ", description = Some \"Blueprint declaring its own launch settings\"",
+      ", prompt = \"Think hard about this repository.\"",
+      ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+      ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+      ", baseModules = [] : List { module : Text, vars : List { name : Text, value : Text } }",
+      ", files = [] : List { src : Text, description : Optional Text }",
+      ", allowedTools = None (List Text)",
+      ", tags = [] : List Text",
+      ", migrations = [] : List { from : Text, to : Text, prompt : Text }",
+      ", launch = Some",
+      "    { provider = None Text",
+      "    , model = Some \"claude-sonnet-5\"",
+      "    , effort = Some \"max\"",
+      "    , mode = None Text",
+      "    }",
+      "}"
+    ]
 
 migrationBlueprintDhall :: T.Text
 migrationBlueprintDhall =
