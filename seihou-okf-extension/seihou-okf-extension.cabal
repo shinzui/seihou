@@ -28,7 +28,6 @@ library seihou-okf-extension-internal
     DuplicateRecordFields
     NoFieldSelectors
     OverloadedLabels
-    OverloadedRecordDot
     OverloadedStrings
     TypeFamilies
 
@@ -60,7 +59,6 @@ executable seihou-okf-extension
     DuplicateRecordFields
     NoFieldSelectors
     OverloadedLabels
-    OverloadedRecordDot
     OverloadedStrings
     TypeFamilies
 
@@ -80,7 +78,6 @@ test-suite seihou-okf-extension-test
     DuplicateRecordFields
     NoFieldSelectors
     OverloadedLabels
-    OverloadedRecordDot
     OverloadedStrings
     TypeFamilies
 

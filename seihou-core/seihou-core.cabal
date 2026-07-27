@@ -28,7 +28,6 @@ library
     DuplicateRecordFields
     NoFieldSelectors
     OverloadedLabels
-    OverloadedRecordDot
     OverloadedStrings
     TypeFamilies
 
@@ -138,7 +137,6 @@ test-suite seihou-core-test
     DuplicateRecordFields
     NoFieldSelectors
     OverloadedLabels
-    OverloadedRecordDot
     OverloadedStrings
 
   hs-source-dirs: test

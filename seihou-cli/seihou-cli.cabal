@@ -47,7 +47,6 @@ library seihou-cli-internal
     DuplicateRecordFields
     NoFieldSelectors
     OverloadedLabels
-    OverloadedRecordDot
     OverloadedStrings
     TypeFamilies
 
@@ -136,7 +135,6 @@ executable seihou
     DuplicateRecordFields
     NoFieldSelectors
     OverloadedLabels
-    OverloadedRecordDot
     OverloadedStrings
     PackageImports
     TypeFamilies
@@ -220,7 +218,6 @@ test-suite seihou-cli-test
     DuplicateRecordFields
     NoFieldSelectors
     OverloadedLabels
-    OverloadedRecordDot
     OverloadedStrings
     TypeFamilies
 
