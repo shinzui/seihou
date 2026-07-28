@@ -29,6 +29,7 @@ extra-source-files:
   help/contexts.md
   help/git-repository.md
   help/kit.md
+  help/manifest.md
   help/migrations.md
   help/modules.md
   help/prompts.md

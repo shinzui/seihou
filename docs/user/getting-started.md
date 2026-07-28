@@ -715,4 +715,5 @@ automation, recovery, and command policies.
 - Read [First-Class Prompts](prompts.md) to learn how to author reusable agent-session workflows.
 - Read [AI Agent Assistance](agent-assistance.md) to configure providers and use `seihou agent` / `seihou kit`.
 - Read [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) to learn how to publish multiple modules, recipes, blueprints, and prompts from a single git repository.
+- Read [Upgrading an Older Manifest](manifest-upgrade.md) if seihou reports that a project's `.seihou/manifest.json` uses an older schema version.
 - Explore the test fixtures at `seihou-core/test/fixtures/` for working examples of multi-module composition (`haskell-with-nix`), structured output (`structured-basic`), shell commands (`command-test`), and recipes (`haskell-with-nix-recipe`).

@@ -79,7 +79,8 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 3: Report rendering matches the format in this plan (2026-07-28)
 - [x] Milestone 4: Every other command detects a legacy manifest and points at the upgrade (2026-07-28)
 - [x] Milestone 4: Refuse to write an upgrade that would immediately trip the downgrade guard (2026-07-28)
-- [ ] Milestone 5: `docs/user/` documentation and CHANGELOG entry
+- [x] Milestone 5: `docs/user/` documentation and CHANGELOG entry (2026-07-28)
+- [x] Milestone 5 (added): `docs/cli/manifest.md` command reference, `seihou help manifest` topic, README index rows (2026-07-28)
 
 
 ## Surprises & Discoveries
@@ -276,7 +277,54 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+`seihou manifest upgrade` exists and does what the Purpose section promised: a
+developer who pulls a repository containing a schema-5-or-earlier manifest runs
+it, sees every conversion explained, and gets a manifest that means the same
+thing on every machine. `--dry-run` writes nothing. Running it twice reports
+"nothing to do" and exits zero. The whole thing is undone by
+`git checkout -- .seihou/manifest.json`.
+
+Two things came out better than the plan asked for and one came out narrower.
+
+**Better: the write is both lossless and validated.** Milestone 3 offered two
+mutually exclusive options — walk the `Aeson.Value` so nothing is dropped, or
+decode into a `Manifest` so the result is proven readable. Doing both costs one
+decode and gives both guarantees, so a conversion that would produce an
+unreadable manifest now fails before the file is touched.
+
+**Better: the interlock protects the case that actually happens.** The plan
+framed the guard interlock as protection against upgrading into a downgrade.
+The verdict it fires on most is `ArtifactUnresolvable`, on a fresh clone where
+nothing is installed — the case where inference is weakest and where writing
+anyway would erase every upstream URL from a file about to be committed. See
+Surprises & Discoveries.
+
+**Narrower: no dirty-manifest warning.** The plan asked for a decision and the
+decision was no; the rationale is in the Decision Log.
+
+Scope grew by three documentation surfaces the plan did not name: `docs/cli/`
+holds a per-command reference for every command, `seihou help <topic>` holds
+twelve embedded topics, and `README.md` indexes both. A command that exists
+only because an error message points at it needs to be findable from all three,
+so `docs/cli/manifest.md`, `seihou-cli/help/manifest.md`, and two README rows
+were added alongside `docs/user/manifest-upgrade.md` and the CHANGELOG entry.
+
+The user-facing "how teams share a manifest" guide and the two-developer
+end-to-end test remain with
+`docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md`,
+as the plan intended. That plan should assert on
+`Seihou.CLI.ManifestUpgrade.formatUpgradeReport`'s wording rather than on the
+handler's stdout, and can reuse `formatUpgradeRefusal` for the refusal path.
+
+No new ADR was needed. This plan implements the conversion that
+`docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md`
+already anticipates ("Manifests written before schema version 6 cannot be read
+directly … refuses them with a message naming the conversion command"), and
+introduces no durable constraint that record does not already state. The
+question it might have raised — how long legacy manifests remain convertible —
+did not come up: the conversion is a self-contained module with no runtime cost
+to anything else, so there is no pressure to date its removal, and inventing a
+deprecation policy nobody needs would be worse than silence.
 
 
 ## Context and Orientation

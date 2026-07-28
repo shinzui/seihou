@@ -127,6 +127,7 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 | [`remove`](docs/cli/remove.md) | Reverse an applied module via its declared `removal` steps. |
 | [`status`](docs/cli/status.md) | Show applied modules, tracked-file state, and resolved variables. |
 | [`diff`](docs/cli/diff.md) | Show files changed on disk since the last generation. |
+| [`manifest`](docs/cli/manifest.md) | Maintain `.seihou/manifest.json` (`upgrade` converts one written by an older seihou). |
 
 **Discovery & lifecycle**
 
@@ -183,6 +184,7 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 - [Configuration & Variables](docs/user/config-and-variables.md) — the resolution hierarchy, scopes, and contexts.
 - [Registries & Multi-Module Repositories](docs/user/registries-and-multi-module-repos.md) — publish many artifacts from one repo.
 - [Migrations](docs/user/migrations.md) — move projects across module versions.
+- [Upgrading an Older Manifest](docs/user/manifest-upgrade.md) — convert a `.seihou/manifest.json` written before schema version 6.
 - [Blueprints](docs/user/blueprints.md) — agent-driven scaffolding.
 - [Blueprint Migrations](docs/user/blueprint-migrations.md) — publish and run agent-guided library upgrades.
 - [Prompts](docs/user/prompts.md) — reusable agent-session workflows.

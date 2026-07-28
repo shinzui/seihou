@@ -38,6 +38,7 @@ helpTopics =
     HelpTopic "config" "Config scopes, reading, and writing values" configContent,
     HelpTopic "git-repository" "Sharing and installing items from git" gitRepositoryContent,
     HelpTopic "kit" "Manage Claude Code and Codex skills and subagents" kitContent,
+    HelpTopic "manifest" "What .seihou/manifest.json records and how to upgrade it" manifestContent,
     HelpTopic "migrations" "Migrating a project between module versions" migrationsContent,
     HelpTopic "prompts" "Reusable agent-session prompt artifacts" promptsContent,
     HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent,
@@ -67,6 +68,9 @@ gitRepositoryContent = $(embedStringFile "help/git-repository.md")
 
 kitContent :: Text
 kitContent = $(embedStringFile "help/kit.md")
+
+manifestContent :: Text
+manifestContent = $(embedStringFile "help/manifest.md")
 
 migrationsContent :: Text
 migrationsContent = $(embedStringFile "help/migrations.md")

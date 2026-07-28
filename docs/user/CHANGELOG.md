@@ -12,6 +12,50 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **`seihou manifest upgrade` converts a manifest written by an older seihou.**
+  Manifests before schema version 6 recorded, for each applied module, the
+  absolute directory it occupied on the machine that ran the command. Seihou no
+  longer reads those, and every command says so:
+
+  ```text
+  [error] Error reading manifest: this manifest uses schema version 5, which
+  records machine-specific absolute paths; run 'seihou manifest upgrade' to
+  convert it
+  ```
+
+  The new command replaces each recorded path with a portable origin — the git
+  URL the module was installed from, or a path relative to the project root for
+  a module living inside the project — and prints every conversion, because
+  recovering a URL from somebody else's absolute path is inference and
+  inference does not belong hidden inside a committed file:
+
+  ```text
+  Reading .seihou/manifest.json (schema version 5)
+
+    haskell-base       /Users/shinzui/.config/seihou/installed/haskell-base
+                    →  remote https://github.com/shinzui/seihou-modules.git
+
+    project-lint       /Users/shinzui/work/myproject/.seihou/modules/project-lint
+                    →  project .seihou/modules/project-lint
+
+  ✓ Upgraded .seihou/manifest.json to schema version 6.
+    Review the diff and commit it: git diff .seihou/manifest.json
+  ```
+
+  `--dry-run` shows the same report and writes nothing. Running it on a
+  manifest that is already current reports that there is nothing to do and
+  exits zero, so it is safe in a script.
+
+  Because the conversion can only record what this machine can see, the command
+  refuses to write when an artifact the manifest names is missing or stale
+  locally — that would commit a guess and lose the upstream for everyone. It
+  names what to install or upgrade first; `--force` writes anyway. Everything
+  it does is undone by `git checkout -- .seihou/manifest.json`, and the write
+  is atomic.
+
+  See [Upgrading an Older Manifest](manifest-upgrade.md), or
+  `seihou help manifest`.
+
 - **Seihou refuses to silently downgrade a project.** If your copy of a module
   is older than the version `.seihou/manifest.json` records, `seihou run` and
   `seihou migrate` now stop before writing anything:
