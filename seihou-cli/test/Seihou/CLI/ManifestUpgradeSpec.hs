@@ -1,24 +1,34 @@
 module Seihou.CLI.ManifestUpgradeSpec (tests) where
 
 import Control.Lens ((^.))
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Text (Text)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
+import Data.Vector qualified as V
 import Seihou.CLI.ManifestUpgrade
   ( InferenceOutcome (..),
     LegacyManifest (..),
     LegacyRef (..),
+    UpgradeReportEntry (..),
+    UpgradeResult (..),
+    applyUpgrade,
+    formatUpgradeReport,
     inferOriginFromLegacyPath,
     readLegacyManifest,
   )
-import Seihou.Core.Types (ArtifactOrigin (..))
+import Seihou.Core.Types (ArtifactOrigin (..), Manifest (..))
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
+import Text.Read (readMaybe)
 
 tests :: IO TestTree
 tests = testSpec "Seihou.CLI.ManifestUpgrade" spec
@@ -105,6 +115,14 @@ spec = do
       readLegacyManifest "{\"modules\":[]}"
         `shouldBe` Left "manifest has no 'version' field"
 
+  describe "schema versions 1 through 5" $
+    -- Version 6's guard made these documents undecodable by the ordinary
+    -- manifest decoder, so this is where their positive coverage now lives.
+    -- Every field a later schema version added is optional with an empty
+    -- default and none of them holds a path, so all five convert identically.
+    it "converts every pre-portable-origin schema version the same way" $
+      mapM_ convertsCleanly [1 .. 5]
+
   describe "inferOriginFromLegacyPath" $ do
     it "converts a foreign project path by its .seihou/modules suffix" $ do
       outcome <-
@@ -146,6 +164,189 @@ spec = do
             [installRoot]
             (legacyRef "demo" "/Users/someone-else/.config/seihou/modules/demo")
         outcome `shouldBe` InferredAsUnverifiable (LocalOrigin "demo")
+
+  describe "applyUpgrade" $ do
+    it "replaces every recorded path with its origin and bumps the schema version" $ do
+      result <- upgradedFixture
+      let document = result ^. #upgradedDocument
+      (result ^. #fromVersion) `shouldBe` 5
+      documentKeys document `shouldNotContain` ["source"]
+      documentKeys document `shouldNotContain` ["targetSource"]
+      documentKeys document `shouldContain` ["origin"]
+      documentKeys document `shouldContain` ["targetOrigin"]
+      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 6)
+      lookupPath ["modules", "0", "origin"] document
+        `shouldBe` Just (Aeson.toJSON (RemoteOrigin haskellBaseUrl "haskell-base" (Just "seihou-modules")))
+      lookupPath ["applications", "1", "instances", "0", "origin"] document
+        `shouldBe` Just (Aeson.toJSON (ProjectOrigin ".seihou/modules/project-lint"))
+
+    it "leaves no machine-specific path anywhere in the document" $ do
+      result <- upgradedFixture
+      -- The invariant of docs/adr/0001: nothing whose meaning depends on the
+      -- machine that wrote it. A variable whose *value* happens to name the
+      -- other developer is data, not a path, and must survive.
+      filter absoluteLooking (documentStrings (result ^. #upgradedDocument))
+        `shouldBe` []
+
+    it "preserves every field it does not convert" $ do
+      result <- upgradedFixture
+      let document = result ^. #upgradedDocument
+      lookupPath ["variables", "project.author"] document
+        `shouldBe` Just (Aeson.String "someone-else")
+      lookupPath ["modules", "0", "parentVars", "project.name"] document
+        `shouldBe` Just (Aeson.String "demo")
+      lookupPath ["files", "flake.nix", "baseline"] document
+        `shouldBe` Just (Aeson.String (T.replicate 64 "2"))
+      lookupPath ["blueprintMigrations", "0", "agentSessionId"] document
+        `shouldBe` Just (Aeson.String "session-abc")
+      lookupPath ["blueprint", "userPrompt"] document
+        `shouldBe` Just (Aeson.String "build a service")
+      lookupPath
+        ["applications", "0", "commandReceipts", T.replicate 64 "4", "command"]
+        document
+        `shouldBe` Just (Aeson.String "cabal build")
+
+    it "produces a document the ordinary manifest decoder accepts" $ do
+      result <- upgradedFixture
+      case Aeson.fromJSON (result ^. #upgradedDocument) :: Aeson.Result Manifest of
+        Aeson.Error err -> expectationFailure ("upgraded manifest does not decode: " <> err)
+        Aeson.Success manifest -> length (manifest ^. #modules) `shouldBe` 2
+
+    it "reports each artifact once even though it appears in three records" $ do
+      result <- upgradedFixture
+      map (^. #artifactName) (result ^. #entries)
+        `shouldBe` ["haskell-base", "project-lint", "haskell-service", "scratch-helper"]
+
+  describe "formatUpgradeReport" $
+    it "renders one aligned block per conversion" $
+      formatUpgradeReport exampleResult `shouldBe` exampleReport
+
+haskellBaseUrl :: Text
+haskellBaseUrl = "https://github.com/shinzui/seihou-modules.git"
+
+-- | A manifest at one of the historical schema versions, carrying only the
+-- keys that version is guaranteed to have.
+schemaVersionDocument :: Int -> LBS.ByteString
+schemaVersionDocument version =
+  LBS.fromStrict . TE.encodeUtf8 . T.concat $
+    [ "{\"version\":",
+      T.pack (show version),
+      ",\"generatedAt\":\"2026-07-01T12:00:00Z\"",
+      ",\"modules\":[{\"name\":\"demo\"",
+      ",\"source\":\"/Users/someone-else/.config/seihou/installed/demo\"",
+      ",\"version\":\"1.0.0\",\"appliedAt\":\"2026-07-01T12:00:00Z\"}]",
+      ",\"variables\":{},\"files\":{}}"
+    ]
+
+-- | One historical schema version reads, converts, and lands on version 6
+-- with a portable origin in place of the recorded path.
+convertsCleanly :: Int -> Expectation
+convertsCleanly version =
+  case readLegacyManifest (schemaVersionDocument version) of
+    Left err -> expectationFailure ("schema version " <> show version <> " did not read: " <> err)
+    Right Nothing -> expectationFailure ("schema version " <> show version <> " reported nothing to do")
+    Right (Just legacy) -> do
+      (legacy ^. #schemaVersion) `shouldBe` version
+      let converted =
+            applyUpgrade
+              legacy
+              [(ref, InferredAsUnverifiable (LocalOrigin "demo")) | ref <- legacy ^. #refs]
+          document = converted ^. #upgradedDocument
+      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 6)
+      lookupPath ["modules", "0", "origin"] document
+        `shouldBe` Just (Aeson.toJSON (LocalOrigin "demo"))
+      lookupPath ["modules", "0", "version"] document `shouldBe` Just (Aeson.String "1.0.0")
+      filter absoluteLooking (documentStrings document) `shouldBe` []
+
+-- | The fixture, converted with a fixed inference for each artifact so the
+-- assertions are about the rewrite rather than about this machine.
+upgradedFixture :: IO UpgradeResult
+upgradedFixture = do
+  bytes <- LBS.readFile fixturePath
+  case readLegacyManifest bytes of
+    Right (Just legacy) ->
+      pure (applyUpgrade legacy [(ref, inferenceFor ref) | ref <- legacy ^. #refs])
+    other -> fail ("fixture did not read as a legacy manifest: " <> show (fmap (fmap (^. #schemaVersion)) other))
+  where
+    inferenceFor ref = case ref ^. #artifactName of
+      "project-lint" -> InferredFromProjectPath (ProjectOrigin ".seihou/modules/project-lint")
+      "scratch-helper" -> InferredAsUnverifiable (LocalOrigin "scratch-helper")
+      name -> InferredFromLocalInstall (RemoteOrigin haskellBaseUrl name (Just "seihou-modules"))
+
+exampleResult :: UpgradeResult
+exampleResult =
+  UpgradeResult
+    { fromVersion = 5,
+      entries =
+        [ UpgradeReportEntry
+            { artifactName = "haskell-base",
+              legacyPath = "/Users/shinzui/.config/seihou/installed/haskell-base",
+              outcome =
+                InferredFromLocalInstall (RemoteOrigin haskellBaseUrl "haskell-base" (Just "seihou-modules"))
+            },
+          UpgradeReportEntry
+            { artifactName = "project-lint",
+              legacyPath = "/Users/shinzui/work/myproject/.seihou/modules/project-lint",
+              outcome = InferredFromProjectPath (ProjectOrigin ".seihou/modules/project-lint")
+            },
+          UpgradeReportEntry
+            { artifactName = "scratch-helper",
+              legacyPath = "/Users/other/.config/seihou/modules/scratch-helper",
+              outcome = InferredAsUnverifiable (LocalOrigin "scratch-helper")
+            }
+        ],
+      upgradedDocument = Aeson.Null
+    }
+
+exampleReport :: Text
+exampleReport =
+  T.unlines
+    [ "Reading .seihou/manifest.json (schema version 5)",
+      "",
+      "  haskell-base       /Users/shinzui/.config/seihou/installed/haskell-base",
+      "                  →  remote https://github.com/shinzui/seihou-modules.git",
+      "",
+      "  project-lint       /Users/shinzui/work/myproject/.seihou/modules/project-lint",
+      "                  →  project .seihou/modules/project-lint",
+      "",
+      "  scratch-helper     /Users/other/.config/seihou/modules/scratch-helper",
+      "                  →  local scratch-helper  (no upstream recorded)",
+      ""
+    ]
+
+-- | Every object key appearing anywhere in a document.
+documentKeys :: Aeson.Value -> [Text]
+documentKeys (Aeson.Object fields) =
+  map Key.toText (KeyMap.keys fields) <> concatMap documentKeys (KeyMap.elems fields)
+documentKeys (Aeson.Array elements) = concatMap documentKeys elements
+documentKeys _ = []
+
+-- | Whether a string looks like a path that only means something on the
+-- machine that wrote it.
+absoluteLooking :: Text -> Bool
+absoluteLooking value =
+  T.isPrefixOf "/" value
+    || T.isPrefixOf "~" value
+    || T.isPrefixOf "\\\\" value
+    || (T.length value >= 3 && T.index value 1 == ':' && T.index value 2 == '\\')
+
+-- | Every string value appearing anywhere in a document.
+documentStrings :: Aeson.Value -> [Text]
+documentStrings (Aeson.String text) = [text]
+documentStrings (Aeson.Object fields) = concatMap documentStrings (KeyMap.elems fields)
+documentStrings (Aeson.Array elements) = concatMap documentStrings elements
+documentStrings _ = []
+
+-- | Follow a pointer of object keys and array indices.
+lookupPath :: [Text] -> Aeson.Value -> Maybe Aeson.Value
+lookupPath [] value = Just value
+lookupPath (step : rest) (Aeson.Object fields) =
+  KeyMap.lookup (Key.fromText step) fields >>= lookupPath rest
+lookupPath (step : rest) (Aeson.Array elements) = do
+  index <- readMaybe (T.unpack step)
+  element <- elements V.!? index
+  lookupPath rest element
+lookupPath _ _ = Nothing
 
 -- | A reference to a module, which is all the inference tests need.
 legacyRef :: Text -> FilePath -> LegacyRef

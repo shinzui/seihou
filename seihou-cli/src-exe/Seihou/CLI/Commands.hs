@@ -39,6 +39,8 @@ module Seihou.CLI.Commands
     RegistryCommand (..),
     SyncVersionsOpts (..),
     ValidateRegistryOpts (..),
+    ManifestCommand (..),
+    ManifestUpgradeOpts (..),
     commandParser,
     opts,
   )
@@ -50,6 +52,8 @@ import Options.Applicative.Help.Pretty (Doc, indent, line, pretty, vsep)
 import Seihou.CLI.Extension (ExtensionRunOpts (..))
 import Seihou.CLI.Help (HelpCommand, helpCommandParser)
 import Seihou.CLI.Kit (KitCommand, kitCommandParser)
+import Seihou.CLI.Manifest (ManifestCommand (..))
+import Seihou.CLI.ManifestUpgrade (ManifestUpgradeOpts (..))
 import Seihou.CLI.Migrate (MigrateOpts (..))
 import Seihou.CLI.Registry (RegistryCommand (..))
 import Seihou.CLI.Registry.Sync (SyncVersionsOpts (..))
@@ -83,6 +87,7 @@ data Command
   | Migrate MigrateOpts
   | SchemaUpgrade SchemaUpgradeOpts
   | Registry RegistryCommand
+  | ManifestCmd ManifestCommand
   | Kit KitCommand
   | Agent AgentOpts
   | Prompt PromptCommand
@@ -444,6 +449,7 @@ commandParser =
         <> command "remove" removeInfo
         <> command "status" statusInfo
         <> command "diff" diffInfo
+        <> command "manifest" manifestInfo
     )
     <|> hsubparser
       ( command "list" listInfo
@@ -1402,6 +1408,69 @@ kitInfo =
     ( fullDesc
         <> progDesc "Manage Claude Code and Codex skills and subagents"
     )
+
+manifestInfo :: ParserInfo Command
+manifestInfo =
+  info
+    (ManifestCmd <$> manifestCommandParser <**> helper)
+    ( fullDesc
+        <> progDesc "Operate on this project's .seihou/manifest.json"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("The manifest is checked into version control and describes the" :: String),
+                  pretty ("project, not the machine. These commands maintain it." :: String),
+                  line,
+                  pretty ("Current subcommands:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("upgrade   Convert a manifest written by an older seihou" :: String)
+                      ],
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou manifest upgrade --dry-run" :: String),
+                        pretty ("seihou manifest upgrade" :: String)
+                      ]
+                ]
+          )
+    )
+
+manifestCommandParser :: Parser ManifestCommand
+manifestCommandParser =
+  hsubparser
+    (command "upgrade" manifestUpgradeInfo)
+
+manifestUpgradeInfo :: ParserInfo ManifestCommand
+manifestUpgradeInfo =
+  info
+    (manifestUpgradeParser <**> helper)
+    ( fullDesc
+        <> progDesc "Convert a manifest written by an older seihou to the portable format"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Manifests written before schema version 6 record, for every applied" :: String),
+                  pretty ("module, the absolute directory that module occupied on the machine" :: String),
+                  pretty ("that ran seihou. Those paths mean nothing in another clone, so this" :: String),
+                  pretty ("command replaces each one with a portable origin: the git URL the" :: String),
+                  pretty ("module was installed from, or a path relative to the project root." :: String),
+                  line,
+                  pretty ("Recovering an upstream URL from somebody else's absolute path takes" :: String),
+                  pretty ("inference, so every conversion is printed. Review the result with" :: String),
+                  pretty ("git diff .seihou/manifest.json before committing it." :: String),
+                  line,
+                  pretty ("Run from the project root. Running it twice is safe." :: String)
+                ]
+          )
+    )
+
+manifestUpgradeParser :: Parser ManifestCommand
+manifestUpgradeParser =
+  fmap ManifestUpgrade $
+    ManifestUpgradeOpts
+      <$> switch (long "dry-run" <> help "Show every conversion without writing the manifest")
 
 registryInfo :: ParserInfo Command
 registryInfo =

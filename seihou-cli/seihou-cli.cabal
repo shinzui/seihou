@@ -76,6 +76,7 @@ library seihou-cli-internal
     Seihou.CLI.InstallHistory
     Seihou.CLI.InstallShared
     Seihou.CLI.List
+    Seihou.CLI.Manifest
     Seihou.CLI.ManifestGuard
     Seihou.CLI.ManifestUpgrade
     Seihou.CLI.Migrate

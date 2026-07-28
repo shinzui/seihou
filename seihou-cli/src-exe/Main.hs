@@ -29,6 +29,7 @@ import Seihou.CLI.Init (handleInit)
 import Seihou.CLI.Install (handleInstall)
 import Seihou.CLI.Kit (runKit)
 import Seihou.CLI.List (ListFilter (..), handleList)
+import Seihou.CLI.Manifest (handleManifest)
 import Seihou.CLI.Migrate (handleMigrate)
 import Seihou.CLI.NewBlueprint (handleNewBlueprint)
 import Seihou.CLI.NewModule (handleNewModule)
@@ -131,6 +132,8 @@ dispatch cmd =
       handleSchemaUpgrade schemaUpgradeOpts
     Registry registryCmd ->
       handleRegistry registryCmd
+    ManifestCmd manifestCmd ->
+      handleManifest manifestCmd
     Kit kitCmd ->
       runKit kitCmd
     Agent agentOpts -> do

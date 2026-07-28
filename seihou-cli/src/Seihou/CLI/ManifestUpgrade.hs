@@ -34,21 +34,42 @@ module Seihou.CLI.ManifestUpgrade
     InferenceOutcome (..),
     inferredOrigin,
     inferOriginFromLegacyPath,
+
+    -- * Rewriting the document
+    UpgradeReportEntry (..),
+    UpgradeResult (..),
+    applyUpgrade,
+    formatUpgradeReport,
+
+    -- * The command
+    ManifestUpgradeOpts (..),
+    UpgradeOutcome (..),
+    manifestRelativePath,
+    runManifestUpgrade,
+    handleManifestUpgrade,
   )
 where
 
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key (Key)
+import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (toList)
 import Data.Generics.Labels ()
+import Data.List (foldl')
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
+import Data.Vector qualified as V
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (resolveArtifactOrigin)
-import Seihou.Core.Types (ArtifactOrigin (..))
+import Seihou.Core.Module (defaultSearchPaths)
+import Seihou.Core.Types (ArtifactOrigin (..), Manifest)
 import Seihou.Manifest.Types (currentManifestVersion)
 import Seihou.Prelude
+import System.Directory (doesFileExist, getCurrentDirectory, renamePath)
+import System.Exit (exitFailure)
+import Text.Read (readMaybe)
 
 -- ----------------------------------------------------------------------------
 -- Reading a legacy manifest
@@ -294,6 +315,270 @@ pathSegments = filter (not . null) . foldr split [[]]
       | character == '/' || character == '\\' = [] : segments
       | otherwise = (character : current) : rest
     split _ [] = []
+
+-- ----------------------------------------------------------------------------
+-- Rewriting the document
+-- ----------------------------------------------------------------------------
+
+-- | One line of the upgrade report.
+data UpgradeReportEntry = UpgradeReportEntry
+  { artifactName :: !Text,
+    legacyPath :: !FilePath,
+    outcome :: !InferenceOutcome
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | An upgraded document plus the reviewable account of how it was reached.
+data UpgradeResult = UpgradeResult
+  { fromVersion :: !Int,
+    entries :: ![UpgradeReportEntry],
+    upgradedDocument :: !Aeson.Value
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Convert a legacy manifest. Pure given the inferences, so the report and
+-- the resulting bytes can both be asserted on without a filesystem.
+--
+-- Each reference's recorded path is deleted and the portable origin written in
+-- its place — @source@ becomes @origin@, @targetSource@ becomes
+-- @targetOrigin@ — and the document's @version@ is set to the current schema
+-- version. Nothing else in the document is touched.
+applyUpgrade :: LegacyManifest -> [(LegacyRef, InferenceOutcome)] -> UpgradeResult
+applyUpgrade legacy conversions =
+  UpgradeResult
+    { fromVersion = legacy ^. #schemaVersion,
+      entries = dedupeEntries (map reportEntry conversions),
+      upgradedDocument = setSchemaVersion (foldl' rewrite (legacy ^. #document) conversions)
+    }
+  where
+    rewrite document (ref, outcome) =
+      replaceAt (ref ^. #jsonPointer) (Aeson.toJSON (inferredOrigin outcome)) document
+
+    reportEntry (ref, outcome) =
+      UpgradeReportEntry
+        { artifactName = ref ^. #artifactName,
+          legacyPath = ref ^. #legacyPath,
+          outcome = outcome
+        }
+
+-- | One line per distinct artifact-and-path pair, in first-seen order.
+--
+-- The same module typically appears three times — once in @modules@, once as
+-- an application's target, once as an instance — and the report should show it
+-- once. Two records naming the same artifact at /different/ paths stay
+-- separate, because that is a real thing the developer should see.
+dedupeEntries :: [UpgradeReportEntry] -> [UpgradeReportEntry]
+dedupeEntries = go []
+  where
+    go _ [] = []
+    go seen (entry : rest)
+      | key entry `elem` seen = go seen rest
+      | otherwise = entry : go (key entry : seen) rest
+
+    key entry = (entry ^. #artifactName, entry ^. #legacyPath)
+
+-- | Replace the key at the end of a pointer with its portable counterpart.
+replaceAt :: [Text] -> Aeson.Value -> Aeson.Value -> Aeson.Value
+replaceAt [] _ document = document
+replaceAt pointer origin document =
+  updateAt (init pointer) (renameKey (last pointer)) document
+  where
+    renameKey legacyKey (Aeson.Object fields) =
+      Aeson.Object
+        ( KeyMap.insert
+            (Key.fromText (portableKey legacyKey))
+            origin
+            (KeyMap.delete (Key.fromText legacyKey) fields)
+        )
+    renameKey _ other = other
+
+-- | The schema-6 name of a key that used to hold an absolute path.
+portableKey :: Text -> Text
+portableKey "source" = "origin"
+portableKey "targetSource" = "targetOrigin"
+portableKey other = other
+
+-- | Apply a function to the value a pointer names, leaving the document
+-- unchanged when the pointer does not lead anywhere.
+updateAt :: [Text] -> (Aeson.Value -> Aeson.Value) -> Aeson.Value -> Aeson.Value
+updateAt [] f value = f value
+updateAt (step : rest) f value = case value of
+  Aeson.Object fields ->
+    let name = Key.fromText step
+     in case KeyMap.lookup name fields of
+          Just child -> Aeson.Object (KeyMap.insert name (updateAt rest f child) fields)
+          Nothing -> value
+  Aeson.Array elements ->
+    case readMaybe (T.unpack step) of
+      Just index
+        | index >= 0 && index < V.length elements ->
+            Aeson.Array (elements V.// [(index, updateAt rest f (elements V.! index))])
+      _ -> value
+  _ -> value
+
+setSchemaVersion :: Aeson.Value -> Aeson.Value
+setSchemaVersion (Aeson.Object fields) =
+  Aeson.Object (KeyMap.insert "version" (Aeson.toJSON currentManifestVersion) fields)
+setSchemaVersion other = other
+
+-- | Render the conversion account shown in the terminal, without the closing
+-- line — whether the file was written is the caller's news to deliver.
+formatUpgradeReport :: UpgradeResult -> Text
+formatUpgradeReport result =
+  T.unlines (header : "" : concatMap entryLines (result ^. #entries))
+  where
+    header =
+      "Reading "
+        <> T.pack manifestRelativePath
+        <> " (schema version "
+        <> T.pack (show (result ^. #fromVersion))
+        <> ")"
+
+    nameColumn =
+      maximum (5 : map (T.length . (^. #artifactName)) (result ^. #entries)) + 5
+
+    entryLines entry =
+      [ "  " <> T.justifyLeft nameColumn ' ' (entry ^. #artifactName) <> T.pack (entry ^. #legacyPath),
+        T.replicate (nameColumn - 1) " " <> "→  " <> describeOutcome (entry ^. #outcome)
+      ]
+        <> map (\note -> T.replicate (nameColumn + 2) " " <> note) (outcomeNotes entry)
+        <> [""]
+
+    describeOutcome outcome = case inferredOrigin outcome of
+      RemoteOrigin url _ _ -> "remote " <> url
+      ProjectOrigin path -> "project " <> T.pack path
+      LocalOrigin name -> "local " <> name <> "  (no upstream recorded)"
+
+    outcomeNotes entry = case entry ^. #outcome of
+      InferredAsUnverifiable _
+        | legacyPathWasInstalled (entry ^. #legacyPath) ->
+            [ "was installed from an upstream on the original machine, but no",
+              "local copy is available here to recover the URL"
+            ]
+      _ -> []
+
+-- ----------------------------------------------------------------------------
+-- The command
+-- ----------------------------------------------------------------------------
+
+-- | Where a project's manifest lives, relative to the project root. Also the
+-- name the report prints, so the two can never drift apart.
+manifestRelativePath :: FilePath
+manifestRelativePath = ".seihou" </> "manifest.json"
+
+-- | Flags parsed for @seihou manifest upgrade@.
+data ManifestUpgradeOpts = ManifestUpgradeOpts
+  { dryRun :: !Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Terminal outcome of an upgrade run, decoupled from printing and exit codes
+-- so it can be asserted on directly.
+data UpgradeOutcome
+  = -- | The manifest is already at the current schema version.
+    UpgradeNotNeeded
+  | -- | @--dry-run@: the document was converted and thrown away.
+    UpgradeWouldWrite UpgradeResult
+  | -- | The converted document was written over the manifest.
+    UpgradeWritten UpgradeResult
+  | -- | Nothing was written; carries the message to show the user.
+    UpgradeFailed Text
+  deriving stock (Eq, Show, Generic)
+
+-- | Testable core of @seihou manifest upgrade@: read the manifest in the
+-- current directory, infer an origin for every recorded path, rewrite the
+-- document, and — unless this is a dry run — write it back.
+runManifestUpgrade :: ManifestUpgradeOpts -> IO UpgradeOutcome
+runManifestUpgrade opts = do
+  projectRoot <- getCurrentDirectory
+  let manifestPath = projectRoot </> manifestRelativePath
+  present <- doesFileExist manifestPath
+  if not present
+    then
+      pure
+        ( UpgradeFailed
+            ( "No "
+                <> T.pack manifestRelativePath
+                <> " here. Run this from the root of a project seihou has generated into."
+            )
+        )
+    else do
+      bytes <- LBS.readFile manifestPath
+      case readLegacyManifest bytes of
+        Left err -> pure (UpgradeFailed (T.pack manifestRelativePath <> " could not be read: " <> T.pack err))
+        Right Nothing -> pure UpgradeNotNeeded
+        Right (Just legacy) -> do
+          searchPaths <- defaultSearchPaths
+          conversions <-
+            traverse
+              (\ref -> (ref,) <$> inferOriginFromLegacyPath projectRoot searchPaths ref)
+              (legacy ^. #refs)
+          let result = applyUpgrade legacy conversions
+          case validateUpgrade result of
+            Left err -> pure (UpgradeFailed err)
+            Right _
+              | opts ^. #dryRun -> pure (UpgradeWouldWrite result)
+              | otherwise -> do
+                  writeDocument manifestPath (result ^. #upgradedDocument)
+                  pure (UpgradeWritten result)
+
+-- | Decode the converted document with the ordinary manifest decoder, which
+-- turns the write into a correctness check: whatever is about to land on disk
+-- is proven readable by every command that will read it.
+validateUpgrade :: UpgradeResult -> Either Text Manifest
+validateUpgrade result =
+  case Aeson.fromJSON (result ^. #upgradedDocument) of
+    Aeson.Error err ->
+      Left
+        ( "The converted manifest is not one this build can read, so nothing was\n\
+          \written. This is a bug in 'seihou manifest upgrade'; please report it.\n\n\
+          \  "
+            <> T.pack err
+        )
+    Aeson.Success manifest -> Right manifest
+
+-- | Write the converted document, atomically.
+--
+-- The bytes are the rewritten 'Aeson.Value' rather than a re-encoded
+-- 'Manifest', so any field this build does not know about survives the round
+-- trip. That rules out reusing 'Seihou.Effect.ManifestStore.writeManifest',
+-- which encodes a typed manifest, so the write-to-temp-then-rename it performs
+-- is replicated here.
+writeDocument :: FilePath -> Aeson.Value -> IO ()
+writeDocument manifestPath document = do
+  let temporaryPath = manifestPath <> ".tmp"
+  LBS.writeFile temporaryPath (Aeson.encode document)
+  renamePath temporaryPath manifestPath
+
+-- | Print the outcome and exit non-zero on failure.
+handleManifestUpgrade :: ManifestUpgradeOpts -> IO ()
+handleManifestUpgrade opts = do
+  outcome <- runManifestUpgrade opts
+  case outcome of
+    UpgradeNotNeeded ->
+      TIO.putStrLn
+        ( "✓ "
+            <> T.pack manifestRelativePath
+            <> " is already at schema version "
+            <> T.pack (show currentManifestVersion)
+            <> "; nothing to do."
+        )
+    UpgradeWouldWrite result -> do
+      TIO.putStr (formatUpgradeReport result)
+      TIO.putStrLn "--dry-run: nothing was written."
+    UpgradeWritten result -> do
+      TIO.putStr (formatUpgradeReport result)
+      TIO.putStrLn
+        ( "✓ Upgraded "
+            <> T.pack manifestRelativePath
+            <> " to schema version "
+            <> T.pack (show currentManifestVersion)
+            <> "."
+        )
+      TIO.putStrLn ("  Review the diff and commit it: git diff " <> T.pack manifestRelativePath)
+    UpgradeFailed message -> do
+      TIO.putStrLn message
+      exitFailure
 
 -- ----------------------------------------------------------------------------
 -- Small JSON accessors

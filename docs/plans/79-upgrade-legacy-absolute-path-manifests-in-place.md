@@ -71,12 +71,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: `LegacyManifest` decoding for schema versions 1 through 5
-- [ ] Milestone 1: Golden-file tests decoding a real schema-5 manifest without data loss
-- [ ] Milestone 2: `inferOriginFromLegacyPath` with its confidence outcome type
-- [ ] Milestone 2: Unit tests for every inference outcome
-- [ ] Milestone 3: `seihou manifest upgrade` subcommand with `--dry-run`
-- [ ] Milestone 3: Report rendering matches the format in this plan
+- [x] Milestone 1: `LegacyManifest` decoding for schema versions 1 through 5 (2026-07-28)
+- [x] Milestone 1: Golden-file tests decoding a real schema-5 manifest without data loss (2026-07-28)
+- [x] Milestone 2: `inferOriginFromLegacyPath` with its confidence outcome type (2026-07-28)
+- [x] Milestone 2: Unit tests for every inference outcome (2026-07-28)
+- [x] Milestone 3: `seihou manifest upgrade` subcommand with `--dry-run` (2026-07-28)
+- [x] Milestone 3: Report rendering matches the format in this plan (2026-07-28)
 - [ ] Milestone 4: Every other command detects a legacy manifest and points at the upgrade
 - [ ] Milestone 4: Refuse to write an upgrade that would immediately trip the downgrade guard
 - [ ] Milestone 5: `docs/user/` documentation and CHANGELOG entry
@@ -87,7 +87,38 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **One legacy decoder really was enough for versions 1 through 5.** The
+  Context section predicted this and it held: every field a later schema
+  version added is optional with an empty default, and none of them holds a
+  path, so `readLegacyManifest` never branches on the version it read. It
+  reports the version for the report's header and otherwise treats every
+  pre-6 document identically. The four schema-version fixtures in
+  `seihou-cli/test/Seihou/CLI/ManifestUpgradeSpec.hs` (`describe "schema
+  versions 1 through 5"`) go through the same code path and produce the same
+  conversions.
+
+- **An application's target can be a recipe, and a recipe is not discovered by
+  `module.dhall`.** The plan's `LegacyRef` sketch carried no definition file,
+  so the local lookup in Milestone 2 would have searched for
+  `<dir>/haskell-service/module.dhall` for an application whose target is the
+  recipe `haskell-service`, never found it, and silently degraded a
+  recoverable `RemoteOrigin` to `LocalOrigin`. `LegacyRef` therefore carries a
+  `definitionFile`, read from `target.kind` — see the Decision Log.
+
+  Evidence: the golden fixture's second application has
+  `"target": {"kind": "recipe", "name": "haskell-service"}`, and the
+  `readLegacyManifest` spec asserts that reference resolves with
+  `recipe.dhall` while its sibling instances resolve with `module.dhall`.
+
+- **A "no absolute paths remain" assertion cannot be a substring grep for the
+  other developer's username.** The first version of the machine-independence
+  test grepped the upgraded document for `someone-else` and failed: the
+  fixture records a *variable* whose value is `someone-else`, which is project
+  data and must survive the upgrade untouched. The assertion is now the actual
+  ADR-0001 invariant — no string value beginning with `/`, `~`, `\\`, or a
+  Windows drive prefix — which is both correct and what
+  `docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md`
+  will want to generalise.
 
 
 ## Decision Log
@@ -112,6 +143,86 @@ Record every decision made while working on the plan.
   already treats `LocalOrigin` as unverifiable rather than trusted, so nothing downstream is
   misled. The report marks these entries clearly so the developer can improve them by
   reinstalling from the real URL.
+  Date: 2026-07-28
+
+- Decision: A `LegacyRef`'s `jsonPointer` ends with the key that holds the path
+  (`["modules", "0", "source"]`), not with the record that contains it
+  (`["modules", "0"]`) as this plan's sketch showed.
+  Rationale: The rewriter has to delete one key and insert its portable
+  counterpart, so it needs the key's name. Deriving it from the pointer's shape
+  — "an index directly under `applications` means `targetSource`" — would encode
+  the manifest layout twice, in the collector and again in the rewriter, and the
+  two could drift. Ending the pointer at the key states it once.
+  Date: 2026-07-28
+
+- Decision: `LegacyRef` carries a `definitionFile`, which is `recipe.dhall` when
+  an application's `target.kind` is `recipe` and `module.dhall` everywhere else.
+  Rationale: Milestone 2's local lookup asks the resolver to find a directory
+  containing the artifact's definition file. Recipes are not discovered by
+  `module.dhall`, so without this a recipe target would never resolve locally
+  and would silently degrade from a recoverable `RemoteOrigin` to `LocalOrigin`
+  — the upgrade would lose exactly the provenance it exists to recover. This
+  extends the type sketched in this plan's Interfaces section; the module is
+  owned by this plan, and no interface owned by another plan changed.
+  Date: 2026-07-28
+
+- Decision: The report deduplicates by artifact name *and* legacy path rather
+  than by name alone.
+  Rationale: The same module appears up to three times at the same path, and
+  collapsing those is the point. But two records naming the same artifact at
+  *different* paths mean the manifest was written across a move or a rename,
+  which is precisely the sort of thing a developer reviewing an inferred
+  conversion should see rather than have hidden.
+  Date: 2026-07-28
+
+- Decision: `ManifestUpgradeOpts` and every handler live in the
+  `seihou-cli-internal` library (`Seihou.CLI.ManifestUpgrade` and the subcommand
+  group `Seihou.CLI.Manifest`), not in `seihou-cli/src-exe/` as this plan's
+  Milestone 3 sketched.
+  Rationale: `seihou registry` already sets the precedent — `RegistryCommand`
+  and `SyncVersionsOpts` live in `src/` and `Seihou.CLI.Commands` imports them,
+  rather than the reverse. Following it keeps every line of behaviour testable
+  from the test suite (which links the library, not the executable) and leaves
+  `src-exe/` holding only the `Options.Applicative` parser, which is what
+  `CLAUDE.md`'s module-placement rule asks for.
+  Date: 2026-07-28
+
+- Decision: Write the rewritten `Aeson.Value` bytes, but validate them first by
+  decoding into a `Manifest`.
+  Rationale: Milestone 3 offered two options and each answers a different
+  worry. Writing the rewritten `Value` is what guarantees no field is dropped;
+  decoding into a `Manifest` is what proves the result is readable by every
+  command that will read it. Doing both costs one extra decode and gives both
+  guarantees, so a conversion that would produce an unreadable manifest fails
+  before anything is written rather than after.
+  Date: 2026-07-28
+
+- Decision: Replicate the write-to-temp-then-rename in
+  `Seihou.CLI.ManifestUpgrade.writeDocument` rather than routing the write
+  through `Seihou.Effect.ManifestStore.writeManifest`.
+  Rationale: `writeManifest` encodes a typed `Manifest`, which would drop any
+  field this build does not know about — the one thing the upgrade must not do.
+  The atomicity it provides is four lines, and this plan needs those four lines
+  applied to raw bytes. `docs/plans/44-make-manifest-writes-atomic.md` records
+  why atomicity matters; the mechanism is unchanged.
+  Date: 2026-07-28
+
+- Decision: `formatUpgradeReport` renders the header and the per-artifact
+  blocks only. Whether anything was written is printed by the handler.
+  Rationale: The same conversion account is shown for a dry run, a successful
+  write, and (from Milestone 4) a refusal. Putting the outcome inside the
+  renderer would mean either three renderers or a flag argument, and would make
+  the golden report test assert on two unrelated things at once.
+  Date: 2026-07-28
+
+- Decision: Do not warn when `.seihou/manifest.json` has uncommitted changes.
+  Rationale: This plan's Idempotence and Recovery section asked for a decision.
+  The value of a warning is that the developer can tell the upgrade's diff from
+  their own, and the successful report already ends by inviting exactly that
+  (`git diff .seihou/manifest.json`). Against it: `Seihou.CLI.Git` has no
+  per-path status helper, so this would mean a new `git status --porcelain`
+  call through the `Process` effect for a message that repeats advice already
+  on screen, in a command that is safe to run twice and trivially revertible.
   Date: 2026-07-28
 
 
@@ -612,6 +723,71 @@ Before committing:
 
 ```bash
 nix flake check
+```
+
+The scenario in Validation and Acceptance was run as written, with one
+substitution: the hand-written `module.dhall` it describes does not evaluate to
+a `Module` (it omits `exports`, `prompts`, `commands`, `dependencies`, and
+`migrations`, all of which the decoder requires), so
+`seihou-core/test/fixtures/prompted-optional` was copied into the fake install
+root and renamed to `demo` instead. Transcripts:
+
+```text
+$ XDG_CONFIG_HOME=/tmp/seihou-legacy/home seihou status
+[error] Error reading manifest: Error in $: this manifest uses schema version 5,
+which records machine-specific absolute paths; run 'seihou manifest upgrade' to
+convert it
+exit status: 1
+
+$ XDG_CONFIG_HOME=/tmp/seihou-legacy/home seihou manifest upgrade --dry-run
+Reading .seihou/manifest.json (schema version 5)
+
+  demo      /Users/someone-else/.config/seihou/installed/demo
+         →  remote https://example.com/demo-modules.git
+
+--dry-run: nothing was written.
+exit status: 0
+$ git status --porcelain
+(empty)
+
+$ XDG_CONFIG_HOME=/tmp/seihou-legacy/home seihou manifest upgrade
+Reading .seihou/manifest.json (schema version 5)
+
+  demo      /Users/someone-else/.config/seihou/installed/demo
+         →  remote https://example.com/demo-modules.git
+
+✓ Upgraded .seihou/manifest.json to schema version 6.
+  Review the diff and commit it: git diff .seihou/manifest.json
+
+$ grep -c 'someone-else' .seihou/manifest.json
+0
+$ XDG_CONFIG_HOME=/tmp/seihou-legacy/home seihou status
+Seihou Status:
+
+Applied modules:
+  demo  v1.0.0    (applied 2026-07-01)
+...
+exit status: 0
+
+$ XDG_CONFIG_HOME=/tmp/seihou-legacy/home seihou manifest upgrade
+✓ .seihou/manifest.json is already at schema version 6; nothing to do.
+exit: 0
+
+$ XDG_CONFIG_HOME=/tmp/seihou-legacy/home2 seihou manifest upgrade --dry-run
+Reading .seihou/manifest.json (schema version 5)
+
+  demo      /Users/someone-else/.config/seihou/installed/demo
+         →  local demo  (no upstream recorded)
+            was installed from an upstream on the original machine, but no
+            local copy is available here to recover the URL
+
+--dry-run: nothing was written.
+```
+
+The written manifest records the origin as promised:
+
+```json
+{"modules":[{"appliedAt":"2026-07-01T12:00:00Z","name":"demo","origin":{"artifact":"demo","kind":"remote","repo":"demo-modules","url":"https://example.com/demo-modules.git"},"version":"1.0.0"}],"version":6}
 ```
 
 Commit with all three trailers:
