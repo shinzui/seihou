@@ -4,7 +4,62 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.6.0.0] - 2026-07-28
+
 ### Added
+
+#### A manifest two developers can share
+- **Portable artifact origins** (EP-76, masterplan 9): `.seihou/manifest.json`
+  no longer records where a module lived on the machine that ran seihou. Every
+  artifact reference — `AppliedModule`, `AppliedInstanceState`,
+  `AppliedComposition` — now carries an **`ArtifactOrigin`**: the git URL the
+  artifact was installed from plus its name (`RemoteOrigin`), a
+  repository-relative path for artifacts committed under `.seihou/modules/`
+  (`ProjectOrigin`), or `LocalOrigin` for an artifact whose provenance cannot
+  be verified. Two developers on different machines who apply the same module
+  now produce the same manifest bytes. The manifest schema is bumped to **v6**.
+- **Local origin resolution in every consumer** (EP-77): `seihou migrate`,
+  `seihou upgrade`'s post-upgrade advisory, `seihou run`'s post-run migration
+  and pre-flight pending-migration check, and `seihou update`'s local staging
+  and same-version comparison all locate an artifact through the new
+  `Seihou.Core.ArtifactRef` resolver instead of a path another machine
+  recorded. A `ProjectOrigin` resolves against the project root and
+  deliberately does not fall through to the search paths, so a missing
+  committed module cannot be silently replaced by an installed one of the same
+  name. When an artifact is not installed locally the message names the module,
+  its recorded git URL, every directory searched, and the exact
+  `seihou install` command that fixes it.
+- **Refusal to silently downgrade or substitute** (EP-78): before generating,
+  `seihou run` and `seihou migrate` compare the version recorded in the
+  manifest against the copy installed on this machine. A strictly older local
+  version, an artifact installed from a different git URL, and an artifact that
+  does not resolve at all each stop the command before a file is written,
+  naming both versions or both URLs. A new **`--allow-downgrade`** flag
+  proceeds anyway, still printing the blocks. `seihou status` lists every
+  artifact that differs from what the project records and always exits zero.
+  `seihou update` takes the flag but not the guard: it already refuses
+  backwards moves through `validateVersionChange` and clones from the origin
+  URL the manifest records, so it cannot substitute a same-named artifact.
+- **`seihou manifest upgrade`** (EP-79): converts a manifest already committed
+  in the old absolute-path format in place. Each recorded path is rewritten
+  into its inferred portable origin — a project-local artifact is recognised by
+  its `.seihou/modules` suffix, an upstream URL is recovered by finding the
+  artifact in this machine's search paths and reading the `.seihou-origin.json`
+  beside it — and the command prints a reviewable account of every conversion.
+  The document is walked as a raw JSON value, so fields this build does not
+  know about survive untouched, and the result is validated by decoding it
+  before anything lands on disk. `--dry-run` reports and writes nothing.
+  An upgrade this machine cannot satisfy (a missing or stale artifact, meaning
+  the conversion recorded a guess) is refused unless `--force` is passed.
+  Documented in `docs/cli/manifest.md`, `docs/user/manifest-upgrade.md`, and a
+  new `docs/user/teams.md` guide to sharing a manifest.
+- The repository's first five **ADRs** (`docs/adr/`), recording that the
+  manifest is a checked-in machine-independent artifact, that artifact identity
+  is the origin URL plus the artifact name, that a stale or substituted
+  artifact is a hard error, that the manifest is the only record of applied
+  state, and that legacy manifests convert through an explicit command.
+
+#### Agent tracing and artifact-declared launch settings
 - **Baikai call tracing** (EP-74): `runAgentCompletionWith` now dispatches
   through `Baikai.Trace.withTrace` instead of `Baikai.completeRequest`, so every
   model call emits a correlated `call_started` plus `call_finished`/`call_failed`
@@ -30,17 +85,6 @@ All notable changes to this project will be documented in this file.
   that branch every provider error would be reported as "Provider returned no
   assistant text." The retained `try` now guards sink-side failures only.
 
-### Fixed
-- **Provider errors on the API providers are no longer swallowed** (EP-74).
-  `runAgentCompletionWith` now checks `Response.responseError` before its
-  empty-text guard, so a failed `anthropic`/`openai` call reports the provider's
-  message instead of `"Provider returned no assistant text."` This predates the
-  tracing work: the API providers' `complete` is
-  `streamingComplete claudeMessagesStream`, and `claudeMessagesStream` wraps
-  `prepareCall` in `trySync` and emits an immediate error event rather than
-  throwing, so the `try` in `runAgentCompletionWith` never fired and the
-  error-shaped `Response` fell through to the empty-text guard. Confirmed by
-  running the pre-change binary against a missing `ANTHROPIC_API_KEY`.
 - **Artifact-declared agent launch settings** (EP-73): a new shared
   `Launch.dhall` record in `seihou-schema`, referenced by both `Blueprint.dhall`
   and `AgentPrompt.dhall` and exported as `S.Launch`, lets a blueprint or prompt
@@ -56,7 +100,51 @@ All notable changes to this project will be documented in this file.
   "Launch settings" check, and `agent config` renumbers its precedence legend to
   nine tiers.
 
+### Fixed
+- **Provider errors on the API providers are no longer swallowed** (EP-74).
+  `runAgentCompletionWith` now checks `Response.responseError` before its
+  empty-text guard, so a failed `anthropic`/`openai` call reports the provider's
+  message instead of `"Provider returned no assistant text."` This predates the
+  tracing work: the API providers' `complete` is
+  `streamingComplete claudeMessagesStream`, and `claudeMessagesStream` wraps
+  `prepareCall` in `trySync` and emits an immediate error event rather than
+  throwing, so the `try` in `runAgentCompletionWith` never fired and the
+  error-shaped `Response` fell through to the empty-text guard. Confirmed by
+  running the pre-change binary against a missing `ANTHROPIC_API_KEY`.
+
 ### Changed
+- **Breaking:** `.seihou/manifest.json` schema **v6** drops the `source` and
+  `targetSource` keys in favour of `origin` and `targetOrigin`. Manifests
+  written by earlier releases no longer decode; running any command against one
+  reports the problem and names `seihou manifest upgrade`, which converts it in
+  place. Correspondingly, `AppliedModule`, `AppliedInstanceState`, and
+  `AppliedComposition` no longer carry a source path, and
+  `buildAppliedComposition` takes `ArtifactOrigin` values instead of paths.
+- **Breaking (library API):** every record across all three packages was
+  converted to the generic-lens conventions (EP-75). Records now declare strict
+  fields, derive `Generic` with an explicit deriving strategy, and **drop their
+  per-type field-name prefixes** — so `seihou-core` field accessors are renamed
+  wholesale (`configEnvironment` → `environment`, and so on). Fields are read
+  and written through `#label` overloaded labels; `OverloadedRecordDot` is
+  disabled in every stanza and record update syntax is gone. `Seihou.Prelude`
+  re-exports all of `Control.Lens` (hiding four names that collide with
+  `Data.Aeson`, `Options.Applicative`, and `Seihou.CLI.Commands`) plus
+  `Generic`; it deliberately does **not** import `Data.Generics.Labels`, whose
+  `IsLabel` instance is an orphan, so each module that uses `#label` imports it
+  itself. `generic-lens` and `lens` are now direct dependencies of all three
+  packages. The convention is documented in
+  `docs/dev/architecture/overview.md` and `docs/dev/contributing.md`, and
+  enforced mechanically by `nix/check-record-conventions.sh` in both
+  `nix flake check` and the pre-commit hook.
+- The read side of `.seihou-origin.json` moved from `seihou-cli` down into
+  `seihou-core` so the origin classifier can use it without a dependency cycle.
+  `Seihou.CLI.InstallShared` re-exports it, so its importers are unchanged.
+- The end-to-end specs now locate the `seihou` executable through a shared
+  `Seihou.CLI.SeihouBinary` helper that probes both layouts cabal produces and
+  names every directory it searched on failure. Cabal 3.16 stopped creating the
+  `build-tool-depends` symlink beside the test binary that the four duplicated
+  copies of this helper assumed, so every end-to-end test failed with a bare
+  `posix_spawnp: does not exist`.
 - Bumped the `haskell-nix` registry input to carry **baikai 0.4.1.0** and
   **baikai-claude / baikai-openai 0.4.0.0**, and widened the cabal bounds to
   match. The previous `baikai-claude` 0.3.0.2 forwarded `Options.thinking` only
@@ -543,7 +631,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.5.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.6.0.0...HEAD
+[0.6.0.0]: https://github.com/shinzui/seihou/compare/v0.5.0.0...v0.6.0.0
 [0.5.0.0]: https://github.com/shinzui/seihou/compare/v0.4.0.0...v0.5.0.0
 [0.4.0.0]: https://github.com/shinzui/seihou/compare/v0.3.0.0...v0.4.0.0
 [0.3.0.0]: https://github.com/shinzui/seihou/compare/v0.2.0.0...v0.3.0.0
