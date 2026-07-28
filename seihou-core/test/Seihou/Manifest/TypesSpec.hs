@@ -55,6 +55,40 @@ spec = do
       (m ^. #files) `shouldBe` Map.empty
       (m ^. #blueprintMigrations) `shouldBe` []
 
+  describe "ArtifactOrigin" $ do
+    it "roundtrips a remote origin carrying a repository name" $ do
+      let origin = RemoteOrigin "https://github.com/shinzui/seihou-modules.git" "haskell-base" (Just "seihou-modules")
+      Aeson.decode (Aeson.encode origin) `shouldBe` Just origin
+
+    it "roundtrips a remote origin with no repository name" $ do
+      let origin = RemoteOrigin "https://github.com/shinzui/seihou-modules.git" "haskell-base" Nothing
+      Aeson.decode (Aeson.encode origin) `shouldBe` Just origin
+
+    it "omits the repo key entirely when there is no repository name" $ do
+      let origin = RemoteOrigin "https://example.com/mods.git" "haskell-base" Nothing
+      Aeson.toJSON origin
+        `shouldBe` Aeson.object
+          [ "kind" Aeson..= ("remote" :: T.Text),
+            "url" Aeson..= ("https://example.com/mods.git" :: T.Text),
+            "artifact" Aeson..= ("haskell-base" :: T.Text)
+          ]
+
+    it "roundtrips a project origin" $ do
+      let origin = ProjectOrigin ".seihou/modules/demo"
+      Aeson.decode (Aeson.encode origin) `shouldBe` Just origin
+
+    it "roundtrips a local origin" $ do
+      let origin = LocalOrigin "scratch-module"
+      Aeson.decode (Aeson.encode origin) `shouldBe` Just origin
+
+    it "rejects an unknown origin kind" $ do
+      (Aeson.decode "{\"kind\":\"martian\"}" :: Maybe ArtifactOrigin) `shouldBe` Nothing
+
+    it "names the artifact each origin refers to" $ do
+      artifactOriginName (RemoteOrigin "https://example.com/mods.git" "haskell-base" Nothing) `shouldBe` "haskell-base"
+      artifactOriginName (LocalOrigin "scratch-module") `shouldBe` "scratch-module"
+      artifactOriginName (ProjectOrigin ".seihou/modules/demo") `shouldBe` "demo"
+
   describe "JSON roundtrip" $ do
     it "roundtrips an empty manifest" $ do
       let m = emptyManifest fixedTime

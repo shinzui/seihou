@@ -6,6 +6,7 @@ module Seihou.Manifest.Types
     writeAppliedBlueprint,
     writeAppliedBlueprintMigration,
     hasAppliedBlueprintMigration,
+    artifactOriginName,
   )
 where
 
@@ -21,6 +22,7 @@ import Data.Time (UTCTime)
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (baselineRefFromText)
 import Seihou.Prelude hiding ((.=))
+import System.FilePath (takeFileName)
 
 -- | Current manifest schema version.
 --
@@ -169,6 +171,49 @@ instance FromJSON AppliedTarget where
       "module" -> pure (AppliedModuleTarget (ModuleName name))
       "recipe" -> pure (AppliedRecipeTarget (RecipeName name))
       other -> fail ("unknown applied target kind: " <> T.unpack other)
+
+-- | Machine-independent artifact references are encoded as a tagged object
+-- so a manifest diff stays readable and so future constructors can be added
+-- without breaking the shape.
+instance ToJSON ArtifactOrigin where
+  toJSON (RemoteOrigin url artifact repo) =
+    Aeson.object $
+      [ "kind" .= ("remote" :: Text),
+        "url" .= url,
+        "artifact" .= artifact
+      ]
+        ++ maybe [] (\value -> ["repo" .= value]) repo
+  toJSON (ProjectOrigin path) =
+    Aeson.object
+      [ "kind" .= ("project" :: Text),
+        "path" .= T.pack path
+      ]
+  toJSON (LocalOrigin artifact) =
+    Aeson.object
+      [ "kind" .= ("local" :: Text),
+        "artifact" .= artifact
+      ]
+
+instance FromJSON ArtifactOrigin where
+  parseJSON = Aeson.withObject "ArtifactOrigin" $ \o -> do
+    kind <- o .: "kind" :: Aeson.Parser Text
+    case kind of
+      "remote" ->
+        RemoteOrigin
+          <$> o .: "url"
+          <*> o .: "artifact"
+          <*> o Aeson..:? "repo"
+      "project" -> ProjectOrigin . T.unpack <$> o .: "path"
+      "local" -> LocalOrigin <$> o .: "artifact"
+      other -> fail ("unknown artifact origin kind: " <> T.unpack other)
+
+-- | The artifact name an origin refers to, for display and for matching
+-- against a discovered artifact. 'ProjectOrigin' derives it from the last
+-- path segment, which is how @.seihou\/modules\/\<name\>@ is laid out.
+artifactOriginName :: ArtifactOrigin -> Text
+artifactOriginName (RemoteOrigin _ artifact _) = artifact
+artifactOriginName (LocalOrigin artifact) = artifact
+artifactOriginName (ProjectOrigin path) = T.pack (takeFileName path)
 
 instance ToJSON AppliedInstanceState where
   toJSON state =

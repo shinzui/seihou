@@ -36,6 +36,7 @@ module Seihou.Core.Types
     ModuleLoadError (..),
     Manifest (..),
     ApplicationId (..),
+    ArtifactOrigin (..),
     AppliedTarget (..),
     BaselineRef (..),
     CommandFingerprint (..),
@@ -488,6 +489,43 @@ data Manifest = Manifest
 
 -- | Stable identity for one top-level module or recipe application.
 newtype ApplicationId = ApplicationId {unApplicationId :: Text}
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | Machine-independent identity of an artifact recorded in the manifest.
+--
+-- The manifest is checked into version control and shared between
+-- developers, so it must never contain a path that is meaningful only on
+-- the machine that wrote it. Every artifact reference is therefore one of
+-- three cases, distinguished by how much provenance seihou can actually
+-- prove.
+--
+-- 'RemoteOrigin' is the strong case: the artifact was installed by
+-- @seihou install@ from a git URL into
+-- @~\/.config\/seihou\/installed\/\<name\>@, and that URL was recorded in
+-- @.seihou-origin.json@ beside it. Two developers who install from the
+-- same URL are provably using the same upstream artifact.
+--
+-- 'ProjectOrigin' is the case where the artifact lives inside the project
+-- itself, under @.seihou\/modules\/\<name\>@. The path is stored relative
+-- to the project root, so it means the same thing in every clone.
+--
+-- 'LocalOrigin' is the weak case: the artifact was found in the
+-- developer's personal @~\/.config\/seihou\/modules\/@ directory, which
+-- carries no provenance metadata at all. Only the name is knowable.
+-- Recording it honestly, rather than fabricating a URL, lets later
+-- verification report that this artifact's provenance cannot be checked.
+data ArtifactOrigin
+  = RemoteOrigin
+      { originUrl :: !Text,
+        artifactName :: !Text,
+        repoName :: !(Maybe Text)
+      }
+  | ProjectOrigin
+      { relativePath :: !FilePath
+      }
+  | LocalOrigin
+      { artifactName :: !Text
+      }
   deriving stock (Eq, Ord, Show, Generic)
 
 -- | The deterministic artifact originally requested by the user.
