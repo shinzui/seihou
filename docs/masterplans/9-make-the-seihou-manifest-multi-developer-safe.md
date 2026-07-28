@@ -152,7 +152,7 @@ candidates, to be written during plan 76 and refined at the end of plan 80.
 | 76 | Record portable artifact origins in the manifest | docs/plans/76-record-portable-artifact-origins-in-the-manifest.md | None | None | Complete |
 | 77 | Resolve manifest artifact origins to local directories | docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md | EP-76 | None | Complete |
 | 78 | Refuse accidental module downgrades and origin mismatches | docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md | EP-76, EP-77 | None | Complete |
-| 79 | Upgrade legacy absolute-path manifests in place | docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md | EP-76, EP-77 | EP-78 | In Progress |
+| 79 | Upgrade legacy absolute-path manifests in place | docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md | EP-76, EP-77 | EP-78 | Complete |
 | 80 | Document and end-to-end verify the shared-manifest workflow | docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md | EP-76, EP-77, EP-78, EP-79 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -275,8 +275,8 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-77: Every CLI consumer resolves through the resolver instead of a recorded path; the path fields are deleted (2026-07-28)
 - [x] EP-78: Version and origin comparison module exists with unit tests (2026-07-28)
 - [x] EP-78: `seihou run` and `seihou migrate` refuse downgrades; `--allow-downgrade` overrides on `run`, `migrate`, and `update` (2026-07-28) — `seihou update` was already safe by construction; see Surprises & Discoveries
-- [ ] EP-79: Schema versions 1–5 decode into `ArtifactOrigin` without data loss
-- [ ] EP-79: `seihou manifest upgrade` converts a committed legacy manifest in place, with `--dry-run`
+- [x] EP-79: Schema versions 1–5 decode into `ArtifactOrigin` without data loss (2026-07-28)
+- [x] EP-79: `seihou manifest upgrade` converts a committed legacy manifest in place, with `--dry-run` (2026-07-28) — plus `--force`; the upgrade refuses to write a manifest this machine cannot satisfy
 - [ ] EP-80: Two-developer end-to-end test in the CLI test suite passes
 - [ ] EP-80: `docs/user/teams.md` written; CHANGELOG and architecture overview updated
 - [ ] EP-80: ADR distillation pass complete
@@ -389,6 +389,45 @@ interactions between child plans. Provide concise evidence.
   through 4 decode with empty defaults. They were replaced with two specs
   asserting the refusal message. EP-79 should restore positive decoding coverage
   for versions 1–5, not merely add new tests alongside them.
+
+  Resolved by EP-79. The coverage now lives in
+  `seihou-cli/test/Seihou/CLI/ManifestUpgradeSpec.hs`
+  (`describe "schema versions 1 through 5"`) rather than back in
+  `TypesSpec.hs`, because versions 1–5 are no longer decodable by the ordinary
+  manifest decoder at all — what can be asserted about them is that they
+  convert, and conversion is EP-79's code.
+
+- **The `manifest upgrade` interlock's most common trigger is the fresh clone,
+  not the stale install.** EP-79's soft dependency on EP-78 was framed as
+  "don't write an upgrade that would immediately trip the downgrade guard". In
+  practice the verdict it fires on is almost always `ArtifactUnresolvable`: a
+  developer who has just pulled a repository with a legacy manifest usually has
+  none of its modules installed, and that is the case where inference is
+  *weakest* — every entry degrades to `LocalOrigin` and the upstream URLs are
+  lost for good inside a file about to be committed. So the interlock earns its
+  place for a different reason than EP-78's guard does, and `--force` is
+  load-bearing rather than an escape hatch nobody reaches for.
+
+  This matters to EP-80: a two-developer scenario that upgrades a legacy
+  manifest on the *second* developer's machine must install the modules there
+  first, or pass `--force` and expect `local <name>` origins.
+
+- **`seihou manifest upgrade` renders its own refusal rather than reusing
+  `formatGuardRefusal`.** EP-78's renderer ends by naming `--allow-downgrade`,
+  which is a flag on `seihou run` and `seihou migrate` and not on
+  `manifest upgrade`. EP-79 reuses EP-78's verdicts and `summarizeCheck` but
+  supplies its own remedy paragraph, exported as
+  `Seihou.CLI.ManifestUpgrade.formatUpgradeRefusal`. No EP-78 interface changed.
+  EP-80 should assert on `formatUpgradeRefusal` for the upgrade path and on
+  `formatGuardRefusal` for run and migrate.
+
+- **`docs/cli/` and `seihou help <topic>` are documentation surfaces the child
+  plans keep forgetting.** EP-79's Milestone 5 named `docs/user/` and the
+  CHANGELOG. But every command already has a reference page under `docs/cli/`,
+  `README.md` indexes both that directory and `docs/user/`, and
+  `seihou-cli/src-exe/Seihou/CLI/Help.hs` embeds twelve help topics. A command
+  that exists only because an error message points at it has to be findable
+  from all of them. EP-80 should budget for the same four surfaces, not two.
 
 
 ## Decision Log
@@ -508,6 +547,20 @@ plan.
   have broken a supported workflow. The Vision's user-visible promise is unchanged; only
   the mechanism differs for that one command. This is the contingency EP-78's own
   Idempotence and Recovery section anticipated, taken one step further than it expected.
+  Date: 2026-07-28
+
+- Decision: EP-79 owns a `seihou manifest` subcommand group, with the group
+  selector and every handler in the `seihou-cli-internal` library
+  (`Seihou.CLI.Manifest`, `Seihou.CLI.ManifestUpgrade`) and only the
+  `Options.Applicative` parser in `seihou-cli/src-exe/Seihou/CLI/Commands.hs`.
+  Rationale: EP-79's own Milestone 3 sketched the handler in `src-exe/`
+  importing its options record from `Seihou.CLI.Commands`. The existing
+  `seihou registry` group does the reverse — `RegistryCommand` and
+  `SyncVersionsOpts` live in `src/` and `Commands.hs` imports them — and that
+  direction keeps every line of behaviour reachable from the test suite, which
+  links the library rather than the executable. It is also what `CLAUDE.md`'s
+  module-placement rule asks for. No MasterPlan-level interface changed; the
+  registry precedent is now followed by two command groups rather than one.
   Date: 2026-07-28
 
 - Decision: `docs/adr/` uses the repository's plain numbered-Markdown convention
