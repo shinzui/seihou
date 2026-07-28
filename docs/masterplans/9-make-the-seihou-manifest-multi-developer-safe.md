@@ -153,7 +153,7 @@ candidates, to be written during plan 76 and refined at the end of plan 80.
 | 77 | Resolve manifest artifact origins to local directories | docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md | EP-76 | None | Complete |
 | 78 | Refuse accidental module downgrades and origin mismatches | docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md | EP-76, EP-77 | None | Complete |
 | 79 | Upgrade legacy absolute-path manifests in place | docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md | EP-76, EP-77 | EP-78 | Complete |
-| 80 | Document and end-to-end verify the shared-manifest workflow | docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md | EP-76, EP-77, EP-78, EP-79 | None | In Progress |
+| 80 | Document and end-to-end verify the shared-manifest workflow | docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md | EP-76, EP-77, EP-78, EP-79 | None | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -277,9 +277,9 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-78: `seihou run` and `seihou migrate` refuse downgrades; `--allow-downgrade` overrides on `run`, `migrate`, and `update` (2026-07-28) — `seihou update` was already safe by construction; see Surprises & Discoveries
 - [x] EP-79: Schema versions 1–5 decode into `ArtifactOrigin` without data loss (2026-07-28)
 - [x] EP-79: `seihou manifest upgrade` converts a committed legacy manifest in place, with `--dry-run` (2026-07-28) — plus `--force`; the upgrade refuses to write a manifest this machine cannot satisfy
-- [ ] EP-80: Two-developer end-to-end test in the CLI test suite passes
-- [ ] EP-80: `docs/user/teams.md` written; CHANGELOG and architecture overview updated
-- [ ] EP-80: ADR distillation pass complete
+- [x] EP-80: Two-developer end-to-end test in the CLI test suite passes (2026-07-28) — four scenarios in `seihou-cli/test/Seihou/CLI/SharedManifestE2ESpec.hs`, plus a whole-document no-absolute-paths sweep in `seihou-core/test/Seihou/Manifest/TypesSpec.hs`
+- [x] EP-80: `docs/user/teams.md` written; CHANGELOG and architecture overview updated (2026-07-28) — also the manifest design doc, whose schema sample still showed version 1
+- [x] EP-80: ADR distillation pass complete (2026-07-28) — ADRs 0003, 0004, 0005 created; 0001 and 0002 updated
 
 
 ## Surprises & Discoveries
@@ -428,6 +428,27 @@ interactions between child plans. Provide concise evidence.
   `seihou-cli/src-exe/Seihou/CLI/Help.hs` embeds twelve help topics. A command
   that exists only because an error message points at it has to be findable
   from all of them. EP-80 should budget for the same four surfaces, not two.
+
+- **A no-op re-run is not a no-op for the manifest.** EP-80's end-to-end test
+  was written expecting an empty `git status --porcelain` after a developer
+  regenerates from an unchanged module. Every `seihou run` stamps a fresh
+  `generatedAt` and `appliedAt`, so the manifest is rewritten whether or not any
+  content moved — four timestamp fields differ and nothing else. The assertion
+  became "the generated file is byte-identical and the manifest is the only path
+  git reports", which is the true claim and still catches a regression.
+
+  This is worth knowing beyond the test: a team running seihou in CI sees a
+  manifest diff on every run. Whether that is worth fixing was out of scope for
+  this initiative; it is recorded in `docs/user/teams.md` so it does not
+  surprise anybody.
+
+- **The `seihou-update-docs` skill cannot run.** EP-80's Milestone 4 suggested
+  it as a documentation cross-check. Its first step reads
+  `docs/user/CHANGELOG.md` for a "Last Reviewed Commit" section to diff from,
+  and that section does not exist in the file and never has. EP-80 did the
+  cross-check by hand. Adding the marker is small, separate work — it is a
+  decision about the changelog's format, not about this initiative — and is
+  deliberately left undone.
 
 
 ## Decision Log
@@ -581,4 +602,102 @@ Compare the result against the original vision. Before marking the MasterPlan co
 distill durable project context from this MasterPlan and its child ExecPlans into
 docs/adr/. Keep task-local execution and coordination details here.
 
-(To be filled during and after implementation.)
+Complete as of 2026-07-28. All five child plans landed. `cabal test all` passes
+(1056 core, 469 CLI, 16 OKF-extension) and `nix flake check` is green.
+
+## Against the Vision
+
+The Vision named three things that would be true afterwards. All three are.
+
+**`.seihou/manifest.json` contains no absolute filesystem paths.** Every module
+and recipe reference is an `ArtifactOrigin` — a git URL plus artifact name, a
+repository-relative path, or a bare name where nothing established provenance.
+Two developers who apply the same module produce the same bytes. The claim is
+enforced rather than asserted: `seihou-core/test/Seihou/Manifest/TypesSpec.hs`
+encodes a manifest populated in every serialized string position, walks the
+whole document, and reports the JSON path of anything machine-specific, so a
+future field that leaks a path fails a test rather than reaching a user.
+
+**Every command resolves an artifact from its recorded origin.**
+`Seihou.Core.ArtifactRef` is the single place that answers "where is this on
+this machine?" and the single place that phrases the answer when it is "not
+here" — naming the artifact, the recorded URL, the directories searched, and
+the exact `seihou install` command.
+
+**Seihou refuses to silently downgrade.** `seihou run` and `seihou migrate`
+compare recorded against installed before generating and stop without touching
+a file; `--allow-downgrade` overrides and still prints what it overrode. The
+same comparison catches an origin mismatch. `seihou update` reaches the same
+user-visible outcome through `validateVersionChange` instead — see the Decision
+Log — so the promise holds on all three commands even though the mechanism
+differs on one.
+
+The two extras the scope named are also delivered: `seihou manifest upgrade`
+converts committed legacy manifests with a printed, reviewable account of every
+inference, and `docs/user/teams.md` documents the workflow with a walkthrough
+that was run verbatim before it was committed.
+
+Nothing in the exclusions list was built. No lockfile, no network fetching in
+`seihou run`, no change to `files` or `.seihou/baselines/`, no change to the
+Dhall module format, and blueprints record their origin the same way modules do
+and no more.
+
+## On the decomposition
+
+The five-way split by functional concern held. Each plan had an independently
+verifiable outcome, and no plan had to be split, merged, or reordered.
+
+It was not clean at the seams, and the interesting part is where it leaked.
+EP-76 was supposed to change only the serialized form, but three readers in
+`seihou update` consume the recorded path off a *decoded* manifest, so removing
+the field from the JSON broke them immediately. The fix was a named, temporary
+helper with a comment pointing at EP-77, plus a MasterPlan decision recording
+why — and EP-77 deleted it as its first act. That worked, and it worked because
+the debt was written down at the moment it was incurred rather than discovered
+later. A boundary that leaks slightly and says so is better than a boundary
+redrawn mid-flight.
+
+The consumer list in the Dependency Graph was wrong in both directions: it
+missed `Seihou.CLI.PendingMigrations`, the most-used consumer of all, and named
+two modules that needed no change. Enumerating call sites from a reading of the
+code, before the code has been changed, is not reliable at this scale; EP-77
+found the real set with a grep in minutes. Future MasterPlans should name the
+*kind* of consumer to look for and leave the enumeration to the plan that does
+the work.
+
+One plan's central assumption was wrong in a way worth keeping. EP-78 was
+specified to add the guard to three commands. It found that `seihou update`
+already refused downgrades by another route, could not suffer an origin
+mismatch by construction, and would have been *broken* by the third check —
+because it deliberately supports updating a project whose modules are not
+installed locally. Adding the guard there would have been a regression dressed
+as compliance. The right move was to deliver the user-visible promise and
+record why the mechanism differs, which is what happened.
+
+## Durable context promoted
+
+`docs/adr/` grew from nothing to five records over this initiative. EP-76
+created 0001 (the manifest is a checked-in, machine-independent artifact) and
+0002 (identity is origin URL plus artifact name). EP-80's distillation added
+0003 (a stale or substituted artifact is a hard error, with the warn and
+auto-fetch alternatives and why each was rejected), 0004 (the manifest is the
+only record of applied state — the no-lockfile exclusion), and 0005 (legacy
+manifests convert through an explicit command, and the compatibility guard has
+no removal date). 0001 and 0002 were updated with what implementation revealed:
+the `ProjectOrigin` no-fallthrough rule, `seihou update`'s different mechanism,
+and the whole-document test that now constrains future manifest fields.
+
+The plans keep what is task-local — the timestamps-churn discovery, the
+deliberate-breakage transcripts, the two commands that did not work in the first
+draft of `teams.md`.
+
+## Left undone
+
+`docs/user/CHANGELOG.md` has no "Last Reviewed Commit" marker, so the
+`seihou-update-docs` skill cannot run against it. EP-80 cross-checked the
+initiative's commits by hand instead. Adding the marker is a decision about the
+changelog's format and belongs to whoever owns that, not to this initiative.
+
+Every `seihou run` rewrites the manifest's timestamps even when nothing else
+changed, so a team running seihou in CI sees a diff on every run. It is
+documented in `docs/user/teams.md` and was out of scope here.

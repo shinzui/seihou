@@ -67,7 +67,7 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 4: `docs/user/teams.md` written and linked from `README.md` (2026-07-28) — walkthrough run verbatim; see Concrete Steps
 - [x] Milestone 4: `docs/user/CHANGELOG.md` entry covering the whole initiative (2026-07-28)
 - [x] Milestone 4: `docs/dev/architecture/overview.md` manifest section updated (2026-07-28) — and `docs/dev/design/proposed/manifest-and-incrementality.md`, whose schema sample still showed version 1 with `source` paths
-- [ ] Milestone 5: ADR distillation pass across all five plans complete
+- [x] Milestone 5: ADR distillation pass across all five plans complete (2026-07-28) — ADRs 0003, 0004, 0005 created; 0001 and 0002 updated
 
 
 ## Surprises & Discoveries
@@ -179,6 +179,21 @@ implementation. Provide concise evidence.
   is also what `docs/user/migrations.md` says. Worth noting for anyone writing
   team-facing docs: `upgrade` and `run` are not a pair.
 
+- **The `seihou-update-docs` skill has nothing to anchor on.** Milestone 4 ends
+  by suggesting a run of `claude/skills/seihou-update-docs/` as a cross-check.
+  Its first step reads `docs/user/CHANGELOG.md` for a "Last Reviewed Commit"
+  section and diffs from there; that section does not exist in the file, and
+  never has. The cross-check was done by hand instead — every commit from
+  `d18faf7` (the first of this initiative) to `HEAD` was listed and each
+  user-visible change matched against a CHANGELOG entry: portable origins and
+  schema 6 under `### Changed`, the downgrade refusal and
+  `seihou manifest upgrade` under `### Added`. Nothing from the initiative is
+  undocumented.
+
+  Adding the marker the skill expects is a separate, small piece of work and is
+  not done here, because choosing where the "last reviewed" line lives is a
+  decision about the changelog's format rather than about this initiative.
+
 
 ## Decision Log
 
@@ -201,6 +216,50 @@ Record every decision made while working on the plan.
   write first. Asserting on the tree is what makes the test meaningful.
   Date: 2026-07-28
 
+- Decision: Each end-to-end scenario re-establishes developer A's state from scratch
+  rather than sharing it across `it` blocks.
+  Rationale: The plan describes scenarios two and three as continuing "from the same
+  state", but hspec's `it` blocks are independent and each wraps its own
+  `withSystemTempDirectory`. A shared fixture would make the scenarios
+  order-dependent and would leave a failure in scenario one cascading into the rest.
+  `withGeneratedProject` does the shared setup — A generates on 2.0.0 and commits,
+  B has 1.4.0 installed — in about a second per scenario, which is not worth trading
+  independence for.
+  Date: 2026-07-28
+
+- Decision: Promote three new ADRs (0003, 0004, 0005) rather than folding the
+  distilled decisions into the two ADRs plan 76 created.
+  Rationale: The three are separable and get re-litigated separately. "Why a hard
+  error and not a warning" is a product stance a future contributor will question on
+  its own; "why no lockfile" is a deliberate exclusion someone will propose reversing
+  without ever touching the downgrade policy; "how long legacy manifests stay
+  convertible" is a question that arises years later when somebody wants to delete
+  code. Folding all three into ADR 0001 would produce a record long enough that none
+  of them is findable. ADRs 0001 and 0002 were updated with what implementation
+  revealed and now cross-link the new records.
+  Date: 2026-07-28
+
+- Decision: Record that legacy manifests have no conversion deadline, rather than
+  inventing one.
+  Rationale: Milestone 5 asks for "whatever rule the implementation settled on for
+  how long legacy manifests remain convertible … so a future contributor knows
+  whether deleting the legacy decoder is safe". The rule the implementation settled
+  on is that there is no deadline: the converter is a self-contained module with no
+  runtime cost to anything else, so nothing pressures its removal, and announcing a
+  removal date without evidence that no legacy manifests remain is a promise to break
+  somebody's repository for no gain. That is a real answer to the question, and
+  [ADR 0005](../adr/0005-legacy-manifests-convert-through-an-explicit-command.md)
+  states it along with what evidence would change it.
+  Date: 2026-07-28
+
+- Decision: `docs/adr/` keeps the plain numbered-Markdown convention.
+  Rationale: `agents/skills/exec-plan/ADR.md` says to check `mori.dhall` for an OKF
+  bundle whose path is `docs/adr` and, when none exists, to preserve the repository's
+  established filesystem convention. `mori show --full` reports zero bundles and zero
+  OKF bundles for this project, so the convention EP-76 established — `NNNN-slug.md`
+  with a `Status`/`Date` header — is what the three new records follow.
+  Date: 2026-07-28
+
 
 ## Outcomes & Retrospective
 
@@ -209,7 +268,47 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Complete as of 2026-07-28. All five milestones landed. `cabal test all` passes
+(1056 core, 469 CLI, 16 OKF-extension) and `nix flake check` is green.
+
+**Against the original purpose.** The purpose was to turn four separate
+mechanisms into one workflow and to prove the workflow works. The proof is
+`seihou-cli/test/Seihou/CLI/SharedManifestE2ESpec.hs`: four scenarios driving the
+real binary against one project tree with two `XDG_CONFIG_HOME` roots, covering
+the portable manifest, the refusal with an unchanged working tree,
+`--allow-downgrade`, the successful run after a local upgrade, and the legacy
+manifest's rejection, conversion, and acceptance. Neutering the guard in
+`seihou-cli/src-exe/Seihou/CLI/Run.hs` fails two of the four, so the test bites.
+
+The workflow is `docs/user/teams.md`, whose walkthrough was run verbatim from an
+empty directory before it was committed — which is how the two broken commands
+in its first draft were found.
+
+**Where the plan was wrong, and it was wrong usefully.** Three of its
+predictions did not survive contact:
+
+- Scenario three's "empty `git status` after a no-op re-run" is false. Every run
+  stamps fresh timestamps into the manifest. The assertion is now that the
+  generated file is byte-identical and the manifest is the only path git
+  reports — a weaker claim, but the true one, and still enough to catch a
+  regression.
+- Milestone 3 offered to narrow the no-absolute-paths sweep if a legitimate
+  field broke it. None does; the unqualified assertion holds across every
+  serialized string position.
+- Milestone 4's suggested cross-check, the `seihou-update-docs` skill, cannot
+  run: the changelog has no "Last Reviewed Commit" marker for it to diff from.
+  The check was done by hand instead.
+
+**The distillation.** Three new ADRs — 0003 (hard error, with the warn and
+auto-fetch alternatives and why each was rejected), 0004 (no lockfile, as a
+deliberate exclusion), 0005 (explicit conversion, no removal date) — plus
+updates to 0001 and 0002 carrying what implementation revealed: the
+`ProjectOrigin` no-fallthrough rule, `seihou update`'s different mechanism, and
+the whole-document machine-independence test that now constrains future fields.
+
+**Left undone, deliberately.** The changelog's missing "Last Reviewed Commit"
+marker is a changelog-format decision, not an initiative one, and is not
+invented here.
 
 
 ## Context and Orientation

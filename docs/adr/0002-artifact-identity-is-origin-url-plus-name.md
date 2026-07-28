@@ -129,6 +129,10 @@ not installed on this machine, which that command supports by design.
 ## References
 
 - [ADR 0001](0001-manifest-is-a-checked-in-machine-independent-artifact.md)
+- [ADR 0003](0003-a-stale-or-substituted-artifact-is-a-hard-error.md) — what
+  seihou does with the verdict this identity makes possible.
+- [ADR 0005](0005-legacy-manifests-convert-through-an-explicit-command.md) —
+  recovering an origin for a manifest written before origins existed.
 - `docs/masterplans/9-make-the-seihou-manifest-multi-developer-safe.md`
 - `docs/plans/76-record-portable-artifact-origins-in-the-manifest.md`
 - `docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md`

@@ -65,7 +65,18 @@ evaluation.
 Manifests written before schema version 6 cannot be read directly, because their
 only record of a module's source is another developer's absolute path.
 `Seihou.Manifest.Types.checkManifestVersion` refuses them with a message naming
-the conversion command rather than misreading them.
+the conversion command rather than misreading them. That command, and the
+decision not to date the guard's removal, are
+[ADR 0005](0005-legacy-manifests-convert-through-an-explicit-command.md).
+
+A `ProjectOrigin` that does not resolve is a hard failure and deliberately does
+*not* fall through to the global search paths. If the recorded directory is
+absent, the repository is incomplete; quietly substituting an installed artifact
+of the same name would be exactly the invisible substitution this record exists
+to prevent. `RemoteOrigin` and `LocalOrigin` do search by name, in the ordinary
+discovery order, so a developer deliberately shadowing an installed module with
+a project-local copy keeps that shadowing. The rule is enforced by a named test
+in `seihou-core/test/Seihou/Core/ArtifactRefSpec.hs`.
 
 Because the manifest describes the project rather than the machine, what it
 records is authoritative over what the machine happens to have. A command that
@@ -75,7 +86,8 @@ records — otherwise the machine silently overrides the project and the
 regression looks like an ordinary diff in code review.
 `Seihou.CLI.ManifestGuard` implements that refusal for `seihou run` and
 `seihou migrate`; `--allow-downgrade` is the explicit override, and it still
-prints what it overrides.
+prints what it overrides. The reasoning, and the alternatives rejected on the
+way to it, are [ADR 0003](0003-a-stale-or-substituted-artifact-is-a-hard-error.md).
 
 The line between the two kinds of consumer, first drawn when the resolver was
 added, holds: commands that generate hard-fail on a stale or missing artifact,
@@ -83,15 +95,31 @@ while advisory consumers (pending-migration detection, `seihou status`,
 `seihou update`'s same-version content comparison) skip what they cannot resolve
 so that one uninstalled module cannot make the whole project unreportable.
 
-The invariant is enforced by a test in
+The invariant is enforced by three tests in
 `seihou-core/test/Seihou/Manifest/TypesSpec.hs` (`describe "machine
-independence"`), which encodes a manifest exercising every origin position and
-asserts that no string in an origin position begins with `/`, `~`, or a Windows
-drive prefix, and that the in-memory `source` path is not serialized at all.
+independence"`). Two encode a manifest exercising every origin position and
+assert that no string in an origin position begins with `/`, `~`, or a Windows
+drive prefix, and that the in-memory `source` path is not serialized at all. The
+third is the one that constrains *future* fields: it encodes a manifest
+populated in every serialized string position — parent variables, a file record
+and its baseline, a command receipt with a working directory, a removal spec, an
+applied recipe, an applied blueprint, a migration receipt — walks the whole
+document, and reports the JSON path of any string, key or value, that is
+machine-specific. A new field that records a location has to express it relative
+to the project root or through an `ArtifactOrigin`, or that test fails.
 
 ## References
 
+- [ADR 0002](0002-artifact-identity-is-origin-url-plus-name.md) — how artifacts
+  are identified instead.
+- [ADR 0003](0003-a-stale-or-substituted-artifact-is-a-hard-error.md) — what
+  happens when the local copy disagrees with the manifest.
+- [ADR 0004](0004-the-manifest-is-the-only-record-of-applied-state.md) — why
+  there is no separate lockfile.
+- [ADR 0005](0005-legacy-manifests-convert-through-an-explicit-command.md) —
+  converting manifests written before schema version 6.
 - `docs/masterplans/9-make-the-seihou-manifest-multi-developer-safe.md`
 - `docs/plans/76-record-portable-artifact-origins-in-the-manifest.md`
 - `docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md`
 - `docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md`
+- `docs/user/teams.md` — the workflow this enables.
