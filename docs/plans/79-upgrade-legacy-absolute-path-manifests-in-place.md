@@ -77,8 +77,8 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 2: Unit tests for every inference outcome (2026-07-28)
 - [x] Milestone 3: `seihou manifest upgrade` subcommand with `--dry-run` (2026-07-28)
 - [x] Milestone 3: Report rendering matches the format in this plan (2026-07-28)
-- [ ] Milestone 4: Every other command detects a legacy manifest and points at the upgrade
-- [ ] Milestone 4: Refuse to write an upgrade that would immediately trip the downgrade guard
+- [x] Milestone 4: Every other command detects a legacy manifest and points at the upgrade (2026-07-28)
+- [x] Milestone 4: Refuse to write an upgrade that would immediately trip the downgrade guard (2026-07-28)
 - [ ] Milestone 5: `docs/user/` documentation and CHANGELOG entry
 
 
@@ -119,6 +119,35 @@ implementation. Provide concise evidence.
   Windows drive prefix — which is both correct and what
   `docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md`
   will want to generalise.
+
+- **Every manifest reader already surfaces the version guard; one deliberately
+  does not.** Milestone 4 asked for an audit of
+  `grep -rn "readManifest\|manifestFromJSON"`. All fourteen call sites funnel
+  through `Seihou.Effect.ManifestStore.readManifest`, whose `Left` carries the
+  decoder's message, and every command-level caller prints it and exits
+  non-zero — `Run.hs:271`, `AgentRun.hs:365`, `Status.hs:46`, `Diff.hs:37`,
+  `Remove.hs:31`, `Migrate.hs:203`, `AgentMigrate.hs:171`, and
+  `Update.hs:977` (as `UpdateManifestUnreadable`). The exception is the
+  post-upgrade migration advisory in
+  `seihou-cli/src-exe/Seihou/CLI/Upgrade.hs:291`, which reads `Left _ -> pure
+  ()`: it is advice layered on an install that already succeeded, and it is
+  exactly the advisory-consumer case EP-77's Decision Log carved out. No
+  change was needed.
+
+  Evidence: on a legacy manifest, `seihou status` prints
+  `[error] Error reading manifest: Error in $: this manifest uses schema
+  version 5, … run 'seihou manifest upgrade' to convert it` and exits 1.
+
+- **The interlock's most common trigger is the fresh clone, not the stale
+  install.** The plan describes the guard interlock as protection against
+  upgrading into a downgrade. In practice the verdict it produces most often
+  is `ArtifactUnresolvable`, because a developer who has just pulled a
+  repository with a legacy manifest frequently has none of its modules
+  installed — and that is the case where inference is *weakest*, since every
+  entry degrades to `LocalOrigin` and the upstream URLs are lost for good in a
+  file about to be committed. Refusing there is more valuable than refusing a
+  downgrade, which makes `--force` load-bearing rather than an afterthought:
+  it is the flag for the developer who genuinely means "record what I can see".
 
 
 ## Decision Log
@@ -213,6 +242,20 @@ Record every decision made while working on the plan.
   write, and (from Milestone 4) a refusal. Putting the outcome inside the
   renderer would mean either three renderers or a flag argument, and would make
   the golden report test assert on two unrelated things at once.
+  Date: 2026-07-28
+
+- Decision: The interlock renders its own refusal from
+  `Seihou.CLI.ManifestGuard.summarizeCheck` rather than calling
+  `formatGuardRefusal`, and `--dry-run` shows the refusal as a warning while
+  still exiting zero.
+  Rationale: `formatGuardRefusal` ends by naming `--allow-downgrade`, which is
+  a flag on `seihou run` and `seihou migrate` and not on this command; printing
+  it here would send the developer to a flag that does not exist. The verdicts
+  are the guard's and are reused unchanged; only the remedy paragraph is this
+  command's. Showing the refusal during a dry run costs one guard pass and
+  means a developer previewing the conversion learns in the same breath that
+  it would not be written — but a preview that writes nothing cannot itself
+  fail, so the exit code stays zero.
   Date: 2026-07-28
 
 - Decision: Do not warn when `.seihou/manifest.json` has uncommitted changes.
@@ -782,6 +825,38 @@ Reading .seihou/manifest.json (schema version 5)
             local copy is available here to recover the URL
 
 --dry-run: nothing was written.
+```
+
+The interlock, exercised against the empty install root from the last scenario:
+
+```text
+$ XDG_CONFIG_HOME=/tmp/seihou-legacy/home2 seihou manifest upgrade
+Reading .seihou/manifest.json (schema version 5)
+
+  demo      /Users/someone-else/.config/seihou/installed/demo
+         →  local demo  (no upstream recorded)
+            was installed from an upstream on the original machine, but no
+            local copy is available here to recover the URL
+
+✗ Refusing to write .seihou/manifest.json.
+
+  demo: recorded in the manifest but not installed on this machine
+
+Upgrading now would record what this machine can see rather than what
+the project uses: an artifact that is missing or stale here converts to
+an origin seihou had to guess at, and that guess would be committed.
+
+Install or upgrade the artifacts above and run this again, or re-run
+with --force to accept the conversions exactly as shown.
+exit: 1
+$ git status --porcelain
+(empty)
+
+$ XDG_CONFIG_HOME=/tmp/seihou-legacy/home2 seihou manifest upgrade --force
+… ✓ Upgraded .seihou/manifest.json to schema version 6.
+exit: 0
+$ git status --porcelain
+ M .seihou/manifest.json
 ```
 
 The written manifest records the origin as promised:

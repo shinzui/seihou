@@ -10,6 +10,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Vector qualified as V
+import Seihou.CLI.ManifestGuard (ArtifactCheck (..), ArtifactVerdict (..))
 import Seihou.CLI.ManifestUpgrade
   ( InferenceOutcome (..),
     LegacyManifest (..),
@@ -17,11 +18,13 @@ import Seihou.CLI.ManifestUpgrade
     UpgradeReportEntry (..),
     UpgradeResult (..),
     applyUpgrade,
+    formatUpgradeRefusal,
     formatUpgradeReport,
     inferOriginFromLegacyPath,
     readLegacyManifest,
   )
-import Seihou.Core.Types (ArtifactOrigin (..), Manifest (..))
+import Seihou.Core.ArtifactRef (ArtifactRefError (..))
+import Seihou.Core.Types (ArtifactOrigin (..), Manifest (..), ModuleName (..))
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -220,6 +223,27 @@ spec = do
   describe "formatUpgradeReport" $
     it "renders one aligned block per conversion" $
       formatUpgradeReport exampleResult `shouldBe` exampleReport
+
+  describe "formatUpgradeRefusal" $ do
+    it "names every blocking artifact and the two ways forward" $ do
+      let refusal = formatUpgradeRefusal "✗ Refusing to write .seihou/manifest.json." [missingDemo]
+      refusal `shouldSatisfy` T.isInfixOf "✗ Refusing to write .seihou/manifest.json."
+      refusal `shouldSatisfy` T.isInfixOf "demo: recorded in the manifest but not installed on this machine"
+      refusal `shouldSatisfy` T.isInfixOf "Install or upgrade the artifacts above and run this again"
+      refusal `shouldSatisfy` T.isInfixOf "--force"
+
+    it "does not offer --allow-downgrade, which is not a flag on this command" $
+      formatUpgradeRefusal "✗" [missingDemo] `shouldSatisfy` (not . T.isInfixOf "--allow-downgrade")
+
+-- | A recorded artifact that is not installed on this machine — the verdict
+-- an upgrade run on a fresh clone hits most often.
+missingDemo :: ArtifactCheck
+missingDemo =
+  ArtifactCheck
+    { name = ModuleName "demo",
+      origin = LocalOrigin "demo",
+      verdict = ArtifactUnresolvable (ArtifactNotFoundLocally (LocalOrigin "demo") [])
+    }
 
 haskellBaseUrl :: Text
 haskellBaseUrl = "https://github.com/shinzui/seihou-modules.git"

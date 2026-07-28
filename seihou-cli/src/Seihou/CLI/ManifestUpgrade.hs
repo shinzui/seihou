@@ -45,11 +45,13 @@ module Seihou.CLI.ManifestUpgrade
     ManifestUpgradeOpts (..),
     UpgradeOutcome (..),
     manifestRelativePath,
+    formatUpgradeRefusal,
     runManifestUpgrade,
     handleManifestUpgrade,
   )
 where
 
+import Control.Monad (unless)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key (Key)
 import Data.Aeson.Key qualified as Key
@@ -61,6 +63,12 @@ import Data.List (foldl')
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Vector qualified as V
+import Seihou.CLI.ManifestGuard
+  ( ArtifactCheck,
+    blockingChecks,
+    checkAppliedArtifacts,
+    summarizeCheck,
+  )
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (resolveArtifactOrigin)
 import Seihou.Core.Module (defaultSearchPaths)
@@ -468,7 +476,11 @@ manifestRelativePath = ".seihou" </> "manifest.json"
 
 -- | Flags parsed for @seihou manifest upgrade@.
 data ManifestUpgradeOpts = ManifestUpgradeOpts
-  { dryRun :: !Bool
+  { dryRun :: !Bool,
+    -- | Write even when the converted manifest names artifacts this machine
+    -- cannot satisfy. For the developer who is upgrading a manifest on a
+    -- machine that deliberately does not have every artifact installed.
+    force :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -477,10 +489,14 @@ data ManifestUpgradeOpts = ManifestUpgradeOpts
 data UpgradeOutcome
   = -- | The manifest is already at the current schema version.
     UpgradeNotNeeded
-  | -- | @--dry-run@: the document was converted and thrown away.
-    UpgradeWouldWrite UpgradeResult
+  | -- | @--dry-run@: the document was converted and thrown away. Carries any
+    -- check that would have blocked a real write.
+    UpgradeWouldWrite UpgradeResult ![ArtifactCheck]
   | -- | The converted document was written over the manifest.
     UpgradeWritten UpgradeResult
+  | -- | The conversion succeeded but writing it would leave the project
+    -- naming artifacts this machine cannot satisfy, so nothing was written.
+    UpgradeBlocked UpgradeResult ![ArtifactCheck]
   | -- | Nothing was written; carries the message to show the user.
     UpgradeFailed Text
   deriving stock (Eq, Show, Generic)
@@ -516,11 +532,19 @@ runManifestUpgrade opts = do
           let result = applyUpgrade legacy conversions
           case validateUpgrade result of
             Left err -> pure (UpgradeFailed err)
-            Right _
-              | opts ^. #dryRun -> pure (UpgradeWouldWrite result)
-              | otherwise -> do
-                  writeDocument manifestPath (result ^. #upgradedDocument)
-                  pure (UpgradeWritten result)
+            Right manifest -> do
+              blocking <-
+                if opts ^. #force
+                  then pure []
+                  else blockingChecks <$> checkAppliedArtifacts projectRoot searchPaths manifest
+              if opts ^. #dryRun
+                then pure (UpgradeWouldWrite result blocking)
+                else
+                  if null blocking
+                    then do
+                      writeDocument manifestPath (result ^. #upgradedDocument)
+                      pure (UpgradeWritten result)
+                    else pure (UpgradeBlocked result blocking)
 
 -- | Decode the converted document with the ordinary manifest decoder, which
 -- turns the write into a correctness check: whatever is about to land on disk
@@ -550,6 +574,27 @@ writeDocument manifestPath document = do
   LBS.writeFile temporaryPath (Aeson.encode document)
   renamePath temporaryPath manifestPath
 
+-- | Explain why an upgrade this machine cannot satisfy was not written.
+--
+-- The blocking verdicts are the guard's, but the remedy is this command's, so
+-- the wording is here rather than reusing
+-- 'Seihou.CLI.ManifestGuard.formatGuardRefusal' — that one ends by naming
+-- @--allow-downgrade@, which is a flag on @seihou run@ and @seihou migrate@,
+-- not on this command.
+formatUpgradeRefusal :: Text -> [ArtifactCheck] -> Text
+formatUpgradeRefusal leadIn checks =
+  T.unlines $
+    [leadIn, ""]
+      <> ["  " <> summary | Just summary <- map summarizeCheck checks]
+      <> [ "",
+           "Upgrading now would record what this machine can see rather than what",
+           "the project uses: an artifact that is missing or stale here converts to",
+           "an origin seihou had to guess at, and that guess would be committed.",
+           "",
+           "Install or upgrade the artifacts above and run this again, or re-run",
+           "with --force to accept the conversions exactly as shown."
+         ]
+
 -- | Print the outcome and exit non-zero on failure.
 handleManifestUpgrade :: ManifestUpgradeOpts -> IO ()
 handleManifestUpgrade opts = do
@@ -563,9 +608,19 @@ handleManifestUpgrade opts = do
             <> T.pack (show currentManifestVersion)
             <> "; nothing to do."
         )
-    UpgradeWouldWrite result -> do
+    UpgradeWouldWrite result blocking -> do
       TIO.putStr (formatUpgradeReport result)
+      unless (null blocking) $
+        TIO.putStr (formatUpgradeRefusal "! Without --force, this upgrade would be refused." blocking)
       TIO.putStrLn "--dry-run: nothing was written."
+    UpgradeBlocked result blocking -> do
+      TIO.putStr (formatUpgradeReport result)
+      TIO.putStr
+        ( formatUpgradeRefusal
+            ("✗ Refusing to write " <> T.pack manifestRelativePath <> ".")
+            blocking
+        )
+      exitFailure
     UpgradeWritten result -> do
       TIO.putStr (formatUpgradeReport result)
       TIO.putStrLn

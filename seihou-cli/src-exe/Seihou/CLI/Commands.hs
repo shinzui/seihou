@@ -1471,6 +1471,7 @@ manifestUpgradeParser =
   fmap ManifestUpgrade $
     ManifestUpgradeOpts
       <$> switch (long "dry-run" <> help "Show every conversion without writing the manifest")
+      <*> switch (long "force" <> help "Write even when a converted artifact is missing or stale here")
 
 registryInfo :: ParserInfo Command
 registryInfo =
