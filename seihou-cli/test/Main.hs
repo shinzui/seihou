@@ -21,6 +21,7 @@ import Seihou.CLI.InitSpec qualified as InitSpec
 import Seihou.CLI.InstallHistorySpec qualified as InstallHistorySpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.ManifestGuardSpec qualified as ManifestGuardSpec
+import Seihou.CLI.ManifestUpgradeSpec qualified as ManifestUpgradeSpec
 import Seihou.CLI.MigrateSpec qualified as MigrateSpec
 import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
 import Seihou.CLI.PromptRenderSpec qualified as PromptRenderSpec
@@ -63,6 +64,7 @@ main = do
         InstallHistorySpec.tests,
         ListSpec.tests,
         ManifestGuardSpec.tests,
+        ManifestUpgradeSpec.tests,
         MigrateSpec.tests,
         PendingMigrationSpec.tests,
         PromptRenderSpec.tests,

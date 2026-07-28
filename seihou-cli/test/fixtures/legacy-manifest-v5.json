@@ -1,0 +1,108 @@
+{
+  "version": 5,
+  "generatedAt": "2026-07-01T12:00:00Z",
+  "modules": [
+    {
+      "name": "haskell-base",
+      "source": "/Users/someone-else/.config/seihou/installed/haskell-base",
+      "version": "1.4.0",
+      "appliedAt": "2026-07-01T12:00:00Z",
+      "parentVars": { "project.name": "demo" },
+      "removal": {
+        "steps": [{ "action": "remove-file", "dest": "flake.nix" }],
+        "commands": [{ "run": "echo cleaned", "workDir": "." }]
+      }
+    },
+    {
+      "name": "project-lint",
+      "source": "/Users/someone-else/work/myproject/.seihou/modules/project-lint",
+      "version": "0.2.0",
+      "appliedAt": "2026-07-01T12:05:00Z"
+    }
+  ],
+  "variables": { "project.name": "demo", "project.author": "someone-else" },
+  "files": {
+    "flake.nix": {
+      "hash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "module": "haskell-base",
+      "strategy": "dhall-text",
+      "generatedAt": "2026-07-01T12:00:00Z",
+      "baseline": "2222222222222222222222222222222222222222222222222222222222222222",
+      "applications": ["app-one"]
+    },
+    ".hlint.yaml": {
+      "hash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "module": "project-lint",
+      "strategy": "copy",
+      "generatedAt": "2026-07-01T12:05:00Z"
+    }
+  },
+  "applications": [
+    {
+      "applicationId": "app-one",
+      "target": { "kind": "module", "name": "haskell-base" },
+      "targetSource": "/Users/someone-else/.config/seihou/installed/haskell-base",
+      "targetVersion": "1.4.0",
+      "additionalModules": [],
+      "namespace": "haskell",
+      "instances": [
+        {
+          "name": "haskell-base",
+          "source": "/Users/someone-else/.config/seihou/installed/haskell-base",
+          "version": "1.4.0",
+          "resolvedVars": { "project.name": "demo" }
+        }
+      ],
+      "commandReceipts": {
+        "4444444444444444444444444444444444444444444444444444444444444444": {
+          "fingerprint": "4444444444444444444444444444444444444444444444444444444444444444",
+          "module": "haskell-base",
+          "command": "cabal build",
+          "completedAt": "2026-07-01T12:01:00Z",
+          "workDir": "."
+        }
+      },
+      "appliedAt": "2026-07-01T12:00:00Z"
+    },
+    {
+      "applicationId": "app-two",
+      "target": { "kind": "recipe", "name": "haskell-service" },
+      "targetSource": "/Users/someone-else/.config/seihou/installed/haskell-service",
+      "targetVersion": "3.1.0",
+      "additionalModules": ["project-lint"],
+      "instances": [
+        {
+          "name": "project-lint",
+          "source": "/Users/someone-else/work/myproject/.seihou/modules/project-lint",
+          "version": "0.2.0",
+          "parentVars": { "lint.strict": "True" },
+          "resolvedVars": {}
+        },
+        {
+          "name": "scratch-helper",
+          "source": "/Users/someone-else/.config/seihou/modules/scratch-helper",
+          "resolvedVars": {}
+        }
+      ],
+      "appliedAt": "2026-07-01T12:10:00Z"
+    }
+  ],
+  "blueprintMigrations": [
+    {
+      "name": "service-blueprint",
+      "from": "1.0.0",
+      "to": "2.0.0",
+      "version": "2.0.0",
+      "appliedAt": "2026-07-01T12:20:00Z",
+      "agentSessionId": "session-abc"
+    }
+  ],
+  "blueprint": {
+    "name": "service-blueprint",
+    "version": "2.0.0",
+    "appliedAt": "2026-07-01T12:20:00Z",
+    "baselineModules": ["haskell-base"],
+    "noBaseline": false,
+    "userPrompt": "build a service"
+  }
+}
