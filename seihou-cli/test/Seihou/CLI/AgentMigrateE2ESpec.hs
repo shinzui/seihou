@@ -6,6 +6,7 @@ import Data.Generics.Labels ()
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.SeihouBinary (seihouBinary)
 import Seihou.Core.Types (AppliedBlueprintMigration (..), Manifest (..))
 import Seihou.Manifest.Types (manifestFromJSON)
 import System.Directory
@@ -15,7 +16,7 @@ import System.Directory
     getPermissions,
     setPermissions,
   )
-import System.Environment (getEnvironment, getExecutablePath)
+import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..))
 import System.FilePath (searchPathSeparator, takeDirectory, (</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -251,11 +252,6 @@ tests = testSpec "Agent migrate end-to-end" $ do
       resumeOutput `shouldSatisfy` T.isInfixOf "already have receipts"
       T.lines <$> TIO.readFile launchLog `shouldReturn` ["called", "called"]
       LBS.readFile manifestPath `shouldReturn` beforeResume
-
-seihouBinary :: IO FilePath
-seihouBinary = do
-  testBinary <- getExecutablePath
-  pure (takeDirectory (takeDirectory testBinary) </> "seihou" </> "seihou")
 
 runProcessText ::
   FilePath ->

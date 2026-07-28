@@ -26,10 +26,11 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import GHC.Generics (Generic)
+import Seihou.CLI.SeihouBinary (seihouBinary)
 import System.Directory (createDirectoryIfMissing)
-import System.Environment (getEnvironment, getExecutablePath)
+import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..))
-import System.FilePath (takeDirectory, (</>))
+import System.FilePath ((</>))
 import System.Process (CreateProcess (..), callProcess, proc, readCreateProcessWithExitCode, readProcess)
 
 data TwoDeveloperFixture = TwoDeveloperFixture
@@ -128,11 +129,6 @@ moduleDhall name version =
 --
 -- @build-tool-depends: seihou-cli:seihou@ in the test-suite stanza is what puts
 -- it at a predictable place beside the test binary.
-seihouBinary :: IO FilePath
-seihouBinary = do
-  testBinary <- getExecutablePath
-  pure (takeDirectory (takeDirectory testBinary) </> "seihou" </> "seihou")
-
 -- | Run the real binary in the shared project as one of the two developers.
 --
 -- @home@ becomes @XDG_CONFIG_HOME@, which is the only thing that distinguishes

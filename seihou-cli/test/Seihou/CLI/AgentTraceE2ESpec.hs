@@ -16,6 +16,7 @@ import Data.ByteString.Lazy.Char8 qualified as BL8
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.SeihouBinary (seihouBinary)
 import System.Directory
   ( createDirectoryIfMissing,
     doesFileExist,
@@ -23,9 +24,9 @@ import System.Directory
     getPermissions,
     setPermissions,
   )
-import System.Environment (getEnvironment, getExecutablePath)
+import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..))
-import System.FilePath (searchPathSeparator, takeDirectory, (</>))
+import System.FilePath (searchPathSeparator, (</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (CreateProcess (..), proc, readCreateProcessWithExitCode)
 import Test.Hspec
@@ -147,11 +148,6 @@ withTraceProject action =
               False -> pure []
           pure (exitCode, output, errorOutput, launchArgs)
     action root run
-
-seihouBinary :: IO FilePath
-seihouBinary = do
-  testBinary <- getExecutablePath
-  pure (takeDirectory (takeDirectory testBinary) </> "seihou" </> "seihou")
 
 runProcessText ::
   FilePath ->
