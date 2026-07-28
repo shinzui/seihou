@@ -258,7 +258,9 @@ test-suite seihou-cli-test
     Seihou.CLI.RemoteVersionSpec
     Seihou.CLI.RunBlueprintRefusalSpec
     Seihou.CLI.SavePromptedSpec
+    Seihou.CLI.SharedManifestE2ESpec
     Seihou.CLI.StatusSpec
+    Seihou.CLI.TwoDeveloperFixture
     Seihou.CLI.UpdateE2ESpec
     Seihou.CLI.UpdateFixture
     Seihou.CLI.UpdateInteractionSpec

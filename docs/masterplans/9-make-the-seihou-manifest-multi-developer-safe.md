@@ -153,7 +153,7 @@ candidates, to be written during plan 76 and refined at the end of plan 80.
 | 77 | Resolve manifest artifact origins to local directories | docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md | EP-76 | None | Complete |
 | 78 | Refuse accidental module downgrades and origin mismatches | docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md | EP-76, EP-77 | None | Complete |
 | 79 | Upgrade legacy absolute-path manifests in place | docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md | EP-76, EP-77 | EP-78 | Complete |
-| 80 | Document and end-to-end verify the shared-manifest workflow | docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md | EP-76, EP-77, EP-78, EP-79 | None | Not Started |
+| 80 | Document and end-to-end verify the shared-manifest workflow | docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md | EP-76, EP-77, EP-78, EP-79 | None | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).

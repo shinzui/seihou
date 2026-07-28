@@ -57,11 +57,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: `TwoDeveloperFixture` builds a project plus two independent fake homes
-- [ ] Milestone 2: End-to-end test — A generates, B is refused, nothing changed on disk
-- [ ] Milestone 2: End-to-end test — `--allow-downgrade` proceeds and says so
-- [ ] Milestone 2: End-to-end test — B upgrades locally and the ordinary run succeeds
-- [ ] Milestone 2: End-to-end test — a legacy manifest is rejected, upgraded, then usable
+- [x] Milestone 1: `TwoDeveloperFixture` builds a project plus two independent fake homes (2026-07-28)
+- [x] Milestone 2: End-to-end test — A generates, B is refused, nothing changed on disk (2026-07-28)
+- [x] Milestone 2: End-to-end test — `--allow-downgrade` proceeds and says so (2026-07-28)
+- [x] Milestone 2: End-to-end test — B upgrades locally and the ordinary run succeeds (2026-07-28) — asserts the generated file is untouched and only the manifest's timestamps move; see Surprises & Discoveries
+- [x] Milestone 2: End-to-end test — a legacy manifest is rejected, upgraded, then usable (2026-07-28)
+- [x] Milestone 2: Deliberate-breakage check proves the test bites (2026-07-28)
 - [ ] Milestone 3: Regression test asserting no absolute path can appear in a written manifest
 - [ ] Milestone 4: `docs/user/teams.md` written and linked from `README.md`
 - [ ] Milestone 4: `docs/user/CHANGELOG.md` entry covering the whole initiative
@@ -74,7 +75,53 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **A re-run is a no-op for the project but never for the manifest.** Scenario
+  three was written to assert an empty `git status --porcelain` after developer
+  B upgrades and re-runs, on the reasoning that regenerating from the same
+  version with the same inputs changes nothing. It changes exactly four fields.
+  Every `seihou run` stamps a fresh timestamp into the manifest whether or not
+  any content moved.
+
+  Evidence, from a hand-run of the same scenario outside the suite — two
+  consecutive `seihou run demo` invocations against an unchanged 2.0.0 module,
+  diffed field by field:
+
+  ```text
+  DIFF /generatedAt                    '…T04:51:29.638022Z' -> '…T04:51:29.715206Z'
+  DIFF /modules/0/appliedAt            '…T04:51:29.638022Z' -> '…T04:51:29.715206Z'
+  DIFF /applications/0/appliedAt       '…T04:51:29.638022Z' -> '…T04:51:29.715206Z'
+  DIFF /files/README.md/generatedAt    '…T04:51:29.638022Z' -> '…T04:51:29.715206Z'
+  ```
+
+  Nothing else differs — not the recorded version, not the file hash, not the
+  origin. So the assertion is now that the *generated file* is byte-identical
+  and that `.seihou/manifest.json` is the only path git reports. That is the
+  honest claim, and it still fails if a re-run rewrites the README.
+
+  This is worth knowing beyond the test: a team that runs seihou in CI will see
+  a manifest diff on every run even when nothing changed. Whether that is worth
+  fixing is out of scope here, but it is recorded in
+  `docs/user/teams.md` so it does not surprise anybody.
+
+- **The deliberate-breakage check fails earlier than the plan predicted, and in
+  two scenarios rather than one.** Validation and Acceptance expected scenario
+  one to fail on the `git status --porcelain` assertion. With
+  `enforceArtifactGuard runOpts (blockingChecks guardChecks)` in
+  `seihou-cli/src-exe/Seihou/CLI/Run.hs:292` replaced by
+  `enforceArtifactGuard runOpts []`, it fails one assertion earlier — on the
+  exit code, since hspec stops at the first failed expectation — and scenario
+  two fails too, because the `--allow-downgrade` override notice is no longer
+  printed:
+
+  ```text
+  records a portable manifest and refuses a stale developer: FAIL
+    predicate failed on: ExitSuccess
+  proceeds under --allow-downgrade and says so:              FAIL
+    predicate failed on: "Generation Plan (demo):\n\n  Variables:\n …"
+  ```
+
+  Both scenarios bite, which is the point. Restoring the line returns all four
+  to green.
 
 
 ## Decision Log
