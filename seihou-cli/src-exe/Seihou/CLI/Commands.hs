@@ -148,7 +148,16 @@ data RunOpts = RunOpts
     -- 'seihou run' to refuse with an actionable message and a
     -- non-zero exit, so a user never silently writes new templates
     -- into paths a migration would have moved.
-    withMigrations :: !Bool
+    withMigrations :: !Bool,
+    -- | When 'True', generate even though a module installed on this
+    -- machine is older than the version @.seihou\/manifest.json@
+    -- records, or came from a different origin than it records. When
+    -- 'False' (the default), either condition makes @seihou run@ refuse
+    -- before writing anything, so a developer whose install cache lags
+    -- behind a teammate's commit cannot silently regenerate the project
+    -- from the older module. The blocking artifacts are printed either
+    -- way; the flag only decides whether the run continues.
+    allowDowngrade :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -840,6 +849,10 @@ runParser =
         ( long "with-migrations"
             <> help "Apply any pending module migrations before the run plan; without this, 'seihou run' refuses when migrations are pending"
         )
+      <*> switch
+        ( long "allow-downgrade"
+            <> help "Proceed even when a module installed locally is older than the version recorded in .seihou/manifest.json"
+        )
 
 updateParser :: Parser Command
 updateParser =
@@ -1285,6 +1298,10 @@ migrateParser =
       <*> switch (long "no-fetch" <> help "Skip the remote fetch; use only the locally installed copy")
       <*> switch (long "commit" <> help "Commit migrated files to git after execution (uses AI-generated message)")
       <*> optional (option (T.pack <$> str) (long "commit-message" <> metavar "MSG" <> help "Custom commit message (implies --commit)"))
+      <*> switch
+        ( long "allow-downgrade"
+            <> help "Proceed even when a module installed locally is older than the version recorded in .seihou/manifest.json"
+        )
 
 migrateFooter :: Doc
 migrateFooter =

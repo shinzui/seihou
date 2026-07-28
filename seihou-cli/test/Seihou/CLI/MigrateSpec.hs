@@ -130,7 +130,8 @@ defaultOpts =
       verbose = False,
       noFetch = True,
       commit = False,
-      commitMessage = Nothing
+      commitMessage = Nothing,
+      allowDowngrade = False
     }
 
 -- ----------------------------------------------------------------------------

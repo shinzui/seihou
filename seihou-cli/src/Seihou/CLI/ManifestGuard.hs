@@ -289,7 +289,7 @@ blockingChecks = filter (isBlocking . (^. #verdict))
 formatGuardRefusal :: [ArtifactCheck] -> Text
 formatGuardRefusal [] = ""
 formatGuardRefusal checks =
-  T.intercalate "\n\n" (map (refusalBlock "Refusing to run") checks)
+  T.intercalate "\n\n" (map (refusalBlock "✗ Refusing to run") checks)
     <> "\n\n"
     <> T.intercalate
       "\n"
@@ -305,14 +305,16 @@ formatGuardRefusal checks =
 formatGuardOverride :: [ArtifactCheck] -> Text
 formatGuardOverride [] = ""
 formatGuardOverride checks =
-  T.intercalate "\n\n" (map (refusalBlock "Proceeding anyway (--allow-downgrade)") checks) <> "\n"
+  T.intercalate "\n\n" (map (refusalBlock "! Proceeding anyway (--allow-downgrade)") checks) <> "\n"
 
--- | One artifact's block, under a caller-supplied lead-in.
+-- | One artifact's block, under a caller-supplied lead-in. The lead-in
+-- carries its own status symbol, because a refusal and a deliberate override
+-- print the same body but are not the same news.
 refusalBlock :: Text -> ArtifactCheck -> Text
 refusalBlock leadIn check = case check ^. #verdict of
   ArtifactStale recordedVersion localVersion ->
     T.intercalate "\n" $
-      [ "✗ " <> leadIn <> ": your local copy of '" <> label <> "' is older than the",
+      [ leadIn <> ": your local copy of '" <> label <> "' is older than the",
         "  version this project expects.",
         "",
         "  Recorded in .seihou/manifest.json:  " <> recordedVersion,
@@ -325,7 +327,7 @@ refusalBlock leadIn check = case check ^. #verdict of
            ]
   ArtifactOriginMismatch recorded local ->
     T.intercalate "\n" $
-      [ "✗ " <> leadIn <> ": '" <> label <> "' is installed from a different source",
+      [ leadIn <> ": '" <> label <> "' is installed from a different source",
         "  than this project records.",
         "",
         "  Recorded in .seihou/manifest.json:  " <> originDescription recorded,
@@ -340,7 +342,7 @@ refusalBlock leadIn check = case check ^. #verdict of
             ]
           _ -> []
   ArtifactUnresolvable refErr ->
-    "✗ " <> leadIn <> ".\n\n" <> renderArtifactRefError refErr
+    leadIn <> ".\n\n" <> renderArtifactRefError refErr
   ArtifactVersionIncomparable recorded local ->
     T.intercalate
       "\n"

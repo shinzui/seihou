@@ -26,6 +26,13 @@ import Seihou.CLI.CommandExecution
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
+import Seihou.CLI.ManifestGuard
+  ( ArtifactCheck,
+    blockingChecks,
+    checkAppliedArtifactsFor,
+    formatGuardOverride,
+    formatGuardRefusal,
+  )
 import Seihou.CLI.Migrate
   ( MigrateError (..),
     MigrateOpts (..),
@@ -267,11 +274,26 @@ handleRun runOpts = do
       exitFailure
     Right m -> pure (fromMaybe (emptyManifest now) m)
 
-  -- 6b. Pre-flight pending-migration check. We only consider modules in
-  -- the current composition: a pending chain on an unrelated module
-  -- must not block this run.
   let composedModuleNames =
         Set.fromList [m ^. #name | (_, m, _) <- modulesInOrder]
+
+  -- 6b. Pre-flight downgrade and origin guard: refuse to generate from a
+  -- module that is older than, or came from somewhere other than, what the
+  -- manifest records. This runs *before* the pending-migration check below
+  -- because a stale local copy is the more fundamental problem — the
+  -- migration chain is computed from that same older copy, so its advice
+  -- would point the wrong way. Like the migration check, it considers only
+  -- modules in the current composition; a stale module this run does not
+  -- touch must not block it.
+  projectRoot <- getCurrentDirectory
+  searchPaths <- defaultSearchPaths
+  guardChecks <-
+    checkAppliedArtifactsFor projectRoot searchPaths (Just composedModuleNames) initialManifest
+  enforceArtifactGuard runOpts (blockingChecks guardChecks)
+
+  -- 6c. Pre-flight pending-migration check. We only consider modules in
+  -- the current composition: a pending chain on an unrelated module
+  -- must not block this run.
   pendings <-
     detectPendingMigrations initialManifest (Just composedModuleNames)
   manifest <-
@@ -284,7 +306,6 @@ handleRun runOpts = do
   -- each artifact's discovery directory is classified into a portable origin
   -- before it is recorded. See docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md.
   let (appliedTarget, targetSource, targetVersion) = targetInfo
-  projectRoot <- getCurrentDirectory
   targetOrigin <- detectArtifactOrigin projectRoot targetSource
   originedModules <-
     traverse
@@ -307,7 +328,7 @@ handleRun runOpts = do
       candidateCommandReceipts =
         finalizeCommandReceipts commandPlan [] priorCommandReceipts
 
-  -- 6c. Compute the diff against the (possibly post-migration) manifest.
+  -- 6d. Compute the diff against the (possibly post-migration) manifest.
   diff <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     -- Diff needs every name that could own a manifest file. Each
     -- instance owns its qualified name; the bare module name is still
@@ -669,6 +690,24 @@ setApplicationCommandReceipts applicationId receipts manifest =
           application & #commandReceipts .~ receipts
       | otherwise = application
 
+-- | Apply the downgrade / origin-mismatch policy.
+--
+-- Without @--allow-downgrade@: the run refuses before a single file is
+-- written, so the project and its manifest are left byte-identical.
+--
+-- With @--allow-downgrade@: the same blocks are printed under a
+-- "proceeding anyway" lead-in and the run continues. They are printed
+-- rather than suppressed on purpose — a deliberate downgrade is still a
+-- downgrade, and the diff it produces should not be the first time anyone
+-- hears about it.
+enforceArtifactGuard :: RunOpts -> [ArtifactCheck] -> IO ()
+enforceArtifactGuard _ [] = pure ()
+enforceArtifactGuard runOpts blocking
+  | runOpts ^. #allowDowngrade = TIO.putStr (formatGuardOverride blocking)
+  | otherwise = do
+      TIO.putStr (formatGuardRefusal blocking)
+      exitFailure
+
 -- | Apply the pending-migration policy.
 --
 -- Without @--with-migrations@: the run refuses and prints a one-line
@@ -754,7 +793,11 @@ applyOneMigration level manifest (modName, _) =
                 verbose = False,
                 noFetch = True,
                 commit = False,
-                commitMessage = Nothing
+                commitMessage = Nothing,
+                -- Only 'handleMigrate' consults this; 'runMigrate' is the
+                -- guard-free core, and 'handleRun' has already applied the
+                -- guard to this run's composition above.
+                allowDowngrade = False
               }
       -- The manifest records a portable origin, so the module has to be
       -- located on this machine before it can be re-read.

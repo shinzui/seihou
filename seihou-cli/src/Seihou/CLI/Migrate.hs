@@ -116,7 +116,20 @@ data MigrateOpts = MigrateOpts
     commit :: !Bool,
     -- | Custom commit message; implies @commit = True@.
     -- When 'Nothing', the AI-generated message is used.
-    commitMessage :: !(Maybe Text)
+    commitMessage :: !(Maybe Text),
+    -- | When 'True', plan a migration even though the copy of the module
+    -- installed on this machine is older than the version
+    -- @.seihou\/manifest.json@ records, or came from a different origin
+    -- than it records. When 'False' (the default), 'handleMigrate'
+    -- refuses before planning. A stale copy is especially damaging here:
+    -- the chain is computed from the local module's declared migration
+    -- list, so an older copy produces a chain that stops short of where
+    -- the project already is.
+    --
+    -- Only 'handleMigrate' consults this. 'runMigrate' is the guard-free
+    -- core that @seihou run --with-migrations@ and @seihou upgrade@ call
+    -- once they have done their own checking.
+    allowDowngrade :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 

@@ -360,7 +360,11 @@ runOnePostUpgradeMigration installedDir name = do
                 -- redundant fetch in 'runMigrate'.
                 noFetch = True,
                 commit = False,
-                commitMessage = Nothing
+                commitMessage = Nothing,
+                -- Only 'handleMigrate' consults this; 'runMigrate' is the
+                -- guard-free core, and the upgrade that got us here has
+                -- just refreshed the installed copy anyway.
+                allowDowngrade = False
               }
       result <- runMigrate opts manifest installedDir
       case result of

@@ -75,8 +75,8 @@ This section must always reflect the actual current state of the work.
 
 - [x] Milestone 1: `Seihou.CLI.ManifestGuard` with `checkAppliedArtifacts` and its verdict type (2026-07-28)
 - [x] Milestone 1: Pure unit tests for every verdict, including unparseable versions and `LocalOrigin` (2026-07-28)
-- [ ] Milestone 2: `--allow-downgrade` flag parsed for `run`, `update`, and `migrate`
-- [ ] Milestone 2: `seihou run` refuses before generating; `--allow-downgrade` proceeds
+- [x] Milestone 2: `--allow-downgrade` flag parsed for `run` and `migrate` (2026-07-28); whether `update` needs one is Milestone 3's question
+- [x] Milestone 2: `seihou run` refuses before generating; `--allow-downgrade` proceeds (2026-07-28)
 - [ ] Milestone 3: `seihou update` refuses before staging
 - [ ] Milestone 3: `seihou migrate` refuses before planning
 - [ ] Milestone 4: `seihou status` reports stale and mismatched artifacts without failing
@@ -171,6 +171,38 @@ Record every decision made while working on the plan.
   one uninstalled module could not run anything at all, which is the failure mode EP-77's
   advisory-consumer decision was written to avoid. `checkAppliedArtifacts` is retained
   unchanged as the `Nothing` case, so the pinned interface still exists.
+  Date: 2026-07-28
+
+- Decision: Run the downgrade guard *before* the pending-migration check in
+  `seihou-cli/src-exe/Seihou/CLI/Run.hs`, and restrict it to the modules in the current
+  composition.
+  Rationale: The order is the one the Plan of Work called for, and the reason holds up in
+  the code: `detectPendingMigrations` computes its chain from the *locally installed*
+  `module.dhall`, so when the local copy is stale the migration advice is derived from
+  the same stale copy and points backwards. Refusing on staleness first means the user
+  never sees that misleading advice. The composition filter mirrors the existing
+  pending-migration call site one line below, which passes `Just composedModuleNames` for
+  the same reason: a problem with a module this run does not touch is not this run's
+  problem.
+  Date: 2026-07-28
+
+- Decision: `--allow-downgrade` prints the blocking blocks under a `!  Proceeding anyway`
+  lead-in rather than suppressing them.
+  Rationale: The whole failure mode this plan addresses is a change that nobody notices.
+  A silent override would reintroduce it for anyone who has the flag in a script or
+  shell alias. The symbol differs from the refusal's `✗` so the two are not confusable at
+  a glance.
+  Date: 2026-07-28
+
+- Decision: Only `handleMigrate` consults `MigrateOpts.allowDowngrade`; `runMigrate` stays
+  guard-free, and its three internal construction sites
+  (`seihou-cli/src-exe/Seihou/CLI/Run.hs`, `seihou-cli/src-exe/Seihou/CLI/Upgrade.hs`,
+  `seihou-cli/test/Seihou/CLI/MigrateSpec.hs`) pass `False`.
+  Rationale: `runMigrate` is the shared core that `seihou run --with-migrations` and
+  `seihou upgrade` call after doing their own checking — `run` has already applied the
+  guard to its composition, and `upgrade` has just refreshed the installed copy. Guarding
+  inside `runMigrate` would double-check in those paths and could refuse a migration that
+  the caller has already established is safe.
   Date: 2026-07-28
 
 - Decision: Distinguish "origins disagree" from "origins cannot be compared" with an
@@ -608,6 +640,88 @@ Before committing:
 
 ```bash
 nix flake check
+```
+
+### Evidence — Milestone 2, run against the scratch environment
+
+The scratch modules use a plain Dhall record rather than the pinned schema import, so no
+network access is needed. Note that a module's step sources must live under
+`<module>/files/`, not at the module root — `checkFileExistence` in
+`seihou-core/src/Seihou/Core/Module.hs` looks there, and a `README.tmpl` placed beside
+`module.dhall` fails validation with `step source file not found`.
+
+Developer A, who has `2.0.0`, generates and commits. The manifest records the version and
+a portable origin, with no absolute path anywhere:
+
+```text
+$ XDG_CONFIG_HOME=/tmp/seihou-downgrade/home-a seihou run demo
+Generation Plan (demo):
+
+  Operations:
+      [new]  README.md  (template, demo)
+
+  1 files to write, 0 conflicts
+1 new, 0 modified, 0 unchanged.
+
+$ python3 -c "import json;print(json.load(open('.seihou/manifest.json'))['modules'])"
+[{'appliedAt': '2026-07-28T03:53:39.834588Z', 'name': 'demo',
+  'origin': {'artifact': 'demo', 'kind': 'remote', 'repo': 'demo-modules',
+             'url': 'https://example.com/demo-modules.git'},
+  'version': '2.0.0'}]
+```
+
+Developer B, who still has `1.4.0`, is refused — and the working tree is untouched, which
+is the check that proves the guard fires before any write:
+
+```text
+$ XDG_CONFIG_HOME=/tmp/seihou-downgrade/home-b seihou run demo
+✗ Refusing to run: your local copy of 'demo' is older than the
+  version this project expects.
+
+  Recorded in .seihou/manifest.json:  2.0.0
+  Installed on this machine:          1.4.0
+  Origin: https://example.com/demo-modules.git
+
+  Update your local copy first:
+    seihou upgrade demo
+
+To proceed anyway — pinning this project to what is installed here —
+re-run with --allow-downgrade.
+--- exit status: 1 ---
+--- git status --porcelain: ---
+--- (end) ---
+```
+
+The override proceeds, still printing the blocks, and the manifest moves to `1.4.0`:
+
+```text
+$ XDG_CONFIG_HOME=/tmp/seihou-downgrade/home-b seihou run demo --allow-downgrade
+! Proceeding anyway (--allow-downgrade): your local copy of 'demo' is older than the
+  version this project expects.
+  ...
+0 new, 1 modified, 0 unchanged.
+--- exit status: 0 ---
+manifest modules: [{..., 'version': '1.4.0'}]
+```
+
+Giving B's copy version `2.0.0` but a different `sourceUrl` produces the mismatch refusal
+instead of a version message, confirming identity is checked before version:
+
+```text
+$ XDG_CONFIG_HOME=/tmp/seihou-downgrade/home-b seihou run demo
+✗ Refusing to run: 'demo' is installed from a different source
+  than this project records.
+
+  Recorded in .seihou/manifest.json:  https://example.com/demo-modules.git
+  Installed on this machine:          https://example.com/forked-modules.git
+
+  These are different artifacts that happen to share a name.
+  Install the one this project records:
+    seihou install https://example.com/demo-modules.git
+
+To proceed anyway — pinning this project to what is installed here —
+re-run with --allow-downgrade.
+--- exit status: 1 ---
 ```
 
 Commit with all three trailers:
