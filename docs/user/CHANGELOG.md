@@ -221,6 +221,46 @@ packages in the workspace share a single version.
 
 ### Changed
 
+- **The manifest is now machine-independent, and manifests written by earlier
+  versions must be upgraded before use.** This is a breaking change for existing
+  projects; `seihou manifest upgrade` is the fix.
+
+  `.seihou/manifest.json` used to record, for every applied module, the absolute
+  directory that module occupied on the machine that ran the command —
+  `/Users/shinzui/.config/seihou/installed/haskell-base`. Teams commit the
+  manifest, and that path meant nothing in anybody else's clone: commands that
+  re-read a module from it either failed or silently fell back to a different
+  module than the manifest described.
+
+  Schema version 6 replaces those paths with portable artifact origins. Every
+  reference is now the git URL the artifact was installed from plus its name, a
+  path relative to the project root for a module living inside the project, or a
+  bare name when nothing recorded an upstream:
+
+  ```json
+  "origin": {
+    "kind": "remote",
+    "url": "https://github.com/shinzui/seihou-modules.git",
+    "artifact": "haskell-base",
+    "repo": "seihou-modules"
+  }
+  ```
+
+  Two developers who apply the same module now produce the same bytes, so a
+  manifest diff in review shows a real change rather than a change of laptop.
+  Every command resolves the recorded origin against the local machine's search
+  paths, and when the artifact is not installed it says so by name, with the
+  `seihou install` command that fixes it, instead of failing somewhere inside a
+  Dhall evaluation.
+
+  Manifests at schema version 5 or earlier no longer load. Every command reports
+  this and names the remedy; run `seihou manifest upgrade` once, review the
+  printed conversions, and commit the result.
+
+  New guide: [Sharing a Seihou Project Across a Team](teams.md) — what to
+  commit, what each developer needs installed, and what happens when someone is
+  out of date.
+
 - `seihou status` recommends one update per recorded application; `run` is
   described as initial application/reconfiguration, while `upgrade` is
   explicitly shared-cache-only maintenance.

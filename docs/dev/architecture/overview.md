@@ -737,6 +737,20 @@ A manifest (`.seihou/manifest.json`) tracks what was generated, enabling:
   chains resume without rerunning successful steps unless `--rerun` is given
 - Undo/rollback capability (future)
 
+The manifest is a **checked-in, machine-independent project artifact**. It
+describes the project, not the machine that wrote it, so it records no absolute
+path: every artifact it references is named by an `ArtifactOrigin`
+(`seihou-core/src/Seihou/Core/Types.hs`) — a git URL plus an artifact name, a
+path relative to the project root, or a bare name when nothing established
+provenance. Two developers who apply the same module therefore produce the same
+bytes in every origin position. Turning a recorded origin back into a directory
+on the current machine is `Seihou.Core.ArtifactRef`'s job; deciding whether that
+directory may be generated from is `Seihou.CLI.ManifestGuard`'s. See
+[ADR 0001](../../adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md)
+and [ADR 0002](../../adr/0002-artifact-identity-is-origin-url-plus-name.md), and
+[Sharing a Seihou Project Across a Team](../../user/teams.md) for the workflow
+this enables.
+
 ### Three-State Diff Model
 
 The diff engine compares three sources: the manifest (last known generated state), the plan (what would be generated now), and disk (current filesystem state). This enables precise conflict classification without requiring version control.

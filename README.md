@@ -110,6 +110,11 @@ project, and detecting changes.
 - **Blueprint migrations** let a library ship ordered, agent-guided upgrade steps
   that consumers run across an explicit version window, with per-edge receipts
   for resume. See [Blueprint Migrations](docs/user/blueprint-migrations.md).
+- **The manifest is shared state.** `.seihou/manifest.json` describes the
+  project rather than the machine, so teams commit it — and seihou refuses to
+  regenerate from a module older than, or from a different repository than, the
+  one it records. See
+  [Sharing a Seihou Project Across a Team](docs/user/teams.md).
 
 
 ## Commands
@@ -184,6 +189,7 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 - [Configuration & Variables](docs/user/config-and-variables.md) — the resolution hierarchy, scopes, and contexts.
 - [Registries & Multi-Module Repositories](docs/user/registries-and-multi-module-repos.md) — publish many artifacts from one repo.
 - [Migrations](docs/user/migrations.md) — move projects across module versions.
+- [Sharing a Seihou Project Across a Team](docs/user/teams.md) — what to commit, what each developer needs installed, and what happens when someone is out of date.
 - [Upgrading an Older Manifest](docs/user/manifest-upgrade.md) — convert a `.seihou/manifest.json` written before schema version 6.
 - [Blueprints](docs/user/blueprints.md) — agent-driven scaffolding.
 - [Blueprint Migrations](docs/user/blueprint-migrations.md) — publish and run agent-guided library upgrades.

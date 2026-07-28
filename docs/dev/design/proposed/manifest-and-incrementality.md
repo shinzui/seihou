@@ -44,19 +44,32 @@ Without state tracking, a scaffolding tool can only do one-shot generation. Re-r
 
 ### Schema
 
+The manifest is committed to version control and read on other developers'
+machines, so it records no absolute path. Each artifact reference is an
+`ArtifactOrigin` — a git URL plus artifact name, a project-relative path, or a
+bare name for an artifact with no recorded provenance. See
+[ADR 0001](../../../adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md)
+and [ADR 0002](../../../adr/0002-artifact-identity-is-origin-url-plus-name.md).
+
 ```json
 {
-  "version": 1,
+  "version": 6,
   "generatedAt": "2026-03-01T10:30:00Z",
   "modules": [
     {
       "name": "haskell-base",
-      "source": "~/.config/seihou/modules/haskell-base",
+      "origin": {
+        "kind": "remote",
+        "url": "https://github.com/shinzui/seihou-modules.git",
+        "artifact": "haskell-base",
+        "repo": "seihou-modules"
+      },
+      "version": "1.4.0",
       "appliedAt": "2026-03-01T10:30:00Z"
     },
     {
       "name": "nix-flake",
-      "source": "~/.config/seihou/modules/nix-flake",
+      "origin": { "kind": "project", "path": ".seihou/modules/nix-flake" },
       "appliedAt": "2026-03-01T10:30:00Z"
     }
   ],
@@ -270,8 +283,8 @@ The manifest stores content hashes, not input hashes, so change detection compar
 Seihou Status:
 
 Applied modules:
-  haskell-base    (applied 2026-03-01, source: ~/.config/seihou/modules/haskell-base)
-  nix-flake       (applied 2026-03-01, source: ~/.config/seihou/modules/nix-flake)
+  haskell-base  v1.4.0    (applied 2026-03-01)
+  nix-flake               (applied 2026-03-01)
 
 Tracked files: 5
   README.md           haskell-base   unchanged
