@@ -40,6 +40,7 @@ library
     Seihou.Composition.Resolve
     Seihou.Core.AgentPrompt
     Seihou.Core.Application
+    Seihou.Core.ArtifactOriginDetect
     Seihou.Core.Blueprint
     Seihou.Core.CommandFingerprint
     Seihou.Core.CommandVar
@@ -149,6 +150,7 @@ test-suite seihou-core-test
     Seihou.Composition.ResolveSpec
     Seihou.Core.AgentPromptSpec
     Seihou.Core.ApplicationSpec
+    Seihou.Core.ArtifactOriginDetectSpec
     Seihou.Core.BlueprintSpec
     Seihou.Core.CommandFingerprintSpec
     Seihou.Core.CommandVarSpec

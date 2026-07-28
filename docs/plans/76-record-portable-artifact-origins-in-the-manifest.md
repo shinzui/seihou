@@ -77,8 +77,8 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1: `ArtifactOrigin` type added to `seihou-core/src/Seihou/Core/Types.hs` (2026-07-28)
 - [x] Milestone 1: JSON encoder and decoder for `ArtifactOrigin` in `seihou-core/src/Seihou/Manifest/Types.hs` (2026-07-28)
 - [x] Milestone 1: Round-trip unit tests in `seihou-core/test/Seihou/Manifest/TypesSpec.hs` (2026-07-28)
-- [ ] Milestone 2: `Seihou.Core.ArtifactOriginDetect` classifies a directory into an `ArtifactOrigin`
-- [ ] Milestone 2: Unit tests for classification covering all three constructors
+- [x] Milestone 2: `Seihou.Core.ArtifactOriginDetect` classifies a directory into an `ArtifactOrigin` (2026-07-28)
+- [x] Milestone 2: Unit tests for classification covering all three constructors (2026-07-28)
 - [ ] Milestone 3: `AppliedModule`, `AppliedInstanceState`, and `AppliedComposition` carry an origin
 - [ ] Milestone 3: `currentManifestVersion` bumped from 5 to 6 with an explanatory comment
 - [ ] Milestone 4: `seihou run` records origins

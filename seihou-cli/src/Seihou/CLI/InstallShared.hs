@@ -12,8 +12,7 @@ module Seihou.CLI.InstallShared
 where
 
 import Control.Monad (when)
-import Data.Aeson (FromJSON (..), ToJSON (..), object, withObject, (.:), (.:?), (.=))
-import Data.Aeson qualified as Aeson
+import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
@@ -21,6 +20,7 @@ import Data.Text qualified as T
 import Data.Time (getCurrentTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
 import Seihou.CLI.Shared (logIO)
+import Seihou.Core.ArtifactOriginDetect (OriginInfo (..), readOriginInfo)
 import Seihou.Core.Types (LogLevel (..))
 import Seihou.Effect.Logger (logWarn)
 import Seihou.Prelude
@@ -29,7 +29,6 @@ import System.Directory
     copyFile,
     createDirectoryIfMissing,
     doesDirectoryExist,
-    doesFileExist,
     getXdgDirectory,
     listDirectory,
     removeDirectoryRecursive,
@@ -41,30 +40,12 @@ import System.Process (readProcessWithExitCode)
 -- Origin metadata
 -- ----------------------------------------------------------------------------
 
--- | Read side of @.seihou-origin.json@. Tolerates files written by older
--- 'seihou install' runs that may have been missing optional fields.
-data OriginInfo = OriginInfo
-  { sourceUrl :: !Text,
-    repoName :: !(Maybe Text),
-    version :: !(Maybe Text)
-  }
-  deriving stock (Eq, Generic, Show)
-
-instance FromJSON OriginInfo where
-  parseJSON = withObject "OriginInfo" $ \v ->
-    OriginInfo <$> v .: "sourceUrl" <*> v .:? "repoName" <*> v .:? "version"
-
--- | Read and parse @.seihou-origin.json@ at the given installed-module
--- directory. Returns 'Nothing' if the file is absent or unparseable.
-readOriginInfo :: FilePath -> IO (Maybe OriginInfo)
-readOriginInfo installedDir = do
-  let path = installedDir </> ".seihou-origin.json"
-  exists <- doesFileExist path
-  if not exists
-    then pure Nothing
-    else do
-      bs <- LBS.readFile path
-      pure (Aeson.decode bs)
+-- The read side ('OriginInfo', 'readOriginInfo') lives in
+-- "Seihou.Core.ArtifactOriginDetect" because @seihou-core@ needs it to
+-- classify an artifact directory into a portable manifest origin and cannot
+-- depend on @seihou-cli-internal@. It is re-exported here so existing
+-- importers are unaffected. The write side below stays in the CLI, which is
+-- the only place that installs anything.
 
 -- | Write side of @.seihou-origin.json@. Captures everything 'seihou
 -- install' / 'seihou upgrade' want to record at install time, including
