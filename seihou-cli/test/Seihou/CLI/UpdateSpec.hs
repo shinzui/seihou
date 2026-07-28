@@ -569,7 +569,8 @@ updateRequest dryRun =
       reconfigure = False,
       promptPolicy = ForbidPrompts,
       commandPolicy = RunChangedCommands,
-      dryRun
+      dryRun,
+      allowDowngrade = False
     }
 
 moduleDhallWithTemplate :: Text -> Text -> Text -> Text

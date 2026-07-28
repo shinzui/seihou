@@ -12,6 +12,45 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **Seihou refuses to silently downgrade a project.** If your copy of a module
+  is older than the version `.seihou/manifest.json` records, `seihou run` and
+  `seihou migrate` now stop before writing anything:
+
+  ```text
+  ✗ Refusing to run: your local copy of 'haskell-base' is older than the
+    version this project expects.
+
+    Recorded in .seihou/manifest.json:  2.0.0
+    Installed on this machine:          1.4.0
+    Origin: https://github.com/shinzui/seihou-modules.git
+
+    Update your local copy first:
+      seihou upgrade haskell-base
+
+  To proceed anyway — pinning this project to what is installed here —
+  re-run with --allow-downgrade.
+  ```
+
+  This is the failure a shared manifest makes easy: a teammate upgrades a
+  module, runs seihou, and commits; you pull, still have the old copy, run
+  seihou, and every generated file quietly reverts — looking like an ordinary
+  diff in code review. The refusal happens before the plan is computed, so the
+  project is byte-identical afterwards and a refusal costs you nothing. Nothing
+  is fetched over the network; seihou tells you what to run.
+
+  The same check catches an *origin mismatch* — a module with the right name
+  installed from a different git repository than the manifest records is a
+  different module, and seihou says so rather than generating from it.
+
+  Pass `--allow-downgrade` to `run`, `migrate`, or `update` when pinning back is
+  deliberate. The command proceeds, but still prints what it is overriding under
+  a `! Proceeding anyway` heading. A module found in your personal
+  `~/.config/seihou/modules/` has no recorded provenance; its version is still
+  compared, but its identity is reported as unverifiable rather than blocked.
+
+  `seihou status` now lists every artifact that differs from what the project
+  records, so you find out before a command refuses. It always exits zero.
+
 - **Call tracing for agent commands.** Seihou can now record what each model
   call actually did — which provider and model ran, how long it took, how many
   tokens it used, and what it cost:

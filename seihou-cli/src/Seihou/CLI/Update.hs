@@ -144,7 +144,7 @@ planProjectUpdateIn sessionDirectory request = do
                           case reconciliationResult of
                             Left err -> pure (Left (UpdateReconciliationFailed err))
                             Right reconciliation -> do
-                              evidence <- versionEvidence projectRoot catalog selected plannedApplications
+                              evidence <- versionEvidence (request ^. #allowDowngrade) projectRoot catalog selected plannedApplications
                               case evidence of
                                 Left err -> pure (Left err)
                                 Right (versionChanges, versionWarnings) -> do
@@ -567,17 +567,19 @@ operationDestination PatchFileOp {dest} = Just dest
 operationDestination _ = Nothing
 
 versionEvidence ::
+  -- | Whether @--allow-downgrade@ was passed.
+  Bool ->
   FilePath ->
   CandidateCatalog ->
   [AppliedComposition] ->
   [PlannedApplication] ->
   IO (Either UpdateError ([VersionChange], [UpdateWarning]))
-versionEvidence projectRoot catalog previousApplications plannedApplications = do
+versionEvidence allowDowngrade projectRoot catalog previousApplications plannedApplications = do
   evidence <- fmap concat $ sequence (zipWith applicationEvidence previousApplications plannedApplications)
   pure $ do
     changes <- sequence evidence
     let actualChanges = filter isActualChange changes
-    traverse_ validateVersionChange actualChanges
+    traverse_ (validateVersionChange allowDowngrade) actualChanges
     let unique = Map.elems (Map.fromList [(versionKey change, change) | change <- actualChanges])
         warnings =
           [ SameVersionContentChanged (change ^. #name)
@@ -638,14 +640,23 @@ versionEvidence projectRoot catalog previousApplications plannedApplications = d
       not (T.null (change ^. #name))
         && (change ^. #fromVersion /= change ^. #toVersion || change ^. #sameVersionContentChanged)
 
-validateVersionChange :: VersionChange -> Either UpdateError ()
-validateVersionChange change
+-- | Refuse a candidate that would move the project to a lower version than
+-- the manifest records, unless @--allow-downgrade@ was passed.
+--
+-- @fromVersion@ is the version @.seihou\/manifest.json@ records for the
+-- already-applied artifact and @toVersion@ is the candidate's. Note what this
+-- does *not* need to guard: the candidate is cloned from the origin URL the
+-- manifest itself records (see 'Seihou.CLI.Update.Source.remoteProvenance'),
+-- never from whatever happens to be installed on this machine, so an update
+-- cannot silently substitute a same-named artifact from a different source.
+validateVersionChange :: Bool -> VersionChange -> Either UpdateError ()
+validateVersionChange allowDowngrade change
   | T.null (change ^. #name) = Right ()
   | otherwise = case (change ^. #fromVersion, change ^. #toVersion) of
       (Just fromText, Just toText) -> do
         fromVersion <- maybe (Left (CandidateVersionInvalid (change ^. #name) fromText)) Right (parseVersion fromText)
         toVersion <- maybe (Left (CandidateVersionInvalid (change ^. #name) toText)) Right (parseVersion toText)
-        if toVersion < fromVersion
+        if toVersion < fromVersion && not allowDowngrade
           then Left (CandidateDowngrade (change ^. #name) (change ^. #fromVersion) (change ^. #toVersion))
           else Right ()
       _ -> Right ()

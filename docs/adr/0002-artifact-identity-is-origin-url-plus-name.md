@@ -92,8 +92,44 @@ Consumers must handle all three constructors. In particular, anything that
 verifies provenance has to have a defined answer for `LocalOrigin`, and that
 answer is "unverifiable", not "assume it matches".
 
+Identity is now enforced, not merely recorded.
+`Seihou.CLI.ManifestGuard.judgeArtifact` compares the recorded origin against
+the origin of the copy found locally before it compares versions, because a
+differing origin URL means the two version numbers describe different artifacts
+and ordering them is meaningless. Each constructor's trust level maps onto a
+distinct outcome:
+
+- Two `RemoteOrigin`s are the only pair whose identity can be confirmed or
+  refuted outright. Disagreeing URLs are a hard refusal. URLs are compared after
+  normalising a trailing `.git` and trailing slashes, because
+  `https://host/repo`, `https://host/repo.git` and `https://host/repo/` are the
+  same repository and a manifest must not read as a different module to a
+  developer who typed a different spelling.
+- A recorded `RemoteOrigin` that resolves to a copy carrying no provenance is
+  *unverifiable*, not a mismatch. Seihou searches all three roots by name, so a
+  developer deliberately shadowing an installed module with a personal copy in
+  `~/.config/seihou/modules/` resolves to the personal one; calling that a
+  mismatch would break a supported workflow, and calling it a match would assert
+  an identity nothing checked.
+- A recorded `ProjectOrigin` resolves against the project root and nowhere else,
+  so anything other than the same project path is a genuine inconsistency.
+
+The version comparison still runs in the unverifiable case: a version comes from
+the artifact's own `module.dhall`, so "older than recorded" remains meaningful
+even where "the same module" is not provable.
+
+One consumer deliberately does not verify identity. `seihou update` clones from
+the origin URL the manifest itself records
+(`remoteProvenance` in `seihou-cli/src/Seihou/CLI/Update/Source.hs`) rather than
+generating from whatever is installed locally, so a same-named artifact from
+another source can never be substituted and there is nothing for a guard to
+catch. Adding one would also have broken updating a project whose modules are
+not installed on this machine, which that command supports by design.
+
 ## References
 
 - [ADR 0001](0001-manifest-is-a-checked-in-machine-independent-artifact.md)
 - `docs/masterplans/9-make-the-seihou-manifest-multi-developer-safe.md`
 - `docs/plans/76-record-portable-artifact-origins-in-the-manifest.md`
+- `docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md`
+- `docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md`

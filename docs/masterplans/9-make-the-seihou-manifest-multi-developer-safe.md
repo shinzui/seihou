@@ -151,7 +151,7 @@ candidates, to be written during plan 76 and refined at the end of plan 80.
 |---|-------|------|-----------|-----------|--------|
 | 76 | Record portable artifact origins in the manifest | docs/plans/76-record-portable-artifact-origins-in-the-manifest.md | None | None | Complete |
 | 77 | Resolve manifest artifact origins to local directories | docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md | EP-76 | None | Complete |
-| 78 | Refuse accidental module downgrades and origin mismatches | docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md | EP-76, EP-77 | None | In Progress |
+| 78 | Refuse accidental module downgrades and origin mismatches | docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md | EP-76, EP-77 | None | Complete |
 | 79 | Upgrade legacy absolute-path manifests in place | docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md | EP-76, EP-77 | EP-78 | Not Started |
 | 80 | Document and end-to-end verify the shared-manifest workflow | docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md | EP-76, EP-77, EP-78, EP-79 | None | Not Started |
 
@@ -273,8 +273,8 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-76: First two ADRs written under `docs/adr/` (2026-07-28)
 - [x] EP-77: `Seihou.Core.ArtifactRef` resolver and its error type exist with unit tests (2026-07-28)
 - [x] EP-77: Every CLI consumer resolves through the resolver instead of a recorded path; the path fields are deleted (2026-07-28)
-- [ ] EP-78: Version and origin comparison module exists with unit tests
-- [ ] EP-78: `seihou run`, `seihou update`, and `seihou migrate` refuse downgrades; `--allow-downgrade` overrides
+- [x] EP-78: Version and origin comparison module exists with unit tests (2026-07-28)
+- [x] EP-78: `seihou run` and `seihou migrate` refuse downgrades; `--allow-downgrade` overrides on `run`, `migrate`, and `update` (2026-07-28) — `seihou update` was already safe by construction; see Surprises & Discoveries
 - [ ] EP-79: Schema versions 1–5 decode into `ArtifactOrigin` without data loss
 - [ ] EP-79: `seihou manifest upgrade` converts a committed legacy manifest in place, with `--dry-run`
 - [ ] EP-80: Two-developer end-to-end test in the CLI test suite passes
@@ -352,6 +352,36 @@ interactions between child plans. Provide concise evidence.
   `seihou-core/test/Seihou/Core/ArtifactRefSpec.hs`; consider stating it explicitly in
   `docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md` once EP-78
   and EP-79 have had a chance to contradict it.
+
+- **`seihou update` did not need the downgrade guard, and adding it would have
+  been a regression.** The Vision above names `seihou run`, `seihou update` and
+  `seihou migrate` as the three commands that must compare recorded against
+  installed. EP-78 found that `update` reaches the same outcome by a different
+  route on all three axes, and that one of the three checks would actively break
+  it.
+
+  Downgrades are already refused: `versionEvidence` in
+  `seihou-cli/src/Seihou/CLI/Update.hs` builds each `VersionChange` with
+  `fromVersion` = the manifest-recorded version and `toVersion` = the
+  candidate's, then calls `validateVersionChange` unconditionally, yielding
+  `CandidateDowngrade`. Origin mismatch is structurally impossible: EP-76's
+  `remoteProvenance` in `seihou-cli/src/Seihou/CLI/Update/Source.hs` derives the
+  clone URL from *the manifest's own recorded origin*, so a same-named artifact
+  installed from elsewhere is never the candidate. And blocking on an
+  unresolvable artifact would break updating a project whose modules are not
+  installed locally — `ArtifactRequirement` documents that a resolution failure
+  is carried rather than raised precisely because "an artifact that will be
+  cloned does not need to exist locally at all".
+
+  So `update` got the `--allow-downgrade` flag the Vision promises (threaded
+  through `UpdateRequest` into `validateVersionChange`, where no override
+  previously existed) and nothing else. The Vision's *user-visible* promise holds
+  for all three commands; the mechanism differs for one of them.
+
+  This matters to EP-80: its end-to-end test should assert that `seihou update`
+  refuses a backwards move via `candidate_downgrade`, not via
+  `formatGuardRefusal`'s wording, and should not assume `seihou update` requires
+  a local install.
 
 - **EP-79 has more to restore than the plan text implies.** EP-76's version-6
   guard invalidated eight existing back-compat specs in
@@ -453,6 +483,31 @@ plan.
   uninstalled module unable to run `seihou status` at all. Refusing to generate from a
   stale or missing artifact is EP-78's job, and this decision draws the line between
   the two plans: EP-77 answers "where is it?", EP-78 answers "should we use it?".
+  Date: 2026-07-28
+
+- Decision: EP-78 may add an `origin` field to `ArtifactCheck` and an additional
+  `checkAppliedArtifactsFor` export, deviating from the `ArtifactCheck` shape sketched in
+  its own Interfaces and Dependencies section. The `ArtifactVerdict` constructors named in
+  Integration Points above are unchanged.
+  Rationale: The refusal message EP-78 specifies prints the artifact's origin, and the
+  sketched `ArtifactCheck { name, verdict }` carried no origin anywhere, so the renderer
+  could not produce the plan's own example output. The filtered variant lets `seihou run`
+  restrict the check to the composition it is generating, matching the precedent
+  `detectPendingMigrations` already set — without it, one uninstalled module would block
+  every command in the project. `Seihou.CLI.ManifestGuard` is owned solely by EP-78 and
+  EP-80 asserts on rendered text rather than on the record's shape, so no other plan is
+  affected. No MasterPlan-level interface changed.
+  Date: 2026-07-28
+
+- Decision: Do not add EP-78's guard to `seihou update`; give it only the
+  `--allow-downgrade` flag.
+  Rationale: See Surprises & Discoveries. `seihou update` already refuses backwards
+  version moves through `validateVersionChange`, cannot substitute a same-named artifact
+  because it clones from the manifest's recorded URL, and deliberately supports updating a
+  project whose modules are not installed locally — so the guard's third verdict would
+  have broken a supported workflow. The Vision's user-visible promise is unchanged; only
+  the mechanism differs for that one command. This is the contingency EP-78's own
+  Idempotence and Recovery section anticipated, taken one step further than it expected.
   Date: 2026-07-28
 
 - Decision: `docs/adr/` uses the repository's plain numbered-Markdown convention

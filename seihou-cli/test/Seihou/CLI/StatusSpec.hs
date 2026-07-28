@@ -5,7 +5,11 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
-import Seihou.CLI.StatusRender (formatStatus)
+import Seihou.CLI.ManifestGuard
+  ( ArtifactCheck (..),
+    ArtifactVerdict (..),
+  )
+import Seihou.CLI.StatusRender (formatArtifactChecks, formatStatus)
 import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
     OutdatedStatus (..),
@@ -344,3 +348,24 @@ spec = describe "formatStatus" $ do
         plan = mkPlan "demo" "1.0.0" "2.0.0" 1
         out = formatStatus False manifest [] Nothing [(ModuleName "demo", plan)]
     T.count "seihou update demo" out `shouldBe` 2
+
+  it "reports a stale artifact without failing, and names the remedy" $ do
+    let check =
+          ArtifactCheck
+            { name = ModuleName "demo",
+              origin = RemoteOrigin "https://example.com/demo.git" "demo" Nothing,
+              verdict = ArtifactStale "2.0.0" "1.4.0"
+            }
+        out = formatArtifactChecks False [check]
+    out `shouldSatisfy` T.isInfixOf "Artifacts that differ from what this project records:"
+    out `shouldSatisfy` T.isInfixOf "seihou upgrade demo"
+
+  it "prints nothing at all when every artifact is healthy" $ do
+    let check =
+          ArtifactCheck
+            { name = ModuleName "demo",
+              origin = RemoteOrigin "https://example.com/demo.git" "demo" Nothing,
+              verdict = ArtifactOk
+            }
+    formatArtifactChecks False [check] `shouldBe` ""
+    formatArtifactChecks False [] `shouldBe` ""

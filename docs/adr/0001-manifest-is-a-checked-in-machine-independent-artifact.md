@@ -67,6 +67,22 @@ only record of a module's source is another developer's absolute path.
 `Seihou.Manifest.Types.checkManifestVersion` refuses them with a message naming
 the conversion command rather than misreading them.
 
+Because the manifest describes the project rather than the machine, what it
+records is authoritative over what the machine happens to have. A command that
+is about to *generate* from an artifact must therefore refuse when the local
+copy is older than, or came from somewhere other than, what the manifest
+records — otherwise the machine silently overrides the project and the
+regression looks like an ordinary diff in code review.
+`Seihou.CLI.ManifestGuard` implements that refusal for `seihou run` and
+`seihou migrate`; `--allow-downgrade` is the explicit override, and it still
+prints what it overrides.
+
+The line between the two kinds of consumer, first drawn when the resolver was
+added, holds: commands that generate hard-fail on a stale or missing artifact,
+while advisory consumers (pending-migration detection, `seihou status`,
+`seihou update`'s same-version content comparison) skip what they cannot resolve
+so that one uninstalled module cannot make the whole project unreportable.
+
 The invariant is enforced by a test in
 `seihou-core/test/Seihou/Manifest/TypesSpec.hs` (`describe "machine
 independence"`), which encodes a manifest exercising every origin position and
@@ -77,3 +93,5 @@ drive prefix, and that the in-memory `source` path is not serialized at all.
 
 - `docs/masterplans/9-make-the-seihou-manifest-multi-developer-safe.md`
 - `docs/plans/76-record-portable-artifact-origins-in-the-manifest.md`
+- `docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md`
+- `docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md`

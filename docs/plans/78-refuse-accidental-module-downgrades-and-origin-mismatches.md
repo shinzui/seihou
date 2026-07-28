@@ -77,10 +77,10 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1: Pure unit tests for every verdict, including unparseable versions and `LocalOrigin` (2026-07-28)
 - [x] Milestone 2: `--allow-downgrade` flag parsed for `run` and `migrate` (2026-07-28); whether `update` needs one is Milestone 3's question
 - [x] Milestone 2: `seihou run` refuses before generating; `--allow-downgrade` proceeds (2026-07-28)
-- [ ] Milestone 3: `seihou update` refuses before staging
-- [ ] Milestone 3: `seihou migrate` refuses before planning
-- [ ] Milestone 4: `seihou status` reports stale and mismatched artifacts without failing
-- [ ] Milestone 4: `docs/user/migrations.md` and `seihou-cli/help/` text updated
+- [x] Milestone 3: `seihou update` gains `--allow-downgrade`; the guard is *not* added there, because update is already safe by construction (2026-07-28) — see Surprises & Discoveries
+- [x] Milestone 3: `seihou migrate` refuses before planning (2026-07-28)
+- [x] Milestone 4: `seihou status` reports stale and mismatched artifacts without failing (2026-07-28)
+- [x] Milestone 4: `docs/user/migrations.md`, `seihou-cli/help/migrations.md`, and `docs/user/CHANGELOG.md` updated (2026-07-28)
 
 
 ## Surprises & Discoveries
@@ -96,6 +96,40 @@ implementation. Provide concise evidence.
   had no way to print the origin the plan's own example message shows. Resolved
   by adding `origin :: !ArtifactOrigin` to `ArtifactCheck`; see the Decision Log.
   Every `ArtifactVerdict` constructor shipped exactly as pinned.
+
+- **`seihou update` is already multi-developer safe, and adding the guard there
+  would have broken it.** The Plan of Work asked whether `validateVersionChange`
+  makes the guard redundant for `update`, and the answer turned out to be yes on
+  all three axes — for reasons that only became visible after EP-76 and EP-77
+  landed.
+
+  On *downgrades*: `versionEvidence` in `seihou-cli/src/Seihou/CLI/Update.hs`
+  builds each `VersionChange` with `fromVersion` = the manifest-recorded
+  version and `toVersion` = the candidate's, then calls `validateVersionChange`
+  unconditionally via `traverse_`. A lower candidate is already
+  `CandidateDowngrade`, with no `--force` escape.
+
+  On *origin mismatch*: `remoteProvenance` in
+  `seihou-cli/src/Seihou/CLI/Update/Source.hs` derives the clone URL from the
+  manifest's own recorded origin, not from anything installed locally — its
+  comment says so explicitly ("Taking it from the manifest instead is both
+  portable and more authoritative"). A same-named module installed from another
+  URL is never the candidate, so the invisible substitution the guard exists to
+  catch cannot occur.
+
+  On *unresolvable*: this is where adding the guard would have caused real harm.
+  `ArtifactRequirement`'s docs state that `sourceDirectory` "is only consulted
+  for artifacts with no remote to clone from, so a resolution failure is carried
+  rather than raised: an artifact that will be cloned does not need to exist
+  locally at all." Blocking `seihou update` on an unresolvable artifact would
+  break the legitimate workflow of updating a project whose modules you have
+  never installed — which is the opposite of `seihou run`, which can only
+  generate from a local copy. The genuinely-unresolvable case is already handled
+  with the resolver's own wording via `CandidateArtifactUnresolved`.
+
+  So `update` got the `--allow-downgrade` flag the MasterPlan's Vision promises,
+  threaded through `UpdateRequest` into `validateVersionChange`, and nothing
+  else. See the Decision Log.
 
 - **The recorded-versus-local origin comparison needs three outcomes, not two.**
   The plan's comparison rules cover "both `RemoteOrigin`, URLs differ" and
@@ -144,6 +178,31 @@ Record every decision made while working on the plan.
   compared, because the version comes from `module.dhall` itself, but its *identity* cannot.
   Blocking would make personal modules unusable in a shared project; saying nothing would
   hide a real gap. Reporting it as unverifiable is the honest middle.
+  Date: 2026-07-28
+
+- Decision: Do not add `checkAppliedArtifacts` to `seihou update`. Give it
+  `--allow-downgrade` as an override for the existing `CandidateDowngrade` check instead.
+  Rationale: See Surprises & Discoveries for the evidence. All three blocking verdicts are
+  either already covered (`validateVersionChange` rejects a lower candidate version) or
+  structurally impossible (`remoteProvenance` clones from the manifest's own recorded URL,
+  so a same-named local module from elsewhere is never the candidate) or would be actively
+  wrong (blocking on an unresolvable artifact would break updating a project whose modules
+  are not installed locally, which `seihou update` supports by design and `seihou run`
+  does not). Duplicating the check would add a second, weaker answer to a question the
+  update path already answers better. The flag is still added, because the MasterPlan's
+  Vision promises it on all three commands and the escape hatch was genuinely missing —
+  `CandidateDowngrade` previously had no override at all.
+  Date: 2026-07-28
+
+- Decision: `seihou status` gets a separate `formatArtifactChecks` renderer printed after
+  `formatStatus`, rather than a new parameter on `formatStatus`.
+  Rationale: `formatStatus` has eighteen call sites in
+  `seihou-cli/test/Seihou/CLI/StatusSpec.hs`; adding a parameter would have churned all of
+  them for a section that is logically independent and belongs at the end of the output
+  next to "Recommended actions". The new renderer returns the empty text when every
+  artifact is healthy, so the section disappears rather than printing a reassuring
+  "0 problems", and the IO that feeds it swallows exceptions — a reporting command must
+  not turn a reporting problem into an exit code.
   Date: 2026-07-28
 
 - Decision: Add `origin :: !ArtifactOrigin` to `ArtifactCheck`, deviating from the shape
@@ -225,7 +284,45 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+The plan's purpose is met and demonstrated. The exact scenario it exists to prevent —
+developer B regenerating a project from a module older than the one developer A committed
+a manifest for — now stops with an actionable message and leaves the working tree
+byte-identical, verified end to end against two fake home directories under
+`XDG_CONFIG_HOME`. The origin-mismatch variant is caught too, and is checked *before*
+version, because a differing origin URL means the version numbers are not comparable at
+all. `--allow-downgrade` overrides both while still printing what it overrides.
+
+What shipped, against what was planned:
+
+`seihou-cli/src/Seihou/CLI/ManifestGuard.hs` holds a pure `judgeArtifact` plus an IO shell,
+with all six `ArtifactVerdict` constructors exactly as the parent MasterPlan's Integration
+Points pinned them. Two interface deviations were needed and are recorded in the Decision
+Log: `ArtifactCheck` carries the recorded origin (without which the specified message
+cannot be rendered), and `checkAppliedArtifactsFor` adds the composition filter that keeps
+an unrelated module from blocking a run. 25 unit tests cover every verdict including the
+zero-padding, `.git`-suffix, unparseable-version and `LocalOrigin` cases.
+
+`seihou run` and `seihou migrate` enforce the guard before any write. `seihou status`
+reports and never fails. `seihou update` deliberately does *not* get the guard — the
+investigation the Plan of Work asked for found it already safe on all three axes, and
+found that adding the unresolvable check there would have broken updating a project whose
+modules are not installed locally. That is the single most valuable thing this plan
+learned, and it is the kind of finding that only surfaces by reading the code the plan
+told you to read rather than trusting the plan's own summary of it.
+
+Gaps and follow-on work: the behavioral scenario was run by hand against a scratch
+environment, not automated. Automating it is
+`docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md`'s job, and
+that plan should assert on `formatGuardRefusal`'s wording and on the `--allow-downgrade`
+override. The broader "how teams share a manifest" document is also EP-80's; this plan's
+documentation is scoped to the flag and the refusal, in `docs/user/migrations.md`,
+`seihou-cli/help/migrations.md`, and `docs/user/CHANGELOG.md`.
+
+Durable context distilled into `docs/adr/`: the existing ADR 0001 and ADR 0002 both gained
+a Consequences note recording that origin identity is now *enforced* rather than merely
+recorded, and how each `ArtifactOrigin` constructor's trust level maps onto a verdict. No
+third ADR was created — this plan established a policy that follows from ADR 0002's
+identity decision rather than a new architectural boundary of its own.
 
 
 ## Context and Orientation
@@ -722,6 +819,74 @@ $ XDG_CONFIG_HOME=/tmp/seihou-downgrade/home-b seihou run demo
 To proceed anyway — pinning this project to what is installed here —
 re-run with --allow-downgrade.
 --- exit status: 1 ---
+```
+
+### Evidence — Milestones 3 and 4
+
+`seihou migrate` refuses with the same body under its own lead-in, exits non-zero, and
+leaves the tree untouched:
+
+```text
+$ XDG_CONFIG_HOME=/tmp/seihou-downgrade/home-b seihou migrate demo --no-fetch
+Error: cannot plan a migration.
+
+✗ Refusing to run: your local copy of 'demo' is older than the
+  version this project expects.
+
+  Recorded in .seihou/manifest.json:  2.0.0
+  Installed on this machine:          1.4.0
+  Origin: https://example.com/demo-modules.git
+
+  Update your local copy first:
+    seihou upgrade demo
+
+To proceed anyway — pinning this project to what is installed here —
+re-run with --allow-downgrade.
+
+--- exit status: 1 ---
+--- git status --porcelain: ---
+--- (end) ---
+```
+
+`seihou status` reports the same artifact and exits zero; on the machine whose copy
+matches, the section is absent entirely:
+
+```text
+$ XDG_CONFIG_HOME=/tmp/seihou-downgrade/home-b seihou status
+Seihou Status:
+
+Applied modules:
+  demo  v2.0.0    (applied 2026-07-28)
+
+Tracked files: 1
+  README.md   demo   unchanged
+
+Variables: 0 resolved
+
+Artifacts that differ from what this project records:
+  demo: this project expects 2.0.0 but 1.4.0 is installed here (run 'seihou upgrade demo')
+
+$ echo $?
+0
+$ XDG_CONFIG_HOME=/tmp/seihou-downgrade/home-a seihou status | tail -3
+Variables: 0 resolved
+$ echo $?
+0
+```
+
+Full validation at the end of Milestone 4:
+
+```text
+$ cabal test all
+All 16 tests passed (0.17s)      Test suite seihou-okf-extension-test: PASS
+All 1055 tests passed (0.79s)    Test suite seihou-core-test: PASS
+All 448 tests passed (53.24s)    Test suite seihou-cli-test: PASS
+
+$ nix flake check
+✅ checks.aarch64-darwin.treefmt
+✅ checks.aarch64-darwin.pre-commit
+✅ checks.aarch64-darwin.cli-module-placement
+✅ checks.aarch64-darwin.record-conventions
 ```
 
 Commit with all three trailers:

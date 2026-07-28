@@ -55,7 +55,8 @@ minimalPlan reconciliation =
             reconfigure = False,
             promptPolicy = ForbidPrompts,
             commandPolicy = RunChangedCommands,
-            dryRun = True
+            dryRun = True,
+            allowDowngrade = False
           },
       snapshot =
         UpdateSnapshot

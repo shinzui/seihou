@@ -7,10 +7,11 @@ import Control.Exception (SomeException, try)
 import Data.Generics.Labels ()
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (StatusOpts (..))
+import Seihou.CLI.ManifestGuard (ArtifactCheck, checkAppliedArtifacts)
 import Seihou.CLI.Outdated (checkInstalledModulesForUpdates)
 import Seihou.CLI.PendingMigrations (detectPendingMigrations)
 import Seihou.CLI.Shared (logIO)
-import Seihou.CLI.StatusRender (formatStatus)
+import Seihou.CLI.StatusRender (formatArtifactChecks, formatStatus)
 import Seihou.CLI.Style (useColor)
 import Seihou.CLI.VersionCompare (OutdatedEntry (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverAllModules)
@@ -21,6 +22,7 @@ import Seihou.Effect.Logger (logError)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Prelude
+import System.Directory (getCurrentDirectory)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 
@@ -53,6 +55,27 @@ handleStatus opts = do
           else pure Nothing
       pendings <- detectPendingMigrations manifest Nothing
       TIO.putStr (formatStatus colorEnabled manifest tracked mEntries pendings)
+      -- Report, never fail: a stale or mismatched module makes 'seihou run'
+      -- refuse, and this is where a developer finds out before that happens.
+      -- Any IO failure while checking is swallowed for the same reason.
+      guardChecks <- fetchArtifactChecks manifest
+      TIO.putStr (formatArtifactChecks colorEnabled guardChecks)
+
+-- | Compare every recorded artifact against this machine, catching any IO
+-- failure so status still renders. An empty list means "nothing to report",
+-- which is also what a failed check yields — @seihou status@ must not turn a
+-- reporting problem into an exit code.
+fetchArtifactChecks :: Manifest -> IO [ArtifactCheck]
+fetchArtifactChecks manifest = do
+  outcome <- try $ do
+    projectRoot <- getCurrentDirectory
+    searchPaths <- defaultSearchPaths
+    checkAppliedArtifacts projectRoot searchPaths manifest
+  case outcome of
+    Left (e :: SomeException) -> do
+      hPutStrLn stderr ("warning: artifact check failed: " <> show e)
+      pure []
+    Right checks -> pure checks
 
 -- | Run the update check, catching any IO failure so status still renders.
 fetchUpdateEntries :: IO (Maybe [OutdatedEntry])

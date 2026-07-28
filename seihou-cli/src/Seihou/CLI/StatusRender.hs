@@ -1,5 +1,6 @@
 module Seihou.CLI.StatusRender
   ( formatStatus,
+    formatArtifactChecks,
     formatBlueprintMigrations,
     ModuleAdvice (..),
   )
@@ -15,6 +16,7 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.Format (defaultTimeLocale, formatTime)
+import Seihou.CLI.ManifestGuard (ArtifactCheck, summarizeCheck)
 import Seihou.CLI.Style (dim, green, red, yellow)
 import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
@@ -213,6 +215,22 @@ recommendedActionsSection advices =
   case nub [c | Just c <- map adviceCommand advices] of
     [] -> []
     cmds -> ["", "Recommended actions:"] ++ map ("  " <>) cmds
+
+-- | Render the manifest guard's non-@ArtifactOk@ verdicts as a trailing
+-- advisory block.
+--
+-- @seihou status@ is a reporting command and must never fail because of a
+-- verdict — this block is precisely what lets a developer discover a stale or
+-- mismatched module *before* @seihou run@ refuses to use it. Returns the empty
+-- text when every artifact is healthy, so the section disappears entirely
+-- rather than printing a reassuring "0 problems".
+formatArtifactChecks :: Bool -> [ArtifactCheck] -> Text
+formatArtifactChecks color checks = case mapMaybe summarizeCheck checks of
+  [] -> ""
+  summaries ->
+    T.unlines $
+      ["", applyColor color yellow "Artifacts that differ from what this project records:"]
+        ++ map ("  " <>) summaries
 
 adviceCommand :: ModuleAdvice -> Maybe Text
 adviceCommand AdviceNone = Nothing

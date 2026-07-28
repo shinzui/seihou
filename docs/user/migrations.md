@@ -209,7 +209,80 @@ does not touch other projects on disk. (Internally,
 upgrade step has already refreshed the installed copy; there is no
 need to clone again.)
 
+## Refusing to go backwards
+
+A migration chain is computed from the *locally installed* module's declared
+migration list. If your copy of a module is older than the version
+`.seihou/manifest.json` records, that chain is computed from the wrong module:
+it stops short of where the project already is, and applying it rewinds the
+manifest to match. This is easy to hit on a team. A teammate upgrades
+`haskell-base` to `2.0.0`, runs seihou, and commits both the regenerated files
+and the updated manifest. You pull that commit but have never run
+`seihou upgrade`, so you still have `1.4.0`.
+
+Before planning or generating anything, `seihou run` and `seihou migrate`
+compare what the manifest records for each module against the copy installed on
+your machine. If yours is older, the command stops without touching a single
+file:
+
+```text
+✗ Refusing to run: your local copy of 'haskell-base' is older than the
+  version this project expects.
+
+  Recorded in .seihou/manifest.json:  2.0.0
+  Installed on this machine:          1.4.0
+  Origin: https://github.com/shinzui/seihou-modules.git
+
+  Update your local copy first:
+    seihou upgrade haskell-base
+
+To proceed anyway — pinning this project to what is installed here —
+re-run with --allow-downgrade.
+```
+
+Nothing is fetched over the network. Seihou tells you what to run and leaves
+the decision to you. The project is byte-identical afterwards, so a refusal
+costs you nothing.
+
+The same check catches an *origin mismatch*: a module with the right name but
+installed from a different git repository than the manifest records is a
+different module, and seihou says so rather than generating from it.
+
+Pass `--allow-downgrade` when pinning back is what you actually want. The
+command proceeds and the manifest moves to the older version — but the blocks
+are still printed, under a `! Proceeding anyway` heading, so a deliberate
+downgrade never passes unremarked.
+
+```sh
+seihou run haskell-base --allow-downgrade
+seihou migrate haskell-base --allow-downgrade
+```
+
+`seihou update` reaches the same outcome by a different route and also accepts
+`--allow-downgrade`. It never generates from whatever is installed locally — it
+clones from the origin URL the manifest itself records — so it cannot
+substitute a same-named module from elsewhere. What it checks is that the
+candidate version is not lower than the recorded one; if it is, the update fails
+with a `candidate_downgrade` error unless you pass the flag.
+
+A module recorded with no provenance (found in your personal
+`~/.config/seihou/modules/` rather than installed from a git URL) is reported as
+unverifiable rather than blocked. Its version is still compared — that comes
+from its own `module.dhall` — but its identity cannot be, and seihou says so
+instead of pretending otherwise.
+
 ## Integration with `seihou status`
+
+`seihou status` also lists any artifact that differs from what the project
+records, so you find out before a command refuses:
+
+```text
+Artifacts that differ from what this project records:
+  haskell-base: this project expects 2.0.0 but 1.4.0 is installed here (run 'seihou upgrade haskell-base')
+```
+
+`seihou status` never fails because of this — it is a reporting command, and it
+exits zero whatever it finds.
 
 `seihou status` adds a `Pending migration: <from> -> <to> (<N>
 step(s)). Run: seihou update <target>` sub-line under any applied

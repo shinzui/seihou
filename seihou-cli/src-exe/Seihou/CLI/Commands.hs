@@ -171,7 +171,15 @@ data UpdateOpts = UpdateOpts
     runAllCommands :: !Bool,
     noCommands :: !Bool,
     commit :: !Bool,
-    commitMessage :: !(Maybe Text)
+    commitMessage :: !(Maybe Text),
+    -- | When 'True', accept a candidate artifact whose version is lower
+    -- than the version @.seihou\/manifest.json@ records. Unlike
+    -- @seihou run@, @seihou update@ does not generate from whatever is
+    -- installed locally — it clones from the origin URL the manifest
+    -- itself records — so the only downgrade it can produce is an
+    -- upstream that moved backwards. This flag is the escape hatch for
+    -- pinning to such a version deliberately.
+    allowDowngrade :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -871,8 +879,12 @@ updateParser =
       <*> updateCommandFlags
       <*> switch (long "commit" <> help "Commit successfully updated managed paths")
       <*> optional (option (T.pack <$> str) (long "commit-message" <> metavar "MSG" <> help "Custom commit message (implies --commit)"))
+      <*> switch
+        ( long "allow-downgrade"
+            <> help "Accept a candidate artifact older than the version recorded in .seihou/manifest.json"
+        )
   where
-    makeUpdateOpts targets vars dryRun json reconfigure force (runAll, noCommands) commit commitMessage =
+    makeUpdateOpts targets vars dryRun json reconfigure force (runAll, noCommands) commit commitMessage allowDowngrade =
       UpdateOpts
         { targets = targets,
           vars = vars,
@@ -883,7 +895,8 @@ updateParser =
           runAllCommands = runAll,
           noCommands = noCommands,
           commit = commit,
-          commitMessage = commitMessage
+          commitMessage = commitMessage,
+          allowDowngrade = allowDowngrade
         }
     updateCommandFlags =
       flag' (True, False) (long "run-all-commands" <> help "Run every generated command, including unchanged ones")

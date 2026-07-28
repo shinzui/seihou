@@ -23,6 +23,7 @@ import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy.Char8 qualified as LBS
 import Data.Generics.Labels ()
 import Data.Maybe (isJust)
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time.Clock (getCurrentTime)
@@ -35,6 +36,13 @@ import Seihou.CLI.InstallShared
     installModuleDir,
     readOriginInfo,
   )
+import Seihou.CLI.ManifestGuard
+  ( ArtifactCheck,
+    blockingChecks,
+    checkAppliedArtifactsFor,
+    formatGuardOverride,
+    formatGuardRefusal,
+  )
 import Seihou.CLI.Shared (resolveAppliedArtifactDir)
 import Seihou.CLI.Style (bold, dim, green, red, useColor, yellow)
 import Seihou.Core.ArtifactRef (ArtifactRefError, renderArtifactRefError)
@@ -45,6 +53,7 @@ import Seihou.Core.Migration
     MigrationPlanError (..),
     planMigrationChain,
   )
+import Seihou.Core.Module (defaultSearchPaths)
 import Seihou.Core.Registry
   ( Registry (..),
     RegistryEntry (..),
@@ -72,7 +81,7 @@ import Seihou.Engine.Migrate
     executeMigration,
   )
 import Seihou.Prelude
-import System.Directory (doesFileExist)
+import System.Directory (doesFileExist, getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure, exitSuccess)
 import System.FilePath (takeFileName, (</>))
 import System.IO (stderr)
@@ -154,6 +163,10 @@ data MigrateError
   | -- | The manifest records the module, but its recorded origin does not
     -- resolve to anything on this machine.
     MigrateArtifactUnresolved ArtifactRefError
+  | -- | The copy of the module installed here is older than, or came from
+    -- somewhere other than, what the manifest records. Carries the blocking
+    -- checks, rendered by 'formatGuardRefusal'.
+    MigrateArtifactGuardFailed [ArtifactCheck]
   deriving stock (Eq, Show, Generic)
 
 -- | Outcome of a successful @runMigrate@ call.
@@ -201,6 +214,21 @@ handleMigrate opts = do
     Nothing -> case applied ^. #moduleVersion of
       Nothing -> die (MigrateNoRecordedVersion modName)
       Just t -> die (MigrateUnparseableManifestVersion t)
+
+  -- Refuse before planning if the copy installed here is not the copy the
+  -- manifest describes. A stale local copy is especially damaging to a
+  -- migration: the chain is computed from the local module's declared
+  -- migration list, so an older copy yields a chain that stops short of where
+  -- the project already is, and the manifest would be rewound to match.
+  projectRoot <- getCurrentDirectory
+  searchPaths <- defaultSearchPaths
+  guardChecks <-
+    checkAppliedArtifactsFor projectRoot searchPaths (Just (Set.singleton modName)) manifest
+  case blockingChecks guardChecks of
+    [] -> pure ()
+    blocking
+      | opts ^. #allowDowngrade -> TIO.putStr (formatGuardOverride blocking)
+      | otherwise -> die (MigrateArtifactGuardFailed blocking)
 
   -- The manifest records a portable origin, never a path, so the module has
   -- to be located on this machine before it can be re-read.
@@ -793,6 +821,8 @@ renderError (MigratePlanFailed e) = renderPlanError e
 renderError (MigrateExecFailed e) = renderExecError e
 renderError (MigrateArtifactUnresolved e) =
   "cannot plan a migration.\n\n" <> renderArtifactRefError e
+renderError (MigrateArtifactGuardFailed checks) =
+  "cannot plan a migration.\n\n" <> formatGuardRefusal checks
 
 renderPlanError :: MigrationPlanError -> Text
 renderPlanError (MigrationVersionUnparseable t) =

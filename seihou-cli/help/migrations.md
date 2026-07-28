@@ -193,6 +193,43 @@ STATUS INTEGRATION
   applicable migrations and the run will only advance the manifest).
   Recommendations are deduplicated by recorded top-level application.
 
+REFUSING TO GO BACKWARDS
+
+  A migration chain is computed from the locally installed module's
+  declared migration list, so a local copy older than the version
+  .seihou/manifest.json records produces a chain that stops short of
+  where the project already is and rewinds the manifest to match.
+
+  Before planning or generating, 'seihou run' and 'seihou migrate'
+  compare the manifest's recorded version and origin against the copy
+  installed on this machine. A strictly older local copy, or one
+  installed from a different git URL than the manifest records, stops
+  the command before any file is written:
+
+    ✗ Refusing to run: your local copy of 'haskell-base' is older than the
+      version this project expects.
+
+      Recorded in .seihou/manifest.json:  2.0.0
+      Installed on this machine:          1.4.0
+      Origin: https://github.com/shinzui/seihou-modules.git
+
+      Update your local copy first:
+        seihou upgrade haskell-base
+
+    To proceed anyway — pinning this project to what is installed here —
+    re-run with --allow-downgrade.
+
+  Nothing is fetched; seihou reports what to run. Pass
+  --allow-downgrade to proceed anyway — the blocks are still printed,
+  under a "! Proceeding anyway" heading. 'seihou update' accepts the
+  same flag for a candidate older than the recorded version.
+
+  A module found in ~/.config/seihou/modules/ has no recorded
+  provenance. Its version is still compared, but its identity is
+  reported as unverifiable rather than blocked.
+
+  'seihou status' lists every differing artifact and always exits zero.
+
 MANIFEST GUARANTEE
 
   After a successful (non-dry-run) migration, the manifest's files map

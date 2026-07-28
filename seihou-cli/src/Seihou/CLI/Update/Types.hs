@@ -55,7 +55,12 @@ data UpdateRequest = UpdateRequest
     reconfigure :: !Bool,
     promptPolicy :: !PromptPolicy,
     commandPolicy :: !CommandPolicy,
-    dryRun :: !Bool
+    dryRun :: !Bool,
+    -- | When 'True', accept a candidate artifact whose version is lower
+    -- than the version @.seihou\/manifest.json@ records, instead of
+    -- failing with 'CandidateDowngrade'. The default is 'False', so an
+    -- update never moves a project backwards by accident.
+    allowDowngrade :: !Bool
   }
   deriving stock (Eq, Generic, Show)
 
