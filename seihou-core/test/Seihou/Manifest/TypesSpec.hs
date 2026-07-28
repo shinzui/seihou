@@ -1,6 +1,6 @@
 module Seihou.Manifest.TypesSpec (tests) where
 
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((%~), (&), (.~), (^.))
 import Control.Monad (forM_)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -105,6 +105,110 @@ manifestWithEveryOriginPosition =
              }
          ]
 
+-- | A manifest populated in every serialized position that can hold a string,
+-- so the machine-independence sweep has something to sweep.
+--
+-- Deliberately broader than 'manifestWithEveryOriginPosition': that one proves
+-- the origin fields are portable, this one proves nothing /else/ smuggles a
+-- path in — a file record and its baseline, a command receipt with a working
+-- directory, a removal spec, an applied recipe, an applied blueprint, and a
+-- blueprint migration receipt.
+manifestWithEveryStringPosition :: Manifest
+manifestWithEveryStringPosition =
+  manifestWithEveryOriginPosition
+    & #modules
+      .~ [ AppliedModule
+             { name = ModuleName "haskell-base",
+               parentVars = ParentVars (Map.singleton (VarName "project.name") "demo"),
+               origin = RemoteOrigin "https://github.com/shinzui/seihou-modules.git" "haskell-base" (Just "seihou-modules"),
+               moduleVersion = Just "1.4.0",
+               appliedAt = fixedTime,
+               removal =
+                 Just
+                   ( Removal
+                       [RemovalStep RemoveFileAction "flake.nix" (Just "files/flake.nix")]
+                       [Command "cabal clean" (Just "backend") Nothing]
+                   )
+             }
+         ]
+    & #vars .~ Map.singleton (VarName "project.name") "demo"
+    & #files
+      .~ Map.singleton
+        "backend/flake.nix"
+        ( FileRecord
+            (hashContent "flake")
+            (ModuleName "haskell-base")
+            DhallText
+            fixedTime
+            (Just (BaselineRef (hashContent "flake")))
+            (Set.singleton (ApplicationId "app"))
+        )
+    & #applications
+      %~ map (withCommandReceipts (Map.singleton receiptFingerprint receipt))
+    & #recipe .~ Just (AppliedRecipe (RecipeName "haskell-service") (Just "3.1.0") fixedTime)
+    & #blueprint
+      .~ Just
+        ( AppliedBlueprint
+            { name = ModuleName "service-blueprint",
+              blueprintVersion = Just "2.0.0",
+              appliedAt = fixedTime,
+              baselineModules = [ModuleName "haskell-base"],
+              noBaseline = False,
+              userPrompt = Just "build a service",
+              agentSessionId = Just "session-abc"
+            }
+        )
+    & #blueprintMigrations .~ [mkBlueprintMigrationReceipt "service-blueprint" "1.0.0" "2.0.0" fixedTime2]
+  where
+    receiptFingerprint = CommandFingerprint (hashContent "cabal build")
+    receipt = CommandReceipt receiptFingerprint (ModuleName "haskell-base") "cabal build" (Just "backend") fixedTime
+
+-- | Set an application's command receipts without record update syntax.
+withCommandReceipts :: Map.Map CommandFingerprint CommandReceipt -> AppliedComposition -> AppliedComposition
+withCommandReceipts receipts composition =
+  AppliedComposition
+    { applicationId = composition ^. #applicationId,
+      target = composition ^. #target,
+      targetOrigin = composition ^. #targetOrigin,
+      targetVersion = composition ^. #targetVersion,
+      additionalModules = composition ^. #additionalModules,
+      namespace = composition ^. #namespace,
+      context = composition ^. #context,
+      instances = composition ^. #instances,
+      commandReceipts = receipts,
+      appliedAt = composition ^. #appliedAt
+    }
+
+-- | Every string in a document, each paired with the JSON path that reaches
+-- it, so a failure can say /where/ the offending value was.
+--
+-- Object keys are reported too: the @files@ map is keyed by destination path,
+-- which is exactly the sort of place an absolute path could reappear.
+documentStrings :: Aeson.Value -> [(String, T.Text)]
+documentStrings = go "$"
+  where
+    go path value = case value of
+      Aeson.Object object ->
+        concat
+          [ (path <> "." <> T.unpack (Key.toText key), Key.toText key)
+              : go (path <> "." <> T.unpack (Key.toText key)) child
+          | (key, child) <- KeyMap.toList object
+          ]
+      Aeson.Array items ->
+        concat [go (path <> "[" <> show index <> "]") item | (index, item) <- zip [(0 :: Int) ..] (toList items)]
+      Aeson.String text -> [(path, text)]
+      _ -> []
+
+-- | Whether a string only means something on the machine that wrote it: a
+-- POSIX absolute path, a home-relative path, a UNC share, or a Windows drive
+-- prefix.
+machineSpecific :: T.Text -> Bool
+machineSpecific text =
+  T.isPrefixOf "/" text
+    || T.isPrefixOf "~" text
+    || T.isPrefixOf "\\\\" text
+    || (T.length text >= 3 && T.index text 1 == ':' && T.index text 2 == '\\')
+
 spec :: Spec
 spec = do
   -- The manifest is checked into version control and read on other machines,
@@ -112,6 +216,21 @@ spec = do
   -- machine that wrote it. See
   -- docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md.
   describe "machine independence" $ do
+    -- The two specs below constrain the origin fields. This one constrains
+    -- every future field as well: a new manifest field that records a location
+    -- has to express it relative to the project root or through an
+    -- ArtifactOrigin, and this fails if one does neither.
+    it "records no machine-specific value anywhere in the document" $ do
+      let encoded = Aeson.toJSON manifestWithEveryStringPosition
+          scanned = documentStrings encoded
+          offenders =
+            [ path <> " = " <> T.unpack text
+            | (path, text) <- scanned,
+              machineSpecific text
+            ]
+      length scanned `shouldSatisfy` (> 20)
+      offenders `shouldBe` []
+
     it "records no absolute path in any origin position" $ do
       let encoded = Aeson.toJSON manifestWithEveryOriginPosition
           strings = originStrings encoded

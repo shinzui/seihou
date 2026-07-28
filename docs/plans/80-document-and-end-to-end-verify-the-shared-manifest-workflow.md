@@ -63,7 +63,7 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 2: End-to-end test — B upgrades locally and the ordinary run succeeds (2026-07-28) — asserts the generated file is untouched and only the manifest's timestamps move; see Surprises & Discoveries
 - [x] Milestone 2: End-to-end test — a legacy manifest is rejected, upgraded, then usable (2026-07-28)
 - [x] Milestone 2: Deliberate-breakage check proves the test bites (2026-07-28)
-- [ ] Milestone 3: Regression test asserting no absolute path can appear in a written manifest
+- [x] Milestone 3: Regression test asserting no absolute path can appear in a written manifest (2026-07-28)
 - [ ] Milestone 4: `docs/user/teams.md` written and linked from `README.md`
 - [ ] Milestone 4: `docs/user/CHANGELOG.md` entry covering the whole initiative
 - [ ] Milestone 4: `docs/dev/architecture/overview.md` manifest section updated
@@ -122,6 +122,28 @@ implementation. Provide concise evidence.
 
   Both scenarios bite, which is the point. Restoring the line returns all four
   to green.
+
+- **The whole-document sweep needed no exception.** Milestone 3 warned that
+  asserting "no string value anywhere begins with `/`" might be too strict for
+  a legitimate field and offered to narrow it. It is not too strict. A manifest
+  populated in every serialized string position — parent variables, a file
+  record keyed by destination with a baseline reference, a command receipt with
+  a `workDir`, a removal spec with `dest` and `src`, an applied recipe, an
+  applied blueprint with a user prompt, and a blueprint migration receipt —
+  contains no absolute path anywhere, so the assertion is the unqualified one.
+  Object *keys* are swept too, which is what covers the `files` map's
+  destination paths.
+
+  Deliberately breaking it by adding
+  `"source" .= ("/Users/shinzui/.config/seihou/installed/haskell-base" :: Text)`
+  to the `ToJSON AppliedModule` instance produces exactly the message the plan
+  asked for — the offending JSON path, not a bare `False`:
+
+  ```text
+  records no machine-specific value anywhere in the document: FAIL
+    expected: []
+     but got: ["$.modules[0].source = /Users/shinzui/.config/seihou/installed/haskell-base"]
+  ```
 
 
 ## Decision Log
