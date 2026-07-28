@@ -81,17 +81,17 @@ spec = do
   describe "candidate source staging" $ do
     it "keeps local artifacts as an explicit candidate-first fallback" $
       withSystemTempDirectory "seihou-update-source" $ \root -> do
-        let moduleDirectory = root </> "current" </> "demo"
+        let localProjectRoot = root </> "current"
+            moduleDirectory = localProjectRoot </> "demo"
             sessionDirectory = root </> "session"
-            applied = application (AppliedModuleTarget "demo") [instanceState "demo" moduleDirectory]
+            origin = ProjectOrigin "demo"
+            applied =
+              application (AppliedModuleTarget "demo") [instanceStateFrom "demo" moduleDirectory origin]
+                & #targetSource .~ moduleDirectory
+                & #targetOrigin .~ origin
         createDirectoryIfMissing True moduleDirectory
         TIO.writeFile (moduleDirectory </> "module.dhall") (moduleDhall "demo" "1.0.0")
-        result <-
-          stageCandidateSources
-            sessionDirectory
-            [ applied
-                & #targetSource .~ moduleDirectory
-            ]
+        result <- stageCandidateSources sessionDirectory localProjectRoot (root </> "installed") [applied]
         case result of
           Left err -> expectationFailure (show err)
           Right (catalog, warnings) -> do
@@ -110,9 +110,15 @@ spec = do
             recipeDirectory = installed </> "stack"
             sessionDirectory = root </> "session"
             sourceUrl = T.pack remote
+            remoteOrigin name = RemoteOrigin sourceUrl name Nothing
             applied =
-              application (AppliedRecipeTarget "stack") [instanceState "one" moduleOne, instanceState "two" moduleTwo]
+              application
+                (AppliedRecipeTarget "stack")
+                [ instanceStateFrom "one" moduleOne (remoteOrigin "one"),
+                  instanceStateFrom "two" moduleTwo (remoteOrigin "two")
+                ]
                 & #targetSource .~ recipeDirectory
+                & #targetOrigin .~ remoteOrigin "stack"
                 & #additionalModules .~ []
         createDirectoryIfMissing True (remote </> "modules" </> "one")
         createDirectoryIfMissing True (remote </> "modules" </> "two")
@@ -125,7 +131,7 @@ spec = do
         callProcess "git" ["-C", remote, "add", "."]
         callProcess "git" ["-C", remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "registry"]
         mapM_ (writeOrigin sourceUrl) [moduleOne, moduleTwo, recipeDirectory]
-        result <- stageCandidateSources sessionDirectory [applied]
+        result <- stageCandidateSources sessionDirectory root installed [applied]
         case result of
           Left err -> expectationFailure (show err)
           Right (catalog, _) -> do
@@ -137,9 +143,13 @@ spec = do
       withSystemTempDirectory "seihou-update-clone-error" $ \root -> do
         let moduleDirectory = root </> "installed" </> "demo"
             missingRemote = T.pack (root </> "missing-remote")
-            applied = application (AppliedModuleTarget "demo") [instanceState "demo" moduleDirectory] & #targetSource .~ moduleDirectory
+            missingOrigin = RemoteOrigin missingRemote "demo" Nothing
+            applied =
+              application (AppliedModuleTarget "demo") [instanceStateFrom "demo" moduleDirectory missingOrigin]
+                & #targetSource .~ moduleDirectory
+                & #targetOrigin .~ missingOrigin
         writeOrigin missingRemote moduleDirectory
-        result <- stageCandidateSources (root </> "session") [applied]
+        result <- stageCandidateSources (root </> "session") root (root </> "installed") [applied]
         result `shouldSatisfy` \case
           Left (CandidateCloneFailed url message) -> url == missingRemote && "git clone failed" `T.isInfixOf` message
           _ -> False
@@ -352,7 +362,7 @@ spec = do
             parentTwo = ParentVars (Map.singleton "tenant" "two")
             instanceOne = ModuleInstance "shared" parentOne
             instanceTwo = ModuleInstance "shared" parentTwo
-            stateFor parent = AppliedInstanceState "shared" parent "/installed/shared" (Just "1.0.0") Map.empty
+            stateFor parent = AppliedInstanceState "shared" parent "/installed/shared" (LocalOrigin "shared") (Just "1.0.0") Map.empty
             previous = application (AppliedModuleTarget "shared") [stateFor parentOne, stateFor parentTwo]
             candidate =
               Module
@@ -369,8 +379,8 @@ spec = do
                   migrations = [Migration "1.0.0" "2.0.0" [RunCommand "true" Nothing]]
                 }
             appliedModules =
-              [ AppliedModule "shared" parentOne "/installed/shared" (Just "1.0.0") testTime Nothing,
-                AppliedModule "shared" parentTwo "/installed/shared" (Just "1.0.0") testTime Nothing
+              [ AppliedModule "shared" parentOne "/installed/shared" (LocalOrigin "shared") (Just "1.0.0") testTime Nothing,
+                AppliedModule "shared" parentTwo "/installed/shared" (LocalOrigin "shared") (Just "1.0.0") testTime Nothing
               ]
             base = emptyManifest testTime
             manifest =
@@ -431,18 +441,20 @@ prepareUpdateFixture root = do
       baselineRef = BaselineRef (hashContent baselineContent)
       target = AppliedModuleTarget "demo"
       applicationId = mkApplicationId target []
+      demoOrigin = RemoteOrigin (T.pack remote) "demo" Nothing
       app =
-        (application target [instanceState "demo" installedModule])
+        (application target [instanceStateFrom "demo" installedModule demoOrigin])
           { applicationId,
             targetSource = installedModule,
+            targetOrigin = demoOrigin,
             targetVersion = Just "1.0.0",
             commandReceipts = Map.singleton commandFingerprint commandReceipt,
             instances =
-              [ (instanceState "demo" installedModule)
+              [ (instanceStateFrom "demo" installedModule demoOrigin)
                   & #resolvedVars .~ Map.singleton "project.name" "accepted"
               ]
           }
-      appliedModule = AppliedModule "demo" emptyParentVars installedModule (Just "1.0.0") testTime Nothing
+      appliedModule = AppliedModule "demo" emptyParentVars installedModule demoOrigin (Just "1.0.0") testTime Nothing
       fileRecord =
         FileRecord
           (hashContent baselineContent)
@@ -495,11 +507,15 @@ prepareRecipeUpdateFixture root = do
           { applicationId,
             target,
             targetSource = installedRecipe,
+            targetOrigin = remoteOrigin "stack",
             targetVersion = Just "1.0.0",
             additionalModules = [],
             namespace = Just "one",
             context = Nothing,
-            instances = [instanceState "old" installedOld, instanceState "one" installedOne],
+            instances =
+              [ instanceStateFrom "old" installedOld (remoteOrigin "old"),
+                instanceStateFrom "one" installedOne (remoteOrigin "one")
+              ],
             commandReceipts = Map.empty,
             appliedAt = testTime
           }
@@ -509,8 +525,8 @@ prepareRecipeUpdateFixture root = do
           { version = base ^. #version,
             genAt = base ^. #genAt,
             modules =
-              [ AppliedModule "old" emptyParentVars installedOld (Just "1.0.0") testTime Nothing,
-                AppliedModule "one" emptyParentVars installedOne (Just "1.0.0") testTime Nothing
+              [ AppliedModule "old" emptyParentVars installedOld (remoteOrigin "old") (Just "1.0.0") testTime Nothing,
+                AppliedModule "one" emptyParentVars installedOne (remoteOrigin "one") (Just "1.0.0") testTime Nothing
               ],
             vars = Map.empty,
             files = Map.empty,
@@ -520,6 +536,7 @@ prepareRecipeUpdateFixture root = do
             blueprintMigrations = []
           }
       sourceUrl = T.pack remote
+      remoteOrigin name = RemoteOrigin sourceUrl name Nothing
   createDirectoryIfMissing True installedOne
   createDirectoryIfMissing True installedOld
   createDirectoryIfMissing True installedRecipe
@@ -592,6 +609,7 @@ application target instances =
     { applicationId = mkApplicationId target [],
       target,
       targetSource = maybe "" (^. #source) (listToMaybe instances),
+      targetOrigin = LocalOrigin targetName,
       targetVersion = Just "1.0.0",
       additionalModules = [],
       namespace = Nothing,
@@ -600,13 +618,22 @@ application target instances =
       commandReceipts = Map.empty,
       appliedAt = testTime
     }
+  where
+    targetName = case target of
+      AppliedModuleTarget name -> name ^. #unModuleName
+      AppliedRecipeTarget name -> name ^. #unRecipeName
 
 instanceState :: ModuleName -> FilePath -> AppliedInstanceState
 instanceState name source =
+  instanceStateFrom name source (LocalOrigin (name ^. #unModuleName))
+
+instanceStateFrom :: ModuleName -> FilePath -> ArtifactOrigin -> AppliedInstanceState
+instanceStateFrom name source origin =
   AppliedInstanceState
     { name,
       parentVars = emptyParentVars,
       source,
+      origin,
       moduleVersion = Just "1.0.0",
       resolvedVars = Map.empty
     }

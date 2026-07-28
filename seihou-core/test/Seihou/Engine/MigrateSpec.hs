@@ -57,7 +57,7 @@ mkV t = case parseVersion t of
 mkManifest :: [(FilePath, Text)] -> Manifest
 mkManifest entries =
   (emptyManifest fixedTime)
-    & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = "/installed/demo", moduleVersion = Just "1.0.0", appliedAt = fixedTime, removal = Nothing}]
+    & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = "/installed/demo", origin = LocalOrigin "demo", moduleVersion = Just "1.0.0", appliedAt = fixedTime, removal = Nothing}]
     & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- entries]
 
 -- | Build an in-memory filesystem from (path, content) pairs.

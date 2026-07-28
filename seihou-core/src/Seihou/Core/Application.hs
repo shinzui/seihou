@@ -39,22 +39,28 @@ mkApplicationId target additional =
 
 -- | Capture a composition using the already-resolved, instance-scoped
 -- values from the generation pipeline.
+--
+-- The target and each module instance are described by both the absolute
+-- directory they were loaded from on this machine and the portable
+-- 'ArtifactOrigin' that identifies them in the manifest. Only the origin is
+-- serialized; the directory is retained in memory for the current run.
 buildAppliedComposition ::
   AppliedTarget ->
-  FilePath ->
+  (FilePath, ArtifactOrigin) ->
   Maybe Text ->
   [ModuleName] ->
   Maybe Text ->
   Maybe Text ->
-  [(ModuleInstance, Module, FilePath)] ->
+  [(ModuleInstance, Module, FilePath, ArtifactOrigin)] ->
   Map ModuleInstance (Map VarName ResolvedVar) ->
   UTCTime ->
   AppliedComposition
-buildAppliedComposition target targetSource targetVersion additional namespace context modulesInOrder resolved now =
+buildAppliedComposition target (targetSource, targetOrigin) targetVersion additional namespace context modulesInOrder resolved now =
   AppliedComposition
     { applicationId = mkApplicationId target additional,
       target = target,
       targetSource = targetSource,
+      targetOrigin = targetOrigin,
       targetVersion = targetVersion,
       additionalModules = additional,
       namespace = namespace,
@@ -64,11 +70,12 @@ buildAppliedComposition target targetSource targetVersion additional namespace c
       appliedAt = now
     }
   where
-    buildInstance (inst, modul, source) =
+    buildInstance (inst, modul, source, origin) =
       AppliedInstanceState
         { name = inst ^. #module_,
           parentVars = inst ^. #parentVars,
           source = source,
+          origin = origin,
           moduleVersion = modul ^. #version,
           resolvedVars = Map.map (varValueToText . (^. #value)) (Map.findWithDefault Map.empty inst resolved)
         }

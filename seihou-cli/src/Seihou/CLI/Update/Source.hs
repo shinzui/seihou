@@ -1,6 +1,7 @@
 module Seihou.CLI.Update.Source
   ( stageCandidateSources,
     hashArtifactDirectory,
+    artifactDirectoryOnThisMachine,
   )
 where
 
@@ -16,10 +17,9 @@ import Seihou.CLI.InstallShared
   ( OriginInfo (..),
     cloneRepo,
     copyDirectoryRecursive,
-    readOriginInfo,
   )
 import Seihou.CLI.Update.Types
-import Seihou.Core.Module (validateModule)
+import Seihou.Core.Module (defaultSearchPaths, discoverRunnable, validateModule)
 import Seihou.Core.Recipe (validateRecipe)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), validateRegistry)
 import Seihou.Core.Types
@@ -43,10 +43,12 @@ data ArtifactRequirement = ArtifactRequirement
 -- remain a fallback and are called out explicitly.
 stageCandidateSources ::
   FilePath ->
+  FilePath ->
+  FilePath ->
   [AppliedComposition] ->
   IO (Either UpdateError (CandidateCatalog, [UpdateWarning]))
-stageCandidateSources sessionRoot selected = do
-  requirements <- requirementsFor selected
+stageCandidateSources sessionRoot projectRoot installedDirectory selected = do
+  requirements <- requirementsFor projectRoot installedDirectory selected
   let remoteOrigins =
         Map.fromList
           [ (origin ^. #sourceUrl, origin)
@@ -74,26 +76,69 @@ stageCandidateSources sessionRoot selected = do
             localWarnings
           )
 
-requirementsFor :: [AppliedComposition] -> IO [ArtifactRequirement]
-requirementsFor applications = concat <$> mapM applicationRequirements applications
+requirementsFor :: FilePath -> FilePath -> [AppliedComposition] -> IO [ArtifactRequirement]
+requirementsFor projectRoot installedDirectory applications = concat <$> mapM applicationRequirements applications
   where
     applicationRequirements application = do
-      targetOrigin <- readOriginInfo (application ^. #targetSource)
-      instanceRequirements <- forM (application ^. #instances) $ \state -> do
-        origin <- readOriginInfo (state ^. #source)
-        pure
-          ArtifactRequirement
-            { kind = CandidateModule,
-              name = state ^. #name . #unModuleName,
-              sourceDirectory = state ^. #source,
-              origin
-            }
-      let targetRequirement = case application ^. #target of
-            AppliedModuleTarget name ->
-              ArtifactRequirement CandidateModule (name ^. #unModuleName) (application ^. #targetSource) targetOrigin
-            AppliedRecipeTarget name ->
-              ArtifactRequirement CandidateRecipe (name ^. #unRecipeName) (application ^. #targetSource) targetOrigin
+      targetRequirement <-
+        requirement
+          ( case application ^. #target of
+              AppliedModuleTarget name -> (CandidateModule, name ^. #unModuleName)
+              AppliedRecipeTarget name -> (CandidateRecipe, name ^. #unRecipeName)
+          )
+          (application ^. #targetOrigin)
+      instanceRequirements <-
+        forM (application ^. #instances) $ \state ->
+          requirement (CandidateModule, state ^. #name . #unModuleName) (state ^. #origin)
       pure (targetRequirement : instanceRequirements)
+
+    requirement (kind, name) origin = do
+      sourceDirectory <- artifactDirectoryOnThisMachine projectRoot installedDirectory origin
+      pure ArtifactRequirement {kind, name, sourceDirectory, origin = remoteProvenance origin}
+
+-- | Recover the remote-provenance view an update needs from the manifest's
+-- portable origin.
+--
+-- Before schema version 6 this was read from the @.seihou-origin.json@ file
+-- beside the absolute path the manifest recorded — that is, from whatever the
+-- machine that ran the command happened to have installed. Taking it from the
+-- manifest instead is both portable and more authoritative: it is the
+-- project's own record of what it was generated from. The installed-at
+-- version is deliberately not reconstructed here; nothing in staging reads it.
+remoteProvenance :: ArtifactOrigin -> Maybe OriginInfo
+remoteProvenance (RemoteOrigin url _ repo) = Just (OriginInfo url repo Nothing)
+remoteProvenance (ProjectOrigin _) = Nothing
+remoteProvenance (LocalOrigin _) = Nothing
+
+-- | Where the artifact an origin names currently lives on this machine.
+--
+-- The manifest deliberately records no absolute path, so anything that has to
+-- look at an artifact's bytes — staging a local fallback, hashing the
+-- currently-applied content — has to ask this question first. A
+-- 'RemoteOrigin' resolves to its slot in the install cache, a 'ProjectOrigin'
+-- to a directory inside the project, and a 'LocalOrigin' to whatever ordinary
+-- discovery finds by that name. When discovery finds nothing the bare name is
+-- returned, so the caller fails with its own "cannot read this artifact"
+-- error rather than silently reading something else.
+--
+-- Resolving an origin back to a directory is owned in general by
+-- docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md,
+-- which replaces this helper with @Seihou.Core.ArtifactRef@ and its
+-- user-facing resolution-error type. It lives here for now so schema version
+-- 6 does not have to land with @seihou update@ broken.
+artifactDirectoryOnThisMachine :: FilePath -> FilePath -> ArtifactOrigin -> IO FilePath
+artifactDirectoryOnThisMachine projectRoot installedDirectory origin = case origin of
+  RemoteOrigin _ name _ -> pure (installedDirectory </> T.unpack name)
+  ProjectOrigin relative -> pure (projectRoot </> relative)
+  LocalOrigin name -> do
+    searchPaths <- defaultSearchPaths
+    discovered <- discoverRunnable searchPaths (ModuleName name)
+    pure $ case discovered of
+      Right (RunnableModule _ directory) -> directory
+      Right (RunnableRecipe _ directory) -> directory
+      Right (RunnableBlueprint _ directory) -> directory
+      Right (RunnableAgentPrompt _ directory) -> directory
+      Left _ -> T.unpack name
 
 stageRemoteOrigins ::
   FilePath ->

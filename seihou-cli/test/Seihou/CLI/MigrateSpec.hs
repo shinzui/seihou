@@ -22,6 +22,7 @@ import Seihou.CLI.Migrate
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
   ( AppliedModule (..),
+    ArtifactOrigin (..),
     FileRecord (..),
     Manifest (..),
     ModuleName (..),
@@ -115,7 +116,7 @@ emptyMigrationsLit =
 mkManifest :: Text -> FilePath -> [(FilePath, Text)] -> Manifest
 mkManifest version installedDir entries =
   (emptyManifest fixedTime)
-    & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = installedDir, moduleVersion = Just version, appliedAt = fixedTime, removal = Nothing}]
+    & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = installedDir, origin = LocalOrigin (modName ^. #unModuleName), moduleVersion = Just version, appliedAt = fixedTime, removal = Nothing}]
     & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- entries]
 
 defaultOpts :: MigrateOpts
@@ -235,7 +236,7 @@ writeOriginJson installedDir sourceUrl = do
 mkManifestAt :: FetchFixture -> Text -> [(FilePath, Text)] -> Manifest
 mkManifestAt fix version entries =
   (emptyManifest fixedTime)
-    & #modules .~ [AppliedModule {name = ModuleName (fix ^. #modName), parentVars = emptyParentVars, source = fix ^. #installedDir, moduleVersion = Just version, appliedAt = fixedTime, removal = Nothing}]
+    & #modules .~ [AppliedModule {name = ModuleName (fix ^. #modName), parentVars = emptyParentVars, source = fix ^. #installedDir, origin = LocalOrigin (fix ^. #modName), moduleVersion = Just version, appliedAt = fixedTime, removal = Nothing}]
     & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = ModuleName (fix ^. #modName), strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- entries]
 
 withSavedEnv :: String -> Maybe String -> IO () -> IO ()
@@ -274,7 +275,7 @@ spec = do
         writeInstalledModule installed "2.0.0" emptyMigrationsLit
         let manifest =
               ( (emptyManifest fixedTime)
-                  & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = installed, moduleVersion = Nothing, appliedAt = fixedTime, removal = Nothing}]
+                  & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, source = installed, origin = LocalOrigin (modName ^. #unModuleName), moduleVersion = Nothing, appliedAt = fixedTime, removal = Nothing}]
               )
         result <-
           withCurrentDirectory dir $

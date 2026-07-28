@@ -79,14 +79,16 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1: Round-trip unit tests in `seihou-core/test/Seihou/Manifest/TypesSpec.hs` (2026-07-28)
 - [x] Milestone 2: `Seihou.Core.ArtifactOriginDetect` classifies a directory into an `ArtifactOrigin` (2026-07-28)
 - [x] Milestone 2: Unit tests for classification covering all three constructors (2026-07-28)
-- [ ] Milestone 3: `AppliedModule`, `AppliedInstanceState`, and `AppliedComposition` carry an origin
-- [ ] Milestone 3: `currentManifestVersion` bumped from 5 to 6 with an explanatory comment
-- [ ] Milestone 4: `seihou run` records origins
-- [ ] Milestone 4: `seihou update` records origins
-- [ ] Milestone 4: `seihou agent run` records origins
-- [ ] Milestone 4: End-to-end assertion that a freshly written manifest contains no absolute paths
-- [ ] Milestone 5: `docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md` written
-- [ ] Milestone 5: `docs/adr/0002-artifact-identity-is-origin-url-plus-name.md` written
+- [x] Milestone 3: `AppliedModule`, `AppliedInstanceState`, and `AppliedComposition` carry an origin (2026-07-28)
+- [x] Milestone 3: `currentManifestVersion` bumped from 5 to 6 with an explanatory comment (2026-07-28)
+- [x] Milestone 3: Legacy-schema guard added; the pre-6 back-compat specs now assert the refusal message (2026-07-28)
+- [x] Milestone 4: `seihou run` records origins (2026-07-28)
+- [x] Milestone 4: `seihou update` records origins (2026-07-28)
+- [x] Milestone 4: `seihou agent run` records origins (2026-07-28)
+- [x] Milestone 4: `seihou update`'s three readers of the dropped `source` field rewired onto origins (2026-07-28)
+- [x] Milestone 4: End-to-end assertion that a freshly written manifest contains no absolute paths (2026-07-28)
+- [x] Milestone 5: `docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md` written (2026-07-28)
+- [x] Milestone 5: `docs/adr/0002-artifact-identity-is-origin-url-plus-name.md` written (2026-07-28)
 
 
 ## Surprises & Discoveries
@@ -94,7 +96,54 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **The plan's premise that "nothing breaks yet" was wrong.** Purpose / Big Picture
+  claimed this plan could stop serializing `source` while commands continued to
+  find modules as they do today. That is not possible: three places in
+  `seihou update` read `source` (or `targetSource`) *off a decoded manifest*, so
+  dropping the field from the JSON breaks them the moment the decoder starts
+  filling it with `""`. The three are
+  `requirementsFor` in `seihou-cli/src/Seihou/CLI/Update/Source.hs`, which read
+  `.seihou-origin.json` from the recorded path to decide what to clone;
+  `compareArtifact` inside `versionEvidence` in
+  `seihou-cli/src/Seihou/CLI/Update.hs`, which hashed the recorded directory to
+  detect same-version content drift; and `sameApplication` inside `isUpdateNoOp`
+  in the same file, which compared recorded paths to decide whether an
+  application changed.
+
+  Evidence: with only the encoder changed, `cabal test seihou-cli-test` failed two
+  tests. `reuses accepted inputs, keeps dry-run read-only, and publishes one
+  coherent update` reported `updatedApplications = [ApplicationId "9ce3f1c8…"]`
+  on a run that should have been a no-op, with
+  `versions: [{from: "2.0.0", to: "2.0.0", sameVersionContentChanged: true}]` —
+  `hashArtifactDirectory ""` throws, and the handler treats a throw as "content
+  changed".
+
+  All three were rewired onto the recorded origin, which is strictly better
+  information than what they read before: `requirementsFor` now takes the git URL
+  from the project's own manifest rather than from whatever the local machine
+  happens to have installed, and `sameApplication` now compares only fields the
+  manifest actually records. See the Decision Log for the resolver question this
+  raised.
+
+- **`AppliedBlueprint` needed no change.** Milestone 4 asked for this to be
+  confirmed. `seihou-core/src/Seihou/Core/Types.hs` defines it with a name,
+  version, baseline module names, and prompt/session metadata, and its encoder in
+  `seihou-core/src/Seihou/Manifest/Types.hs` serializes exactly those. There is no
+  path field, so it is already portable.
+
+- **Legacy-manifest tolerance had eight existing tests.** The `schema back-compat`
+  and `schema back-compat (version 1)` blocks in
+  `seihou-core/test/Seihou/Manifest/TypesSpec.hs` asserted that schema versions 1
+  through 4 decode with empty defaults. The version-6 guard makes that deliberately
+  false. Those specs were replaced with two that assert the refusal message names
+  `seihou manifest upgrade`; restoring lossless decoding of versions 1–5 is
+  `docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md`, which should
+  re-add positive coverage.
+
+- **The version-6 manifest is confirmed clean end-to-end.** A scratch project with
+  a module committed at `.seihou/modules/demo` produced a manifest whose three
+  origin positions are all `{"kind":"project","path":".seihou/modules/demo"}`, and
+  `grep -c '"/' .seihou/manifest.json` printed `0`.
 
 
 ## Decision Log
@@ -120,6 +169,52 @@ Record every decision made while working on the plan.
   cleanup happens in plan 77.
   Date: 2026-07-28
 
+- Decision: Put the minimum origin-to-directory resolution this plan needs in
+  `seihou-cli/src/Seihou/CLI/Update/Source.hs` as `artifactDirectoryOnThisMachine`,
+  rather than creating `Seihou.Core.ArtifactRef` early.
+  Rationale: Dropping `source` from the JSON broke three readers in `seihou update`
+  (see Surprises & Discoveries), and repairing them requires answering "which
+  directory does this origin name on this machine?". The parent MasterPlan at
+  `docs/masterplans/9-make-the-seihou-manifest-multi-developer-safe.md` assigns that
+  module, its signature, and its user-facing error type to
+  `docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md`. Creating
+  it here with a signature plan 77 owns would force plan 77 to change it immediately.
+  A single CLI-internal helper, exported from one module and carrying a comment
+  naming plan 77 as its replacement, keeps the shared interface unclaimed while
+  leaving the tree green. Plan 77 folds it into `Seihou.Core.ArtifactRef`, gives it a
+  real resolution-error type, and deletes this helper.
+  Date: 2026-07-28
+
+- Decision: `isUpdateNoOp`'s `sameApplication` compares `targetOrigin` plus a
+  field-by-field instance comparison that excludes `source`, instead of comparing
+  whole `AppliedInstanceState` values.
+  Rationale: The previous application is decoded from the manifest and so carries no
+  `source`; the candidate was just loaded from disk and carries one. A structural
+  `==` would therefore report every re-run as a change. The fields the manifest
+  actually records — name, parent vars, origin, version, resolved values — are the
+  correct basis for "did this application change?".
+  Date: 2026-07-28
+
+- Decision: Replace the eight pre-version-6 back-compat specs with two that assert the
+  refusal, rather than deleting them or weakening the guard to keep them passing.
+  Rationale: The version-6 guard makes their assertions deliberately false. Deleting
+  them outright would lose the record that these schema versions exist and must
+  eventually decode. Asserting the refusal message keeps the coverage pointed at the
+  current contract and leaves a visible marker for
+  `docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md` to convert back
+  into positive coverage.
+  Date: 2026-07-28
+
+- Decision: `seihou-cli/src/Seihou/CLI/Update/Source.hs` derives an artifact's remote
+  provenance from the manifest's `ArtifactOrigin` rather than from
+  `.seihou-origin.json` beside the recorded path.
+  Rationale: The old read consulted the local machine's install metadata to decide
+  what the *project* was generated from — precisely the confusion this initiative
+  exists to remove. The manifest's own `RemoteOrigin` carries the same URL and
+  repository name and is authoritative. The installed-at version is not
+  reconstructed, because nothing in staging reads it.
+  Date: 2026-07-28
+
 
 ## Outcomes & Retrospective
 
@@ -128,7 +223,46 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Complete as of 2026-07-28. All five milestones landed; `cabal test all` passes
+(1045 core, 421 CLI, 16 OKF-extension) and `nix flake check` is green, including
+the record-conventions and CLI-module-placement checks.
+
+**What the plan delivered as written.** `ArtifactOrigin` and its tagged JSON
+encoding, `Seihou.Core.ArtifactOriginDetect` with the read side of
+`.seihou-origin.json` moved down from `seihou-cli` (re-exported from
+`Seihou.CLI.InstallShared`, so no importer changed), the three manifest records
+carrying origins, schema version 6 with an actionable refusal for older
+manifests, all three write paths recording real origins, and the first two ADRs.
+The behavioral check passed: a scratch project produced a manifest whose every
+origin position is `{"kind":"project","path":".seihou/modules/demo"}`, and
+`grep -c '"/' .seihou/manifest.json` printed `0`.
+
+**Where the plan was wrong.** It asserted that removing `source` from the JSON
+would break nothing because commands still find modules the way they do today.
+Three readers in `seihou update` consume `source` *off a decoded manifest*, so
+they broke immediately; Surprises & Discoveries records them with the failing
+test output. Repairing them needed a minimal origin-to-directory resolver, which
+is plan 77's concern. The compromise — a single CLI-internal helper marked for
+plan 77 to absorb — is recorded in the Decision Log.
+
+The lesson worth carrying: "keep the field in memory, drop it from the wire" is
+only non-breaking when nothing reads the field after a decode. That is a
+question about *readers of decoded values*, not about the number of modules that
+mention the field, and the plan's Context section counted the latter.
+
+**What plan 77 inherits.** `artifactDirectoryOnThisMachine` in
+`seihou-cli/src/Seihou/CLI/Update/Source.hs` is the seed of
+`Seihou.Core.ArtifactRef` and should be deleted once that module exists, with its
+three call sites (`requirementsFor`, `compareArtifact`, and the local-staging
+fallback) moved onto the real resolver and its error type. The in-memory `source`
+and `targetSource` fields are still present and still populated at write time;
+they are now read only within a single run.
+
+**What plan 79 inherits.** `checkManifestVersion` in
+`seihou-core/src/Seihou/Manifest/Types.hs` is the compatibility seam, and the two
+specs under `describe "schema back-compat"` in
+`seihou-core/test/Seihou/Manifest/TypesSpec.hs` assert the refusal that plan 79
+replaces with real decoding.
 
 
 ## Context and Orientation

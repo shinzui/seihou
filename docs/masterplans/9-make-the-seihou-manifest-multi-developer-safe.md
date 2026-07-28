@@ -149,7 +149,7 @@ candidates, to be written during plan 76 and refined at the end of plan 80.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 76 | Record portable artifact origins in the manifest | docs/plans/76-record-portable-artifact-origins-in-the-manifest.md | None | None | In Progress |
+| 76 | Record portable artifact origins in the manifest | docs/plans/76-record-portable-artifact-origins-in-the-manifest.md | None | None | Complete |
 | 77 | Resolve manifest artifact origins to local directories | docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md | EP-76 | None | Not Started |
 | 78 | Refuse accidental module downgrades and origin mismatches | docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md | EP-76, EP-77 | None | Not Started |
 | 79 | Upgrade legacy absolute-path manifests in place | docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md | EP-76, EP-77 | EP-78 | Not Started |
@@ -268,9 +268,9 @@ adds any constraint that implementation revealed.
 Track milestone-level progress across all child plans. Each entry names the child plan
 and the milestone. This section provides an at-a-glance view of the entire initiative.
 
-- [ ] EP-76: `ArtifactOrigin` type and JSON encoding exist; round-trip tests pass
-- [ ] EP-76: `seihou run`, `seihou update`, and `seihou agent run` record origins; manifest schema is version 6
-- [ ] EP-76: First two ADRs written under `docs/adr/`
+- [x] EP-76: `ArtifactOrigin` type and JSON encoding exist; round-trip tests pass (2026-07-28)
+- [x] EP-76: `seihou run`, `seihou update`, and `seihou agent run` record origins; manifest schema is version 6 (2026-07-28)
+- [x] EP-76: First two ADRs written under `docs/adr/` (2026-07-28)
 - [ ] EP-77: `Seihou.Core.ArtifactRef` resolver and its error type exist with unit tests
 - [ ] EP-77: All seven CLI consumers resolve through the resolver instead of a recorded path
 - [ ] EP-78: Version and origin comparison module exists with unit tests
@@ -287,7 +287,51 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 Document cross-plan insights, dependency changes, scope adjustments, or unexpected
 interactions between child plans. Provide concise evidence.
 
-(None yet.)
+- **EP-76 and EP-77 are less separable than the decomposition assumed.** The
+  Decomposition Strategy above claims plan 76 changes the serialized form while
+  "commands still find modules the way they do today". That is false for
+  `seihou update`, which reads the recorded `source` path *off a decoded manifest*
+  in three places: `requirementsFor` in
+  `seihou-cli/src/Seihou/CLI/Update/Source.hs` (to locate `.seihou-origin.json`
+  and to stage a local fallback), `compareArtifact` inside `versionEvidence` in
+  `seihou-cli/src/Seihou/CLI/Update.hs` (to hash the currently-applied artifact),
+  and `sameApplication` inside `isUpdateNoOp` in the same file (to decide whether
+  an application changed). The moment the decoder stops populating `source`, all
+  three misbehave.
+
+  Evidence: with only the encoder changed, two `seihou-cli-test` cases failed. The
+  no-op third run of `reuses accepted inputs, keeps dry-run read-only, and
+  publishes one coherent update` reported
+  `updatedApplications = [ApplicationId "9ce3f1c8…"]` and
+  `versions: [{from: "2.0.0", to: "2.0.0", sameVersionContentChanged: true}]`,
+  because `hashArtifactDirectory ""` throws and the handler reads a throw as
+  "content changed".
+
+  EP-76 repaired all three onto the recorded origin, using a minimal
+  CLI-internal helper `artifactDirectoryOnThisMachine` in
+  `seihou-cli/src/Seihou/CLI/Update/Source.hs` rather than creating
+  `Seihou.Core.ArtifactRef` early, so EP-77 keeps ownership of that module's
+  signature and error type. **EP-77 must delete that helper** and move its three
+  call sites onto the real resolver; the helper carries a comment saying so.
+  The decomposition itself still holds — the boundary just leaks slightly, and
+  EP-77 inherits a small, named debt rather than a surprise.
+
+- **The `ArtifactOrigin` shape shipped exactly as agreed in Integration Points.**
+  Three constructors, `RemoteOrigin` / `ProjectOrigin` / `LocalOrigin`, with the
+  agreed payloads and a tagged JSON encoding. No child plan needs a MasterPlan
+  update to consume it.
+
+- **`AppliedBlueprint` needs no origin.** EP-76 confirmed that
+  `seihou-core/src/Seihou/Core/Types.hs` records a blueprint's name, version,
+  baseline module names, and prompt metadata, but no path, so it was already
+  portable. EP-80's no-absolute-paths assertion does not need to cover it.
+
+- **EP-79 has more to restore than the plan text implies.** EP-76's version-6
+  guard invalidated eight existing back-compat specs in
+  `seihou-core/test/Seihou/Manifest/TypesSpec.hs` that asserted schema versions 1
+  through 4 decode with empty defaults. They were replaced with two specs
+  asserting the refusal message. EP-79 should restore positive decoding coverage
+  for versions 1–5, not merely add new tests alongside them.
 
 
 ## Decision Log
@@ -356,6 +400,31 @@ plan.
   above (manifest is machine-independent; identity is origin URL plus name) constrain all
   future manifest work and belong in durable project memory rather than in a plan that
   will be marked complete.
+  Date: 2026-07-28
+
+- Decision: Allow EP-76 to land a minimal, explicitly temporary origin-to-directory
+  helper (`artifactDirectoryOnThisMachine` in
+  `seihou-cli/src/Seihou/CLI/Update/Source.hs`) rather than either leaving the tree
+  with a broken `seihou update` or creating `Seihou.Core.ArtifactRef` inside EP-76.
+  Rationale: EP-76 discovered that three readers in `seihou update` consume the
+  recorded `source` path off a decoded manifest, so schema version 6 cannot land
+  without answering "which directory does this origin name here?" (see Surprises &
+  Discoveries). Creating `Seihou.Core.ArtifactRef` in EP-76 would claim the module,
+  signature, and error type this MasterPlan assigns to EP-77, forcing EP-77 to
+  rewrite them. A single CLI-internal helper keeps the shared interface unclaimed,
+  and EP-77's scope grows only by "delete this helper and move its three call sites",
+  which is smaller than the rewiring EP-77 already owns. The decomposition is
+  unchanged; no plan is split, merged, or reordered.
+  Date: 2026-07-28
+
+- Decision: `docs/adr/` uses the repository's plain numbered-Markdown convention
+  with a `Status`/`Date` header rather than OKF frontmatter.
+  Rationale: `agents/skills/exec-plan/ADR.md` says to inspect `mori.dhall` for an
+  OKF bundle whose path is `docs/adr` and, when none exists, to preserve the
+  repository's established filesystem convention without inventing Mori identity as
+  an incidental plan edit. `mori show --full` reports zero bundles for this project,
+  and there was no prior `docs/adr/` corpus, so EP-76 established the plain
+  convention. Migrating to the shared profile is separate work.
   Date: 2026-07-28
 
 

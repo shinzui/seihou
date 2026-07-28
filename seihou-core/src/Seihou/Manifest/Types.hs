@@ -43,8 +43,15 @@ import System.FilePath (takeFileName)
 --
 -- Bumped from 4 to 5 when 'Manifest' gained the durable
 -- @blueprintMigrations@ receipt ledger. A missing ledger decodes as empty.
+--
+-- Bumped from 5 to 6 when every recorded artifact reference gained a
+-- portable @origin@ and the machine-specific @source@ / @targetSource@
+-- absolute paths were dropped from the serialized form
+-- (see docs/plans/76-record-portable-artifact-origins-in-the-manifest.md).
+-- Version-5-and-earlier manifests are not readable directly; see
+-- docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md.
 currentManifestVersion :: Int
-currentManifestVersion = 5
+currentManifestVersion = 6
 
 -- | Create an empty manifest with the given timestamp.
 emptyManifest :: UTCTime -> Manifest
@@ -143,19 +150,39 @@ instance ToJSON Manifest where
 instance FromJSON Manifest where
   parseJSON = Aeson.withObject "Manifest" $ \o -> do
     v <- o .: "version"
-    if v > currentManifestVersion
-      then fail "manifest was created by a newer version of seihou"
-      else
-        Manifest
-          <$> pure v
-          <*> o .: "generatedAt"
-          <*> o .: "modules"
-          <*> (varsFromJSON =<< o .: "variables")
-          <*> (filesFromJSON =<< o .: "files")
-          <*> o Aeson..:? "applications" Aeson..!= []
-          <*> o Aeson..:? "recipe"
-          <*> o Aeson..:? "blueprint"
-          <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
+    checkManifestVersion v
+    Manifest
+      <$> pure v
+      <*> o .: "generatedAt"
+      <*> o .: "modules"
+      <*> (varsFromJSON =<< o .: "variables")
+      <*> (filesFromJSON =<< o .: "files")
+      <*> o Aeson..:? "applications" Aeson..!= []
+      <*> o Aeson..:? "recipe"
+      <*> o Aeson..:? "blueprint"
+      <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
+
+-- | Reject a manifest this build cannot read, naming the remedy.
+--
+-- Compatibility seam: schema-5-and-earlier manifests carry an absolute
+-- @source@ path in place of the portable @origin@. Decoding those is owned
+-- by docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md; until
+-- that plan lands an older manifest fails here with a clear message rather
+-- than being silently misread. The @seihou manifest upgrade@ command the
+-- message names is delivered by that same plan, so the remedy does not exist
+-- yet.
+checkManifestVersion :: Int -> Aeson.Parser ()
+checkManifestVersion v
+  | v > currentManifestVersion =
+      fail "manifest was created by a newer version of seihou"
+  | v < 6 =
+      fail
+        ( "this manifest uses schema version "
+            <> show v
+            <> ", which records machine-specific absolute paths; run "
+            <> "'seihou manifest upgrade' to convert it"
+        )
+  | otherwise = pure ()
 
 instance ToJSON AppliedTarget where
   toJSON (AppliedModuleTarget name) =
@@ -219,7 +246,7 @@ instance ToJSON AppliedInstanceState where
   toJSON state =
     Aeson.object $
       [ "name" .= (state ^. #name . #unModuleName),
-        "source" .= (state ^. #source),
+        "origin" .= (state ^. #origin),
         "resolvedVars" .= varsToJSON (state ^. #resolvedVars)
       ]
         ++ parentVarsField (state ^. #parentVars)
@@ -238,7 +265,11 @@ instance FromJSON AppliedInstanceState where
     AppliedInstanceState
       <$> (ModuleName <$> o .: "name")
       <*> pure pv
-      <*> o .: "source"
+      -- The absolute source directory is resolved from the origin on the
+      -- machine that reads the manifest; see
+      -- docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md.
+      <*> pure ""
+      <*> o .: "origin"
       <*> o Aeson..:? "version"
       <*> (varsFromJSON =<< o Aeson..:? "resolvedVars" Aeson..!= Aeson.object [])
 
@@ -247,7 +278,7 @@ instance ToJSON AppliedComposition where
     Aeson.object $
       [ "applicationId" .= (composition ^. #applicationId . #unApplicationId),
         "target" .= (composition ^. #target),
-        "targetSource" .= (composition ^. #targetSource),
+        "targetOrigin" .= (composition ^. #targetOrigin),
         "additionalModules" .= map (^. #unModuleName) (composition ^. #additionalModules),
         "instances" .= (composition ^. #instances),
         "appliedAt" .= (composition ^. #appliedAt)
@@ -266,7 +297,10 @@ instance FromJSON AppliedComposition where
     AppliedComposition
       <$> (ApplicationId <$> o .: "applicationId")
       <*> o .: "target"
-      <*> o .: "targetSource"
+      -- Resolved from the origin at read time; see
+      -- docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md.
+      <*> pure ""
+      <*> o .: "targetOrigin"
       <*> o Aeson..:? "targetVersion"
       <*> (map ModuleName <$> o Aeson..:? "additionalModules" Aeson..!= [])
       <*> o Aeson..:? "namespace"
@@ -357,7 +391,7 @@ instance ToJSON AppliedModule where
   toJSON am =
     Aeson.object $
       [ "name" .= (am ^. #name . #unModuleName),
-        "source" .= (am ^. #source),
+        "origin" .= (am ^. #origin),
         "appliedAt" .= (am ^. #appliedAt)
       ]
         ++ parentVarsField (am ^. #parentVars)
@@ -387,7 +421,10 @@ instance FromJSON AppliedModule where
     AppliedModule
       <$> (ModuleName <$> o .: "name")
       <*> pure pv
-      <*> o .: "source"
+      -- Resolved from the origin at read time; see
+      -- docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md.
+      <*> pure ""
+      <*> o .: "origin"
       <*> o Aeson..:? "version"
       <*> o .: "appliedAt"
       <*> pure removal

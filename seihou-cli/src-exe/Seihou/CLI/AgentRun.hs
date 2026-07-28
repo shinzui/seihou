@@ -67,6 +67,7 @@ import Seihou.CLI.Shared
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
+import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
@@ -91,6 +92,7 @@ import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
 import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import Seihou.Prelude
+import System.Directory (getCurrentDirectory)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory, (</>))
@@ -289,6 +291,15 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
       exitFailure
     Right ms -> pure ms
 
+  -- Classify every baseline module's discovery directory into a portable
+  -- origin before anything is recorded, so the manifest stays meaningful on
+  -- another developer's machine.
+  projectRoot <- getCurrentDirectory
+  originedModules <-
+    traverse
+      (\(inst, m, dir) -> (inst,m,dir,) <$> detectArtifactOrigin projectRoot dir)
+      modulesInOrder
+
   -- Fold the blueprint's resolved vars into the CLI override map for
   -- the base modules. CLI overrides (already present in cliOverridesIn)
   -- win over blueprint values, mirroring 'seihou run' semantics.
@@ -412,7 +423,7 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
                     Right baselineRecords -> do
                       let orphanedPaths = map (^. #path) (diff ^. #orphaned)
                           cleanedFiles = foldr Map.delete (manifest ^. #files) orphanedPaths
-                          allModuleEntries = updateAllModules (manifest ^. #modules) modulesInOrder now
+                          allModuleEntries = updateAllModules (manifest ^. #modules) originedModules now
                           allResolvedVals =
                             Map.unions [Map.map (^. #value) vs | vs <- Map.elems baseResolved]
                           newManifest =
@@ -499,14 +510,14 @@ opTargetsPath _ _ = False
 -- applied-modules list. Local copy of @Seihou.CLI.Run.updateAllModules@.
 updateAllModules ::
   [AppliedModule] ->
-  [(ModuleInstance, Module, FilePath)] ->
+  [(ModuleInstance, Module, FilePath, ArtifactOrigin)] ->
   UTCTime ->
   [AppliedModule]
 updateAllModules existing modulesInOrder now =
   let composedKeys =
         Set.fromList
           [ (inst ^. #module_, inst ^. #parentVars)
-          | (inst, _, _) <- modulesInOrder
+          | (inst, _, _, _) <- modulesInOrder
           ]
       filtered =
         filter (\am -> not (Set.member (am ^. #name, am ^. #parentVars) composedKeys)) existing
@@ -515,11 +526,12 @@ updateAllModules existing modulesInOrder now =
             { name = inst ^. #module_,
               parentVars = inst ^. #parentVars,
               source = dir,
+              origin = origin,
               moduleVersion = m ^. #version,
               appliedAt = now,
               removal = m ^. #removal
             }
-        | (inst, m, dir) <- modulesInOrder
+        | (inst, m, dir, origin) <- modulesInOrder
         ]
    in filtered ++ new
 

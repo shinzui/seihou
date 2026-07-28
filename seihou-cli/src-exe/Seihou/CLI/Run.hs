@@ -44,6 +44,7 @@ import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
+import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
@@ -73,6 +74,7 @@ import Seihou.Fzf.Selector (selectModule)
 import Seihou.Interaction.Confirm (confirmDefaults)
 import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import Seihou.Prelude
+import System.Directory (getCurrentDirectory)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory)
@@ -277,8 +279,18 @@ handleRun runOpts = do
   -- Commands are planned against the previously accepted receipts for this
   -- exact top-level application. Ordinary run deliberately remains run-all;
   -- --no-commands disables execution while retaining matching old receipts.
+  -- What lands in the manifest must mean the same thing on every machine, so
+  -- each artifact's discovery directory is classified into a portable origin
+  -- before it is recorded. See docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md.
   let (appliedTarget, targetSource, targetVersion) = targetInfo
-      currentApplicationId = mkApplicationId appliedTarget additional
+  projectRoot <- getCurrentDirectory
+  targetOrigin <- detectArtifactOrigin projectRoot targetSource
+  originedModules <-
+    traverse
+      (\(inst, m, dir) -> (inst,m,dir,) <$> detectArtifactOrigin projectRoot dir)
+      modulesInOrder
+
+  let currentApplicationId = mkApplicationId appliedTarget additional
       priorCommandReceipts =
         case [ application ^. #commandReceipts
              | application <- manifest ^. #applications,
@@ -389,7 +401,7 @@ handleRun runOpts = do
                               -- Build updated manifest with all composed modules.
                               let orphanedPaths = map (^. #path) (diff ^. #orphaned)
                                   cleanedFiles = foldr Map.delete (manifest ^. #files) orphanedPaths
-                                  allModuleEntries = updateAllModules (manifest ^. #modules) modulesInOrder now
+                                  allModuleEntries = updateAllModules (manifest ^. #modules) originedModules now
                                   allResolvedVals =
                                     Map.unions
                                       [Map.map (^. #value) vs | vs <- Map.elems resolved]
@@ -400,12 +412,12 @@ handleRun runOpts = do
                                   appliedCompositionWithoutReceipts =
                                     buildAppliedComposition
                                       appliedTarget
-                                      targetSource
+                                      (targetSource, targetOrigin)
                                       targetVersion
                                       additional
                                       (Just namespace)
                                       context
-                                      modulesInOrder
+                                      originedModules
                                       resolved
                                       now
                                   appliedComposition =
@@ -789,14 +801,14 @@ findAppliedByName manifest name =
 -- refreshes the matching instance and leaves siblings unchanged.
 updateAllModules ::
   [AppliedModule] ->
-  [(ModuleInstance, Module, FilePath)] ->
+  [(ModuleInstance, Module, FilePath, ArtifactOrigin)] ->
   UTCTime ->
   [AppliedModule]
 updateAllModules existing modulesInOrder now =
   let composedKeys =
         Set.fromList
           [ (inst ^. #module_, inst ^. #parentVars)
-          | (inst, _, _) <- modulesInOrder
+          | (inst, _, _, _) <- modulesInOrder
           ]
       filtered = filter (\am -> not (Set.member (am ^. #name, am ^. #parentVars) composedKeys)) existing
       new =
@@ -804,10 +816,11 @@ updateAllModules existing modulesInOrder now =
             { name = inst ^. #module_,
               parentVars = inst ^. #parentVars,
               source = dir,
+              origin = origin,
               moduleVersion = m ^. #version,
               appliedAt = now,
               removal = m ^. #removal
             }
-        | (inst, m, dir) <- modulesInOrder
+        | (inst, m, dir, origin) <- modulesInOrder
         ]
    in filtered ++ new

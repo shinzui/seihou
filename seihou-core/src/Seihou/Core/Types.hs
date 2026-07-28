@@ -553,10 +553,15 @@ data CommandReceipt = CommandReceipt
   deriving stock (Eq, Show, Generic)
 
 -- | Reproducible state for one module instance in an application.
+--
+-- @source@ is the absolute directory the module was loaded from on the
+-- machine that ran the command. It is deliberately no longer serialized;
+-- @origin@ is the portable identity that goes into the manifest.
 data AppliedInstanceState = AppliedInstanceState
   { name :: !ModuleName,
     parentVars :: !ParentVars,
     source :: !FilePath,
+    origin :: !ArtifactOrigin,
     moduleVersion :: !(Maybe Text),
     resolvedVars :: !(Map VarName Text)
   }
@@ -567,6 +572,7 @@ data AppliedComposition = AppliedComposition
   { applicationId :: !ApplicationId,
     target :: !AppliedTarget,
     targetSource :: !FilePath,
+    targetOrigin :: !ArtifactOrigin,
     targetVersion :: !(Maybe Text),
     additionalModules :: ![ModuleName],
     namespace :: !(Maybe Text),
@@ -629,10 +635,15 @@ data AppliedBlueprintMigration = AppliedBlueprintMigration
 -- the same @name@ and different @parentVars@ represent two legitimate
 -- instances. Manifests produced before schema version 2 decode with
 -- @parentVars = 'emptyParentVars'@.
+--
+-- @source@ is the absolute directory the module was loaded from on the
+-- machine that ran the command. It is deliberately no longer serialized;
+-- @origin@ is the portable identity that goes into the manifest.
 data AppliedModule = AppliedModule
   { name :: !ModuleName,
     parentVars :: !ParentVars,
     source :: !FilePath,
+    origin :: !ArtifactOrigin,
     moduleVersion :: !(Maybe Text),
     appliedAt :: !UTCTime,
     removal :: !(Maybe Removal)

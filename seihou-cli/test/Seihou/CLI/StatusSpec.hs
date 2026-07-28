@@ -23,6 +23,7 @@ import Seihou.Core.Types
     AppliedInstanceState (..),
     AppliedModule (..),
     AppliedTarget (..),
+    ArtifactOrigin (..),
     Manifest (..),
     ModuleName (..),
     RecipeName (..),
@@ -51,6 +52,7 @@ mkApplied name mver =
     { name = ModuleName name,
       parentVars = emptyParentVars,
       source = "/installed/" <> T.unpack name,
+      origin = LocalOrigin name,
       moduleVersion = mver,
       appliedAt = fixedTime,
       removal = Nothing
@@ -68,6 +70,7 @@ mkApplication target modules =
     { applicationId = ApplicationId ("app-" <> target),
       target = AppliedRecipeTarget (RecipeName target),
       targetSource = "/installed/" <> T.unpack target,
+      targetOrigin = LocalOrigin target,
       targetVersion = Just "1.0.0",
       additionalModules = [],
       namespace = Nothing,
@@ -82,6 +85,7 @@ mkApplication target modules =
         { name = ModuleName name,
           parentVars = emptyParentVars,
           source = "/installed/" <> T.unpack name,
+          origin = LocalOrigin name,
           moduleVersion = Just "1.0.0",
           resolvedVars = Map.empty
         }

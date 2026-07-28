@@ -1,8 +1,14 @@
 module Seihou.Manifest.TypesSpec (tests) where
 
 import Control.Lens ((&), (.~), (^.))
+import Control.Monad (forM_)
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString.Lazy.Char8 qualified as LBS8
+import Data.Foldable (toList)
 import Data.Generics.Labels ()
+import Data.List (isInfixOf)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -40,13 +46,96 @@ withManifestModules :: [AppliedModule] -> Manifest -> Manifest
 withManifestModules mods m =
   Manifest (m ^. #version) (m ^. #genAt) mods (m ^. #vars) (m ^. #files) (m ^. #applications) (m ^. #recipe) (m ^. #blueprint) (m ^. #blueprintMigrations)
 
+-- | Every string that appears anywhere inside a value keyed @origin@ or
+-- @targetOrigin@, at any depth.
+originStrings :: Aeson.Value -> [T.Text]
+originStrings = go False
+  where
+    go inOrigin value = case value of
+      Aeson.Object object ->
+        concat
+          [ go (inOrigin || Key.toText key `elem` (["origin", "targetOrigin"] :: [T.Text])) child
+          | (key, child) <- KeyMap.toList object
+          ]
+      Aeson.Array items -> concatMap (go inOrigin) (toList items)
+      Aeson.String text -> [text | inOrigin]
+      _ -> []
+
+-- | A manifest exercising every serialized origin position at once.
+manifestWithEveryOriginPosition :: Manifest
+manifestWithEveryOriginPosition =
+  (emptyManifest fixedTime)
+    & #modules
+      .~ [ AppliedModule
+             { name = ModuleName "haskell-base",
+               parentVars = emptyParentVars,
+               source = "/Users/someone/.config/seihou/installed/haskell-base",
+               origin = RemoteOrigin "https://github.com/shinzui/seihou-modules.git" "haskell-base" (Just "seihou-modules"),
+               moduleVersion = Just "1.4.0",
+               appliedAt = fixedTime,
+               removal = Nothing
+             }
+         ]
+    & #applications
+      .~ [ AppliedComposition
+             { applicationId = ApplicationId "app",
+               target = AppliedModuleTarget (ModuleName "haskell-base"),
+               targetSource = "/Users/someone/.config/seihou/installed/haskell-base",
+               targetOrigin = RemoteOrigin "https://github.com/shinzui/seihou-modules.git" "haskell-base" (Just "seihou-modules"),
+               targetVersion = Just "1.4.0",
+               additionalModules = [],
+               namespace = Nothing,
+               context = Nothing,
+               instances =
+                 [ AppliedInstanceState
+                     { name = ModuleName "docs",
+                       parentVars = emptyParentVars,
+                       source = "/Users/someone/project/.seihou/modules/docs",
+                       origin = ProjectOrigin ".seihou/modules/docs",
+                       moduleVersion = Just "0.1.0",
+                       resolvedVars = Map.empty
+                     },
+                   AppliedInstanceState
+                     { name = ModuleName "scratch",
+                       parentVars = emptyParentVars,
+                       source = "/Users/someone/.config/seihou/modules/scratch",
+                       origin = LocalOrigin "scratch",
+                       moduleVersion = Nothing,
+                       resolvedVars = Map.empty
+                     }
+                 ],
+               commandReceipts = Map.empty,
+               appliedAt = fixedTime
+             }
+         ]
+
 spec :: Spec
 spec = do
+  -- The manifest is checked into version control and read on other machines,
+  -- so no origin it records may name a location that only exists on the
+  -- machine that wrote it. See
+  -- docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md.
+  describe "machine independence" $ do
+    it "records no absolute path in any origin position" $ do
+      let encoded = Aeson.toJSON manifestWithEveryOriginPosition
+          strings = originStrings encoded
+      strings `shouldSatisfy` not . null
+      forM_ strings $ \text -> do
+        T.isPrefixOf "/" text `shouldBe` False
+        T.isPrefixOf "~" text `shouldBe` False
+        (T.length text >= 2 && T.index text 1 == ':') `shouldBe` False
+
+    it "does not serialize the in-memory source path at all" $ do
+      let encoded = LBS8.unpack (manifestToJSON manifestWithEveryOriginPosition)
+      encoded `shouldSatisfy` not . isInfixOf "/Users/someone"
+      encoded `shouldSatisfy` not . isInfixOf "\"source\""
+      encoded `shouldSatisfy` not . isInfixOf "\"targetSource\""
+
   describe "emptyManifest" $ do
     it "creates a manifest with the current version" $ do
       let m = emptyManifest fixedTime
       (m ^. #version) `shouldBe` currentManifestVersion
-      (m ^. #version) `shouldBe` 5
+      (m ^. #version) `shouldBe` 6
 
     it "creates a manifest with no modules, vars, or files" $ do
       let m = emptyManifest fixedTime
@@ -100,7 +189,8 @@ spec = do
               [ AppliedModule
                   { name = ModuleName "haskell-base",
                     parentVars = emptyParentVars,
-                    source = "/home/user/.config/seihou/modules/haskell-base",
+                    source = "",
+                    origin = RemoteOrigin "https://github.com/shinzui/seihou-modules.git" "haskell-base" (Just "seihou-modules"),
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
                     removal = Nothing
@@ -143,8 +233,8 @@ spec = do
               { version = currentManifestVersion,
                 genAt = fixedTime,
                 modules =
-                  [ AppliedModule (ModuleName "haskell-base") emptyParentVars "/path/to/module" Nothing fixedTime Nothing,
-                    AppliedModule (ModuleName "nix-flake") emptyParentVars "/path/to/nix" Nothing fixedTime2 Nothing
+                  [ AppliedModule (ModuleName "haskell-base") emptyParentVars "" (LocalOrigin "haskell-base") Nothing fixedTime Nothing,
+                    AppliedModule (ModuleName "nix-flake") emptyParentVars "" (LocalOrigin "nix-flake") Nothing fixedTime2 Nothing
                   ],
                 vars =
                   Map.fromList
@@ -184,7 +274,8 @@ spec = do
               [ AppliedModule
                   { name = ModuleName "haskell-base",
                     parentVars = emptyParentVars,
-                    source = "/path/to/module",
+                    source = "",
+                    origin = LocalOrigin "haskell-base",
                     moduleVersion = Just "1.0.0",
                     appliedAt = fixedTime,
                     removal = Nothing
@@ -199,7 +290,8 @@ spec = do
               [ AppliedModule
                   { name = ModuleName "simple-mod",
                     parentVars = emptyParentVars,
-                    source = "/path/to/mod",
+                    source = "",
+                    origin = LocalOrigin "simple-mod",
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
                     removal = Nothing
@@ -216,7 +308,8 @@ spec = do
               [ AppliedModule
                   { name = ModuleName "claude-skill-link",
                     parentVars = pv1,
-                    source = "/modules/claude-skill-link",
+                    source = "",
+                    origin = ProjectOrigin ".seihou/modules/claude-skill-link",
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
                     removal = Nothing
@@ -224,7 +317,8 @@ spec = do
                 AppliedModule
                   { name = ModuleName "claude-skill-link",
                     parentVars = pv2,
-                    source = "/modules/claude-skill-link",
+                    source = "",
+                    origin = ProjectOrigin ".seihou/modules/claude-skill-link",
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
                     removal = Nothing
@@ -251,14 +345,15 @@ spec = do
             AppliedComposition
               { applicationId = appId1,
                 target = AppliedModuleTarget (ModuleName "master-plan"),
-                targetSource = "/modules/master-plan",
+                targetSource = "",
+                targetOrigin = ProjectOrigin ".seihou/modules/master-plan",
                 targetVersion = Just "0.7.0",
                 additionalModules = [ModuleName "docs"],
                 namespace = Just "planning",
                 context = Just "work",
                 instances =
-                  [ AppliedInstanceState (ModuleName "link-skill") pv1 "/modules/link-skill" (Just "1") (Map.singleton (VarName "skill.name") "exec-plan"),
-                    AppliedInstanceState (ModuleName "link-skill") pv2 "/modules/link-skill" (Just "1") (Map.singleton (VarName "skill.name") "master-plan")
+                  [ AppliedInstanceState (ModuleName "link-skill") pv1 "" (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "exec-plan"),
+                    AppliedInstanceState (ModuleName "link-skill") pv2 "" (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "master-plan")
                   ],
                 commandReceipts = Map.singleton fingerprint receipt,
                 appliedAt = fixedTime
@@ -267,7 +362,8 @@ spec = do
             AppliedComposition
               { applicationId = appId2,
                 target = AppliedRecipeTarget (RecipeName "service"),
-                targetSource = "/recipes/service",
+                targetSource = "",
+                targetOrigin = LocalOrigin "service",
                 targetVersion = Nothing,
                 additionalModules = [],
                 namespace = Nothing,
@@ -386,12 +482,13 @@ spec = do
       hasAppliedBlueprintMigration "payments" "2.0.0" "3.0.0" manifest2 `shouldBe` False
 
     it "preserves modules, applications, files, recipe, and normal blueprint provenance" $ do
-      let appliedModule = AppliedModule "base" emptyParentVars "/installed/base" (Just "1.0.0") fixedTime Nothing
+      let appliedModule = AppliedModule "base" emptyParentVars "" (LocalOrigin "base") (Just "1.0.0") fixedTime Nothing
           application =
             AppliedComposition
               { applicationId = ApplicationId "app-base",
                 target = AppliedModuleTarget "base",
-                targetSource = "/installed/base",
+                targetSource = "",
+                targetOrigin = LocalOrigin "base",
                 targetVersion = Just "1.0.0",
                 additionalModules = [],
                 namespace = Nothing,
@@ -418,79 +515,30 @@ spec = do
       (updated ^. #recipe) `shouldBe` (seed ^. #recipe)
       (updated ^. #blueprint) `shouldBe` (seed ^. #blueprint)
 
+  -- Schema versions 1 through 5 recorded a machine-specific absolute
+  -- @source@ path in place of the portable @origin@ introduced in version 6.
+  -- Rather than misread them, the decoder refuses them and names the remedy.
+  -- Restoring lossless decoding of those versions is owned by
+  -- docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md, which
+  -- also delivers the 'seihou manifest upgrade' command the message names.
   describe "schema back-compat" $ do
-    it "decodes a v4 manifest with no blueprintMigrations key as an empty ledger" $ do
-      let json = "{\"version\":4,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},\"applications\":[]}"
-      case manifestFromJSON json of
-        Right manifest -> do
-          (manifest ^. #version) `shouldBe` 4
-          (manifest ^. #blueprintMigrations) `shouldBe` []
-        Left err -> expectationFailure ("failed to parse v4 manifest: " <> err)
+    it "refuses every pre-portable-origin schema version and names the remedy" $ do
+      let legacy v =
+            "{\"version\":"
+              <> LBS8.pack (show (v :: Int))
+              <> ",\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},\"applications\":[]}"
+      forM_ [1 .. 5] $ \v ->
+        case manifestFromJSON (legacy v) of
+          Right _ -> expectationFailure ("schema version " <> show v <> " should not decode directly")
+          Left err -> do
+            err `shouldSatisfy` isInfixOf "seihou manifest upgrade"
+            err `shouldSatisfy` isInfixOf ("schema version " <> show v)
 
-    -- A pre-EP-32 (schema v2) manifest has no @blueprint@ key. The
-    -- decoder must read it as 'Nothing' regardless of the version
-    -- field, so a pre-bump project does not refuse to load after the
-    -- user upgrades seihou.
-    it "decodes a v2 manifest with no blueprint key as Nothing" $ do
-      let json = "{\"version\":2,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{}}"
-      case manifestFromJSON json of
-        Right manifest -> do
-          (manifest ^. #blueprint) `shouldBe` Nothing
-          (manifest ^. #version) `shouldBe` 2
-        Left err -> expectationFailure ("failed to parse: " <> err)
-
-    it "decodes a v3 manifest with an explicit null blueprint as Nothing" $ do
-      let json = "{\"version\":3,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},\"blueprint\":null}"
-      case manifestFromJSON json of
-        Right manifest -> (manifest ^. #blueprint) `shouldBe` Nothing
-        Left err -> expectationFailure ("failed to parse: " <> err)
-
-    it "decodes a v3 manifest with empty defaults for every version-4 field" $ do
-      let json =
-            "{\"version\":3,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},"
-              <> "\"files\":{\"README.md\":{\"hash\":\"abc\",\"module\":\"legacy\",\"strategy\":\"template\",\"generatedAt\":\"2026-03-01T10:30:00Z\"}}}"
-      case manifestFromJSON json of
-        Right manifest -> do
-          (manifest ^. #applications) `shouldBe` []
-          case Map.lookup "README.md" (manifest ^. #files) of
-            Just record -> do
-              (record ^. #baseline) `shouldBe` Nothing
-              (record ^. #applicationIds) `shouldBe` Set.empty
-            Nothing -> expectationFailure "expected legacy file record"
-        Left err -> expectationFailure ("failed to parse: " <> err)
-
-    it "decodes a v3 manifest with a populated blueprint object" $ do
-      let json =
-            "{\"version\":3,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[],\"variables\":{},\"files\":{},"
-              <> "\"blueprint\":{\"name\":\"payments-service\",\"version\":\"0.3.1\",\"appliedAt\":\"2026-03-01T11:00:00Z\","
-              <> "\"baselineModules\":[\"nix-flake\"],\"noBaseline\":false,\"userPrompt\":\"set up payments\"}}"
-      case manifestFromJSON json of
-        Right manifest -> case manifest ^. #blueprint of
-          Just ab -> do
-            (ab ^. #name) `shouldBe` ModuleName "payments-service"
-            (ab ^. #blueprintVersion) `shouldBe` Just "0.3.1"
-            (ab ^. #baselineModules) `shouldBe` [ModuleName "nix-flake"]
-            (ab ^. #noBaseline) `shouldBe` False
-            (ab ^. #userPrompt) `shouldBe` Just "set up payments"
-            (ab ^. #agentSessionId) `shouldBe` Nothing
-          Nothing -> expectationFailure "expected populated blueprint"
-        Left err -> expectationFailure ("failed to parse: " <> err)
-
-  describe "schema back-compat (version 1)" $ do
-    it "decodes a version-1 manifest with parentVars defaulting to empty" $ do
+    it "refuses a version-1 manifest that records an absolute module source" $ do
       let json = "{\"version\":1,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[{\"name\":\"haskell-base\",\"source\":\"/path\",\"appliedAt\":\"2026-03-01T10:30:00Z\"}],\"variables\":{},\"files\":{}}"
       case manifestFromJSON json of
-        Right manifest -> do
-          length (manifest ^. #modules) `shouldBe` 1
-          ((head (manifest ^. #modules)) ^. #parentVars) `shouldBe` emptyParentVars
-        Left err -> expectationFailure ("failed to parse: " <> err)
-
-    it "parses old manifest without version key as Nothing" $ do
-      let json = "{\"version\":1,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[{\"name\":\"old-mod\",\"source\":\"/path\",\"appliedAt\":\"2026-03-01T10:30:00Z\"}],\"variables\":{},\"files\":{}}"
-          result = manifestFromJSON json
-      case result of
-        Right manifest -> ((head (manifest ^. #modules)) ^. #moduleVersion) `shouldBe` Nothing
-        Left err -> expectationFailure ("failed to parse: " <> err)
+        Right _ -> expectationFailure "a version-1 manifest should not decode directly"
+        Left err -> err `shouldSatisfy` isInfixOf "seihou manifest upgrade"
 
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do

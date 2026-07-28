@@ -20,6 +20,7 @@ import Seihou.Core.Migration
   )
 import Seihou.Core.Types
   ( AppliedModule (..),
+    ArtifactOrigin (..),
     Manifest (..),
     Module (..),
     ModuleName (..),
@@ -51,6 +52,7 @@ mkApplied mver =
     { name = ModuleName "demo",
       parentVars = emptyParentVars,
       source = "/installed/demo",
+      origin = LocalOrigin "demo",
       moduleVersion = mver,
       appliedAt = fixedTime,
       removal = Nothing
@@ -115,6 +117,7 @@ mkAppliedAt name source mver =
     { name = ModuleName name,
       parentVars = emptyParentVars,
       source = source,
+      origin = LocalOrigin name,
       moduleVersion = mver,
       appliedAt = fixedTime,
       removal = Nothing
