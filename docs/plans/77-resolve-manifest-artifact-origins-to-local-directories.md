@@ -76,9 +76,9 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: `Seihou.Core.ArtifactRef` module with `resolveArtifactOrigin` and `ArtifactRefError`
-- [ ] Milestone 1: `renderArtifactRefError` produces the user-facing message
-- [ ] Milestone 1: Unit tests covering resolution success and every failure shape
+- [x] Milestone 1: `Seihou.Core.ArtifactRef` module with `resolveArtifactOrigin` and `ArtifactRefError` (2026-07-28)
+- [x] Milestone 1: `renderArtifactRefError` produces the user-facing message (2026-07-28)
+- [x] Milestone 1: Unit tests covering resolution success and every failure shape (2026-07-28)
 - [ ] Milestone 2: `seihou migrate` resolves through the resolver
 - [ ] Milestone 2: `seihou upgrade` resolves through the resolver
 - [ ] Milestone 2: `seihou remove` resolves through the resolver (or confirmed not to need it)
