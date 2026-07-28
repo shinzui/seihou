@@ -29,6 +29,11 @@ module Seihou.CLI.ManifestUpgrade
     LegacyRef (..),
     LegacyManifest (..),
     readLegacyManifest,
+
+    -- * Inferring a portable origin
+    InferenceOutcome (..),
+    inferredOrigin,
+    inferOriginFromLegacyPath,
   )
 where
 
@@ -39,6 +44,9 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (toList)
 import Data.Generics.Labels ()
 import Data.Text qualified as T
+import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
+import Seihou.Core.ArtifactRef (resolveArtifactOrigin)
+import Seihou.Core.Types (ArtifactOrigin (..))
 import Seihou.Manifest.Types (currentManifestVersion)
 import Seihou.Prelude
 
@@ -173,6 +181,119 @@ mkRef pointer definitionFile mName mSource mVersion =
           }
       ]
     _ -> []
+
+-- ----------------------------------------------------------------------------
+-- Inferring a portable origin
+-- ----------------------------------------------------------------------------
+
+-- | How confident the upgrade is about a converted origin.
+--
+-- The distinction is not decoration: it is what the printed report shows the
+-- developer, and it is the difference between a manifest entry that names its
+-- upstream and one that admits it cannot.
+data InferenceOutcome
+  = -- | The artifact resolved locally and its install metadata gave a URL.
+    -- Strongest result.
+    InferredFromLocalInstall !ArtifactOrigin
+  | -- | The legacy path names a directory inside the project, so it converts
+    -- to a 'ProjectOrigin' by path arithmetic alone. Exact rather than
+    -- inferred: a project-relative path means the same thing in every clone.
+    InferredFromProjectPath !ArtifactOrigin
+  | -- | Nothing local matched, or what matched carries no provenance; fell
+    -- back to 'LocalOrigin' with only the recorded name. The developer can
+    -- improve this by reinstalling from the real upstream and re-running the
+    -- upgrade.
+    InferredAsUnverifiable !ArtifactOrigin
+  deriving stock (Eq, Show, Generic)
+
+-- | The converted origin, whatever the confidence.
+inferredOrigin :: InferenceOutcome -> ArtifactOrigin
+inferredOrigin (InferredFromLocalInstall origin) = origin
+inferredOrigin (InferredFromProjectPath origin) = origin
+inferredOrigin (InferredAsUnverifiable origin) = origin
+
+-- | Convert one legacy reference into a portable origin.
+--
+-- @projectRoot@ is the absolute directory holding @.seihou@. @searchPaths@ is
+-- normally 'Seihou.Core.Module.defaultSearchPaths'.
+--
+-- Inference proceeds in three steps.
+--
+-- First, path arithmetic that needs no local state. The recorded path was
+-- written by another machine, so its project-root prefix is that machine's
+-- checkout, not this one — which is why the test is on the /suffix/: a path
+-- ending in @.seihou\/modules\/\<name\>@ names a project-local artifact in
+-- every clone. Containment inside this machine's project root is checked
+-- second, as confirmation, for a layout the suffix test does not recognise.
+--
+-- Second, a local lookup by name through @searchPaths@, which is exactly what
+-- 'Seihou.Core.ArtifactRef.resolveArtifactOrigin' does for a 'LocalOrigin'.
+-- What is found is classified by 'detectArtifactOrigin', so an installed copy
+-- with a @.seihou-origin.json@ yields the upstream URL the legacy path had
+-- thrown away.
+--
+-- Third, 'LocalOrigin' carrying only the recorded name — the honest
+-- representation of "this came from somewhere on that developer's machine and
+-- we cannot say where".
+inferOriginFromLegacyPath ::
+  FilePath ->
+  [FilePath] ->
+  LegacyRef ->
+  IO InferenceOutcome
+inferOriginFromLegacyPath projectRoot searchPaths ref =
+  case projectModuleSuffix (ref ^. #legacyPath) of
+    Just relative -> pure (InferredFromProjectPath (ProjectOrigin relative))
+    Nothing -> do
+      recorded <- detectArtifactOrigin projectRoot (ref ^. #legacyPath)
+      case recorded of
+        ProjectOrigin _ -> pure (InferredFromProjectPath recorded)
+        _ -> fromLocalLookup
+  where
+    name = ref ^. #artifactName
+
+    fromLocalLookup = do
+      resolved <-
+        resolveArtifactOrigin
+          projectRoot
+          searchPaths
+          (ref ^. #definitionFile)
+          (LocalOrigin name)
+      case resolved of
+        Left _ -> pure (InferredAsUnverifiable (LocalOrigin name))
+        Right directory -> do
+          found <- detectArtifactOrigin projectRoot directory
+          pure $ case found of
+            RemoteOrigin {} -> InferredFromLocalInstall found
+            ProjectOrigin {} -> InferredFromProjectPath found
+            LocalOrigin {} -> InferredAsUnverifiable found
+
+-- | The project-relative form of a legacy path that names an artifact under
+-- @.seihou\/modules\/@, whichever machine's checkout it was written on.
+projectModuleSuffix :: FilePath -> Maybe FilePath
+projectModuleSuffix path = case reverse (pathSegments path) of
+  (name : "modules" : ".seihou" : _) -> Just (".seihou/modules/" <> name)
+  _ -> Nothing
+
+-- | Whether a legacy path has the shape of an entry in the install cache,
+-- @\<xdg-config\>\/seihou\/installed\/\<name\>@.
+--
+-- A path with that shape says the original author had the artifact installed
+-- from an upstream, so when inference still falls back to 'LocalOrigin' the
+-- report can say the URL was lost rather than that there never was one.
+legacyPathWasInstalled :: FilePath -> Bool
+legacyPathWasInstalled path = case reverse (pathSegments path) of
+  (_ : "installed" : "seihou" : _) -> True
+  _ -> False
+
+-- | Split a recorded path into its segments, tolerating either separator: the
+-- path may have been written by a machine that is not this one.
+pathSegments :: FilePath -> [FilePath]
+pathSegments = filter (not . null) . foldr split [[]]
+  where
+    split character segments@(current : rest)
+      | character == '/' || character == '\\' = [] : segments
+      | otherwise = (character : current) : rest
+    split _ [] = []
 
 -- ----------------------------------------------------------------------------
 -- Small JSON accessors
