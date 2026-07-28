@@ -1,7 +1,6 @@
 module Seihou.CLI.Update.Source
   ( stageCandidateSources,
     hashArtifactDirectory,
-    artifactDirectoryOnThisMachine,
   )
 where
 
@@ -19,7 +18,8 @@ import Seihou.CLI.InstallShared
     copyDirectoryRecursive,
   )
 import Seihou.CLI.Update.Types
-import Seihou.Core.Module (defaultSearchPaths, discoverRunnable, validateModule)
+import Seihou.Core.ArtifactRef (ArtifactRefError, resolveArtifactOrigin)
+import Seihou.Core.Module (defaultSearchPaths, validateModule)
 import Seihou.Core.Recipe (validateRecipe)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), validateRegistry)
 import Seihou.Core.Types
@@ -30,10 +30,17 @@ import System.Directory qualified as Directory
 import System.Exit (ExitCode (..))
 import System.Process (readProcessWithExitCode)
 
+-- | One artifact an update has to obtain before it can re-plan.
+--
+-- @sourceDirectory@ is where the currently-applied copy lives on this
+-- machine, resolved from the manifest's recorded origin. It is only consulted
+-- for artifacts with no remote to clone from, so a resolution failure is
+-- carried rather than raised: an artifact that will be cloned does not need
+-- to exist locally at all.
 data ArtifactRequirement = ArtifactRequirement
   { kind :: !CandidateArtifactKind,
     name :: !Text,
-    sourceDirectory :: !FilePath,
+    sourceDirectory :: !(Either ArtifactRefError FilePath),
     origin :: !(Maybe OriginInfo)
   }
   deriving stock (Generic)
@@ -93,8 +100,13 @@ requirementsFor projectRoot installedDirectory applications = concat <$> mapM ap
       pure (targetRequirement : instanceRequirements)
 
     requirement (kind, name) origin = do
-      sourceDirectory <- artifactDirectoryOnThisMachine projectRoot installedDirectory origin
+      searchPaths <- defaultSearchPaths
+      sourceDirectory <- resolveArtifactOrigin projectRoot searchPaths (definitionFileFor kind) origin
       pure ArtifactRequirement {kind, name, sourceDirectory, origin = remoteProvenance origin}
+
+definitionFileFor :: CandidateArtifactKind -> FilePath
+definitionFileFor CandidateModule = "module.dhall"
+definitionFileFor CandidateRecipe = "recipe.dhall"
 
 -- | Recover the remote-provenance view an update needs from the manifest's
 -- portable origin.
@@ -109,36 +121,6 @@ remoteProvenance :: ArtifactOrigin -> Maybe OriginInfo
 remoteProvenance (RemoteOrigin url _ repo) = Just (OriginInfo url repo Nothing)
 remoteProvenance (ProjectOrigin _) = Nothing
 remoteProvenance (LocalOrigin _) = Nothing
-
--- | Where the artifact an origin names currently lives on this machine.
---
--- The manifest deliberately records no absolute path, so anything that has to
--- look at an artifact's bytes — staging a local fallback, hashing the
--- currently-applied content — has to ask this question first. A
--- 'RemoteOrigin' resolves to its slot in the install cache, a 'ProjectOrigin'
--- to a directory inside the project, and a 'LocalOrigin' to whatever ordinary
--- discovery finds by that name. When discovery finds nothing the bare name is
--- returned, so the caller fails with its own "cannot read this artifact"
--- error rather than silently reading something else.
---
--- Resolving an origin back to a directory is owned in general by
--- docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md,
--- which replaces this helper with @Seihou.Core.ArtifactRef@ and its
--- user-facing resolution-error type. It lives here for now so schema version
--- 6 does not have to land with @seihou update@ broken.
-artifactDirectoryOnThisMachine :: FilePath -> FilePath -> ArtifactOrigin -> IO FilePath
-artifactDirectoryOnThisMachine projectRoot installedDirectory origin = case origin of
-  RemoteOrigin _ name _ -> pure (installedDirectory </> T.unpack name)
-  ProjectOrigin relative -> pure (projectRoot </> relative)
-  LocalOrigin name -> do
-    searchPaths <- defaultSearchPaths
-    discovered <- discoverRunnable searchPaths (ModuleName name)
-    pure $ case discovered of
-      Right (RunnableModule _ directory) -> directory
-      Right (RunnableRecipe _ directory) -> directory
-      Right (RunnableBlueprint _ directory) -> directory
-      Right (RunnableAgentPrompt _ directory) -> directory
-      Left _ -> T.unpack name
 
 stageRemoteOrigins ::
   FilePath ->
@@ -297,18 +279,23 @@ stageLocalRequirements searchRoot initial = go initial []
       Just _ -> go artifacts warnings rest
       Nothing
         | Map.member (requirement ^. #kind, requirement ^. #name) artifacts -> go artifacts warnings rest
-        | otherwise -> do
-            loaded <- case requirement ^. #kind of
-              CandidateModule -> loadModuleArtifact Nothing Nothing [] Nothing (requirement ^. #sourceDirectory)
-              CandidateRecipe -> loadRecipeArtifact Nothing Nothing [] Nothing (requirement ^. #sourceDirectory)
-            case loaded of
-              Left err -> pure (Left err)
-              Right candidate -> do
-                inserted <- insertCandidate searchRoot (Right artifacts) candidate
-                case inserted of
-                  Left err -> pure (Left err)
-                  Right artifacts' ->
-                    go artifacts' (LocalArtifactHasNoRemote (requirement ^. #name) : warnings) rest
+        | otherwise -> case requirement ^. #sourceDirectory of
+            -- There is no remote to fall back on and no local copy either, so
+            -- the update cannot proceed. Report the resolution failure with
+            -- its own wording rather than a generic "artifact missing".
+            Left refErr -> pure (Left (CandidateArtifactUnresolved refErr))
+            Right directory -> do
+              loaded <- case requirement ^. #kind of
+                CandidateModule -> loadModuleArtifact Nothing Nothing [] Nothing directory
+                CandidateRecipe -> loadRecipeArtifact Nothing Nothing [] Nothing directory
+              case loaded of
+                Left err -> pure (Left err)
+                Right candidate -> do
+                  inserted <- insertCandidate searchRoot (Right artifacts) candidate
+                  case inserted of
+                    Left err -> pure (Left err)
+                    Right artifacts' ->
+                      go artifacts' (LocalArtifactHasNoRemote (requirement ^. #name) : warnings) rest
 
 insertCandidate ::
   FilePath ->

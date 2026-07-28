@@ -28,7 +28,7 @@ import Seihou.Core.Types
   )
 import Seihou.Core.Version qualified
 import Seihou.Manifest.Types (emptyManifest)
-import System.Directory (createDirectoryIfMissing)
+import System.Directory (createDirectoryIfMissing, withCurrentDirectory)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
@@ -51,7 +51,6 @@ mkApplied mver =
   AppliedModule
     { name = ModuleName "demo",
       parentVars = emptyParentVars,
-      source = "/installed/demo",
       origin = LocalOrigin "demo",
       moduleVersion = mver,
       appliedAt = fixedTime,
@@ -111,17 +110,34 @@ emptyMigrationsLit :: Text
 emptyMigrationsLit =
   "[] : List { from : Text, to : Text, ops : List < MoveFile : { src : Text, dest : Text } | MoveDir : { src : Text, dest : Text } | DeleteFile : { path : Text } | DeleteDir : { path : Text } | RunCommand : { run : Text, workDir : Optional Text } > }"
 
-mkAppliedAt :: Text -> FilePath -> Maybe Text -> AppliedModule
-mkAppliedAt name source mver =
+-- | An applied module recorded the way the manifest records one: by portable
+-- origin, not by path. Detection resolves the origin against the current
+-- working directory, so the tests below plant modules under
+-- @<project>/.seihou/modules/<name>@ and run inside that project.
+mkAppliedAt :: Text -> Maybe Text -> AppliedModule
+mkAppliedAt name mver =
   AppliedModule
     { name = ModuleName name,
       parentVars = emptyParentVars,
-      source = source,
-      origin = LocalOrigin name,
+      origin = ProjectOrigin (projectModulePath name),
       moduleVersion = mver,
       appliedAt = fixedTime,
       removal = Nothing
     }
+
+-- | Where a project-origin module lives, relative to the project root.
+projectModulePath :: Text -> FilePath
+projectModulePath name = ".seihou/modules/" <> T.unpack name
+
+-- | Plant a module inside a scratch project and run the body from the project
+-- root, which is what @detectPendingMigrations@ resolves origins against.
+withProjectModules :: [(Text, Text, Text)] -> IO a -> IO a
+withProjectModules modules body =
+  withSystemTempDirectory "seihou-pending-detect" $ \projectRoot -> do
+    mapM_
+      (\(name, version, migrationsLit) -> writeInstalledModule (projectRoot </> projectModulePath name) name version migrationsLit)
+      modules
+    withCurrentDirectory projectRoot body
 
 spec :: Spec
 spec = do
@@ -201,28 +217,20 @@ spec = do
 
   describe "detectPendingMigrations" $ do
     it "with Nothing filter, surfaces every applied module's pending plan" $
-      withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
-        let aDir = dir </> "demo-a"
-            bDir = dir </> "demo-b"
-        writeInstalledModule aDir "demo-a" "2.0.0" moveOldToNewLit
-        writeInstalledModule bDir "demo-b" "2.0.0" moveOldToNewLit
+      withProjectModules [("demo-a", "2.0.0", moveOldToNewLit), ("demo-b", "2.0.0", moveOldToNewLit)] $ do
         let manifest =
               ( (emptyManifest fixedTime)
-                  & #modules .~ [mkAppliedAt "demo-a" aDir (Just "1.0.0"), mkAppliedAt "demo-b" bDir (Just "1.0.0")]
+                  & #modules .~ [mkAppliedAt "demo-a" (Just "1.0.0"), mkAppliedAt "demo-b" (Just "1.0.0")]
                   & #files .~ Map.empty
               )
         result <- detectPendingMigrations manifest Nothing
         map fst result `shouldMatchList` [ModuleName "demo-a", ModuleName "demo-b"]
 
     it "with a Just filter, restricts detection to the named modules" $
-      withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
-        let aDir = dir </> "demo-a"
-            bDir = dir </> "demo-b"
-        writeInstalledModule aDir "demo-a" "2.0.0" moveOldToNewLit
-        writeInstalledModule bDir "demo-b" "2.0.0" moveOldToNewLit
+      withProjectModules [("demo-a", "2.0.0", moveOldToNewLit), ("demo-b", "2.0.0", moveOldToNewLit)] $ do
         let manifest =
               ( (emptyManifest fixedTime)
-                  & #modules .~ [mkAppliedAt "demo-a" aDir (Just "1.0.0"), mkAppliedAt "demo-b" bDir (Just "1.0.0")]
+                  & #modules .~ [mkAppliedAt "demo-a" (Just "1.0.0"), mkAppliedAt "demo-b" (Just "1.0.0")]
                   & #files .~ Map.empty
               )
         result <-
@@ -231,38 +239,31 @@ spec = do
             (Just (Set.singleton (ModuleName "demo-a")))
         map fst result `shouldBe` [ModuleName "demo-a"]
 
-    it "skips modules whose installed copy has no module.dhall" $
-      withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
-        let bogus = dir </> "missing-installed"
+    it "skips a module whose recorded origin does not resolve here" $
+      withProjectModules [] $ do
         let manifest =
               ( (emptyManifest fixedTime)
-                  & #modules .~ [mkAppliedAt "demo" bogus (Just "1.0.0")]
+                  & #modules .~ [mkAppliedAt "demo" (Just "1.0.0")]
                   & #files .~ Map.empty
               )
         result <- detectPendingMigrations manifest Nothing
         result `shouldBe` []
 
     it "skips modules with no pending chain (manifest already at installed version)" $
-      withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
-        let modDir = dir </> "demo"
-        writeInstalledModule modDir "demo" "1.0.0" emptyMigrationsLit
+      withProjectModules [("demo", "1.0.0", emptyMigrationsLit)] $ do
         let manifest =
               ( (emptyManifest fixedTime)
-                  & #modules .~ [mkAppliedAt "demo" modDir (Just "1.0.0")]
+                  & #modules .~ [mkAppliedAt "demo" (Just "1.0.0")]
                   & #files .~ Map.empty
               )
         result <- detectPendingMigrations manifest Nothing
         result `shouldBe` []
 
     it "with a filter selecting only no-chain modules, returns empty" $
-      withSystemTempDirectory "seihou-pending-detect" $ \dir -> do
-        let withChain = dir </> "with-chain"
-            noChain = dir </> "no-chain"
-        writeInstalledModule withChain "with-chain" "2.0.0" moveOldToNewLit
-        writeInstalledModule noChain "no-chain" "1.0.0" emptyMigrationsLit
+      withProjectModules [("with-chain", "2.0.0", moveOldToNewLit), ("no-chain", "1.0.0", emptyMigrationsLit)] $ do
         let manifest =
               ( (emptyManifest fixedTime)
-                  & #modules .~ [mkAppliedAt "with-chain" withChain (Just "1.0.0"), mkAppliedAt "no-chain" noChain (Just "1.0.0")]
+                  & #modules .~ [mkAppliedAt "with-chain" (Just "1.0.0"), mkAppliedAt "no-chain" (Just "1.0.0")]
                   & #files .~ Map.empty
               )
         result <-

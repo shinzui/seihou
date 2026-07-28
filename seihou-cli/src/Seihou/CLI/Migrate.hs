@@ -35,7 +35,9 @@ import Seihou.CLI.InstallShared
     installModuleDir,
     readOriginInfo,
   )
+import Seihou.CLI.Shared (resolveAppliedArtifactDir)
 import Seihou.CLI.Style (bold, dim, green, red, useColor, yellow)
+import Seihou.Core.ArtifactRef (ArtifactRefError, renderArtifactRefError)
 import Seihou.Core.Migration
   ( Migration (..),
     MigrationOp (..),
@@ -136,6 +138,9 @@ data MigrateError
   | MigrateUnparseableManifestVersion Text
   | MigratePlanFailed MigrationPlanError
   | MigrateExecFailed MigrationExecError
+  | -- | The manifest records the module, but its recorded origin does not
+    -- resolve to anything on this machine.
+    MigrateArtifactUnresolved ArtifactRefError
   deriving stock (Eq, Show, Generic)
 
 -- | Outcome of a successful @runMigrate@ call.
@@ -184,7 +189,12 @@ handleMigrate opts = do
       Nothing -> die (MigrateNoRecordedVersion modName)
       Just t -> die (MigrateUnparseableManifestVersion t)
 
-  result <- runMigrate opts manifest (applied ^. #source)
+  -- The manifest records a portable origin, never a path, so the module has
+  -- to be located on this machine before it can be re-read.
+  resolved <- resolveAppliedArtifactDir "module.dhall" (applied ^. #origin)
+  installedDir <- either (die . MigrateArtifactUnresolved) pure resolved
+
+  result <- runMigrate opts manifest installedDir
 
   colorEnabled <- useColor
   case result of
@@ -768,6 +778,8 @@ renderError (MigrateUnparseableManifestVersion v) =
   "manifest's recorded module version '" <> v <> "' is not a valid dotted version."
 renderError (MigratePlanFailed e) = renderPlanError e
 renderError (MigrateExecFailed e) = renderExecError e
+renderError (MigrateArtifactUnresolved e) =
+  "cannot plan a migration.\n\n" <> renderArtifactRefError e
 
 renderPlanError :: MigrationPlanError -> Text
 renderPlanError (MigrationVersionUnparseable t) =

@@ -265,10 +265,6 @@ instance FromJSON AppliedInstanceState where
     AppliedInstanceState
       <$> (ModuleName <$> o .: "name")
       <*> pure pv
-      -- The absolute source directory is resolved from the origin on the
-      -- machine that reads the manifest; see
-      -- docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md.
-      <*> pure ""
       <*> o .: "origin"
       <*> o Aeson..:? "version"
       <*> (varsFromJSON =<< o Aeson..:? "resolvedVars" Aeson..!= Aeson.object [])
@@ -297,9 +293,6 @@ instance FromJSON AppliedComposition where
     AppliedComposition
       <$> (ApplicationId <$> o .: "applicationId")
       <*> o .: "target"
-      -- Resolved from the origin at read time; see
-      -- docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md.
-      <*> pure ""
       <*> o .: "targetOrigin"
       <*> o Aeson..:? "targetVersion"
       <*> (map ModuleName <$> o Aeson..:? "additionalModules" Aeson..!= [])
@@ -421,9 +414,6 @@ instance FromJSON AppliedModule where
     AppliedModule
       <$> (ModuleName <$> o .: "name")
       <*> pure pv
-      -- Resolved from the origin at read time; see
-      -- docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md.
-      <*> pure ""
       <*> o .: "origin"
       <*> o Aeson..:? "version"
       <*> o .: "appliedAt"

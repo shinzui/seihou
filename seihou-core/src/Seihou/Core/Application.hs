@@ -40,26 +40,24 @@ mkApplicationId target additional =
 -- | Capture a composition using the already-resolved, instance-scoped
 -- values from the generation pipeline.
 --
--- The target and each module instance are described by both the absolute
--- directory they were loaded from on this machine and the portable
--- 'ArtifactOrigin' that identifies them in the manifest. Only the origin is
--- serialized; the directory is retained in memory for the current run.
+-- The target and each module instance are identified by the portable
+-- 'ArtifactOrigin' the manifest records, never by the directory they happened
+-- to be loaded from on this machine.
 buildAppliedComposition ::
   AppliedTarget ->
-  (FilePath, ArtifactOrigin) ->
+  ArtifactOrigin ->
   Maybe Text ->
   [ModuleName] ->
   Maybe Text ->
   Maybe Text ->
-  [(ModuleInstance, Module, FilePath, ArtifactOrigin)] ->
+  [(ModuleInstance, Module, ArtifactOrigin)] ->
   Map ModuleInstance (Map VarName ResolvedVar) ->
   UTCTime ->
   AppliedComposition
-buildAppliedComposition target (targetSource, targetOrigin) targetVersion additional namespace context modulesInOrder resolved now =
+buildAppliedComposition target targetOrigin targetVersion additional namespace context modulesInOrder resolved now =
   AppliedComposition
     { applicationId = mkApplicationId target additional,
       target = target,
-      targetSource = targetSource,
       targetOrigin = targetOrigin,
       targetVersion = targetVersion,
       additionalModules = additional,
@@ -70,11 +68,10 @@ buildAppliedComposition target (targetSource, targetOrigin) targetVersion additi
       appliedAt = now
     }
   where
-    buildInstance (inst, modul, source, origin) =
+    buildInstance (inst, modul, origin) =
       AppliedInstanceState
         { name = inst ^. #module_,
           parentVars = inst ^. #parentVars,
-          source = source,
           origin = origin,
           moduleVersion = modul ^. #version,
           resolvedVars = Map.map (varValueToText . (^. #value)) (Map.findWithDefault Map.empty inst resolved)

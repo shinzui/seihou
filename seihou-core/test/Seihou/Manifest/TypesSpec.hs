@@ -69,7 +69,6 @@ manifestWithEveryOriginPosition =
       .~ [ AppliedModule
              { name = ModuleName "haskell-base",
                parentVars = emptyParentVars,
-               source = "/Users/someone/.config/seihou/installed/haskell-base",
                origin = RemoteOrigin "https://github.com/shinzui/seihou-modules.git" "haskell-base" (Just "seihou-modules"),
                moduleVersion = Just "1.4.0",
                appliedAt = fixedTime,
@@ -80,7 +79,6 @@ manifestWithEveryOriginPosition =
       .~ [ AppliedComposition
              { applicationId = ApplicationId "app",
                target = AppliedModuleTarget (ModuleName "haskell-base"),
-               targetSource = "/Users/someone/.config/seihou/installed/haskell-base",
                targetOrigin = RemoteOrigin "https://github.com/shinzui/seihou-modules.git" "haskell-base" (Just "seihou-modules"),
                targetVersion = Just "1.4.0",
                additionalModules = [],
@@ -90,7 +88,6 @@ manifestWithEveryOriginPosition =
                  [ AppliedInstanceState
                      { name = ModuleName "docs",
                        parentVars = emptyParentVars,
-                       source = "/Users/someone/project/.seihou/modules/docs",
                        origin = ProjectOrigin ".seihou/modules/docs",
                        moduleVersion = Just "0.1.0",
                        resolvedVars = Map.empty
@@ -98,7 +95,6 @@ manifestWithEveryOriginPosition =
                    AppliedInstanceState
                      { name = ModuleName "scratch",
                        parentVars = emptyParentVars,
-                       source = "/Users/someone/.config/seihou/modules/scratch",
                        origin = LocalOrigin "scratch",
                        moduleVersion = Nothing,
                        resolvedVars = Map.empty
@@ -189,7 +185,6 @@ spec = do
               [ AppliedModule
                   { name = ModuleName "haskell-base",
                     parentVars = emptyParentVars,
-                    source = "",
                     origin = RemoteOrigin "https://github.com/shinzui/seihou-modules.git" "haskell-base" (Just "seihou-modules"),
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
@@ -233,8 +228,8 @@ spec = do
               { version = currentManifestVersion,
                 genAt = fixedTime,
                 modules =
-                  [ AppliedModule (ModuleName "haskell-base") emptyParentVars "" (LocalOrigin "haskell-base") Nothing fixedTime Nothing,
-                    AppliedModule (ModuleName "nix-flake") emptyParentVars "" (LocalOrigin "nix-flake") Nothing fixedTime2 Nothing
+                  [ AppliedModule (ModuleName "haskell-base") emptyParentVars (LocalOrigin "haskell-base") Nothing fixedTime Nothing,
+                    AppliedModule (ModuleName "nix-flake") emptyParentVars (LocalOrigin "nix-flake") Nothing fixedTime2 Nothing
                   ],
                 vars =
                   Map.fromList
@@ -274,7 +269,6 @@ spec = do
               [ AppliedModule
                   { name = ModuleName "haskell-base",
                     parentVars = emptyParentVars,
-                    source = "",
                     origin = LocalOrigin "haskell-base",
                     moduleVersion = Just "1.0.0",
                     appliedAt = fixedTime,
@@ -290,7 +284,6 @@ spec = do
               [ AppliedModule
                   { name = ModuleName "simple-mod",
                     parentVars = emptyParentVars,
-                    source = "",
                     origin = LocalOrigin "simple-mod",
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
@@ -308,7 +301,6 @@ spec = do
               [ AppliedModule
                   { name = ModuleName "claude-skill-link",
                     parentVars = pv1,
-                    source = "",
                     origin = ProjectOrigin ".seihou/modules/claude-skill-link",
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
@@ -317,7 +309,6 @@ spec = do
                 AppliedModule
                   { name = ModuleName "claude-skill-link",
                     parentVars = pv2,
-                    source = "",
                     origin = ProjectOrigin ".seihou/modules/claude-skill-link",
                     moduleVersion = Nothing,
                     appliedAt = fixedTime,
@@ -345,15 +336,14 @@ spec = do
             AppliedComposition
               { applicationId = appId1,
                 target = AppliedModuleTarget (ModuleName "master-plan"),
-                targetSource = "",
                 targetOrigin = ProjectOrigin ".seihou/modules/master-plan",
                 targetVersion = Just "0.7.0",
                 additionalModules = [ModuleName "docs"],
                 namespace = Just "planning",
                 context = Just "work",
                 instances =
-                  [ AppliedInstanceState (ModuleName "link-skill") pv1 "" (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "exec-plan"),
-                    AppliedInstanceState (ModuleName "link-skill") pv2 "" (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "master-plan")
+                  [ AppliedInstanceState (ModuleName "link-skill") pv1 (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "exec-plan"),
+                    AppliedInstanceState (ModuleName "link-skill") pv2 (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "master-plan")
                   ],
                 commandReceipts = Map.singleton fingerprint receipt,
                 appliedAt = fixedTime
@@ -362,7 +352,6 @@ spec = do
             AppliedComposition
               { applicationId = appId2,
                 target = AppliedRecipeTarget (RecipeName "service"),
-                targetSource = "",
                 targetOrigin = LocalOrigin "service",
                 targetVersion = Nothing,
                 additionalModules = [],
@@ -482,12 +471,11 @@ spec = do
       hasAppliedBlueprintMigration "payments" "2.0.0" "3.0.0" manifest2 `shouldBe` False
 
     it "preserves modules, applications, files, recipe, and normal blueprint provenance" $ do
-      let appliedModule = AppliedModule "base" emptyParentVars "" (LocalOrigin "base") (Just "1.0.0") fixedTime Nothing
+      let appliedModule = AppliedModule "base" emptyParentVars (LocalOrigin "base") (Just "1.0.0") fixedTime Nothing
           application =
             AppliedComposition
               { applicationId = ApplicationId "app-base",
                 target = AppliedModuleTarget "base",
-                targetSource = "",
                 targetOrigin = LocalOrigin "base",
                 targetVersion = Just "1.0.0",
                 additionalModules = [],

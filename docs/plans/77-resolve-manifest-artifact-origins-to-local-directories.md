@@ -79,14 +79,16 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1: `Seihou.Core.ArtifactRef` module with `resolveArtifactOrigin` and `ArtifactRefError` (2026-07-28)
 - [x] Milestone 1: `renderArtifactRefError` produces the user-facing message (2026-07-28)
 - [x] Milestone 1: Unit tests covering resolution success and every failure shape (2026-07-28)
-- [ ] Milestone 2: `seihou migrate` resolves through the resolver
-- [ ] Milestone 2: `seihou upgrade` resolves through the resolver
-- [ ] Milestone 2: `seihou remove` resolves through the resolver (or confirmed not to need it)
-- [ ] Milestone 3: `seihou update` resolves through the resolver
-- [ ] Milestone 3: `seihou status` resolves through the resolver (or confirmed not to need it)
-- [ ] Milestone 3: `seihou run`'s post-run migration path resolves through the resolver
-- [ ] Milestone 4: `source` and `targetSource` fields deleted from the three manifest records
-- [ ] Milestone 4: Full test suite green with no reference to a manifest-recorded path
+- [x] Milestone 2: `seihou migrate` resolves through the resolver (2026-07-28)
+- [x] Milestone 2: `seihou upgrade` resolves through the resolver (2026-07-28)
+- [x] Milestone 2: `seihou remove` confirmed not to need it — it dereferences no recorded path (2026-07-28)
+- [x] Milestone 2: `seihou run`/`seihou status`'s shared pending-migration detector resolves through the resolver (2026-07-28)
+- [x] Milestone 3: `seihou update` resolves through the resolver (2026-07-28)
+- [x] Milestone 3: `seihou status` and `seihou outdated` confirmed not to need it — they enumerate installed modules independently of the manifest (2026-07-28)
+- [x] Milestone 3: `seihou run`'s post-run migration path resolves through the resolver (2026-07-28)
+- [x] Milestone 4: `source` and `targetSource` fields deleted from the three manifest records (2026-07-28)
+- [x] Milestone 4: EP-76's temporary `artifactDirectoryOnThisMachine` helper deleted, its callers moved onto the resolver (2026-07-28)
+- [x] Milestone 4: Full test suite green with no reference to a manifest-recorded path (2026-07-28)
 
 
 ## Surprises & Discoveries
@@ -94,7 +96,42 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **The consumer inventory in Context and Orientation was incomplete and partly
+  already-done.** Two corrections. First, `seihou-cli/src/Seihou/CLI/PendingMigrations.hs`
+  was not listed but is a real consumer: `detectPendingMigrations` built
+  `am ^. #source </> "module.dhall"` for every applied module. It is reached from
+  both `seihou run` (pre-flight refusal) and `seihou status`, so it is arguably the
+  most-used consumer of all. Second, `versionEvidence`'s `compareArtifact` in
+  `seihou-cli/src/Seihou/CLI/Update.hs` had already been moved off `#source` during
+  EP-76, because dropping the field from the JSON broke it immediately; this plan
+  moved it the rest of the way, from EP-76's stopgap helper onto
+  `resolveArtifactOrigin`.
+
+  Evidence: `grep -rn '#source\b\|#targetSource\b' --include='*.hs' seihou-core/src
+  seihou-cli/src seihou-cli/src-exe` at the start of this plan.
+
+- **`seihou remove`, `seihou status`, and `seihou outdated` genuinely need no
+  resolution.** `grep -n "source\|#origin" seihou-cli/src-exe/Seihou/CLI/Remove.hs`
+  returns nothing: removal is driven entirely by the `Removal` steps recorded in the
+  manifest, never by re-reading the module. `seihou status` reaches the manifest only
+  through `detectPendingMigrations` (now resolved) and through `fetchUpdateEntries`,
+  which enumerates installed modules independently. `seihou outdated` never reads the
+  manifest at all — its `dm ^. #source` hits are `ModuleSource`, an enumeration of
+  which search root a module was discovered in, not a path.
+
+- **`isUpdateNoOp` had a latent path dependency that only the field deletion
+  exposed.** Its `sameApplication` compared whole `AppliedInstanceState` values,
+  including the machine-local `source`. EP-76 already had to loosen it to keep the
+  no-op test passing; deleting the field makes the comparison correct by
+  construction rather than by careful field selection.
+
+- **`ProjectOrigin` resolution has to refuse the fallback, and it matters.** The
+  spec's "do not fall through to the search paths" is not hypothetical: the
+  `ArtifactRefSpec` case "refuses to substitute an installed artifact for a missing
+  project one" plants an installed `docs` module and asserts that a missing
+  `.seihou/modules/docs` still fails. Without that rule a developer who forgot to
+  commit a project module would silently generate from a global one of the same
+  name.
 
 
 ## Decision Log
@@ -121,6 +158,40 @@ Record every decision made while working on the plan.
   its exact wording. A typed error with one shared renderer gives both.
   Date: 2026-07-28
 
+- Decision: The three commands that consult an artifact opportunistically —
+  `detectPendingMigrations`, `seihou upgrade`'s post-upgrade advisory, and
+  `versionEvidence`'s content comparison — skip an unresolvable artifact rather than
+  aborting.
+  Rationale: All three produce advisory output on top of work that has already
+  succeeded or is about to be gated elsewhere. `detectPendingMigrations` already
+  treated a missing `module.dhall` and an unparseable one as "nothing pending";
+  resolution failure is the same class of event. `versionEvidence` keeps its existing
+  conservative "treat as changed". Turning any of them into a hard stop would make a
+  developer who has one uninstalled module unable to run `seihou status` at all.
+  Refusing to *generate* from a stale or missing artifact is
+  `docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md`.
+  Date: 2026-07-28
+
+- Decision: Put the shared "resolve an applied artifact against this machine" wrapper
+  in `seihou-cli/src/Seihou/CLI/Shared.hs` as `resolveAppliedArtifactDir`, rather than
+  repeating the project-root and search-path plumbing at each call site.
+  Rationale: `Seihou.Core.ArtifactRef.resolveArtifactOrigin` deliberately takes the
+  project root and the search paths as parameters so it stays testable against
+  temporary directories. Every CLI caller wants the same two answers —
+  `getCurrentDirectory` and `defaultSearchPaths` — and four call sites deriving them
+  independently would be four chances to disagree about what the project root is.
+  Date: 2026-07-28
+
+- Decision: `Seihou.CLI.Update.Source.ArtifactRequirement` carries
+  `Either ArtifactRefError FilePath` for its local directory rather than resolving
+  eagerly or falling back to a bare name.
+  Rationale: The field is only consulted for artifacts with no remote to clone from,
+  so an artifact that will be fetched need not exist locally at all and must not fail
+  the update. Carrying the error defers the decision to the one place that knows
+  whether it matters, and lets that place report `CandidateArtifactUnresolved` with
+  the resolver's own wording instead of a generic "artifact missing".
+  Date: 2026-07-28
+
 
 ## Outcomes & Retrospective
 
@@ -129,7 +200,40 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Complete as of 2026-07-28. All four milestones landed; `cabal test all` passes
+(1055 core, 421 CLI, 16 OKF-extension) and `nix flake check` is green.
+
+**Against the original purpose.** The purpose section promised that a manifest
+written on one machine would produce, on another, a message naming the artifact,
+the recorded git URL, the directories searched, and the exact `seihou install`
+command. The transcript in Validation and Acceptance is that message, produced by
+the real binary against two fake home directories over one project tree. Exit
+status is 1, and copying the module into the second home makes the same command
+succeed. The manifest itself contains no path from the first machine.
+
+**What changed relative to the plan.** Two consumers were mis-scoped: the plan
+missed `Seihou.CLI.PendingMigrations` entirely (the detector behind both
+`seihou run`'s pre-flight refusal and `seihou status`), and it listed
+`versionEvidence` as untouched when EP-76 had already been forced to move it. Both
+are recorded in Surprises & Discoveries. `seihou remove`, `seihou status`, and
+`seihou outdated` were confirmed to need nothing, as the plan allowed for.
+
+**The debt EP-76 left is paid.** `artifactDirectoryOnThisMachine` in
+`seihou-cli/src/Seihou/CLI/Update/Source.hs` — EP-76's stopgap, created because
+schema version 6 could not land with `seihou update` broken — is gone. Its two
+callers now use `resolveArtifactOrigin`, and the parts of it that were guesses (a
+bare artifact name when discovery found nothing) are now typed failures.
+
+**No new ADR.** The two records EP-76 wrote already state the durable decisions
+this plan implements: `docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md`
+says the manifest names no machine-specific location, and this plan is the read
+side of that constraint;
+`docs/adr/0002-artifact-identity-is-origin-url-plus-name.md` says identity is the
+origin URL plus name, which is what resolution keys on. The one judgement here
+that might outlive the plan — that a `ProjectOrigin` never falls back to the
+search paths — is recorded in ADR 0001's consequences by implication and is
+enforced by a named test; it is worth restating explicitly during EP-80's
+distillation pass if it survives contact with EP-78 and EP-79.
 
 
 ## Context and Orientation
@@ -594,7 +698,63 @@ XDG_CONFIG_HOME=/tmp/seihou-two-dev/home-b cabal run seihou -- migrate demo
 
 Expected: `✓ demo is already at version 1.0.0; nothing to do.`
 
-Paste the real transcript into the Concrete Steps section as evidence when you run it.
+The real transcript, run on 2026-07-28 with a scratch project under the session
+scratchpad rather than `/tmp` (the two roots are otherwise identical):
+
+```text
+$ XDG_CONFIG_HOME=$SCRATCH/home-a seihou run demo
+  Operations:
+      [new]  HELLO.md  (copy, demo)
+
+  1 files to write, 0 conflicts
+1 new, 0 modified, 0 unchanged.
+
+$ grep -o '"origin":{[^}]*}' .seihou/manifest.json | head -1
+"origin":{"artifact":"demo","kind":"remote","repo":"demo-modules","url":"https://example.com/demo-modules.git"}
+
+$ grep -c "home-a" .seihou/manifest.json
+0
+
+$ XDG_CONFIG_HOME=$SCRATCH/home-b seihou migrate demo
+Error: cannot plan a migration.
+
+Artifact 'demo' is recorded in .seihou/manifest.json but is not
+installed on this machine.
+
+  Recorded origin: https://example.com/demo-modules.git
+
+  Searched:
+    $SCRATCH/project/.seihou/modules/demo
+    $SCRATCH/home-b/seihou/modules/demo
+    $SCRATCH/home-b/seihou/installed/demo
+
+  Install it with:
+    seihou install https://example.com/demo-modules.git
+$ echo $?
+1
+
+$ cp -r $SCRATCH/home-a/seihou/installed/demo $SCRATCH/home-b/seihou/installed/demo
+$ XDG_CONFIG_HOME=$SCRATCH/home-b seihou migrate demo --no-fetch
+✓ demo is already at version 1.0.0; nothing to do.
+$ echo $?
+0
+
+$ XDG_CONFIG_HOME=$SCRATCH/home-b seihou status
+Seihou Status:
+
+Applied modules:
+  demo  v1.0.0    (applied 2026-07-28)
+
+Tracked files: 1
+  HELLO.md   demo   unchanged
+
+Variables: 0 resolved
+```
+
+Note that the second `migrate` passes `--no-fetch`: the recorded origin URL is a
+fabricated `https://example.com/demo-modules.git`, so the default fetch path
+would try to clone it. That is the fetch behaviour working as designed, not a
+resolution failure.
 
 The automated form of this scenario belongs to
 `docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md`; running it

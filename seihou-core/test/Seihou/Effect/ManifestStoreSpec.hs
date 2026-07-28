@@ -31,7 +31,7 @@ fixedTime = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-0
 sampleManifest :: Manifest
 sampleManifest =
   (emptyManifest fixedTime)
-    & #modules .~ [AppliedModule (ModuleName "haskell-base") emptyParentVars "" (LocalOrigin "haskell-base") Nothing fixedTime Nothing]
+    & #modules .~ [AppliedModule (ModuleName "haskell-base") emptyParentVars (LocalOrigin "haskell-base") Nothing fixedTime Nothing]
     & #vars .~ Map.fromList [(VarName "project.name", "my-app")]
     & #files .~ Map.fromList [("README.md", FileRecord (SHA256 "abc123") (ModuleName "haskell-base") Template fixedTime Nothing mempty)]
 

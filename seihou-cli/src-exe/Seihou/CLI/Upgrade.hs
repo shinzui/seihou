@@ -25,6 +25,7 @@ import Seihou.CLI.Migrate
   )
 import Seihou.CLI.Outdated (moduleNameFromDm, readOriginWithModule)
 import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
+import Seihou.CLI.Shared (resolveAppliedArtifactDir)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
 import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
 import Seihou.Core.Install (parseModuleName)
@@ -298,16 +299,23 @@ handleOneModule uopts manifest name =
   case findAppliedByName manifest name of
     Nothing -> pure ()
     Just am -> do
-      let dhallFile = am ^. #source </> "module.dhall"
-      r <- evalModuleFromFile dhallFile
-      case r of
+      -- The manifest records a portable origin, so the just-upgraded module
+      -- has to be located on this machine before its migrations can be read.
+      -- This is advisory reporting after a successful upgrade, so a module
+      -- that does not resolve here is skipped rather than reported.
+      resolved <- resolveAppliedArtifactDir "module.dhall" (am ^. #origin)
+      case resolved of
         Left _ -> pure ()
-        Right installed ->
-          case pendingChainFor am installed of
-            Nothing -> pure ()
-            Just plan
-              | uopts ^. #withMigrations -> runOnePostUpgradeMigration (am ^. #source) name
-              | otherwise -> printAdvisory name plan
+        Right moduleDir -> do
+          r <- evalModuleFromFile (moduleDir </> "module.dhall")
+          case r of
+            Left _ -> pure ()
+            Right installed ->
+              case pendingChainFor am installed of
+                Nothing -> pure ()
+                Just plan
+                  | uopts ^. #withMigrations -> runOnePostUpgradeMigration moduleDir name
+                  | otherwise -> printAdvisory name plan
 
 findAppliedByName :: Manifest -> Text -> Maybe AppliedModule
 findAppliedByName manifest name =

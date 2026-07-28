@@ -7,6 +7,7 @@ module Seihou.CLI.Shared
     logIO,
     unwrapConfig,
     shortenHome,
+    resolveAppliedArtifactDir,
   )
 where
 
@@ -14,12 +15,28 @@ import Data.Generics.Labels ()
 import Data.List (isPrefixOf)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
+import Seihou.Core.ArtifactRef (ArtifactRefError, resolveArtifactOrigin)
+import Seihou.Core.Module (defaultSearchPaths)
 import Seihou.Core.Types
 import Seihou.Effect.Logger (Logger, logError)
 import Seihou.Effect.LoggerInterp (runLoggerIO)
 import Seihou.Prelude
-import System.Directory (getHomeDirectory)
+import System.Directory (getCurrentDirectory, getHomeDirectory)
 import System.Exit (exitFailure)
+
+-- | Locate, on this machine, the artifact an origin recorded in the manifest
+-- names.
+--
+-- Every command that re-reads an artifact after the fact goes through here,
+-- so they all search the same places and all fail with the same wording. The
+-- project root is the current working directory, which is what the commands
+-- already assume when they build the manifest path as
+-- @.seihou\/manifest.json@.
+resolveAppliedArtifactDir :: FilePath -> ArtifactOrigin -> IO (Either ArtifactRefError FilePath)
+resolveAppliedArtifactDir definitionFile origin = do
+  projectRoot <- getCurrentDirectory
+  searchPaths <- defaultSearchPaths
+  resolveArtifactOrigin projectRoot searchPaths definitionFile origin
 
 -- | Format a 'VarError' for display in CLI output.
 formatVarError :: VarError -> Text

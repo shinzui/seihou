@@ -297,7 +297,7 @@ applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
   projectRoot <- getCurrentDirectory
   originedModules <-
     traverse
-      (\(inst, m, dir) -> (inst,m,dir,) <$> detectArtifactOrigin projectRoot dir)
+      (\(inst, m, dir) -> (inst,m,) <$> detectArtifactOrigin projectRoot dir)
       modulesInOrder
 
   -- Fold the blueprint's resolved vars into the CLI override map for
@@ -510,14 +510,14 @@ opTargetsPath _ _ = False
 -- applied-modules list. Local copy of @Seihou.CLI.Run.updateAllModules@.
 updateAllModules ::
   [AppliedModule] ->
-  [(ModuleInstance, Module, FilePath, ArtifactOrigin)] ->
+  [(ModuleInstance, Module, ArtifactOrigin)] ->
   UTCTime ->
   [AppliedModule]
 updateAllModules existing modulesInOrder now =
   let composedKeys =
         Set.fromList
           [ (inst ^. #module_, inst ^. #parentVars)
-          | (inst, _, _, _) <- modulesInOrder
+          | (inst, _, _) <- modulesInOrder
           ]
       filtered =
         filter (\am -> not (Set.member (am ^. #name, am ^. #parentVars) composedKeys)) existing
@@ -525,13 +525,12 @@ updateAllModules existing modulesInOrder now =
         [ AppliedModule
             { name = inst ^. #module_,
               parentVars = inst ^. #parentVars,
-              source = dir,
               origin = origin,
               moduleVersion = m ^. #version,
               appliedAt = now,
               removal = m ^. #removal
             }
-        | (inst, m, dir, origin) <- modulesInOrder
+        | (inst, m, origin) <- modulesInOrder
         ]
    in filtered ++ new
 

@@ -37,7 +37,7 @@ import Seihou.CLI.PendingMigrations
     formatRefusalMessage,
   )
 import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
-import Seihou.CLI.Shared (deriveNamespace, formatBlueprintRefusal, formatVarError, logIO, toVarNameMap, unwrapConfig)
+import Seihou.CLI.Shared (deriveNamespace, formatBlueprintRefusal, formatVarError, logIO, resolveAppliedArtifactDir, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (compileComposedPlan)
@@ -45,6 +45,7 @@ import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
+import Seihou.Core.ArtifactRef (renderArtifactRefError)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
@@ -287,7 +288,7 @@ handleRun runOpts = do
   targetOrigin <- detectArtifactOrigin projectRoot targetSource
   originedModules <-
     traverse
-      (\(inst, m, dir) -> (inst,m,dir,) <$> detectArtifactOrigin projectRoot dir)
+      (\(inst, m, dir) -> (inst,m,) <$> detectArtifactOrigin projectRoot dir)
       modulesInOrder
 
   let currentApplicationId = mkApplicationId appliedTarget additional
@@ -412,7 +413,7 @@ handleRun runOpts = do
                                   appliedCompositionWithoutReceipts =
                                     buildAppliedComposition
                                       appliedTarget
-                                      (targetSource, targetOrigin)
+                                      targetOrigin
                                       targetVersion
                                       additional
                                       (Just namespace)
@@ -755,7 +756,20 @@ applyOneMigration level manifest (modName, _) =
                 commit = False,
                 commitMessage = Nothing
               }
-      result <- runMigrate opts manifest (am ^. #source)
+      -- The manifest records a portable origin, so the module has to be
+      -- located on this machine before it can be re-read.
+      resolved <- resolveAppliedArtifactDir "module.dhall" (am ^. #origin)
+      moduleDir <- case resolved of
+        Left refErr -> do
+          logIO level $
+            logError $
+              "Migration failed for "
+                <> modName ^. #unModuleName
+                <> ":\n\n"
+                <> renderArtifactRefError refErr
+          exitFailure
+        Right directory -> pure directory
+      result <- runMigrate opts manifest moduleDir
       case result of
         Right (MigrateApplied _ manifest' _ _) -> do
           TIO.putStrLn $ "  Migrated " <> (modName ^. #unModuleName)
@@ -783,6 +797,7 @@ renderMigrateError err = case err of
   MigratePlanFailed _ -> "plan failed"
   MigrateExecFailed _ -> "execution failed; revert your edits or run 'seihou migrate <module> --force' first"
   MigrateNoManifest _ -> "no manifest in current dir"
+  MigrateArtifactUnresolved refErr -> renderArtifactRefError refErr
 
 findAppliedByName :: Manifest -> ModuleName -> Maybe AppliedModule
 findAppliedByName manifest name =
@@ -801,26 +816,25 @@ findAppliedByName manifest name =
 -- refreshes the matching instance and leaves siblings unchanged.
 updateAllModules ::
   [AppliedModule] ->
-  [(ModuleInstance, Module, FilePath, ArtifactOrigin)] ->
+  [(ModuleInstance, Module, ArtifactOrigin)] ->
   UTCTime ->
   [AppliedModule]
 updateAllModules existing modulesInOrder now =
   let composedKeys =
         Set.fromList
           [ (inst ^. #module_, inst ^. #parentVars)
-          | (inst, _, _, _) <- modulesInOrder
+          | (inst, _, _) <- modulesInOrder
           ]
       filtered = filter (\am -> not (Set.member (am ^. #name, am ^. #parentVars) composedKeys)) existing
       new =
         [ AppliedModule
             { name = inst ^. #module_,
               parentVars = inst ^. #parentVars,
-              source = dir,
               origin = origin,
               moduleVersion = m ^. #version,
               appliedAt = now,
               removal = m ^. #removal
             }
-        | (inst, m, dir, origin) <- modulesInOrder
+        | (inst, m, origin) <- modulesInOrder
         ]
    in filtered ++ new

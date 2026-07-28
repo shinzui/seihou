@@ -19,7 +19,7 @@ module Seihou.CLI.Update
   )
 where
 
-import Control.Exception (SomeException, displayException, try)
+import Control.Exception (SomeException, displayException, toException, try)
 import Control.Monad (foldM, forM, forM_, when)
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
@@ -50,6 +50,7 @@ import Seihou.Composition.Resolve
   )
 import Seihou.Core.Application (buildAppliedComposition, replaceAppliedComposition)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
+import Seihou.Core.ArtifactRef (renderArtifactRefError, resolveArtifactOrigin)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Version (parseVersion)
@@ -120,7 +121,7 @@ planProjectUpdateIn sessionDirectory request = do
               case staged of
                 Left err -> pure (Left err)
                 Right (catalog, sourceWarnings) -> do
-                  plannedApplicationsResult <- traverse (planApplication request projectRoot installedDirectory catalog now) selected
+                  plannedApplicationsResult <- traverse (planApplication request projectRoot catalog now) selected
                   case sequence plannedApplicationsResult of
                     Left err -> pure (Left err)
                     Right plannedApplications -> do
@@ -143,7 +144,7 @@ planProjectUpdateIn sessionDirectory request = do
                           case reconciliationResult of
                             Left err -> pure (Left (UpdateReconciliationFailed err))
                             Right reconciliation -> do
-                              evidence <- versionEvidence projectRoot installedDirectory catalog selected plannedApplications
+                              evidence <- versionEvidence projectRoot catalog selected plannedApplications
                               case evidence of
                                 Left err -> pure (Left err)
                                 Right (versionChanges, versionWarnings) -> do
@@ -279,12 +280,11 @@ applyAcceptedPlan plan = do
 planApplication ::
   UpdateRequest ->
   FilePath ->
-  FilePath ->
   CandidateCatalog ->
   UTCTime ->
   AppliedComposition ->
   IO (Either UpdateError PlannedApplication)
-planApplication request projectRoot installedDirectory catalog now previous = do
+planApplication request projectRoot catalog now previous = do
   fallback <- defaultSearchPaths
   case candidateRoot catalog previous of
     Left err -> pure (Left err)
@@ -313,11 +313,10 @@ planApplication request projectRoot installedDirectory catalog now previous = do
                 Right (operations, compositionWarnings, rawOwners) -> do
                   targetOrigin <- publishedArtifactOrigin projectRoot targetArtifact
                   originedModules <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
-                  let targetSource = publishedArtifactSource installedDirectory targetArtifact
-                      candidate0 =
+                  let candidate0 =
                         buildAppliedComposition
                           (previous ^. #target)
-                          (targetSource, targetOrigin)
+                          targetOrigin
                           (targetArtifact ^. #version)
                           (previous ^. #additionalModules)
                           (Just namespace)
@@ -329,7 +328,7 @@ planApplication request projectRoot installedDirectory catalog now previous = do
                           .~ (previous ^. #applicationId)
                       candidate =
                         setCompositionState
-                          (map (publishInstanceSource installedDirectory catalog) (candidate0 ^. #instances))
+                          (candidate0 ^. #instances)
                           (previous ^. #commandReceipts)
                           candidate0
                       desiredOwners =
@@ -464,10 +463,10 @@ seedLegacyApplication request projectRoot manifest now requested = do
                   targetOrigin <- detectArtifactOrigin projectRoot targetSource
                   originedModules <-
                     traverse
-                      (\(instanceId, modul, directory) -> (instanceId,modul,directory,) <$> detectArtifactOrigin projectRoot directory)
+                      (\(instanceId, modul, directory) -> (instanceId,modul,) <$> detectArtifactOrigin projectRoot directory)
                       modulesInOrder
                   let provisional0 =
-                        buildAppliedComposition target (targetSource, targetOrigin) targetVersion [] (Just namespace) Nothing originedModules resolvedValues now
+                        buildAppliedComposition target targetOrigin targetVersion [] (Just namespace) Nothing originedModules resolvedValues now
                       provisional =
                         ( provisional0
                             & #instances
@@ -513,7 +512,6 @@ restoreLegacyVersion manifest state =
       AppliedInstanceState
         { name = state ^. #name,
           parentVars = state ^. #parentVars,
-          source = applied ^. #source,
           origin = applied ^. #origin,
           moduleVersion = applied ^. #moduleVersion,
           resolvedVars = state ^. #resolvedVars
@@ -570,12 +568,11 @@ operationDestination _ = Nothing
 
 versionEvidence ::
   FilePath ->
-  FilePath ->
   CandidateCatalog ->
   [AppliedComposition] ->
   [PlannedApplication] ->
   IO (Either UpdateError ([VersionChange], [UpdateWarning]))
-versionEvidence projectRoot installedDirectory catalog previousApplications plannedApplications = do
+versionEvidence projectRoot catalog previousApplications plannedApplications = do
   evidence <- fmap concat $ sequence (zipWith applicationEvidence previousApplications plannedApplications)
   pure $ do
     changes <- sequence evidence
@@ -608,10 +605,17 @@ versionEvidence projectRoot installedDirectory catalog previousApplications plan
     candidateVersion kind name = (^. #version) =<< Map.lookup (kind, name) (catalog ^. #artifacts)
 
     -- The manifest records no path, so the already-applied artifact has to be
-    -- located from its recorded origin before its content can be hashed.
+    -- located from its recorded origin before its content can be hashed. A
+    -- resolution failure keeps the existing conservative behaviour of treating
+    -- the artifact as changed: this produces an advisory warning, not a
+    -- correctness gate. Aborting on a stale or missing artifact is the job of
+    -- docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md.
     compareArtifact name fromVersion toVersion oldOrigin kind = do
-      oldSource <- artifactDirectoryOnThisMachine projectRoot installedDirectory oldOrigin
-      oldHashResult <- try @SomeException (hashArtifactDirectory oldSource)
+      searchPaths <- defaultSearchPaths
+      resolved <- resolveArtifactOrigin projectRoot searchPaths (definitionFileFor kind) oldOrigin
+      oldHashResult <- case resolved of
+        Left refErr -> pure (Left (toException (userError (T.unpack (renderArtifactRefError refErr)))))
+        Right oldSource -> try @SomeException (hashArtifactDirectory oldSource)
       let candidateHash = (^. #contentHash) <$> Map.lookup (kind, name) (catalog ^. #artifacts)
           changed = case (oldHashResult, candidateHash) of
             (Right oldHash, Just newHash) -> oldHash /= newHash
@@ -625,6 +629,9 @@ versionEvidence projectRoot installedDirectory catalog previousApplications plan
                 sameVersionContentChanged = changed && fromVersion == toVersion
               }
         )
+
+    definitionFileFor CandidateModule = "module.dhall"
+    definitionFileFor CandidateRecipe = "recipe.dhall"
 
     versionKey change = (change ^. #name, change ^. #fromVersion, change ^. #toVersion, change ^. #sameVersionContentChanged)
     isActualChange change =
@@ -858,7 +865,6 @@ updateAppliedModules existing recordedApplications applications now =
         [ AppliedModule
             { name = instanceId ^. #module_,
               parentVars = instanceId ^. #parentVars,
-              source = publishedInstance application instanceId ^. #source,
               origin = publishedInstance application instanceId ^. #origin,
               moduleVersion = modul ^. #version,
               appliedAt = now,
@@ -891,7 +897,6 @@ setCompositionState instances receipts composition =
   AppliedComposition
     { applicationId = composition ^. #applicationId,
       target = composition ^. #target,
-      targetSource = composition ^. #targetSource,
       targetOrigin = composition ^. #targetOrigin,
       targetVersion = composition ^. #targetVersion,
       additionalModules = composition ^. #additionalModules,
@@ -902,30 +907,8 @@ setCompositionState instances receipts composition =
       appliedAt = composition ^. #appliedAt
     }
 
-publishInstanceSource :: FilePath -> CandidateCatalog -> AppliedInstanceState -> AppliedInstanceState
-publishInstanceSource installedDirectory catalog state =
-  case Map.lookup (CandidateModule, state ^. #name . #unModuleName) (catalog ^. #artifacts) of
-    Nothing -> state
-    Just artifact ->
-      AppliedInstanceState
-        { name = state ^. #name,
-          parentVars = state ^. #parentVars,
-          source = publishedArtifactSource installedDirectory artifact,
-          -- The origin was already computed against the published identity
-          -- when the composition was built; only the on-disk source moves.
-          origin = state ^. #origin,
-          moduleVersion = state ^. #moduleVersion,
-          resolvedVars = state ^. #resolvedVars
-        }
-
-publishedArtifactSource :: FilePath -> CandidateArtifact -> FilePath
-publishedArtifactSource installedDirectory artifact =
-  if isJust (artifact ^. #sourceUrl)
-    then installedDirectory </> T.unpack (artifact ^. #name)
-    else (artifact ^. #originalDirectory)
-
 -- | The portable manifest identity an artifact will have once this update
--- publishes it, mirroring 'publishedArtifactSource'.
+-- publishes it.
 --
 -- A candidate staged from a git URL is recorded against that URL directly:
 -- its staging directory is a temporary clone that no other machine will ever
@@ -944,12 +927,12 @@ withInstanceOrigin ::
   FilePath ->
   CandidateCatalog ->
   (ModuleInstance, Module, FilePath) ->
-  IO (ModuleInstance, Module, FilePath, ArtifactOrigin)
+  IO (ModuleInstance, Module, ArtifactOrigin)
 withInstanceOrigin projectRoot catalog (instanceId, modul, directory) = do
   origin <- case Map.lookup (CandidateModule, instanceId ^. #module_ . #unModuleName) (catalog ^. #artifacts) of
     Just artifact -> publishedArtifactOrigin projectRoot artifact
     Nothing -> detectArtifactOrigin projectRoot directory
-  pure (instanceId, modul, directory, origin)
+  pure (instanceId, modul, origin)
 
 publishCandidates :: [CandidateArtifact] -> IO (Either UpdateError ())
 publishCandidates artifacts = do
@@ -1107,11 +1090,10 @@ isUpdateNoOp plan =
   where
     unchangedFile FileUnchanged {} = True
     unchangedFile _ = False
-    -- Compare only what the manifest actually records. The in-memory
-    -- @source@ / @targetSource@ paths are machine-local scratch: the previous
-    -- application was decoded from the manifest and carries none, while the
-    -- candidate was just loaded from disk and carries one. Comparing them
-    -- would report every re-run as a change.
+    -- Compare only what the manifest actually records. Anything derived from
+    -- where an artifact happens to sit on this machine would differ between a
+    -- decoded application and a freshly loaded candidate, and would report
+    -- every re-run as a change.
     sameApplication previous candidate =
       previous ^. #target == candidate ^. #target
         && previous ^. #targetOrigin == candidate ^. #targetOrigin

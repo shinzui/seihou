@@ -9,6 +9,7 @@ import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.CLI.Migrate (pendingChainFor)
+import Seihou.CLI.Shared (resolveAppliedArtifactDir)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
   ( AppliedModule (..),
@@ -18,7 +19,6 @@ import Seihou.Core.Types
 import Seihou.Core.Version (renderVersion)
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Prelude
-import System.Directory (doesFileExist)
 
 -- | Detect pending migrations across applied modules in a manifest.
 --
@@ -52,12 +52,16 @@ detectPendingMigrations manifest mFilter =
       Nothing -> (manifest ^. #modules)
       Just names -> filter (\am -> Set.member (am ^. #name) names) (manifest ^. #modules)
 
+    -- The manifest records a portable origin, so the module has to be located
+    -- on this machine first. A module that does not resolve here is skipped
+    -- like any other read failure: detection is best-effort, and the command
+    -- that actually needs the module reports the resolution error properly.
     check am = do
-      let dhallFile = am ^. #source </> "module.dhall"
-      exists <- doesFileExist dhallFile
-      if not exists
-        then pure (am ^. #name, Nothing)
-        else do
+      resolved <- resolveAppliedArtifactDir "module.dhall" (am ^. #origin)
+      case resolved of
+        Left _ -> pure (am ^. #name, Nothing)
+        Right directory -> do
+          let dhallFile = directory </> "module.dhall"
           r <- evalModuleFromFile dhallFile
           case r of
             Left _ -> pure (am ^. #name, Nothing)

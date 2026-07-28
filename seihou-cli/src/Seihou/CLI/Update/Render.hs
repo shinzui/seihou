@@ -335,6 +335,7 @@ errorCode SharedPathRequiresApplications {} = "shared_path_requires_applications
 errorCode CandidateCloneFailed {} = "candidate_clone_failed"
 errorCode CandidateRepositoryInvalid {} = "candidate_repository_invalid"
 errorCode CandidateArtifactMissing {} = "candidate_artifact_missing"
+errorCode CandidateArtifactUnresolved {} = "candidate_artifact_unresolved"
 errorCode CandidateArtifactAmbiguous {} = "candidate_artifact_ambiguous"
 errorCode CandidateLoadFailed {} = "candidate_load_failed"
 errorCode CandidateDowngrade {} = "candidate_downgrade"

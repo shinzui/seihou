@@ -51,7 +51,6 @@ mkApplied name mver =
   AppliedModule
     { name = ModuleName name,
       parentVars = emptyParentVars,
-      source = "/installed/" <> T.unpack name,
       origin = LocalOrigin name,
       moduleVersion = mver,
       appliedAt = fixedTime,
@@ -69,7 +68,6 @@ mkApplication target modules =
   AppliedComposition
     { applicationId = ApplicationId ("app-" <> target),
       target = AppliedRecipeTarget (RecipeName target),
-      targetSource = "/installed/" <> T.unpack target,
       targetOrigin = LocalOrigin target,
       targetVersion = Just "1.0.0",
       additionalModules = [],
@@ -84,7 +82,6 @@ mkApplication target modules =
       AppliedInstanceState
         { name = ModuleName name,
           parentVars = emptyParentVars,
-          source = "/installed/" <> T.unpack name,
           origin = LocalOrigin name,
           moduleVersion = Just "1.0.0",
           resolvedVars = Map.empty

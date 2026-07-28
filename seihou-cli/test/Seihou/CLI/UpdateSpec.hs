@@ -46,16 +46,16 @@ spec :: Spec
 spec = do
   describe "application selection" $ do
     it "selects every application containing a requested bare module" $ do
-      let first = application (AppliedModuleTarget "one") [instanceState "shared" "/one/shared"]
-          second = application (AppliedRecipeTarget "stack") [instanceState "shared" "/two/shared"]
+      let first = application (AppliedModuleTarget "one") [instanceState "shared"]
+          second = application (AppliedRecipeTarget "stack") [instanceState "shared"]
           manifest :: Manifest
           manifest = manifestForApplications [first, second] Map.empty
       selectApplications (NamedUpdateTargets ["shared"]) manifest
         `shouldBe` Right (RecordedSelection [first, second])
 
     it "keeps manifest order for all applications and deduplicates repeated targets" $ do
-      let first = application (AppliedModuleTarget "one") [instanceState "one" "/one"]
-          second = application (AppliedModuleTarget "two") [instanceState "two" "/two"]
+      let first = application (AppliedModuleTarget "one") [instanceState "one"]
+          second = application (AppliedModuleTarget "two") [instanceState "two"]
           manifest :: Manifest
           manifest = manifestForApplications [first, second] Map.empty
       selectApplications AllRecordedApplications manifest
@@ -64,8 +64,8 @@ spec = do
         `shouldBe` Right (RecordedSelection [first, second])
 
     it "rejects a partial selection that shares an owned path" $ do
-      let first = application (AppliedModuleTarget "one") [instanceState "one" "/one"]
-          second = application (AppliedModuleTarget "two") [instanceState "two" "/two"]
+      let first = application (AppliedModuleTarget "one") [instanceState "one"]
+          second = application (AppliedModuleTarget "two") [instanceState "two"]
           owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
           record = FileRecord (hashContent "old") "one" Template testTime Nothing owners
           manifest :: Manifest
@@ -86,8 +86,7 @@ spec = do
             sessionDirectory = root </> "session"
             origin = ProjectOrigin "demo"
             applied =
-              application (AppliedModuleTarget "demo") [instanceStateFrom "demo" moduleDirectory origin]
-                & #targetSource .~ moduleDirectory
+              application (AppliedModuleTarget "demo") [instanceStateFrom "demo" origin]
                 & #targetOrigin .~ origin
         createDirectoryIfMissing True moduleDirectory
         TIO.writeFile (moduleDirectory </> "module.dhall") (moduleDhall "demo" "1.0.0")
@@ -114,10 +113,9 @@ spec = do
             applied =
               application
                 (AppliedRecipeTarget "stack")
-                [ instanceStateFrom "one" moduleOne (remoteOrigin "one"),
-                  instanceStateFrom "two" moduleTwo (remoteOrigin "two")
+                [ instanceStateFrom "one" (remoteOrigin "one"),
+                  instanceStateFrom "two" (remoteOrigin "two")
                 ]
-                & #targetSource .~ recipeDirectory
                 & #targetOrigin .~ remoteOrigin "stack"
                 & #additionalModules .~ []
         createDirectoryIfMissing True (remote </> "modules" </> "one")
@@ -145,8 +143,7 @@ spec = do
             missingRemote = T.pack (root </> "missing-remote")
             missingOrigin = RemoteOrigin missingRemote "demo" Nothing
             applied =
-              application (AppliedModuleTarget "demo") [instanceStateFrom "demo" moduleDirectory missingOrigin]
-                & #targetSource .~ moduleDirectory
+              application (AppliedModuleTarget "demo") [instanceStateFrom "demo" missingOrigin]
                 & #targetOrigin .~ missingOrigin
         writeOrigin missingRemote moduleDirectory
         result <- stageCandidateSources (root </> "session") root (root </> "installed") [applied]
@@ -362,7 +359,7 @@ spec = do
             parentTwo = ParentVars (Map.singleton "tenant" "two")
             instanceOne = ModuleInstance "shared" parentOne
             instanceTwo = ModuleInstance "shared" parentTwo
-            stateFor parent = AppliedInstanceState "shared" parent "/installed/shared" (LocalOrigin "shared") (Just "1.0.0") Map.empty
+            stateFor parent = AppliedInstanceState "shared" parent (LocalOrigin "shared") (Just "1.0.0") Map.empty
             previous = application (AppliedModuleTarget "shared") [stateFor parentOne, stateFor parentTwo]
             candidate =
               Module
@@ -379,8 +376,8 @@ spec = do
                   migrations = [Migration "1.0.0" "2.0.0" [RunCommand "true" Nothing]]
                 }
             appliedModules =
-              [ AppliedModule "shared" parentOne "/installed/shared" (LocalOrigin "shared") (Just "1.0.0") testTime Nothing,
-                AppliedModule "shared" parentTwo "/installed/shared" (LocalOrigin "shared") (Just "1.0.0") testTime Nothing
+              [ AppliedModule "shared" parentOne (LocalOrigin "shared") (Just "1.0.0") testTime Nothing,
+                AppliedModule "shared" parentTwo (LocalOrigin "shared") (Just "1.0.0") testTime Nothing
               ]
             base = emptyManifest testTime
             manifest =
@@ -443,18 +440,17 @@ prepareUpdateFixture root = do
       applicationId = mkApplicationId target []
       demoOrigin = RemoteOrigin (T.pack remote) "demo" Nothing
       app =
-        (application target [instanceStateFrom "demo" installedModule demoOrigin])
+        (application target [instanceStateFrom "demo" demoOrigin])
           { applicationId,
-            targetSource = installedModule,
             targetOrigin = demoOrigin,
             targetVersion = Just "1.0.0",
             commandReceipts = Map.singleton commandFingerprint commandReceipt,
             instances =
-              [ (instanceStateFrom "demo" installedModule demoOrigin)
+              [ (instanceStateFrom "demo" demoOrigin)
                   & #resolvedVars .~ Map.singleton "project.name" "accepted"
               ]
           }
-      appliedModule = AppliedModule "demo" emptyParentVars installedModule demoOrigin (Just "1.0.0") testTime Nothing
+      appliedModule = AppliedModule "demo" emptyParentVars demoOrigin (Just "1.0.0") testTime Nothing
       fileRecord =
         FileRecord
           (hashContent baselineContent)
@@ -506,15 +502,14 @@ prepareRecipeUpdateFixture root = do
         AppliedComposition
           { applicationId,
             target,
-            targetSource = installedRecipe,
             targetOrigin = remoteOrigin "stack",
             targetVersion = Just "1.0.0",
             additionalModules = [],
             namespace = Just "one",
             context = Nothing,
             instances =
-              [ instanceStateFrom "old" installedOld (remoteOrigin "old"),
-                instanceStateFrom "one" installedOne (remoteOrigin "one")
+              [ instanceStateFrom "old" (remoteOrigin "old"),
+                instanceStateFrom "one" (remoteOrigin "one")
               ],
             commandReceipts = Map.empty,
             appliedAt = testTime
@@ -525,8 +520,8 @@ prepareRecipeUpdateFixture root = do
           { version = base ^. #version,
             genAt = base ^. #genAt,
             modules =
-              [ AppliedModule "old" emptyParentVars installedOld (remoteOrigin "old") (Just "1.0.0") testTime Nothing,
-                AppliedModule "one" emptyParentVars installedOne (remoteOrigin "one") (Just "1.0.0") testTime Nothing
+              [ AppliedModule "old" emptyParentVars (remoteOrigin "old") (Just "1.0.0") testTime Nothing,
+                AppliedModule "one" emptyParentVars (remoteOrigin "one") (Just "1.0.0") testTime Nothing
               ],
             vars = Map.empty,
             files = Map.empty,
@@ -608,7 +603,6 @@ application target instances =
   AppliedComposition
     { applicationId = mkApplicationId target [],
       target,
-      targetSource = maybe "" (^. #source) (listToMaybe instances),
       targetOrigin = LocalOrigin targetName,
       targetVersion = Just "1.0.0",
       additionalModules = [],
@@ -623,16 +617,14 @@ application target instances =
       AppliedModuleTarget name -> name ^. #unModuleName
       AppliedRecipeTarget name -> name ^. #unRecipeName
 
-instanceState :: ModuleName -> FilePath -> AppliedInstanceState
-instanceState name source =
-  instanceStateFrom name source (LocalOrigin (name ^. #unModuleName))
+instanceState :: ModuleName -> AppliedInstanceState
+instanceState name = instanceStateFrom name (LocalOrigin (name ^. #unModuleName))
 
-instanceStateFrom :: ModuleName -> FilePath -> ArtifactOrigin -> AppliedInstanceState
-instanceStateFrom name source origin =
+instanceStateFrom :: ModuleName -> ArtifactOrigin -> AppliedInstanceState
+instanceStateFrom name origin =
   AppliedInstanceState
     { name,
       parentVars = emptyParentVars,
-      source,
       origin,
       moduleVersion = Just "1.0.0",
       resolvedVars = Map.empty

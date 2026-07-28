@@ -61,7 +61,6 @@ mkComposition target additional =
   AppliedComposition
     { applicationId = mkApplicationId target additional,
       target = target,
-      targetSource = "/modules/root",
       targetOrigin = LocalOrigin "root",
       targetVersion = Just "1.0.0",
       additionalModules = additional,
@@ -99,8 +98,8 @@ spec = do
           inst2 = ModuleInstance moduleName pv2
           modul = mkModule moduleName (Just "0.7.0")
           modulesInOrder =
-            [ (inst1, modul, "/modules/link-skill", LocalOrigin "link-skill"),
-              (inst2, modul, "/modules/link-skill", LocalOrigin "link-skill")
+            [ (inst1, modul, LocalOrigin "link-skill"),
+              (inst2, modul, LocalOrigin "link-skill")
             ]
           resolved =
             Map.fromList
@@ -108,7 +107,7 @@ spec = do
                 (inst2, Map.singleton (VarName "skill.name") (mkResolved "skill.name" (VText "master-plan")))
               ]
           composition =
-            buildAppliedComposition moduleTarget ("/modules/master-plan", LocalOrigin "master-plan") (Just "0.7.0") [] (Just "docs") Nothing modulesInOrder resolved fixedTime
+            buildAppliedComposition moduleTarget (LocalOrigin "master-plan") (Just "0.7.0") [] (Just "docs") Nothing modulesInOrder resolved fixedTime
       map (^. #parentVars) (composition ^. #instances) `shouldBe` [pv1, pv2]
       map (^. #resolvedVars) (composition ^. #instances)
         `shouldBe` [Map.singleton "skill.name" "exec-plan", Map.singleton "skill.name" "master-plan"]
@@ -118,31 +117,31 @@ spec = do
           first =
             buildAppliedComposition
               moduleTarget
-              ("/old/root", LocalOrigin "root")
+              (LocalOrigin "root")
               (Just "1.0.0")
               ["extra"]
               Nothing
               Nothing
-              [(inst, mkModule "dep" (Just "1.0.0"), "/old/dep", LocalOrigin "dep")]
+              [(inst, mkModule "dep" (Just "1.0.0"), LocalOrigin "dep")]
               (Map.singleton inst (Map.singleton "value" (mkResolved "value" (VText "old"))))
               fixedTime
           second =
             buildAppliedComposition
               moduleTarget
-              ("/new/root", LocalOrigin "root")
+              (LocalOrigin "root")
               (Just "2.0.0")
               ["extra"]
               Nothing
               Nothing
-              [(inst, mkModule "dep" (Just "2.0.0"), "/new/dep", LocalOrigin "dep")]
+              [(inst, mkModule "dep" (Just "2.0.0"), LocalOrigin "dep")]
               (Map.singleton inst (Map.singleton "value" (mkResolved "value" (VText "new"))))
               fixedTime
       (first ^. #applicationId) `shouldBe` (second ^. #applicationId)
 
     it "preserves the original module or recipe target" $ do
-      let moduleComposition = buildAppliedComposition moduleTarget ("/module", LocalOrigin "module") Nothing [] Nothing Nothing [] Map.empty fixedTime
+      let moduleComposition = buildAppliedComposition moduleTarget (LocalOrigin "module") Nothing [] Nothing Nothing [] Map.empty fixedTime
           recipeTarget = AppliedRecipeTarget "service"
-          recipeComposition = buildAppliedComposition recipeTarget ("/recipe", LocalOrigin "recipe") (Just "2") [] Nothing Nothing [] Map.empty fixedTime
+          recipeComposition = buildAppliedComposition recipeTarget (LocalOrigin "recipe") (Just "2") [] Nothing Nothing [] Map.empty fixedTime
       (moduleComposition ^. #target) `shouldBe` moduleTarget
       (recipeComposition ^. #target) `shouldBe` recipeTarget
 

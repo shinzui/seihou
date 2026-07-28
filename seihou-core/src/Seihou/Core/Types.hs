@@ -554,13 +554,12 @@ data CommandReceipt = CommandReceipt
 
 -- | Reproducible state for one module instance in an application.
 --
--- @source@ is the absolute directory the module was loaded from on the
--- machine that ran the command. It is deliberately no longer serialized;
--- @origin@ is the portable identity that goes into the manifest.
+-- @origin@ is the module's portable identity. Turning it back into a
+-- directory on the current machine is 'Seihou.Core.ArtifactRef.resolveArtifactOrigin';
+-- no path is ever recorded here.
 data AppliedInstanceState = AppliedInstanceState
   { name :: !ModuleName,
     parentVars :: !ParentVars,
-    source :: !FilePath,
     origin :: !ArtifactOrigin,
     moduleVersion :: !(Maybe Text),
     resolvedVars :: !(Map VarName Text)
@@ -571,7 +570,6 @@ data AppliedInstanceState = AppliedInstanceState
 data AppliedComposition = AppliedComposition
   { applicationId :: !ApplicationId,
     target :: !AppliedTarget,
-    targetSource :: !FilePath,
     targetOrigin :: !ArtifactOrigin,
     targetVersion :: !(Maybe Text),
     additionalModules :: ![ModuleName],
@@ -636,13 +634,13 @@ data AppliedBlueprintMigration = AppliedBlueprintMigration
 -- instances. Manifests produced before schema version 2 decode with
 -- @parentVars = 'emptyParentVars'@.
 --
--- @source@ is the absolute directory the module was loaded from on the
--- machine that ran the command. It is deliberately no longer serialized;
--- @origin@ is the portable identity that goes into the manifest.
+-- @origin@ is the module's portable identity. Turning it back into a
+-- directory on the current machine is
+-- 'Seihou.Core.ArtifactRef.resolveArtifactOrigin'; no path is ever recorded
+-- here.
 data AppliedModule = AppliedModule
   { name :: !ModuleName,
     parentVars :: !ParentVars,
-    source :: !FilePath,
     origin :: !ArtifactOrigin,
     moduleVersion :: !(Maybe Text),
     appliedAt :: !UTCTime,

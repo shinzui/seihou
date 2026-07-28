@@ -150,7 +150,7 @@ candidates, to be written during plan 76 and refined at the end of plan 80.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 76 | Record portable artifact origins in the manifest | docs/plans/76-record-portable-artifact-origins-in-the-manifest.md | None | None | Complete |
-| 77 | Resolve manifest artifact origins to local directories | docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md | EP-76 | None | In Progress |
+| 77 | Resolve manifest artifact origins to local directories | docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md | EP-76 | None | Complete |
 | 78 | Refuse accidental module downgrades and origin mismatches | docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md | EP-76, EP-77 | None | Not Started |
 | 79 | Upgrade legacy absolute-path manifests in place | docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md | EP-76, EP-77 | EP-78 | Not Started |
 | 80 | Document and end-to-end verify the shared-manifest workflow | docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md | EP-76, EP-77, EP-78, EP-79 | None | Not Started |
@@ -271,8 +271,8 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-76: `ArtifactOrigin` type and JSON encoding exist; round-trip tests pass (2026-07-28)
 - [x] EP-76: `seihou run`, `seihou update`, and `seihou agent run` record origins; manifest schema is version 6 (2026-07-28)
 - [x] EP-76: First two ADRs written under `docs/adr/` (2026-07-28)
-- [ ] EP-77: `Seihou.Core.ArtifactRef` resolver and its error type exist with unit tests
-- [ ] EP-77: All seven CLI consumers resolve through the resolver instead of a recorded path
+- [x] EP-77: `Seihou.Core.ArtifactRef` resolver and its error type exist with unit tests (2026-07-28)
+- [x] EP-77: Every CLI consumer resolves through the resolver instead of a recorded path; the path fields are deleted (2026-07-28)
 - [ ] EP-78: Version and origin comparison module exists with unit tests
 - [ ] EP-78: `seihou run`, `seihou update`, and `seihou migrate` refuse downgrades; `--allow-downgrade` overrides
 - [ ] EP-79: Schema versions 1–5 decode into `ArtifactOrigin` without data loss
@@ -325,6 +325,33 @@ interactions between child plans. Provide concise evidence.
   `seihou-core/src/Seihou/Core/Types.hs` records a blueprint's name, version,
   baseline module names, and prompt metadata, but no path, so it was already
   portable. EP-80's no-absolute-paths assertion does not need to cover it.
+
+- **The debt EP-76 left for EP-77 is paid, and the resolver interface shipped as
+  agreed.** `Seihou.Core.ArtifactRef` exports `resolveArtifactOrigin`,
+  `ArtifactRefError` (`ArtifactNotFoundLocally` / `ProjectArtifactMissing`), and
+  `renderArtifactRefError`, exactly the shape Integration Points specifies.
+  EP-76's stopgap `artifactDirectoryOnThisMachine` is deleted. EP-78 and EP-79 can
+  consume the resolver as documented.
+
+- **The consumer list in the Dependency Graph above was wrong in two ways.** It named
+  seven modules; the real set differs. `seihou-cli/src/Seihou/CLI/PendingMigrations.hs`
+  was missing and is the most-used consumer of all, since both `seihou run`'s
+  pre-flight refusal and `seihou status` go through it. Conversely
+  `seihou-cli/src-exe/Seihou/CLI/Remove.hs` and
+  `seihou-cli/src-exe/Seihou/CLI/Status.hs` needed no change: removal is driven by the
+  `Removal` steps recorded in the manifest, and status enumerates installed modules
+  independently. EP-80's end-to-end test should exercise `seihou run`,
+  `seihou migrate`, `seihou update`, and `seihou status` on a foreign manifest, and
+  need not exercise `seihou remove`.
+
+- **A resolution rule worth promoting during EP-80's distillation.** A `ProjectOrigin`
+  that does not resolve is a hard failure and deliberately does *not* fall through to
+  the global search paths. Substituting an installed artifact for a project-local one
+  of the same name would be exactly the invisible substitution this initiative exists
+  to remove. It is enforced by a named test in
+  `seihou-core/test/Seihou/Core/ArtifactRefSpec.hs`; consider stating it explicitly in
+  `docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md` once EP-78
+  and EP-79 have had a chance to contradict it.
 
 - **EP-79 has more to restore than the plan text implies.** EP-76's version-6
   guard invalidated eight existing back-compat specs in
@@ -415,6 +442,17 @@ plan.
   and EP-77's scope grows only by "delete this helper and move its three call sites",
   which is smaller than the rewiring EP-77 already owns. The decomposition is
   unchanged; no plan is split, merged, or reordered.
+  Date: 2026-07-28
+
+- Decision: EP-77's advisory consumers (pending-migration detection, the post-upgrade
+  advisory, and `seihou update`'s same-version content comparison) skip an
+  unresolvable artifact rather than aborting; only commands that are about to
+  *generate* from an artifact hard-fail on resolution.
+  Rationale: These three produce advice on top of work that already succeeded or is
+  gated elsewhere. Making them hard stops would leave a developer with one
+  uninstalled module unable to run `seihou status` at all. Refusing to generate from a
+  stale or missing artifact is EP-78's job, and this decision draws the line between
+  the two plans: EP-77 answers "where is it?", EP-78 answers "should we use it?".
   Date: 2026-07-28
 
 - Decision: `docs/adr/` uses the repository's plain numbered-Markdown convention

@@ -26,6 +26,7 @@ import Seihou.CLI.CommandExecution
     CommandPolicy,
   )
 import Seihou.Composition.Instance (ModuleInstance)
+import Seihou.Core.ArtifactRef (ArtifactRefError)
 import Seihou.Core.Migration (MigrationPlan, MigrationPlanError)
 import Seihou.Core.Types
 import Seihou.Engine.Migrate (ExecutedMigrationPlan, MigrationExecError)
@@ -192,6 +193,9 @@ data UpdateError
   | CandidateCloneFailed Text Text
   | CandidateRepositoryInvalid Text [Text]
   | CandidateArtifactMissing CandidateArtifactKind Text
+  | -- | An artifact the manifest records could not be located on this
+    -- machine and has no remote to fetch it from.
+    CandidateArtifactUnresolved ArtifactRefError
   | CandidateArtifactAmbiguous CandidateArtifactKind Text [Text]
   | CandidateLoadFailed Text ModuleLoadError
   | CandidateDowngrade Text (Maybe Text) (Maybe Text)
