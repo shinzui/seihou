@@ -76,6 +76,7 @@ library seihou-cli-internal
     Seihou.CLI.InstallHistory
     Seihou.CLI.InstallShared
     Seihou.CLI.List
+    Seihou.CLI.ManifestGuard
     Seihou.CLI.Migrate
     Seihou.CLI.PendingMigrations
     Seihou.CLI.PromptRender
@@ -244,6 +245,7 @@ test-suite seihou-cli-test
     Seihou.CLI.InitSpec
     Seihou.CLI.InstallHistorySpec
     Seihou.CLI.ListSpec
+    Seihou.CLI.ManifestGuardSpec
     Seihou.CLI.MigrateSpec
     Seihou.CLI.PendingMigrationSpec
     Seihou.CLI.PromptRenderSpec

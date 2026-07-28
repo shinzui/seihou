@@ -73,8 +73,8 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: `Seihou.CLI.ManifestGuard` with `checkAppliedArtifacts` and its verdict type
-- [ ] Milestone 1: Pure unit tests for every verdict, including unparseable versions and `LocalOrigin`
+- [x] Milestone 1: `Seihou.CLI.ManifestGuard` with `checkAppliedArtifacts` and its verdict type (2026-07-28)
+- [x] Milestone 1: Pure unit tests for every verdict, including unparseable versions and `LocalOrigin` (2026-07-28)
 - [ ] Milestone 2: `--allow-downgrade` flag parsed for `run`, `update`, and `migrate`
 - [ ] Milestone 2: `seihou run` refuses before generating; `--allow-downgrade` proceeds
 - [ ] Milestone 3: `seihou update` refuses before staging
@@ -88,7 +88,29 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **The pinned `ArtifactCheck` shape could not render the specified message.**
+  Purpose / Big Picture shows a refusal block containing an `Origin:` line, but
+  the shape this plan pinned in Interfaces and Dependencies — `ArtifactCheck {
+  name, verdict }` — carries no origin anywhere: `ArtifactStale` holds only the
+  two version strings. `formatGuardRefusal :: [ArtifactCheck] -> Text` therefore
+  had no way to print the origin the plan's own example message shows. Resolved
+  by adding `origin :: !ArtifactOrigin` to `ArtifactCheck`; see the Decision Log.
+  Every `ArtifactVerdict` constructor shipped exactly as pinned.
+
+- **The recorded-versus-local origin comparison needs three outcomes, not two.**
+  The plan's comparison rules cover "both `RemoteOrigin`, URLs differ" and
+  "recorded `LocalOrigin`", but the resolver can also hand back a copy with
+  *less* provenance than the manifest recorded: `resolveArtifactOrigin` searches
+  a `RemoteOrigin` by name across all three roots in discovery order, so a
+  developer with a personal `~/.config/seihou/modules/demo` shadowing an
+  installed `demo` resolves to the personal copy, which
+  `detectArtifactOrigin` classifies as a `LocalOrigin`. Calling that a mismatch
+  would break deliberate shadowing; calling it a match would be a lie. The
+  internal `OriginRelation` type (`OriginMatches` / `OriginDiffers` /
+  `OriginUnverifiable`) makes the third case explicit, and it maps onto the
+  already-agreed `ArtifactUnverifiableOrigin` verdict, so no new constructor was
+  needed. Covered by the spec case "reports a remote artifact shadowed by an
+  unprovenanced copy as unverifiable".
 
 
 ## Decision Log
@@ -122,6 +144,45 @@ Record every decision made while working on the plan.
   compared, because the version comes from `module.dhall` itself, but its *identity* cannot.
   Blocking would make personal modules unusable in a shared project; saying nothing would
   hide a real gap. Reporting it as unverifiable is the honest middle.
+  Date: 2026-07-28
+
+- Decision: Add `origin :: !ArtifactOrigin` to `ArtifactCheck`, deviating from the shape
+  pinned in Interfaces and Dependencies.
+  Rationale: The refusal message this plan specifies in Purpose / Big Picture prints an
+  `Origin:` line, and nothing in the pinned shape carries an origin — `ArtifactStale`
+  holds two version strings and nothing else, so `formatGuardRefusal` could not produce
+  the plan's own example output. The recorded origin is a property of the artifact being
+  checked rather than of the conclusion reached about it, so `ArtifactCheck` is its
+  natural home; putting it inside `ArtifactStale` would have deviated from the pinned
+  *verdict* constructors instead, which more plans depend on. No other plan consumes
+  `ArtifactCheck` structurally —
+  `docs/plans/80-document-and-end-to-end-verify-the-shared-manifest-workflow.md` asserts
+  on the rendered text — so the change is contained to this plan's own module.
+  Date: 2026-07-28
+
+- Decision: Export `checkAppliedArtifactsFor`, taking an optional module-name filter,
+  alongside the pinned `checkAppliedArtifacts`.
+  Rationale: The pinned signature checks every module in the manifest. That is right for
+  `seihou status`, which reports on the whole project, but wrong for `seihou run`: a
+  module unrelated to the composition being generated must not block the run.
+  `seihou-cli/src/Seihou/CLI/PendingMigrations.hs` already draws exactly this line —
+  `detectPendingMigrations` takes a `Maybe (Set ModuleName)` and `seihou run` passes the
+  composed module names — and diverging from that precedent would mean a developer with
+  one uninstalled module could not run anything at all, which is the failure mode EP-77's
+  advisory-consumer decision was written to avoid. `checkAppliedArtifacts` is retained
+  unchanged as the `Nothing` case, so the pinned interface still exists.
+  Date: 2026-07-28
+
+- Decision: Distinguish "origins disagree" from "origins cannot be compared" with an
+  internal three-valued `OriginRelation`, and treat a recorded `RemoteOrigin` that
+  resolves to a copy with no provenance as unverifiable rather than as a mismatch.
+  Rationale: See Surprises & Discoveries. `resolveArtifactOrigin` searches a
+  `RemoteOrigin` by name across all three discovery roots, so a deliberately shadowing
+  personal copy resolves ahead of the installed one and detects back as a `LocalOrigin`.
+  Reporting that as a mismatch would block a workflow seihou explicitly supports;
+  reporting it as a match would assert an identity nothing checked. The existing
+  `ArtifactUnverifiableOrigin` verdict already means exactly this, so the distinction
+  needed no new constructor and stays internal to the module.
   Date: 2026-07-28
 
 
@@ -701,8 +762,14 @@ actually implemented.
 No new package dependencies. `seihou-cli-internal` already depends on `seihou-core`,
 `text`, `containers`, `directory`, `filepath`, `generic-lens`, and `lens`.
 
-At the end of Milestone 1, these must exist in
-`seihou-cli/src/Seihou/CLI/ManifestGuard.hs`:
+At the end of Milestone 1, these exist in
+`seihou-cli/src/Seihou/CLI/ManifestGuard.hs`. Two entries differ from the shape
+originally pinned here; both deviations are recorded in the Decision Log above:
+`ArtifactCheck` gained an `origin` field, without which `formatGuardRefusal`
+cannot print the `Origin:` line the specified message contains, and
+`checkAppliedArtifactsFor` was added so `seihou run` can restrict the check to
+the composition it is generating. Every `ArtifactVerdict` constructor is exactly
+as pinned.
 
 ```haskell
 data ArtifactVerdict
@@ -716,15 +783,23 @@ data ArtifactVerdict
 
 data ArtifactCheck = ArtifactCheck
   { name :: !ModuleName,
+    origin :: !ArtifactOrigin,
     verdict :: !ArtifactVerdict
   }
   deriving stock (Eq, Show, Generic)
 
 judgeArtifact :: ArtifactOrigin -> Maybe Text -> ArtifactOrigin -> Maybe Text -> ArtifactVerdict
 checkAppliedArtifacts :: FilePath -> [FilePath] -> Manifest -> IO [ArtifactCheck]
+checkAppliedArtifactsFor :: FilePath -> [FilePath] -> Maybe (Set ModuleName) -> Manifest -> IO [ArtifactCheck]
 blockingChecks :: [ArtifactCheck] -> [ArtifactCheck]
 formatGuardRefusal :: [ArtifactCheck] -> Text
+formatGuardOverride :: [ArtifactCheck] -> Text
+summarizeCheck :: ArtifactCheck -> Maybe Text
 ```
+
+`formatGuardOverride` renders the same blocks under a "Proceeding anyway" lead-in
+for the `--allow-downgrade` path, and `summarizeCheck` renders one line per
+non-`ArtifactOk` verdict for `seihou status`, which must report rather than fail.
 
 This plan consumes, and must not change,
 `resolveArtifactOrigin` and `renderArtifactRefError` from
