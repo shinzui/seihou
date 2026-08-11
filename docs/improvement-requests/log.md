@@ -7,6 +7,9 @@
 * **Addition**: IR-3 requests that `seihou agent run` and `seihou agent migrate` consult
   `ManifestGuard`, extending the ADR 0003 refusal to the one path that applies baselines and writes
   receipts without it.
+* **Addition**: IR-4 requests that `seihou install` read the origin metadata it is about to delete
+  and refuse a different-source overwrite, since the install cache is keyed by bare name and a
+  registry entry has no rename escape hatch.
 
 ## 2026-07-31
 * **Addition**: IR-1 requests a not-applicable outcome for blueprint migration edges, so an edge
