@@ -5,6 +5,9 @@ description: >-
   Give a blueprint migration edge a way to report that its precondition is unmet so the edge is
   left unrecorded, instead of a deliberate no-op returning a receipt indistinguishable from a
   completed upgrade.
+generated:
+  by: human:nadeem
+  at: "2026-07-31T12:19:09Z"
 timestamp: 2026-07-31T12:19:09Z
 requestId: IR-1
 status: proposed

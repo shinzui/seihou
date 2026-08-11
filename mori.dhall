@@ -1,6 +1,6 @@
 let Schema =
-      https://raw.githubusercontent.com/shinzui/mori-schema/a3c59033a08c2eaef2cfba4a3c99fc9c192ca6d7/package.dhall
-        sha256:18258ef583580a897f4af3e7c86db0342afb42fb40efc535b217ba1089230141
+      https://raw.githubusercontent.com/shinzui/mori-schema/93104153ecf8817547229a867302a70a25c4b3d8/package.dhall
+        sha256:5e00bba267f27069df1d3caadfec2ec6a8c4e797ce652d78c09528f981b71b42
 
 in  Schema.Project::{ project =
       Schema.ProjectIdentity::{ name = "seihou"
@@ -86,6 +86,15 @@ in  Schema.Project::{ project =
         , description = Some "V1 implementation milestones (M0-M6)"
         , location =
             Schema.DocLocation.LocalFile "docs/dev/roadmap/v1-milestones.md"
+        }
+      ]
+    , okfBundles =
+      [ Schema.OkfBundle::{ name = "improvement-requests"
+        , path = "docs/improvement-requests"
+        , okfVersion = "0.2"
+        , profile = Some "docs/improvement-requests/profile.dhall"
+        , description = Some
+            "Cross-repository requests raised against seihou by the projects that consume it"
         }
       ]
     }
