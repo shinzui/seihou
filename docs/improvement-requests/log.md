@@ -4,6 +4,9 @@
 * **Addition**: IR-2 requests an `ArtifactOrigin` on `AppliedBlueprint`, `AppliedBlueprintMigration`,
   and `AppliedRecipe`, so agent-path provenance is the identity ADR 0002 accepts rather than the
   bare name it rejects, and so a migration receipt cannot suppress a different blueprint's edge.
+* **Addition**: IR-3 requests that `seihou agent run` and `seihou agent migrate` consult
+  `ManifestGuard`, extending the ADR 0003 refusal to the one path that applies baselines and writes
+  receipts without it.
 
 ## 2026-07-31
 * **Addition**: IR-1 requests a not-applicable outcome for blueprint migration edges, so an edge
