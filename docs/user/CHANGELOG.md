@@ -12,6 +12,45 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **A blueprint migration edge can now report that it does not apply.** A
+  well-written edge states its own precondition, and when a project does not meet
+  it the correct action is to change nothing and say so. Seihou could only record
+  two outcomes — the provider session returned, or it failed — so a deliberate,
+  correct no-op was recorded as a completed upgrade. The edge that *should* have
+  run once the precondition was met was then silently skipped forever.
+
+  There is now a third outcome. An edge reports it by writing a one-line reason
+  to a signal file `seihou` names in the prompt, or, for API providers that
+  cannot write files, by ending its reply with `SEIHOU: not-applicable <reason>`.
+  Seihou prints the reason, records the attempt with that outcome, and
+  **continues to the next edge** — an inapplicable step is not a failure and does
+  not halt a chain. Only an applied receipt suppresses a later run, so the edge is
+  planned again next time, no `--rerun` needed:
+
+  ```text
+  Blueprint migration 1/2: 1.0.0 -> 2.0.0 — not applicable: the project has not adopted the bundle
+  Running blueprint migration 2/2: 2.5.0 -> 3.0.0
+  ...
+  Completed 2 blueprint migration(s) for 'my-library' (1 not applicable).
+  ```
+
+  `seihou status` distinguishes the two:
+
+  ```text
+  Blueprint migrations:
+    my-library v0.3.0: 1.0.0 -> 2.0.0 (applied 2026-07-20 15:02 UTC)
+    my-library v0.3.0: 2.5.0 -> 3.0.0 (not applicable 2026-07-20 15:19 UTC -- no direct kiroku imports)
+  ```
+
+  Edge authors do not need to invent a convention: seihou's own framing prompt
+  carries it, so an edge prompt only has to state what its precondition is.
+
+  **One-time caveat.** Every receipt written before this release is read as
+  applied, including any that was really a deliberate no-op — nothing on disk can
+  tell the two apart after the fact. `--rerun` remains the remedy for those, as
+  it was before. New receipts carry their outcome explicitly, and older manifests
+  keep parsing unchanged.
+
 - **`seihou agent run` and `seihou agent migrate` now refuse a stale or
   substituted artifact.** `seihou run` and `seihou migrate` have refused to
   generate from an artifact older than, or from a different repository than,

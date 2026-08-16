@@ -20,6 +20,24 @@ Reads `.seihou/manifest.json` in the current directory and displays:
 
 - **Recipe** — if the project was generated from a recipe, shows the recipe
   name and version (e.g. `Recipe: haskell-library v1.0.0`).
+- **Blueprint** — if `seihou agent run` was used here, the blueprint name and
+  version, its baseline modules, and the prompt that was supplied.
+- **Blueprint migrations** — one line per recorded
+  [blueprint migration](../user/blueprint-migrations.md) edge, with the outcome
+  the edge reported. Omitted entirely when none has been recorded.
+
+  ```text
+  Blueprint migrations:
+    my-library v0.3.0: 1.0.0 -> 2.0.0 (applied 2026-07-20 15:02 UTC)
+    my-library v0.3.0: 2.5.0 -> 3.0.0 (not applicable 2026-07-20 15:19 UTC -- no direct kiroku imports)
+  ```
+
+  `applied` means the provider interaction for that edge returned; it is
+  bookkeeping, not proof that the upgrade worked. `not applicable` means the
+  edge reported that its precondition is unmet in this project and changed
+  nothing, and it carries the reason, truncated here and recorded in full in
+  `.seihou/manifest.json`. A not-applicable edge is planned again on the next
+  `seihou agent migrate` run; an applied one is not.
 - **Applied modules** — each line shows the module name, its recorded
   version (e.g. `v1.2.0`) when available, and the date it was applied.
   Modules without a recorded version (older manifests or unversioned

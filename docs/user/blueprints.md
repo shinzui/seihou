@@ -219,11 +219,21 @@ an earlier selected edge is skipped once the cursor has advanced past its
 invocation.
 
 Each selected edge gets its own provider interaction. Seihou writes a receipt
-for `(blueprint name, from, to)` immediately after a successful interaction and
-before starting the next edge. Re-running the same command therefore resumes at
-the first unrecorded edge. Pass `--rerun` to intentionally ignore matching
-receipts. Blueprint artifact version and timestamp are audit metadata, not part
-of the completion key.
+for `(blueprint origin, blueprint name, from, to)` immediately after an
+interaction returns and before starting the next edge. Re-running the same
+command therefore resumes at the first edge with no applied receipt. Pass
+`--rerun` to intentionally ignore matching receipts. Blueprint artifact version
+and timestamp are audit metadata, not part of the completion key.
+
+An edge may also report that it does not apply to the project running it — the
+library is not used here, the feature it upgrades was never adopted, the change
+is already present. Seihou's framing prompt tells the agent how to say so, so an
+edge prompt only has to state its precondition. That outcome is recorded with its
+reason, the chain continues to the next edge, and the edge is planned again on a
+later run, because the precondition may be met by then. This matters most for a
+blueprint that serves both projects using a library directly and projects that
+only see it through a wrapper: for those, most runs of a given edge legitimately
+do nothing.
 
 Use parent debug mode to inspect every pending prompt in order:
 
@@ -231,10 +241,10 @@ Use parent debug mode to inspect every pending prompt in order:
 seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
 ```
 
-Migration debug never contacts a provider and never writes receipts. A normal
-receipt means the provider interaction returned successfully; it does **not**
-prove that a package manager now reports the target version. Edge prompts should
-tell the agent which project validation to run and what evidence to summarize.
+Migration debug never contacts a provider and never writes receipts. An applied
+receipt means the provider interaction returned; it does **not** prove that a
+package manager now reports the target version. Edge prompts should tell the
+agent which project validation to run and what evidence to summarize.
 
 ## Baseline modules
 

@@ -10,7 +10,23 @@ generated:
   at: "2026-07-31T12:19:09Z"
 timestamp: 2026-07-31T12:19:09Z
 requestId: IR-1
-status: proposed
+status: completed
+completedAt: "2026-08-16T00:00:00Z"
+targetPlan: docs/plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md
+resolution: >-
+  A blueprint migration edge can now report that it does not apply. Shape 2 was chosen — a distinct
+  recorded outcome — reached through both of the other two vocabularies rather than either alone,
+  because the signal channel differs by provider: an interactive claude-cli or codex-cli session
+  communicates only through an exit code, so it writes a one-line reason to a signal file seihou
+  names in the prompt and deletes around each edge, while an API provider's reply reaches seihou
+  directly and is scanned for a trailing SEIHOU: not-applicable line. Shape 3, a dedicated exit
+  code, was rejected: an interactive session's exit code is the shell session's, so a user could
+  forge it and an agent finishing normally could not choose it. Both channels produce one
+  MigrationOutcome on the receipt. The completion key now requires an applied outcome, so a
+  not-applicable edge is replanned without --rerun, while the upsert key still ignores the outcome
+  so a replanned edge replaces its own receipt. The chain continues past an inapplicable edge,
+  seihou status renders the outcome and its reason, and seihou's framing prompt carries the
+  convention so edge authors need only state their precondition.
 origin: mori://shinzui/okf-profiles
 ---
 
@@ -18,8 +34,12 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Proposed. A workaround exists (`--rerun`), so this blocks nothing; it costs correctness of the
-receipt chain in the one case where an edge is legitimately skipped.
+Completed 2026-08-16 by
+[`docs/plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md`](../plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md).
+See [Resolution](#resolution). Depended on
+[IR-2](record-artifact-origin-for-agent-applied-artifacts.md), which landed first: both changes
+rewrite `AppliedBlueprintMigration` and the completion key, and sequencing them kept two plans off
+the same predicate.
 
 ## Context
 
@@ -115,3 +135,45 @@ Structurally identical to `mori://shinzui/keiro`'s IR-3, which asks for an expli
 rejection outcome in an outbox so an intentional refusal can be finalized without retrying or
 being misreported as delivery success. The shared shape is that a deliberate, correct refusal is a
 third outcome, and collapsing it into success loses information the caller needs.
+
+## Resolution
+
+Shape 2 was chosen and both other shapes were folded into it as signal channels.
+
+An `AppliedBlueprintMigration` receipt now carries a `MigrationOutcome`, either `MigrationApplied`
+or `MigrationNotApplicable` with the reason inside the constructor, so the type cannot express a
+reason for an applied edge or a skipped edge with no reason. The completion key in
+`pendingBlueprintMigrations` requires an applied outcome, which is what makes the edge run again;
+the upsert key in `writeAppliedBlueprintMigration` deliberately still ignores the outcome, so a
+replanned edge replaces its own receipt rather than accumulating a second one. That asymmetry is
+the one place a receipt comparison leaves the outcome out, and both are documented as such.
+
+Shape 1 alone would not have worked, and neither would shape 3. The channel available to an edge
+depends on its provider: `claude-cli` and `codex-cli` sessions are spawned interactively and
+communicate only through an exit code, so seihou never sees a sentinel line in the transcript;
+`anthropic` and `openai` hand seihou the assistant text directly, and there is no process of the
+agent's to carry an exit code. So the prompt describes one convention with two mechanics — write a
+one-line reason to a signal file under `.seihou/`, or, failing that, end the reply with
+`SEIHOU: not-applicable <reason>` — and both reach the same recorded outcome.
+
+Shape 3 was rejected outright rather than used for the interactive half. An interactive agent
+session's exit code is the *shell session's* exit code: a user who types `exit 3`, or whose
+terminal is killed, would forge the signal, and an agent that finishes normally cannot choose it. A
+file the agent writes with its own tools is a deliberate act, carries a reason, and can be
+inspected afterwards. Seihou deletes it before each edge and after reading it, so a stale file from
+a crashed run cannot mark the next edge inapplicable.
+
+The marker-line parser is deliberately forgiving about formatting and strict about the marker: it
+scans the last few non-empty lines, tolerates backticks and emphasis, and requires the line to
+*begin* with `SEIHOU:` followed by `not-applicable` as a whole word. Prose that merely discusses
+applicability is not a signal, because a false positive silently skips real work — strictly worse
+than missing a signal the agent could also have written to the file.
+
+The chain continues past an inapplicable edge, as the request requires; the run summary counts them
+(`Completed 2 blueprint migration(s) for 'my-library' (1 not applicable).`), and `seihou status`
+renders the outcome with a truncated reason. Seihou's framing prompt carries the convention, so
+edge authors state only their precondition.
+
+One thing the change cannot do: receipts written before this release are all read as applied,
+because nothing on disk distinguishes a completed upgrade from a deliberate no-op after the fact.
+`--rerun` remains the remedy for those, as it was before, and the changelog says so.

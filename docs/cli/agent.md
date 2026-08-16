@@ -165,14 +165,25 @@ seihou agent migrate BLUEPRINT --from VERSION --to VERSION [PROMPT] [OPTIONS]
 | `--namespace NS` | Override namespace for config lookup |
 | `--context CTX`, `-c CTX` | Override context for config lookup |
 | `--verbose`, `-v` | Show detailed progress messages |
-| `--rerun` | Ignore matching exact-edge receipts and run the selected steps again |
+| `--rerun` | Ignore matching exact-edge receipts, applied ones included, and run the selected steps again |
 | `--allow-downgrade` | Proceed even when the blueprint installed locally is older than, or from a different source than, `.seihou/manifest.json` records |
 
 The command plans matching blueprint edges in ascending version order, permitting
 undeclared gaps, and starts one provider interaction per edge. It writes a
-receipt after each successful interaction, so an interrupted invocation resumes
+receipt after each interaction that returns, so an interrupted invocation resumes
 at its first unrecorded edge. Migration mode does not apply blueprint baselines
 and has no `--force` option.
+
+An edge can report that it does not apply to this project — its precondition is
+unmet and it deliberately changed nothing. That is a third outcome, distinct from
+both success and provider failure: the reason is printed and recorded, and the
+chain **continues to the next edge** rather than halting. Only an applied receipt
+suppresses a later run, so an edge recorded as not applicable is planned again
+next time without `--rerun`. The run summary counts them:
+
+```text
+Completed 2 blueprint migration(s) for 'my-library' (1 not applicable).
+```
 
 ```sh
 seihou agent migrate my-library --from 1.0.0 --to 3.0.0

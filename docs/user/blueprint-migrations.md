@@ -10,9 +10,9 @@ seihou agent migrate my-library --from 1.0.0 --to 3.0.0
 ```
 
 Seihou selects the declared edges inside that window, orders them, and runs one
-agent session per edge. After each session returns successfully it records a
-receipt in `.seihou/manifest.json`, so an interrupted chain resumes where it
-stopped instead of repeating completed work.
+agent session per edge. After each session returns it records a receipt in
+`.seihou/manifest.json`, so an interrupted chain resumes where it stopped instead
+of repeating completed work.
 
 This guide covers both sides: publishing upgrade knowledge as a library author,
 and running an upgrade as a consumer. For the command flags, see
@@ -48,12 +48,20 @@ per-edge state.
    is older than, or came from a different repository than, the project records.
 3. It parses `--from` and `--to` and asks the core planner which declared edges
    fall inside that window.
-4. It drops edges that already have a receipt, unless `--rerun` was passed.
+4. It drops edges that already have an *applied* receipt, unless `--rerun` was
+   passed.
 5. It resolves the blueprint's variables once and renders the shared prompt.
 6. For each remaining edge, in ascending order: start one provider session, wait
    for it to return, then write that edge's receipt before starting the next.
 7. On a provider failure or a receipt-write failure, it stops immediately and
    leaves earlier receipts in place.
+
+Step 6 has three outcomes, not two. The session can return having done the work
+(recorded **applied**), it can return having reported that this edge's
+precondition is unmet in this project (recorded **not applicable**, and the chain
+continues to the next edge), or the provider can fail (nothing recorded, and the
+chain stops so you can resume at that edge). Only an applied receipt suppresses a
+later run of its edge.
 
 Step 2 runs before planning on purpose. A blueprint of the recorded name from a
 different repository declares different edges, so planning first would launch a
@@ -137,6 +145,26 @@ So write the edge prompt as the library-specific half of that contract:
 `{{variable.name}}` placeholders are substituted in both the shared prompt and
 edge prompts using the blueprint's resolved variables, so an edge prompt can
 address the consumer's project by name.
+
+### State the edge's precondition
+
+Write down what has to be true of a project for the edge to mean anything: the
+library is actually used here, the feature this edge upgrades was adopted, the
+change is not already present. One blueprint often serves projects in very
+different states, and an edge that does not apply is a normal result rather than
+an error.
+
+You do not have to invent a way to say so. Seihou's framing already tells the
+agent that when the precondition is unmet the correct action is to change nothing
+and report it, and gives it the mechanism — a one-line reason written to a signal
+file under `.seihou/`, or a trailing `SEIHOU: not-applicable <reason>` line when
+the provider cannot write files. Seihou records the attempt with that outcome,
+prints the reason, and moves to the next edge; the edge is not marked done, so it
+runs again once the precondition is met.
+
+So the edge prompt only needs to say what the precondition *is*. Do not tell an
+edge to exit nonzero when it does not apply: that reports a provider failure and
+halts every remaining edge.
 
 Reference files under `files/` are shared by every edge. Interactive `claude-cli`
 and `codex-cli` sessions get the directory mounted and its absolute path printed
@@ -226,6 +254,16 @@ Each edge announces itself before its session starts:
 Running blueprint migration 1/2: 1.0.0 -> 2.0.0
 ```
 
+An edge that reports its precondition unmet says so on the way past, and the run
+summary counts it separately:
+
+```text
+Blueprint migration 1/2: 1.0.0 -> 2.0.0 — not applicable: the project has not adopted the bundle
+Running blueprint migration 2/2: 2.5.0 -> 3.0.0
+...
+Completed 2 blueprint migration(s) for 'my-library' (1 not applicable).
+```
+
 An optional trailing `PROMPT` argument is passed as the initial user instruction
 to every session in the chain, and `--var KEY=VALUE` overrides blueprint
 variables. Provider, model, and reasoning effort resolve through the standard
@@ -242,16 +280,17 @@ seihou status
 ```text
 Blueprint migrations:
   my-library v0.3.0: 1.0.0 -> 2.0.0 (applied 2026-07-20 15:02 UTC)
-  my-library v0.3.0: 2.5.0 -> 3.0.0 (applied 2026-07-20 15:19 UTC)
+  my-library v0.3.0: 2.5.0 -> 3.0.0 (not applicable 2026-07-20 15:19 UTC -- no direct kiroku imports)
 ```
 
-The section is omitted entirely when no migration has been recorded.
+The section is omitted entirely when no migration has been recorded. A long
+reason is truncated here; the whole of it is in `.seihou/manifest.json`.
 
 ### Resume, repeat, and re-run
 
-Re-running the same command skips edges that already have a receipt and continues
-with the rest — that is the resume path after a failure, an interruption, or a
-deliberate pause:
+Re-running the same command skips edges that already have an applied receipt and
+continues with the rest — that is the resume path after a failure, an
+interruption, or a deliberate pause:
 
 ```text
 Blueprint migrations for my-library: 1.0.0 -> 3.0.0
@@ -265,9 +304,16 @@ anything:
 All blueprint migrations in the requested version window already have receipts.
 ```
 
+An edge recorded as **not applicable** is planned again on the next run, without
+`--rerun`. That is the point of the outcome: the precondition it reported unmet
+is usually the very thing the edge told you to fix, so the run after you fix it
+must reach the edge. When it then does the work, its receipt is replaced in place
+and the edge stops being replanned.
+
 Pass `--rerun` to ignore matching receipts and execute the selected edges again —
 the recovery path when an agent exited successfully without actually finishing the
-work. A re-run updates the existing receipt in place rather than appending a
+work, and the remedy for a receipt that says applied when the edge really did
+nothing. A re-run updates the existing receipt in place rather than appending a
 duplicate.
 
 ## How the version window is planned
@@ -288,14 +334,26 @@ ends at or before `--to`; selecting it advances the cursor to its `to`.
 
 ## What a receipt means
 
-A receipt records that the provider interaction for one exact edge returned
-successfully. It does **not** prove that your package manager now reports the
+A receipt records that the provider interaction for one exact edge returned, and
+what it reported. It does **not** prove that your package manager now reports the
 target version, that the build passes, or that every call site was updated.
 Seihou cannot verify arbitrary libraries across ecosystems, so the burden of
 proof sits in the edge prompt (which validation to run) and in your review.
 
 Treat the receipt as chain bookkeeping — "this step has been attempted and
 returned" — and verify the outcome yourself before shipping.
+
+A receipt carries one of two outcomes:
+
+| Outcome | Means | Effect on a later run |
+|---------|-------|-----------------------|
+| **applied** | The session returned having been asked to do the work. Not proof it succeeded. | The edge is skipped unless `--rerun` is passed. |
+| **not applicable** | The session reported that the edge's precondition is unmet in this project and deliberately changed nothing. The reason is recorded with it. | The edge is planned again, no flag needed. |
+
+The distinction exists because a deliberate, correct no-op used to be
+indistinguishable from a completed upgrade: the edge was recorded as done, so the
+run that *should* have happened once the precondition was met was silently
+skipped.
 
 ### Which edge a receipt is for
 
@@ -337,6 +395,7 @@ edge finds nothing to do — or skip it deliberately by widening `--from`.
 | `'my-library' is a module, not a blueprint.` | `agent migrate` only accepts blueprints. Check the name, or use `seihou migrate` for module migrations. |
 | `Blueprint migration 2.5.0 -> 3.0.0 failed; completed earlier edges remain recorded. …` | The provider exited nonzero or returned an error. Fix the provider problem, then rerun the same command to resume at that edge. |
 | `Agent completed blueprint migration …, but its receipt could not be recorded: …` | Source edits may already exist while the edge is unrecorded, and the next edge was not started. Repair `.seihou/manifest.json` or its permissions, then rerun the same command. |
+| `Blueprint migration 1/2: 1.0.0 -> 2.0.0 — not applicable: …` | Not an error. The edge reported its precondition unmet and changed nothing; the chain continued. Fix what the reason names and rerun the same command — the edge runs, no `--rerun` needed. If you disagree with the agent's judgement, `--rerun` forces it now. |
 | Nothing renders under `--debug` | Every edge in the window already has a receipt, or the blueprint declares none there. Widen the window or pass `--rerun`. |
 | `✗ Refusing to run: your local copy of 'my-library' is older than the version this project expects.` | The installed blueprint predates what this project records. Run `seihou upgrade my-library`, or pass `--allow-downgrade` to pin the project to the copy installed here. |
 | `✗ Refusing to run: 'my-library' is installed from a different source than this project records.` | A blueprint of that name from another repository is installed. Its edges are not this project's edges. Reinstall from the URL the message prints, or pass `--allow-downgrade` if the substitution is deliberate. |

@@ -199,7 +199,7 @@ Integration Points.
 | EP-81 | Record artifact origin for agent-applied artifacts | docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md | None | None | Complete |
 | EP-82 | Refuse to overwrite an installation from a different source | docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md | None | None | Complete |
 | EP-83 | Guard the agent path against stale and substituted artifacts | docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md | EP-81 | EP-82 | Complete |
-| EP-84 | Add a not-applicable outcome for blueprint migration edges | docs/plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md | EP-81 | None | In Progress |
+| EP-84 | Add a not-applicable outcome for blueprint migration edges | docs/plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md | EP-81 | None | Complete |
 | EP-85 | Fan out a blueprint migration edge to entailed cohort edges | docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md | EP-81, EP-84 | EP-82, EP-83 | Not Started |
 | EP-86 | Infer the blueprint migration version window | docs/plans/86-infer-the-blueprint-migration-version-window.md | EP-81 | EP-85 | Not Started |
 
@@ -265,9 +265,16 @@ record with no `origin` key decodes as `LocalOrigin` of its recorded name via `l
 in `seihou-core/src/Seihou/Manifest/Types.hs`. The rationale is in EP-81's Decision Log — the
 origin of an already-recorded artifact is genuinely unrecoverable, so an explicit conversion
 command per ADR 0005 could only write the same weak value, and ADR 0005's rule is for conversions
-that lose or relocate information. **EP-84 must follow the same approach**: give the outcome field
-a decoder default meaning "applied", so a receipt written before the field existed keeps its
-current meaning, and do not bump the schema version.
+that lose or relocate information.
+
+**Extended by EP-84 (complete).** `AppliedBlueprintMigration` gained
+`outcome :: !MigrationOutcome` after `toVersion`, encoded under the JSON key `outcome` as a nested
+object with a `status` discriminator (`{"status": "applied"}` /
+`{"status": "not-applicable", "reason": …}`), matching `ArtifactOrigin`'s shape so the reason has
+somewhere to live. EP-84 took the same decoder-default call for the same reason:
+`currentManifestVersion` stays at 6, and a receipt with no `outcome` key decodes as
+`MigrationApplied`. The `origin` encoding is untouched. **EP-85 and EP-86 read the record and must
+not add fields to it.**
 
 **The migration completion key** — the `alreadyApplied` predicate inside
 `pendingBlueprintMigrations` in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`.
@@ -291,13 +298,20 @@ Origins are compared with `Seihou.Core.ArtifactIdentity.sameArtifactIdentity`, n
 `hasAppliedBlueprintMigration`, whose signature gained an `ArtifactOrigin` first parameter — use
 the same function, so a receipt cannot be written as a new entry while being read as a duplicate.
 
-EP-84 makes the predicate consider only receipts whose outcome is "applied". EP-85 calls it once
-per expanded step using that step's *owning* blueprint identity rather than the invoked
-blueprint's, which is the mechanism by which one project crossing the same cohort edge from two
-entry points crosses it once. EP-86 reads receipts through the same key to compute the default
-`--from`. The predicate's doc comment must state, at every stage, which fields are part of the key
-and which are deliberately excluded; EP-81 left it saying that artifact versions and timestamps
-are intentionally excluded while origin is included, and that passage must stay true and grow.
+**Extended by EP-84 (complete).** `alreadyApplied` now also requires
+`receipt ^. #outcome == MigrationApplied`. The outcome is part of the *decision* but not of the
+edge's identity, and that distinction is load-bearing: `writeAppliedBlueprintMigration`'s
+`sameEdge` deliberately still ignores it, so an edge replanned after reporting itself inapplicable
+replaces its own receipt rather than accumulating a second one. EP-84 also brought
+`hasAppliedBlueprintMigration` into line — see Surprises & Discoveries for why that third
+comparison exists. The predicate's doc comment now states all three exclusions and inclusions.
+
+EP-85 calls `pendingBlueprintMigrations` once per expanded step using that step's *owning*
+blueprint identity rather than the invoked blueprint's, which is the mechanism by which one project
+crossing the same cohort edge from two entry points crosses it once. EP-86 reads receipts through
+the same key to compute the default `--from`. The doc comment must state, at every stage, which
+fields are part of the key and which are deliberately excluded; that passage must stay true and
+grow.
 
 **The blueprint migration plan type** — `BlueprintMigrationPlan` in
 `seihou-core/src/Seihou/Core/Migration.hs`, whose `steps` field is `[BlueprintMigration]`
@@ -367,8 +381,13 @@ Cross-plan decisions expected to become ADRs at completion:
   says an artifact the command is about to use is in scope; EP-83 left
   `enforceAgentArtifactGuard` taking one blueprint name, and `checkRecordedBlueprint` is
   already per-name, so widening it is a fold rather than a rewrite.
-- **A deliberate no-op is a third outcome, not a success.** Record during EP-84; note the
-  structurally identical decision in `mori://shinzui/keiro` that IR-1 cites.
+- **A deliberate no-op is a third outcome, not a success.** *Recorded.* EP-84 wrote
+  `docs/adr/0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md` rather than amending an
+  existing record, because no existing ADR decides what a receipt's outcome vocabulary should be —
+  ADR 0004 constrains where the outcome lives and ADR 0005 constrains how a pre-existing receipt is
+  read, and 0007 cites both. It records the generalisation to `mori://shinzui/keiro`'s
+  structurally identical request, and scopes the *signalling* mechanism out as an implementation
+  concern that may change while the recorded vocabulary is durable.
 - **Deliberate exclusion: no cohort artifact.** A `Recipe`-like artifact listing member
   blueprints and a version map per cohort release was considered and rejected in favour of
   per-edge entailment. Record the rationale so a future contributor does not re-open it
@@ -384,8 +403,8 @@ Cross-plan decisions expected to become ADRs at completion:
 - [x] EP-82: same-source reinstall stays frictionless; `seihou migrate`'s install refresh verified to take the same-source path — 2026-08-16
 - [x] EP-83: `seihou agent run` consults `ManifestGuard` before `applyBaseline`, leaving the tree byte-identical on refusal — 2026-08-16
 - [x] EP-83: `seihou agent migrate` consults `ManifestGuard` before planning; `--debug` checks nothing there because it writes nothing, while `agent run --debug` is checked because it is not a dry run — 2026-08-16
-- [ ] EP-84: an edge can report not-applicable; the outcome is recorded and does not suppress a later run
-- [ ] EP-84: framing prompt template tells the agent how to signal it; `seihou status` renders the outcome
+- [x] EP-84: an edge can report not-applicable; the outcome is recorded and does not suppress a later run — 2026-08-16
+- [x] EP-84: framing prompt template tells the agent how to signal it; `seihou status` renders the outcome — 2026-08-16
 - [ ] EP-85: `entails` published in `seihou-schema` and re-pinned; decoder tolerates blueprints without it
 - [ ] EP-85: recursive entailment expansion with cycle detection, in a pure planner
 - [ ] EP-85: each step runs with its owning blueprint's reference files, allowed tools, and variables
@@ -475,6 +494,29 @@ Cross-plan decisions expected to become ADRs at completion:
   `[Dependency]`. **Consequence for EP-85:** `handleAgentRun` resolves its baseline composition
   before the guard now, so anything EP-85 inserts between discovery and baseline application
   lands after that resolution, not before it.
+
+- **There are three receipt comparisons in this codebase, not two, and only one ignores the
+  outcome.** The Integration Points section names two — `writeAppliedBlueprintMigration`'s
+  `sameEdge` and `pendingBlueprintMigrations`'s `alreadyApplied`. EP-84 found a third,
+  `hasAppliedBlueprintMigration` in `seihou-core/src/Seihou/Manifest/Types.hs`, whose Haddock
+  promises it agrees with the completion key. It now requires an applied outcome. It has no
+  production caller today, only `seihou-core/test/Seihou/Manifest/TypesSpec.hs`, but a function
+  disagreeing with the predicate it documents itself against is a trap for the first plan to reach
+  for it. **Consequence for EP-85 and EP-86:** the split is deliberate and now documented at all
+  three sites — the upsert key identifies the edge and so ignores the outcome, while both read-side
+  comparisons require `MigrationApplied`. EP-85 calling the predicate once per expanded step
+  inherits this for free: an entailed edge recorded not-applicable in one project is replanned,
+  which is the behaviour fan-out needs.
+
+- **`--debug` is genuinely inert for `agent migrate`, confirmed by measurement rather than
+  inherited from the premise EP-83 invalidated.** EP-84 verified against the built binary that
+  `seihou agent --debug migrate` in a scratch project leaves `.seihou/` containing only `modules/`
+  — no manifest, no signal file, no created directory — because `handleAgentMigrate`'s debug branch
+  returns before `runBlueprintMigrationsWith`. Nothing EP-84 added executes under it. **Consequence
+  for EP-85 and EP-86:** the "check follows the writes, not the flag" rule holds, and for
+  `agent migrate` specifically the debug branch remains the safe place to put render-only work.
+  Note what still *does* render under it: the not-applicable signal path is substituted into the
+  debug prompt, deliberately, because `--debug` is how a blueprint author checks the framing.
 
 - **Closing an Improvement Request has a required frontmatter shape.** The bundle profile at
   `docs/improvement-requests/profile.dhall` does not accept `status: implemented`; the terminal

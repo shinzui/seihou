@@ -64,33 +64,164 @@ nothing.
 
 ## Progress
 
-- [ ] Read `AppliedBlueprintMigration`, the receipt writer, the skip predicate, and the prompt template (orientation, no edits).
-- [ ] Decide the signalling mechanism and record it in the Decision Log.
-- [ ] Add an outcome field to `AppliedBlueprintMigration` in `seihou-core/src/Seihou/Core/Types.hs`, with JSON encode/decode and a legacy default of "applied".
-- [ ] Narrow the skip predicate in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` so only `applied` receipts suppress an edge.
-- [ ] Detect the not-applicable signal in `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs` and record it, continuing the chain.
-- [ ] Teach the agent how to signal it, in `seihou-cli/data/blueprint-migration-prompt.md`.
-- [ ] Render the outcome in `seihou status` (`seihou-cli/src/Seihou/CLI/StatusRender.hs`).
-- [ ] Add tests for the predicate, the receipt round-trip, the signal parser, and the chain-continues behaviour.
-- [ ] Update `docs/user/blueprint-migrations.md`, `docs/cli/agent.md`, `docs/cli/status.md`, and `docs/user/CHANGELOG.md`.
-- [ ] Mark IR-1 `status: implemented` and update `docs/improvement-requests/log.md`.
+- [x] Read `AppliedBlueprintMigration`, the receipt writer, the skip predicate, and the prompt template (orientation, no edits). — 2026-08-16
+- [x] Decide the signalling mechanism and record it in the Decision Log. — 2026-08-16
+- [x] Add an outcome field to `AppliedBlueprintMigration` in `seihou-core/src/Seihou/Core/Types.hs`, with JSON encode/decode and a legacy default of "applied". — 2026-08-16
+- [x] Narrow the skip predicate in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` so only `applied` receipts suppress an edge. — 2026-08-16
+- [x] Detect the not-applicable signal in `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs` and record it, continuing the chain. — 2026-08-16
+- [x] Teach the agent how to signal it, in `seihou-cli/data/blueprint-migration-prompt.md`. — 2026-08-16
+- [x] Render the outcome in `seihou status` (`seihou-cli/src/Seihou/CLI/StatusRender.hs`). — 2026-08-16
+- [x] Add tests for the predicate, the receipt round-trip, the signal parser, and the chain-continues behaviour. — 2026-08-16
+- [x] Update `docs/user/blueprint-migrations.md`, `docs/user/blueprints.md`, `docs/cli/agent.md`, `docs/cli/status.md`, and `docs/user/CHANGELOG.md`. — 2026-08-16
+- [x] Close IR-1 (`status: completed`) and update `docs/improvement-requests/log.md`. — 2026-08-16
+- [x] Record `docs/adr/0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md`. — 2026-08-16
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **`hasAppliedBlueprintMigration` is a third comparison the plan did not name, and it had to
+  move.** The plan named two: `writeAppliedBlueprintMigration`'s `sameEdge` (identity, outcome
+  excluded) and `pendingBlueprintMigrations`'s `alreadyApplied` (suppression, outcome included).
+  There is a third in `seihou-core/src/Seihou/Manifest/Types.hs`, whose Haddock promises it agrees
+  with the completion key. It now requires an applied outcome, matching its own name. It has no
+  production caller today — only `seihou-core/test/Seihou/Manifest/TypesSpec.hs` — but leaving it
+  disagreeing with the predicate it documents itself against would have been a trap for the first
+  plan to reach for it. **Consequence for EP-85 and EP-86:** there are three receipt comparisons in
+  this codebase, not two, and only one of them ignores the outcome.
+
+- **The plan's rule for the signal file makes an empty file mean "applied", which loses the
+  signal.** The plan says to treat the file as a signal only when it "exists and is non-empty".
+  Implemented as written, an agent that creates the file but writes nothing to it — a plausible
+  tool-call failure mode — has its refusal recorded as a completed upgrade, which is the exact
+  defect IR-1 filed. The file's *existence* is the deliberate act: it lives at a path only this
+  command names, under `.seihou/`, and is deleted before every edge. So existence is the signal,
+  and an empty one records `(no reason given)`.
+
+- **`--debug` needs no special handling here, which is not true of `agent run`.** The MasterPlan's
+  Surprises section warns that `agent run --debug` is not a dry run. `handleAgentMigrate`'s debug
+  branch genuinely is: it returns before `runBlueprintMigrationsWith`, so nothing this plan added
+  runs under it. Verified against the built binary — a debug migrate in a scratch project left
+  `.seihou/` containing only `modules/`, with no manifest, no signal file, and no directory
+  created. The signal path still renders into the prompt, which is the point: `--debug` is how an
+  author checks that the framing prompt reads correctly.
+
+- **`Data.Maybe.listToMaybe`, not `Data.List.find`, is what a "scan the last few lines" parser
+  wants.** Trivial, but worth stating because the near-miss is expensive: an early version returned
+  `Nothing` for a bare `SEIHOU: not-applicable` line with no reason, because the whole-word check
+  read an *empty* remainder as "the token continues". The unit test for the placeholder case is
+  what caught it; without that case the bug would have shipped and silently converted a
+  reason-less refusal into a completed upgrade.
 
 
 ## Decision Log
 
-- Decision: ...
-  Rationale: ...
-  Date: ...
+- Decision: Record one outcome on the receipt (IR-1's shape 2), reached by two different signalling
+  mechanics — a signal file for interactive providers, a `SEIHOU: not-applicable <reason>` marker
+  line for API providers. Do not use a dedicated exit code (shape 3).
+  Rationale: The three shapes are not alternatives; 2 is about what is recorded and 1 and 3 are
+  about how it is signalled. What forces two mechanics is the provider asymmetry: `claude-cli` and
+  `codex-cli` are spawned interactively and communicate only through an exit code, so seihou never
+  sees a sentinel line in the transcript; `anthropic` and `openai` hand seihou the assistant text
+  directly and have no process of the agent's to carry an exit code. A dedicated exit code was
+  rejected outright rather than used for the interactive half, because an interactive session's
+  exit code is the *shell session's*: a user who types `exit 3`, or whose terminal is killed, would
+  forge the signal, and an agent that finishes normally cannot choose it. A file the agent writes
+  with its own tools is a deliberate act, carries a reason, and is inspectable afterwards.
+  Date: 2026-08-16
+
+- Decision: Put the signal at `.seihou/.migrate-signal`, delete it before every edge and after
+  reading it, and create `.seihou/` before the chain starts.
+  Rationale: Under `.seihou/` rather than the working tree so a file left by a crashed run never
+  appears in `git status`. Deleted before each edge so a stale signal cannot mark the next edge
+  inapplicable, and after reading so it is never read twice; also cleared on a provider failure,
+  because a failed session's signal is not that edge's answer. One path rather than a unique path
+  per edge, since delete-before-launch makes reuse safe and a per-edge path would leave litter to
+  clean up. `.seihou/` is created up front because the chain writes a manifest into it anyway, so
+  this adds no side effect a run did not already have.
+  Date: 2026-08-16
+
+- Decision: Carry the reason inside `MigrationNotApplicable` rather than as a sibling
+  `Maybe Text` field on the receipt.
+  Rationale: The type then cannot express a reason for an applied edge or a skipped edge with no
+  reason. The alternative needs an invariant maintained by every construction site, and this plan
+  demonstrated that construction sites are easy to miss — EP-81 found four where it planned for
+  three.
+  Date: 2026-08-16
+
+- Decision: Decode a missing `outcome` key as `MigrationApplied`; do not bump
+  `currentManifestVersion` (it stays at 6).
+  Rationale: The same reasoning EP-81 recorded for `origin`, and the MasterPlan's Integration Points
+  require it. Every receipt written before this release recorded an edge whose session returned,
+  which is exactly what `MigrationApplied` means, so reading it that way preserves its meaning
+  rather than inventing one. ADR 0005's explicit-conversion rule exists for conversions that lose
+  or relocate information; there is nothing here for a conversion command to recover, because
+  nothing on disk distinguishes a completed upgrade from a deliberate no-op after the fact. The
+  residual case — a pre-release receipt that was really a no-op stays wrong, with `--rerun` as its
+  remedy — is stated in `docs/user/CHANGELOG.md`.
+  Date: 2026-08-16
+
+- Decision: Keep the outcome out of `writeAppliedBlueprintMigration`'s upsert key while putting it
+  into `pendingBlueprintMigrations`'s suppression predicate and into
+  `hasAppliedBlueprintMigration`.
+  Rationale: The two comparisons answer different questions. The upsert asks "which receipt is this
+  one replacing", and the answer must not depend on what happened, or an edge replanned after
+  reporting itself inapplicable would accumulate a second receipt for the same edge and the ledger
+  would carry two records disagreeing about one edge. The predicate asks "has this work happened",
+  where the outcome is the whole point. This is the one place a receipt comparison deliberately
+  ignores the outcome, and both sites now say so.
+  Date: 2026-08-16
+
+- Decision: Make the marker parser forgiving about formatting and strict about the marker — scan
+  the last five non-empty lines, strip surrounding whitespace, backticks and emphasis, but require
+  the line to *begin* with `SEIHOU:` and the token to end a word.
+  Rationale: Models wrap things in backticks and bold and follow a signal with a closing sentence,
+  so requiring the exact final line would miss real signals. But a false positive silently skips
+  real work, which is strictly worse than a false negative here: an agent that meant to signal has
+  a second channel (the signal file), while an agent that merely discussed applicability has no way
+  to retract. So prose that mentions the words, a mid-sentence occurrence, and `not-applicable-ish`
+  are all rejected.
+  Date: 2026-08-16
+
+- Decision: Write a new ADR
+  (`docs/adr/0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md`) rather than amend an
+  existing one.
+  Rationale: EP-81 and EP-83 both amended (ADR 0002 and ADR 0003 respectively) because their
+  decisions were the existing ones with a wider reach. This one is genuinely new: no existing ADR
+  says anything about what a receipt's *outcome* vocabulary should be. ADR 0004 constrains where
+  the outcome lives and ADR 0005 constrains how a receipt written before it is read, and 0007 cites
+  both, but neither decides the question. The record also states the generalisation, since
+  `mori://shinzui/keiro` carries a structurally identical request.
+  Date: 2026-08-16
 
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Delivered as planned, with the deviations recorded in Surprises & Discoveries. All seven milestones
+landed; `cabal test seihou-core-test` (1058 tests) and `cabal test seihou-cli-test` (516 tests) pass,
+and `nix flake check` is green.
+
+The acceptance criterion the plan names is proven end to end rather than by hand.
+`seihou-cli/test/Seihou/CLI/AgentMigrateE2ESpec.hs` drives the real binary against a fake `claude`
+on `PATH` that writes the signal file on its first launch only, and asserts the whole IR-1 scenario:
+the first edge reports itself not applicable, the chain continues and runs the second, the manifest
+records `(not-applicable, applied)`, the signal file is consumed, and the *same command with no
+`--rerun`* then replans the first edge alone — which applies, replaces its own receipt in place, and
+leaves the ledger at two entries. A third run reports the window settled. Before this change the
+first edge would have been skipped forever.
+
+Three things are worth carrying forward.
+
+The provider asymmetry is the design constraint the plan correctly identified and it drove
+everything: one recorded vocabulary, two mechanics, and a deliberate refusal to use the mechanism
+(an exit code) that would have been forgeable by the user rather than chosen by the agent.
+
+The parser's strictness is asymmetric on purpose, and the asymmetry has a reason that will outlive
+this plan: an agent that meant to signal has a second channel, and an agent that merely discussed
+applicability has none. Any future loosening should preserve that direction.
+
+`docs/cli/status.md` documented neither the blueprint section nor the blueprint-migrations section
+before this plan; both were added, since documenting the new outcome required a section for it to
+live in.
 
 
 ## Context and Orientation
