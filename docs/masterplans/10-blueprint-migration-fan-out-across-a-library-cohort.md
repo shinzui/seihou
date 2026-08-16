@@ -195,7 +195,7 @@ Integration Points.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| EP-81 | Record artifact origin for agent-applied artifacts | docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md | None | None | In Progress |
+| EP-81 | Record artifact origin for agent-applied artifacts | docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md | None | None | Complete |
 | EP-82 | Refuse to overwrite an installation from a different source | docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md | None | None | Not Started |
 | EP-83 | Guard the agent path against stale and substituted artifacts | docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md | EP-81 | EP-82 | Not Started |
 | EP-84 | Add a not-applicable outcome for blueprint migration edges | docs/plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md | EP-81 | None | Not Started |
@@ -254,26 +254,49 @@ start; EP-83 runs alongside once EP-81 lands.
 
 **`AppliedBlueprintMigration` and its JSON encoding**
 (`seihou-core/src/Seihou/Core/Types.hs`, `seihou-core/src/Seihou/Manifest/Types.hs`).
-Involved: EP-81, EP-84, EP-85, EP-86. EP-81 owns the record's final shape and adds
-`origin :: !ArtifactOrigin` with the JSON key `origin`, matching `AppliedModule`. EP-84
-extends the same record with an outcome field and must not alter EP-81's origin encoding.
-EP-85 and EP-86 read the record and must not add fields to it. Every decoder change must
-keep manifests written before the field existed readable, per ADR 0005's insistence that
-conversion is explicit; EP-81 records the chosen approach (decoder default versus
-`currentManifestVersion` bump from 6 to 7) in its Decision Log, and EP-84 follows the same
-approach for consistency.
+Involved: EP-81, EP-84, EP-85, EP-86. **Settled by EP-81 (complete).** All three records carry
+`origin :: !ArtifactOrigin` immediately after `name`, encoded under the JSON key `origin`,
+matching `AppliedModule`. EP-84 extends `AppliedBlueprintMigration` with an outcome field and must
+not alter that encoding. EP-85 and EP-86 read the record and must not add fields to it.
+
+EP-81 chose the decoder default over a schema bump: `currentManifestVersion` stays at 6, and a
+record with no `origin` key decodes as `LocalOrigin` of its recorded name via `legacyLocalOrigin`
+in `seihou-core/src/Seihou/Manifest/Types.hs`. The rationale is in EP-81's Decision Log — the
+origin of an already-recorded artifact is genuinely unrecoverable, so an explicit conversion
+command per ADR 0005 could only write the same weak value, and ADR 0005's rule is for conversions
+that lose or relocate information. **EP-84 must follow the same approach**: give the outcome field
+a decoder default meaning "applied", so a receipt written before the field existed keeps its
+current meaning, and do not bump the schema version.
 
 **The migration completion key** — the `alreadyApplied` predicate inside
 `pendingBlueprintMigrations` in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`.
-Involved: EP-81, EP-84, EP-85, EP-86. EP-81 owns it and extends it from
-`(name, from, to)` to `(origin, name, from, to)`. EP-84 makes the predicate consider only
-receipts whose outcome is "applied". EP-85 calls it once per expanded step using that
-step's *owning* blueprint identity rather than the invoked blueprint's, which is the
-mechanism by which one project crossing the same cohort edge from two entry points crosses
-it once. EP-86 reads receipts through the same key to compute the default `--from`. The
-predicate's doc comment must state, at every stage, which fields are part of the key and
-which are deliberately excluded; it currently says "Artifact versions and timestamps are
-intentionally not part of the completion key" and that sentence must stay true and grow.
+Involved: EP-81, EP-84, EP-85, EP-86. **Settled by EP-81 (complete).** The key is
+`(origin, name, from, to)`, and `pendingBlueprintMigrations` now takes the invoked blueprint's
+`ArtifactOrigin` as its second argument:
+
+```haskell
+pendingBlueprintMigrations ::
+  Bool ->
+  ArtifactOrigin ->
+  ModuleName ->
+  [AppliedBlueprintMigration] ->
+  BlueprintMigrationPlan ->
+  [BlueprintMigration]
+```
+
+Origins are compared with `Seihou.Core.ArtifactIdentity.sameArtifactIdentity`, never structural
+`==`, so that two spellings of one git URL are one identity. The two ledger helpers in
+`seihou-core/src/Seihou/Manifest/Types.hs` — `writeAppliedBlueprintMigration`'s `sameEdge` and
+`hasAppliedBlueprintMigration`, whose signature gained an `ArtifactOrigin` first parameter — use
+the same function, so a receipt cannot be written as a new entry while being read as a duplicate.
+
+EP-84 makes the predicate consider only receipts whose outcome is "applied". EP-85 calls it once
+per expanded step using that step's *owning* blueprint identity rather than the invoked
+blueprint's, which is the mechanism by which one project crossing the same cohort edge from two
+entry points crosses it once. EP-86 reads receipts through the same key to compute the default
+`--from`. The predicate's doc comment must state, at every stage, which fields are part of the key
+and which are deliberately excluded; EP-81 left it saying that artifact versions and timestamps
+are intentionally excluded while origin is included, and that passage must stay true and grow.
 
 **The blueprint migration plan type** — `BlueprintMigrationPlan` in
 `seihou-core/src/Seihou/Core/Migration.hs`, whose `steps` field is `[BlueprintMigration]`
@@ -314,11 +337,12 @@ editing rather than assuming the shape it had when this MasterPlan was written.
 
 Cross-plan decisions expected to become ADRs at completion:
 
-- **Receipt identity includes the origin of the blueprint that owns the edge.** This
-  extends `docs/adr/0002-artifact-identity-is-origin-url-plus-name.md` from "what the
-  manifest records about an artifact" to "what makes two records of the same work the same
-  record". Decide during EP-81 whether to amend ADR 0002 or write a new ADR; write a new one
-  if EP-85 lands, because the cross-blueprint consequence is a genuinely new decision.
+- **Receipt identity includes the origin of the blueprint that owns the edge.** *Recorded.*
+  EP-81 amended `docs/adr/0002-artifact-identity-is-origin-url-plus-name.md` rather than adding
+  a record, extending it from "what the manifest records about an artifact" to "what makes two
+  records of the same work the same record", and noting that the comparison has one definition in
+  `Seihou.Core.ArtifactIdentity` because three call sites must agree. See the Decision Log entry
+  dated 2026-08-16 for why the anticipated new ADR was deferred to EP-85 instead.
 - **An entailed edge is owned by the blueprint that declares it, not by the blueprint that
   names it.** This is the architectural boundary the whole fan-out design rests on and is
   the reason a cohort does not need a coordinating artifact. Record it during EP-85.
@@ -332,9 +356,9 @@ Cross-plan decisions expected to become ADRs at completion:
 
 ## Progress
 
-- [ ] EP-81: `ArtifactOrigin` added to `AppliedBlueprint`, `AppliedBlueprintMigration`, and `AppliedRecipe`, with JSON round-trip tests
-- [ ] EP-81: completion key extended to include origin, with a spec proving two same-named blueprints from different origins do not share receipts
-- [ ] EP-81: legacy manifests without `origin` decode as unverifiable provenance; documentation and CHANGELOG updated
+- [x] EP-81: `ArtifactOrigin` added to `AppliedBlueprint`, `AppliedBlueprintMigration`, and `AppliedRecipe`, with JSON round-trip tests — 2026-08-16
+- [x] EP-81: completion key extended to include origin, with a spec proving two same-named blueprints from different origins do not share receipts — 2026-08-16
+- [x] EP-81: legacy manifests without `origin` decode as unverifiable provenance; documentation and CHANGELOG updated — 2026-08-16
 - [ ] EP-82: `installModuleDir` reads `.seihou-origin.json` before removal and refuses on a different source, with `--force` override
 - [ ] EP-82: same-source reinstall stays frictionless; `seihou migrate`'s install refresh verified to take the same-source path
 - [ ] EP-83: `seihou agent run` consults `ManifestGuard` before `applyBaseline`, leaving the tree byte-identical on refusal
@@ -352,7 +376,39 @@ Cross-plan decisions expected to become ADRs at completion:
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **The "same artifact?" comparison is a core concern, not a CLI one, and EP-81 has already
+  placed it.** EP-81's plan proposed exporting `normalizeOriginUrl` from
+  `seihou-cli/src/Seihou/CLI/ManifestGuard.hs` for a helper local to
+  `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`. That could not work: two of the three
+  places the Integration Points section requires to agree —
+  `writeAppliedBlueprintMigration`'s `sameEdge` and `hasAppliedBlueprintMigration` — are in
+  `seihou-core`, which cannot import from `seihou-cli`. The comparison now lives in a new
+  module, `seihou-core/src/Seihou/Core/ArtifactIdentity.hs`, exporting `sameArtifactIdentity`,
+  `normalizeOriginUrl`, and `normalizeProjectPath`; `ManifestGuard`'s private copies of the two
+  normalisers were deleted in favour of it, and its three-way `judgeArtifact` verdict is
+  untouched.
+
+  **Consequence for EP-84, EP-85, and EP-86:** compare recorded origins with
+  `Seihou.Core.ArtifactIdentity.sameArtifactIdentity`, never structural `==`. EP-85 in
+  particular calls `pendingBlueprintMigrations` once per expanded step with that step's owning
+  origin, and a `.git` spelling difference between the entailing blueprint's declaration and the
+  entailed blueprint's install record would otherwise cross a shared edge twice — the exact
+  failure the fan-out design exists to prevent.
+
+- **Adding a strict field to a manifest record surfaces write sites a search does not.** EP-81's
+  plan named three sites for `AppliedRecipe`/`AppliedBlueprint`/`AppliedBlueprintMigration`
+  construction; there were four. `seihou-cli/src/Seihou/CLI/Update.hs` rebuilds the recipe record
+  in `buildFinalManifest` when `seihou update` republishes the manifest. EP-84 adds a field to
+  `AppliedBlueprintMigration` and should expect the same: add the field first, then treat the
+  `[GHC-95909]` error list as the site inventory rather than planning the list up front.
+
+- **Closing an Improvement Request has a required frontmatter shape.** The bundle profile at
+  `docs/improvement-requests/profile.dhall` does not accept `status: implemented`; the terminal
+  value is `completed`, which requires `completedAt` and recommends `resolution`. EP-82, EP-83,
+  and EP-84 each close an IR and should set `status`, `completedAt`, `resolution`, and
+  `targetPlan` in one edit. Separately, `okf validate --strict --profile-enforce` already exits 1
+  for all four documents because none carries the recommended `reviews` field; that is
+  pre-existing, and the check to apply is that closing a request adds no new line to the output.
 
 
 ## Decision Log
@@ -399,6 +455,21 @@ Cross-plan decisions expected to become ADRs at completion:
   content that uses it have different owners and release cadences, and the IR channel
   already exists for exactly this direction of request — the four IRs implemented here were
   filed against seihou from `mori://shinzui/okf-profiles` the same way.
+  Date: 2026-08-16
+
+- Decision: Amend `docs/adr/0002-artifact-identity-is-origin-url-plus-name.md` during EP-81
+  rather than write a new ADR; the new ADR the Integration Points section anticipates is
+  deferred to EP-85.
+  Rationale: The Integration Points section left this open, conditioned on whether EP-85 lands.
+  What EP-81 established — that a receipt's identity is the origin and name of the owning
+  blueprint plus the edge window, that origin is included while artifact version and timestamp
+  are excluded, and that one shared definition of "same artifact" must serve all three key
+  comparisons — is the *same* decision ADR 0002 already makes, extended from "what the manifest
+  records about an artifact" to "what makes two records of the same work the same record". It is
+  recorded there as an amendment with a dated note. The genuinely new decision is EP-85's: that
+  an entailed edge is owned by the blueprint that declares it, which is what lets one project
+  cross a shared cohort edge exactly once from two entry points. That has no home in ADR 0002 and
+  gets its own record when EP-85 lands.
   Date: 2026-08-16
 
 - Decision: `--to` defaults to a blueprint-declared version probe; `--from` defaults to the

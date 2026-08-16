@@ -2,6 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-07-28
+- Amended: 2026-08-16 — extended from "what the manifest records about an
+  artifact" to "what makes two records of the same work the same record", when
+  the agent-applied records gained an origin and the blueprint migration
+  completion key gained it too
+  (`docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md`).
 
 ## Context
 
@@ -118,6 +123,38 @@ The version comparison still runs in the unverifiable case: a version comes from
 the artifact's own `module.dhall`, so "older than recorded" remains meaningful
 even where "the same module" is not provable.
 
+The identity also settles *when two records of the same work are the same
+record*, not only what the manifest says about an artifact. A blueprint
+migration receipt (`AppliedBlueprintMigration`) stands for one crossed version
+edge, and `seihou agent migrate` skips an edge that already has one. What makes
+two receipts the same receipt is the origin and name of the blueprint that owns
+the edge together with the edge's `from` and `to` versions. The blueprint's own
+release version and the receipt timestamp are deliberately excluded, because an
+edge is the same edge no matter which release declared it; origin is included,
+for the reason "Rejected: the bare artifact name" gives — two repositories
+publishing a blueprint under one name declare different work, and a receipt for
+one must not suppress the other's edge. `AppliedBlueprint` and `AppliedRecipe`
+carry an origin for the same reason, though nothing keys a decision on theirs
+yet.
+
+Because three separate places have to give the same answer — the receipt upsert
+and lookup in `seihou-core/src/Seihou/Manifest/Types.hs`, the pending-edge
+filter in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`, and the
+pre-generation guard — the comparison has one definition,
+`Seihou.Core.ArtifactIdentity.sameArtifactIdentity`, in `seihou-core` so that
+core-side callers can reach it. Two answers would let a receipt be written as a
+new entry while being read as a duplicate. That module owns the URL and
+project-path normalisation described above; `judgeArtifact` consumes it rather
+than carrying its own copy.
+
+`sameArtifactIdentity` is a plain yes-or-no question and is not a substitute for
+`judgeArtifact`'s three-way verdict. "Cannot be proved either way" is a
+meaningful and necessary answer for the guard, which is deciding whether to
+refuse an action. It is not a meaningful answer for a receipt lookup: a receipt
+either records this identity or it does not, and two `LocalOrigin`s bearing the
+same name are treated as the same identity there — the strongest statement
+available about an artifact seihou can only identify by name.
+
 One consumer deliberately does not verify identity. `seihou update` clones from
 the origin URL the manifest itself records
 (`remoteProvenance` in `seihou-cli/src/Seihou/CLI/Update/Source.hs`) rather than
@@ -137,3 +174,6 @@ not installed on this machine, which that command supports by design.
 - `docs/plans/76-record-portable-artifact-origins-in-the-manifest.md`
 - `docs/plans/77-resolve-manifest-artifact-origins-to-local-directories.md`
 - `docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md`
+- `docs/masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md`
+- `docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md` — the
+  amendment above.

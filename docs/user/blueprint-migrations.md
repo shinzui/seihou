@@ -278,15 +278,44 @@ ends at or before `--to`; selecting it advances the cursor to its `to`.
 
 ## What a receipt means
 
-A receipt records that the provider interaction for one exact
-`(blueprint, from, to)` tuple returned successfully. It does **not** prove that
-your package manager now reports the target version, that the build passes, or
-that every call site was updated. Seihou cannot verify arbitrary libraries across
-ecosystems, so the burden of proof sits in the edge prompt (which validation to
-run) and in your review.
+A receipt records that the provider interaction for one exact edge returned
+successfully. It does **not** prove that your package manager now reports the
+target version, that the build passes, or that every call site was updated.
+Seihou cannot verify arbitrary libraries across ecosystems, so the burden of
+proof sits in the edge prompt (which validation to run) and in your review.
 
 Treat the receipt as chain bookkeeping — "this step has been attempted and
 returned" — and verify the outcome yourself before shipping.
+
+### Which edge a receipt is for
+
+A receipt identifies its edge by four things: the **origin** and the **name** of
+the blueprint that owns the edge, plus the edge's `from` and `to` versions. The
+blueprint's own release version and the receipt's timestamp are deliberately not
+part of that identity — an edge is the same edge no matter which release of the
+blueprint declared it.
+
+Origin is part of the identity because two repositories can publish a blueprint
+under the same name. If `github.com/acme/one` and `github.com/acme/two` both ship
+a `shared-upgrade` blueprint with a `1.0.0 -> 2.0.0` edge, those are different
+prompts doing different work, and running one must not make seihou believe the
+other has been done. Each keeps its own receipt, and a project that consumes both
+crosses both edges.
+
+Two spellings of one git URL are one origin: `https://host/repo`,
+`https://host/repo.git` and `https://host/repo/` all match each other.
+
+A blueprint discovered somewhere with no provenance seihou can prove — a personal
+blueprint in `~/.config/seihou/blueprints/`, for instance — is recorded honestly
+as having no verifiable origin, and its receipts match only other receipts in the
+same situation.
+
+Receipts written before seihou recorded origins at all are read the same way.
+The first `seihou agent migrate` run after upgrading to a seihou that does may
+therefore list an edge you have already completed as pending, because seihou
+genuinely cannot prove the recorded edge came from the blueprint now installed.
+Re-run it — edge prompts are written to inspect real usage first, so a completed
+edge finds nothing to do — or skip it deliberately by widening `--from`.
 
 ## Troubleshooting
 

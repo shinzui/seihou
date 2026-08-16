@@ -59,9 +59,9 @@ either extend these records or read this completion key.
 - [x] Extend `alreadyApplied` inside `pendingBlueprintMigrations` in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` to compare origin. — 2026-08-16
 - [x] Add tests: JSON round-trip, legacy decode, and a same-name-different-origin skip test. — 2026-08-16
 - [x] Decide and record whether this is a decoder default or a manifest schema bump. — 2026-08-16
-- [ ] Update `docs/user/blueprint-migrations.md`, `docs/cli/manifest.md`, and `docs/user/CHANGELOG.md`.
-- [ ] Mark IR-2 `status: implemented` in `docs/improvement-requests/record-artifact-origin-for-agent-applied-artifacts.md` and update `docs/improvement-requests/log.md`.
-- [ ] ADR distillation pass.
+- [x] Update `docs/user/blueprint-migrations.md`, `docs/cli/manifest.md`, and `docs/user/CHANGELOG.md`. — 2026-08-16
+- [x] Close IR-2 in `docs/improvement-requests/record-artifact-origin-for-agent-applied-artifacts.md` and update `docs/improvement-requests/log.md`. Status is `completed`, not `implemented` (see Surprises). — 2026-08-16
+- [x] ADR distillation pass: amended `docs/adr/0002-artifact-identity-is-origin-url-plus-name.md`. — 2026-08-16
 
 
 ## Surprises & Discoveries
@@ -94,6 +94,25 @@ either extend these records or read this completion key.
   `vars`; the encoder writes `variables`. The first hand-written legacy fixture used the field
   name and failed with `Error in $: key "variables" not found`. Worth knowing for anyone
   hand-authoring a manifest fixture.
+
+- **The IR bundle's profile does not accept `status: implemented`.** The plan said to set that
+  value; `okf validate --profile-enforce` rejected it:
+
+  ```text
+  profile: record-artifact-origin-for-agent-applied-artifacts: frontmatter value at status
+  must be one of [proposed, accepted, in-progress, completed, rejected, withdrawn,
+  superseded], found: "implemented"
+  ```
+
+  The terminal value is `completed`, and it pulls in a required `completedAt` and a recommended
+  `resolution`, both frontmatter fields. Anyone closing IR-1, IR-3, or IR-4 under the sibling
+  plans should set all three at once rather than discovering them one validation run at a time.
+
+- **The bundle already fails `--strict` for an unrelated reason.** All four IR documents, including
+  the three this plan did not touch, are missing the profile-recommended `reviews` field, so
+  `okf validate --strict --profile-enforce --log-enforce` exits 1 both before and after this
+  change. That is pre-existing and out of scope here; the only new finding is that closing a
+  request does not introduce further failures.
 
 
 ## Decision Log
@@ -144,7 +163,55 @@ either extend these records or read this completion key.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Complete. All three agent-path and recipe records carry an `ArtifactOrigin`, the blueprint
+migration completion key includes it in all three places that compute it, and manifests written
+before the field existed still parse.
+
+What was achieved, against the acceptance criteria in Validation and Acceptance:
+
+- **Automated.** `cabal test seihou-core-test` (1056 tests) and `cabal test seihou-cli-test`
+  (480 tests) both pass. The decisive case named in the plan is
+  `seihou-cli/test/Seihou/CLI/BlueprintMigrationSpec.hs`, "does not let another repository's
+  receipt suppress an identical edge": a receipt under
+  `RemoteOrigin "https://github.com/acme/two" "payments" Nothing` no longer suppresses the same
+  edge of a blueprint whose origin is `.../acme/one`. Its mirror ("does drop the edge when the
+  receipt is from the same repository") guards against a future refactor that stops comparing
+  origin. Two further cases cover the `.git` spelling and the legacy `LocalOrigin` reading.
+- **Ledger-level.** `seihou-cli/test/Seihou/CLI/AppliedBlueprintMigrationSpec.hs` proves the
+  upsert agrees with the filter: same origin replaces in place, different origin appends, and
+  a `.git` spelling difference still replaces.
+- **Legacy manifests.** Three cases decode hand-written manifests with no `origin` key — one per
+  record kind — and assert `LocalOrigin` of the recorded name rather than a parse failure.
+- **Mechanical checks.** `nix/check-record-conventions.sh` and
+  `nix/check-cli-module-placement.sh` both pass; the new core module is a library module and
+  needs no placement justification.
+
+The end-to-end scenario in Validation and Acceptance (two throwaway git repositories publishing
+`shared-upgrade`) was not walked by hand. The automated cases assert the same property at the two
+layers where it is decided — the completion key and the receipt ledger — and the two-repository
+walk exercises `seihou install` and blueprint discovery, which this plan does not change.
+`docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md` builds exactly that
+two-repository fixture for a change that does affect install, and is the natural place to run the
+walk once.
+
+Lessons worth carrying into the sibling plans:
+
+- **Let the compiler enumerate write sites, not the plan.** The plan named three; there were four.
+  Adding a strict field to a record and reading the resulting `[GHC-95909]` errors is exhaustive
+  in a way that a `rg` sweep during planning was not.
+- **Ask where a shared comparison has to live before deciding where to put it.** The plan's
+  proposal to export `normalizeOriginUrl` from a `seihou-cli` module was sound for the one caller
+  it had in mind and impossible for the two in `seihou-core`. The requirement that "all three must
+  agree" is the constraint that decides placement; check it against the package graph first.
+  `docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md` will call
+  `pendingBlueprintMigrations` per expanded step with each step's *owning* origin, so it inherits
+  the shared definition for free.
+- **Close an OKF request's frontmatter in one pass.** `status: completed` implies `completedAt`
+  and `resolution`; discovering them one validation run at a time cost three round trips.
+
+Downstream plans can rely on the exact signatures listed in Interfaces and Dependencies, with one
+addition: `Seihou.Core.ArtifactIdentity.sameArtifactIdentity` rather than a `BlueprintMigration.hs`
+local helper.
 
 
 ## Context and Orientation
@@ -456,7 +523,9 @@ Find its callers with `rg -n "hasAppliedBlueprintMigration" --glob '*.hs'` and u
 At the end of this milestone, running `seihou agent run`, `seihou agent migrate`, and a
 recipe application all write a real origin into the manifest.
 
-There are three write sites.
+There are four write sites. Do not take this list on faith — add the field first and let the
+compiler enumerate them, because it is exhaustive and a search is not. That is how the fourth
+one was found.
 
 `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs` — the function `recordMigration` near line
 255 constructs the receipt. It currently receives `manifestPath` and the `Blueprint`. It
@@ -482,11 +551,16 @@ This module already imports `detectArtifactOrigin` (used at line 300 for baselin
 and already calls `getCurrentDirectory` at line 297, so reuse rather than duplicate.
 
 `seihou-cli/src-exe/Seihou/CLI/Run.hs` — around line 432, `AppliedRecipe` is constructed
-inline inside a larger expression. The recipe's directory is available from the same
-discovery that produced the recipe. Compute its origin with `detectArtifactOrigin` against
-the project root already in scope at that point in the function, and add the field. If the
-project root is not in scope there, obtain it the same way the surrounding code does rather
-than introducing a second convention.
+inline inside a larger expression. No new call is needed: `targetOrigin`, computed near line
+309 from the discovered artifact directory, *is* the recipe's origin on this branch, because
+the branch that produces a `recipeInfo` of `Just` is the same branch that put the recipe's
+directory into `targetInfo`. Pass it straight through and say so in a comment.
+
+`seihou-cli/src/Seihou/CLI/Update.hs` — around line 849, `buildFinalManifest`'s `updateRecipe`
+reconstructs `AppliedRecipe` when `seihou update` republishes the manifest. The same shortcut
+applies for the same reason: it is folding over `AppliedComposition` values, whose
+`targetOrigin` on an `AppliedRecipeTarget` branch is the recipe's origin. Note that this file
+is in the CLI *library* (`seihou-cli/src/`), not the executable, so it is reachable from tests.
 
 ### Milestone 3 — the completion key
 
@@ -506,22 +580,17 @@ pendingBlueprintMigrations ::
   [BlueprintMigration]
 ```
 
-and extend `alreadyApplied` to compare `receipt ^. #origin == blueprintOrigin` alongside the
-existing three comparisons. Use structural equality on `ArtifactOrigin`, which already
-derives `Eq`. Do **not** reuse `Seihou.CLI.ManifestGuard.originRelation` here: that function
-answers a different question ("can these two be proved to be the same artifact, and if not
-is that a mismatch or merely unknowable"), and its `OriginUnverifiable` verdict is a
-deliberate non-answer that has no meaning for a receipt lookup. A receipt either records this
-exact identity or it does not.
+and extend `alreadyApplied` to compare origins alongside the existing three comparisons. Do
+**not** reuse `Seihou.CLI.ManifestGuard.originRelation` here: that function answers a
+different question ("can these two be proved to be the same artifact, and if not is that a
+mismatch or merely unknowable"), and its `OriginUnverifiable` verdict is a deliberate
+non-answer that has no meaning for a receipt lookup. A receipt either records this exact
+identity or it does not.
 
-There is one wrinkle worth handling explicitly. Two spellings of the same git URL —
-`https://host/repo` and `https://host/repo.git` — would compare unequal under structural
-equality, so a project whose manifest was written from one spelling would see its edges
-reappear after installing from the other. `ManifestGuard` already solves this with
-`normalizeOriginUrl`, which strips a trailing `.git` and trailing slashes, but that function
-is currently private to that module. Export it from `Seihou.CLI.ManifestGuard` and use it to
-normalise both sides of a `RemoteOrigin` comparison in a small helper local to
-`BlueprintMigration.hs`:
+Do not use structural `==` either. Two spellings of the same git URL —
+`https://host/repo` and `https://host/repo.git` — compare unequal structurally, so a project
+whose manifest was written from one spelling would see its edges reappear after installing
+from the other. Use `sameArtifactIdentity`:
 
 ```haskell
 -- | Whether two recorded origins name the same artifact for the purpose of
@@ -530,6 +599,20 @@ normalise both sides of a `RemoteOrigin` comparison in a small helper local to
 -- either records this identity or it does not.
 sameArtifactIdentity :: ArtifactOrigin -> ArtifactOrigin -> Bool
 ```
+
+That helper lives in a new core module, `seihou-core/src/Seihou/Core/ArtifactIdentity.hs`,
+**not** in `BlueprintMigration.hs`, because two of the three places that must give the same
+answer — `writeAppliedBlueprintMigration`'s `sameEdge` and `hasAppliedBlueprintMigration` from
+milestone 1 — are in `seihou-core` and cannot import from `seihou-cli`. Create it before
+milestone 1's key changes and use it in all three. It absorbs `normalizeOriginUrl` and
+`normalizeProjectPath`, which were private to `Seihou.CLI.ManifestGuard`; delete them there and
+import them from core so there is exactly one definition of URL normalisation in the workspace.
+Remember to add the module to `exposed-modules` in `seihou-core/seihou-core.cabal`.
+
+Within a `RemoteOrigin`, compare the artifact name as well as the normalised URL: one
+repository can publish several artifacts, and ADR 0002's identity is origin URL *plus* name.
+Two `LocalOrigin`s compare equal when their names match, which is what makes two receipts
+written before origins existed still match each other.
 
 Update the caller in `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs` (line 101) to pass the
 origin computed in milestone 2.
@@ -587,11 +670,15 @@ run after upgrading may list a previously-completed edge as pending. Tell the us
 remedy is to re-run it (edges are written to be safe to re-run, and the agent will find
 nothing to do) or to skip it deliberately.
 
-Finally, update the Improvement Request. Set `status: implemented` in the frontmatter of
-`docs/improvement-requests/record-artifact-origin-for-agent-applied-artifacts.md` and add a
-short closing section naming this plan. The bundle at `docs/improvement-requests/` is a
-profile-governed OKF bundle registered in `mori.dhall`, so its reserved `log.md` must be
-maintained when a document's timestamp advances — use `okf log add` and then validate:
+Finally, update the Improvement Request in
+`docs/improvement-requests/record-artifact-origin-for-agent-applied-artifacts.md`. Its
+terminal status is `status: completed` — the bundle's profile does not accept `implemented` —
+and that value requires `completedAt` (an RFC-3339 UTC timestamp) and recommends `resolution`
+(a summary of the evidence), both in the frontmatter. Set all three at once, add
+`targetPlan: docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md`, and add a
+short closing section naming this plan. The bundle is a profile-governed OKF bundle registered
+in `mori.dhall`, so its reserved `log.md` must be maintained when a document's timestamp
+advances — use `okf log add` and then validate:
 
 ```bash
 okf validate docs/improvement-requests \
@@ -600,6 +687,11 @@ okf validate docs/improvement-requests \
   --profile-enforce \
   --log-enforce
 ```
+
+This exits 1 both before and after the change, because all four IR documents are missing the
+profile-recommended `reviews` field. That is pre-existing and not this plan's to fix. What to
+check is that closing IR-2 adds no *new* line to the output — the only lines that should remain
+are one `missing profile-recommended field: reviews` per document.
 
 
 ## Concrete Steps
@@ -786,8 +878,18 @@ hasAppliedBlueprintMigration ::
   ArtifactOrigin -> ModuleName -> Text -> Text -> Manifest -> Bool
 ```
 
-`seihou-cli/src/Seihou/CLI/ManifestGuard.hs` — `normalizeOriginUrl` added to the export
-list, with a Haddock note that it is shared with receipt-identity comparison.
+`seihou-core/src/Seihou/Core/ArtifactIdentity.hs` — a new module, added to
+`exposed-modules` in `seihou-core/seihou-core.cabal`:
+
+```haskell
+sameArtifactIdentity :: ArtifactOrigin -> ArtifactOrigin -> Bool
+normalizeOriginUrl :: Text -> Text
+normalizeProjectPath :: FilePath -> FilePath
+```
+
+`seihou-cli/src/Seihou/CLI/ManifestGuard.hs` — its private `normalizeOriginUrl` and
+`normalizeProjectPath` are deleted and imported from the module above instead. Its exports
+are unchanged; `judgeArtifact` and `originRelation` keep their three-way verdict.
 
 `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`
 
@@ -799,8 +901,6 @@ pendingBlueprintMigrations ::
   [AppliedBlueprintMigration] ->
   BlueprintMigrationPlan ->
   [BlueprintMigration]
-
-sameArtifactIdentity :: ArtifactOrigin -> ArtifactOrigin -> Bool
 ```
 
 Downstream plans depend on these exact shapes:
@@ -809,4 +909,36 @@ outcome field to `AppliedBlueprintMigration` and narrows `alreadyApplied` to app
 receipts; `docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md`
 calls `pendingBlueprintMigrations` once per expanded step with that step's owning blueprint
 identity; `docs/plans/86-infer-the-blueprint-migration-version-window.md` selects receipts
-by the same identity to derive a default `--from`.
+by the same identity to derive a default `--from`. All three should compare identities with
+`Seihou.Core.ArtifactIdentity.sameArtifactIdentity` rather than structural `==`, so URL
+spelling differences do not resurface as duplicated or reappearing edges.
+
+
+## Revision Notes
+
+**2026-08-16 — implementation.** Three things in the plan as written did not survive contact
+with the code, and the sections above have been updated to match what was built.
+
+The plan proposed exporting `normalizeOriginUrl` from `seihou-cli/src/Seihou/CLI/ManifestGuard.hs`
+and defining `sameArtifactIdentity` locally in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`.
+That cannot satisfy the plan's own requirement, stated in Context and Orientation, that the
+completion key in `pendingBlueprintMigrations`, `writeAppliedBlueprintMigration`'s `sameEdge`, and
+`hasAppliedBlueprintMigration` all agree — the latter two are in `seihou-core`, which cannot import
+from `seihou-cli`. The comparison moved into a new core module, `Seihou.Core.ArtifactIdentity`,
+which also absorbed `ManifestGuard`'s two private normalisers. Interfaces and Dependencies now
+lists that module; Milestone 3's instruction to define the helper locally is superseded by it.
+
+The plan named three write sites for the new field. There are four: `seihou-cli/src/Seihou/CLI/Update.hs`
+reconstructs `AppliedRecipe` in `buildFinalManifest` when `seihou update` republishes the manifest.
+Milestone 2's site list and the Progress entry now say four. Neither the `Run.hs` nor the
+`Update.hs` site needed a new `detectArtifactOrigin` call, because the composition they are
+building already carries `targetOrigin`, which on the recipe branch *is* the recipe's origin.
+
+Milestone 5 said to set IR-2's frontmatter to `status: implemented`. The bundle's profile does not
+admit that value; the terminal status is `completed`, and it requires `completedAt` and recommends
+`resolution`. All three are set. See Surprises & Discoveries for the validator output.
+
+The reason for each change is the same in all three cases: the plan specified a location or a
+literal value that the surrounding system rejects, while the *property* it was specifying — one
+shared answer to "same artifact", an origin at every write site, a closed request — is unchanged
+and is what shipped.

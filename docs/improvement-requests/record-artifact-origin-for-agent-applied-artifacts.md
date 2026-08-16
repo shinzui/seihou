@@ -8,9 +8,20 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-08-06T17:12:58Z"
-timestamp: 2026-08-06T17:12:58Z
+timestamp: 2026-08-16T00:00:00Z
 requestId: IR-2
-status: proposed
+status: completed
+completedAt: "2026-08-16T00:00:00Z"
+targetPlan: docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md
+resolution: >-
+  All three requested changes landed. AppliedBlueprint, AppliedBlueprintMigration, and
+  AppliedRecipe carry origin :: !ArtifactOrigin under the JSON key origin; the blueprint migration
+  completion key in pendingBlueprintMigrations, writeAppliedBlueprintMigration, and
+  hasAppliedBlueprintMigration all include it; and a record with no origin decodes as LocalOrigin
+  of its recorded name, so currentManifestVersion stays at 6 and no conversion command is needed.
+  The shared "same artifact" comparison had to move into seihou-core as
+  Seihou.Core.ArtifactIdentity, because two of the three key comparisons live there and cannot
+  import from seihou-cli.
 origin: mori://shinzui/okf-profiles
 ---
 
@@ -18,9 +29,9 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Proposed. Nothing is blocked today, and the failure needs a name collision to trigger. It costs
-the correctness of the migration-receipt skip decision when one does occur, and that failure is
-silent by construction.
+Implemented in `docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md`, under
+`docs/masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md`. See Resolution
+below.
 
 ## Context
 
@@ -129,3 +140,35 @@ the mismatch representable, which IR-3 depends on. Preventing the collision upst
   an outcome the receipt cannot express; this is about an identity it does not carry.
 - [ADR 0002](../adr/0002-artifact-identity-is-origin-url-plus-name.md) — the decision this brings
   the agent path into line with.
+
+## Resolution
+
+All three requested changes landed as specified.
+
+`AppliedBlueprint`, `AppliedBlueprintMigration`, and `AppliedRecipe` in
+`seihou-core/src/Seihou/Core/Types.hs` each carry `origin :: !ArtifactOrigin`, encoded under the
+JSON key `origin` to match `AppliedModule`. There were four write sites rather than the three the
+request implies: `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs`,
+`seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`, `seihou-cli/src-exe/Seihou/CLI/Run.hs`, and
+`seihou-cli/src/Seihou/CLI/Update.hs`, which rebuilds the recipe record when `seihou update`
+republishes the manifest.
+
+`pendingBlueprintMigrations` takes the invoked blueprint's origin and compares it, and its Haddock
+now states the whole key and both exclusions. The two ledger helpers in
+`seihou-core/src/Seihou/Manifest/Types.hs` — `writeAppliedBlueprintMigration`'s `sameEdge` and
+`hasAppliedBlueprintMigration` — were extended to match, so a receipt cannot be written as a new
+entry while being read as a duplicate.
+
+Point 3 was taken as written: a record with no `origin` decodes as `LocalOrigin` of its recorded
+name, and `currentManifestVersion` stays at 6. No schema bump, and
+[ADR 0005](../adr/0005-legacy-manifests-convert-through-an-explicit-command.md) is not engaged,
+because the conversion would lose nothing — the origin of an already-recorded artifact is not
+recoverable, so an explicit command could only write the same weak value the decoder supplies.
+
+One thing the request did not anticipate: the comparison could not live only in
+`seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`, because two of the three places that need it
+are in `seihou-core` and cannot import from `seihou-cli`. It is now
+`Seihou.Core.ArtifactIdentity.sameArtifactIdentity`, which also absorbs the git-URL and
+project-path normalisers that were private to `Seihou.CLI.ManifestGuard`. That module's three-way
+`judgeArtifact` verdict is unchanged and stays where it was: "cannot be proved either way" is a
+meaningful answer for the pre-generation guard and no answer at all for a receipt lookup.

@@ -267,6 +267,55 @@ packages in the workspace share a single version.
 
 ### Fixed
 
+- **A blueprint migration edge is no longer skipped because a same-named
+  blueprint from another repository already ran it.** `seihou agent migrate`
+  skips any edge that already has a receipt in `.seihou/manifest.json`, and it
+  used to decide "already has a receipt" from the blueprint's bare name plus the
+  edge's `from` and `to` versions. Two repositories can publish a blueprint
+  under the same name. If you ran the `1.0.0 -> 2.0.0` edge of `shared-upgrade`
+  from one repository and later installed a different repository's
+  `shared-upgrade`, its `1.0.0 -> 2.0.0` edge was dropped from the plan with no
+  message at all — the run looked like an ordinary "nothing pending" for work
+  that never happened.
+
+  The manifest now records where each of these artifacts came from. The
+  `blueprint` entry written by `seihou agent run`, every entry in
+  `blueprintMigrations`, and the `recipe` entry all carry an `origin` block, in
+  the same shape modules have always had:
+
+  ```json
+  {
+    "name": "shared-upgrade",
+    "origin": {
+      "kind": "remote",
+      "url": "https://github.com/acme/one",
+      "artifact": "shared-upgrade"
+    },
+    "from": "1.0.0",
+    "to": "2.0.0",
+    "appliedAt": "2026-08-16T15:02:00Z"
+  }
+  ```
+
+  A receipt now stands for the origin and name of the blueprint that owns the
+  edge together with its `from` and `to` versions, so the two repositories keep
+  separate receipts and both edges run. Two spellings of one git URL —
+  `https://host/repo` and `https://host/repo.git` — still count as one origin.
+
+  **One-time effect on existing projects.** Receipts written before this release
+  carry no provenance, and nothing on disk can say retroactively which
+  repository they came from, so they are read as "name only, provenance
+  unverifiable". The first `seihou agent migrate` after upgrading may therefore
+  list an edge you have already completed as pending. That is honest rather than
+  a regression — seihou cannot prove the recorded edge came from the blueprint
+  installed now. Re-run it, which is safe by design because edge prompts inspect
+  real usage before changing anything and a completed edge finds nothing to do,
+  or skip it deliberately by raising `--from`. Nothing is deleted from the
+  manifest and no conversion command is needed; `seihou manifest upgrade` is
+  unaffected.
+
+  See [What a receipt means](blueprint-migrations.md#which-edge-a-receipt-is-for).
+
 - **Provider errors on the `anthropic` and `openai` providers are reported
   properly.** A failing API call — a missing or invalid key, a rate limit, an
   unknown model — was reported as `Error: Provider returned no assistant text.`,

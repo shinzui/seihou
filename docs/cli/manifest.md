@@ -97,6 +97,17 @@ untouched. The converted document is decoded with the ordinary manifest decoder
 before anything is written, so a conversion that would produce an unreadable
 manifest fails without touching the file.
 
+The records written by the agent path and by recipe application — the
+`blueprint` entry, each entry in `blueprintMigrations`, and the `recipe` entry —
+carry an `origin` of their own, in the same three-way shape as a module's. The
+upgrade does not fill it and cannot: a manifest old enough to need converting
+never recorded where those artifacts came from, and nothing on this machine can
+say retroactively. They read as `local <name>` — the artifact is known by name
+only, and its provenance cannot be verified — until the next `seihou agent run`,
+`seihou agent migrate`, or recipe application records a real one. See
+[Blueprint Migrations](../user/blueprint-migrations.md#which-edge-a-receipt-is-for)
+for why a migration receipt's origin is part of which edge it stands for.
+
 Running the command on a manifest that is already at the current schema version
 reports that there is nothing to do and exits zero.
 
