@@ -7,6 +7,7 @@ module Seihou.CLI.BlueprintMigration
     renderBlueprintMigrationInstruction,
     renderBlueprintMigrationSystemPrompt,
     formatBlueprintMigrationDebugOutput,
+    formatMigrationStepLabel,
     pendingBlueprintMigrations,
     parseNotApplicableSignal,
     unstatedNotApplicableReason,
@@ -35,6 +36,8 @@ import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
 import Seihou.Core.Migration
   ( BlueprintMigration (..),
     BlueprintMigrationPlan (..),
+    BlueprintMigrationStep (..),
+    EntailmentSite (..),
   )
 import Seihou.Core.Types
   ( AppliedBlueprintMigration (..),
@@ -71,9 +74,9 @@ data BlueprintMigrationLaunchResult
 -- reported themselves inapplicable without re-reading the manifest.
 data BlueprintMigrationRunResult
   = BlueprintMigrationNoWork
-  | BlueprintMigrationComplete [(BlueprintMigration, MigrationOutcome)]
-  | BlueprintMigrationLaunchFailed BlueprintMigration BlueprintMigrationLaunchFailure
-  | BlueprintMigrationRecordFailed BlueprintMigration Text
+  | BlueprintMigrationComplete [(BlueprintMigrationStep, MigrationOutcome)]
+  | BlueprintMigrationLaunchFailed BlueprintMigrationStep BlueprintMigrationLaunchFailure
+  | BlueprintMigrationRecordFailed BlueprintMigrationStep Text
   deriving stock (Eq, Show)
 
 -- | Render the edge-specific instruction with the same resolved variables as
@@ -90,18 +93,25 @@ renderBlueprintMigrationInstruction resolved migration =
 -- it as an argument keeps all rendering policy pure and unit-testable here.
 -- The not-applicable signal path is passed in for the same reason: the caller
 -- knows the project root, and this stays a function of its arguments.
+--
+-- @prepared@ must be the execution context of the step's /owning/ blueprint,
+-- not of the blueprint named on the command line. Under entailment those
+-- differ, and the agent is told the owner's identity and handed the owner's
+-- reference files, because it is doing the owner's migration.
 renderBlueprintMigrationSystemPrompt ::
   Text ->
   -- | absolute path the agent writes to when this edge does not apply
   FilePath ->
   AgentContext ->
+  -- | the /owning/ blueprint's prepared execution
   PreparedBlueprintExecution ->
   Int ->
   Int ->
-  BlueprintMigration ->
+  BlueprintMigrationStep ->
   Text
-renderBlueprintMigrationSystemPrompt template signalPath ctx prepared position total migration =
+renderBlueprintMigrationSystemPrompt template signalPath ctx prepared position total step =
   let blueprint = (prepared ^. #blueprint)
+      migration = (step ^. #edge)
       renderedInstruction =
         renderBlueprintMigrationInstruction (prepared ^. #resolvedVariables) migration
    in substitute
@@ -118,6 +128,7 @@ renderBlueprintMigrationSystemPrompt template signalPath ctx prepared position t
           ("migration_to", migration ^. #to),
           ("migration_position", T.pack (show position)),
           ("migration_total", T.pack (show total)),
+          ("migration_entailed_by", formatEntailedBy step),
           ("reference_files", prepared ^. #referenceFiles),
           ("reference_files_dir", prepared ^. #referenceFilesAccess),
           ("shared_prompt", prepared ^. #sharedPrompt),
@@ -129,11 +140,15 @@ renderBlueprintMigrationSystemPrompt template signalPath ctx prepared position t
 -- | Clearly delimit every pending prompt for parent debug mode. This pure
 -- function cannot launch a provider or receive a recorder, which makes the
 -- migration debug path structurally read-only.
+--
+-- Each header names the step's owning blueprint, because a chain may span
+-- several: a reader inspecting a cohort migration has no other way to tell
+-- which blueprint's prompt they are looking at.
 formatBlueprintMigrationDebugOutput ::
-  (Int -> Int -> BlueprintMigration -> Text) ->
-  [BlueprintMigration] ->
+  (Int -> Int -> BlueprintMigrationStep -> Text) ->
+  [BlueprintMigrationStep] ->
   Text
-formatBlueprintMigrationDebugOutput render migrations =
+formatBlueprintMigrationDebugOutput render steps =
   T.intercalate
     "\n\n"
     [ T.unlines
@@ -142,16 +157,45 @@ formatBlueprintMigrationDebugOutput render migrations =
             <> "/"
             <> T.pack (show total)
             <> "] "
-            <> migration ^. #from
-            <> " -> "
-            <> migration ^. #to
+            <> formatMigrationStepLabel step
             <> " =====",
-          render position total migration
+          render position total step
         ]
-    | (position, migration) <- zip [1 ..] migrations
+    | (position, step) <- zip [1 ..] steps
     ]
   where
-    total = length migrations
+    total = length steps
+
+-- | Name one step the way every user-facing surface names it: the owning
+-- blueprint, its edge window, and — when the step was reached through
+-- entailment rather than named on the command line — what pulled it in.
+--
+-- One definition rather than three, because the launch announcement, the
+-- debug headers, and the failure messages must agree; a chain that spans
+-- blueprints is confusing enough without three spellings of the same step.
+formatMigrationStepLabel :: BlueprintMigrationStep -> Text
+formatMigrationStepLabel step =
+  step ^. #owner
+    <> " "
+    <> step ^. #edge . #from
+    <> " -> "
+    <> step ^. #edge . #to
+    <> maybe "" (\site -> " (entailed by " <> renderSite site <> ")") (step ^. #entailedBy)
+
+-- | The sentence the framing prompt uses to explain to an agent why it is
+-- migrating a library the user did not name. Empty for a directly selected
+-- edge, which needs no explanation.
+formatEntailedBy :: BlueprintMigrationStep -> Text
+formatEntailedBy step = case step ^. #entailedBy of
+  Nothing -> ""
+  Just site ->
+    "This edge was not requested directly. It is required by "
+      <> renderSite site
+      <> ", which the user is migrating."
+
+renderSite :: EntailmentSite -> Text
+renderSite site =
+  site ^. #blueprint <> " " <> site ^. #from <> " -> " <> site ^. #to
 
 -- | Remove applied exact-edge receipts while retaining planner order.
 --
@@ -163,6 +207,20 @@ formatBlueprintMigrationDebugOutput render migrations =
 -- that share a name and an edge window are not the same edge, and dropping a
 -- second repository's edge because the first one's is recorded would be a
 -- silent skip of work that never ran.
+--
+-- The identity used for a step is the /owning/ blueprint's, resolved through
+-- @lookupOwner@, not the identity of the blueprint the user invoked. Under
+-- entailment a single plan contains steps owned by several blueprints, and
+-- this is the mechanism that makes a shared cohort edge the same edge from
+-- either entry point: a project that crossed kiroku's edge by running
+-- @keiro-upgrade@ has a receipt under @kiroku-upgrade@'s identity, so running
+-- @kiroku-upgrade@ directly finds that receipt and crosses nothing twice.
+--
+-- @lookupOwner@ returning 'Nothing' cannot happen in production: cohort
+-- discovery resolves every owner before a plan reaches this function. It is
+-- treated as "not previously applied" rather than as a crash, because the
+-- honest failure for an unresolvable owner is the discovery error the caller
+-- already raises, not a receipt lookup that silently claims completion.
 --
 -- The receipt's outcome is also part of the decision, though not of the
 -- edge's identity. Only a 'MigrationApplied' receipt suppresses its edge. A
@@ -180,25 +238,27 @@ formatBlueprintMigrationDebugOutput render migrations =
 -- the same repository.
 pendingBlueprintMigrations ::
   Bool ->
-  ArtifactOrigin ->
-  ModuleName ->
+  -- | the recorded identity of a step's owning blueprint, by name
+  (Text -> Maybe (ModuleName, ArtifactOrigin)) ->
   [AppliedBlueprintMigration] ->
   BlueprintMigrationPlan ->
-  [BlueprintMigration]
-pendingBlueprintMigrations rerun blueprintOrigin blueprintName receipts plan
+  [BlueprintMigrationStep]
+pendingBlueprintMigrations rerun lookupOwner receipts plan
   | rerun = plan ^. #steps
   | otherwise = filter (not . alreadyApplied) (plan ^. #steps)
   where
-    alreadyApplied migration =
-      any
-        ( \receipt ->
-            receipt ^. #outcome == MigrationApplied
-              && sameArtifactIdentity (receipt ^. #origin) blueprintOrigin
-              && receipt ^. #name == blueprintName
-              && receipt ^. #fromVersion == migration ^. #from
-              && receipt ^. #toVersion == migration ^. #to
-        )
-        receipts
+    alreadyApplied step = case lookupOwner (step ^. #owner) of
+      Nothing -> False
+      Just (ownerName, ownerOrigin) ->
+        any
+          ( \receipt ->
+              receipt ^. #outcome == MigrationApplied
+                && sameArtifactIdentity (receipt ^. #origin) ownerOrigin
+                && receipt ^. #name == ownerName
+                && receipt ^. #fromVersion == step ^. #edge . #from
+                && receipt ^. #toVersion == step ^. #edge . #to
+          )
+          receipts
 
 -- | Launch and record one pending edge at a time. A receipt is requested only
 -- after its launch returns, and either callback failure stops the chain before
@@ -208,29 +268,29 @@ pendingBlueprintMigrations rerun blueprintOrigin blueprintName receipts plan
 -- stop the chain: its receipt is written with that outcome and the next edge
 -- launches, exactly as after an applied one.
 runBlueprintMigrationsWith ::
-  (Int -> Int -> BlueprintMigration -> IO (Either BlueprintMigrationLaunchFailure BlueprintMigrationLaunchResult)) ->
-  (BlueprintMigration -> MigrationOutcome -> IO (Either Text ())) ->
-  [BlueprintMigration] ->
+  (Int -> Int -> BlueprintMigrationStep -> IO (Either BlueprintMigrationLaunchFailure BlueprintMigrationLaunchResult)) ->
+  (BlueprintMigrationStep -> MigrationOutcome -> IO (Either Text ())) ->
+  [BlueprintMigrationStep] ->
   IO BlueprintMigrationRunResult
 runBlueprintMigrationsWith _launch _record [] = pure BlueprintMigrationNoWork
-runBlueprintMigrationsWith launch record migrations =
-  go [] (zip [1 ..] migrations)
+runBlueprintMigrationsWith launch record steps =
+  go [] (zip [1 ..] steps)
   where
-    total = length migrations
+    total = length steps
 
     go completed [] = pure (BlueprintMigrationComplete (reverse completed))
-    go completed ((position, migration) : rest) = do
-      launchResult <- launch position total migration
+    go completed ((position, step) : rest) = do
+      launchResult <- launch position total step
       case launchResult of
-        Left failure -> pure (BlueprintMigrationLaunchFailed migration failure)
+        Left failure -> pure (BlueprintMigrationLaunchFailed step failure)
         Right sessionResult -> do
           let outcome = case sessionResult of
                 BlueprintMigrationSessionReturned -> MigrationApplied
                 BlueprintMigrationSessionNotApplicable reason -> MigrationNotApplicable reason
-          recordResult <- record migration outcome
+          recordResult <- record step outcome
           case recordResult of
-            Left err -> pure (BlueprintMigrationRecordFailed migration err)
-            Right () -> go ((migration, outcome) : completed) rest
+            Left err -> pure (BlueprintMigrationRecordFailed step err)
+            Right () -> go ((step, outcome) : completed) rest
 
 -- | Extract a not-applicable signal from an API provider's assistant text.
 --

@@ -6,6 +6,7 @@ import Data.Text (Text)
 import Seihou.Core.Migration
   ( BlueprintMigration (..),
     BlueprintMigrationPlan (..),
+    BlueprintMigrationStep (..),
     Migration (..),
     MigrationOp (..),
     MigrationPlan (..),
@@ -162,15 +163,18 @@ spec = do
 
   describe "planBlueprintMigrationChain" $ do
     it "orders in-window migrations while allowing intentional gaps" $ do
-      let early = BlueprintMigration "1.0.0" "2.0.0" "first"
-          late = BlueprintMigration "2.5.0" "3.0.0" "second"
+      let early = BlueprintMigration "1.0.0" "2.0.0" "first" []
+          late = BlueprintMigration "2.5.0" "3.0.0" "second" []
           result = planBlueprintMigrationChain "demo" [late, early] (mkV "1.0.0") (mkV "3.0.0")
       case result of
         Right (Just plan) -> do
           (plan ^. #name) `shouldBe` "demo"
           (plan ^. #from) `shouldBe` mkV "1.0.0"
           (plan ^. #to) `shouldBe` mkV "3.0.0"
-          (plan ^. #steps) `shouldBe` [early, late]
+          -- Every window-selected edge is owned by the blueprint that was
+          -- planned; owners other than that one appear only after entailment
+          -- expansion.
+          (plan ^. #steps) `shouldBe` [ownedBy "demo" early, ownedBy "demo" late]
         other -> expectationFailure ("Expected ordered blueprint plan, got: " <> show other)
 
     it "returns Nothing for an equal version window" $ do
@@ -182,20 +186,20 @@ spec = do
         `shouldBe` Left (MigrationDowngradeNotSupported (mkV "3.0.0") (mkV "2.0.0"))
 
     it "rejects an unparseable declared version" $ do
-      let migration = BlueprintMigration "release-1" "2.0.0" "change"
+      let migration = BlueprintMigration "release-1" "2.0.0" "change" []
       planBlueprintMigrationChain "demo" [migration] (mkV "1.0.0") (mkV "2.0.0")
         `shouldBe` Left (MigrationVersionUnparseable "release-1")
 
     it "rejects duplicate starts" $ do
-      let first = BlueprintMigration "1.0.0" "2.0.0" "first"
-          second = BlueprintMigration "1.0.0" "1.5.0" "second"
+      let first = BlueprintMigration "1.0.0" "2.0.0" "first" []
+          second = BlueprintMigration "1.0.0" "1.5.0" "second" []
           result = planBlueprintMigrationChain "demo" [first, second] (mkV "1.0.0") (mkV "2.0.0")
       case result of
         Left (MigrationDuplicateEdge fromVersion _) -> fromVersion `shouldBe` mkV "1.0.0"
         other -> expectationFailure ("Expected duplicate blueprint edge error, got: " <> show other)
 
     it "skips an edge that overshoots the target" $ do
-      let migration = BlueprintMigration "1.0.0" "3.0.0" "too far"
+      let migration = BlueprintMigration "1.0.0" "3.0.0" "too far" []
           result = planBlueprintMigrationChain "demo" [migration] (mkV "1.0.0") (mkV "2.0.0")
       case result of
         Right (Just plan) -> (plan ^. #steps) `shouldBe` []
@@ -209,3 +213,9 @@ mkV :: Text -> Version
 mkV t = case parseVersion t of
   Just ver -> ver
   Nothing -> error ("MigrationSpec.mkV: bad version literal " <> show t)
+
+-- | A directly selected step: owned by the planned blueprint, entailed by
+-- nothing.
+ownedBy :: Text -> BlueprintMigration -> BlueprintMigrationStep
+ownedBy owner edge =
+  BlueprintMigrationStep {owner = owner, edge = edge, entailedBy = Nothing}

@@ -1,7 +1,9 @@
 You are running one ordered Seihou blueprint migration for a library upgrade.
 The blueprint author supplied shared library guidance plus instructions for this
 exact version edge. Work only on the current edge; later edges run in separate
-agent sessions after this one succeeds.
+agent sessions after this one succeeds. A chain may span several blueprints,
+because one library's upgrade can require another's; the identity below is the
+blueprint that owns *this* edge, and it may not be the one the user named.
 
 You may be running in an interactive local CLI with repository tools, or as a
 one-shot API completion without tools. When tools are available, inspect the
@@ -32,6 +34,8 @@ Description: {{blueprint_description}}
 Step {{migration_position}} of {{migration_total}}
 From library version: {{migration_from}}
 To library version: {{migration_to}}
+
+{{migration_entailed_by}}
 
 
 ## Reference Files
@@ -74,7 +78,9 @@ The blueprint declares these shared library-upgrade references:
 An edge states its own precondition. If this project does not meet it — the
 library is not used here, the feature this edge upgrades was never adopted, the
 change is already present — the correct action is to change nothing and report
-that.
+that. This is the ordinary case for an edge the project reached indirectly:
+a project that depends on one library only through another may never use the
+upgraded library's API itself.
 
 Do not make speculative edits to justify the step, and do not exit with an
 error: an error means the provider failed, halts the remaining edges, and asks

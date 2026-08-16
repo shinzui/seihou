@@ -48,7 +48,7 @@ import Dhall.Map qualified as DhallMap
 import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, field, maybe, natural, string, union)
 import Dhall.Src (Src)
 import Seihou.Core.Expr (parseExpr)
-import Seihou.Core.Migration (BlueprintMigration (..), Migration (..), MigrationOp (..))
+import Seihou.Core.Migration (BlueprintMigration (..), EntailedEdge (..), Migration (..), MigrationOp (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
 import Seihou.Core.Variable (coerceDefault)
@@ -176,7 +176,7 @@ moduleDecoder :: Decoder Module
 moduleDecoder =
   withDefaults
     [ ("removal", noneText),
-      ("migrations", emptyMigrationList)
+      ("migrations", emptyRecordList)
     ]
     $ record
       ( Module
@@ -193,12 +193,14 @@ moduleDecoder =
           <*> field "migrations" (list migrationDecoder)
       )
 
--- | A Dhall expression representing an empty list of Migration records.
+-- | A Dhall expression representing an empty list of records, used as the
+-- default for a list-typed field an older artifact omits entirely.
 -- The list element type annotation is unused by the list extractor (which
 -- ignores the annotation and reads element values), so we use a placeholder
--- type to keep the synthesized expression compact.
-emptyMigrationList :: Dhall.Expr Src Void
-emptyMigrationList = Dhall.ListLit (Just Dhall.Text) mempty
+-- type to keep the synthesized expression compact and reuse one constant for
+-- every such field.
+emptyRecordList :: Dhall.Expr Src Void
+emptyRecordList = Dhall.ListLit (Just Dhall.Text) mempty
 
 -- | Decoder for a single 'Migration' record.
 migrationDecoder :: Decoder Migration
@@ -211,13 +213,30 @@ migrationDecoder =
     )
 
 -- | Decoder for one agent-guided blueprint migration edge.
+-- Uses 'withDefaults' to handle blueprints published before the @entails@
+-- field existed. The default has to be attached here rather than on
+-- 'blueprintDecoder', because the missing key is inside each element of the
+-- @migrations@ list rather than on the blueprint record itself.
 blueprintMigrationDecoder :: Decoder BlueprintMigration
 blueprintMigrationDecoder =
+  withDefaults [("entails", emptyRecordList)] $
+    record
+      ( BlueprintMigration
+          <$> field "from" strictText
+          <*> field "to" strictText
+          <*> field "prompt" strictText
+          <*> field "entails" (list entailedEdgeDecoder)
+      )
+
+-- | Decoder for one entailed-edge reference: the blueprint that owns the
+-- entailed edge, and that edge's exact version window.
+entailedEdgeDecoder :: Decoder EntailedEdge
+entailedEdgeDecoder =
   record
-    ( BlueprintMigration
-        <$> field "from" strictText
+    ( EntailedEdge
+        <$> field "blueprint" strictText
+        <*> field "from" strictText
         <*> field "to" strictText
-        <*> field "prompt" strictText
     )
 
 -- | Decoder for a 'MigrationOp' from a Dhall union value.
@@ -281,7 +300,7 @@ blueprintFileDecoder =
 -- @launch@ fields.
 blueprintDecoder :: Decoder Blueprint
 blueprintDecoder =
-  withDefaults [("migrations", emptyMigrationList), ("launch", noneText)] $
+  withDefaults [("migrations", emptyRecordList), ("launch", noneText)] $
     record
       ( Blueprint
           <$> field "name" moduleNameDecoder

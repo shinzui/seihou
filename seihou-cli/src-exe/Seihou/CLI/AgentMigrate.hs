@@ -10,6 +10,8 @@ import Control.Applicative ((<|>))
 import Control.Monad (unless, when)
 import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
+import Data.List (nub)
+import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, listToMaybe, maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -41,6 +43,7 @@ import Seihou.CLI.BlueprintMigration
     BlueprintMigrationLaunchResult (..),
     BlueprintMigrationRunResult (..),
     formatBlueprintMigrationDebugOutput,
+    formatMigrationStepLabel,
     parseNotApplicableSignal,
     pendingBlueprintMigrations,
     renderBlueprintMigrationSystemPrompt,
@@ -48,13 +51,22 @@ import Seihou.CLI.BlueprintMigration
     unstatedNotApplicableReason,
   )
 import Seihou.CLI.Commands (BlueprintMigrationOpts (..))
+import Seihou.CLI.MigrationCohort
+  ( CohortBlueprint (..),
+    CohortResolutionError (..),
+    resolveCohortBlueprint,
+    resolveMigrationCohort,
+  )
 import Seihou.CLI.Shared (formatVarError, logIO)
-import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
-import Seihou.Core.Blueprint (validateBlueprint)
 import Seihou.Core.Migration
   ( BlueprintMigration (..),
     BlueprintMigrationPlan (..),
+    BlueprintMigrationStep (..),
+    EntailedEdge (..),
+    EntailmentError (..),
+    EntailmentSite (..),
     MigrationPlanError (..),
+    expandEntailedEdges,
     planBlueprintMigrationChain,
   )
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
@@ -82,20 +94,14 @@ handleAgentMigrate debug pendingConfig opts = do
   let level = if opts ^. #verbose then LogVerbose else LogNormal
       manifestPath = ".seihou" </> "manifest.json"
 
-  (blueprint, blueprintDir) <- discoverMigrationBlueprint level (opts ^. #name)
-  validationResult <- validateBlueprint blueprintDir blueprint
-  case validationResult of
-    Left err -> exitErr level (renderModuleLoadError err)
-    Right _ -> pure ()
-
-  -- Classify the blueprint's discovery directory into a portable origin once
-  -- per command. The blueprint does not move mid-run, and every receipt this
-  -- command writes belongs to the same blueprint identity, so one filesystem
-  -- read is enough. Receipts are keyed by this origin, not by the name the
+  -- The blueprint's discovery directory is classified into a portable origin
+  -- as it is loaded. Receipts are keyed by that origin, not by the name the
   -- user typed, so a blueprint of the same name from another repository has
   -- its own receipts.
   projectRoot <- getCurrentDirectory
-  blueprintOrigin <- detectArtifactOrigin projectRoot blueprintDir
+  searchPaths <- defaultSearchPaths
+  invoked <- discoverMigrationBlueprint level projectRoot searchPaths (opts ^. #name)
+  let blueprint = invoked ^. #blueprint
 
   -- Pre-flight downgrade and origin guard, before a single edge is planned.
   -- Placing it before planning is the point rather than an implementation
@@ -112,11 +118,17 @@ handleAgentMigrate debug pendingConfig opts = do
   --
   -- --debug performs no check at all: it contacts no provider and writes
   -- nothing, so a prompt can still be inspected on any machine.
+  --
+  -- Only the invoked blueprint is in scope here. Blueprints reached by
+  -- entailment are not known until the window has been planned, and they are
+  -- checked separately once they are; the guard is not moved later to
+  -- accommodate them, because the invoked blueprint being substituted is
+  -- exactly the case that would make the planned window meaningless.
   unless debug $
     enforceAgentArtifactGuard
       (opts ^. #allowDowngrade)
       manifestPath
-      (blueprint ^. #name)
+      [blueprint ^. #name]
       mempty
 
   -- Finish provider/model/effort resolution now that the blueprint is loaded:
@@ -142,32 +154,72 @@ handleAgentMigrate debug pendingConfig opts = do
   case planned of
     Nothing -> pure ()
     Just migrationPlan -> do
+      -- Load every blueprint this window reaches by entailment, then flatten
+      -- the window into an ordered list of steps, each labelled with the
+      -- blueprint that declares it. Both happen before receipts are consulted,
+      -- because an entailed step is filtered against its own owner's receipts
+      -- rather than the invoked blueprint's.
+      let invokedName = blueprint ^. #name . #unModuleName
+      cohortResult <-
+        resolveMigrationCohort
+          projectRoot
+          searchPaths
+          (Map.singleton invokedName invoked)
+          (migrationPlan ^. #steps)
+      cohort <- case cohortResult of
+        Left err -> exitErr level (renderCohortError err)
+        Right resolved -> pure resolved
+
+      -- Every entailed blueprint is an artifact this command is about to
+      -- generate from, so ADR 0003's scoping rule reaches it too. The invoked
+      -- blueprint was already checked before planning; this covers the rest,
+      -- and still lands before any launch.
+      let entailedNames =
+            [ModuleName name | name <- Map.keys cohort, name /= invokedName]
+      unless (debug || null entailedNames) $
+        enforceAgentArtifactGuard
+          (opts ^. #allowDowngrade)
+          manifestPath
+          entailedNames
+          mempty
+
+      expandedPlan <- case expandEntailedEdges (lookupCohortMigrations cohort) (migrationPlan ^. #steps) of
+        Left err -> exitErr level (renderEntailmentError cohort err)
+        Right expandedSteps -> pure (migrationPlan & #steps .~ expandedSteps)
+
       receipts <- readMigrationReceipts level manifestPath
       let pending =
             pendingBlueprintMigrations
               (opts ^. #rerun)
-              blueprintOrigin
-              (blueprint ^. #name)
+              (lookupCohortIdentity cohort)
               receipts
-              migrationPlan
+              expandedPlan
       if null pending
-        then reportNoPending migrationPlan
+        then reportNoPending expandedPlan
         else do
-          prepared <- prepare level modelConfig opts blueprint blueprintDir
+          -- One execution context per blueprint that owns a pending step, so
+          -- each step gets its own reference files, allowed tools, and
+          -- variables. All of them are resolved now rather than lazily per
+          -- step: a user should answer every prompt up front rather than
+          -- being interrupted between agent sessions.
+          preparedByOwner <- prepareCohort level modelConfig opts cohort pending
           traceSink <- traceSinkForConfig level modelConfig
           context <- gatherAgentContext
           let signalPath = notApplicableSignalPath projectRoot
-              renderStep position total migration =
-                renderBlueprintMigrationSystemPrompt
-                  migrationPromptTemplate
-                  signalPath
-                  context
-                  prepared
-                  position
-                  total
-                  migration
-              renderDebugStep position total migration =
-                renderStep position total migration
+              renderStep position total step =
+                case Map.lookup (step ^. #owner) preparedByOwner of
+                  Nothing -> missingOwnerMessage step
+                  Just prepared ->
+                    renderBlueprintMigrationSystemPrompt
+                      migrationPromptTemplate
+                      signalPath
+                      context
+                      prepared
+                      position
+                      total
+                      step
+              renderDebugStep position total step =
+                renderStep position total step
                   <> maybe
                     ""
                     ("\n\n===== Initial user instruction =====\n" <>)
@@ -177,11 +229,11 @@ handleAgentMigrate debug pendingConfig opts = do
             then
               TIO.putStrLn $
                 "Blueprint migrations for "
-                  <> blueprint ^. #name . #unModuleName
+                  <> invokedName
                   <> ": "
-                  <> renderVersion (migrationPlan ^. #from)
+                  <> renderVersion (expandedPlan ^. #from)
                   <> " -> "
-                  <> renderVersion (migrationPlan ^. #to)
+                  <> renderVersion (expandedPlan ^. #to)
                   <> "\n"
                   <> formatBlueprintMigrationDebugOutput renderDebugStep pending
             else do
@@ -190,24 +242,122 @@ handleAgentMigrate debug pendingConfig opts = do
               createDirectoryIfMissing True (takeDirectory signalPath)
               result <-
                 runBlueprintMigrationsWith
-                  (launchMigration traceSink modelConfig opts prepared signalPath renderStep)
-                  (recordMigration manifestPath blueprintOrigin blueprint)
+                  (launchMigration traceSink modelConfig opts preparedByOwner signalPath renderStep)
+                  (recordMigration manifestPath cohort)
                   pending
               handleRunResult level (blueprint ^. #name) result
 
-discoverMigrationBlueprint :: LogLevel -> ModuleName -> IO (Blueprint, FilePath)
-discoverMigrationBlueprint level requestedName = do
-  searchPaths <- defaultSearchPaths
-  runnableResult <- discoverRunnable searchPaths requestedName
-  case runnableResult of
-    Right (RunnableBlueprint blueprint dir) -> pure (blueprint, dir)
-    Right (RunnableModule _ _) ->
-      exitErr level $ "'" <> requestedName ^. #unModuleName <> "' is a module, not a blueprint."
-    Right (RunnableRecipe _ _) ->
-      exitErr level $ "'" <> requestedName ^. #unModuleName <> "' is a recipe, not a blueprint."
-    Right (RunnableAgentPrompt _ _) ->
-      exitErr level $ "'" <> requestedName ^. #unModuleName <> "' is a prompt, not a blueprint."
-    Left err -> exitErr level (renderModuleLoadError err)
+-- | What a step's owning blueprint declares, for the pure expander. A name
+-- absent from the cohort was not installed, which the expander reports against
+-- the edge that named it.
+lookupCohortMigrations :: Map Text CohortBlueprint -> Text -> Maybe [BlueprintMigration]
+lookupCohortMigrations cohort name =
+  (^. #blueprint . #migrations) <$> Map.lookup name cohort
+
+-- | A step's owning blueprint's recorded identity, for receipt matching. This
+-- is the whole cross-entry-point property in one function: a step owned by
+-- @kiroku-upgrade@ is filtered against kiroku's receipts no matter which
+-- blueprint the user named.
+lookupCohortIdentity :: Map Text CohortBlueprint -> Text -> Maybe (ModuleName, ArtifactOrigin)
+lookupCohortIdentity cohort name = do
+  resolved <- Map.lookup name cohort
+  pure (resolved ^. #blueprint . #name, resolved ^. #origin)
+
+-- | Prepare one execution context per blueprint that owns a pending step.
+--
+-- Blueprints in the cohort that own no pending step are deliberately skipped:
+-- preparing one resolves its variables, which can prompt, and asking a user to
+-- answer questions for a blueprint whose every edge already has a receipt is
+-- pure friction.
+prepareCohort ::
+  LogLevel ->
+  AgentModelConfig ->
+  BlueprintMigrationOpts ->
+  Map Text CohortBlueprint ->
+  [BlueprintMigrationStep] ->
+  IO (Map Text PreparedBlueprintExecution)
+prepareCohort level modelConfig opts cohort pending =
+  Map.fromList <$> traverse prepareOne owners
+  where
+    owners = nub [step ^. #owner | step <- pending]
+
+    prepareOne name = case Map.lookup name cohort of
+      -- Unreachable: every owner came out of a plan the cohort resolved.
+      Nothing -> exitErr level ("Internal error: no blueprint loaded for migration step owner '" <> name <> "'.")
+      Just resolved -> do
+        prepared <-
+          prepare level modelConfig opts (resolved ^. #blueprint) (resolved ^. #blueprintDir)
+        pure (name, prepared)
+
+-- | Unreachable in production — 'prepareCohort' covers every pending step's
+-- owner — but a rendered message beats a partial-function crash if the two
+-- ever drift apart.
+missingOwnerMessage :: BlueprintMigrationStep -> Text
+missingOwnerMessage step =
+  "Internal error: no execution context prepared for '" <> step ^. #owner <> "'."
+
+discoverMigrationBlueprint :: LogLevel -> FilePath -> [FilePath] -> ModuleName -> IO CohortBlueprint
+discoverMigrationBlueprint level projectRoot searchPaths requestedName = do
+  result <- resolveCohortBlueprint projectRoot searchPaths requestedName
+  case result of
+    Right resolved -> pure resolved
+    Left err -> exitErr level (renderCohortError err)
+
+renderCohortError :: CohortResolutionError -> Text
+renderCohortError = \case
+  CohortArtifactWrongKind name kind ->
+    "'" <> name ^. #unModuleName <> "' is a " <> kind <> ", not a blueprint."
+  CohortArtifactMissing name searched ->
+    renderModuleLoadError (ModuleNotFound name searched)
+  CohortArtifactUnusable err -> renderModuleLoadError err
+
+-- | Turn an expansion failure into the message a blueprint author has to act
+-- on. These are the only feedback an author gets about an @entails@ list, so
+-- each says which blueprint is at fault and what to do next.
+renderEntailmentError :: Map Text CohortBlueprint -> EntailmentError -> Text
+renderEntailmentError cohort = \case
+  EntailedBlueprintNotFound site name ->
+    renderSite site
+      <> " entails blueprint '"
+      <> name
+      <> "', which is not installed on this machine.\n\n"
+      <> "  Install it, then re-run:\n"
+      <> "    seihou install <url> --module "
+      <> name
+  EntailedEdgeNotDeclared site name fromVersion toVersion ->
+    renderSite site
+      <> " entails edge "
+      <> fromVersion
+      <> " -> "
+      <> toVersion
+      <> " of '"
+      <> name
+      <> "', which declares no such edge.\n\n"
+      <> "  This is an authoring error in '"
+      <> site ^. #blueprint
+      <> "'. Report it upstream.\n"
+      <> "  Declared edges of '"
+      <> name
+      <> "': "
+      <> declaredEdges name
+  EntailmentCycle chain ->
+    "blueprint migration entailment forms a cycle:\n"
+      <> T.intercalate "\n" ["    " <> link | link <- chain]
+      <> "\n\n  Each of these edges declares that the next must run first, so"
+      <> " there is no order that satisfies them all.\n"
+      <> "  This is an authoring error in the blueprints listed. Report it upstream."
+  where
+    renderSite site =
+      "'" <> site ^. #blueprint <> "' edge " <> site ^. #from <> " -> " <> site ^. #to
+
+    -- The likeliest cause of a missing edge is an off-by-one in a version
+    -- string, so showing the real list usually makes the mistake obvious.
+    declaredEdges name = case Map.lookup name cohort of
+      Nothing -> "(none: the blueprint could not be read)"
+      Just resolved ->
+        case [edge ^. #from <> " -> " <> edge ^. #to | edge <- resolved ^. #blueprint . #migrations] of
+          [] -> "(it declares no migrations at all)"
+          rendered -> T.intercalate ", " rendered
 
 parseRequestedVersion :: LogLevel -> Text -> Text -> IO Version
 parseRequestedVersion level flag raw =
@@ -288,35 +438,39 @@ launchMigration ::
   TraceSink ->
   AgentModelConfig ->
   BlueprintMigrationOpts ->
-  PreparedBlueprintExecution ->
+  -- | one execution context per owning blueprint, keyed by name
+  Map Text PreparedBlueprintExecution ->
   -- | where this edge reports that it does not apply
   FilePath ->
-  (Int -> Int -> BlueprintMigration -> Text) ->
+  (Int -> Int -> BlueprintMigrationStep -> Text) ->
   Int ->
   Int ->
-  BlueprintMigration ->
+  BlueprintMigrationStep ->
   IO (Either BlueprintMigrationLaunchFailure BlueprintMigrationLaunchResult)
-launchMigration traceSink modelConfig opts prepared signalPath renderStep position total migration = do
+launchMigration traceSink modelConfig opts preparedByOwner signalPath renderStep position total step = do
   TIO.putStrLn $
     "Running blueprint migration "
       <> stepLabel
       <> ": "
-      <> migration ^. #from
-      <> " -> "
-      <> (migration ^. #to)
+      <> formatMigrationStepLabel step
   clearNotApplicableSignal signalPath
-  let systemPrompt = renderStep position total migration
-  case modelConfig ^. #provider of
-    AgentProviderClaudeCli -> launchInteractive systemPrompt
-    AgentProviderCodexCli -> launchInteractive systemPrompt
-    AgentProviderAnthropic -> launchCompletion systemPrompt
-    AgentProviderOpenAI -> launchCompletion systemPrompt
+  let systemPrompt = renderStep position total step
+  case Map.lookup (step ^. #owner) preparedByOwner of
+    Nothing -> pure (Left (BlueprintMigrationProviderFailure (missingOwnerMessage step)))
+    Just prepared -> case modelConfig ^. #provider of
+      AgentProviderClaudeCli -> launchInteractive prepared systemPrompt
+      AgentProviderCodexCli -> launchInteractive prepared systemPrompt
+      AgentProviderAnthropic -> launchCompletion systemPrompt
+      AgentProviderOpenAI -> launchCompletion systemPrompt
   where
     stepLabel = T.pack (show position) <> "/" <> T.pack (show total)
 
     -- An interactive session communicates only through its exit code, so the
     -- signal file is the one channel an agent has to report inapplicability.
-    launchInteractive systemPrompt = do
+    -- Only the owning blueprint's files/ directory is mounted: handing this
+    -- step another cohort member's reference material invites the agent to
+    -- pre-apply work the framing prompt tells it to leave for a later step.
+    launchInteractive prepared systemPrompt = do
       exitCode <-
         launchConfiguredAgentAddingDirs
           (maybeToList (prepared ^. #mountedFilesDir))
@@ -356,35 +510,45 @@ launchMigration traceSink modelConfig opts prepared signalPath renderStep positi
             "Blueprint migration "
               <> stepLabel
               <> ": "
-              <> migration ^. #from
-              <> " -> "
-              <> (migration ^. #to)
+              <> formatMigrationStepLabel step
               <> " — not applicable: "
               <> reason
           pure (BlueprintMigrationSessionNotApplicable reason)
 
+-- | Write one edge's receipt under the identity of the blueprint that /owns/
+-- the edge, not the one the user named on the command line.
+--
+-- This looks like a mistake to a reader who does not know the design, and it
+-- is the single line that makes fan-out correct. A project that crossed
+-- kiroku's edge by running @keiro-upgrade@ has a receipt saying so under
+-- @kiroku-upgrade@'s name and origin, so running @kiroku-upgrade@ directly
+-- afterwards finds it and crosses nothing twice. Recording under the invoking
+-- blueprint would make the same work look like two different edges.
 recordMigration ::
   FilePath ->
-  -- | the owning blueprint's portable identity, computed once per command
-  ArtifactOrigin ->
-  Blueprint ->
-  BlueprintMigration ->
+  -- | every blueprint this run loaded, keyed by name
+  Map Text CohortBlueprint ->
+  BlueprintMigrationStep ->
   MigrationOutcome ->
   IO (Either Text ())
-recordMigration manifestPath blueprintOrigin blueprint migration migrationOutcome = do
-  now <- getCurrentTime
-  recordAppliedBlueprintMigration
-    manifestPath
-    AppliedBlueprintMigration
-      { name = blueprint ^. #name,
-        origin = blueprintOrigin,
-        blueprintVersion = blueprint ^. #version,
-        fromVersion = migration ^. #from,
-        toVersion = migration ^. #to,
-        outcome = migrationOutcome,
-        appliedAt = now,
-        agentSessionId = Nothing
-      }
+recordMigration manifestPath cohort step migrationOutcome =
+  case Map.lookup (step ^. #owner) cohort of
+    -- Unreachable: the step came out of a plan this cohort resolved.
+    Nothing -> pure (Left (missingOwnerMessage step))
+    Just owner -> do
+      now <- getCurrentTime
+      recordAppliedBlueprintMigration
+        manifestPath
+        AppliedBlueprintMigration
+          { name = owner ^. #blueprint . #name,
+            origin = owner ^. #origin,
+            blueprintVersion = owner ^. #blueprint . #version,
+            fromVersion = step ^. #edge . #from,
+            toVersion = step ^. #edge . #to,
+            outcome = migrationOutcome,
+            appliedAt = now,
+            agentSessionId = Nothing
+          }
 
 handleRunResult :: LogLevel -> ModuleName -> BlueprintMigrationRunResult -> IO ()
 handleRunResult level blueprintName = \case
@@ -403,12 +567,10 @@ handleRunResult level blueprintName = \case
                else ""
            )
         <> "."
-  BlueprintMigrationLaunchFailed migration failure -> do
+  BlueprintMigrationLaunchFailed step failure -> do
     let prefix =
           "Blueprint migration "
-            <> migration ^. #from
-            <> " -> "
-            <> migration ^. #to
+            <> formatMigrationStepLabel step
             <> " failed; completed earlier edges remain recorded. "
         retry = "Fix the provider error, then rerun the same command to resume."
     case failure of
@@ -418,13 +580,11 @@ handleRunResult level blueprintName = \case
       BlueprintMigrationProviderFailure err -> do
         logIO level $ logError $ prefix <> err <> " " <> retry
         exitFailure
-  BlueprintMigrationRecordFailed migration err -> do
+  BlueprintMigrationRecordFailed step err -> do
     logIO level $
       logError $
         "Agent completed blueprint migration "
-          <> migration ^. #from
-          <> " -> "
-          <> migration ^. #to
+          <> formatMigrationStepLabel step
           <> ", but its receipt could not be recorded: "
           <> err
           <> ". The next edge was not started; repair manifest access, then rerun the same command."

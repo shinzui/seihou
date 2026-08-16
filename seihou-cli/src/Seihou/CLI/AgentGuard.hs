@@ -40,11 +40,14 @@ import System.Directory (getCurrentDirectory)
 -- disagrees with what the project records, unless @--allow-downgrade@ says
 -- otherwise.
 --
--- @manifestPath@ is the project's @.seihou\/manifest.json@. @blueprintName@
--- is the blueprint the command was invoked on. @baselineModuleNames@ are the
--- modules the command is about to generate files from — every module in the
--- resolved baseline composition for @agent run@, and empty for @agent
--- migrate@, which applies no baseline.
+-- @manifestPath@ is the project's @.seihou\/manifest.json@.
+-- @blueprintNames@ are the blueprints the command is about to use: the one it
+-- was invoked on, and — for @agent migrate@ crossing a cohort — every further
+-- blueprint reached by entailment, each of which owns edges this run will
+-- launch and write receipts for. @baselineModuleNames@ are the modules the
+-- command is about to generate files from — every module in the resolved
+-- baseline composition for @agent run@, and empty for @agent migrate@, which
+-- applies no baseline.
 --
 -- Two situations pass without a check because there is genuinely nothing to
 -- compare against: a project with no manifest at all, and a manifest that
@@ -72,12 +75,12 @@ enforceAgentArtifactGuard ::
   Bool ->
   -- | path to @.seihou\/manifest.json@
   FilePath ->
-  -- | the blueprint this command was invoked on
-  ModuleName ->
+  -- | the blueprints this command is about to use
+  [ModuleName] ->
   -- | modules this command is about to generate files from
   Set ModuleName ->
   IO ()
-enforceAgentArtifactGuard allowDowngrade manifestPath blueprintName baselineModuleNames = do
+enforceAgentArtifactGuard allowDowngrade manifestPath blueprintNames baselineModuleNames = do
   readResult <- runEff $ runFilesystem $ runManifestStore manifestPath readManifest
   case readResult of
     Left _ -> pure ()
@@ -85,11 +88,14 @@ enforceAgentArtifactGuard allowDowngrade manifestPath blueprintName baselineModu
     Right (Just manifest) -> do
       projectRoot <- getCurrentDirectory
       searchPaths <- defaultSearchPaths
-      blueprintCheck <- checkRecordedBlueprint projectRoot searchPaths blueprintName manifest
+      blueprintChecks <-
+        traverse
+          (\blueprintName -> checkRecordedBlueprint projectRoot searchPaths blueprintName manifest)
+          blueprintNames
       moduleChecks <-
         if Set.null baselineModuleNames
           then pure []
           else checkAppliedArtifactsFor projectRoot searchPaths (Just baselineModuleNames) manifest
       enforceArtifactGuard
         allowDowngrade
-        (blockingChecks (maybeToList blueprintCheck <> moduleChecks))
+        (blockingChecks (concatMap maybeToList blueprintChecks <> moduleChecks))

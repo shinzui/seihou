@@ -82,6 +82,7 @@ library seihou-cli-internal
     Seihou.CLI.ManifestGuard
     Seihou.CLI.ManifestUpgrade
     Seihou.CLI.Migrate
+    Seihou.CLI.MigrationCohort
     Seihou.CLI.PendingMigrations
     Seihou.CLI.PromptRender
     Seihou.CLI.Registry

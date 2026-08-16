@@ -158,6 +158,7 @@ test-suite seihou-core-test
     Seihou.Core.CommandFingerprintSpec
     Seihou.Core.CommandVarSpec
     Seihou.Core.ContextSpec
+    Seihou.Core.EntailmentSpec
     Seihou.Core.ExprSpec
     Seihou.Core.InstallSpec
     Seihou.Core.ListSpec

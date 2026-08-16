@@ -3,18 +3,27 @@ module Seihou.Core.Migration
     Migration (..),
     MigrationOp (..),
     BlueprintMigration (..),
+    EntailedEdge (..),
 
     -- * Migration planning
     MigrationPlan (..),
     BlueprintMigrationPlan (..),
+    BlueprintMigrationStep (..),
     MigrationPlanError (..),
     planMigrationChain,
     planBlueprintMigrationChain,
+
+    -- * Entailment expansion
+    EntailmentSite (..),
+    EntailmentError (..),
+    expandEntailedEdges,
   )
 where
 
+import Control.Monad (foldM)
 import Data.Generics.Labels ()
 import Data.List (sortOn)
+import Data.Set qualified as Set
 import Seihou.Core.Version (Version, parseVersion)
 import Seihou.Prelude
 
@@ -50,13 +59,35 @@ data Migration = Migration
   }
   deriving stock (Eq, Show, Generic)
 
+-- | A reference from one blueprint's migration edge to an exact edge of
+-- another blueprint. Resolution is by name through the same search paths
+-- @seihou agent migrate@ uses; the referenced edge must exist verbatim.
+--
+-- This is how a breaking change that reaches consumers through an
+-- intermediary library travels. A blueprint for @keiro@ — which absorbed a
+-- breaking change from @kiroku@ — declares that crossing its own
+-- @2.4.0 -> 3.0.0@ edge entails crossing kiroku's @1.9.0 -> 2.0.0@ edge. A
+-- project that depends on keiro and has never heard of kiroku still gets
+-- kiroku's upgrade guidance, in kiroku's own version space.
+data EntailedEdge = EntailedEdge
+  { blueprint :: !Text,
+    from :: !Text,
+    to :: !Text
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | One agent-guided source migration declared by a blueprint. The
 -- version strings use the same dotted-numeric format as module migrations,
 -- while 'prompt' describes only the changes needed for this edge.
+--
+-- 'entails' names exact edges of other blueprints that crossing this edge
+-- requires. They are expanded recursively and run before this edge; see
+-- 'expandEntailedEdges'.
 data BlueprintMigration = BlueprintMigration
   { from :: !Text,
     to :: !Text,
-    prompt :: !Text
+    prompt :: !Text,
+    entails :: ![EntailedEdge]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -102,14 +133,52 @@ data MigrationPlan = MigrationPlan
   }
   deriving stock (Eq, Show, Generic)
 
+-- | Where an entailment declaration was written: the blueprint that owns the
+-- declaring edge, and that edge's own version window.
+--
+-- Both 'EntailmentError' variants carry one because both are authoring
+-- mistakes in that exact edge, and an error message that cannot say which
+-- edge to fix is useless to the author who has to fix it.
+data EntailmentSite = EntailmentSite
+  { blueprint :: !Text,
+    from :: !Text,
+    to :: !Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | One edge to run, together with the blueprint that declares it.
+--
+-- @owner@ is the name of the blueprint whose @migrations@ list contains
+-- @edge@ — not the blueprint the user named on the command line. Receipts
+-- are written under the owner, which is what makes a shared cohort edge the
+-- same edge from either entry point.
+--
+-- @entailedBy@ names the edge that pulled this one in, when this step was
+-- reached through entailment rather than selected directly by the version
+-- window. It exists so output can say @(entailed by keiro-upgrade 2.4.0 ->
+-- 3.0.0)@. It is display-only and must never enter an identity comparison:
+-- the same cohort edge reached from two different declaring edges is one
+-- edge, and treating the two as distinct would cross it twice.
+data BlueprintMigrationStep = BlueprintMigrationStep
+  { owner :: !Text,
+    edge :: !BlueprintMigration,
+    entailedBy :: !(Maybe EntailmentSite)
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | The ordered blueprint migrations selected for a requested version
 -- window. A non-trivial window may have no selected steps when the author
 -- declared no agent intervention for that range.
+--
+-- @name@ and the version window belong to the blueprint the user invoked.
+-- After 'expandEntailedEdges' has run, individual steps may be owned by other
+-- blueprints and carry versions from those blueprints' version spaces; each
+-- step says which blueprint it belongs to.
 data BlueprintMigrationPlan = BlueprintMigrationPlan
   { name :: !Text,
     from :: !Version,
     to :: !Version,
-    steps :: ![BlueprintMigration]
+    steps :: ![BlueprintMigrationStep]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -179,6 +248,10 @@ planMigrationChain modName migrations installed target =
 
 -- | Compute the ordered agent-guided migrations for a blueprint and version
 -- window. Selection and errors deliberately match 'planMigrationChain'.
+--
+-- Every selected edge is labelled with @blueprintName@, because at this point
+-- every edge in the plan came out of that blueprint's own @migrations@ list.
+-- Steps owned by other blueprints appear only after 'expandEntailedEdges'.
 planBlueprintMigrationChain ::
   Text ->
   [BlueprintMigration] ->
@@ -193,11 +266,128 @@ planBlueprintMigrationChain blueprintName migrations current target =
               { name = blueprintName,
                 from = current,
                 to = target,
-                steps = steps
+                steps = map ownedBy steps
               }
         )
     )
     (planMigrationWindow (^. #from) (^. #to) migrations current target)
+  where
+    ownedBy selected =
+      BlueprintMigrationStep
+        { owner = blueprintName,
+          edge = selected,
+          entailedBy = Nothing
+        }
+
+-- | All the ways entailment expansion can fail. Every variant is an authoring
+-- mistake in a published blueprint rather than anything the consumer running
+-- the migration did, so each carries enough to name the blueprint whose author
+-- has to fix it.
+data EntailmentError
+  = -- | An entailed blueprint could not be resolved on this machine. Carries
+    -- the declaring edge and the name that did not resolve. This is a
+    -- consumer-fixable situation — the blueprint is simply not installed —
+    -- but seihou refuses rather than skipping, because the consumer does not
+    -- know the cohort and a silently omitted member leaves a half-migrated
+    -- project with no signal.
+    EntailedBlueprintNotFound !EntailmentSite !Text
+  | -- | The named blueprint resolved but declares no edge with that exact
+    -- window. Carries the declaring edge, then the entailed blueprint's name,
+    -- @from@, and @to@. Entailment names one exact edge; falling back to
+    -- window planning inside the entailed blueprint would let a release
+    -- silently change which upstream work it implies.
+    EntailedEdgeNotDeclared !EntailmentSite !Text !Text !Text
+  | -- | Entailment forms a cycle. Carries the chain in order, each element
+    -- rendered as @blueprint from -> to@, beginning and ending with the edge
+    -- that closed it.
+    EntailmentCycle ![Text]
+  deriving stock (Eq, Show, Generic)
+
+-- | Expand each selected edge into its entailed edges followed by itself,
+-- recursively, in declaration order.
+--
+-- @lookupMigrations@ answers "what edges does this blueprint declare?" and
+-- returns 'Nothing' for a blueprint that could not be resolved. Keeping it a
+-- parameter is what lets this function stay pure: discovery is the CLI's job.
+--
+-- Ordering: an entailed edge runs /before/ the edge that declares it, and
+-- several entailed edges run in declaration order. The entailed edge is the
+-- deeper change — kiroku's API — and the declaring edge's own guidance may
+-- assume it has already been applied.
+--
+-- Deduplication: an edge already emitted is not emitted again, no matter how
+-- many selected edges entail it. Identity is the triple @(owner, from, to)@,
+-- which deliberately ignores @entailedBy@: the same cohort edge reached from
+-- two declaring edges is one piece of work. This is expansion-time
+-- deduplication only; dropping edges this project has already recorded
+-- receipts for happens afterwards and separately.
+--
+-- Cycles are a hard error rather than a silently broken chain, because a
+-- cycle means two blueprints each claim the other's edge must run first and
+-- there is no order that satisfies both.
+expandEntailedEdges ::
+  (Text -> Maybe [BlueprintMigration]) ->
+  [BlueprintMigrationStep] ->
+  Either EntailmentError [BlueprintMigrationStep]
+expandEntailedEdges lookupMigrations topSteps = do
+  (expanded, _visited) <- foldM (expandStep []) ([], Set.empty) topSteps
+  Right expanded
+  where
+    -- @path@ is the chain of edges currently being expanded, oldest first.
+    -- @emitted@ is the output so far, in final order. @visited@ is every
+    -- edge already emitted, so a second reference to it is dropped.
+    expandStep path (emitted, visited) step
+      | stepKey `Set.member` visited = Right (emitted, visited)
+      | stepKey `elem` path = Left (EntailmentCycle (renderCycle path stepKey))
+      | otherwise = do
+          entailedSteps <- traverse (resolveEntailed step) (step ^. #edge . #entails)
+          (emitted', visited') <-
+            foldM (expandStep (path <> [stepKey])) (emitted, visited) entailedSteps
+          Right (emitted' <> [step], Set.insert stepKey visited')
+      where
+        stepKey = edgeKey step
+
+    resolveEntailed declaringStep entailed =
+      case lookupMigrations (entailed ^. #blueprint) of
+        Nothing -> Left (EntailedBlueprintNotFound site (entailed ^. #blueprint))
+        Just declared ->
+          case [ candidate
+               | candidate <- declared,
+                 candidate ^. #from == entailed ^. #from,
+                 candidate ^. #to == entailed ^. #to
+               ] of
+            (matched : _) ->
+              Right
+                BlueprintMigrationStep
+                  { owner = entailed ^. #blueprint,
+                    edge = matched,
+                    entailedBy = Just site
+                  }
+            [] ->
+              Left
+                ( EntailedEdgeNotDeclared
+                    site
+                    (entailed ^. #blueprint)
+                    (entailed ^. #from)
+                    (entailed ^. #to)
+                )
+      where
+        site =
+          EntailmentSite
+            { blueprint = declaringStep ^. #owner,
+              from = declaringStep ^. #edge . #from,
+              to = declaringStep ^. #edge . #to
+            }
+
+    edgeKey step = (step ^. #owner, step ^. #edge . #from, step ^. #edge . #to)
+
+    -- The cycle a reader wants to see starts where the repeat began, not at
+    -- whichever top-level edge happened to lead there.
+    renderCycle path repeated =
+      map renderKey (dropWhile (/= repeated) path <> [repeated])
+
+    renderKey (owner, fromVersion, toVersion) =
+      owner <> " " <> fromVersion <> " -> " <> toVersion
 
 -- | Shared gap-tolerant version-window planner. Keeping parsing, duplicate
 -- detection, ordering, overlap handling, and overshoot handling here prevents

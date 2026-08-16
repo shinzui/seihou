@@ -20,7 +20,7 @@ import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
-import Seihou.Core.Migration (BlueprintMigration (..))
+import Seihou.Core.Migration (BlueprintMigration (..), EntailedEdge (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable, isValidModuleName)
 import Seihou.Core.Types
 import Seihou.Core.Version (parseVersion)
@@ -46,7 +46,13 @@ import System.Directory (doesFileExist)
 --   8. Every tag is non-empty.
 --   9. Every @allowedTools@ entry, when set, is non-empty.
 --  10. Every migration is a forward dotted-numeric edge with a non-empty
---      prompt, and each starting version occurs at most once.
+--      prompt, and each starting version occurs at most once. Every entailed
+--      edge names a well-formed blueprint other than this one, with a forward
+--      dotted-numeric window, and no edge entails the same edge twice.
+--      Whether the named blueprint exists and declares that exact edge cannot
+--      be checked here — this function is pure and existence is a filesystem
+--      question — so it is checked when @seihou agent migrate@ resolves the
+--      cohort.
 --  11. Every field the @launch@ record does set is non-blank. The values
 --      themselves are parsed by the CLI, which owns the provider and effort
 --      vocabularies.
@@ -228,6 +234,84 @@ checkBlueprintMigrations b =
         <> versionErrors "from" (migration ^. #from)
         <> versionErrors "to" (migration ^. #to)
         <> orderErrors migration
+        <> concatMap (entailErrors migration) (migration ^. #entails)
+        <> duplicateEntailErrors migration
+
+    -- An entailed edge names another blueprint's exact edge. Everything
+    -- checkable without touching the filesystem is checked here; existence of
+    -- the named blueprint and of the exact edge is resolved by
+    -- @seihou agent migrate@, which is the only caller that has search paths.
+    entailErrors :: BlueprintMigration -> EntailedEdge -> [Text]
+    entailErrors migration entailed =
+      nameErrors
+        <> entailVersionErrors "from" (entailed ^. #from)
+        <> entailVersionErrors "to" (entailed ^. #to)
+        <> entailOrderErrors
+        <> selfErrors
+      where
+        prefix =
+          "blueprint migration "
+            <> migration ^. #from
+            <> " -> "
+            <> migration ^. #to
+            <> " entails "
+
+        nameErrors
+          | T.null target || not (isValidModuleName target) =
+              [prefix <> "a blueprint whose name must match [a-z][a-z0-9-]*, got: " <> target]
+          | otherwise = []
+
+        entailVersionErrors label versionText = case parseVersion versionText of
+          Nothing ->
+            [ prefix
+                <> "'"
+                <> target
+                <> "' with a "
+                <> label
+                <> " version that is not dotted numeric: "
+                <> versionText
+            ]
+          Just _ -> []
+
+        entailOrderErrors =
+          case (parseVersion (entailed ^. #from), parseVersion (entailed ^. #to)) of
+            (Just fromVersion, Just toVersion)
+              | fromVersion >= toVersion ->
+                  [ prefix
+                      <> "'"
+                      <> target
+                      <> "' with an edge that does not advance versions: "
+                      <> entailed ^. #from
+                      <> " -> "
+                      <> entailed ^. #to
+                  ]
+            _ -> []
+
+        -- Entailment crosses blueprints. An edge naming its own blueprint is
+        -- either a typo or an attempt to express ordering within one
+        -- migrations list, which the version window already decides.
+        selfErrors
+          | target == b ^. #name . #unModuleName =
+              [prefix <> "an edge of its own blueprint '" <> target <> "'"]
+          | otherwise = []
+
+        target = entailed ^. #blueprint
+
+    duplicateEntailErrors :: BlueprintMigration -> [Text]
+    duplicateEntailErrors migration =
+      map
+        ( \key ->
+            "blueprint migration "
+              <> migration ^. #from
+              <> " -> "
+              <> migration ^. #to
+              <> " entails the same edge twice: "
+              <> key
+        )
+        (findDupes Set.empty Set.empty (map renderEntailed (migration ^. #entails)))
+
+    renderEntailed entailed =
+      entailed ^. #blueprint <> " " <> entailed ^. #from <> " -> " <> entailed ^. #to
 
     promptErrors :: BlueprintMigration -> [Text]
     promptErrors migration =

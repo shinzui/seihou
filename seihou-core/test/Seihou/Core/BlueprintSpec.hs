@@ -115,8 +115,8 @@ spec = do
           (b ^. #baseModules) `shouldBe` []
           length (b ^. #files) `shouldBe` 1
           (b ^. #migrations)
-            `shouldBe` [ BlueprintMigration "1.0.0" "2.0.0" "Update {{project.name}} for the first library release.",
-                         BlueprintMigration "2.5.0" "3.0.0" "Update {{project.name}} for the second library release."
+            `shouldBe` [ BlueprintMigration "1.0.0" "2.0.0" "Update {{project.name}} for the first library release." [],
+                         BlueprintMigration "2.5.0" "3.0.0" "Update {{project.name}} for the second library release." []
                        ]
 
     it "decodes declared blueprint migrations in declaration order" $ do
@@ -127,8 +127,8 @@ spec = do
         case result of
           Right b ->
             (b ^. #migrations)
-              `shouldBe` [ BlueprintMigration "1.0.0" "2.0.0" "first edge",
-                           BlueprintMigration "2.5.0" "3.0.0" "second edge"
+              `shouldBe` [ BlueprintMigration "1.0.0" "2.0.0" "first edge" [],
+                           BlueprintMigration "2.5.0" "3.0.0" "second edge" []
                          ]
           Left err -> expectationFailure ("Expected migrations to decode, got: " <> show err)
 
@@ -275,26 +275,26 @@ spec = do
           other -> expectationFailure ("Expected ValidationError, got: " <> show other)
 
     it "rejects an empty migration prompt" $ do
-      let bad = withBlueprintMigrations [BlueprintMigration "1.0.0" "2.0.0" "  "] goodBlueprint
+      let bad = withBlueprintMigrations [BlueprintMigration "1.0.0" "2.0.0" "  " []] goodBlueprint
       checkBlueprintMigrations bad `shouldSatisfy` hasError "prompt must not be empty"
 
     it "rejects malformed migration versions" $ do
-      let bad = withBlueprintMigrations [BlueprintMigration "release-1" "next" "change"] goodBlueprint
+      let bad = withBlueprintMigrations [BlueprintMigration "release-1" "next" "change" []] goodBlueprint
           errors = checkBlueprintMigrations bad
       errors `shouldSatisfy` hasError "from version is not dotted numeric"
       errors `shouldSatisfy` hasError "to version is not dotted numeric"
 
     it "rejects migration edges that do not advance" $ do
-      let equalEdge = withBlueprintMigrations [BlueprintMigration "2.0.0" "2.0.0" "change"] goodBlueprint
-          reverseEdge = withBlueprintMigrations [BlueprintMigration "3.0.0" "2.0.0" "change"] goodBlueprint
+      let equalEdge = withBlueprintMigrations [BlueprintMigration "2.0.0" "2.0.0" "change" []] goodBlueprint
+          reverseEdge = withBlueprintMigrations [BlueprintMigration "3.0.0" "2.0.0" "change" []] goodBlueprint
       checkBlueprintMigrations equalEdge `shouldSatisfy` hasError "must advance versions"
       checkBlueprintMigrations reverseEdge `shouldSatisfy` hasError "must advance versions"
 
     it "rejects duplicate migration starts" $ do
       let bad =
             withBlueprintMigrations
-              [ BlueprintMigration "1.0.0" "2.0.0" "first",
-                BlueprintMigration "1.0.0" "3.0.0" "second"
+              [ BlueprintMigration "1.0.0" "2.0.0" "first" [],
+                BlueprintMigration "1.0.0" "3.0.0" "second" []
               ]
               goodBlueprint
       checkBlueprintMigrations bad `shouldSatisfy` hasError "duplicate blueprint migration from version"

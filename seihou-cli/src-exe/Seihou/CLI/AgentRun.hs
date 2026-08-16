@@ -162,7 +162,7 @@ handleAgentRun debug pending opts = do
   enforceAgentArtifactGuard
     (opts ^. #allowDowngrade)
     (".seihou" </> "manifest.json")
-    (bp ^. #name)
+    [bp ^. #name]
     (baselineComposedNames baselineComposition)
 
   -- Finish provider/model/effort resolution now that the blueprint is loaded

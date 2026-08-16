@@ -181,8 +181,8 @@ tests = testSpec "Agent migrate end-to-end" $ do
               <> "\nstderr:\n"
               <> T.unpack errorOutput
       output `shouldSatisfy` T.isInfixOf "Blueprint migrations for payments: 1.0.0 -> 3.0.0"
-      output `shouldSatisfy` T.isInfixOf "===== [1/2] 1.0.0 -> 2.0.0 ====="
-      output `shouldSatisfy` T.isInfixOf "===== [2/2] 2.5.0 -> 3.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "===== [1/2] payments 1.0.0 -> 2.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "===== [2/2] payments 2.5.0 -> 3.0.0 ====="
       output `shouldSatisfy` T.isInfixOf "Shared upgrade guidance for baikai."
       output `shouldSatisfy` T.isInfixOf "Replace baikai legacy calls."
       let (_, afterFirst) = T.breakOn "1.0.0 -> 2.0.0" output
@@ -334,7 +334,7 @@ tests = testSpec "Agent migrate end-to-end" $ do
       -- is not.
       (resumeExit, resumeOutput, resumeError) <- runProcessText binary args (Just root) (Just environment)
       expectSuccess "replanned migration" resumeExit resumeOutput resumeError
-      resumeOutput `shouldSatisfy` T.isInfixOf "Running blueprint migration 1/1: 1.0.0 -> 2.0.0"
+      resumeOutput `shouldSatisfy` T.isInfixOf "Running blueprint migration 1/1: payments 1.0.0 -> 2.0.0"
       resumeOutput `shouldNotSatisfy` T.isInfixOf "2.5.0 -> 3.0.0"
       resumeOutput `shouldNotSatisfy` T.isInfixOf "not applicable"
       T.lines <$> TIO.readFile launchLog `shouldReturn` ["called", "called", "called"]

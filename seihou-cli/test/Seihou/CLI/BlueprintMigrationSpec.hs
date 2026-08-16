@@ -30,8 +30,8 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
               [late, early]
               (version "1.0.0")
               (version "3.0.0")
-      pendingBlueprintMigrations False blueprintOrigin blueprintName [] migrationPlan
-        `shouldBe` [early, late]
+      pendingBlueprintMigrations False owners [] migrationPlan
+        `shouldBe` [ownedStep "payments" early, ownedStep "payments" late]
 
     it "resumes by filtering only an already-recorded exact edge" $ do
       let migrationPlan = plan [first, second]
@@ -39,13 +39,13 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
             [ receipt blueprintOrigin blueprintName "1.0.0" "2.0.0",
               receipt blueprintOrigin "another-blueprint" "2.0.0" "3.0.0"
             ]
-      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+      pendingBlueprintMigrations False owners receipts migrationPlan
         `shouldBe` [second]
 
     it "keeps recorded edges when rerun is requested" $ do
       let migrationPlan = plan [first, second]
           receipts = [receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"]
-      pendingBlueprintMigrations True blueprintOrigin blueprintName receipts migrationPlan
+      pendingBlueprintMigrations True owners receipts migrationPlan
         `shouldBe` [first, second]
 
     -- The behaviour the origin field exists for. Two repositories can publish
@@ -55,13 +55,13 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
     it "does not let another repository's receipt suppress an identical edge" $ do
       let migrationPlan = plan [first, second]
           receipts = [receipt otherRepoOrigin blueprintName "1.0.0" "2.0.0"]
-      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+      pendingBlueprintMigrations False owners receipts migrationPlan
         `shouldBe` [first, second]
 
     it "does drop the edge when the receipt is from the same repository" $ do
       let migrationPlan = plan [first, second]
           receipts = [receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"]
-      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+      pendingBlueprintMigrations False owners receipts migrationPlan
         `shouldBe` [second]
 
     -- Two spellings of one git URL are one repository. A developer who
@@ -71,7 +71,7 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
       let migrationPlan = plan [first, second]
           receipts =
             [receipt (RemoteOrigin "https://github.com/acme/one.git" "payments" Nothing) blueprintName "1.0.0" "2.0.0"]
-      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+      pendingBlueprintMigrations False owners receipts migrationPlan
         `shouldBe` [second]
 
     -- Receipts written before origins were recorded decode as LocalOrigin.
@@ -79,9 +79,11 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
     it "matches a legacy receipt only against an equally unprovenanced blueprint" $ do
       let migrationPlan = plan [first, second]
           receipts = [receipt (LocalOrigin "payments") blueprintName "1.0.0" "2.0.0"]
-      pendingBlueprintMigrations False (LocalOrigin "payments") blueprintName receipts migrationPlan
+          unprovenancedOwners =
+            ownersFrom [("payments", (blueprintName, LocalOrigin "payments"))]
+      pendingBlueprintMigrations False unprovenancedOwners receipts migrationPlan
         `shouldBe` [second]
-      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+      pendingBlueprintMigrations False owners receipts migrationPlan
         `shouldBe` [first, second]
 
     -- The defect IR-1 filed. An edge that reported its precondition unmet
@@ -97,7 +99,7 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
                 "2.0.0"
                 "the project has not adopted the bundle"
             ]
-      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+      pendingBlueprintMigrations False owners receipts migrationPlan
         `shouldBe` [first, second]
 
     -- The same edge, the same origin, the same window: only the outcome
@@ -106,10 +108,46 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
       let migrationPlan = plan [first, second]
           skipped = notApplicableReceipt blueprintOrigin blueprintName "1.0.0" "2.0.0" "no adr bundle"
           applied = receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"
-      pendingBlueprintMigrations False blueprintOrigin blueprintName [skipped] migrationPlan
+      pendingBlueprintMigrations False owners [skipped] migrationPlan
         `shouldBe` [first, second]
-      pendingBlueprintMigrations False blueprintOrigin blueprintName [applied] migrationPlan
+      pendingBlueprintMigrations False owners [applied] migrationPlan
         `shouldBe` [second]
+
+    -- The regression fence around fan-out's central claim. A plan whose steps
+    -- belong to two blueprints is filtered per step against the receipts of
+    -- that step's own owner.
+    it "drops an entailed step when the entailed blueprint recorded that edge" $ do
+      let migrationPlan = plan [entailedStep, first]
+          receipts = [receipt entailedOrigin entailedName "1.9.0" "2.0.0"]
+      pendingBlueprintMigrations False cohortOwners receipts migrationPlan
+        `shouldBe` [first]
+
+    -- The mirror, and the whole reason the receipt is written under the owner:
+    -- a receipt filed under the invoking blueprint for the same window says
+    -- nothing about the entailed blueprint's edge, and must not drop it.
+    it "does not drop an entailed step because the invoking blueprint recorded that window" $ do
+      let migrationPlan = plan [entailedStep, first]
+          receipts = [receipt blueprintOrigin blueprintName "1.9.0" "2.0.0"]
+      pendingBlueprintMigrations False cohortOwners receipts migrationPlan
+        `shouldBe` [entailedStep, first]
+
+    -- Discovery resolves every owner before a plan reaches this function, so
+    -- an unresolvable owner is an internal inconsistency. Claiming the step
+    -- was already applied would silently skip real work; the honest answer is
+    -- that nothing is known about it.
+    it "treats a step whose owner cannot be resolved as not previously applied" $ do
+      let migrationPlan = plan [entailedStep]
+          receipts = [receipt entailedOrigin entailedName "1.9.0" "2.0.0"]
+      pendingBlueprintMigrations False owners receipts migrationPlan
+        `shouldBe` [entailedStep]
+
+  describe "formatMigrationStepLabel" $ do
+    it "names the owning blueprint and the edge" $
+      formatMigrationStepLabel first `shouldBe` "payments 1.0.0 -> 2.0.0"
+
+    it "names what pulled in an entailed step" $
+      formatMigrationStepLabel entailedStep
+        `shouldBe` "kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)"
 
   describe "renderBlueprintMigrationInstruction" $ do
     it "substitutes the variables resolved for the shared blueprint" $ do
@@ -123,7 +161,7 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
 
   describe "renderBlueprintMigrationSystemPrompt" $ do
     it "renders identity, position, shared guidance, edge instructions, and reference access" $ do
-      let edge = migrationWithPrompt "1.0.0" "2.0.0" "Upgrade {{library.name}} now."
+      let edge = ownedStep "payments" (migrationWithPrompt "1.0.0" "2.0.0" "Upgrade {{library.name}} now.")
           rendered =
             renderBlueprintMigrationSystemPrompt
               "{{blueprint_name}} {{blueprint_version}} | {{migration_position}}/{{migration_total}} | {{migration_from}} -> {{migration_to}} | {{shared_prompt}} | {{migration_prompt}} | {{reference_files_dir}} | {{cwd}}"
@@ -150,14 +188,42 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
         first
         `shouldBe` "write to /tmp/project/.seihou/.migrate-signal"
 
+    -- An entailed step is being run on a library the user never named, so the
+    -- framing has to say why it is happening at all.
+    it "explains an entailed step, and says nothing for a directly selected one" $ do
+      let render step =
+            renderBlueprintMigrationSystemPrompt
+              "{{migration_entailed_by}}"
+              "/tmp/project/.seihou/.migrate-signal"
+              sampleContext
+              samplePrepared
+              1
+              1
+              step
+      render entailedStep
+        `shouldBe` "This edge was not requested directly. It is required by keiro-upgrade 2.4.0 -> 3.0.0, which the user is migrating."
+      render first `shouldBe` ""
+
     it "delimits debug prompts in pending order without any execution callback" $ do
       let output =
             formatBlueprintMigrationDebugOutput
-              (\position total edge -> "prompt " <> tshow position <> "/" <> tshow total <> " " <> edge ^. #from)
+              (\position total step -> "prompt " <> tshow position <> "/" <> tshow total <> " " <> step ^. #edge . #from)
               [first, second]
-      output `shouldSatisfy` T.isInfixOf "===== [1/2] 1.0.0 -> 2.0.0 ====="
-      output `shouldSatisfy` T.isInfixOf "===== [2/2] 2.0.0 -> 3.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "===== [1/2] payments 1.0.0 -> 2.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "===== [2/2] payments 2.0.0 -> 3.0.0 ====="
       T.breakOn "2.0.0 -> 3.0.0" output `shouldSatisfy` (not . T.null . snd)
+
+    -- A chain that spans blueprints is unreadable if every header looks the
+    -- same; the owner is the only way to tell whose prompt follows.
+    it "labels a debug header with the owning blueprint and what entailed it" $ do
+      let output =
+            formatBlueprintMigrationDebugOutput
+              (\_ _ _ -> "prompt body")
+              [entailedStep, first]
+      output
+        `shouldSatisfy` T.isInfixOf
+          "===== [1/2] kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0) ====="
+      output `shouldSatisfy` T.isInfixOf "===== [2/2] payments 1.0.0 -> 2.0.0 ====="
 
   describe "runBlueprintMigrationsWith" $ do
     it "reports no work without invoking either callback" $ do
@@ -172,11 +238,11 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
 
     it "launches and records every edge sequentially" $ do
       calls <- newIORef ([] :: [Text])
-      let launch position total edge = do
-            modifyIORef' calls (<> ["launch " <> tshow position <> "/" <> tshow total <> " " <> edge ^. #from])
+      let launch position total step = do
+            modifyIORef' calls (<> ["launch " <> tshow position <> "/" <> tshow total <> " " <> step ^. #edge . #from])
             pure (Right BlueprintMigrationSessionReturned)
-          record edge _ = do
-            modifyIORef' calls (<> ["record " <> edge ^. #from])
+          record step _ = do
+            modifyIORef' calls (<> ["record " <> step ^. #edge . #from])
             pure (Right ())
       result <- runBlueprintMigrationsWith launch record [first, second]
       result `shouldBe` BlueprintMigrationComplete [(first, MigrationApplied), (second, MigrationApplied)]
@@ -193,15 +259,15 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
     it "records the outcome and continues past a not-applicable edge" $ do
       calls <- newIORef ([] :: [Text])
       outcomes <- newIORef ([] :: [(Text, MigrationOutcome)])
-      let launch _ _ edge = do
-            modifyIORef' calls (<> ["launch " <> edge ^. #from])
+      let launch _ _ step = do
+            modifyIORef' calls (<> ["launch " <> step ^. #edge . #from])
             pure . Right $
-              if edge == first
+              if step == first
                 then BlueprintMigrationSessionNotApplicable "no docs/adr directory"
                 else BlueprintMigrationSessionReturned
-          record edge outcome = do
-            modifyIORef' calls (<> ["record " <> edge ^. #from])
-            modifyIORef' outcomes (<> [(edge ^. #from, outcome)])
+          record step outcome = do
+            modifyIORef' calls (<> ["record " <> step ^. #edge . #from])
+            modifyIORef' outcomes (<> [(step ^. #edge . #from, outcome)])
             pure (Right ())
       result <- runBlueprintMigrationsWith launch record [first, second]
       result
@@ -219,7 +285,7 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
     it "records only completed edges after failure and resumes at the failed edge" $ do
       calls <- newIORef ([] :: [Text])
       recorded <- newIORef ([] :: [AppliedBlueprintMigration])
-      let third = migration "3.0.0" "4.0.0"
+      let third = ownedStep "payments" (migration "3.0.0" "4.0.0")
           migrationPlan =
             BlueprintMigrationPlan
               { name = "payments",
@@ -227,15 +293,15 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
                 to = version "4.0.0",
                 steps = [first, second, third]
               }
-          launch _ _ edge = do
-            modifyIORef' calls (<> ["launch " <> edge ^. #from])
+          launch _ _ step = do
+            modifyIORef' calls (<> ["launch " <> step ^. #edge . #from])
             pure $
-              if edge == second
+              if step == second
                 then Left (BlueprintMigrationProcessFailure (ExitFailure 17))
                 else Right BlueprintMigrationSessionReturned
-          record edge _ = do
-            modifyIORef' calls (<> ["record " <> edge ^. #from])
-            modifyIORef' recorded (<> [receipt blueprintOrigin blueprintName (edge ^. #from) (edge ^. #to)])
+          record step _ = do
+            modifyIORef' calls (<> ["record " <> step ^. #edge . #from])
+            modifyIORef' recorded (<> [receipt blueprintOrigin blueprintName (step ^. #edge . #from) (step ^. #edge . #to)])
             pure (Right ())
       result <- runBlueprintMigrationsWith launch record [first, second, third]
       result
@@ -244,21 +310,24 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
         `shouldReturn` ["launch 1.0.0", "record 1.0.0", "launch 2.0.0"]
 
       savedReceipts <- readIORef recorded
-      let resumed = pendingBlueprintMigrations False blueprintOrigin blueprintName savedReceipts migrationPlan
+      let resumed = pendingBlueprintMigrations False owners savedReceipts migrationPlan
       resumed `shouldBe` [second, third]
 
       resumedResult <-
         runBlueprintMigrationsWith
-          (\_ _ edge -> modifyIORef' calls (<> ["resume " <> edge ^. #from]) >> pure (Right BlueprintMigrationSessionReturned))
+          (\_ _ step -> modifyIORef' calls (<> ["resume " <> step ^. #edge . #from]) >> pure (Right BlueprintMigrationSessionReturned))
           record
           resumed
       resumedResult `shouldBe` BlueprintMigrationComplete [(second, MigrationApplied), (third, MigrationApplied)]
-      readIORef recorded `shouldReturn` map (\edge -> receipt blueprintOrigin blueprintName (edge ^. #from) (edge ^. #to)) [first, second, third]
+      readIORef recorded
+        `shouldReturn` map
+          (\step -> receipt blueprintOrigin blueprintName (step ^. #edge . #from) (step ^. #edge . #to))
+          [first, second, third]
 
     it "stops before the next launch when receipt recording fails" $ do
       calls <- newIORef ([] :: [Text])
-      let launch _ _ edge = modifyIORef' calls (<> ["launch " <> edge ^. #from]) >> pure (Right BlueprintMigrationSessionReturned)
-          record edge _ = modifyIORef' calls (<> ["record " <> edge ^. #from]) >> pure (Left "disk full")
+      let launch _ _ step = modifyIORef' calls (<> ["launch " <> step ^. #edge . #from]) >> pure (Right BlueprintMigrationSessionReturned)
+          record step _ = modifyIORef' calls (<> ["record " <> step ^. #edge . #from]) >> pure (Left "disk full")
       result <- runBlueprintMigrationsWith launch record [first, second]
       result `shouldBe` BlueprintMigrationRecordFailed first "disk full"
       readIORef calls `shouldReturn` ["launch 1.0.0", "record 1.0.0"]
@@ -310,11 +379,47 @@ blueprintOrigin = RemoteOrigin "https://github.com/acme/one" "payments" Nothing
 otherRepoOrigin :: ArtifactOrigin
 otherRepoOrigin = RemoteOrigin "https://github.com/acme/two" "payments" Nothing
 
-first :: BlueprintMigration
-first = migration "1.0.0" "2.0.0"
+-- | A second cohort member, published by a third repository, whose edge is
+-- reached only through entailment.
+entailedName :: ModuleName
+entailedName = "kiroku-upgrade"
 
-second :: BlueprintMigration
-second = migration "2.0.0" "3.0.0"
+entailedOrigin :: ArtifactOrigin
+entailedOrigin = RemoteOrigin "https://github.com/acme/kiroku" "kiroku-upgrade" Nothing
+
+-- | Owner identities for a run that loaded only the invoked blueprint.
+owners :: Text -> Maybe (ModuleName, ArtifactOrigin)
+owners = ownersFrom [("payments", (blueprintName, blueprintOrigin))]
+
+-- | Owner identities for a run that also loaded the entailed blueprint.
+cohortOwners :: Text -> Maybe (ModuleName, ArtifactOrigin)
+cohortOwners =
+  ownersFrom
+    [ ("payments", (blueprintName, blueprintOrigin)),
+      ("kiroku-upgrade", (entailedName, entailedOrigin))
+    ]
+
+ownersFrom :: [(Text, (ModuleName, ArtifactOrigin))] -> Text -> Maybe (ModuleName, ArtifactOrigin)
+ownersFrom table name = lookup name table
+
+first :: BlueprintMigrationStep
+first = ownedStep "payments" (migration "1.0.0" "2.0.0")
+
+second :: BlueprintMigrationStep
+second = ownedStep "payments" (migration "2.0.0" "3.0.0")
+
+-- | An edge of another blueprint, pulled in by an edge of the invoked one.
+entailedStep :: BlueprintMigrationStep
+entailedStep =
+  BlueprintMigrationStep
+    { owner = "kiroku-upgrade",
+      edge = migration "1.9.0" "2.0.0",
+      entailedBy = Just (EntailmentSite "keiro-upgrade" "2.4.0" "3.0.0")
+    }
+
+ownedStep :: Text -> BlueprintMigration -> BlueprintMigrationStep
+ownedStep owner edge =
+  BlueprintMigrationStep {owner = owner, edge = edge, entailedBy = Nothing}
 
 migration :: Text -> Text -> BlueprintMigration
 migration fromVersion toVersion =
@@ -325,10 +430,11 @@ migrationWithPrompt fromVersion toVersion instructions =
   BlueprintMigration
     { from = fromVersion,
       to = toVersion,
-      prompt = instructions
+      prompt = instructions,
+      entails = []
     }
 
-plan :: [BlueprintMigration] -> BlueprintMigrationPlan
+plan :: [BlueprintMigrationStep] -> BlueprintMigrationPlan
 plan steps =
   BlueprintMigrationPlan
     { name = "payments",
@@ -398,7 +504,7 @@ samplePrepared =
             files = [],
             allowedTools = Nothing,
             tags = [],
-            migrations = [first, second],
+            migrations = [first ^. #edge, second ^. #edge],
             launch = Nothing
           }
    in PreparedBlueprintExecution

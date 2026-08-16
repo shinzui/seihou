@@ -62,30 +62,174 @@ other plans make it safe; this one makes it work.
 
 ## Progress
 
-- [ ] Verify both prerequisite plans have landed (orientation, no edits).
-- [ ] Publish `EntailedEdge.dhall` and the `entails` field in the `seihou-schema` submodule; push and re-pin.
-- [ ] Decode `entails` in `seihou-core/src/Seihou/Dhall/Eval.hs`, tolerating blueprints that predate it.
-- [ ] Validate entailment in `seihou-core/src/Seihou/Core/Blueprint.hs`.
-- [ ] Add a step type carrying its owning blueprint, and pure recursive expansion with cycle detection, in `seihou-core/src/Seihou/Core/Migration.hs`.
-- [ ] Resolve the cohort's blueprints in `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs` by transitive-closure discovery.
-- [ ] Prepare one execution context per owning blueprint so each step gets its own files, tools, and variables.
-- [ ] Filter each step against receipts using its owning blueprint's identity.
-- [ ] Label the owning blueprint in launch output and `--debug` output.
-- [ ] Add tests: expansion, cycles, missing blueprint, missing edge, cross-entry-point deduplication.
-- [ ] Update `docs/user/blueprint-migrations.md`, `docs/user/blueprints.md`, `docs/cli/agent.md`, `schema/README.md`, and `docs/user/CHANGELOG.md`.
+- [x] Verify both prerequisite plans have landed (orientation, no edits) — 2026-08-16
+- [x] Publish `EntailedEdge.dhall` and the `entails` field in the `seihou-schema` submodule; push and re-pin (schema commit `014bb79`) — 2026-08-16
+- [x] Decode `entails` in `seihou-core/src/Seihou/Dhall/Eval.hs`, tolerating blueprints that predate it — 2026-08-16
+- [x] Validate entailment in `seihou-core/src/Seihou/Core/Blueprint.hs` — 2026-08-16
+- [x] Add a step type carrying its owning blueprint, and pure recursive expansion with cycle detection, in `seihou-core/src/Seihou/Core/Migration.hs` — 2026-08-16
+- [x] Resolve the cohort's blueprints by transitive-closure discovery, in a new `seihou-cli/src/Seihou/CLI/MigrationCohort.hs` — 2026-08-16
+- [x] Prepare one execution context per owning blueprint so each step gets its own files, tools, and variables — 2026-08-16
+- [x] Filter each step against receipts using its owning blueprint's identity — 2026-08-16
+- [x] Label the owning blueprint in launch output and `--debug` output — 2026-08-16
+- [x] Extend the agent guard to every entailed blueprint in the resolved cohort — 2026-08-16
+- [x] Unit tests: expansion order, transitivity, deduplication, cycles, missing blueprint, missing edge, per-owner receipt filtering — 2026-08-16
+- [ ] End-to-end test: two blueprint fixtures on disk, `--debug` chain spanning both with each step's own reference files.
+- [ ] Update `docs/user/blueprint-migrations.md`, `docs/user/blueprints.md`, `docs/cli/agent.md`, and `docs/user/CHANGELOG.md` (`schema/README.md` done in milestone 1).
 - [ ] Write the ADR recording that an entailed edge is owned by the blueprint that declares it.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **`withDefaults` already had a reusable empty-list constant; the plan's
+  `emptyEntailsList` with a spelled-out element type was unnecessary.** The plan
+  said a list of records "needs its element type spelled out where the empty
+  migration list only needed `Text`". It does not: the comment on
+  `emptyMigrationList` in `seihou-core/src/Seihou/Dhall/Eval.hs` records that the
+  list extractor ignores the annotation entirely and reads element values, so
+  `Dhall.ListLit (Just Dhall.Text) mempty` serves any empty list. The constant
+  was renamed `emptyRecordList` and reused for `entails`, which is now three
+  fields sharing one placeholder rather than three near-identical constants.
+
+- **`withDefaults` had to move to the per-migration decoder, as the plan
+  predicted, and that is the only place it works.** Attaching the default at
+  `blueprintDecoder` cannot help, because the missing key is inside each element
+  of the `migrations` list rather than on the blueprint record. The existing
+  `AgentMigrateE2ESpec` fixtures spell their migration lists out longhand as
+  `List { from : Text, to : Text, prompt : Text }` with no `entails` key at all,
+  so they are the in-tree regression test that an older blueprint still loads —
+  they were left untouched and still pass.
+
+- **Adding a field to `BlueprintMigration` surfaced positional construction in
+  two test modules that a search for the record's field names would have
+  missed.** `seihou-core/test/Seihou/Core/BlueprintSpec.hs` and
+  `.../MigrationSpec.hs` build edges as `BlueprintMigration "1.0.0" "2.0.0"
+  "prompt"`, which fails with "applied to too few arguments" rather than the
+  `[GHC-95909]` missing-field error EP-81's note leads one to expect. **For
+  EP-86:** if it adds a field to a core record, build first and treat the
+  compiler's error list as the site inventory, but expect positional
+  constructions among them, not only record literals.
+
+- **`pendingBlueprintMigrations`'s owner lookup returning `Nothing` needed a
+  deliberate answer, and "not previously applied" is the safe one.** Cohort
+  discovery resolves every owner before a plan reaches the predicate, so the
+  case is unreachable. Treating it as *applied* would silently skip real work,
+  which is the failure mode this whole initiative exists to close; treating it
+  as pending at worst re-runs an edge whose receipt cannot be read. There is a
+  spec pinning it, so a future refactor that makes the case reachable fails
+  loudly rather than quietly.
 
 
 ## Decision Log
 
-- Decision: ...
-  Rationale: ...
-  Date: ...
+- Decision: Entailed edges run before the edge that declares them, several of
+  them in declaration order, and expansion is recursive.
+  Rationale: The entailed edge is the deeper change — kiroku's API — and the
+  declaring edge's guidance may assume it has already been applied. Recursion is
+  what lets a three-deep cohort work without every blueprint knowing the whole
+  graph. Both are stated in `schema/EntailedEdge.dhall` and in the authoring
+  documentation, because an author cannot discover either from the field's type.
+  Date: 2026-08-16
+
+- Decision: A cycle is a hard error naming the chain; a missing entailed
+  blueprint is a hard error naming what to install; a named edge the entailed
+  blueprint does not declare is a hard error listing the edges it does declare.
+  None of the three is skipped.
+  Rationale: The consumer does not know the cohort, so a silently omitted member
+  produces a half-migrated project with no signal at all. Guessing at a
+  near-miss edge would let a keiro release silently change which kiroku work it
+  implies. Auto-fetching a missing blueprint is rejected for the reason
+  `docs/adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md` gives: it
+  would mutate the machine-global install cache as a side effect of an unrelated
+  command.
+  Date: 2026-08-16
+
+- Decision: An edge already emitted is not emitted again within one expansion,
+  keyed on `(owner, from, to)` and deliberately ignoring what entailed it.
+  Rationale: Two selected keiro edges can both entail the same kiroku edge; it
+  is one piece of work. Keying on the entailing edge as well would cross it
+  twice — the exact failure fan-out exists to prevent. This is distinct from
+  receipt-based skipping, which happens afterwards against the manifest.
+  Date: 2026-08-16
+
+- Decision: `EntailmentError`'s two authoring variants carry an `EntailmentSite`
+  record — the declaring blueprint plus its edge window — rather than the plan's
+  bare declaring-blueprint name. `BlueprintMigrationStep`'s `entailedBy` reuses
+  the same record instead of a `(Text, Text, Text)` tuple.
+  Rationale: The error messages the plan specifies read `'keiro-upgrade' edge
+  2.4.0 -> 3.0.0 entails ...`, which the blueprint name alone cannot produce; an
+  author with several edges needs to know which one to fix. The same three
+  fields are what `entailedBy` carries, and a named record beats a tuple whose
+  component order has to be remembered at four call sites.
+  Date: 2026-08-16
+
+- Decision: Cohort discovery follows exact edges, not whole blueprints, and
+  leaves an uninstalled blueprint out of the map rather than erroring where it
+  is found.
+  Rationale: Loading everything a newly discovered blueprint mentions anywhere
+  would make an unrelated, uninstalled member of some other chain fail a run
+  that never needed it. Reporting the absence is left to `expandEntailedEdges`,
+  which knows which edge named the missing blueprint and can therefore say what
+  to install and why. Discovery terminates on its own — each `(blueprint, from,
+  to)` reference is expanded at most once — so a cyclic declaration cannot spin
+  there even though reporting the cycle is the expander's job.
+  Date: 2026-08-16
+
+- Decision: Discovery, validation, and origin detection for both the invoked
+  blueprint and every entailed one live in a new CLI *library* module,
+  `seihou-cli/src/Seihou/CLI/MigrationCohort.hs`, rather than in
+  `AgentMigrate.hs`.
+  Rationale: The project's library-first convention (`CLAUDE.md`,
+  `nix/check-cli-module-placement.sh`) puts new code in a library unless it
+  needs `Options.Applicative`, `Data.FileEmbed`, `GitHash`, or
+  `Paths_seihou_cli`. This code needs none of them. Folding the invoked
+  blueprint's own discovery into the same function also removed a duplicate
+  discovery path, so a name that resolves to a module rather than a blueprint
+  produces the same message whether it was typed or entailed.
+  Date: 2026-08-16
+
+- Decision: Execution contexts are prepared for the blueprints that own a
+  *pending* step, not for every blueprint in the cohort, and all of them before
+  the first session launches.
+  Rationale: Preparing a blueprint resolves its variables, which can prompt.
+  Asking a user to answer questions for a blueprint whose every edge already has
+  a receipt is pure friction. Preparing them all up front rather than lazily per
+  step means a user answers every prompt before any agent session starts, rather
+  than being interrupted between sessions.
+  Date: 2026-08-16
+
+- Decision: Only the owning blueprint's `files/` directory is mounted for a
+  step, and an entailed blueprint's `launch` declaration is ignored; provider,
+  model, and effort stay a property of the command.
+  Rationale: Mounting every cohort member's reference material hands kiroku's
+  documents to keiro's edge and invites the agent to pre-apply work the framing
+  prompt explicitly tells it to leave for a later step. A single command cannot
+  switch providers between edges, so the invoked blueprint's declaration wins,
+  as it does today. Both are user-visible and are documented.
+  Date: 2026-08-16
+
+- Decision: `enforceAgentArtifactGuard` now takes a list of blueprint names, and
+  `agent migrate` calls it twice — once for the invoked blueprint before
+  planning, once for the entailed blueprints after discovery.
+  Rationale: `docs/adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md`
+  scopes the check to artifacts a command is about to use, and under entailment
+  that set grows to the whole resolved cohort. The entailed members cannot be
+  known before the window is planned, and
+  `docs/masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md`
+  requires the existing check to stay exactly where it is — a substituted
+  *invoked* blueprint is precisely what would make the planned window
+  meaningless, so that check must not move behind planning. Two calls, one
+  widened function.
+  Date: 2026-08-16
+
+- Decision: The framing prompt gains a `{{migration_entailed_by}}` line, empty
+  for a directly selected edge.
+  Rationale: An entailed step asks an agent to migrate a library the user never
+  named. Without a sentence saying what required it, the agent's most reasonable
+  reading of "the user is upgrading keiro" is that a kiroku migration is a
+  mistake. The prompt's "If This Edge Does Not Apply" section gained a matching
+  sentence, because an indirectly reached edge is the ordinary case for
+  inapplicability.
+  Date: 2026-08-16
 
 
 ## Outcomes & Retrospective
