@@ -38,6 +38,7 @@ import Data.List (nubBy)
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Seihou.Core.ArtifactIdentity (normalizeOriginUrl, normalizeProjectPath)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef
   ( ArtifactRefError,
@@ -162,32 +163,6 @@ originRelation recorded local = case (recorded, local) of
     | otherwise -> OriginDiffers
   (ProjectOrigin {}, _) -> OriginDiffers
   (LocalOrigin {}, _) -> OriginUnverifiable
-
--- | Reduce a git URL to a form two spellings of the same repository share.
---
--- @https:\/\/host\/repo@, @https:\/\/host\/repo.git@ and
--- @https:\/\/host\/repo\/@ all name the same repository, and a manifest
--- written by a developer who typed one of them must not read as a different
--- module to a developer who typed another.
-normalizeOriginUrl :: Text -> Text
-normalizeOriginUrl =
-  dropTrailingSlashes . dropGitSuffix . dropTrailingSlashes . T.strip
-  where
-    dropTrailingSlashes = T.dropWhileEnd (== '/')
-    dropGitSuffix url = fromMaybe url (T.stripSuffix ".git" url)
-
--- | Reduce a project-relative path to a comparable form. The manifest stores
--- these with forward slashes; @.\/@ prefixes and trailing slashes are noise.
-normalizeProjectPath :: FilePath -> FilePath
-normalizeProjectPath =
-  dropWhileEnd' (== '/') . dropDotPrefix . dropWhileEnd' (== '/')
-  where
-    dropDotPrefix path = fromMaybe path (stripPrefix' "./" path)
-    stripPrefix' prefix path =
-      if take (length prefix) path == prefix
-        then Just (drop (length prefix) path)
-        else Nothing
-    dropWhileEnd' p = reverse . dropWhile p . reverse
 
 -- ----------------------------------------------------------------------------
 -- Checking a manifest against this machine

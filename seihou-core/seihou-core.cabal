@@ -40,6 +40,7 @@ library
     Seihou.Composition.Resolve
     Seihou.Core.AgentPrompt
     Seihou.Core.Application
+    Seihou.Core.ArtifactIdentity
     Seihou.Core.ArtifactOriginDetect
     Seihou.Core.ArtifactRef
     Seihou.Core.Blueprint

@@ -526,7 +526,7 @@ prepareRecipeUpdateFixture root = do
             vars = Map.empty,
             files = Map.empty,
             applications = [app],
-            recipe = Just (AppliedRecipe "stack" (Just "1.0.0") testTime),
+            recipe = Just (AppliedRecipe "stack" (remoteOrigin "stack") (Just "1.0.0") testTime),
             blueprint = Nothing,
             blueprintMigrations = []
           }

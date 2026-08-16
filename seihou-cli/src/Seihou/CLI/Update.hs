@@ -845,8 +845,17 @@ buildFinalManifest now plan filesManifest completedReceipts =
         ]
     updatedRecipe =
       foldl' updateRecipe (filesManifest ^. #recipe) finalApplications
+    -- The composition's targetOrigin is the recipe's own portable identity on
+    -- this branch, because the target is the recipe.
     updateRecipe current application = case application ^. #target of
-      AppliedRecipeTarget name -> Just AppliedRecipe {name, recipeVersion = application ^. #targetVersion, appliedAt = now}
+      AppliedRecipeTarget name ->
+        Just
+          AppliedRecipe
+            { name,
+              origin = application ^. #targetOrigin,
+              recipeVersion = application ^. #targetVersion,
+              appliedAt = now
+            }
       AppliedModuleTarget _ -> current
 
 updateAppliedModules :: [AppliedModule] -> [AppliedComposition] -> [PlannedApplication] -> UTCTime -> [AppliedModule]

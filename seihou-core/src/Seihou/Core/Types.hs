@@ -582,8 +582,16 @@ data AppliedComposition = AppliedComposition
   deriving stock (Eq, Show, Generic)
 
 -- | Recipe provenance recorded in the manifest when a recipe is used.
+--
+-- @origin@ is the recipe's portable identity. Turning it back into a
+-- directory on the current machine is
+-- 'Seihou.Core.ArtifactRef.resolveArtifactOrigin'; no path is ever recorded
+-- here. Manifests written before the field existed decode with a
+-- 'LocalOrigin' carrying the recorded name, which honestly says "this
+-- recipe's provenance cannot be verified".
 data AppliedRecipe = AppliedRecipe
   { name :: !RecipeName,
+    origin :: !ArtifactOrigin,
     recipeVersion :: !(Maybe Text),
     appliedAt :: !UTCTime
   }
@@ -602,8 +610,16 @@ data AppliedRecipe = AppliedRecipe
 -- @agentSessionId@ is reserved for the deferred resume feature recorded
 -- in @docs/masterplans/3-agent-driven-blueprints.md@; in v1 it is always
 -- 'Nothing' and the encoder omits the JSON key in that case.
+--
+-- @origin@ is the blueprint's portable identity. Turning it back into a
+-- directory on the current machine is
+-- 'Seihou.Core.ArtifactRef.resolveArtifactOrigin'; no path is ever recorded
+-- here. Manifests written before the field existed decode with a
+-- 'LocalOrigin' carrying the recorded name, which honestly says "this
+-- blueprint's provenance cannot be verified".
 data AppliedBlueprint = AppliedBlueprint
   { name :: !ModuleName,
+    origin :: !ArtifactOrigin,
     blueprintVersion :: !(Maybe Text),
     appliedAt :: !UTCTime,
     baselineModules :: ![ModuleName],
@@ -614,10 +630,21 @@ data AppliedBlueprint = AppliedBlueprint
   deriving stock (Eq, Show, Generic)
 
 -- | A durable receipt for one successfully completed agent-guided blueprint
--- migration edge. Exact-edge identity is the blueprint 'name' together with
--- 'fromVersion' and 'toVersion'; the remaining fields are audit metadata.
+-- migration edge. Exact-edge identity is the 'origin' and 'name' of the
+-- blueprint that owns the edge together with 'fromVersion' and 'toVersion';
+-- the remaining fields are audit metadata.
+--
+-- @origin@ is the blueprint's portable identity. Turning it back into a
+-- directory on the current machine is
+-- 'Seihou.Core.ArtifactRef.resolveArtifactOrigin'; no path is ever recorded
+-- here. It is part of the identity, not merely audit metadata, because two
+-- blueprints published by different repositories under the same name are not
+-- the same blueprint and their identically-numbered edges are not the same
+-- edge. Manifests written before the field existed decode with a
+-- 'LocalOrigin' carrying the recorded name.
 data AppliedBlueprintMigration = AppliedBlueprintMigration
   { name :: !ModuleName,
+    origin :: !ArtifactOrigin,
     blueprintVersion :: !(Maybe Text),
     fromVersion :: !Text,
     toVersion :: !Text,

@@ -34,12 +34,17 @@ mkBlueprintMigrationReceipt :: T.Text -> T.Text -> T.Text -> UTCTime -> AppliedB
 mkBlueprintMigrationReceipt blueprintName fromVersion toVersion appliedAt =
   AppliedBlueprintMigration
     { name = ModuleName blueprintName,
+      origin = RemoteOrigin ("https://github.com/acme/" <> blueprintName) blueprintName Nothing,
       blueprintVersion = Just "0.4.0",
       fromVersion = fromVersion,
       toVersion = toVersion,
       appliedAt = appliedAt,
       agentSessionId = Nothing
     }
+
+-- | The identity the @payments@ blueprint carries in the receipt cases below.
+paymentsOrigin :: ArtifactOrigin
+paymentsOrigin = RemoteOrigin "https://github.com/acme/payments" "payments" Nothing
 
 -- | Helper to set modules on a Manifest without ambiguous record update.
 withManifestModules :: [AppliedModule] -> Manifest -> Manifest
@@ -145,11 +150,19 @@ manifestWithEveryStringPosition =
         )
     & #applications
       %~ map (withCommandReceipts (Map.singleton receiptFingerprint receipt))
-    & #recipe .~ Just (AppliedRecipe (RecipeName "haskell-service") (Just "3.1.0") fixedTime)
+    & #recipe
+      .~ Just
+        ( AppliedRecipe
+            (RecipeName "haskell-service")
+            (RemoteOrigin "https://github.com/acme/haskell-service" "haskell-service" Nothing)
+            (Just "3.1.0")
+            fixedTime
+        )
     & #blueprint
       .~ Just
         ( AppliedBlueprint
             { name = ModuleName "service-blueprint",
+              origin = RemoteOrigin "https://github.com/acme/service-blueprint" "service-blueprint" Nothing,
               blueprintVersion = Just "2.0.0",
               appliedAt = fixedTime,
               baselineModules = [ModuleName "haskell-base"],
@@ -508,6 +521,7 @@ spec = do
       let ab =
             AppliedBlueprint
               { name = ModuleName "payments-service",
+                origin = RemoteOrigin "https://github.com/acme/payments-service" "payments-service" Nothing,
                 blueprintVersion = Just "0.3.1",
                 appliedAt = fixedTime,
                 baselineModules = [ModuleName "nix-flake", ModuleName "haskell-base"],
@@ -521,6 +535,7 @@ spec = do
       let ab =
             AppliedBlueprint
               { name = ModuleName "lone-blueprint",
+                origin = LocalOrigin "lone-blueprint",
                 blueprintVersion = Nothing,
                 appliedAt = fixedTime,
                 baselineModules = [],
@@ -535,6 +550,7 @@ spec = do
           ab1 =
             AppliedBlueprint
               (ModuleName "first")
+              (LocalOrigin "first")
               Nothing
               fixedTime
               []
@@ -544,6 +560,7 @@ spec = do
           ab2 =
             AppliedBlueprint
               (ModuleName "second")
+              (LocalOrigin "second")
               (Just "1.0.0")
               fixedTime2
               [ModuleName "x"]
@@ -560,6 +577,7 @@ spec = do
       let receipt =
             AppliedBlueprintMigration
               (ModuleName "payments")
+              (RemoteOrigin "https://github.com/acme/payments" "payments" Nothing)
               (Just "0.4.0")
               "1.0.0"
               "2.0.0"
@@ -578,6 +596,7 @@ spec = do
           replacement =
             AppliedBlueprintMigration
               (ModuleName "payments")
+              (RemoteOrigin "https://github.com/acme/payments" "payments" Nothing)
               (Just "0.5.0")
               "1.0.0"
               "2.0.0"
@@ -586,8 +605,17 @@ spec = do
           manifest1 = writeAppliedBlueprintMigration unrelated (writeAppliedBlueprintMigration first (emptyManifest fixedTime))
           manifest2 = writeAppliedBlueprintMigration replacement manifest1
       (manifest2 ^. #blueprintMigrations) `shouldBe` [replacement, unrelated]
-      hasAppliedBlueprintMigration "payments" "1.0.0" "2.0.0" manifest2 `shouldBe` True
-      hasAppliedBlueprintMigration "payments" "2.0.0" "3.0.0" manifest2 `shouldBe` False
+      hasAppliedBlueprintMigration paymentsOrigin "payments" "1.0.0" "2.0.0" manifest2 `shouldBe` True
+      hasAppliedBlueprintMigration paymentsOrigin "payments" "2.0.0" "3.0.0" manifest2 `shouldBe` False
+      -- A blueprint of the same name from another repository has its own
+      -- receipts, so the identical edge is not recorded for it.
+      hasAppliedBlueprintMigration
+        (RemoteOrigin "https://github.com/other/payments" "payments" Nothing)
+        "payments"
+        "1.0.0"
+        "2.0.0"
+        manifest2
+        `shouldBe` False
 
     it "preserves modules, applications, files, recipe, and normal blueprint provenance" $ do
       let appliedModule = AppliedModule "base" emptyParentVars (LocalOrigin "base") (Just "1.0.0") fixedTime Nothing
@@ -605,8 +633,8 @@ spec = do
                 appliedAt = fixedTime
               }
           fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty
-          recipe = AppliedRecipe "recipe" (Just "1.0.0") fixedTime
-          normalBlueprint = AppliedBlueprint "payments" (Just "0.4.0") fixedTime [] False Nothing Nothing
+          recipe = AppliedRecipe "recipe" (LocalOrigin "recipe") (Just "1.0.0") fixedTime
+          normalBlueprint = AppliedBlueprint "payments" (LocalOrigin "payments") (Just "0.4.0") fixedTime [] False Nothing Nothing
           seed =
             ( (emptyManifest fixedTime)
                 & #modules .~ [appliedModule]

@@ -195,7 +195,12 @@ handleAgentRun debug pending opts = do
   -- after the rendered prompt is printed successfully.
   when launchSucceeded $ do
     now <- getCurrentTime
-    let entry = appliedBlueprintFromOutcome bp baseline opts now
+    -- Classify the blueprint's discovery directory into a portable origin, so
+    -- the recorded entry names the artifact rather than a directory that means
+    -- nothing on another developer's machine.
+    projectRoot <- getCurrentDirectory
+    blueprintOrigin <- detectArtifactOrigin projectRoot blueprintDir
+    let entry = appliedBlueprintFromOutcome bp blueprintOrigin baseline opts now
         manifestPath = ".seihou" </> "manifest.json"
     writeRes <- recordAppliedBlueprint manifestPath entry
     case writeRes of
@@ -246,10 +251,11 @@ runRenderedAgentPromptMode debug batch modelConfig tools mFilesDir systemPrompt 
 -- one-liner at the call site and so cross-plan tests can drive it
 -- with synthetic inputs.
 appliedBlueprintFromOutcome ::
-  Blueprint -> BaselineStatus -> BlueprintRunOpts -> UTCTime -> AppliedBlueprint
-appliedBlueprintFromOutcome bp baseline opts now =
+  Blueprint -> ArtifactOrigin -> BaselineStatus -> BlueprintRunOpts -> UTCTime -> AppliedBlueprint
+appliedBlueprintFromOutcome bp blueprintOrigin baseline opts now =
   AppliedBlueprint
     { name = bp ^. #name,
+      origin = blueprintOrigin,
       blueprintVersion = bp ^. #version,
       appliedAt = now,
       baselineModules = case baseline of

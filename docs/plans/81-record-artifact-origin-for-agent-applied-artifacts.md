@@ -50,28 +50,96 @@ either extend these records or read this completion key.
 
 ## Progress
 
-- [ ] Read the current record definitions and JSON instances (orientation, no edits).
-- [ ] Add `origin :: !ArtifactOrigin` to `AppliedBlueprint`, `AppliedBlueprintMigration`, and `AppliedRecipe` in `seihou-core/src/Seihou/Core/Types.hs`.
-- [ ] Update the six JSON instances in `seihou-core/src/Seihou/Manifest/Types.hs` to encode and decode the new field, with a decoder fallback for records written before it existed.
-- [ ] Update `hasAppliedBlueprintMigration` and `writeAppliedBlueprintMigration` in `seihou-core/src/Seihou/Manifest/Types.hs` so the upsert key includes origin.
-- [ ] Fill the field at the three write sites: `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs`, `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`, `seihou-cli/src-exe/Seihou/CLI/Run.hs`.
-- [ ] Extend `alreadyApplied` inside `pendingBlueprintMigrations` in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` to compare origin.
-- [ ] Add tests: JSON round-trip, legacy decode, and a same-name-different-origin skip test.
+- [x] Read the current record definitions and JSON instances (orientation, no edits). — 2026-08-16
+- [x] Add `origin :: !ArtifactOrigin` to `AppliedBlueprint`, `AppliedBlueprintMigration`, and `AppliedRecipe` in `seihou-core/src/Seihou/Core/Types.hs`. — 2026-08-16
+- [x] Update the six JSON instances in `seihou-core/src/Seihou/Manifest/Types.hs` to encode and decode the new field, with a decoder fallback for records written before it existed. — 2026-08-16
+- [x] Update `hasAppliedBlueprintMigration` and `writeAppliedBlueprintMigration` in `seihou-core/src/Seihou/Manifest/Types.hs` so the upsert key includes origin. — 2026-08-16
+- [x] Add `seihou-core/src/Seihou/Core/ArtifactIdentity.hs` so the three key comparisons share one definition of "same artifact" (see Decision Log). — 2026-08-16
+- [x] Fill the field at the write sites. There were **four**, not three: `AgentRun.hs`, `AgentMigrate.hs`, `Run.hs`, and `seihou-cli/src/Seihou/CLI/Update.hs` (see Surprises). — 2026-08-16
+- [x] Extend `alreadyApplied` inside `pendingBlueprintMigrations` in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` to compare origin. — 2026-08-16
+- [x] Add tests: JSON round-trip, legacy decode, and a same-name-different-origin skip test. — 2026-08-16
+- [x] Decide and record whether this is a decoder default or a manifest schema bump. — 2026-08-16
 - [ ] Update `docs/user/blueprint-migrations.md`, `docs/cli/manifest.md`, and `docs/user/CHANGELOG.md`.
-- [ ] Decide and record whether this is a decoder default or a manifest schema bump.
 - [ ] Mark IR-2 `status: implemented` in `docs/improvement-requests/record-artifact-origin-for-agent-applied-artifacts.md` and update `docs/improvement-requests/log.md`.
+- [ ] ADR distillation pass.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **There is a fourth write site the plan did not name.** `seihou-cli/src/Seihou/CLI/Update.hs`
+  rebuilds the whole manifest in `buildFinalManifest` and reconstructs `AppliedRecipe` there,
+  so `seihou update` also writes a recipe record. The compiler found it:
+
+  ```text
+  src/Seihou/CLI/Update.hs:849:40: error: [GHC-95909]
+      • Constructor ‘AppliedRecipe’ does not have the required strict field(s):
+          origin :: ArtifactOrigin
+  ```
+
+  It needed no new plumbing: the `AppliedComposition` it is folding over already carries
+  `targetOrigin`, which on that branch *is* the recipe's origin, because the branch is
+  selected by `target` being an `AppliedRecipeTarget`. The same shortcut applies in
+  `seihou-cli/src-exe/Seihou/CLI/Run.hs`, where `targetOrigin` is already in scope at the
+  construction site. Neither file needed a new `detectArtifactOrigin` call.
+
+- **`normalizeOriginUrl` could not simply be exported from `ManifestGuard`.** The plan proposed
+  exporting it from `seihou-cli/src/Seihou/CLI/ManifestGuard.hs` and using it in
+  `BlueprintMigration.hs`. That works for the CLI-side predicate but not for
+  `writeAppliedBlueprintMigration` and `hasAppliedBlueprintMigration`, which live in
+  `seihou-core` and cannot import from `seihou-cli`. The plan itself requires all three to
+  agree ("or a receipt could be written as a new entry while being read as a duplicate"), so
+  the comparison moved down into core instead. See the Decision Log.
+
+- **The manifest's JSON key for variables is `variables`, not `vars`.** The Haskell field is
+  `vars`; the encoder writes `variables`. The first hand-written legacy fixture used the field
+  name and failed with `Error in $: key "variables" not found`. Worth knowing for anyone
+  hand-authoring a manifest fixture.
 
 
 ## Decision Log
 
-- Decision: ...
-  Rationale: ...
-  Date: ...
+- Decision: A manifest written before this change decodes a missing `origin` as
+  `LocalOrigin <recorded name>`; `currentManifestVersion` stays at 6.
+  Rationale: The plan's option 1, chosen for the reason it gives. Where such an artifact
+  actually came from is unrecoverable — nothing on disk says which repository a receipt
+  written last month was resolved from — so a `seihou manifest upgrade` pass would have
+  nothing to write but the same weak value the decoder can supply.
+  `docs/adr/0005-legacy-manifests-convert-through-an-explicit-command.md` reserves the
+  explicit-command rule for conversions that lose or relocate information; this one loses
+  nothing. Implemented as `legacyLocalOrigin` in
+  `seihou-core/src/Seihou/Manifest/Types.hs`, shared by all three decoders.
+  Date: 2026-08-16
+
+- Decision: Put the "are these the same artifact?" comparison in a new core module,
+  `seihou-core/src/Seihou/Core/ArtifactIdentity.hs`, exporting `sameArtifactIdentity`,
+  `normalizeOriginUrl`, and `normalizeProjectPath` — rather than exporting
+  `normalizeOriginUrl` from `Seihou.CLI.ManifestGuard` as the plan proposed.
+  Rationale: Three places have to agree on the answer, and one of them
+  (`writeAppliedBlueprintMigration`/`hasAppliedBlueprintMigration` in `seihou-core`) cannot
+  import from `seihou-cli`. Exporting from `ManifestGuard` would have left the core upsert
+  keyed on structural equality while the CLI's pending filter normalised URLs, so a receipt
+  recorded under `https://host/repo.git` would have been appended as a second entry while
+  being read as a duplicate — the exact hazard the plan warns about. `ManifestGuard` now
+  imports the two normalisers from core and its private copies were deleted; its
+  three-way `judgeArtifact`/`originRelation` verdict logic is unchanged and stays in the CLI,
+  because "cannot be proved either way" has no meaning for a receipt lookup.
+  Date: 2026-08-16
+
+- Decision: `sameArtifactIdentity` compares the artifact *name* inside a `RemoteOrigin` as
+  well as the URL.
+  Rationale: One repository can publish several artifacts. Two `RemoteOrigin`s that share a
+  URL but name different artifacts are different artifacts, and the manifest's identity rule
+  in `docs/adr/0002-artifact-identity-is-origin-url-plus-name.md` is origin URL *plus* name.
+  Date: 2026-08-16
+
+- Decision: Compute the blueprint origin once per command in `handleAgentMigrate` rather than
+  once per edge.
+  Rationale: The blueprint cannot move mid-run, and every receipt the command writes belongs
+  to the same blueprint identity. One filesystem read is enough, and threading a single value
+  through `recordMigration` keeps the recorder honest about which blueprint owns the edge —
+  the property `docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md`
+  will need to vary per step.
+  Date: 2026-08-16
 
 
 ## Outcomes & Retrospective

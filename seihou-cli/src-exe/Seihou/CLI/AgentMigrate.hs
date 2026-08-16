@@ -43,6 +43,7 @@ import Seihou.CLI.BlueprintMigration
   )
 import Seihou.CLI.Commands (BlueprintMigrationOpts (..))
 import Seihou.CLI.Shared (formatVarError, logIO)
+import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.Blueprint (validateBlueprint)
 import Seihou.Core.Migration
   ( BlueprintMigration (..),
@@ -58,6 +59,7 @@ import Seihou.Effect.Logger (logError)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Prelude
+import System.Directory (getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 
 migrationPromptTemplate :: Text
@@ -73,6 +75,15 @@ handleAgentMigrate debug pendingConfig opts = do
   case validationResult of
     Left err -> exitErr level (renderModuleLoadError err)
     Right _ -> pure ()
+
+  -- Classify the blueprint's discovery directory into a portable origin once
+  -- per command. The blueprint does not move mid-run, and every receipt this
+  -- command writes belongs to the same blueprint identity, so one filesystem
+  -- read is enough. Receipts are keyed by this origin, not by the name the
+  -- user typed, so a blueprint of the same name from another repository has
+  -- its own receipts.
+  projectRoot <- getCurrentDirectory
+  blueprintOrigin <- detectArtifactOrigin projectRoot blueprintDir
 
   -- Finish provider/model/effort resolution now that the blueprint is loaded:
   -- `agent migrate` reads the same Blueprint record as `agent run`, so it
@@ -101,6 +112,7 @@ handleAgentMigrate debug pendingConfig opts = do
       let pending =
             pendingBlueprintMigrations
               (opts ^. #rerun)
+              blueprintOrigin
               (blueprint ^. #name)
               receipts
               migrationPlan
@@ -140,7 +152,7 @@ handleAgentMigrate debug pendingConfig opts = do
               result <-
                 runBlueprintMigrationsWith
                   (launchMigration traceSink modelConfig opts prepared renderStep)
-                  (recordMigration manifestPath blueprint)
+                  (recordMigration manifestPath blueprintOrigin blueprint)
                   pending
               handleRunResult level (blueprint ^. #name) result
 
@@ -254,15 +266,18 @@ launchMigration traceSink modelConfig opts prepared renderStep position total mi
 
 recordMigration ::
   FilePath ->
+  -- | the owning blueprint's portable identity, computed once per command
+  ArtifactOrigin ->
   Blueprint ->
   BlueprintMigration ->
   IO (Either Text ())
-recordMigration manifestPath blueprint migration = do
+recordMigration manifestPath blueprintOrigin blueprint migration = do
   now <- getCurrentTime
   recordAppliedBlueprintMigration
     manifestPath
     AppliedBlueprintMigration
       { name = blueprint ^. #name,
+        origin = blueprintOrigin,
         blueprintVersion = blueprint ^. #version,
         fromVersion = migration ^. #from,
         toVersion = migration ^. #to,

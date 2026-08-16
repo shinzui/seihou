@@ -125,6 +125,7 @@ mkBlueprint ::
 mkBlueprint name mver baselines noBL prompt =
   AppliedBlueprint
     { name = ModuleName name,
+      origin = RemoteOrigin ("https://github.com/acme/" <> name) name Nothing,
       blueprintVersion = mver,
       appliedAt = fixedTime,
       baselineModules = map ModuleName baselines,
@@ -140,6 +141,7 @@ mkBlueprintMigrationReceipt :: Text -> Maybe Text -> Text -> Text -> AppliedBlue
 mkBlueprintMigrationReceipt blueprintName artifactVersion fromVersion toVersion =
   AppliedBlueprintMigration
     { name = ModuleName blueprintName,
+      origin = RemoteOrigin ("https://github.com/acme/" <> blueprintName) blueprintName Nothing,
       blueprintVersion = artifactVersion,
       fromVersion = fromVersion,
       toVersion = toVersion,

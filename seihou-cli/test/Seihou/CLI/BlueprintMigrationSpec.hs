@@ -30,22 +30,58 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
               [late, early]
               (version "1.0.0")
               (version "3.0.0")
-      pendingBlueprintMigrations False blueprintName [] migrationPlan
+      pendingBlueprintMigrations False blueprintOrigin blueprintName [] migrationPlan
         `shouldBe` [early, late]
 
     it "resumes by filtering only an already-recorded exact edge" $ do
       let migrationPlan = plan [first, second]
           receipts =
-            [ receipt blueprintName "1.0.0" "2.0.0",
-              receipt "another-blueprint" "2.0.0" "3.0.0"
+            [ receipt blueprintOrigin blueprintName "1.0.0" "2.0.0",
+              receipt blueprintOrigin "another-blueprint" "2.0.0" "3.0.0"
             ]
-      pendingBlueprintMigrations False blueprintName receipts migrationPlan
+      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
         `shouldBe` [second]
 
     it "keeps recorded edges when rerun is requested" $ do
       let migrationPlan = plan [first, second]
-          receipts = [receipt blueprintName "1.0.0" "2.0.0"]
-      pendingBlueprintMigrations True blueprintName receipts migrationPlan
+          receipts = [receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"]
+      pendingBlueprintMigrations True blueprintOrigin blueprintName receipts migrationPlan
+        `shouldBe` [first, second]
+
+    -- The behaviour the origin field exists for. Two repositories can publish
+    -- a blueprint under the same name; their identically-numbered edges are
+    -- different work, and the first one's receipt must not silently suppress
+    -- the second one's edge.
+    it "does not let another repository's receipt suppress an identical edge" $ do
+      let migrationPlan = plan [first, second]
+          receipts = [receipt otherRepoOrigin blueprintName "1.0.0" "2.0.0"]
+      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+        `shouldBe` [first, second]
+
+    it "does drop the edge when the receipt is from the same repository" $ do
+      let migrationPlan = plan [first, second]
+          receipts = [receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"]
+      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+        `shouldBe` [second]
+
+    -- Two spellings of one git URL are one repository. A developer who
+    -- installed with the '.git' suffix must not see their recorded edges
+    -- reappear because someone else typed it without.
+    it "treats a trailing .git as the same origin" $ do
+      let migrationPlan = plan [first, second]
+          receipts =
+            [receipt (RemoteOrigin "https://github.com/acme/one.git" "payments" Nothing) blueprintName "1.0.0" "2.0.0"]
+      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+        `shouldBe` [second]
+
+    -- Receipts written before origins were recorded decode as LocalOrigin.
+    -- They match each other, and they match nothing installed from a URL.
+    it "matches a legacy receipt only against an equally unprovenanced blueprint" $ do
+      let migrationPlan = plan [first, second]
+          receipts = [receipt (LocalOrigin "payments") blueprintName "1.0.0" "2.0.0"]
+      pendingBlueprintMigrations False (LocalOrigin "payments") blueprintName receipts migrationPlan
+        `shouldBe` [second]
+      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
         `shouldBe` [first, second]
 
   describe "renderBlueprintMigrationInstruction" $ do
@@ -128,7 +164,7 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
                 else Right ()
           record edge = do
             modifyIORef' calls (<> ["record " <> edge ^. #from])
-            modifyIORef' recorded (<> [receipt blueprintName (edge ^. #from) (edge ^. #to)])
+            modifyIORef' recorded (<> [receipt blueprintOrigin blueprintName (edge ^. #from) (edge ^. #to)])
             pure (Right ())
       result <- runBlueprintMigrationsWith launch record [first, second, third]
       result
@@ -137,7 +173,7 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
         `shouldReturn` ["launch 1.0.0", "record 1.0.0", "launch 2.0.0"]
 
       savedReceipts <- readIORef recorded
-      let resumed = pendingBlueprintMigrations False blueprintName savedReceipts migrationPlan
+      let resumed = pendingBlueprintMigrations False blueprintOrigin blueprintName savedReceipts migrationPlan
       resumed `shouldBe` [second, third]
 
       resumedResult <-
@@ -146,7 +182,7 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
           record
           resumed
       resumedResult `shouldBe` BlueprintMigrationComplete [second, third]
-      readIORef recorded `shouldReturn` map (\edge -> receipt blueprintName (edge ^. #from) (edge ^. #to)) [first, second, third]
+      readIORef recorded `shouldReturn` map (\edge -> receipt blueprintOrigin blueprintName (edge ^. #from) (edge ^. #to)) [first, second, third]
 
     it "stops before the next launch when receipt recording fails" $ do
       calls <- newIORef ([] :: [Text])
@@ -158,6 +194,14 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
 
 blueprintName :: ModuleName
 blueprintName = "payments"
+
+-- | The identity of the blueprint under test: installed from one repository.
+blueprintOrigin :: ArtifactOrigin
+blueprintOrigin = RemoteOrigin "https://github.com/acme/one" "payments" Nothing
+
+-- | A different repository publishing a blueprint of the same name.
+otherRepoOrigin :: ArtifactOrigin
+otherRepoOrigin = RemoteOrigin "https://github.com/acme/two" "payments" Nothing
 
 first :: BlueprintMigration
 first = migration "1.0.0" "2.0.0"
@@ -186,10 +230,11 @@ plan steps =
       steps = steps
     }
 
-receipt :: ModuleName -> Text -> Text -> AppliedBlueprintMigration
-receipt name fromVersion toVersion =
+receipt :: ArtifactOrigin -> ModuleName -> Text -> Text -> AppliedBlueprintMigration
+receipt origin name fromVersion toVersion =
   AppliedBlueprintMigration
     { name,
+      origin,
       blueprintVersion = Just "4.2.0",
       fromVersion,
       toVersion,

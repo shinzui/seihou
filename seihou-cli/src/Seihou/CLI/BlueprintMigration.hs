@@ -27,12 +27,14 @@ import Seihou.CLI.BlueprintExecution
   ( PreparedBlueprintExecution (..),
     renderBlueprintText,
   )
+import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
 import Seihou.Core.Migration
   ( BlueprintMigration (..),
     BlueprintMigrationPlan (..),
   )
 import Seihou.Core.Types
   ( AppliedBlueprintMigration (..),
+    ArtifactOrigin (..),
     Blueprint (..),
     ModuleName (..),
     ResolvedVar,
@@ -128,22 +130,39 @@ formatBlueprintMigrationDebugOutput render migrations =
   where
     total = length migrations
 
--- | Remove exact-edge receipts while retaining planner order. Artifact
--- versions and timestamps are intentionally not part of the completion key.
+-- | Remove exact-edge receipts while retaining planner order.
+--
+-- Exact-edge identity is the origin and name of the blueprint that owns the
+-- edge together with its @from@ and @to@ versions. Artifact versions and
+-- timestamps are intentionally not part of the completion key: an edge is the
+-- same edge regardless of which release of the blueprint declared it. Origin
+-- is part of it, because two blueprints published by different repositories
+-- that share a name and an edge window are not the same edge, and dropping a
+-- second repository's edge because the first one's is recorded would be a
+-- silent skip of work that never ran.
+--
+-- Receipts written before origins were recorded decode as
+-- @'LocalOrigin' name@, which matches other such receipts and matches nothing
+-- installed from a git URL. A project upgrading across that change therefore
+-- sees its previously-recorded edges become pending once; that is honest,
+-- because seihou cannot prove the recorded edge and the planned one came from
+-- the same repository.
 pendingBlueprintMigrations ::
   Bool ->
+  ArtifactOrigin ->
   ModuleName ->
   [AppliedBlueprintMigration] ->
   BlueprintMigrationPlan ->
   [BlueprintMigration]
-pendingBlueprintMigrations rerun blueprintName receipts plan
+pendingBlueprintMigrations rerun blueprintOrigin blueprintName receipts plan
   | rerun = plan ^. #steps
   | otherwise = filter (not . alreadyApplied) (plan ^. #steps)
   where
     alreadyApplied migration =
       any
         ( \receipt ->
-            receipt ^. #name == blueprintName
+            sameArtifactIdentity (receipt ^. #origin) blueprintOrigin
+              && receipt ^. #name == blueprintName
               && receipt ^. #fromVersion == migration ^. #from
               && receipt ^. #toVersion == migration ^. #to
         )

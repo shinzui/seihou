@@ -16,9 +16,11 @@ import Data.Aeson.Types qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
+import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (baselineRefFromText)
 import Seihou.Prelude hiding ((.=))
@@ -104,7 +106,8 @@ writeAppliedBlueprintMigration receipt manifest =
     }
   where
     sameEdge existing =
-      existing ^. #name == receipt ^. #name
+      sameArtifactIdentity (existing ^. #origin) (receipt ^. #origin)
+        && existing ^. #name == receipt ^. #name
         && existing ^. #fromVersion == receipt ^. #fromVersion
         && existing ^. #toVersion == (receipt ^. #toVersion)
 
@@ -113,11 +116,18 @@ writeAppliedBlueprintMigration receipt manifest =
       | otherwise = receipts <> [receipt]
 
 -- | Whether one exact blueprint migration edge already has a receipt.
-hasAppliedBlueprintMigration :: ModuleName -> Text -> Text -> Manifest -> Bool
-hasAppliedBlueprintMigration blueprintName fromVersion toVersion manifest =
+--
+-- The edge is identified by the origin and name of the blueprint that owns it
+-- together with its @from@ and @to@ versions, matching the completion key
+-- 'Seihou.CLI.BlueprintMigration.pendingBlueprintMigrations' applies when it
+-- decides what is still pending. The two must agree, or a receipt could be
+-- written as a new entry while being read as a duplicate.
+hasAppliedBlueprintMigration :: ArtifactOrigin -> ModuleName -> Text -> Text -> Manifest -> Bool
+hasAppliedBlueprintMigration blueprintOrigin blueprintName fromVersion toVersion manifest =
   any
     ( \receipt ->
-        receipt ^. #name == blueprintName
+        sameArtifactIdentity (receipt ^. #origin) blueprintOrigin
+          && receipt ^. #name == blueprintName
           && receipt ^. #fromVersion == fromVersion
           && receipt ^. #toVersion == toVersion
     )
@@ -242,6 +252,22 @@ artifactOriginName (RemoteOrigin _ artifact _) = artifact
 artifactOriginName (LocalOrigin artifact) = artifact
 artifactOriginName (ProjectOrigin path) = T.pack (takeFileName path)
 
+-- | The origin to use for a record written before 'ArtifactOrigin' reached the
+-- agent-applied records — the blueprint, blueprint-migration and recipe
+-- entries, all of which carried a bare name until
+-- docs\/plans\/81-record-artifact-origin-for-agent-applied-artifacts.md.
+--
+-- Where the artifact actually came from is genuinely unrecoverable: nothing on
+-- disk says which repository a receipt written last month was resolved from.
+-- 'LocalOrigin' is the constructor that already means "provenance seihou
+-- cannot verify", so decoding to it is honest rather than a fabrication, and
+-- it keeps every older manifest readable without an explicit conversion pass
+-- (see docs\/adr\/0005-legacy-manifests-convert-through-an-explicit-command.md,
+-- whose explicit-command rule exists for conversions that lose or relocate
+-- information; this one loses nothing).
+legacyLocalOrigin :: Text -> Maybe ArtifactOrigin -> ArtifactOrigin
+legacyLocalOrigin recordedName = fromMaybe (LocalOrigin recordedName)
+
 instance ToJSON AppliedInstanceState where
   toJSON state =
     Aeson.object $
@@ -325,21 +351,24 @@ instance ToJSON AppliedRecipe where
   toJSON ar =
     Aeson.object $
       [ "name" .= (ar ^. #name . #unRecipeName),
+        "origin" .= (ar ^. #origin),
         "appliedAt" .= (ar ^. #appliedAt)
       ]
         ++ maybe [] (\v -> ["version" .= v]) (ar ^. #recipeVersion)
 
 instance FromJSON AppliedRecipe where
-  parseJSON = Aeson.withObject "AppliedRecipe" $ \o ->
-    AppliedRecipe
-      <$> (RecipeName <$> o .: "name")
-      <*> o Aeson..:? "version"
+  parseJSON = Aeson.withObject "AppliedRecipe" $ \o -> do
+    name <- RecipeName <$> o .: "name"
+    origin <- legacyLocalOrigin (name ^. #unRecipeName) <$> o Aeson..:? "origin"
+    AppliedRecipe name origin
+      <$> o Aeson..:? "version"
       <*> o .: "appliedAt"
 
 instance ToJSON AppliedBlueprint where
   toJSON ab =
     Aeson.object $
       [ "name" .= (ab ^. #name . #unModuleName),
+        "origin" .= (ab ^. #origin),
         "appliedAt" .= (ab ^. #appliedAt),
         "baselineModules" .= map (^. #unModuleName) (ab ^. #baselineModules),
         "noBaseline" .= (ab ^. #noBaseline)
@@ -349,10 +378,11 @@ instance ToJSON AppliedBlueprint where
         ++ maybe [] (\s -> ["agentSessionId" .= s]) (ab ^. #agentSessionId)
 
 instance FromJSON AppliedBlueprint where
-  parseJSON = Aeson.withObject "AppliedBlueprint" $ \o ->
-    AppliedBlueprint
-      <$> (ModuleName <$> o .: "name")
-      <*> o Aeson..:? "version"
+  parseJSON = Aeson.withObject "AppliedBlueprint" $ \o -> do
+    name <- ModuleName <$> o .: "name"
+    origin <- legacyLocalOrigin (name ^. #unModuleName) <$> o Aeson..:? "origin"
+    AppliedBlueprint name origin
+      <$> o Aeson..:? "version"
       <*> o .: "appliedAt"
       <*> (map ModuleName <$> o Aeson..:? "baselineModules" Aeson..!= [])
       <*> o Aeson..:? "noBaseline" Aeson..!= False
@@ -363,6 +393,7 @@ instance ToJSON AppliedBlueprintMigration where
   toJSON receipt =
     Aeson.object $
       [ "name" .= (receipt ^. #name . #unModuleName),
+        "origin" .= (receipt ^. #origin),
         "from" .= (receipt ^. #fromVersion),
         "to" .= (receipt ^. #toVersion),
         "appliedAt" .= (receipt ^. #appliedAt)
@@ -371,10 +402,11 @@ instance ToJSON AppliedBlueprintMigration where
         ++ maybe [] (\sessionId -> ["agentSessionId" .= sessionId]) (receipt ^. #agentSessionId)
 
 instance FromJSON AppliedBlueprintMigration where
-  parseJSON = Aeson.withObject "AppliedBlueprintMigration" $ \o ->
-    AppliedBlueprintMigration
-      <$> (ModuleName <$> o .: "name")
-      <*> o Aeson..:? "version"
+  parseJSON = Aeson.withObject "AppliedBlueprintMigration" $ \o -> do
+    name <- ModuleName <$> o .: "name"
+    origin <- legacyLocalOrigin (name ^. #unModuleName) <$> o Aeson..:? "origin"
+    AppliedBlueprintMigration name origin
+      <$> o Aeson..:? "version"
       <*> o .: "from"
       <*> o .: "to"
       <*> o .: "appliedAt"

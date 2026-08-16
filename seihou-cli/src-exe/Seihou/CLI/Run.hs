@@ -429,7 +429,11 @@ handleRun runOpts = do
                                       [Map.map (^. #value) vs | vs <- Map.elems resolved]
                                   appliedRecipe = case recipeInfo of
                                     Just (rName, rVersion) ->
-                                      Just AppliedRecipe {name = rName, recipeVersion = rVersion, appliedAt = now}
+                                      -- targetOrigin is the recipe's own origin
+                                      -- here: recipeInfo is Just only on the
+                                      -- branch where targetInfo was built from
+                                      -- the discovered recipe directory.
+                                      Just AppliedRecipe {name = rName, origin = targetOrigin, recipeVersion = rVersion, appliedAt = now}
                                     Nothing -> (manifest ^. #recipe)
                                   appliedCompositionWithoutReceipts =
                                     buildAppliedComposition
