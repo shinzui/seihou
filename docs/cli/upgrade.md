@@ -26,6 +26,16 @@ seihou upgrade [MODULE...] [OPTIONS]
 
 Refreshes installed modules from their source repository. Only modules installed via `seihou install` are eligible. This is cache maintenance: it does not reconcile templates, migrations, commands, or user edits in the current project. Use [`seihou update`](update.md) for that project-aware workflow.
 
+Each module is refetched from the URL its own `.seihou-origin.json` records, so
+an upgrade is always a same-source reinstall and never hits the different-source
+refusal described in [`seihou install`](install.md#when-the-name-is-already-taken).
+There is correspondingly no `--force` here. If an upgrade does report a source
+mismatch, the installed copy disagrees with its own provenance file — most
+likely because something replaced the directory outside seihou. The module is
+reported as failed rather than overwritten; inspect
+`~/.config/seihou/installed/<name>/.seihou-origin.json` and reinstall
+deliberately with `seihou install <url> --force`.
+
 ## How "outdated" detection works
 
 `seihou upgrade` (like `seihou outdated`) clones each remote source and reads

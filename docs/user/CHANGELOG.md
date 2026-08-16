@@ -12,6 +12,53 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **`seihou install` refuses to replace an artifact that came from a different
+  repository.** `~/.config/seihou/installed/` is keyed by an artifact's bare
+  name across every repository you have ever installed from, and it is shared by
+  every project on the machine. Installing over an existing entry used to print
+  one line — `warning: overwriting existing installation of 'shared-thing'` —
+  whether you were doing the routine thing (reinstalling the same artifact to
+  pick up a new version) or the destructive thing (replacing one repository's
+  artifact with a different repository's artifact of the same name). The routine
+  case is overwhelmingly common, which is what trained everyone to skip the
+  line.
+
+  Seihou now reads the `.seihou-origin.json` it is about to delete and decides
+  from it:
+
+  ```text
+  ✗ Refusing to install 'shared-thing': a different artifact
+    is already installed under that name.
+
+    Installed on this machine:  https://github.com/acme/one
+    Incoming:                   https://github.com/acme/two
+
+    These are different artifacts that happen to share a name. Installing
+    would replace the first for every project on this machine.
+
+    To replace it anyway, re-run with --force.
+  ```
+
+  Nothing is removed before that decision, so a refused install leaves the
+  existing entry byte-identical, and the command exits non-zero. An entry with no
+  `.seihou-origin.json` at all is refused the same way, because seihou cannot
+  tell whether it is the same artifact. Two spellings of one git URL —
+  `https://host/repo` and `https://host/repo.git` — are still one source.
+
+  The new `--force` replaces the entry anyway and prints what it overrode. It is
+  the only override for a registry entry, since `--name` applies to
+  single-artifact repositories only.
+
+  `seihou upgrade`, `seihou update`, and `seihou migrate` also write to the
+  cache, but always from the URL the artifact itself records, so they are
+  structurally same-source and have no `--force`. If one of them reports a
+  source mismatch, the cache disagrees with its own provenance file, and each
+  reports rather than overrides: `upgrade` marks the module failed, `migrate`
+  warns that the project was migrated but the shared cache was left alone, and
+  `update` fails the cache-publication step.
+
+  See [`seihou install`](../cli/install.md#when-the-name-is-already-taken).
+
 - **`seihou manifest upgrade` converts a manifest written by an older seihou.**
   Manifests before schema version 6 recorded, for each applied module, the
   absolute directory it occupied on the machine that ran the command. Seihou no
@@ -264,6 +311,19 @@ packages in the workspace share a single version.
 - `seihou status` recommends one update per recorded application; `run` is
   described as initial application/reconfiguration, while `upgrade` is
   explicitly shared-cache-only maintenance.
+
+- **A routine reinstall is quieter, and a failed registry batch now exits
+  non-zero.** Reinstalling an artifact from the URL it is already installed from
+  no longer prints `warning: overwriting existing installation of '<name>'`; the
+  command already tells you what it installed on the line after. If you relied
+  on that warning to notice replacements, the different-source refusal above is
+  what now surfaces the case worth noticing.
+
+  Separately, `seihou install` against a registry used to report
+  `3 entries installed, 2 failed.` and exit zero, so a script could not tell a
+  half-applied batch from a complete one. Every entry is still attempted and
+  every failure still reported at the end, but the command now exits non-zero
+  when any entry failed.
 
 ### Fixed
 

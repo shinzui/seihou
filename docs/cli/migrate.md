@@ -52,6 +52,24 @@ failure, module not present in the remote), the command emits a
 one-line note and falls back to the local-only path: planning against
 whatever the locally installed copy currently declares.
 
+Step 5 reinstalls from the URL read out of the installed copy's own
+`.seihou-origin.json` in step 1, so it is always a same-source reinstall and
+never hits the different-source refusal described in
+[`seihou install`](install.md#when-the-name-is-already-taken). There is
+correspondingly no `--force` for it here. If the refresh is refused, the cache
+disagrees with its own provenance file, and the command says so:
+
+```text
+[warn]  could not refresh the installed copy of 'haskell-base': refused: the
+installed copy records https://github.com/acme/one, not
+https://github.com/acme/two. The migration was applied to this project; the
+shared cache still holds the older copy.
+```
+
+The migration itself still applied — this project's files and manifest are
+correct. Only the machine-global cache was left alone, deliberately, because
+overwriting it would affect every other project on the machine.
+
 There is also a **fetch-vs-local fallback**. If the locally installed
 `module.dhall` declares strictly more in-window migrations than the
 clone-based plan, `migrate` re-plans against the local migrations and

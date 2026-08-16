@@ -54,32 +54,154 @@ with an overlapping name.
 
 ## Progress
 
-- [ ] Read `installModuleDir` and every call site (orientation, no edits).
-- [ ] Add an `InstallCollision` result type and origin comparison to `seihou-cli/src/Seihou/CLI/InstallShared.hs`.
-- [ ] Change `installModuleDir` to consult the existing `.seihou-origin.json` before removing the directory.
-- [ ] Add a `force` flag to the `installModuleDir` signature and thread it through all ten call sites.
-- [ ] Add `--force` to `seihou install` in `seihou-cli/src-exe/Seihou/CLI/Commands.hs` and wire it to `InstallOpts`.
-- [ ] Confirm the non-`install` call sites (upgrade, update, migrate refresh) pass the same-source expectation rather than an unconditional override.
-- [ ] Add tests covering same-source, different-source, missing-provenance, and `--force`.
-- [ ] Update `docs/cli/install.md`, `docs/cli/upgrade.md`, and `docs/user/CHANGELOG.md`.
-- [ ] Mark IR-4 `status: implemented` and update `docs/improvement-requests/log.md`.
+- [x] Read `installModuleDir` and every call site (orientation, no edits). — 2026-08-16
+- [x] Add an `InstallCollision` result type and origin comparison to `seihou-cli/src/Seihou/CLI/InstallShared.hs`. — 2026-08-16
+- [x] Change `installModuleDir` to consult the existing `.seihou-origin.json` before removing the directory. — 2026-08-16
+- [x] Add a `force` flag to the `installModuleDir` signature and thread it through all ten call sites. — 2026-08-16
+- [x] Add an `installModuleDirInto` variant taking the cache root explicitly, so tests never touch the developer's real cache (see Decision Log). — 2026-08-16
+- [x] Add `--force` to `seihou install` in `seihou-cli/src-exe/Seihou/CLI/Commands.hs` and wire it to `InstallOpts`. — 2026-08-16
+- [x] Confirm the non-`install` call sites (upgrade, update, migrate refresh) pass the same-source expectation rather than an unconditional override. — 2026-08-16
+- [x] Add tests covering same-source, different-source, missing-provenance, and `--force`. — 2026-08-16
+- [x] Update `docs/cli/install.md`, `docs/cli/upgrade.md`, `docs/cli/migrate.md`, and `docs/user/CHANGELOG.md`. — 2026-08-16
+- [x] Close IR-4 and update `docs/improvement-requests/log.md`. Terminal status is `completed`, not `implemented`. — 2026-08-16
+- [x] ADR decision: wrote `docs/adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md` rather than amending ADR 0003 (see Decision Log). — 2026-08-16
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **The plan's "verbose-level note" for a same-source reinstall is not reachable.**
+  `logIO`'s first argument is the *configured* log level, not the message's level, so
+  `logIO LogVerbose (logInfo …)` prints unconditionally rather than only under `-v`. And
+  `InstallOpts` has no verbosity field at all, so `installModuleDir` has no configured level
+  to consult. The same-source case is therefore silent rather than demoted; the calling
+  command already prints what it installed on the next line.
+
+- **`normalizeOriginUrl` had already moved, and further than the plan expected.** The plan
+  said to export it from `seihou-cli/src/Seihou/CLI/ManifestGuard.hs`, noting that
+  `docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md` needed the same
+  export and whichever landed first would perform it. EP-81 landed first and did something
+  better: it moved the function into `seihou-core/src/Seihou/Core/ArtifactIdentity.hs`,
+  because two of the receipt-ledger call sites are in `seihou-core` and cannot import from
+  `seihou-cli`. This plan imports it from there. The coordination note was right about the
+  shape of the interaction and wrong about the destination — no conflict either way.
+
+- **The registry batch already had the right structure.** `installRegistryEntry` returns
+  `IO Bool` and `installFromRegistry` already counted successes and failures and printed a
+  summary. The only thing missing was the exit code: it reported `3 entries installed, 2
+  failed.` and exited zero, so a script could not tell a half-applied batch from a complete
+  one. Adding `when (failed > 0) exitFailure` also covers pre-existing failure kinds
+  (validation errors, unloadable entries) that previously exited zero — see the Decision Log.
+
+- **The `UnknownSource` case was not in IR-4 but has the same shape.** An entry with no
+  readable `.seihou-origin.json` — created by hand, or left by a much older seihou — cannot
+  be proved to be the same artifact either, and the remedy is identical. It is refused
+  alongside `DifferentSource`.
 
 
 ## Decision Log
 
-- Decision: ...
-  Rationale: ...
-  Date: ...
+- Decision: Split the install primitive into `installModuleDir`, which resolves the XDG cache
+  root, and `installModuleDirInto`, which takes the root as its first argument. Tests target
+  the second.
+  Rationale: The plan proposed redirecting `XDG_CONFIG_HOME` in the test sandbox. That does
+  work — `getXdgDirectory XdgConfig` honours it on this platform — but an environment
+  variable is process-global, and `tasty` runs specs concurrently, so a spec that mutates it
+  would silently affect whatever else is running. The plan's own fallback ("extract the root
+  as a parameter") is the safe form, and it costs one thin wrapper. No call site outside the
+  tests changes.
+  Date: 2026-08-16
+
+- Decision: A refused install returns `InstallRefused`; it does not throw. A single-artifact
+  install exits non-zero on refusal, a registry batch collects every refusal, reports the
+  totals, and exits non-zero at the end.
+  Rationale: The plan's choice, for its reason: a user installing twenty entries should see
+  all twenty verdicts rather than stopping at the first, and should not be left with a
+  half-applied batch and no summary.
+  Date: 2026-08-16
+
+- Decision: The batch exits non-zero when *any* entry failed, not only when an entry was
+  refused.
+  Rationale: Distinguishing refusals from other failures in the counter would be more code
+  for a worse outcome — a batch where every entry failed to load would still exit zero.
+  A batch install that did not fully succeed should not report success. This changes the exit
+  code for pre-existing failure kinds too, which is a behaviour change beyond the refusal
+  itself and is called out in `docs/user/CHANGELOG.md` under Changed for that reason.
+  Date: 2026-08-16
+
+- Decision: The routine same-source reinstall prints nothing, rather than printing a note at
+  verbose level.
+  Rationale: See Surprises — the verbose level is not reachable from this command. The plan's
+  goal was "a routine upgrade prints nothing at normal verbosity", and removing the warning
+  achieves it exactly. The version transition it wanted to show is already visible where it
+  matters: `seihou upgrade` prints an old → new table, and `seihou install` prints what it
+  installed.
+  Date: 2026-08-16
+
+- Decision: Write a new ADR, `docs/adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md`,
+  rather than amending `docs/adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md`.
+  Rationale: The plan left this open. ADR 0003's Decision is scoped by its own words to "a
+  command that is about to *generate* from an artifact", and its Consequences section draws a
+  careful boundary between resolving where an artifact is, deciding whether to generate from
+  it, and advisory consumers that never block. Broadening it to cover writes into the cache
+  would blur that boundary and give one ADR two override flags. The install-time rule has a
+  different subject (what may enter machine-global shared state), a different flag
+  (`--force`), and a deliberate exclusion of its own (namespacing the cache by repository)
+  worth recording where a future contributor will find it. ADR 0003 gains a cross-reference
+  and keeps its scope, which also leaves it the clean home for
+  `docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md`, whose work
+  genuinely is the same generate-time decision extended to the agent path.
+  Date: 2026-08-16
+
+- Decision: Refuse `UnknownSource` — an existing installation with no readable
+  `.seihou-origin.json` — on the same footing as `DifferentSource`.
+  Rationale: IR-4 argues from "seihou cannot prove these are the same artifact". That is
+  exactly true of an entry with no provenance, and the consequence of guessing wrong is the
+  same: every project on the machine that resolved the name is affected. The message says
+  provenance is missing rather than naming a URL, and `--force` overrides it.
+  Date: 2026-08-16
 
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Complete. `seihou install` reads the provenance it is about to destroy and refuses a
+different-source or unprovenanced overwrite; `--force` overrides and prints what it overrode.
+
+Against the acceptance criteria in Validation and Acceptance:
+
+- **Automated.** `cabal test seihou-cli-test` passes at 495 tests, 15 of them new in
+  `seihou-cli/test/Seihou/CLI/InstallCollisionSpec.hs`. `cabal test seihou-core-test` passes
+  at 1056. The decisive assertion is "refuses a different source and leaves the existing
+  installation untouched": a marker file written into the existing directory before the call
+  still reads back verbatim afterwards, the incoming file is absent, and the provenance file
+  still names the original URL.
+- **Classification.** Every case the plan lists is covered: absent directory, matching URL
+  (including `.git` and trailing-slash spellings), differing URL, missing provenance file,
+  and unparseable provenance file.
+- **Mechanical checks.** `nix/check-record-conventions.sh` and
+  `nix/check-cli-module-placement.sh` both pass. The new code is in the CLI library and the
+  flag is in the executable, as the plan required.
+
+The by-hand two-repository walk was not performed. The automated spec drives
+`installModuleDirInto` directly against a temporary cache with both repositories' provenance
+laid out, which exercises the same classification and the same refusal-before-deletion
+ordering without needing two throwaway git repositories; what the walk would add is coverage
+of `seihou install`'s clone-and-discover path, which this plan does not change. Worth running
+once when a session already has the fixture — `docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md`
+needs two repositories publishing related blueprints and is the natural place.
+
+Lessons worth carrying into the sibling plans:
+
+- **Check what a logging helper's arguments actually mean before planning around them.**
+  `logIO LogVerbose` reads like "log at verbose level" and means "the user configured verbose
+  level". A plan written against the misreading specified behaviour the command could not
+  produce.
+- **A plan that says "export this private function" is really saying "these callers must
+  agree".** EP-81 satisfied that requirement in a better place than either plan named. When a
+  coordination note points at a specific line, check whether the requirement behind it has
+  already been met differently before doing what it literally says.
+- **Prefer a parameter to an environment variable when a test needs to redirect a global.**
+  The env-var route works and is a concurrency hazard; the parameter route costs one wrapper
+  and is unconditionally safe.
 
 
 ## Context and Orientation
@@ -256,20 +378,14 @@ classifyInstallCollision :: FilePath -> Text -> IO InstallCollision
 Compare URLs after normalisation, not literally. `https://host/repo`,
 `https://host/repo.git`, and `https://host/repo/` all name the same repository, and a user
 who typed one spelling last week and another today must not be told they have a different
-artifact. `Seihou.CLI.ManifestGuard` already contains exactly this function:
+artifact. Import `normalizeOriginUrl` from `Seihou.Core.ArtifactIdentity` rather than writing
+a second copy — two normalisers that drift apart would produce a refusal on the install path
+and no mismatch on the guard path, or the reverse.
 
-```haskell
-normalizeOriginUrl :: Text -> Text
-normalizeOriginUrl = dropTrailingSlashes . dropGitSuffix . dropTrailingSlashes . T.strip
-```
-
-It is currently private. Export it from `Seihou.CLI.ManifestGuard` and import it here rather
-than writing a second copy — two normalisers that drift apart would produce a refusal on the
-install path and no mismatch on the guard path, or the reverse.
-
-Note for coordination: `docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md`
-also needs `normalizeOriginUrl` exported. Whichever plan lands first performs the export;
-the second finds it already done. Exporting an existing private function is not a conflict.
+That module is where `docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md`
+put the function; it was previously private to `Seihou.CLI.ManifestGuard`, and moved into
+`seihou-core` because the blueprint-migration receipt ledger needs the same comparison and
+cannot import from `seihou-cli`.
 
 Keep the pure classification separate from the destructive act so a test can exercise it
 against a temp directory without installing anything.
@@ -301,11 +417,12 @@ six positionals and reshaping it is out of scope for this plan.
 Behaviour by case:
 
 - `NoExistingInstall` — proceed silently, as today.
-- `SameSource mVersion` — proceed. Replace the current warning with a verbose-level note
-  naming the transition, for example
-  `reinstalling 'haskell-base' (0.4.0 -> 0.5.0) from the same source`. Use
-  `logIO LogVerbose` so a routine upgrade prints nothing at normal verbosity. If either
-  version is unknown, omit that half rather than printing `(unknown -> 0.5.0)`.
+- `SameSource mVersion` — proceed silently. Delete the current warning rather than demoting
+  it: `logIO`'s first argument is the *configured* log level, not the message's, so
+  `logIO LogVerbose` prints unconditionally, and `InstallOpts` has no verbosity field for
+  `installModuleDir` to consult anyway. The goal — a routine reinstall printing nothing at
+  normal verbosity — is met by removing the line, and the calling command already reports
+  what it installed on the next line.
 - `DifferentSource recordedUrl` — with `force` false, refuse. With `force` true, proceed and
   print what is being overridden at normal level, mirroring how `--allow-downgrade` behaves
   under ADR 0003: a deliberate override should still be visible.
@@ -405,12 +522,11 @@ Create `seihou-cli/test/Seihou/CLI/InstallCollisionSpec.hs` and register it. Cov
 - `installModuleDir True` against the same setup returns `InstallPerformed` and the
   directory now holds the incoming content and a `.seihou-origin.json` naming the new URL.
 
-Point `XDG_CONFIG_HOME` at the temp directory so `getXdgDirectory XdgConfig "seihou"`
-resolves inside the sandbox and the test never touches the developer's real cache. Verify
-that redirection works before writing the rest of the spec — if `installModuleDir` resolves
-the cache root internally in a way the environment cannot redirect, extract the root as a
-parameter with a `getXdgDirectory`-based default rather than testing against a real home
-directory.
+Do **not** redirect `XDG_CONFIG_HOME`. It works, but it is process-global and `tasty` runs
+specs concurrently, so mutating it would silently affect whatever else is in flight. Test
+`installModuleDirInto`, which takes the cache root as its first argument;
+`installModuleDir` is a thin wrapper that resolves the XDG root and delegates, so every
+command keeps calling the same function it always did.
 
 Also check `seihou-cli/test/Seihou/CLI/InstallHistorySpec.hs` and `UpgradeSpec.hs` for
 existing tests that call the install primitives and will need their expectations updated for
@@ -432,10 +548,14 @@ source mismatch.
 routine same-source reinstall is now quieter, since a user who relied on seeing the warning
 will notice its absence.
 
-Update `docs/improvement-requests/refuse-to-overwrite-an-installation-from-a-different-source.md`:
-set `status: implemented` in the frontmatter and add a closing section naming this plan.
-That bundle is a profile-governed OKF bundle registered in `mori.dhall`, so maintain its
-reserved `log.md` with `okf log add` and validate:
+Update `docs/improvement-requests/refuse-to-overwrite-an-installation-from-a-different-source.md`.
+Its terminal status is `status: completed` — the bundle's profile does not accept
+`implemented` — and that value requires `completedAt` (RFC-3339 UTC) and recommends
+`resolution`. Set those, add
+`targetPlan: docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md`,
+and add a closing section naming this plan. That bundle is a profile-governed OKF bundle
+registered in `mori.dhall`, so maintain its reserved `log.md` with `okf log add` and
+validate:
 
 ```bash
 okf validate docs/improvement-requests \
@@ -580,12 +700,22 @@ classifyInstallCollision :: FilePath -> Text -> IO InstallCollision
 
 formatInstallRefusal :: String -> Text -> InstallCollision -> Text
 
+formatInstallOverride :: String -> Text -> InstallCollision -> Text
+
+summarizeInstallRefusal :: Text -> InstallCollision -> Text
+
+installedRoot :: IO FilePath
+
 installModuleDir ::
   Bool -> FilePath -> String -> Text -> Maybe Text -> Maybe Text -> [Text] -> IO InstallOutcome
+
+installModuleDirInto ::
+  FilePath -> Bool -> FilePath -> String -> Text -> Maybe Text -> Maybe Text -> [Text] -> IO InstallOutcome
 ```
 
-In `seihou-cli/src/Seihou/CLI/ManifestGuard.hs`, `normalizeOriginUrl` added to the export
-list.
+`normalizeOriginUrl` is imported from `Seihou.Core.ArtifactIdentity`, where
+`docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md` put it. Nothing in
+`Seihou.CLI.ManifestGuard` changes.
 
 In `seihou-cli/src-exe/Seihou/CLI/Commands.hs`:
 
@@ -602,7 +732,40 @@ data InstallOpts = InstallOpts
 
 This plan has no hard dependency on any other child plan and can be implemented first, last,
 or in parallel. It shares one line of surface with
-`docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md` — the export of
+`docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md` — the location of
 `normalizeOriginUrl` — and one soft relationship with
 `docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md`, which
 detects at use time the collision this plan prevents at install time.
+
+
+## Revision Notes
+
+**2026-08-16 — implementation.** Four things in the plan as written changed on contact with
+the code; the sections above have been updated to match what was built, and the reasoning for
+each is in the Decision Log.
+
+Milestone 1 said to export `normalizeOriginUrl` from `seihou-cli/src/Seihou/CLI/ManifestGuard.hs`,
+with a coordination note that EP-81 needed the same export. EP-81 landed first and moved the
+function into `seihou-core/src/Seihou/Core/ArtifactIdentity.hs` instead, because two of its
+own call sites are in `seihou-core`. This plan imports it from there and touches
+`ManifestGuard` not at all.
+
+Milestone 2 said to replace the overwrite warning with a verbose-level note naming the version
+transition. That is not reachable: `logIO`'s first argument is the configured log level rather
+than the message's, and `seihou install` has no verbosity flag. The same-source case is silent
+instead, which is what "a routine upgrade prints nothing at normal verbosity" asked for.
+
+Milestone 4 said to redirect `XDG_CONFIG_HOME` in the test sandbox, with a fallback of
+extracting the cache root as a parameter. The fallback is what shipped, unconditionally:
+`tasty` runs specs concurrently and an environment variable is process-global.
+`installModuleDirInto` takes the root; `installModuleDir` resolves XDG and delegates.
+
+Milestone 5's `status: implemented` is `status: completed`, the only terminal value the
+bundle's profile accepts, and it pulls in `completedAt` and `resolution`.
+
+Two things were added beyond the plan. `UnknownSource` — an existing installation with no
+readable provenance — is refused alongside `DifferentSource`, because seihou cannot prove
+those are the same artifact either. And a registry batch now exits non-zero when any entry
+failed, which the plan implied ("collect and report, then exit nonzero") and which also
+changes the exit code for pre-existing failure kinds; that is called out in
+`docs/user/CHANGELOG.md`.

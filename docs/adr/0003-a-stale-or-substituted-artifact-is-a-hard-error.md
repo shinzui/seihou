@@ -100,10 +100,19 @@ than blocked, per [ADR 0002](0002-artifact-identity-is-origin-url-plus-name.md).
 Its version is still compared, because a version comes from the artifact's own
 `module.dhall`.
 
+This decision governs the generate path only. What may be written *into* the
+machine-global install cache in the first place is a separate question with a
+separate override flag, decided in
+[ADR 0006](0006-the-install-cache-will-not-silently-substitute-an-artifact.md).
+The two compose: the install-time refusal makes the substituted state hard to
+reach, and this refusal catches it if a project reaches it anyway.
+
 ## References
 
 - [ADR 0001](0001-manifest-is-a-checked-in-machine-independent-artifact.md)
 - [ADR 0002](0002-artifact-identity-is-origin-url-plus-name.md)
+- [ADR 0006](0006-the-install-cache-will-not-silently-substitute-an-artifact.md)
+  — the same reasoning applied one layer earlier, at install time.
 - `docs/masterplans/9-make-the-seihou-manifest-multi-developer-safe.md`
 - `docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md`
 - `docs/user/teams.md`

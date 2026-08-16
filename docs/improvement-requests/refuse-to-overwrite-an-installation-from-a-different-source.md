@@ -8,9 +8,18 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-08-06T17:12:58Z"
-timestamp: 2026-08-06T17:12:58Z
+timestamp: 2026-08-16T00:00:00Z
 requestId: IR-4
-status: proposed
+status: completed
+completedAt: "2026-08-16T00:00:00Z"
+targetPlan: docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md
+resolution: >-
+  installModuleDir now classifies the existing installation against the incoming source URL before
+  removing anything, and refuses a different-source or unprovenanced overwrite; seihou install
+  gained --force, which overrides and prints what it overrode. seihou upgrade, seihou update, and
+  seihou migrate's refresh pass no override and report a refusal rather than suppressing it, as
+  this request asked. Namespacing the cache by repository stays rejected; the durable reasoning is
+  recorded in docs/adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md.
 origin: mori://shinzui/okf-profiles
 ---
 
@@ -18,9 +27,9 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Proposed. This is the collision that [IR-2](record-artifact-origin-for-agent-applied-artifacts.md)
-and [IR-3](guard-the-agent-path-against-stale-and-substituted-artifacts.md) make detectable,
-addressed one layer earlier. Either layer is useful alone; together they close it at both ends.
+Implemented in `docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md`,
+under `docs/masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md`. See Resolution
+below.
 
 ## Context
 
@@ -122,3 +131,39 @@ and should be checked against that expectation rather than exempted.
   use time.
 - [ADR 0003](../adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md) — the rejected
   warn-and-continue reasoning this applies to the install path.
+
+## Resolution
+
+`installModuleDir` in `seihou-cli/src/Seihou/CLI/InstallShared.hs` now classifies what the cache
+already holds — `NoExistingInstall`, `SameSource`, `DifferentSource`, or `UnknownSource` — against
+the source URL the install is about to write, and does so *before*
+`removeDirectoryRecursive`, so a refused install leaves the directory byte-identical. That
+property is asserted directly in `seihou-cli/test/Seihou/CLI/InstallCollisionSpec.hs` with a
+marker file written into the existing installation.
+
+`seihou install` gained `--force`, which replaces the entry anyway and prints what it overrode. A
+single-artifact install exits non-zero on refusal; a registry batch attempts every entry, prints
+each refusal, reports the totals, and then exits non-zero — a batch that did not fully succeed no
+longer exits zero.
+
+The request's insistence that the three non-`install` call sites be checked against the same-source
+expectation rather than exempted was followed. `seihou upgrade` marks the module failed,
+`seihou migrate`'s `refreshInstalledFromClone` warns that the project was migrated while the shared
+cache was left alone, and `seihou update` fails the cache-publication step. Each site carries a
+comment saying why it passes `force = False` so a future reader does not "fix" a refusal by passing
+`True`.
+
+Two details differ from the request as written, both for the better:
+
+`UnknownSource` — an entry with no readable `.seihou-origin.json` — is refused alongside
+`DifferentSource`. The request focused on the different-repository case; the unprovenanced case has
+the same shape (seihou cannot prove replacing it is safe) and the same remedy.
+
+The routine same-source reinstall is now silent rather than demoted to a verbose note. `logIO`'s
+first argument is the *configured* log level, not the message's, and `seihou install` has no
+verbosity flag, so a "verbose-level note" was not reachable. The calling command already prints
+what it installed on the next line.
+
+The rejection of `installed/<repo>/<name>` stands, and is now recorded durably in
+[ADR 0006](../adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md) together with
+this decision, so a future contributor finds the reasoning without reading this request.

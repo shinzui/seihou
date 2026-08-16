@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-08-16
+* **Update**: IR-4 is implemented. seihou install classifies the existing installation before removing it and refuses a different-source or unprovenanced overwrite; --force overrides and prints what it overrode. Namespacing the cache by repository stays rejected, now recorded in ADR 0006.
 * **Update**: IR-2 is implemented. AppliedBlueprint, AppliedBlueprintMigration, and AppliedRecipe now carry an ArtifactOrigin, the blueprint migration completion key includes it, and a record written without one decodes as unverifiable provenance rather than failing.
 
 ## 2026-08-06

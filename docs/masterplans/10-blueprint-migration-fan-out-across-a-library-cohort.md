@@ -94,7 +94,8 @@ Explicitly excluded:
 - **Namespacing the install cache by repository** (`installed/<repo>/<name>`). IR-4
   considers and rejects this: it changes artifact resolution for every command and
   invalidates every existing installation. The refusal added by EP-82 stays correct if the
-  cache is ever re-laid-out.
+  cache is ever re-laid-out. *Recorded during EP-82 in*
+  `docs/adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md`.
 - **Verifying that a migration worked.** A receipt records that a provider interaction
   returned, not that the build passes. That contract, documented in
   `docs/user/blueprint-migrations.md`, is unchanged; EP-84 adds a third outcome to it
@@ -196,7 +197,7 @@ Integration Points.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | EP-81 | Record artifact origin for agent-applied artifacts | docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md | None | None | Complete |
-| EP-82 | Refuse to overwrite an installation from a different source | docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md | None | None | In Progress |
+| EP-82 | Refuse to overwrite an installation from a different source | docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md | None | None | Complete |
 | EP-83 | Guard the agent path against stale and substituted artifacts | docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md | EP-81 | EP-82 | Not Started |
 | EP-84 | Add a not-applicable outcome for blueprint migration edges | docs/plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md | EP-81 | None | Not Started |
 | EP-85 | Fan out a blueprint migration edge to entailed cohort edges | docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md | EP-81, EP-84 | EP-82, EP-83 | Not Started |
@@ -359,8 +360,8 @@ Cross-plan decisions expected to become ADRs at completion:
 - [x] EP-81: `ArtifactOrigin` added to `AppliedBlueprint`, `AppliedBlueprintMigration`, and `AppliedRecipe`, with JSON round-trip tests — 2026-08-16
 - [x] EP-81: completion key extended to include origin, with a spec proving two same-named blueprints from different origins do not share receipts — 2026-08-16
 - [x] EP-81: legacy manifests without `origin` decode as unverifiable provenance; documentation and CHANGELOG updated — 2026-08-16
-- [ ] EP-82: `installModuleDir` reads `.seihou-origin.json` before removal and refuses on a different source, with `--force` override
-- [ ] EP-82: same-source reinstall stays frictionless; `seihou migrate`'s install refresh verified to take the same-source path
+- [x] EP-82: `installModuleDir` reads `.seihou-origin.json` before removal and refuses on a different source, with `--force` override — 2026-08-16
+- [x] EP-82: same-source reinstall stays frictionless; `seihou migrate`'s install refresh verified to take the same-source path — 2026-08-16
 - [ ] EP-83: `seihou agent run` consults `ManifestGuard` before `applyBaseline`, leaving the tree byte-identical on refusal
 - [ ] EP-83: `seihou agent migrate` consults `ManifestGuard` before planning; `--debug` still checks nothing
 - [ ] EP-84: an edge can report not-applicable; the outcome is recorded and does not suppress a later run
@@ -401,6 +402,21 @@ Cross-plan decisions expected to become ADRs at completion:
   in `buildFinalManifest` when `seihou update` republishes the manifest. EP-84 adds a field to
   `AppliedBlueprintMigration` and should expect the same: add the field first, then treat the
   `[GHC-95909]` error list as the site inventory rather than planning the list up front.
+
+- **EP-82 found the same `logIO` trap that any plan specifying log levels will hit.**
+  `logIO`'s first argument is the *configured* log level, not the message's, so
+  `logIO LogVerbose (logInfo …)` prints unconditionally rather than only under `-v`. EP-82's
+  plan specified a "verbose-level note" that was therefore unreachable, and `InstallOpts` has
+  no verbosity field at all. EP-83 and EP-84 both add user-facing output; check the command's
+  own options record for a verbosity flag before planning a level for a message.
+
+- **The install-time and use-time refusals got separate ADRs, deliberately.** EP-82 wrote
+  `docs/adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md` rather than
+  broadening `docs/adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md`, whose
+  Decision is scoped by its own words to "a command that is about to *generate* from an
+  artifact". **Consequence for EP-83:** its work *is* that generate-time decision extended to
+  the agent path, so it amends ADR 0003 rather than writing a third record. ADR 0003 now
+  carries a cross-reference to ADR 0006 explaining how the two compose.
 
 - **Closing an Improvement Request has a required frontmatter shape.** The bundle profile at
   `docs/improvement-requests/profile.dhall` does not accept `status: implemented`; the terminal
