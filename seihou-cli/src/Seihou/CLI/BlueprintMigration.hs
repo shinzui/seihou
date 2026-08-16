@@ -12,13 +12,29 @@ module Seihou.CLI.BlueprintMigration
     parseNotApplicableSignal,
     unstatedNotApplicableReason,
     runBlueprintMigrationsWith,
+
+    -- * Inferring the version window
+    VersionSource (..),
+    ResolvedWindow (..),
+    WindowResolutionError (..),
+    VersionProbeResult (..),
+    highestMigratedVersion,
+    resolveMigrationWindow,
+    readVersionProbeOutput,
+    runVersionProbe,
+    formatResolvedWindow,
+    formatProbeFailure,
+    formatWindowResolutionError,
   )
 where
 
 import Data.Char (isAlphaNum, isSpace)
 import Data.Generics.Labels ()
+import Data.List (sortOn)
 import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
+import Data.Ord (Down (..))
 import Data.Text qualified as T
+import Data.Time.Format (defaultTimeLocale, formatTime)
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
     formatAvailableModules,
@@ -48,8 +64,10 @@ import Seihou.Core.Types
     ResolvedVar,
     VarName,
   )
+import Seihou.Core.Version (Version, parseVersion, renderVersion)
+import Seihou.Effect.Process (Process, runProcess)
 import Seihou.Prelude
-import System.Exit (ExitCode)
+import System.Exit (ExitCode (..))
 
 -- | Provider failures retain either a real interactive process exit or API
 -- error text rather than collapsing both paths into an artificial exit code.
@@ -344,3 +362,270 @@ signalScanDepth = 5
 -- what suffers.
 unstatedNotApplicableReason :: Text
 unstatedNotApplicableReason = "(no reason given)"
+
+-- ---------------------------------------------------------------------------
+-- Inferring the version window
+-- ---------------------------------------------------------------------------
+
+-- | Where one end of the migration version window came from. Carried so the
+-- command can tell the user what it inferred and why, which matters more here
+-- than usual: an inferred window silently off by one release would run the
+-- wrong edges against their source.
+data VersionSource
+  = VersionFromFlag
+  | -- | The blueprint's declared probe command, which printed this version.
+    VersionFromProbe !Text
+  | -- | The receipt this end was read from. The whole record is carried
+    -- rather than only its edge window, because the reported line names the
+    -- blueprint and the date the edge was applied, and a user checking an
+    -- inferred start needs to recognise the run it came from.
+    VersionFromReceipt !AppliedBlueprintMigration
+  deriving stock (Eq, Show, Generic)
+
+-- | Both ends of the window, each with the reason it holds that value.
+data ResolvedWindow = ResolvedWindow
+  { fromVersion :: !Version,
+    fromSource :: !VersionSource,
+    toVersion :: !Version,
+    toSource :: !VersionSource
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Why a window could not be resolved. Both cases are recoverable by passing
+-- the flag the message names, so neither is reported as a defect.
+data WindowResolutionError
+  = -- | No @--to@ was given, and no probe supplied one.
+    NoTargetVersion
+  | -- | No @--from@ was given, and this project has no applied receipt for
+    -- this blueprint to start from.
+    NoStartVersion
+  deriving stock (Eq, Show, Generic)
+
+-- | What running a blueprint's declared version probe produced.
+--
+-- Only 'ProbeVersion' contributes to the window. The other two are reported to
+-- the user and then treated as "no probe result": a probe is the blueprint
+-- author's convenience, and a broken one must degrade to requiring @--to@
+-- rather than failing a command the user can still complete by hand.
+data VersionProbeResult
+  = ProbeVersion !Version
+  | -- | Exit code and captured stderr.
+    ProbeExitedNonZero !Int !Text
+  | -- | The probe succeeded but printed something that is not a dotted
+    -- numeric version. Carries the raw stdout.
+    ProbeOutputUnparseable !Text
+  deriving stock (Eq, Show, Generic)
+
+-- | The highest version this project has already migrated this blueprint to,
+-- with the receipt that says so.
+--
+-- Only receipts belonging to this blueprint identity are considered — name and
+-- origin both, per docs\/adr\/0002-artifact-identity-is-origin-url-plus-name.md
+-- and compared with 'sameArtifactIdentity' rather than structural equality,
+-- because a same-named blueprint from another repository records a different
+-- project history and two spellings of one git URL record the same one.
+--
+-- The identity to pass is that of the blueprint whose /own/ edges are being
+-- windowed. For @seihou agent migrate@ that is the invoked blueprint, because
+-- the window is expressed in the invoked library's version space; an entailed
+-- blueprint's steps are windowed by the edge that entails them, not by a
+-- window of their own.
+--
+-- Two exclusions are deliberate:
+--
+--   * A receipt whose @toVersion@ does not parse is skipped rather than
+--     failing the command. Receipts are data written by earlier runs, and one
+--     malformed entry must not make the command unusable.
+--
+--   * A 'MigrationNotApplicable' receipt does not count. It records that
+--     seihou considered an edge and this project did not need it, which says
+--     nothing about how far the source has been carried. Counting it would
+--     start the window above edges that were never applied and skip them
+--     permanently.
+highestMigratedVersion ::
+  ArtifactOrigin ->
+  ModuleName ->
+  [AppliedBlueprintMigration] ->
+  Maybe (Version, AppliedBlueprintMigration)
+highestMigratedVersion origin name receipts =
+  listToMaybe (sortOn (Down . fst) (mapMaybe reached receipts))
+  where
+    reached receipt
+      | receipt ^. #outcome /= MigrationApplied = Nothing
+      | not (sameArtifactIdentity (receipt ^. #origin) origin) = Nothing
+      | receipt ^. #name /= name = Nothing
+      | otherwise = (,receipt) <$> parseVersion (receipt ^. #toVersion)
+
+-- | Decide each end of the window from what the user supplied and what seihou
+-- could infer.
+--
+-- Precedence is per end and independent: an explicit flag always wins, and
+-- either end may be inferred while the other is typed.
+--
+-- The two ends deliberately draw on different sources. @--to@ takes the probe,
+-- which reads how far the /dependency/ has been bumped in this project;
+-- @--from@ takes the receipt ledger, which records how far the /source/ has
+-- been migrated. Swapping them would break the workflow this exists for: the
+-- normal sequence is to bump the dependency and then migrate the source up to
+-- it, so at the moment the command runs the lockfile already names the target.
+--
+-- Running the probe is the caller's job, and its result arrives here already
+-- parsed. That keeps this pure, and lets the caller skip the subprocess
+-- entirely when @--to@ was given.
+resolveMigrationWindow ::
+  -- | @--from@, already parsed
+  Maybe Version ->
+  -- | @--to@, already parsed
+  Maybe Version ->
+  -- | the probe's version and the command that produced it
+  Maybe (Version, Text) ->
+  -- | the highest applied receipt, from 'highestMigratedVersion'
+  Maybe (Version, AppliedBlueprintMigration) ->
+  Either WindowResolutionError ResolvedWindow
+resolveMigrationWindow fromFlag toFlag probed recorded = do
+  (target, targetSource) <- case (toFlag, probed) of
+    (Just version, _) -> Right (version, VersionFromFlag)
+    (Nothing, Just (version, command)) -> Right (version, VersionFromProbe command)
+    (Nothing, Nothing) -> Left NoTargetVersion
+  (start, startSource) <- case (fromFlag, recorded) of
+    (Just version, _) -> Right (version, VersionFromFlag)
+    (Nothing, Just (version, receipt)) -> Right (version, VersionFromReceipt receipt)
+    (Nothing, Nothing) -> Left NoStartVersion
+  pure
+    ResolvedWindow
+      { fromVersion = start,
+        fromSource = startSource,
+        toVersion = target,
+        toSource = targetSource
+      }
+
+-- | Read a probe's captured stdout as a version.
+--
+-- The rule is the /last non-empty line/, trimmed, rather than the whole of
+-- stdout: a probe like @nix eval@ prints progress before its answer, and
+-- requiring authors to silence every tool's chatter would make probes
+-- fragile. Authors need to know this rule, so it is documented in
+-- docs\/user\/blueprints.md as well as here.
+readVersionProbeOutput :: Text -> VersionProbeResult
+readVersionProbeOutput raw =
+  case lastNonEmptyLine of
+    Just line | Just version <- parseVersion line -> ProbeVersion version
+    _ -> ProbeOutputUnparseable raw
+  where
+    lastNonEmptyLine =
+      listToMaybe (reverse (filter (not . T.null) (map T.strip (T.lines raw))))
+
+-- | Run a blueprint's declared version probe in the project directory.
+--
+-- Executed through @sh -c@, exactly as a module's @RunCommand@ operation and a
+-- command-derived variable are, so an author writes the same kind of shell
+-- string everywhere. This function has no timeout of its own; the caller
+-- bounds it, because a bound belongs where the real clock is.
+runVersionProbe ::
+  (Process :> es) =>
+  -- | the declared command
+  Text ->
+  -- | the project directory to run it in
+  FilePath ->
+  Eff es VersionProbeResult
+runVersionProbe command projectRoot = do
+  (exitCode, stdoutText, stderrText) <- runProcess "sh" ["-c", command] (Just projectRoot)
+  pure $ case exitCode of
+    ExitSuccess -> readVersionProbeOutput stdoutText
+    ExitFailure code -> ProbeExitedNonZero code stderrText
+
+-- | Report the resolved window and where each end came from.
+--
+-- Returns no lines at all when the user typed both flags and did not ask for
+-- verbose output: they already know what they typed, and existing invocations
+-- should keep printing exactly what they printed before. An /inferred/ end is
+-- always reported, verbose or not — a window silently off by one release runs
+-- the wrong agent sessions against the user's source, which is worth two lines.
+formatResolvedWindow :: Bool -> ResolvedWindow -> [Text]
+formatResolvedWindow verbose window
+  | null provenance = []
+  | otherwise = header : provenance
+  where
+    header =
+      "Version window: "
+        <> renderVersion (window ^. #fromVersion)
+        <> " -> "
+        <> renderVersion (window ^. #toVersion)
+
+    provenance =
+      end "--from" (window ^. #fromVersion) (window ^. #fromSource)
+        <> end "--to  " (window ^. #toVersion) (window ^. #toSource)
+
+    end flag version source =
+      [ "  " <> flag <> " " <> renderVersion version <> "  " <> renderSource source
+      | verbose || source /= VersionFromFlag
+      ]
+
+    renderSource = \case
+      VersionFromFlag -> "[flag]"
+      VersionFromProbe command -> "[probe: " <> command <> "]"
+      VersionFromReceipt receipt ->
+        "[receipt: "
+          <> receipt ^. #name . #unModuleName
+          <> " "
+          <> receipt ^. #fromVersion
+          <> " -> "
+          <> receipt ^. #toVersion
+          <> ", applied "
+          <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d" (receipt ^. #appliedAt))
+          <> "]"
+
+-- | Explain a probe that did not produce a version.
+--
+-- The blueprint's author wrote the command and the consumer is the one holding
+-- the failure, so the message shows enough to forward upstream — and says
+-- plainly that the run can continue with an explicit flag.
+formatProbeFailure :: Text -> VersionProbeResult -> Maybe Text
+formatProbeFailure command = \case
+  ProbeVersion _ -> Nothing
+  ProbeExitedNonZero code stderrText ->
+    Just $
+      "The blueprint's version probe failed, so --to could not be inferred.\n"
+        <> "  probe:  "
+        <> command
+        <> "\n  exit:   "
+        <> T.pack (show code)
+        <> diagnostic "stderr" stderrText
+  ProbeOutputUnparseable raw ->
+    Just $
+      "The blueprint's version probe printed no dotted numeric version, so --to could not be inferred.\n"
+        <> "  probe:  "
+        <> command
+        <> diagnostic "output" raw
+  where
+    -- Both labels are six characters, so one space after the colon lines
+    -- their values up under `probe:` and `exit:` above them.
+    diagnostic label text
+      | T.null trimmed = ""
+      | otherwise = "\n  " <> label <> ": " <> T.replace "\n" "\n          " trimmed
+      where
+        trimmed = T.strip text
+
+-- | Turn an unresolvable window into the sentence the user has to act on.
+--
+-- The missing-start case is the first-run case and will be much the commoner
+-- of the two, so it explains rather than complains: seihou has no record of
+-- this project's migration history, which is a fact about the project and not
+-- a mistake by the person typing.
+formatWindowResolutionError :: ModuleName -> WindowResolutionError -> Text
+formatWindowResolutionError blueprintName = \case
+  NoTargetVersion ->
+    "Cannot determine the target version for '"
+      <> name
+      <> "'.\n\n"
+      <> "  Pass --to VERSION, or ask the blueprint's author to declare a versionProbe\n"
+      <> "  so seihou can read the version this project depends on."
+  NoStartVersion ->
+    "Cannot determine the starting version for '"
+      <> name
+      <> "'.\n\n"
+      <> "  This project has no recorded migration for that blueprint, so seihou does\n"
+      <> "  not know how far its source has already been migrated.\n\n"
+      <> "  Pass --from VERSION."
+  where
+    name = blueprintName ^. #unModuleName

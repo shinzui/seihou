@@ -135,11 +135,11 @@ tests = testSpec "Agent migrate end-to-end" $ do
       launchArgs `shouldSatisfy` elem "--effort"
       launchArgs `shouldSatisfy` elem "max"
 
-  it "exposes the required version window and rerun option in help" $ do
+  it "exposes an optional version window and the rerun option in help" $ do
     binary <- seihouBinary
     (exitCode, output, _) <- runProcessText binary ["agent", "migrate", "--help"] Nothing Nothing
     exitCode `shouldBe` ExitSuccess
-    output `shouldSatisfy` T.isInfixOf "Usage: seihou agent migrate BLUEPRINT --from VERSION --to VERSION [PROMPT]"
+    output `shouldSatisfy` T.isInfixOf "Usage: seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT]"
     output `shouldSatisfy` T.isInfixOf "--rerun"
     output `shouldNotSatisfy` T.isInfixOf "--no-baseline"
     output `shouldNotSatisfy` T.isInfixOf "--force"
@@ -462,6 +462,185 @@ tests = testSpec "Agent migrate end-to-end" $ do
       expectSuccess "direct kiroku debug migration" exitCode output errorOutput
       output `shouldSatisfy` T.isInfixOf "===== [1/1] kiroku-upgrade 1.9.0 -> 2.0.0 ====="
       output `shouldNotSatisfy` T.isInfixOf "keiro"
+
+  -- The point of the whole plan: the command a user types is `seihou agent
+  -- migrate my-library`, and it does the right thing. The probe reads a file
+  -- so the test can move the "installed version" around, exactly as bumping a
+  -- lockfile would.
+  it "infers --to from the probe and --from from the receipt ledger" $
+    withProbeProject $ \root run -> do
+      TIO.writeFile (root </> ".library-version") "2.0.0\n"
+
+      -- First run: --from is typed because nothing has been recorded yet, and
+      -- --to comes from the probe. Only the inferred end is reported.
+      (firstExit, firstOutput, firstError) <-
+        run ["agent", "migrate", "probe-upgrade", "--from", "1.0.0"]
+      expectSuccess "probe-inferred target" firstExit firstOutput firstError
+      firstOutput `shouldSatisfy` T.isInfixOf "Version window: 1.0.0 -> 2.0.0"
+      firstOutput `shouldSatisfy` T.isInfixOf "--to   2.0.0  [probe: cat .library-version]"
+      firstOutput `shouldNotSatisfy` T.isInfixOf "--from 1.0.0"
+      firstOutput `shouldSatisfy` T.isInfixOf "Running blueprint migration 1/1: probe-upgrade 1.0.0 -> 2.0.0"
+
+      -- Bump the dependency and run with no flags at all. The window starts
+      -- where the last run finished and ends where the project now points.
+      TIO.writeFile (root </> ".library-version") "3.0.0\n"
+      (secondExit, secondOutput, secondError) <-
+        run ["agent", "--debug", "migrate", "probe-upgrade"]
+      expectSuccess "fully inferred window" secondExit secondOutput secondError
+      secondOutput `shouldSatisfy` T.isInfixOf "Version window: 2.0.0 -> 3.0.0"
+      secondOutput
+        `shouldSatisfy` T.isInfixOf "--from 2.0.0  [receipt: probe-upgrade 1.0.0 -> 2.0.0, applied "
+      secondOutput `shouldSatisfy` T.isInfixOf "--to   3.0.0  [probe: cat .library-version]"
+      secondOutput `shouldSatisfy` T.isInfixOf "===== [1/1] probe-upgrade 2.0.0 -> 3.0.0 ====="
+
+  -- Explicit flags win over both sources, and a run that names them keeps
+  -- printing exactly what it printed before this feature existed.
+  it "lets explicit flags override the probe and the ledger silently" $
+    withProbeProject $ \root run -> do
+      TIO.writeFile (root </> ".library-version") "2.0.0\n"
+      (exitCode, output, errorOutput) <-
+        run ["agent", "--debug", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "3.0.0"]
+      expectSuccess "explicit window" exitCode output errorOutput
+      output `shouldNotSatisfy` T.isInfixOf "Version window:"
+      output `shouldSatisfy` T.isInfixOf "===== [1/2] probe-upgrade 1.0.0 -> 2.0.0 ====="
+      output `shouldSatisfy` T.isInfixOf "===== [2/2] probe-upgrade 2.0.0 -> 3.0.0 ====="
+
+      -- --verbose is where a user who typed both flags can still see them
+      -- accounted for.
+      (verboseExit, verboseOutput, verboseError) <-
+        run ["agent", "--debug", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "3.0.0", "--verbose"]
+      expectSuccess "explicit window, verbose" verboseExit verboseOutput verboseError
+      verboseOutput `shouldSatisfy` T.isInfixOf "--from 1.0.0  [flag]"
+      verboseOutput `shouldSatisfy` T.isInfixOf "--to   3.0.0  [flag]"
+
+  -- A broken probe is the author's mistake and the consumer's problem, so it
+  -- degrades to requiring --to rather than failing a command the user can
+  -- still complete by hand.
+  it "degrades to requiring --to when the probe fails" $
+    withProbeProject $ \_ run -> do
+      (exitCode, output, errorOutput) <-
+        run ["agent", "--debug", "migrate", "probe-upgrade", "--from", "1.0.0"]
+      exitCode `shouldSatisfy` (/= ExitSuccess)
+      let streams = output <> errorOutput
+      streams `shouldSatisfy` T.isInfixOf "version probe failed"
+      streams `shouldSatisfy` T.isInfixOf "probe:  cat .library-version"
+      streams `shouldSatisfy` T.isInfixOf "No such file"
+      streams `shouldSatisfy` T.isInfixOf "Cannot determine the target version for 'probe-upgrade'."
+      streams `shouldSatisfy` T.isInfixOf "Pass --to VERSION"
+
+      -- The escape hatch works despite the broken probe.
+      (withFlag, flagOutput, flagError) <-
+        run ["agent", "--debug", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "2.0.0"]
+      expectSuccess "explicit target despite broken probe" withFlag flagOutput flagError
+      flagOutput `shouldSatisfy` T.isInfixOf "===== [1/1] probe-upgrade 1.0.0 -> 2.0.0 ====="
+
+  -- The first-run case, which will be the commonest failure by far. It has to
+  -- read as an explanation of what seihou cannot know.
+  it "explains a missing start version when nothing has been recorded" $
+    withProbeProject $ \root run -> do
+      TIO.writeFile (root </> ".library-version") "3.0.0\n"
+      (exitCode, output, errorOutput) <- run ["agent", "--debug", "migrate", "probe-upgrade"]
+      exitCode `shouldSatisfy` (/= ExitSuccess)
+      let streams = output <> errorOutput
+      streams `shouldSatisfy` T.isInfixOf "Cannot determine the starting version for 'probe-upgrade'."
+      streams `shouldSatisfy` T.isInfixOf "no recorded migration for that blueprint"
+      streams `shouldSatisfy` T.isInfixOf "Pass --from VERSION."
+
+  -- Blueprints published before versionProbe existed must be unaffected: both
+  -- flags still work, and omitting --to gives the actionable refusal rather
+  -- than a decoding failure.
+  it "leaves a blueprint without a probe working exactly as before" $
+    withSystemTempDirectory "seihou-agent-migrate-noprobe" $ \root -> do
+      binary <- seihouBinary
+      let blueprintDir = root </> ".seihou" </> "modules" </> "payments"
+          xdgHome = root </> "xdg"
+      createDirectoryIfMissing True blueprintDir
+      createDirectoryIfMissing True xdgHome
+      TIO.writeFile (blueprintDir </> "blueprint.dhall") migrationBlueprintDhall
+      inherited <- getEnvironment
+      let overriddenNames = ["XDG_CONFIG_HOME", "SEIHOU_AGENT_PROVIDER", "SEIHOU_AGENT_MODEL", "SEIHOU_CONTEXT"]
+          environment =
+            ("XDG_CONFIG_HOME", xdgHome)
+              : ("SEIHOU_AGENT_PROVIDER", "claude-cli")
+              : filter (\(key, _) -> key `notElem` overriddenNames) inherited
+          run args = runProcessText binary args (Just root) (Just environment)
+
+      (exitCode, output, errorOutput) <-
+        run ["agent", "--debug", "migrate", "payments", "--from", "1.0.0", "--to", "3.0.0", "--var", "library.name=baikai"]
+      expectSuccess "probe-less blueprint" exitCode output errorOutput
+      output `shouldSatisfy` T.isInfixOf "Blueprint migrations for payments: 1.0.0 -> 3.0.0"
+      output `shouldNotSatisfy` T.isInfixOf "Version window:"
+
+      (bareExit, bareOutput, bareError) <-
+        run ["agent", "--debug", "migrate", "payments", "--from", "1.0.0", "--var", "library.name=baikai"]
+      bareExit `shouldSatisfy` (/= ExitSuccess)
+      (bareOutput <> bareError) `shouldSatisfy` T.isInfixOf "Cannot determine the target version for 'payments'."
+
+-- | A scratch project holding one blueprint whose version probe reads
+-- @.library-version@ from the project root, plus a fake @claude@ that always
+-- succeeds. The probe file is deliberately absent until a test writes it, so
+-- the broken-probe case needs no extra setup.
+withProbeProject ::
+  (FilePath -> ([String] -> IO (ExitCode, T.Text, T.Text)) -> IO a) ->
+  IO a
+withProbeProject action =
+  withSystemTempDirectory "seihou-agent-migrate-probe" $ \root -> do
+    binary <- seihouBinary
+    let blueprintDir = root </> ".seihou" </> "modules" </> "probe-upgrade"
+        xdgHome = root </> "xdg"
+        fakeBin = root </> "bin"
+        fakeClaude = fakeBin </> "claude"
+    createDirectoryIfMissing True blueprintDir
+    createDirectoryIfMissing True xdgHome
+    createDirectoryIfMissing True fakeBin
+    TIO.writeFile (blueprintDir </> "blueprint.dhall") probeBlueprintDhall
+    TIO.writeFile fakeClaude "#!/bin/sh\nexit 0\n"
+    permissions <- getPermissions fakeClaude
+    -- Permissions comes from `directory` and has no Generic instance, so it
+    -- has no #executable label. Record update syntax is the only option.
+    setPermissions fakeClaude (permissions {executable = True})
+
+    inherited <- getEnvironment
+    let inheritedPath = fromMaybe "" (lookup "PATH" inherited)
+        overriddenNames =
+          [ "PATH",
+            "XDG_CONFIG_HOME",
+            "SEIHOU_AGENT_PROVIDER",
+            "SEIHOU_AGENT_MODEL",
+            "SEIHOU_AGENT_EFFORT",
+            "SEIHOU_CONTEXT"
+          ]
+        environment =
+          ("PATH", fakeBin <> [searchPathSeparator] <> inheritedPath)
+            : ("XDG_CONFIG_HOME", xdgHome)
+            : ("SEIHOU_AGENT_PROVIDER", "claude-cli")
+            : filter (\(key, _) -> key `notElem` overriddenNames) inherited
+        run args = runProcessText binary args (Just root) (Just environment)
+    action root run
+
+-- | A blueprint declaring two consecutive edges and a file-backed version
+-- probe, so a test can move the "installed version" the way bumping a
+-- lockfile would.
+probeBlueprintDhall :: T.Text
+probeBlueprintDhall =
+  T.unlines
+    [ "{ name = \"probe-upgrade\"",
+      ", version = Some \"3.0.0\"",
+      ", description = Some \"probe fixture\"",
+      ", prompt = \"Shared probe guidance.\"",
+      ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+      ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+      ", baseModules = [] : List { module : Text, vars : List { name : Text, value : Text } }",
+      ", files = [] : List { src : Text, description : Optional Text }",
+      ", allowedTools = None (List Text)",
+      ", tags = [] : List Text",
+      ", migrations =",
+      "  [ { from = \"1.0.0\", to = \"2.0.0\", prompt = \"First probe edge.\" }",
+      "  , { from = \"2.0.0\", to = \"3.0.0\", prompt = \"Second probe edge.\" }",
+      "  ]",
+      ", versionProbe = Some \"cat .library-version\"",
+      "}"
+    ]
 
 -- | A scratch project with both cohort blueprints installed, a fake @claude@
 -- first on @PATH@ that always succeeds, and a scrubbed environment. The

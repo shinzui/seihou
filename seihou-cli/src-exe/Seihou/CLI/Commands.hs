@@ -376,8 +376,14 @@ data BlueprintRunOpts = BlueprintRunOpts
 
 data BlueprintMigrationOpts = BlueprintMigrationOpts
   { name :: !ModuleName,
-    from :: !Text,
-    to :: !Text,
+    -- | Where to start migrating from. 'Nothing' means "infer it": the
+    -- highest version this project's receipts say the blueprint has
+    -- already been migrated to.
+    from :: !(Maybe Text),
+    -- | Where to migrate to. 'Nothing' means "infer it": the output of
+    -- the blueprint's declared @versionProbe@, which reads the version
+    -- this project depends on.
+    to :: !(Maybe Text),
     prompt :: !(Maybe Text),
     vars :: ![(Text, Text)],
     namespace :: !(Maybe Text),
@@ -1845,20 +1851,28 @@ agentMigrateInfo =
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Selects the blueprint migrations inside the explicit version window," :: String),
+                [ pretty ("Selects the blueprint migrations inside the version window," :: String),
                   pretty ("runs one provider interaction per edge, and records each successful" :: String),
                   pretty ("edge so an interrupted chain resumes without repeating completed work." :: String),
                   line,
+                  pretty ("Either end of the window may be omitted. --to then comes from the" :: String),
+                  pretty ("blueprint's declared version probe, which reads the version this" :: String),
+                  pretty ("project depends on; --from comes from the highest version already" :: String),
+                  pretty ("recorded in this project's migration receipts. An explicit flag" :: String),
+                  pretty ("always wins, and an inferred end is reported with its source." :: String),
+                  line,
                   pretty ("Versions must be dotted numeric values. Gaps are allowed. Pass --rerun" :: String),
                   pretty ("to ignore matching receipts. Parent --debug prints every pending prompt" :: String),
-                  pretty ("without contacting a provider or changing the manifest." :: String),
+                  pretty ("without contacting a provider or changing the manifest; it does run" :: String),
+                  pretty ("the version probe, which is read-only." :: String),
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
                     vsep
-                      [ pretty ("seihou agent migrate my-library --from 1.0.0 --to 3.0.0" :: String),
+                      [ pretty ("seihou agent migrate my-library" :: String),
+                        pretty ("seihou agent migrate my-library --from 1.0.0 --to 3.0.0" :: String),
                         pretty ("seihou agent migrate my-library --from 1 --to 3 --rerun" :: String),
-                        pretty ("seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0" :: String)
+                        pretty ("seihou agent --debug migrate my-library --to 3.0.0" :: String)
                       ]
                 ]
           )
@@ -1869,8 +1883,22 @@ agentMigrateParser =
   fmap AgentMigrate $
     BlueprintMigrationOpts
       <$> argument moduleNameReader (metavar "BLUEPRINT" <> help "Name of the blueprint containing migrations")
-      <*> option (T.pack <$> str) (long "from" <> metavar "VERSION" <> help "Currently used library version (dotted numeric)")
-      <*> option (T.pack <$> str) (long "to" <> metavar "VERSION" <> help "Desired library version (dotted numeric)")
+      <*> optional
+        ( option
+            (T.pack <$> str)
+            ( long "from"
+                <> metavar "VERSION"
+                <> help "Currently used library version (dotted numeric; default: the highest version this project has already migrated to)"
+            )
+        )
+      <*> optional
+        ( option
+            (T.pack <$> str)
+            ( long "to"
+                <> metavar "VERSION"
+                <> help "Desired library version (dotted numeric; default: the blueprint's declared version probe)"
+            )
+        )
       <*> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Optional initial user instruction for each migration session"))
       <*> many
         ( option

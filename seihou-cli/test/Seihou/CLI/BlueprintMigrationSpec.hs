@@ -7,12 +7,14 @@ import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime)
+import Effectful (runPureEff)
 import Seihou.CLI.AgentLaunch (AgentContext (..))
 import Seihou.CLI.BlueprintExecution (PreparedBlueprintExecution (..))
 import Seihou.CLI.BlueprintMigration
 import Seihou.Core.Migration
 import Seihou.Core.Types
 import Seihou.Core.Version (Version, parseVersion)
+import Seihou.Effect.ProcessPure (ProcessMock (..), runProcessPure)
 import System.Exit (ExitCode (..))
 import Test.Hspec
 import Test.Tasty (TestTree)
@@ -332,6 +334,205 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
       result `shouldBe` BlueprintMigrationRecordFailed first "disk full"
       readIORef calls `shouldReturn` ["launch 1.0.0", "record 1.0.0"]
 
+  describe "highestMigratedVersion" $ do
+    it "returns Nothing when nothing has been recorded" $
+      highestMigratedVersion blueprintOrigin blueprintName [] `shouldBe` Nothing
+
+    it "returns the highest recorded target with the receipt that says so" $ do
+      let earlier = receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"
+          later = receipt blueprintOrigin blueprintName "2.0.0" "2.5.0"
+      highestMigratedVersion blueprintOrigin blueprintName [later, earlier]
+        `shouldBe` Just (version "2.5.0", later)
+
+    it "ignores receipts belonging to another blueprint name" $
+      highestMigratedVersion
+        blueprintOrigin
+        blueprintName
+        [receipt blueprintOrigin "another-blueprint" "1.0.0" "9.0.0"]
+        `shouldBe` Nothing
+
+    -- The reason origin is part of the identity: another repository's
+    -- same-named blueprint records a different project history, and starting
+    -- this project's window from it would skip every edge below its target.
+    it "ignores a same-named receipt from another repository" $
+      highestMigratedVersion
+        blueprintOrigin
+        blueprintName
+        [receipt otherRepoOrigin blueprintName "1.0.0" "9.0.0"]
+        `shouldBe` Nothing
+
+    it "treats two spellings of one git URL as the same repository" $ do
+      let dotGit = receipt (RemoteOrigin "https://github.com/acme/one.git" "payments" Nothing) blueprintName "1.0.0" "2.0.0"
+      highestMigratedVersion blueprintOrigin blueprintName [dotGit]
+        `shouldBe` Just (version "2.0.0", dotGit)
+
+    -- One malformed entry written by an earlier run must not make the
+    -- command unusable.
+    it "skips an unparseable recorded version rather than failing" $ do
+      let usable = receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"
+          broken = receipt blueprintOrigin blueprintName "2.0.0" "not-a-version"
+      highestMigratedVersion blueprintOrigin blueprintName [broken, usable]
+        `shouldBe` Just (version "2.0.0", usable)
+
+    -- The subtlest correctness point in the feature. A not-applicable receipt
+    -- says seihou considered an edge and this project did not need it, which
+    -- is not progress. Its target is deliberately the highest here, so an
+    -- implementation that counted it would visibly pick it and then skip the
+    -- 2.0.0 -> 3.0.0 edge forever.
+    it "does not count a not-applicable receipt as progress" $ do
+      let applied = receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"
+          skipped = notApplicableReceipt blueprintOrigin blueprintName "2.0.0" "3.0.0" "no bundle adopted"
+      highestMigratedVersion blueprintOrigin blueprintName [applied, skipped]
+        `shouldBe` Just (version "2.0.0", applied)
+
+  describe "resolveMigrationWindow" $ do
+    it "takes an explicit flag over the probe and the receipts, at each end" $ do
+      resolveMigrationWindow (Just (version "1.0.0")) (Just (version "4.0.0")) probeResult recordedResult
+        `shouldBe` Right
+          ResolvedWindow
+            { fromVersion = version "1.0.0",
+              fromSource = VersionFromFlag,
+              toVersion = version "4.0.0",
+              toSource = VersionFromFlag
+            }
+
+    -- The two ends resolve independently: either may be typed while the
+    -- other is inferred.
+    it "infers only the end that was not given" $ do
+      resolveMigrationWindow (Just (version "1.0.0")) Nothing probeResult recordedResult
+        `shouldBe` Right
+          ResolvedWindow
+            { fromVersion = version "1.0.0",
+              fromSource = VersionFromFlag,
+              toVersion = version "3.0.0",
+              toSource = VersionFromProbe "cat .library-version"
+            }
+      resolveMigrationWindow Nothing (Just (version "4.0.0")) probeResult recordedResult
+        `shouldBe` Right
+          ResolvedWindow
+            { fromVersion = version "2.0.0",
+              fromSource = VersionFromReceipt recordedReceipt,
+              toVersion = version "4.0.0",
+              toSource = VersionFromFlag
+            }
+
+    -- The probe reads how far the dependency was bumped, so it is the
+    -- target; the ledger records how far the source was carried, so it is the
+    -- start. Reversing them would report nothing to do for every project that
+    -- bumped its lockfile first, which is the workflow this exists for.
+    it "takes --to from the probe and --from from the receipt" $
+      resolveMigrationWindow Nothing Nothing probeResult recordedResult
+        `shouldBe` Right
+          ResolvedWindow
+            { fromVersion = version "2.0.0",
+              fromSource = VersionFromReceipt recordedReceipt,
+              toVersion = version "3.0.0",
+              toSource = VersionFromProbe "cat .library-version"
+            }
+
+    it "reports a missing target when there is no --to and no probe" $
+      resolveMigrationWindow Nothing Nothing Nothing recordedResult
+        `shouldBe` Left NoTargetVersion
+
+    it "reports a missing start when there is no --from and no receipt" $
+      resolveMigrationWindow Nothing Nothing probeResult Nothing
+        `shouldBe` Left NoStartVersion
+
+  describe "readVersionProbeOutput" $ do
+    it "reads a version printed on its own" $
+      readVersionProbeOutput "3.0.0\n" `shouldBe` ProbeVersion (version "3.0.0")
+
+    -- A probe like `nix eval` prints progress before its answer, and
+    -- requiring authors to silence every tool's chatter would make probes
+    -- fragile.
+    it "reads the last non-empty line, past progress output" $
+      readVersionProbeOutput "evaluating derivation\nbuilding...\n\n3.0.0\n\n"
+        `shouldBe` ProbeVersion (version "3.0.0")
+
+    it "reports unparseable output with the raw text" $ do
+      readVersionProbeOutput "v3.0.0\n" `shouldBe` ProbeOutputUnparseable "v3.0.0\n"
+      readVersionProbeOutput "" `shouldBe` ProbeOutputUnparseable ""
+
+  describe "runVersionProbe" $ do
+    it "returns the version a successful probe printed" $
+      runProbe (ExitSuccess, "3.0.0\n", "") `shouldBe` ProbeVersion (version "3.0.0")
+
+    it "returns the version after progress lines" $
+      runProbe (ExitSuccess, "evaluating\n3.0.0\n", "warning: ignoring config\n")
+        `shouldBe` ProbeVersion (version "3.0.0")
+
+    -- Neither failure aborts the command: the caller reports them and falls
+    -- through to requiring --to, because the user did not write the probe and
+    -- still has an explicit flag.
+    it "carries a nonzero exit and its stderr back to the caller" $
+      runProbe (ExitFailure 1, "", "cat: .library-version: No such file\n")
+        `shouldBe` ProbeExitedNonZero 1 "cat: .library-version: No such file\n"
+
+    it "reports output that is not a version" $
+      runProbe (ExitSuccess, "nothing useful\n", "")
+        `shouldBe` ProbeOutputUnparseable "nothing useful\n"
+
+    it "falls through when the probe command does not exist at all" $
+      runPureEff (runProcessPure [] (runVersionProbe "no-such-tool" "/tmp/project"))
+        `shouldBe` ProbeExitedNonZero 127 "command not found: sh"
+
+  describe "formatResolvedWindow" $ do
+    -- Existing invocations that name both versions keep printing exactly what
+    -- they printed before; the user does not need to be told what they typed.
+    it "says nothing when both ends were typed and verbose was not asked for" $
+      formatResolvedWindow False (windowWith VersionFromFlag VersionFromFlag) `shouldBe` []
+
+    it "names both sources under verbose" $
+      formatResolvedWindow True (windowWith VersionFromFlag VersionFromFlag)
+        `shouldBe` [ "Version window: 2.0.0 -> 3.0.0",
+                     "  --from 2.0.0  [flag]",
+                     "  --to   3.0.0  [flag]"
+                   ]
+
+    -- An inferred window that is silently wrong runs the wrong agent sessions
+    -- against the user's source, so an inferred end always reports itself.
+    it "reports an inferred end at normal verbosity, and only that end" $
+      formatResolvedWindow False (windowWith VersionFromFlag (VersionFromProbe "cat .library-version"))
+        `shouldBe` [ "Version window: 2.0.0 -> 3.0.0",
+                     "  --to   3.0.0  [probe: cat .library-version]"
+                   ]
+
+    it "names the blueprint, the edge, and the date a receipt-derived start came from" $
+      formatResolvedWindow False (windowWith (VersionFromReceipt recordedReceipt) (VersionFromProbe "cat .library-version"))
+        `shouldBe` [ "Version window: 2.0.0 -> 3.0.0",
+                     "  --from 2.0.0  [receipt: payments 1.0.0 -> 2.0.0, applied 2026-07-20]",
+                     "  --to   3.0.0  [probe: cat .library-version]"
+                   ]
+
+  describe "formatProbeFailure" $ do
+    it "says nothing about a probe that produced a version" $
+      formatProbeFailure "cat .library-version" (ProbeVersion (version "3.0.0")) `shouldBe` Nothing
+
+    it "shows the command, the exit code, and the stderr" $ do
+      let rendered = formatProbeFailure "cat .library-version" (ProbeExitedNonZero 1 "No such file\n")
+      rendered `shouldSatisfy` maybe False (T.isInfixOf "probe:  cat .library-version")
+      rendered `shouldSatisfy` maybe False (T.isInfixOf "exit:   1")
+      rendered `shouldSatisfy` maybe False (T.isInfixOf "stderr: No such file")
+
+    it "shows what an unparseable probe printed" $
+      formatProbeFailure "cat .library-version" (ProbeOutputUnparseable "v3.0.0\n")
+        `shouldSatisfy` maybe False (T.isInfixOf "output: v3.0.0")
+
+  describe "formatWindowResolutionError" $ do
+    it "names --to and the author's remedy for a missing target" $ do
+      let rendered = formatWindowResolutionError blueprintName NoTargetVersion
+      rendered `shouldSatisfy` T.isInfixOf "Cannot determine the target version for 'payments'."
+      rendered `shouldSatisfy` T.isInfixOf "Pass --to VERSION"
+      rendered `shouldSatisfy` T.isInfixOf "versionProbe"
+
+    -- The first-run case, which will be much the commoner of the two. It
+    -- should read as an explanation of what seihou does not know, not as a
+    -- complaint about what the user failed to type.
+    it "explains rather than complains about a missing start" $ do
+      let rendered = formatWindowResolutionError blueprintName NoStartVersion
+      rendered `shouldSatisfy` T.isInfixOf "no recorded migration for that blueprint"
+      rendered `shouldSatisfy` T.isInfixOf "Pass --from VERSION."
+
   describe "parseNotApplicableSignal" $ do
     it "reads the plain marker line" $
       parseNotApplicableSignal "Checked the pins.\nSEIHOU: not-applicable the bundle was never adopted"
@@ -470,6 +671,39 @@ version raw =
   case parseVersion raw of
     Just parsed -> parsed
     Nothing -> error "test version should parse"
+
+-- | The receipt an inferred @--from@ is read out of.
+recordedReceipt :: AppliedBlueprintMigration
+recordedReceipt = receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"
+
+-- | What 'highestMigratedVersion' would hand the resolver for that receipt.
+recordedResult :: Maybe (Version, AppliedBlueprintMigration)
+recordedResult = Just (version "2.0.0", recordedReceipt)
+
+-- | What a successful probe would hand the resolver.
+probeResult :: Maybe (Version, Text)
+probeResult = Just (version "3.0.0", "cat .library-version")
+
+-- | A resolved window whose values are fixed so a test can vary only where
+-- each end came from.
+windowWith :: VersionSource -> VersionSource -> ResolvedWindow
+windowWith startSource targetSource =
+  ResolvedWindow
+    { fromVersion = version "2.0.0",
+      fromSource = startSource,
+      toVersion = version "3.0.0",
+      toSource = targetSource
+    }
+
+-- | Run one probe against a mocked @sh -c@ result.
+runProbe :: (ExitCode, Text, Text) -> VersionProbeResult
+runProbe result =
+  runPureEff $
+    runProcessPure
+      [ProcessMock {command = "sh", args = ["-c", probeCommand], result = result}]
+      (runVersionProbe probeCommand "/tmp/project")
+  where
+    probeCommand = "cat .library-version"
 
 tshow :: (Show a) => a -> Text
 tshow = T.pack . show

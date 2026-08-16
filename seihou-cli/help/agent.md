@@ -118,16 +118,24 @@ SUBCOMMANDS
       provider. A successful non-debug run records applied-blueprint
       provenance in `.seihou/manifest.json`.
 
-  seihou agent migrate BLUEPRINT --from VERSION --to VERSION [PROMPT]
+  seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT]
       Run one agent session per in-window migration declared by the blueprint.
-      Versions are explicit dotted numbers; gaps are allowed. Successful edges
-      are recorded immediately so a later invocation resumes at the first
+      Versions are dotted numbers; gaps are allowed. Successful edges are
+      recorded immediately so a later invocation resumes at the first
       unrecorded edge. `--rerun` ignores matching receipts. Migration mode does
       not apply baseModules and exposes neither --no-baseline nor --force.
 
+      Either end of the window may be omitted. --to then comes from the
+      blueprint's declared versionProbe, a command it supplies that reads the
+      version this project depends on; --from comes from the highest version
+      already recorded in this project's receipts. An explicit flag always
+      wins, and an inferred end is reported with the source it came from.
+
       Parent --debug prints every pending migration prompt in order without
-      contacting a provider or writing receipts. A receipt records provider
-      completion, not package-manager verification.
+      contacting a provider or writing receipts. It does run the version
+      probe, which is required to be read-only, so debug planning matches a
+      real run. A receipt records provider completion, not package-manager
+      verification.
 
   seihou prompt run PROMPT [USER-PROMPT] [--var KEY=VALUE] [--debug]
       Resolve a reusable prompt, run command-derived variables, render
@@ -141,6 +149,7 @@ DEBUG EXAMPLES
   seihou agent --debug --provider openai setup "inspect this prompt"
   seihou agent --debug run my-blueprint --var project.name=demo
   seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
+  seihou agent --debug migrate my-library
 
 SEE ALSO
 

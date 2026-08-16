@@ -42,12 +42,20 @@ import Seihou.CLI.BlueprintMigration
   ( BlueprintMigrationLaunchFailure (..),
     BlueprintMigrationLaunchResult (..),
     BlueprintMigrationRunResult (..),
+    ResolvedWindow (..),
+    VersionProbeResult (..),
     formatBlueprintMigrationDebugOutput,
     formatMigrationStepLabel,
+    formatProbeFailure,
+    formatResolvedWindow,
+    formatWindowResolutionError,
+    highestMigratedVersion,
     parseNotApplicableSignal,
     pendingBlueprintMigrations,
     renderBlueprintMigrationSystemPrompt,
+    resolveMigrationWindow,
     runBlueprintMigrationsWith,
+    runVersionProbe,
     unstatedNotApplicableReason,
   )
 import Seihou.CLI.Commands (BlueprintMigrationOpts (..))
@@ -73,9 +81,10 @@ import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Version (Version, parseVersion, renderVersion)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
-import Seihou.Effect.Logger (logError)
+import Seihou.Effect.Logger (logError, logWarn)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Prelude
 import System.Directory
   ( createDirectoryIfMissing,
@@ -85,6 +94,7 @@ import System.Directory
   )
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory)
+import System.Timeout (timeout)
 
 migrationPromptTemplate :: Text
 migrationPromptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-migration-prompt.md")
@@ -141,8 +151,19 @@ handleAgentMigrate debug pendingConfig opts = do
       pendingConfig
       (agentLaunchDeclaration (blueprint ^. #launch))
 
-  current <- parseRequestedVersion level "--from" (opts ^. #from)
-  target <- parseRequestedVersion level "--to" (opts ^. #to)
+  -- The receipts are read before the window is planned, not after, because
+  -- the window itself now depends on them: an omitted --from is the highest
+  -- version this project has already migrated this blueprint to. The same
+  -- list is reused for per-step filtering further down, so the manifest is
+  -- read once.
+  receipts <- readMigrationReceipts level manifestPath
+
+  window <- resolveWindow level projectRoot invoked receipts opts
+  let current = window ^. #fromVersion
+      target = window ^. #toVersion
+      windowReport = formatResolvedWindow (opts ^. #verbose) window
+  unless (null windowReport) $ mapM_ TIO.putStrLn (windowReport <> [""])
+
   planned <-
     case planBlueprintMigrationChain (blueprint ^. #name . #unModuleName) (blueprint ^. #migrations) current target of
       Left err -> exitErr level (renderPlanError err)
@@ -187,7 +208,6 @@ handleAgentMigrate debug pendingConfig opts = do
         Left err -> exitErr level (renderEntailmentError cohort err)
         Right expandedSteps -> pure (migrationPlan & #steps .~ expandedSteps)
 
-      receipts <- readMigrationReceipts level manifestPath
       let pending =
             pendingBlueprintMigrations
               (opts ^. #rerun)
@@ -358,6 +378,77 @@ renderEntailmentError cohort = \case
         case [edge ^. #from <> " -> " <> edge ^. #to | edge <- resolved ^. #blueprint . #migrations] of
           [] -> "(it declares no migrations at all)"
           rendered -> T.intercalate ", " rendered
+
+-- | Decide both ends of the version window, running the blueprint's declared
+-- probe only if it is needed.
+--
+-- The probe is skipped entirely when @--to@ was supplied: an explicit
+-- invocation must never execute a subprocess whose answer it would discard.
+-- It /is/ run under @--debug@, though nothing else there is: it is a
+-- read-only command the blueprint supplies, and refusing to run it would make
+-- debug output diverge from a real run in exactly the way that matters — the
+-- window, and therefore which edges are shown.
+--
+-- Receipts are matched against the invoked blueprint's own identity. That is
+-- the same "by owner" rule the per-step filtering uses: the window is
+-- expressed in the invoked library's version space, so the receipts that
+-- bound it are the ones the invoked blueprint owns.
+resolveWindow ::
+  LogLevel ->
+  FilePath ->
+  CohortBlueprint ->
+  [AppliedBlueprintMigration] ->
+  BlueprintMigrationOpts ->
+  IO ResolvedWindow
+resolveWindow level projectRoot invoked receipts opts = do
+  fromFlag <- traverse (parseRequestedVersion level "--from") (opts ^. #from)
+  toFlag <- traverse (parseRequestedVersion level "--to") (opts ^. #to)
+  probed <- case (toFlag, invoked ^. #blueprint . #versionProbe) of
+    (Just _, _) -> pure Nothing
+    (Nothing, Nothing) -> pure Nothing
+    (Nothing, Just command) -> do
+      result <- executeVersionProbe level projectRoot command
+      pure $ case result of
+        ProbeVersion version -> Just (version, command)
+        _ -> Nothing
+  let recorded =
+        highestMigratedVersion
+          (invoked ^. #origin)
+          (invoked ^. #blueprint . #name)
+          receipts
+  case resolveMigrationWindow fromFlag toFlag probed recorded of
+    Right window -> pure window
+    Left err ->
+      exitErr level (formatWindowResolutionError (invoked ^. #blueprint . #name) err)
+
+-- | Run one version probe under a wall-clock bound, reporting anything that
+-- is not a version and returning it for the caller to discard.
+--
+-- Every failure here is a warning rather than an error. The user did not
+-- write the probe, and still has @--to@; turning an author's broken command
+-- into a hard failure would take a working escape hatch away from the person
+-- who cannot fix it.
+executeVersionProbe :: LogLevel -> FilePath -> Text -> IO VersionProbeResult
+executeVersionProbe level projectRoot command = do
+  bounded <- timeout probeTimeoutMicroseconds run
+  let result = fromMaybe (ProbeExitedNonZero 124 timedOut) bounded
+  mapM_ (logIO level . logWarn) (formatProbeFailure command result)
+  pure result
+  where
+    run = runEff $ runProcessIO $ runVersionProbe command projectRoot
+
+    -- 124 is what `timeout(1)` reports, which is the closest thing to a
+    -- convention for "the command did not finish".
+    timedOut =
+      "timed out after "
+        <> T.pack (show (probeTimeoutMicroseconds `div` 1_000_000))
+        <> " seconds"
+
+-- | How long a version probe may take before the command stops waiting for
+-- it. Generous enough for a cold @nix eval@, short enough that a probe that
+-- hangs forever does not hang @seihou agent migrate@ forever with it.
+probeTimeoutMicroseconds :: Int
+probeTimeoutMicroseconds = 60 * 1_000_000
 
 parseRequestedVersion :: LogLevel -> Text -> Text -> IO Version
 parseRequestedVersion level flag raw =
