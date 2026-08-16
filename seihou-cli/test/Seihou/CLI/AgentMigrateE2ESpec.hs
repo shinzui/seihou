@@ -1,19 +1,25 @@
 module Seihou.CLI.AgentMigrateE2ESpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens (to, (^.))
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.SeihouBinary (seihouBinary)
-import Seihou.Core.Types (AppliedBlueprintMigration (..), Manifest (..), MigrationOutcome (..))
+import Seihou.Core.Types
+  ( AppliedBlueprintMigration (..),
+    Manifest (..),
+    MigrationOutcome (..),
+    ModuleName (..),
+  )
 import Seihou.Manifest.Types (manifestFromJSON)
 import System.Directory
   ( createDirectoryIfMissing,
     doesFileExist,
     executable,
     getPermissions,
+    removeDirectoryRecursive,
     setPermissions,
   )
 import System.Environment (getEnvironment)
@@ -350,6 +356,211 @@ tests = testSpec "Agent migrate end-to-end" $ do
       expectSuccess "settled migration" settledExit settledOutput settledError
       settledOutput `shouldSatisfy` T.isInfixOf "already have receipts"
       T.lines <$> TIO.readFile launchLog `shouldReturn` ["called", "called", "called"]
+
+  -- The cohort story end to end. A keiro edge entails a kiroku edge; one
+  -- command plans both, in order, each carrying its own blueprint's reference
+  -- files. --debug is the ideal surface: it exercises discovery, expansion, and
+  -- per-blueprint preparation while contacting no provider and writing nothing.
+  it "expands an entailed edge into the chain with its own blueprint's context" $
+    withCohortProject $ \root run -> do
+      (exitCode, output, errorOutput) <-
+        run ["agent", "--debug", "migrate", "keiro-upgrade", "--from", "2.4.0", "--to", "3.0.0"]
+      expectSuccess "cohort debug migration" exitCode output errorOutput
+      output `shouldSatisfy` T.isInfixOf "Blueprint migrations for keiro-upgrade: 2.4.0 -> 3.0.0"
+      output
+        `shouldSatisfy` T.isInfixOf
+          "===== [1/2] kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0) ====="
+      output `shouldSatisfy` T.isInfixOf "===== [2/2] keiro-upgrade 2.4.0 -> 3.0.0 ====="
+
+      -- The entailed edge comes first, which is the ordering rule.
+      let (beforeKiroku, fromKiroku) = T.breakOn "kiroku-upgrade 1.9.0 -> 2.0.0" output
+          (_, fromKeiro) = T.breakOn "===== [2/2]" fromKiroku
+      beforeKiroku `shouldSatisfy` (not . T.isInfixOf "===== [2/2]")
+      fromKeiro `shouldNotBe` ""
+
+      -- Each step got its own blueprint's shared prompt, edge prompt, and
+      -- reference-file listing. The marker files are the proof that `files/`
+      -- was read from the owning blueprint's directory, not the invoked one's.
+      let kirokuStep = T.take (T.length fromKiroku - T.length fromKeiro) fromKiroku
+      kirokuStep `shouldSatisfy` T.isInfixOf "Shared kiroku guidance."
+      kirokuStep `shouldSatisfy` T.isInfixOf "Drop the removed kiroku API."
+      kirokuStep `shouldSatisfy` T.isInfixOf "kiroku-marker.md"
+      kirokuStep `shouldNotSatisfy` T.isInfixOf "keiro-marker.md"
+      kirokuStep
+        `shouldSatisfy` T.isInfixOf "It is required by keiro-upgrade 2.4.0 -> 3.0.0"
+      fromKeiro `shouldSatisfy` T.isInfixOf "Shared keiro guidance."
+      fromKeiro `shouldSatisfy` T.isInfixOf "keiro-marker.md"
+      fromKeiro `shouldNotSatisfy` T.isInfixOf "kiroku-marker.md"
+
+      doesFileExist (root </> ".seihou" </> "manifest.json") `shouldReturn` False
+
+  -- The decisive property. A project that crossed the shared kiroku edge by
+  -- running keiro-upgrade does not cross it again by running kiroku-upgrade,
+  -- because the receipt was written under kiroku-upgrade's own identity.
+  it "crosses a shared cohort edge once regardless of entry point" $
+    withCohortProject $ \root run -> do
+      (exitCode, output, errorOutput) <-
+        run ["agent", "migrate", "keiro-upgrade", "--from", "2.4.0", "--to", "3.0.0"]
+      expectSuccess "cohort migration" exitCode output errorOutput
+      output `shouldSatisfy` T.isInfixOf "Running blueprint migration 1/2: kiroku-upgrade 1.9.0 -> 2.0.0"
+      output `shouldSatisfy` T.isInfixOf "Running blueprint migration 2/2: keiro-upgrade 2.4.0 -> 3.0.0"
+
+      -- The kiroku receipt is filed under kiroku-upgrade, not keiro-upgrade.
+      bytes <- LBS.readFile (root </> ".seihou" </> "manifest.json")
+      manifest <- case manifestFromJSON bytes of
+        Left err -> expectationFailure err >> fail "unreachable"
+        Right decoded -> pure decoded
+      [ (receipt ^. #name . #unModuleName, receipt ^. #fromVersion, receipt ^. #toVersion)
+        | receipt <- manifest ^. #blueprintMigrations
+        ]
+        `shouldBe` [ ("kiroku-upgrade", "1.9.0", "2.0.0"),
+                     ("keiro-upgrade", "2.4.0", "3.0.0")
+                   ]
+
+      -- Running the entailed blueprint directly finds that receipt.
+      (kirokuExit, kirokuOutput, kirokuError) <-
+        run ["agent", "migrate", "kiroku-upgrade", "--from", "1.9.0", "--to", "2.0.0"]
+      expectSuccess "direct kiroku migration" kirokuExit kirokuOutput kirokuError
+      kirokuOutput `shouldSatisfy` T.isInfixOf "already have receipts"
+
+  -- Skipping an uninstalled cohort member would leave a half-migrated project
+  -- with no signal, because the consumer never named that library.
+  it "refuses when an entailed blueprint is not installed" $
+    withCohortProject $ \root run -> do
+      removeDirectoryRecursive (root </> ".seihou" </> "modules" </> "kiroku-upgrade")
+      (exitCode, output, errorOutput) <-
+        run ["agent", "--debug", "migrate", "keiro-upgrade", "--from", "2.4.0", "--to", "3.0.0"]
+      exitCode `shouldSatisfy` (/= ExitSuccess)
+      let streams = output <> errorOutput
+      streams
+        `shouldSatisfy` T.isInfixOf
+          "'keiro-upgrade' edge 2.4.0 -> 3.0.0 entails blueprint 'kiroku-upgrade', which is not installed"
+      streams `shouldSatisfy` T.isInfixOf "seihou install <url> --module kiroku-upgrade"
+
+  -- Entailment names one exact edge; the likeliest authoring mistake is an
+  -- off-by-one in a version string, so the real list is printed.
+  it "refuses when the entailed blueprint declares no such edge, listing what it does" $
+    withCohortProject $ \root run -> do
+      TIO.writeFile
+        (root </> ".seihou" </> "modules" </> "kiroku-upgrade" </> "blueprint.dhall")
+        (kirokuBlueprintDhall "1.8.0")
+      (exitCode, output, errorOutput) <-
+        run ["agent", "--debug", "migrate", "keiro-upgrade", "--from", "2.4.0", "--to", "3.0.0"]
+      exitCode `shouldSatisfy` (/= ExitSuccess)
+      let streams = output <> errorOutput
+      streams
+        `shouldSatisfy` T.isInfixOf
+          "'keiro-upgrade' edge 2.4.0 -> 3.0.0 entails edge 1.9.0 -> 2.0.0 of 'kiroku-upgrade', which declares no such edge"
+      streams `shouldSatisfy` T.isInfixOf "Declared edges of 'kiroku-upgrade': 1.8.0 -> 2.0.0"
+
+  -- A consumer of the entailed library alone is untouched by the existence of
+  -- the blueprint that entails it.
+  it "leaves a direct consumer of the entailed blueprint alone" $
+    withCohortProject $ \_ run -> do
+      (exitCode, output, errorOutput) <-
+        run ["agent", "--debug", "migrate", "kiroku-upgrade", "--from", "1.9.0", "--to", "2.0.0"]
+      expectSuccess "direct kiroku debug migration" exitCode output errorOutput
+      output `shouldSatisfy` T.isInfixOf "===== [1/1] kiroku-upgrade 1.9.0 -> 2.0.0 ====="
+      output `shouldNotSatisfy` T.isInfixOf "keiro"
+
+-- | A scratch project with both cohort blueprints installed, a fake @claude@
+-- first on @PATH@ that always succeeds, and a scrubbed environment. The
+-- callback receives the project root and a runner for @seihou@ arguments.
+withCohortProject ::
+  (FilePath -> ([String] -> IO (ExitCode, T.Text, T.Text)) -> IO a) ->
+  IO a
+withCohortProject action =
+  withSystemTempDirectory "seihou-agent-migrate-cohort" $ \root -> do
+    binary <- seihouBinary
+    let modulesDir = root </> ".seihou" </> "modules"
+        kirokuDir = modulesDir </> "kiroku-upgrade"
+        keiroDir = modulesDir </> "keiro-upgrade"
+        xdgHome = root </> "xdg"
+        fakeBin = root </> "bin"
+        fakeClaude = fakeBin </> "claude"
+    createDirectoryIfMissing True (kirokuDir </> "files")
+    createDirectoryIfMissing True (keiroDir </> "files")
+    createDirectoryIfMissing True xdgHome
+    createDirectoryIfMissing True fakeBin
+    TIO.writeFile (kirokuDir </> "blueprint.dhall") (kirokuBlueprintDhall "1.9.0")
+    TIO.writeFile (keiroDir </> "blueprint.dhall") keiroBlueprintDhall
+    -- Distinctive markers, so each rendered step's reference-file listing
+    -- proves which blueprint's files/ directory it was built from.
+    TIO.writeFile (kirokuDir </> "files" </> "kiroku-marker.md") "kiroku reference"
+    TIO.writeFile (keiroDir </> "files" </> "keiro-marker.md") "keiro reference"
+    TIO.writeFile fakeClaude "#!/bin/sh\nexit 0\n"
+    permissions <- getPermissions fakeClaude
+    -- Permissions comes from `directory` and has no Generic instance, so it
+    -- has no #executable label. Record update syntax is the only option.
+    setPermissions fakeClaude (permissions {executable = True})
+
+    inherited <- getEnvironment
+    let inheritedPath = fromMaybe "" (lookup "PATH" inherited)
+        overriddenNames =
+          [ "PATH",
+            "XDG_CONFIG_HOME",
+            "SEIHOU_AGENT_PROVIDER",
+            "SEIHOU_AGENT_MODEL",
+            "SEIHOU_AGENT_EFFORT",
+            "SEIHOU_CONTEXT"
+          ]
+        environment =
+          ("PATH", fakeBin <> [searchPathSeparator] <> inheritedPath)
+            : ("XDG_CONFIG_HOME", xdgHome)
+            : ("SEIHOU_AGENT_PROVIDER", "claude-cli")
+            : filter (\(key, _) -> key `notElem` overriddenNames) inherited
+        run args = runProcessText binary args (Just root) (Just environment)
+    action root run
+
+-- | The entailed blueprint. Its edge's start version is a parameter so a test
+-- can move it and make the declaring blueprint's reference dangle.
+kirokuBlueprintDhall :: T.Text -> T.Text
+kirokuBlueprintDhall edgeFrom =
+  T.unlines
+    [ "{ name = \"kiroku-upgrade\"",
+      ", version = Some \"2.0.0\"",
+      ", description = Some \"kiroku upgrade\"",
+      ", prompt = \"Shared kiroku guidance.\"",
+      ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+      ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+      ", baseModules = [] : List { module : Text, vars : List { name : Text, value : Text } }",
+      ", files = [ { src = \"kiroku-marker.md\", description = Some \"kiroku reference\" } ]",
+      ", allowedTools = None (List Text)",
+      ", tags = [] : List Text",
+      ", migrations =",
+      "  [ { from = \"" <> edgeFrom <> "\"",
+      "    , to = \"2.0.0\"",
+      "    , prompt = \"Drop the removed kiroku API.\"",
+      "    , entails = [] : List { blueprint : Text, from : Text, to : Text }",
+      "    }",
+      "  ]",
+      "}"
+    ]
+
+-- | The declaring blueprint, whose only edge entails kiroku's.
+keiroBlueprintDhall :: T.Text
+keiroBlueprintDhall =
+  T.unlines
+    [ "{ name = \"keiro-upgrade\"",
+      ", version = Some \"3.0.0\"",
+      ", description = Some \"keiro upgrade\"",
+      ", prompt = \"Shared keiro guidance.\"",
+      ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+      ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+      ", baseModules = [] : List { module : Text, vars : List { name : Text, value : Text } }",
+      ", files = [ { src = \"keiro-marker.md\", description = Some \"keiro reference\" } ]",
+      ", allowedTools = None (List Text)",
+      ", tags = [] : List Text",
+      ", migrations =",
+      "  [ { from = \"2.4.0\"",
+      "    , to = \"3.0.0\"",
+      "    , prompt = \"Adopt the new keiro wrapper.\"",
+      "    , entails =",
+      "      [ { blueprint = \"kiroku-upgrade\", from = \"1.9.0\", to = \"2.0.0\" } ]",
+      "    }",
+      "  ]",
+      "}"
+    ]
 
 -- | The recorded edge windows and outcomes, in ledger order.
 readReceipts :: FilePath -> IO [(T.Text, T.Text, MigrationOutcome)]
