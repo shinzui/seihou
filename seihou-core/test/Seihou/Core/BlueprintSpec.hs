@@ -4,7 +4,12 @@ import Control.Lens (at, (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
-import Seihou.Core.Blueprint (checkBlueprintLaunch, checkBlueprintMigrations, validateBlueprintWith)
+import Seihou.Core.Blueprint
+  ( checkBlueprintLaunch,
+    checkBlueprintMigrations,
+    checkBlueprintVersionProbe,
+    validateBlueprintWith,
+  )
 import Seihou.Core.Migration (BlueprintMigration (..))
 import Seihou.Core.Module (discoverRunnable)
 import Seihou.Core.Types
@@ -49,6 +54,7 @@ goodBlueprint =
     []
     []
     Nothing
+    Nothing
 
 -- | Helpers to update individual 'Blueprint' fields without ambiguous
 -- record updates. Several @Blueprint@ fields collide by name with
@@ -56,47 +62,51 @@ goodBlueprint =
 -- the ambiguity once and for all.
 withBlueprintName :: ModuleName -> Blueprint -> Blueprint
 withBlueprintName n b =
-  Blueprint n (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
+  Blueprint n (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintVersion :: Maybe T.Text -> Blueprint -> Blueprint
 withBlueprintVersion v b =
-  Blueprint (b ^. #name) v (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
+  Blueprint (b ^. #name) v (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintPrompt :: T.Text -> Blueprint -> Blueprint
 withBlueprintPrompt p b =
-  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) p (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) p (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintVars :: [VarDecl] -> Blueprint -> Blueprint
 withBlueprintVars vs b =
-  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) vs (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) vs (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintPrompts :: [Prompt] -> Blueprint -> Blueprint
 withBlueprintPrompts ps b =
-  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) ps (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) ps (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintBaseModules :: [Dependency] -> Blueprint -> Blueprint
 withBlueprintBaseModules ds b =
-  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) ds (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) ds (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintFiles :: [BlueprintFile] -> Blueprint -> Blueprint
 withBlueprintFiles fs b =
-  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) fs (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch)
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) fs (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintAllowedTools :: Maybe [T.Text] -> Blueprint -> Blueprint
 withBlueprintAllowedTools at b =
-  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) at (b ^. #tags) (b ^. #migrations) (b ^. #launch)
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) at (b ^. #tags) (b ^. #migrations) (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintTags :: [T.Text] -> Blueprint -> Blueprint
 withBlueprintTags ts b =
-  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) ts (b ^. #migrations) (b ^. #launch)
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) ts (b ^. #migrations) (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintMigrations :: [BlueprintMigration] -> Blueprint -> Blueprint
 withBlueprintMigrations migrations b =
-  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) migrations (b ^. #launch)
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) migrations (b ^. #launch) (b ^. #versionProbe)
 
 withBlueprintLaunch :: Maybe AgentLaunch -> Blueprint -> Blueprint
 withBlueprintLaunch launch b =
-  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) launch
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) launch (b ^. #versionProbe)
+
+withBlueprintVersionProbe :: Maybe T.Text -> Blueprint -> Blueprint
+withBlueprintVersionProbe probe b =
+  Blueprint (b ^. #name) (b ^. #version) (b ^. #description) (b ^. #prompt) (b ^. #vars) (b ^. #prompts) (b ^. #baseModules) (b ^. #files) (b ^. #allowedTools) (b ^. #tags) (b ^. #migrations) (b ^. #launch) probe
 
 spec :: Spec
 spec = do
@@ -179,6 +189,42 @@ spec = do
                     mode = Nothing
                   }
           Left err -> expectationFailure ("Expected legacy launch to decode, got: " <> show err)
+
+    it "decodes a declared version probe" $ do
+      withSystemTempDirectory "seihou-blueprint-probe-decode" $ \tmpDir -> do
+        let path = tmpDir </> "blueprint.dhall"
+        writeFile path (sampleBlueprintWithVersionProbeDhall "probe-bp")
+        result <- evalBlueprintFromFile path
+        case result of
+          Right b -> (b ^. #versionProbe) `shouldBe` Just "jq -r .dependencies.payments package.json"
+          Left err -> expectationFailure ("Expected version probe to decode, got: " <> show err)
+
+    -- Regression: blueprints authored against a schema pin that predates
+    -- @versionProbe@ must keep decoding. 'sampleBlueprintDhall' writes no
+    -- such key, so this exercises the decoder's 'withDefaults'.
+    it "decodes a blueprint with no version probe as Nothing" $ do
+      withSystemTempDirectory "seihou-blueprint-noprobe-decode" $ \tmpDir -> do
+        let path = tmpDir </> "blueprint.dhall"
+        writeFile path (sampleBlueprintDhall "no-probe-bp")
+        result <- evalBlueprintFromFile path
+        case result of
+          Right b -> (b ^. #versionProbe) `shouldBe` Nothing
+          Left err -> expectationFailure ("Expected blueprint to decode, got: " <> show err)
+
+  describe "checkBlueprintVersionProbe" $ do
+    it "rejects a blank probe command" $
+      checkBlueprintVersionProbe (withBlueprintVersionProbe (Just "   ") goodBlueprint)
+        `shouldBe` ["versionProbe, if specified, must not be empty"]
+
+    -- Validation runs on the author's machine and must execute nothing, so
+    -- anything non-blank is accepted; a probe that cannot run degrades to
+    -- requiring --to at migrate time.
+    it "accepts any non-blank command without running it" $
+      checkBlueprintVersionProbe (withBlueprintVersionProbe (Just "definitely-not-installed --version") goodBlueprint)
+        `shouldBe` []
+
+    it "accepts a blueprint that declares no probe" $
+      checkBlueprintVersionProbe goodBlueprint `shouldBe` []
 
   describe "validateBlueprintWith (sample fixture)" $ do
     it "accepts the sample-blueprint fixture" $ do
@@ -507,6 +553,16 @@ sampleBlueprintWithLaunchDhall n =
            "    , effort = Some \"max\"",
            "    , mode = Some \"reserved\"",
            "    }",
+           "}"
+         ]
+
+-- | A blueprint declaring the shell command that reads its library's version
+-- out of the consuming project.
+sampleBlueprintWithVersionProbeDhall :: T.Text -> String
+sampleBlueprintWithVersionProbeDhall n =
+  unlines $
+    init (lines (sampleBlueprintDhall n))
+      <> [ ", versionProbe = Some \"jq -r .dependencies.payments package.json\"",
            "}"
          ]
 

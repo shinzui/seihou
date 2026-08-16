@@ -13,6 +13,7 @@ module Seihou.Core.Blueprint
     checkBlueprintAllowedTools,
     checkBlueprintMigrations,
     checkBlueprintLaunch,
+    checkBlueprintVersionProbe,
   )
 where
 
@@ -56,6 +57,11 @@ import System.Directory (doesFileExist)
 --  11. Every field the @launch@ record does set is non-blank. The values
 --      themselves are parsed by the CLI, which owns the provider and effort
 --      vocabularies.
+--  12. @versionProbe@, when set, is non-blank. What the command /does/ is
+--      deliberately not checked: validation must not execute anything, and
+--      seihou cannot know whether the author's @jq@ or @nix@ is installed on
+--      the consumer's machine. A probe that fails at run time degrades to
+--      requiring @--to@ rather than failing the blueprint.
 validateBlueprint :: FilePath -> Blueprint -> IO (Either ModuleLoadError Blueprint)
 validateBlueprint baseDir b = do
   searchPaths <- defaultSearchPaths
@@ -83,6 +89,7 @@ validateBlueprintWith searchPaths baseDir b = do
           <> checkBlueprintAllowedTools b
           <> checkBlueprintMigrations b
           <> checkBlueprintLaunch b
+          <> checkBlueprintVersionProbe b
       allErrs = pureErrs <> fileErrs <> baseErrs
   pure $
     if null allErrs
@@ -360,3 +367,13 @@ checkBlueprintLaunch b = case b ^. #launch of
       | Just v <- [value],
         T.null (T.strip v)
       ]
+
+-- Rule 12: @versionProbe@, when set, must not be blank. Nothing more is
+-- checkable here: the command is a shell string for the consumer's machine,
+-- and validation runs on the author's.
+checkBlueprintVersionProbe :: Blueprint -> [Text]
+checkBlueprintVersionProbe b =
+  [ "versionProbe, if specified, must not be empty"
+  | Just probe <- [b ^. #versionProbe],
+    T.null (T.strip probe)
+  ]

@@ -296,12 +296,16 @@ blueprintFileDecoder =
     )
 
 -- | Decoder for the top-level Blueprint type from Dhall.
--- Uses 'withDefaults' to handle blueprints that predate the @migrations@ and
--- @launch@ fields.
+-- Uses 'withDefaults' to handle blueprints that predate the @migrations@,
+-- @launch@, and @versionProbe@ fields.
 blueprintDecoder :: Decoder Blueprint
 blueprintDecoder =
-  withDefaults [("migrations", emptyRecordList), ("launch", noneText)] $
-    record
+  withDefaults
+    [ ("migrations", emptyRecordList),
+      ("launch", noneText),
+      ("versionProbe", noneText)
+    ]
+    $ record
       ( Blueprint
           <$> field "name" moduleNameDecoder
           <*> field "version" (maybe strictText)
@@ -315,6 +319,7 @@ blueprintDecoder =
           <*> field "tags" (list strictText)
           <*> field "migrations" (list blueprintMigrationDecoder)
           <*> field "launch" (maybe agentLaunchDecoder)
+          <*> field "versionProbe" (maybe strictText)
       )
 
 -- | Evaluate a @blueprint.dhall@ file and decode it into a 'Blueprint'.

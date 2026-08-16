@@ -315,7 +315,14 @@ data Blueprint = Blueprint
     allowedTools :: !(Maybe [Text]),
     tags :: ![Text],
     migrations :: ![BlueprintMigration],
-    launch :: !(Maybe AgentLaunch)
+    launch :: !(Maybe AgentLaunch),
+    -- | A shell command that prints which version of this blueprint's
+    -- library the project currently declares. It supplies the default
+    -- @--to@ for @seihou agent migrate@; only the blueprint's author
+    -- knows where the version lives in their ecosystem, which is how
+    -- seihou infers a target without reading any package-manager format
+    -- itself.
+    versionProbe :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 

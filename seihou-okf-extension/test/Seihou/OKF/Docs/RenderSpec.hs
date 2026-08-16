@@ -182,7 +182,8 @@ blueprintEntry =
               allowedTools = Nothing,
               tags = ["blueprint"],
               migrations = [],
-              launch = Nothing
+              launch = Nothing,
+              versionProbe = Nothing
             },
       moduleRefs = [ModuleRef "base" True]
     }

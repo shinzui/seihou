@@ -505,7 +505,8 @@ samplePrepared =
             allowedTools = Nothing,
             tags = [],
             migrations = [first ^. #edge, second ^. #edge],
-            launch = Nothing
+            launch = Nothing,
+            versionProbe = Nothing
           }
    in PreparedBlueprintExecution
         { blueprint = blueprint,
