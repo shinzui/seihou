@@ -209,7 +209,8 @@ data InstallOpts = InstallOpts
   { source :: !(Maybe Text),
     name :: !(Maybe Text),
     modules :: ![Text],
-    all :: !Bool
+    all :: !Bool,
+    force :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -931,6 +932,7 @@ installParser =
       <*> optional (option (T.pack <$> str) (long "name" <> metavar "NAME" <> help "Override installed module name"))
       <*> many (option (T.pack <$> str) (long "module" <> metavar "MODULE" <> help "Module, recipe, blueprint, or prompt name from the registry to install (repeatable)"))
       <*> switch (long "all" <> help "Install every module, recipe, blueprint, and prompt listed in the registry")
+      <*> switch (long "force" <> help "Replace an installation that came from a different source")
 
 newModuleParser :: Parser Command
 newModuleParser =

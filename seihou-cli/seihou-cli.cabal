@@ -246,6 +246,7 @@ test-suite seihou-cli-test
     Seihou.CLI.ExtensionSpec
     Seihou.CLI.GitSpec
     Seihou.CLI.InitSpec
+    Seihou.CLI.InstallCollisionSpec
     Seihou.CLI.InstallHistorySpec
     Seihou.CLI.ListSpec
     Seihou.CLI.ManifestGuardSpec

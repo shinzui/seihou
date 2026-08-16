@@ -14,7 +14,13 @@ import Data.Text.IO qualified as TIO
 import Seihou.CLI.BrowseFormat (kindLabel)
 import Seihou.CLI.Commands (InstallOpts (..))
 import Seihou.CLI.InstallHistory (HistoryEntry (..), InstallHistory (..), readHistory, recordUrl)
-import Seihou.CLI.InstallShared (cloneRepo, copyDirectoryRecursive, installModuleDir)
+import Seihou.CLI.InstallShared
+  ( InstallOutcome (..),
+    cloneRepo,
+    copyDirectoryRecursive,
+    formatInstallRefusal,
+    installModuleDir,
+  )
 import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
 import Seihou.Core.AgentPrompt (validateAgentPrompt)
@@ -182,7 +188,8 @@ installSingleModule iopts rootDir source registryName = do
     Right _ -> pure ()
   TIO.putStrLn "  Validated module definition"
 
-  installModuleDir rootDir name source registryName (modul ^. #version) []
+  outcome <- installModuleDir (iopts ^. #force) rootDir name source registryName (modul ^. #version) []
+  reportSingleInstall name source outcome
   TIO.putStrLn ""
   TIO.putStrLn $ "Module available as: " <> T.pack name
 
@@ -196,7 +203,8 @@ installSingleRecipe iopts rootDir source = do
   -- Validate recipe.dhall exists (discoverRepoContents already confirmed it)
   TIO.putStrLn "  Validated recipe definition"
 
-  installModuleDir rootDir name source Nothing Nothing []
+  outcome <- installModuleDir (iopts ^. #force) rootDir name source Nothing Nothing []
+  reportSingleInstall name source outcome
   TIO.putStrLn ""
   TIO.putStrLn $ "Recipe available as: " <> T.pack name
 
@@ -231,7 +239,8 @@ installSingleBlueprint iopts rootDir source = do
   TIO.putStrLn "  Validated blueprint definition"
 
   let bpVersion = (bp ^. #version)
-  installModuleDir rootDir name source Nothing bpVersion []
+  outcome <- installModuleDir (iopts ^. #force) rootDir name source Nothing bpVersion []
+  reportSingleInstall name source outcome
   TIO.putStrLn ""
   TIO.putStrLn $ "Blueprint available as: " <> T.pack name
 
@@ -265,7 +274,8 @@ installSinglePrompt iopts rootDir source = do
     Right _ -> pure ()
   TIO.putStrLn "  Validated prompt definition"
 
-  installModuleDir rootDir name source Nothing (prompt ^. #version) []
+  outcome <- installModuleDir (iopts ^. #force) rootDir name source Nothing (prompt ^. #version) []
+  reportSingleInstall name source outcome
   TIO.putStrLn ""
   TIO.putStrLn $ "Prompt available as: " <> T.pack name
 
@@ -276,7 +286,7 @@ installFromRegistry iopts cloneDir registry source = do
   if null selected
     then TIO.putStrLn "No entries selected."
     else do
-      results <- mapM (installRegistryEntry cloneDir source (registry ^. #repoName)) selected
+      results <- mapM (installRegistryEntry (iopts ^. #force) cloneDir source (registry ^. #repoName)) selected
       let succeeded = length (filter id results)
           failed = length results - succeeded
       TIO.putStrLn ""
@@ -287,6 +297,32 @@ installFromRegistry iopts cloneDir registry source = do
           <> " installed"
           <> (if failed > 0 then ", " <> T.pack (show failed) <> " failed" else "")
           <> "."
+      -- A batch runs to completion before it reports, so a user installing
+      -- twenty entries sees every refusal and every load failure at once
+      -- rather than stopping at the first. But a batch that did not fully
+      -- succeed must not exit zero: a caller in a script would otherwise
+      -- treat a half-applied install as done.
+      when (failed > 0) exitFailure
+
+-- | Report one single-artifact install. A refusal is fatal here: the command
+-- was asked to install exactly one thing and did not.
+reportSingleInstall :: String -> Text -> InstallOutcome -> IO ()
+reportSingleInstall _ _ InstallPerformed = pure ()
+reportSingleInstall name source (InstallRefused collision) = do
+  TIO.putStrLn ""
+  TIO.putStrLn (formatInstallRefusal name source collision)
+  exitFailure
+
+-- | Report one registry-batch install, returning whether it succeeded. A
+-- refusal is not fatal here: the remaining entries are still attempted, and
+-- 'installFromRegistry' exits nonzero once it has reported them all.
+reportRegistryInstall :: String -> Text -> InstallOutcome -> Text -> IO Bool
+reportRegistryInstall _ _ InstallPerformed successLine = do
+  TIO.putStrLn successLine
+  pure True
+reportRegistryInstall name source (InstallRefused collision) _ = do
+  TIO.putStrLn (formatInstallRefusal name source collision)
+  pure False
 
 -- | All registry entries (modules, recipes, blueprints, prompts) in display order.
 -- Used wherever installation must treat all four kinds uniformly.
@@ -406,8 +442,8 @@ promptModuleSelection registry = do
             else pure [entryList !! (n - 1) | n <- indices]
 
 -- | Install a single registry entry (module, recipe, blueprint, or prompt).
-installRegistryEntry :: FilePath -> Text -> Text -> RegistryEntry -> IO Bool
-installRegistryEntry cloneDir source repoName entry = do
+installRegistryEntry :: Bool -> FilePath -> Text -> Text -> RegistryEntry -> IO Bool
+installRegistryEntry force cloneDir source repoName entry = do
   let entryDir = cloneDir </> (entry ^. #path)
       name = T.unpack (entry ^. #name . #unModuleName)
       moduleDhall = entryDir </> "module.dhall"
@@ -438,16 +474,14 @@ installRegistryEntry cloneDir source repoName entry = do
               pure False
             Right _ -> do
               let ver = entry ^. #version <|> (modul ^. #version)
-              installModuleDir entryDir name source (Just repoName) ver (entry ^. #tags)
-              TIO.putStrLn $ "    Installed as: " <> T.pack name
-              pure True
+              outcome <- installModuleDir force entryDir name source (Just repoName) ver (entry ^. #tags)
+              reportRegistryInstall name source outcome ("    Installed as: " <> T.pack name)
     else do
       hasRecipe <- doesFileExist recipeDhall
       if hasRecipe
         then do
-          installModuleDir entryDir name source (Just repoName) (entry ^. #version) (entry ^. #tags)
-          TIO.putStrLn $ "    Installed recipe as: " <> T.pack name
-          pure True
+          outcome <- installModuleDir force entryDir name source (Just repoName) (entry ^. #version) (entry ^. #tags)
+          reportRegistryInstall name source outcome ("    Installed recipe as: " <> T.pack name)
         else do
           hasBlueprint <- doesFileExist blueprintDhall
           if hasBlueprint
@@ -461,9 +495,8 @@ installRegistryEntry cloneDir source repoName entry = do
                 Right bp -> do
                   let bpVersion = (bp ^. #version)
                       ver = entry ^. #version <|> bpVersion
-                  installModuleDir entryDir name source (Just repoName) ver (entry ^. #tags)
-                  TIO.putStrLn $ "    Installed blueprint as: " <> T.pack name
-                  pure True
+                  outcome <- installModuleDir force entryDir name source (Just repoName) ver (entry ^. #tags)
+                  reportRegistryInstall name source outcome ("    Installed blueprint as: " <> T.pack name)
             else do
               hasPrompt <- doesFileExist promptDhall
               if hasPrompt
@@ -487,9 +520,8 @@ installRegistryEntry cloneDir source repoName entry = do
                           pure False
                         Right _ -> do
                           let ver = entry ^. #version <|> (prompt ^. #version)
-                          installModuleDir entryDir name source (Just repoName) ver (entry ^. #tags)
-                          TIO.putStrLn $ "    Installed prompt as: " <> T.pack name
-                          pure True
+                          outcome <- installModuleDir force entryDir name source (Just repoName) ver (entry ^. #tags)
+                          reportRegistryInstall name source outcome ("    Installed prompt as: " <> T.pack name)
                 else do
                   logIO LogNormal $ do
                     logError $ "  entry '" <> entry ^. #name . #unModuleName <> "' has no supported runnable Dhall file at " <> T.pack (entry ^. #path)

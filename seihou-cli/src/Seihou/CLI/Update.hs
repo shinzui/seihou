@@ -19,7 +19,7 @@ module Seihou.CLI.Update
   )
 where
 
-import Control.Exception (SomeException, displayException, toException, try)
+import Control.Exception (SomeException, displayException, throwIO, toException, try)
 import Control.Monad (foldM, forM, forM_, when)
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
@@ -32,7 +32,7 @@ import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime, getCurrentTime)
 import Effectful (runEff)
 import Seihou.CLI.CommandExecution
-import Seihou.CLI.InstallShared (installModuleDir)
+import Seihou.CLI.InstallShared (InstallOutcome (..), installModuleDir, summarizeInstallRefusal)
 import Seihou.CLI.Shared (deriveNamespace, toVarNameMap)
 import Seihou.CLI.Update.Migrations
 import Seihou.CLI.Update.Recovery
@@ -959,14 +959,31 @@ publishCandidates artifacts = do
   result <- try @SomeException $
     forM_ artifacts $ \artifact -> case artifact ^. #sourceUrl of
       Nothing -> pure ()
-      Just sourceUrl ->
-        installModuleDir
-          (artifact ^. #originalDirectory)
-          (T.unpack (artifact ^. #name))
-          sourceUrl
-          (artifact ^. #repoName)
-          (artifact ^. #version)
-          (artifact ^. #tags)
+      Just sourceUrl -> do
+        -- Pass force = False deliberately. Every candidate was fetched from
+        -- the URL the manifest itself records for that artifact, so this is
+        -- structurally the same-source case and must never refuse. A refusal
+        -- means the shared cache holds a different artifact under this name,
+        -- which would make the update publish over somebody else's
+        -- installation — reported as a publication failure rather than
+        -- overridden. Do not "fix" it by passing True.
+        outcome <-
+          installModuleDir
+            False
+            (artifact ^. #originalDirectory)
+            (T.unpack (artifact ^. #name))
+            sourceUrl
+            (artifact ^. #repoName)
+            (artifact ^. #version)
+            (artifact ^. #tags)
+        case outcome of
+          InstallPerformed -> pure ()
+          InstallRefused collision ->
+            throwIO . userError . T.unpack $
+              "publishing '"
+                <> (artifact ^. #name)
+                <> "' to the shared install cache was "
+                <> summarizeInstallRefusal sourceUrl collision
   pure $ first (UpdateCachePublicationFailed . T.pack . displayException) result
 
 setCommitMarkers :: UpdateTransaction -> Manifest -> IO (Either UpdateError ())

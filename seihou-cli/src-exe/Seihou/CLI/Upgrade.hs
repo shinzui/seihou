@@ -15,7 +15,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (UpgradeOpts (..))
 import Seihou.CLI.Install (installModuleDir)
-import Seihou.CLI.InstallShared (OriginInfo (..))
+import Seihou.CLI.InstallShared (InstallOutcome (..), OriginInfo (..), summarizeInstallRefusal)
 import Seihou.CLI.Migrate
   ( MigrateError (..),
     MigrateOpts (..),
@@ -214,9 +214,25 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
                       (entry : _) -> (modul ^. #version <|> entry ^. #version, entry ^. #tags)
                       [] -> (modul ^. #version, [])
                     _ -> (modul ^. #version, [])
-              installModuleDir moduleDir (T.unpack name) sourceUrl registryName ver tags
-              TIO.putStrLn $ "    Upgraded " <> name
-              pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
+              -- Pass force = False deliberately. This reinstalls from the URL
+              -- the installed copy already records, so it is structurally the
+              -- same-source case and must never refuse. If it ever does, the
+              -- cache and its own provenance file disagree — real news, and
+              -- reported as an upgrade failure rather than overridden. Do not
+              -- "fix" a refusal here by passing True.
+              outcome <- installModuleDir False moduleDir (T.unpack name) sourceUrl registryName ver tags
+              case outcome of
+                InstallRefused collision ->
+                  pure
+                    UpgradeEntry
+                      { moduleName = name,
+                        oldVersion = installedVer,
+                        newVersion = availableVer,
+                        upgradeStatus = UpgradeFailed (summarizeInstallRefusal sourceUrl collision)
+                      }
+                InstallPerformed -> do
+                  TIO.putStrLn $ "    Upgraded " <> name
+                  pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
 
 renderUpgradeTable :: [UpgradeEntry] -> IO ()
 renderUpgradeTable entries = do

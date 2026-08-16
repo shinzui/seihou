@@ -18,6 +18,7 @@ import Seihou.CLI.DiffSpec qualified as DiffSpec
 import Seihou.CLI.ExtensionSpec qualified as ExtensionSpec
 import Seihou.CLI.GitSpec qualified as GitSpec
 import Seihou.CLI.InitSpec qualified as InitSpec
+import Seihou.CLI.InstallCollisionSpec qualified as InstallCollisionSpec
 import Seihou.CLI.InstallHistorySpec qualified as InstallHistorySpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.ManifestGuardSpec qualified as ManifestGuardSpec
@@ -62,6 +63,7 @@ main = do
         ExtensionSpec.tests,
         GitSpec.tests,
         InitSpec.tests,
+        InstallCollisionSpec.tests,
         InstallHistorySpec.tests,
         ListSpec.tests,
         ManifestGuardSpec.tests,

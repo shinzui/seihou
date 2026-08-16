@@ -31,10 +31,12 @@ import Effectful (runEff)
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
 import Seihou.CLI.InstallShared
-  ( OriginInfo (..),
+  ( InstallOutcome (..),
+    OriginInfo (..),
     cloneRepo,
     installModuleDir,
     readOriginInfo,
+    summarizeInstallRefusal,
   )
 import Seihou.CLI.ManifestGuard
   ( ArtifactCheck,
@@ -43,7 +45,7 @@ import Seihou.CLI.ManifestGuard
     formatGuardOverride,
     formatGuardRefusal,
   )
-import Seihou.CLI.Shared (resolveAppliedArtifactDir)
+import Seihou.CLI.Shared (logIO, resolveAppliedArtifactDir)
 import Seihou.CLI.Style (bold, dim, green, red, useColor, yellow)
 import Seihou.Core.ArtifactRef (ArtifactRefError, renderArtifactRefError)
 import Seihou.Core.Migration
@@ -62,6 +64,7 @@ import Seihou.Core.Registry
   )
 import Seihou.Core.Types
   ( AppliedModule (..),
+    LogLevel (..),
     Manifest (..),
     Module (..),
     ModuleName (..),
@@ -69,6 +72,7 @@ import Seihou.Core.Types
 import Seihou.Core.Version (Version, parseVersion, renderVersion)
 import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
+import Seihou.Effect.Logger (logWarn)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.ProcessInterp (runProcessIO)
@@ -497,13 +501,29 @@ refreshInstalledFromClone moduleDir installedDir origin tags = do
     Left _ -> pure ()
     Right modul -> do
       let installedName = takeFileName installedDir
-      installModuleDir
-        moduleDir
-        installedName
-        (origin ^. #sourceUrl)
-        (origin ^. #repoName)
-        (modul ^. #version)
-        tags
+      -- Pass force = False deliberately. The URL passed here was read out of
+      -- the installed copy's own @.seihou-origin.json@ a moment ago, so this
+      -- is structurally the same-source case and must never refuse. If it
+      -- does, the cache disagrees with its own provenance file — real news,
+      -- and reported rather than overridden. Do not "fix" it by passing True.
+      outcome <-
+        installModuleDir
+          False
+          moduleDir
+          installedName
+          (origin ^. #sourceUrl)
+          (origin ^. #repoName)
+          (modul ^. #version)
+          tags
+      case outcome of
+        InstallPerformed -> pure ()
+        InstallRefused collision ->
+          logIO LogNormal . logWarn $
+            "could not refresh the installed copy of '"
+              <> T.pack installedName
+              <> "': "
+              <> summarizeInstallRefusal (origin ^. #sourceUrl) collision
+              <> ". The migration was applied to this project; the shared cache still holds the older copy."
 
 -- ----------------------------------------------------------------------------
 -- Pending-migration detection (used by status / upgrade)
