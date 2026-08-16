@@ -60,32 +60,161 @@ Explicit flags always win, so nothing that works today stops working.
 
 ## Progress
 
-- [ ] Verify the prerequisite plan has landed (orientation, no edits).
-- [ ] Publish `versionProbe` on `schema/Blueprint.dhall` in the `seihou-schema` submodule; push and re-pin.
-- [ ] Decode and validate `versionProbe` in `seihou-core/src/Seihou/Dhall/Eval.hs` and `seihou-core/src/Seihou/Core/Blueprint.hs`.
-- [ ] Make `--from` and `--to` optional in `seihou-cli/src-exe/Seihou/CLI/Commands.hs`.
-- [ ] Add pure window resolution (source-tracked) in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`.
-- [ ] Run the probe and derive the receipt-based default in `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`.
-- [ ] Report both ends and their sources; make errors actionable when neither can be resolved.
-- [ ] Add tests for resolution precedence, probe failure, and no-receipt-no-probe.
-- [ ] Update `docs/cli/agent.md`, `docs/user/blueprint-migrations.md`, `docs/user/blueprints.md`, `schema/README.md`, and `docs/user/CHANGELOG.md`.
+- [x] Verify the prerequisite plan has landed (orientation, no edits) — 2026-08-16
+- [x] Publish `versionProbe` on `schema/Blueprint.dhall` in the `seihou-schema` submodule; push and re-pin (`49ff1e5`) — 2026-08-16
+- [x] Decode and validate `versionProbe` in `seihou-core/src/Seihou/Dhall/Eval.hs` and `seihou-core/src/Seihou/Core/Blueprint.hs` — 2026-08-16
+- [x] Make `--from` and `--to` optional in `seihou-cli/src-exe/Seihou/CLI/Commands.hs` — 2026-08-16
+- [x] Add pure window resolution (source-tracked) in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` — 2026-08-16
+- [x] Run the probe and derive the receipt-based default in `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs` — 2026-08-16
+- [x] Report both ends and their sources; make errors actionable when neither can be resolved — 2026-08-16
+- [x] Add tests for resolution precedence, probe failure, and no-receipt-no-probe — 2026-08-16
+- [x] Update `docs/cli/agent.md`, `docs/user/blueprint-migrations.md`, `docs/user/blueprints.md`, `schema/README.md`, and `docs/user/CHANGELOG.md` — 2026-08-16
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **The `VersionSource` this plan specified cannot render the output this plan
+  specified.** The Interfaces section pins
+  `VersionFromReceipt !Text !Text  -- ^ from, to`, but every transcript in the
+  plan renders `[receipt: scratch-upgrade 1.0.0 -> 2.0.0, applied 2026-08-16]`,
+  which also needs the blueprint's name and the applied date. `ResolvedWindow`
+  carries only sources, so the renderer has nothing else to reach for. The
+  constructor now carries the whole `AppliedBlueprintMigration`, which
+  `highestMigratedVersion` already returns, so nothing extra had to be threaded
+  through. **For a future plan:** when a plan specifies both a type and the text
+  it must render, check that the type can produce the text before treating the
+  type as settled.
+
+- **`ProbeOutputUnparseable` cannot live in `WindowResolutionError`, and a
+  nonzero probe exit had nowhere to live at all.** The plan lists three
+  constructors on `WindowResolutionError`, but `resolveMigrationWindow` takes an
+  *already parsed* `Maybe (Version, Text)`, so it can never produce an
+  unparseable-output error — and the plan's own milestone 5 requires reporting a
+  nonzero exit too, which no listed constructor covers. Probe outcomes are now
+  their own type, `VersionProbeResult` (`ProbeVersion` / `ProbeExitedNonZero` /
+  `ProbeOutputUnparseable`), and `WindowResolutionError` keeps the two cases it
+  can actually decide. No constructor is unreachable.
+
+- **The probe runner had to go in the library, not the executable, for the
+  reason the plan's own test milestone implies.** Milestone 5 places probe
+  execution in `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`; milestone 6 asks
+  for probe-execution tests against the pure `Process` interpreter. Tests cannot
+  import from `src-exe`. `runVersionProbe` therefore lives in
+  `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` alongside the rest of the
+  pure logic, and the executable keeps only what genuinely needs IO: the
+  timeout, and printing the warning. This also matches the placement convention
+  in `CLAUDE.md` better than the plan's wording did.
+
+- **A pure-effect test needs `runPureEff`, which `Seihou.Prelude` does not
+  re-export.** `Seihou.Prelude` exports `runEff :: Eff '[IOE] a -> IO a`, so a
+  test driving `runProcessPure` with it fails to typecheck against a pure
+  result. `seihou-cli/test/Seihou/CLI/BlueprintMigrationSpec.hs` imports
+  `runPureEff` from `Effectful` directly. Worth knowing for any plan that adds
+  the first pure-interpreter test to a spec module.
+
+- **`dhall hash < schema/package.dhall`, as written in this plan and in the
+  `update-seihou-schema` skill, does not work.** `package.dhall` imports its
+  siblings by relative path, and those resolve against the current directory
+  when the expression arrives on stdin, so the command fails with
+  `Missing file ./VarDecl.dhall`. The working form is
+  `dhall hash --file schema/package.dhall`. The skill at
+  `claude/skills/update-seihou-schema/SKILL.md` has been corrected in this
+  change, with the reason, so the next plan to re-pin the schema does not lose
+  the same few minutes.
+
+- **EP-85's warning about two error shapes was exactly right, and the positional
+  half is much the larger.** Adding `versionProbe` to `Blueprint` produced
+  `[GHC-95909]` missing-field errors at three record literals and
+  `[GHC-83865] applied to too few arguments` at **eleven** positional sites —
+  `seihou-core/test/Seihou/Core/BlueprintSpec.hs` builds a `withBlueprintX`
+  helper per field, each constructing the whole record positionally, and every
+  one of them needs the new field appended. Build first and read the errors;
+  do not conclude the inventory is complete because no `[GHC-95909]` remains.
 
 
 ## Decision Log
 
-- Decision: ...
-  Rationale: ...
-  Date: ...
+- Decision: An end of the window the user typed is reported only under
+  `--verbose`; an end seihou inferred is reported always.
+  Rationale: This plan's milestone 5 says to print provenance "whenever *either*
+  end was inferred", and its acceptance section separately says an invocation
+  naming both flags "reports both sources as `[flag]`" at normal verbosity.
+  Those two rules disagree, and both of the plan's concrete transcripts follow
+  the first: the `--from 1.0.0` run prints only the `--to` line. The rule
+  implemented matches both transcripts and adds a property the plan wanted
+  elsewhere — an invocation that names both versions prints exactly what it
+  printed before this change, so no existing script or expectation moves. The
+  `[flag]` accounting the acceptance section asks for is available under
+  `--verbose`, and is tested there.
+  Date: 2026-08-16
+
+- Decision: The probe is bounded by `System.Timeout.timeout` at the call site,
+  at 60 seconds, rather than by a new field on the `Process` effect.
+  Rationale: The effect has no timeout and a pure interpreter that cannot have
+  one; a bound belongs where the real clock is. 60 seconds is generous enough
+  for a cold `nix eval` — the plan's own worked example — and short enough that a
+  hung probe does not hang the command indefinitely. A timeout is reported like
+  any other probe failure and degrades to requiring `--to`, so the cost of the
+  bound being occasionally too tight is one flag, not a broken command.
+  Date: 2026-08-16
+
+- Decision: A schema-side default plus the decoder's existing `withDefaults`
+  covers blueprints published before `versionProbe` existed; no manifest schema
+  version moves.
+  Rationale: `versionProbe` is additive and optional on an *artifact*, not on
+  the manifest, so `docs/adr/0005-legacy-manifests-convert-through-an-explicit-command.md`
+  does not apply — nothing recorded needs converting. `noneText` was already the
+  right placeholder and the key sits on the top-level blueprint record, so the
+  wrapper goes on `blueprintDecoder` rather than on a nested decoder as
+  `entails` needed.
+  Date: 2026-08-16
+
+- Decision: Validation checks only that a declared probe is non-blank.
+  Rationale: Validation runs on the author's machine and must execute nothing.
+  Whether `jq` or `nix` exists where the probe will actually run is not knowable
+  there, and a probe that fails at run time already degrades to requiring
+  `--to`. This follows `checkBlueprintLaunch`, which applies the same
+  "non-blank is all core can judge" rule.
+  Date: 2026-08-16
 
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Delivered as specified. `seihou agent migrate keiro-upgrade` — no flags — now
+resolves its own window, and the plan's acceptance transcripts reproduce
+byte-for-byte:
+
+```text
+$ seihou agent --debug migrate scratch-upgrade
+Version window: 2.0.0 -> 3.0.0
+  --from 2.0.0  [receipt: scratch-upgrade 1.0.0 -> 2.0.0, applied 2026-08-16]
+  --to   3.0.0  [probe: cat .keiro-version]
+
+Blueprint migrations for scratch-upgrade: 2.0.0 -> 3.0.0
+===== [1/1] scratch-upgrade 2.0.0 -> 3.0.0 =====
+```
+
+Three deviations from the plan as written, each recorded above with its reason:
+`VersionSource` carries the receipt rather than two version strings, probe
+outcomes moved out of `WindowResolutionError` into their own type, and the probe
+runner lives in the library rather than the executable. All three were forced by
+the plan's own requirements rather than chosen; none changes the user-visible
+behaviour the plan specifies.
+
+What went to plan and is worth repeating: keeping the *decision* pure and the
+*execution* effectful made the precedence table, the "last non-empty line" rule,
+and both error messages testable without a filesystem or a subprocess, and the
+E2E cases then only had to prove the wiring. The subtlest correctness point the
+plan flagged — that a not-applicable receipt must not count toward the inferred
+`--from` — is fenced by a unit test whose not-applicable receipt has the
+numerically highest target, so a wrong implementation visibly picks it.
+
+Verification: `cabal test all` green (1074 core, 562 CLI, 16 extension),
+`nix flake check` green, and every manual case in Validation and Acceptance
+exercised against the built binary — inferred target, fully inferred window,
+explicit override, probe failure with a working `--to` fallback, unparseable
+probe output, first run with no receipts, and a probe-less blueprint behaving
+exactly as before.
 
 
 ## Context and Orientation

@@ -70,10 +70,13 @@ someone else already pushed it.
 2. Read the commit now checked out and compute the new Dhall integrity hash:
 
        git -C schema rev-parse HEAD
-       dhall hash < schema/package.dhall
+       dhall hash --file schema/package.dhall
 
    The hash covers the fully resolved package including its imports, so it changes whenever any
-   file in the schema changes.
+   file in the schema changes. Use `--file`, not a `<` redirect: `package.dhall` imports its
+   siblings by relative path, and those resolve against the *importing file's* directory only
+   when Dhall knows which file it is reading. Piped on stdin they resolve against the current
+   directory instead, and the command fails with `Missing file ./VarDecl.dhall`.
 
 3. Update `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`:
    - Replace the commit hash inside `schemaUrl` with the new commit.

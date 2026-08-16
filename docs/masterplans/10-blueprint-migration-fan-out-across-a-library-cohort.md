@@ -201,7 +201,7 @@ Integration Points.
 | EP-83 | Guard the agent path against stale and substituted artifacts | docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md | EP-81 | EP-82 | Complete |
 | EP-84 | Add a not-applicable outcome for blueprint migration edges | docs/plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md | EP-81 | None | Complete |
 | EP-85 | Fan out a blueprint migration edge to entailed cohort edges | docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md | EP-81, EP-84 | EP-82, EP-83 | Complete |
-| EP-86 | Infer the blueprint migration version window | docs/plans/86-infer-the-blueprint-migration-version-window.md | EP-81 | EP-85 | In Progress |
+| EP-86 | Infer the blueprint migration version window | docs/plans/86-infer-the-blueprint-migration-version-window.md | EP-81 | EP-85 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -273,8 +273,13 @@ object with a `status` discriminator (`{"status": "applied"}` /
 `{"status": "not-applicable", "reason": …}`), matching `ArtifactOrigin`'s shape so the reason has
 somewhere to live. EP-84 took the same decoder-default call for the same reason:
 `currentManifestVersion` stays at 6, and a receipt with no `outcome` key decodes as
-`MigrationApplied`. The `origin` encoding is untouched. **EP-85 and EP-86 read the record and must
-not add fields to it.**
+`MigrationApplied`. The `origin` encoding is untouched. **Read without modification by EP-85 and
+EP-86 (both complete).** The record's final shape is the one EP-84 left; `currentManifestVersion`
+never moved past 6 across the whole initiative, and both decoder defaults are still the only
+tolerance a legacy manifest needs. EP-86 reads three of its fields — `origin`, `name`, and
+`outcome` — to select the receipts that bound an inferred `--from`, and renders `name`,
+`fromVersion`, `toVersion`, and `appliedAt` back to the user so an inferred start can be traced
+to the run that produced it.
 
 **The migration completion key** — the `alreadyApplied` predicate inside
 `pendingBlueprintMigrations` in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`.
@@ -324,10 +329,14 @@ two entry points crosses it once. A lookup returning `Nothing` is unreachable �
 resolves every owner first — and is treated as "not previously applied" rather than as applied,
 because claiming completion would silently skip real work; there is a spec pinning that choice.
 
-**EP-86 reads receipts through the same key to compute the default `--from`, and must resolve the
-identity it matches on the same way — by owner, not by the invoked blueprint.** The doc comment
-must state, at every stage, which fields are part of the key and which are deliberately excluded;
-that passage must stay true and grow.
+**Read by EP-86 (complete).** `highestMigratedVersion` in
+`seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` selects the receipts that bound the inferred
+`--from` using the same three tests — `sameArtifactIdentity` on origin, equality on name, and
+`outcome == MigrationApplied`. It matches by owner as required: the owner of the *invoked*
+blueprint's edges is the invoked blueprint, because the window is expressed in the invoked
+library's version space, and an entailed blueprint's steps are windowed by the edge that entails
+them rather than by a window of their own. The predicate is unchanged; `pendingBlueprintMigrations`
+gained nothing and lost nothing. The doc comments at all three comparison sites remain accurate.
 
 **The blueprint migration plan type** — `BlueprintMigrationPlan` in
 `seihou-core/src/Seihou/Core/Migration.hs`. Involved: EP-85, EP-86. **Settled by EP-85
@@ -339,13 +348,12 @@ reached from two declaring edges is one edge. `BlueprintMigration` gained
 `entails :: ![EntailedEdge]`. `planMigrationWindow` was not touched and module migrations
 are byte-identical.
 
-**EP-86 consumes the new shape and must not widen it.** Two things to expect: adding a
-field to `BlueprintMigration` breaks *positional* constructions in
-`seihou-core/test/Seihou/Core/BlueprintSpec.hs` and `.../MigrationSpec.hs` with an
-"applied to too few arguments" error rather than the `[GHC-95909]` missing-field error
-EP-81's note leads one to expect; and every user-facing step label now goes through
-`formatMigrationStepLabel` in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`, which is
-the one place to change if a label must grow.
+**Consumed unchanged by EP-86 (complete).** EP-86 added no field to `BlueprintMigration`,
+`BlueprintMigrationStep`, or `BlueprintMigrationPlan`, and re-used `formatMigrationStepLabel`
+rather than deriving a second label. Its own new field went on `Blueprint` instead
+(`versionProbe :: !(Maybe Text)`), which broke the *eleven* positional `withBlueprintX` helpers
+in `seihou-core/test/Seihou/Core/BlueprintSpec.hs` with "applied to too few arguments" and three
+record literals with `[GHC-95909]` — both predicted error shapes, in the predicted proportion.
 
 **The blueprint Dhall schema** — the `schema/` git submodule, a working copy of
 `shinzui/seihou-schema`, plus the pinned URL and hash in `SchemaVersion.hs` and
@@ -353,10 +361,15 @@ the one place to change if a label must grow.
 `schema/EntailedEdge.dhall` is new, `schema/BlueprintMigration.dhall` gained
 `entails : List EntailedEdge.Type` defaulting to `[]`, both are exported from
 `schema/package.dhall` and listed in `schema/README.md`, and the repository is pinned to
-`014bb79`. **EP-86 adds `versionProbe` to `schema/Blueprint.dhall` on top of that pin
-rather than publishing a competing one**, following the `update-seihou-schema` skill:
-author in the submodule, push to `shinzui/seihou-schema` before re-pinning, then bump
-`SchemaVersion.hs` and `flake.lock`.
+`014bb79`. **EP-86 landed its half on top of that pin (complete):**
+`schema/Blueprint.dhall` gained `versionProbe : Optional Text` defaulting to `None Text`,
+`schema/README.md` gained a "Declaring a version probe" section, and the repository is
+pinned to `49ff1e5`. Both schema changes are purely additive, so no `blueprint.dhall`
+already in the wild stopped type-checking at either step.
+
+One correction to the recipe itself: `dhall hash < schema/package.dhall`, as the skill and
+both plans wrote it, fails — relative sibling imports resolve against the current directory
+on stdin. Use `dhall hash --file schema/package.dhall`. The skill is fixed.
 
 The decoder tolerance mechanism is settled and generalised. `withDefaults` in
 `seihou-core/src/Seihou/Dhall/Eval.hs` had to be attached to
@@ -381,8 +394,16 @@ from the wrong declarations.
 
 EP-85 added a *second* call in `agent migrate`, covering the blueprints reached by entailment,
 placed after cohort discovery and before any session starts — the entailed set cannot be known
-before the window is planned. **EP-86 must not move either call**, and must not fold them into
-one. ADR 0003 carries an amendment recording the widened scope.
+before the window is planned. **Both calls are where EP-85 left them (complete).** EP-86 moved
+neither and folded neither: it inserted receipt reading and window resolution *between* them,
+after the invoked blueprint has been guarded and before the plan exists, which is the only
+correct place — a substituted blueprint's probe declaration must not be trusted to set the
+window. ADR 0003 carries an amendment recording the widened scope.
+
+EP-86 also added the one thing `agent migrate --debug` does execute: the blueprint's declared
+version probe. That is a deliberate, documented exception to "contacts nothing", not a
+violation of the "check follows the writes" rule — a probe is required to be read-only, and a
+debug run that skipped it would preview a different chain than the real one.
 
 The `--debug` rule is narrower than this section originally stated, and EP-83 measured it: debug
 is a true dry run for `agent migrate`, which therefore performs no check, and is *not* one for
@@ -434,6 +455,16 @@ Cross-plan decisions expected to become ADRs at completion:
   favour of per-edge entailment. The rationale, and the condition under which it should be
   re-opened, are in ADR 0008's "Rejected: a cohort artifact" section rather than in a record
   of their own — the exclusion is inseparable from the decision it justifies.
+- **Seihou reads no package-manager format; the artifact declares the command.** *Recorded.*
+  EP-86 wrote
+  `docs/adr/0009-seihou-reads-no-package-manager-format-artifacts-declare-the-command.md`.
+  This was not anticipated when the MasterPlan was written — the Decision Log entry dated
+  2026-08-16 treats the probe as a mechanism for choosing a default. Implementing it made
+  clear that the durable decision is an architecture boundary about what seihou is permitted
+  to know about an ecosystem, with built-in dependency readers as the rejected alternative,
+  and that it generalises past this one field. No existing ADR had a home for it: ADR 0004
+  constrains where *state* lives, and the inferred `--from` is an application of it rather
+  than a new decision, while nothing decided who supplies ecosystem knowledge.
 
 
 ## Progress
@@ -451,9 +482,9 @@ Cross-plan decisions expected to become ADRs at completion:
 - [x] EP-85: recursive entailment expansion with cycle detection, in a pure planner — 2026-08-16
 - [x] EP-85: each step runs with its owning blueprint's reference files, allowed tools, and variables — 2026-08-16
 - [x] EP-85: a shared edge reached from two entry points is crossed once; end-to-end spec proves it — 2026-08-16
-- [ ] EP-86: `versionProbe` published and re-pinned; `--to` defaults to the probe's output
-- [ ] EP-86: `--from` defaults to the highest recorded receipt for this blueprint identity
-- [ ] EP-86: both defaults reported in `--verbose` and `--debug` output with their source
+- [x] EP-86: `versionProbe` published in `seihou-schema` (`49ff1e5`) and re-pinned; `--to` defaults to the probe's output — 2026-08-16
+- [x] EP-86: `--from` defaults to the highest *applied* receipt for this blueprint identity — 2026-08-16
+- [x] EP-86: an inferred end is always reported with its source; a typed end is reported under `--verbose` — 2026-08-16
 
 
 ## Surprises & Discoveries
@@ -591,6 +622,35 @@ Cross-plan decisions expected to become ADRs at completion:
   should reuse this function rather than re-deriving a label, and any E2E assertion it writes
   against a step line must include the owner prefix.
 
+- **A plan that specifies both a type and the text it renders should be checked for
+  agreement between them before the type is treated as settled.** EP-86's Interfaces
+  section pinned `VersionFromReceipt !Text !Text` (an edge's `from` and `to`) while every
+  transcript in the same plan rendered `[receipt: keiro-upgrade 2.0.0 -> 2.4.0, applied
+  2026-08-02]`, which also needs the blueprint's name and the applied date. The constructor
+  now carries the whole `AppliedBlueprintMigration`. A second, larger instance in the same
+  plan: `WindowResolutionError` was specified with a `ProbeOutputUnparseable` constructor
+  that its own resolver could never produce — the resolver takes an already-parsed probe
+  result — and with no constructor at all for the nonzero-exit case the plan's milestone 5
+  separately required reporting. Probe outcomes became their own type. Neither was a
+  judgement call; both were forced by the plan's other requirements.
+
+- **`dhall hash < schema/package.dhall` does not work, and the skill said to run it.**
+  `package.dhall` imports its siblings by relative path; on stdin those resolve against the
+  current directory and the command fails with `Missing file ./VarDecl.dhall`. The working
+  form is `dhall hash --file schema/package.dhall`. Both EP-85 and EP-86 re-pinned the
+  schema, so this trap was reachable twice. `claude/skills/update-seihou-schema/SKILL.md`
+  is corrected in EP-86's change, with the reason, so a later plan does not lose the same
+  few minutes.
+
+- **Tests cannot import `src-exe`, which decides where effectful code lives more often than
+  the placement convention alone does.** EP-86's plan put probe execution in
+  `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs` and, in the next milestone, asked for
+  probe-execution tests against the pure `Process` interpreter. Those cannot coexist.
+  `runVersionProbe` lives in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`; the
+  executable keeps only the wall-clock timeout and the warning. **Consequence for any later
+  plan:** "this is IO, so it goes in the executable" is not sufficient — if the behaviour
+  needs a test, it needs a library home, and `Process`-effect code has one available.
+
 - **Closing an Improvement Request has a required frontmatter shape.** The bundle profile at
   `docs/improvement-requests/profile.dhall` does not accept `status: implemented`; the terminal
   value is `completed`, which requires `completedAt` and recommends `resolution`. EP-82, EP-83,
@@ -598,6 +658,11 @@ Cross-plan decisions expected to become ADRs at completion:
   `targetPlan` in one edit. Separately, `okf validate --strict --profile-enforce` already exits 1
   for all four documents because none carries the recommended `reviews` field; that is
   pre-existing, and the check to apply is that closing a request adds no new line to the output.
+
+  *At completion (EP-86) this no longer reproduces:*
+  `okf validate docs/improvement-requests --strict --profile-enforce` reports
+  `OK: 4 concepts (okf_version 0.2)` and exits zero, with all four requests `completed`. The
+  advice above is kept as the record of what EP-82 through EP-84 worked against.
 
 
 ## Decision Log
@@ -689,4 +754,103 @@ Cross-plan decisions expected to become ADRs at completion:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All six child plans are complete. The command the initiative existed for now works as
+described in Vision & Scope:
+
+```text
+$ seihou agent migrate keiro-upgrade
+Version window: 2.4.0 -> 3.0.0
+  --from 2.4.0  [receipt: keiro-upgrade 2.0.0 -> 2.4.0, applied 2026-08-02]
+  --to   3.0.0  [probe: nix eval --raw .#keiroVersion]
+
+Running blueprint migration 1/2: kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)
+Running blueprint migration 2/2: keiro-upgrade 2.4.0 -> 3.0.0
+```
+
+A mori maintainer types one command and gets both edges, in order, each with its own
+blueprint's reference files, allowed tools, and variables. A project depending on kiroku
+alone runs `seihou agent migrate kiroku-upgrade` and never learns keiro exists. A project
+depending on both crosses the shared kiroku edge exactly once from either entry point,
+because every receipt is keyed by the origin and name of the blueprint that owns the edge.
+All four Improvement Requests (IR-1 through IR-4) are closed as `completed`.
+
+### What the decomposition got right
+
+Making EP-81 the spine was the decision the whole initiative rested on. Three plans rewrite
+`AppliedBlueprintMigration` and the `alreadyApplied` predicate; sequencing them through one
+owning plan meant each later plan extended a settled record rather than racing for the same
+three lines, and no plan had to redo another's work. The one thing EP-81 could not settle
+in advance — that the "same artifact?" comparison had to be a `seihou-core` concern, because
+two of the three call sites live there — surfaced immediately and was fixed once, in
+`Seihou.Core.ArtifactIdentity`, rather than in three places by three plans.
+
+Separating EP-84 from EP-85 also paid. The not-applicable outcome shipped as the IR-1 defect
+exactly as filed, with its own end-to-end proof and its own ADR, and was then available to
+EP-85 as a prerequisite rather than a buried implementation detail. ADR 0008 states the
+dependency in the other direction — without a third outcome, entailment would have been a
+silent-work-loss machine — which is a claim worth having recorded where the next person
+reading about cohorts will find it.
+
+The Surprises & Discoveries section did its job as a channel between plans. EP-83's
+measurement that `--debug` is a true dry run for `agent migrate` and *not* for `agent run`
+invalidated a premise three documents shared, and the corrected rule — "the check follows the
+writes, not the flag" — was then applied correctly by EP-84, EP-85, and EP-86 without any of
+them re-deriving it. EP-85's warning about two distinct GHC error shapes saved EP-86 from
+concluding its site inventory was complete.
+
+### What the MasterPlan got wrong
+
+Two child plans specified types that could not produce the output the same plan specified.
+EP-81 proposed exporting a helper from a module that the code needing it cannot import;
+EP-86 pinned a `VersionSource` constructor carrying two version strings while every transcript
+in the same document rendered a blueprint name and a date. Both were caught in minutes and
+both are recorded, but the pattern is worth naming: **a plan that specifies both a type and
+the text it renders should be checked for agreement between them before either is treated as
+settled.** Nothing in the authoring protocol currently prompts that check.
+
+The MasterPlan also under-called EP-86's durable content. Its Decision Log treats the version
+probe as a mechanism for picking a default, and the Integration Points section anticipated no
+ADR from that plan. What EP-86 actually established is an architecture boundary — seihou
+reads no package-manager format in any ecosystem, and the artifact declares the command
+instead, with built-in dependency readers as the rejected alternative — which generalises well
+past `--to` and is now ADR 0009. Recorded decisions that turn out to be boundaries rather
+than mechanisms seem to be the ones a decomposition is most likely to miss up front.
+
+### Durable record
+
+Five ADRs came out of this initiative, three of them amendments to existing records rather
+than new ones:
+
+| Decision | Where |
+|----------|-------|
+| A receipt's identity is the origin and name of the blueprint that *owns* the edge | Amendment to ADR 0002 (EP-81) |
+| The agent path is subject to the ADR 0003 refusal, over the whole resolved cohort | Amendments to ADR 0003 (EP-83, EP-85) |
+| The install cache will not silently substitute an artifact | ADR 0006 (EP-82) |
+| A deliberate no-op is a third outcome, not a success | ADR 0007 (EP-84) |
+| An entailed edge is owned by the blueprint that declares it; no cohort artifact | ADR 0008 (EP-85) |
+| Seihou reads no package-manager format; the artifact declares the command | ADR 0009 (EP-86) |
+
+The split between amendment and new record held to one rule throughout, and it is the rule
+worth carrying forward: **amend when the decision is unchanged and only its reach grew; write
+a new record when there is a rejected alternative the existing record has nowhere to put.**
+EP-83 and EP-85 amended ADR 0003 because the refusal itself never changed. EP-82 wrote a new
+record because install-time and generate-time refusal are decisions about different layers.
+EP-85 and EP-86 wrote new records because each had a real alternative — the cohort artifact,
+and built-in ecosystem readers — that no existing ADR could have held.
+
+### Verification at completion
+
+`cabal test all` green across all three suites (1074 core, 562 CLI, 16 extension) and
+`nix flake check` green, with the module-placement and record-convention checks passing.
+`schema/` is pinned at `49ff1e5`, two additive commits ahead of where the initiative started;
+`currentManifestVersion` never moved past 6, because every manifest change in this initiative
+was absorbable by a decoder default and each plan made that call deliberately.
+
+### Follow-on work, deliberately out of scope
+
+The cohort blueprints themselves — `kiroku-upgrade`, `keiro-upgrade`, their prompt fragments,
+their registry entries, and now their `versionProbe` declarations — belong to
+`mori://shinzui/kiroku` and `mori://shinzui/keiro`. Nothing in seihou blocks them: the
+capability is complete and documented for authors in `docs/user/blueprint-migrations.md`.
+Anything those repositories find missing is filed as an Improvement Request against seihou,
+which is how all four of the requests implemented here arrived.
