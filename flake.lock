@@ -346,11 +346,11 @@
     "seihou-schema-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1785160487,
-        "narHash": "sha256-I+nir+KGhaAvXsC9a8eTN4Ljz611cqFgID2TAMRLc/Q=",
+        "lastModified": 1786904862,
+        "narHash": "sha256-wwhW4RUEeAGHTZ4+s2JWfwKiNCthvOGrli6AYsdRJMQ=",
         "ref": "refs/heads/master",
-        "rev": "0e1b875efcf2b4e4b98d93595ea627290459e3ad",
-        "revCount": 11,
+        "rev": "014bb7909b6d1f8e837499e4239cbee41c6fd6c4",
+        "revCount": 12,
         "type": "git",
         "url": "file:./schema"
       },
