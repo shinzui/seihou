@@ -54,10 +54,10 @@ resolving the wrong one rises accordingly.
 - [x] Generalise `checkAppliedArtifactsFor` so it can check a recorded blueprint as well as recorded modules — 2026-08-16
 - [x] Move `enforceArtifactGuard` into `ManifestGuard`, generalised from `RunOpts` to a `Bool`; `Run.hs` calls the moved version — 2026-08-16
 - [x] `seihou status` reports on the recorded blueprint alongside recorded modules — 2026-08-16
-- [ ] Add `allowDowngrade` to `BlueprintRunOpts` and `BlueprintMigrationOpts` and parse `--allow-downgrade` for both agent subcommands.
-- [ ] Insert the guard into `seihou agent run` before `applyBaseline`, covering the blueprint and its resolved base modules.
-- [ ] Insert the guard into `seihou agent migrate` before planning edges.
-- [ ] Keep `--debug` free of any check on both commands.
+- [x] Add `allowDowngrade` to `BlueprintRunOpts` and `BlueprintMigrationOpts` and parse `--allow-downgrade` for both agent subcommands — 2026-08-16
+- [x] Insert the guard into `seihou agent run` before `applyBaseline`, covering the blueprint and its resolved base modules — 2026-08-16
+- [x] Insert the guard into `seihou agent migrate` before planning edges — 2026-08-16
+- [x] Keep `--debug` free of any check on both commands — 2026-08-16
 - [ ] Add tests: refusal leaves the tree byte-identical; override prints and proceeds; debug checks nothing.
 - [ ] Update `docs/cli/agent.md`, `docs/user/blueprints.md`, `docs/user/blueprint-migrations.md`, and `docs/user/CHANGELOG.md`.
 - [ ] Consider whether ADR 0003 should be amended to name the agent path; record the decision.
@@ -66,7 +66,25 @@ resolving the wrong one rises accordingly.
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **The guard could not reach the modules `seihou run` guards without hoisting the
+  composition load.** The Plan of Work said to build the filter set from the blueprint's
+  declared `baseModules`, but that is not what `seihou run` does: `Run.hs` builds
+  `composedModuleNames` from `modulesInOrder`, the *resolved* composition, which includes
+  every transitive dependency. Declared base modules are only the top of that tree, so the
+  filter would have let a stale transitive dependency generate files unchecked — on the one
+  path where no other guard runs.
+
+  `loadComposition` lived inside `applyBaseline`, after the point where the guard has to run.
+  It is now `loadBaselineComposition` in `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs`, called
+  once from `handleAgentRun` before the guard, with its result handed to `applyBaseline`.
+  `applyBaseline`'s signature changed from taking `[Dependency]` to taking the resolved
+  `BaselineComposition`, and the Dhall evaluation still happens exactly once per run.
+
+- **The `--no-baseline` / no-baseModules distinction is load-bearing at the new call site.**
+  `BaselineSkipped` and `BaselineEmpty` are different values in the rendered prompt, and both
+  now correspond to `baselineComposition = Nothing`. The `opts ^. #noBaseline` test therefore
+  has to stay ahead of the `case` on the composition, or a blueprint that simply declares no
+  base modules would report itself as user-skipped.
 
 
 ## Decision Log

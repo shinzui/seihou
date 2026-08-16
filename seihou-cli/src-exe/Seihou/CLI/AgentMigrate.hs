@@ -6,6 +6,7 @@ module Seihou.CLI.AgentMigrate
 where
 
 import Baikai.Trace.Sink (TraceSink)
+import Control.Monad (unless)
 import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
 import Data.Maybe (maybeToList)
@@ -24,6 +25,7 @@ import Seihou.CLI.AgentConfig
     agentLaunchDeclaration,
     resolveDeclaredAgentConfig,
   )
+import Seihou.CLI.AgentGuard (enforceAgentArtifactGuard)
 import Seihou.CLI.AgentLaunch (gatherAgentContext)
 import Seihou.CLI.AgentLaunchExec (launchConfiguredAgentAddingDirs)
 import Seihou.CLI.AgentTrace (traceSinkForConfig)
@@ -84,6 +86,28 @@ handleAgentMigrate debug pendingConfig opts = do
   -- its own receipts.
   projectRoot <- getCurrentDirectory
   blueprintOrigin <- detectArtifactOrigin projectRoot blueprintDir
+
+  -- Pre-flight downgrade and origin guard, before a single edge is planned.
+  -- Placing it before planning is the point rather than an implementation
+  -- detail: a substituted blueprint's edges do not match this project's
+  -- receipts, so without the check the command would report that every edge in
+  -- the window already has a receipt and exit successfully, having silently
+  -- skipped work that never ran. The refusal happens before any receipt is
+  -- written, so the manifest is left byte-identical.
+  --
+  -- No baseline modules are in scope: migration mode applies no baseModules
+  -- (see docs/user/blueprint-migrations.md), and refusing for artifacts this
+  -- command will not touch would violate the scoping rule in
+  -- docs/adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md.
+  --
+  -- --debug performs no check at all: it contacts no provider and writes
+  -- nothing, so a prompt can still be inspected on any machine.
+  unless debug $
+    enforceAgentArtifactGuard
+      (opts ^. #allowDowngrade)
+      manifestPath
+      (blueprint ^. #name)
+      mempty
 
   -- Finish provider/model/effort resolution now that the blueprint is loaded:
   -- `agent migrate` reads the same Blueprint record as `agent run`, so it

@@ -369,7 +369,8 @@ data BlueprintRunOpts = BlueprintRunOpts
     provider :: !(Maybe Text),
     model :: !(Maybe Text),
     effort :: !(Maybe Text),
-    trace :: !(Maybe Text)
+    trace :: !(Maybe Text),
+    allowDowngrade :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -386,7 +387,8 @@ data BlueprintMigrationOpts = BlueprintMigrationOpts
     provider :: !(Maybe Text),
     model :: !(Maybe Text),
     effort :: !(Maybe Text),
-    trace :: !(Maybe Text)
+    trace :: !(Maybe Text),
+    allowDowngrade :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -1829,6 +1831,10 @@ agentRunParser =
       <*> modelOption
       <*> effortOption
       <*> traceOption
+      <*> switch
+        ( long "allow-downgrade"
+            <> help "Proceed even when the blueprint or a baseline module installed locally is older than, or from a different source than, .seihou/manifest.json records"
+        )
 
 agentMigrateInfo :: ParserInfo AgentCommand
 agentMigrateInfo =
@@ -1879,6 +1885,10 @@ agentMigrateParser =
       <*> modelOption
       <*> effortOption
       <*> traceOption
+      <*> switch
+        ( long "allow-downgrade"
+            <> help "Proceed even when the blueprint installed locally is older than, or from a different source than, .seihou/manifest.json records"
+        )
 
 agentModelsInfo :: ParserInfo AgentCommand
 agentModelsInfo =

@@ -13,7 +13,7 @@ module Seihou.CLI.AgentRun
 where
 
 import Control.Exception (IOException, displayException, try)
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -35,6 +35,7 @@ import Seihou.CLI.AgentConfig
     agentLaunchDeclaration,
     resolveDeclaredAgentConfig,
   )
+import Seihou.CLI.AgentGuard (enforceAgentArtifactGuard)
 import Seihou.CLI.AgentLaunch
   ( AgentContext (..),
     BaselineStatus (..),
@@ -130,6 +131,39 @@ handleAgentRun debug pending opts = do
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
 
+  -- (a2) Resolve the baseline composition — every declared base module plus
+  -- its transitive dependencies — before anything is written. 'seihou run'
+  -- guards every module in the composition it is about to generate from, not
+  -- just the ones named at the top level, so the guard below needs the
+  -- resolved composition rather than the blueprint's declared baseModules
+  -- list. Resolving it here rather than inside 'applyBaseline' also means the
+  -- Dhall evaluation happens exactly once.
+  baselineComposition <-
+    if opts ^. #noBaseline || null (bp ^. #baseModules)
+      then pure Nothing
+      else Just <$> loadBaselineComposition level (bp ^. #baseModules)
+
+  -- (a3) Pre-flight downgrade and origin guard. This runs before the baseline
+  -- is applied, before any variable is prompted for, and before the manifest
+  -- is touched, so a refusal leaves the working tree and
+  -- .seihou/manifest.json byte-identical — the property
+  -- docs/adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md relies
+  -- on. It covers the blueprint itself and every module the baseline would
+  -- generate from, and nothing else: an artifact this run will not touch must
+  -- not block it.
+  --
+  -- --debug performs no check at all. It contacts no provider, applies no
+  -- baseline and writes nothing, so a developer inspecting a prompt on a
+  -- machine that has never installed the artifact has nothing to be refused
+  -- for. The condition sits here rather than inside the guard so that debug
+  -- mode is structurally check-free on reading.
+  unless debug $
+    enforceAgentArtifactGuard
+      (opts ^. #allowDowngrade)
+      (".seihou" </> "manifest.json")
+      (bp ^. #name)
+      (baselineComposedNames baselineComposition)
+
   -- Finish provider/model/effort resolution now that the blueprint is loaded
   -- and its launch declaration is known. This must precede the
   -- providerCanMountFiles computation below, which depends on the final
@@ -169,10 +203,9 @@ handleAgentRun debug pending opts = do
   baseline <-
     if opts ^. #noBaseline
       then pure BaselineSkipped
-      else
-        if null (bp ^. #baseModules)
-          then pure BaselineEmpty
-          else applyBaseline level opts (bp ^. #baseModules) cliOverrides resolved
+      else case baselineComposition of
+        Nothing -> pure BaselineEmpty
+        Just composition -> applyBaseline level opts composition cliOverrides resolved
 
   -- (d) Render the system prompt around the prepared shared body.
   ctx <- gatherAgentContext
@@ -269,34 +302,56 @@ appliedBlueprintFromOutcome bp blueprintOrigin baseline opts now =
       agentSessionId = Nothing
     }
 
--- | Apply the blueprint's @baseModules@ to the cwd. Mirrors the
--- composition pipeline in @Seihou.CLI.Run.handleRun@: load every
--- declared base module (plus transitive deps), resolve their variables
--- through the same precedence chain (with the blueprint's own resolved
--- vars folded into the CLI override map so the agent's prompt and the
--- base modules see the same values), compile the composed plan,
--- compute the diff, resolve conflicts, execute the plan, and write the
--- resulting manifest. Returns 'BaselineApplied' listing each module's
--- (name, version) for the prompt's "Baseline" section.
-applyBaseline ::
-  LogLevel ->
-  BlueprintRunOpts ->
-  [Dependency] ->
-  Map VarName Text ->
-  Map VarName ResolvedVar ->
-  IO BaselineStatus
-applyBaseline level opts baseModules cliOverridesIn resolvedBlueprintVars = do
+-- | One resolved baseline composition: the primary base module, and every
+-- module the baseline would generate from — the declared base modules plus
+-- their transitive dependencies — in dependency order, each paired with the
+-- directory it was discovered in.
+type BaselineComposition = (ModuleName, [(ModuleInstance, Module, FilePath)])
+
+-- | Load the blueprint's baseline composition without applying it.
+--
+-- Split out of 'applyBaseline' so the pre-flight artifact guard can see
+-- exactly the module set the baseline would generate from before anything is
+-- written, and so the composition's Dhall evaluation happens once per run
+-- rather than once for the guard and once for the application.
+loadBaselineComposition :: LogLevel -> [Dependency] -> IO BaselineComposition
+loadBaselineComposition level baseModules = do
   searchPaths <- defaultSearchPaths
   (primary, additionals) <- case baseModules of
     d : rs -> pure (d ^. #module_, map (^. #module_) rs)
-    [] -> exitErr level "internal error: applyBaseline called with empty baseModules"
+    [] -> exitErr level "internal error: loadBaselineComposition called with empty baseModules"
   compositionResult <- loadComposition searchPaths primary additionals
-  modulesInOrder <- case compositionResult of
+  case compositionResult of
     Left err -> do
       logIO level $ logError $ "Baseline error: " <> renderModuleLoadError err
       exitFailure
-    Right ms -> pure ms
+    Right modulesInOrder -> pure (primary, modulesInOrder)
 
+-- | The module names a baseline application would generate from, as the
+-- artifact guard's filter wants them. Mirrors @composedModuleNames@ in
+-- "Seihou.CLI.Run". Empty when no baseline will be applied, which the guard
+-- reads as "no modules are in scope for this run".
+baselineComposedNames :: Maybe BaselineComposition -> Set ModuleName
+baselineComposedNames =
+  maybe mempty (\(_, modulesInOrder) -> Set.fromList [m ^. #name | (_, m, _) <- modulesInOrder])
+
+-- | Apply the blueprint's @baseModules@ to the cwd. Mirrors the
+-- composition pipeline in @Seihou.CLI.Run.handleRun@: take the composition
+-- resolved by 'loadBaselineComposition', resolve its variables through the
+-- same precedence chain (with the blueprint's own resolved vars folded into
+-- the CLI override map so the agent's prompt and the base modules see the
+-- same values), compile the composed plan, compute the diff, resolve
+-- conflicts, execute the plan, and write the resulting manifest. Returns
+-- 'BaselineApplied' listing each module's (name, version) for the prompt's
+-- "Baseline" section.
+applyBaseline ::
+  LogLevel ->
+  BlueprintRunOpts ->
+  BaselineComposition ->
+  Map VarName Text ->
+  Map VarName ResolvedVar ->
+  IO BaselineStatus
+applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBlueprintVars = do
   -- Classify every baseline module's discovery directory into a portable
   -- origin before anything is recorded, so the manifest stays meaningful on
   -- another developer's machine.
