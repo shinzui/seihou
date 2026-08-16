@@ -3,16 +3,20 @@
 A **blueprint migration** is an agent-guided upgrade step that a library author
 ships with their blueprint. Each step describes one version edge — "moving from
 1.0.0 to 2.0.0 requires these source changes" — as a Markdown prompt. Consumers
-run the edges that fall inside an explicit version window:
+run the edges that fall inside a version window:
 
 ```sh
+seihou agent migrate my-library
 seihou agent migrate my-library --from 1.0.0 --to 3.0.0
 ```
 
 Seihou selects the declared edges inside that window, orders them, and runs one
 agent session per edge. After each session returns it records a receipt in
 `.seihou/manifest.json`, so an interrupted chain resumes where it stopped instead
-of repeating completed work.
+of repeating completed work. Either end of the window can be named explicitly or
+[left to Seihou to infer](#how-the-version-window-is-inferred) — from a command
+the blueprint's author declares for reading the version this project depends on,
+and from the receipts of earlier runs.
 
 This guide covers both sides: publishing upgrade knowledge as a library author,
 and running an upgrade as a consumer. For the command flags, see
@@ -46,8 +50,10 @@ per-edge state.
    applied-blueprint entry when there is one, otherwise from the most recent
    receipt — and refuses before planning a single edge when the installed copy
    is older than, or came from a different repository than, the project records.
-3. It parses `--from` and `--to` and asks the core planner which declared edges
-   fall inside that window.
+3. It settles the version window — taking each end from its flag, or
+   [inferring it](#how-the-version-window-is-inferred) from the blueprint's
+   version probe and this project's receipts — and asks the core planner which
+   declared edges fall inside it.
 4. It follows any [entailed edges](#entail-another-librarys-edge) those edges
    declare, loading each named blueprint and expanding recursively, so the chain
    becomes an ordered list of steps that may span several blueprints. It checks
@@ -268,6 +274,53 @@ Nothing records the cohort. It is recomputed from these declarations on every
 run, so adding, removing, or retargeting an entailment takes effect the moment
 consumers install the new blueprint version.
 
+### Supply a version probe
+
+Your consumers should not have to look up which version of your library they are
+on before they can upgrade. Declare the one command that reads it out of their
+project:
+
+```dhall
+in  S.Blueprint::{
+    , name = "my-library"
+    , version = Some "3.0.0"
+    , prompt = ./prompt.md as Text
+    , versionProbe = Some "jq -r .dependencies.my-library package.json"
+    }
+```
+
+Seihou runs it in the project root and uses its output as the default `--to`.
+This is what keeps Seihou language-agnostic while still sparing the consumer the
+lookup: Seihou never guesses where a version lives, and you are the only person
+who knows.
+
+Worked examples:
+
+```dhall
+versionProbe = Some "jq -r .dependencies.my-library package.json"
+versionProbe = Some "nix eval --raw .#myLibraryVersion"
+versionProbe = Some "cargo metadata --format-version 1 | jq -r '.packages[] | select(.name==\"my-library\") | .version'"
+```
+
+Four requirements, all of which follow from where and when it runs:
+
+- **Read-only.** It runs on someone else's project without their review, and it
+  runs under `--debug` too — the one thing `--debug` does execute, because the
+  window decides which edges are shown and debug output that skipped the probe
+  would show a different chain than a real run.
+- **Fast.** It sits between the user's command and the first agent session.
+  Seihou stops waiting after 60 seconds and falls back to requiring `--to`.
+- **Prints the version as its last non-empty output line.** Trailing progress
+  chatter above it is fine — `nix eval` is not going to stop printing what it is
+  doing — but the answer must come last, and must be a dotted numeric version.
+- **Works from the project root**, which is where Seihou runs it.
+
+A probe that exits nonzero or prints something unparseable is not fatal: Seihou
+prints the command, its exit code, and its output, and asks the consumer for
+`--to`. Prefer that to a probe that guesses — a wrong target runs the wrong
+edges against their source. Blueprints published without a probe keep working;
+their consumers pass `--to` as before.
+
 ### Validate and publish
 
 ```sh
@@ -281,6 +334,10 @@ blueprint name, an unparseable or non-advancing entailed window, an edge that
 entails its own blueprint, and the same entailed edge listed twice. Whether the
 named blueprint exists and declares that edge is a filesystem question, so it is
 checked when `seihou agent migrate` resolves the cohort rather than here.
+
+`versionProbe` is checked only for being non-blank. Validation never executes
+anything, and it runs on your machine rather than your consumer's, so whether
+`jq` is installed where the probe will actually run is not knowable here.
 
 Publication uses the existing registry mechanism — there is no separate migration
 registry. Point a `blueprints` entry at the directory containing
@@ -313,6 +370,9 @@ so publishing a new blueprint version never silently re-runs an upgrade.
 
 `--debug` on the parent `agent` command is a true dry run for migrations: it
 renders every pending session in order, contacts no provider, and writes nothing.
+The one thing it does execute is the blueprint's
+[version probe](#supply-a-version-probe), which is required to be read-only and
+which decides the window the preview is of.
 
 ```sh
 seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
@@ -344,12 +404,23 @@ Blueprint migrations for keiro-upgrade: 2.4.0 -> 3.0.0
 ### Run the upgrade
 
 ```sh
-seihou agent migrate my-library --from 1.0.0 --to 3.0.0
+seihou agent migrate my-library
 ```
 
-Supply both versions explicitly. Seihou is language-agnostic and does not read
-Cabal, npm, Cargo, or Maven files to guess which version you are on or where you
-are going.
+You can supply either end of the version window explicitly, and Seihou infers
+whichever you leave out:
+
+```sh
+seihou agent migrate my-library --from 1.0.0 --to 3.0.0
+seihou agent migrate my-library --from 1.0.0
+```
+
+Seihou still reads no Cabal, npm, Cargo, or Maven file. What changed is who
+supplies the one command that reads yours: the blueprint's author declares a
+[version probe](#supply-a-version-probe), because only they know where their
+library's version lives in your ecosystem. See
+[How the version window is inferred](#how-the-version-window-is-inferred) for
+what each end falls back to and what happens when neither can be resolved.
 
 Start from a clean working tree. Agent edits are not transactional, and Seihou
 cannot roll them back — version control is your undo. Reviewing (or committing)
@@ -449,6 +520,51 @@ other blueprints. To re-run only one library's half, invoke that library's
 blueprint directly with its own version window: running an entailed blueprint by
 name never expands anything it does not need.
 
+## How the version window is inferred
+
+Each end of the window is resolved independently, so you can type one and let
+Seihou work out the other:
+
+| End | Explicit | Otherwise | If neither |
+|-----|----------|-----------|------------|
+| `--to` | The flag wins | The blueprint's declared [version probe](#supply-a-version-probe) | Refuses, naming `--to` and the probe the author could declare |
+| `--from` | The flag wins | The highest `to` among this project's **applied** receipts for that blueprint | Refuses, explaining that nothing has been recorded to start from |
+
+The two ends draw on different sources on purpose. The probe reads how far the
+*dependency* has been bumped in this project; the receipt ledger records how far
+your *source* has been migrated. That is the ordinary workflow — bump the
+dependency, then migrate the source up to it — so at the moment you run the
+command your lockfile already names the target and your receipts name the start.
+
+An end Seihou inferred is always reported, along with where it came from:
+
+```text
+Version window: 2.0.0 -> 3.0.0
+  --from 2.0.0  [receipt: my-library 1.0.0 -> 2.0.0, applied 2026-08-02]
+  --to   3.0.0  [probe: cat .library-version]
+```
+
+An end *you* typed is reported only under `--verbose`, so a command naming both
+versions prints exactly what it always did. Read the inferred values before the
+first session starts: a window off by one release runs the wrong edges against
+your source, and this block is the only place that is visible.
+
+Three cases are worth knowing:
+
+- **A receipt recorded as not applicable does not count toward `--from`.** It
+  records that Seihou considered an edge and this project did not need it, which
+  says nothing about how far your source has been carried. Counting it would
+  start the window above edges that never ran.
+- **A broken probe is not fatal.** Its command, exit code, and output are
+  printed, and Seihou then asks for `--to`. You did not write the probe; pass the
+  flag and report the failure upstream.
+- **The first run in a project usually needs `--from`.** There are no receipts
+  yet, so Seihou has no way to know how far the source has been migrated. Give
+  it the version you are on once; after that the ledger answers.
+
+Under `--debug`, the probe *is* executed — it is the one thing a debug run does,
+because the window decides which edges are rendered.
+
 ## How the version window is planned
 
 Blueprint migrations use the same gap-tolerant planner as module migrations. An
@@ -529,6 +645,10 @@ edge finds nothing to do — or skip it deliberately by widening `--from`.
 | Message | Meaning and fix |
 |---------|-----------------|
 | `--from value '1.0.0-rc1' is not a valid dotted numeric version.` | Only dotted numbers are accepted. Use the release version without prerelease or build metadata. |
+| `Cannot determine the target version for 'my-library'.` | No `--to` was given and the blueprint declares no usable version probe. Pass `--to VERSION`, and ask the author to declare a [`versionProbe`](#supply-a-version-probe) so nobody has to look the version up again. |
+| `Cannot determine the starting version for 'my-library'.` | Not an error in your project. This is the first migration Seihou has run for that blueprint here, so it has no receipt saying how far your source has been carried. Pass `--from VERSION` once; later runs infer it. |
+| `[warn] The blueprint's version probe failed, so --to could not be inferred.` | The author's probe command did not run successfully on your machine — the message shows the command, its exit code, and its stderr. Pass `--to VERSION` to continue, and report the failure upstream. |
+| `[warn] The blueprint's version probe printed no dotted numeric version, …` | The probe ran but its last output line is not a version — often a `v` prefix or a prerelease suffix. Pass `--to VERSION` and report it upstream. |
 | `blueprint migration downgrades are not supported: --from 3.0.0, --to 2.0.0.` | Migrations only run forward. Downgrade by reverting source changes in version control. |
 | `the blueprint declares more than one migration starting at 2.0.0; the author must merge or remove the duplicate.` | An authoring error in the installed blueprint. Report it upstream; the author must merge or drop one edge. |
 | `'my-library' is a module, not a blueprint.` | `agent migrate` only accepts blueprints. Check the name, or use `seihou migrate` for module migrations. |

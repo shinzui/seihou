@@ -154,13 +154,13 @@ Resolves the named blueprint, prompts for required variables, optionally applies
 Run ordered library-upgrade prompts declared by a blueprint.
 
 ```text
-seihou agent migrate BLUEPRINT --from VERSION --to VERSION [PROMPT] [OPTIONS]
+seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT] [OPTIONS]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `--from VERSION` | Current library version; required dotted numeric value |
-| `--to VERSION` | Target library version; required dotted numeric value |
+| `--from VERSION` | Current library version, dotted numeric. Defaults to the highest version this project's receipts record for the blueprint |
+| `--to VERSION` | Target library version, dotted numeric. Defaults to the output of the blueprint's declared `versionProbe` |
 | `--var KEY=VALUE` | Variable override; repeatable |
 | `--namespace NS` | Override namespace for config lookup |
 | `--context CTX`, `-c CTX` | Override context for config lookup |
@@ -195,15 +195,55 @@ blueprint that *owns* it, so a shared edge is crossed once whichever blueprint
 you name. An entailed blueprint that is not installed fails the run with an
 install hint rather than being skipped.
 
+### Inferring the version window
+
+Either end of the window may be omitted, and the two ends are resolved
+independently — one may be typed while the other is inferred.
+
+| End | Explicit | Inferred from | If neither |
+|-----|----------|---------------|------------|
+| `--to` | The flag wins | The blueprint's declared `versionProbe`, a command it supplies that prints the version this project depends on | Refuses, naming `--to` and the probe the author could declare |
+| `--from` | The flag wins | The highest `to` version among this project's **applied** receipts for that blueprint | Refuses, explaining that this project has no recorded migration to start from |
+
+The two ends deliberately draw on different sources. The probe reads how far the
+*dependency* has been bumped; the receipt ledger records how far the *source* has
+been migrated. That matches the normal workflow — bump the dependency, then
+migrate the source up to it — so at the moment you run the command the lockfile
+already names the target.
+
+A receipt recorded as **not applicable** does not count toward the inferred
+start. It records that an edge was considered and skipped, which says nothing
+about how far the source has been carried.
+
+An inferred end is always reported with the source it came from, verbose or not;
+a window silently off by one release would run the wrong sessions against your
+source. An end you typed is reported only under `--verbose`, so invocations that
+name both versions print exactly what they always did.
+
+```text
+Version window: 2.0.0 -> 3.0.0
+  --from 2.0.0  [receipt: my-library 1.0.0 -> 2.0.0, applied 2026-08-02]
+  --to   3.0.0  [probe: cat .library-version]
+```
+
+A probe that exits nonzero, or prints something that is not a dotted numeric
+version, is a warning rather than a failure: its command, exit code, and output
+are printed, and the command falls through to requiring `--to`. You did not write
+the probe and still have the flag.
+
 ```sh
+seihou agent migrate my-library
 seihou agent migrate my-library --from 1.0.0 --to 3.0.0
 seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
 ```
 
 For this subcommand, parent `--debug` is a true dry run: it prints every pending
 prompt in order, never contacts a provider, and never writes a migration receipt.
-Every step is labelled with the blueprint that owns it, and an entailed step also
-says which edge pulled it in:
+It does run the version probe — a probe is required to be read-only, and skipping
+it would make debug output diverge from a real run in exactly the way that
+matters, since the probe decides which edges are shown. Every step is labelled
+with the blueprint that owns it, and an entailed step also says which edge pulled
+it in:
 
 ```text
 Blueprint migrations for keiro-upgrade: 2.4.0 -> 3.0.0

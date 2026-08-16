@@ -12,6 +12,44 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **`seihou agent migrate` now infers the version window.** Both `--from` and
+  `--to` used to be mandatory and typed by hand, which meant looking up two
+  numbers before every upgrade — and for a cohort chain, looking up a version the
+  consumer does not even declare. Either end may now be omitted:
+
+  ```text
+  $ seihou agent migrate keiro-upgrade
+  Version window: 2.4.0 -> 3.0.0
+    --from 2.4.0  [receipt: keiro-upgrade 2.0.0 -> 2.4.0, applied 2026-08-02]
+    --to   3.0.0  [probe: nix eval --raw .#keiroVersion]
+  ```
+
+  The two ends draw on different sources on purpose. `--to` comes from a new
+  optional `versionProbe` field: a shell command the *blueprint's author*
+  declares, which reads the version the project depends on. Seihou still reads no
+  Cabal, npm, Cargo, or Maven file itself — it stays language-agnostic by never
+  guessing the command, because only the author knows where their library's
+  version lives. `--from` comes from the project's own migration receipts: the
+  highest version already migrated to. That matches the ordinary workflow, where
+  the dependency is bumped first and the source is then carried up to it.
+
+  A receipt recorded as *not applicable* deliberately does not count toward the
+  inferred start — it records that an edge was considered and skipped, which is
+  not progress.
+
+  Nothing that works today stops working. An explicit flag always wins, a
+  blueprint that declares no probe behaves exactly as before, and a probe that
+  fails or prints something unparseable is a warning rather than a failure: its
+  command, exit code, and output are printed, and the command falls through to
+  asking for `--to`. The probe *is* executed under `--debug`, the one exception
+  to migration debug contacting nothing, because the window decides which edges
+  the preview shows.
+
+  For blueprint authors, see
+  [Supply a version probe](blueprint-migrations.md#supply-a-version-probe); for
+  consumers, see
+  [How the version window is inferred](blueprint-migrations.md#how-the-version-window-is-inferred).
+
 - **A blueprint migration edge can now require another library's edge.** When a
   breaking change reaches consumers through an intermediary — `kiroku` ships it,
   `keiro` absorbs it in one of its own releases, and most projects depend on
@@ -391,6 +429,14 @@ packages in the workspace share a single version.
   Git commits are included. See [the update reference](../cli/update.md).
 
 ### Changed
+
+- **`seihou agent migrate`'s `--from` and `--to` are now optional.** Its usage
+  line changed from `seihou agent migrate BLUEPRINT --from VERSION --to VERSION
+  [PROMPT]` to `seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION]
+  [PROMPT]`. Every existing invocation is unaffected and prints exactly what it
+  printed before; a run that omits either flag gains a two-line report of what
+  was inferred and where it came from. Add `--verbose` to see an explicitly
+  supplied end accounted for too.
 
 - **`seihou agent migrate` now names the owning blueprint in every step label.**
   A chain can span several blueprints, so `Running blueprint migration 1/2:

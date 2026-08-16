@@ -92,8 +92,9 @@ Important fields:
 | `files` | Reference files under the blueprint's `files/` directory. |
 | `allowedTools` | Extra tools to pre-approve in addition to the runner's base set. |
 | `tags` | Discovery tags for registries, browse, install, and list filters. |
-| `migrations` | Ordered agent instructions for explicit library version edges. |
+| `migrations` | Ordered agent instructions for library version edges. |
 | `launch` | Optional agent provider, model, and reasoning effort this blueprint expects. See [Launch settings](#launch-settings). |
+| `versionProbe` | Optional shell command that prints the version of this library the consuming project depends on. See [Version probe](#version-probe). |
 
 Blueprints share a lookup namespace with modules, recipes, and prompts. If one
 directory contains more than one runnable file, discovery prefers
@@ -237,10 +238,12 @@ blueprint the consumer named on the command line wins. The full rules, including
 what happens when the named blueprint is not installed, are in
 [Entail another library's edge](blueprint-migrations.md#entail-another-librarys-edge).
 
-Consumers provide both versions explicitly because Seihou does not guess from
-Cabal, npm, Cargo, Maven, or other package files:
+Consumers can name the window explicitly, or let Seihou infer either end — the
+target from this blueprint's [version probe](#version-probe), the start from the
+project's own receipts:
 
 ```sh
+seihou agent migrate my-library
 seihou agent migrate my-library --from 1.0.0 --to 3.0.0
 ```
 
@@ -274,10 +277,55 @@ Use parent debug mode to inspect every pending prompt in order:
 seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
 ```
 
-Migration debug never contacts a provider and never writes receipts. An applied
-receipt means the provider interaction returned; it does **not** prove that a
-package manager now reports the target version. Edge prompts should tell the
-agent which project validation to run and what evidence to summarize.
+Migration debug never contacts a provider and never writes receipts; the one
+thing it does run is the version probe. An applied receipt means the provider
+interaction returned; it does **not** prove that a package manager now reports
+the target version. Edge prompts should tell the agent which project validation
+to run and what evidence to summarize.
+
+## Version probe
+
+`versionProbe` is a shell command Seihou runs in the consuming project's root to
+discover which version of your library that project declares. Its output is the
+default `--to` for `seihou agent migrate`, so a consumer who has bumped the
+dependency can just run the command:
+
+```dhall
+versionProbe = Some "jq -r .dependencies.my-library package.json"
+```
+
+Only you know where your library's version lives, which is exactly why the
+command is declared rather than guessed — Seihou reads no package-manager format
+of its own, in any ecosystem:
+
+```dhall
+-- npm / yarn / pnpm
+versionProbe = Some "jq -r .dependencies.my-library package.json"
+
+-- Nix flake output
+versionProbe = Some "nix eval --raw .#myLibraryVersion"
+
+-- Cargo
+versionProbe = Some "cargo metadata --format-version 1 | jq -r '.packages[] | select(.name==\"my-library\") | .version'"
+
+-- A plain pinned file, which is also the easiest thing to test against
+versionProbe = Some "cat .my-library-version"
+```
+
+The command must be read-only, must finish quickly (Seihou stops waiting after
+60 seconds), must work from the project root, and must print a dotted numeric
+version as its **last non-empty output line** — progress chatter above it is
+fine, so `nix eval` needs no silencing.
+
+It is executed under `--debug` as well, which is the single exception to debug
+mode contacting nothing: the window decides which edges are rendered, so a debug
+run that skipped the probe would preview a different chain than the real one.
+
+A probe that fails or prints something unparseable is not fatal. Seihou prints
+the command, its exit code, and its output, then asks the consumer for `--to`.
+Validation checks only that the string is non-blank — it never executes anything,
+and it runs on your machine rather than your consumer's. Blueprints that declare
+no probe are unaffected; their consumers pass `--to` as they always did.
 
 ## Baseline modules
 
@@ -416,9 +464,10 @@ seihou validate-blueprint api-service
 
 Validation checks that `blueprint.dhall` evaluates, the prompt is non-empty,
 variables are unique, prompts reference declared variables, base modules
-resolve to modules or recipes, declared reference files exist, and migration
-edges have valid forward dotted versions, unique starts, and non-empty prompts. Add
-`--lint` for advisory warnings about best practices.
+resolve to modules or recipes, declared reference files exist, migration
+edges have valid forward dotted versions, unique starts, and non-empty prompts,
+and a declared `versionProbe` is non-blank. Add `--lint` for advisory warnings
+about best practices.
 
 ## Publishing blueprints
 
