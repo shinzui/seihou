@@ -8,7 +8,13 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
 import Seihou.CLI.AppliedBlueprintMigration (recordAppliedBlueprintMigration)
-import Seihou.Core.Types (AppliedBlueprintMigration (..), ArtifactOrigin (..), Manifest (..), ModuleName (..))
+import Seihou.Core.Types
+  ( AppliedBlueprintMigration (..),
+    ArtifactOrigin (..),
+    Manifest (..),
+    MigrationOutcome (..),
+    ModuleName (..),
+  )
 import Seihou.Manifest.Types (currentManifestVersion, manifestFromJSON)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -37,12 +43,24 @@ repoTwo = RemoteOrigin "https://github.com/acme/two" "payments" Nothing
 
 mkReceipt :: ArtifactOrigin -> T.Text -> T.Text -> T.Text -> UTCTime -> AppliedBlueprintMigration
 mkReceipt origin blueprintName fromVersion toVersion appliedAt =
+  mkReceiptWithOutcome origin blueprintName fromVersion toVersion appliedAt MigrationApplied
+
+mkReceiptWithOutcome ::
+  ArtifactOrigin ->
+  T.Text ->
+  T.Text ->
+  T.Text ->
+  UTCTime ->
+  MigrationOutcome ->
+  AppliedBlueprintMigration
+mkReceiptWithOutcome origin blueprintName fromVersion toVersion appliedAt outcome =
   AppliedBlueprintMigration
     { name = ModuleName blueprintName,
       origin = origin,
       blueprintVersion = Just "0.4.0",
       fromVersion = fromVersion,
       toVersion = toVersion,
+      outcome = outcome,
       appliedAt = appliedAt,
       agentSessionId = Nothing
     }
@@ -134,6 +152,32 @@ spec = do
         manifest <- readManifestFile manifestPath
         map (^. #origin) (manifest ^. #blueprintMigrations) `shouldBe` [repoOne]
 
+    it "round-trips a not-applicable outcome with its reason intact" $
+      withSystemTempDirectory "seihou-blueprint-migration" $ \dir -> do
+        let manifestPath = dir </> "manifest.json"
+            reason = "the project has not adopted the bundle"
+            skipped =
+              mkReceiptWithOutcome repoOne "payments" "1.0.0" "2.0.0" fixedTime (MigrationNotApplicable reason)
+        recordAppliedBlueprintMigration manifestPath skipped `shouldReturn` Right ()
+        encoded <- LBS.readFile manifestPath
+        LBS.toStrict encoded `shouldSatisfy` BS.isInfixOf (TE.encodeUtf8 "not-applicable")
+        manifest <- readManifestFile manifestPath
+        (manifest ^. #blueprintMigrations) `shouldBe` [skipped]
+
+    -- Outcome is audit metadata, not identity. An edge that reported itself
+    -- inapplicable and later ran for real must leave one receipt behind, not
+    -- two records of the same edge disagreeing about what happened.
+    it "replaces a not-applicable receipt when the same edge later applies" $
+      withSystemTempDirectory "seihou-blueprint-migration" $ \dir -> do
+        let manifestPath = dir </> "manifest.json"
+            skipped =
+              mkReceiptWithOutcome repoOne "payments" "1.0.0" "2.0.0" fixedTime (MigrationNotApplicable "no adr bundle")
+            applied = mkReceipt repoOne "payments" "1.0.0" "2.0.0" fixedTime2
+        recordAppliedBlueprintMigration manifestPath skipped `shouldReturn` Right ()
+        recordAppliedBlueprintMigration manifestPath applied `shouldReturn` Right ()
+        manifest <- readManifestFile manifestPath
+        (manifest ^. #blueprintMigrations) `shouldBe` [applied]
+
     -- A manifest written before the origin field existed must keep parsing.
     -- Nothing on disk can say where such a receipt came from, so it decodes
     -- to the constructor that means "provenance seihou cannot verify".
@@ -157,6 +201,12 @@ spec = do
                   ]
       case manifestFromJSON legacy of
         Left err -> expectationFailure ("legacy manifest must still parse: " <> err)
-        Right manifest ->
+        Right manifest -> do
           map (^. #origin) (manifest ^. #blueprintMigrations)
             `shouldBe` [LocalOrigin "payments"]
+          -- Every receipt written before the outcome field existed recorded an
+          -- edge whose session returned, which is what MigrationApplied means.
+          -- Reading it that way preserves its meaning; a receipt that was
+          -- really a deliberate no-op stays wrong, and --rerun is its remedy.
+          map (^. #outcome) (manifest ^. #blueprintMigrations)
+            `shouldBe` [MigrationApplied]

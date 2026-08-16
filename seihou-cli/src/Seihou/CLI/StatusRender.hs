@@ -32,6 +32,7 @@ import Seihou.Core.Types
     AppliedRecipe (..),
     AppliedTarget (..),
     Manifest (..),
+    MigrationOutcome (..),
     ModuleName (..),
     ParentVars (..),
     RecipeName (..),
@@ -135,9 +136,28 @@ formatBlueprintMigrations receipts =
         <> receipt ^. #fromVersion
         <> " -> "
         <> receipt ^. #toVersion
-        <> " (applied "
+        <> " ("
+        <> renderOutcome (receipt ^. #outcome)
+        <> " "
         <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d %H:%M UTC" (receipt ^. #appliedAt))
+        <> renderReason (receipt ^. #outcome)
         <> ")"
+
+    renderOutcome MigrationApplied = "applied"
+    renderOutcome (MigrationNotApplicable _) = "not applicable"
+
+    -- `seihou status` is a scannable summary, so a long reason is truncated
+    -- rather than wrapped; the manifest keeps the whole of it.
+    renderReason MigrationApplied = ""
+    renderReason (MigrationNotApplicable reason) = " -- " <> truncateReason reason
+
+    truncateReason reason
+      | T.length oneLine <= reasonWidth = oneLine
+      | otherwise = T.take (reasonWidth - 1) oneLine <> "…"
+      where
+        oneLine = T.unwords (T.words reason)
+
+    reasonWidth = 60
 
 -- | Render the baseline body for the blueprint section. Three cases:
 -- @--no-baseline@ was passed, the blueprint declared no baseline at

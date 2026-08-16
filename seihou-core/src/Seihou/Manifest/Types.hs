@@ -91,6 +91,11 @@ writeAppliedBlueprint ab m =
 -- | Insert or replace one exact blueprint migration receipt. Replacement is
 -- performed in place, while adding a v5-only receipt upgrades the manifest
 -- version and preserves every unrelated field.
+--
+-- The receipt's 'outcome' is deliberately excluded from the edge comparison,
+-- which is the one place it is left out of one. An edge that reported itself
+-- not applicable and later runs for real must replace its earlier receipt, not
+-- accumulate a second one for the same edge.
 writeAppliedBlueprintMigration :: AppliedBlueprintMigration -> Manifest -> Manifest
 writeAppliedBlueprintMigration receipt manifest =
   Manifest
@@ -115,18 +120,25 @@ writeAppliedBlueprintMigration receipt manifest =
       | any sameEdge receipts = map (\existing -> if sameEdge existing then receipt else existing) receipts
       | otherwise = receipts <> [receipt]
 
--- | Whether one exact blueprint migration edge already has a receipt.
+-- | Whether one exact blueprint migration edge has been applied.
 --
 -- The edge is identified by the origin and name of the blueprint that owns it
--- together with its @from@ and @to@ versions, matching the completion key
+-- together with its @from@ and @to@ versions, and only a receipt whose outcome
+-- is 'MigrationApplied' counts — matching the completion key
 -- 'Seihou.CLI.BlueprintMigration.pendingBlueprintMigrations' applies when it
--- decides what is still pending. The two must agree, or a receipt could be
--- written as a new entry while being read as a duplicate.
+-- decides what is still pending. The two must agree, or an edge could be
+-- reported here as done while the planner still schedules it.
+--
+-- This is deliberately a different comparison from
+-- 'writeAppliedBlueprintMigration'’s: that one identifies the edge in order to
+-- upsert its receipt and so ignores the outcome, while this one answers
+-- whether the work happened.
 hasAppliedBlueprintMigration :: ArtifactOrigin -> ModuleName -> Text -> Text -> Manifest -> Bool
 hasAppliedBlueprintMigration blueprintOrigin blueprintName fromVersion toVersion manifest =
   any
     ( \receipt ->
-        sameArtifactIdentity (receipt ^. #origin) blueprintOrigin
+        receipt ^. #outcome == MigrationApplied
+          && sameArtifactIdentity (receipt ^. #origin) blueprintOrigin
           && receipt ^. #name == blueprintName
           && receipt ^. #fromVersion == fromVersion
           && receipt ^. #toVersion == toVersion
@@ -389,6 +401,32 @@ instance FromJSON AppliedBlueprint where
       <*> o Aeson..:? "userPrompt"
       <*> o Aeson..:? "agentSessionId"
 
+-- | A nested object with a discriminator, matching 'ArtifactOrigin', because
+-- the not-applicable case carries a reason and a bare string would have
+-- nowhere to put it.
+instance ToJSON MigrationOutcome where
+  toJSON MigrationApplied =
+    Aeson.object ["status" .= ("applied" :: Text)]
+  toJSON (MigrationNotApplicable reason) =
+    Aeson.object
+      [ "status" .= ("not-applicable" :: Text),
+        "reason" .= reason
+      ]
+
+instance FromJSON MigrationOutcome where
+  parseJSON = Aeson.withObject "MigrationOutcome" $ \o -> do
+    status <- o .: "status" :: Aeson.Parser Text
+    case status of
+      "applied" -> pure MigrationApplied
+      "not-applicable" -> MigrationNotApplicable <$> o Aeson..:? "reason" Aeson..!= unstatedReason
+      other -> fail ("unknown blueprint migration outcome: " <> T.unpack other)
+
+-- | Stand-in for a not-applicable outcome whose reason is missing. An edge
+-- that reports itself skipped always supplies one, so this only covers a
+-- hand-edited manifest.
+unstatedReason :: Text
+unstatedReason = "(no reason recorded)"
+
 instance ToJSON AppliedBlueprintMigration where
   toJSON receipt =
     Aeson.object $
@@ -396,6 +434,7 @@ instance ToJSON AppliedBlueprintMigration where
         "origin" .= (receipt ^. #origin),
         "from" .= (receipt ^. #fromVersion),
         "to" .= (receipt ^. #toVersion),
+        "outcome" .= (receipt ^. #outcome),
         "appliedAt" .= (receipt ^. #appliedAt)
       ]
         ++ maybe [] (\version -> ["version" .= version]) (receipt ^. #blueprintVersion)
@@ -409,6 +448,10 @@ instance FromJSON AppliedBlueprintMigration where
       <$> o Aeson..:? "version"
       <*> o .: "from"
       <*> o .: "to"
+      -- A receipt written before the field existed records an edge whose
+      -- session returned, which is exactly what 'MigrationApplied' means, so
+      -- reading it that way preserves its meaning rather than inventing one.
+      <*> o Aeson..:? "outcome" Aeson..!= MigrationApplied
       <*> o .: "appliedAt"
       <*> o Aeson..:? "agentSessionId"
 

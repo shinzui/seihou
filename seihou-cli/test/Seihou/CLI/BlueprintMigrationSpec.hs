@@ -84,6 +84,33 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
       pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
         `shouldBe` [first, second]
 
+    -- The defect IR-1 filed. An edge that reported its precondition unmet
+    -- recorded a receipt indistinguishable from a real upgrade, so the run
+    -- that should have happened once the precondition was met never did.
+    it "does not let a not-applicable receipt suppress its own edge" $ do
+      let migrationPlan = plan [first, second]
+          receipts =
+            [ notApplicableReceipt
+                blueprintOrigin
+                blueprintName
+                "1.0.0"
+                "2.0.0"
+                "the project has not adopted the bundle"
+            ]
+      pendingBlueprintMigrations False blueprintOrigin blueprintName receipts migrationPlan
+        `shouldBe` [first, second]
+
+    -- The same edge, the same origin, the same window: only the outcome
+    -- differs, and only the applied one suppresses.
+    it "suppresses the edge once the same edge is recorded as applied" $ do
+      let migrationPlan = plan [first, second]
+          skipped = notApplicableReceipt blueprintOrigin blueprintName "1.0.0" "2.0.0" "no adr bundle"
+          applied = receipt blueprintOrigin blueprintName "1.0.0" "2.0.0"
+      pendingBlueprintMigrations False blueprintOrigin blueprintName [skipped] migrationPlan
+        `shouldBe` [first, second]
+      pendingBlueprintMigrations False blueprintOrigin blueprintName [applied] migrationPlan
+        `shouldBe` [second]
+
   describe "renderBlueprintMigrationInstruction" $ do
     it "substitutes the variables resolved for the shared blueprint" $ do
       let declaration = VarDecl "library.name" VTText Nothing Nothing False Nothing
@@ -100,6 +127,7 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
           rendered =
             renderBlueprintMigrationSystemPrompt
               "{{blueprint_name}} {{blueprint_version}} | {{migration_position}}/{{migration_total}} | {{migration_from}} -> {{migration_to}} | {{shared_prompt}} | {{migration_prompt}} | {{reference_files_dir}} | {{cwd}}"
+              "/tmp/project/.seihou/.migrate-signal"
               sampleContext
               samplePrepared
               1
@@ -107,6 +135,20 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
               edge
       rendered
         `shouldBe` "payments 4.2.0 | 1/2 | 1.0.0 -> 2.0.0 | Shared guidance for baikai. | Upgrade baikai now. | mounted at /tmp/payments/files | /tmp/project"
+
+    -- The agent cannot signal inapplicability without being told where; the
+    -- path is a template variable so the caller owns it, exactly as it owns
+    -- the template text.
+    it "substitutes the not-applicable signal path" $ do
+      renderBlueprintMigrationSystemPrompt
+        "write to {{not_applicable_signal_path}}"
+        "/tmp/project/.seihou/.migrate-signal"
+        sampleContext
+        samplePrepared
+        1
+        1
+        first
+        `shouldBe` "write to /tmp/project/.seihou/.migrate-signal"
 
     it "delimits debug prompts in pending order without any execution callback" $ do
       let output =
@@ -122,8 +164,8 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
       calls <- newIORef ([] :: [Text])
       result <-
         runBlueprintMigrationsWith
-          (\_ _ _ -> modifyIORef' calls (<> ["launch"]) >> pure (Right ()))
-          (\_ -> modifyIORef' calls (<> ["record"]) >> pure (Right ()))
+          (\_ _ _ -> modifyIORef' calls (<> ["launch"]) >> pure (Right BlueprintMigrationSessionReturned))
+          (\_ _ -> modifyIORef' calls (<> ["record"]) >> pure (Right ()))
           []
       result `shouldBe` BlueprintMigrationNoWork
       readIORef calls `shouldReturn` []
@@ -132,17 +174,46 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
       calls <- newIORef ([] :: [Text])
       let launch position total edge = do
             modifyIORef' calls (<> ["launch " <> tshow position <> "/" <> tshow total <> " " <> edge ^. #from])
-            pure (Right ())
-          record edge = do
+            pure (Right BlueprintMigrationSessionReturned)
+          record edge _ = do
             modifyIORef' calls (<> ["record " <> edge ^. #from])
             pure (Right ())
       result <- runBlueprintMigrationsWith launch record [first, second]
-      result `shouldBe` BlueprintMigrationComplete [first, second]
+      result `shouldBe` BlueprintMigrationComplete [(first, MigrationApplied), (second, MigrationApplied)]
       readIORef calls
         `shouldReturn` [ "launch 1/2 1.0.0",
                          "record 1.0.0",
                          "launch 2/2 2.0.0",
                          "record 2.0.0"
+                       ]
+
+    -- IR-1 rejects exiting nonzero for an inapplicable edge precisely because
+    -- it "halts a multi-edge chain that should have continued past an
+    -- inapplicable step". This is that requirement.
+    it "records the outcome and continues past a not-applicable edge" $ do
+      calls <- newIORef ([] :: [Text])
+      outcomes <- newIORef ([] :: [(Text, MigrationOutcome)])
+      let launch _ _ edge = do
+            modifyIORef' calls (<> ["launch " <> edge ^. #from])
+            pure . Right $
+              if edge == first
+                then BlueprintMigrationSessionNotApplicable "no docs/adr directory"
+                else BlueprintMigrationSessionReturned
+          record edge outcome = do
+            modifyIORef' calls (<> ["record " <> edge ^. #from])
+            modifyIORef' outcomes (<> [(edge ^. #from, outcome)])
+            pure (Right ())
+      result <- runBlueprintMigrationsWith launch record [first, second]
+      result
+        `shouldBe` BlueprintMigrationComplete
+          [ (first, MigrationNotApplicable "no docs/adr directory"),
+            (second, MigrationApplied)
+          ]
+      readIORef calls
+        `shouldReturn` ["launch 1.0.0", "record 1.0.0", "launch 2.0.0", "record 2.0.0"]
+      readIORef outcomes
+        `shouldReturn` [ ("1.0.0", MigrationNotApplicable "no docs/adr directory"),
+                         ("2.0.0", MigrationApplied)
                        ]
 
     it "records only completed edges after failure and resumes at the failed edge" $ do
@@ -161,8 +232,8 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
             pure $
               if edge == second
                 then Left (BlueprintMigrationProcessFailure (ExitFailure 17))
-                else Right ()
-          record edge = do
+                else Right BlueprintMigrationSessionReturned
+          record edge _ = do
             modifyIORef' calls (<> ["record " <> edge ^. #from])
             modifyIORef' recorded (<> [receipt blueprintOrigin blueprintName (edge ^. #from) (edge ^. #to)])
             pure (Right ())
@@ -178,19 +249,55 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
 
       resumedResult <-
         runBlueprintMigrationsWith
-          (\_ _ edge -> modifyIORef' calls (<> ["resume " <> edge ^. #from]) >> pure (Right ()))
+          (\_ _ edge -> modifyIORef' calls (<> ["resume " <> edge ^. #from]) >> pure (Right BlueprintMigrationSessionReturned))
           record
           resumed
-      resumedResult `shouldBe` BlueprintMigrationComplete [second, third]
+      resumedResult `shouldBe` BlueprintMigrationComplete [(second, MigrationApplied), (third, MigrationApplied)]
       readIORef recorded `shouldReturn` map (\edge -> receipt blueprintOrigin blueprintName (edge ^. #from) (edge ^. #to)) [first, second, third]
 
     it "stops before the next launch when receipt recording fails" $ do
       calls <- newIORef ([] :: [Text])
-      let launch _ _ edge = modifyIORef' calls (<> ["launch " <> edge ^. #from]) >> pure (Right ())
-          record edge = modifyIORef' calls (<> ["record " <> edge ^. #from]) >> pure (Left "disk full")
+      let launch _ _ edge = modifyIORef' calls (<> ["launch " <> edge ^. #from]) >> pure (Right BlueprintMigrationSessionReturned)
+          record edge _ = modifyIORef' calls (<> ["record " <> edge ^. #from]) >> pure (Left "disk full")
       result <- runBlueprintMigrationsWith launch record [first, second]
       result `shouldBe` BlueprintMigrationRecordFailed first "disk full"
       readIORef calls `shouldReturn` ["launch 1.0.0", "record 1.0.0"]
+
+  describe "parseNotApplicableSignal" $ do
+    it "reads the plain marker line" $
+      parseNotApplicableSignal "Checked the pins.\nSEIHOU: not-applicable the bundle was never adopted"
+        `shouldBe` Just "the bundle was never adopted"
+
+    it "tolerates backticks, bold, and trailing whitespace" $ do
+      parseNotApplicableSignal "`SEIHOU: not-applicable no kiroku imports`"
+        `shouldBe` Just "no kiroku imports"
+      parseNotApplicableSignal "**SEIHOU: not-applicable no kiroku imports**"
+        `shouldBe` Just "no kiroku imports"
+      parseNotApplicableSignal "**SEIHOU:** not-applicable no kiroku imports"
+        `shouldBe` Just "no kiroku imports"
+      parseNotApplicableSignal "   SEIHOU: not-applicable no kiroku imports   \n\n"
+        `shouldBe` Just "no kiroku imports"
+
+    it "finds the marker above a closing sentence" $
+      parseNotApplicableSignal
+        (T.unlines ["Summary of what I checked.", "SEIHOU: not-applicable nothing to upgrade", "", "No files were changed."])
+        `shouldBe` Just "nothing to upgrade"
+
+    it "records a placeholder when the marker carries no reason" $
+      parseNotApplicableSignal "SEIHOU: not-applicable" `shouldBe` Just unstatedNotApplicableReason
+
+    -- A parser that reads a refusal out of prose silently skips real work,
+    -- which is strictly worse than missing a signal the agent could also have
+    -- written to the signal file.
+    it "rejects prose that merely mentions the words" $ do
+      parseNotApplicableSignal "This edge is not applicable to projects without an ADR bundle."
+        `shouldBe` Nothing
+      parseNotApplicableSignal "I considered writing SEIHOU: not-applicable but the edge does apply."
+        `shouldBe` Nothing
+      parseNotApplicableSignal "not-applicable" `shouldBe` Nothing
+      parseNotApplicableSignal "SEIHOU: not-applicable-ish" `shouldBe` Nothing
+      parseNotApplicableSignal "" `shouldBe` Nothing
+      parseNotApplicableSignal "Upgraded three call sites and ran the tests." `shouldBe` Nothing
 
 blueprintName :: ModuleName
 blueprintName = "payments"
@@ -232,12 +339,22 @@ plan steps =
 
 receipt :: ArtifactOrigin -> ModuleName -> Text -> Text -> AppliedBlueprintMigration
 receipt origin name fromVersion toVersion =
+  receiptWithOutcome origin name fromVersion toVersion MigrationApplied
+
+-- | A receipt for an edge that reported its precondition unmet.
+notApplicableReceipt :: ArtifactOrigin -> ModuleName -> Text -> Text -> Text -> AppliedBlueprintMigration
+notApplicableReceipt origin name fromVersion toVersion reason =
+  receiptWithOutcome origin name fromVersion toVersion (MigrationNotApplicable reason)
+
+receiptWithOutcome :: ArtifactOrigin -> ModuleName -> Text -> Text -> MigrationOutcome -> AppliedBlueprintMigration
+receiptWithOutcome origin name fromVersion toVersion outcome =
   AppliedBlueprintMigration
     { name,
       origin,
       blueprintVersion = Just "4.2.0",
       fromVersion,
       toVersion,
+      outcome,
       appliedAt = read "2026-07-20 12:00:00 UTC" :: UTCTime,
       agentSessionId = Nothing
     }

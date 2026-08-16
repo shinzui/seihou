@@ -46,6 +46,7 @@ module Seihou.Core.Types
     AppliedModule (..),
     AppliedRecipe (..),
     AppliedBlueprint (..),
+    MigrationOutcome (..),
     AppliedBlueprintMigration (..),
     FileRecord (..),
     SHA256 (..),
@@ -629,10 +630,33 @@ data AppliedBlueprint = AppliedBlueprint
   }
   deriving stock (Eq, Show, Generic)
 
--- | A durable receipt for one successfully completed agent-guided blueprint
--- migration edge. Exact-edge identity is the 'origin' and 'name' of the
--- blueprint that owns the edge together with 'fromVersion' and 'toVersion';
--- the remaining fields are audit metadata.
+-- | What actually happened when seihou ran one blueprint migration edge.
+--
+-- 'MigrationApplied' means the provider interaction returned. As
+-- @docs\/user\/blueprint-migrations.md@ states, that is bookkeeping and not
+-- proof that the build passes.
+--
+-- 'MigrationNotApplicable' means the edge reported that its precondition is
+-- unmet in this project and it deliberately changed nothing. The attempt is
+-- recorded so the audit trail is complete, but it does not suppress a later
+-- run: the precondition may be met by then.
+--
+-- The reason is carried inside the constructor rather than in a sibling
+-- @Maybe Text@ field, so the type cannot express a reason for an applied edge
+-- or a skipped edge with no reason.
+data MigrationOutcome
+  = MigrationApplied
+  | MigrationNotApplicable !Text
+  deriving stock (Eq, Show, Generic)
+
+-- | A durable receipt for one attempted agent-guided blueprint migration
+-- edge. Exact-edge identity is the 'origin' and 'name' of the blueprint that
+-- owns the edge together with 'fromVersion' and 'toVersion'; the remaining
+-- fields, 'outcome' included, are audit metadata.
+--
+-- @outcome@ is deliberately not part of the identity: re-running an edge that
+-- was previously not applicable replaces its receipt rather than appending a
+-- second one for the same edge.
 --
 -- @origin@ is the blueprint's portable identity. Turning it back into a
 -- directory on the current machine is
@@ -648,6 +672,7 @@ data AppliedBlueprintMigration = AppliedBlueprintMigration
     blueprintVersion :: !(Maybe Text),
     fromVersion :: !Text,
     toVersion :: !Text,
+    outcome :: !MigrationOutcome,
     appliedAt :: !UTCTime,
     agentSessionId :: !(Maybe Text)
   }

@@ -69,8 +69,33 @@ The blueprint declares these shared library-upgrade references:
    that remains for the user or later migration steps.
 
 
+## If This Edge Does Not Apply
+
+An edge states its own precondition. If this project does not meet it — the
+library is not used here, the feature this edge upgrades was never adopted, the
+change is already present — the correct action is to change nothing and report
+that.
+
+Do not make speculative edits to justify the step, and do not exit with an
+error: an error means the provider failed, halts the remaining edges, and asks
+the user to retry.
+
+To report it, write one line explaining why to:
+
+{{not_applicable_signal_path}}
+
+If you cannot write files, end your reply with a line of exactly this form:
+
+    SEIHOU: not-applicable <one-line reason>
+
+Seihou records the attempt with that outcome, prints your reason, and continues
+to the next edge. The edge is not marked done, so it runs again once the
+precondition is met.
+
+
 ## Completion Boundary
 
-Seihou records this exact edge after your provider interaction returns
-successfully. That receipt is not package-manager verification. Do not report
-the target version as installed unless you actually verified it in the project.
+Seihou records this exact edge after your provider interaction returns, with
+what it produced: applied, or not applicable. An applied receipt is not
+package-manager verification. Do not report the target version as installed
+unless you actually verified it in the project.

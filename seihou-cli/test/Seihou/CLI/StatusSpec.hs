@@ -29,6 +29,7 @@ import Seihou.Core.Types
     AppliedTarget (..),
     ArtifactOrigin (..),
     Manifest (..),
+    MigrationOutcome (..),
     ModuleName (..),
     RecipeName (..),
     emptyParentVars,
@@ -139,12 +140,18 @@ withManifestBlueprint mb m = m & #blueprint .~ mb
 
 mkBlueprintMigrationReceipt :: Text -> Maybe Text -> Text -> Text -> AppliedBlueprintMigration
 mkBlueprintMigrationReceipt blueprintName artifactVersion fromVersion toVersion =
+  mkBlueprintMigrationReceiptWith blueprintName artifactVersion fromVersion toVersion MigrationApplied
+
+mkBlueprintMigrationReceiptWith ::
+  Text -> Maybe Text -> Text -> Text -> MigrationOutcome -> AppliedBlueprintMigration
+mkBlueprintMigrationReceiptWith blueprintName artifactVersion fromVersion toVersion outcome =
   AppliedBlueprintMigration
     { name = ModuleName blueprintName,
       origin = RemoteOrigin ("https://github.com/acme/" <> blueprintName) blueprintName Nothing,
       blueprintVersion = artifactVersion,
       fromVersion = fromVersion,
       toVersion = toVersion,
+      outcome = outcome,
       appliedAt = fixedTime,
       agentSessionId = Nothing
     }
@@ -223,8 +230,39 @@ spec = describe "formatStatus" $ do
           manifest = ((mkManifest []) & #blueprintMigrations .~ [receipt])
           out = formatStatus False manifest [] Nothing []
       out `shouldSatisfy` T.isInfixOf "Blueprint migrations:"
-      out `shouldSatisfy` T.isInfixOf "payments v0.4.0: 1.0.0 -> 2.0.0"
-      out `shouldSatisfy` T.isInfixOf "2026-04-15 10:00 UTC"
+      out `shouldSatisfy` T.isInfixOf "payments v0.4.0: 1.0.0 -> 2.0.0 (applied 2026-04-15 10:00 UTC)"
+
+    -- What IR-1 means by "keeps seihou status honest": an edge that was
+    -- evaluated and found inapplicable must not look like an upgrade.
+    it "distinguishes a not-applicable receipt and shows its reason" $ do
+      let applied = mkBlueprintMigrationReceipt "payments" (Just "0.4.0") "1.0.0" "2.0.0"
+          skipped =
+            mkBlueprintMigrationReceiptWith
+              "payments"
+              (Just "0.4.0")
+              "2.5.0"
+              "3.0.0"
+              (MigrationNotApplicable "no direct kiroku imports")
+          manifest = ((mkManifest []) & #blueprintMigrations .~ [applied, skipped])
+          out = formatStatus False manifest [] Nothing []
+      out `shouldSatisfy` T.isInfixOf "payments v0.4.0: 1.0.0 -> 2.0.0 (applied 2026-04-15 10:00 UTC)"
+      out
+        `shouldSatisfy` T.isInfixOf
+          "payments v0.4.0: 2.5.0 -> 3.0.0 (not applicable 2026-04-15 10:00 UTC -- no direct kiroku imports)"
+
+    it "truncates a long reason rather than wrapping it" $ do
+      let skipped =
+            mkBlueprintMigrationReceiptWith
+              "payments"
+              Nothing
+              "1.0.0"
+              "2.0.0"
+              (MigrationNotApplicable (T.replicate 200 "x"))
+          manifest = ((mkManifest []) & #blueprintMigrations .~ [skipped])
+          out = formatStatus False manifest [] Nothing []
+          migrationLine = head [line | line <- T.lines out, "1.0.0 -> 2.0.0" `T.isInfixOf` line]
+      migrationLine `shouldSatisfy` T.isInfixOf (T.replicate 59 "x" <> "…")
+      migrationLine `shouldNotSatisfy` T.isInfixOf (T.replicate 61 "x")
 
   it "all modules clean: no remediation, no Recommended actions block" $ do
     let am = mkApplied "demo" (Just "1.0.0")

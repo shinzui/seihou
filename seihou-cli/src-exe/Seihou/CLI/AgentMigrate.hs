@@ -6,10 +6,11 @@ module Seihou.CLI.AgentMigrate
 where
 
 import Baikai.Trace.Sink (TraceSink)
-import Control.Monad (unless)
+import Control.Applicative ((<|>))
+import Control.Monad (unless, when)
 import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
-import Data.Maybe (maybeToList)
+import Data.Maybe (fromMaybe, listToMaybe, maybeToList)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
@@ -37,11 +38,14 @@ import Seihou.CLI.BlueprintExecution
   )
 import Seihou.CLI.BlueprintMigration
   ( BlueprintMigrationLaunchFailure (..),
+    BlueprintMigrationLaunchResult (..),
     BlueprintMigrationRunResult (..),
     formatBlueprintMigrationDebugOutput,
+    parseNotApplicableSignal,
     pendingBlueprintMigrations,
     renderBlueprintMigrationSystemPrompt,
     runBlueprintMigrationsWith,
+    unstatedNotApplicableReason,
   )
 import Seihou.CLI.Commands (BlueprintMigrationOpts (..))
 import Seihou.CLI.Shared (formatVarError, logIO)
@@ -61,8 +65,14 @@ import Seihou.Effect.Logger (logError)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Prelude
-import System.Directory (getCurrentDirectory)
+import System.Directory
+  ( createDirectoryIfMissing,
+    doesFileExist,
+    getCurrentDirectory,
+    removeFile,
+  )
 import System.Exit (ExitCode (..), exitFailure, exitWith)
+import System.FilePath (takeDirectory)
 
 migrationPromptTemplate :: Text
 migrationPromptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-migration-prompt.md")
@@ -146,9 +156,11 @@ handleAgentMigrate debug pendingConfig opts = do
           prepared <- prepare level modelConfig opts blueprint blueprintDir
           traceSink <- traceSinkForConfig level modelConfig
           context <- gatherAgentContext
-          let renderStep position total migration =
+          let signalPath = notApplicableSignalPath projectRoot
+              renderStep position total migration =
                 renderBlueprintMigrationSystemPrompt
                   migrationPromptTemplate
+                  signalPath
                   context
                   prepared
                   position
@@ -173,9 +185,12 @@ handleAgentMigrate debug pendingConfig opts = do
                   <> "\n"
                   <> formatBlueprintMigrationDebugOutput renderDebugStep pending
             else do
+              -- The agent needs somewhere to put the signal file, and the
+              -- directory is created by the first receipt anyway.
+              createDirectoryIfMissing True (takeDirectory signalPath)
               result <-
                 runBlueprintMigrationsWith
-                  (launchMigration traceSink modelConfig opts prepared renderStep)
+                  (launchMigration traceSink modelConfig opts prepared signalPath renderStep)
                   (recordMigration manifestPath blueprintOrigin blueprint)
                   pending
               handleRunResult level (blueprint ^. #name) result
@@ -237,27 +252,59 @@ prepare level modelConfig opts blueprint blueprintDir = do
       exitFailure
     Right prepared -> pure prepared
 
+-- | Where an edge reports that it does not apply.
+--
+-- It lives under @.seihou\/@ rather than in the working tree so a signal a
+-- crashed run left behind never shows up in @git status@, and the leading dot
+-- keeps it out of the way of @.seihou@'s own contents.
+notApplicableSignalPath :: FilePath -> FilePath
+notApplicableSignalPath projectRoot = projectRoot </> ".seihou" </> ".migrate-signal"
+
+-- | Delete a signal left behind by an earlier edge or a crashed run, so it
+-- cannot be misread as this edge's answer.
+clearNotApplicableSignal :: FilePath -> IO ()
+clearNotApplicableSignal signalPath = do
+  exists <- doesFileExist signalPath
+  when exists (removeFile signalPath)
+
+-- | Read and consume the signal an edge may have written.
+--
+-- The file's existence is the signal: an agent creates it deliberately, with
+-- its own tools, at a path only this command names. An empty one therefore
+-- still means "not applicable", it just fails to say why.
+readNotApplicableSignal :: FilePath -> IO (Maybe Text)
+readNotApplicableSignal signalPath = do
+  exists <- doesFileExist signalPath
+  if not exists
+    then pure Nothing
+    else do
+      contents <- TIO.readFile signalPath
+      removeFile signalPath
+      let firstLine = listToMaybe (filter (not . T.null) (map T.strip (T.lines contents)))
+      pure (Just (fromMaybe unstatedNotApplicableReason firstLine))
+
 launchMigration ::
   -- | built once per command, so every migration edge appends to one destination
   TraceSink ->
   AgentModelConfig ->
   BlueprintMigrationOpts ->
   PreparedBlueprintExecution ->
+  -- | where this edge reports that it does not apply
+  FilePath ->
   (Int -> Int -> BlueprintMigration -> Text) ->
   Int ->
   Int ->
   BlueprintMigration ->
-  IO (Either BlueprintMigrationLaunchFailure ())
-launchMigration traceSink modelConfig opts prepared renderStep position total migration = do
+  IO (Either BlueprintMigrationLaunchFailure BlueprintMigrationLaunchResult)
+launchMigration traceSink modelConfig opts prepared signalPath renderStep position total migration = do
   TIO.putStrLn $
     "Running blueprint migration "
-      <> T.pack (show position)
-      <> "/"
-      <> T.pack (show total)
+      <> stepLabel
       <> ": "
       <> migration ^. #from
       <> " -> "
       <> (migration ^. #to)
+  clearNotApplicableSignal signalPath
   let systemPrompt = renderStep position total migration
   case modelConfig ^. #provider of
     AgentProviderClaudeCli -> launchInteractive systemPrompt
@@ -265,6 +312,10 @@ launchMigration traceSink modelConfig opts prepared renderStep position total mi
     AgentProviderAnthropic -> launchCompletion systemPrompt
     AgentProviderOpenAI -> launchCompletion systemPrompt
   where
+    stepLabel = T.pack (show position) <> "/" <> T.pack (show total)
+
+    -- An interactive session communicates only through its exit code, so the
+    -- signal file is the one channel an agent has to report inapplicability.
     launchInteractive systemPrompt = do
       exitCode <-
         launchConfiguredAgentAddingDirs
@@ -274,19 +325,43 @@ launchMigration traceSink modelConfig opts prepared renderStep position total mi
           False
           systemPrompt
           (opts ^. #prompt)
-      pure $ case exitCode of
-        ExitSuccess -> Right ()
-        failure -> Left (BlueprintMigrationProcessFailure failure)
+      case exitCode of
+        ExitSuccess -> Right <$> sessionResultFromSignal Nothing
+        failure -> do
+          -- A failed session's signal is not this edge's answer.
+          clearNotApplicableSignal signalPath
+          pure (Left (BlueprintMigrationProcessFailure failure))
 
+    -- An API provider hands us its reply directly, so the marker line works.
+    -- The signal file is still checked, because a provider given tool access
+    -- may take the prompt's first instruction rather than its fallback.
     launchCompletion systemPrompt = do
       result <-
         runAgentCompletion
           (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt (opts ^. #prompt))
       case result of
-        Left err -> pure (Left (BlueprintMigrationProviderFailure err))
+        Left err -> do
+          clearNotApplicableSignal signalPath
+          pure (Left (BlueprintMigrationProviderFailure err))
         Right assistantText -> do
           TIO.putStrLn assistantText
-          pure (Right ())
+          Right <$> sessionResultFromSignal (parseNotApplicableSignal assistantText)
+
+    sessionResultFromSignal parsedReason = do
+      fileReason <- readNotApplicableSignal signalPath
+      case fileReason <|> parsedReason of
+        Nothing -> pure BlueprintMigrationSessionReturned
+        Just reason -> do
+          TIO.putStrLn $
+            "Blueprint migration "
+              <> stepLabel
+              <> ": "
+              <> migration ^. #from
+              <> " -> "
+              <> (migration ^. #to)
+              <> " — not applicable: "
+              <> reason
+          pure (BlueprintMigrationSessionNotApplicable reason)
 
 recordMigration ::
   FilePath ->
@@ -294,8 +369,9 @@ recordMigration ::
   ArtifactOrigin ->
   Blueprint ->
   BlueprintMigration ->
+  MigrationOutcome ->
   IO (Either Text ())
-recordMigration manifestPath blueprintOrigin blueprint migration = do
+recordMigration manifestPath blueprintOrigin blueprint migration migrationOutcome = do
   now <- getCurrentTime
   recordAppliedBlueprintMigration
     manifestPath
@@ -305,6 +381,7 @@ recordMigration manifestPath blueprintOrigin blueprint migration = do
         blueprintVersion = blueprint ^. #version,
         fromVersion = migration ^. #from,
         toVersion = migration ^. #to,
+        outcome = migrationOutcome,
         appliedAt = now,
         agentSessionId = Nothing
       }
@@ -313,13 +390,19 @@ handleRunResult :: LogLevel -> ModuleName -> BlueprintMigrationRunResult -> IO (
 handleRunResult level blueprintName = \case
   BlueprintMigrationNoWork ->
     TIO.putStrLn "No pending blueprint migrations."
-  BlueprintMigrationComplete completed ->
+  BlueprintMigrationComplete completed -> do
+    let notApplicable = length [() | (_, MigrationNotApplicable _) <- completed]
     TIO.putStrLn $
       "Completed "
         <> T.pack (show (length completed))
         <> " blueprint migration(s) for '"
         <> blueprintName ^. #unModuleName
-        <> "'."
+        <> "'"
+        <> ( if notApplicable > 0
+               then " (" <> T.pack (show notApplicable) <> " not applicable)"
+               else ""
+           )
+        <> "."
   BlueprintMigrationLaunchFailed migration failure -> do
     let prefix =
           "Blueprint migration "

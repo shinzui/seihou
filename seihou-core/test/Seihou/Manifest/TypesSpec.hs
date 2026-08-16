@@ -38,6 +38,7 @@ mkBlueprintMigrationReceipt blueprintName fromVersion toVersion appliedAt =
       blueprintVersion = Just "0.4.0",
       fromVersion = fromVersion,
       toVersion = toVersion,
+      outcome = MigrationApplied,
       appliedAt = appliedAt,
       agentSessionId = Nothing
     }
@@ -581,8 +582,22 @@ spec = do
               (Just "0.4.0")
               "1.0.0"
               "2.0.0"
+              MigrationApplied
               fixedTime
               (Just "session-123")
+      Aeson.eitherDecode (Aeson.encode receipt) `shouldBe` Right receipt
+
+    it "round-trips a not-applicable receipt with its reason" $ do
+      let receipt =
+            AppliedBlueprintMigration
+              (ModuleName "payments")
+              (RemoteOrigin "https://github.com/acme/payments" "payments" Nothing)
+              (Just "0.4.0")
+              "1.0.0"
+              "2.0.0"
+              (MigrationNotApplicable "the project has not adopted the bundle")
+              fixedTime
+              Nothing
       Aeson.eitherDecode (Aeson.encode receipt) `shouldBe` Right receipt
 
     it "round-trips a version-5 manifest containing a receipt" $ do
@@ -600,6 +615,7 @@ spec = do
               (Just "0.5.0")
               "1.0.0"
               "2.0.0"
+              MigrationApplied
               fixedTime2
               (Just "rerun")
           manifest1 = writeAppliedBlueprintMigration unrelated (writeAppliedBlueprintMigration first (emptyManifest fixedTime))
@@ -616,6 +632,20 @@ spec = do
         "2.0.0"
         manifest2
         `shouldBe` False
+
+    -- The upsert key deliberately ignores the outcome, so a re-run replaces
+    -- the earlier record. The read side does not ignore it: an edge that
+    -- reported itself inapplicable has not been applied.
+    it "upserts across a change of outcome and reports the edge unapplied while it is skipped" $ do
+      let edge = mkBlueprintMigrationReceipt "payments" "1.0.0" "2.0.0" fixedTime
+          skipped = edge & #outcome .~ MigrationNotApplicable "no adr bundle"
+          applied = edge & #appliedAt .~ fixedTime2
+          afterSkip = writeAppliedBlueprintMigration skipped (emptyManifest fixedTime)
+          afterApply = writeAppliedBlueprintMigration applied afterSkip
+      (afterSkip ^. #blueprintMigrations) `shouldBe` [skipped]
+      hasAppliedBlueprintMigration paymentsOrigin "payments" "1.0.0" "2.0.0" afterSkip `shouldBe` False
+      (afterApply ^. #blueprintMigrations) `shouldBe` [applied]
+      hasAppliedBlueprintMigration paymentsOrigin "payments" "1.0.0" "2.0.0" afterApply `shouldBe` True
 
     it "preserves modules, applications, files, recipe, and normal blueprint provenance" $ do
       let appliedModule = AppliedModule "base" emptyParentVars (LocalOrigin "base") (Just "1.0.0") fixedTime Nothing
