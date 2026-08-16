@@ -5,9 +5,10 @@ where
 
 import Control.Exception (SomeException, try)
 import Data.Generics.Labels ()
+import Data.Maybe (maybeToList)
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (StatusOpts (..))
-import Seihou.CLI.ManifestGuard (ArtifactCheck, checkAppliedArtifacts)
+import Seihou.CLI.ManifestGuard (ArtifactCheck, checkAppliedArtifacts, checkAppliedBlueprint)
 import Seihou.CLI.Outdated (checkInstalledModulesForUpdates)
 import Seihou.CLI.PendingMigrations (detectPendingMigrations)
 import Seihou.CLI.Shared (logIO)
@@ -65,12 +66,19 @@ handleStatus opts = do
 -- failure so status still renders. An empty list means "nothing to report",
 -- which is also what a failed check yields — @seihou status@ must not turn a
 -- reporting problem into an exit code.
+--
+-- The recorded blueprint is checked alongside the recorded modules. A stale
+-- or substituted blueprint makes @seihou agent run@ and @seihou agent
+-- migrate@ refuse, so this is where a developer finds out before that
+-- happens — the same reason the module checks are here.
 fetchArtifactChecks :: Manifest -> IO [ArtifactCheck]
 fetchArtifactChecks manifest = do
   outcome <- try $ do
     projectRoot <- getCurrentDirectory
     searchPaths <- defaultSearchPaths
-    checkAppliedArtifacts projectRoot searchPaths manifest
+    moduleChecks <- checkAppliedArtifacts projectRoot searchPaths manifest
+    blueprintCheck <- checkAppliedBlueprint projectRoot searchPaths manifest
+    pure (moduleChecks <> maybeToList blueprintCheck)
   case outcome of
     Left (e :: SomeException) -> do
       hPutStrLn stderr ("warning: artifact check failed: " <> show e)

@@ -24,7 +24,12 @@ module Seihou.CLI.ManifestGuard
     -- * Checking a manifest against this machine
     checkAppliedArtifacts,
     checkAppliedArtifactsFor,
+    checkAppliedBlueprint,
+    checkRecordedBlueprint,
     blockingChecks,
+
+    -- * Enforcing
+    enforceArtifactGuard,
 
     -- * Rendering
     formatGuardRefusal,
@@ -34,10 +39,12 @@ module Seihou.CLI.ManifestGuard
 where
 
 import Data.Generics.Labels ()
-import Data.List (nubBy)
+import Data.List (maximumBy, nubBy)
 import Data.Maybe (fromMaybe)
+import Data.Ord (comparing)
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Seihou.Core.ArtifactIdentity (normalizeOriginUrl, normalizeProjectPath)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef
@@ -46,15 +53,19 @@ import Seihou.Core.ArtifactRef
     resolveArtifactOrigin,
   )
 import Seihou.Core.Types
-  ( AppliedModule (..),
+  ( AppliedBlueprint (..),
+    AppliedBlueprintMigration (..),
+    AppliedModule (..),
     ArtifactOrigin (..),
+    Blueprint (..),
     Manifest (..),
     Module (..),
     ModuleName (..),
   )
 import Seihou.Core.Version (parseVersion)
-import Seihou.Dhall.Eval (evalModuleFromFile)
+import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile)
 import Seihou.Prelude
+import System.Exit (exitFailure)
 
 -- ----------------------------------------------------------------------------
 -- Verdicts
@@ -207,21 +218,119 @@ checkAppliedArtifactsFor projectRoot searchPaths mFilter manifest =
 
     dedupeByName = nubBy (\a b -> a ^. #name == b ^. #name)
 
-    checkOne applied = do
-      let recordedOrigin = applied ^. #origin
-      resolved <- resolveArtifactOrigin projectRoot searchPaths "module.dhall" recordedOrigin
-      verdict <- case resolved of
-        Left refErr -> pure (ArtifactUnresolvable refErr)
-        Right directory -> do
-          localOrigin <- detectArtifactOrigin projectRoot directory
-          localVersion <- localModuleVersion directory
-          pure (judgeArtifact recordedOrigin (applied ^. #moduleVersion) localOrigin localVersion)
-      pure
-        ArtifactCheck
-          { name = applied ^. #name,
-            origin = recordedOrigin,
-            verdict = verdict
-          }
+    checkOne applied =
+      checkRecordedArtifact
+        projectRoot
+        searchPaths
+        "module.dhall"
+        localModuleVersion
+        (applied ^. #name)
+        (applied ^. #origin)
+        (applied ^. #moduleVersion)
+
+-- | Check the blueprint the manifest records, if any, against this machine.
+--
+-- 'Nothing' means no @seihou agent run@ has been recorded in this project.
+--
+-- This is the reporting form: it checks whatever blueprint the manifest
+-- happens to record, which is what @seihou status@ wants. A command about to
+-- *use* a blueprint wants 'checkRecordedBlueprint', which is scoped to that
+-- one blueprint.
+checkAppliedBlueprint :: FilePath -> [FilePath] -> Manifest -> IO (Maybe ArtifactCheck)
+checkAppliedBlueprint projectRoot searchPaths manifest =
+  traverse checkOne (manifest ^. #blueprint)
+  where
+    checkOne applied =
+      checkBlueprintIdentity
+        projectRoot
+        searchPaths
+        (applied ^. #name)
+        (applied ^. #origin)
+        (applied ^. #blueprintVersion)
+
+-- | Check one named blueprint — the one a command is about to use — against
+-- what this project already records about it.
+--
+-- A project records a blueprint's identity in two independent places, and
+-- either is enough. @seihou agent run@ writes the applied-blueprint entry;
+-- @seihou agent migrate@ writes one receipt per completed edge and never
+-- touches that entry, so a project may well have migrated a blueprint it
+-- never ran. The applied-blueprint entry wins when both exist, because it is
+-- rewritten on every run and is therefore the more recent statement; among
+-- receipts the most recently applied one wins for the same reason.
+--
+-- 'Nothing' means this project records nothing about this blueprint, so there
+-- is nothing to compare and the caller proceeds. A record naming a
+-- *different* blueprint is deliberately ignored: docs\/adr\/0003 scopes each
+-- refusal to the artifacts the command is actually about to use, so an
+-- unrelated stale artifact must not block unrelated work.
+checkRecordedBlueprint ::
+  FilePath ->
+  [FilePath] ->
+  ModuleName ->
+  Manifest ->
+  IO (Maybe ArtifactCheck)
+checkRecordedBlueprint projectRoot searchPaths blueprintName manifest =
+  traverse checkOne recorded
+  where
+    checkOne (recordedOrigin, recordedVersion) =
+      checkBlueprintIdentity projectRoot searchPaths blueprintName recordedOrigin recordedVersion
+
+    recorded = case appliedEntry of
+      Just entry -> Just (entry ^. #origin, entry ^. #blueprintVersion)
+      Nothing -> latestReceipt
+
+    appliedEntry = case manifest ^. #blueprint of
+      Just entry | entry ^. #name == blueprintName -> Just entry
+      _ -> Nothing
+
+    latestReceipt =
+      case filter (\receipt -> receipt ^. #name == blueprintName) (manifest ^. #blueprintMigrations) of
+        [] -> Nothing
+        receipts ->
+          let newest = maximumBy (comparing (^. #appliedAt)) receipts
+           in Just (newest ^. #origin, newest ^. #blueprintVersion)
+
+-- | One recorded blueprint identity, checked against the copy installed here.
+checkBlueprintIdentity ::
+  FilePath ->
+  [FilePath] ->
+  ModuleName ->
+  ArtifactOrigin ->
+  Maybe Text ->
+  IO ArtifactCheck
+checkBlueprintIdentity projectRoot searchPaths =
+  checkRecordedArtifact projectRoot searchPaths "blueprint.dhall" localBlueprintVersion
+
+-- | Locate one recorded artifact on this machine and judge it.
+--
+-- Shared by every caller so there is one verdict vocabulary regardless of
+-- what kind of artifact is being checked. Only two things vary: the file that
+-- makes a directory count as this kind of artifact (@module.dhall@ versus
+-- @blueprint.dhall@), and how the local copy's version is read out of it.
+checkRecordedArtifact ::
+  FilePath ->
+  [FilePath] ->
+  FilePath ->
+  (FilePath -> IO (Maybe Text)) ->
+  ModuleName ->
+  ArtifactOrigin ->
+  Maybe Text ->
+  IO ArtifactCheck
+checkRecordedArtifact projectRoot searchPaths definitionFile readLocalVersion name recordedOrigin recordedVersion = do
+  resolved <- resolveArtifactOrigin projectRoot searchPaths definitionFile recordedOrigin
+  verdict <- case resolved of
+    Left refErr -> pure (ArtifactUnresolvable refErr)
+    Right directory -> do
+      localOrigin <- detectArtifactOrigin projectRoot directory
+      localVersion <- readLocalVersion directory
+      pure (judgeArtifact recordedOrigin recordedVersion localOrigin localVersion)
+  pure
+    ArtifactCheck
+      { name = name,
+        origin = recordedOrigin,
+        verdict = verdict
+      }
 
 -- | The version the locally installed @module.dhall@ declares.
 --
@@ -235,6 +344,15 @@ localModuleVersion directory = do
   pure $ case result of
     Left _ -> Nothing
     Right modul -> modul ^. #version
+
+-- | The version the locally installed @blueprint.dhall@ declares, on the same
+-- terms as 'localModuleVersion'.
+localBlueprintVersion :: FilePath -> IO (Maybe Text)
+localBlueprintVersion directory = do
+  result <- evalBlueprintFromFile (directory </> "blueprint.dhall")
+  pure $ case result of
+    Left _ -> Nothing
+    Right blueprint -> blueprint ^. #version
 
 -- | Whether any verdict is severe enough to stop the command.
 --
@@ -254,6 +372,33 @@ blockingChecks = filter (isBlocking . (^. #verdict))
       ArtifactOk -> False
       ArtifactVersionIncomparable {} -> False
       ArtifactUnverifiableOrigin -> False
+
+-- ----------------------------------------------------------------------------
+-- Enforcing
+-- ----------------------------------------------------------------------------
+
+-- | Apply the downgrade / origin-mismatch policy to whatever 'blockingChecks'
+-- kept.
+--
+-- The 'Bool' is the command's @--allow-downgrade@ flag. Every command that
+-- generates from an artifact spells that flag the same way and behaves the
+-- same way once it is set, so the policy lives here rather than being
+-- reimplemented per command.
+--
+-- Without @--allow-downgrade@: the command refuses before a single file is
+-- written, so the project and its manifest are left byte-identical.
+--
+-- With @--allow-downgrade@: the same blocks are printed under a "proceeding
+-- anyway" lead-in and the command continues. They are printed rather than
+-- suppressed on purpose — a deliberate downgrade is still a downgrade, and
+-- the diff it produces should not be the first time anyone hears about it.
+enforceArtifactGuard :: Bool -> [ArtifactCheck] -> IO ()
+enforceArtifactGuard _ [] = pure ()
+enforceArtifactGuard allowDowngrade blocking
+  | allowDowngrade = TIO.putStr (formatGuardOverride blocking)
+  | otherwise = do
+      TIO.putStr (formatGuardRefusal blocking)
+      exitFailure
 
 -- ----------------------------------------------------------------------------
 -- Rendering

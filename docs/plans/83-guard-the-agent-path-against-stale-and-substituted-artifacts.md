@@ -50,8 +50,10 @@ resolving the wrong one rises accordingly.
 
 ## Progress
 
-- [ ] Read `ManifestGuard`, the `seihou run` guard call, and both agent entry points (orientation, no edits).
-- [ ] Generalise `checkAppliedArtifactsFor` so it can check a recorded blueprint as well as recorded modules.
+- [x] Read `ManifestGuard`, the `seihou run` guard call, and both agent entry points (orientation, no edits) — 2026-08-16
+- [x] Generalise `checkAppliedArtifactsFor` so it can check a recorded blueprint as well as recorded modules — 2026-08-16
+- [x] Move `enforceArtifactGuard` into `ManifestGuard`, generalised from `RunOpts` to a `Bool`; `Run.hs` calls the moved version — 2026-08-16
+- [x] `seihou status` reports on the recorded blueprint alongside recorded modules — 2026-08-16
 - [ ] Add `allowDowngrade` to `BlueprintRunOpts` and `BlueprintMigrationOpts` and parse `--allow-downgrade` for both agent subcommands.
 - [ ] Insert the guard into `seihou agent run` before `applyBaseline`, covering the blueprint and its resolved base modules.
 - [ ] Insert the guard into `seihou agent migrate` before planning edges.
@@ -69,9 +71,38 @@ resolving the wrong one rises accordingly.
 
 ## Decision Log
 
-- Decision: ...
-  Rationale: ...
-  Date: ...
+- Decision: Move `enforceArtifactGuard` into `Seihou.CLI.ManifestGuard`, generalised from
+  `RunOpts` to a plain `Bool`, and have `seihou run` call the moved version.
+  Rationale: The Plan of Work offered this or a two-line local equivalent per command and
+  asked for the move to be chosen. Taking it means one implementation of the policy, in the
+  module that already owns both renderers, and it removed `formatGuardOverride` and
+  `formatGuardRefusal` from `Run.hs`'s import list entirely — the policy is now stated once.
+  Every command that generates from an artifact spells the flag `--allow-downgrade`, so the
+  `Bool` loses nothing.
+  Date: 2026-08-16
+
+- Decision: Add a second blueprint-check entry point, `checkRecordedBlueprint`, rather than
+  only the `checkAppliedBlueprint` named in Interfaces and Dependencies.
+  Rationale: The two callers want different scopes and neither is a special case of the
+  other. `seihou status` reports on whatever blueprint the manifest records, unfiltered — it
+  is a report, not a refusal. The agent commands must consider only the blueprint they are
+  about to use, because ADR 0003 scopes each refusal to the artifacts the command will
+  actually touch, and a project's recorded blueprint is frequently a different one. Both are
+  three lines over one shared `checkBlueprintIdentity`, which is itself the module/blueprint
+  generalisation of the old inline `checkOne`.
+  Date: 2026-08-16
+
+- Decision: `checkRecordedBlueprint` falls back to the newest migration receipt for the named
+  blueprint when the manifest has no matching `AppliedBlueprint` entry.
+  Rationale: Milestone 4 left this open and observed that checking receipts is the more
+  complete answer. It is: `seihou agent migrate` writes receipts and never writes the
+  applied-blueprint entry, so a project that has only ever migrated a blueprint records its
+  identity exclusively in receipts. Without the fallback the migrate path — the one IR-3
+  calls out as worst, because a substituted blueprint's edges are silently dropped as
+  already-applied — would have nothing to compare against in exactly the projects that use it
+  most. The applied-blueprint entry still wins when both exist, because `agent run` rewrites
+  it every time and it is therefore the more recent statement.
+  Date: 2026-08-16
 
 
 ## Outcomes & Retrospective

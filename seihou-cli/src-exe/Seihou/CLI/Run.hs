@@ -27,11 +27,9 @@ import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
 import Seihou.CLI.ManifestGuard
-  ( ArtifactCheck,
-    blockingChecks,
+  ( blockingChecks,
     checkAppliedArtifactsFor,
-    formatGuardOverride,
-    formatGuardRefusal,
+    enforceArtifactGuard,
   )
 import Seihou.CLI.Migrate
   ( MigrateError (..),
@@ -289,7 +287,7 @@ handleRun runOpts = do
   searchPaths <- defaultSearchPaths
   guardChecks <-
     checkAppliedArtifactsFor projectRoot searchPaths (Just composedModuleNames) initialManifest
-  enforceArtifactGuard runOpts (blockingChecks guardChecks)
+  enforceArtifactGuard (runOpts ^. #allowDowngrade) (blockingChecks guardChecks)
 
   -- 6c. Pre-flight pending-migration check. We only consider modules in
   -- the current composition: a pending chain on an unrelated module
@@ -693,24 +691,6 @@ setApplicationCommandReceipts applicationId receipts manifest =
       | application ^. #applicationId == applicationId =
           application & #commandReceipts .~ receipts
       | otherwise = application
-
--- | Apply the downgrade / origin-mismatch policy.
---
--- Without @--allow-downgrade@: the run refuses before a single file is
--- written, so the project and its manifest are left byte-identical.
---
--- With @--allow-downgrade@: the same blocks are printed under a
--- "proceeding anyway" lead-in and the run continues. They are printed
--- rather than suppressed on purpose — a deliberate downgrade is still a
--- downgrade, and the diff it produces should not be the first time anyone
--- hears about it.
-enforceArtifactGuard :: RunOpts -> [ArtifactCheck] -> IO ()
-enforceArtifactGuard _ [] = pure ()
-enforceArtifactGuard runOpts blocking
-  | runOpts ^. #allowDowngrade = TIO.putStr (formatGuardOverride blocking)
-  | otherwise = do
-      TIO.putStr (formatGuardRefusal blocking)
-      exitFailure
 
 -- | Apply the pending-migration policy.
 --
