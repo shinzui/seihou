@@ -7,7 +7,7 @@ import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.SeihouBinary (seihouBinary)
-import Seihou.Core.Types (AppliedBlueprintMigration (..), Manifest (..))
+import Seihou.Core.Types (AppliedBlueprintMigration (..), Manifest (..), MigrationOutcome (..))
 import Seihou.Manifest.Types (manifestFromJSON)
 import System.Directory
   ( createDirectoryIfMissing,
@@ -252,6 +252,116 @@ tests = testSpec "Agent migrate end-to-end" $ do
       resumeOutput `shouldSatisfy` T.isInfixOf "already have receipts"
       T.lines <$> TIO.readFile launchLog `shouldReturn` ["called", "called"]
       LBS.readFile manifestPath `shouldReturn` beforeResume
+
+  -- The IR-1 scenario end to end: an edge whose precondition is unmet writes
+  -- the signal file, the chain continues past it, and the edge runs again once
+  -- the signal is no longer written -- without --rerun, which is the whole
+  -- point. Before this outcome existed the first edge was skipped forever.
+  it "continues past a not-applicable edge and replans it on the next invocation" $
+    withSystemTempDirectory "seihou-agent-migrate-not-applicable" $ \root -> do
+      binary <- seihouBinary
+      let blueprintDir = root </> ".seihou" </> "modules" </> "payments"
+          blueprintPath = blueprintDir </> "blueprint.dhall"
+          manifestPath = root </> ".seihou" </> "manifest.json"
+          signalPath = root </> ".seihou" </> ".migrate-signal"
+          xdgHome = root </> "xdg"
+          fakeBin = root </> "bin"
+          fakeClaude = fakeBin </> "claude"
+          launchLog = root </> "agent-launches.log"
+          reason = "no docs/adr directory in this project"
+      createDirectoryIfMissing True blueprintDir
+      createDirectoryIfMissing True xdgHome
+      createDirectoryIfMissing True fakeBin
+      TIO.writeFile blueprintPath migrationBlueprintDhall
+      -- Signals inapplicability on its very first launch only, so the same
+      -- edge applies for real when it is replanned.
+      TIO.writeFile
+        fakeClaude
+        "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nif [ \"$(wc -l < \"$SEIHOU_FAKE_AGENT_LOG\" | tr -d ' ')\" = \"1\" ]; then\n  printf '%s\\n' \"$SEIHOU_FAKE_SIGNAL_REASON\" > \"$SEIHOU_FAKE_SIGNAL_FILE\"\nfi\nexit 0\n"
+      permissions <- getPermissions fakeClaude
+      -- Permissions comes from `directory` and has no Generic instance, so it
+      -- has no #executable label. Record update syntax is the only option.
+      setPermissions fakeClaude (permissions {executable = True})
+
+      inherited <- getEnvironment
+      let inheritedPath = fromMaybe "" (lookup "PATH" inherited)
+          overriddenNames =
+            [ "PATH",
+              "XDG_CONFIG_HOME",
+              "SEIHOU_AGENT_PROVIDER",
+              "SEIHOU_AGENT_MODEL",
+              "SEIHOU_CONTEXT",
+              "SEIHOU_FAKE_AGENT_LOG",
+              "SEIHOU_FAKE_SIGNAL_FILE",
+              "SEIHOU_FAKE_SIGNAL_REASON"
+            ]
+          environment =
+            ("PATH", fakeBin <> [searchPathSeparator] <> inheritedPath)
+              : ("XDG_CONFIG_HOME", xdgHome)
+              : ("SEIHOU_AGENT_PROVIDER", "claude-cli")
+              : ("SEIHOU_FAKE_AGENT_LOG", launchLog)
+              : ("SEIHOU_FAKE_SIGNAL_FILE", signalPath)
+              : ("SEIHOU_FAKE_SIGNAL_REASON", T.unpack reason)
+              : filter (\(key, _) -> key `notElem` overriddenNames) inherited
+          args =
+            [ "agent",
+              "migrate",
+              "payments",
+              "--from",
+              "1.0.0",
+              "--to",
+              "3.0.0",
+              "--var",
+              "library.name=baikai"
+            ]
+
+      (firstExit, firstOutput, firstError) <- runProcessText binary args (Just root) (Just environment)
+      expectSuccess "not-applicable migration" firstExit firstOutput firstError
+      firstOutput `shouldSatisfy` T.isInfixOf ("not applicable: " <> reason)
+      firstOutput `shouldSatisfy` T.isInfixOf "Completed 2 blueprint migration(s) for 'payments' (1 not applicable)."
+      -- Both edges launched: an inapplicable edge does not halt the chain.
+      T.lines <$> TIO.readFile launchLog `shouldReturn` ["called", "called"]
+      -- The signal is transient state, consumed by the run that read it.
+      doesFileExist signalPath `shouldReturn` False
+
+      afterFirst <- readReceipts manifestPath
+      afterFirst
+        `shouldBe` [ ("1.0.0", "2.0.0", MigrationNotApplicable reason),
+                     ("2.5.0", "3.0.0", MigrationApplied)
+                   ]
+
+      -- No --rerun. The not-applicable edge is pending again; the applied one
+      -- is not.
+      (resumeExit, resumeOutput, resumeError) <- runProcessText binary args (Just root) (Just environment)
+      expectSuccess "replanned migration" resumeExit resumeOutput resumeError
+      resumeOutput `shouldSatisfy` T.isInfixOf "Running blueprint migration 1/1: 1.0.0 -> 2.0.0"
+      resumeOutput `shouldNotSatisfy` T.isInfixOf "2.5.0 -> 3.0.0"
+      resumeOutput `shouldNotSatisfy` T.isInfixOf "not applicable"
+      T.lines <$> TIO.readFile launchLog `shouldReturn` ["called", "called", "called"]
+
+      -- The replanned edge replaces its own receipt rather than adding one.
+      afterResume <- readReceipts manifestPath
+      afterResume
+        `shouldBe` [ ("1.0.0", "2.0.0", MigrationApplied),
+                     ("2.5.0", "3.0.0", MigrationApplied)
+                   ]
+
+      (settledExit, settledOutput, settledError) <- runProcessText binary args (Just root) (Just environment)
+      expectSuccess "settled migration" settledExit settledOutput settledError
+      settledOutput `shouldSatisfy` T.isInfixOf "already have receipts"
+      T.lines <$> TIO.readFile launchLog `shouldReturn` ["called", "called", "called"]
+
+-- | The recorded edge windows and outcomes, in ledger order.
+readReceipts :: FilePath -> IO [(T.Text, T.Text, MigrationOutcome)]
+readReceipts manifestPath = do
+  bytes <- LBS.readFile manifestPath
+  case manifestFromJSON bytes of
+    Left err -> expectationFailure err >> fail "unreachable"
+    Right manifest ->
+      pure
+        [ (receipt ^. #fromVersion, receipt ^. #toVersion, receipt ^. #outcome)
+        | receipt <- manifest ^. #blueprintMigrations
+        ]
 
 runProcessText ::
   FilePath ->
