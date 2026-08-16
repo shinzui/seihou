@@ -200,7 +200,7 @@ Integration Points.
 | EP-82 | Refuse to overwrite an installation from a different source | docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md | None | None | Complete |
 | EP-83 | Guard the agent path against stale and substituted artifacts | docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md | EP-81 | EP-82 | Complete |
 | EP-84 | Add a not-applicable outcome for blueprint migration edges | docs/plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md | EP-81 | None | Complete |
-| EP-85 | Fan out a blueprint migration edge to entailed cohort edges | docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md | EP-81, EP-84 | EP-82, EP-83 | In Progress |
+| EP-85 | Fan out a blueprint migration edge to entailed cohort edges | docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md | EP-81, EP-84 | EP-82, EP-83 | Complete |
 | EP-86 | Infer the blueprint migration version window | docs/plans/86-infer-the-blueprint-migration-version-window.md | EP-81 | EP-85 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -306,43 +306,83 @@ replaces its own receipt rather than accumulating a second one. EP-84 also broug
 `hasAppliedBlueprintMigration` into line — see Surprises & Discoveries for why that third
 comparison exists. The predicate's doc comment now states all three exclusions and inclusions.
 
-EP-85 calls `pendingBlueprintMigrations` once per expanded step using that step's *owning*
-blueprint identity rather than the invoked blueprint's, which is the mechanism by which one project
-crossing the same cohort edge from two entry points crosses it once. EP-86 reads receipts through
-the same key to compute the default `--from`. The doc comment must state, at every stage, which
-fields are part of the key and which are deliberately excluded; that passage must stay true and
-grow.
+**Extended by EP-85 (complete).** `pendingBlueprintMigrations` no longer takes one blueprint
+identity. Its second parameter is now `(Text -> Maybe (ModuleName, ArtifactOrigin))`, resolving
+each step's *owning* blueprint by name, and it returns `[BlueprintMigrationStep]`:
+
+```haskell
+pendingBlueprintMigrations ::
+  Bool ->
+  (Text -> Maybe (ModuleName, ArtifactOrigin)) ->
+  [AppliedBlueprintMigration] ->
+  BlueprintMigrationPlan ->
+  [BlueprintMigrationStep]
+```
+
+That per-step lookup is the mechanism by which one project crossing the same cohort edge from
+two entry points crosses it once. A lookup returning `Nothing` is unreachable — cohort discovery
+resolves every owner first — and is treated as "not previously applied" rather than as applied,
+because claiming completion would silently skip real work; there is a spec pinning that choice.
+
+**EP-86 reads receipts through the same key to compute the default `--from`, and must resolve the
+identity it matches on the same way — by owner, not by the invoked blueprint.** The doc comment
+must state, at every stage, which fields are part of the key and which are deliberately excluded;
+that passage must stay true and grow.
 
 **The blueprint migration plan type** — `BlueprintMigrationPlan` in
-`seihou-core/src/Seihou/Core/Migration.hs`, whose `steps` field is `[BlueprintMigration]`
-today. Involved: EP-85, EP-86. EP-85 owns the change: a step must carry the name of the
-blueprint that declared it, so `steps` becomes a list of a new step record rather than of
-bare edges. EP-86 consumes the new shape and must not widen it. `planMigrationWindow` in
-the same module is shared with module migrations and must remain behaviourally unchanged
-for them.
+`seihou-core/src/Seihou/Core/Migration.hs`. Involved: EP-85, EP-86. **Settled by EP-85
+(complete).** `steps` is now `![BlueprintMigrationStep]`, a record of
+`owner :: !Text` (the blueprint whose `migrations` list declares the edge),
+`edge :: !BlueprintMigration`, and `entailedBy :: !(Maybe EntailmentSite)` — the latter
+display-only and excluded from every identity comparison, because the same cohort edge
+reached from two declaring edges is one edge. `BlueprintMigration` gained
+`entails :: ![EntailedEdge]`. `planMigrationWindow` was not touched and module migrations
+are byte-identical.
+
+**EP-86 consumes the new shape and must not widen it.** Two things to expect: adding a
+field to `BlueprintMigration` breaks *positional* constructions in
+`seihou-core/test/Seihou/Core/BlueprintSpec.hs` and `.../MigrationSpec.hs` with an
+"applied to too few arguments" error rather than the `[GHC-95909]` missing-field error
+EP-81's note leads one to expect; and every user-facing step label now goes through
+`formatMigrationStepLabel` in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`, which is
+the one place to change if a label must grow.
 
 **The blueprint Dhall schema** — the `schema/` git submodule, a working copy of
 `shinzui/seihou-schema`, plus the pinned URL and hash in `SchemaVersion.hs` and
-`flake.lock`. Involved: EP-85 (adds `entails` to `schema/BlueprintMigration.dhall` and a new
-`schema/EntailedEdge.dhall`), EP-86 (adds `versionProbe` to `schema/Blueprint.dhall`). Both
-must follow the `update-seihou-schema` skill: author in the submodule, push to
-`shinzui/seihou-schema` before re-pinning, then bump `SchemaVersion.hs` and `flake.lock`.
-Because both plans touch `schema/package.dhall` and `schema/README.md`, EP-85 lands its
-schema change first and EP-86 rebases onto the resulting pin rather than publishing a
-competing one. Both must keep the corresponding decoder in
-`seihou-core/src/Seihou/Dhall/Eval.hs` tolerant of blueprints that predate the new field,
-using the existing `withDefaults` mechanism.
+`flake.lock`. Involved: EP-85, EP-86. **EP-85 landed its half (complete):**
+`schema/EntailedEdge.dhall` is new, `schema/BlueprintMigration.dhall` gained
+`entails : List EntailedEdge.Type` defaulting to `[]`, both are exported from
+`schema/package.dhall` and listed in `schema/README.md`, and the repository is pinned to
+`014bb79`. **EP-86 adds `versionProbe` to `schema/Blueprint.dhall` on top of that pin
+rather than publishing a competing one**, following the `update-seihou-schema` skill:
+author in the submodule, push to `shinzui/seihou-schema` before re-pinning, then bump
+`SchemaVersion.hs` and `flake.lock`.
+
+The decoder tolerance mechanism is settled and generalised. `withDefaults` in
+`seihou-core/src/Seihou/Dhall/Eval.hs` had to be attached to
+`blueprintMigrationDecoder` itself, not to `blueprintDecoder`, because the missing key sits
+inside each element of the `migrations` list. The empty-list placeholder is now one shared
+constant, `emptyRecordList` (renamed from `emptyMigrationList`): the list extractor ignores
+the element-type annotation entirely, so one constant serves any list-typed field an older
+artifact omits. EP-86 should reuse it rather than adding another.
 
 **The agent-path command entry points** — `handleAgentRun` in
 `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` and `handleAgentMigrate` in
 `seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`. Involved: EP-83, EP-85, EP-86.
-**Settled by EP-83 (complete).** The guard is a single call to `enforceAgentArtifactGuard`
-(`seihou-cli/src/Seihou/CLI/AgentGuard.hs`) taking the `--allow-downgrade` flag, the manifest
-path, the invoked blueprint's name, and the set of modules the command will generate from. In
-`agent run` it sits immediately after blueprint discovery and baseline-composition resolution,
-before `applyBaseline` and before any variable is prompted for; in `agent migrate` it sits after
-validation and before `planBlueprintMigrationChain`. EP-85 and EP-86 add work after those points
-and must not move the guard earlier or later.
+**Settled by EP-83, widened by EP-85 (both complete).** The guard is a call to
+`enforceAgentArtifactGuard` (`seihou-cli/src/Seihou/CLI/AgentGuard.hs`) taking the
+`--allow-downgrade` flag, the manifest path, a **list** of blueprint names, and the set of modules
+the command will generate from. In `agent run` it sits immediately after blueprint discovery and
+baseline-composition resolution, before `applyBaseline` and before any variable is prompted for;
+in `agent migrate` it sits after validation and before `planBlueprintMigrationChain`. That first
+call still names only the invoked blueprint, and deliberately: a substituted invoked blueprint
+declares different edges, so checking it after planning would validate a window already computed
+from the wrong declarations.
+
+EP-85 added a *second* call in `agent migrate`, covering the blueprints reached by entailment,
+placed after cohort discovery and before any session starts — the entailed set cannot be known
+before the window is planned. **EP-86 must not move either call**, and must not fold them into
+one. ADR 0003 carries an amendment recording the widened scope.
 
 The `--debug` rule is narrower than this section originally stated, and EP-83 measured it: debug
 is a true dry run for `agent migrate`, which therefore performs no check, and is *not* one for
@@ -375,12 +415,13 @@ Cross-plan decisions expected to become ADRs at completion:
   install-time refusal is a different decision about a different layer, which ADR 0003 scopes
   out by its own words.
 - **An entailed edge is owned by the blueprint that declares it, not by the blueprint that
-  names it.** This is the architectural boundary the whole fan-out design rests on and is
-  the reason a cohort does not need a coordinating artifact. Record it during EP-85. EP-85
-  must also decide whether each *entailed* blueprint is guarded, since ADR 0003's scoping rule
-  says an artifact the command is about to use is in scope; EP-83 left
-  `enforceAgentArtifactGuard` taking one blueprint name, and `checkRecordedBlueprint` is
-  already per-name, so widening it is a fold rather than a rewrite.
+  names it.** *Recorded.* EP-85 wrote
+  `docs/adr/0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md`,
+  which also absorbs the "no cohort artifact" exclusion below and the decision that the cohort
+  is recomputed rather than recorded. Each entailed blueprint *is* guarded: widening
+  `enforceAgentArtifactGuard` to a list was the fold this section predicted, and ADR 0003 was
+  amended rather than a third refusal ADR being written, because the decision is unchanged and
+  only its reach grew.
 - **A deliberate no-op is a third outcome, not a success.** *Recorded.* EP-84 wrote
   `docs/adr/0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md` rather than amending an
   existing record, because no existing ADR decides what a receipt's outcome vocabulary should be —
@@ -388,10 +429,11 @@ Cross-plan decisions expected to become ADRs at completion:
   read, and 0007 cites both. It records the generalisation to `mori://shinzui/keiro`'s
   structurally identical request, and scopes the *signalling* mechanism out as an implementation
   concern that may change while the recorded vocabulary is durable.
-- **Deliberate exclusion: no cohort artifact.** A `Recipe`-like artifact listing member
-  blueprints and a version map per cohort release was considered and rejected in favour of
-  per-edge entailment. Record the rationale so a future contributor does not re-open it
-  without new information.
+- **Deliberate exclusion: no cohort artifact.** *Recorded.* A `Recipe`-like artifact listing
+  member blueprints and a version map per cohort release was considered and rejected in
+  favour of per-edge entailment. The rationale, and the condition under which it should be
+  re-opened, are in ADR 0008's "Rejected: a cohort artifact" section rather than in a record
+  of their own — the exclusion is inseparable from the decision it justifies.
 
 
 ## Progress
@@ -405,10 +447,10 @@ Cross-plan decisions expected to become ADRs at completion:
 - [x] EP-83: `seihou agent migrate` consults `ManifestGuard` before planning; `--debug` checks nothing there because it writes nothing, while `agent run --debug` is checked because it is not a dry run — 2026-08-16
 - [x] EP-84: an edge can report not-applicable; the outcome is recorded and does not suppress a later run — 2026-08-16
 - [x] EP-84: framing prompt template tells the agent how to signal it; `seihou status` renders the outcome — 2026-08-16
-- [ ] EP-85: `entails` published in `seihou-schema` and re-pinned; decoder tolerates blueprints without it
-- [ ] EP-85: recursive entailment expansion with cycle detection, in a pure planner
-- [ ] EP-85: each step runs with its owning blueprint's reference files, allowed tools, and variables
-- [ ] EP-85: a shared edge reached from two entry points is crossed once; end-to-end spec proves it
+- [x] EP-85: `entails` published in `seihou-schema` (`014bb79`) and re-pinned; decoder tolerates blueprints without it — 2026-08-16
+- [x] EP-85: recursive entailment expansion with cycle detection, in a pure planner — 2026-08-16
+- [x] EP-85: each step runs with its owning blueprint's reference files, allowed tools, and variables — 2026-08-16
+- [x] EP-85: a shared edge reached from two entry points is crossed once; end-to-end spec proves it — 2026-08-16
 - [ ] EP-86: `versionProbe` published and re-pinned; `--to` defaults to the probe's output
 - [ ] EP-86: `--from` defaults to the highest recorded receipt for this blueprint identity
 - [ ] EP-86: both defaults reported in `--verbose` and `--debug` output with their source
@@ -518,6 +560,37 @@ Cross-plan decisions expected to become ADRs at completion:
   Note what still *does* render under it: the not-applicable signal path is substituted into the
   debug prompt, deliberately, because `--debug` is how a blueprint author checks the framing.
 
+- **One empty-list constant serves every list-typed field an older artifact omits, and
+  `withDefaults` has to be attached where the missing key actually is.** EP-85's plan called for
+  a new `emptyEntailsList` with the element record type spelled out. That was unnecessary: the
+  comment on `emptyMigrationList` in `seihou-core/src/Seihou/Dhall/Eval.hs` already records that
+  the list extractor ignores the annotation and reads element values, so
+  `Dhall.ListLit (Just Dhall.Text) mempty` serves any empty list. It is now named
+  `emptyRecordList` and shared by three fields. Separately, `entails` needed its `withDefaults`
+  wrapper on `blueprintMigrationDecoder` rather than on `blueprintDecoder`, because the missing
+  key sits inside each element of the `migrations` list. **Consequence for EP-86:** reuse
+  `emptyRecordList` for a list-typed field, and check whether the field a legacy artifact omits
+  is on the top-level record or inside a nested one before choosing where to wrap.
+
+- **A new field on a core record breaks positional constructions, which read as a different
+  error than the missing-field one EP-81 warned about.** EP-81's note said to add the field and
+  treat the `[GHC-95909]` error list as the site inventory. That works for record literals;
+  `seihou-core/test/Seihou/Core/BlueprintSpec.hs` and `.../MigrationSpec.hs` build edges
+  positionally as `BlueprintMigration "1.0.0" "2.0.0" "prompt"`, which fails with
+  `[GHC-83865] applied to too few arguments` instead. **Consequence for EP-86:** the advice still
+  holds — build first, read the errors — but expect two error shapes, and do not conclude the
+  inventory is complete because no `[GHC-95909]` remains.
+
+- **Every user-facing step label now goes through one function, and the label format changed.**
+  `formatMigrationStepLabel` in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` produces
+  `payments 1.0.0 -> 2.0.0` and, for an entailed step, appends
+  `(entailed by keiro-upgrade 2.4.0 -> 3.0.0)`. It is used by the launch announcement, the
+  `--debug` headers, the not-applicable notice, and both failure messages, so those cannot drift
+  apart. The owner prefix is a user-visible output change, recorded under Changed in
+  `docs/user/CHANGELOG.md`. **Consequence for EP-86:** its `--verbose` and `--debug` additions
+  should reuse this function rather than re-deriving a label, and any E2E assertion it writes
+  against a step line must include the owner prefix.
+
 - **Closing an Improvement Request has a required frontmatter shape.** The bundle profile at
   `docs/improvement-requests/profile.dhall` does not accept `status: implemented`; the terminal
   value is `completed`, which requires `completedAt` and recommends `resolution`. EP-82, EP-83,
@@ -586,6 +659,21 @@ Cross-plan decisions expected to become ADRs at completion:
   an entailed edge is owned by the blueprint that declares it, which is what lets one project
   cross a shared cohort edge exactly once from two entry points. That has no home in ADR 0002 and
   gets its own record when EP-85 lands.
+  Date: 2026-08-16
+
+- Decision: Record the fan-out architectural boundary as a new ADR
+  (`docs/adr/0008-...`), and amend `docs/adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md`
+  for the guard's widened scope rather than writing a second refusal record.
+  Rationale: The two are different kinds of change. That an entailed edge is owned by the
+  blueprint that declares it is a genuinely new architectural decision with a rejected
+  alternative — the cohort artifact — and no existing ADR has anywhere to put it; ADR 0002
+  decides what makes two records the same record, not whose record it is. The guard change,
+  by contrast, is ADR 0003's own decision applied to a larger set of artifacts, with its
+  scoping rule unchanged. That is the same call EP-83 made for the same reason, and the
+  opposite of EP-82's, which introduced a decision about a different layer. ADR 0008 also
+  absorbs the "no cohort artifact" exclusion the Integration Points section listed
+  separately: the exclusion is the rejected alternative to the decision, and splitting them
+  would leave a record whose only content is a rejection.
   Date: 2026-08-16
 
 - Decision: `--to` defaults to a blueprint-declared version probe; `--from` defaults to the

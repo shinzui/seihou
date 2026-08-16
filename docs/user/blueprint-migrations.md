@@ -48,15 +48,21 @@ per-edge state.
    is older than, or came from a different repository than, the project records.
 3. It parses `--from` and `--to` and asks the core planner which declared edges
    fall inside that window.
-4. It drops edges that already have an *applied* receipt, unless `--rerun` was
-   passed.
-5. It resolves the blueprint's variables once and renders the shared prompt.
-6. For each remaining edge, in ascending order: start one provider session, wait
-   for it to return, then write that edge's receipt before starting the next.
-7. On a provider failure or a receipt-write failure, it stops immediately and
+4. It follows any [entailed edges](#entail-another-librarys-edge) those edges
+   declare, loading each named blueprint and expanding recursively, so the chain
+   becomes an ordered list of steps that may span several blueprints. It checks
+   each of those blueprints the same way it checked the one you named.
+5. It drops steps that already have an *applied* receipt **under their own
+   blueprint's identity**, unless `--rerun` was passed.
+6. It resolves the variables of every blueprint that owns a remaining step, all
+   before the first session starts, and renders each one's shared prompt.
+7. For each remaining step, in order: start one provider session with its owning
+   blueprint's reference files and allowed tools, wait for it to return, then
+   write that step's receipt before starting the next.
+8. On a provider failure or a receipt-write failure, it stops immediately and
    leaves earlier receipts in place.
 
-Step 6 has three outcomes, not two. The session can return having done the work
+Step 7 has three outcomes, not two. The session can return having done the work
 (recorded **applied**), it can return having reported that this edge's
 precondition is unmet in this project (recorded **not applicable**, and the chain
 continues to the next edge), or the provider can fail (nothing recorded, and the
@@ -166,16 +172,101 @@ So the edge prompt only needs to say what the precondition *is*. Do not tell an
 edge to exit nonzero when it does not apply: that reports a provider failure and
 halts every remaining edge.
 
-Reference files under `files/` are shared by every edge. Interactive `claude-cli`
-and `codex-cli` sessions get the directory mounted and its absolute path printed
-in the prompt; API providers cannot read local files and are told to ask the user
-instead. `allowedTools` is likewise shared by every edge. There is no per-edge
-`files` or `allowedTools`.
+Reference files under `files/` are shared by every edge *of one blueprint*, as is
+`allowedTools`; there is no per-edge `files` or `allowedTools`. A step reached
+through [entailment](#entail-another-librarys-edge) is owned by another blueprint
+and gets that blueprint's files and tools instead, never yours. Interactive
+`claude-cli` and `codex-cli` sessions get the owning blueprint's directory
+mounted and its absolute path printed in the prompt; API providers cannot read
+local files and are told to ask the user instead.
 
 Migration mode never applies `baseModules`, so a blueprint can safely serve both
 purposes: scaffolding new projects through `seihou agent run` and upgrading
 existing ones through `seihou agent migrate`. Normal runs ignore `migrations`
 entirely.
+
+### Entail another library's edge
+
+Sometimes the breaking change you are helping consumers absorb is not yours.
+Suppose `kiroku` ships a breaking change, your library `keiro` depends on kiroku
+and absorbs that change in its `3.0.0` release, and most of your consumers depend
+on keiro and have never heard of kiroku. They know their keiro version. They
+neither know nor should have to look up which kiroku version keiro pulls in. So
+kiroku's upgrade knowledge has to reach them through *your* version space —
+without being copied into your repository, and without running twice for the
+minority of projects that also depend on kiroku directly.
+
+An edge can declare that crossing it **entails** crossing an exact edge of
+another blueprint:
+
+```dhall
+migrations =
+  [ S.BlueprintMigration::{
+    , from = "2.4.0"
+    , to = "3.0.0"
+    , prompt = ./migrations/2-4-to-3.md as Text
+    , entails =
+      [ S.EntailedEdge::{
+        , blueprint = "kiroku-upgrade"
+        , from = "1.9.0"
+        , to = "2.0.0"
+        }
+      ]
+    }
+  ]
+```
+
+A consumer then runs one command and gets both edges:
+
+```sh
+seihou agent migrate keiro-upgrade --from 2.4.0 --to 3.0.0
+```
+
+```text
+Running blueprint migration 1/2: kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)
+Running blueprint migration 2/2: keiro-upgrade 2.4.0 -> 3.0.0
+```
+
+The rules, none of which are visible from the field's type, so they are worth
+stating plainly:
+
+- **Entailed edges run first**, and several of them run in the order you list
+  them. The entailed edge is the deeper change, and your own edge's guidance may
+  assume it has already been applied.
+- **Expansion is recursive.** An entailed edge may itself entail others, so a
+  three-deep cohort works without any blueprint knowing the whole graph. A cycle
+  is an authoring error, reported with the chain that closed it.
+- **The reference is to one exact edge**, matched on both `from` and `to`.
+  Seihou will not window-plan inside the entailed blueprint on your behalf,
+  because that would let one of your releases silently change which upstream work
+  it implies.
+- **The entailed edge runs under its own blueprint's context** — that blueprint's
+  shared prompt, edge prompt, `files/`, `allowedTools`, and variables. Its
+  `launch` declaration is ignored: one command cannot switch providers between
+  edges, so the blueprint the consumer named decides provider, model, and effort.
+- **The receipt goes to the entailed blueprint**, under its name and origin. That
+  is what makes a shared edge crossed once: a project that reached kiroku's edge
+  through keiro has a kiroku receipt, so running `seihou agent migrate
+  kiroku-upgrade` afterwards finds nothing to do — and the reverse order works
+  the same way.
+- **A blueprint may not entail an edge of itself.** Ordering within your own
+  `migrations` list is already decided by the version window.
+- **The entailed blueprint must be installed.** If it is not, the run fails with
+  an install hint rather than skipping the step, because your consumer does not
+  know the cohort and a silently omitted member leaves a half-migrated project
+  with no signal at all.
+
+Write the entailed blueprint's edge so it survives being run by a project that
+does not use that library directly — which, for a cohort like this one, is most
+of them. That is what [the precondition](#state-the-edges-precondition) is for:
+an entailed edge that finds no direct usage should report itself not applicable
+and change nothing, and it will run again later if the project starts using the
+library. Seihou's framing tells the agent that an indirectly reached edge is the
+ordinary case for inapplicability, and tells it which edge required this one.
+
+Nothing records the cohort. It is recomputed from these declarations on every
+run, so adding, removing, or retargeting an entailment takes effect the moment
+consumers install the new blueprint version.
 
 ### Validate and publish
 
@@ -185,7 +276,11 @@ seihou validate-blueprint my-library
 
 Validation rejects an empty edge prompt, an unparseable version, an edge whose
 `from` is not strictly less than its `to`, and duplicate `from` versions,
-alongside the usual blueprint checks.
+alongside the usual blueprint checks. For `entails` it rejects a malformed
+blueprint name, an unparseable or non-advancing entailed window, an edge that
+entails its own blueprint, and the same entailed edge listed twice. Whether the
+named blueprint exists and declares that edge is a filesystem question, so it is
+checked when `seihou agent migrate` resolves the cohort rather than here.
 
 Publication uses the existing registry mechanism — there is no separate migration
 registry. Point a `blueprints` entry at the directory containing
@@ -225,14 +320,26 @@ seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
 
 ```text
 Blueprint migrations for my-library: 1.0.0 -> 3.0.0
-===== [1/2] 1.0.0 -> 2.0.0 =====
+===== [1/2] my-library 1.0.0 -> 2.0.0 =====
 ...
-===== [2/2] 2.5.0 -> 3.0.0 =====
+===== [2/2] my-library 2.5.0 -> 3.0.0 =====
 ...
 ```
 
 Use it to see which edges apply, read what the agent will be told, and confirm
 that the reference files resolved.
+
+Every step is labelled with the blueprint that owns it, because a chain can span
+several. When a library's upgrade requires another library's, the entailed step
+appears first and says what pulled it in:
+
+```text
+Blueprint migrations for keiro-upgrade: 2.4.0 -> 3.0.0
+===== [1/2] kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0) =====
+...
+===== [2/2] keiro-upgrade 2.4.0 -> 3.0.0 =====
+...
+```
 
 ### Run the upgrade
 
@@ -248,18 +355,19 @@ Start from a clean working tree. Agent edits are not transactional, and Seihou
 cannot roll them back — version control is your undo. Reviewing (or committing)
 between edges is a good habit for long chains.
 
-Each edge announces itself before its session starts:
+Each edge announces itself before its session starts, named by the blueprint that
+owns it:
 
 ```text
-Running blueprint migration 1/2: 1.0.0 -> 2.0.0
+Running blueprint migration 1/2: my-library 1.0.0 -> 2.0.0
 ```
 
 An edge that reports its precondition unmet says so on the way past, and the run
 summary counts it separately:
 
 ```text
-Blueprint migration 1/2: 1.0.0 -> 2.0.0 — not applicable: the project has not adopted the bundle
-Running blueprint migration 2/2: 2.5.0 -> 3.0.0
+Blueprint migration 1/2: my-library 1.0.0 -> 2.0.0 — not applicable: the project has not adopted the bundle
+Running blueprint migration 2/2: my-library 2.5.0 -> 3.0.0
 ...
 Completed 2 blueprint migration(s) for 'my-library' (1 not applicable).
 ```
@@ -270,6 +378,26 @@ variables. Provider, model, and reasoning effort resolve through the standard
 hierarchy with `agent.migrate.provider`, `agent.migrate.model`, and
 `agent.migrate.effort` overriding the shared `agent.*` defaults for this command
 only; see [AI Agent Assistance](agent-assistance.md).
+
+### One command may cross several libraries
+
+A library author can declare that one of their edges requires an exact edge of
+another library's blueprint — see
+[Entail another library's edge](#entail-another-librarys-edge). Three
+consequences are worth knowing before you run an upgrade:
+
+- The chain may include steps from a blueprint you did not name and may never
+  have heard of. It has to be installed; if it is not, the run refuses and prints
+  what to install rather than silently skipping it.
+- You may be prompted for variables that blueprint declares. Every prompt is
+  asked before the first session starts, so you are not interrupted mid-chain.
+  `--var`, `--namespace`, and `--context` apply to every blueprint in the chain.
+- `seihou status` lists those steps' receipts under *their* blueprint's name, not
+  the one you typed. That is deliberate: it is what stops the same shared edge
+  being crossed twice if you later run that blueprint directly.
+
+Provider, model, and effort stay a property of the command. An entailed
+blueprint's own `launch` declaration is ignored.
 
 ### Inspect what was recorded
 
@@ -294,7 +422,7 @@ interruption, or a deliberate pause:
 
 ```text
 Blueprint migrations for my-library: 1.0.0 -> 3.0.0
-===== [1/1] 2.5.0 -> 3.0.0 =====
+===== [1/1] my-library 2.5.0 -> 3.0.0 =====
 ```
 
 When the whole window is already recorded, Seihou exits zero without doing
@@ -315,6 +443,11 @@ the recovery path when an agent exited successfully without actually finishing t
 work, and the remedy for a receipt that says applied when the edge really did
 nothing. A re-run updates the existing receipt in place rather than appending a
 duplicate.
+
+`--rerun` re-runs *every* step in the expanded chain, including steps owned by
+other blueprints. To re-run only one library's half, invoke that library's
+blueprint directly with its own version window: running an entailed blueprint by
+name never expands anything it does not need.
 
 ## How the version window is planned
 
@@ -363,6 +496,12 @@ blueprint's own release version and the receipt's timestamp are deliberately not
 part of that identity — an edge is the same edge no matter which release of the
 blueprint declared it.
 
+"The blueprint that owns the edge" is exact wording. For a step reached through
+[entailment](#entail-another-librarys-edge) the owner is the blueprint whose
+`migrations` list actually declares it, not the one you typed on the command
+line. That is the whole mechanism by which a shared cohort edge is crossed once
+from either entry point.
+
 Origin is part of the identity because two repositories can publish a blueprint
 under the same name. If `github.com/acme/one` and `github.com/acme/two` both ship
 a `shared-upgrade` blueprint with a `1.0.0 -> 2.0.0` edge, those are different
@@ -393,6 +532,9 @@ edge finds nothing to do — or skip it deliberately by widening `--from`.
 | `blueprint migration downgrades are not supported: --from 3.0.0, --to 2.0.0.` | Migrations only run forward. Downgrade by reverting source changes in version control. |
 | `the blueprint declares more than one migration starting at 2.0.0; the author must merge or remove the duplicate.` | An authoring error in the installed blueprint. Report it upstream; the author must merge or drop one edge. |
 | `'my-library' is a module, not a blueprint.` | `agent migrate` only accepts blueprints. Check the name, or use `seihou migrate` for module migrations. |
+| `'keiro-upgrade' edge 2.4.0 -> 3.0.0 entails blueprint 'kiroku-upgrade', which is not installed on this machine.` | The upgrade you asked for requires another library's upgrade guidance. Install it with the printed command and re-run. Seihou will not skip it: doing so would leave the project half-migrated with no signal. |
+| `'keiro-upgrade' edge 2.4.0 -> 3.0.0 entails edge 1.9.0 -> 2.0.0 of 'kiroku-upgrade', which declares no such edge.` | An authoring error in `keiro-upgrade`, usually an off-by-one in a version string; the message lists the edges `kiroku-upgrade` really declares. Report it upstream. Meanwhile you can run each blueprint directly by name — a blueprint invoked by name expands nothing it does not need, so it is unaffected by the other's mistake. |
+| `blueprint migration entailment forms a cycle: …` | Two or more blueprints each declare that the other's edge must run first, so no order satisfies them all. An authoring error in the blueprints listed; report it upstream and run each directly by name in the meantime. |
 | `Blueprint migration 2.5.0 -> 3.0.0 failed; completed earlier edges remain recorded. …` | The provider exited nonzero or returned an error. Fix the provider problem, then rerun the same command to resume at that edge. |
 | `Agent completed blueprint migration …, but its receipt could not be recorded: …` | Source edits may already exist while the edge is unrecorded, and the next edge was not started. Repair `.seihou/manifest.json` or its permissions, then rerun the same command. |
 | `Blueprint migration 1/2: 1.0.0 -> 2.0.0 — not applicable: …` | Not an error. The edge reported its precondition unmet and changed nothing; the chain continued. Fix what the reason names and rerun the same command — the edge runs, no `--rerun` needed. If you disagree with the agent's judgement, `--rerun` forces it now. |

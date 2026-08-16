@@ -120,7 +120,9 @@ in  S.Blueprint::{
 ```
 
 Every field is optional; an omitted field means "let the invoking user's
-configuration decide".
+configuration decide". One exception: during `seihou agent migrate`, a blueprint
+reached through another blueprint's `entails` declaration has its `launch`
+ignored — see [Library upgrade migrations](#library-upgrade-migrations).
 
 | Field | Accepted values |
 |-------|-----------------|
@@ -201,8 +203,39 @@ migrations =
 
 The blueprint's main `prompt` is shared guidance for every edge. Variables are
 resolved once and substituted into both shared and edge prompts; `files` and
-`allowedTools` are also reused for every session. Migration mode never applies
-`baseModules`, while normal `seihou agent run` ignores `migrations`.
+`allowedTools` are also reused for every session of this blueprint. Migration
+mode never applies `baseModules`, while normal `seihou agent run` ignores
+`migrations`.
+
+An edge may also declare `entails`: exact edges of *other* blueprints that
+crossing it requires. This is how a breaking change reaches consumers who depend
+on the library that absorbed it rather than on the library that shipped it.
+
+```dhall
+migrations =
+  [ S.BlueprintMigration::{
+    , from = "2.4.0"
+    , to = "3.0.0"
+    , prompt = ./migrations/2-4-to-3.md as Text
+    , entails =
+      [ S.EntailedEdge::{
+        , blueprint = "kiroku-upgrade"
+        , from = "1.9.0"
+        , to = "2.0.0"
+        }
+      ]
+    }
+  ]
+```
+
+Entailed edges are expanded recursively and run before the edge that declares
+them, each with its *own* blueprint's shared prompt, edge prompt, `files`,
+`allowedTools`, and variables — not this blueprint's. The one thing an entailed
+blueprint does not get to decide is the agent: its `launch` declaration is
+ignored, because a single command cannot switch providers between edges, so the
+blueprint the consumer named on the command line wins. The full rules, including
+what happens when the named blueprint is not installed, are in
+[Entail another library's edge](blueprint-migrations.md#entail-another-librarys-edge).
 
 Consumers provide both versions explicitly because Seihou does not guess from
 Cabal, npm, Cargo, Maven, or other package files:

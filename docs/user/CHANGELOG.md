@@ -12,6 +12,50 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **A blueprint migration edge can now require another library's edge.** When a
+  breaking change reaches consumers through an intermediary — `kiroku` ships it,
+  `keiro` absorbs it in one of its own releases, and most projects depend on
+  keiro and have never heard of kiroku — the upgrade knowledge lives one
+  repository away from the version number the consumer actually knows. A
+  blueprint edge can now declare that crossing it **entails** crossing an exact
+  edge of another blueprint:
+
+  ```dhall
+  S.BlueprintMigration::{
+  , from = "2.4.0"
+  , to = "3.0.0"
+  , prompt = ./migrations/2-4-to-3.md as Text
+  , entails =
+    [ S.EntailedEdge::{ blueprint = "kiroku-upgrade", from = "1.9.0", to = "2.0.0" } ]
+  }
+  ```
+
+  One command then crosses both, in order, each step running with its own
+  blueprint's shared prompt, reference files, allowed tools, and variables:
+
+  ```text
+  $ seihou agent migrate keiro-upgrade --from 2.4.0 --to 3.0.0
+  Running blueprint migration 1/2: kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)
+  Running blueprint migration 2/2: keiro-upgrade 2.4.0 -> 3.0.0
+  ```
+
+  Expansion is recursive, so a three-deep cohort works without any blueprint
+  knowing the whole graph. The entailed step's receipt is written under the
+  *entailed* blueprint's name and origin, which is what makes a shared edge
+  crossed exactly once: a project that reached kiroku's edge through keiro finds
+  nothing to do when it later runs `seihou agent migrate kiroku-upgrade`
+  directly, and the reverse order behaves the same way. A project that depends on
+  kiroku alone is unaffected by keiro's declaration entirely.
+
+  A cycle, an entailed blueprint that is not installed, and a named edge the
+  entailed blueprint does not declare are all hard errors that name the blueprint
+  whose author must fix them — never a silently skipped step, because a consumer
+  who does not know the cohort has no way to notice a missing member. The
+  artifact guard covers every blueprint in the resolved chain, not just the one
+  you named.
+
+  See [Entail another library's edge](blueprint-migrations.md#entail-another-librarys-edge).
+
 - **A blueprint migration edge can now report that it does not apply.** A
   well-written edge states its own precondition, and when a project does not meet
   it the correct action is to change nothing and say so. Seihou could only record
@@ -347,6 +391,12 @@ packages in the workspace share a single version.
   Git commits are included. See [the update reference](../cli/update.md).
 
 ### Changed
+
+- **`seihou agent migrate` now names the owning blueprint in every step label.**
+  A chain can span several blueprints, so `Running blueprint migration 1/2:
+  1.0.0 -> 2.0.0` became `Running blueprint migration 1/2: my-library 1.0.0 ->
+  2.0.0`, and the `--debug` headers gained the same prefix. Scripts matching the
+  old shape need updating; nothing else about the output changed.
 
 - **The manifest is now machine-independent, and manifests written by earlier
   versions must be upgraded before use.** This is a breaking change for existing

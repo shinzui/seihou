@@ -185,6 +185,16 @@ next time without `--rerun`. The run summary counts them:
 Completed 2 blueprint migration(s) for 'my-library' (1 not applicable).
 ```
 
+A chain may span more than one blueprint. An edge can declare that crossing it
+*entails* crossing an exact edge of another blueprint, which is how a breaking
+change reaches consumers who depend on the library that absorbed it rather than
+on the library that shipped it. Entailed edges are expanded recursively, run
+before the edge that declares them, and use their own blueprint's reference
+files, allowed tools, and variables. Each step's receipt is written under the
+blueprint that *owns* it, so a shared edge is crossed once whichever blueprint
+you name. An entailed blueprint that is not installed fails the run with an
+install hint rather than being skipped.
+
 ```sh
 seihou agent migrate my-library --from 1.0.0 --to 3.0.0
 seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
@@ -192,6 +202,15 @@ seihou agent --debug migrate my-library --from 1.0.0 --to 3.0.0
 
 For this subcommand, parent `--debug` is a true dry run: it prints every pending
 prompt in order, never contacts a provider, and never writes a migration receipt.
+Every step is labelled with the blueprint that owns it, and an entailed step also
+says which edge pulled it in:
+
+```text
+Blueprint migrations for keiro-upgrade: 2.4.0 -> 3.0.0
+===== [1/2] kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0) =====
+===== [2/2] keiro-upgrade 2.4.0 -> 3.0.0 =====
+```
+
 Receipts report provider completion rather than package-manager verification.
 See [Blueprint Migrations](../user/blueprint-migrations.md) for the full workflow
 and [Agent-Driven Blueprints](../user/blueprints.md#library-upgrade-migrations)
@@ -207,9 +226,12 @@ apply, extended to the agent path; see
 [ADR 0003](../adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md).
 
 `agent run` checks the blueprint and every module its baseline would generate
-from. `agent migrate` checks the blueprint only, because migration mode applies
-no baselines. Neither checks an artifact it will not touch: a stale module
-elsewhere in the project cannot block an unrelated blueprint.
+from. `agent migrate` checks blueprints only, because migration mode applies no
+baselines: the blueprint you named, before it plans a single edge, and then every
+further blueprint the plan reaches through `entails`, once discovery has found
+them and still before any session starts. Neither command checks an artifact it
+will not touch: a stale module elsewhere in the project cannot block an unrelated
+blueprint, and a cohort member no selected edge entails is never consulted.
 
 A refusal happens before the baseline is applied and before any receipt is
 written, so the working tree and the manifest are left byte-identical. The fix

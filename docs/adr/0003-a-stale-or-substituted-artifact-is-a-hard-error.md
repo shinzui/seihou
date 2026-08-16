@@ -93,8 +93,22 @@ one uninstalled or stale module elsewhere in the project cannot block unrelated
 work. This mirrors the line drawn for pending-migration detection. On the agent
 path the same line means `seihou agent run` checks the blueprint plus every
 module in its resolved baseline composition, and `seihou agent migrate` checks
-the blueprint alone, because migration mode applies no baselines. A blueprint
+blueprints alone, because migration mode applies no baselines. A blueprint
 recorded in the manifest under a different name is not checked by either.
+
+*Amended 2026-08-16
+(`docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md`):*
+`seihou agent migrate` no longer checks a single blueprint. A migration edge may
+entail an exact edge of another blueprint
+([ADR 0008](0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md)),
+so the set of artifacts the command is about to generate from is the whole
+resolved chain. The invoked blueprint is still checked before the version window
+is planned — a substituted blueprint declares different edges, so a check after
+planning would be validating a window already computed from the wrong
+declarations — and every further blueprint the plan reaches is checked once
+discovery has found it, still before any session starts. The scoping rule is
+unchanged: a cohort member that no selected edge entails is never consulted, so
+it can be missing or stale without blocking anything.
 
 A dry run is exempt; a command that merely skips one step is not. `seihou agent
 migrate --debug` writes nothing at all, so it performs no check and stays usable
@@ -138,6 +152,8 @@ reach, and this refusal catches it if a project reaches it anyway.
 - [ADR 0002](0002-artifact-identity-is-origin-url-plus-name.md)
 - [ADR 0006](0006-the-install-cache-will-not-silently-substitute-an-artifact.md)
   — the same reasoning applied one layer earlier, at install time.
+- [ADR 0008](0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md)
+  — why `seihou agent migrate`'s in-scope set grew to a whole cohort.
 - `docs/masterplans/9-make-the-seihou-manifest-multi-developer-safe.md`
 - `docs/masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md`
 - `docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md`

@@ -110,6 +110,9 @@ one the caller needs.
   why the decoder defaults rather than converting.
 - [ADR 0002](0002-artifact-identity-is-origin-url-plus-name.md) — what makes two
   records of the same work the same record.
+- [ADR 0008](0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md)
+  — the feature that makes a frequently-inapplicable edge routine rather than
+  rare, and which this outcome is a prerequisite of.
 - `docs/improvement-requests/add-a-not-applicable-outcome-for-blueprint-migration-edges.md`
   (IR-1) — the request, its three candidate shapes, and why the obvious
   workarounds fail.

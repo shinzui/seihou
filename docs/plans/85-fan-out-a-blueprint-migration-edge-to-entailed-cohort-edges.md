@@ -73,9 +73,9 @@ other plans make it safe; this one makes it work.
 - [x] Label the owning blueprint in launch output and `--debug` output — 2026-08-16
 - [x] Extend the agent guard to every entailed blueprint in the resolved cohort — 2026-08-16
 - [x] Unit tests: expansion order, transitivity, deduplication, cycles, missing blueprint, missing edge, per-owner receipt filtering — 2026-08-16
-- [ ] End-to-end test: two blueprint fixtures on disk, `--debug` chain spanning both with each step's own reference files.
-- [ ] Update `docs/user/blueprint-migrations.md`, `docs/user/blueprints.md`, `docs/cli/agent.md`, and `docs/user/CHANGELOG.md` (`schema/README.md` done in milestone 1).
-- [ ] Write the ADR recording that an entailed edge is owned by the blueprint that declares it.
+- [x] End-to-end test: two blueprint fixtures on disk, `--debug` chain spanning both with each step's own reference files, cross-entry-point deduplication, both hard errors, and the direct-consumer case — 2026-08-16
+- [x] Update `docs/user/blueprint-migrations.md`, `docs/user/blueprints.md`, `docs/cli/agent.md`, and `docs/user/CHANGELOG.md` (`schema/README.md` done in milestone 1) — 2026-08-16
+- [x] Write `docs/adr/0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md`, and amend ADR 0003 for the widened guard scope — 2026-08-16
 
 
 ## Surprises & Discoveries
@@ -234,7 +234,76 @@ other plans make it safe; this one makes it work.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**What was achieved.** A blueprint migration edge can declare that crossing it
+entails crossing an exact edge of another blueprint. `seihou agent migrate`
+expands those declarations recursively into one ordered chain, runs each step
+with its owning blueprint's shared prompt, edge prompt, reference files, allowed
+tools, and variables, and writes each step's receipt under the owning
+blueprint's identity. A project that reaches a shared cohort edge through one
+entry point does not cross it again through the other, in either order. A
+project that consumes only the entailed library is untouched by the declaring
+library's existence.
+
+**Verified.** `nix flake check` passes; `cabal test all` passes with 1069 core,
+528 CLI, and 16 extension tests. The cohort story is proven end to end in
+`seihou-cli/test/Seihou/CLI/AgentMigrateE2ESpec.hs` against the real binary with
+two blueprint fixtures on disk, covering the plan's whole "Validation and
+Acceptance" section without needing the by-hand walkthrough it describes: chain
+order, per-blueprint reference files (distinctive marker files prove which
+`files/` directory each step read), cross-entry-point deduplication with the
+manifest read back, the uninstalled-blueprint and undeclared-edge refusals with
+their exact messages, and the kiroku-only consumer planning one step and never
+mentioning keiro. `expandEntailedEdges` has eleven cases in
+`seihou-core/test/Seihou/Core/EntailmentSpec.hs`, including both cycle shapes and
+the mutual-entailment-at-different-edges case that catches a cycle check keyed on
+blueprint name.
+
+Module migrations are unaffected: `planMigrationWindow` was not touched, and
+`seihou-core/test/Seihou/Core/MigrationSpec.hs` and
+`Seihou.Engine.MigrateSpec` pass unchanged apart from mechanical updates for the
+new `BlueprintMigration` field.
+
+**What changed relative to the plan.**
+
+- The pure expander and step type landed as planned in `seihou-core`, but
+  `EntailmentError`'s two authoring variants carry an `EntailmentSite` record
+  rather than a bare declaring-blueprint name, and `entailedBy` reuses that
+  record rather than a tuple. The Decision Log explains why.
+- Cohort discovery landed in a new CLI *library* module,
+  `seihou-cli/src/Seihou/CLI/MigrationCohort.hs`, rather than inline in
+  `AgentMigrate.hs` — the repository's library-first convention applies, and
+  folding the invoked blueprint's own discovery into the same function removed a
+  duplicate discovery path.
+- The plan left "extend EP-83's guard here" conditional on that plan having
+  landed. It had, so `enforceAgentArtifactGuard` was widened to take a list of
+  blueprint names and `agent migrate` now calls it twice: once for the invoked
+  blueprint before planning, once for the entailed blueprints after discovery.
+  ADR 0003 was amended to record the widened scope.
+- The framing prompt gained a `{{migration_entailed_by}}` line the plan did not
+  anticipate. Without it an agent asked to migrate a library the user never named
+  has no way to know why.
+
+**What remains.** Nothing in this plan. `docs/plans/86-infer-the-blueprint-migration-version-window.md`
+consumes `BlueprintMigrationStep` and the reshaped `--debug` output, and
+publishes its schema field on top of the `014bb79` pin this plan established.
+
+**Lessons.**
+
+- The plan's instruction to make `expandEntailedEdges` "obviously correct rather
+  than clever" was right, and the shape that achieved it was a `foldM` over
+  `(emitted, visited)` with an explicit `path` list — list concatenation
+  everywhere, quadratic in principle, irrelevant at cohort sizes, and readable
+  line by line. The two cycle tests and the mutual-entailment test were written
+  against that shape and all passed first try, which is the outcome the
+  instruction was aiming at.
+- Deciding early that ownership settles *three* things at once — execution
+  context, receipt identity, and pending-filter identity — kept the
+  implementation small. Each is one lookup in the same `Map Text CohortBlueprint`
+  that discovery built, and the design's central claim reduces to one line in
+  `recordMigration`.
+- The existing E2E fixtures spell their Dhall out longhand without `entails`, so
+  they were already the regression test that an older blueprint still loads. Not
+  touching them was worth more than adding a new tolerance test.
 
 
 ## Context and Orientation
