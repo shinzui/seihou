@@ -145,8 +145,9 @@ seihou agent run BLUEPRINT [PROMPT] [OPTIONS]
 | `--namespace NS` | Override namespace for config lookup |
 | `--context CTX`, `-c CTX` | Override context for config lookup |
 | `--verbose`, `-v` | Show detailed progress messages |
+| `--allow-downgrade` | Proceed even when the blueprint or a baseline module installed locally is older than, or from a different source than, `.seihou/manifest.json` records |
 
-Resolves the named blueprint, prompts for required variables, optionally applies its baseline modules, renders the blueprint prompt, and starts the configured provider. A successful non-debug run records applied-blueprint provenance in `.seihou/manifest.json`.
+Resolves the named blueprint, prompts for required variables, optionally applies its baseline modules, renders the blueprint prompt, and starts the configured provider. A successful run records applied-blueprint provenance in `.seihou/manifest.json`; a `--debug` run does so too, after printing the prompt.
 
 ### agent migrate
 
@@ -165,6 +166,7 @@ seihou agent migrate BLUEPRINT --from VERSION --to VERSION [PROMPT] [OPTIONS]
 | `--context CTX`, `-c CTX` | Override context for config lookup |
 | `--verbose`, `-v` | Show detailed progress messages |
 | `--rerun` | Ignore matching exact-edge receipts and run the selected steps again |
+| `--allow-downgrade` | Proceed even when the blueprint installed locally is older than, or from a different source than, `.seihou/manifest.json` records |
 
 The command plans matching blueprint edges in ascending version order, permitting
 undeclared gaps, and starts one provider interaction per edge. It writes a
@@ -183,6 +185,33 @@ Receipts report provider completion rather than package-manager verification.
 See [Blueprint Migrations](../user/blueprint-migrations.md) for the full workflow
 and [Agent-Driven Blueprints](../user/blueprints.md#library-upgrade-migrations)
 for the Dhall shape.
+
+## Artifact Guard
+
+`agent run` and `agent migrate` both check the artifacts they are about to use
+against what `.seihou/manifest.json` records, and refuse before writing anything
+when the local copy is older than, or came from a different repository than, the
+project records. This is the same refusal `seihou run` and `seihou migrate`
+apply, extended to the agent path; see
+[ADR 0003](../adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md).
+
+`agent run` checks the blueprint and every module its baseline would generate
+from. `agent migrate` checks the blueprint only, because migration mode applies
+no baselines. Neither checks an artifact it will not touch: a stale module
+elsewhere in the project cannot block an unrelated blueprint.
+
+A refusal happens before the baseline is applied and before any receipt is
+written, so the working tree and the manifest are left byte-identical. The fix
+is `seihou upgrade <name>` for a stale copy, or reinstalling from the URL the
+manifest records for a substituted one; the message prints the exact command.
+`--allow-downgrade` proceeds anyway and prints what it overrode.
+
+Parent `--debug` changes this for `agent migrate` only, because `--debug` means
+different things to the two subcommands. It is a true dry run for `agent
+migrate`, which writes nothing, so no check runs and a prompt can be inspected
+on any machine. It is not a dry run for `agent run`, which still applies the
+baseline and still records provenance under `--debug`, so the check runs there
+regardless.
 
 ## Requirements
 

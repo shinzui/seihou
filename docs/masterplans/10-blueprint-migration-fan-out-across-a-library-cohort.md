@@ -198,7 +198,7 @@ Integration Points.
 |---|-------|------|-----------|-----------|--------|
 | EP-81 | Record artifact origin for agent-applied artifacts | docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md | None | None | Complete |
 | EP-82 | Refuse to overwrite an installation from a different source | docs/plans/82-refuse-to-overwrite-an-installation-from-a-different-source.md | None | None | Complete |
-| EP-83 | Guard the agent path against stale and substituted artifacts | docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md | EP-81 | EP-82 | In Progress |
+| EP-83 | Guard the agent path against stale and substituted artifacts | docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md | EP-81 | EP-82 | Complete |
 | EP-84 | Add a not-applicable outcome for blueprint migration edges | docs/plans/84-add-a-not-applicable-outcome-for-blueprint-migration-edges.md | EP-81 | None | Not Started |
 | EP-85 | Fan out a blueprint migration edge to entailed cohort edges | docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md | EP-81, EP-84 | EP-82, EP-83 | Not Started |
 | EP-86 | Infer the blueprint migration version window | docs/plans/86-infer-the-blueprint-migration-version-window.md | EP-81 | EP-85 | Not Started |
@@ -321,12 +321,21 @@ using the existing `withDefaults` mechanism.
 
 **The agent-path command entry points** — `handleAgentRun` in
 `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` and `handleAgentMigrate` in
-`seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`. Involved: EP-83, EP-85, EP-86. EP-83
-inserts a guard check before any work and owns where in the sequence it sits — specifically,
-before `applyBaseline` in `agent run` and before planning in `agent migrate`. EP-85 and
-EP-86 add work after that point and must not move the guard earlier or later. All three
-must preserve the rule that `--debug` performs no check, applies no baseline, contacts no
-provider, and writes nothing.
+`seihou-cli/src-exe/Seihou/CLI/AgentMigrate.hs`. Involved: EP-83, EP-85, EP-86.
+**Settled by EP-83 (complete).** The guard is a single call to `enforceAgentArtifactGuard`
+(`seihou-cli/src/Seihou/CLI/AgentGuard.hs`) taking the `--allow-downgrade` flag, the manifest
+path, the invoked blueprint's name, and the set of modules the command will generate from. In
+`agent run` it sits immediately after blueprint discovery and baseline-composition resolution,
+before `applyBaseline` and before any variable is prompted for; in `agent migrate` it sits after
+validation and before `planBlueprintMigrationChain`. EP-85 and EP-86 add work after those points
+and must not move the guard earlier or later.
+
+The `--debug` rule is narrower than this section originally stated, and EP-83 measured it: debug
+is a true dry run for `agent migrate`, which therefore performs no check, and is *not* one for
+`agent run`, which still applies the baseline and still records provenance under `--debug` and is
+therefore checked unconditionally. The rule all three plans must preserve is **the check follows
+the writes, not the flag**. `handleAgentMigrate`'s debug branch is the only genuinely inert path;
+work EP-85 or EP-86 adds to `handleAgentRun` executes under `--debug` too.
 
 **Documentation surfaces.** Involved: all six. Each plan updates `docs/cli/agent.md` and/or
 `docs/cli/install.md` for flags and behaviour, `docs/user/blueprint-migrations.md` for the
@@ -344,9 +353,20 @@ Cross-plan decisions expected to become ADRs at completion:
   records of the same work the same record", and noting that the comparison has one definition in
   `Seihou.Core.ArtifactIdentity` because three call sites must agree. See the Decision Log entry
   dated 2026-08-16 for why the anticipated new ADR was deferred to EP-85 instead.
+- **The agent path is subject to the ADR 0003 refusal.** *Recorded.* EP-83 amended
+  `docs/adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md` rather than adding a record,
+  because the decision is unchanged and only its reach grew. The amendment states which four
+  commands `ManifestGuard` now serves, how the scoping rule applies to each agent command, and
+  the debug rule. This is the opposite call from EP-82's, and deliberately so: EP-82's
+  install-time refusal is a different decision about a different layer, which ADR 0003 scopes
+  out by its own words.
 - **An entailed edge is owned by the blueprint that declares it, not by the blueprint that
   names it.** This is the architectural boundary the whole fan-out design rests on and is
-  the reason a cohort does not need a coordinating artifact. Record it during EP-85.
+  the reason a cohort does not need a coordinating artifact. Record it during EP-85. EP-85
+  must also decide whether each *entailed* blueprint is guarded, since ADR 0003's scoping rule
+  says an artifact the command is about to use is in scope; EP-83 left
+  `enforceAgentArtifactGuard` taking one blueprint name, and `checkRecordedBlueprint` is
+  already per-name, so widening it is a fold rather than a rewrite.
 - **A deliberate no-op is a third outcome, not a success.** Record during EP-84; note the
   structurally identical decision in `mori://shinzui/keiro` that IR-1 cites.
 - **Deliberate exclusion: no cohort artifact.** A `Recipe`-like artifact listing member
@@ -362,8 +382,8 @@ Cross-plan decisions expected to become ADRs at completion:
 - [x] EP-81: legacy manifests without `origin` decode as unverifiable provenance; documentation and CHANGELOG updated — 2026-08-16
 - [x] EP-82: `installModuleDir` reads `.seihou-origin.json` before removal and refuses on a different source, with `--force` override — 2026-08-16
 - [x] EP-82: same-source reinstall stays frictionless; `seihou migrate`'s install refresh verified to take the same-source path — 2026-08-16
-- [ ] EP-83: `seihou agent run` consults `ManifestGuard` before `applyBaseline`, leaving the tree byte-identical on refusal
-- [ ] EP-83: `seihou agent migrate` consults `ManifestGuard` before planning; `--debug` still checks nothing
+- [x] EP-83: `seihou agent run` consults `ManifestGuard` before `applyBaseline`, leaving the tree byte-identical on refusal — 2026-08-16
+- [x] EP-83: `seihou agent migrate` consults `ManifestGuard` before planning; `--debug` checks nothing there because it writes nothing, while `agent run --debug` is checked because it is not a dry run — 2026-08-16
 - [ ] EP-84: an edge can report not-applicable; the outcome is recorded and does not suppress a later run
 - [ ] EP-84: framing prompt template tells the agent how to signal it; `seihou status` renders the outcome
 - [ ] EP-85: `entails` published in `seihou-schema` and re-pinned; decoder tolerates blueprints without it
@@ -417,6 +437,44 @@ Cross-plan decisions expected to become ADRs at completion:
   artifact". **Consequence for EP-83:** its work *is* that generate-time decision extended to
   the agent path, so it amends ADR 0003 rather than writing a third record. ADR 0003 now
   carries a cross-reference to ADR 0006 explaining how the two compose.
+
+- **`--debug` is a dry run for `agent migrate` and not for `agent run`, which invalidates a
+  premise three documents share.** EP-83's Context, IR-3, and this MasterPlan's Integration
+  Points all state that `--debug` "performs no check, applies no baseline, contacts no
+  provider, and writes nothing". Measured against the built binary, `seihou agent --debug run`
+  applies the blueprint's `baseModules` to the working directory and writes an
+  applied-blueprint entry naming the *local* blueprint's version:
+
+  ```text
+  $ seihou agent --debug run probe-bp
+  … prompt printed …
+  $ ls
+  BASELINE.md
+  $ cat .seihou/manifest.json
+  {"blueprint":{"name":"probe-bp","version":"1.0.0",…},…}
+  ```
+
+  In `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` the baseline step has no `debug` condition,
+  and the provenance write is gated on `launchSucceeded`, which debug mode returns `True` for
+  after printing the prompt — deliberately, per the comment there. `docs/cli/agent.md` says the
+  true-dry-run property belongs to `migrate` specifically, and separately contained a sentence
+  claiming only a *non-debug* run records provenance, which EP-83 corrected.
+
+  **Consequence for EP-85 and EP-86:** the Integration Points rule below now reads "the check
+  follows the writes, not the flag". Any work either plan adds to `handleAgentRun` is reached
+  under `--debug` too, so a step that writes must not assume debug skipped it; only
+  `handleAgentMigrate`'s debug branch is genuinely inert. EP-84 should apply the same test
+  before assuming a debug path is write-free.
+
+- **EP-83's module-scope filter needed the resolved composition, not the declared modules.**
+  EP-83's plan said to build the guard's filter from the blueprint's declared `baseModules`,
+  matching "exactly as `seihou run` passes `composedModuleNames`". Those two are not the same
+  set: `Run.hs` builds `composedModuleNames` from `modulesInOrder`, which includes transitive
+  dependencies. `loadComposition` moved out of `applyBaseline` into `handleAgentRun` as
+  `loadBaselineComposition`, and `applyBaseline` now takes the resolved composition rather than
+  `[Dependency]`. **Consequence for EP-85:** `handleAgentRun` resolves its baseline composition
+  before the guard now, so anything EP-85 inserts between discovery and baseline application
+  lands after that resolution, not before it.
 
 - **Closing an Improvement Request has a required frontmatter shape.** The bundle profile at
   `docs/improvement-requests/profile.dhall` does not accept `status: implemented`; the terminal

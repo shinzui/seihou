@@ -8,9 +8,19 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-08-06T17:12:58Z"
-timestamp: 2026-08-06T17:12:58Z
+timestamp: 2026-08-16T00:00:00Z
 requestId: IR-3
-status: proposed
+status: completed
+completedAt: "2026-08-16T00:00:00Z"
+targetPlan: docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md
+resolution: >-
+  seihou agent run and seihou agent migrate now consult ManifestGuard before doing any work and
+  refuse on the same terms as seihou run, with a --allow-downgrade override that prints what it
+  overrode. agent run checks the blueprint plus every module in its resolved baseline composition;
+  agent migrate checks the blueprint alone, against the applied-blueprint entry or, failing that,
+  the most recent receipt for it. The blanket --debug exemption this request asked for was applied
+  to agent migrate only: agent run --debug still applies the baseline and still records provenance,
+  so exempting it would have left the hole open. ADR 0003 was amended rather than duplicated.
 origin: mori://shinzui/okf-profiles
 ---
 
@@ -18,8 +28,11 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Proposed. Depends on [IR-2](record-artifact-origin-for-agent-applied-artifacts.md): the guard has
-nothing to compare against until the agent-path records carry an origin.
+Completed 2026-08-16 by
+[`docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md`](../plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md).
+See [Resolution](#resolution). Depended on
+[IR-2](record-artifact-origin-for-agent-applied-artifacts.md), which landed first: the guard had
+nothing to compare against until the agent-path records carried an origin.
 
 ## Context
 
@@ -116,3 +129,51 @@ no provenance, so it has nothing to compare and is deliberately excluded.
   addressed one layer earlier, at install time rather than at use time.
 - [ADR 0003](../adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md) — the decision this
   extends to a path it does not currently reach.
+
+## Resolution
+
+All four requested changes landed.
+
+`seihou agent run` checks before `applyBaseline` and before any variable prompt, so a refusal
+leaves the working tree and `.seihou/manifest.json` byte-identical — the property
+`seihou-cli/test/Seihou/CLI/AgentGuardE2ESpec.hs` asserts by hashing the manifest and checking
+`git status --porcelain` after each refused run. `seihou agent migrate` checks after the blueprint
+is discovered and validated and before `planBlueprintMigrationChain`, so a substituted blueprint is
+refused rather than having another library's edges planned against this project's source.
+
+Point 2 was implemented one step further than written. The request asks for the resolved
+`baseModules` to be checked; `seihou run` in fact guards the *resolved composition*, transitive
+dependencies included, and declared base modules are only its roots. `loadComposition` therefore
+moved out of `applyBaseline` into `handleAgentRun` as `loadBaselineComposition`, so the guard sees
+the same module set the baseline would generate from and the composition is evaluated once per run.
+
+Point 4's scoping rule is honoured on both commands. `agent run` checks the blueprint and its
+baseline composition; `agent migrate` checks the blueprint alone, because migration mode applies no
+baselines and checking modules it will not touch would refuse for unrelated artifacts. A blueprint
+recorded in the manifest under a different name is ignored by both.
+
+Two details differ from the request as written.
+
+The blanket `--debug` exemption was applied to `agent migrate` only. The request justifies the
+exemption on the grounds that `--debug` "contacts no provider, applies no baseline, and writes
+nothing". That is true of `agent migrate` and false of `agent run`, which under `--debug` still
+applies the baseline to the working directory and still records applied-blueprint provenance naming
+the local blueprint's version; only the provider call is skipped. Exempting it would have left
+[ADR 0003](../adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md)'s opening scenario
+reachable through the one flag the change advertised as safe. The exemption's purpose — never
+refuse a command that writes nothing — is preserved exactly where it applies, and the rule is now
+stated in the ADR as "the check follows the writes, not the flag".
+
+The command's identity record is read from receipts as well as from the applied-blueprint entry.
+`agent migrate` writes receipts and never writes that entry, so a project that has only ever
+migrated a blueprint records its identity exclusively in receipts; without the fallback the path
+this request calls out as worst would have had nothing to compare against in exactly the projects
+that use it.
+
+`seihou status` now also reports a stale or substituted blueprint, so a developer can find out
+before a command refuses — the passive signal this request correctly says is not sufficient on its
+own, kept as a complement rather than a substitute.
+
+The decision itself did not change, only its reach, so
+[ADR 0003](../adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md) was amended rather than
+joined by a second record restating the same judgement.

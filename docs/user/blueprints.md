@@ -259,6 +259,36 @@ Skip the baseline for a one-off run with:
 seihou agent run api-service --no-baseline --var project.name=payments
 ```
 
+## Artifact guard
+
+Baseline modules generate ordinary files, so `seihou agent run` checks them the
+same way `seihou run` does. Before applying anything it compares the blueprint,
+and every module the baseline would generate from, against what
+`.seihou/manifest.json` records. It refuses when a local copy is older than the
+recorded version, or was installed from a different repository than the one the
+project records:
+
+```text
+✗ Refusing to run: your local copy of 'api-service' is older than the
+  version this project expects.
+
+  Recorded in .seihou/manifest.json:  2.0.0
+  Installed on this machine:          1.0.0
+
+  Update your local copy first:
+    seihou upgrade api-service
+```
+
+The refusal happens before any file is written, so the working tree and the
+manifest are left byte-identical. Run the command the message prints, or pass
+`--allow-downgrade` to proceed anyway — the override prints the same blocks
+under a `! Proceeding anyway` heading rather than falling silent, because a
+deliberate downgrade still changes shared state.
+
+`--debug` does not exempt `agent run` from this check. Unlike `agent migrate`,
+a debug run still applies the baseline and still records provenance; it skips
+only the provider call.
+
 ## Reference files
 
 Declare reference files that the agent should consult:
@@ -317,13 +347,17 @@ opening a terminal UI.
 The runner:
 
 1. Discovers the named blueprint.
-2. Resolves blueprint variables and prompts for required missing values.
-3. Applies `baseModules`, unless `--no-baseline` is set.
-4. Mounts an existing `files/` directory for interactive CLI providers and
+2. Checks the blueprint and its baseline modules against what
+   `.seihou/manifest.json` records, refusing before anything is written when a
+   local copy is older than, or from a different repository than, this project
+   records. See [Artifact guard](#artifact-guard) below.
+3. Resolves blueprint variables and prompts for required missing values.
+4. Applies `baseModules`, unless `--no-baseline` is set.
+5. Mounts an existing `files/` directory for interactive CLI providers and
    renders its absolute path into the blueprint prompt.
-5. Resolves the base tool set plus de-duplicated `allowedTools` additions.
-6. Starts the configured provider.
-7. Records applied-blueprint provenance in `.seihou/manifest.json` after a
+6. Resolves the base tool set plus de-duplicated `allowedTools` additions.
+7. Starts the configured provider.
+8. Records applied-blueprint provenance in `.seihou/manifest.json` after a
    successful run, including a debug render.
 
 `seihou run api-service` refuses when `api-service` resolves to a blueprint.

@@ -62,9 +62,10 @@ resolving the wrong one rises accordingly.
       applies the baseline and records provenance even under `--debug` — 2026-08-16
 - [x] Add tests: refusal leaves the tree byte-identical; override prints and proceeds; debug checks
       nothing on migrate and still checks on run — 2026-08-16
-- [ ] Update `docs/cli/agent.md`, `docs/user/blueprints.md`, `docs/user/blueprint-migrations.md`, and `docs/user/CHANGELOG.md`.
-- [ ] Consider whether ADR 0003 should be amended to name the agent path; record the decision.
-- [ ] Mark IR-3 `status: implemented` and update `docs/improvement-requests/log.md`.
+- [x] Update `docs/cli/agent.md`, `docs/user/blueprints.md`, `docs/user/blueprint-migrations.md`, and `docs/user/CHANGELOG.md` — 2026-08-16
+- [x] Correct `docs/cli/agent.md`'s claim that only a non-debug `agent run` records provenance — 2026-08-16
+- [x] Amend ADR 0003 to name the agent path rather than writing a second record; decision recorded — 2026-08-16
+- [x] Mark IR-3 `status: completed` with `completedAt`, `resolution`, and `targetPlan`; update `docs/improvement-requests/log.md` with `okf log add` — 2026-08-16
 
 
 ## Surprises & Discoveries
@@ -167,6 +168,18 @@ resolving the wrong one rises accordingly.
   re-resolving inside the guard would not.
   Date: 2026-08-16
 
+- Decision: Amend `docs/adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md` rather
+  than write a new ADR.
+  Rationale: The Context section asked for this call and leaned toward amending. Amending is
+  right: nothing about the decision changed, only its reach. The two amendments state that
+  `ManifestGuard` now serves four commands, that the agent path is not exempt because a
+  blueprint's baseline half is ordinary module generation, how the scoping rule applies to each
+  agent command, and the debug rule as "the check follows the writes, not the flag". A second
+  ADR restating the same judgement would fragment it. This is the opposite call from EP-82,
+  which wrote `docs/adr/0006-...` because the install-time refusal genuinely is a different
+  decision about a different layer, scoped out of ADR 0003 by its own words.
+  Date: 2026-08-16
+
 - Decision: `checkRecordedBlueprint` falls back to the newest migration receipt for the named
   blueprint when the manifest has no matching `AppliedBlueprint` entry.
   Rationale: Milestone 4 left this open and observed that checking receipts is the more
@@ -182,7 +195,60 @@ resolving the wrong one rises accordingly.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Complete. `seihou agent run` and `seihou agent migrate` consult
+`Seihou.CLI.ManifestGuard` before doing any work and refuse a stale or substituted artifact on
+the same terms as `seihou run`, with a `--allow-downgrade` override that prints what it
+overrode. `seihou status` reports a stale or substituted blueprint alongside modules, so the
+refusal is discoverable before it happens. IR-3 is closed; ADR 0003 is amended.
+
+Seven end-to-end cases in `seihou-cli/test/Seihou/CLI/AgentGuardE2ESpec.hs` drive the real
+binary; the whole suite is 502 tests and `nix flake check` passes:
+
+```text
+agent path artifact guard
+  offers --allow-downgrade on both agent subcommands:                                OK
+  refuses agent run when the installed blueprint is older than the manifest records: OK
+  proceeds under --allow-downgrade and prints what it overrode:                      OK
+  refuses agent run when a baseline module is stale though the blueprint is current: OK
+  refuses agent migrate when the installed blueprint came from another repository:   OK
+  checks nothing under agent --debug migrate, which writes nothing:                  OK
+  still checks under agent --debug run, which is not a dry run:                      OK
+
+All 502 tests passed (42.24s)
+```
+
+What differed from the plan as written, all recorded above in full: the guard needed the
+*resolved* baseline composition rather than the declared `baseModules`, which meant hoisting
+`loadComposition` out of `applyBaseline`; `--debug` turned out not to be a dry run on the run
+path, so the exemption applies to `agent migrate` only; and the migrate-path identity record
+comes from receipts when no applied-blueprint entry names the blueprint.
+
+One correction to the plan's stated acceptance criterion, worth knowing for anyone reading the
+Validation section literally. It says the migrate contrast is "before: `All blueprint
+migrations in the requested version window already have receipts.` and exit 0". That was the
+behaviour when IR-3 was filed, but
+`docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md` landed first and put
+origin into the completion key, so a substituted blueprint's edges no longer match this
+project's receipts and are no longer dropped. The pre-EP-83 behaviour was therefore *worse*
+than a silent skip: the edges were pending, so the command would launch a provider session
+carrying another library's upgrade prompt against this project's source. That is what the
+refusal now prevents, and what the spec asserts by proving the fake provider was never called.
+
+### For plan 85
+
+`docs/plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md` extends a
+migration chain across several blueprints. Each entailed blueprint is then an artifact the
+command is about to use, so ADR 0003's scoping rule implies each should be guarded, not just
+the one named on the command line. `enforceAgentArtifactGuard` in
+`seihou-cli/src/Seihou/CLI/AgentGuard.hs` takes a single blueprint name today; plan 85 owns
+widening it, and `checkRecordedBlueprint` is already per-name so the widening is a fold rather
+than a rewrite. Two properties must survive: the check still runs before planning (an entailed
+blueprint resolved by bare name is exactly the surface this guards), and the refusal stays
+scoped — a cohort member the expansion does not reach must not block the chain.
+
+Plan 84 should also note that this plan added no user-facing output beyond the two existing
+renderers, so the `logIO` level trap the MasterPlan records was not hit here: `formatGuardRefusal`
+and `formatGuardOverride` write to stdout unconditionally, which is correct for a refusal.
 
 
 ## Context and Orientation

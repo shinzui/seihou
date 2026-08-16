@@ -42,14 +42,24 @@ per-edge state.
 ## How a migration runs
 
 1. Seihou discovers and validates the named blueprint.
-2. It parses `--from` and `--to` and asks the core planner which declared edges
+2. It checks the blueprint against what this project records about it — from the
+   applied-blueprint entry when there is one, otherwise from the most recent
+   receipt — and refuses before planning a single edge when the installed copy
+   is older than, or came from a different repository than, the project records.
+3. It parses `--from` and `--to` and asks the core planner which declared edges
    fall inside that window.
-3. It drops edges that already have a receipt, unless `--rerun` was passed.
-4. It resolves the blueprint's variables once and renders the shared prompt.
-5. For each remaining edge, in ascending order: start one provider session, wait
+4. It drops edges that already have a receipt, unless `--rerun` was passed.
+5. It resolves the blueprint's variables once and renders the shared prompt.
+6. For each remaining edge, in ascending order: start one provider session, wait
    for it to return, then write that edge's receipt before starting the next.
-6. On a provider failure or a receipt-write failure, it stops immediately and
+7. On a provider failure or a receipt-write failure, it stops immediately and
    leaves earlier receipts in place.
+
+Step 2 runs before planning on purpose. A blueprint of the recorded name from a
+different repository declares different edges, so planning first would launch a
+provider session carrying another library's upgrade prompt against your source.
+The check is skipped under `--debug`, which contacts no provider and writes
+nothing. `--allow-downgrade` proceeds anyway and prints what it overrode.
 
 Because the receipt is written between sessions, the chain is always resumable at
 a known edge.
@@ -328,6 +338,8 @@ edge finds nothing to do — or skip it deliberately by widening `--from`.
 | `Blueprint migration 2.5.0 -> 3.0.0 failed; completed earlier edges remain recorded. …` | The provider exited nonzero or returned an error. Fix the provider problem, then rerun the same command to resume at that edge. |
 | `Agent completed blueprint migration …, but its receipt could not be recorded: …` | Source edits may already exist while the edge is unrecorded, and the next edge was not started. Repair `.seihou/manifest.json` or its permissions, then rerun the same command. |
 | Nothing renders under `--debug` | Every edge in the window already has a receipt, or the blueprint declares none there. Widen the window or pass `--rerun`. |
+| `✗ Refusing to run: your local copy of 'my-library' is older than the version this project expects.` | The installed blueprint predates what this project records. Run `seihou upgrade my-library`, or pass `--allow-downgrade` to pin the project to the copy installed here. |
+| `✗ Refusing to run: 'my-library' is installed from a different source than this project records.` | A blueprint of that name from another repository is installed. Its edges are not this project's edges. Reinstall from the URL the message prints, or pass `--allow-downgrade` if the substitution is deliberate. |
 
 ## See also
 

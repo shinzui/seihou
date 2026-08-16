@@ -35,8 +35,22 @@ Because the manifest describes the project and the install cache describes the
 machine, the manifest wins. A machine may not silently override a project.
 
 `Seihou.CLI.ManifestGuard` implements the comparison and the refusal for
-`seihou run` and `seihou migrate`. `seihou update` reaches the same
-user-visible outcome by a different route — see Consequences.
+`seihou run`, `seihou migrate`, `seihou agent run`, and `seihou agent migrate`.
+`seihou update` reaches the same user-visible outcome by a different route — see
+Consequences.
+
+*Amended 2026-08-16 (`docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md`):*
+the decision is unchanged; its reach now includes the agent path, which it did
+not previously cover. Nothing about a blueprint exempts it. `seihou agent run`
+applies the blueprint's baseline modules to the working directory — ordinary
+modules generating ordinary files — and then rewrites the manifest to name the
+blueprint it used, which is this ADR's opening scenario with a blueprint
+substituted for a module. `seihou agent migrate` writes a receipt per edge, and
+those receipts suppress future runs of the edges they name, so a blueprint of
+the recorded name from a different repository would have its own library's
+upgrade prompts run against this project's source. What is guarded is the
+identity and version of the artifact being applied, not the determinism of its
+output.
 
 ### Rejected: warn and continue
 
@@ -76,7 +90,18 @@ flag would hide precisely what the guard exists to make legible.
 The refusal is scoped to the artifacts a command is actually about to generate
 from. `seihou run` checks only the modules in the composition it is running, so
 one uninstalled or stale module elsewhere in the project cannot block unrelated
-work. This mirrors the line drawn for pending-migration detection.
+work. This mirrors the line drawn for pending-migration detection. On the agent
+path the same line means `seihou agent run` checks the blueprint plus every
+module in its resolved baseline composition, and `seihou agent migrate` checks
+the blueprint alone, because migration mode applies no baselines. A blueprint
+recorded in the manifest under a different name is not checked by either.
+
+A dry run is exempt; a command that merely skips one step is not. `seihou agent
+migrate --debug` writes nothing at all, so it performs no check and stays usable
+for inspecting a prompt on a machine that has never installed the artifact.
+`seihou agent run --debug` skips only the provider call — it still applies the
+baseline and still records applied-blueprint provenance — so it is checked like
+any other run. The rule is that the check follows the writes, not the flag.
 
 Advisory consumers never block. `seihou status`, pending-migration detection,
 and `seihou update`'s same-version content comparison report what they cannot
@@ -114,5 +139,8 @@ reach, and this refusal catches it if a project reaches it anyway.
 - [ADR 0006](0006-the-install-cache-will-not-silently-substitute-an-artifact.md)
   — the same reasoning applied one layer earlier, at install time.
 - `docs/masterplans/9-make-the-seihou-manifest-multi-developer-safe.md`
+- `docs/masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md`
 - `docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md`
+- `docs/plans/83-guard-the-agent-path-against-stale-and-substituted-artifacts.md`
+  — extends this decision to `seihou agent run` and `seihou agent migrate`.
 - `docs/user/teams.md`

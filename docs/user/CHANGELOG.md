@@ -12,6 +12,47 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **`seihou agent run` and `seihou agent migrate` now refuse a stale or
+  substituted artifact.** `seihou run` and `seihou migrate` have refused to
+  generate from an artifact older than, or from a different repository than,
+  `.seihou/manifest.json` records. The agent commands did not, even though
+  `agent run` applies a blueprint's baseline modules to your working directory
+  and rewrites the manifest, and `agent migrate` writes receipts that suppress
+  future runs of the edges they name. Both now consult the same guard, refuse on
+  the same terms, and accept the same `--allow-downgrade` override.
+
+  ```text
+  ✗ Refusing to run: your local copy of 'keiro-upgrade' is older than the
+    version this project expects.
+
+    Recorded in .seihou/manifest.json:  2.0.0
+    Installed on this machine:          1.0.0
+
+    Update your local copy first:
+      seihou upgrade keiro-upgrade
+  ```
+
+  **This may refuse a command that succeeded before.** If your install cache
+  lags behind what a colleague committed, run `seihou upgrade <name>`; if a
+  blueprint of that name from another repository is installed, reinstall from
+  the URL the message prints. `--allow-downgrade` proceeds anyway and prints
+  what it overrode.
+
+  `agent run` checks the blueprint and every module its baseline would generate
+  from; `agent migrate` checks the blueprint only, since it applies no
+  baselines. Neither checks an artifact it will not touch. A refusal happens
+  before anything is written, so the working tree and the manifest are left
+  byte-identical.
+
+  `--debug` behaves differently for the two subcommands, because it always has:
+  it is a true dry run for `agent migrate`, which therefore checks nothing,
+  while `agent run --debug` still applies the baseline and still records
+  provenance, so it is checked like any other run.
+
+- **`seihou status` reports on the recorded blueprint.** A stale or substituted
+  blueprint now appears alongside stale or substituted modules, so you find out
+  before an `agent` command refuses.
+
 - **`seihou install` refuses to replace an artifact that came from a different
   repository.** `~/.config/seihou/installed/` is keyed by an artifact's bare
   name across every repository you have ever installed from, and it is shared by
