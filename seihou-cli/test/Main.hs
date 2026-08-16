@@ -3,6 +3,7 @@ module Main (main) where
 import Seihou.CLI.AgentCompletionSpec qualified as AgentCompletionSpec
 import Seihou.CLI.AgentConfigShowSpec qualified as AgentConfigShowSpec
 import Seihou.CLI.AgentConfigSpec qualified as AgentConfigSpec
+import Seihou.CLI.AgentGuardE2ESpec qualified as AgentGuardE2ESpec
 import Seihou.CLI.AgentLaunchSpec qualified as AgentLaunchSpec
 import Seihou.CLI.AgentMigrateE2ESpec qualified as AgentMigrateE2ESpec
 import Seihou.CLI.AgentModelsSpec qualified as AgentModelsSpec
@@ -47,6 +48,7 @@ main = do
     sequence
       [ AgentLaunchSpec.tests,
         AgentMigrateE2ESpec.tests,
+        AgentGuardE2ESpec.tests,
         AgentCompletionSpec.tests,
         AgentConfigSpec.tests,
         AgentConfigShowSpec.tests,

@@ -13,7 +13,7 @@ module Seihou.CLI.AgentRun
 where
 
 import Control.Exception (IOException, displayException, try)
-import Control.Monad (unless, when)
+import Control.Monad (when)
 import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -152,17 +152,18 @@ handleAgentRun debug pending opts = do
   -- generate from, and nothing else: an artifact this run will not touch must
   -- not block it.
   --
-  -- --debug performs no check at all. It contacts no provider, applies no
-  -- baseline and writes nothing, so a developer inspecting a prompt on a
-  -- machine that has never installed the artifact has nothing to be refused
-  -- for. The condition sits here rather than inside the guard so that debug
-  -- mode is structurally check-free on reading.
-  unless debug $
-    enforceAgentArtifactGuard
-      (opts ^. #allowDowngrade)
-      (".seihou" </> "manifest.json")
-      (bp ^. #name)
-      (baselineComposedNames baselineComposition)
+  -- The check runs in --debug too, unlike on the migrate path. --debug is a
+  -- true dry run for @agent migrate@ but not here: it skips only the provider
+  -- call, still applies the baseline at (c), and still records
+  -- applied-blueprint provenance below. Rewriting the manifest to name a
+  -- blueprint older than the one this project records is ADR 0003's opening
+  -- scenario exactly, so exempting debug would leave the hole this guard
+  -- exists to close.
+  enforceAgentArtifactGuard
+    (opts ^. #allowDowngrade)
+    (".seihou" </> "manifest.json")
+    (bp ^. #name)
+    (baselineComposedNames baselineComposition)
 
   -- Finish provider/model/effort resolution now that the blueprint is loaded
   -- and its launch declaration is known. This must precede the

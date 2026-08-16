@@ -57,8 +57,11 @@ resolving the wrong one rises accordingly.
 - [x] Add `allowDowngrade` to `BlueprintRunOpts` and `BlueprintMigrationOpts` and parse `--allow-downgrade` for both agent subcommands — 2026-08-16
 - [x] Insert the guard into `seihou agent run` before `applyBaseline`, covering the blueprint and its resolved base modules — 2026-08-16
 - [x] Insert the guard into `seihou agent migrate` before planning edges — 2026-08-16
-- [x] Keep `--debug` free of any check on both commands — 2026-08-16
-- [ ] Add tests: refusal leaves the tree byte-identical; override prints and proceeds; debug checks nothing.
+- [x] Keep `--debug` free of any check on both commands — revised during implementation: `--debug`
+      is check-free on `agent migrate`, which writes nothing, and checked on `agent run`, which
+      applies the baseline and records provenance even under `--debug` — 2026-08-16
+- [x] Add tests: refusal leaves the tree byte-identical; override prints and proceeds; debug checks
+      nothing on migrate and still checks on run — 2026-08-16
 - [ ] Update `docs/cli/agent.md`, `docs/user/blueprints.md`, `docs/user/blueprint-migrations.md`, and `docs/user/CHANGELOG.md`.
 - [ ] Consider whether ADR 0003 should be amended to name the agent path; record the decision.
 - [ ] Mark IR-3 `status: implemented` and update `docs/improvement-requests/log.md`.
@@ -79,6 +82,35 @@ resolving the wrong one rises accordingly.
   once from `handleAgentRun` before the guard, with its result handed to `applyBaseline`.
   `applyBaseline`'s signature changed from taking `[Dependency]` to taking the resolved
   `BaselineComposition`, and the Dhall evaluation still happens exactly once per run.
+
+- **`seihou agent --debug run` is not a dry run — it applies the baseline and rewrites the
+  manifest.** Both this plan's Context section and IR-3 assert that `--debug` "contacts no
+  provider, applies no baseline, and writes nothing", and use that to justify exempting debug
+  from the check. That is true of `agent migrate` and false of `agent run`. Verified against
+  the built binary in a scratch project:
+
+  ```text
+  $ seihou agent --debug run probe-bp
+  … prompt printed …
+  $ cat .seihou/manifest.json
+  {"blueprint":{"name":"probe-bp","origin":{"kind":"project",…},"version":"1.0.0",…},…}
+  $ ls
+  BASELINE.md
+  ```
+
+  `BASELINE.md` came from the blueprint's `baseModules`. In
+  `seihou-cli/src-exe/Seihou/CLI/AgentRun.hs` the baseline step (c) has no `debug` condition,
+  and the provenance write is gated on `launchSucceeded`, which
+  `runRenderedAgentPromptMode` returns `True` for in debug mode after printing the prompt —
+  the comment there says that is deliberate. `docs/cli/agent.md` agrees in one place ("For
+  this subcommand, parent `--debug` is a true dry run" — said only of `migrate`) and
+  contradicts itself in another ("A successful non-debug run records applied-blueprint
+  provenance"), which is now corrected.
+
+  **Consequence:** exempting `--debug` on the run path would have left `seihou agent --debug
+  run` free to regenerate from a stale blueprint and rewrite the manifest to name it — ADR
+  0003's opening scenario, reachable by the one flag the plan promised was safe. The check is
+  therefore unconditional on `agent run` and skipped on `agent migrate`. See the Decision Log.
 
 - **The `--no-baseline` / no-baseModules distinction is load-bearing at the new call site.**
   `BaselineSkipped` and `BaselineEmpty` are different values in the rendered prompt, and both
@@ -108,6 +140,31 @@ resolving the wrong one rises accordingly.
   actually touch, and a project's recorded blueprint is frequently a different one. Both are
   three lines over one shared `checkBlueprintIdentity`, which is itself the module/blueprint
   generalisation of the old inline `checkOne`.
+  Date: 2026-08-16
+
+- Decision: `--debug` skips the check on `seihou agent migrate` and does not skip it on
+  `seihou agent run`.
+  Rationale: The plan and IR-3 both specify a blanket debug exemption, justified by the claim
+  that `--debug` writes nothing. Measurement (see Surprises & Discoveries) shows that is true
+  only of `agent migrate`. `agent run --debug` still applies the blueprint's baseline to the
+  working directory and still records applied-blueprint provenance naming the local
+  blueprint's version; only the provider call is skipped. A blanket exemption would therefore
+  have left the plan's own headline scenario reachable through one flag. The exemption's
+  actual purpose — do not refuse a command that writes nothing — is preserved exactly where it
+  applies. Making `agent run --debug` a true dry run instead was considered and rejected as
+  out of scope: `docs/cli/agent.md` describes the true-dry-run property as belonging to
+  `migrate` specifically, and the provenance write is a deliberate long-standing behaviour
+  documented in a code comment, so changing it is a separate decision from adding a guard.
+  Date: 2026-08-16
+
+- Decision: Hoist the baseline composition load out of `applyBaseline` into `handleAgentRun`
+  rather than filtering the guard by the blueprint's declared `baseModules`.
+  Rationale: Milestone 3 says to scope the module check "exactly as `seihou run` passes
+  `composedModuleNames`". That set is built from the *resolved* composition, so it includes
+  transitive dependencies; declared `baseModules` are only its roots. Filtering by the roots
+  would have let a stale transitive dependency generate files on the one path where no other
+  guard runs. Hoisting also keeps the composition's Dhall evaluation to once per run, which
+  re-resolving inside the guard would not.
   Date: 2026-08-16
 
 - Decision: `checkRecordedBlueprint` falls back to the newest migration receipt for the named

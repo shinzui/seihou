@@ -232,6 +232,7 @@ test-suite seihou-cli-test
     Seihou.CLI.AgentCompletionSpec
     Seihou.CLI.AgentConfigShowSpec
     Seihou.CLI.AgentConfigSpec
+    Seihou.CLI.AgentGuardE2ESpec
     Seihou.CLI.AgentLaunchSpec
     Seihou.CLI.AgentMigrateE2ESpec
     Seihou.CLI.AgentModelsSpec
