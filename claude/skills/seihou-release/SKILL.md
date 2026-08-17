@@ -7,6 +7,19 @@ allowed-tools: Bash, Read, Edit, Write, Grep, Glob, Skill, AskUserQuestion
 
 # Seihou Release
 
+> **Superseded by the `release` skill — use that one.**
+>
+> `agents/skills/release/SKILL.md` (invoked as `/release`) is the current,
+> maintained procedure. It covers the **three** packages this repo now ships,
+> publishes them to Hackage in dependency order, and gates the release on
+> `just format` / `build` / `test` / `check` plus `cabal check`.
+>
+> This file predates `seihou-okf-extension` and the Hackage publishing step: it
+> knows only `seihou-cli` and `seihou-core` and stops at the GitHub release, so
+> following it would cut an incomplete release. It is kept only for the
+> version-suggestion and release-notes guidance below. Prefer `/release`; if
+> you use anything here, cross-check it against that skill first.
+
 This skill orchestrates the release process by analyzing changes since the last release, suggesting a version number, updating cabal files and the changelog, and creating a GitHub release.
 
 **Project:** seihou — Composable, type-safe project scaffolding system
@@ -83,7 +96,9 @@ Categorize changes by type:
 - **Documentation**: Doc updates (usually don't warrant version bump alone)
 - **Internal**: Refactoring, tests, infrastructure (don't warrant version bump)
 
-Note: `docs/user/CHANGELOG.md` is a **documentation review log**, not a release changelog — don't confuse the two. The release changelog lives at `CHANGELOG.md` in the repo root.
+Note: there are **two** changelogs and a release cuts both. `CHANGELOG.md` in the repo root is the engineering log (ExecPlans, modules, type signatures). `docs/user/CHANGELOG.md` is a curated **user-facing** changelog in plain prose with worked examples — same `## [A.B.C.D] - YYYY-MM-DD` sections, same compare links at the foot. Move each file's `Unreleased` entries into a new version section and refresh both sets of links; don't copy one file's wording into the other.
+
+(This note used to say `docs/user/CHANGELOG.md` was a doc-review log to leave alone. That was wrong, and because of it no release cut the file between `0.3.0.0` and `0.7.0.0` — its `Unreleased` heading quietly absorbed three releases before being split back out at `0.7.0.0`.)
 
 ### Step 4: Suggest Version Number
 
@@ -262,10 +277,10 @@ The release notes should be a concise summary of user-facing changes, organized 
 - **No releases for internal-only changes** — if all changes are refactoring/tests/infrastructure, suggest not releasing
 - **Keep release notes user-focused** — don't include internal implementation details
 - **Tag format**: Use `vX.Y.Z.W` format (with 'v' prefix)
-- **Both cabal packages** share the same version number
+- **All three cabal packages** (`seihou-core`, `seihou-cli`, `seihou-okf-extension`) share the same version number — this file's step-by-step only edits the first two, which is one reason to use the `release` skill instead
 - If there are uncommitted changes before starting, warn the user and suggest committing or stashing first
 - Always run `just format` before committing to satisfy the pre-commit hook
-- Do **not** touch `docs/user/CHANGELOG.md` during a release — it is a doc-review log, not a release changelog
+- **Cut both changelogs** during a release — the root `CHANGELOG.md` (engineering) and `docs/user/CHANGELOG.md` (curated, user-facing). Both carry version sections and compare links, and both belong in the release commit
 
 ## Version Suggestion Guidelines
 
