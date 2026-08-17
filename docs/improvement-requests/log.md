@@ -1,5 +1,15 @@
 # Bundle Update Log
 
+## 2026-08-17
+* **Addition**: IR-5 requests that a blueprint author be able to verify an entailed edge resolves
+from the source consumers install from. Observed at the keiro 0.13.0.0 release: an entailment was
+correct and the entailed blueprint declared exactly the named edge, but its commit was unpushed, so
+every consumer's run would have refused. `validate-blueprint` passes correctly because the question
+is not a property of the blueprint being validated, and `--debug migrate` passes because it
+resolves the author's own machine — so the preview's reassurance is strongest where it is least
+warranted. Asks for resolved-blueprint provenance in the preview, and an opt-in mode that resolves
+entailments against their recorded remote.
+
 ## 2026-08-16
 * **update**: IR-1 is implemented. A blueprint migration receipt now carries an outcome; an edge reports inapplicability through a signal file (interactive providers) or a trailing SEIHOU: not-applicable line (API providers), the chain continues past it, and only an applied receipt suppresses a later run. A dedicated exit code was rejected because an interactive session's exit code is the shell's.
 * **Update**: IR-3 is implemented. seihou agent run and seihou agent migrate now consult ManifestGuard before doing any work and refuse a stale or substituted artifact, with a --allow-downgrade override. The blanket --debug exemption applies to agent migrate only, because agent run --debug still applies the baseline and records provenance. ADR 0003 was amended to cover the agent path.
