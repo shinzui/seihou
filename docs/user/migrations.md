@@ -26,23 +26,43 @@ run `seihou help migrations`.
 A library repository can publish upgrade knowledge through an ordinary installed
 blueprint. Each `S.BlueprintMigration` has `from`, `to`, and `prompt`; both
 versions use the same dotted numeric parser as module migrations. The consumer
-supplies the version window explicitly:
+can name the version window explicitly, or let seihou infer either end of it:
 
 ```sh
+seihou agent migrate my-library
 seihou agent migrate my-library --from 1.0.0 --to 3.0.0
 ```
 
 Blueprint migrations share the gap-tolerant window walker described below, but
 not the deterministic filesystem engine. Seihou runs one provider session per
-selected edge, writes an exact `(blueprint, from, to)` receipt after success,
+selected edge, writes a receipt for that exact edge after the session returns,
 and stops before the next edge on provider or receipt-write failure. A rerun
 skips completed edges and resumes; `--rerun` intentionally repeats them. Parent
 `--debug` prints all pending sessions without contacting a provider or changing
 the manifest.
 
-Migration mode reuses blueprint variables, shared prompt, references, and allowed
-tools, but never applies `baseModules`. A receipt records successful agent
-completion, not proof that a language package manager reports the target version.
+Four details differ from module migrations in ways that matter, and each is
+covered fully in [Blueprint Migrations](blueprint-migrations.md):
+
+- **A receipt is keyed by origin as well as name.** Its identity is the origin
+  and name of the blueprint that owns the edge plus the edge's `from` and `to`,
+  so two repositories publishing a same-named blueprint keep separate ledgers.
+- **A session has three outcomes, not two.** It can do the work (*applied*),
+  report that this project does not meet the edge's precondition and change
+  nothing (*not applicable*), or fail. Only an applied receipt suppresses a
+  later run.
+- **A chain can span blueprints.** An edge may declare that crossing it
+  `entails` crossing an exact edge of another blueprint, so one command can
+  carry a project across a cohort of libraries released together.
+- **The version window can be inferred.** `--to` comes from a `versionProbe`
+  the blueprint's author declares; `--from` comes from the project's own
+  receipts.
+
+Each step reuses the variables, shared prompt, reference files, and allowed tools
+of the blueprint that *owns* it — which under `entails` need not be the one named
+on the command line — and never applies `baseModules`. A receipt records that the
+agent session returned, not proof that a language package manager reports the
+target version.
 See [Blueprint Migrations](blueprint-migrations.md) for the complete workflow, and
 [Agent-Driven Blueprints](blueprints.md#library-upgrade-migrations) for the Dhall
 shape and registry publication.

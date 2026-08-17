@@ -420,6 +420,27 @@ complete until its own documentation is updated. `docs/user/blueprint-migrations
 one file every plan from EP-84 onward edits, so each should re-read it immediately before
 editing rather than assuming the shape it had when this MasterPlan was written.
 
+**This list was incomplete, and every child plan inherited the omission.** It names the
+files each plan *edits* but not the files that *describe* what those plans changed from
+elsewhere. Two summary pages drifted for the whole initiative and were caught only by the
+completion sweep:
+
+- `docs/user/migrations.md` — its "Agent-guided blueprint migrations" section summarises the
+  blueprint side for readers who arrived looking for module migrations. It was stale from
+  four separate plans at once: it gave the receipt key as `(blueprint, from, to)` (EP-81
+  added origin), said a receipt is written "after success" (EP-84 added a third outcome),
+  described `S.BlueprintMigration` as `from`/`to`/`prompt` with no `entails` (EP-85), and
+  told consumers the window is supplied explicitly (EP-86).
+- `docs/user/teams.md` — its "What happens when someone is out of date" section named
+  `seihou run` and `seihou migrate` as the commands that check installed artifacts against
+  the manifest, which EP-83 widened to four, and listed `--allow-downgrade` as accepted by
+  three commands rather than five.
+
+**For a later MasterPlan:** when a plan changes a behaviour, grep the whole documentation
+tree for the *behaviour*, not just for the files the plan expects to edit — a summary that
+points at your guide is as wrong as the guide would be, and nothing in the plan's own
+checklist will catch it.
+
 Cross-plan decisions expected to become ADRs at completion:
 
 - **Receipt identity includes the origin of the blueprint that owns the edge.** *Recorded.*

@@ -62,8 +62,9 @@ seihou upgrade demo                                            # installed, but 
 
 ## What happens when someone is out of date
 
-Before it plans or writes anything, `seihou run` and `seihou migrate` compare
-the version the manifest records for each module against the copy installed on
+Before they plan or write anything, `seihou run`, `seihou migrate`,
+`seihou agent run`, and `seihou agent migrate` compare the version the manifest
+records for each artifact they are about to use against the copy installed on
 your machine. If yours is older, the command stops without touching a file:
 
 ```text
@@ -105,7 +106,8 @@ than through this message — so a backwards move is refused there too.
 
 ### When `--allow-downgrade` is right
 
-Pass `--allow-downgrade` to `run`, `migrate`, or `update` when pinning the
+Pass `--allow-downgrade` to `run`, `migrate`, `update`, `agent run`, or
+`agent migrate` when pinning the
 project back is what you actually mean: reverting a module upgrade that broke
 something, or reproducing an old state to debug it. The command proceeds and
 still prints what it is overriding, under a `! Proceeding anyway` heading —
