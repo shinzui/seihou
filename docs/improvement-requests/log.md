@@ -1,6 +1,13 @@
 # Bundle Update Log
 
 ## 2026-08-17
+* **Addition**: IR-6 requests that `seihou agent migrate` work without a trailing PROMPT on the
+default claude-cli provider. `claude -p` requires a user message, seihou sends only a system prompt,
+and `initialPrompt` is typed and documented as optional — so the invocation every worked example
+shows fails on the first edge of every chain, and the error blames the provider. Observed running
+keiro-upgrade against mori. The surrounding fail-closed behaviour was correct: no receipt, no source
+touched, resumable. Asks for a default instruction, a required argument, or a per-provider fallback.
+
 * **Addition**: IR-5 requests that a blueprint author be able to verify an entailed edge resolves
 from the source consumers install from. Observed at the keiro 0.13.0.0 release: an entailment was
 correct and the entailed blueprint declared exactly the named edge, but its commit was unpushed, so
