@@ -4,6 +4,151 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0.0] - 2026-08-16
+
+### Added
+
+#### Migration fan-out across a library cohort
+- **Entailed cohort edges** (EP-85, masterplan 10): a blueprint migration edge
+  may declare that crossing it **entails** crossing an exact edge of another
+  blueprint, through a new `EntailedEdge.dhall` and an `entails` field on
+  `BlueprintMigration`. Entailed edges are expanded recursively by a pure core
+  planner (`Seihou.Core.Migration`) into one ordered plan, run before the edge
+  that declares them, and resolve their own owning blueprint's reference files,
+  allowed tools, and variables. Their receipts are filed under the **owning**
+  blueprint's identity, so a shared edge reached through an intermediary is
+  crossed exactly once from either entry point. A cycle, an entailed blueprint
+  that is not installed, and a named edge the entailed blueprint does not
+  declare are all hard errors naming the blueprint whose author must fix them.
+  New library module `Seihou.CLI.MigrationCohort`.
+- **A not-applicable migration outcome** (EP-84, IR-1): a new
+  `MigrationOutcome` type (`MigrationApplied` / `MigrationNotApplicable !Text`)
+  records a deliberate no-op as a third outcome distinct from success and
+  provider failure. An edge signals it through a per-edge file under `.seihou/`
+  for interactive providers, or a trailing `SEIHOU: not-applicable <reason>`
+  marker line for API providers; seihou's own framing prompt carries the
+  convention so edge prompts need only state their precondition. The chain
+  continues past an inapplicable edge, and only an *applied* receipt suppresses
+  a later run — so an edge whose precondition is met later is planned again
+  without `--rerun`. `seihou status` distinguishes the two outcomes.
+- **An inferred migration version window** (EP-86): `seihou agent migrate`'s
+  `--from` and `--to` are now optional. `--to` comes from a new optional
+  `versionProbe` field on `Blueprint` — a shell command the blueprint's author
+  declares, which reads the version the consuming project depends on — and
+  `--from` from the highest version this project's receipts record as applied.
+  An explicit flag always wins, and an inferred end is reported with its
+  source. A probe that fails or prints an unparseable version is a warning that
+  degrades to requiring `--to`, not a failure. The probe *is* executed under
+  `--debug`, since the window decides which edges the preview shows.
+  `validate-blueprint` gains a probe check.
+- **Artifact origin on the agent-applied manifest records** (EP-81, IR-2):
+  `AppliedBlueprint`, `AppliedBlueprintMigration`, and `AppliedRecipe` now carry
+  the `ArtifactOrigin` the module records already had, and the blueprint
+  migration completion key includes it — two blueprints published by different
+  repositories under one name are not the same blueprint, so their
+  identically-numbered edges are not the same edge. The three places that ask
+  whether two recorded origins name the same artifact share one definition in
+  the new `Seihou.Core.ArtifactIdentity` (`sameArtifactIdentity`), which also
+  absorbed `ManifestGuard`'s private URL and path normalizers, since
+  `seihou-core` cannot import `seihou-cli`. The manifest schema stays at **v6**:
+  a missing `origin` decodes as `LocalOrigin` of the recorded name, so no
+  conversion pass is needed and `seihou manifest upgrade` is unaffected.
+- **An install-time different-source refusal** (EP-82, IR-4): `seihou install`
+  reads the `.seihou-origin.json` it is about to delete and refuses when the
+  incoming artifact comes from a different repository, or when the existing
+  entry records no provenance at all. The refusal happens before anything is
+  removed, so a refused install leaves the cache byte-identical and exits
+  non-zero. A new **`--force`** replaces the entry anyway and prints what it
+  overrode. `seihou upgrade`, `seihou update`, and `seihou migrate` reinstall
+  from an artifact's own recorded origin and so pass `force = False`, reporting
+  a mismatch rather than overriding it.
+- **The artifact guard on the agent path** (EP-83, IR-3): `seihou agent run` and
+  `seihou agent migrate` now consult `ManifestGuard` before applying a
+  blueprint baseline and before planning migration edges, refusing a stale or
+  substituted artifact on the same terms as `seihou run` with the same new
+  **`--allow-downgrade`** override. `ManifestGuard` gains `checkAppliedBlueprint`
+  and `checkRecordedBlueprint` over a shared `checkRecordedArtifact`, falling
+  back to the newest migration receipt when no applied-blueprint entry names the
+  blueprint; `enforceArtifactGuard` moved into `ManifestGuard`, generalised from
+  `RunOpts` to a `Bool`. `agent run` checks the blueprint and every module its
+  baseline would generate from, transitive dependencies included; `agent migrate`
+  checks the blueprint only, and every blueprint in a resolved cohort chain.
+  Both checks run before anything is written, so a refusal leaves the tree and
+  manifest byte-identical. New library module `Seihou.CLI.AgentGuard`.
+- **`seihou status` reports on the recorded blueprint**, alongside stale or
+  substituted modules.
+
+### Changed
+- **Breaking:** `AppliedBlueprint`, `AppliedBlueprintMigration`, and
+  `AppliedRecipe` each gain an `origin :: !ArtifactOrigin` field, and
+  `AppliedBlueprintMigration` also gains `outcome :: !MigrationOutcome`.
+  `Seihou.Manifest.Types.hasAppliedBlueprintMigration` takes an
+  `ArtifactOrigin` as its new first argument and now counts only receipts whose
+  outcome is `MigrationApplied`, matching the completion key
+  `pendingBlueprintMigrations` applies. `Blueprint` gains
+  `versionProbe :: !(Maybe Text)`. Both new blueprint fields decode through
+  `withDefaults`, so artifacts authored against an older schema pin still load.
+- **Breaking:** `BlueprintMigrationOpts`'s `from` and `to` become
+  `Maybe Text`, and `InstallOpts`, `BlueprintRunOpts`, and
+  `BlueprintMigrationOpts` gain `force` / `allowDowngrade` fields.
+- **Breaking:** a `seihou install` run against a registry now exits non-zero
+  when any entry failed, instead of reporting the failure count and exiting
+  zero. Every entry is still attempted and every failure still reported.
+- `seihou agent migrate` names the owning blueprint in every step label
+  (`Running blueprint migration 1/2: my-library 1.0.0 -> 2.0.0`), and the
+  `--debug` headers gained the same prefix; scripts matching the old shape need
+  updating.
+- Reinstalling an artifact from the URL it is already installed from no longer
+  prints `warning: overwriting existing installation of '<name>'`. The one-line
+  warning covered both the routine reinstall and the destructive substitution,
+  and the routine case is overwhelmingly common; the calling command already
+  reports what it installed, and the different-source refusal now surfaces the
+  case worth stopping for.
+
+### Fixed
+- **A blueprint migration edge is no longer silently skipped because a
+  same-named blueprint from another repository already ran it** (EP-81, IR-2).
+  The completion key was the blueprint's bare name plus the edge's `from` and
+  `to` versions, so an edge from a second repository's same-named blueprint was
+  dropped from the plan with no message — the run looked like an ordinary
+  "nothing pending" for work that never happened. Receipts now record and
+  compare origin. **One-time effect:** receipts written before this release
+  carry no provenance and are read as name-only, so the first `agent migrate`
+  after upgrading may list an already-completed edge as pending; re-running is
+  safe by design, or raise `--from` to skip it deliberately.
+
+### Documentation
+- Four **Improvement Requests** (IR-1 through IR-4) filed under
+  `docs/improvement-requests/`, a bundle this repository did not have, and
+  registered as an OKF bundle with the `okf-profiles` profile. All four are
+  closed as completed by this release.
+- **MasterPlan 10** (`docs/masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md`)
+  and its six ExecPlans, EP-81 through EP-86.
+- Four new **ADRs**: 0006 (the install cache will not silently substitute an
+  artifact), 0007 (a deliberate no-op is a third outcome, not a success), 0008
+  (an entailed migration edge is owned by the blueprint that declares it), and
+  0009 (seihou reads no package-manager format — artifacts declare the command).
+  ADR 0002 is amended for what makes two records of the same work the same
+  record, and ADR 0003 for the guard's widened scope.
+- `docs/user/CHANGELOG.md`'s `Unreleased` section had accumulated across
+  0.4.0.0, 0.5.0.0, and 0.6.0.0 because no release commit ever cut it; its
+  entries are now filed under the releases they shipped in.
+- Author and consumer guidance for `entails`, the not-applicable outcome, the
+  version probe, and the agent-path guard across `docs/user/blueprint-migrations.md`,
+  `docs/user/blueprints.md`, `docs/cli/agent.md`, `docs/cli/install.md`,
+  `docs/cli/migrate.md`, `docs/cli/status.md`, and `docs/cli/upgrade.md`.
+- Corrected the `update-seihou-schema` skill, which told two plans to run
+  `dhall hash < schema/package.dhall`; relative sibling imports resolve against
+  the wrong directory on stdin, so the command always failed.
+
+### Packaging
+- `seihou-schema` re-pinned twice — to `014bb79` for `EntailedEdge.dhall` and
+  the `entails` field, then to `49ff1e5` for `versionProbe` — with the
+  submodule pointer, `schemaUrl` / `schemaHash`, and `flake.lock` all moved
+  together each time.
+- The `mori-schema` pin bumped to a revision carrying `OkfBundle`.
+- No dependency bounds changed in this release.
+
 ## [0.6.0.0] - 2026-07-28
 
 ### Added
@@ -631,7 +776,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.6.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.7.0.0...HEAD
+[0.7.0.0]: https://github.com/shinzui/seihou/compare/v0.6.0.0...v0.7.0.0
 [0.6.0.0]: https://github.com/shinzui/seihou/compare/v0.5.0.0...v0.6.0.0
 [0.5.0.0]: https://github.com/shinzui/seihou/compare/v0.4.0.0...v0.5.0.0
 [0.4.0.0]: https://github.com/shinzui/seihou/compare/v0.3.0.0...v0.4.0.0

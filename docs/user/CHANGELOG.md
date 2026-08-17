@@ -10,6 +10,8 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+## [0.7.0.0] - 2026-08-16
+
 ### Added
 
 - **`seihou agent migrate` now infers the version window.** Both `--from` and
@@ -221,6 +223,90 @@ packages in the workspace share a single version.
 
   See [`seihou install`](../cli/install.md#when-the-name-is-already-taken).
 
+### Changed
+
+- **`seihou agent migrate`'s `--from` and `--to` are now optional.** Its usage
+  line changed from `seihou agent migrate BLUEPRINT --from VERSION --to VERSION
+  [PROMPT]` to `seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION]
+  [PROMPT]`. Every existing invocation is unaffected and prints exactly what it
+  printed before; a run that omits either flag gains a two-line report of what
+  was inferred and where it came from. Add `--verbose` to see an explicitly
+  supplied end accounted for too.
+
+- **`seihou agent migrate` now names the owning blueprint in every step label.**
+  A chain can span several blueprints, so `Running blueprint migration 1/2:
+  1.0.0 -> 2.0.0` became `Running blueprint migration 1/2: my-library 1.0.0 ->
+  2.0.0`, and the `--debug` headers gained the same prefix. Scripts matching the
+  old shape need updating; nothing else about the output changed.
+
+- **A routine reinstall is quieter, and a failed registry batch now exits
+  non-zero.** Reinstalling an artifact from the URL it is already installed from
+  no longer prints `warning: overwriting existing installation of '<name>'`; the
+  command already tells you what it installed on the line after. If you relied
+  on that warning to notice replacements, the different-source refusal above is
+  what now surfaces the case worth noticing.
+
+  Separately, `seihou install` against a registry used to report
+  `3 entries installed, 2 failed.` and exit zero, so a script could not tell a
+  half-applied batch from a complete one. Every entry is still attempted and
+  every failure still reported at the end, but the command now exits non-zero
+  when any entry failed.
+
+### Fixed
+
+- **A blueprint migration edge is no longer skipped because a same-named
+  blueprint from another repository already ran it.** `seihou agent migrate`
+  skips any edge that already has a receipt in `.seihou/manifest.json`, and it
+  used to decide "already has a receipt" from the blueprint's bare name plus the
+  edge's `from` and `to` versions. Two repositories can publish a blueprint
+  under the same name. If you ran the `1.0.0 -> 2.0.0` edge of `shared-upgrade`
+  from one repository and later installed a different repository's
+  `shared-upgrade`, its `1.0.0 -> 2.0.0` edge was dropped from the plan with no
+  message at all — the run looked like an ordinary "nothing pending" for work
+  that never happened.
+
+  The manifest now records where each of these artifacts came from. The
+  `blueprint` entry written by `seihou agent run`, every entry in
+  `blueprintMigrations`, and the `recipe` entry all carry an `origin` block, in
+  the same shape modules have always had:
+
+  ```json
+  {
+    "name": "shared-upgrade",
+    "origin": {
+      "kind": "remote",
+      "url": "https://github.com/acme/one",
+      "artifact": "shared-upgrade"
+    },
+    "from": "1.0.0",
+    "to": "2.0.0",
+    "appliedAt": "2026-08-16T15:02:00Z"
+  }
+  ```
+
+  A receipt now stands for the origin and name of the blueprint that owns the
+  edge together with its `from` and `to` versions, so the two repositories keep
+  separate receipts and both edges run. Two spellings of one git URL —
+  `https://host/repo` and `https://host/repo.git` — still count as one origin.
+
+  **One-time effect on existing projects.** Receipts written before this release
+  carry no provenance, and nothing on disk can say retroactively which
+  repository they came from, so they are read as "name only, provenance
+  unverifiable". The first `seihou agent migrate` after upgrading may therefore
+  list an edge you have already completed as pending. That is honest rather than
+  a regression — seihou cannot prove the recorded edge came from the blueprint
+  installed now. Re-run it, which is safe by design because edge prompts inspect
+  real usage before changing anything and a completed edge finds nothing to do,
+  or skip it deliberately by raising `--from`. Nothing is deleted from the
+  manifest and no conversion command is needed; `seihou manifest upgrade` is
+  unaffected.
+
+  See [What a receipt means](blueprint-migrations.md#which-edge-a-receipt-is-for).
+
+## [0.6.0.0] - 2026-07-28
+
+### Added
+
 - **`seihou manifest upgrade` converts a manifest written by an older seihou.**
   Manifests before schema version 6 recorded, for each applied module, the
   absolute directory it occupied on the machine that ran the command. Seihou no
@@ -379,6 +465,71 @@ packages in the workspace share a single version.
   [Blueprints](blueprints.md#launch-settings) and
   [Prompts](prompts.md#launch-settings).
 
+### Changed
+
+- **The manifest is now machine-independent, and manifests written by earlier
+  versions must be upgraded before use.** This is a breaking change for existing
+  projects; `seihou manifest upgrade` is the fix.
+
+  `.seihou/manifest.json` used to record, for every applied module, the absolute
+  directory that module occupied on the machine that ran the command —
+  `/Users/shinzui/.config/seihou/installed/haskell-base`. Teams commit the
+  manifest, and that path meant nothing in anybody else's clone: commands that
+  re-read a module from it either failed or silently fell back to a different
+  module than the manifest described.
+
+  Schema version 6 replaces those paths with portable artifact origins. Every
+  reference is now the git URL the artifact was installed from plus its name, a
+  path relative to the project root for a module living inside the project, or a
+  bare name when nothing recorded an upstream:
+
+  ```json
+  "origin": {
+    "kind": "remote",
+    "url": "https://github.com/shinzui/seihou-modules.git",
+    "artifact": "haskell-base",
+    "repo": "seihou-modules"
+  }
+  ```
+
+  Two developers who apply the same module now produce the same bytes, so a
+  manifest diff in review shows a real change rather than a change of laptop.
+  Every command resolves the recorded origin against the local machine's search
+  paths, and when the artifact is not installed it says so by name, with the
+  `seihou install` command that fixes it, instead of failing somewhere inside a
+  Dhall evaluation.
+
+  Manifests at schema version 5 or earlier no longer load. Every command reports
+  this and names the remedy; run `seihou manifest upgrade` once, review the
+  printed conversions, and commit the result.
+
+  New guide: [Sharing a Seihou Project Across a Team](teams.md) — what to
+  commit, what each developer needs installed, and what happens when someone is
+  out of date.
+
+### Fixed
+
+- **Provider errors on the `anthropic` and `openai` providers are reported
+  properly.** A failing API call — a missing or invalid key, a rate limit, an
+  unknown model — was reported as `Error: Provider returned no assistant text.`,
+  which told you nothing about what went wrong. It now names the actual failure:
+
+  ```text
+  $ seihou agent run my-blueprint --provider anthropic
+  Error: BaikaiError {category = AuthError, message = "env var ANTHROPIC_API_KEY is not set", ...}
+  ```
+
+- **Reasoning effort now reaches non-interactive agent runs.** Effort was
+  applied to interactive Claude Code and Codex sessions but silently dropped
+  whenever Seihou took the batch path — `claude -p`, used when stdin is not a
+  terminal, such as in CI or through a pipe. Configured, environment-set, and
+  blueprint-declared effort now reach the agent in both modes. Requires Baikai
+  0.4.1 / baikai-claude 0.4.
+
+## [0.5.0.0] - 2026-07-20
+
+### Added
+
 - **Configurable reasoning effort.** Each agent command (and `seihou prompt
   run`) can now set the model's reasoning effort — how hard it thinks — with the
   same hierarchy as provider and model. Use `agent.effort` /
@@ -430,144 +581,18 @@ packages in the workspace share a single version.
 
 ### Changed
 
-- **`seihou agent migrate`'s `--from` and `--to` are now optional.** Its usage
-  line changed from `seihou agent migrate BLUEPRINT --from VERSION --to VERSION
-  [PROMPT]` to `seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION]
-  [PROMPT]`. Every existing invocation is unaffected and prints exactly what it
-  printed before; a run that omits either flag gains a two-line report of what
-  was inferred and where it came from. Add `--verbose` to see an explicitly
-  supplied end accounted for too.
-
-- **`seihou agent migrate` now names the owning blueprint in every step label.**
-  A chain can span several blueprints, so `Running blueprint migration 1/2:
-  1.0.0 -> 2.0.0` became `Running blueprint migration 1/2: my-library 1.0.0 ->
-  2.0.0`, and the `--debug` headers gained the same prefix. Scripts matching the
-  old shape need updating; nothing else about the output changed.
-
-- **The manifest is now machine-independent, and manifests written by earlier
-  versions must be upgraded before use.** This is a breaking change for existing
-  projects; `seihou manifest upgrade` is the fix.
-
-  `.seihou/manifest.json` used to record, for every applied module, the absolute
-  directory that module occupied on the machine that ran the command —
-  `/Users/shinzui/.config/seihou/installed/haskell-base`. Teams commit the
-  manifest, and that path meant nothing in anybody else's clone: commands that
-  re-read a module from it either failed or silently fell back to a different
-  module than the manifest described.
-
-  Schema version 6 replaces those paths with portable artifact origins. Every
-  reference is now the git URL the artifact was installed from plus its name, a
-  path relative to the project root for a module living inside the project, or a
-  bare name when nothing recorded an upstream:
-
-  ```json
-  "origin": {
-    "kind": "remote",
-    "url": "https://github.com/shinzui/seihou-modules.git",
-    "artifact": "haskell-base",
-    "repo": "seihou-modules"
-  }
-  ```
-
-  Two developers who apply the same module now produce the same bytes, so a
-  manifest diff in review shows a real change rather than a change of laptop.
-  Every command resolves the recorded origin against the local machine's search
-  paths, and when the artifact is not installed it says so by name, with the
-  `seihou install` command that fixes it, instead of failing somewhere inside a
-  Dhall evaluation.
-
-  Manifests at schema version 5 or earlier no longer load. Every command reports
-  this and names the remedy; run `seihou manifest upgrade` once, review the
-  printed conversions, and commit the result.
-
-  New guide: [Sharing a Seihou Project Across a Team](teams.md) — what to
-  commit, what each developer needs installed, and what happens when someone is
-  out of date.
-
 - `seihou status` recommends one update per recorded application; `run` is
   described as initial application/reconfiguration, while `upgrade` is
   explicitly shared-cache-only maintenance.
 
-- **A routine reinstall is quieter, and a failed registry batch now exits
-  non-zero.** Reinstalling an artifact from the URL it is already installed from
-  no longer prints `warning: overwriting existing installation of '<name>'`; the
-  command already tells you what it installed on the line after. If you relied
-  on that warning to notice replacements, the different-source refusal above is
-  what now surfaces the case worth noticing.
+## [0.4.0.0] - 2026-07-15
 
-  Separately, `seihou install` against a registry used to report
-  `3 entries installed, 2 failed.` and exit zero, so a script could not tell a
-  half-applied batch from a complete one. Every entry is still attempted and
-  every failure still reported at the end, but the command now exits non-zero
-  when any entry failed.
-
-### Fixed
-
-- **A blueprint migration edge is no longer skipped because a same-named
-  blueprint from another repository already ran it.** `seihou agent migrate`
-  skips any edge that already has a receipt in `.seihou/manifest.json`, and it
-  used to decide "already has a receipt" from the blueprint's bare name plus the
-  edge's `from` and `to` versions. Two repositories can publish a blueprint
-  under the same name. If you ran the `1.0.0 -> 2.0.0` edge of `shared-upgrade`
-  from one repository and later installed a different repository's
-  `shared-upgrade`, its `1.0.0 -> 2.0.0` edge was dropped from the plan with no
-  message at all — the run looked like an ordinary "nothing pending" for work
-  that never happened.
-
-  The manifest now records where each of these artifacts came from. The
-  `blueprint` entry written by `seihou agent run`, every entry in
-  `blueprintMigrations`, and the `recipe` entry all carry an `origin` block, in
-  the same shape modules have always had:
-
-  ```json
-  {
-    "name": "shared-upgrade",
-    "origin": {
-      "kind": "remote",
-      "url": "https://github.com/acme/one",
-      "artifact": "shared-upgrade"
-    },
-    "from": "1.0.0",
-    "to": "2.0.0",
-    "appliedAt": "2026-08-16T15:02:00Z"
-  }
-  ```
-
-  A receipt now stands for the origin and name of the blueprint that owns the
-  edge together with its `from` and `to` versions, so the two repositories keep
-  separate receipts and both edges run. Two spellings of one git URL —
-  `https://host/repo` and `https://host/repo.git` — still count as one origin.
-
-  **One-time effect on existing projects.** Receipts written before this release
-  carry no provenance, and nothing on disk can say retroactively which
-  repository they came from, so they are read as "name only, provenance
-  unverifiable". The first `seihou agent migrate` after upgrading may therefore
-  list an edge you have already completed as pending. That is honest rather than
-  a regression — seihou cannot prove the recorded edge came from the blueprint
-  installed now. Re-run it, which is safe by design because edge prompts inspect
-  real usage before changing anything and a completed edge finds nothing to do,
-  or skip it deliberately by raising `--from`. Nothing is deleted from the
-  manifest and no conversion command is needed; `seihou manifest upgrade` is
-  unaffected.
-
-  See [What a receipt means](blueprint-migrations.md#which-edge-a-receipt-is-for).
-
-- **Provider errors on the `anthropic` and `openai` providers are reported
-  properly.** A failing API call — a missing or invalid key, a rate limit, an
-  unknown model — was reported as `Error: Provider returned no assistant text.`,
-  which told you nothing about what went wrong. It now names the actual failure:
-
-  ```text
-  $ seihou agent run my-blueprint --provider anthropic
-  Error: BaikaiError {category = AuthError, message = "env var ANTHROPIC_API_KEY is not set", ...}
-  ```
-
-- **Reasoning effort now reaches non-interactive agent runs.** Effort was
-  applied to interactive Claude Code and Codex sessions but silently dropped
-  whenever Seihou took the batch path — `claude -p`, used when stdin is not a
-  terminal, such as in CI or through a pipe. Configured, environment-set, and
-  blueprint-declared effort now reach the agent in both modes. Requires Baikai
-  0.4.1 / baikai-claude 0.4.
+No entries were curated here for this release. Its user-visible changes —
+agent prompts as a first-class artifact kind, `commandVars`, `seihou docs`
+via the OKF extension, and the rest — are recorded in the
+[engineering changelog](../../CHANGELOG.md#0400---2026-07-15). This section
+exists so the version sequence is unbroken rather than to summarise them
+after the fact.
 
 ## [0.3.0.0] - 2026-06-12
 
@@ -676,6 +701,10 @@ regeneration.
 
 ---
 
+[0.7.0.0]: https://github.com/shinzui/seihou/compare/v0.6.0.0...v0.7.0.0
+[0.6.0.0]: https://github.com/shinzui/seihou/compare/v0.5.0.0...v0.6.0.0
+[0.5.0.0]: https://github.com/shinzui/seihou/compare/v0.4.0.0...v0.5.0.0
+[0.4.0.0]: https://github.com/shinzui/seihou/compare/v0.3.0.0...v0.4.0.0
 [0.3.0.0]: https://github.com/shinzui/seihou/compare/v0.2.0.0...v0.3.0.0
 [0.2.0.0]: https://github.com/shinzui/seihou/compare/v0.1.0.0...v0.2.0.0
 [0.1.0.0]: https://github.com/shinzui/seihou/releases/tag/v0.1.0.0
