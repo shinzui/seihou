@@ -3,7 +3,7 @@
 , seihou-schema-src ? null
 }:
 let
-  inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck;
+  inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck dontHaddock;
 in
 final: prev:
 let
@@ -45,7 +45,7 @@ in
       # cause the suite to fail.
       testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git ];
     })
-    (doJailbreak (final.callCabal2nix "seihou-core" ../seihou-core { }));
+    (dontHaddock (doJailbreak (final.callCabal2nix "seihou-core" ../seihou-core { })));
 
   seihou-cli = pkgs.haskell.lib.compose.overrideCabal
     (drv: {
@@ -63,8 +63,18 @@ in
       # available inside the Nix test sandbox.
       testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git ];
     })
-    (doJailbreak (final.callCabal2nix "seihou-cli" ../seihou-cli { }));
+    (dontHaddock (doJailbreak (final.callCabal2nix "seihou-cli" ../seihou-cli { })));
+
+  # `dontHaddock` below: seihou ships a CLI, not a library anyone reads Haddock
+  # for, and these are exactly the derivations that rebuild on every `nix build`
+  # here and on every `darwin-rebuild` in mori://shinzui/dotfiles.nix. nixpkgs'
+  # builder defaults `doHaddock` to true, which adds a `doc` output plus a
+  # Haddock pass over the package and its dependencies' interfaces — pure
+  # repeated cost. Scoped to these packages rather than the whole scope (which
+  # is what `disableHaddock = true` on mori://shinzui/haskell-nix's
+  # `mkChannelExtension` would do) so the dependency closure keeps its hashes
+  # instead of needing a one-time full rebuild.
 
   seihou-okf-extension =
-    doJailbreak (final.callCabal2nix "seihou-okf-extension" ../seihou-okf-extension { });
+    dontHaddock (doJailbreak (final.callCabal2nix "seihou-okf-extension" ../seihou-okf-extension { }));
 }
