@@ -204,6 +204,17 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
   References entry pointing at 0011, which is how it already cross-references ADR 0008.
   Date: 2026-09-10
 
+- Decision: Keep the plan's exact summary sentence, "No agent session was started and no file was
+  changed.", even though the marking does write `.seihou/manifest.json`.
+  Rationale: The sentence is about the working tree, which is what a user asserting "I already did
+  this" is worried about, and the receipts it just announced are self-evidently the change it
+  made. Qualifying it in the terminal ("no file other than the manifest") would trade the line's
+  bluntness — the thing that makes a mistaken marking obvious — for precision the user does not
+  need at that moment. The documentation carries the precise version instead:
+  `docs/user/blueprint-migrations.md` says no file in the working tree is read or written and
+  that the only change is the receipts appended to the manifest.
+  Date: 2026-09-10
+
 ## Outcomes & Retrospective
 
 Delivered as specified. `seihou agent migrate <blueprint> --mark-applied` records a receipt for
@@ -1029,3 +1040,28 @@ Reused without modification: `recordMigration` and `exitErr` in
 This plan has no dependency on another plan and nothing depends on it. It is, however, a
 sensible prerequisite for any future plan that surfaces *pending* blueprint migrations across
 installed blueprints, for the reason given at the end of Context and Orientation.
+
+---
+
+## Revision note — 2026-09-10
+
+Refreshed before implementation and closed after it.
+
+**Refresh.** Milestone 7 claimed the next free ADR number was `0010` and that the corpus ended at
+`0009`; `docs/adr/0010-generated-documentation-is-checked-before-it-is-written.md` had landed in
+the meantime, so the number is now `0011`. Every other claim the plan makes about the working
+tree was re-verified against it and still held — the record and parser shapes, the
+`if null pending` branch, `recordMigration`, the library exports, the test fixtures, `mori.dhall`'s
+single OKF bundle, and every documentation file named in Milestone 6. An Intention was minted for
+this work (`intention_01m26cpw67eens6yw0dz028ryj`) and added to the frontmatter, so Concrete Steps
+now shows both git trailers instead of saying no Intention applies. The CHANGELOG note was
+corrected: `## Unreleased` already carries an `### Added` heading, so the entry is appended under
+it rather than creating it.
+
+**Implementation.** All seven milestones are complete. Two findings are recorded in Surprises &
+Discoveries: the documentation grep found three files Milestone 6 had not named, all asserting
+that a receipt means an agent session completed; and the two end-to-end helpers the plan named for
+the no-session assertion used a fake provider that wrote no log, so the assertion the plan proposed
+would have passed unconditionally. Four decisions were added to the Decision Log, covering the
+refusal output stream, the second exported formatter, the new-ADR-versus-amendment call, and the
+summary sentence's wording.
