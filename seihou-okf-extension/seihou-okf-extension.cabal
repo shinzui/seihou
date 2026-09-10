@@ -23,6 +23,7 @@ source-repository head
 
 library seihou-okf-extension-internal
   default-language: GHC2024
+  ghc-options: -Wall -Werror=incomplete-patterns
   default-extensions:
     DeriveAnyClass
     DuplicateRecordFields
@@ -46,14 +47,14 @@ library seihou-okf-extension-internal
     filepath >=1.4 && <2,
     generic-lens >=2.2 && <3,
     lens >=5.2 && <6,
-    okf-core ^>=0.1.2.0,
+    okf-core ^>=0.8.0.0,
     optparse-applicative >=0.18 && <1,
     seihou-core ^>=0.7.0.0,
     text >=2.0 && <3,
 
 executable seihou-okf-extension
   default-language: GHC2024
-  ghc-options: -threaded
+  ghc-options: -threaded -Wall -Werror=incomplete-patterns
   default-extensions:
     DeriveAnyClass
     DuplicateRecordFields
@@ -73,6 +74,7 @@ executable seihou-okf-extension
 test-suite seihou-okf-extension-test
   type: exitcode-stdio-1.0
   default-language: GHC2024
+  ghc-options: -Wall -Werror=incomplete-patterns
   default-extensions:
     DeriveAnyClass
     DuplicateRecordFields
@@ -96,7 +98,7 @@ test-suite seihou-okf-extension-test
     generic-lens >=2.2 && <3,
     hspec >=2.11 && <3,
     lens >=5.2 && <6,
-    okf-core ^>=0.1.2.0,
+    okf-core ^>=0.8.0.0,
     seihou-core ^>=0.7.0.0,
     seihou-okf-extension-internal,
     tasty >=1.4 && <2,

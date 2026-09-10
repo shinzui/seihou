@@ -22,7 +22,7 @@ spec :: Spec
 spec = do
   describe "renderDocBundle" $ do
     it "emits one concept per entry with the documented id scheme" $ do
-      let Right (concepts, problems) = renderDocBundle wellFormedModel
+      (concepts, problems) <- renderOrFail wellFormedModel
       problems `shouldBe` []
       sort (Okf.renderConceptId . Okf.conceptIdOf <$> concepts)
         `shouldBe` [ "blueprints/app-blueprint",
@@ -47,28 +47,33 @@ spec = do
       rendered `shouldSatisfy` T.isInfixOf "](/modules/app.md)"
 
     it "validates clean for a well-formed model" $ do
-      let Right (_, problems) = renderDocBundle wellFormedModel
+      (_, problems) <- renderOrFail wellFormedModel
       problems `shouldBe` []
 
     it "reports a DanglingReference for an unresolved module ref" $ do
-      let Right (_, problems) = renderDocBundle danglingModel
+      (_, problems) <- renderOrFail danglingModel
       problems `shouldSatisfy` any isDanglingReference
 
     it "reports invalid generated concept IDs as render errors" $ do
       renderDocBundle invalidIdModel
         `shouldBe` Left [InvalidDocConceptId DocModuleKind "-bad" "InvalidConceptIdSegment \"-bad\""]
 
-requireConcept :: T.Text -> DocModel -> IO Okf.Concept
-requireConcept rawId model =
+-- | Render a model, failing the example rather than pattern-matching partially.
+renderOrFail :: DocModel -> IO ([Okf.Concept], [BundleValidationError])
+renderOrFail model =
   case renderDocBundle model of
     Left errs -> expectationFailure ("Expected render success, got " <> show errs) >> error "unreachable"
-    Right (concepts, _) ->
-      case Okf.parseConceptId rawId of
-        Left err -> expectationFailure ("Bad test concept id: " <> show err) >> error "unreachable"
-        Right conceptId ->
-          case filter (\concept -> Okf.conceptIdOf concept == conceptId) concepts of
-            [concept] -> pure concept
-            other -> expectationFailure ("Expected one concept, got " <> show (length other)) >> error "unreachable"
+    Right rendered -> pure rendered
+
+requireConcept :: T.Text -> DocModel -> IO Okf.Concept
+requireConcept rawId model = do
+  (concepts, _) <- renderOrFail model
+  case Okf.parseConceptId rawId of
+    Left err -> expectationFailure ("Bad test concept id: " <> show err) >> error "unreachable"
+    Right conceptId ->
+      case filter (\concept -> Okf.conceptIdOf concept == conceptId) concepts of
+        [concept] -> pure concept
+        other -> expectationFailure ("Expected one concept, got " <> show (length other)) >> error "unreachable"
 
 isDanglingReference :: BundleValidationError -> Bool
 isDanglingReference DanglingReference {} = True

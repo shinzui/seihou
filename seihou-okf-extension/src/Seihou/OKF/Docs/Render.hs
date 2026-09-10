@@ -13,16 +13,16 @@ import Data.Bifunctor (first)
 import Data.Either (partitionEithers)
 import Data.Generics.Labels ()
 import Data.Text qualified as T
-import Okf.Bundle (Concept, conceptFromDocument, writeBundle)
+import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptFromDocument, writeBundle)
 import Okf.ConceptId (ConceptId, parseConceptId, renderConceptLink)
 import Okf.Document qualified as Okf
+import Okf.Index (VersionDeclaration (..))
 import Okf.Validation (BundleValidationError, ValidationProfile (..), validateBundle)
 import Seihou.Core.Types
   ( AgentPrompt (..),
     Blueprint (..),
     BlueprintFile (..),
     Module (..),
-    Recipe (..),
     VarDecl (..),
     VarExport (..),
     VarName (..),
@@ -46,7 +46,14 @@ renderDocBundle :: DocModel -> Either [DocRenderError] ([Concept], [BundleValida
 renderDocBundle model =
   case partitionEithers (conceptFor (model ^. #repoName) <$> model ^. #entries) of
     ([], concepts) ->
-      Right (concepts, validateBundle PermissiveConformance concepts)
+      Right
+        ( concepts,
+          validateBundle
+            PermissiveConformance
+            VersionUndeclared
+            (bundleInventoryOfConcepts concepts)
+            concepts
+        )
     (errors, _) ->
       Left errors
 

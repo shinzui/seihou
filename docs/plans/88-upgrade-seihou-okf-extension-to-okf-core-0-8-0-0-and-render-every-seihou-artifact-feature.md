@@ -10,6 +10,12 @@ provenance:
     model: "claude-opus-5[1m]"
     harness: "claude-code"
     at: 2026-09-10T17:46:15Z
+  revisions:
+    - model: "claude-opus-5[1m]"
+      harness: "claude-code"
+      at: 2026-09-10T18:16:21Z
+      mode: "implement"
+      note: "Milestone 1: okf-core pin raised to 0.8.0.0, warning flags on, error renderers made total"
 ---
 
 # Upgrade seihou-okf-extension to okf-core 0.8.0.0 and render every seihou artifact feature
@@ -71,8 +77,8 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: `okf-core` pin raised from 0.1.2.0 to 0.8.0.0 in `seihou-okf-extension/seihou-okf-extension.cabal` and `nix/haskell-overlay.nix`; extension compiles and its existing tests pass unchanged in behavior.
-- [ ] M1: `-Wall -Werror=incomplete-patterns` added to the extension's library, executable, and test stanzas so a future okf-core error constructor breaks the build instead of the runtime.
+- [x] M1: `okf-core` pin raised from 0.1.2.0 to 0.8.0.0 in `seihou-okf-extension/seihou-okf-extension.cabal` and `nix/haskell-overlay.nix` (2026-09-10). Generated output verified byte-identical before and after the upgrade against the `seihou-modules` registry (12 concepts, `diff -r` clean).
+- [x] M1: `-Wall -Werror=incomplete-patterns` added to the extension's library, executable, and test stanzas; the three warnings `-Wall` surfaced in existing code are fixed, and `renderValidationError`, `renderBundleValidationError`, and the new `renderLogValidationError` are total with no catch-all (2026-09-10).
 - [ ] M2: bundle declares OKF v0.2 at its root, writes section indexes, stamps `generated` provenance on every concept, and validates with `StrictAuthoring`.
 - [ ] M3: `renderExpr` added to `Seihou.Core.Expr` with round-trip tests.
 - [ ] M3: module documents render variables in full, steps, commands, prompts, removal, and migrations.
@@ -87,8 +93,52 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet. Findings from plan research that the implementer needs are stated in Context and
-Orientation rather than here, because they were known before implementation began.)
+- **`cabal test all` does not resolve a build plan in this working tree; `cabal test all
+  --enable-tests` does.** Running the plan's documented command fails with
+
+    ```text
+    Error: [Cabal-7043]
+    Cannot test all the packages in the project because none of the components are
+    available to build: the test suite 'seihou-cli-test', the test suite
+    'seihou-core-test' and the test suite 'seihou-okf-extension-test' are not
+    available because the solver picked a plan that does not include the test suites
+    ```
+
+    This is **not** caused by the okf-core upgrade: `git stash`ing every change in this
+    plan and re-running `cabal test all --dry-run` reproduces it identically on the clean
+    tree at `d83433e`. Adding `--enable-tests` makes the solver find a plan, so the
+    working command throughout this plan is:
+
+    ```bash
+    cabal test all --enable-tests
+    ```
+
+    The alternative fix is a `cabal.project.local` carrying `tests: True`, which the error
+    message itself suggests; that file is not checked in and this plan does not add it.
+
+- **`BundleValidationError` also gained constructors, not just `ValidationError`.** Context
+  and Orientation lists the twelve new `ValidationError` constructors but says
+  `validateBundle`'s signature change "is the only" compile error. In fact
+  `Okf.Validation.BundleValidationError` went from three constructors in 0.1.2.0 to seven
+  in 0.8.0.0, adding `DanglingFrontmatterPath`, `LogInvalid`, `BundleVersionUnparseable`,
+  and `BundleVersionNotUnderstood`. `LogInvalid` carries an `Okf.Log.LogValidationError`,
+  so a third total renderer (`renderLogValidationError`, over `LogDateNotIso`,
+  `LogDaysOutOfOrder`, `LogEmptyDay`) was needed as well. All three renderers now live in
+  `seihou-okf-extension/src/Seihou/OKF/Extension/Docs.hs` with no catch-all branch.
+
+- **The test suite had its own two-argument `validateBundle` call.**
+  `seihou-okf-extension/test/Seihou/OKF/Extension/DocsSpec.hs` calls `validateBundle`
+  directly on a walked bundle, so the signature change broke the tests as well as the
+  library. It now passes `VersionUndeclared` and `bundleInventoryOfConcepts`, matching the
+  library call site.
+
+- **`seihou-modules` exercises only some of the features milestone 3 adds.** Grepping the
+  registry's `.dhall` sources: `migrations` appears in 4 files and `removal` in 3, but
+  `launch`, `versionProbe`, `entails`, `guidance`, and `commandVars` appear in none.
+  `/Users/shinzui/Keikaku/bokuno/agent-seihou` covers `launch` (1), `guidance` (2), and
+  `commandVars` (1) but still not `versionProbe` or `entails`. Neither real registry
+  declares an entailed edge or a version probe, so for those two sections the milestone 3
+  unit-test fixtures are the only proof, exactly as Validation and Acceptance anticipates.
 
 
 ## Decision Log

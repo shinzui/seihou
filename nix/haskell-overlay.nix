@@ -24,12 +24,16 @@ in
   # Options.thinking to the batch `claude -p` / `codex exec` invocations as a
   # reasoning-effort flag, not just to interactive launches), baikai-kit
   # 0.1.0.3 — already wrapped with dontCheck + doJailbreak.
-  # Only okf-core, which is not registered there, needs a local Hackage pin.
+  # Only okf-core needs a local Hackage pin. The shared overlay does carry an
+  # okf-src input, but it sits at okf 0.2.0.0, so it cannot supply the 0.8.0.0
+  # release this repository builds against.
 
-  # The 0.1.2.0 Hackage sdist omits dhall/ and test/fixtures/, which its
-  # upstream test suite requires.
-  okf-core = dontCheck (hackagePackage "okf-core" "0.1.2.0"
-    "sha256-p2LC8DDdqeLnlQn/n8jBL6tt6Iid+bPK15zBRwIOnJg=");
+  # dontCheck: this repository has no reason to run a dependency's own test
+  # suite on every build. (The 0.8.0.0 sdist does ship dhall/ and
+  # test/fixtures/, unlike 0.1.2.0, so the old justification no longer
+  # applies -- the flag is kept purely for build time.)
+  okf-core = dontCheck (hackagePackage "okf-core" "0.8.0.0"
+    "sha256-ADugvEouY5r+o1W0K09M7IX0GTVuZ1OXvA+Vem/QnBI=");
 
   seihou-core = pkgs.haskell.lib.compose.overrideCabal
     (drv: {

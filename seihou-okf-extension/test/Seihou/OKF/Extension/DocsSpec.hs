@@ -2,6 +2,7 @@ module Seihou.OKF.Extension.DocsSpec (tests) where
 
 import Data.Text qualified as T
 import Okf.Bundle qualified as Okf
+import Okf.Index qualified as Okf
 import Okf.Validation qualified as Okf
 import Seihou.OKF.Extension.Docs
 import System.Directory (createDirectoryIfMissing, doesFileExist)
@@ -29,7 +30,13 @@ spec = do
         walked <- Okf.walkBundle outDir
         case walked of
           Left err -> expectationFailure ("Expected walkBundle success, got " <> show err)
-          Right concepts -> Okf.validateBundle Okf.PermissiveConformance concepts `shouldBe` []
+          Right concepts ->
+            Okf.validateBundle
+              Okf.PermissiveConformance
+              Okf.VersionUndeclared
+              (Okf.bundleInventoryOfConcepts concepts)
+              concepts
+              `shouldBe` []
 
     it "refuses to overwrite a non-empty output directory without force" $ do
       withSystemTempDirectory "seihou-okf-docs-force" $ \tmpDir -> do

@@ -20,9 +20,7 @@ import Seihou.Core.Types
     Dependency,
     Module (..),
     ModuleLoadError,
-    ModuleName (..),
     Recipe (..),
-    RecipeName (..),
     depModuleNames,
   )
 import Seihou.Dhall.Eval

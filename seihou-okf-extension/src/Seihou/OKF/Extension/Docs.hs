@@ -13,6 +13,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import GHC.Generics (Generic)
 import Okf.ConceptId qualified as Okf
+import Okf.Log (LogValidationError (..))
 import Okf.Validation (BundleValidationError (..), ValidationError (..))
 import Seihou.OKF.Docs.Model
 import Seihou.OKF.Docs.Render
@@ -110,14 +111,41 @@ renderDocRenderError :: DocRenderError -> T.Text
 renderDocRenderError (InvalidDocConceptId kind name err) =
   "invalid OKF concept ID for " <> T.pack (show kind) <> " " <> name <> ": " <> err
 
+-- | Every 'BundleValidationError' constructor gets its own branch, deliberately
+-- with no catch-all: @-Werror=incomplete-patterns@ then turns the next okf-core
+-- upgrade that adds a constructor into a build failure here rather than a
+-- pattern-match crash at generation time.
 renderBundleValidationError :: BundleValidationError -> T.Text
 renderBundleValidationError (DocumentInvalid conceptId err) =
   Okf.renderConceptId conceptId <> ": " <> renderValidationError err
 renderBundleValidationError (DanglingReference source target) =
   Okf.renderConceptId source <> ": link to missing concept: " <> Okf.renderConceptId target
+renderBundleValidationError (DanglingFrontmatterPath conceptId field target alternative) =
+  Okf.renderConceptId conceptId
+    <> ": frontmatter field "
+    <> field
+    <> " names a path that is not in the bundle: "
+    <> T.pack target
+    <> maybe "" (\alt -> " (did you mean " <> T.pack alt <> "?)") alternative
 renderBundleValidationError (DuplicateConceptId conceptId) =
   "duplicate concept ID: " <> Okf.renderConceptId conceptId
+renderBundleValidationError (LogInvalid path err) =
+  T.pack path <> ": " <> renderLogValidationError err
+renderBundleValidationError (BundleVersionUnparseable raw) =
+  "bundle root index declares an unparseable OKF version: " <> raw
+renderBundleValidationError (BundleVersionNotUnderstood raw) =
+  "bundle root index declares an OKF version this tool does not understand: " <> raw
 
+-- | Total by construction; see 'renderBundleValidationError'.
+renderLogValidationError :: LogValidationError -> T.Text
+renderLogValidationError (LogDateNotIso raw) =
+  "log day heading is not an ISO-8601 date: " <> raw
+renderLogValidationError (LogDaysOutOfOrder earlier later) =
+  "log days are out of order: " <> earlier <> " appears before " <> later
+renderLogValidationError (LogEmptyDay day) =
+  "log day has no entries: " <> day
+
+-- | Total by construction; see 'renderBundleValidationError'.
 renderValidationError :: ValidationError -> T.Text
 renderValidationError (MissingRequiredField field) =
   "missing required field: " <> field
@@ -125,6 +153,32 @@ renderValidationError (FieldMustBeNonEmptyText field) =
   "field must be non-empty text: " <> field
 renderValidationError (MissingRecommendedField field) =
   "missing recommended field: " <> field
+renderValidationError (FieldMustBeListOfText field) =
+  "field must be a list of text: " <> field
+renderValidationError MissingGeneratedField =
+  "concept records neither a generated block nor a legacy timestamp"
+renderValidationError GeneratedMustHaveActor =
+  "concept has a generated block with no by actor"
+renderValidationError (SourceMissingResource index) =
+  "sources entry " <> T.pack (show index) <> " has no resource"
+renderValidationError (DuplicateSourceId sourceId) =
+  "two sources entries share the id: " <> sourceId
+renderValidationError (FootnoteLabelNotInSources label) =
+  "body cites footnote label with no matching sources entry: " <> label
+renderValidationError (SourceIdNotCited sourceId) =
+  "sources entry is never cited in the body: " <> sourceId
+renderValidationError (LegacyFieldInDeclaredV2 field) =
+  "concept uses the superseded OKF v0.1 field " <> field <> " in a bundle declaring v0.2"
+renderValidationError AttestedComputationMissingRuntime =
+  "Attested Computation concept declares no runtime"
+renderValidationError AttestedComputationHasNoComputation =
+  "Attested Computation concept offers neither a computation path nor a body code block"
+renderValidationError AttestedComputationHasBothComputations =
+  "Attested Computation concept offers both a computation path and a body code block"
+renderValidationError (AttestedComputationHasManyBlocks count) =
+  "Attested Computation section holds "
+    <> T.pack (show count)
+    <> " code blocks; exactly one is permitted"
 
 renderMany :: (a -> T.Text) -> [a] -> T.Text
 renderMany render = T.intercalate "\n" . fmap render

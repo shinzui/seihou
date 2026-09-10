@@ -20,8 +20,8 @@ okfSmoke = serializeDocument (OKFDocument emptyFrontmatter "# smoke\n")
 
 runExtensionMain :: IO ()
 runExtensionMain = do
-  command <- customExecParser (prefs showHelpOnEmpty) opts
-  case command of
+  parsedCommand <- customExecParser (prefs showHelpOnEmpty) opts
+  case parsedCommand of
     Docs docsOpts ->
       handleDocs docsOpts
 
