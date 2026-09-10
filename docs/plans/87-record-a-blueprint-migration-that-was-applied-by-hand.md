@@ -76,8 +76,8 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
 - [x] Milestone 1 — add `--mark-applied` to `BlueprintMigrationOpts` and its parser, and reject the flag combinations that cannot mean anything. (2026-09-10)
 - [x] Milestone 2 — record receipts for the pending steps without launching a provider, in `handleAgentMigrate`. (2026-09-10)
 - [x] Milestone 3 — report what was marked, and make the no-op and refusal messages readable. (2026-09-10)
-- [ ] Milestone 4 — unit tests for the pure marking summary and the flag-conflict rules.
-- [ ] Milestone 5 — end-to-end tests: marking writes receipts, suppresses a later run, starts no session, and touches no file.
+- [x] Milestone 4 — unit tests for the pure marking summary and the flag-conflict rules. (2026-09-10; flag-conflict rules are covered end-to-end in Milestone 5 as the plan anticipated, since the checks live in `src-exe`.)
+- [x] Milestone 5 — end-to-end tests: marking writes receipts, suppresses a later run, starts no session, and touches no file. (2026-09-10)
 - [ ] Milestone 6 — documentation: new sections in `docs/user/blueprint-migrations.md` and `docs/cli/agent.md`, the summary pages in `docs/user/migrations.md` and `docs/user/blueprints.md`, the in-binary help topic, and `docs/user/CHANGELOG.md`.
 - [ ] Milestone 7 — ADR pass: record the decision that a receipt asserts a claim about the project rather than proof of an agent session.
 
@@ -100,6 +100,17 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
   all exist, `mori.dhall` still registers `docs/improvement-requests` as its only OKF bundle, and
   every documentation file named in Milestone 6 is present.
 
+
+- **2026-09-10 — the fixtures could not prove a session did not start.** Milestone 5 said "the
+  fake `claude` in these fixtures appends a line to a log file each time it is called", and that
+  asserting the log's absence proves nothing ran. That was true of the two *inline* fixtures in
+  `seihou-cli/test/Seihou/CLI/AgentMigrateE2ESpec.hs` (the ones that set `SEIHOU_FAKE_AGENT_LOG`),
+  but not of the two helpers the plan named: `withProbeProject` and `withCohortProject` both wrote
+  `#!/bin/sh\nexit 0\n`, a fake that succeeds silently and records nothing. Asserting an absent log
+  against that fake would have passed whether or not a session started — a test that proves
+  nothing while appearing to prove the central claim.
+  Both helpers now write the logging fake and set `SEIHOU_FAKE_AGENT_LOG` to
+  `<root>/agent-launch.log`. Existing tests using them are unaffected; they never read the log.
 
 ## Decision Log
 

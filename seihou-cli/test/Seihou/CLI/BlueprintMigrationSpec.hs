@@ -151,6 +151,35 @@ tests = testSpec "Seihou.CLI.BlueprintMigration" $ do
       formatMigrationStepLabel entailedStep
         `shouldBe` "kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)"
 
+  describe "formatMarkAppliedNotice" $ do
+    it "names every step it is about to record, with the owning blueprint" $
+      formatMarkAppliedNotice [first, second]
+        `shouldBe` T.unlines
+          [ "Marking 2 blueprint migration(s) as already applied, without running them:",
+            "  payments 1.0.0 -> 2.0.0",
+            "  payments 2.0.0 -> 3.0.0"
+          ]
+
+    -- Proves the notice goes through 'formatMigrationStepLabel' rather than a
+    -- second label derivation: someone marking a cohort window must see that
+    -- an edge of a blueprint they never named is about to get a receipt, and
+    -- what pulled it in.
+    it "labels an entailed step with what entailed it" $
+      formatMarkAppliedNotice [entailedStep]
+        `shouldSatisfy` T.isInfixOf
+          "  kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)\n"
+
+    it "counts the steps it lists" $
+      formatMarkAppliedNotice [first, second, entailedStep]
+        `shouldSatisfy` T.isPrefixOf "Marking 3 blueprint migration(s) "
+
+  describe "formatMarkAppliedSummary" $ do
+    -- The second sentence is the whole point of the line: it is what makes a
+    -- mistaken marking obvious the moment it happens.
+    it "says plainly that nothing ran and nothing changed" $
+      formatMarkAppliedSummary 2
+        `shouldBe` "Recorded 2 receipt(s). No agent session was started and no file was changed."
+
   describe "renderBlueprintMigrationInstruction" $ do
     it "substitutes the variables resolved for the shared blueprint" $ do
       let declaration = VarDecl "library.name" VTText Nothing Nothing False Nothing

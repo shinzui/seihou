@@ -166,6 +166,7 @@ seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT] [OPTIONS
 | `--context CTX`, `-c CTX` | Override context for config lookup |
 | `--verbose`, `-v` | Show detailed progress messages |
 | `--rerun` | Ignore matching exact-edge receipts, applied ones included, and run the selected steps again |
+| `--mark-applied` | Record the pending edges in the window as already applied, without running them |
 | `--allow-downgrade` | Proceed even when the blueprint installed locally is older than, or from a different source than, `.seihou/manifest.json` records |
 
 The command plans matching blueprint edges in ascending version order, permitting
@@ -194,6 +195,40 @@ files, allowed tools, and variables. Each step's receipt is written under the
 blueprint that *owns* it, so a shared edge is crossed once whichever blueprint
 you name. An entailed blueprint that is not installed fails the run with an
 install hint rather than being skipped.
+
+### Recording an upgrade performed by hand
+
+`--mark-applied` writes a receipt for every pending edge in the resolved window
+without starting an agent session, on your assertion that the upgrade has already
+been performed:
+
+```text
+Marking 2 blueprint migration(s) as already applied, without running them:
+  kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)
+  keiro-upgrade 2.4.0 -> 3.0.0
+
+Recorded 2 receipt(s). No agent session was started and no file was changed.
+```
+
+No provider is contacted and no file in the working tree is read or written; the
+only change is to `.seihou/manifest.json`. The window is resolved exactly as it
+is for a real run — `--from` and `--to` narrow it the same way — and each receipt
+is filed under the blueprint that *owns* its edge, so a marked entailed edge
+suppresses a later direct run of that blueprint too.
+
+Marking is scoped to *pending* edges. An edge that already has a receipt is left
+alone rather than having its timestamp rewritten, which makes repeated marking a
+no-op and marking a wider window purely additive. The outcome recorded is
+`applied`, indistinguishable from an earned receipt, so `--rerun` clears a
+mistaken marking exactly as it clears any other applied receipt.
+
+Two combinations are refused rather than resolved by precedence, both before the
+blueprint is discovered and before anything is read or written: `--mark-applied`
+with `--rerun` (which would ask to both skip and force the same edges), and
+`--mark-applied` with the parent `--debug` (which would ask a dry run to write
+receipts). See
+[ADR 0011](../adr/0011-a-migration-receipt-asserts-a-claim-about-the-project.md)
+for what a receipt asserts.
 
 ### Inferring the version window
 
@@ -251,7 +286,8 @@ Blueprint migrations for keiro-upgrade: 2.4.0 -> 3.0.0
 ===== [2/2] keiro-upgrade 2.4.0 -> 3.0.0 =====
 ```
 
-Receipts report provider completion rather than package-manager verification.
+A receipt records that an edge has been dealt with — by a provider interaction
+that returned, or by `--mark-applied` — rather than package-manager verification.
 See [Blueprint Migrations](../user/blueprint-migrations.md) for the full workflow
 and [Agent-Driven Blueprints](../user/blueprints.md#library-upgrade-migrations)
 for the Dhall shape.
@@ -282,7 +318,10 @@ manifest records for a substituted one; the message prints the exact command.
 Parent `--debug` changes this for `agent migrate` only, because `--debug` means
 different things to the two subcommands. It is a true dry run for `agent
 migrate`, which writes nothing, so no check runs and a prompt can be inspected
-on any machine. It is not a dry run for `agent run`, which still applies the
+on any machine. `--mark-applied` does not reach the guard by a different route:
+it is refused alongside `--debug`, and on its own it runs the guard in full
+before recording anything, because a receipt written against a substituted
+blueprint would match nothing. It is not a dry run for `agent run`, which still applies the
 baseline and still records provenance under `--debug`, so the check runs there
 regardless.
 

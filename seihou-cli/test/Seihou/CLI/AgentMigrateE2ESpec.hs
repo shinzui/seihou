@@ -3,9 +3,11 @@ module Seihou.CLI.AgentMigrateE2ESpec (tests) where
 import Control.Lens (to, (^.))
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
+import Data.List (sort)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Data.Time (UTCTime)
 import Seihou.CLI.SeihouBinary (seihouBinary)
 import Seihou.Core.Types
   ( AppliedBlueprintMigration (..),
@@ -19,6 +21,7 @@ import System.Directory
     doesFileExist,
     executable,
     getPermissions,
+    listDirectory,
     removeDirectoryRecursive,
     setPermissions,
   )
@@ -135,12 +138,15 @@ tests = testSpec "Agent migrate end-to-end" $ do
       launchArgs `shouldSatisfy` elem "--effort"
       launchArgs `shouldSatisfy` elem "max"
 
-  it "exposes an optional version window and the rerun option in help" $ do
+  it "exposes an optional version window, rerun, and mark-applied in help" $ do
     binary <- seihouBinary
     (exitCode, output, _) <- runProcessText binary ["agent", "migrate", "--help"] Nothing Nothing
     exitCode `shouldBe` ExitSuccess
     output `shouldSatisfy` T.isInfixOf "Usage: seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT]"
     output `shouldSatisfy` T.isInfixOf "--rerun"
+    output `shouldSatisfy` T.isInfixOf "--mark-applied"
+    output
+      `shouldSatisfy` T.isInfixOf "Record the pending migrations in the window as"
     output `shouldNotSatisfy` T.isInfixOf "--no-baseline"
     output `shouldNotSatisfy` T.isInfixOf "--force"
 
@@ -576,6 +582,138 @@ tests = testSpec "Agent migrate end-to-end" $ do
       bareExit `shouldSatisfy` (/= ExitSuccess)
       (bareOutput <> bareError) `shouldSatisfy` T.isInfixOf "Cannot determine the target version for 'payments'."
 
+  -- === --mark-applied =====================================================
+  --
+  -- Someone who upgraded a library by hand needs to say so, and be believed.
+  -- Every case below turns on the same pair of facts: a receipt appears, and
+  -- the provider was never called.
+
+  it "records the window as applied without starting a session" $
+    withProbeProject $ \root run -> do
+      let launchLog = root </> "agent-launch.log"
+          manifestPath = root </> ".seihou" </> "manifest.json"
+      (exitCode, output, errorOutput) <-
+        run ["agent", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "2.0.0", "--mark-applied"]
+      expectSuccess "mark applied" exitCode output errorOutput
+      output `shouldSatisfy` T.isInfixOf "Marking 1 blueprint migration(s) as already applied, without running them:"
+      output `shouldSatisfy` T.isInfixOf "  probe-upgrade 1.0.0 -> 2.0.0"
+      output `shouldSatisfy` T.isInfixOf "Recorded 1 receipt(s). No agent session was started and no file was changed."
+
+      -- The fake provider appends to this log whenever it is invoked, so its
+      -- absence is the proof that no session started.
+      doesFileExist launchLog `shouldReturn` False
+
+      -- A marked receipt is an ordinary applied receipt.
+      readReceipts manifestPath `shouldReturn` [("1.0.0", "2.0.0", MigrationApplied)]
+
+      -- And it suppresses a real run of the same window, still without a
+      -- session.
+      (againExit, againOutput, againError) <-
+        run ["agent", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "2.0.0"]
+      expectSuccess "run after marking" againExit againOutput againError
+      againOutput `shouldSatisfy` T.isInfixOf "already have receipts"
+      doesFileExist launchLog `shouldReturn` False
+
+  -- The decisive cohort property, reached without running anything: an
+  -- entailed edge is marked under the blueprint that declares it, so the
+  -- direct entry point finds the receipt too.
+  it "marks an entailed edge under the blueprint that owns it" $
+    withCohortProject $ \root run -> do
+      let launchLog = root </> "agent-launch.log"
+      (exitCode, output, errorOutput) <-
+        run ["agent", "migrate", "keiro-upgrade", "--from", "2.4.0", "--to", "3.0.0", "--mark-applied"]
+      expectSuccess "mark cohort window" exitCode output errorOutput
+      output
+        `shouldSatisfy` T.isInfixOf "  kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)"
+      output `shouldSatisfy` T.isInfixOf "  keiro-upgrade 2.4.0 -> 3.0.0"
+      output `shouldSatisfy` T.isInfixOf "Recorded 2 receipt(s)."
+      doesFileExist launchLog `shouldReturn` False
+
+      bytes <- LBS.readFile (root </> ".seihou" </> "manifest.json")
+      manifest <- case manifestFromJSON bytes of
+        Left err -> expectationFailure err >> fail "unreachable"
+        Right decoded -> pure decoded
+      [ (migrationReceipt ^. #name . #unModuleName, migrationReceipt ^. #fromVersion, migrationReceipt ^. #toVersion)
+        | migrationReceipt <- manifest ^. #blueprintMigrations
+        ]
+        `shouldBe` [ ("kiroku-upgrade", "1.9.0", "2.0.0"),
+                     ("keiro-upgrade", "2.4.0", "3.0.0")
+                   ]
+
+      (kirokuExit, kirokuOutput, kirokuError) <-
+        run ["agent", "migrate", "kiroku-upgrade", "--from", "1.9.0", "--to", "2.0.0"]
+      expectSuccess "direct kiroku run after marking" kirokuExit kirokuOutput kirokuError
+      kirokuOutput `shouldSatisfy` T.isInfixOf "already have receipts"
+      doesFileExist launchLog `shouldReturn` False
+
+  -- Marking asserts that the working tree is already correct, so it must not
+  -- touch it. Only .seihou/manifest.json may appear.
+  it "changes nothing in the working tree but the manifest" $
+    withProbeProject $ \root run -> do
+      let listing = fmap sort . listDirectory
+      before <- listing root
+      modulesBefore <- listing (root </> ".seihou")
+      (exitCode, output, errorOutput) <-
+        run ["agent", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "3.0.0", "--mark-applied"]
+      expectSuccess "mark whole window" exitCode output errorOutput
+      listing root `shouldReturn` before
+      listing (root </> ".seihou") `shouldReturn` sort ("manifest.json" : modulesBefore)
+
+  -- Marking a window twice is a no-op the second time, and widening it later
+  -- adds only what is newly pending: an honestly recorded appliedAt is never
+  -- moved for work that was recorded at a different time.
+  it "is idempotent and never rewrites an existing receipt" $
+    withProbeProject $ \root run -> do
+      let manifestPath = root </> ".seihou" </> "manifest.json"
+      (firstExit, firstOutput, firstError) <-
+        run ["agent", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "2.0.0", "--mark-applied"]
+      expectSuccess "first marking" firstExit firstOutput firstError
+      originalTimestamps <- readReceiptTimestamps manifestPath
+
+      (repeatExit, repeatOutput, repeatError) <-
+        run ["agent", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "2.0.0", "--mark-applied"]
+      expectSuccess "repeated marking" repeatExit repeatOutput repeatError
+      repeatOutput `shouldSatisfy` T.isInfixOf "already have receipts"
+      repeatOutput `shouldNotSatisfy` T.isInfixOf "Marking "
+
+      (widerExit, widerOutput, widerError) <-
+        run ["agent", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "3.0.0", "--mark-applied"]
+      expectSuccess "wider marking" widerExit widerOutput widerError
+      widerOutput `shouldSatisfy` T.isInfixOf "Marking 1 blueprint migration(s) "
+      widerOutput `shouldSatisfy` T.isInfixOf "  probe-upgrade 2.0.0 -> 3.0.0"
+
+      readReceipts manifestPath
+        `shouldReturn` [ ("1.0.0", "2.0.0", MigrationApplied),
+                         ("2.0.0", "3.0.0", MigrationApplied)
+                       ]
+      widened <- readReceiptTimestamps manifestPath
+      take 1 widened `shouldBe` originalTimestamps
+
+  -- Both refusals must land before the blueprint is even discovered, so an
+  -- invalid invocation cannot leave a receipt behind.
+  it "refuses --mark-applied with --rerun before writing anything" $
+    withProbeProject $ \root run -> do
+      (exitCode, output, errorOutput) <-
+        run ["agent", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "2.0.0", "--mark-applied", "--rerun"]
+      exitCode `shouldSatisfy` (/= ExitSuccess)
+      let streams = output <> errorOutput
+      streams `shouldSatisfy` T.isInfixOf "--mark-applied"
+      streams `shouldSatisfy` T.isInfixOf "--rerun"
+      streams `shouldSatisfy` T.isInfixOf "cannot be combined"
+      doesFileExist (root </> ".seihou" </> "manifest.json") `shouldReturn` False
+      doesFileExist (root </> "agent-launch.log") `shouldReturn` False
+
+  it "refuses --mark-applied with --debug before writing anything" $
+    withProbeProject $ \root run -> do
+      (exitCode, output, errorOutput) <-
+        run ["agent", "--debug", "migrate", "probe-upgrade", "--from", "1.0.0", "--to", "2.0.0", "--mark-applied"]
+      exitCode `shouldSatisfy` (/= ExitSuccess)
+      let streams = output <> errorOutput
+      streams `shouldSatisfy` T.isInfixOf "--mark-applied"
+      streams `shouldSatisfy` T.isInfixOf "--debug"
+      streams `shouldSatisfy` T.isInfixOf "cannot be combined"
+      doesFileExist (root </> ".seihou" </> "manifest.json") `shouldReturn` False
+
 -- | A scratch project holding one blueprint whose version probe reads
 -- @.library-version@ from the project root, plus a fake @claude@ that always
 -- succeeds. The probe file is deliberately absent until a test writes it, so
@@ -590,11 +728,15 @@ withProbeProject action =
         xdgHome = root </> "xdg"
         fakeBin = root </> "bin"
         fakeClaude = fakeBin </> "claude"
+        launchLog = root </> "agent-launch.log"
     createDirectoryIfMissing True blueprintDir
     createDirectoryIfMissing True xdgHome
     createDirectoryIfMissing True fakeBin
     TIO.writeFile (blueprintDir </> "blueprint.dhall") probeBlueprintDhall
-    TIO.writeFile fakeClaude "#!/bin/sh\nexit 0\n"
+    -- The fake logs every invocation so a test can prove a session did NOT
+    -- start. An assertion that the log is absent is only evidence when the
+    -- fake would have written it; a silently succeeding fake proves nothing.
+    TIO.writeFile fakeClaude "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nexit 0\n"
     permissions <- getPermissions fakeClaude
     -- Permissions comes from `directory` and has no Generic instance, so it
     -- has no #executable label. Record update syntax is the only option.
@@ -608,12 +750,14 @@ withProbeProject action =
             "SEIHOU_AGENT_PROVIDER",
             "SEIHOU_AGENT_MODEL",
             "SEIHOU_AGENT_EFFORT",
-            "SEIHOU_CONTEXT"
+            "SEIHOU_CONTEXT",
+            "SEIHOU_FAKE_AGENT_LOG"
           ]
         environment =
           ("PATH", fakeBin <> [searchPathSeparator] <> inheritedPath)
             : ("XDG_CONFIG_HOME", xdgHome)
             : ("SEIHOU_AGENT_PROVIDER", "claude-cli")
+            : ("SEIHOU_FAKE_AGENT_LOG", launchLog)
             : filter (\(key, _) -> key `notElem` overriddenNames) inherited
         run args = runProcessText binary args (Just root) (Just environment)
     action root run
@@ -657,6 +801,7 @@ withCohortProject action =
         xdgHome = root </> "xdg"
         fakeBin = root </> "bin"
         fakeClaude = fakeBin </> "claude"
+        launchLog = root </> "agent-launch.log"
     createDirectoryIfMissing True (kirokuDir </> "files")
     createDirectoryIfMissing True (keiroDir </> "files")
     createDirectoryIfMissing True xdgHome
@@ -667,7 +812,10 @@ withCohortProject action =
     -- proves which blueprint's files/ directory it was built from.
     TIO.writeFile (kirokuDir </> "files" </> "kiroku-marker.md") "kiroku reference"
     TIO.writeFile (keiroDir </> "files" </> "keiro-marker.md") "keiro reference"
-    TIO.writeFile fakeClaude "#!/bin/sh\nexit 0\n"
+    -- The fake logs every invocation so a test can prove a session did NOT
+    -- start. An assertion that the log is absent is only evidence when the
+    -- fake would have written it; a silently succeeding fake proves nothing.
+    TIO.writeFile fakeClaude "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nexit 0\n"
     permissions <- getPermissions fakeClaude
     -- Permissions comes from `directory` and has no Generic instance, so it
     -- has no #executable label. Record update syntax is the only option.
@@ -681,12 +829,14 @@ withCohortProject action =
             "SEIHOU_AGENT_PROVIDER",
             "SEIHOU_AGENT_MODEL",
             "SEIHOU_AGENT_EFFORT",
-            "SEIHOU_CONTEXT"
+            "SEIHOU_CONTEXT",
+            "SEIHOU_FAKE_AGENT_LOG"
           ]
         environment =
           ("PATH", fakeBin <> [searchPathSeparator] <> inheritedPath)
             : ("XDG_CONFIG_HOME", xdgHome)
             : ("SEIHOU_AGENT_PROVIDER", "claude-cli")
+            : ("SEIHOU_FAKE_AGENT_LOG", launchLog)
             : filter (\(key, _) -> key `notElem` overriddenNames) inherited
         run args = runProcessText binary args (Just root) (Just environment)
     action root run
@@ -740,6 +890,16 @@ keiroBlueprintDhall =
       "  ]",
       "}"
     ]
+
+-- | The recorded @appliedAt@ stamps, in ledger order. A marking that rewrote
+-- an existing receipt would move one of these.
+readReceiptTimestamps :: FilePath -> IO [UTCTime]
+readReceiptTimestamps manifestPath = do
+  bytes <- LBS.readFile manifestPath
+  case manifestFromJSON bytes of
+    Left err -> expectationFailure err >> fail "unreachable"
+    Right manifest ->
+      pure [migrationReceipt ^. #appliedAt | migrationReceipt <- manifest ^. #blueprintMigrations]
 
 -- | The recorded edge windows and outcomes, in ledger order.
 readReceipts :: FilePath -> IO [(T.Text, T.Text, MigrationOutcome)]

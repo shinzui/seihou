@@ -520,6 +520,61 @@ other blueprints. To re-run only one library's half, invoke that library's
 blueprint directly with its own version window: running an entailed blueprint by
 name never expands anything it does not need.
 
+### I already upgraded by hand
+
+Plenty of upgrades happen without Seihou. You read the release notes, made the
+changes yourself, and never ran `seihou agent migrate` at all. Tell Seihou so:
+
+```bash
+seihou agent migrate keiro-upgrade --mark-applied
+```
+
+```text
+Version window: 2.4.0 -> 3.0.0
+  --from 2.4.0  [receipt: keiro-upgrade 2.0.0 -> 2.4.0, applied 2026-08-02]
+  --to   3.0.0  [probe: nix eval --raw .#keiroVersion]
+
+Marking 2 blueprint migration(s) as already applied, without running them:
+  kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)
+  keiro-upgrade 2.4.0 -> 3.0.0
+
+Recorded 2 receipt(s). No agent session was started and no file was changed.
+```
+
+Running `seihou agent migrate keiro-upgrade` afterwards reports that every edge
+in the window already has a receipt and exits without contacting a provider.
+
+What the flag does, precisely:
+
+- **It asserts, on your word, that the work is done.** Seihou cannot verify that,
+  and does not try. A marked receipt is an ordinary applied receipt — see
+  [What a receipt means](#what-a-receipt-means).
+- **Nothing runs.** No provider is contacted, no agent session starts, and no
+  file in your working tree is read or written. The only change is the receipts
+  appended to `.seihou/manifest.json`.
+- **It marks every pending edge in the window**, including edges owned by other
+  blueprints that this window reaches through
+  [entailment](#entail-another-librarys-edge) — because upgrading the library by
+  hand is what crossed those edges too. Each receipt is filed under the blueprint
+  that owns its edge, exactly as a real run would file it, so a marked entailed
+  edge suppresses a later direct run of that blueprint as well.
+- **It skips edges that already have a receipt** rather than rewriting them. An
+  `appliedAt` timestamp recorded honestly at some other time is never moved, so
+  marking the same window twice is a no-op and marking a wider window later adds
+  only what is newly pending.
+
+Narrow what gets marked with `--from` and `--to`, the same window flags a real
+run takes. To mark a single edge, ask for exactly that window.
+
+**If you mark something by mistake**, `--rerun` is the remedy: it ignores
+matching receipts and plans the edges again, just as it does for a receipt that
+says applied when the edge really did nothing.
+
+The flag refuses two combinations rather than picking a winner. With `--rerun` it
+would be asking to both skip and force the same edges; with the parent `--debug`
+it would be asking a dry run that writes nothing to write receipts. Both exit
+non-zero before anything is read or written.
+
 ## How the version window is inferred
 
 Each end of the window is resolved independently, so you can type one and let
@@ -583,20 +638,30 @@ ends at or before `--to`; selecting it advances the cursor to its `to`.
 
 ## What a receipt means
 
-A receipt records that the provider interaction for one exact edge returned, and
-what it reported. It does **not** prove that your package manager now reports the
+A receipt records that one exact edge **has been attended to and need not run
+again**. It is a claim about your project, and it is established in one of two
+ways: a provider interaction for that edge returned, or you asserted the work was
+already done with [`--mark-applied`](#i-already-upgraded-by-hand).
+
+Either way, it does **not** prove that your package manager now reports the
 target version, that the build passes, or that every call site was updated.
 Seihou cannot verify arbitrary libraries across ecosystems, so the burden of
 proof sits in the edge prompt (which validation to run) and in your review.
 
-Treat the receipt as chain bookkeeping — "this step has been attempted and
-returned" — and verify the outcome yourself before shipping.
+Treat the receipt as chain bookkeeping — "this step has been dealt with" — and
+verify the outcome yourself before shipping.
+
+The two ways of establishing a receipt are deliberately indistinguishable once
+written: a marked receipt records the same `applied` outcome, is matched the same
+way, and is cleared the same way with `--rerun`. Nothing downstream needs to know
+which one it was, and inventing a third outcome would force every reader of the
+outcome field to decide what it meant to them, for no gain.
 
 A receipt carries one of two outcomes:
 
 | Outcome | Means | Effect on a later run |
 |---------|-------|-----------------------|
-| **applied** | The session returned having been asked to do the work. Not proof it succeeded. | The edge is skipped unless `--rerun` is passed. |
+| **applied** | The edge has been dealt with: a session returned having been asked to do the work, or you asserted it was already done with `--mark-applied`. Not proof it succeeded. | The edge is skipped unless `--rerun` is passed. |
 | **not applicable** | The session reported that the edge's precondition is unmet in this project and deliberately changed nothing. The reason is recorded with it. | The edge is planned again, no flag needed. |
 
 The distinction exists because a deliberate, correct no-op used to be
@@ -658,6 +723,8 @@ edge finds nothing to do — or skip it deliberately by widening `--from`.
 | `Blueprint migration 2.5.0 -> 3.0.0 failed; completed earlier edges remain recorded. …` | The provider exited nonzero or returned an error. Fix the provider problem, then rerun the same command to resume at that edge. |
 | `Agent completed blueprint migration …, but its receipt could not be recorded: …` | Source edits may already exist while the edge is unrecorded, and the next edge was not started. Repair `.seihou/manifest.json` or its permissions, then rerun the same command. |
 | `Blueprint migration 1/2: 1.0.0 -> 2.0.0 — not applicable: …` | Not an error. The edge reported its precondition unmet and changed nothing; the chain continued. Fix what the reason names and rerun the same command — the edge runs, no `--rerun` needed. If you disagree with the agent's judgement, `--rerun` forces it now. |
+| `✗ --mark-applied and --rerun cannot be combined.` | The two flags ask for opposite things: `--rerun` runs edges that already have receipts, `--mark-applied` records receipts without running anything. Drop whichever one you did not mean. Nothing was read or written. |
+| `✗ --mark-applied cannot be combined with --debug.` | `--debug` is a dry run that changes nothing; `--mark-applied` writes receipts. Re-run without `--debug` when you are ready to record. Nothing was read or written. |
 | Nothing renders under `--debug` | Every edge in the window already has a receipt, or the blueprint declares none there. Widen the window or pass `--rerun`. |
 | `✗ Refusing to run: your local copy of 'my-library' is older than the version this project expects.` | The installed blueprint predates what this project records. Run `seihou upgrade my-library`, or pass `--allow-downgrade` to pin the project to the copy installed here. |
 | `✗ Refusing to run: 'my-library' is installed from a different source than this project records.` | A blueprint of that name from another repository is installed. Its edges are not this project's edges. Reinstall from the URL the message prints, or pass `--allow-downgrade` if the substitution is deliberate. |
