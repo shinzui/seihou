@@ -1,12 +1,15 @@
 module Seihou.OKF.Extension.DocsSpec (tests) where
 
+import Control.Lens ((&), (.~), (?~))
+import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Okf.Bundle qualified as Okf
 import Okf.Index qualified as Okf
 import Okf.Validation qualified as Okf
+import Seihou.OKF.Docs.Render (builtinProfileDescriptor)
 import Seihou.OKF.Extension.Docs
-import System.Directory (createDirectoryIfMissing, doesFileExist)
+import System.Directory (createDirectoryIfMissing, doesFileExist, doesPathExist)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
@@ -34,6 +37,9 @@ spec = do
         doesFileExist (outDir </> "modules" </> "index.md") `shouldReturn` True
         doesFileExist (outDir </> "recipes" </> "index.md") `shouldReturn` True
         doesFileExist (outDir </> "registry" </> "fixture-registry.md") `shouldReturn` True
+        doesFileExist (outDir </> "profile.dhall") `shouldReturn` True
+        writtenProfile <- TIO.readFile (outDir </> "profile.dhall")
+        writtenProfile `shouldBe` builtinProfileDescriptor
         walked <- Okf.walkBundle outDir
         case walked of
           Left err -> expectationFailure ("Expected walkBundle success, got " <> show err)
@@ -57,6 +63,42 @@ spec = do
         forced <- runDocs (docsOpts registryDir outDir True)
         forced `shouldBe` Right ("Wrote 3 concepts to " <> T.pack outDir)
 
+    it "refuses to write a bundle that violates the house profile" $ do
+      withSystemTempDirectory "seihou-okf-docs-profile" $ \tmpDir -> do
+        let registryDir = tmpDir </> "registry"
+            outDir = tmpDir </> "out"
+            profilePath = tmpDir </> "demanding.dhall"
+        writeFixtureRegistry registryDir
+        TIO.writeFile profilePath demandingProfile
+        result <-
+          runDocs (docsOpts registryDir outDir False & #profile ?~ profilePath)
+        case result of
+          Right summary -> expectationFailure ("Expected a profile violation, got " <> show summary)
+          -- Specifically a violation, not an unreadable or uncompilable
+          -- descriptor, which would also mention the house profile.
+          Left err -> err `shouldSatisfy` T.isInfixOf "house profile: modules/base: missing required field stale_after"
+        -- Nothing at all reached disk: the check runs before the output
+        -- directory is even prepared.
+        doesPathExist outDir `shouldReturn` False
+
+    it "skips profile enforcement with --no-profile" $ do
+      withSystemTempDirectory "seihou-okf-docs-no-profile" $ \tmpDir -> do
+        let registryDir = tmpDir </> "registry"
+            outDir = tmpDir </> "out"
+            profilePath = tmpDir </> "demanding.dhall"
+        writeFixtureRegistry registryDir
+        TIO.writeFile profilePath demandingProfile
+        result <-
+          runDocs
+            ( docsOpts registryDir outDir False
+                & #profile ?~ profilePath
+                & #noProfile .~ True
+            )
+        result `shouldBe` Right ("Wrote 3 concepts to " <> T.pack outDir)
+
+    it "derives its demanding fixture profile from the real descriptor" $ do
+      demandingProfile `shouldNotBe` builtinProfileDescriptor
+
     it "reports a missing registry file" $ do
       withSystemTempDirectory "seihou-okf-docs-missing" $ \tmpDir -> do
         let registryDir = tmpDir </> "missing"
@@ -72,8 +114,27 @@ docsOpts registryDir outDir force =
       out = outDir,
       force = force,
       generatedAt = Nothing,
-      permissive = False
+      permissive = False,
+      profile = Nothing,
+      noProfile = False
     }
+
+-- | The house profile, plus one required frontmatter key the generator never
+-- emits, so that enforcement has something real to reject. Derived from the
+-- real descriptor rather than hand-written, so it stays a valid profile.
+--
+-- 'demandingProfileIsDifferent' guards the substitution: if the descriptor is
+-- reworded so the anchor no longer matches, that test fails loudly rather than
+-- these two silently checking nothing.
+demandingProfile :: T.Text
+demandingProfile =
+  T.replace
+    demandingProfileAnchor
+    ("[ scalar \"stale_after\" \"A key this generator never emits.\"\n              , scalar \"type\"")
+    builtinProfileDescriptor
+
+demandingProfileAnchor :: T.Text
+demandingProfileAnchor = "[ scalar \"type\""
 
 writeFixtureRegistry :: FilePath -> IO ()
 writeFixtureRegistry registryDir = do

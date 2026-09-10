@@ -1,10 +1,15 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 module Seihou.OKF.Docs.Render
   ( conceptIdFor,
     RenderOptions (..),
     defaultRenderOptions,
     DocRenderError (..),
     DocBundleError (..),
+    builtinProfileDescriptor,
+    profileFileName,
     renderDocBundle,
+    checkDocProfile,
     writeDocBundle,
   )
 where
@@ -13,16 +18,27 @@ import Control.Lens ((^.))
 import Data.Aeson (Value (..))
 import Data.Bifunctor (first)
 import Data.Either (partitionEithers)
+import Data.FileEmbed (embedStringFile)
 import Data.Generics.Labels ()
+import Data.List.NonEmpty (NonEmpty)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import GHC.Generics (Generic)
 import Okf.Actor (Actor (..))
 import Okf.Bundle (BundleError, Concept, bundleInventoryOfConcepts, conceptFromDocument, writeBundle)
 import Okf.ConceptId (ConceptId, parseConceptId, renderConceptLink)
 import Okf.Document qualified as Okf
 import Okf.Index (VersionDeclaration (..), supportedOkfVersion, writeBundleIndexesWith)
+import Okf.Profile
+  ( ProfileDefinitionError,
+    ProfileViolation,
+    compileProfile,
+    loadProfileFile,
+    validateProfile,
+    validateProfileVersion,
+  )
 import Okf.Validation (BundleValidationError, ValidationProfile (..), validateBundle)
 import Seihou.Core.Expr (renderExpr)
 import Seihou.Core.Migration
@@ -59,6 +75,9 @@ import Seihou.Core.Types
   )
 import Seihou.OKF.Docs.Model
 import Seihou.OKF.Extension.Version (producerActorName)
+import System.Directory (createDirectoryIfMissing)
+import System.FilePath ((</>))
+import System.IO.Temp (withSystemTempDirectory)
 
 -- | Everything the renderer needs that is not in the model: who to name as the
 -- producer, whether to stamp a generation date, and how strictly to validate.
@@ -69,17 +88,26 @@ import Seihou.OKF.Extension.Version (producerActorName)
 data RenderOptions = RenderOptions
   { producerVersion :: !T.Text,
     generatedAt :: !(Maybe T.Text),
-    validationProfile :: !ValidationProfile
+    validationProfile :: !ValidationProfile,
+    -- | Where to read the house profile descriptor from. 'Nothing' means the
+    -- descriptor embedded in this executable.
+    profileSource :: !(Maybe FilePath),
+    -- | Whether to check the rendered concepts against that descriptor before
+    -- writing anything.
+    enforceProfile :: !Bool
   }
   deriving stock (Eq, Generic, Show)
 
--- | Strict validation with no generation date, for the given producer version.
+-- | Strict OKF validation and the built-in house profile enforced, with no
+-- generation date, for the given producer version.
 defaultRenderOptions :: T.Text -> RenderOptions
 defaultRenderOptions version =
   RenderOptions
     { producerVersion = version,
       generatedAt = Nothing,
-      validationProfile = StrictAuthoring
+      validationProfile = StrictAuthoring,
+      profileSource = Nothing,
+      enforceProfile = True
     }
 
 data DocRenderError
@@ -93,7 +121,24 @@ data DocBundleError
     -- written, so the bundle on disk is missing its version declaration and its
     -- per-kind section indexes.
     DocBundleIndexError BundleError
+  | -- | The house profile descriptor could not be read as a profile at all.
+    DocBundleProfileUnreadable T.Text
+  | -- | The descriptor read but does not compile to a checkable profile.
+    DocBundleProfileInvalid (NonEmpty ProfileDefinitionError)
+  | -- | The rendered concepts deviate from the house profile.
+    DocBundleProfileViolation ProfileViolation
   deriving stock (Eq, Show)
+
+-- | The house profile descriptor, embedded so the generator never depends on
+-- its own source tree at run time. It is also written into every bundle, so a
+-- downstream consumer can check a bundle it did not generate.
+builtinProfileDescriptor :: T.Text
+builtinProfileDescriptor = $(embedStringFile "profile/seihou-registry-docs.dhall")
+
+-- | Where the descriptor is written inside a generated bundle. A Dhall file at
+-- the bundle root is not a concept and does not disturb the bundle walk.
+profileFileName :: FilePath
+profileFileName = "profile.dhall"
 
 conceptIdFor :: DocKind -> T.Text -> Either T.Text ConceptId
 conceptIdFor kind name =
@@ -117,20 +162,69 @@ renderDocBundle opts model =
 -- | Write concepts into the output directory. This overwrites files it writes but does
 -- not clear unrelated files; callers that need pristine regeneration should clear the
 -- output directory before calling this function.
+-- | Check rendered concepts against the house profile, before anything is
+-- written. The descriptor is read from @--profile PATH@ when the operator
+-- supplied one and otherwise from 'builtinProfileDescriptor', written to a
+-- temporary file because okf reads a profile from a path.
+--
+-- Returns @[]@ when the profile is not being enforced.
+checkDocProfile :: RenderOptions -> [Concept] -> IO [DocBundleError]
+checkDocProfile opts concepts
+  | not (opts ^. #enforceProfile) = pure []
+  | otherwise =
+      case opts ^. #profileSource of
+        Just path -> checkAgainst path
+        Nothing ->
+          withSystemTempDirectory "seihou-okf-profile" $ \tmpDir -> do
+            let path = tmpDir </> profileFileName
+            TIO.writeFile path builtinProfileDescriptor
+            checkAgainst path
+  where
+    checkAgainst path = do
+      loaded <- loadProfileFile path
+      pure $ case loaded of
+        Left err -> [DocBundleProfileUnreadable err]
+        Right spec ->
+          case compileProfile spec of
+            Left definitionErrors -> [DocBundleProfileInvalid definitionErrors]
+            Right compiled ->
+              DocBundleProfileViolation
+                <$> ( validateProfileVersion (VersionDeclared supportedOkfVersion) compiled
+                        <> validateProfile (opts ^. #validationProfile) compiled concepts
+                    )
+
 writeDocBundle :: RenderOptions -> FilePath -> DocModel -> IO (Either [DocBundleError] ())
 writeDocBundle opts outDir model =
   case renderDocBundle opts model of
     Left renderErrors ->
       pure (Left (DocBundleRenderError <$> renderErrors))
     Right (concepts, validationErrors)
-      | null validationErrors -> do
-          writeBundle outDir concepts
-          -- Walk what was just written and lay down the root index (carrying the
-          -- OKF version declaration, the one place a bundle states it) plus one
-          -- index per subdirectory.
-          indexResult <- writeBundleIndexesWith (Just supportedOkfVersion) outDir
-          pure (first (pure . DocBundleIndexError) indexResult)
-      | otherwise -> pure (Left (DocBundleValidationError <$> validationErrors))
+      | not (null validationErrors) ->
+          pure (Left (DocBundleValidationError <$> validationErrors))
+      | otherwise -> do
+          -- The profile is checked before a single file is written, so a bundle
+          -- that violates the house convention never reaches disk at all.
+          profileProblems <- checkDocProfile opts concepts
+          if not (null profileProblems)
+            then pure (Left profileProblems)
+            else do
+              writeBundle outDir concepts
+              writeProfileDescriptor opts outDir
+              -- Walk what was just written and lay down the root index (carrying
+              -- the OKF version declaration, the one place a bundle states it)
+              -- plus one index per subdirectory.
+              indexResult <- writeBundleIndexesWith (Just supportedOkfVersion) outDir
+              pure (first (pure . DocBundleIndexError) indexResult)
+
+-- | Write the descriptor the bundle was checked against beside the bundle, so a
+-- reader can re-run the same check with @okf validate --profile@.
+writeProfileDescriptor :: RenderOptions -> FilePath -> IO ()
+writeProfileDescriptor opts outDir = do
+  createDirectoryIfMissing True outDir
+  descriptor <- case opts ^. #profileSource of
+    Nothing -> pure builtinProfileDescriptor
+    Just path -> TIO.readFile path
+  TIO.writeFile (outDir </> profileFileName) descriptor
 
 conceptFor :: RenderOptions -> T.Text -> DocEntry -> Either DocRenderError Concept
 conceptFor opts repoName entry =

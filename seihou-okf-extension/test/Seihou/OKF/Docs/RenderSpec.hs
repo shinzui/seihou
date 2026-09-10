@@ -234,7 +234,9 @@ testOptions =
   RenderOptions
     { producerVersion = "9.9.9",
       generatedAt = Nothing,
-      validationProfile = StrictAuthoring
+      validationProfile = StrictAuthoring,
+      profileSource = Nothing,
+      enforceProfile = True
     }
 
 -- | Render a model, failing the example rather than pattern-matching partially.

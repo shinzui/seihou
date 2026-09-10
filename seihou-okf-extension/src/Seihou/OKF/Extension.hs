@@ -88,3 +88,16 @@ docsParser =
             "Validate with OKF permissive conformance instead of the default \
             \strict authoring rules"
       )
+    <*> optional
+      ( strOption
+          ( long "profile"
+              <> metavar "PATH"
+              <> help
+                "Check the bundle against this house profile descriptor instead \
+                \of the built-in one"
+          )
+      )
+    <*> switch
+      ( long "no-profile"
+          <> help "Skip house-profile enforcement entirely"
+      )

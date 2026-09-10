@@ -84,7 +84,7 @@ This section must always reflect the actual current state of the work.
 - [x] M3: module documents render variables in full, steps, commands, prompts, removal, and migrations (2026-09-10). Against `seihou-modules`, all 7 module documents carry `## Generation steps`; 1 carries `## Migrations`, 2 carry `## Removal`, 1 carries `## Commands` — which is exactly what those `.dhall` sources declare.
 - [x] M3: blueprint documents render migrations with entailment cross-links, launch preferences, version probe, variables, and prompts (2026-09-10). No real registry declares entailment, a launch block, or a version probe, so the proof is the `richModel` fixture in `seihou-okf-extension/test/Seihou/OKF/Docs/RenderSpec.hs`; see Validation and Acceptance for the named assertions.
 - [x] M3: recipe documents render supplied variable bindings and prompts; prompt documents render command variables, guidance, and launch preferences (2026-09-10). Also adds the registry overview concept the plan asks for, which gives `okf graph` a root: 13 concepts for `seihou-modules`, 14 for `agent-seihou`.
-- [ ] M4: house profile descriptor authored, written beside the bundle, and enforced in-process.
+- [x] M4: house profile descriptor authored, written beside the bundle, and enforced in-process (2026-09-10). `okf validate <bundle> --strict --profile <bundle>/profile.dhall --profile-enforce` exits 0 on a freshly generated `seihou-modules` bundle, and a deliberately demanding profile makes the generator refuse before creating the output directory at all.
 - [ ] M5: `docs/cli/okf-docs.md`, `docs/user/`, `CHANGELOG.md`, and `docs/user/CHANGELOG.md` updated; end-to-end run recorded against `seihou-modules` and `agent-seihou`.
 
 
@@ -200,6 +200,33 @@ Record every decision made while working on the plan.
   vars`, `seihou status`) can use it later.
   Date: 2026-09-10
 
+
+- Decision: The house profile marks `version` **optional**, not required, on module,
+  recipe, and blueprint concepts.
+  Rationale: the plan asked for it to be required "where the registry supplies one", which
+  is not a shape the descriptor language has — a rule is required, recommended, or
+  optional, and `recommended` is enforced under `StrictAuthoring`, which is this
+  generator's default. `seihou-registry.dhall` declares `version : Optional Text`, so
+  requiring it in either sense would make the generator refuse a registry that is
+  perfectly valid by its own schema. `optional` still validates the field whenever it is
+  present and never reports it absent, which is exactly the intent.
+  Date: 2026-09-10
+
+- Decision: The profile descriptor is written standalone, spelling out every profile type
+  inline rather than importing okf-core's published `Profile/*.dhall` schemas.
+  Rationale: the descriptor is embedded in the executable and written to the bundle root,
+  where a relative import pointing out of the bundle would not resolve and a remote import
+  would make `okf validate --profile` require the network. The shared `okf-profiles`
+  catalogue has no profile for generated scaffolding-registry documentation, so there was
+  nothing to reuse.
+  Date: 2026-09-10
+
+- Decision: `pathPattern` in the descriptor is written without a `.md` suffix
+  (`modules/*`, not `modules/*.md`).
+  Rationale: okf matches `pathPattern` against a concept **ID**, not a file path — see
+  `matchPathPattern` in `okf-core/src/Okf/Profile.hs`, which splits `renderConceptId` on
+  `/`. Written with the suffix, every concept in the bundle is reported as misplaced.
+  Date: 2026-09-10
 
 ## Outcomes & Retrospective
 

@@ -8,14 +8,27 @@ where
 
 import Control.Lens ((^.))
 import Control.Monad (when)
+import Data.Aeson (Value)
+import Data.Aeson.Text qualified as Aeson
 import Data.Generics.Labels ()
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Data.Text.Lazy qualified as TL
+import Data.Text.Lazy.Builder qualified as TLB
 import GHC.Generics (Generic)
 import Okf.Bundle (BundleError (..))
 import Okf.ConceptId qualified as Okf
 import Okf.Document (DocumentParseError (..))
 import Okf.Log (LogValidationError (..))
+import Okf.Profile
+  ( FieldCondition (..),
+    FieldPath (..),
+    FieldPathSegment (..),
+    ProfileViolation (..),
+    renderCardinalityName,
+    renderFieldFormatName,
+  )
 import Okf.Validation (BundleValidationError (..), ValidationError (..), ValidationProfile (..))
 import Seihou.OKF.Docs.Model
 import Seihou.OKF.Docs.Render
@@ -41,7 +54,12 @@ data DocsOpts = DocsOpts
     generatedAt :: !(Maybe T.Text),
     -- | Validate with 'PermissiveConformance' instead of the default
     -- 'StrictAuthoring'.
-    permissive :: !Bool
+    permissive :: !Bool,
+    -- | Check against this house profile descriptor instead of the built-in
+    -- one.
+    profile :: !(Maybe FilePath),
+    -- | Skip house-profile enforcement entirely.
+    noProfile :: !Bool
   }
   deriving stock (Eq, Generic, Show)
 
@@ -52,7 +70,9 @@ renderOptionsFor opts =
     { producerVersion = extensionVersion,
       generatedAt = opts ^. #generatedAt,
       validationProfile =
-        if opts ^. #permissive then PermissiveConformance else StrictAuthoring
+        if opts ^. #permissive then PermissiveConformance else StrictAuthoring,
+      profileSource = opts ^. #profile,
+      enforceProfile = not (opts ^. #noProfile)
     }
 
 runDocs :: DocsOpts -> IO (Either T.Text T.Text)
@@ -77,11 +97,18 @@ runDocs opts = do
                   | not (null validationProblems) ->
                       pure (Left (renderMany renderBundleValidationError validationProblems))
                   | otherwise -> do
-                      prepareOutputDirectory (opts ^. #out)
-                      writeResult <- writeDocBundle (renderOptionsFor opts) (opts ^. #out) model
-                      pure $ case writeResult of
-                        Left errors -> Left (renderMany renderDocBundleError errors)
-                        Right () -> Right ("Wrote " <> T.pack (show (length concepts)) <> " concepts to " <> T.pack (opts ^. #out))
+                      -- Check the house profile before touching the output
+                      -- directory, so a violating run leaves whatever was
+                      -- there untouched rather than clearing it first.
+                      profileProblems <- checkDocProfile (renderOptionsFor opts) concepts
+                      if not (null profileProblems)
+                        then pure (Left (renderMany renderDocBundleError profileProblems))
+                        else do
+                          prepareOutputDirectory (opts ^. #out)
+                          writeResult <- writeDocBundle (renderOptionsFor opts) (opts ^. #out) model
+                          pure $ case writeResult of
+                            Left errors -> Left (renderMany renderDocBundleError errors)
+                            Right () -> Right ("Wrote " <> T.pack (show (length concepts)) <> " concepts to " <> T.pack (opts ^. #out))
 
 handleDocs :: DocsOpts -> IO ()
 handleDocs opts = do
@@ -127,6 +154,13 @@ renderDocBundleError (DocBundleRenderError err) = renderDocRenderError err
 renderDocBundleError (DocBundleValidationError err) = renderBundleValidationError err
 renderDocBundleError (DocBundleIndexError err) =
   "failed to write bundle indexes: " <> renderBundleError err
+renderDocBundleError (DocBundleProfileUnreadable err) =
+  "could not read the house profile descriptor: " <> err
+renderDocBundleError (DocBundleProfileInvalid errs) =
+  "the house profile descriptor does not compile: "
+    <> T.intercalate "; " (T.pack . show <$> NonEmpty.toList errs)
+renderDocBundleError (DocBundleProfileViolation violation) =
+  "house profile: " <> renderProfileViolation violation
 
 -- | Total by construction; see 'renderBundleValidationError'.
 renderBundleError :: BundleError -> T.Text
@@ -221,3 +255,130 @@ renderValidationError (AttestedComputationHasManyBlocks count) =
 
 renderMany :: (a -> T.Text) -> [a] -> T.Text
 renderMany render = T.intercalate "\n" . fmap render
+
+-- | Render one house-profile deviation.
+--
+-- okf-core reports 'ProfileViolation' but does not render it: the renderer
+-- lives in the @okf-cli@ package, which this repository does not depend on.
+-- Total by construction, for the reason 'renderBundleValidationError' gives.
+renderProfileViolation :: ProfileViolation -> T.Text
+renderProfileViolation (TypeNotInProfile conceptId conceptType) =
+  at conceptId <> "type " <> conceptType <> " is not one this profile declares"
+renderProfileViolation (MissingProfileField conceptId key condition) =
+  at conceptId <> "missing required field " <> key <> renderFieldCondition condition
+renderProfileViolation (MissingRecommendedProfileField conceptId key condition) =
+  at conceptId <> "missing recommended field " <> key <> renderFieldCondition condition
+renderProfileViolation (MissingNestedProfileField conceptId path condition) =
+  at conceptId <> "missing required field " <> renderFieldPath path <> renderFieldCondition condition
+renderProfileViolation (MissingRecommendedNestedProfileField conceptId path condition) =
+  at conceptId <> "missing recommended field " <> renderFieldPath path <> renderFieldCondition condition
+renderProfileViolation (ValueNotInVocabulary conceptId path allowed value) =
+  at conceptId
+    <> renderFieldPath path
+    <> " holds "
+    <> renderJson value
+    <> ", which is not one of "
+    <> T.intercalate ", " allowed
+renderProfileViolation (CardinalityMismatch conceptId path cardinality value) =
+  at conceptId
+    <> renderFieldPath path
+    <> " must be "
+    <> renderCardinalityName cardinality
+    <> ", but holds "
+    <> renderJson value
+renderProfileViolation (ValueFormatMismatch conceptId path format value) =
+  at conceptId
+    <> renderFieldPath path
+    <> " must be "
+    <> renderFieldFormatName format
+    <> ", but holds "
+    <> renderJson value
+renderProfileViolation (DanglingHandleReference conceptId path handle) =
+  at conceptId <> renderFieldPath path <> " references handle " <> handle <> ", which nothing in this bundle owns"
+renderProfileViolation (ReferenceHandlePrefixMismatch conceptId path expected actual) =
+  at conceptId <> renderFieldPath path <> " expects handle prefix " <> expected <> ", but holds " <> actual
+renderProfileViolation (MalformedDocumentReference conceptId path value) =
+  at conceptId <> renderFieldPath path <> " is neither a local handle nor an absolute URI: " <> renderJson value
+renderProfileViolation (ExternalReferenceSchemeNotAllowed conceptId path scheme allowed) =
+  at conceptId
+    <> renderFieldPath path
+    <> " uses URI scheme "
+    <> scheme
+    <> ", which this profile does not permit; allowed: "
+    <> T.intercalate ", " allowed
+renderProfileViolation (LocalDocumentReferenceNotAllowed conceptId path handle) =
+  at conceptId <> renderFieldPath path <> " may not hold a local handle, but holds " <> handle
+renderProfileViolation (ExternalReferencePatternMismatch conceptId path value pattern_) =
+  at conceptId <> renderFieldPath path <> " holds " <> value <> ", which does not match " <> pattern_
+renderProfileViolation (SelfDocumentReference conceptId path value) =
+  at conceptId <> renderFieldPath path <> " references the concept it is written on: " <> value
+renderProfileViolation (MalformedPathReference conceptId path value) =
+  at conceptId <> renderFieldPath path <> " is not a usable path or URI: " <> renderJson value
+renderProfileViolation (PathEscapesBundle conceptId path value) =
+  at conceptId <> renderFieldPath path <> " climbs above the bundle root: " <> value
+renderProfileViolation (DanglingPathReference conceptId path target) =
+  at conceptId <> renderFieldPath path <> " names a path that is not in this bundle: " <> target
+renderProfileViolation (FieldNotInProfile conceptId key) =
+  at conceptId <> "field " <> key <> " is not one this profile declares"
+renderProfileViolation (NestedElementNotRecord conceptId path value) =
+  at conceptId <> renderFieldPath path <> " must be a record, but holds " <> renderJson value
+renderProfileViolation (DuplicateNestedFieldValue conceptId path value indexes) =
+  at conceptId
+    <> renderFieldPath path
+    <> " repeats the value "
+    <> renderJson value
+    <> " at elements "
+    <> T.intercalate ", " (T.pack . show <$> NonEmpty.toList indexes)
+renderProfileViolation (PathPatternMismatch conceptId conceptType pattern_) =
+  at conceptId <> conceptType <> " concepts must live at " <> pattern_
+renderProfileViolation (MissingResource conceptId conceptType scheme) =
+  at conceptId <> conceptType <> " concepts must carry a " <> scheme <> ": resource"
+renderProfileViolation (ResourceSchemeMismatch conceptId scheme resource) =
+  at conceptId <> "resource must use the " <> scheme <> " scheme, but is " <> resource
+renderProfileViolation (MissingSchemaSection conceptId conceptType) =
+  at conceptId <> conceptType <> " concepts must carry a # Schema section"
+renderProfileViolation (SchemaColumnsMismatch conceptId conceptType expected actual) =
+  at conceptId
+    <> conceptType
+    <> " # Schema columns must be "
+    <> T.intercalate ", " expected
+    <> ", but are "
+    <> T.intercalate ", " actual
+renderProfileViolation (MissingDocumentId conceptId conceptType prefix) =
+  at conceptId <> conceptType <> " concepts must carry a " <> prefix <> "-N handle"
+renderProfileViolation (MalformedDocumentId conceptId prefix value) =
+  at conceptId <> "handle " <> value <> " is not well formed for prefix " <> prefix
+renderProfileViolation (DuplicateDocumentId handle conceptId other) =
+  "handle "
+    <> handle
+    <> " is claimed by both "
+    <> Okf.renderConceptId conceptId
+    <> " and "
+    <> Okf.renderConceptId other
+renderProfileViolation (RequiredBundleVersionUnmet required declared) =
+  "bundle must declare OKF version "
+    <> required
+    <> " or later, but declares "
+    <> maybe "nothing" id declared
+
+at :: Okf.ConceptId -> T.Text
+at conceptId = Okf.renderConceptId conceptId <> ": "
+
+renderFieldCondition :: Maybe FieldCondition -> T.Text
+renderFieldCondition =
+  foldMap
+    ( \FieldCondition {field, hasValue} ->
+        " (required when " <> field <> " is " <> T.intercalate " or " hasValue <> ")"
+    )
+
+-- | A frontmatter field path, in the dotted form the descriptor writes it in.
+renderFieldPath :: FieldPath -> T.Text
+renderFieldPath FieldPath {segments} =
+  T.intercalate "." (renderFieldPathSegment <$> NonEmpty.toList segments)
+
+renderFieldPathSegment :: FieldPathSegment -> T.Text
+renderFieldPathSegment (FieldName name) = name
+renderFieldPathSegment (ArrayIndex index) = "[" <> T.pack (show index) <> "]"
+
+renderJson :: Value -> T.Text
+renderJson = TL.toStrict . TLB.toLazyText . Aeson.encodeToTextBuilder
