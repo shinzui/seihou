@@ -390,6 +390,11 @@ data BlueprintMigrationOpts = BlueprintMigrationOpts
     context :: !(Maybe Text),
     verbose :: !Bool,
     rerun :: !Bool,
+    -- | When 'True', record a receipt for every pending step in the window
+    -- without starting an agent session, on the user's assertion that the
+    -- upgrade has already been performed by hand. No provider is contacted
+    -- and no file in the working tree is touched.
+    markApplied :: !Bool,
     provider :: !(Maybe Text),
     model :: !(Maybe Text),
     effort :: !(Maybe Text),
@@ -1909,6 +1914,10 @@ agentMigrateParser =
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
       <*> switch (long "rerun" <> help "Run matching migrations even when a receipt already exists")
+      <*> switch
+        ( long "mark-applied"
+            <> help "Record the pending migrations in the window as already applied, without running them"
+        )
       <*> providerOption
       <*> modelOption
       <*> effortOption

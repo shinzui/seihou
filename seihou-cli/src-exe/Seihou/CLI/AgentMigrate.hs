@@ -104,6 +104,13 @@ handleAgentMigrate debug pendingConfig opts = do
   let level = if opts ^. #verbose then LogVerbose else LogNormal
       manifestPath = ".seihou" </> "manifest.json"
 
+  -- Two --mark-applied combinations cannot mean anything, and both are
+  -- refused here rather than resolved by precedence. This is the first thing
+  -- the command does: the refusal must land before the blueprint is
+  -- discovered, before the version probe runs, and above all before a receipt
+  -- is written, so an invalid invocation leaves the filesystem untouched.
+  rejectConflictingMarkApplied debug opts
+
   -- The blueprint's discovery directory is classified into a portable origin
   -- as it is loaded. Receipts are keyed by that origin, not by the name the
   -- user typed, so a blueprint of the same name from another repository has
@@ -266,6 +273,40 @@ handleAgentMigrate debug pendingConfig opts = do
                   (recordMigration manifestPath cohort)
                   pending
               handleRunResult level (blueprint ^. #name) result
+
+-- | Refuse the two @--mark-applied@ combinations that contradict themselves.
+--
+-- Neither has a defensible winner, so neither gets one. @--rerun@ means "run
+-- these edges again even though receipts exist" and @--mark-applied@ means
+-- "run nothing"; @--debug@ is a true dry run that writes nothing and
+-- @--mark-applied@ exists to write receipts. Letting either silently win
+-- would leave a user believing something happened that did not.
+--
+-- The refusal block follows the shape 'Seihou.CLI.ManifestGuard' established
+-- for this command's other refusal — a @✗@ line naming what was refused, then
+-- an indented paragraph explaining the conflict and what to do instead.
+rejectConflictingMarkApplied :: Bool -> BlueprintMigrationOpts -> IO ()
+rejectConflictingMarkApplied debug opts
+  | not (opts ^. #markApplied) = pure ()
+  | opts ^. #rerun =
+      refuse
+        [ "✗ --mark-applied and --rerun cannot be combined.",
+          "",
+          "  --rerun runs edges that already have receipts; --mark-applied records",
+          "  receipts without running anything. Pick one."
+        ]
+  | debug =
+      refuse
+        [ "✗ --mark-applied cannot be combined with --debug.",
+          "",
+          "  --debug renders prompts without changing anything; --mark-applied writes",
+          "  migration receipts. Run it without --debug when you are ready to record."
+        ]
+  | otherwise = pure ()
+  where
+    refuse ls = do
+      TIO.putStrLn (T.intercalate "\n" ls)
+      exitFailure
 
 -- | What a step's owning blueprint declares, for the pure expander. A name
 -- absent from the cohort was not installed, which the expander reports against

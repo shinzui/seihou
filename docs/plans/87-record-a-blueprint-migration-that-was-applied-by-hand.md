@@ -4,6 +4,14 @@ slug: record-a-blueprint-migration-that-was-applied-by-hand
 title: "Record a blueprint migration that was applied by hand"
 kind: exec-plan
 created_at: 2026-08-17T03:18:12Z
+intention: intention_01m26cpw67eens6yw0dz028ryj
+provenance:
+  revisions:
+    - model: "claude-opus-5"
+      harness: "claude-code"
+      at: 2026-09-10T19:29:37Z
+      mode: "implement"
+      note: "Refreshed the stale next-free-ADR-number claim, added an intention, and began implementation"
 ---
 
 # Record a blueprint migration that was applied by hand
@@ -65,7 +73,7 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
 
 ## Progress
 
-- [ ] Milestone 1 — add `--mark-applied` to `BlueprintMigrationOpts` and its parser, and reject the flag combinations that cannot mean anything.
+- [x] Milestone 1 — add `--mark-applied` to `BlueprintMigrationOpts` and its parser, and reject the flag combinations that cannot mean anything. (2026-09-10)
 - [ ] Milestone 2 — record receipts for the pending steps without launching a provider, in `handleAgentMigrate`.
 - [ ] Milestone 3 — report what was marked, and make the no-op and refusal messages readable.
 - [ ] Milestone 4 — unit tests for the pure marking summary and the flag-conflict rules.
@@ -76,7 +84,21 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- **2026-09-10 — the ADR corpus moved under the plan.** Milestone 7 said the next free ADR
+  number was `0010` and that the corpus ended at `0009`. Between the plan being written on
+  2026-08-17 and implementation starting, `docs/adr/0010-generated-documentation-is-checked-before-it-is-written.md`
+  landed (commit `6745c54`). The next free number is `0011`. This is exactly why the plan told
+  the implementer to list `docs/adr/` rather than trust the sentence; the sentence has now been
+  corrected too.
+  Everything else the plan asserts about the working tree was re-verified and still holds:
+  `BlueprintMigrationOpts` has the fourteen fields listed in Interfaces and Dependencies,
+  `agentMigrateParser` is positional in the order shown, the `if null pending` branch in
+  `handleAgentMigrate` has the shape quoted in Milestone 2, `recordMigration` looks the owner up
+  in the cohort exactly as quoted, `formatMigrationStepLabel` and `pendingBlueprintMigrations`
+  are exported from `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`, the test fixtures `first`,
+  `second`, `entailedStep`, `withProbeProject`, `withCohortProject` and `probeBlueprintDhall`
+  all exist, `mori.dhall` still registers `docs/improvement-requests` as its only OKF bundle, and
+  every documentation file named in Milestone 6 is present.
 
 
 ## Decision Log
@@ -656,9 +678,10 @@ executable with `Data.FileEmbed` and shown by `seihou help agent`. Its `agent mi
 lists the flags and their behaviour and must mention `--mark-applied`. This file is easy to
 forget because it is not under `docs/`.
 
-**Append** to `docs/user/CHANGELOG.md` under `## Unreleased` → `### Added`. Note that the
-release immediately before this work is `0.7.0.0`, so `## Unreleased` may be empty when you
-start; create the `### Added` heading if it is missing. The entry should lead with the problem
+**Append** to `docs/user/CHANGELOG.md` under `## Unreleased` → `### Added`. The release
+immediately before this work is `0.7.0.0`; `## Unreleased` already carries an `### Added`
+heading with entries from later work, so append a new bullet under it rather than creating the
+heading. The entry should lead with the problem
 — there was no way to tell seihou about an upgrade you did yourself — and state plainly that a
 marked receipt is an ordinary applied receipt, with `--rerun` as the correction.
 
@@ -685,9 +708,10 @@ specifically about the *outcome vocabulary* rather than about what a receipt ass
 record is the likelier answer. Make the call deliberately and record which you chose and why in
 the Decision Log.
 
-If a new record: the next free number is `0010` (the corpus currently ends at `0009`); verify
-by listing `docs/adr/` rather than trusting this sentence, since another plan may have landed
-first. Follow the local convention exactly — `NNNN-slug.md`, a `# ADR NNNN — Title` heading,
+If a new record: the next free number is `0011` (the corpus ends at
+`docs/adr/0010-generated-documentation-is-checked-before-it-is-written.md`, which landed after
+this plan was written); verify by listing `docs/adr/` rather than trusting this sentence, since
+another plan may have landed first. Follow the local convention exactly — `NNNN-slug.md`, a `# ADR NNNN — Title` heading,
 `Status: Accepted` and `Date:` lines, then Context, Decision, Consequences, and References
 sections. Cite ADRs 0002, 0004, 0007, and 0008 by repository-relative path where they bear on
 the reasoning. Do not add OKF frontmatter.
@@ -722,9 +746,9 @@ checks, which fail the build rather than merely warning:
 nix flake check
 ```
 
-Commit with the ExecPlan trailer. This plan has no associated Intention, so no `Intention:`
-trailer is used; if one is added to the frontmatter later, add the trailer to subsequent
-commits as well:
+Commit with both trailers. The plan's frontmatter carries
+`intention: intention_01m26cpw67eens6yw0dz028ryj`, so every commit for this work gets an
+`Intention:` trailer alongside the `ExecPlan:` one:
 
 ```text
 feat(agent): let a user record a migration they applied by hand
@@ -736,6 +760,7 @@ same path a real run uses, so an entailed step is still recorded under
 the blueprint that owns it.
 
 ExecPlan: docs/plans/87-record-a-blueprint-migration-that-was-applied-by-hand.md
+Intention: intention_01m26cpw67eens6yw0dz028ryj
 ```
 
 
