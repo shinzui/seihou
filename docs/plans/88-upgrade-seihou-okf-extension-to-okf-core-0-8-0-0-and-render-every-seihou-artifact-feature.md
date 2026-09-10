@@ -41,10 +41,11 @@ After this change, a person who runs the generator gets documentation that actua
 describes what their registry declares, and tools that can check it. Concretely, after this
 work:
 
-- `seihou-okf-extension docs --dir /path/to/seihou-modules --out okf-docs` writes **12**
-  concept documents for the current `seihou-modules` registry (7 modules, 2 recipes, 3
-  blueprints), plus a bundle-root `index.md` that declares `okf_version: "0.2"` and per-kind
-  section indexes.
+- `seihou-okf-extension docs --dir /path/to/seihou-modules --out okf-docs` writes **13**
+  concept documents for the current `seihou-modules` registry — 12 artifacts (7 modules, 2
+  recipes, 3 blueprints) plus the registry overview concept milestone 3 adds — along with a
+  bundle-root `index.md` that declares `okf_version: "0.2"`, per-kind section indexes, and
+  the house profile descriptor at `profile.dhall`.
 - Every generated document carries a `generated` block naming its producer
   (`seihou-okf-extension/<version>`), so `okf trust okf-docs` reports a real trust tier for
   each concept instead of nothing.
@@ -61,9 +62,11 @@ work:
   `okf validate okf-docs --strict --profile okf-docs/profile.dhall --profile-enforce`,
   because the generator writes a house profile beside the bundle and enforces it in-process
   before writing anything.
-- `okf concepts okf-docs --filter type=SeihouBlueprint` and
-  `okf concepts okf-docs --filter tags=migration` select documents, because the frontmatter
-  now carries the vocabulary those filters need.
+- `okf concepts okf-docs --type SeihouBlueprint` and
+  `okf concepts okf-docs --where tags=migration` select documents, because the frontmatter
+  now carries the vocabulary those filters need. (This bullet originally wrote both as
+  `--filter KEY=VALUE`; okf 0.8.0.0 spells them `--type` and `--where`, and rejects
+  `--filter` outright.)
 
 The failure this prevents is quiet documentation drift: a registry author adds a migration
 edge or a launch preference, regenerates the docs, and the new declaration silently does not
@@ -85,7 +88,7 @@ This section must always reflect the actual current state of the work.
 - [x] M3: blueprint documents render migrations with entailment cross-links, launch preferences, version probe, variables, and prompts (2026-09-10). No real registry declares entailment, a launch block, or a version probe, so the proof is the `richModel` fixture in `seihou-okf-extension/test/Seihou/OKF/Docs/RenderSpec.hs`; see Validation and Acceptance for the named assertions.
 - [x] M3: recipe documents render supplied variable bindings and prompts; prompt documents render command variables, guidance, and launch preferences (2026-09-10). Also adds the registry overview concept the plan asks for, which gives `okf graph` a root: 13 concepts for `seihou-modules`, 14 for `agent-seihou`.
 - [x] M4: house profile descriptor authored, written beside the bundle, and enforced in-process (2026-09-10). `okf validate <bundle> --strict --profile <bundle>/profile.dhall --profile-enforce` exits 0 on a freshly generated `seihou-modules` bundle, and a deliberately demanding profile makes the generator refuse before creating the output directory at all.
-- [ ] M5: `docs/cli/okf-docs.md`, `docs/user/`, `CHANGELOG.md`, and `docs/user/CHANGELOG.md` updated; end-to-end run recorded against `seihou-modules` and `agent-seihou`.
+- [x] M5: `docs/cli/okf-docs.md`, `docs/user/`, `CHANGELOG.md`, and `docs/user/CHANGELOG.md` updated; end-to-end run recorded against `seihou-modules` and `agent-seihou` (2026-09-10). New user guide at `docs/user/registry-documentation.md`, linked from `docs/user/registries-and-multi-module-repos.md`. Full transcripts are in Concrete Steps.
 
 
 ## Surprises & Discoveries
@@ -235,7 +238,74 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+### Against the original purpose
+
+All five milestones landed. Measured against the Purpose section's own list:
+
+- The generator writes **13** concepts for `seihou-modules` (12 artifacts plus the registry
+  overview) and 14 for `agent-seihou`, with a bundle-root `index.md` declaring
+  `okf_version: "0.2"`, per-kind section indexes, and `profile.dhall`. ✅
+- Every concept carries `generated.by: seihou-okf-extension/<version>`, and
+  `okf trust` lists a tier for all of them. ✅
+- Module documents render variables with type, default, requiredness and validation rule,
+  plus steps, commands, prompts, removal and migrations. ✅
+- Blueprint documents render migrations with entailment cross-linked in-registry and
+  labelled out-of-registry, plus launch preferences and version probe. ✅
+- Prompt documents render command variables and guidance blocks. ✅
+- `okf validate --strict` and the profile-enforcing form both exit 0. ✅
+- Frontmatter carries what `okf concepts` filters on — though with `--type` / `--where`,
+  not the `--filter` this plan predicted. ✅
+- `docs/cli/okf-docs.md`'s stale "writes 8 concepts" claim is gone. ✅
+
+The failure the plan set out to prevent — a registry author adding a declaration and seeing
+it silently not appear — is now structurally harder: every field in
+`Seihou.Core.Types`/`Seihou.Core.Migration` that an artifact can declare has a rendering
+branch, and the `richModel` fixture exercises the ones no real registry declares.
+
+### What was harder than the plan expected
+
+**The upgrade broke more than the plan predicted, in a way `-Wall` alone would not have
+caught.** Context and Orientation named `validateBundle`'s signature as "the only" compile
+error. It was the only one in the *library*, but `BundleValidationError` had also grown four
+constructors (one carrying a nested `LogValidationError`), and the test suite had its own
+two-argument `validateBundle` call. Milestone 1's real value turned out to be less the pin
+move than `-Werror=incomplete-patterns`, which was verified by deleting a branch and
+watching the build fail. Three total renderers now guard that boundary, and a fourth
+(`renderProfileViolation`, 30 constructors) joined in milestone 4.
+
+**The plan's own commands did not all work as written.** `cabal test all` does not resolve a
+plan in this tree — on the clean tree at `d83433e`, not because of anything here — and needs
+`--enable-tests`. `okf concepts --filter` does not exist. Both are recorded in Surprises &
+Discoveries and the plan's command blocks are corrected.
+
+**Neither real registry exercises four of the features.** `launch`, `versionProbe`,
+`entails` and `commandVars` appear in no `.dhall` in `seihou-modules`, and only as
+`None`/empty declarations in `agent-seihou`. The plan anticipated this and asked for the
+fixture assertions to be named in Validation and Acceptance, which they now are — but it
+means those four sections have unit-test coverage and no field evidence. The first registry
+that declares one of them is the real test.
+
+### What the plan asked for that changed shape
+
+The plan asked the house profile to "require `version` on module, recipe, and blueprint
+concepts where the registry supplies one". The descriptor language has no such rule — a
+field is required, recommended, or optional — and the registry schema declares
+`version : Optional Text`, so requiring it in either sense would refuse valid registries.
+It is `optional` instead: validated when present, never reported absent. Recorded in the
+Decision Log.
+
+### Durable context distilled
+
+[ADR 0010 — Generated documentation is checked before it is written, and never reads the
+clock](../adr/0010-generated-documentation-is-checked-before-it-is-written.md) records the
+two conventions worth keeping beyond this plan: that derived documentation must satisfy the
+strictest rules its own format offers *and* its house profile before anything is written,
+and that the generator reads no clock, so regeneration is byte-stable. It also records the
+"input schema wins" rule that settled the `version` question.
+
+The `renderExpr` addition to `seihou-core` is purely additive and nothing else calls it yet;
+`seihou vars` and `seihou status` are the obvious next consumers, since both currently have
+no way to display a `when` condition either.
 
 
 ## Context and Orientation
@@ -388,7 +458,7 @@ these facts matter for this work, and they were verified by reading the 0.8.0.0 
     Note that `renderProfileViolation` lives in the `okf-cli` package, **not** in `okf-core`,
     so the extension must render `ProfileViolation` values itself.
 
-5. **`Okf.Query` arrived** (0.6.0.0) and powers `okf concepts --filter KEY=VALUE`. Nothing in
+5. **`Okf.Query` arrived** (0.6.0.0) and powers `okf concepts --type TYPE` / `--where KEY=VALUE`. Nothing in
    the extension needs to call it; it is listed because milestone 5 demonstrates it against
    the generated bundle.
 
@@ -533,10 +603,13 @@ Two existing ADRs bear on this plan:
   currently-declared version. Documenting the probe command is therefore documenting a
   user-visible contract, not an implementation detail.
 
-No existing ADR covers documentation generation, OKF bundle conventions, or the extension
-boundary. If milestone 4's house profile settles a durable convention (which frontmatter keys
-a seihou documentation bundle must carry), that is a candidate for a new ADR during the
-distillation pass; see Outcomes & Retrospective.
+No existing ADR covered documentation generation, OKF bundle conventions, or the extension
+boundary when this plan was written. One does now:
+[ADR 0010 — Generated documentation is checked before it is written, and never reads the
+clock](../adr/0010-generated-documentation-is-checked-before-it-is-written.md), written
+during this plan's distillation pass. It records why validation is strict by default, why
+the house profile is enforced in-process before anything is written, and why the generator
+reads no clock.
 
 `docs/improvement-requests/` is a profiled OKF bundle in this same repository and is a useful
 worked example of how a profile is pinned here — `docs/improvement-requests/profile.dhall` is
@@ -877,7 +950,7 @@ Update `docs/cli/okf-docs.md`: document `--generated-at`, `--permissive`, `--pro
 you actually observe, not the number this plan predicts); describe the bundle layout
 (root `index.md` with the version declaration, per-kind section indexes, `profile.dhall`);
 and update the follow-up checks to the strict, profile-enforcing invocation plus
-`okf trust`, `okf sources`, and `okf concepts --filter`.
+`okf trust` and `okf concepts --type` / `--where`.
 
 Add a user-facing guide. There is no page under `docs/user/` about the OKF extension at all
 today (`docs/user/` holds `getting-started.md`, `registries-and-multi-module-repos.md`,
@@ -954,28 +1027,159 @@ okf validate /tmp/okf-docs --strict
 okf validate /tmp/okf-docs --strict --profile /tmp/okf-docs/profile.dhall --profile-enforce
 okf graph /tmp/okf-docs --json | head -20
 okf trust /tmp/okf-docs
-okf concepts /tmp/okf-docs --filter type=SeihouBlueprint
+okf concepts /tmp/okf-docs --type SeihouBlueprint
 ```
 
 Milestone 5, the hosted path (requires the extension executable on `PATH`; `cabal install
 --overwrite-policy=always seihou-okf-extension` or `nix build .#seihou-okf-extension` then use
-the result path):
+the result path).
 
-```bash
-seihou extension run okf -- docs \
-  --dir /Users/shinzui/Keikaku/bokuno/agent-seihou \
-  --out /tmp/agent-seihou-docs --force
-```
+### Recorded end-to-end run, 2026-09-10
 
-Expected output shape:
+All paths below are under this session's scratchpad; substitute your own.
+
+**`seihou-modules` (7 modules, 2 recipes, 3 blueprints, 0 prompts), invoked directly:**
 
 ```text
-Wrote 13 concepts to /tmp/agent-seihou-docs
+$ cabal run -v0 seihou-okf-extension -- docs \
+    --dir /Users/shinzui/Keikaku/bokuno/seihou-modules --out okf-docs --force
+Wrote 13 concepts to okf-docs
+
+$ ls okf-docs
+blueprints
+index.md
+modules
+profile.dhall
+recipes
+registry
+
+$ head -3 okf-docs/index.md
+---
+okf_version: "0.2"
+---
+
+$ okf validate okf-docs --strict
+OK: 13 concepts (okf_version 0.2)
+
+$ okf validate okf-docs --strict --profile okf-docs/profile.dhall --profile-enforce
+OK: 13 concepts (okf_version 0.2)
+
+$ okf trust okf-docs
+blueprints/fix-nix-haskell-flake-customizations  unverified  stable  ok
+blueprints/haskell-keiro-service                 unverified  stable  ok
+blueprints/upgrade-haskell-flake-parts           unverified  stable  ok
+modules/fumadocs                                 unverified  stable  ok
+modules/git-init                                 unverified  stable  ok
+modules/haskell-cli-app                          unverified  stable  ok
+modules/haskell-keiro-project                    unverified  stable  ok
+modules/haskell-library                          unverified  stable  ok
+modules/nix-bun-flake                            unverified  stable  ok
+modules/nix-haskell-flake                        unverified  stable  ok
+recipes/haskell-cli-app-repo                     unverified  stable  ok
+recipes/haskell-library-repo                     unverified  stable  ok
+registry/seihou-modules                          unverified  stable  ok
+
+$ okf concepts okf-docs --type SeihouBlueprint
+blueprints/fix-nix-haskell-flake-customizations  SeihouBlueprint  fix-nix-haskell-flake-customizations
+blueprints/haskell-keiro-service                 SeihouBlueprint  haskell-keiro-service
+blueprints/upgrade-haskell-flake-parts           SeihouBlueprint  upgrade-haskell-flake-parts
+
+$ okf concepts okf-docs --where tags=migration
+blueprints/fix-nix-haskell-flake-customizations  SeihouBlueprint  fix-nix-haskell-flake-customizations
+blueprints/upgrade-haskell-flake-parts           SeihouBlueprint  upgrade-haskell-flake-parts
 ```
 
-(Replace with the count you actually observe; `agent-seihou` has a different artifact mix.)
+Note that the `okf` 0.8.0.0 CLI spells these filters `--type` and `--where KEY=VALUE`, not
+`--filter KEY=VALUE` as Purpose / Big Picture predicted; `--filter` is rejected outright.
 
-Record the real transcripts here as you go, replacing the placeholders above.
+**Byte stability**, two consecutive runs into different directories:
+
+```text
+$ diff -r okf-docs okf-docs-again && echo "BYTE-STABLE"
+BYTE-STABLE
+```
+
+**Section coverage for `seihou-modules`** (the counts are what the registry's own `.dhall`
+sources declare, verified against them):
+
+```text
+$ grep -rl '^## Generation steps' okf-docs/modules | wc -l
+       7
+$ grep -rl '^## Variables'        okf-docs        | wc -l
+       8
+$ grep -rl '^## Prompts'          okf-docs        | wc -l
+       8
+$ grep -rl '^## Removal'          okf-docs        | wc -l
+       2
+$ grep -rl '^## Commands'         okf-docs        | wc -l
+       1
+$ grep -rl '^## Migrations'       okf-docs        | wc -l
+       1
+```
+
+`## Agent launch`, `## Version probe` and `Entails:` are 0 here, because no artifact in
+`seihou-modules` declares a launch block, a version probe or an entailed edge — confirmed by
+grepping the registry's `.dhall` sources. The milestone 3 unit fixtures are the proof for
+those three; see Validation and Acceptance.
+
+**The hosted path** (`seihou extension run okf -- ...`, which has its own raw-argv forwarding
+in `seihou-cli/src-exe/Main.hs`), with the freshly built extension first on `PATH`:
+
+```text
+$ cabal install --overwrite-policy=always seihou-okf-extension
+Symlinking 'seihou-okf-extension' to '/Users/shinzui/.cabal/bin/seihou-okf-extension'
+
+$ export PATH="$HOME/.cabal/bin:$PATH"
+$ cabal run -v0 seihou -- extension run okf -- docs \
+    --dir /Users/shinzui/Keikaku/bokuno/seihou-modules --out hosted-docs --force
+Wrote 13 concepts to hosted-docs
+
+$ diff -r hosted-docs okf-docs && echo "HOSTED == DIRECT"
+HOSTED == DIRECT
+```
+
+**`agent-seihou`** (a different artifact mix: 9 modules, 3 blueprints, 1 prompt), through the
+host, exercising the new `--generated-at` option to prove the forwarding handles options
+added after the host was written:
+
+```text
+$ cabal run -v0 seihou -- extension run okf -- docs \
+    --dir /Users/shinzui/Keikaku/bokuno/agent-seihou --out agent-docs --force \
+    --generated-at 2026-09-10
+Wrote 14 concepts to agent-docs
+
+$ okf validate agent-docs --strict --profile agent-docs/profile.dhall --profile-enforce
+log: blueprints/docs-sync: generated date 2026-09-10 has no enclosing log.md
+... (one advisory per concept) ...
+OK: 14 concepts (okf_version 0.2)
+log: 14 stale concept advisory/advisories (use --log-enforce to fail)
+
+$ grep -A2 '^generated:' agent-docs/prompts/fix-prelude-import-conflicts.md
+generated:
+  at: 2026-09-10
+  by: seihou-okf-extension/0.7.0.0
+
+$ grep -rl '^## Guidance' agent-docs | wc -l
+       1
+```
+
+`agent-seihou` is the registry that exercises `guidance`; its `launch` and `commandVars`
+occurrences are `None`/empty declarations, which the renderer correctly omits.
+
+**Profile enforcement refuses to write.** With a descriptor demanding a key the generator
+never emits:
+
+```text
+$ cabal run -v0 seihou-okf-extension -- docs \
+    --dir /Users/shinzui/Keikaku/bokuno/seihou-modules --out okf-docs-violating \
+    --force --profile demanding.dhall
+house profile: blueprints/fix-nix-haskell-flake-customizations: missing required field stale_after
+house profile: blueprints/haskell-keiro-service: missing required field stale_after
+... (one per concept) ...
+
+$ ls okf-docs-violating
+ls: okf-docs-violating: No such file or directory
+```
 
 
 ## Validation and Acceptance

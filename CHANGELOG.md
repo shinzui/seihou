@@ -4,6 +4,62 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- **`seihou-okf-extension` now builds against `okf-core` 0.8.0.0** (EP-88), up from
+  0.1.2.0. Both pins move together: the Cabal `build-depends` and the explicit Hackage
+  pin in `nix/haskell-overlay.nix`. `validateBundle` gained a `VersionDeclaration` and a
+  `BundleInventory` parameter; `ValidationError` grew from three constructors to fifteen
+  and `BundleValidationError` from three to seven. `-Wall -Werror=incomplete-patterns` is
+  now set on the extension's library, executable, and test stanzas, and the error
+  renderers in `Seihou.OKF.Extension.Docs` are total with no catch-all, so the next
+  okf-core release that adds a constructor fails the build rather than crashing the
+  generator at run time.
+
+### Added
+
+#### The documentation bundle says what the registry declares
+- **Every seihou artifact feature now reaches the generated page** (EP-88). A module
+  document renders its variables in full (declared type, requiredness, default,
+  validation rule, description), export aliases, interactive prompts with choices and
+  conditions, generation steps with strategy/patch operation/condition, shell commands,
+  the removal procedure, and each migration edge with its operations. Recipes and
+  blueprints show the variable bindings they supply along each composition edge.
+  Blueprints add their `allowedTools`, `launch` preferences, `versionProbe`, and
+  migration edges with entailment; agent prompts add `commandVars` and `guidance`. A
+  section the artifact declares nothing for is omitted rather than printed empty.
+- **An entailed migration edge renders as a cross-link when its blueprint is in the same
+  registry** and as plainly labelled text when it is not, because an entailed edge is
+  owned by the blueprint that declares it and may live in another repository entirely
+  ([ADR 0008](docs/adr/0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md)),
+  while okf reports a link to a concept outside the bundle as dangling. Resolution is
+  decided once, in `Seihou.OKF.Docs.Model.resolveEntryRefs`, beside module-reference
+  resolution.
+- **`Seihou.Core.Expr.renderExpr`**: the inverse of `parseExpr`, so a surface that wants
+  to display a `when` condition can rebuild it — the original text is parsed out of
+  Dhall and discarded. Parenthesizes only where the grammar's precedence would
+  reassociate; round-tripped in tests over every constructor and two nesting levels.
+- **The bundle is an OKF v0.2 bundle.** Its root `index.md` declares
+  `okf_version: "0.2"`, every subdirectory gets a section index, and each concept carries
+  a `generated` block naming `seihou-okf-extension/<version>` as its producer actor plus
+  a `status: stable` lifecycle field, so `okf trust` reports a real tier per concept.
+  Validation defaults to `StrictAuthoring`, which needs a non-empty description; the
+  generator resolves one deterministically (registry entry, else the artifact's own, else
+  a synthesized sentence) and uses it in both frontmatter and the body.
+- **A registry overview concept** at `registry/<repoName>` describes the registry itself
+  and links every artifact grouped by kind, so the bundle is a connected graph from one
+  entry point and `okf graph` has a root.
+- **A house profile the generator enforces on itself.** A Dhall descriptor declaring what
+  a seihou documentation bundle's frontmatter must carry is embedded in the executable
+  with `file-embed`, written to `<out>/profile.dhall`, and checked in-process *before*
+  anything is written, so a violating bundle never reaches disk and a failing run does
+  not clear the output directory. `ProfileViolation` is rendered locally, since
+  okf-core reports it but leaves rendering to `okf-cli`.
+- **New `docs` options**: `--generated-at DATE` records a generation time verbatim
+  (omitted by default, so regeneration is byte-stable — nothing reads the clock),
+  `--permissive` restores the old conformance profile, `--profile PATH` substitutes a
+  house profile descriptor, and `--no-profile` skips the check.
+
 ## [0.7.0.0] - 2026-08-16
 
 ### Added

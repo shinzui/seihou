@@ -482,5 +482,6 @@ See [migrations.md](migrations.md) for the full reference, or run
 - Read the [Module Authoring Reference](module-authoring.md) for the complete module format and all generation strategies.
 - Read [Agent-Driven Blueprints](blueprints.md) for blueprint authoring and agent-runner behavior.
 - Read [First-Class Prompts](prompts.md) for reusable agent-session prompt authoring.
+- Read [Documenting a registry](registry-documentation.md) to turn your registry into a browsable documentation set, one page per published artifact.
 - Read [Configuration and Variable Resolution](config-and-variables.md) for details on how variable values flow through the config hierarchy.
 - Explore the test fixtures at `seihou-core/test/fixtures/` for working examples of module composition.

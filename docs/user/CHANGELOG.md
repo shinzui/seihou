@@ -10,6 +10,59 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+### Added
+
+- **Registry documentation now describes what your registry actually declares.**
+  `seihou-okf-extension docs` used to show a module's dependencies, a bare list of its
+  variable names, and its exports — so you could add a migration edge, a removal
+  procedure, an interactive prompt or an agent launch preference and see none of it
+  appear on the page.
+
+  Every artifact feature now reaches the generated documentation. A module page lists
+  each variable with its declared type, whether it is required, its default, its
+  validation rule and its description; its export aliases; its interactive prompts with
+  their choices and the condition that gates them; its generation steps with strategy,
+  destination, patch operation and condition; its shell commands; its removal procedure;
+  and each migration edge with the operations it performs. Recipes and blueprints show
+  the variable bindings they preconfigure for each module they compose. Blueprints add
+  their tool allowlist, agent launch preferences, version-probe command and migration
+  edges. Agent prompts add their command-derived variables and guidance blocks. A section
+  your artifact declares nothing for is left out rather than printed empty.
+
+  Conditions read the way you wrote them, for example ``when `Eq nix.treefmt true` ``.
+
+- **An entailed migration edge is a link when you can follow it.** If a blueprint edge
+  entails an edge of another blueprint that the same registry publishes, the page links
+  to that blueprint's page. If the entailed blueprint lives in another repository — the
+  usual case — it is shown as labelled text ending `(declared outside this registry)`,
+  since there is no page here to link to.
+
+- **A page for the registry itself.** The bundle now includes one document naming the
+  registry, its description, and every artifact it publishes grouped by kind, so there is
+  a single place to start reading and `okf graph` has a root.
+
+- **The bundle is checkable.** It is now an OKF v0.2 bundle: the root `index.md` declares
+  the version, every subdirectory has a section index, and every page records the
+  generator that produced it, so `okf trust okf-docs` reports a trust tier per page
+  instead of nothing. The generator also writes the house profile it checked itself
+  against to `okf-docs/profile.dhall`, so you can re-run the same check:
+
+  ```bash
+  okf validate okf-docs --strict
+  okf validate okf-docs --strict --profile okf-docs/profile.dhall --profile-enforce
+  ```
+
+  Both checks run inside the generator too, *before* it writes anything — a bundle that
+  would fail them is never written, and a failing run leaves your output directory alone.
+
+- **New options on `seihou-okf-extension docs`**: `--generated-at DATE` stamps a
+  generation date on every page (left off by default, so regenerating an unchanged
+  registry produces byte-identical output and diffs cleanly in review); `--permissive`,
+  `--profile PATH`, and `--no-profile` adjust how strictly the bundle is checked.
+
+  A new guide, [Documenting a registry](registry-documentation.md), walks through what
+  the command produces and which part of your `.dhall` files each section comes from.
+
 ## [0.7.0.0] - 2026-08-16
 
 ### Added
