@@ -1203,9 +1203,18 @@ one branch from `renderValidationError` and confirm the build fails; restore it.
 `okf trust /tmp/okf-docs` lists a tier for every concept rather than reporting unknown
 provenance.
 
-**Strict validation passes.** `okf validate /tmp/okf-docs --strict` exits 0. Confirm the
-strictness is real by regenerating with `--permissive` after deliberately blanking a fixture's
-description, and observing that strict mode reports it while permissive does not.
+**Strict validation passes.** `okf validate <bundle> --strict` exits 0.
+
+The check this section originally proposed — blank a fixture's description and watch strict
+mode report it while permissive does not — turned out to be unreachable, and deliberately
+so. Milestone 2's three-step description fallback means a concept with no description
+anywhere still gets one, so strict validation has nothing to report. The property that
+matters is the fallback itself, and it is asserted directly by three RenderSpec cases:
+`validates clean under StrictAuthoring when nothing supplies a description`,
+`falls back to the artifact description when the registry entry has none`, and
+`synthesizes a description when neither the registry nor the artifact has one`.
+`--permissive` is exercised end-to-end (it generates the same 13 concepts) and by the
+`DocsOpts` plumbing test.
 
 **Every artifact feature reaches the page.** For the `seihou-modules` registry, all of these
 report a non-zero count:
