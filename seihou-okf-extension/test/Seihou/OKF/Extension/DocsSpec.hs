@@ -25,7 +25,7 @@ spec = do
             outDir = tmpDir </> "out"
         writeFixtureRegistry registryDir
         result <- runDocs (docsOpts registryDir outDir False)
-        result `shouldBe` Right ("Wrote 2 concepts to " <> T.pack outDir)
+        result `shouldBe` Right ("Wrote 3 concepts to " <> T.pack outDir)
         doesFileExist (outDir </> "modules" </> "base.md") `shouldReturn` True
         doesFileExist (outDir </> "recipes" </> "base-recipe.md") `shouldReturn` True
         doesFileExist (outDir </> "index.md") `shouldReturn` True
@@ -33,6 +33,7 @@ spec = do
         rootIndex `shouldSatisfy` T.isInfixOf "okf_version: \"0.2\""
         doesFileExist (outDir </> "modules" </> "index.md") `shouldReturn` True
         doesFileExist (outDir </> "recipes" </> "index.md") `shouldReturn` True
+        doesFileExist (outDir </> "registry" </> "fixture-registry.md") `shouldReturn` True
         walked <- Okf.walkBundle outDir
         case walked of
           Left err -> expectationFailure ("Expected walkBundle success, got " <> show err)
@@ -50,11 +51,11 @@ spec = do
             outDir = tmpDir </> "out"
         writeFixtureRegistry registryDir
         first <- runDocs (docsOpts registryDir outDir False)
-        first `shouldBe` Right ("Wrote 2 concepts to " <> T.pack outDir)
+        first `shouldBe` Right ("Wrote 3 concepts to " <> T.pack outDir)
         second <- runDocs (docsOpts registryDir outDir False)
         second `shouldBe` Left ("output directory is not empty: " <> T.pack outDir <> "; pass --force to overwrite")
         forced <- runDocs (docsOpts registryDir outDir True)
-        forced `shouldBe` Right ("Wrote 2 concepts to " <> T.pack outDir)
+        forced `shouldBe` Right ("Wrote 3 concepts to " <> T.pack outDir)
 
     it "reports a missing registry file" $ do
       withSystemTempDirectory "seihou-okf-docs-missing" $ \tmpDir -> do

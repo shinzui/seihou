@@ -25,7 +25,7 @@ spec = do
         (model ^. #repoName) `shouldBe` "fixture-registry"
         length (entriesByKind DocModuleKind model) `shouldBe` 3
         length (entriesByKind DocRecipeKind model) `shouldBe` 1
-        length (entriesByKind DocBlueprintKind model) `shouldBe` 1
+        length (entriesByKind DocBlueprintKind model) `shouldBe` 2
         length (entriesByKind DocPromptKind model) `shouldBe` 1
 
     it "keeps catalog metadata from the registry entry" $ do
@@ -56,6 +56,44 @@ spec = do
             blueprint = requireEntry "app-blueprint" model
         (recipe ^. #moduleRefs) `shouldMatchList` [ModuleRef "base" True, ModuleRef "app" True]
         (blueprint ^. #moduleRefs) `shouldBe` [ModuleRef "base" True]
+
+    it "resolves an entailed edge naming a blueprint in the same registry" $ do
+      withFixtureRegistry $ \registryDir -> do
+        model <- shouldLoad registryDir
+        let entry = requireEntry "entailing-blueprint" model
+        (entry ^. #entailedRefs)
+          `shouldContain` [ EntailedRef
+                              { blueprint = "app-blueprint",
+                                from = "1.0.0",
+                                to = "2.0.0",
+                                resolved = True
+                              }
+                          ]
+
+    it "leaves an entailed edge naming a blueprint outside the registry unresolved" $ do
+      withFixtureRegistry $ \registryDir -> do
+        model <- shouldLoad registryDir
+        let entry = requireEntry "entailing-blueprint" model
+        (entry ^. #entailedRefs)
+          `shouldContain` [ EntailedRef
+                              { blueprint = "kiroku",
+                                from = "1.9.0",
+                                to = "2.0.0",
+                                resolved = False
+                              }
+                          ]
+
+    it "records no entailed edges for a blueprint that declares none" $ do
+      withFixtureRegistry $ \registryDir -> do
+        model <- shouldLoad registryDir
+        (requireEntry "app-blueprint" model ^. #entailedRefs) `shouldBe` []
+
+    it "records no entailed edges for kinds that cannot declare them" $ do
+      withFixtureRegistry $ \registryDir -> do
+        model <- shouldLoad registryDir
+        (requireEntry "app" model ^. #entailedRefs) `shouldBe` []
+        (requireEntry "app-recipe" model ^. #entailedRefs) `shouldBe` []
+        (requireEntry "review" model ^. #entailedRefs) `shouldBe` []
 
     it "returns RegistryNotFound when the registry file is absent" $ do
       withSystemTempDirectory "seihou-doc-model-missing" $ \registryDir -> do
@@ -94,6 +132,7 @@ writeFixtureRegistry registryDir = do
   writeModule registryDir "modules/dangling" "dangling" ["missing"] "Dangling module"
   writeRecipe registryDir
   writeBlueprint registryDir
+  writeEntailingBlueprint registryDir
   writePrompt registryDir
 
 writeModule :: FilePath -> FilePath -> String -> [String] -> String -> IO ()
@@ -113,6 +152,14 @@ writeBlueprint registryDir = do
   createDirectoryIfMissing True (registryDir </> relDir)
   writeFile (registryDir </> relDir </> "blueprint.dhall") blueprintDhall
 
+-- | A blueprint whose one migration edge entails two edges: one of a blueprint
+-- listed in this registry, and one of a blueprint that is not.
+writeEntailingBlueprint :: FilePath -> IO ()
+writeEntailingBlueprint registryDir = do
+  let relDir = "blueprints/entailing-blueprint"
+  createDirectoryIfMissing True (registryDir </> relDir)
+  writeFile (registryDir </> relDir </> "blueprint.dhall") entailingBlueprintDhall
+
 writePrompt :: FilePath -> IO ()
 writePrompt registryDir = do
   let relDir = "prompts/review"
@@ -129,7 +176,10 @@ registryDhall =
   \  , { name = \"dangling\", version = None Text, path = \"modules/dangling\", description = Some \"Dangling module\", tags = [] : List Text }\n\
   \  ]\n\
   \, recipes = [ { name = \"app-recipe\", version = Some \"0.1.0\", path = \"recipes/app-recipe\", description = Some \"Recipe\", tags = [ \"recipe\" ] } ]\n\
-  \, blueprints = [ { name = \"app-blueprint\", version = Some \"0.1.0\", path = \"blueprints/app-blueprint\", description = Some \"Blueprint\", tags = [ \"blueprint\" ] } ]\n\
+  \, blueprints =\n\
+  \  [ { name = \"app-blueprint\", version = Some \"0.1.0\", path = \"blueprints/app-blueprint\", description = Some \"Blueprint\", tags = [ \"blueprint\" ] }\n\
+  \  , { name = \"entailing-blueprint\", version = Some \"0.1.0\", path = \"blueprints/entailing-blueprint\", description = Some \"Entailing blueprint\", tags = [] : List Text }\n\
+  \  ]\n\
   \, prompts = [ { name = \"review\", version = Some \"0.1.0\", path = \"prompts/review\", description = Some \"Review prompt\", tags = [ \"prompt\" ] } ]\n\
   \}"
 
@@ -194,6 +244,36 @@ blueprintDhall =
     <> "\n\
        \, allowedTools = None (List Text)\n\
        \, tags = [ \"blueprint\" ]\n\
+       \}"
+
+entailingBlueprintDhall :: String
+entailingBlueprintDhall =
+  "{ name = \"entailing-blueprint\"\n\
+  \, version = Some \"0.1.0\"\n\
+  \, description = Some \"Entailing blueprint\"\n\
+  \, prompt = \"Upgrade\"\n\
+  \, vars = [] : "
+    <> varDeclListType
+    <> "\n\
+       \, prompts = [] : "
+    <> promptListType
+    <> "\n\
+       \, baseModules = [] : List Text\n\
+       \, files = [] : "
+    <> blueprintFileListType
+    <> "\n\
+       \, allowedTools = None (List Text)\n\
+       \, tags = [] : List Text\n\
+       \, migrations =\n\
+       \  [ { from = \"2.4.0\"\n\
+       \    , to = \"3.0.0\"\n\
+       \    , prompt = \"Cross it\"\n\
+       \    , entails =\n\
+       \      [ { blueprint = \"app-blueprint\", from = \"1.0.0\", to = \"2.0.0\" }\n\
+       \      , { blueprint = \"kiroku\", from = \"1.9.0\", to = \"2.0.0\" }\n\
+       \      ]\n\
+       \    }\n\
+       \  ]\n\
        \}"
 
 promptDhall :: String

@@ -1,7 +1,7 @@
 module Seihou.Core.ExprSpec (tests) where
 
 import Data.Map.Strict qualified as Map
-import Seihou.Core.Expr (evalExpr, exprRefs, parseExpr)
+import Seihou.Core.Expr (evalExpr, exprRefs, parseExpr, renderExpr)
 import Seihou.Core.Types
 import Test.Hspec
 import Test.Tasty
@@ -155,6 +155,42 @@ spec = do
       evalExpr vars expr `shouldBe` True
       evalExpr Map.empty expr `shouldBe` False
 
+  describe "renderExpr" $ do
+    it "renders each atom in the surface syntax" $ do
+      renderExpr (ExprLit True) `shouldBe` "true"
+      renderExpr (ExprLit False) `shouldBe` "false"
+      renderExpr (ExprIsSet "license") `shouldBe` "IsSet license"
+      renderExpr (ExprEq "license" (VText "MIT")) `shouldBe` "Eq license \"MIT\""
+      renderExpr (ExprEq "enabled" (VBool True)) `shouldBe` "Eq enabled true"
+      renderExpr (ExprEq "count" (VInt 3)) `shouldBe` "Eq count 3"
+
+    it "quotes text values so a bareword keyword is not reclassified" $ do
+      renderExpr (ExprEq "x" (VText "true")) `shouldBe` "Eq x \"true\""
+      parseExpr (renderExpr (ExprEq "x" (VText "true")))
+        `shouldBe` Right (ExprEq "x" (VText "true"))
+
+    it "quotes text values containing a delimiter" $ do
+      let expr = ExprEq "x" (VText "a b) c")
+      parseExpr (renderExpr expr) `shouldBe` Right expr
+
+    it "renders binary operators without needless parentheses" $ do
+      renderExpr (ExprAnd (ExprIsSet "a") (ExprIsSet "b"))
+        `shouldBe` "IsSet a && IsSet b"
+      renderExpr (ExprOr (ExprIsSet "a") (ExprIsSet "b"))
+        `shouldBe` "IsSet a || IsSet b"
+      renderExpr (ExprNot (ExprIsSet "a")) `shouldBe` "!IsSet a"
+
+    it "parenthesizes only where precedence would reassociate" $ do
+      renderExpr (ExprAnd (ExprOr (ExprIsSet "a") (ExprIsSet "b")) (ExprIsSet "c"))
+        `shouldBe` "(IsSet a || IsSet b) && IsSet c"
+      renderExpr (ExprOr (ExprAnd (ExprIsSet "a") (ExprIsSet "b")) (ExprIsSet "c"))
+        `shouldBe` "IsSet a && IsSet b || IsSet c"
+      renderExpr (ExprNot (ExprAnd (ExprIsSet "a") (ExprIsSet "b")))
+        `shouldBe` "!(IsSet a && IsSet b)"
+
+    it "round-trips through parseExpr for every constructor and two nesting levels" $ do
+      mapM_ roundTrips roundTripCases
+
   describe "exprRefs" $ do
     it "returns the compared literal for Eq with a bareword bool" $ do
       exprRefs (ExprEq "x" (VBool True)) `shouldBe` [("x", Just (VBool True))]
@@ -175,3 +211,40 @@ spec = do
 
     it "returns nothing for a literal" $ do
       exprRefs (ExprLit True) `shouldBe` []
+
+-- | @parseExpr . renderExpr@ must be the identity on every expression
+-- 'parseExpr' can produce.
+roundTrips :: Expr -> Expectation
+roundTrips expr = parseExpr (renderExpr expr) `shouldBe` Right expr
+
+roundTripCases :: [Expr]
+roundTripCases =
+  [ ExprLit True,
+    ExprLit False,
+    ExprIsSet "license",
+    ExprIsSet "project.name",
+    ExprEq "license" (VText "MIT"),
+    ExprEq "license" (VText "Apache 2.0"),
+    ExprEq "license" (VText ""),
+    ExprEq "enabled" (VBool True),
+    ExprEq "enabled" (VBool False),
+    ExprEq "count" (VInt 0),
+    ExprEq "count" (VInt (-3)),
+    ExprNot (ExprIsSet "a"),
+    ExprNot (ExprNot (ExprIsSet "a")),
+    ExprAnd (ExprIsSet "a") (ExprIsSet "b"),
+    ExprOr (ExprIsSet "a") (ExprIsSet "b"),
+    -- Two nesting levels, in both associations, for both operators.
+    ExprAnd (ExprAnd (ExprIsSet "a") (ExprIsSet "b")) (ExprIsSet "c"),
+    ExprAnd (ExprIsSet "a") (ExprAnd (ExprIsSet "b") (ExprIsSet "c")),
+    ExprOr (ExprOr (ExprIsSet "a") (ExprIsSet "b")) (ExprIsSet "c"),
+    ExprOr (ExprIsSet "a") (ExprOr (ExprIsSet "b") (ExprIsSet "c")),
+    ExprAnd (ExprOr (ExprIsSet "a") (ExprIsSet "b")) (ExprIsSet "c"),
+    ExprOr (ExprAnd (ExprIsSet "a") (ExprIsSet "b")) (ExprIsSet "c"),
+    ExprNot (ExprAnd (ExprIsSet "a") (ExprIsSet "b")),
+    ExprNot (ExprOr (ExprIsSet "a") (ExprIsSet "b")),
+    ExprAnd (ExprNot (ExprIsSet "a")) (ExprEq "b" (VText "x y")),
+    ExprOr
+      (ExprNot (ExprEq "a" (VBool True)))
+      (ExprAnd (ExprIsSet "b") (ExprEq "c" (VInt 7)))
+  ]

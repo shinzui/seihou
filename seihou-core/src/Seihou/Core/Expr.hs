@@ -1,5 +1,6 @@
 module Seihou.Core.Expr
   ( parseExpr,
+    renderExpr,
     evalExpr,
     exprRefs,
   )
@@ -35,6 +36,56 @@ parseExpr input =
           Right (expr, rest)
             | T.null (T.strip rest) -> Right expr
             | otherwise -> Left ("unexpected trailing input: " <> rest)
+
+-- | Render an 'Expr' back to the surface syntax 'parseExpr' accepts.
+--
+-- @parseExpr . renderExpr@ is the identity on every expression 'parseExpr' can
+-- produce, which matters because the original condition text is not retained
+-- anywhere: a @when@ clause is parsed out of Dhall and the string is discarded,
+-- so any surface that wants to /show/ a condition has to rebuild it.
+--
+-- Sub-expressions are parenthesized exactly where the grammar\'s precedence
+-- (@||@ loosest, then @&&@, then @!@, then atoms) would otherwise reassociate
+-- them. A 'VText' value is always quoted, both because it may contain a space
+-- or a delimiter and because an unquoted @true@ would come back as a 'VBool'.
+--
+-- One value has no surface syntax to render into: 'VList' cannot appear in an
+-- expression 'parseExpr' produced, because the value grammar has no list
+-- literal. It is rendered as a bracketed, comma-separated list for display, and
+-- that one shape alone does not round-trip.
+renderExpr :: Expr -> Text
+renderExpr = go precLowest
+  where
+    go :: Int -> Expr -> Text
+    go prec (ExprOr left right) =
+      parenWhen (prec > precOr) (go precOr left <> " || " <> go precAnd right)
+    go prec (ExprAnd left right) =
+      parenWhen (prec > precAnd) (go precAnd left <> " && " <> go precNot right)
+    go prec (ExprNot inner) =
+      parenWhen (prec > precNot) ("!" <> go precAtom inner)
+    go _ (ExprIsSet (VarName name)) = "IsSet " <> name
+    go _ (ExprEq (VarName name) value) = "Eq " <> name <> " " <> renderVarValue value
+    go _ (ExprLit True) = "true"
+    go _ (ExprLit False) = "false"
+
+    precLowest = 0 :: Int
+    precOr = 0 :: Int
+    precAnd = 1 :: Int
+    precNot = 2 :: Int
+    precAtom = 3 :: Int
+
+    parenWhen True rendered = "(" <> rendered <> ")"
+    parenWhen False rendered = rendered
+
+-- | Render a 'VarValue' as an expression right-hand side. Text is always
+-- quoted; see 'renderExpr' for why, and for the 'VList' caveat.
+renderVarValue :: VarValue -> Text
+renderVarValue (VText text) = "\"" <> text <> "\""
+renderVarValue (VBool True) = "true"
+renderVarValue (VBool False) = "false"
+renderVarValue (VInt n) = T.pack (show n)
+renderVarValue (VList values) =
+  "[" <> T.intercalate ", " (renderVarValue <$> values) <> "]"
 
 -- | Evaluate an expression against a map of variable bindings.
 evalExpr :: Map VarName VarValue -> Expr -> Bool

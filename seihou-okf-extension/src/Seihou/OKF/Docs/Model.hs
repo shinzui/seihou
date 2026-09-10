@@ -3,6 +3,7 @@ module Seihou.OKF.Docs.Model
     DocArtifact (..),
     DocEntry (..),
     ModuleRef (..),
+    EntailedRef (..),
     DocModel (..),
     DocLoadError (..),
     loadDocModel,
@@ -13,6 +14,7 @@ import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Text qualified as T
 import GHC.Generics (Generic)
+import Seihou.Core.Migration (BlueprintMigration (..))
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..))
 import Seihou.Core.Types
   ( AgentPrompt,
@@ -33,11 +35,15 @@ import Seihou.Dhall.Eval
 import System.Directory (doesFileExist)
 import System.FilePath ((</>))
 
+-- | The kinds of concept this bundle emits. The first four are registry entry
+-- kinds; 'DocRegistryKind' belongs to the single overview concept describing the
+-- registry itself, and never appears as a 'DocEntry' kind.
 data DocKind
   = DocModuleKind
   | DocRecipeKind
   | DocBlueprintKind
   | DocPromptKind
+  | DocRegistryKind
   deriving stock (Eq, Show)
 
 data DocArtifact
@@ -55,12 +61,32 @@ data DocEntry = DocEntry
     tags :: ![T.Text],
     path :: !FilePath,
     artifact :: !DocArtifact,
-    moduleRefs :: ![ModuleRef]
+    moduleRefs :: ![ModuleRef],
+    -- | Every edge this entry\'s migrations entail, flattened across the
+    -- entry\'s migration edges in declaration order. Empty for every kind but
+    -- a blueprint, which is the only artifact that can declare entailment.
+    entailedRefs :: ![EntailedRef]
   }
   deriving stock (Eq, Generic, Show)
 
 data ModuleRef = ModuleRef
   { name :: !T.Text,
+    resolved :: !Bool
+  }
+  deriving stock (Eq, Generic, Show)
+
+-- | One edge of another blueprint that crossing this entry\'s edge entails.
+--
+-- @resolved@ says whether the named blueprint is listed in the /same/ registry,
+-- which is the only thing this bundle can link to. An entailed edge naming a
+-- blueprint in another repository is normal and expected -- see
+-- @docs\/adr\/0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md@
+-- -- and is rendered as plain labelled text rather than as a cross-link that
+-- bundle validation would report as dangling.
+data EntailedRef = EntailedRef
+  { blueprint :: !T.Text,
+    from :: !T.Text,
+    to :: !T.Text,
     resolved :: !Bool
   }
   deriving stock (Eq, Generic, Show)
@@ -104,7 +130,8 @@ buildDocModel registryDir Registry {repoName, repoDescription, modules, recipes,
   pure $ do
     entries <- entriesResult
     let moduleNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocModuleKind]
-        resolvedEntries = map (resolveEntryRefs moduleNames) entries
+        blueprintNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocBlueprintKind]
+        resolvedEntries = map (resolveEntryRefs moduleNames blueprintNames) entries
     Right
       DocModel
         { repoName = repoName,
@@ -145,6 +172,7 @@ loadModuleEntry registryDir entry = do
           DocModuleKind
           (DocModuleArtifact artifact)
           (moduleRefs dependencies)
+          []
 
 loadRecipeEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
 loadRecipeEntry registryDir entry = do
@@ -159,6 +187,7 @@ loadRecipeEntry registryDir entry = do
           DocRecipeKind
           (DocRecipeArtifact artifact)
           (moduleRefs recipeModules)
+          []
 
 loadBlueprintEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
 loadBlueprintEntry registryDir entry = do
@@ -166,13 +195,14 @@ loadBlueprintEntry registryDir entry = do
   result <- evalBlueprintFromFile artifactFile
   pure $ case result of
     Left err -> Left (ArtifactLoadFailed (entry ^. #name . #unModuleName) (renderModuleLoadError err))
-    Right artifact@Blueprint {baseModules} ->
+    Right artifact@Blueprint {baseModules, migrations} ->
       Right $
         docEntryFromRegistry
           entry
           DocBlueprintKind
           (DocBlueprintArtifact artifact)
           (moduleRefs baseModules)
+          (entailedRefs migrations)
 
 loadPromptEntry :: FilePath -> RegistryEntry -> IO (Either DocLoadError DocEntry)
 loadPromptEntry registryDir entry = do
@@ -187,9 +217,10 @@ loadPromptEntry registryDir entry = do
           DocPromptKind
           (DocPromptArtifact artifact)
           []
+          []
 
-docEntryFromRegistry :: RegistryEntry -> DocKind -> DocArtifact -> [ModuleRef] -> DocEntry
-docEntryFromRegistry entry kind artifact refs =
+docEntryFromRegistry :: RegistryEntry -> DocKind -> DocArtifact -> [ModuleRef] -> [EntailedRef] -> DocEntry
+docEntryFromRegistry entry kind artifact refs entailed =
   DocEntry
     { name = entry ^. #name . #unModuleName,
       kind = kind,
@@ -198,7 +229,8 @@ docEntryFromRegistry entry kind artifact refs =
       tags = entry ^. #tags,
       path = entry ^. #path,
       artifact = artifact,
-      moduleRefs = refs
+      moduleRefs = refs,
+      entailedRefs = entailed
     }
 
 moduleRefs :: [Dependency] -> [ModuleRef]
@@ -207,10 +239,26 @@ moduleRefs dependencies =
   | moduleName <- depModuleNames dependencies
   ]
 
-resolveEntryRefs :: [T.Text] -> DocEntry -> DocEntry
-resolveEntryRefs moduleNames entry =
+entailedRefs :: [BlueprintMigration] -> [EntailedRef]
+entailedRefs migrations =
+  [ EntailedRef
+      { blueprint = edge ^. #blueprint,
+        from = edge ^. #from,
+        to = edge ^. #to,
+        resolved = False
+      }
+  | BlueprintMigration {entails} <- migrations,
+    edge <- entails
+  ]
+
+-- | The single place that decides whether a reference points inside this
+-- registry. Module references resolve against the registry\'s module names,
+-- entailed edges against its blueprint names.
+resolveEntryRefs :: [T.Text] -> [T.Text] -> DocEntry -> DocEntry
+resolveEntryRefs moduleNames blueprintNames entry =
   entry
     & #moduleRefs .~ [ref & #resolved .~ ((ref ^. #name) `elem` moduleNames) | ref <- entry ^. #moduleRefs]
+    & #entailedRefs .~ [ref & #resolved .~ ((ref ^. #blueprint) `elem` blueprintNames) | ref <- entry ^. #entailedRefs]
 
 renderModuleLoadError :: ModuleLoadError -> T.Text
 renderModuleLoadError = T.pack . show
