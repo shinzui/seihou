@@ -78,8 +78,8 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
 - [x] Milestone 3 — report what was marked, and make the no-op and refusal messages readable. (2026-09-10)
 - [x] Milestone 4 — unit tests for the pure marking summary and the flag-conflict rules. (2026-09-10; flag-conflict rules are covered end-to-end in Milestone 5 as the plan anticipated, since the checks live in `src-exe`.)
 - [x] Milestone 5 — end-to-end tests: marking writes receipts, suppresses a later run, starts no session, and touches no file. (2026-09-10)
-- [ ] Milestone 6 — documentation: new sections in `docs/user/blueprint-migrations.md` and `docs/cli/agent.md`, the summary pages in `docs/user/migrations.md` and `docs/user/blueprints.md`, the in-binary help topic, and `docs/user/CHANGELOG.md`.
-- [ ] Milestone 7 — ADR pass: record the decision that a receipt asserts a claim about the project rather than proof of an agent session.
+- [x] Milestone 6 — documentation: new sections in `docs/user/blueprint-migrations.md` and `docs/cli/agent.md`, the summary pages in `docs/user/migrations.md` and `docs/user/blueprints.md`, the in-binary help topic, and `docs/user/CHANGELOG.md`. (2026-09-10; the grep found three more files the plan did not name — see Surprises.)
+- [x] Milestone 7 — ADR pass: record the decision that a receipt asserts a claim about the project rather than proof of an agent session. (2026-09-10; new record `docs/adr/0011-a-migration-receipt-asserts-a-claim-about-the-project.md`.)
 
 
 ## Surprises & Discoveries
@@ -111,6 +111,22 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
   nothing while appearing to prove the central claim.
   Both helpers now write the logging fake and set `SEIHOU_FAKE_AGENT_LOG` to
   `<root>/agent-launch.log`. Existing tests using them are unaffected; they never read the log.
+
+- **2026-09-10 — the documentation grep paid for itself three times over.** Milestone 6 named
+  six files. Running `rg -n "agent migrate|blueprint migration|receipt" docs/ seihou-cli/help/`
+  as the plan insisted turned up three more that assert what a receipt means and would have
+  silently gone stale — precisely the drift
+  `docs/masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md` recorded as its
+  lesson:
+  - `seihou-cli/help/blueprints.md` — "A receipt records agent completion, not proof that a
+    package manager now reports the target version."
+  - `seihou-cli/help/migrations.md` — "A receipt means the agent interaction completed
+    successfully."
+  - `docs/cli/status.md` — "`applied` means the provider interaction for that edge returned".
+
+  All three now say a receipt records that an edge has been dealt with, by a session returning
+  or by the consumer marking it. Two of the three are in-binary help topics, which is the
+  category the plan already flagged as easy to forget because it is not under `docs/`.
 
 ## Decision Log
 
@@ -175,9 +191,77 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
   the step list, so both belong in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`.
   Date: 2026-09-10
 
+- Decision: Milestone 7's durable decision becomes a new record,
+  `docs/adr/0011-a-migration-receipt-asserts-a-claim-about-the-project.md`, rather than an
+  amendment to ADR 0007.
+  Rationale: The plan's own rule — amend when the decision is unchanged and only its reach grew,
+  write a new record when there is a rejected alternative the existing record has nowhere to put
+  — points at a new record, and reading ADR 0007 confirms it. That record's subject is the
+  *outcome vocabulary*: which values `MigrationOutcome` may take and what each means for
+  suppression, the chain, and identity. This plan settles a different question — what a receipt
+  *asserts*, and by what means it may come to exist — and it carries a rejected alternative, a
+  distinct "applied by hand" outcome, that ADR 0007 has no section for. ADR 0007 gains a
+  References entry pointing at 0011, which is how it already cross-references ADR 0008.
+  Date: 2026-09-10
+
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Delivered as specified. `seihou agent migrate <blueprint> --mark-applied` records a receipt for
+every pending edge in the resolved window, contacts no provider, and touches no file in the
+working tree:
+
+```text
+Marking 1 blueprint migration(s) as already applied, without running them:
+  scratch-upgrade 1.0.0 -> 2.0.0
+
+Recorded 1 receipt(s). No agent session was started and no file was changed.
+```
+
+Every acceptance check in Validation and Acceptance was run by hand against a scratch project
+built from `probeBlueprintDhall`, and all passed: `seihou status` lists the marked edge as
+applied with today's date; a later ordinary run of the same window reports "already have
+receipts" and exits zero with no provider on `PATH`; `--rerun` plans the edge again despite the
+marked receipt; marking the wider `1.0.0 -> 3.0.0` window leaves the first edge's `appliedAt`
+byte-identical while adding a receipt for `2.0.0 -> 3.0.0`; and both refusals exit non-zero
+naming each conflicting flag with no manifest left behind.
+
+Automated: `cabal test seihou-core-test` and `cabal test seihou-cli-test` both pass (572 CLI
+tests, up from 566 before the end-to-end cases). `nix flake check` passes, including the
+module-placement and record-convention checks. The decisive assertions are the cohort case —
+marking `keiro-upgrade 2.4.0 -> 3.0.0` files receipts under `kiroku-upgrade` and
+`keiro-upgrade` separately, and the entailed receipt then suppresses a direct `kiroku-upgrade`
+run — and the no-session assertion, which only became real evidence after the fixture fix
+recorded in Surprises & Discoveries.
+
+Three things are worth carrying forward.
+
+**The plan's instruction to grep the documentation tree rather than the expected file list was
+the single highest-value line in it.** It found three files the plan had not named, two of them
+in-binary help topics outside `docs/`, each asserting that a receipt means an agent session
+completed. Without the grep this change would have shipped the same drift the preceding
+initiative spent six plans accumulating.
+
+**A test fixture that cannot fail is worse than a missing test.** The plan's proposed
+no-session assertion — that the fake provider's log is absent — would have passed unconditionally
+against the two helpers it named, because their fake `claude` was `exit 0` and wrote no log. The
+assertion would have looked like the proof of the plan's central claim while proving nothing.
+Checking what a fixture actually does before relying on it is not optional.
+
+**Scoping the operation to the pending set, rather than to the window, is what makes the command
+idempotent for free.** No separate guard against rewriting an existing receipt was needed: the
+planner's existing filter already computes exactly the right set. That was recorded as a
+decision at planning time rather than discovered during implementation, and it paid off.
+
+The plan needed one correction before implementation: it claimed the next free ADR number was
+`0010`, which another change had taken in the meantime. The plan itself told the implementer to
+verify by listing `docs/adr/` rather than trusting the sentence, so the stale claim cost
+nothing.
+
+The related gap named in Context and Orientation — that seihou never tells a user a blueprint
+migration is *pending* — remains open and is still worth its own plan. This plan was the
+prerequisite: with `--mark-applied` in place, a future discovery feature can list a pending
+migration without manufacturing a false positive that a hand-upgraded project has no way to
+dismiss.
 
 
 ## Context and Orientation

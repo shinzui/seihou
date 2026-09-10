@@ -32,8 +32,11 @@ Reads `.seihou/manifest.json` in the current directory and displays:
     my-library v0.3.0: 2.5.0 -> 3.0.0 (not applicable 2026-07-20 15:19 UTC -- no direct kiroku imports)
   ```
 
-  `applied` means the provider interaction for that edge returned; it is
-  bookkeeping, not proof that the upgrade worked. `not applicable` means the
+  `applied` means the edge has been dealt with — the provider interaction for
+  it returned, or it was recorded with
+  [`--mark-applied`](../user/blueprint-migrations.md#i-already-upgraded-by-hand)
+  by someone who upgraded by hand. Either way it is bookkeeping, not proof that
+  the upgrade worked. `not applicable` means the
   edge reported that its precondition is unmet in this project and changed
   nothing, and it carries the reason, truncated here and recorded in full in
   `.seihou/manifest.json`. A not-applicable edge is planned again on the next

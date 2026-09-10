@@ -132,9 +132,13 @@ LIBRARY UPGRADE MIGRATIONS
   receipt before the next session. Rerunning resumes; --rerun repeats matching
   receipts. Parent --debug prints pending prompts without launching or writing.
 
+  --mark-applied records the pending edges in a window as already applied
+  without running them, for a consumer who performed the upgrade by hand.
+
   Migration mode reuses variables, shared prompt, references, and allowed tools,
-  but never applies baseModules. A receipt records agent completion, not proof
-  that a package manager now reports the target version.
+  but never applies baseModules. A receipt records that an edge has been dealt
+  with -- an agent session returned, or the consumer marked it -- not proof that
+  a package manager now reports the target version.
 
 COMMON COMMANDS
 

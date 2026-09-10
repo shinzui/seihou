@@ -17,8 +17,11 @@ BLUEPRINT MIGRATIONS
   Parent --debug renders pending prompts in order without launching a provider
   or changing the manifest. Migration mode never applies blueprint baseModules.
 
-  A receipt means the agent interaction completed successfully. It does not
-  verify that Cabal, npm, Cargo, or another package manager reports the target.
+  A receipt means the edge has been dealt with and need not run again: either
+  the agent interaction completed, or the consumer upgraded by hand and said so
+  with --mark-applied, which records the pending edges in a window without
+  starting a session. It does not verify that Cabal, npm, Cargo, or another
+  package manager reports the target.
 
 DETERMINISTIC MODULE MIGRATIONS
 

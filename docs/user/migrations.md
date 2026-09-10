@@ -41,7 +41,7 @@ skips completed edges and resumes; `--rerun` intentionally repeats them. Parent
 `--debug` prints all pending sessions without contacting a provider or changing
 the manifest.
 
-Four details differ from module migrations in ways that matter, and each is
+Five details differ from module migrations in ways that matter, and each is
 covered fully in [Blueprint Migrations](blueprint-migrations.md):
 
 - **A receipt is keyed by origin as well as name.** Its identity is the origin
@@ -57,12 +57,19 @@ covered fully in [Blueprint Migrations](blueprint-migrations.md):
 - **The version window can be inferred.** `--to` comes from a `versionProbe`
   the blueprint's author declares; `--from` comes from the project's own
   receipts.
+- **A receipt can be asserted rather than earned.** Plenty of people upgrade a
+  library by hand and never run `seihou agent migrate` at all.
+  [`--mark-applied`](blueprint-migrations.md#i-already-upgraded-by-hand) records
+  the pending edges in the window as applied on the consumer's word, starting no
+  session and touching no file. There is no equivalent for a module migration,
+  whose operations seihou performs itself.
 
 Each step reuses the variables, shared prompt, reference files, and allowed tools
 of the blueprint that *owns* it — which under `entails` need not be the one named
-on the command line — and never applies `baseModules`. A receipt records that the
-agent session returned, not proof that a language package manager reports the
-target version.
+on the command line — and never applies `baseModules`. A receipt records that an edge has been
+dealt with — either an agent session returned, or the consumer asserted the work
+was already done — not proof that a language package manager reports the target
+version.
 See [Blueprint Migrations](blueprint-migrations.md) for the complete workflow, and
 [Agent-Driven Blueprints](blueprints.md#library-upgrade-migrations) for the Dhall
 shape and registry publication.

@@ -261,6 +261,14 @@ command therefore resumes at the first edge with no applied receipt. Pass
 `--rerun` to intentionally ignore matching receipts. Blueprint artifact version
 and timestamp are audit metadata, not part of the completion key.
 
+A receipt says that an edge has been dealt with and need not run again — a claim
+about the consumer's project, not proof that an agent did the work. A consumer
+who performed the upgrade by hand records the same receipt without any session
+at all, with
+[`--mark-applied`](blueprint-migrations.md#i-already-upgraded-by-hand). Nothing
+in an edge prompt needs to account for that: a marked receipt is an ordinary
+applied receipt, and `--rerun` clears it the same way.
+
 An edge may also report that it does not apply to the project running it — the
 library is not used here, the feature it upgrades was never adopted, the change
 is already present. Seihou's framing prompt tells the agent how to say so, so an

@@ -113,6 +113,10 @@ one the caller needs.
 - [ADR 0008](0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md)
   — the feature that makes a frequently-inapplicable edge routine rather than
   rare, and which this outcome is a prerequisite of.
+- [ADR 0011](0011-a-migration-receipt-asserts-a-claim-about-the-project.md) —
+  what a receipt asserts. It widens how a receipt may come to exist without
+  extending the vocabulary this record fixes: a migration applied by hand is
+  recorded as `MigrationApplied`, not as a fourth outcome.
 - `docs/improvement-requests/add-a-not-applicable-outcome-for-blueprint-migration-edges.md`
   (IR-1) — the request, its three candidate shapes, and why the obvious
   workarounds fail.

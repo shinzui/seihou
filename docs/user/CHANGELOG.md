@@ -12,6 +12,37 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **You can now tell Seihou about an upgrade you did yourself.** Plenty of people
+  upgrade a library by hand: they read the release notes, make the changes, and never
+  run `seihou agent migrate` at all. Until now there was no way to say so. The edge had
+  no receipt, so every later run planned it again, and the workarounds were all bad —
+  hand-editing `.seihou/manifest.json` meant guessing the blueprint's origin, and
+  guessing wrong produced a receipt that matched nothing; running the migration anyway
+  spent a real provider session to discover there was nothing to do.
+
+  `seihou agent migrate <blueprint> --mark-applied` records a receipt for every pending
+  edge in the window without starting a session:
+
+  ```text
+  Marking 2 blueprint migration(s) as already applied, without running them:
+    kiroku-upgrade 1.9.0 -> 2.0.0 (entailed by keiro-upgrade 2.4.0 -> 3.0.0)
+    keiro-upgrade 2.4.0 -> 3.0.0
+
+  Recorded 2 receipt(s). No agent session was started and no file was changed.
+  ```
+
+  No provider is contacted and no file in your working tree is read or written. The
+  window is resolved exactly as for a real run, so `--from` and `--to` narrow it the
+  same way, and edges owned by other blueprints that the window reaches through
+  `entails` are marked under their own blueprint — which means a marked entailed edge
+  suppresses a later direct run of that blueprint too. Edges that already have a receipt
+  are skipped rather than restamped, so marking the same window twice is a no-op.
+
+  A marked receipt is an ordinary applied receipt; nothing downstream can tell the
+  difference, and `--rerun` is the correction if you mark something by mistake. The flag
+  is refused alongside `--rerun` or `--debug`, both of which it contradicts, before
+  anything is read or written.
+
 - **Registry documentation now describes what your registry actually declares.**
   `seihou-okf-extension docs` used to show a module's dependencies, a bare list of its
   variable names, and its exports — so you could add a migration edge, a removal

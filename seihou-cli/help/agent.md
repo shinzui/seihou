@@ -134,7 +134,19 @@ SUBCOMMANDS
       Parent --debug prints every pending migration prompt in order without
       contacting a provider or writing receipts. It does run the version
       probe, which is required to be read-only, so debug planning matches a
-      real run. A receipt records provider completion, not package-manager
+      real run.
+
+      --mark-applied records every pending edge in the window as already
+      applied, without running them, on your assertion that you performed the
+      upgrade by hand. No provider is contacted and no file in the working
+      tree is changed. Each receipt is filed under the blueprint that owns its
+      edge, so a marked entailed edge suppresses a later direct run of that
+      blueprint too; edges that already have receipts are left alone rather
+      than restamped. --rerun clears a mistaken marking. The flag is refused
+      alongside --rerun or parent --debug, both of which it contradicts.
+
+      A receipt records that an edge has been dealt with -- a provider
+      interaction returned, or you marked it -- not package-manager
       verification.
 
   seihou prompt run PROMPT [USER-PROMPT] [--var KEY=VALUE] [--debug]
