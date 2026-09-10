@@ -43,6 +43,39 @@
       packages.seihou-okf-extension = haskellPackages.seihou-okf-extension;
       packages.default = seihou-bundle;
 
+      # Extra dev-shell tooling (reads the option declared in ./nix/haskell.nix).
+      # `xz` (liblzma) is needed by the build/test toolchain.
+      haskellProject.extraDevPackages = [ pkgs.xz ];
+
+      # Pin fourmolu and cabal-gild to the ghc9124 package set so they match the
+      # project's compiler (the managed ./nix/treefmt.nix enables them but leaves
+      # the package at treefmt-nix's nixpkgs default). flake-parts merges these
+      # treefmt.* options into the module's treefmt config.
+      treefmt.programs.fourmolu.package = pkgs.haskell.packages.ghc9124.fourmolu;
+      treefmt.programs.cabal-gild.package = pkgs.haskell.packages.ghc9124.cabal-gild;
+
+      # Project-specific pre-commit hooks, merged into the managed
+      # ./nix/pre-commit.nix (which contributes only the treefmt hook). These
+      # enforce the CLI library-first module-placement convention and the record
+      # conventions, mirroring the standalone flake checks below.
+      pre-commit.settings.hooks = {
+        cli-module-placement = {
+          enable = true;
+          name = "cli-module-placement";
+          entry = "${pkgs.bash}/bin/bash ${./nix/check-cli-module-placement.sh}";
+          language = "system";
+          pass_filenames = false;
+        };
+
+        record-conventions = {
+          enable = true;
+          name = "record-conventions";
+          entry = "${pkgs.bash}/bin/bash ${./nix/check-record-conventions.sh}";
+          language = "system";
+          pass_filenames = false;
+        };
+      };
+
       # Enforce the CLI library-first module-placement convention as a flake
       # check (mirrors the pre-commit hook in ./nix/pre-commit.nix).
       checks.cli-module-placement = pkgs.runCommand "cli-module-placement-check"

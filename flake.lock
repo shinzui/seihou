@@ -35,15 +35,16 @@
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": [
+          "haskell-nix-dev",
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1778716662,
-        "narHash": "sha256-m1Yf0wZ8j1OHjTc2UwHwyQRSnNeSgLJOd7q5Y45hzi4=",
+        "lastModified": 1788450739,
+        "narHash": "sha256-glZLQlzIn1fXH6PazR2iUmTo7kzzyYSshrWhLS9TqCU=",
         "owner": "hercules-ci",
         "repo": "flake-parts",
-        "rev": "f7c1a2d347e4c52d5fb8d10cb4d94b5884e546fb",
+        "rev": "31729ca8cbdb4fa927b34e5f4353e6a83f39e993",
         "type": "github"
       },
       "original": {
@@ -67,27 +68,6 @@
       "original": {
         "owner": "numtide",
         "repo": "flake-utils",
-        "type": "github"
-      }
-    },
-    "gitignore": {
-      "inputs": {
-        "nixpkgs": [
-          "pre-commit-hooks",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1709087332,
-        "narHash": "sha256-HG2cCnktfHsKV0s4XW83gU3F57gaTljL9KNSuG6bnQs=",
-        "owner": "hercules-ci",
-        "repo": "gitignore.nix",
-        "rev": "637db329424fd7e46cf4185293b9cc8c88c95394",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hercules-ci",
-        "repo": "gitignore.nix",
         "type": "github"
       }
     },
@@ -121,26 +101,30 @@
       "original": {
         "owner": "shinzui",
         "repo": "haskell-nix",
+        "rev": "999e6addda204a4ee435773463eb0e6023c09e26",
         "type": "github"
       }
     },
     "haskell-nix-dev": {
       "inputs": {
+        "flake-parts": "flake-parts",
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs",
+        "pre-commit-hooks": "pre-commit-hooks",
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1780511109,
-        "narHash": "sha256-ovNXmgd3ouO1koao1NWnBTVTJ/9F/zUGPMXUcdXzf70=",
+        "lastModified": 1789060979,
+        "narHash": "sha256-PL9m4OjpyS96Jh/G/nx0BxD26ONuVYZfsbDhmWgcvU8=",
         "owner": "shinzui",
         "repo": "haskell-nix-dev",
-        "rev": "af29a4869ca87aea3eb3e9d6164e24f571412527",
+        "rev": "05579ed8151fe8fd5e79d23d6ef9f4608b08d35a",
         "type": "github"
       },
       "original": {
         "owner": "shinzui",
         "repo": "haskell-nix-dev",
+        "rev": "05579ed8151fe8fd5e79d23d6ef9f4608b08d35a",
         "type": "github"
       }
     },
@@ -291,17 +275,17 @@
     "pre-commit-hooks": {
       "inputs": {
         "flake-compat": "flake-compat",
-        "gitignore": "gitignore",
         "nixpkgs": [
+          "haskell-nix-dev",
           "nixpkgs"
         ]
       },
       "locked": {
-        "lastModified": 1778507602,
-        "narHash": "sha256-kTwur1wV+01SdqskVMSo6JMEpg71ps3HpbFY2GsflKs=",
+        "lastModified": 1788267358,
+        "narHash": "sha256-nt+lUqYVpc9Y6JeMd2WmXzCDojasdadKo0mWcluvY2Y=",
         "owner": "cachix",
         "repo": "git-hooks.nix",
-        "rev": "61ab0e80d9c7ab14c256b5b453d8b3fb0189ba0a",
+        "rev": "27555e2624241fb116b49095df4caaee85a25691",
         "type": "github"
       },
       "original": {
@@ -328,14 +312,20 @@
     },
     "root": {
       "inputs": {
-        "flake-parts": "flake-parts",
+        "flake-parts": [
+          "haskell-nix-dev",
+          "flake-parts"
+        ],
         "haskell-nix": "haskell-nix",
         "haskell-nix-dev": "haskell-nix-dev",
         "nixpkgs": [
           "haskell-nix-dev",
           "nixpkgs"
         ],
-        "pre-commit-hooks": "pre-commit-hooks",
+        "pre-commit-hooks": [
+          "haskell-nix-dev",
+          "pre-commit-hooks"
+        ],
         "seihou-schema-src": "seihou-schema-src",
         "treefmt-nix": [
           "haskell-nix-dev",

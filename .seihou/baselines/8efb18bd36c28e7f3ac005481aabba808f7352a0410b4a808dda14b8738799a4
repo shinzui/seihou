@@ -19,29 +19,6 @@
     flake-parts.follows = "haskell-nix-dev/flake-parts";
     treefmt-nix.follows = "haskell-nix-dev/treefmt-nix";
     pre-commit-hooks.follows = "haskell-nix-dev/pre-commit-hooks";
-
-    # --- project-added inputs (NOT module-owned) -------------------------------
-    # Inputs cannot be declared from an imported flake-parts module, so these two
-    # seihou-specific inputs must live here in the seihou-managed flake.nix. On a
-    # future `seihou run nix-haskell-flake` the module will report a conflict on
-    # this file: resolve it with "accept new" and re-add the two lines below.
-    # They are consumed by ./flake.module.nix (the seihou package build).
-    #
-    # Shared Haskell patch management (registry overlay), grafted onto the
-    # haskell-nix-dev nixpkgs in flake.module.nix for the package build.
-    # Rev-pinned so adopting a new toolchain never silently bumps the baikai
-    # family (baikai-kit's KitUpdate API, etc.). Bump this rev deliberately in
-    # its own change when picking up newer shared Haskell patches.
-    haskell-nix.url = "github:shinzui/haskell-nix/999e6addda204a4ee435773463eb0e6023c09e26";
-    haskell-nix.inputs.nixpkgs.follows = "nixpkgs";
-
-    # Dhall schema package (non-flake), sourced from the checked-in schema
-    # submodule so Nix builds use the same schema revision as the repository.
-    seihou-schema-src = {
-      url = "git+file:./schema";
-      flake = false;
-    };
-    # ---------------------------------------------------------------------------
   };
 
   # The haskell-nix-dev base flake's binary cache, so the first `nix develop` downloads
