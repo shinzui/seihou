@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: seihou-okf-extension
-version: 0.7.0.0
+version: 0.8.0.0
 synopsis: OKF documentation extension for Seihou registries
 description:
   External Seihou extension executable for generating OKF documentation bundles
@@ -60,7 +60,7 @@ library seihou-okf-extension-internal
     lens >=5.2 && <6,
     okf-core ^>=0.8.0.0,
     optparse-applicative >=0.18 && <1,
-    seihou-core ^>=0.7.0.0,
+    seihou-core ^>=0.8.0.0,
     temporary >=1.3 && <2,
     text >=2.0 && <3,
 
@@ -118,7 +118,7 @@ test-suite seihou-okf-extension-test
     hspec >=2.11 && <3,
     lens >=5.2 && <6,
     okf-core ^>=0.8.0.0,
-    seihou-core ^>=0.7.0.0,
+    seihou-core ^>=0.8.0.0,
     seihou-okf-extension-internal,
     tasty >=1.4 && <2,
     tasty-hspec >=1.2 && <2,

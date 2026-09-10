@@ -10,6 +10,8 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+## [0.8.0.0] - 2026-09-10
+
 ### Added
 
 - **You can now tell Seihou about an upgrade you did yourself.** Plenty of people
@@ -785,6 +787,7 @@ regeneration.
 
 ---
 
+[0.8.0.0]: https://github.com/shinzui/seihou/compare/v0.7.0.0...v0.8.0.0
 [0.7.0.0]: https://github.com/shinzui/seihou/compare/v0.6.0.0...v0.7.0.0
 [0.6.0.0]: https://github.com/shinzui/seihou/compare/v0.5.0.0...v0.6.0.0
 [0.5.0.0]: https://github.com/shinzui/seihou/compare/v0.4.0.0...v0.5.0.0

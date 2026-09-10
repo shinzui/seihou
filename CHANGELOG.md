@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.8.0.0] - 2026-09-10
+
 ### Changed
 
 - **`seihou-okf-extension` now builds against `okf-core` 0.8.0.0** (EP-88), up from
@@ -17,6 +19,20 @@ All notable changes to this project will be documented in this file.
   generator at run time.
 
 ### Added
+
+- **`seihou agent migrate <blueprint> --mark-applied`** (EP-87): records an applied
+  receipt for every pending edge in the resolved window without contacting a provider or
+  reading or writing a single file in the working tree. A receipt asserts a claim about
+  the project rather than reporting a completed agent session
+  ([ADR 0011](docs/adr/0011-a-migration-receipt-asserts-a-claim-about-the-project.md)), so
+  the hand-upgrade case that previously had no representation now has one. The window is
+  resolved by the same code as a real run, so `--from`/`--to` narrow it identically and
+  edges reached through `entails` are marked under their **owning** blueprint — which
+  suppresses a later direct run of that blueprint too. An edge that already carries a
+  receipt is skipped rather than restamped, making a repeated mark a no-op. The flag is
+  refused alongside `--rerun` or `--debug`, both of which it contradicts, before anything
+  is read or written. New pure helpers `formatMarkAppliedNotice` and
+  `formatMarkAppliedSummary` in `Seihou.CLI.BlueprintMigration`.
 
 #### The documentation bundle says what the registry declares
 - **Every seihou artifact feature now reaches the generated page** (EP-88). A module
@@ -832,7 +848,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.7.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.8.0.0...HEAD
+[0.8.0.0]: https://github.com/shinzui/seihou/compare/v0.7.0.0...v0.8.0.0
 [0.7.0.0]: https://github.com/shinzui/seihou/compare/v0.6.0.0...v0.7.0.0
 [0.6.0.0]: https://github.com/shinzui/seihou/compare/v0.5.0.0...v0.6.0.0
 [0.5.0.0]: https://github.com/shinzui/seihou/compare/v0.4.0.0...v0.5.0.0
