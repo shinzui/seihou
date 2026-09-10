@@ -1,6 +1,7 @@
 module Seihou.OKF.Extension.DocsSpec (tests) where
 
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Okf.Bundle qualified as Okf
 import Okf.Index qualified as Okf
 import Okf.Validation qualified as Okf
@@ -23,10 +24,15 @@ spec = do
         let registryDir = tmpDir </> "registry"
             outDir = tmpDir </> "out"
         writeFixtureRegistry registryDir
-        result <- runDocs DocsOpts {dir = registryDir, out = outDir, force = False}
+        result <- runDocs (docsOpts registryDir outDir False)
         result `shouldBe` Right ("Wrote 2 concepts to " <> T.pack outDir)
         doesFileExist (outDir </> "modules" </> "base.md") `shouldReturn` True
         doesFileExist (outDir </> "recipes" </> "base-recipe.md") `shouldReturn` True
+        doesFileExist (outDir </> "index.md") `shouldReturn` True
+        rootIndex <- TIO.readFile (outDir </> "index.md")
+        rootIndex `shouldSatisfy` T.isInfixOf "okf_version: \"0.2\""
+        doesFileExist (outDir </> "modules" </> "index.md") `shouldReturn` True
+        doesFileExist (outDir </> "recipes" </> "index.md") `shouldReturn` True
         walked <- Okf.walkBundle outDir
         case walked of
           Left err -> expectationFailure ("Expected walkBundle success, got " <> show err)
@@ -43,18 +49,30 @@ spec = do
         let registryDir = tmpDir </> "registry"
             outDir = tmpDir </> "out"
         writeFixtureRegistry registryDir
-        first <- runDocs DocsOpts {dir = registryDir, out = outDir, force = False}
+        first <- runDocs (docsOpts registryDir outDir False)
         first `shouldBe` Right ("Wrote 2 concepts to " <> T.pack outDir)
-        second <- runDocs DocsOpts {dir = registryDir, out = outDir, force = False}
+        second <- runDocs (docsOpts registryDir outDir False)
         second `shouldBe` Left ("output directory is not empty: " <> T.pack outDir <> "; pass --force to overwrite")
-        forced <- runDocs DocsOpts {dir = registryDir, out = outDir, force = True}
+        forced <- runDocs (docsOpts registryDir outDir True)
         forced `shouldBe` Right ("Wrote 2 concepts to " <> T.pack outDir)
 
     it "reports a missing registry file" $ do
       withSystemTempDirectory "seihou-okf-docs-missing" $ \tmpDir -> do
         let registryDir = tmpDir </> "missing"
-        result <- runDocs DocsOpts {dir = registryDir, out = tmpDir </> "out", force = False}
+        result <- runDocs (docsOpts registryDir (tmpDir </> "out") False)
         result `shouldBe` Left ("registry file not found: " <> T.pack (registryDir </> "seihou-registry.dhall"))
+
+-- | The default option set for a fixture run: strict validation, no generation
+-- date, so the written bundle is byte-stable across runs.
+docsOpts :: FilePath -> FilePath -> Bool -> DocsOpts
+docsOpts registryDir outDir force =
+  DocsOpts
+    { dir = registryDir,
+      out = outDir,
+      force = force,
+      generatedAt = Nothing,
+      permissive = False
+    }
 
 writeFixtureRegistry :: FilePath -> IO ()
 writeFixtureRegistry registryDir = do

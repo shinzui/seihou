@@ -73,3 +73,18 @@ docsParser =
           <> help "Output directory for the generated OKF bundle"
       )
     <*> switch (long "force" <> help "Overwrite a non-empty output directory")
+    <*> optional
+      ( strOption
+          ( long "generated-at"
+              <> metavar "DATE"
+              <> help
+                "ISO-8601 date or timestamp recorded as the generation time; \
+                \omitted by default so regeneration is byte-stable"
+          )
+      )
+    <*> switch
+      ( long "permissive"
+          <> help
+            "Validate with OKF permissive conformance instead of the default \
+            \strict authoring rules"
+      )

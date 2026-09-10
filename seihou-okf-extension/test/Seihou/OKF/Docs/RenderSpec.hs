@@ -1,13 +1,13 @@
 module Seihou.OKF.Docs.RenderSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (?~), (^.))
 import Data.Generics.Labels ()
 import Data.List (sort)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Okf.Bundle qualified as Okf
 import Okf.ConceptId qualified as Okf
-import Okf.Validation (BundleValidationError (..))
+import Okf.Validation (BundleValidationError (..), ValidationProfile (..))
 import Seihou.Core.Types
 import Seihou.OKF.Docs.Model
 import Seihou.OKF.Docs.Render
@@ -22,7 +22,7 @@ spec :: Spec
 spec = do
   describe "renderDocBundle" $ do
     it "emits one concept per entry with the documented id scheme" $ do
-      (concepts, problems) <- renderOrFail wellFormedModel
+      (concepts, problems) <- renderOrFail testOptions wellFormedModel
       problems `shouldBe` []
       sort (Okf.renderConceptId . Okf.conceptIdOf <$> concepts)
         `shouldBe` [ "blueprints/app-blueprint",
@@ -33,7 +33,7 @@ spec = do
                    ]
 
     it "renders frontmatter fields and resource pointers" $ do
-      concept <- requireConcept "modules/base" wellFormedModel
+      concept <- requireConcept "modules/base" testOptions wellFormedModel
       let rendered = Okf.serializeConcept concept
       rendered `shouldSatisfy` T.isInfixOf "type: SeihouModule"
       rendered `shouldSatisfy` T.isInfixOf "title: base"
@@ -41,33 +41,75 @@ spec = do
       rendered `shouldSatisfy` T.isInfixOf "version: 1.0.0"
 
     it "renders resolvable cross-links to composed modules" $ do
-      concept <- requireConcept "recipes/app-recipe" wellFormedModel
+      concept <- requireConcept "recipes/app-recipe" testOptions wellFormedModel
       let rendered = Okf.serializeConcept concept
       rendered `shouldSatisfy` T.isInfixOf "](/modules/base.md)"
       rendered `shouldSatisfy` T.isInfixOf "](/modules/app.md)"
 
     it "validates clean for a well-formed model" $ do
-      (_, problems) <- renderOrFail wellFormedModel
+      (_, problems) <- renderOrFail testOptions wellFormedModel
       problems `shouldBe` []
 
     it "reports a DanglingReference for an unresolved module ref" $ do
-      (_, problems) <- renderOrFail danglingModel
+      (_, problems) <- renderOrFail testOptions danglingModel
       problems `shouldSatisfy` any isDanglingReference
 
     it "reports invalid generated concept IDs as render errors" $ do
-      renderDocBundle invalidIdModel
+      renderDocBundle testOptions invalidIdModel
         `shouldBe` Left [InvalidDocConceptId DocModuleKind "-bad" "InvalidConceptIdSegment \"-bad\""]
 
+    it "stamps a generated.by producer actor on every concept" $ do
+      (concepts, _) <- renderOrFail testOptions wellFormedModel
+      let rendered = Okf.serializeConcept <$> concepts
+      rendered `shouldSatisfy` all (T.isInfixOf "by: seihou-okf-extension/9.9.9")
+
+    it "omits generated.at unless the operator supplies one" $ do
+      concept <- requireConcept "modules/base" testOptions wellFormedModel
+      Okf.serializeConcept concept `shouldNotSatisfy` T.isInfixOf "at:"
+
+    it "records --generated-at verbatim in generated.at" $ do
+      let dated = testOptions & #generatedAt ?~ "2026-09-10"
+      concept <- requireConcept "modules/base" dated wellFormedModel
+      Okf.serializeConcept concept `shouldSatisfy` T.isInfixOf "at: 2026-09-10"
+
+    it "marks every concept stable" $ do
+      concept <- requireConcept "modules/base" testOptions wellFormedModel
+      Okf.serializeConcept concept `shouldSatisfy` T.isInfixOf "status: stable"
+
+    it "validates clean under StrictAuthoring when nothing supplies a description" $ do
+      (_, problems) <- renderOrFail testOptions undescribedModel
+      problems `shouldBe` []
+
+    it "falls back to the artifact description when the registry entry has none" $ do
+      concept <- requireConcept "modules/base" testOptions registrySilentModel
+      Okf.serializeConcept concept
+        `shouldSatisfy` T.isInfixOf "description: the artifact describes itself"
+
+    it "synthesizes a description when neither the registry nor the artifact has one" $ do
+      concept <- requireConcept "modules/base" testOptions undescribedModel
+      Okf.serializeConcept concept
+        `shouldSatisfy` T.isInfixOf "Seihou module `base` published by the `fixture` registry."
+
+-- | A fixed producer version, so assertions on the stamped actor do not change
+-- every time the package version is bumped.
+testOptions :: RenderOptions
+testOptions =
+  RenderOptions
+    { producerVersion = "9.9.9",
+      generatedAt = Nothing,
+      validationProfile = StrictAuthoring
+    }
+
 -- | Render a model, failing the example rather than pattern-matching partially.
-renderOrFail :: DocModel -> IO ([Okf.Concept], [BundleValidationError])
-renderOrFail model =
-  case renderDocBundle model of
+renderOrFail :: RenderOptions -> DocModel -> IO ([Okf.Concept], [BundleValidationError])
+renderOrFail opts model =
+  case renderDocBundle opts model of
     Left errs -> expectationFailure ("Expected render success, got " <> show errs) >> error "unreachable"
     Right rendered -> pure rendered
 
-requireConcept :: T.Text -> DocModel -> IO Okf.Concept
-requireConcept rawId model = do
-  (concepts, _) <- renderOrFail model
+requireConcept :: T.Text -> RenderOptions -> DocModel -> IO Okf.Concept
+requireConcept rawId opts model = do
+  (concepts, _) <- renderOrFail opts model
   case Okf.parseConceptId rawId of
     Left err -> expectationFailure ("Bad test concept id: " <> show err) >> error "unreachable"
     Right conceptId ->
@@ -101,6 +143,54 @@ danglingModel =
       entries =
         [ moduleEntry "app" [ModuleRef "missing" False] "modules/app"
         ]
+    }
+
+-- | Neither the registry entry nor the module says anything about itself, which
+-- is what StrictAuthoring would otherwise reject.
+undescribedModel :: DocModel
+undescribedModel =
+  DocModel
+    { repoName = "fixture",
+      repoDescription = Nothing,
+      entries = [silentEntry Nothing]
+    }
+
+-- | The registry entry is silent but the artifact describes itself.
+registrySilentModel :: DocModel
+registrySilentModel =
+  DocModel
+    { repoName = "fixture",
+      repoDescription = Nothing,
+      entries = [silentEntry (Just "the artifact describes itself")]
+    }
+
+silentEntry :: Maybe T.Text -> DocEntry
+silentEntry artifactDescription =
+  DocEntry
+    { name = "base",
+      kind = DocModuleKind,
+      version = Nothing,
+      description = Nothing,
+      tags = [],
+      path = "modules/base",
+      artifact = DocModuleArtifact (silentModuleArtifact artifactDescription),
+      moduleRefs = []
+    }
+
+silentModuleArtifact :: Maybe T.Text -> Module
+silentModuleArtifact description =
+  Module
+    { name = ModuleName "base",
+      version = Nothing,
+      description = description,
+      vars = [],
+      exports = [],
+      prompts = [],
+      steps = [],
+      commands = [],
+      dependencies = [],
+      removal = Nothing,
+      migrations = []
     }
 
 invalidIdModel :: DocModel

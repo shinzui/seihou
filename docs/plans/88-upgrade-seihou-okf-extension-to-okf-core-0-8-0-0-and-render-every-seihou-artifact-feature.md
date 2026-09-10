@@ -79,7 +79,7 @@ This section must always reflect the actual current state of the work.
 
 - [x] M1: `okf-core` pin raised from 0.1.2.0 to 0.8.0.0 in `seihou-okf-extension/seihou-okf-extension.cabal` and `nix/haskell-overlay.nix` (2026-09-10). Generated output verified byte-identical before and after the upgrade against the `seihou-modules` registry (12 concepts, `diff -r` clean).
 - [x] M1: `-Wall -Werror=incomplete-patterns` added to the extension's library, executable, and test stanzas; the three warnings `-Wall` surfaced in existing code are fixed, and `renderValidationError`, `renderBundleValidationError`, and the new `renderLogValidationError` are total with no catch-all (2026-09-10).
-- [ ] M2: bundle declares OKF v0.2 at its root, writes section indexes, stamps `generated` provenance on every concept, and validates with `StrictAuthoring`.
+- [x] M2: bundle declares OKF v0.2 at its root, writes section indexes, stamps `generated` provenance on every concept, and validates with `StrictAuthoring` (2026-09-10). Against `seihou-modules`: `okf validate --strict` exits 0 reporting `OK: 12 concepts (okf_version 0.2)`, `okf trust` lists `unverified stable ok` for all 12, and two consecutive runs are byte-identical.
 - [ ] M3: `renderExpr` added to `Seihou.Core.Expr` with round-trip tests.
 - [ ] M3: module documents render variables in full, steps, commands, prompts, removal, and migrations.
 - [ ] M3: blueprint documents render migrations with entailment cross-links, launch preferences, version probe, variables, and prompts.

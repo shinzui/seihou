@@ -12,11 +12,14 @@ import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import GHC.Generics (Generic)
+import Okf.Bundle (BundleError (..))
 import Okf.ConceptId qualified as Okf
+import Okf.Document (DocumentParseError (..))
 import Okf.Log (LogValidationError (..))
-import Okf.Validation (BundleValidationError (..), ValidationError (..))
+import Okf.Validation (BundleValidationError (..), ValidationError (..), ValidationProfile (..))
 import Seihou.OKF.Docs.Model
 import Seihou.OKF.Docs.Render
+import Seihou.OKF.Extension.Version (extensionVersion)
 import System.Directory
   ( createDirectoryIfMissing,
     doesDirectoryExist,
@@ -32,9 +35,25 @@ import System.IO (stderr)
 data DocsOpts = DocsOpts
   { dir :: !FilePath,
     out :: !FilePath,
-    force :: !Bool
+    force :: !Bool,
+    -- | Recorded verbatim as OKF @generated.at@. Absent by default, because
+    -- reading the clock would make every regeneration produce different bytes.
+    generatedAt :: !(Maybe T.Text),
+    -- | Validate with 'PermissiveConformance' instead of the default
+    -- 'StrictAuthoring'.
+    permissive :: !Bool
   }
   deriving stock (Eq, Generic, Show)
+
+-- | The renderer configuration these command-line options describe.
+renderOptionsFor :: DocsOpts -> RenderOptions
+renderOptionsFor opts =
+  RenderOptions
+    { producerVersion = extensionVersion,
+      generatedAt = opts ^. #generatedAt,
+      validationProfile =
+        if opts ^. #permissive then PermissiveConformance else StrictAuthoring
+    }
 
 runDocs :: DocsOpts -> IO (Either T.Text T.Text)
 runDocs opts = do
@@ -51,7 +70,7 @@ runDocs opts = do
           case modelResult of
             Left err -> pure (Left (renderDocLoadError err))
             Right model ->
-              case renderDocBundle model of
+              case renderDocBundle (renderOptionsFor opts) model of
                 Left renderErrors ->
                   pure (Left (renderMany renderDocRenderError renderErrors))
                 Right (concepts, validationProblems)
@@ -59,7 +78,7 @@ runDocs opts = do
                       pure (Left (renderMany renderBundleValidationError validationProblems))
                   | otherwise -> do
                       prepareOutputDirectory (opts ^. #out)
-                      writeResult <- writeDocBundle (opts ^. #out) model
+                      writeResult <- writeDocBundle (renderOptionsFor opts) (opts ^. #out) model
                       pure $ case writeResult of
                         Left errors -> Left (renderMany renderDocBundleError errors)
                         Right () -> Right ("Wrote " <> T.pack (show (length concepts)) <> " concepts to " <> T.pack (opts ^. #out))
@@ -106,6 +125,26 @@ renderDocLoadError (ArtifactLoadFailed name err) =
 renderDocBundleError :: DocBundleError -> T.Text
 renderDocBundleError (DocBundleRenderError err) = renderDocRenderError err
 renderDocBundleError (DocBundleValidationError err) = renderBundleValidationError err
+renderDocBundleError (DocBundleIndexError err) =
+  "failed to write bundle indexes: " <> renderBundleError err
+
+-- | Total by construction; see 'renderBundleValidationError'.
+renderBundleError :: BundleError -> T.Text
+renderBundleError (InvalidConceptPath path err) =
+  T.pack path <> ": not a usable concept path: " <> T.pack (show err)
+renderBundleError (InvalidConceptDocument path err) =
+  T.pack path <> ": " <> renderDocumentParseError err
+renderBundleError (BundleIoError path err) =
+  T.pack path <> ": " <> err
+
+-- | Total by construction; see 'renderBundleValidationError'.
+renderDocumentParseError :: DocumentParseError -> T.Text
+renderDocumentParseError UnterminatedFrontmatter =
+  "frontmatter block is never closed"
+renderDocumentParseError (InvalidYaml err) =
+  "frontmatter is not valid YAML: " <> err
+renderDocumentParseError FrontmatterNotMapping =
+  "frontmatter is not a YAML mapping"
 
 renderDocRenderError :: DocRenderError -> T.Text
 renderDocRenderError (InvalidDocConceptId kind name err) =
