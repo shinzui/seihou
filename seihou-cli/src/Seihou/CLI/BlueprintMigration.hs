@@ -8,6 +8,8 @@ module Seihou.CLI.BlueprintMigration
     renderBlueprintMigrationSystemPrompt,
     formatBlueprintMigrationDebugOutput,
     formatMigrationStepLabel,
+    formatMarkAppliedNotice,
+    formatMarkAppliedSummary,
     pendingBlueprintMigrations,
     parseNotApplicableSignal,
     unstatedNotApplicableReason,
@@ -183,6 +185,36 @@ formatBlueprintMigrationDebugOutput render steps =
     ]
   where
     total = length steps
+
+-- | Announce the steps a @--mark-applied@ run is about to record.
+--
+-- Every step is named with 'formatMigrationStepLabel', the one function every
+-- user-facing step label goes through, so a marked chain reads the same as a
+-- run one and an entailed step still says what pulled it in.
+--
+-- \"without running them\" is in the first line rather than only in the
+-- summary because this is the sentence a user sees before the receipts are
+-- written. Marking asserts something rather than observing it, and someone
+-- who reached for the flag by mistake needs the mistake visible here.
+formatMarkAppliedNotice :: [BlueprintMigrationStep] -> Text
+formatMarkAppliedNotice steps =
+  T.unlines $
+    "Marking "
+      <> T.pack (show (length steps))
+      <> " blueprint migration(s) as already applied, without running them:"
+      : ["  " <> formatMigrationStepLabel step | step <- steps]
+
+-- | Confirm what a @--mark-applied@ run recorded, once the receipts are in.
+--
+-- The second sentence is doing real work. A receipt written this way is an
+-- ordinary applied receipt, indistinguishable from one an agent earned, so a
+-- user who marked a migration they have not actually performed has to notice
+-- immediately — and @--rerun@ is the remedy.
+formatMarkAppliedSummary :: Int -> Text
+formatMarkAppliedSummary recorded =
+  "Recorded "
+    <> T.pack (show recorded)
+    <> " receipt(s). No agent session was started and no file was changed."
 
 -- | Name one step the way every user-facing surface names it: the owning
 -- blueprint, its edge window, and — when the step was reached through

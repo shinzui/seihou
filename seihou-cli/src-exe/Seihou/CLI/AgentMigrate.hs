@@ -45,6 +45,8 @@ import Seihou.CLI.BlueprintMigration
     ResolvedWindow (..),
     VersionProbeResult (..),
     formatBlueprintMigrationDebugOutput,
+    formatMarkAppliedNotice,
+    formatMarkAppliedSummary,
     formatMigrationStepLabel,
     formatProbeFailure,
     formatResolvedWindow,
@@ -223,56 +225,107 @@ handleAgentMigrate debug pendingConfig opts = do
               expandedPlan
       if null pending
         then reportNoPending expandedPlan
-        else do
-          -- One execution context per blueprint that owns a pending step, so
-          -- each step gets its own reference files, allowed tools, and
-          -- variables. All of them are resolved now rather than lazily per
-          -- step: a user should answer every prompt up front rather than
-          -- being interrupted between agent sessions.
-          preparedByOwner <- prepareCohort level modelConfig opts cohort pending
-          traceSink <- traceSinkForConfig level modelConfig
-          context <- gatherAgentContext
-          let signalPath = notApplicableSignalPath projectRoot
-              renderStep position total step =
-                case Map.lookup (step ^. #owner) preparedByOwner of
-                  Nothing -> missingOwnerMessage step
-                  Just prepared ->
-                    renderBlueprintMigrationSystemPrompt
-                      migrationPromptTemplate
-                      signalPath
-                      context
-                      prepared
-                      position
-                      total
-                      step
-              renderDebugStep position total step =
-                renderStep position total step
-                  <> maybe
-                    ""
-                    ("\n\n===== Initial user instruction =====\n" <>)
-                    (opts ^. #prompt)
-
-          if debug
-            then
-              TIO.putStrLn $
-                "Blueprint migrations for "
-                  <> invokedName
-                  <> ": "
-                  <> renderVersion (expandedPlan ^. #from)
-                  <> " -> "
-                  <> renderVersion (expandedPlan ^. #to)
-                  <> "\n"
-                  <> formatBlueprintMigrationDebugOutput renderDebugStep pending
+        else
+          if opts ^. #markApplied
+            then markPendingAsApplied level manifestPath cohort pending
             else do
-              -- The agent needs somewhere to put the signal file, and the
-              -- directory is created by the first receipt anyway.
-              createDirectoryIfMissing True (takeDirectory signalPath)
-              result <-
-                runBlueprintMigrationsWith
-                  (launchMigration traceSink modelConfig opts preparedByOwner signalPath renderStep)
-                  (recordMigration manifestPath cohort)
-                  pending
-              handleRunResult level (blueprint ^. #name) result
+              -- One execution context per blueprint that owns a pending step, so
+              -- each step gets its own reference files, allowed tools, and
+              -- variables. All of them are resolved now rather than lazily per
+              -- step: a user should answer every prompt up front rather than
+              -- being interrupted between agent sessions.
+              preparedByOwner <- prepareCohort level modelConfig opts cohort pending
+              traceSink <- traceSinkForConfig level modelConfig
+              context <- gatherAgentContext
+              let signalPath = notApplicableSignalPath projectRoot
+                  renderStep position total step =
+                    case Map.lookup (step ^. #owner) preparedByOwner of
+                      Nothing -> missingOwnerMessage step
+                      Just prepared ->
+                        renderBlueprintMigrationSystemPrompt
+                          migrationPromptTemplate
+                          signalPath
+                          context
+                          prepared
+                          position
+                          total
+                          step
+                  renderDebugStep position total step =
+                    renderStep position total step
+                      <> maybe
+                        ""
+                        ("\n\n===== Initial user instruction =====\n" <>)
+                        (opts ^. #prompt)
+
+              if debug
+                then
+                  TIO.putStrLn $
+                    "Blueprint migrations for "
+                      <> invokedName
+                      <> ": "
+                      <> renderVersion (expandedPlan ^. #from)
+                      <> " -> "
+                      <> renderVersion (expandedPlan ^. #to)
+                      <> "\n"
+                      <> formatBlueprintMigrationDebugOutput renderDebugStep pending
+                else do
+                  -- The agent needs somewhere to put the signal file, and the
+                  -- directory is created by the first receipt anyway.
+                  createDirectoryIfMissing True (takeDirectory signalPath)
+                  result <-
+                    runBlueprintMigrationsWith
+                      (launchMigration traceSink modelConfig opts preparedByOwner signalPath renderStep)
+                      (recordMigration manifestPath cohort)
+                      pending
+                  handleRunResult level (blueprint ^. #name) result
+
+-- | Record every pending step as applied without running it.
+--
+-- Each receipt goes through 'recordMigration', the same function the real run
+-- uses, so a marked receipt is indistinguishable from a run one and is written
+-- under the identity of the blueprint that /owns/ the edge rather than the one
+-- the user named. Reusing it is the point: a second receipt-construction site
+-- could drift from the ownership rule in
+-- docs\/adr\/0008-an-entailed-migration-edge-is-owned-by-the-blueprint-that-declares-it.md,
+-- and a receipt written under the wrong identity matches nothing.
+--
+-- The outcome is 'MigrationApplied' rather than a third \"applied by hand\"
+-- value. A receipt already means \"this edge has been attended to and need not
+-- run again\" rather than proof an agent did it, and a hand migration satisfies
+-- that meaning exactly; see
+-- docs\/adr\/0011-a-migration-receipt-asserts-a-claim-about-the-project.md.
+--
+-- Recording stops at the first failure and reports it, leaving earlier
+-- receipts in place, which is the same contract the real run has: re-running
+-- the same command then records only what is still pending.
+markPendingAsApplied ::
+  LogLevel ->
+  FilePath ->
+  Map Text CohortBlueprint ->
+  [BlueprintMigrationStep] ->
+  IO ()
+markPendingAsApplied level manifestPath cohort pending = do
+  TIO.putStr (formatMarkAppliedNotice pending)
+  TIO.putStrLn ""
+  go 0 pending
+  where
+    go recorded [] = TIO.putStrLn (formatMarkAppliedSummary recorded)
+    go recorded (step : rest) =
+      recordMigration manifestPath cohort step MigrationApplied >>= \case
+        Right () -> go (recorded + 1) rest
+        Left err ->
+          exitErr level $
+            "Blueprint migration "
+              <> formatMigrationStepLabel step
+              <> " could not be marked as applied: "
+              <> err
+              <> ". "
+              <> markedSoFar recorded
+              <> " Repair manifest access, then rerun the same command; "
+              <> "already-recorded edges are no longer pending."
+    markedSoFar 0 = "No receipts were recorded."
+    markedSoFar n =
+      "The first " <> T.pack (show (n :: Int)) <> " edge(s) remain recorded."
 
 -- | Refuse the two @--mark-applied@ combinations that contradict themselves.
 --

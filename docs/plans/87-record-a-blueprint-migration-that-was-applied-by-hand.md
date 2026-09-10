@@ -74,8 +74,8 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
 ## Progress
 
 - [x] Milestone 1 — add `--mark-applied` to `BlueprintMigrationOpts` and its parser, and reject the flag combinations that cannot mean anything. (2026-09-10)
-- [ ] Milestone 2 — record receipts for the pending steps without launching a provider, in `handleAgentMigrate`.
-- [ ] Milestone 3 — report what was marked, and make the no-op and refusal messages readable.
+- [x] Milestone 2 — record receipts for the pending steps without launching a provider, in `handleAgentMigrate`. (2026-09-10)
+- [x] Milestone 3 — report what was marked, and make the no-op and refusal messages readable. (2026-09-10)
 - [ ] Milestone 4 — unit tests for the pure marking summary and the flag-conflict rules.
 - [ ] Milestone 5 — end-to-end tests: marking writes receipts, suppresses a later run, starts no session, and touches no file.
 - [ ] Milestone 6 — documentation: new sections in `docs/user/blueprint-migrations.md` and `docs/cli/agent.md`, the summary pages in `docs/user/migrations.md` and `docs/user/blueprints.md`, the in-binary help topic, and `docs/user/CHANGELOG.md`.
@@ -146,6 +146,23 @@ getting origin wrong is precisely the failure that makes a hand-written receipt 
   smaller change.
   Date: 2026-08-17
 
+
+- Decision: The two flag-conflict refusals print a `✗` block to stdout and exit non-zero,
+  rather than going through `exitErr` (which writes to stderr behind a `[error] ` prefix).
+  Rationale: `enforceArtifactGuard` in `seihou-cli/src/Seihou/CLI/ManifestGuard.hs` is this
+  command's other refusal, and it already prints a multi-line `✗ Refusing to run …` block to
+  stdout before `exitFailure`. Two refusal kinds from the same command on two different streams
+  in two different shapes would be gratuitous. `exitErr`'s existing callers pass lowercase
+  sentence fragments designed to read after `[error] `, which a multi-line indented block is
+  not.
+  Date: 2026-09-10
+
+- Decision: Milestone 3's completion sentence is a separate exported function,
+  `formatMarkAppliedSummary`, rather than a literal in the executable.
+  Rationale: The plan placed only the notice in the library, but the test suites cannot import
+  from `src-exe`, so a literal there is untestable. Both sentences are pure text derived from
+  the step list, so both belong in `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs`.
+  Date: 2026-09-10
 
 ## Outcomes & Retrospective
 
