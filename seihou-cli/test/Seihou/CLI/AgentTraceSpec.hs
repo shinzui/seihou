@@ -155,6 +155,12 @@ finishEvent =
       latencyMs = 7913,
       inputTokens = Just 4211,
       outputTokens = Just 880,
+      cachedInputTokens = Nothing,
+      cacheWriteTokens = Nothing,
+      reasoningTokens = Nothing,
+      totalTokens = Nothing,
+      costBasis = Nothing,
+      usageAvailability = Nothing,
       usd = Just 0.0264
     }
 
@@ -166,5 +172,14 @@ failEvent =
       provider = "anthropic",
       model = "claude-sonnet-4-6",
       latencyMs = 120,
+      inputTokens = Nothing,
+      outputTokens = Nothing,
+      cachedInputTokens = Nothing,
+      cacheWriteTokens = Nothing,
+      reasoningTokens = Nothing,
+      totalTokens = Nothing,
+      costBasis = Nothing,
+      usageAvailability = Nothing,
+      usd = Nothing,
       errorMessage = "invalid x-api-key"
     }

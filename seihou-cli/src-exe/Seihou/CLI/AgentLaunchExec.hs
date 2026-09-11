@@ -5,6 +5,7 @@ module Seihou.CLI.AgentLaunchExec
   )
 where
 
+import Baikai.Agent (AgentRenderError, renderAgentRenderError)
 import Baikai.Interactive
   ( CodexApprovalPolicy (CodexApprovalOnRequest),
     CodexSandboxMode (CodexWorkspaceWrite),
@@ -71,8 +72,8 @@ launchClaude addDirs tools model effortLevel systemPrompt initialPrompt = do
       exitFailure
     Just _ -> do
       cwd <- getCurrentDirectory
-      InteractiveLaunchResult {exitCode} <-
-        launchClaudeInteractive
+      launchExitCode
+        =<< launchClaudeInteractive
           defaultClaudeInteractiveConfig
           -- InteractiveLaunchRequest comes from baikai and has no Generic instance,
           -- so these fields have no labels. Record update syntax is the only option.
@@ -84,7 +85,6 @@ launchClaude addDirs tools model effortLevel systemPrompt initialPrompt = do
               extraDirs = addDirs,
               safety = ClaudeAllowedTools (map T.pack tools)
             }
-      pure exitCode
 
 launchCodex :: [FilePath] -> Maybe Text -> Maybe ThinkingLevel -> Text -> Maybe Text -> IO ExitCode
 launchCodex addDirs model effortLevel systemPrompt initialPrompt = do
@@ -96,8 +96,8 @@ launchCodex addDirs model effortLevel systemPrompt initialPrompt = do
       exitFailure
     Just _ -> do
       cwd <- getCurrentDirectory
-      InteractiveLaunchResult {exitCode} <-
-        launchCodexInteractive
+      launchExitCode
+        =<< launchCodexInteractive
           defaultCodexInteractiveConfig
           -- InteractiveLaunchRequest comes from baikai and has no Generic instance,
           -- so these fields have no labels. Record update syntax is the only option.
@@ -109,7 +109,16 @@ launchCodex addDirs model effortLevel systemPrompt initialPrompt = do
               extraDirs = addDirs,
               safety = CodexSandbox CodexWorkspaceWrite CodexApprovalOnRequest
             }
-      pure exitCode
+
+-- | The launched session's exit code. A 'Left' means baikai refused to render
+-- the launch (the provider cannot honor the requested safety policy), so no
+-- process ran.
+launchExitCode :: Either AgentRenderError InteractiveLaunchResult -> IO ExitCode
+launchExitCode = \case
+  Right InteractiveLaunchResult {exitCode} -> pure exitCode
+  Left err -> do
+    TIO.putStrLn ("Error: " <> renderAgentRenderError err)
+    exitFailure
 
 promptOrEmpty :: Maybe Text -> Text
 promptOrEmpty = maybe "" id

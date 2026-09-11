@@ -20,13 +20,11 @@ in
   # baikai, baikai-claude, baikai-openai, and baikai-kit are supplied by the
   # shared haskell-nix registry overlay (composed ahead of this one in
   # ../flake.module.nix), which builds the whole baikai family from its GitHub
-  # source — baikai 0.4.1.0, baikai-claude/openai 0.4.0.0 (which forward
-  # Options.thinking to the batch `claude -p` / `codex exec` invocations as a
-  # reasoning-effort flag, not just to interactive launches), baikai-kit
-  # 0.1.0.3 — already wrapped with dontCheck + doJailbreak.
-  # Only okf-core needs a local Hackage pin. The shared overlay does carry an
-  # okf-src input, but it sits at okf 0.2.0.0, so it cannot supply the 0.8.0.0
-  # release this repository builds against.
+  # source — baikai, baikai-claude and baikai-openai 0.7.0.0, baikai-kit
+  # 0.2.0.1 — already wrapped with dontCheck + doJailbreak.
+  # okf-core keeps a local pin to the Hackage 0.8.0.0 release this repository
+  # builds against, rather than the shared overlay's okf family, which builds
+  # okf-core from the okf repository's GitHub revision.
 
   # dontCheck: this repository has no reason to run a dependency's own test
   # suite on every build. (The 0.8.0.0 sdist does ship dhall/ and

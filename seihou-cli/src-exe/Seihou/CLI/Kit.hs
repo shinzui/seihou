@@ -9,13 +9,14 @@ where
 import Baikai.Interactive (InteractiveProvider (..))
 import Baikai.Kit.Command qualified as Kit
 import Baikai.Kit.Config (KitConfig (..), KitScope (..))
+import Baikai.Kit.Install (OverwritePolicy)
 import Options.Applicative (Parser)
 import Seihou.Prelude
 
 data KitCommand
   = KitList
   | KitInstall !Text !KitScope
-  | KitUpdate !(Maybe Text)
+  | KitUpdate !(Maybe Text) !OverwritePolicy
   | KitUninstall !Text !KitScope
   | KitStatus
   deriving stock (Eq, Show)
@@ -38,7 +39,7 @@ fromShared :: Kit.KitCommand -> KitCommand
 fromShared = \case
   Kit.KitList -> KitList
   Kit.KitInstall name scope -> KitInstall name scope
-  Kit.KitUpdate name -> KitUpdate name
+  Kit.KitUpdate name policy -> KitUpdate name policy
   Kit.KitUninstall name scope -> KitUninstall name scope
   Kit.KitStatus -> KitStatus
 
@@ -46,6 +47,6 @@ toShared :: KitCommand -> Kit.KitCommand
 toShared = \case
   KitList -> Kit.KitList
   KitInstall name scope -> Kit.KitInstall name scope
-  KitUpdate name -> Kit.KitUpdate name
+  KitUpdate name policy -> Kit.KitUpdate name policy
   KitUninstall name scope -> Kit.KitUninstall name scope
   KitStatus -> Kit.KitStatus

@@ -227,11 +227,11 @@ runStub respond sink =
   where
     registerStub =
       Baikai.registerApiProvider
-        Baikai.ApiProvider
-          { Baikai.apiTag = Baikai.AnthropicMessages,
-            Baikai.complete = \m _ _ -> respond m,
-            Baikai.stream = Baikai.liftCompleteToStream (\m _ _ -> respond m)
-          }
+        ( Baikai.apiProviderWith
+            Baikai.AnthropicMessages
+            (Baikai.liftCompleteToStream (\m _ _ -> respond m))
+            (\m _ _ -> respond m)
+        )
     request =
       buildAgentCompletionRequestWith
         (maybe silent id sink)

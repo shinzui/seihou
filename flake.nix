@@ -1,47 +1,50 @@
 {
   description = "製法 - Seihou";
 
-  # Every module-owned input is decided by exactly ONE pin: the haskell-nix-dev revision
-  # below. Everything else `follows` it, so this project's flake.lock is a pure function of
-  # that rev — every project on this nix-haskell-flake version locks to byte-identical pins
-  # and shares one store closure instead of each re-resolving `master` on its own schedule.
+  # Every module-owned input is decided by the module's pins: the haskell-nix-dev revision
+  # below (and, with nix.haskell-nix, the haskell-nix revision). Everything else `follows`
+  # them, so this project's flake.lock is a pure function of those revs — every project on
+  # this nix-haskell-flake version locks to byte-identical pins and shares one store closure
+  # instead of each re-resolving `master` on its own schedule.
   #
   # The rev lives in the URL, not only in flake.lock, which is what makes it stick: a
   # rev-pinned input cannot be moved by `nix flake update`, so a stray full update in this
   # project is a no-op here and only touches inputs you added yourself. Verify with
   # `git diff flake.lock` — it should come back empty.
   #
-  # seihou-managed: to move the toolchain, release a new nix-haskell-flake version and
-  # `seihou run nix-haskell-flake`. Editing the rev here is a conflict at the next run.
+  # seihou-managed: to move the toolchain or the shared patches, release a new
+  # nix-haskell-flake version and `seihou update nix-haskell-flake`. Editing a rev here is a
+  # conflict at the next run.
   inputs = {
-    haskell-nix-dev.url = "github:shinzui/haskell-nix-dev/05579ed8151fe8fd5e79d23d6ef9f4608b08d35a";
+    haskell-nix-dev.url = "github:shinzui/haskell-nix-dev/206ecd25bcb4a07581210bdae3e6f43c8fd179d8";
     nixpkgs.follows = "haskell-nix-dev/nixpkgs";
     flake-parts.follows = "haskell-nix-dev/flake-parts";
     treefmt-nix.follows = "haskell-nix-dev/treefmt-nix";
     pre-commit-hooks.follows = "haskell-nix-dev/pre-commit-hooks";
 
-    # --- project-added inputs (NOT module-owned) -------------------------------
-    # Inputs cannot be declared from an imported flake-parts module, so these two
-    # seihou-specific inputs must live here in the seihou-managed flake.nix. On a
-    # future `seihou run nix-haskell-flake` the module will report a conflict on
-    # this file: resolve it with "accept new" and re-add the two lines below.
-    # They are consumed by ./flake.module.nix (the seihou package build).
-    #
-    # Shared Haskell patch management (registry overlay), grafted onto the
-    # haskell-nix-dev nixpkgs in flake.module.nix for the package build.
-    # Rev-pinned so adopting a new toolchain never silently bumps the baikai
-    # family (baikai-kit's KitUpdate API, etc.). Bump this rev deliberately in
-    # its own change when picking up newer shared Haskell patches.
-    haskell-nix.url = "github:shinzui/haskell-nix/999e6addda204a4ee435773463eb0e6023c09e26";
-    haskell-nix.inputs.nixpkgs.follows = "nixpkgs";
+    # Shared Haskell patch registry (mori://shinzui/haskell-nix), consumed from
+    # ./flake.module.nix via `inputs.haskell-nix.lib.haskellExtension`. Rev-pinned by the
+    # module alongside haskell-nix-dev, so it moves only with a nix-haskell-flake release;
+    # both follows keep the lock to a single haskell-nix-dev and a single nixpkgs.
+    haskell-nix = {
+      url = "github:shinzui/haskell-nix/7b696dc80f8aaccaf1783fda0ab6a7f978a67134";
+      inputs.haskell-nix-dev.follows = "haskell-nix-dev";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
-    # Dhall schema package (non-flake), sourced from the checked-in schema
-    # submodule so Nix builds use the same schema revision as the repository.
+    # --- project-added input (NOT module-owned) --------------------------------
+    # Inputs cannot be declared from an imported flake-parts module, so this one
+    # lives in the seihou-managed flake.nix: a future `seihou update` reports a
+    # conflict here — accept the generated file and re-add this block.
+    #
+    # Dhall schema package (non-flake) at the revision the `schema` submodule
+    # records (`git ls-tree HEAD schema`); bump both together. Fetched from the
+    # public repository rather than `git+file:./schema`, which resolves against
+    # the caller's working directory and so breaks `nix run github:shinzui/seihou`.
     seihou-schema-src = {
-      url = "git+file:./schema";
+      url = "github:shinzui/seihou-schema/49ff1e5b353b171b1b52946f478623ee4423ea93";
       flake = false;
     };
-    # ---------------------------------------------------------------------------
   };
 
   # The haskell-nix-dev base flake's binary cache, so the first `nix develop` downloads
