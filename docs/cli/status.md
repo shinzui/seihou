@@ -13,6 +13,7 @@ seihou status [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `-u, --check-updates` | Check installed modules for available updates (requires network) |
+| `--full-prompt` | Print the blueprint's stored prompt in full instead of truncating it |
 
 ## Description
 
@@ -21,7 +22,31 @@ Reads `.seihou/manifest.json` in the current directory and displays:
 - **Recipe** — if the project was generated from a recipe, shows the recipe
   name and version (e.g. `Recipe: haskell-library v1.0.0`).
 - **Blueprint** — if `seihou agent run` was used here, the blueprint name and
-  version, its baseline modules, and the prompt that was supplied.
+  version, its baseline modules, and the prompt that was supplied. The prompt is
+  collapsed to a single line and truncated at 72 characters, so a
+  several-paragraph instruction cannot push the rest of the summary off the
+  screen; a truncated prompt ends in an ellipsis.
+
+  ```text
+  Blueprint: fix-nix-haskell-flake-customizations (applied 2026-09-13 09:41 UTC)
+    Baseline: (none declared)
+    Prompt: "Upgrade this repository to nix-haskell-flake 0.24.0. The flake already…"
+  ```
+
+  The whole prompt is recorded in `.seihou/manifest.json` and is never
+  shortened there. Pass `--full-prompt` to print it verbatim instead, as a bare
+  `Prompt:` header with the prompt's own lines indented beneath it:
+
+  ```text
+  Blueprint: fix-nix-haskell-flake-customizations (applied 2026-09-13 09:41 UTC)
+    Baseline: (none declared)
+    Prompt:
+      Upgrade this repository to nix-haskell-flake 0.24.0.
+
+      The flake already pins baikai 0.7, so do not re-pin it.
+
+      Do not commit anything; leave the tree dirty for review.
+  ```
 - **Blueprint migrations** — one line per recorded
   [blueprint migration](../user/blueprint-migrations.md) edge, with the outcome
   the edge reported. Omitted entirely when none has been recorded.

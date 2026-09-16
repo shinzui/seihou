@@ -8,13 +8,41 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-09-14T00:00:00Z"
-timestamp: 2026-09-14T00:00:00Z
+timestamp: 2026-09-16T16:06:23Z
 requestId: IR-7
-status: proposed
+targetPlan: docs/plans/91-truncate-the-blueprint-prompt-in-status-output.md
+status: accepted
 origin: mori://shinzui/okf-profiles
 ---
 
 # Improvement Request: Truncate the Blueprint Prompt in Status Output
+
+## Status
+
+Accepted 2026-09-16 and implemented by
+[`docs/plans/91-truncate-the-blueprint-prompt-in-status-output.md`](../plans/91-truncate-the-blueprint-prompt-in-status-output.md)
+across three milestones.
+
+Both parts of [Requested change](#requested-change) ship as asked. `truncateReason`
+and `reasonWidth` were hoisted out of `formatBlueprintMigrations`'s `where` clause
+into a module-level `truncateForSummary :: Int -> Text -> Text`, which the receipt
+reason and the blueprint prompt now share; the prompt is bounded at
+`promptWidth = 72` and the reason keeps `reasonWidth = 60`. `userPrompt` is
+untouched — no file under `seihou-core/` changed, and `seihou status` writes
+nothing.
+
+The optional escape hatch ships too, with one deviation from the request. It is
+spelled **`seihou status --full-prompt`**, not the suggested `--full`. A bare
+`--full` on `status` does not say full *what*, since `status` renders six blocks
+and bounds one value; and neither short form was available — `-u` is
+`--check-updates` on this same command and `-v` is `--verbose` on six other
+commands, where it means "show progress messages" rather than "show more of a
+stored value".
+
+The underlying rule the request appeals to — that `status` is a scannable summary
+and the manifest is the record — was written down as
+[ADR 0013](../adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md),
+so the next free-text field added to `status` does not have to re-derive it.
 
 ## Context
 

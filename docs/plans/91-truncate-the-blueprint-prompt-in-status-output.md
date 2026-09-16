@@ -10,6 +10,12 @@ provenance:
     model: "claude-opus-5[1m]"
     harness: "claude-code"
     at: 2026-09-16T13:22:48Z
+  revisions:
+    - model: "claude-opus-5[1m]"
+      harness: "claude-code"
+      at: 2026-09-16T15:58:37Z
+      mode: "implement"
+      note: "Implementing all three milestones; ADR renumbered 0012 -> 0013"
 ---
 
 # Truncate the blueprint prompt in status output
@@ -70,35 +76,41 @@ This plan implements improvement request IR-7, filed at
 
 ## Progress
 
-- [ ] Milestone 1 — shared truncation helper and a bounded `Prompt:` line
-  - [ ] Hoist `truncateReason` / `reasonWidth` out of `formatBlueprintMigrations`'s
+- [x] Milestone 1 — shared truncation helper and a bounded `Prompt:` line (2026-09-16)
+  - [x] Hoist `truncateReason` / `reasonWidth` out of `formatBlueprintMigrations`'s
         `where` clause into module-level `truncateForSummary` and `reasonWidth` in
         `seihou-cli/src/Seihou/CLI/StatusRender.hs`
-  - [ ] Add module-level `promptWidth = 72`
-  - [ ] Route `blueprintSection`'s `Prompt:` line through `truncateForSummary promptWidth`
-  - [ ] Add tests to `seihou-cli/test/Seihou/CLI/StatusSpec.hs` covering a long prompt,
+  - [x] Add module-level `promptWidth = 72`
+  - [x] Route `blueprintSection`'s `Prompt:` line through `truncateForSummary promptWidth`
+  - [x] Add tests to `seihou-cli/test/Seihou/CLI/StatusSpec.hs` covering a long prompt,
         a short multi-line prompt, and a short prompt left alone; confirm the
-        pre-existing reason-truncation test at line 253 passes unmodified
-  - [ ] `cabal test all --enable-tests` green; commit
-- [ ] Milestone 2 — `seihou status --full-prompt`
-  - [ ] Add `PromptDisplay` and `formatStatusWith` to
+        pre-existing reason-truncation test passes unmodified — all 23
+        `StatusRender` tests pass, the 5 pre-existing blueprint-provenance tests
+        and the long-reason receipt test untouched
+  - [x] `cabal test all --enable-tests` green; commit `e104f80`
+- [x] Milestone 2 — `seihou status --full-prompt` (2026-09-16)
+  - [x] Add `PromptDisplay` and `formatStatusWith` to
         `seihou-cli/src/Seihou/CLI/StatusRender.hs`; redefine `formatStatus` in terms of it
-  - [ ] Add `statusFullPrompt` to `StatusOpts` and a `--full-prompt` switch to
+  - [x] Add `statusFullPrompt` to `StatusOpts` and a `--full-prompt` switch to
         `statusParser` in `seihou-cli/src-exe/Seihou/CLI/Commands.hs`
-  - [ ] Thread the flag through `handleStatus` in
+  - [x] Thread the flag through `handleStatus` in
         `seihou-cli/src-exe/Seihou/CLI/Status.hs`
-  - [ ] Add tests for `PromptFull` rendering
-  - [ ] `cabal test all --enable-tests` green; `cabal build all` clean; commit
-- [ ] Milestone 3 — documentation, ADR, and IR bookkeeping
-  - [ ] Update `docs/cli/status.md` (options table and the Blueprint bullet)
-  - [ ] Add a user-facing entry under `## Unreleased` in `docs/user/CHANGELOG.md`
-  - [ ] Correct the `seihou status` example in
+  - [x] Add tests for `PromptFull` rendering — 10 blueprint-provenance tests pass
+  - [x] End-to-end walkthrough against a scratch manifest: bounded line by
+        default, whole prompt under `--full-prompt`, flag listed in `--help`,
+        manifest hash unchanged across a `status` run
+  - [x] `cabal test all --enable-tests` green; `cabal build all` clean; commit `a018bb9`
+- [x] Milestone 3 — documentation, ADR, and IR bookkeeping (2026-09-16)
+  - [x] Update `docs/cli/status.md` (options table and the Blueprint bullet)
+  - [x] Add a user-facing entry under `## Unreleased` in `docs/user/CHANGELOG.md`
+  - [x] Correct the `seihou status` example in
         `docs/dev/design/proposed/blueprints.md`
-  - [ ] Write `docs/adr/0012-status-is-a-bounded-summary-the-manifest-is-the-record.md`
-  - [ ] Mark IR-7 accepted: frontmatter `status`, `targetPlan`, `timestamp`, and a
+  - [x] Write `docs/adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md`
+  - [x] Mark IR-7 accepted: frontmatter `status`, `targetPlan`, `timestamp`, and a
         `## Status` section; append an `okf log add` entry to
         `docs/improvement-requests/log.md`
-  - [ ] `nix flake check` green; commit
+  - [x] `okf validate` output byte-identical to the pre-plan baseline
+  - [x] `nix flake check` green; commit
 
 
 ## Surprises & Discoveries
@@ -139,6 +151,55 @@ implementation with evidence.
   Acceptance for the IR bookkeeping in Milestone 3 is therefore "no *new*
   diagnostic lines", not "exit 0". Do not try to make it exit 0; fixing the
   corpus-wide missing `reviews` field is separate work.
+
+- **ADR 0012 was taken before this plan started work.** The plan's Context and
+  Orientation says "the highest allocated number today is 0011, so a new record
+  takes 0012". Between the plan being written and implementation beginning,
+  commit `d24126c` landed
+  `docs/adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md`:
+
+  ```text
+  $ ls docs/adr/ | tail -2
+  0011-a-migration-receipt-asserts-a-claim-about-the-project.md
+  0012-an-additive-co-write-is-not-a-shared-path-conflict.md
+  ```
+
+  This plan's ADR is therefore **0013**, not 0012. The `truncateForSummary`
+  Haddock written in Milestone 1 already points at 0013.
+
+- **The full form indents blank lines too.** `renderPrompt PromptFull` maps
+  `("    " <>)` over every line, so a paragraph break inside the prompt renders
+  as a line of four spaces rather than a truly empty line:
+
+  ```text
+    Prompt:
+      Upgrade this repository to nix-haskell-flake 0.24.0.
+  ....
+      The flake already pins baikai 0.7, so do not re-pin it. ...
+  ```
+
+  (the `....` marks four trailing spaces). This is left as-is deliberately: the
+  Decision Log's reasoning is that indentation, not quoting, delimits the value,
+  and an indented blank line is inside the value while an unindented one would be
+  ambiguous. The whitespace is invisible in a terminal and does not affect any
+  assertion.
+
+- **`okf log add` warns `concept not found: IR-7` but writes the entry correctly.**
+
+  ```text
+  $ okf log add docs/improvement-requests IR-7 --kind Update -m "..."
+  log: warning: concept not found: IR-7
+  Wrote log.md for 2026-09-16
+  ```
+
+  The bundle has no `concepts/` directory — improvement requests are plain
+  documents keyed by slug, and `requestId` is a frontmatter field rather than a
+  concept key — so the resolver has nothing to match `IR-7` against. It is
+  advisory: exit status is 0, one line was appended to
+  `docs/improvement-requests/log.md` in the same shape as every existing entry,
+  and `okf validate --log-enforce` afterwards reports exactly the same eight
+  lines as the pre-plan baseline, byte for byte. The same warning applies to the
+  IR-8 entries already in the log.
 
 - **GHC is 9.12.4 on this checkout**, not the 9.12.2 that the repository's
   `CLAUDE.md` states. Nothing in this plan depends on the difference; noted so a
@@ -219,7 +280,23 @@ implementation with evidence.
   "at most `width` characters" rather than "exactly `width` when cut".
   Date: 2026-09-16
 
-- Decision: This plan writes a new ADR (0012) rather than only citing existing ones.
+- Decision: The long-prompt test asserts `promptLines \`shouldBe\` [<exact line>]`
+  rather than the plan's `length promptLines \`shouldBe\` 1` plus
+  `head promptLines \`shouldBe\` <exact line>`.
+  Rationale: The list equality asserts both properties at once and is total. GHC
+  9.12 warns on `head` under `-Wx-partial` (there is an existing such warning at
+  `seihou-cli/test/Seihou/CLI/StatusSpec.hs` line 297), and there was no reason to
+  add a second one.
+  Date: 2026-09-16
+
+- Decision: The end-to-end walkthrough used the session scratchpad directory
+  rather than `/tmp/seihou-ir7`.
+  Rationale: The harness designates a session-specific scratchpad and asks that it
+  be used in place of system temp directories. The manifest content, commands and
+  expected output were otherwise exactly as the plan specifies.
+  Date: 2026-09-16
+
+- Decision: This plan writes a new ADR (0013) rather than only citing existing ones.
   Rationale: The rule being applied — the summary view is bounded, the manifest is
   the record — is now on its second free-text field and there will be a third. It is
   currently recorded only as a code comment inside one `where` clause. Writing it
@@ -230,7 +307,48 @@ implementation with evidence.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All three milestones landed on `master` on 2026-09-16, in the order planned, each
+leaving the tree green.
+
+**What a user can now do that they could not before.** In a project whose
+`.seihou/manifest.json` records a blueprint with a multi-paragraph `userPrompt`,
+`seihou status` prints a `Blueprint:` block exactly three lines tall, the third
+being a single bounded `Prompt:` line ending in an ellipsis. Verified against the
+real binary with a scratch manifest carrying a 232-character three-paragraph
+prompt:
+
+```text
+Blueprint: fix-nix-haskell-flake-customizations (applied 2026-09-13 09:41 UTC)
+  Baseline: (none declared)
+  Prompt: "Upgrade this repository to nix-haskell-flake 0.24.0. The flake already…"
+```
+
+`seihou status --full-prompt` on the same project prints all three paragraphs,
+indented under a bare `  Prompt:` header, with no ellipsis, and
+`seihou status --help` lists the flag. The manifest hash was identical before and
+after a `status` run, confirming nothing was lost and nothing was written.
+
+**The plan held up almost exactly.** Every file it named existed at the path it
+gave, every signature it specified compiled as written, and the expected
+truncated line it derived by hand — 71 characters between the quotes, an
+83-column line — matched the implementation on the first run. The pre-existing
+tests it identified as the real regression guards all passed unmodified: the five
+blueprint-provenance tests and, critically, the long-reason receipt test whose
+space-free fixture pins the cut arithmetic through the hoist.
+
+Three things the plan did not anticipate, all recorded in Surprises &
+Discoveries: ADR 0012 was allocated to unrelated work between the plan being
+written and implementation starting, so this plan's record is 0013; `okf log add`
+emits a spurious `concept not found` warning that does not affect the written
+entry; and the full-prompt form indents blank lines, which was left as-is for the
+reason in the Decision Log.
+
+**What the next person should take from this.** The defect was not that someone
+forgot to bound the prompt — it was that the rule bounding the *reason* lived as
+a comment inside one `where` clause, invisible to anyone adding a second free-text
+field. Hoisting the helper to module level fixed the immediate bug; ADR 0013 is
+what stops the third field from repeating it. The shared helper is the durable
+part, not the two width constants.
 
 
 ## Context and Orientation
@@ -391,7 +509,9 @@ Architecture Decision Records live in `docs/adr/` as plain Markdown files named
 `- Date:` lines. This directory is **not** an OKF bundle — `mori.dhall` declares only
 `docs/improvement-requests` under `okfBundles`, and `docs/adr/` has no `profile.dhall`
 — so the local filesystem convention is authoritative and no `okf` command applies to
-it. The highest allocated number today is 0011, so a new record takes 0012.
+it. The highest allocated number was 0011 when this plan was written; 0012 was
+allocated to an unrelated record before implementation began, so this plan's
+record is 0013 (see Surprises & Discoveries).
 
 Two existing records bear on this work:
 
@@ -406,7 +526,7 @@ Two existing records bear on this work:
   applied, with no second lockfile-style file beside it. It follows that any view
   `seihou status` renders is exactly that — a view — and is free to be lossy, because
   the authoritative copy is one file away. This plan makes that implication explicit
-  in a new ADR 0012.
+  in a new ADR 0013.
 
 [`docs/adr/0010-generated-documentation-is-checked-before-it-is-written.md`](../adr/0010-generated-documentation-is-checked-before-it-is-written.md)
 sounds relevant from its title but is not: it governs the OKF documentation bundles
@@ -437,7 +557,7 @@ near the bottom of the module beside the other small helpers such as `applyColor
 -- result to @width@ characters, marking a cut with a trailing ellipsis.
 --
 -- @seihou status@ is a scannable summary, and the manifest is the record (see
--- docs/adr/0012-status-is-a-bounded-summary-the-manifest-is-the-record.md). Two
+-- docs/adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md). Two
 -- values the summary renders are unbounded free text kept in full in
 -- @.seihou/manifest.json@ — a migration receipt's not-applicable reason and a
 -- blueprint's stored user prompt — and this is the single place that decides how
@@ -671,8 +791,8 @@ Do **not** edit `docs/dev/documentation-changelog.md`. Its `Prompt:` occurrence 
 263 is inside a dated historical audit entry, and that log records what was true at the
 time.
 
-Write `docs/adr/0012-status-is-a-bounded-summary-the-manifest-is-the-record.md`,
-following the local convention exactly — `# ADR 0012 — …` then `- Status: Accepted`
+Write `docs/adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md`,
+following the local convention exactly — `# ADR 0013 — …` then `- Status: Accepted`
 and `- Date: 2026-09-16`, then Context / Decision / Consequences sections. Link sibling
 ADRs the way `docs/adr/0011-a-migration-receipt-asserts-a-claim-about-the-project.md`
 does, by bare filename relative to `docs/adr/` — `[ADR 0004](0004-the-manifest-is-the-only-record-of-applied-state.md)`,
@@ -1020,12 +1140,12 @@ Intention: intention_01m2n64h7bevtr2xxfcn81f49b
 
 ### Milestone 3
 
-Make the documentation edits and write ADR 0012 as described under "Plan of Work →
+Make the documentation edits and write ADR 0013 as described under "Plan of Work →
 Milestone 3". Then record the IR-7 log entry:
 
 ```bash
 okf log add docs/improvement-requests IR-7 --kind Update \
-  -m "IR-7 is accepted and planned in docs/plans/91-truncate-the-blueprint-prompt-in-status-output.md. The plan hoists the existing reason truncation in StatusRender.hs into a shared truncateForSummary helper and routes the blueprint Prompt line through it at a 72-character bound, leaving .seihou/manifest.json untouched. The optional escape hatch ships as seihou status --full-prompt rather than the suggested --full, because status truncates one value among six blocks and a bare --full does not say which; -u and -v are both taken. ADR 0012 records the underlying rule."
+  -m "IR-7 is accepted and planned in docs/plans/91-truncate-the-blueprint-prompt-in-status-output.md. The plan hoists the existing reason truncation in StatusRender.hs into a shared truncateForSummary helper and routes the blueprint Prompt line through it at a 72-character bound, leaving .seihou/manifest.json untouched. The optional escape hatch ships as seihou status --full-prompt rather than the suggested --full, because status truncates one value among six blocks and a bare --full does not say which; -u and -v are both taken. ADR 0013 records the underlying rule."
 ```
 
 Check the bundle reports nothing new:
@@ -1062,7 +1182,7 @@ git commit
 ```text
 docs(status): document the bounded prompt line and accept IR-7
 
-Add ADR 0012 recording that seihou status is a bounded summary and the
+Add ADR 0013 recording that seihou status is a bounded summary and the
 manifest is the record, update the status CLI reference and the user
 changelog, and mark IR-7 accepted against this plan.
 

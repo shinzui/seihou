@@ -10,6 +10,30 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+### Changed
+
+- **`seihou status` no longer opens with a wall of prompt text.** In a project set
+  up with `seihou agent run <blueprint> "<prompt>"`, the prompt you typed was
+  echoed back in full. A real blueprint prompt is several paragraphs — the
+  pre-established facts, the per-file caveats, the "do not commit anything" — so
+  the summary began with a dozen wrapped lines and everything you actually ran
+  the command to see scrolled off the top.
+
+  The prompt is now collapsed to one line and cut at 72 characters, so the
+  `Blueprint:` block is three lines tall no matter how long the prompt was:
+
+  ```text
+  Blueprint: fix-nix-haskell-flake-customizations (applied 2026-09-13 09:41 UTC)
+    Baseline: (none declared)
+    Prompt: "Upgrade this repository to nix-haskell-flake 0.24.0. The flake already…"
+  ```
+
+  Nothing is lost. `.seihou/manifest.json` still records the whole prompt and is
+  never shortened — `seihou status` only reads it. When you want the whole
+  instruction back in the terminal, the new `seihou status --full-prompt` prints
+  it verbatim, with the prompt's own paragraphs indented under a bare `Prompt:`
+  header.
+
 ### Fixed
 
 - **A targeted update no longer refuses because of `.gitignore`.** If you tried to update
