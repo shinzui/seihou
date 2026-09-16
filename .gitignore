@@ -19,3 +19,4 @@ CLAUDE.local.md
 .mina/
 db/
 result-*
+.envrc.local
