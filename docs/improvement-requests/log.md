@@ -1,5 +1,30 @@
 # Bundle Update Log
 
+## 2026-09-16
+* **Addition**: IR-8 requests that a targeted `seihou update` stop failing on a shared path whose every
+owner writes it with an additive, idempotent patch. `ensureOwnershipClosure` in
+`Update/Selection.hs` (mirrored in `Reconcile.hs`) classifies any co-owned path as a whole-file
+conflict, but `append-line-if-absent` and `append-section` owners occupy disjoint, commutative slices
+that cannot clobber one another. Observed against `mori://shinzui/pgmq-hs`, whose `.gitignore` is
+co-owned by `nix-haskell-flake` (append-line-if-absent) and `master-plan`, so `seihou update
+nix-haskell-flake` refuses. Part 1 asks to exempt the additive, non-overlapping patch strategies from
+the closure requirement — noting `FileRecord` records only a single `strategy`/`moduleName` and no
+`PatchOp`, so the exemption needs per-owner write mode recorded in the manifest (preferred) or the
+owners' steps re-resolved at update time, failing closed on unknown. Part 2 asks for an explicit
+`--include-shared-owners` opt-in that expands a named selection to its ownership closure for the paths
+where the requirement legitimately still holds, keeping the plan 66/68/69 rule that a bare selection
+is never silently broadened.
+
+## 2026-09-14
+* **Addition**: IR-7 requests that `seihou status` stop printing the stored blueprint prompt in
+full. `blueprintSection` in `StatusRender.hs` emits `userPrompt` verbatim with no length bound, so
+a multi-paragraph positional prompt dominates the summary and pushes the actual status off screen.
+Observed against `mori://shinzui/kotei`, whose `fix-nix-haskell-flake-customizations` blueprint
+carries a long upgrade prompt. `formatBlueprintMigrations` in the same file already truncates a
+long migration reason to a scannable line while the manifest keeps the whole of it; IR-7 asks that
+the prompt line get the same discipline (collapse whitespace, cut with a trailing `…`), leaving the
+manifest untouched, with an optional verbose flag to show it in full.
+
 ## 2026-08-17
 * **Addition**: IR-6 requests that `seihou agent migrate` work without a trailing PROMPT on the
 default claude-cli provider. `claude -p` requires a user message, seihou sends only a system prompt,
