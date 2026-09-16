@@ -22,6 +22,28 @@ in
   # ../flake.module.nix), which builds the whole baikai family from its GitHub
   # source — baikai, baikai-claude and baikai-openai 0.7.0.0, baikai-kit
   # 0.2.0.1 — already wrapped with dontCheck + doJailbreak.
+
+  # effectful-core 2.7.x: the ghc9124 package set still carries 2.6.1.0, which
+  # is below the `>=2.7.1.1` bound seihou-core/seihou-cli declare (2.7.0.0 has a
+  # dynamic-dispatch performance regression, fixed in 2.7.1.1). 2.7 requires
+  # strict-mutable-base >= 2, whose API dropped the ticks from the strict
+  # MVar/Chan/IORef names, so the set's 1.1.0.0 will not do -- it is pinned
+  # alongside. `effectful` is bumped in lockstep even though nothing here
+  # depends on it: it is the other consumer of strict-mutable-base in the scope,
+  # and leaving 2.6.1.0 against the new base would put a package that cannot
+  # build into the set.
+  strict-mutable-base = hackagePackage "strict-mutable-base" "2.0.0.0"
+    "sha256-3o2PMN8l56X7ULqyNNJrJQZ8xgqqOsxhjm0jfULQt+k=";
+
+  effectful-core = hackagePackage "effectful-core" "2.7.1.2"
+    "sha256-OZhGk0UY3BMWF+oUAQnCvF3hnzscBCm0Cz+nz8p2XM8=";
+
+  # 2.7.1.0 is the newest `effectful`; the wrapper is versioned independently
+  # of effectful-core and has not been re-released for core's 2.7.1.1/.2. Its
+  # `effectful-core < 2.7.2.0` bound admits 2.7.1.2 as-is.
+  effectful = hackagePackage "effectful" "2.7.1.0"
+    "sha256-1jr7uWldG/qzNljv41c8ustRFNLnD9DuOFBmL3BYT6g=";
+
   # okf-core keeps a local pin to the Hackage 0.8.0.0 release this repository
   # builds against, rather than the shared overlay's okf family, which builds
   # okf-core from the okf repository's GitHub revision.
