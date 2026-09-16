@@ -9,13 +9,46 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-09-16T00:00:00Z"
-timestamp: 2026-09-16T00:00:00Z
+timestamp: 2026-09-16T12:51:16Z
 requestId: IR-8
-status: proposed
+status: accepted
+targetPlan: docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md
 origin: mori://shinzui/okf-profiles
 ---
 
 # Improvement Request: Exempt Additive-Patch Paths from the Shared-Ownership Closure
+
+## Status
+
+Accepted 2026-09-16 and planned in
+[`docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md`](../plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md),
+which implements both parts across four milestones.
+
+The plan takes option (a) from [Requested change](#1-exempt-non-overlapping-additive-patch-paths-from-the-closure-requirement):
+the per-path write mode is persisted in the manifest, but as a single boolean
+`FileRecord.additiveOnly` rather than a per-`ApplicationId` map. Both gates only ever ask the
+conjunctive question — does *every* contribution to this path go through an additive,
+non-overlapping patch — so one flag answers it, decodes as `False` when absent, and therefore
+fails closed on a manifest written before the field existed. The manifest schema version stays
+at 6: the key is emitted only when true and an older seihou that ignores it simply keeps
+enforcing the closure everywhere, which is the conservative reading.
+
+Two additions the request did not name, both recorded in the plan's Decision Log. First, the
+exemption is checked in two layers: the CLI preflight reads the manifest, since selection
+happens before anything is fetched, while reconciliation additionally requires every operation
+the *candidate* contributes to the path to be additive — so a module whose new version changed
+`.gitignore` from a patch step to a template step is refused rather than trusted on the strength
+of the previous release's record. Second, `Seihou.Engine.UpdateTransaction.prepareCandidateManifest`
+must union the surviving owners into the rewritten `FileRecord` instead of replacing them with
+the selection's view, and may only carry `additiveOnly = True` forward when the prior record
+agreed. Without that, the first targeted update of an exempted path would silently drop the
+unselected co-owner from the manifest and could flip the flag open for a path that is not
+additive at all. Both are fail-open defects that the closure requirement had been masking, and
+the plan sequences them ahead of the gate change.
+
+Part 2 lands as `seihou update <target> --include-shared-owners`, expanding the named selection
+to a fixed point over the paths that still require closure and reporting each application it
+added, so a bare selection is still never broadened silently.
 
 ## Context
 

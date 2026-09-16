@@ -158,8 +158,41 @@ spec = do
     it "unions prior and current ownership and preserves the generated baseline" $ do
       let priorId = ApplicationId "prior"
           currentId = ApplicationId "current"
-          prior = FileRecord (hashContent "old") "module" Template fixedTime Nothing (Set.singleton priorId)
-          current = FileRecord (hashContent "new") "module" Template fixedTime (Just (BaselineRef (hashContent "generated"))) Set.empty
+          prior = FileRecord (hashContent "old") "module" Template fixedTime Nothing (Set.singleton priorId) False
+          current = FileRecord (hashContent "new") "module" Template fixedTime (Just (BaselineRef (hashContent "generated"))) Set.empty False
           attached = attachApplication currentId (Just prior) current
       (attached ^. #applicationIds) `shouldBe` Set.fromList [priorId, currentId]
       (attached ^. #baseline) `shouldBe` Just (BaselineRef (hashContent "generated"))
+
+    it "cannot strengthen additiveOnly while a prior owner survives" $ do
+      -- This run executed only its own application's operations, so its
+      -- answer covers only its own contributions. A co-owner that rewrites
+      -- the whole file must keep the path under the ownership closure.
+      let priorId = ApplicationId "prior"
+          currentId = ApplicationId "current"
+          prior = record (Set.singleton priorId) False
+          current = record Set.empty True
+      (attachApplication currentId (Just prior) current ^. #additiveOnly) `shouldBe` False
+
+    it "keeps additiveOnly true when the prior record and this run agree" $ do
+      let priorId = ApplicationId "prior"
+          currentId = ApplicationId "current"
+      (attachApplication currentId (Just (record (Set.singleton priorId) True)) (record Set.empty True) ^. #additiveOnly)
+        `shouldBe` True
+
+    it "weakens additiveOnly when this run is no longer additive" $ do
+      let priorId = ApplicationId "prior"
+          currentId = ApplicationId "current"
+      (attachApplication currentId (Just (record (Set.singleton priorId) True)) (record Set.empty False) ^. #additiveOnly)
+        `shouldBe` False
+
+    it "trusts this run's answer when it is the only owner" $ do
+      let currentId = ApplicationId "current"
+          prior = record (Set.singleton currentId) False
+      (attachApplication currentId (Just prior) (record Set.empty True) ^. #additiveOnly) `shouldBe` True
+      (attachApplication currentId Nothing (record Set.empty True) ^. #additiveOnly) `shouldBe` True
+
+-- | A file record carrying the given owners and additive-only verdict.
+record :: Set.Set ApplicationId -> Bool -> FileRecord
+record owners additive =
+  FileRecord (hashContent "content") "module" Template fixedTime Nothing owners additive

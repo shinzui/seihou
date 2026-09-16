@@ -92,12 +92,25 @@ replaceAppliedComposition replacement existing
 -- ownership from the prior record and any ownership already on the result.
 -- The current record's baseline is preserved: EP-65 captures the exact
 -- post-execution generated content before ownership is attached.
+--
+-- @additiveOnly@ can only be weakened here, never strengthened. This run
+-- executed only its own application's operations, so its answer covers only
+-- its own contributions; when a prior owner survives outside this run, the
+-- prior record is the only evidence about that owner's write mode, and a
+-- co-owner that rewrites the whole file must keep the path under the
+-- ownership closure. This is the @seihou run@ counterpart of the
+-- partial-update merge rule in
+-- 'Seihou.Engine.UpdateTransaction.prepareCandidateManifest'.
 attachApplication :: ApplicationId -> Maybe FileRecord -> FileRecord -> FileRecord
 attachApplication applicationId previous current =
   current
     & #applicationIds .~ Set.insert applicationId (Set.union (current ^. #applicationIds) priorApplications)
+    & #additiveOnly .~ ((current ^. #additiveOnly) && (not partial || priorAdditive))
   where
     priorApplications = maybe Set.empty (^. #applicationIds) previous
+    retainedOwners = Set.delete applicationId priorApplications
+    partial = not (Set.null retainedOwners)
+    priorAdditive = maybe False (^. #additiveOnly) previous
 
 varValueToText :: VarValue -> Text
 varValueToText (VText value) = value

@@ -36,14 +36,14 @@ mkManifest :: Bool -> [(FilePath, Text)] -> Manifest
 mkManifest isRemovable fileContents =
   (emptyManifest fixedTime)
     & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, origin = LocalOrigin "test-module", moduleVersion = Nothing, appliedAt = fixedTime, removal = if isRemovable then Just (Removal [] []) else Nothing}]
-    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- fileContents]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, additiveOnly = False}) | (path, content) <- fileContents]
 
 -- | Helper: create a manifest with a specific removal spec.
 mkManifestWithRemoval :: Removal -> [(FilePath, Text)] -> Manifest
 mkManifestWithRemoval removal fileContents =
   (emptyManifest fixedTime)
     & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, origin = LocalOrigin "test-module", moduleVersion = Nothing, appliedAt = fixedTime, removal = Just removal}]
-    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- fileContents]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, additiveOnly = False}) | (path, content) <- fileContents]
 
 -- | Helper: create a PureFS with files.
 mkFS :: [(FilePath, Text)] -> PureFS
@@ -158,7 +158,7 @@ spec = do
 
     it "preserves files from other modules in manifest" $ do
       let base = mkManifest True [("mine.txt", "mine")]
-          otherRec = FileRecord (hashContent "other") otherMod Template fixedTime Nothing mempty
+          otherRec = FileRecord (hashContent "other") otherMod Template fixedTime Nothing mempty False
           manifest =
             Manifest
               { version = base ^. #version,
@@ -341,7 +341,7 @@ spec = do
 
     it "preserves other modules' files in manifest" $ do
       let base = mkManifest True [("mine.txt", "mine")]
-          otherRec = FileRecord (hashContent "other") otherMod Template fixedTime Nothing mempty
+          otherRec = FileRecord (hashContent "other") otherMod Template fixedTime Nothing mempty False
           manifest =
             Manifest
               { version = base ^. #version,

@@ -463,7 +463,8 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
                           strategy = Template,
                           generatedAt = now,
                           baseline = Nothing,
-                          applicationIds = mempty
+                          applicationIds = mempty,
+                          additiveOnly = False
                         }
                 )
               | (c, KeepCurrent) <- conflictResolved

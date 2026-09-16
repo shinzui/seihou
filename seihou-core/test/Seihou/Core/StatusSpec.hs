@@ -32,7 +32,8 @@ mkRecord content =
       strategy = Template,
       generatedAt = fixedTime,
       baseline = Nothing,
-      applicationIds = mempty
+      applicationIds = mempty,
+      additiveOnly = False
     }
 
 runStatus :: PureFS -> Manifest -> [TrackedFile]

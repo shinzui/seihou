@@ -1,7 +1,7 @@
 module Seihou.Engine.UpdateTransactionSpec (tests) where
 
 import Control.Exception (throwIO)
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Control.Monad (unless, when)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
@@ -186,6 +186,75 @@ spec = do
         result `shouldSatisfy` isUnresolved
         readProject projectRoot "file.txt" `shouldReturn` "user\n"
         Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
+
+  describe "partial update of a co-owned path" $ do
+    -- A targeted update plans only the applications it selected, so for a
+    -- co-owned path the reconciliation result describes a subset of the
+    -- owners. Everything belonging to an unselected owner must survive.
+    let coOwned additive =
+          ( ( fileRecord "/dist\n" (Just (baselineRefForContent "/dist\n")) [appA, appB]
+                & #moduleName
+                  .~ "co-owner"
+            )
+              & #strategy
+                .~ DhallText
+          )
+            & #additiveOnly
+              .~ additive
+        alphaOnly additive =
+          (desiredFile ".gitignore" "/dist\n/result\n" [appA] & #moduleName .~ "alpha")
+            & #additiveOnly
+              .~ additive
+        runPartial selection prior desired =
+          withSystemTempDirectory "seihou-update-partial" $ \projectRoot -> do
+            writeProject projectRoot ".gitignore" "/dist\n"
+            let state = plannedState "/dist\n/result\n" "/dist\n/result\n" True
+                plan =
+                  ReconciliationPlan
+                    selection
+                    ( Map.singleton
+                        ".gitignore"
+                        (FileUpdate desired state (observed "/dist\n") (Just prior))
+                    )
+                    Set.empty
+                manifest = manifestWithFiles (Map.singleton ".gitignore" prior)
+            transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton ".gitignore")
+            candidate <- expectRight =<< applyReconciliation transaction plan manifest
+            pure ((candidate ^. #files) Map.! ".gitignore")
+
+    it "keeps an unselected co-owner in the record" $ do
+      record <- runPartial (Set.singleton appA) (coOwned True) (alphaOnly True)
+      (record ^. #applicationIds) `shouldBe` Set.fromList [appA, appB]
+
+    it "keeps the prior attribution when an unselected co-owner survives" $ do
+      record <- runPartial (Set.singleton appA) (coOwned True) (alphaOnly True)
+      (record ^. #moduleName) `shouldBe` "co-owner"
+      (record ^. #strategy) `shouldBe` DhallText
+
+    it "keeps additiveOnly true when both the prior record and the candidate agree" $ do
+      record <- runPartial (Set.singleton appA) (coOwned True) (alphaOnly True)
+      (record ^. #additiveOnly) `shouldBe` True
+
+    it "cannot strengthen additiveOnly from a partial update" $ do
+      -- The prior False may have been set because the unselected co-owner
+      -- writes the whole file. This run has no evidence about that owner, so
+      -- flipping the flag open here would let a later update through unsafely.
+      record <- runPartial (Set.singleton appA) (coOwned False) (alphaOnly True)
+      (record ^. #additiveOnly) `shouldBe` False
+
+    it "weakens additiveOnly when the candidate is no longer additive" $ do
+      record <- runPartial (Set.singleton appA) (coOwned True) (alphaOnly False)
+      (record ^. #additiveOnly) `shouldBe` False
+
+    it "re-credits the path and trusts the candidate once every owner is selected" $ do
+      -- Subtracting the selection rather than the desired set matters here:
+      -- appA stopped writing the path but was part of this update, so it
+      -- genuinely loses ownership and the candidate's own answer stands.
+      record <- runPartial (Set.fromList [appA, appB]) (coOwned False) (alphaOnly True)
+      (record ^. #applicationIds) `shouldBe` Set.singleton appA
+      (record ^. #moduleName) `shouldBe` "alpha"
+      (record ^. #strategy) `shouldBe` Template
+      (record ^. #additiveOnly) `shouldBe` True
 
   describe "rollback and recovery" $ do
     it "rolls every earlier mutation back after an injected failure" $
@@ -388,7 +457,8 @@ fileRecord content baseline owners =
       strategy = Template,
       generatedAt = fixedTime,
       baseline = baseline,
-      applicationIds = Set.fromList owners
+      applicationIds = Set.fromList owners,
+      additiveOnly = False
     }
 
 desiredFile :: FilePath -> Text -> [ApplicationId] -> DesiredFile
@@ -398,7 +468,8 @@ desiredFile path content owners =
       generatedContent = content,
       moduleName = "owner",
       strategy = Template,
-      applicationIds = Set.fromList owners
+      applicationIds = Set.fromList owners,
+      additiveOnly = False
     }
 
 plannedState :: Text -> Text -> Bool -> PlannedFileState

@@ -53,7 +53,12 @@ data DesiredFile = DesiredFile
     generatedContent :: !Text,
     moduleName :: !ModuleName,
     strategy :: !Strategy,
-    applicationIds :: !(Set ApplicationId)
+    applicationIds :: !(Set ApplicationId),
+    -- | Does every operation /this run/ contributes to the path go through
+    -- an additive, non-overlapping patch ('isAdditiveOperation')? This is
+    -- the candidate's own answer, independent of what the manifest recorded
+    -- for the owners that are not part of this run.
+    additiveOnly :: !Bool
   }
   deriving stock (Eq, Generic, Show)
 
@@ -355,7 +360,8 @@ materializeOne readDisk readCopy readStoredBaseline ownerMap manifest pathOperat
               generatedContent = generated,
               moduleName = owner ^. #moduleName,
               strategy = finalStrategy,
-              applicationIds = owner ^. #applicationIds
+              applicationIds = owner ^. #applicationIds,
+              additiveOnly = all isAdditiveOperation pathOperations
             }
     Right
       DesiredContext

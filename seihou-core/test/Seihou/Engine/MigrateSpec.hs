@@ -58,7 +58,7 @@ mkManifest :: [(FilePath, Text)] -> Manifest
 mkManifest entries =
   (emptyManifest fixedTime)
     & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, origin = LocalOrigin "demo", moduleVersion = Just "1.0.0", appliedAt = fixedTime, removal = Nothing}]
-    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- entries]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, additiveOnly = False}) | (path, content) <- entries]
 
 -- | Build an in-memory filesystem from (path, content) pairs.
 mkFS :: [(FilePath, Text)] -> PureFS

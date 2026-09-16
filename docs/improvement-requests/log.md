@@ -1,13 +1,13 @@
 # Bundle Update Log
 
 ## 2026-09-16
+* **Update**: IR-8 is accepted and planned in docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md. The plan persists the per-path write mode in the manifest as a single boolean FileRecord.additiveOnly (option (a), fail-closed when absent, no schema version bump), checks the exemption in two layers — the CLI preflight against the manifest and reconciliation against the candidate's own operations — and sequences two fail-open defects the closure had been masking ahead of the gate change: prepareCandidateManifest must union surviving owners into the rewritten record instead of replacing them, and may only carry additiveOnly forward when the prior record agreed. Part 2 lands as seihou update <target> --include-shared-owners, expanding to a fixed point and reporting each application it adds.
 * **Addition**: IR-8 requests that a targeted `seihou update` stop failing on a shared path whose every
 owner writes it with an additive, idempotent patch. `ensureOwnershipClosure` in
 `Update/Selection.hs` (mirrored in `Reconcile.hs`) classifies any co-owned path as a whole-file
 conflict, but `append-line-if-absent` and `append-section` owners occupy disjoint, commutative slices
 that cannot clobber one another. Observed against `mori://shinzui/pgmq-hs`, whose `.gitignore` is
-co-owned by `nix-haskell-flake` (append-line-if-absent) and `master-plan`, so `seihou update
-nix-haskell-flake` refuses. Part 1 asks to exempt the additive, non-overlapping patch strategies from
+co-owned by `nix-haskell-flake` (append-line-if-absent) and `master-plan`, so `seihou update nix-haskell-flake` refuses. Part 1 asks to exempt the additive, non-overlapping patch strategies from
 the closure requirement — noting `FileRecord` records only a single `strategy`/`moduleName` and no
 `PatchOp`, so the exemption needs per-owner write mode recorded in the manifest (preferred) or the
 owners' steps re-resolved at update time, failing closed on unknown. Part 2 asks for an explicit
@@ -32,7 +32,6 @@ and `initialPrompt` is typed and documented as optional — so the invocation ev
 shows fails on the first edge of every chain, and the error blames the provider. Observed running
 keiro-upgrade against mori. The surrounding fail-closed behaviour was correct: no receipt, no source
 touched, resumable. Asks for a default instruction, a required argument, or a per-provider fallback.
-
 * **Addition**: IR-5 requests that a blueprint author be able to verify an entailed edge resolves
 from the source consumers install from. Observed at the keiro 0.13.0.0 release: an entailment was
 correct and the entailed blueprint declared exactly the named edge, but its commit was unpushed, so

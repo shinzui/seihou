@@ -67,7 +67,7 @@ spec = do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
           second = application (AppliedModuleTarget "two") [instanceState "two"]
           owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners
+          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners False
           manifest :: Manifest
           manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
       selectApplications (NamedUpdateTargets ["one"]) manifest
@@ -459,6 +459,7 @@ prepareUpdateFixture root = do
           testTime
           (Just baselineRef)
           (Set.singleton applicationId)
+          False
       manifest =
         ( (emptyManifest testTime)
             & #modules .~ [appliedModule]

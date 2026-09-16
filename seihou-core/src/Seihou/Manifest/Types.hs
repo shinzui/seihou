@@ -52,6 +52,14 @@ import System.FilePath (takeFileName)
 -- (see docs/plans/76-record-portable-artifact-origins-in-the-manifest.md).
 -- Version-5-and-earlier manifests are not readable directly; see
 -- docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md.
+--
+-- Deliberately /not/ bumped from 6 to 7 when 'FileRecord' gained
+-- @additiveOnly@. The field is emitted only when true, so a manifest with no
+-- additive-only paths is byte-identical to one written before it existed, and
+-- a reader that predates it treats every path as requiring the full ownership
+-- closure -- the conservative reading. Bumping would make every manifest this
+-- release writes unreadable to 0.8.x binaries in exchange for nothing. See
+-- docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md.
 currentManifestVersion :: Int
 currentManifestVersion = 6
 
@@ -566,10 +574,19 @@ instance ToJSON FileRecord where
       ]
         ++ maybe [] (\ref -> ["baseline" .= (ref ^. #unBaselineRef . #unSHA256)]) (fr ^. #baseline)
         ++ applicationIdsField (fr ^. #applicationIds)
+        ++ additiveOnlyField (fr ^. #additiveOnly)
     where
       applicationIdsField ids
         | Set.null ids = []
         | otherwise = ["applications" .= map (^. #unApplicationId) (Set.toAscList ids)]
+      -- Emitted only when true, so a manifest with no additive-only paths is
+      -- byte-identical to one written before the field existed. A reader that
+      -- predates the field ignores it and keeps enforcing the ownership
+      -- closure everywhere, which is the conservative behaviour; that is why
+      -- 'currentManifestVersion' does not move for this field.
+      additiveOnlyField additive
+        | additive = ["additiveOnly" .= True]
+        | otherwise = []
 
 instance FromJSON FileRecord where
   parseJSON = Aeson.withObject "FileRecord" $ \o -> do
@@ -582,6 +599,7 @@ instance FromJSON FileRecord where
       <*> o .: "generatedAt"
       <*> pure baseline
       <*> (Set.fromList . map ApplicationId <$> o Aeson..:? "applications" Aeson..!= [])
+      <*> (o Aeson..:? "additiveOnly" Aeson..!= False)
     where
       parseBaselineRef value = case baselineRefFromText value of
         Just ref -> pure ref

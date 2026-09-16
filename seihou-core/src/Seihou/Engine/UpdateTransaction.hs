@@ -231,25 +231,52 @@ observeDiskFile path = do
       pure (ObservedFile True (Just (hashContent content)))
     else pure (ObservedFile False Nothing)
 
+-- | Fold the reconciliation result into the manifest's file records.
+--
+-- A targeted update plans only the applications it selected, so for a
+-- co-owned path the reconciliation result describes a /subset/ of the
+-- owners. Everything belonging to an owner outside this update therefore has
+-- to survive the write untouched: its ownership, and the recorded facts about
+-- the path as a whole. See
+-- docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md.
 prepareCandidateManifest :: UpdateTransaction -> ReconciliationPlan -> Manifest -> IO Manifest
 prepareCandidateManifest transaction plan manifest = do
   nextFiles <- foldM applyManifestAction (manifest ^. #files) (Map.toAscList (plan ^. #files))
   pure (replaceManifestFiles manifest nextFiles)
   where
+    selected = plan ^. #applicationIds
     applyManifestAction files (path, reconciliation) = case desiredState reconciliation of
       Just (desired, state) -> do
         baseline <- writeBaselineBlob (transaction ^. #projectRoot) (state ^. #generatedBaseline)
-        let record =
+        let prior = Map.lookup path (manifest ^. #files)
+            -- Owners this update did not touch. Subtracting the /selection/
+            -- rather than the desired set matters: a selected application
+            -- that stopped writing the path must genuinely lose ownership,
+            -- while an unselected one must keep it.
+            retainedOwners = maybe Set.empty (^. #applicationIds) prior Set.\\ selected
+            partial = not (Set.null retainedOwners)
+            -- The prior flag summarises every owner, including the ones absent
+            -- from this run, so a partial update can only weaken it.
+            priorAdditive = maybe False (^. #additiveOnly) prior
+            record =
               FileRecord
                 { hash = state ^. #recordedHash,
-                  moduleName = desired ^. #moduleName,
-                  strategy = desired ^. #strategy,
+                  -- A partial update has no standing to re-credit a path it
+                  -- only partly wrote; keeping the prior attribution also
+                  -- avoids manifest churn between targeted runs.
+                  moduleName = case prior of
+                    Just priorRecord | partial -> priorRecord ^. #moduleName
+                    _ -> desired ^. #moduleName,
+                  strategy = case prior of
+                    Just priorRecord | partial -> priorRecord ^. #strategy
+                    _ -> desired ^. #strategy,
                   generatedAt = manifest ^. #genAt,
                   baseline = Just baseline,
-                  applicationIds = desired ^. #applicationIds
+                  applicationIds = (desired ^. #applicationIds) `Set.union` retainedOwners,
+                  additiveOnly = (desired ^. #additiveOnly) && (not partial || priorAdditive)
                 }
         pure (Map.insert path record files)
-      Nothing -> pure (applyOrphanManifestAction (plan ^. #applicationIds) reconciliation files)
+      Nothing -> pure (applyOrphanManifestAction selected reconciliation files)
 
 desiredState :: FileReconciliation -> Maybe (DesiredFile, PlannedFileState)
 desiredState reconciliation = case reconciliation of
@@ -290,7 +317,8 @@ replaceRecordApplications record owners =
       strategy = record ^. #strategy,
       generatedAt = record ^. #generatedAt,
       baseline = record ^. #baseline,
-      applicationIds = owners
+      applicationIds = owners,
+      additiveOnly = record ^. #additiveOnly
     }
 
 replaceManifestFiles :: Manifest -> Map FilePath FileRecord -> Manifest

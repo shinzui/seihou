@@ -111,7 +111,8 @@ orphanPlan = minimalPlan (oneFile orphan)
             strategy = Template,
             generatedAt = fixedTime,
             baseline = Nothing,
-            applicationIds = Set.empty
+            applicationIds = Set.empty,
+            additiveOnly = False
           }
         "user edit"
         (ObservedFile True (Just (SHA256 "current")))
@@ -124,7 +125,8 @@ desired =
       generatedContent = "title: generated\nbody: old\n",
       moduleName = ModuleName "demo",
       strategy = Template,
-      applicationIds = Set.empty
+      applicationIds = Set.empty,
+      additiveOnly = False
     }
 
 oneFile :: FileReconciliation -> ReconciliationPlan

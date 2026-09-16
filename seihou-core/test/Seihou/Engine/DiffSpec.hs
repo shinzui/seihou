@@ -40,7 +40,8 @@ mkRecord content =
       strategy = Template,
       generatedAt = fixedTime,
       baseline = Nothing,
-      applicationIds = mempty
+      applicationIds = mempty,
+      additiveOnly = False
     }
 
 -- | Helper to create a manifest with file records (avoids ambiguous record update).
@@ -208,7 +209,8 @@ spec = do
                 strategy = Template,
                 generatedAt = fixedTime,
                 baseline = Nothing,
-                applicationIds = mempty
+                applicationIds = mempty,
+                additiveOnly = False
               }
           manifest = manifestWithFiles (Map.singleton "other.txt" record)
           planned = [("new.txt", "new content", modName, Nothing)]
@@ -237,7 +239,8 @@ spec = do
                 strategy = Copy,
                 generatedAt = fixedTime,
                 baseline = Nothing,
-                applicationIds = mempty
+                applicationIds = mempty,
+                additiveOnly = False
               }
           manifest =
             manifestWithFiles
@@ -270,7 +273,8 @@ spec = do
                 strategy = Template,
                 generatedAt = fixedTime,
                 baseline = Nothing,
-                applicationIds = mempty
+                applicationIds = mempty,
+                additiveOnly = False
               }
           manifest = manifestWithFiles (Map.singleton "shared.txt" otherRecord)
           -- active module wants to write to same path owned by inactive module
@@ -293,7 +297,8 @@ spec = do
                 strategy = Template,
                 generatedAt = fixedTime,
                 baseline = Nothing,
-                applicationIds = mempty
+                applicationIds = mempty,
+                additiveOnly = False
               }
           manifest =
             manifestWithFiles

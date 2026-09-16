@@ -395,7 +395,8 @@ handleRun runOpts = do
                                   strategy = Template,
                                   generatedAt = now,
                                   baseline = Nothing,
-                                  applicationIds = mempty
+                                  applicationIds = mempty,
+                                  additiveOnly = False
                                 }
                         )
                       | (c, KeepCurrent) <- conflictResolved

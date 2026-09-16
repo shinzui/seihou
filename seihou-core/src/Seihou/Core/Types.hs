@@ -10,6 +10,7 @@ module Seihou.Core.Types
     Expr (..),
     Strategy (..),
     PatchOp (..),
+    isAdditivePatchOp,
     Step (..),
     Command (..),
     Dependency (..),
@@ -33,6 +34,7 @@ module Seihou.Core.Types
     Runnable (..),
     recipeNameToModuleName,
     Operation (..),
+    isAdditiveOperation,
     ModuleLoadError (..),
     Manifest (..),
     ApplicationId (..),
@@ -171,6 +173,26 @@ data PatchOp
   | AppendSection
   | AppendLineIfAbsent
   deriving stock (Eq, Show, Generic)
+
+-- | Does this patch operation occupy a slice of the file that no other
+-- contributor can disturb?
+--
+-- 'AppendLineIfAbsent' filters out lines already present, so it is
+-- idempotent and commutative. 'AppendSection' writes a region delimited by
+-- the contributing module's own markers, which no other module's region
+-- overlaps. Replaying either one on top of a baseline that already holds
+-- another owner's content leaves that content byte for byte where it was.
+--
+-- 'AppendFile' and 'PrependFile' place bytes relative to whatever is already
+-- in the file, so replaying one contributor without the others can reorder
+-- the result. They are not additive in this sense.
+--
+-- See docs/adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md.
+isAdditivePatchOp :: PatchOp -> Bool
+isAdditivePatchOp AppendSection = True
+isAdditivePatchOp AppendLineIfAbsent = True
+isAdditivePatchOp AppendFile = False
+isAdditivePatchOp PrependFile = False
 
 -- | A generation step within a module.
 data Step = Step
@@ -423,6 +445,22 @@ data Operation
         moduleName :: !ModuleName
       }
   deriving stock (Eq, Show, Generic)
+
+-- | Does this operation contribute to its destination through an additive,
+-- non-overlapping patch?
+--
+-- Only a 'PatchFileOp' whose 'PatchOp' satisfies 'isAdditivePatchOp'
+-- qualifies. A 'WriteFileOp' or 'CopyFileOp' discards whatever the file
+-- already held, so it never does. Operations with no file destination
+-- ('CreateDirOp', 'RunCommandOp') are not contributions to a path and
+-- answer 'False'; callers group operations by destination first, so they
+-- never ask.
+isAdditiveOperation :: Operation -> Bool
+isAdditiveOperation (PatchFileOp _ _ op' _ _) = isAdditivePatchOp op'
+isAdditiveOperation WriteFileOp {} = False
+isAdditiveOperation CopyFileOp {} = False
+isAdditiveOperation CreateDirOp {} = False
+isAdditiveOperation RunCommandOp {} = False
 
 -- | Errors that can occur during module loading and validation.
 data ModuleLoadError
@@ -714,7 +752,13 @@ data FileRecord = FileRecord
     strategy :: !Strategy,
     generatedAt :: !UTCTime,
     baseline :: !(Maybe BaselineRef),
-    applicationIds :: !(Set ApplicationId)
+    applicationIds :: !(Set ApplicationId),
+    -- | Does /every/ contribution to this path go through an additive,
+    -- non-overlapping patch ('isAdditivePatchOp')? When true, reconciling
+    -- one owner provably cannot disturb another's bytes, so a targeted
+    -- update need not name every owner. Absent from older manifests, where
+    -- it decodes as 'False' and the closure keeps being enforced.
+    additiveOnly :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 

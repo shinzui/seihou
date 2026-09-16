@@ -117,7 +117,7 @@ mkManifest :: Text -> FilePath -> [(FilePath, Text)] -> Manifest
 mkManifest version installedDir entries =
   (emptyManifest fixedTime)
     & #modules .~ [AppliedModule {name = modName, parentVars = emptyParentVars, origin = LocalOrigin (modName ^. #unModuleName), moduleVersion = Just version, appliedAt = fixedTime, removal = Nothing}]
-    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- entries]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = modName, strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, additiveOnly = False}) | (path, content) <- entries]
 
 defaultOpts :: MigrateOpts
 defaultOpts =
@@ -238,7 +238,7 @@ mkManifestAt :: FetchFixture -> Text -> [(FilePath, Text)] -> Manifest
 mkManifestAt fix version entries =
   (emptyManifest fixedTime)
     & #modules .~ [AppliedModule {name = ModuleName (fix ^. #modName), parentVars = emptyParentVars, origin = LocalOrigin (fix ^. #modName), moduleVersion = Just version, appliedAt = fixedTime, removal = Nothing}]
-    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = ModuleName (fix ^. #modName), strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}) | (path, content) <- entries]
+    & #files .~ Map.fromList [(path, FileRecord {hash = hashContent content, moduleName = ModuleName (fix ^. #modName), strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, additiveOnly = False}) | (path, content) <- entries]
 
 withSavedEnv :: String -> Maybe String -> IO () -> IO ()
 withSavedEnv key newVal action = do

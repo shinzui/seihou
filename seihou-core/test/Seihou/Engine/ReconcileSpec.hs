@@ -281,7 +281,8 @@ record content baseline owners' =
       strategy = Template,
       generatedAt = fixedTime,
       baseline = baseline,
-      applicationIds = Set.fromList owners'
+      applicationIds = Set.fromList owners',
+      additiveOnly = False
     }
 
 owners :: FilePath -> [ApplicationId] -> Map.Map FilePath DesiredFileOwner

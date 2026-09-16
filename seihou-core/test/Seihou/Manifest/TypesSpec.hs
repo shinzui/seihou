@@ -148,6 +148,7 @@ manifestWithEveryStringPosition =
             fixedTime
             (Just (BaselineRef (hashContent "flake")))
             (Set.singleton (ApplicationId "app"))
+            False
         )
     & #applications
       %~ map (withCommandReceipts (Map.singleton receiptFingerprint receipt))
@@ -351,7 +352,7 @@ spec = do
       let m :: Manifest
           m =
             ( (emptyManifest fixedTime)
-                & #files .~ Map.fromList [("README.md", FileRecord {hash = SHA256 "abc123", moduleName = ModuleName "haskell-base", strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty}), ("my-app.cabal", FileRecord {hash = SHA256 "def456", moduleName = ModuleName "haskell-base", strategy = DhallText, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty})]
+                & #files .~ Map.fromList [("README.md", FileRecord {hash = SHA256 "abc123", moduleName = ModuleName "haskell-base", strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, additiveOnly = False}), ("my-app.cabal", FileRecord {hash = SHA256 "def456", moduleName = ModuleName "haskell-base", strategy = DhallText, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, additiveOnly = False})]
             )
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -372,10 +373,10 @@ spec = do
                 files =
                   Map.fromList
                     [ ( "README.md",
-                        FileRecord (SHA256 "aaa") (ModuleName "haskell-base") Template fixedTime Nothing mempty
+                        FileRecord (SHA256 "aaa") (ModuleName "haskell-base") Template fixedTime Nothing mempty False
                       ),
                       ( "LICENSE",
-                        FileRecord (SHA256 "bbb") (ModuleName "haskell-base") Copy fixedTime Nothing mempty
+                        FileRecord (SHA256 "bbb") (ModuleName "haskell-base") Copy fixedTime Nothing mempty False
                       )
                     ],
                 applications = [],
@@ -388,7 +389,7 @@ spec = do
     it "roundtrips all strategy types" $ do
       let strategies = [Copy, Template, DhallText, Structured]
           makeRecord s =
-            FileRecord (SHA256 "hash") (ModuleName "mod") s fixedTime Nothing mempty
+            FileRecord (SHA256 "hash") (ModuleName "mod") s fixedTime Nothing mempty False
           m :: Manifest
           m =
             ( (emptyManifest fixedTime)
@@ -501,7 +502,8 @@ spec = do
                 strategy = Template,
                 generatedAt = fixedTime,
                 baseline = Just (BaselineRef (hashContent "generated baseline")),
-                applicationIds = Set.fromList [appId1, appId2]
+                applicationIds = Set.fromList [appId1, appId2],
+                additiveOnly = False
               }
           manifest =
             ( (emptyManifest fixedTime)
@@ -662,7 +664,7 @@ spec = do
                 commandReceipts = Map.empty,
                 appliedAt = fixedTime
               }
-          fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty
+          fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty False
           recipe = AppliedRecipe "recipe" (LocalOrigin "recipe") (Just "1.0.0") fixedTime
           normalBlueprint = AppliedBlueprint "payments" (LocalOrigin "payments") (Just "0.4.0") fixedTime [] False Nothing Nothing
           seed =
@@ -704,6 +706,51 @@ spec = do
       case manifestFromJSON json of
         Right _ -> expectationFailure "a version-1 manifest should not decode directly"
         Left err -> err `shouldSatisfy` isInfixOf "seihou manifest upgrade"
+
+  describe "additive-only file records" $ do
+    let additiveRecord additive =
+          FileRecord
+            { hash = SHA256 "aaa",
+              moduleName = ModuleName "nix-haskell-flake",
+              strategy = Template,
+              generatedAt = fixedTime,
+              baseline = Nothing,
+              applicationIds = Set.fromList [ApplicationId "app-one", ApplicationId "app-two"],
+              additiveOnly = additive
+            }
+        manifestWith additive =
+          (emptyManifest fixedTime) & #files .~ Map.singleton ".gitignore" (additiveRecord additive)
+        recordKeys manifest = case Aeson.decode (manifestToJSON manifest) of
+          Just (Aeson.Object top) -> case KeyMap.lookup "files" top of
+            Just (Aeson.Object files) -> case KeyMap.lookup ".gitignore" files of
+              Just (Aeson.Object record) -> map Key.toText (KeyMap.keys record)
+              _ -> []
+            _ -> []
+          _ -> []
+
+    it "roundtrips a record whose additiveOnly is true" $ do
+      manifestFromJSON (manifestToJSON (manifestWith True)) `shouldBe` Right (manifestWith True)
+
+    it "roundtrips a record whose additiveOnly is false" $ do
+      manifestFromJSON (manifestToJSON (manifestWith False)) `shouldBe` Right (manifestWith False)
+
+    it "emits the additiveOnly key only when the flag is true" $ do
+      recordKeys (manifestWith True) `shouldContain` ["additiveOnly"]
+      recordKeys (manifestWith False) `shouldNotContain` ["additiveOnly"]
+
+    it "decodes a record with no additiveOnly key as not additive-only" $ do
+      -- A manifest written before the field existed must keep every shared
+      -- path under the ownership closure, so the absent key must fail closed.
+      let json =
+            "{\"version\":6,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[]"
+              <> ",\"variables\":{},\"applications\":[],\"files\":{\".gitignore\":{\"hash\":\"aaa\""
+              <> ",\"module\":\"nix-haskell-flake\",\"strategy\":\"template\""
+              <> ",\"generatedAt\":\"2026-03-01T10:30:00Z\"}}}"
+      case manifestFromJSON json of
+        Left err -> expectationFailure ("expected the manifest to decode, got: " <> err)
+        Right decoded -> case Map.lookup ".gitignore" (decoded ^. #files) of
+          Nothing -> expectationFailure "expected a .gitignore record"
+          Just decodedRecord -> (decodedRecord ^. #additiveOnly) `shouldBe` False
 
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do

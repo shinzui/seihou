@@ -37,7 +37,8 @@ spec = do
                 strategy = Template,
                 generatedAt = fixedTime,
                 baseline = Nothing,
-                applicationIds = Set.singleton applicationId
+                applicationIds = Set.singleton applicationId,
+                additiveOnly = False
               }
           initialFS = PureFS (Map.singleton ("/project/" <> path) content) Set.empty
           ((result, stored), _) =
@@ -56,7 +57,7 @@ spec = do
           Map.lookup expectedRef stored `shouldBe` Just content
 
     it "returns an error and publishes no reference when a generated file is missing" $ do
-      let record = FileRecord (hashContent "planned") "module" Template fixedTime Nothing Set.empty
+      let record = FileRecord (hashContent "planned") "module" Template fixedTime Nothing Set.empty False
           ((result, stored), _) =
             runPureEff $
               runFilesystemPure (PureFS Map.empty Set.empty) $
@@ -67,7 +68,7 @@ spec = do
 
     it "stores content that can be read back through the baseline effect" $ do
       let content = "round trip"
-          record = FileRecord (hashContent content) "module" Copy fixedTime Nothing Set.empty
+          record = FileRecord (hashContent content) "module" Copy fixedTime Nothing Set.empty False
           initialFS = PureFS (Map.singleton "copy.txt" content) Set.empty
           ((result, readBack), _) =
             runPureEff $
@@ -86,7 +87,7 @@ spec = do
     it "collects and deduplicates every referenced blob" $ do
       let first = baselineRefForContent "first"
           second = baselineRefForContent "second"
-          mkRecord ref = FileRecord (hashContent "applied") "module" Template fixedTime ref Set.empty
+          mkRecord ref = FileRecord (hashContent "applied") "module" Template fixedTime ref Set.empty False
           manifest :: Manifest
           manifest =
             ( (emptyManifest fixedTime)

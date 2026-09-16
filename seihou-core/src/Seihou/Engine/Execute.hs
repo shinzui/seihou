@@ -21,6 +21,11 @@ import Seihou.Prelude
 -- (by its qualified name) that produced it. Paths not present in the
 -- map fall back to the default @moduleName'@ — this preserves single-
 -- module call-sites and test usage that do not build an ownership map.
+--
+-- Each record's @additiveOnly@ is folded across /every/ operation that
+-- targets the same destination, so a path a module both writes and patches
+-- records 'False'. Only a path reached exclusively through additive patches
+-- records 'True'.
 executePlan ::
   (Filesystem :> es) =>
   FilePath ->
@@ -31,18 +36,36 @@ executePlan ::
   Eff es (Map FilePath FileRecord)
 executePlan targetDir ops ownerMap moduleName' now = do
   let ownerFor dest = Map.findWithDefault moduleName' dest ownerMap
-  records <- mapM (executeOp targetDir ownerFor now) ops
+      additiveFor dest = Map.findWithDefault False dest additiveMap
+  records <- mapM (executeOp targetDir ownerFor additiveFor now) ops
   pure (Map.fromList [(k, v) | Just (k, v) <- records])
+  where
+    additiveMap =
+      Map.fromListWith
+        (&&)
+        [ (dest, isAdditiveOperation op)
+        | op <- ops,
+          Just dest <- [operationDestination op]
+        ]
+
+-- | The file a generated operation targets, if it targets one at all.
+operationDestination :: Operation -> Maybe FilePath
+operationDestination (WriteFileOp dest _ _) = Just dest
+operationDestination (CopyFileOp _ dest) = Just dest
+operationDestination (PatchFileOp dest _ _ _ _) = Just dest
+operationDestination CreateDirOp {} = Nothing
+operationDestination RunCommandOp {} = Nothing
 
 -- | Execute a single operation and return a FileRecord if a file was written.
 executeOp ::
   (Filesystem :> es) =>
   FilePath ->
   (FilePath -> ModuleName) ->
+  (FilePath -> Bool) ->
   UTCTime ->
   Operation ->
   Eff es (Maybe (FilePath, FileRecord))
-executeOp targetDir ownerFor now op = case op of
+executeOp targetDir ownerFor additiveFor now op = case op of
   WriteFileOp dest content strat -> do
     let fullPath = targetDir </> dest
     writeFileText fullPath content
@@ -53,7 +76,8 @@ executeOp targetDir ownerFor now op = case op of
               strategy = strat,
               generatedAt = now,
               baseline = Nothing,
-              applicationIds = mempty
+              applicationIds = mempty,
+              additiveOnly = additiveFor dest
             }
     pure (Just (dest, record))
   CreateDirOp path -> do
@@ -71,7 +95,8 @@ executeOp targetDir ownerFor now op = case op of
               strategy = Copy,
               generatedAt = now,
               baseline = Nothing,
-              applicationIds = mempty
+              applicationIds = mempty,
+              additiveOnly = additiveFor dest
             }
     pure (Just (dest, record))
   RunCommandOp {} -> do
@@ -97,7 +122,8 @@ executeOp targetDir ownerFor now op = case op of
                   strategy = strat,
                   generatedAt = now,
                   baseline = Nothing,
-                  applicationIds = mempty
+                  applicationIds = mempty,
+                  additiveOnly = additiveFor dest
                 }
         pure (Just (dest, record))
 

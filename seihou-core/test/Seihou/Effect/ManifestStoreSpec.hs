@@ -33,7 +33,7 @@ sampleManifest =
   (emptyManifest fixedTime)
     & #modules .~ [AppliedModule (ModuleName "haskell-base") emptyParentVars (LocalOrigin "haskell-base") Nothing fixedTime Nothing]
     & #vars .~ Map.fromList [(VarName "project.name", "my-app")]
-    & #files .~ Map.fromList [("README.md", FileRecord (SHA256 "abc123") (ModuleName "haskell-base") Template fixedTime Nothing mempty)]
+    & #files .~ Map.fromList [("README.md", FileRecord (SHA256 "abc123") (ModuleName "haskell-base") Template fixedTime Nothing mempty False)]
 
 spec :: Spec
 spec = do
