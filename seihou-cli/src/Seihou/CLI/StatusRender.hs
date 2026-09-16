@@ -101,7 +101,10 @@ recipeSection manifest = case manifest ^. #recipe of
 -- Header line: name, optional @vX.Y.Z@, and the applied timestamp.
 -- Baseline line: comma-separated baseline module names, or one of the
 -- two empty-baseline placeholders.
--- Prompt line: present only when the user passed a positional prompt.
+-- Prompt line: present only when the user passed a positional prompt. The
+-- stored prompt is collapsed to one line and bounded at 'promptWidth' so a
+-- multi-paragraph instruction cannot push the rest of the summary off the
+-- screen; @.seihou/manifest.json@ keeps the whole of it.
 blueprintSection :: Manifest -> [Text]
 blueprintSection manifest = case manifest ^. #blueprint of
   Nothing -> []
@@ -116,7 +119,7 @@ blueprintSection manifest = case manifest ^. #blueprint of
         baselineLine = "  Baseline: " <> renderBaseline ab
         promptLines = case ab ^. #userPrompt of
           Nothing -> []
-          Just p -> ["  Prompt: \"" <> p <> "\""]
+          Just p -> ["  Prompt: \"" <> truncateForSummary promptWidth p <> "\""]
      in [header, baselineLine] ++ promptLines ++ [""]
 
 -- | Render durable agent-guided migration receipts. An empty ledger adds no
@@ -149,15 +152,8 @@ formatBlueprintMigrations receipts =
     -- `seihou status` is a scannable summary, so a long reason is truncated
     -- rather than wrapped; the manifest keeps the whole of it.
     renderReason MigrationApplied = ""
-    renderReason (MigrationNotApplicable reason) = " -- " <> truncateReason reason
-
-    truncateReason reason
-      | T.length oneLine <= reasonWidth = oneLine
-      | otherwise = T.take (reasonWidth - 1) oneLine <> "…"
-      where
-        oneLine = T.unwords (T.words reason)
-
-    reasonWidth = 60
+    renderReason (MigrationNotApplicable reason) =
+      " -- " <> truncateForSummary reasonWidth reason
 
 -- | Render the baseline body for the blueprint section. Three cases:
 -- @--no-baseline@ was passed, the blueprint declared no baseline at
@@ -426,6 +422,38 @@ statusColor :: TrackedFileStatus -> Text -> Text
 statusColor TfsUnchanged = dim
 statusColor TfsModified = yellow
 statusColor TfsDeleted = red
+
+-- | Collapse every run of internal whitespace to a single space and cut the
+-- result to @width@ characters, marking a cut with a trailing ellipsis.
+--
+-- @seihou status@ is a scannable summary, and the manifest is the record (see
+-- docs/adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md). Two
+-- values the summary renders are unbounded free text kept in full in
+-- @.seihou/manifest.json@ — a migration receipt's not-applicable reason and a
+-- blueprint's stored user prompt — and this is the single place that decides how
+-- much of such a value the summary shows, so the two cannot drift apart.
+--
+-- The result is never longer than @width@: a cut keeps at most @width - 1@
+-- characters and spends the last on the ellipsis. A cut that lands mid-gap has
+-- its trailing space stripped, so the output reads @\"... already…\"@ rather than
+-- @\"... already …\"@.
+truncateForSummary :: Int -> Text -> Text
+truncateForSummary width text
+  | T.length oneLine <= width = oneLine
+  | otherwise = T.stripEnd (T.take (width - 1) oneLine) <> "…"
+  where
+    oneLine = T.unwords (T.words text)
+
+-- | How much of a blueprint migration's not-applicable reason the summary
+-- shows. The reason is a clause appended to an already-long receipt line.
+reasonWidth :: Int
+reasonWidth = 60
+
+-- | How much of a blueprint's stored user prompt the summary shows. Wider than
+-- 'reasonWidth' because a prompt is a whole instruction on a line of its own
+-- rather than a trailing clause.
+promptWidth :: Int
+promptWidth = 72
 
 applyColor :: Bool -> (Text -> Text) -> Text -> Text
 applyColor True f = f

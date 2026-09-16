@@ -220,6 +220,40 @@ spec = describe "formatStatus" $ do
       out `shouldSatisfy` T.isInfixOf "Blueprint: pure-prompt (applied"
       out `shouldSatisfy` T.isInfixOf "  Baseline: (none declared)"
 
+    -- IR-7: a multi-paragraph prompt used to occupy a dozen lines of the
+    -- summary. The manifest still holds all of it.
+    it "collapses and truncates a long multi-line prompt to a single bounded line" $ do
+      let longPrompt =
+            "Upgrade this repository to nix-haskell-flake 0.24.0.\n\n\
+            \The flake already pins baikai 0.7, so do not re-pin it.\n\
+            \Do not commit anything; leave the tree dirty for review."
+          manifest =
+            withManifestBlueprint
+              (Just $ mkBlueprint "upgrade-flake" Nothing [] False (Just longPrompt))
+              (mkManifest [])
+          out = formatStatus False manifest [] Nothing []
+          promptLines = [l | l <- T.lines out, "  Prompt: " `T.isPrefixOf` l]
+      promptLines
+        `shouldBe` ["  Prompt: \"Upgrade this repository to nix-haskell-flake 0.24.0. The flake already\x2026\""]
+      out `shouldNotSatisfy` T.isInfixOf "leave the tree dirty"
+
+    it "leaves a prompt shorter than the bound untouched and unmarked" $ do
+      let manifest =
+            withManifestBlueprint
+              (Just $ mkBlueprint "short" Nothing [] False (Just "set this up for a payments microservice"))
+              (mkManifest [])
+          out = formatStatus False manifest [] Nothing []
+      out `shouldSatisfy` T.isInfixOf "  Prompt: \"set this up for a payments microservice\""
+      out `shouldNotSatisfy` T.isInfixOf "\x2026"
+
+    it "collapses internal whitespace in a short multi-line prompt without truncating" $ do
+      let manifest =
+            withManifestBlueprint
+              (Just $ mkBlueprint "wrapped" Nothing [] False (Just "first line\n\n  second line"))
+              (mkManifest [])
+          out = formatStatus False manifest [] Nothing []
+      out `shouldSatisfy` T.isInfixOf "  Prompt: \"first line second line\""
+
   describe "blueprint migration receipts" $ do
     it "omits the section for an empty ledger" $ do
       let out = formatStatus False (mkManifest []) [] Nothing []
