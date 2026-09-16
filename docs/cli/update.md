@@ -11,9 +11,29 @@ seihou update [TARGET...] [OPTIONS]
 
 With no target, Seihou updates every recorded top-level application in manifest
 order. A target may name a recorded module or recipe, or a module contained in
-an application. Repeated targets select a deduplicated subset. Seihou refuses a
-partial selection when a generated path is also owned by an unselected
-application; run the no-target form or name every required owner.
+an application. Repeated targets select a deduplicated subset.
+
+When a generated path is also owned by an application you did not select,
+Seihou asks one question: does *every* owner reach that path through an
+additive, non-overlapping patch?
+
+- **Yes** — the update proceeds. `append-line-if-absent` filters out lines
+  already present, and `append-section` writes a region delimited by the
+  contributing module's own comment markers, so replaying one owner leaves the
+  others' lines exactly where they were. This is the ordinary case for
+  `.gitignore`, which nearly every module appends to.
+- **No** — the update refuses, because regenerating the file on one owner's
+  behalf would discard another owner's content. This covers any path an owner
+  writes wholesale (`copy`, `template`, `dhall-text`, `structured`) and the
+  position-dependent patches `append-file` and `prepend-file`, whose result
+  depends on what is already in the file.
+
+The answer is recorded per path in `.seihou/manifest.json`, as `additiveOnly`
+on the file's record. A manifest written before that field existed has no
+answer, so Seihou takes the conservative one and refuses; one
+`seihou update` with no targets records it. When the refusal is genuine, either
+name every required owner, run the no-target form, or pass
+`--include-shared-owners` to let Seihou expand the selection for you.
 
 ## Options
 
@@ -28,8 +48,23 @@ application; run the no-target form or name every required owner.
 | `--no-commands` | Disable every declared command. Mutually exclusive with `--run-all-commands`. |
 | `--commit` | Commit only the managed paths reported by a successful update. |
 | `--commit-message MSG` | Use `MSG` verbatim and imply `--commit`. |
+| `--allow-downgrade` | Accept a candidate artifact older than the version `.seihou/manifest.json` records. |
+| `--include-shared-owners` | Also update the applications that co-own a selected path, reporting each one added. |
 
 `--commit` and `--commit-message` cannot be combined with `--dry-run`.
+
+`--include-shared-owners` expands a named selection to exactly the applications
+the shared-path rule above still requires, and prints one line per application
+it added:
+
+```text
+Warning:     also updating master-plan because it co-owns .gitignore
+```
+
+The expansion iterates to a fixed point, because an application pulled in
+through one path may co-own a different path with a third application. Paths
+that are already additive-only are skipped, so the flag never drags in an owner
+the update did not need. Without the flag a named selection is never broadened.
 
 ## Saved inputs and migrations
 

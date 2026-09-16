@@ -4,6 +4,68 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An additive co-write is no longer treated as a shared-path conflict** (EP-90, IR-8).
+  `FileRecord` gained `additiveOnly :: !Bool`: true when every contribution to a managed
+  path goes through an additive, non-overlapping patch — `append-line-if-absent`, which
+  filters out lines already present, or `append-section`, which writes a region delimited
+  by the contributing module's own markers. `append-file` and `prepend-file` place bytes
+  relative to whatever is already in the file, so they do not qualify, and neither do the
+  four whole-file strategies.
+
+  Both ownership gates now consult it. `ensureOwnershipClosure`
+  (`seihou-cli/src/Seihou/CLI/Update/Selection.hs`) skips exempt records; this is the
+  preflight, and it runs before any candidate is fetched, so the manifest is the only
+  evidence available. `validateOwner` (`seihou-core/src/Seihou/Engine/Reconcile.hs`)
+  requires both the record's flag *and* every operation the candidate contributes to the
+  path, which catches a module whose new version replaced a patch step with a whole-file
+  step rather than trusting the previous release's record.
+
+  The safety argument is the trusted baseline: `materializeOne` starts from the exact bytes
+  the last successful application generated — which already contain every owner's content —
+  and replays this run's operations on top, so an additive patch provably cannot move or
+  rewrite another owner's bytes. A `WriteFileOp` discards that baseline entirely, which is
+  why whole-file paths keep the closure requirement.
+
+  `currentManifestVersion` deliberately **stays at 6**. The key is emitted only when true,
+  so a manifest with no additive-only paths is byte-identical to one written before the
+  field existed, and a reader that predates it ignores the key and keeps enforcing the
+  closure everywhere — the conservative reading. Bumping to 7 would make every manifest
+  this release writes unreadable to 0.8.x binaries in exchange for nothing. This departs
+  from the 3-to-4 and 4-to-5 precedent, which bumped for additive fields an older reader
+  would have *misinterpreted*. Rationale in
+  [ADR 0012](docs/adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md).
+
+- **Both manifest write paths may only weaken `additiveOnly`, never strengthen it** (EP-90).
+  `prepareCandidateManifest` (`seihou-core/src/Seihou/Engine/UpdateTransaction.hs`) now
+  unions the owners a targeted update did not select back into the rewritten record, keeps
+  their `moduleName`/`strategy`, and carries `additiveOnly = True` forward only when the
+  prior record agreed. It previously wrote `applicationIds = desired ^. #applicationIds`,
+  which was safe only because the closure guaranteed the selection held every owner; once
+  the exemption lets a subset through, the same line would have deleted the unselected
+  co-owner from the manifest. `attachApplication`
+  (`seihou-core/src/Seihou/Core/Application.hs`) applies the same rule on the `seihou run`
+  path, where applying an appending module to a project whose shared file another
+  application writes wholesale would otherwise have recorded the appending module's own
+  honest `True` for the whole path. Both were fail-open, and both are covered by tests that
+  fail if the rule is reverted.
+
+### Added
+
+- **`seihou update <target> --include-shared-owners`** (EP-90).
+  `selectApplications` now takes a `SelectionPolicy` (`RequireNamedOwners` /
+  `IncludeSharedOwners`) and returns the warnings it produced. Under
+  `IncludeSharedOwners`, `expandToSharedOwners` grows the named selection to a fixed point
+  over every managed path that is not additive-only and whose owners intersect the
+  selection; the iteration is required rather than defensive, because an application pulled
+  in through one path may co-own a different path with a third one. Additive-only paths are
+  skipped, so the flag never drags in an owner the update did not need. Each addition is
+  reported through a new `SelectionExpandedForSharedPath FilePath ApplicationId` warning
+  with an explicit `warningText` case. `includeSharedOwners` was threaded through
+  `UpdateOpts`, `updateParser`, `requestFromOptions`, `UpdateRequest`, and
+  `selectAndSeedLegacy`.
+
 ## [0.8.0.0] - 2026-09-10
 
 ### Changed

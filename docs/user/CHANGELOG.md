@@ -10,6 +10,57 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+### Fixed
+
+- **A targeted update no longer refuses because of `.gitignore`.** If you tried to update
+  one module in a project, you were probably told you could not:
+
+  ```text
+  Update failed [shared_path_requires_applications]: Path .gitignore is also owned by
+  application(s) master-plan. Select every owner or run seihou update with no targets.
+  ```
+
+  The reason was that two applications both contribute to `.gitignore`, and Seihou will
+  not regenerate a file for one owner when that would throw away another owner's content.
+  That is the right instinct for a file someone rewrites from scratch. It was wrong for
+  `.gitignore`, because every owner only *appends* to it — its own lines, or its own
+  marker-delimited block — and those slices cannot collide. Since nearly every module
+  appends something to `.gitignore`, a rail meant for real collisions was firing on almost
+  every targeted update.
+
+  Seihou now records, per file, whether every owner reaches it by appending, and lets a
+  targeted update through when they do. `seihou update nix-haskell-flake` now runs, and the
+  other owner's lines are still there afterwards, byte for byte.
+
+  A shared file that any owner writes wholesale still refuses, and so does one written with
+  `append-file` or `prepend-file`, where the result depends on what was already in the
+  file. The refusal now tells you which of those it is:
+
+  ```text
+  Path Makefile is also owned by application(s) master-plan, and it is not recorded as
+  written only by additive patches -- either an owner writes the whole file, or the
+  manifest predates that record, in which case one seihou update with no targets will
+  record it. Select every owner, pass --include-shared-owners, or run seihou update with
+  no targets.
+  ```
+
+  Projects whose manifest was written by an earlier Seihou have no record of this yet, so
+  they keep the old behaviour until one `seihou update` with no targets writes it down.
+
+### Added
+
+- **`seihou update <target> --include-shared-owners`** saves you from typing every owner
+  when the refusal above is genuine. It expands your selection to exactly the applications
+  required — no more — and tells you about each one:
+
+  ```text
+  Warning:     also updating master-plan because it co-owns Makefile
+  ```
+
+  It keeps expanding until the selection is closed, since an application it pulls in may
+  itself share a different file with a third one. Without the flag, naming a target still
+  means exactly that target: Seihou never quietly updates more than you asked for.
+
 ## [0.8.0.0] - 2026-09-10
 
 ### Added

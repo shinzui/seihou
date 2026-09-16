@@ -32,9 +32,24 @@ TARGET SELECTION
   recorded application. Repeat TARGET to select several applications. With no
   target, every recorded application is selected.
 
-  A targeted update stops if an unselected application also owns a path the
-  selected applications would change. Name every required owner or run the
-  no-target form; Seihou will not guess how to reconstruct an omitted layer.
+  When a path the selected applications would change is also owned by an
+  unselected one, Seihou asks whether every owner reaches that path through an
+  additive, non-overlapping patch. `append-line-if-absent` and
+  `append-section` occupy disjoint slices of a file, so replaying one owner
+  leaves the others' lines untouched and the update proceeds -- the ordinary
+  case for `.gitignore`.
+
+  Otherwise the update stops, because regenerating the file for one owner
+  would discard another's content. That covers any path an owner writes
+  wholesale, and the position-dependent `append-file` / `prepend-file`
+  patches. A manifest written before Seihou recorded this distinction has no
+  answer and is treated conservatively; one no-target update records it.
+
+  When the refusal is genuine, name every required owner, run the no-target
+  form, or pass `--include-shared-owners` to expand the selection to exactly
+  the owners required. Each added application is reported. Seihou will not
+  guess how to reconstruct an omitted layer, and never broadens a named
+  selection without being asked.
 
 SAVED INPUTS
 

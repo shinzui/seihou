@@ -142,7 +142,15 @@ This section must always reflect the actual current state of the work.
   - [x] Unit tests: 3 selection (single expansion, three-application fixed point, no expansion
     for an additive path), 2 render. End-to-end: the flag updates the co-owner and reports it;
     `seihou update --help` lists it.
-- [ ] Milestone 4 — documentation, changelogs, ADR, and full-suite verification.
+- [x] Milestone 4 — documentation, changelogs, ADR, and full-suite verification (2026-09-16).
+  - [x] `docs/cli/update.md`: the refusal sentence replaced with the additive rule, plus
+    `--include-shared-owners` and the previously undocumented `--allow-downgrade` in the
+    options table and a section on how the expansion behaves.
+  - [x] `seihou-cli/help/update.md`: the same correction in the embedded help, verified with
+    `seihou help update`.
+  - [x] `docs/user/CHANGELOG.md` and `CHANGELOG.md` under Unreleased.
+  - [x] [ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md).
+  - [x] `nix flake check` passes; `cabal test all --enable-tests` passes.
 
 
 ## Surprises & Discoveries
@@ -328,7 +336,42 @@ and the second added a Decision Log entry and four tests. The lesson worth carry
 ADR: this field has two producers, not one, and the rule that a partial contribution may only
 weaken it has to hold at both.
 
-(Milestones 2-4 to be filled as they land.)
+**Milestone 2 (2026-09-16).** Both gates now consult the flag, and the behaviour the plan set
+out to deliver exists. In a project whose `.gitignore` is co-owned by two appending
+applications, `seihou update <one-of-them>` completes, the other's lines survive byte for
+byte, and both application ids stay in the manifest. A shared path any owner writes wholesale
+still refuses, with a message that now says *why* the exemption did not apply.
+
+The layered check earned its keep immediately as a test case: the reconciliation gate refuses
+a module whose new version swapped its patch step for a template step even though the manifest
+still records the path as additive. Without the second layer that update would have written,
+on the strength of the previous release's record.
+
+**Milestone 3 (2026-09-16).** `--include-shared-owners` lands. The fixed-point iteration is
+not defensive engineering — the three-application chain test (one and two share `a.txt`, two
+and three share `b.txt`, selecting one must yield all three) fails with a single pass. One
+thing the plan did not specify: the expansion skips additive-only paths, because a path that
+no longer requires the closure must not pull in a co-owner the user neither asked for nor
+needed. There is a test for that too.
+
+**Milestone 4 (2026-09-16).** Documentation, both changelogs, and
+[ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md).
+
+**Against the original purpose.** Both things the Purpose section promised are now true. A
+targeted update succeeds when the shared path is additive-only, verified end to end through
+the real binary rather than only at the unit level; and `--include-shared-owners` exists for
+the paths that legitimately still need every owner, expanding to exactly those and reporting
+each addition.
+
+**Lessons.** Two worth keeping, both now in the ADR. First, this flag has *two* producers, not
+one: the plan analysed `prepareCandidateManifest` carefully and missed `attachApplication` on
+the `seihou run` path, which had the identical fail-open shape and would have been reachable
+without ever running `seihou update`. When a derived fact is written from more than one place,
+enumerate the write paths before reasoning about the invariant. Second, the deliberate
+*non*-bump of the manifest schema version is the interesting decision here, and the reason
+generalizes: the test for bumping is whether an older reader would **misinterpret** the new
+field, not whether the field is new. A key emitted only when true, whose absence means the
+conservative answer, is invisible to an older reader in the only way that matters.
 
 
 ## Context and Orientation
@@ -484,7 +527,14 @@ records (`# ADR NNNN — Title`, then `- Status:`, `- Date:`, `## Context`, `## 
   version bump are needed; the reasoning is recorded in the Decision Log and belongs in the
   new ADR.
 
-No existing ADR covers what counts as a conflicting co-write; Milestone 4 adds one.
+Milestone 4 added the fourth:
+
+- [ADR 0012 — An additive co-write is not a shared-path conflict](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md).
+  The durable record of this plan's decisions: the exact additive set and why
+  `AppendFile`/`PrependFile` are excluded, the fail-closed default, why the flag lives in the
+  manifest and why the schema version does not move, the two-layer check, the rule that both
+  manifest write paths may only weaken the flag, and that broadening a named selection stays
+  opt-in.
 
 ### Related plans
 
@@ -783,6 +833,16 @@ only the new warning needs prose; the render test asserts the constructor name d
 placement checks along with the build and tests), and `seihou help update` shows the new
 text.
 
+**Result (2026-09-16).** Done. `nix flake check` reports
+`checks.aarch64-darwin.pre-commit`, `record-conventions`, `cli-module-placement`, and
+`treefmt` all green; `cabal test all --enable-tests` passes 1105 core + 583 cli + 51
+okf-extension. `seihou help update` and `seihou update --help` both show the new text, the
+latter listing `--include-shared-owners`.
+
+`0012` was confirmed as the next unused number. One addition beyond the plan: the options
+table in `docs/cli/update.md` was missing `--allow-downgrade` as well, so it was added in the
+same edit rather than left as a known gap in a table this change was already rewriting.
+
 
 ## Concrete Steps
 
@@ -1027,6 +1087,9 @@ In `seihou-cli/src/Seihou/CLI/Update/Types.hs`: `UpdateRequest` gains
 `includeSharedOwners :: !Bool`, and `UpdateWarning` gains
 `SelectionExpandedForSharedPath FilePath ApplicationId`.
 
+`Seihou.Core.Application.attachApplication` keeps its existing signature but gained the same
+weakening rule as `prepareCandidateManifest`; see the Decision Log.
+
 In `seihou-cli/src-exe/Seihou/CLI/Commands.hs`: `UpdateOpts` gains
 `includeSharedOwners :: !Bool`, wired through `updateParser` and `makeUpdateOpts`.
 
@@ -1068,3 +1131,29 @@ against.
 - **Outcomes & Retrospective**: Milestone 1 outcome recorded.
 
 No scope changed. Milestones 2, 3, and 4 stand as written.
+
+### 2026-09-16 — Milestones 2, 3, and 4 implemented; plan complete
+
+All four milestones landed in one session. Recorded here rather than in three separate notes
+because the changes to the plan were of one kind: each milestone's `Acceptance` gained a
+`Result` block with the observed output, and the living-document sections were brought up to
+date at the end.
+
+- **Progress**: Milestones 2, 3, and 4 checked off with what each step became.
+- **Plan of Work**: a `Result (2026-09-16)` block under each milestone's Acceptance, recording
+  test counts, the fixture names, and the two places the implementation departed from the plan
+  as written — `expandToSharedOwners` skipping additive-only paths, and `warningText` keeping
+  a `show` fallback rather than becoming exhaustive.
+- **Context and Orientation**: "Relevant ADRs" now lists ADR 0012 and what it records, in
+  place of the note that no such ADR existed.
+- **Interfaces and Dependencies**: noted that `attachApplication` kept its signature but
+  gained the weakening rule.
+- **Outcomes & Retrospective**: outcomes for Milestones 2-4, the comparison against the
+  original Purpose, and the two lessons distilled into ADR 0012 — that this flag has two
+  producers rather than one, and that the test for bumping a schema version is
+  misinterpretation by an older reader, not novelty.
+
+No scope changed and no milestone was dropped. Two additions beyond the plan's text, both
+recorded in the Decision Log and Surprises & Discoveries at the time: the `attachApplication`
+weakening rule (Milestone 1) and the additive-only skip in the selection expansion
+(Milestone 3).
