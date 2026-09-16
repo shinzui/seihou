@@ -4,6 +4,55 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0.0] - 2026-09-16
+
+### Added
+
+- **`seihou update <target> --include-shared-owners`** (EP-90).
+  `selectApplications` now takes a `SelectionPolicy` (`RequireNamedOwners` /
+  `IncludeSharedOwners`) and returns the warnings it produced. Under
+  `IncludeSharedOwners`, `expandToSharedOwners` grows the named selection to a fixed point
+  over every managed path that is not additive-only and whose owners intersect the
+  selection; the iteration is required rather than defensive, because an application pulled
+  in through one path may co-own a different path with a third one. Additive-only paths are
+  skipped, so the flag never drags in an owner the update did not need. Each addition is
+  reported through a new `SelectionExpandedForSharedPath FilePath ApplicationId` warning
+  with an explicit `warningText` case. `includeSharedOwners` was threaded through
+  `UpdateOpts`, `updateParser`, `requestFromOptions`, `UpdateRequest`, and
+  `selectAndSeedLegacy`.
+- **`seihou status --full-prompt`** (EP-91, IR-7).
+  `StatusOpts` gained `statusFullPrompt`, and `Seihou.CLI.StatusRender` exports
+  `formatStatusWith` and `PromptDisplay` (`PromptTruncated` / `PromptFull`).
+  `formatStatus` is retained as `formatStatusWith PromptTruncated`, so the existing
+  callers and the golden tests keep their signature. The full form prints a bare
+  `Prompt:` header followed by the stored prompt's own lines, each indented four
+  spaces, and is deliberately unquoted: a prompt may contain a `"` and nothing escapes
+  it, so quotes would not tell a reader where the value ends while the indentation
+  does.
+
+### Changed
+
+- **`seihou status` bounds the blueprint prompt line** (EP-91, IR-7).
+  `blueprintSection` collapsed the whole stored `userPrompt` onto the `Prompt:` line,
+  so a project set up through `seihou agent run <blueprint> "<prompt>"` opened its
+  summary with a dozen wrapped lines of instruction. The prompt is now collapsed to a
+  single line and cut at `promptWidth` (72), making the `Blueprint:` block three lines
+  tall regardless of the prompt's length.
+
+  The truncation itself moved into one helper, `truncateForSummary :: Int -> Text ->
+  Text`, which now serves both unbounded free-text values the summary renders — a
+  blueprint migration receipt's not-applicable reason (`reasonWidth`, 60) and the
+  stored prompt — so the two cannot drift apart. It also fixes a rough edge in the
+  receipt path it replaced: a cut landing mid-gap now has its trailing space stripped,
+  so the output reads `"... already…"` rather than `"... already …"`, and the result is
+  never longer than `width`.
+
+  Nothing is discarded. `.seihou/manifest.json` still records the prompt whole and
+  `seihou status` only reads it; `--full-prompt` prints it verbatim. Rationale in
+  [ADR 0013](docs/adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md),
+  which states the general rule: status is a bounded summary, the manifest is the
+  record.
+
 ### Fixed
 
 - **An additive co-write is no longer treated as a shared-path conflict** (EP-90, IR-8).
@@ -67,20 +116,35 @@ All notable changes to this project will be documented in this file.
   `CrossApplicationLastWriter` case — and widening it would report those paths as pending
   work forever.
 
-### Added
+### Packaging
 
-- **`seihou update <target> --include-shared-owners`** (EP-90).
-  `selectApplications` now takes a `SelectionPolicy` (`RequireNamedOwners` /
-  `IncludeSharedOwners`) and returns the warnings it produced. Under
-  `IncludeSharedOwners`, `expandToSharedOwners` grows the named selection to a fixed point
-  over every managed path that is not additive-only and whose owners intersect the
-  selection; the iteration is required rather than defensive, because an application pulled
-  in through one path may co-own a different path with a third one. Additive-only paths are
-  skipped, so the flag never drags in an owner the update did not need. Each addition is
-  reported through a new `SelectionExpandedForSharedPath FilePath ApplicationId` warning
-  with an explicit `warningText` case. `includeSharedOwners` was threaded through
-  `UpdateOpts`, `updateParser`, `requestFromOptions`, `UpdateRequest`, and
-  `selectAndSeedLegacy`.
+- **`effectful-core` raised to `>=2.7.1.1 && <3`** across all five stanzas that depend
+  on it, with `effectful-core` 2.7.1.2, `effectful` 2.7.1.0, and
+  `strict-mutable-base` 2.0.0.0 pinned in `nix/haskell-overlay.nix`. The two build
+  paths had silently diverged under the old `>=2.4` bound: `cabal build` resolved
+  2.7.1.2 from the Hackage index while `nix build` — and so CI, `darwin-rebuild`, and
+  every installed binary — kept building against the 2.6.1.0 in the ghc9124 package
+  set. No source changes were needed; this repository imports only `Effectful` and
+  `Effectful.State.Static.Local` and touches none of the 2.7 breaking surfaces. The
+  floor is `2.7.1.1` rather than `2.7.0.0` because 2.7.0.0 regressed per-operation
+  overhead for dynamically dispatched effects and the fix landed in 2.7.1.1.
+- **The `baikai` family moved to 0.7** — `baikai`, `baikai-claude`, and `baikai-openai`
+  to `^>=0.7.0.0`, `baikai-kit` to `^>=0.2.0.1`. `KitUpdate` carries the new
+  `OverwritePolicy`, the interactive launchers report `AgentRenderError` instead of
+  pattern-failing on it, and the tests fill the new `TraceEvent` fields and build the
+  stub provider with `apiProviderWith`.
+- **`nix run github:shinzui/seihou` works for callers other than the author.** The
+  rev-pinned `haskell-nix` (999e6ad) fetched `claude` from a private corpus mirror, and
+  the schema input used `git+file:./schema`, which resolves against the caller's
+  working directory. nix-haskell-flake moved to 0.19.0 — whose module-owned
+  `haskell-nix` (7b696dc) sources `claude` and `openai` from Hackage — and
+  `seihou-schema-src` is now fetched from `github:shinzui/seihou-schema` at the
+  submodule's revision.
+- **nix-haskell-flake refreshed to 0.24.0**, adding the commit-message
+  newline-escape pre-commit guard, the Linux-guarded `dockerTools.buildLayeredImage`
+  example in `flake.module.nix.example`, and `.envrc.local` to `.gitignore`.
+- No `seihou-core` / `seihou-cli` / `seihou-okf-extension` bound other than the shared
+  `seihou-core ^>=0.9.0.0` pin changed.
 
 ## [0.8.0.0] - 2026-09-10
 
@@ -926,7 +990,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.8.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.9.0.0...HEAD
+[0.9.0.0]: https://github.com/shinzui/seihou/compare/v0.8.0.0...v0.9.0.0
 [0.8.0.0]: https://github.com/shinzui/seihou/compare/v0.7.0.0...v0.8.0.0
 [0.7.0.0]: https://github.com/shinzui/seihou/compare/v0.6.0.0...v0.7.0.0
 [0.6.0.0]: https://github.com/shinzui/seihou/compare/v0.5.0.0...v0.6.0.0

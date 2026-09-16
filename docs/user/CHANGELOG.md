@@ -10,6 +10,8 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+## [0.9.0.0] - 2026-09-16
+
 ### Changed
 
 - **`seihou status` no longer opens with a wall of prompt text.** In a project set
@@ -87,6 +89,27 @@ packages in the workspace share a single version.
   It keeps expanding until the selection is closed, since an application it pulls in may
   itself share a different file with a third one. Without the flag, naming a target still
   means exactly that target: Seihou never quietly updates more than you asked for.
+- **`nix run github:shinzui/seihou` now works for everyone.** It only ever ran on the
+  author's machine. Two things were wrong: the pinned Haskell package set fetched one of
+  its dependencies from a private mirror nobody else can read, and the schema was pulled
+  from `./schema` — a path that resolves against *your* working directory, not the
+  flake's. Both now come from their public GitHub sources, so a clean checkout, or no
+  checkout at all, builds the same thing the author gets.
+
+- **`seihou status --full-prompt`** prints the blueprint's stored prompt exactly as you
+  typed it, for when the one-line summary above is not what you came for:
+
+  ```text
+  Blueprint: fix-nix-haskell-flake-customizations (applied 2026-09-13 09:41 UTC)
+    Baseline: (none declared)
+    Prompt:
+      Upgrade this repository to nix-haskell-flake 0.24.0. The flake already
+      carries three local customizations; keep every one of them.
+  ```
+
+  The full form is printed unquoted and indented rather than wrapped in `"`, because a
+  prompt may itself contain a quote character and nothing escapes it — the indentation
+  is what tells you where the prompt ends.
 
 ## [0.8.0.0] - 2026-09-10
 
@@ -865,6 +888,7 @@ regeneration.
 
 ---
 
+[0.9.0.0]: https://github.com/shinzui/seihou/compare/v0.8.0.0...v0.9.0.0
 [0.8.0.0]: https://github.com/shinzui/seihou/compare/v0.7.0.0...v0.8.0.0
 [0.7.0.0]: https://github.com/shinzui/seihou/compare/v0.6.0.0...v0.7.0.0
 [0.6.0.0]: https://github.com/shinzui/seihou/compare/v0.5.0.0...v0.6.0.0
