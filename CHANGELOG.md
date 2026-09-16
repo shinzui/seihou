@@ -51,6 +51,22 @@ All notable changes to this project will be documented in this file.
   honest `True` for the whole path. Both were fail-open, and both are covered by tests that
   fail if the rule is reverted.
 
+- **A missing `additiveOnly` answer is pending work, not a no-op** (EP-90).
+  `isUpdateNoOp` (`seihou-cli/src/Seihou/CLI/Update.hs`) and `planLooksUnchanged`
+  (`seihou-cli/src/Seihou/CLI/Update/Render.hs`, which computes the JSON
+  `alreadyUpToDate`) no longer treat a `FileUnchanged` as unchanged when this plan would
+  record a different `additiveOnly` than the manifest holds. Without this the exemption was
+  unreachable on every project that exists: they all have a manifest predating the field, and
+  an otherwise-up-to-date one would print "Already up to date." and write nothing, so the
+  answer would never be recorded. Recording a fact about applied state is a change to applied
+  state ([ADR 0004](docs/adr/0004-the-manifest-is-the-only-record-of-applied-state.md)), so
+  such a plan is not a *deliberate* no-op
+  ([ADR 0007](docs/adr/0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md)). The
+  comparison is limited to `additiveOnly` on purpose: a whole-project update of a co-owned
+  path can legitimately re-credit `moduleName` to a different last writer — the existing
+  `CrossApplicationLastWriter` case — and widening it would report those paths as pending
+  work forever.
+
 ### Added
 
 - **`seihou update <target> --include-shared-owners`** (EP-90).

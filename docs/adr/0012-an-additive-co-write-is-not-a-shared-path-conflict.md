@@ -114,6 +114,20 @@ than replacing them with the current run's view. Getting either wrong is
 fail-open: it would flip a `False` to `True` for a path a co-owner rewrites
 wholesale, opening both gates for a later update that is not safe.
 
+**A plan that would record a different answer than the manifest holds is not a
+no-op.** Every project that existed when this field was introduced has a
+manifest with no recorded answer. If an otherwise-up-to-date project reported
+"already up to date" and wrote nothing, the answer would never be written and
+the exemption would be unreachable on any existing project. Recording a fact
+about applied state is a change to applied state
+([ADR 0004](0004-the-manifest-is-the-only-record-of-applied-state.md)), so such
+a plan is not a *deliberate* no-op and
+[ADR 0007](0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md)'s third
+outcome does not apply to it. The comparison is deliberately limited to
+`additiveOnly`: a whole-project update of a co-owned path can legitimately
+re-credit `moduleName` to a different last writer, and reporting that as
+pending work would make such paths permanently non-idempotent.
+
 **Broadening a named selection stays opt-in.** Narrowing what counts as a
 conflict is the fix for the false refusals. It is not a licence to update
 applications the user did not name. When the closure requirement genuinely
@@ -158,6 +172,8 @@ would not be.
   direct authority for putting the flag in the manifest.
 - [ADR 0005](0005-legacy-manifests-convert-through-an-explicit-command.md) —
   the schema-growth rule, and why this field needs no conversion command.
+- [ADR 0007](0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md) — the
+  no-op outcome this field's absence deliberately does not qualify for.
 - `docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md`
   — the implementation, with the full decision log.
 - `docs/improvement-requests/exempt-additive-patch-paths-from-shared-ownership-closure.md`

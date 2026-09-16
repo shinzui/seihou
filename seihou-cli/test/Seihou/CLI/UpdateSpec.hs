@@ -26,11 +26,19 @@ import Seihou.CLI.Update.Migrations (StagedMigrations (..), planAndStageMigratio
 import Seihou.CLI.Update.Selection
 import Seihou.CLI.Update.Source
 import Seihou.CLI.Update.Types
+import Seihou.CLI.UpdateFixture (minimalPlan)
 import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Core.Application (mkApplicationId)
 import Seihou.Core.CommandFingerprint (fingerprintCommand)
 import Seihou.Core.Migration (Migration (..), MigrationOp (..))
 import Seihou.Core.Types
+import Seihou.Engine.Reconcile
+  ( DesiredFile (..),
+    FileReconciliation (..),
+    ObservedFile (..),
+    PlannedFileState (..),
+    ReconciliationPlan (..),
+  )
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.Types (emptyManifest, manifestFromJSON, manifestToJSON)
 import System.Directory (createDirectoryIfMissing, doesFileExist, withCurrentDirectory)
@@ -293,6 +301,19 @@ spec = do
               Right result -> (result ^. #updatedApplications) `shouldBe` []
             LBS.readFile (fixture ^. #manifestPath) `shouldReturn` afterFirstApply
 
+    it "is not a no-op when a file's recorded write mode is stale" $ do
+      -- A manifest that predates `additiveOnly` has no answer for any path.
+      -- If that counted as a no-op, nothing would ever write the answer down
+      -- and the shared-path exemption could never take effect on an existing
+      -- project. Recording a fact about applied state is a change to applied
+      -- state (ADR 0004), so it is not a deliberate no-op (ADR 0007).
+      isUpdateNoOp (unchangedFilePlan False True) `shouldBe` False
+      isUpdateNoOp (unchangedFilePlan True False) `shouldBe` False
+
+    it "is a no-op when the recorded write mode already agrees" $ do
+      isUpdateNoOp (unchangedFilePlan True True) `shouldBe` True
+      isUpdateNoOp (unchangedFilePlan False False) `shouldBe` True
+
     it "rejects a plan when its manifest snapshot changes" $
       withSystemTempDirectory "seihou-update-stale" $ \root -> do
         fixture <- prepareUpdateFixture root
@@ -494,6 +515,40 @@ spec = do
             (migrationStage ^. #warnings) `shouldBe` [MigrationCommandNotSimulated "shared" "true"]
             map (^. #moduleVersion) (migrationStage ^. #manifest . #modules) `shouldBe` [Just "2.0.0", Just "2.0.0"]
 
+-- | A plan whose one file is byte-unchanged on disk, parameterized by the
+-- @additiveOnly@ the manifest holds and the one this run would record.
+unchangedFilePlan :: Bool -> Bool -> UpdatePlan
+unchangedFilePlan priorAdditive desiredAdditive =
+  minimalPlan
+    ( ReconciliationPlan
+        { applicationIds = Set.empty,
+          files = Map.singleton ".gitignore" (FileUnchanged desired state observedFile (Just prior)),
+          requiredDirectories = Set.empty
+        }
+    )
+  where
+    content = "/dist-newstyle\n"
+    desired =
+      DesiredFile
+        { path = ".gitignore",
+          generatedContent = content,
+          moduleName = "alpha",
+          strategy = Template,
+          applicationIds = Set.empty,
+          additiveOnly = desiredAdditive
+        }
+    state = PlannedFileState content content (hashContent content) False
+    observedFile = ObservedFile True (Just (hashContent content))
+    prior =
+      FileRecord
+        (hashContent content)
+        "alpha"
+        Template
+        testTime
+        Nothing
+        Set.empty
+        priorAdditive
+
 data UpdateFixture = UpdateFixture
   { projectRoot :: !FilePath,
     projectFile :: !FilePath,
@@ -588,6 +643,13 @@ data CoOwnerWriteMode
     --   would discard beta's content, so the path records
     --   @additiveOnly = False@ and stays under the ownership closure.
     CoOwnerWritesWholeFile
+  | -- | Beta appends, exactly as 'CoOwnerAppends', but the manifest predates
+    --   the @additiveOnly@ record and so has no answer. This models every
+    --   project in the wild at the moment the field was introduced. Alpha's
+    --   remote is published at the installed version with identical content,
+    --   so the /only/ thing a whole-project update has to do is write the
+    --   missing record down.
+    CoOwnerAppendsUnrecorded
   deriving stock (Eq, Show)
 
 -- | A project whose @.gitignore@ is co-owned by two recorded applications.
@@ -632,7 +694,14 @@ prepareSharedPathFixture writeMode root = do
           }
       betaPatch = case writeMode of
         CoOwnerAppends -> Just "append-line-if-absent"
+        CoOwnerAppendsUnrecorded -> Just "append-line-if-absent"
         CoOwnerWritesWholeFile -> Nothing
+      -- What alpha's remote publishes. Under 'CoOwnerAppendsUnrecorded' it
+      -- matches the installed module exactly, so nothing about the sources
+      -- has changed and the only pending work is the manifest record.
+      (alphaRemoteVersion, alphaRemoteContent) = case writeMode of
+        CoOwnerAppendsUnrecorded -> ("1.0.0", "/dist-newstyle\n")
+        _ -> ("2.0.0", "/dist-newstyle\n/alpha-v2\n")
       fileRecord =
         FileRecord
           (hashContent baselineContent)
@@ -676,7 +745,7 @@ prepareSharedPathFixture writeMode root = do
 
   _ <- installModule "alpha" "1.0.0" (Just "append-line-if-absent") "/dist-newstyle\n"
   _ <- installModule "beta" "1.0.0" betaPatch "/result\n"
-  publishRemote "alpha" "2.0.0" (Just "append-line-if-absent") "/dist-newstyle\n/alpha-v2\n"
+  publishRemote "alpha" alphaRemoteVersion (Just "append-line-if-absent") alphaRemoteContent
   publishRemote "beta" "1.0.0" betaPatch "/result\n"
 
   createDirectoryIfMissing True (projectRoot </> ".seihou" </> "baselines")

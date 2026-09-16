@@ -150,6 +150,12 @@ This section must always reflect the actual current state of the work.
     `seihou help update`.
   - [x] `docs/user/CHANGELOG.md` and `CHANGELOG.md` under Unreleased.
   - [x] [ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md).
+  - [x] Manual verification against real project data, which uncovered one more fail-closed
+    defect: an already-up-to-date project would never have recorded the flag, making the
+    remedy the message and both documents promise unreachable. Fixed in `isUpdateNoOp` and
+    `planLooksUnchanged`, with two unit tests that fail when reverted plus an end-to-end test
+    of the whole upgrade path. Recorded in Surprises & Discoveries and the Decision Log, and
+    in ADR 0012, `docs/cli/update.md`, `seihou-cli/help/update.md`, and both changelogs.
   - [x] `nix flake check` passes; `cabal test all --enable-tests` passes.
 
 
@@ -193,6 +199,63 @@ implementation. Provide concise evidence.
   not safe. `attachApplication` now weakens the flag whenever a prior owner survives outside
   the current application, by exactly the rule `prepareCandidateManifest` uses. Four tests in
   `seihou-core/test/Seihou/Core/ApplicationSpec.hs` cover it.
+
+- **An already-up-to-date project would never have recorded the flag, which made the
+  documented remedy unreachable.** Found during the manual verification Milestone 2 calls for.
+  A scan of every `.seihou/manifest.json` under `/Users/shinzui/Keikaku` found 40-odd projects
+  with a co-owned `.gitignore` and **not one** with an `additiveOnly` record — expected, since
+  they all predate the field. The refusal message and both documents tell such a user that one
+  `seihou update` with no targets will record it. It would not have. On a real project copied
+  into a scratch directory:
+
+  ```text
+  outcome: plan | alreadyUpToDate: True
+  ```
+
+  `isUpdateNoOp` counted every `FileUnchanged` as unchanged, and
+  `seihou-cli/src-exe/Seihou/CLI/Update.hs` prints "Already up to date." and applies nothing,
+  so the manifest is never written. Every existing project would have kept refusing until some
+  unrelated change happened to force a real update.
+
+  Fixed by making a stale `additiveOnly` record count as pending work in both `isUpdateNoOp`
+  (`seihou-cli/src/Seihou/CLI/Update.hs`) and `planLooksUnchanged`
+  (`seihou-cli/src/Seihou/CLI/Update/Render.hs`, which computes the JSON `alreadyUpToDate`).
+  This is consistent with both ADRs it touches: recording a fact about applied state is a
+  change to applied state ([ADR 0004](../adr/0004-the-manifest-is-the-only-record-of-applied-state.md)),
+  so the plan is not a *deliberate* no-op
+  ([ADR 0007](../adr/0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md)). Re-run on
+  the same real-project copy:
+
+  ```text
+  outcome: applied | files: unchanged 19, updated 0, created 0
+  additiveOnly = True | owners = 2
+  ```
+
+  `.gitignore` byte-identical to the original afterwards, and
+  `seihou update nix-haskell-flake` then reports "Already up to date." instead of refusing.
+
+  The comparison is deliberately narrow — only `additiveOnly`. A whole-project update of a
+  co-owned path can legitimately re-credit `moduleName` to a different last writer (the
+  existing `CrossApplicationLastWriter` warning), and `isUpdateNoOp` has always ignored that;
+  widening the check to every recorded field would report a no-op as pending work on such
+  paths forever.
+
+- **A fixture can be non-no-op for reasons that have nothing to do with the clause under
+  test.** The end-to-end `CoOwnerAppendsUnrecorded` fixture — alpha's remote published at the
+  installed version with identical content, so the only pending work is the record — still
+  reported `applied` with the fix reverted, so it does not guard it. The guard is the pair of
+  unit tests on `isUpdateNoOp` in `seihou-cli/test/Seihou/CLI/UpdateSpec.hs`, which do fail
+  when reverted:
+
+  ```text
+  is not a no-op when a file's recorded write mode is stale: FAIL
+    expected: False
+     but got: True
+  ```
+
+  The end-to-end test is kept, because it is the only thing that exercises the whole upgrade
+  path a real user walks — refusal, then a no-target update that records the answer without
+  touching a byte, then the targeted update succeeding.
 
 - **The repository's test suites are not in the default `cabal` install plan.** `cabal test all`
   fails with `[Cabal-7043] ... the solver picked a plan that does not include the test suites`.
@@ -303,6 +366,18 @@ Record every decision made while working on the plan.
   prior `True` survives untouched.
   Date: 2026-09-16
 
+- Decision: A plan that would record a different `additiveOnly` than the manifest holds is not
+  a no-op, in both `isUpdateNoOp` and `planLooksUnchanged`. Compare only that one field.
+  Rationale: Without this the exemption is dead code for every project that exists today — all
+  of them have a manifest with no recorded answer, and an up-to-date project would never write
+  one, so the remedy the error message and the documents promise would never work. Recording a
+  fact about applied state is a change to applied state (ADR 0004), so such a plan is not a
+  *deliberate* no-op (ADR 0007) and the third outcome does not apply. The comparison stays
+  narrow because a whole-project update of a co-owned path can legitimately re-credit
+  `moduleName` to a different last writer — the existing `CrossApplicationLastWriter` case —
+  and widening the check would report those paths as pending work forever.
+  Date: 2026-09-16
+
 - Decision: Name the opt-in `--include-shared-owners`, expand to a fixed point, and report
   every application the expansion added.
   Rationale: The IR leaves the name to the author; this one says what it does in the
@@ -355,7 +430,11 @@ no longer requires the closure must not pull in a co-owner the user neither aske
 needed. There is a test for that too.
 
 **Milestone 4 (2026-09-16).** Documentation, both changelogs, and
-[ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md).
+[ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md). Writing the
+remedy down is what exposed the last defect: the manual verification the plan asks for cannot
+be done without a project whose manifest records the flag, and it turned out nothing would
+ever write one for a project that was otherwise up to date. Fixed before the milestone closed,
+and the exemption is now reachable from the state every real project is actually in.
 
 **Against the original purpose.** Both things the Purpose section promised are now true. A
 targeted update succeeds when the shared path is additive-only, verified end to end through
@@ -363,7 +442,7 @@ the real binary rather than only at the unit level; and `--include-shared-owners
 the paths that legitimately still need every owner, expanding to exactly those and reporting
 each addition.
 
-**Lessons.** Two worth keeping, both now in the ADR. First, this flag has *two* producers, not
+**Lessons.** Three worth keeping, all now in the ADR. First, this flag has *two* producers, not
 one: the plan analysed `prepareCandidateManifest` carefully and missed `attachApplication` on
 the `seihou run` path, which had the identical fail-open shape and would have been reachable
 without ever running `seihou update`. When a derived fact is written from more than one place,
@@ -372,6 +451,14 @@ enumerate the write paths before reasoning about the invariant. Second, the deli
 generalizes: the test for bumping is whether an older reader would **misinterpret** the new
 field, not whether the field is new. A key emitted only when true, whose absence means the
 conservative answer, is invisible to an older reader in the only way that matters.
+
+Third — and this one nearly shipped — a gate that reads a recorded fact is only half a
+feature; something has to write the fact, from the state real projects are actually in. Every
+existing manifest predates the field, and an up-to-date project wrote nothing, so the
+exemption would have been correct, tested, documented, and dead. The tests all passed because
+they built fixtures with the field already set. Doing the manual verification the plan called
+for, on a copy of real project data, is what caught it: the first thing that verification
+needs is a project whose manifest has the flag, and there was no way to get one.
 
 
 ## Context and Orientation
@@ -843,6 +930,20 @@ latter listing `--include-shared-owners`.
 table in `docs/cli/update.md` was missing `--allow-downgrade` as well, so it was added in the
 same edit rather than left as a known gap in a table this change was already rewriting.
 
+The manual verification then found a fail-closed defect that would have shipped: an
+already-up-to-date project never wrote the manifest, so it would never have recorded the flag,
+and the remedy the refusal message and both documents promise would never have worked on any
+existing project. Fixed and covered; see Surprises & Discoveries. Verified on a copy of this
+repository's own project state:
+
+```text
+before:  additiveOnly = ABSENT
+         seihou update nix-haskell-flake  ->  shared_path_requires_applications
+update:  outcome: applied | files: unchanged 19, updated 0, created 0
+after:   additiveOnly = True | owners = 2  | .gitignore byte-identical
+         seihou update nix-haskell-flake  ->  Already up to date.
+```
+
 
 ## Concrete Steps
 
@@ -997,6 +1098,17 @@ cabal run seihou -- help update
 
 The help output must describe the additive exemption and the flag. `seihou update --help`
 must list `--include-shared-owners`.
+
+The manual verification Milestone 2 asks for needs a project whose manifest actually records
+the flag, and no such project exists until one is written. Do it on a **copy**, never on a
+real project: copy the project's `.seihou/` directory plus every path in the manifest's
+`files` map into a scratch directory, and point `XDG_CONFIG_HOME` at a copy of
+`~/.config/seihou` so the run cannot publish to the real install cache. Then, in the copy:
+
+- the targeted update must refuse with `shared_path_requires_applications`;
+- `seihou update --json` must report `"outcome":"applied"` and write `"additiveOnly":true`,
+  while leaving every project file byte-identical;
+- the targeted update must then go through.
 
 
 ## Idempotence and Recovery
@@ -1157,3 +1269,26 @@ No scope changed and no milestone was dropped. Two additions beyond the plan's t
 recorded in the Decision Log and Surprises & Discoveries at the time: the `attachApplication`
 weakening rule (Milestone 1) and the additive-only skip in the selection expansion
 (Milestone 3).
+
+### 2026-09-16 — Missing-answer plans are no longer no-ops
+
+Recorded separately from the milestone note above because it changes behaviour rather than
+prose. The manual verification Milestone 2 asks for turned out to be impossible as written:
+it needs a project whose manifest records `additiveOnly`, and nothing would ever write one
+for a project that was otherwise up to date. That made the remedy named in the refusal
+message and in both documents unreachable for every project in existence.
+
+- **Surprises & Discoveries**: the discovery, with the `alreadyUpToDate: True` evidence from a
+  real-project copy and the `applied` output after the fix; plus a second entry on the
+  end-to-end fixture that does *not* guard the fix and why the unit tests do.
+- **Decision Log**: a plan that would record a different `additiveOnly` than the manifest
+  holds is not a no-op, in both `isUpdateNoOp` and `planLooksUnchanged`, comparing only that
+  one field.
+- **Progress** and **Plan of Work, Milestone 4**: the fix listed under Milestone 4, where it
+  was found, with the before/after transcript.
+- **Validation and Acceptance, Milestone 4**: how to do the manual verification safely, on a
+  copy, with an isolated `XDG_CONFIG_HOME`.
+- **Outcomes & Retrospective**: a third lesson — a gate that reads a recorded fact is only
+  half a feature until something writes that fact from the state real projects are in.
+- `docs/adr/0012-...`, `docs/cli/update.md`, `seihou-cli/help/update.md`, `CHANGELOG.md`, and
+  `docs/user/CHANGELOG.md` all updated to match.

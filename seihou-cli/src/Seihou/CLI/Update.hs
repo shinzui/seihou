@@ -1129,7 +1129,15 @@ isUpdateNoOp plan =
     && all unchangedFile (Map.elems (plan ^. #reconciliation . #files))
     && and (zipWith sameApplication (mapMaybe (^. #previous) (plan ^. #plannedApplications)) (plan ^. #applications))
   where
-    unchangedFile FileUnchanged {} = True
+    -- A file whose content is unchanged can still carry a manifest record
+    -- that is out of date. @additiveOnly@ is the case that matters: a project
+    -- whose manifest predates the field has no answer for any path, and
+    -- treating that as a no-op would mean the answer is never written, so the
+    -- shared-path exemption could never take effect on an existing project.
+    -- Recording a fact about applied state is a change to applied state
+    -- (ADR 0004), so such a plan is not a deliberate no-op (ADR 0007).
+    unchangedFile (FileUnchanged desired _ _ prior) =
+      maybe True (\record -> record ^. #additiveOnly == desired ^. #additiveOnly) prior
     unchangedFile _ = False
     -- Compare only what the manifest actually records. Anything derived from
     -- where an artifact happens to sit on this machine would differ between a

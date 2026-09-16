@@ -43,7 +43,9 @@ TARGET SELECTION
   would discard another's content. That covers any path an owner writes
   wholesale, and the position-dependent `append-file` / `prepend-file`
   patches. A manifest written before Seihou recorded this distinction has no
-  answer and is treated conservatively; one no-target update records it.
+  answer and is treated conservatively. One no-target update records it: a
+  missing answer counts as pending work even when nothing else has changed,
+  and writing it down touches no project file.
 
   When the refusal is genuine, name every required owner, run the no-target
   form, or pass `--include-shared-owners` to expand the selection to exactly

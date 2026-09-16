@@ -30,8 +30,10 @@ additive, non-overlapping patch?
 
 The answer is recorded per path in `.seihou/manifest.json`, as `additiveOnly`
 on the file's record. A manifest written before that field existed has no
-answer, so Seihou takes the conservative one and refuses; one
-`seihou update` with no targets records it. When the refusal is genuine, either
+answer, so Seihou takes the conservative one and refuses. One `seihou update`
+with no targets records it — a project whose sources are otherwise unchanged is
+*not* reported as already up to date while an answer is still missing, and the
+update that writes it down changes no project file. When the refusal is genuine, either
 name every required owner, run the no-target form, or pass
 `--include-shared-owners` to let Seihou expand the selection for you.
 

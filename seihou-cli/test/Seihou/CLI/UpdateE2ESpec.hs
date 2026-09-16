@@ -189,6 +189,46 @@ spec = do
       stdoutText `shouldSatisfy` T.isInfixOf "because it co-owns .gitignore"
       stdoutText `shouldSatisfy` T.isInfixOf (fixture ^. #betaApplicationId . #unApplicationId)
 
+  it "records a missing additiveOnly answer instead of reporting nothing to do" $
+    withSystemTempDirectory "seihou-update-shared-unrecorded" $ \root -> do
+      -- Every project in the wild has a manifest that predates the field. If
+      -- an up-to-date project reported "already up to date" and wrote
+      -- nothing, the answer would never be recorded and the exemption could
+      -- never take effect on an existing project.
+      fixture <- prepareSharedPathFixture CoOwnerAppendsUnrecorded root
+      binary <- seihouBinary
+      beforeGitignore <- TIO.readFile (fixture ^. #gitignorePath)
+
+      -- The targeted update refuses first, as documented for a manifest with
+      -- no recorded answer.
+      (refusedExit, refusedOut, _) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      refusedExit `shouldSatisfy` (/= ExitSuccess)
+      refusedOut `shouldSatisfy` T.isInfixOf "shared_path_requires_applications"
+      refusedOut `shouldSatisfy` T.isInfixOf "manifest predates that record"
+
+      -- Nothing about the sources changed, so the only pending work is the
+      -- record itself -- which is still work, not a no-op.
+      (exitCode, stdoutText, stderrText) <- runSeihouShared binary fixture ["update", "--json"]
+      case exitCode of
+        ExitSuccess -> pure ()
+        ExitFailure code ->
+          expectationFailure
+            ("update exited " <> show code <> "\nstdout:\n" <> T.unpack stdoutText <> "\nstderr:\n" <> T.unpack stderrText)
+      stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
+      manifestText <- TIO.readFile (fixture ^. #manifestPath)
+      manifestText `shouldSatisfy` T.isInfixOf "\"additiveOnly\":true"
+      -- Recording an answer must not touch a single byte of the project.
+      TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
+
+      -- And now the targeted update the user wanted all along goes through.
+      (afterExit, afterOut, afterErr) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      case afterExit of
+        ExitSuccess -> pure ()
+        ExitFailure code ->
+          expectationFailure
+            ("targeted update exited " <> show code <> "\nstdout:\n" <> T.unpack afterOut <> "\nstderr:\n" <> T.unpack afterErr)
+      afterOut `shouldNotSatisfy` T.isInfixOf "shared_path_requires_applications"
+
   it "lists --include-shared-owners in update --help" $ do
     binary <- seihouBinary
     (exitCode, stdoutText, _) <- runProcessText binary ["update", "--help"] Nothing Nothing

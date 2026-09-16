@@ -45,7 +45,10 @@ packages in the workspace share a single version.
   ```
 
   Projects whose manifest was written by an earlier Seihou have no record of this yet, so
-  they keep the old behaviour until one `seihou update` with no targets writes it down.
+  they keep the old behaviour until one `seihou update` with no targets writes it down. You do
+  not have to arrange for anything else to be out of date first: a project with nothing else
+  to do is no longer reported as already up to date while that record is missing, and the
+  update that writes it down does not change a single project file.
 
 ### Added
 
