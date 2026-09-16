@@ -53,18 +53,18 @@ spec = do
           second = application (AppliedRecipeTarget "stack") [instanceState "shared"]
           manifest :: Manifest
           manifest = manifestForApplications [first, second] Map.empty
-      selectApplications (NamedUpdateTargets ["shared"]) manifest
-        `shouldBe` Right (RecordedSelection [first, second])
+      selectApplications RequireNamedOwners (NamedUpdateTargets ["shared"]) manifest
+        `shouldBe` Right (RecordedSelection [first, second], [])
 
     it "keeps manifest order for all applications and deduplicates repeated targets" $ do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
           second = application (AppliedModuleTarget "two") [instanceState "two"]
           manifest :: Manifest
           manifest = manifestForApplications [first, second] Map.empty
-      selectApplications AllRecordedApplications manifest
-        `shouldBe` Right (RecordedSelection [first, second])
-      selectApplications (NamedUpdateTargets ["two", "two", "one"]) manifest
-        `shouldBe` Right (RecordedSelection [first, second])
+      selectApplications RequireNamedOwners AllRecordedApplications manifest
+        `shouldBe` Right (RecordedSelection [first, second], [])
+      selectApplications RequireNamedOwners (NamedUpdateTargets ["two", "two", "one"]) manifest
+        `shouldBe` Right (RecordedSelection [first, second], [])
 
     it "rejects a partial selection that shares an owned path" $ do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
@@ -73,7 +73,7 @@ spec = do
           record = FileRecord (hashContent "old") "one" Template testTime Nothing owners False
           manifest :: Manifest
           manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
-      selectApplications (NamedUpdateTargets ["one"]) manifest
+      selectApplications RequireNamedOwners (NamedUpdateTargets ["one"]) manifest
         `shouldBe` Left (SharedPathRequiresApplications "shared.txt" (Set.singleton (first ^. #applicationId)) (Set.singleton (second ^. #applicationId)))
 
     it "accepts a partial selection when the shared path is additive-only" $ do
@@ -85,8 +85,8 @@ spec = do
           record = FileRecord (hashContent "old") "one" Template testTime Nothing owners True
           manifest :: Manifest
           manifest = manifestForApplications [first, second] (Map.singleton ".gitignore" record)
-      selectApplications (NamedUpdateTargets ["one"]) manifest
-        `shouldBe` Right (RecordedSelection [first])
+      selectApplications RequireNamedOwners (NamedUpdateTargets ["one"]) manifest
+        `shouldBe` Right (RecordedSelection [first], [])
 
     it "still rejects a partial selection when one shared path is not additive-only" $ do
       -- The exemption is per path: an additive shared path does not excuse a
@@ -101,7 +101,7 @@ spec = do
             manifestForApplications
               [first, second]
               (Map.fromList [(".gitignore", additive), ("shared.txt", wholeFile)])
-      selectApplications (NamedUpdateTargets ["one"]) manifest
+      selectApplications RequireNamedOwners (NamedUpdateTargets ["one"]) manifest
         `shouldBe` Left
           ( SharedPathRequiresApplications
               "shared.txt"
@@ -109,9 +109,64 @@ spec = do
               (Set.singleton (second ^. #applicationId))
           )
 
+    it "expands a named selection to the owners the closure requires" $ do
+      let first = application (AppliedModuleTarget "one") [instanceState "one"]
+          second = application (AppliedModuleTarget "two") [instanceState "two"]
+          owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
+          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners False
+          manifest :: Manifest
+          manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
+      selectApplications IncludeSharedOwners (NamedUpdateTargets ["one"]) manifest
+        `shouldBe` Right
+          ( RecordedSelection [first, second],
+            [SelectionExpandedForSharedPath "shared.txt" (second ^. #applicationId)]
+          )
+
+    it "expands to a fixed point across a chain of shared paths" $ do
+      -- One and two share a.txt; two and three share b.txt. Selecting one
+      -- pulls in two, which then forces three: a single pass is not enough.
+      let first = application (AppliedModuleTarget "one") [instanceState "one"]
+          second = application (AppliedModuleTarget "two") [instanceState "two"]
+          third = application (AppliedModuleTarget "three") [instanceState "three"]
+          pair left right =
+            FileRecord
+              (hashContent "old")
+              "one"
+              Template
+              testTime
+              Nothing
+              (Set.fromList [left ^. #applicationId, right ^. #applicationId])
+              False
+          manifest :: Manifest
+          manifest =
+            manifestForApplications
+              [first, second, third]
+              (Map.fromList [("a.txt", pair first second), ("b.txt", pair second third)])
+      case selectApplications IncludeSharedOwners (NamedUpdateTargets ["one"]) manifest of
+        Left err -> expectationFailure ("expected an expanded selection, got " <> show err)
+        Right (selected, warnings) -> do
+          selected `shouldBe` RecordedSelection [first, second, third]
+          warnings
+            `shouldBe` [ SelectionExpandedForSharedPath "a.txt" (second ^. #applicationId),
+                         SelectionExpandedForSharedPath "b.txt" (third ^. #applicationId)
+                       ]
+
+    it "does not expand for a shared path that is additive-only" $ do
+      -- The path no longer requires the closure, so pulling the co-owner in
+      -- would update an application the user neither asked for nor needed.
+      let first = application (AppliedModuleTarget "one") [instanceState "one"]
+          second = application (AppliedModuleTarget "two") [instanceState "two"]
+          owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
+          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners True
+          manifest :: Manifest
+          manifest = manifestForApplications [first, second] (Map.singleton ".gitignore" record)
+      selectApplications IncludeSharedOwners (NamedUpdateTargets ["one"]) manifest
+        `shouldBe` Right (RecordedSelection [first], [])
+
     it "requires one explicit target to seed a legacy manifest" $ do
-      selectApplications AllRecordedApplications (emptyManifest testTime) `shouldBe` Left NoRecordedApplications
-      selectApplications (NamedUpdateTargets ["one", "two"]) (emptyManifest testTime)
+      selectApplications RequireNamedOwners AllRecordedApplications (emptyManifest testTime)
+        `shouldBe` Left NoRecordedApplications
+      selectApplications RequireNamedOwners (NamedUpdateTargets ["one", "two"]) (emptyManifest testTime)
         `shouldBe` Left LegacyUpdateRequiresOneTarget
 
   describe "candidate source staging" $ do
@@ -744,7 +799,8 @@ updateRequest dryRun =
       promptPolicy = ForbidPrompts,
       commandPolicy = RunChangedCommands,
       dryRun,
-      allowDowngrade = False
+      allowDowngrade = False,
+      includeSharedOwners = False
     }
 
 moduleDhallWithTemplate :: Text -> Text -> Text -> Text

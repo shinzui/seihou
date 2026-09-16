@@ -60,7 +60,12 @@ data UpdateRequest = UpdateRequest
     -- than the version @.seihou\/manifest.json@ records, instead of
     -- failing with 'CandidateDowngrade'. The default is 'False', so an
     -- update never moves a project backwards by accident.
-    allowDowngrade :: !Bool
+    allowDowngrade :: !Bool,
+    -- | When 'True', expand a named selection to the applications the
+    -- ownership closure still requires instead of refusing, reporting each
+    -- one added. The default is 'False': a named selection is never
+    -- broadened without being asked.
+    includeSharedOwners :: !Bool
   }
   deriving stock (Eq, Generic, Show)
 
@@ -153,6 +158,9 @@ data UpdateWarning
   | ArbitraryCommandSideEffectsMayRemain
   | BaselinePruneFailed Text
   | RecoveryCleanupDeferred Text
+  | -- | @--include-shared-owners@ added this application to the selection
+    --   because it co-owns the named path with something the user asked for.
+    SelectionExpandedForSharedPath FilePath ApplicationId
   deriving stock (Eq, Show)
 
 data UpdatePlan = UpdatePlan

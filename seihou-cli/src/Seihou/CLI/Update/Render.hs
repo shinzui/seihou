@@ -323,7 +323,12 @@ fingerprintText :: CommandFingerprint -> Text
 fingerprintText (CommandFingerprint (SHA256 value)) = value
 
 warningText :: UpdateWarning -> Text
-warningText = T.pack . show
+warningText (SelectionExpandedForSharedPath path owner) =
+  "also updating "
+    <> (owner ^. #unApplicationId)
+    <> " because it co-owns "
+    <> T.pack path
+warningText other = T.pack (show other)
 
 errorCode :: UpdateError -> Text
 errorCode UpdateManifestMissing {} = "manifest_missing"
@@ -373,7 +378,8 @@ errorMessage (SharedPathRequiresApplications path selected required) =
     <> ", and it is not recorded as written only by additive patches"
     <> " -- either an owner writes the whole file, or the manifest predates that record,"
     <> " in which case one seihou update with no targets will record it."
-    <> " Select every owner or run seihou update with no targets. Selected: "
+    <> " Select every owner, pass --include-shared-owners, or run seihou update"
+    <> " with no targets. Selected: "
     <> T.intercalate ", " (map (^. #unApplicationId) (Set.toAscList selected))
 errorMessage (UpdateHasUnresolvedPaths paths) =
   "Resolve these paths before apply: " <> T.intercalate ", " (map T.pack (Set.toAscList paths))

@@ -70,7 +70,8 @@ requestFromOptions terminal opts =
           then RunAllCommands
           else if opts ^. #noCommands then DisableCommands else RunChangedCommands,
       dryRun = opts ^. #dryRun,
-      allowDowngrade = opts ^. #allowDowngrade
+      allowDowngrade = opts ^. #allowDowngrade,
+      includeSharedOwners = opts ^. #includeSharedOwners
     }
 
 handlePlanned :: Bool -> UpdateOpts -> Either Service.UpdateError Service.UpdatePlan -> IO ()

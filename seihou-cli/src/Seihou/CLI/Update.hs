@@ -428,10 +428,14 @@ selectAndSeedLegacy ::
   Manifest ->
   UTCTime ->
   IO (Either UpdateError ([AppliedComposition], [UpdateWarning]))
-selectAndSeedLegacy request projectRoot manifest now = case selectApplications (request ^. #selection) manifest of
+selectAndSeedLegacy request projectRoot manifest now = case selectApplications policy (request ^. #selection) manifest of
   Left err -> pure (Left err)
-  Right (RecordedSelection selected) -> pure (Right (selected, []))
-  Right (LegacySelection name) -> seedLegacyApplication request projectRoot manifest now name
+  Right (RecordedSelection selected, warnings) -> pure (Right (selected, warnings))
+  Right (LegacySelection name, _) -> seedLegacyApplication request projectRoot manifest now name
+  where
+    policy
+      | request ^. #includeSharedOwners = IncludeSharedOwners
+      | otherwise = RequireNamedOwners
 
 seedLegacyApplication ::
   UpdateRequest -> FilePath -> Manifest -> UTCTime -> Text -> IO (Either UpdateError ([AppliedComposition], [UpdateWarning]))

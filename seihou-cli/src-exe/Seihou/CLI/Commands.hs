@@ -184,7 +184,12 @@ data UpdateOpts = UpdateOpts
     -- itself records — so the only downgrade it can produce is an
     -- upstream that moved backwards. This flag is the escape hatch for
     -- pinning to such a version deliberately.
-    allowDowngrade :: !Bool
+    allowDowngrade :: !Bool,
+    -- | When 'True', a named selection is expanded to the applications the
+    -- shared-path ownership closure still requires, reporting each one that
+    -- was added. Without it a partial selection is refused rather than
+    -- silently broadened.
+    includeSharedOwners :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -903,8 +908,12 @@ updateParser =
         ( long "allow-downgrade"
             <> help "Accept a candidate artifact older than the version recorded in .seihou/manifest.json"
         )
+      <*> switch
+        ( long "include-shared-owners"
+            <> help "Also update applications that co-own a selected path"
+        )
   where
-    makeUpdateOpts targets vars dryRun json reconfigure force (runAll, noCommands) commit commitMessage allowDowngrade =
+    makeUpdateOpts targets vars dryRun json reconfigure force (runAll, noCommands) commit commitMessage allowDowngrade includeSharedOwners =
       UpdateOpts
         { targets = targets,
           vars = vars,
@@ -916,7 +925,8 @@ updateParser =
           noCommands = noCommands,
           commit = commit,
           commitMessage = commitMessage,
-          allowDowngrade = allowDowngrade
+          allowDowngrade = allowDowngrade,
+          includeSharedOwners = includeSharedOwners
         }
     updateCommandFlags =
       flag' (True, False) (long "run-all-commands" <> help "Run every generated command, including unchanged ones")

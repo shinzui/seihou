@@ -172,6 +172,30 @@ spec = do
       TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
       LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
 
+  it "updates the co-owner too under --include-shared-owners" $
+    withSystemTempDirectory "seihou-update-shared-include" $ \root -> do
+      fixture <- prepareSharedPathFixture CoOwnerWritesWholeFile root
+      binary <- seihouBinary
+      (exitCode, stdoutText, stderrText) <-
+        runSeihouShared binary fixture ["update", "alpha", "--include-shared-owners", "--json"]
+      case exitCode of
+        ExitSuccess -> pure ()
+        ExitFailure code ->
+          expectationFailure
+            ("update exited " <> show code <> "\nstdout:\n" <> T.unpack stdoutText <> "\nstderr:\n" <> T.unpack stderrText)
+      stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
+      -- The expansion is reported, never silent.
+      stdoutText `shouldSatisfy` T.isInfixOf "also updating"
+      stdoutText `shouldSatisfy` T.isInfixOf "because it co-owns .gitignore"
+      stdoutText `shouldSatisfy` T.isInfixOf (fixture ^. #betaApplicationId . #unApplicationId)
+
+  it "lists --include-shared-owners in update --help" $ do
+    binary <- seihouBinary
+    (exitCode, stdoutText, _) <- runProcessText binary ["update", "--help"] Nothing Nothing
+    exitCode `shouldBe` ExitSuccess
+    stdoutText `shouldSatisfy` T.isInfixOf "--include-shared-owners"
+    stdoutText `shouldSatisfy` T.isInfixOf "co-own a selected path"
+
   it "exposes update and its options through the shared Bash, Zsh, and Fish completion protocol" $ do
     binary <- seihouBinary
     (topExit, topOutput, _) <- runProcessText binary ["--bash-completion-enriched", "--bash-completion-index", "0"] Nothing Nothing

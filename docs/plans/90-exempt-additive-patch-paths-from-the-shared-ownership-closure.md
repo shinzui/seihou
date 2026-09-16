@@ -130,7 +130,18 @@ This section must always reflect the actual current state of the work.
     `seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs`): the additive case applies and keeps the
     co-owner's line and both application ids; the whole-file case refuses with
     `shared_path_requires_applications` and leaves project and manifest byte-identical.
-- [ ] Milestone 3 — add `seihou update <target> --include-shared-owners`.
+- [x] Milestone 3 — add `seihou update <target> --include-shared-owners` (2026-09-16).
+  - [x] `SelectionPolicy` and the fixed-point `expandToSharedOwners`
+    (`seihou-cli/src/Seihou/CLI/Update/Selection.hs`); `selectApplications` now takes the
+    policy and returns its warnings.
+  - [x] `SelectionExpandedForSharedPath FilePath ApplicationId` on `UpdateWarning`, rendered as
+    prose by `warningText` (`seihou-cli/src/Seihou/CLI/Update/Render.hs`).
+  - [x] `includeSharedOwners` on `UpdateRequest`, `UpdateOpts`, `updateParser`,
+    `makeUpdateOpts`, and `requestFromOptions`; threaded through `selectAndSeedLegacy`.
+  - [x] The refusal message now names `--include-shared-owners`.
+  - [x] Unit tests: 3 selection (single expansion, three-application fixed point, no expansion
+    for an additive path), 2 render. End-to-end: the flag updates the co-owner and reports it;
+    `seihou update --help` lists it.
 - [ ] Milestone 4 — documentation, changelogs, ADR, and full-suite verification.
 
 
@@ -725,6 +736,19 @@ and every `selectApplications` call in `seihou-cli/test/Seihou/CLI/UpdateSpec.hs
 **Acceptance.** The unit and end-to-end tests described below pass, including the
 fixed-point case where expanding for one path pulls in an application that forces a second
 expansion for another path.
+
+**Result (2026-09-16).** Done. `cabal test all --enable-tests`: 1105 core + 583 cli + 51
+okf-extension, all passing. `seihou update --help` lists the flag:
+
+```text
+  --include-shared-owners  Also update applications that co-own a selected path
+```
+
+Two departures from the plan as written, both small. `expandToSharedOwners` skips
+additive-only records: a path that no longer requires the closure must not pull in a co-owner
+the user neither asked for nor needed, and there is a test for it. And `warningText` keeps a
+`show` fallback for the other constructors rather than gaining an exhaustive case list, since
+only the new warning needs prose; the render test asserts the constructor name does not leak.
 
 ### Milestone 4 — Documentation, changelog, ADR, and distillation
 

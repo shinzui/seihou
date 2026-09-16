@@ -1,5 +1,6 @@
 module Seihou.CLI.Update.Selection
   ( SelectedApplications (..),
+    SelectionPolicy (..),
     selectApplications,
     targetName,
     availableTargets,
@@ -19,23 +20,46 @@ data SelectedApplications
   | LegacySelection Text
   deriving stock (Eq, Show)
 
+-- | What to do when a named selection does not satisfy the ownership closure.
+data SelectionPolicy
+  = -- | Refuse, and tell the user which owners are missing. The default: a
+    --   named selection is never broadened without being asked.
+    RequireNamedOwners
+  | -- | Add the applications the closure requires, reporting each one. Chosen
+    --   by @seihou update <target> --include-shared-owners@.
+    IncludeSharedOwners
+  deriving stock (Eq, Show)
+
 -- | Select applications in manifest order. Bare module names select every
 -- recorded application containing that module instance; target names take
 -- precedence for each requested name.
-selectApplications :: UpdateSelection -> Manifest -> Either UpdateError SelectedApplications
-selectApplications selection manifest = case selection of
+--
+-- Returns the warnings the selection produced, which under
+-- 'IncludeSharedOwners' name every application the expansion added and the
+-- path it was added for.
+selectApplications ::
+  SelectionPolicy ->
+  UpdateSelection ->
+  Manifest ->
+  Either UpdateError (SelectedApplications, [UpdateWarning])
+selectApplications policy selection manifest = case selection of
   AllRecordedApplications
     | null (manifest ^. #applications) -> Left NoRecordedApplications
-    | otherwise -> Right (RecordedSelection (manifest ^. #applications))
+    | otherwise -> Right (RecordedSelection (manifest ^. #applications), [])
   NamedUpdateTargets names
+    -- A manifest with no recorded applications has no ownership to close
+    -- over, so the policy cannot apply.
     | null (manifest ^. #applications) -> case nubOrd names of
-        [name] -> Right (LegacySelection name)
+        [name] -> Right (LegacySelection name, [])
         _ -> Left LegacyUpdateRequiresOneTarget
     | otherwise -> do
-        selectedIds <- foldM selectName Set.empty (nubOrd names)
-        let selected = filter ((`Set.member` selectedIds) . (^. #applicationId)) (manifest ^. #applications)
+        namedIds <- foldM selectName Set.empty (nubOrd names)
+        let (selectedIds, warnings) = case policy of
+              RequireNamedOwners -> (namedIds, [])
+              IncludeSharedOwners -> expandToSharedOwners manifest namedIds
+            selected = filter ((`Set.member` selectedIds) . (^. #applicationId)) (manifest ^. #applications)
         ensureOwnershipClosure manifest selectedIds
-        Right (RecordedSelection selected)
+        Right (RecordedSelection selected, warnings)
   where
     selectName selected name =
       let exact = filter ((== name) . targetName) (manifest ^. #applications)
@@ -46,6 +70,33 @@ selectApplications selection manifest = case selection of
        in if null matches
             then Left (UpdateTargetNotFound name (availableTargets manifest))
             else Right (foldl' (flip (Set.insert . (^. #applicationId))) selected matches)
+
+-- | Grow the selection until it satisfies the ownership closure.
+--
+-- For every managed path that is /not/ additive-only and whose owners
+-- intersect the selection, add all of that path's owners. This has to iterate
+-- to a fixed point rather than run once: an application pulled in through one
+-- path may co-own a different path with a third application, which then has
+-- to come along too.
+--
+-- Additive-only paths are skipped, because they no longer require the
+-- closure; expanding for them would update applications the user did not ask
+-- for and did not need.
+expandToSharedOwners :: Manifest -> Set ApplicationId -> (Set ApplicationId, [UpdateWarning])
+expandToSharedOwners manifest = go []
+  where
+    go warnings selected =
+      case [ (path, owner)
+           | (path, record) <- Map.toAscList (manifest ^. #files),
+             not (record ^. #additiveOnly),
+             not (Set.null (Set.intersection selected (record ^. #applicationIds))),
+             owner <- Set.toAscList ((record ^. #applicationIds) Set.\\ selected)
+           ] of
+        [] -> (selected, reverse warnings)
+        additions ->
+          go
+            ([SelectionExpandedForSharedPath path owner | (path, owner) <- additions] <> warnings)
+            (Set.union selected (Set.fromList (map snd additions)))
 
 -- | For every managed path a selected application owns, require that every
 -- other owner is selected too — because regenerating a file normally means

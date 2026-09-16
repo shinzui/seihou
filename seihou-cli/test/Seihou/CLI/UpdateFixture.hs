@@ -1,11 +1,14 @@
 module Seihou.CLI.UpdateFixture
   ( minimalPlan,
+    planWithWarnings,
     conflictPlan,
     unavailableConflictPlan,
     orphanPlan,
   )
 where
 
+import Control.Lens ((&), (.~))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
@@ -16,6 +19,7 @@ import Seihou.CLI.Update
     UpdatePlan (..),
     UpdateRequest (..),
     UpdateSelection (..),
+    UpdateWarning (..),
   )
 import Seihou.CLI.Update.Types (UpdateSnapshot (..))
 import Seihou.Core.Types
@@ -28,6 +32,7 @@ import Seihou.Engine.Reconcile
   ( DesiredFile (..),
     FileReconciliation (..),
     ObservedFile (..),
+    PlannedFileState (..),
     ReconciliationPlan (..),
     ReconciliationReason (..),
   )
@@ -56,7 +61,8 @@ minimalPlan reconciliation =
             promptPolicy = ForbidPrompts,
             commandPolicy = RunChangedCommands,
             dryRun = True,
-            allowDowngrade = False
+            allowDowngrade = False,
+            includeSharedOwners = False
           },
       snapshot =
         UpdateSnapshot
@@ -72,6 +78,15 @@ minimalPlan reconciliation =
           },
       plannedApplications = []
     }
+
+-- | The minimal plan, carrying the given warnings.
+planWithWarnings :: [UpdateWarning] -> UpdatePlan
+planWithWarnings warnings =
+  minimalPlan (oneFile (FileUnchanged desired unchangedState (ObservedFile True Nothing) Nothing))
+    & #warnings
+      .~ warnings
+  where
+    unchangedState = PlannedFileState "title: generated\nbody: old\n" "title: generated\nbody: old\n" (SHA256 "current") False
 
 conflictPlan :: UpdatePlan
 conflictPlan = minimalPlan (oneFile conflict)
