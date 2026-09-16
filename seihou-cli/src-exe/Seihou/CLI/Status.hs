@@ -12,7 +12,7 @@ import Seihou.CLI.ManifestGuard (ArtifactCheck, checkAppliedArtifacts, checkAppl
 import Seihou.CLI.Outdated (checkInstalledModulesForUpdates)
 import Seihou.CLI.PendingMigrations (detectPendingMigrations)
 import Seihou.CLI.Shared (logIO)
-import Seihou.CLI.StatusRender (formatArtifactChecks, formatStatus)
+import Seihou.CLI.StatusRender (PromptDisplay (..), formatArtifactChecks, formatStatusWith)
 import Seihou.CLI.Style (useColor)
 import Seihou.CLI.VersionCompare (OutdatedEntry (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverAllModules)
@@ -55,7 +55,10 @@ handleStatus opts = do
           then fetchUpdateEntries
           else pure Nothing
       pendings <- detectPendingMigrations manifest Nothing
-      TIO.putStr (formatStatus colorEnabled manifest tracked mEntries pendings)
+      let promptDisplay
+            | opts ^. #statusFullPrompt = PromptFull
+            | otherwise = PromptTruncated
+      TIO.putStr (formatStatusWith promptDisplay colorEnabled manifest tracked mEntries pendings)
       -- Report, never fail: a stale or mismatched module makes 'seihou run'
       -- refuse, and this is where a developer finds out before that happens.
       -- Any IO failure while checking is swallowed for the same reason.

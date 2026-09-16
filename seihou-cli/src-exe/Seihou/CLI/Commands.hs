@@ -303,7 +303,10 @@ data BrowseOpts = BrowseOpts
   deriving stock (Eq, Show, Generic)
 
 data StatusOpts = StatusOpts
-  { statusCheckUpdates :: !Bool
+  { statusCheckUpdates :: !Bool,
+    -- | Print the blueprint's stored prompt in full instead of the bounded
+    -- one-line slice the summary shows by default.
+    statusFullPrompt :: !Bool
   }
   deriving stock (Eq, Show, Generic)
 
@@ -710,6 +713,10 @@ statusInfo =
                   pretty ("versions available from their source repository. This requires network" :: String),
                   pretty ("access and will clone each source repo shallowly." :: String),
                   line,
+                  pretty ("The blueprint's stored prompt is collapsed to one line and truncated" :: String),
+                  pretty ("so it cannot dominate the summary. Use --full-prompt to print it in" :: String),
+                  pretty ("full; .seihou/manifest.json always holds the whole of it." :: String),
+                  line,
                   pretty ("When an applied module's installed copy has advanced past the manifest's" :: String),
                   pretty ("recorded version, status reports the pending migration count under that" :: String),
                   pretty ("module's line. Recorded applications recommend 'seihou update <target>';" :: String),
@@ -726,6 +733,10 @@ statusParser =
         ( long "check-updates"
             <> short 'u'
             <> help "Check installed modules for available updates (requires network)"
+        )
+      <*> switch
+        ( long "full-prompt"
+            <> help "Print the blueprint's stored prompt in full instead of truncating it"
         )
 
 diffInfo :: ParserInfo Command

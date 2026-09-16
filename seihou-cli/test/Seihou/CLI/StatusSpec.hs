@@ -9,7 +9,12 @@ import Seihou.CLI.ManifestGuard
   ( ArtifactCheck (..),
     ArtifactVerdict (..),
   )
-import Seihou.CLI.StatusRender (formatArtifactChecks, formatStatus)
+import Seihou.CLI.StatusRender
+  ( PromptDisplay (..),
+    formatArtifactChecks,
+    formatStatus,
+    formatStatusWith,
+  )
 import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
     OutdatedStatus (..),
@@ -253,6 +258,26 @@ spec = describe "formatStatus" $ do
               (mkManifest [])
           out = formatStatus False manifest [] Nothing []
       out `shouldSatisfy` T.isInfixOf "  Prompt: \"first line second line\""
+
+    it "prints the whole prompt, indented, under --full-prompt" $ do
+      let longPrompt = "First paragraph.\nSecond paragraph that is quite long indeed."
+          manifest =
+            withManifestBlueprint
+              (Just $ mkBlueprint "upgrade-flake" Nothing [] False (Just longPrompt))
+              (mkManifest [])
+          out = formatStatusWith PromptFull False manifest [] Nothing []
+      out
+        `shouldSatisfy` T.isInfixOf
+          "  Prompt:\n    First paragraph.\n    Second paragraph that is quite long indeed."
+      out `shouldNotSatisfy` T.isInfixOf "\x2026"
+
+    it "still omits the prompt entirely under --full-prompt when none was supplied" $ do
+      let manifest =
+            withManifestBlueprint
+              (Just $ mkBlueprint "no-prompt" Nothing [] False Nothing)
+              (mkManifest [])
+          out = formatStatusWith PromptFull False manifest [] Nothing []
+      out `shouldNotSatisfy` T.isInfixOf "  Prompt:"
 
   describe "blueprint migration receipts" $ do
     it "omits the section for an empty ledger" $ do

@@ -1,8 +1,10 @@
 module Seihou.CLI.StatusRender
   ( formatStatus,
+    formatStatusWith,
     formatArtifactChecks,
     formatBlueprintMigrations,
     ModuleAdvice (..),
+    PromptDisplay (..),
   )
 where
 
@@ -51,7 +53,17 @@ data ModuleAdvice
   | AdviceProjectUpdateAll
   deriving stock (Eq, Show)
 
--- | Render the full @seihou status@ output as a single 'Text' value.
+-- | Whether the @Prompt:@ line shows a bounded one-line slice of the blueprint's
+-- stored prompt or the whole of it. @seihou status@ renders 'PromptTruncated';
+-- @seihou status --full-prompt@ renders 'PromptFull'. Either way the manifest
+-- keeps the whole prompt.
+data PromptDisplay
+  = PromptTruncated
+  | PromptFull
+  deriving stock (Eq, Show)
+
+-- | Render the full @seihou status@ output as a single 'Text' value, with the
+-- default, bounded blueprint prompt.
 --
 -- @color@ controls ANSI styling; pass 'False' for plain text (used by
 -- the test suite).
@@ -62,11 +74,23 @@ formatStatus ::
   Maybe [OutdatedEntry] ->
   [(ModuleName, MigrationPlan)] ->
   Text
-formatStatus color manifest tracked mEntries pendings =
+formatStatus = formatStatusWith PromptTruncated
+
+-- | As 'formatStatus', but with explicit control over how much of the
+-- blueprint's stored prompt the @Prompt:@ line shows.
+formatStatusWith ::
+  PromptDisplay ->
+  Bool ->
+  Manifest ->
+  [TrackedFile] ->
+  Maybe [OutdatedEntry] ->
+  [(ModuleName, MigrationPlan)] ->
+  Text
+formatStatusWith display color manifest tracked mEntries pendings =
   T.unlines $
     ["Seihou Status:", ""]
       ++ recipeSection manifest
-      ++ blueprintSection manifest
+      ++ blueprintSection display manifest
       ++ formatBlueprintMigrations (manifest ^. #blueprintMigrations)
       ++ appliedSection color manifest mEntries pendings
       ++ trackedSection color tracked
@@ -105,8 +129,8 @@ recipeSection manifest = case manifest ^. #recipe of
 -- stored prompt is collapsed to one line and bounded at 'promptWidth' so a
 -- multi-paragraph instruction cannot push the rest of the summary off the
 -- screen; @.seihou/manifest.json@ keeps the whole of it.
-blueprintSection :: Manifest -> [Text]
-blueprintSection manifest = case manifest ^. #blueprint of
+blueprintSection :: PromptDisplay -> Manifest -> [Text]
+blueprintSection display manifest = case manifest ^. #blueprint of
   Nothing -> []
   Just ab ->
     let header =
@@ -119,7 +143,7 @@ blueprintSection manifest = case manifest ^. #blueprint of
         baselineLine = "  Baseline: " <> renderBaseline ab
         promptLines = case ab ^. #userPrompt of
           Nothing -> []
-          Just p -> ["  Prompt: \"" <> truncateForSummary promptWidth p <> "\""]
+          Just p -> renderPrompt display p
      in [header, baselineLine] ++ promptLines ++ [""]
 
 -- | Render durable agent-guided migration receipts. An empty ledger adds no
@@ -422,6 +446,17 @@ statusColor :: TrackedFileStatus -> Text -> Text
 statusColor TfsUnchanged = dim
 statusColor TfsModified = yellow
 statusColor TfsDeleted = red
+
+-- | The @Prompt:@ line(s) for a stored prompt. The truncated form is one quoted
+-- line; the full form is a bare header followed by the prompt's own lines, each
+-- indented under it. The full form is deliberately not quoted: a prompt may
+-- contain a @"@ and nothing escapes it, so quotes would not tell a reader where
+-- the value ends, while the indentation does.
+renderPrompt :: PromptDisplay -> Text -> [Text]
+renderPrompt PromptTruncated p =
+  ["  Prompt: \"" <> truncateForSummary promptWidth p <> "\""]
+renderPrompt PromptFull p =
+  "  Prompt:" : map ("    " <>) (T.lines p)
 
 -- | Collapse every run of internal whitespace to a single space and cut the
 -- result to @width@ characters, marking a cut with a trailing ellipsis.
