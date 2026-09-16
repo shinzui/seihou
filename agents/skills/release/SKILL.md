@@ -73,24 +73,23 @@ Versions are `A.B.C.D`:
 **Before the first real publish, verify these and stop if any are unmet** —
 do not upload a package that won't resolve or build for downstream users:
 
-1. **Git-pinned dependency.** `cabal.project` pins `streamly` via a
-   `source-repository-package` (git). A package whose dependency closure needs
-   that pin cannot be built from Hackage by others. Confirm that the
-   dependencies of `seihou-cli` and `seihou-okf-extension` (e.g. `baikai`,
-   `baikai-claude`, `baikai-openai`, and their `streamly` requirement) resolve
-   against **Hackage releases**, not the git pin. If a package still needs the
-   git `streamly`, do **not** upload it — publish the packages that do resolve
-   (at least `seihou-core`) and stop.
+1. **No git-pinned dependency.** `cabal.project` must contain no
+   `source-repository-package` stanza. A package whose dependency closure needs
+   one cannot be built from Hackage by anyone else, so if a stanza has appeared,
+   find out what needs it and do **not** upload a package that depends on it —
+   publish the packages that resolve without it (at least `seihou-core`) and
+   stop.
 
-   As checked at `0.7.0.0`: `baikai` requires `streamly >=0.11 && <0.13` and
-   `streamly-core >=0.3 && <0.5`, and Hackage carries `streamly 0.11.1` and
-   `streamly-core 0.3.1`, both in range. So a Hackage-only *resolution* exists
-   and the git pin is a build-level workaround (GHC 9.12 compatibility) rather
-   than a resolution blocker. Note the distinction honestly when reporting:
-   this shows the closure resolves, not that it builds from Hackage. Re-check
-   the bounds whenever `build-depends` changes; if nothing in any `build-depends`
-   moved since the last release, the picture is unchanged from a release that
-   already published successfully.
+   Settled at `0.9.0.0`: the `streamly` / `streamly-core` pin that had been
+   there since `84ae8a8` was removed. The Hackage releases `streamly 0.11.1`
+   and `streamly-core 0.3.1` satisfy `baikai`'s `>=0.11 && <0.13` and
+   `>=0.3 && <0.5` *and* compile under GHC 9.12.4, so the pin was buying
+   nothing. Verify the property rather than assuming it: `grep
+   source-repository-package cabal.project` should find nothing, and
+   `cabal build all` should resolve every dependency as `repo-tar` — check
+   `dist-newstyle/cache/plan.json` if in doubt. Note that a version satisfying
+   a bound is not the same as it compiling; only an actual build settles that.
+
 2. **Package metadata.** Each `*.cabal` already carries `license`
    (BSD-3-Clause), `license-file`, `author`, `maintainer`, `homepage`,
    `bug-reports`, `category`, `synopsis`, and `description`, and each package
@@ -268,31 +267,47 @@ either order):
 Tip: run a candidate first (`cabal upload <tarball>` **without** `--publish`)
 to sanity-check the Hackage page before the irreversible `--publish`.
 
-**Expect the two documentation uploads to fail.** Only `seihou-core` can
-publish Haddocks. For `seihou-cli` and `seihou-okf-extension`,
-`cabal upload --documentation` returns:
+**The two dependents' doc tarballs need repacking first.** `seihou-core` has a
+public library and its tarball uploads as `cabal haddock` produces it.
+`seihou-cli` and `seihou-okf-extension` ship a private sublibrary and no public
+library, which breaks the tarball two ways at once: Haddock names the
+sublibrary's Hoogle file with a colon (Hackage rejects the name) and nests the
+HTML under `<pkg>-<ver>-docs/<sublibrary>/` instead of directly under
+`<pkg>-<ver>-docs/`. Fixing either alone is not enough, and Hackage also
+refuses GNU-format archives, so a naive `tar czf` repack fails a third way.
 
-```text
-http code 400
-Error: Invalid documentation tarball
-Invalid windows file name in tar archive:
-"seihou-cli-0.7.0.0-docs\\seihou-cli-internal\\seihou-cli:seihou-cli-internal.txt"
+`just docs-tarball <package> <version>` does all three — it flattens the
+sublibrary directory, renames the Hoogle file, and repacks as ustar — and
+prints the path to upload:
+
+```bash
+( cd seihou-cli
+  cabal haddock --haddock-for-hackage )
+cabal upload --documentation --publish \
+  "$(just docs-tarball seihou-cli A.B.C.D)"
+
+( cd seihou-okf-extension
+  cabal haddock --haddock-for-hackage )
+cabal upload --documentation --publish \
+  "$(just docs-tarball seihou-okf-extension A.B.C.D)"
 ```
 
-This is **not a regression and not a release blocker** — it has failed for
-every release, and no version of either package has docs on Hackage. Both
-ship a private sublibrary and no public library, which breaks the tarball two
-ways at once: Haddock names the sublibrary's interface file with a colon
-(which Hackage rejects), and it nests the HTML under
-`<pkg>-<ver>-docs/<sublibrary>/` instead of directly under `<pkg>-<ver>-docs/`.
-Fixing the filename alone is not enough.
+The recipe refuses a tarball that is already flat, so running it on
+`seihou-core` is a safe no-op that tells you to upload that one as-is.
 
-Run the two `cabal upload --documentation` commands anyway, note the failure,
-and carry on to the GitHub release. Repacking the tarball (flatten the
-sublibrary directory, drop the colon file) would satisfy Hackage but would
-publish a *private* sublibrary's API as the package's documentation — raise it
-with the user rather than doing it silently. Unlike a package version,
-documentation can be re-uploaded at any time, so there is no rush.
+**Know what this publishes.** The only Haddocks these two packages have are
+their *private* sublibrary's, so their Hackage pages document `Seihou.CLI.*`
+and `Seihou.OKF.Extension.*` modules that no downstream package can actually
+depend on — a private sublibrary is not nameable in another package's
+`build-depends`. The user accepted that trade at `0.9.0.0`, on the grounds that
+real docs beat none and documentation can be re-uploaded at any time. The
+alternative, promoting each sublibrary to a public `library` stanza, would make
+the tarball correct with no repacking but contradicts the library-first
+convention in `CLAUDE.md` and would turn the internal API into a supported
+public surface. Do not make that change as part of a release.
+
+History: no version before `0.9.0.0` had docs for either package, because this
+skill used to say the failure was expected and to carry on past it.
 
 ### 9. GitHub release
 
@@ -326,14 +341,16 @@ section — no internal implementation detail.
 - **A breaking release bumps `B`, pre-1.0 included** — that is what every
   release in this repo has done. Don't reason your way to a `C` bump from
   generic PVP advice.
-- **Honor the Hackage-readiness preconditions.** If the git-pinned `streamly`
-  still leaks into a package's Hackage dependency closure, publish the
-  packages that resolve (at least `seihou-core`) and stop — do not upload an
-  unbuildable package.
+- **Honor the Hackage-readiness preconditions.** If a
+  `source-repository-package` stanza has reappeared in `cabal.project` and a
+  package's dependency closure needs it, publish the packages that resolve
+  without it (at least `seihou-core`) and stop — do not upload an unbuildable
+  package.
 - **Conventional Commits** for the release commit (`chore(release): vA.B.C.D`).
 - **Cut both changelogs** — the root `CHANGELOG.md` (engineering) *and*
   `docs/user/CHANGELOG.md` (curated, user-facing). Both carry version sections
   and compare links; both belong in the release commit.
-- **The two doc uploads for `seihou-cli` and `seihou-okf-extension` will
-  fail**, as they always have. Note it and continue — the packages themselves
-  publish fine.
+- **Repack the two dependents' doc tarballs** with
+  `just docs-tarball <package> <version>` before uploading them; the raw
+  `cabal haddock` output is rejected three ways over. `seihou-core` uploads
+  as-is.

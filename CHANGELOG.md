@@ -18,6 +18,21 @@ All notable changes to this project will be documented in this file.
   `just test` recipe runs — failed with `[Cabal-7043]`, because the solver picked
   a plan with no test components. Build and test now share one install plan, so
   neither recipe re-resolves after the other.
+- **`seihou-cli` and `seihou-okf-extension` have Hackage documentation for the
+  first time.** Both ship a private sublibrary and no public library, so
+  `cabal haddock --haddock-for-hackage` emits a tarball Hackage rejects three
+  ways over: the Hoogle file is named with a colon, the HTML sits under
+  `<pkg>-<ver>-docs/<sublibrary>/` rather than directly under
+  `<pkg>-<ver>-docs/`, and a naive `tar czf` repack is GNU-format, which is
+  refused as well. The new `just docs-tarball <package> <version>` recipe fixes
+  all three and prints the path to upload. It detects the sublibrary directory
+  by the colon-named file rather than by "first subdirectory", so it cannot
+  corrupt a correctly packed tarball, and it refuses a flat one outright.
+
+  Note what this publishes: the only Haddocks these packages have are the
+  private sublibrary's, so their Hackage pages document modules no downstream
+  package can depend on. Accepted deliberately — real docs beat none, and
+  documentation can be re-uploaded at any time.
 
 ## [0.9.0.0] - 2026-09-16
 
