@@ -113,11 +113,23 @@ This section must always reflect the actual current state of the work.
   - [x] Unit tests: codec round-trip / key omission / legacy decode (4),
     `executePlan` flag folding (7), partial-update merge rule (6), `attachApplication` (4).
     `cabal test all --enable-tests`: 1101 core + 572 cli + 51 okf-extension, all passing.
-- [ ] Milestone 2 — relax both ownership gates for additive-only paths and improve the refusal message.
-  - [ ] Add the `ensureOwnershipClosure` exemption in `seihou-cli/src/Seihou/CLI/Update/Selection.hs`.
-  - [ ] Add the `validateOwner` exemption in `seihou-core/src/Seihou/Engine/Reconcile.hs`, requiring both
-    the manifest record's flag and every candidate operation for the path.
-  - [ ] End-to-end proof on a two-owner `.gitignore` fixture.
+- [x] Milestone 2 — relax both ownership gates for additive-only paths and improve the refusal
+  message (2026-09-16).
+  - [x] `ensureOwnershipClosure` skips records whose `additiveOnly` is true
+    (`seihou-cli/src/Seihou/CLI/Update/Selection.hs`).
+  - [x] `validateOwner` exempts a path only when the manifest record's flag *and* every
+    candidate operation for the path agree (`seihou-core/src/Seihou/Engine/Reconcile.hs`);
+    `validateInputs` now traverses `Map.toList grouped` to hand it the operations.
+  - [x] Refusal message explains that the path is not recorded as additive-only and names both
+    reasons (`seihou-cli/src/Seihou/CLI/Update/Render.hs`). The `--include-shared-owners`
+    mention is deliberately deferred to Milestone 3, so no message names a flag that does not
+    exist yet.
+  - [x] Unit tests: 2 selection preflight, 4 reconciliation.
+  - [x] End-to-end proof on a two-owner `.gitignore` fixture
+    (`prepareSharedPathFixture` in `seihou-cli/test/Seihou/CLI/UpdateSpec.hs`, driven from
+    `seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs`): the additive case applies and keeps the
+    co-owner's line and both application ids; the whole-file case refuses with
+    `shared_path_requires_applications` and leaves project and manifest byte-identical.
 - [ ] Milestone 3 — add `seihou update <target> --include-shared-owners`.
 - [ ] Milestone 4 — documentation, changelogs, ADR, and full-suite verification.
 
@@ -632,6 +644,20 @@ targeted update on the two-owner `.gitignore` fixture succeeds, the co-owner's l
 present byte for byte, and the manifest still names both applications. The whole-file variant
 of the same fixture still refuses with exit status 1 and the code
 `shared_path_requires_applications`.
+
+**Result (2026-09-16).** Done. `cabal test all --enable-tests`: 1105 core + 576 cli + 51
+okf-extension, all passing. The fixture is `prepareSharedPathFixture` in
+`seihou-cli/test/Seihou/CLI/UpdateSpec.hs`, parameterized by a `CoOwnerWriteMode`
+(`CoOwnerAppends` / `CoOwnerWritesWholeFile`) so the positive and negative cases share one
+builder. On the additive fixture, `seihou update alpha --json` reports
+`"outcome":"applied"` and `.gitignore` becomes `/dist-newstyle\n/result\n/alpha-v2\n` — beta's
+`/result` untouched — with both application ids and `"additiveOnly":true` still in the
+manifest. On the whole-file fixture the same command exits non-zero with
+`shared_path_requires_applications`, and both `.gitignore` and `.seihou/manifest.json` are
+byte-identical afterwards.
+
+The refusal message gained the explanation but not the flag name, since `--include-shared-owners`
+does not exist until Milestone 3; Milestone 3 adds the mention.
 
 ### Milestone 3 — `--include-shared-owners`
 

@@ -370,7 +370,10 @@ errorMessage (SharedPathRequiresApplications path selected required) =
     <> T.pack path
     <> " is also owned by application(s) "
     <> T.intercalate ", " (map (^. #unApplicationId) (Set.toAscList required))
-    <> ". Select every owner or run seihou update with no targets. Selected: "
+    <> ", and it is not recorded as written only by additive patches"
+    <> " -- either an owner writes the whole file, or the manifest predates that record,"
+    <> " in which case one seihou update with no targets will record it."
+    <> " Select every owner or run seihou update with no targets. Selected: "
     <> T.intercalate ", " (map (^. #unApplicationId) (Set.toAscList selected))
 errorMessage (UpdateHasUnresolvedPaths paths) =
   "Resolve these paths before apply: " <> T.intercalate ", " (map T.pack (Set.toAscList paths))

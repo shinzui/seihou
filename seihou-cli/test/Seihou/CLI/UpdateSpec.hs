@@ -2,6 +2,9 @@ module Seihou.CLI.UpdateSpec
   ( tests,
     UpdateFixture (..),
     prepareUpdateFixture,
+    SharedPathFixture (..),
+    CoOwnerWriteMode (..),
+    prepareSharedPathFixture,
   )
 where
 
@@ -72,6 +75,39 @@ spec = do
           manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
       selectApplications (NamedUpdateTargets ["one"]) manifest
         `shouldBe` Left (SharedPathRequiresApplications "shared.txt" (Set.singleton (first ^. #applicationId)) (Set.singleton (second ^. #applicationId)))
+
+    it "accepts a partial selection when the shared path is additive-only" $ do
+      -- Every owner reaches the path through an additive, non-overlapping
+      -- patch, so reconciling one of them cannot disturb the other's bytes.
+      let first = application (AppliedModuleTarget "one") [instanceState "one"]
+          second = application (AppliedModuleTarget "two") [instanceState "two"]
+          owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
+          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners True
+          manifest :: Manifest
+          manifest = manifestForApplications [first, second] (Map.singleton ".gitignore" record)
+      selectApplications (NamedUpdateTargets ["one"]) manifest
+        `shouldBe` Right (RecordedSelection [first])
+
+    it "still rejects a partial selection when one shared path is not additive-only" $ do
+      -- The exemption is per path: an additive shared path does not excuse a
+      -- whole-file one in the same manifest.
+      let first = application (AppliedModuleTarget "one") [instanceState "one"]
+          second = application (AppliedModuleTarget "two") [instanceState "two"]
+          owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
+          additive = FileRecord (hashContent "ignore") "one" Template testTime Nothing owners True
+          wholeFile = FileRecord (hashContent "old") "one" Template testTime Nothing owners False
+          manifest :: Manifest
+          manifest =
+            manifestForApplications
+              [first, second]
+              (Map.fromList [(".gitignore", additive), ("shared.txt", wholeFile)])
+      selectApplications (NamedUpdateTargets ["one"]) manifest
+        `shouldBe` Left
+          ( SharedPathRequiresApplications
+              "shared.txt"
+              (Set.singleton (first ^. #applicationId))
+              (Set.singleton (second ^. #applicationId))
+          )
 
     it "requires one explicit target to seed a legacy manifest" $ do
       selectApplications AllRecordedApplications (emptyManifest testTime) `shouldBe` Left NoRecordedApplications
@@ -486,6 +522,143 @@ prepareUpdateFixture root = do
     baselineContent
   LBS.writeFile manifestPath (manifestToJSON manifest)
   pure UpdateFixture {projectRoot, projectFile, manifestPath, xdgHome, installedModule, remote, applicationId}
+
+-- | How the co-owning application @beta@ writes the shared @.gitignore@.
+data CoOwnerWriteMode
+  = -- | @append-line-if-absent@: beta occupies a disjoint slice of the file,
+    --   so the path records @additiveOnly = True@ and a targeted update of
+    --   @alpha@ alone is safe.
+    CoOwnerAppends
+  | -- | A whole-file @template@ step: regenerating the path on alpha's behalf
+    --   would discard beta's content, so the path records
+    --   @additiveOnly = False@ and stays under the ownership closure.
+    CoOwnerWritesWholeFile
+  deriving stock (Eq, Show)
+
+-- | A project whose @.gitignore@ is co-owned by two recorded applications.
+data SharedPathFixture = SharedPathFixture
+  { projectRoot :: !FilePath,
+    gitignorePath :: !FilePath,
+    manifestPath :: !FilePath,
+    xdgHome :: !FilePath,
+    alphaApplicationId :: !ApplicationId,
+    betaApplicationId :: !ApplicationId
+  }
+  deriving stock (Generic)
+
+-- | Build a project where @alpha@ and @beta@ both own @.gitignore@.
+--
+-- The recorded baseline holds both owners' lines. Alpha's installed module is
+-- at 1.0.0 and its remote at 2.0.0 with one extra line, so
+-- @seihou update alpha@ has real work to do. Beta is recorded but never
+-- updated, which is exactly the partial selection the ownership closure used
+-- to refuse.
+prepareSharedPathFixture :: CoOwnerWriteMode -> FilePath -> IO SharedPathFixture
+prepareSharedPathFixture writeMode root = do
+  let projectRoot = root </> "project"
+      manifestPath = projectRoot </> ".seihou" </> "manifest.json"
+      gitignorePath = projectRoot </> ".gitignore"
+      xdgHome = root </> "xdg"
+      installedRoot = xdgHome </> "seihou" </> "installed"
+      remoteRoot = root </> "remote"
+      baselineContent = "/dist-newstyle\n/result\n"
+      baselineRef = BaselineRef (hashContent baselineContent)
+      alphaTarget = AppliedModuleTarget "alpha"
+      betaTarget = AppliedModuleTarget "beta"
+      alphaApplicationId = mkApplicationId alphaTarget []
+      betaApplicationId = mkApplicationId betaTarget []
+      originFor name = RemoteOrigin (T.pack (remoteRoot </> T.unpack name)) name Nothing
+      appliedFor name target applicationId version =
+        (application target [instanceStateFrom (ModuleName name) (originFor name)])
+          { applicationId,
+            targetOrigin = originFor name,
+            targetVersion = Just version,
+            instances = [instanceStateFrom (ModuleName name) (originFor name)]
+          }
+      betaPatch = case writeMode of
+        CoOwnerAppends -> Just "append-line-if-absent"
+        CoOwnerWritesWholeFile -> Nothing
+      fileRecord =
+        FileRecord
+          (hashContent baselineContent)
+          "alpha"
+          Template
+          testTime
+          (Just baselineRef)
+          (Set.fromList [alphaApplicationId, betaApplicationId])
+          (writeMode == CoOwnerAppends)
+      manifest =
+        ( (emptyManifest testTime)
+            & #modules
+              .~ [ AppliedModule "alpha" emptyParentVars (originFor "alpha") (Just "1.0.0") testTime Nothing,
+                   AppliedModule "beta" emptyParentVars (originFor "beta") (Just "1.0.0") testTime Nothing
+                 ]
+            & #files .~ Map.singleton ".gitignore" fileRecord
+            & #applications
+              .~ [ appliedFor "alpha" alphaTarget alphaApplicationId "1.0.0",
+                   appliedFor "beta" betaTarget betaApplicationId "1.0.0"
+                 ]
+        )
+      -- Install one module and publish the same content as its git remote.
+      installModule name version patchOp content = do
+        let installed = installedRoot </> T.unpack name
+            remote = remoteRoot </> T.unpack name
+        createDirectoryIfMissing True (installed </> "files")
+        TIO.writeFile (installed </> "module.dhall") (moduleDhallForGitignore name version patchOp)
+        TIO.writeFile (installed </> "files" </> "gitignore.tmpl") content
+        TIO.writeFile
+          (installed </> ".seihou-origin.json")
+          ("{\"sourceUrl\":\"" <> T.pack remote <> "\",\"version\":\"" <> version <> "\"}")
+        pure installed
+      publishRemote name version patchOp content = do
+        let remote = remoteRoot </> T.unpack name
+        createDirectoryIfMissing True (remote </> "files")
+        TIO.writeFile (remote </> "module.dhall") (moduleDhallForGitignore name version patchOp)
+        TIO.writeFile (remote </> "files" </> "gitignore.tmpl") content
+        callProcess "git" ["-C", remote, "init", "-q"]
+        callProcess "git" ["-C", remote, "add", "."]
+        callProcess "git" ["-C", remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "v" <> T.unpack version]
+
+  _ <- installModule "alpha" "1.0.0" (Just "append-line-if-absent") "/dist-newstyle\n"
+  _ <- installModule "beta" "1.0.0" betaPatch "/result\n"
+  publishRemote "alpha" "2.0.0" (Just "append-line-if-absent") "/dist-newstyle\n/alpha-v2\n"
+  publishRemote "beta" "1.0.0" betaPatch "/result\n"
+
+  createDirectoryIfMissing True (projectRoot </> ".seihou" </> "baselines")
+  TIO.writeFile gitignorePath baselineContent
+  TIO.writeFile
+    (projectRoot </> ".seihou" </> "baselines" </> T.unpack (baselineRef ^. #unBaselineRef . #unSHA256))
+    baselineContent
+  LBS.writeFile manifestPath (manifestToJSON manifest)
+  pure
+    SharedPathFixture
+      { projectRoot,
+        gitignorePath,
+        manifestPath,
+        xdgHome,
+        alphaApplicationId,
+        betaApplicationId
+      }
+
+-- | A module whose only step contributes to @.gitignore@, either through the
+-- given patch operation or, with 'Nothing', as a whole-file template.
+moduleDhallForGitignore :: Text -> Text -> Maybe Text -> Text
+moduleDhallForGitignore name version patchOp =
+  T.unlines
+    [ "{ name = \"" <> name <> "\"",
+      ", version = Some \"" <> version <> "\"",
+      ", description = None Text",
+      ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }",
+      ", exports = [] : List { var : Text, alias : Optional Text }",
+      ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
+      ", steps = [{ strategy = \"template\", src = \"gitignore.tmpl\", dest = \".gitignore\", when = None Text, patch = "
+        <> maybe "None Text" (\op -> "Some \"" <> op <> "\"") patchOp
+        <> " }]",
+      ", commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }",
+      ", dependencies = [] : List Text",
+      ", removal = None { steps : List { action : Text, dest : Text, src : Optional Text }, commands : List { run : Text, workDir : Optional Text, when : Optional Text } }",
+      "}"
+    ]
 
 prepareRecipeUpdateFixture :: FilePath -> IO RecipeUpdateFixture
 prepareRecipeUpdateFixture root = do

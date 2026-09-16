@@ -6,7 +6,13 @@ import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.SeihouBinary (seihouBinary)
-import Seihou.CLI.UpdateSpec (UpdateFixture (..), prepareUpdateFixture)
+import Seihou.CLI.UpdateSpec
+  ( CoOwnerWriteMode (..),
+    SharedPathFixture (..),
+    UpdateFixture (..),
+    prepareSharedPathFixture,
+    prepareUpdateFixture,
+  )
 import System.Directory (doesFileExist)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..))
@@ -132,6 +138,40 @@ spec = do
       forceOut `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
       TIO.readFile (fixture ^. #projectFile) `shouldReturn` "candidate accepted\nkeep\nv2\n"
 
+  it "updates one owner of an additive shared path and leaves the other's lines intact" $
+    withSystemTempDirectory "seihou-update-shared-additive" $ \root -> do
+      fixture <- prepareSharedPathFixture CoOwnerAppends root
+      binary <- seihouBinary
+      (exitCode, stdoutText, stderrText) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      case exitCode of
+        ExitSuccess -> pure ()
+        ExitFailure code ->
+          expectationFailure
+            ("update exited " <> show code <> "\nstdout:\n" <> T.unpack stdoutText <> "\nstderr:\n" <> T.unpack stderrText)
+      stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
+      -- Replaying alpha's append on top of the recorded baseline adds its new
+      -- line and leaves beta's /result exactly where it was.
+      TIO.readFile (fixture ^. #gitignorePath)
+        `shouldReturn` "/dist-newstyle\n/result\n/alpha-v2\n"
+      manifestText <- TIO.readFile (fixture ^. #manifestPath)
+      -- Both owners are still recorded: a partial update must not quietly
+      -- drop the co-owner it did not touch.
+      manifestText `shouldSatisfy` T.isInfixOf (fixture ^. #alphaApplicationId . #unApplicationId)
+      manifestText `shouldSatisfy` T.isInfixOf (fixture ^. #betaApplicationId . #unApplicationId)
+      manifestText `shouldSatisfy` T.isInfixOf "\"additiveOnly\":true"
+
+  it "still refuses a partial selection when a co-owner writes the shared path wholesale" $
+    withSystemTempDirectory "seihou-update-shared-wholefile" $ \root -> do
+      fixture <- prepareSharedPathFixture CoOwnerWritesWholeFile root
+      binary <- seihouBinary
+      beforeGitignore <- TIO.readFile (fixture ^. #gitignorePath)
+      beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+      (exitCode, stdoutText, _) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      exitCode `shouldSatisfy` (/= ExitSuccess)
+      stdoutText `shouldSatisfy` T.isInfixOf "shared_path_requires_applications"
+      TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
+      LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+
   it "exposes update and its options through the shared Bash, Zsh, and Fish completion protocol" $ do
     binary <- seihouBinary
     (topExit, topOutput, _) <- runProcessText binary ["--bash-completion-enriched", "--bash-completion-index", "0"] Nothing Nothing
@@ -163,6 +203,12 @@ spec = do
           script `shouldSatisfy` T.isInfixOf "bash-completion"
       )
       ["bash", "zsh", "fish"]
+
+runSeihouShared :: FilePath -> SharedPathFixture -> [String] -> IO (ExitCode, T.Text, T.Text)
+runSeihouShared binary fixture args = do
+  inherited <- getEnvironment
+  let environment = ("XDG_CONFIG_HOME", fixture ^. #xdgHome) : filter ((/= "XDG_CONFIG_HOME") . fst) inherited
+  runProcessText binary args (Just (fixture ^. #projectRoot)) (Just environment)
 
 runSeihou :: FilePath -> UpdateFixture -> [String] -> IO (ExitCode, T.Text, T.Text)
 runSeihou binary fixture args = do

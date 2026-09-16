@@ -47,10 +47,26 @@ selectApplications selection manifest = case selection of
             then Left (UpdateTargetNotFound name (availableTargets manifest))
             else Right (foldl' (flip (Set.insert . (^. #applicationId))) selected matches)
 
+-- | For every managed path a selected application owns, require that every
+-- other owner is selected too — because regenerating a file normally means
+-- rewriting all of it, which would discard an unselected owner's content.
+--
+-- A path whose manifest record says @additiveOnly@ is exempt: every owner
+-- reaches it through an additive, non-overlapping patch, so reconciling one
+-- of them provably cannot disturb another. This is the preflight, and it runs
+-- before any candidate artifact is fetched, so the manifest is the only
+-- evidence available here; 'Seihou.Engine.Reconcile.validateOwner' checks the
+-- candidate's own operations later, once they are known.
+--
+-- A @False@ cannot distinguish "an owner writes the whole file" from "this
+-- manifest predates the field", so the refusal message names both.
+--
+-- See docs/adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md.
 ensureOwnershipClosure :: Manifest -> Set ApplicationId -> Either UpdateError ()
 ensureOwnershipClosure manifest selected =
   case [ (path, selectedOwners, missingOwners)
        | (path, record) <- Map.toAscList (manifest ^. #files),
+         not (record ^. #additiveOnly),
          let selectedOwners = Set.intersection selected (record ^. #applicationIds),
          let missingOwners = (record ^. #applicationIds) Set.\\ selected,
          not (Set.null selectedOwners),

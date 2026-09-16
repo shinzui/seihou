@@ -257,27 +257,40 @@ validateInputs selected operations ownerMap manifest = do
       directories = Set.fromList [path | CreateDirOp path <- operations]
   traverse_ validateManagedPath (Map.keys grouped)
   traverse_ validateManagedPath (Set.toList directories)
-  traverse_ (validateOwner selected ownerMap manifest) (Map.keys grouped)
+  traverse_ (validateOwner selected ownerMap manifest) (Map.toList grouped)
   pure (grouped, directories)
 
+-- | Defence in depth behind the CLI's selection preflight: refuse to write a
+-- path an unselected application also owns.
+--
+-- A path every owner reaches through an additive, non-overlapping patch is
+-- exempt, because replaying one owner's patch on top of the trusted baseline
+-- provably leaves the others' bytes where they were. The exemption requires
+-- /both/ halves: the manifest's record must say the path was additive-only,
+-- and every operation this run contributes to it must still be additive. The
+-- second half is what catches a module whose new version changed a shared
+-- file from a patch step to a whole-file step — the manifest still says
+-- additive, the candidate is not, and the update refuses before writing
+-- anything rather than trusting last release's record.
+--
+-- See docs/adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md.
 validateOwner ::
   Set ApplicationId ->
   Map FilePath DesiredFileOwner ->
   Manifest ->
-  FilePath ->
+  (FilePath, [Operation]) ->
   Either ReconciliationError ()
-validateOwner selected ownerMap manifest path = case Map.lookup path ownerMap of
+validateOwner selected ownerMap manifest (path, pathOperations) = case Map.lookup path ownerMap of
   Nothing -> Left (MissingDesiredOwner path)
   Just owner
     | not ((owner ^. #applicationIds) `Set.isSubsetOf` selected) ->
         Left (DesiredOwnerOutsideSelection path ((owner ^. #applicationIds) Set.\\ selected))
     | otherwise -> case Map.lookup path (manifest ^. #files) of
         Nothing -> Right ()
-        Just record ->
-          let unselectedOwners = (record ^. #applicationIds) Set.\\ selected
-           in if Set.null unselectedOwners
-                then Right ()
-                else Left (SharedPathRequiresApplications path (record ^. #applicationIds))
+        Just record
+          | Set.null ((record ^. #applicationIds) Set.\\ selected) -> Right ()
+          | record ^. #additiveOnly && all isAdditiveOperation pathOperations -> Right ()
+          | otherwise -> Left (SharedPathRequiresApplications path (record ^. #applicationIds))
 
 validateManagedPath :: FilePath -> Either ReconciliationError ()
 validateManagedPath rawPath = case validateProjectRelativePath (T.pack rawPath) of

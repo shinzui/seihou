@@ -136,6 +136,88 @@ spec = do
               cleanMerge
       result `shouldBe` Left (SharedPathRequiresApplications "shared.txt" (Set.singleton appB))
 
+    it "lets a targeted update through an additive-only shared path" $ do
+      -- Replaying appA's append on top of the trusted baseline leaves appB's
+      -- lines where they were, so the closure has nothing to protect here.
+      let baseline = baselineRefForContent "/dist\n/result\n"
+          prior = additiveRecord "/dist\n/result\n" (Just baseline) [appA, appB]
+          manifest = withFile ".gitignore" prior empty
+          result =
+            planWith
+              (Map.singleton ".gitignore" "/dist\n/result\n")
+              Map.empty
+              (Map.singleton baseline "/dist\n/result\n")
+              manifest
+              [appA]
+              [patch "/dist-newstyle" "mod-a"]
+              (owners ".gitignore" [appA])
+              cleanMerge
+      case result of
+        Left err -> expectationFailure ("expected the plan to be accepted, got " <> show err)
+        Right reconciliation -> do
+          Map.keys (reconciliation ^. #files) `shouldBe` [".gitignore"]
+          case (reconciliation ^. #files) Map.! ".gitignore" of
+            FileUpdate desired _ _ _ -> do
+              -- appB's line survives the replay byte for byte.
+              (desired ^. #generatedContent) `shouldBe` "/dist\n/result\n/dist-newstyle\n"
+              (desired ^. #additiveOnly) `shouldBe` True
+            other -> expectationFailure ("expected a file update, got " <> show other)
+
+    it "refuses an additive-only shared path when the candidate writes the whole file" $ do
+      -- The manifest still says additive, but this module's new version
+      -- replaced its patch step with a whole-file step. The candidate's own
+      -- operations settle it, before anything is written.
+      let baseline = baselineRefForContent "/dist\n/result\n"
+          prior = additiveRecord "/dist\n/result\n" (Just baseline) [appA, appB]
+          manifest = withFile ".gitignore" prior empty
+          result =
+            planWith
+              (Map.singleton ".gitignore" "/dist\n/result\n")
+              Map.empty
+              (Map.singleton baseline "/dist\n/result\n")
+              manifest
+              [appA]
+              [WriteFileOp ".gitignore" "/dist-newstyle\n" Template]
+              (owners ".gitignore" [appA])
+              cleanMerge
+      result `shouldBe` Left (SharedPathRequiresApplications ".gitignore" (Set.fromList [appA, appB]))
+
+    it "refuses an additive-only shared path when the candidate adds a position-dependent patch" $ do
+      let baseline = baselineRefForContent "/dist\n/result\n"
+          prior = additiveRecord "/dist\n/result\n" (Just baseline) [appA, appB]
+          manifest = withFile ".gitignore" prior empty
+          result =
+            planWith
+              (Map.singleton ".gitignore" "/dist\n/result\n")
+              Map.empty
+              (Map.singleton baseline "/dist\n/result\n")
+              manifest
+              [appA]
+              [ patch "/dist-newstyle" "mod-a",
+                PatchFileOp ".gitignore" "/tail\n" AppendFile Template "mod-a"
+              ]
+              (owners ".gitignore" [appA])
+              cleanMerge
+      result `shouldBe` Left (SharedPathRequiresApplications ".gitignore" (Set.fromList [appA, appB]))
+
+    it "refuses a shared path the manifest does not record as additive-only" $ do
+      -- A manifest written before the field existed reads as False, and must
+      -- keep requiring every owner regardless of how additive this run is.
+      let baseline = baselineRefForContent "/dist\n/result\n"
+          prior = record "/dist\n/result\n" (Just baseline) [appA, appB]
+          manifest = withFile ".gitignore" prior empty
+          result =
+            planWith
+              (Map.singleton ".gitignore" "/dist\n/result\n")
+              Map.empty
+              (Map.singleton baseline "/dist\n/result\n")
+              manifest
+              [appA]
+              [patch "/dist-newstyle" "mod-a"]
+              (owners ".gitignore" [appA])
+              cleanMerge
+      result `shouldBe` Left (SharedPathRequiresApplications ".gitignore" (Set.fromList [appA, appB]))
+
     it "rejects control paths before reading or planning" $ do
       let result =
             planWith
@@ -283,6 +365,19 @@ record content baseline owners' =
       baseline = baseline,
       applicationIds = Set.fromList owners',
       additiveOnly = False
+    }
+
+-- | A record for a path every owner reaches through an additive patch.
+additiveRecord :: Text -> Maybe BaselineRef -> [ApplicationId] -> FileRecord
+additiveRecord content baseline owners' =
+  FileRecord
+    { hash = hashContent content,
+      moduleName = "owner",
+      strategy = Template,
+      generatedAt = fixedTime,
+      baseline = baseline,
+      applicationIds = Set.fromList owners',
+      additiveOnly = True
     }
 
 owners :: FilePath -> [ApplicationId] -> Map.Map FilePath DesiredFileOwner
