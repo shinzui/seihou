@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Packaging
+
+- **`streamly` and `streamly-core` now resolve from Hackage.** `cabal.project`
+  pinned both to a `composewell/streamly` master commit 301 commits past the
+  `streamly-0.11.1` tag, added in `84ae8a8` with no recorded reason. The Hackage
+  releases `streamly 0.11.1` / `streamly-core 0.3.1` satisfy every bound in the
+  closure *and* compile under GHC 9.12.4, so the pin bought nothing while making
+  the package look unbuildable from Hackage to anyone reading `cabal.project`.
+  Both `source-repository-package` stanzas are gone; `cabal build all` now
+  resolves both as `repo-tar`.
+- **`tests: True` added to `cabal.project`.** `cabal test all` — what the
+  `just test` recipe runs — failed with `[Cabal-7043]`, because the solver picked
+  a plan with no test components. Build and test now share one install plan, so
+  neither recipe re-resolves after the other.
+
 ## [0.9.0.0] - 2026-09-16
 
 ### Added
