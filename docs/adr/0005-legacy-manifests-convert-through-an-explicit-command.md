@@ -24,6 +24,13 @@ trusts.
 Conversion is an explicit command — `seihou manifest upgrade` — that prints
 every conversion it makes. It is never an automatic upgrade on first read.
 
+This explicit boundary applies to inference-bearing conversion. A later
+adjacent schema step that is deterministic and lossless may be staged by a
+command that requires its capability, provided the command validates the final
+document and commits the manifest atomically with its other changes. The
+classification and ordered-step requirements are defined by
+[ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md).
+
 Until it is run, a schema-5-or-earlier manifest fails to decode.
 `Seihou.Manifest.Types.checkManifestVersion` refuses it with a message naming
 the command, rather than misreading it or silently converting it.
@@ -75,6 +82,9 @@ decoder at all, so what can be asserted about them is that they convert.
 
 - [ADR 0001](0001-manifest-is-a-checked-in-machine-independent-artifact.md)
 - [ADR 0004](0004-the-manifest-is-the-only-record-of-applied-state.md)
+- [ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md)
+  — distinguishes deterministic adjacent upgrades from inference-bearing
+  conversion.
 - `docs/masterplans/9-make-the-seihou-manifest-multi-developer-safe.md`
 - `docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md`
 - `docs/user/manifest-upgrade.md`

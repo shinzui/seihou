@@ -10,6 +10,12 @@ provenance:
     model: "gpt-5.6-sol"
     harness: "codex-cli"
     at: 2026-09-17T14:16:50Z
+  revisions:
+    - model: "gpt-5.6-sol"
+      harness: "codex-cli"
+      at: 2026-09-17T15:41:41Z
+      mode: "update"
+      note: "Made ADR 0014 the initiative-wide manifest-evolution contract"
 ---
 
 # Make manifest evolution explicit and targeted updates upgrade-safe
@@ -27,7 +33,8 @@ shared-write evidence explicit for every managed path: the manifest can say that
 path is certified additive-only, that it requires the complete ownership closure, or
 that an older manifest has not yet established either answer. A feature declares the
 minimum manifest schema it needs, and a command upgrades only as far as that feature
-requires.
+requires. [ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md)
+makes that versioning and upgrade discipline the permanent manifest-evolution contract.
 
 The failure reported in
 [BUG-1](../bug-reports/additive-only-gate-breaks-targeted-update-on-preexisting-manifests.md)
@@ -74,9 +81,9 @@ Bool` interpretation with explicit shared-write evidence, advances the schema to
 7, defines the mapping from a feature to its minimum schema version, and introduces a
 pure ordered-step model that cannot skip a schema version accidentally. This is isolated
 in `seihou-core` so every producer and consumer shares one definition. It also owns the
-durable ADR amendments: ADR 0012 currently says the schema deliberately remains at 6,
-and ADR 0005 currently describes only inference-based explicit conversion. Both must be
-updated before later plans build on a different rule.
+implementation of ADR 0014. ADR 0012 now marks its schema-6 non-bump as superseded, and
+ADR 0005 distinguishes inference-based explicit conversion from deterministic, lossless
+adjacent upgrades. EP-92 must keep the code and those prospective records aligned.
 
 EP-93 owns evidence acquisition and the explicit upgrade command. It generalizes
 `Seihou.CLI.ManifestUpgrade` into a stepwise, lossless driver, keeps the current
@@ -110,7 +117,9 @@ machine is inference that must remain explicit and reviewable under ADR 0005.
 
 The relevant local decisions consulted were ADR 0001, ADR 0004, ADR 0005,
 [ADR 0007](../adr/0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md),
-and ADR 0012. Mori searches for `manifest schema upgrade` and
+ADR 0012, and
+[ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md).
+Mori searches for `manifest schema upgrade` and
 `additive shared ownership` returned no cross-repository ADRs, so this initiative cites
 no cross-repository decision record. The reproducing consumer is canonically identified
 as `mori://tan/mls-service-v2`; no path into that other repository is used as a durable
@@ -183,12 +192,11 @@ with the target update's manifest, while `Engine.UpdateTransaction` continues to
 atomic file and manifest publication. No child plan may write the manifest as a separate
 preflight side effect of `seihou update --dry-run`.
 
-EP-92 must amend ADR 0012 to replace the deliberate schema-6 ambiguity and amend ADR 0005
-to distinguish inference-bearing upgrades, which remain explicit, from lossless ordered
-upgrades, which a feature command may stage to its declared minimum. If implementation
-shows that this distinction is broader than either record's scope, EP-92 should allocate
-a new ADR and make both existing records reference it rather than forcing the policy into
-an unrelated record.
+ADR 0014 owns the cross-plan manifest-evolution rule. EP-92 implements its schema,
+capability, and contiguous-step contracts. EP-93 implements its distinction between
+lossless steps and inference-bearing conversions. EP-94 consumes its feature-to-minimum
+mapping. ADR 0012 and ADR 0005 link to ADR 0014 so later implementation must update those
+records only if the delivered behavior differs from their prospective wording.
 
 
 ## Progress
@@ -198,7 +206,7 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 
 - [ ] EP-92 M1: Define schema versions, feature requirements, and explicit shared-write evidence.
 - [ ] EP-92 M2: Make version-aware JSON round trips and ordered pure schema steps pass.
-- [ ] EP-92 M3: Update every manifest producer and the governing ADRs without silently stamping incomplete state current.
+- [ ] EP-92 M3: Update every manifest producer and verify ADR 0014 without silently stamping incomplete state current.
 - [ ] EP-93 M1: Generalize the raw-document upgrader into an ordered, targetable step chain.
 - [ ] EP-93 M2: Preserve and strengthen machine-local-path-to-remote conversion for schema 5 and earlier.
 - [ ] EP-93 M3: Certify shared-write modes for all applications or a named target without touching project files.
@@ -275,6 +283,12 @@ plan.
   updating those applications.
   Date: 2026-09-17
 
+- Decision: Adopt ADR 0014 as the governing cross-plan manifest-evolution contract.
+  Rationale: Requiring a schema bump, one adjacent classified upgrade step, a capability
+  minimum, and a mechanical gap check for every semantic change prevents a future
+  optional-field exception from recreating the schema-6 ambiguity.
+  Date: 2026-09-17
+
 
 ## Outcomes & Retrospective
 
@@ -284,3 +298,10 @@ distill durable project context from this MasterPlan and its child ExecPlans int
 docs/adr/. Keep task-local execution and coordination details here.
 
 (To be filled during and after implementation.)
+
+
+## Revision Notes
+
+- 2026-09-17: Recorded accepted ADR 0014 as the initiative-wide manifest-evolution
+  contract, replaced prospective ADR-creation language, and assigned its implementation
+  responsibilities across EP-92, EP-93, and EP-94.

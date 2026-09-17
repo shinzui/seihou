@@ -11,6 +11,12 @@ provenance:
     model: "gpt-5.6-sol"
     harness: "codex-cli"
     at: 2026-09-17T14:17:05Z
+  revisions:
+    - model: "gpt-5.6-sol"
+      harness: "codex-cli"
+      at: 2026-09-17T15:41:41Z
+      mode: "update"
+      note: "Linked ADR 0014 upgrade-step and classification requirements"
 ---
 
 # Upgrade legacy path manifests and backfill additive facts
@@ -155,12 +161,16 @@ The relevant ADRs are
 [ADR 0003](../adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md),
 [ADR 0004](../adr/0004-the-manifest-is-the-only-record-of-applied-state.md),
 [ADR 0005](../adr/0005-legacy-manifests-convert-through-an-explicit-command.md), and
-[ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md).
+[ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md), together
+with the governing schema policy in
+[ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md).
 ADR 0001 forbids machine-local paths in the upgraded file. ADR 0003 forbids substituting a
 stale or different artifact. ADR 0005 requires inferred conversions to be visible and
-lossless. ADR 0012 defines the exact additive operation set. EP-92 updates the durable
-policy; this plan implements it and should only amend an ADR if implementation reveals a
-new durable constraint. Mori discovery found no relevant cross-repository ADR.
+lossless. ADR 0012 defines the exact additive operation set. ADR 0014 requires contiguous
+adjacent steps and classifies the 5-to-6 path conversion as inference-bearing while the
+6-to-7 transform is deterministic and lossless. This plan implements that policy and
+should only amend an ADR if implementation reveals a new durable constraint. Mori
+discovery found no relevant cross-repository ADR.
 
 
 ## Plan of Work
@@ -351,3 +361,9 @@ small fixtures. Return per-path unknown reasons rather than throwing away partia
 
 Use existing dependencies only: `aeson`, `containers`, `directory`, `temporary`, `text`,
 and Seihou's composition/source modules. Do not add a generic migration framework package.
+
+
+## Revision Notes
+
+- 2026-09-17: Linked accepted ADR 0014 and made its adjacent-step and upgrade
+  classification rules explicit in this plan's durable context.

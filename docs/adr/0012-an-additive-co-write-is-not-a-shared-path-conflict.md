@@ -75,18 +75,16 @@ The exemption fails closed. A manifest written before the field existed carries
 no answer, so every shared path in it stays under the closure until one
 whole-project `seihou update` records the answers.
 
-**The manifest schema version does not move for this field.** It stays at 6.
-The key is emitted only when true, so a manifest with no additive-only paths is
-byte-identical to one written before the field existed, and a Seihou that
-predates the field ignores the key and keeps enforcing the closure everywhere.
-No misreading is possible in either direction. This is a deliberate departure
-from the 3→4 and 4→5 precedent, which bumped for additive fields an older
-reader would have *misinterpreted*; the test here is misinterpretation, not
-novelty. See
-[ADR 0005](0005-legacy-manifests-convert-through-an-explicit-command.md) for
-the general rule this is an exception to, and the reason it is not a
-counterexample: the conservative reading is the correct one, so no conversion
-command is needed.
+**This field was initially added without advancing schema version 6.** That
+choice was based on the narrower observation that an older reader would ignore
+the key and a newer reader could fail closed when it was absent. In practice,
+absence then meant both a known non-additive path and a manifest that predated
+the evidence, so a targeted update could not tell whether it was safe to
+certify the path without broadening the update. [ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md)
+supersedes the no-version-bump part of this decision: semantic manifest changes
+always advance the schema, and schema 7 represents unknown shared-write
+evidence explicitly. The additive classification and the safety behavior in
+this record remain accepted.
 
 **The exemption is checked in two layers, and both must agree.** The CLI
 preflight consults the manifest, because selection happens before any candidate
@@ -145,13 +143,12 @@ The manifest grew a field that says something no other field could express:
 single `strategy` and a single `moduleName` for the whole path, neither of
 which can represent "two owners, both appending".
 
-A `False` is ambiguous between "an owner writes the whole file" and "this
-manifest predates the field". That is the price of a boolean instead of a
-per-`ApplicationId` map, and it is paid once, in the error message, which names
-both possibilities and tells the user that a no-target update will record the
-answer. A per-owner map would have had to be threaded through `FileRecord`,
-`DesiredFile`, `DesiredFileOwner`, and both write paths to buy a better
-sentence.
+In schema 6, `False` is ambiguous between "an owner writes the whole file" and
+"this manifest predates the field". Schema 7 removes that ambiguity with an
+explicit unknown state. This remains a per-path answer rather than a
+per-`ApplicationId` map; a future per-owner refinement would still have to be
+threaded through `FileRecord`, `DesiredFile`, `DesiredFileOwner`, and both write
+paths.
 
 Adding a fifth `PatchOp` obliges the author to classify it. `isAdditivePatchOp`
 is total with no catch-all, so a new constructor fails the build rather than
@@ -174,6 +171,9 @@ would not be.
   the schema-growth rule, and why this field needs no conversion command.
 - [ADR 0007](0007-a-deliberate-no-op-is-a-third-outcome-not-a-success.md) — the
   no-op outcome this field's absence deliberately does not qualify for.
+- [ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md)
+  — supersedes the decision not to advance schema version 6 and governs future
+  manifest evolution.
 - `docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md`
   — the implementation, with the full decision log.
 - `docs/improvement-requests/exempt-additive-patch-paths-from-shared-ownership-closure.md`

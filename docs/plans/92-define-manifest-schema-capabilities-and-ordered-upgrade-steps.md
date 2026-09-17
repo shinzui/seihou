@@ -11,6 +11,12 @@ provenance:
     model: "gpt-5.6-sol"
     harness: "codex-cli"
     at: 2026-09-17T14:17:05Z
+  revisions:
+    - model: "gpt-5.6-sol"
+      harness: "codex-cli"
+      at: 2026-09-17T15:39:42Z
+      mode: "update"
+      note: "Linked accepted ADR 0014 and made its schema-evolution rules authoritative"
 ---
 
 # Define manifest schema capabilities and ordered upgrade steps
@@ -47,7 +53,7 @@ This section must always reflect the actual current state of the work.
 
 - [ ] M1: Define typed manifest schema versions, feature requirements, and explicit shared-write evidence.
 - [ ] M2: Add version-aware decoding, schema-7 encoding, and ordered pure document upgrades with focused tests.
-- [ ] M3: Move every manifest producer to the new contract, amend the governing ADRs, and pass the core and repository checks.
+- [ ] M3: Move every manifest producer to the new contract, verify it against the governing ADRs, and pass the core and repository checks.
 
 
 ## Surprises & Discoveries
@@ -84,6 +90,15 @@ Record every decision made while working on the plan.
 - Decision: Keep inference-bearing step implementation out of `seihou-core`.
   Rationale: Core owns schema shapes and pure JSON transforms. Looking at installed
   artifacts and selecting an upstream URL is CLI policy and remains in EP-93.
+  Date: 2026-09-17
+
+- Decision: Adopt
+  [ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md)
+  as the governing manifest-evolution contract before implementation begins.
+  Rationale: The schema-6 ambiguity came from treating fail-closed decoding as enough
+  compatibility. A dedicated decision makes schema bumps, adjacent upgrade steps,
+  capability minimums, and mechanical gap checks mandatory for future changes rather
+  than leaving them as task-local choices in this plan.
   Date: 2026-09-17
 
 
@@ -147,15 +162,15 @@ The relevant durable decisions are:
 - [ADR 0005](../adr/0005-legacy-manifests-convert-through-an-explicit-command.md)
   requires inference-based legacy conversion to remain explicit and lossless.
 - [ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md)
-  defines the two-layer safety check but currently records the now-broken decision not to
-  bump schema 6.
+  defines the two-layer safety check; its decision not to bump schema 6 is superseded by
+  ADR 0014.
+- [ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md)
+  requires every semantic manifest change to advance the version, provide a contiguous
+  adjacent upgrade, classify whether that step needs review, and declare feature minimums.
 
-EP-92 must amend ADR 0012 to describe schema 7 and explicit unknown evidence. It must also
-amend ADR 0005 to distinguish inference-bearing conversion from a deterministic adjacent
-schema step that a command may stage to its minimum required version. If that policy is
-too broad for an amendment, create a new ADR following
-`agents/skills/exec-plan/ADR.md` and link both existing ADRs to it. Mori searches found no
-cross-repository ADR for this concern.
+ADR 0012 and ADR 0005 already link to the governing contract. During implementation,
+EP-92 must keep their prospective schema-7 language aligned with the code that actually
+lands. Mori searches found no cross-repository ADR for this concern.
 
 
 ## Plan of Work
@@ -205,9 +220,11 @@ an explicit unknown value, but it must not turn unknown into additive-only witho
 evidence.
 
 Update the version history comment and architecture sample in
-`docs/dev/design/proposed/manifest-and-incrementality.md`. Amend or create ADRs as described
-above. Do not change the public `seihou manifest upgrade` or `seihou update` flow in this
-plan; focused tests should prove the new core contract before those integrations begin.
+`docs/dev/design/proposed/manifest-and-incrementality.md`. Verify that the implementation
+fulfills ADR 0014 and update ADR 0005 or ADR 0012 only if the implemented behavior changes
+their prospective wording. Do not change the public `seihou manifest upgrade` or `seihou
+update` flow in this plan; focused tests should prove the new core contract before those
+integrations begin.
 
 
 ## Concrete Steps
@@ -332,3 +349,11 @@ No new package dependency is expected. Use the existing `aeson`, `containers`, `
 and `generic-lens` dependencies. New records follow `CLAUDE.md`: strict `data` fields,
 explicit deriving strategies including `Generic`, and overloaded-label access rather than
 record update syntax.
+
+
+## Revision Notes
+
+- 2026-09-17: Added the accepted ADR 0014 contract to make schema bumps, adjacent upgrade
+  steps, capability minimums, and upgrade classifications permanent requirements rather
+  than decisions local to this implementation plan. Updated the relevant ADR context and
+  implementation guidance accordingly.

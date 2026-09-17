@@ -11,6 +11,12 @@ provenance:
     model: "gpt-5.6-sol"
     harness: "codex-cli"
     at: 2026-09-17T14:17:05Z
+  revisions:
+    - model: "gpt-5.6-sol"
+      harness: "codex-cli"
+      at: 2026-09-17T15:41:41Z
+      mode: "update"
+      note: "Linked ADR 0014 feature-minimum and lossless-upgrade requirements"
 ---
 
 # Gate targeted updates on the minimum manifest schema
@@ -149,8 +155,11 @@ selected candidate's actual operations. [ADR 0005](../adr/0005-legacy-manifests-
 means schema 5 and earlier cannot be silently converted as part of update. The manifest is
 the single applied-state record under
 [ADR 0004](../adr/0004-the-manifest-is-the-only-record-of-applied-state.md), so no sidecar
-or cache may remember certification. EP-92 updates these decisions as necessary. No
-cross-repository ADR applies.
+or cache may remember certification.
+[ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md)
+requires this feature to use the central minimum-version mapping and permits only
+deterministic, lossless steps inside the update transaction. No cross-repository ADR
+applies.
 
 
 ## Plan of Work
@@ -340,3 +349,9 @@ requirement, but replace bare id sets with renderer-neutral `ApplicationRef` val
 Consume `minimumManifestVersion`, `manifestSupports`, the EP-93 ordered-upgrade service,
 and `certifySharedWriteModes`. Do not add dependencies beyond the existing CLI/core package
 relationship. Do not move behavior into the executable adapter.
+
+
+## Revision Notes
+
+- 2026-09-17: Linked accepted ADR 0014 as the authority for the feature minimum and the
+  restriction that only deterministic, lossless upgrades may be staged transactionally.
