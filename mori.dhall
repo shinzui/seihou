@@ -96,5 +96,12 @@ in  Schema.Project::{ project =
         , description = Some
             "Cross-repository requests raised against seihou by the projects that consume it"
         }
+      , Schema.OkfBundle::{ name = "bug-reports"
+        , path = "docs/bug-reports"
+        , okfVersion = "0.2"
+        , profile = Some "docs/bug-reports/profile.dhall"
+        , description = Some
+            "Defect reports raised against seihou by the projects that consume it"
+        }
       ]
     }
