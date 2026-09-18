@@ -88,6 +88,7 @@ library seihou-cli-internal
     Seihou.CLI.MigrationCohort
     Seihou.CLI.PendingMigrations
     Seihou.CLI.PromptRender
+    Seihou.CLI.RecordedRelease
     Seihou.CLI.Registry
     Seihou.CLI.Registry.Sync
     Seihou.CLI.Registry.Validate
@@ -263,6 +264,7 @@ test-suite seihou-cli-test
     Seihou.CLI.MigrateSpec
     Seihou.CLI.PendingMigrationSpec
     Seihou.CLI.PromptRenderSpec
+    Seihou.CLI.RecordedReleaseSpec
     Seihou.CLI.Registry.SyncSpec
     Seihou.CLI.Registry.ValidateSpec
     Seihou.CLI.RemoteVersionSpec

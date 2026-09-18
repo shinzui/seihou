@@ -30,6 +30,7 @@ import Seihou.CLI.ManifestUpgradeSpec qualified as ManifestUpgradeSpec
 import Seihou.CLI.MigrateSpec qualified as MigrateSpec
 import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
 import Seihou.CLI.PromptRenderSpec qualified as PromptRenderSpec
+import Seihou.CLI.RecordedReleaseSpec qualified as RecordedReleaseSpec
 import Seihou.CLI.Registry.SyncSpec qualified as RegistrySyncSpec
 import Seihou.CLI.Registry.ValidateSpec qualified as RegistryValidateSpec
 import Seihou.CLI.RemoteVersionSpec qualified as RemoteVersionSpec
@@ -82,6 +83,7 @@ main = do
         PromptRenderSpec.tests,
         RegistrySyncSpec.tests,
         RegistryValidateSpec.tests,
+        RecordedReleaseSpec.tests,
         RemoteVersionSpec.tests,
         RepairOriginsE2ESpec.tests,
         RunBlueprintRefusalSpec.tests,
