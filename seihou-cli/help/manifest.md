@@ -37,6 +37,10 @@ OLDER MANIFESTS
 
     seihou manifest upgrade
     seihou manifest upgrade --dry-run    # show the report, write nothing
+    seihou manifest upgrade --to 6       # stop after a given schema version
+
+  The command runs one schema step at a time and prints each one. Only the
+  5 -> 6 step infers anything; the others are mechanical.
 
   Each recorded path is resolved to an artifact on this machine and replaced
   with that artifact's portable origin. Every conversion is printed, because
@@ -45,14 +49,33 @@ OLDER MANIFESTS
 
     Reading .seihou/manifest.json (schema version 5)
 
+      5 -> 6  portable artifact origins  (inferred; review before committing)
+
       haskell-base       /Users/shinzui/.config/seihou/installed/haskell-base
                       →  remote https://github.com/shinzui/seihou-modules.git
 
-    ✓ Upgraded .seihou/manifest.json to schema version 6.
+      6 -> 7  explicit shared-write evidence
+
+      shared-write evidence
+      .gitignore  unknown -> additive-only
+
+    ✓ Upgraded .seihou/manifest.json to schema version 7.
       Review the diff and commit it: git diff .seihou/manifest.json
 
   Running it on a manifest that is already current reports that there is
   nothing to do and exits zero.
+
+SHARED-WRITE EVIDENCE
+
+  Schema 7 records, for every file, whether all of its owners only append to
+  it (additive-only), whether one rewrites it (requires-ownership-closure), or
+  that nobody has established either yet (unknown). A targeted
+  seihou update can leave a co-owner out only for an additive-only file.
+
+  After reaching schema 7 the upgrade compiles each unknown file's owners from
+  their recorded module versions and saved values, writes nothing but the
+  manifest, and records what it finds. An owner whose recorded version is not
+  installed here leaves the file unknown, and the report names it.
 
 INSTALL FIRST
 

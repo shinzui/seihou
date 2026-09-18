@@ -121,6 +121,16 @@ records the known answer. A run that retained an owner records
 otherwise keeps the prior mode unchanged: `unknown` stays `unknown` and a
 closure requirement is never relaxed.
 
+An `unknown` mode is established only from evidence about how the project was
+actually written. `Seihou.CLI.ManifestCapabilityUpgrade` recompiles each owner
+from its recorded instances: the same origin, the exact recorded module
+version, parent variables, and saved values, with no prompt, configuration,
+or environment layer. It records `additive-only` only when every owner's
+operations for the path are additive. A single owner that writes the path any
+other way proves `requires-ownership-closure` by itself. Any other gap, such as
+an owner whose recorded version is not installed or that no longer writes the
+path, leaves it `unknown`. A known mode is never recomputed this way.
+
 **A plan that would record a different answer than the manifest holds is not a
 no-op.** Every project that existed when this field was introduced has a
 manifest with no recorded answer. If an otherwise-up-to-date project reported

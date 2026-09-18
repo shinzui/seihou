@@ -17,6 +17,11 @@ provenance:
       at: 2026-09-17T15:41:41Z
       mode: "update"
       note: "Linked ADR 0014 upgrade-step and classification requirements"
+    - model: "claude-opus-5[1m]"
+      harness: "claude-code"
+      at: 2026-09-18T04:21:44Z
+      mode: "implement"
+      note: "Implemented stepwise manifest upgrade with --to and shared-write certification service"
 ---
 
 # Upgrade legacy path manifests and backfill additive facts
@@ -50,9 +55,9 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: Refactor `seihou manifest upgrade` into a contiguous, target-versioned schema-step driver.
-- [ ] M2: Preserve and strengthen schema-1-through-5 machine-local-path conversion and remote-origin reporting.
-- [ ] M3: Add reusable all-path and target-scoped shared-write certification that changes only the manifest.
+- [x] M1: Refactor `seihou manifest upgrade` into a contiguous, target-versioned schema-step driver. (2026-09-18) `runManifestUpgrade` walks `planManifestUpgrade`, dispatches `ConvertMachineLocalPaths` to the CLI and every other step to `applyLosslessUpgradeStep`, validates at each decodable boundary, and reports each step; `--to VERSION` added.
+- [x] M2: Preserve and strengthen schema-1-through-5 machine-local-path conversion and remote-origin reporting. (2026-09-18) `convertMachineLocalPaths` is the 5-to-6 handler and stamps 6; the artifact guard runs right after it and a refusal stops the chain before 6-to-7; a schema-6 document never reaches `collectRefs`.
+- [x] M3: Add reusable all-path and target-scoped shared-write certification that changes only the manifest. (2026-09-18) `Seihou.CLI.ManifestCapabilityUpgrade` (pure `certifySharedWriteModes`, IO `gatherApplicationEvidence` / `certifySharedWriteModesIO`); the upgrade command certifies every unknown owned path after reaching schema 7. `cabal test all`: core 1134, okf-extension 51, cli 617 pass; `nix fmt` and `nix flake check` pass.
 
 
 ## Surprises & Discoveries
@@ -60,7 +65,32 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Observation: The recorded application instances already hold everything needed to
+  recompile an owner exactly: `AppliedComposition.instances` is written in composition
+  order (`buildAppliedComposition` maps over `modulesInOrder`) and each instance carries
+  its origin, module version, parent variables, and resolved values. Certification
+  therefore does not call `loadComposition`, which would re-resolve dependencies by name
+  and could pick up a different artifact; it resolves each recorded instance's origin
+  directly.
+
+- Observation: One owner that writes a path non-additively proves a closure requirement
+  even when another owner's evidence is missing, because the mode is a conjunction.
+  The first draft left such paths unknown; it now records
+  `requires-ownership-closure`. Evidence: `ManifestCapabilityUpgradeSpec` "proves a
+  closure requirement from one whole-file owner even when another is missing".
+
+- Observation: `renderArtifactRefError` is a multi-line explanation with absolute search
+  paths, fine for a refusal but unreadable inside a per-path reason. The first transcript
+  printed it for every unknown path. Reasons are now one line, e.g.
+  `haskell-base: module haskell-base 1.4.0 is not installed here`.
+
+- Observation: Paths with no recorded owners (every file of a manifest older than
+  schema 4) were reported as unknown on every run. No ownership check consults them, so
+  they are out of every certification scope.
+
+- Observation: `seihou manifest upgrade --help` prints `-h,--help` twice. This predates
+  this plan (both `manifestUpgradeParser <**> helper` and the enclosing subparser add
+  one) and is left for EP-95's presentation pass.
 
 
 ## Decision Log
@@ -90,6 +120,50 @@ Record every decision made while working on the plan.
   learn that fact is the blast radius this initiative removes.
   Date: 2026-09-17
 
+- Decision: Recompile each owner from its recorded instances (origin, exact module
+  version, parent variables, resolved values), with prompts forbidden and no
+  configuration or environment layer, rather than through `loadComposition` and the update
+  source-staging path.
+  Rationale: The fact being established is how the project *was* written. Re-resolving
+  by name or consulting today's configuration could compile a different artifact or
+  different values. A local copy with any other version, or a different origin, is refused
+  and leaves the path unknown (ADR 0003).
+  Date: 2026-09-18
+
+- Decision: A single whole-file owner certifies `requires-ownership-closure` even when
+  other owners are unavailable; `additive-only` needs every owner.
+  Rationale: The mode is a conjunction across owners, so one false conjunct decides it.
+  This only ever tightens the gate.
+  Date: 2026-09-18
+
+- Decision: Scopes exclude ownerless paths. `CertifyAllUnknownPaths` (renamed from the
+  plan's `CertifyAllUnknownSharedPaths`) covers every unknown path with at least one owner,
+  including single-owner paths, and `CertifyPathsForApplications ids` covers unknown paths
+  whose owners intersect `ids` without being a subset of it.
+  Rationale: A single-owner answer becomes useful as soon as a second application
+  co-owns the path, and it costs nothing extra to compute. A path owned only by the
+  selection is fully recomputed by the update itself, so a targeted scope skips it.
+  Date: 2026-09-18
+
+- Decision: The evidence map carries `ApplicationEvidence` (operations or an
+  unavailability reason) rather than bare `[Operation]`, and callers supply
+  already-compiled owners as `Map ApplicationId [Operation]` to
+  `certifySharedWriteModesIO`.
+  Rationale: The report must say why a path stayed unknown; a missing map key cannot.
+  Date: 2026-09-18
+
+- Decision: The artifact guard runs immediately after the 5-to-6 step, and a refusal ends
+  the chain in both apply and dry-run mode, reporting only the steps that ran.
+  Rationale: A later step must not run on a conversion the user has not accepted.
+  Date: 2026-09-18
+
+- Decision: `UpgradeNotNeeded` carries the schema and every still-unknown path with its
+  reason, and a run that changes nothing reports "nothing to do" even when unknown paths
+  remain.
+  Rationale: Re-running must be a no-op, but the user still needs to know why a later
+  targeted update may refuse.
+  Date: 2026-09-18
+
 
 ## Outcomes & Retrospective
 
@@ -98,7 +172,36 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Completed 2026-09-18. `seihou manifest upgrade` is an ordered driver over the core step
+table. It stops at `--to VERSION`, rejects a target outside the document-to-current
+range, and reports every step. It keeps the path conversion as the only inference-bearing
+step, with the artifact guard and `--force` unchanged. Unmodelled keys survive because the
+whole chain edits one `Aeson.Value`.
+
+At schema 7 it certifies every unknown owned path by recompiling the owners from their
+recorded state, then writes only `.seihou/manifest.json`. A real run against the schema-5
+fixture with nothing installed reports:
+
+```text
+  6 -> 7  explicit shared-write evidence
+
+  shared-write evidence
+  flake.nix  unknown (unchanged)
+               haskell-base: module haskell-base 1.4.0 is not installed here
+```
+
+With the shared-path update fixture (two recorded owners appending to `.gitignore`, both
+installed at the recorded version), the same command records
+`.gitignore: additive-only` and leaves the file itself byte-identical.
+
+The certification service is ready for EP-94. `certifySharedWriteModesIO` takes
+`CertifyPathsForApplications selected` and the candidate operations of the selected
+applications, and returns an in-memory manifest plus per-path entries. It never writes.
+
+No ADR changed. ADR 0005 and ADR 0014 already describe the behaviour delivered here:
+explicit inference, lossless automatic steps, and contiguous paths. The durable rule
+"certify from exact recorded versions only; one whole-file owner proves closure" was
+added to ADR 0012, next to the definition of the mode it computes.
 
 
 ## Context and Orientation
@@ -367,3 +470,7 @@ and Seihou's composition/source modules. Do not add a generic migration framewor
 
 - 2026-09-17: Linked accepted ADR 0014 and made its adjacent-step and upgrade
   classification rules explicit in this plan's durable context.
+
+- 2026-09-18: Implemented all three milestones; recorded the certification design
+  decisions (recorded-instance recompilation, conjunction short-circuit, scopes, evidence
+  type), discoveries, and the outcome.

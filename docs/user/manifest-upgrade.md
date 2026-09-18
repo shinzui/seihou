@@ -40,6 +40,8 @@ inference that happens silently in a committed file is worth nothing:
 ```text
 Reading .seihou/manifest.json (schema version 5)
 
+  5 -> 6  portable artifact origins  (inferred; review before committing)
+
   haskell-base       /Users/shinzui/.config/seihou/installed/haskell-base
                   →  remote https://github.com/shinzui/seihou-modules.git
 
@@ -49,7 +51,12 @@ Reading .seihou/manifest.json (schema version 5)
   scratch-helper     /Users/other/.config/seihou/modules/scratch-helper
                   →  local scratch-helper  (no upstream recorded)
 
-✓ Upgraded .seihou/manifest.json to schema version 6.
+  6 -> 7  explicit shared-write evidence
+
+  shared-write evidence
+  .gitignore  unknown -> additive-only
+
+✓ Upgraded .seihou/manifest.json to schema version 7.
   Review the diff and commit it: git diff .seihou/manifest.json
 ```
 
@@ -70,6 +77,31 @@ seihou manifest upgrade --dry-run
 
 Running the command on a manifest that is already current reports that there is
 nothing to do and exits zero, so it is safe to run twice or to put in a script.
+
+The command walks one schema version at a time, so the report lists each step
+it ran. `seihou manifest upgrade --to 6` stops after the path conversion, if you
+want to review that on its own before going further.
+
+## Shared files and targeted updates
+
+Schema 7 also records, for every file two applications share, whether both of
+them only append to it. That is what lets `seihou update nix-haskell-flake`
+update one owner of `.gitignore` without also updating every other module that
+adds a line to it. A manifest upgraded from schema 6 starts with that answer
+`unknown` for most shared files, so the upgrade works it out: it compiles each
+owner at the exact version the manifest records and looks at how it writes the
+file, without writing anything but the manifest. The report shows the result:
+
+```text
+  shared-write evidence
+  .gitignore  unknown -> additive-only
+  flake.nix   unknown (unchanged)
+                haskell-base: module haskell-base 1.4.0 is not installed here
+```
+
+A file stays `unknown` when one of its owners' recorded versions is not
+installed here. Install that version and run the command again. An unknown
+file is safe — updates simply keep treating it as needing every owner.
 
 ## Install your modules first
 
@@ -116,7 +148,7 @@ it over the manifest — so an interrupted run cannot leave a truncated one.
 
 ## After the upgrade
 
-Once the manifest is at schema version 6, every command reads it again, and it
+Once the manifest is at schema version 6 or later, every command reads it again, and it
 means the same thing on every machine. Two developers who apply the same module
 now produce the same bytes, so a manifest diff in code review shows a real
 change rather than a change of laptop.

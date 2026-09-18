@@ -1,5 +1,9 @@
--- | Convert a @.seihou\/manifest.json@ written before schema version 6 into
--- the portable form every current command expects.
+-- | Upgrade a @.seihou\/manifest.json@ through the ordered schema steps of
+-- "Seihou.Manifest.Upgrade", one adjacent step at a time, and establish the
+-- shared-write evidence schema 7 can record.
+--
+-- Most of this module is the one inference-bearing step, schema 5 to 6: the
+-- conversion of machine-local artifact paths into portable origins.
 --
 -- Schema-5-and-earlier manifests record, for each applied artifact, the
 -- absolute directory that artifact occupied on the machine that ran seihou —
@@ -37,8 +41,11 @@ module Seihou.CLI.ManifestUpgrade
 
     -- * Rewriting the document
     UpgradeReportEntry (..),
+    UpgradeStepReport (..),
+    SharedWriteReportEntry (..),
     UpgradeResult (..),
     applyUpgrade,
+    convertMachineLocalPaths,
     formatUpgradeReport,
 
     -- * The command
@@ -60,9 +67,19 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (toList)
 import Data.Generics.Labels ()
 import Data.List (foldl')
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Vector qualified as V
+import Seihou.CLI.ManifestCapabilityUpgrade
+  ( CertificationScope (..),
+    SharedWriteCertification (..),
+    SharedWriteCertificationEntry (..),
+    certifiedChanges,
+    certifySharedWriteModesIO,
+    renderCertificationGap,
+  )
 import Seihou.CLI.ManifestGuard
   ( ArtifactCheck,
     blockingChecks,
@@ -72,9 +89,30 @@ import Seihou.CLI.ManifestGuard
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (resolveArtifactOrigin)
 import Seihou.Core.Module (defaultSearchPaths)
-import Seihou.Core.Types (ArtifactOrigin (..), Manifest)
-import Seihou.Manifest.Types (currentManifestVersion, oldestDecodableManifestVersion)
-import Seihou.Manifest.Upgrade (setDocumentSchemaVersion, upgradeDocumentLosslessly)
+import Seihou.Core.Types
+  ( ArtifactOrigin (..),
+    Manifest,
+    ManifestCapability (..),
+    ManifestSchemaVersion (..),
+    SharedWriteMode (..),
+  )
+import Seihou.Manifest.Types
+  ( currentManifestVersion,
+    manifestSupports,
+    oldestDecodableManifestVersion,
+    sharedWriteModeToText,
+  )
+import Seihou.Manifest.Upgrade
+  ( ManifestUpgradeStep (..),
+    UpgradeStepAction (..),
+    UpgradeStepKind (..),
+    applyLosslessUpgradeStep,
+    documentSchemaVersion,
+    planManifestUpgrade,
+    renderManifestUpgradeError,
+    setDocumentSchemaVersion,
+    upgradeStepKind,
+  )
 import Seihou.Prelude
 import System.Directory (doesFileExist, getCurrentDirectory, renamePath)
 import System.Exit (exitFailure)
@@ -115,13 +153,13 @@ data LegacyManifest = LegacyManifest
   }
   deriving stock (Eq, Show, Generic)
 
--- | Parse a manifest document that has not yet been upgraded.
+-- | Parse a manifest document whose artifact references are still
+-- machine-local paths.
 --
--- Returns 'Nothing' when the document's @version@ is already at or above the
--- current schema version, so callers can treat "nothing to do" as an ordinary
--- outcome rather than an error. A manifest from a /newer/ seihou is also
--- 'Nothing': there is nothing here to convert, and complaining about it is
--- 'Seihou.Manifest.Types.checkManifestVersion''s job.
+-- Returns 'Nothing' when the document's @version@ is already portable
+-- (schema 6 or later), so a schema-6 document can never reach 'collectRefs'.
+-- A manifest from a /newer/ seihou is also 'Nothing': there is nothing here
+-- to convert, and complaining about it is the step planner's job.
 readLegacyManifest :: LBS.ByteString -> Either String (Maybe LegacyManifest)
 readLegacyManifest bytes = do
   value <- Aeson.eitherDecode bytes
@@ -337,28 +375,86 @@ data UpgradeReportEntry = UpgradeReportEntry
   }
   deriving stock (Eq, Show, Generic)
 
+-- | One adjacent schema step that ran.
+data UpgradeStepReport = UpgradeStepReport
+  { fromVersion :: !ManifestSchemaVersion,
+    toVersion :: !ManifestSchemaVersion,
+    kind :: !UpgradeStepKind,
+    summary :: !Text
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | An upgraded document plus the reviewable account of how it was reached.
 data UpgradeResult = UpgradeResult
-  { fromVersion :: !Int,
+  { -- | The schema the document was read at.
+    fromVersion :: !ManifestSchemaVersion,
+    -- | The schema of the last step that actually ran.
+    toVersion :: !ManifestSchemaVersion,
+    -- | Every step that ran, in order.
+    steps :: ![UpgradeStepReport],
+    -- | The origin conversions of the schema 5 to 6 step, if it ran.
     entries :: ![UpgradeReportEntry],
+    -- | Shared-write modes established after reaching schema 7, including
+    -- paths that stayed unknown and why.
+    certification :: ![SharedWriteReportEntry],
     upgradedDocument :: !Aeson.Value
   }
   deriving stock (Eq, Show, Generic)
 
--- | Convert a legacy manifest. Pure given the inferences, so the report and
--- the resulting bytes can both be asserted on without a filesystem.
---
--- Each reference's recorded path is deleted and the portable origin written in
--- its place — @source@ becomes @origin@, @targetSource@ becomes
--- @targetOrigin@ — and the document's @version@ is set to the current schema
--- version. Nothing else in the document is touched.
+-- | One path's shared-write outcome, with any gap already rendered.
+data SharedWriteReportEntry = SharedWriteReportEntry
+  { path :: !FilePath,
+    previousMode :: !SharedWriteMode,
+    certifiedMode :: !SharedWriteMode,
+    reasons :: ![Text]
+  }
+  deriving stock (Eq, Show, Generic)
+
+sharedWriteReportEntry :: Manifest -> SharedWriteCertificationEntry -> SharedWriteReportEntry
+sharedWriteReportEntry manifest entry =
+  SharedWriteReportEntry
+    { path = entry ^. #path,
+      previousMode = entry ^. #previousMode,
+      certifiedMode = entry ^. #certifiedMode,
+      reasons = map (renderCertificationGap manifest) (entry ^. #gaps)
+    }
+
+stepReport :: ManifestUpgradeStep -> UpgradeStepReport
+stepReport step =
+  UpgradeStepReport
+    { fromVersion = step ^. #fromVersion,
+      toVersion = step ^. #toVersion,
+      kind = upgradeStepKind (step ^. #action),
+      summary = step ^. #summary
+    }
+
+-- | Convert a legacy manifest straight to schema 6. Pure given the
+-- inferences, so the report and the resulting bytes can both be asserted on
+-- without a filesystem. The steps below 5 only stamp the version, so they
+-- are reported but need no transform here.
 applyUpgrade :: LegacyManifest -> [(LegacyRef, InferenceOutcome)] -> UpgradeResult
 applyUpgrade legacy conversions =
   UpgradeResult
-    { fromVersion = legacy ^. #schemaVersion,
-      entries = dedupeEntries (map reportEntry conversions),
-      upgradedDocument = setSchemaVersion (foldl' rewrite (legacy ^. #document) conversions)
+    { fromVersion = source,
+      toVersion = oldestDecodableManifestVersion,
+      steps = either (const []) (map stepReport) (planManifestUpgrade source oldestDecodableManifestVersion),
+      entries = reportEntries,
+      certification = [],
+      upgradedDocument = document
     }
+  where
+    source = ManifestSchemaVersion (legacy ^. #schemaVersion)
+    (reportEntries, document) = convertMachineLocalPaths legacy conversions
+
+-- | The schema 5 to 6 step: each reference's recorded path is deleted and
+-- the portable origin written in its place — @source@ becomes @origin@,
+-- @targetSource@ becomes @targetOrigin@ — and the document is stamped
+-- schema 6. Nothing else in the document is touched.
+convertMachineLocalPaths :: LegacyManifest -> [(LegacyRef, InferenceOutcome)] -> ([UpgradeReportEntry], Aeson.Value)
+convertMachineLocalPaths legacy conversions =
+  ( dedupeEntries (map reportEntry conversions),
+    setDocumentSchemaVersion oldestDecodableManifestVersion (foldl' rewrite (legacy ^. #document) conversions)
+  )
   where
     rewrite document (ref, outcome) =
       replaceAt (ref ^. #jsonPointer) (Aeson.toJSON (inferredOrigin outcome)) document
@@ -425,26 +521,36 @@ updateAt (step : rest) f value = case value of
       _ -> value
   _ -> value
 
--- | Stamp the converted document as schema 6, the version the path
--- conversion produces, and then run the lossless steps above it. If one of
--- those fails the document stays at 6, which the decoder still reads.
-setSchemaVersion :: Aeson.Value -> Aeson.Value
-setSchemaVersion document =
-  let converted = setDocumentSchemaVersion oldestDecodableManifestVersion document
-   in either (const converted) snd (upgradeDocumentLosslessly currentManifestVersion converted)
-
--- | Render the conversion account shown in the terminal, without the closing
+-- | Render the upgrade account shown in the terminal, without the closing
 -- line — whether the file was written is the caller's news to deliver.
+--
+-- Steps are listed in the order they ran; the origin conversions sit under
+-- the 5 to 6 step that made them, and the shared-write evidence follows the
+-- steps because it is established once the document can record it.
 formatUpgradeReport :: UpgradeResult -> Text
 formatUpgradeReport result =
-  T.unlines (header : "" : concatMap entryLines (result ^. #entries))
+  T.unlines (header : "" : concatMap stepLines (result ^. #steps) <> certificationLines)
   where
     header =
       "Reading "
         <> T.pack manifestRelativePath
         <> " (schema version "
-        <> T.pack (show (result ^. #fromVersion))
+        <> showVersion (result ^. #fromVersion)
         <> ")"
+
+    stepLines step =
+      [ "  "
+          <> showVersion (step ^. #fromVersion)
+          <> " -> "
+          <> showVersion (step ^. #toVersion)
+          <> "  "
+          <> step ^. #summary
+          <> (if step ^. #kind == InferenceBearingUpgrade then "  (inferred; review before committing)" else "")
+      ]
+        <> ( if step ^. #toVersion == oldestDecodableManifestVersion
+               then "" : concatMap entryLines (result ^. #entries)
+               else []
+           )
 
     nameColumn =
       maximum (5 : map (T.length . (^. #artifactName)) (result ^. #entries)) + 5
@@ -469,6 +575,28 @@ formatUpgradeReport result =
             ]
       _ -> []
 
+    certificationLines = case result ^. #certification of
+      [] -> []
+      entries -> "" : "  shared-write evidence" : concatMap certificationEntryLines entries
+
+    pathColumn =
+      maximum (5 : map (T.length . T.pack . (^. #path)) (result ^. #certification)) + 2
+
+    certificationEntryLines entry =
+      ( "  "
+          <> T.justifyLeft pathColumn ' ' (T.pack (entry ^. #path))
+          <> ( if entry ^. #previousMode == entry ^. #certifiedMode
+                 then sharedWriteModeToText (entry ^. #certifiedMode) <> " (unchanged)"
+                 else sharedWriteModeToText (entry ^. #previousMode) <> " -> " <> sharedWriteModeToText (entry ^. #certifiedMode)
+             )
+      )
+        : [ T.replicate (pathColumn + 4) " " <> gapText
+          | gapText <- entry ^. #reasons
+          ]
+
+showVersion :: ManifestSchemaVersion -> Text
+showVersion (ManifestSchemaVersion v) = T.pack (show v)
+
 -- ----------------------------------------------------------------------------
 -- The command
 -- ----------------------------------------------------------------------------
@@ -484,30 +612,37 @@ data ManifestUpgradeOpts = ManifestUpgradeOpts
     -- | Write even when the converted manifest names artifacts this machine
     -- cannot satisfy. For the developer who is upgrading a manifest on a
     -- machine that deliberately does not have every artifact installed.
-    force :: !Bool
+    -- Only the inference-bearing 5 to 6 step consults it.
+    force :: !Bool,
+    -- | Stop at this schema. 'Nothing' means the current schema.
+    targetVersion :: !(Maybe ManifestSchemaVersion)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | Terminal outcome of an upgrade run, decoupled from printing and exit codes
 -- so it can be asserted on directly.
 data UpgradeOutcome
-  = -- | The manifest is already at the current schema version.
-    UpgradeNotNeeded
-  | -- | @--dry-run@: the document was converted and thrown away. Carries any
+  = -- | Nothing to change: the document is at the requested schema and no
+    -- shared-write evidence could be added. Carries the schema and every path
+    -- that is still unknown, with why.
+    UpgradeNotNeeded !ManifestSchemaVersion ![SharedWriteReportEntry]
+  | -- | @--dry-run@: the document was upgraded and thrown away. Carries any
     -- check that would have blocked a real write.
     UpgradeWouldWrite UpgradeResult ![ArtifactCheck]
-  | -- | The converted document was written over the manifest.
+  | -- | The upgraded document was written over the manifest.
     UpgradeWritten UpgradeResult
-  | -- | The conversion succeeded but writing it would leave the project
-    -- naming artifacts this machine cannot satisfy, so nothing was written.
+  | -- | The path conversion succeeded but writing it would leave the project
+    -- naming artifacts this machine cannot satisfy, so nothing was written
+    -- and no later step ran.
     UpgradeBlocked UpgradeResult ![ArtifactCheck]
   | -- | Nothing was written; carries the message to show the user.
     UpgradeFailed Text
   deriving stock (Eq, Show, Generic)
 
 -- | Testable core of @seihou manifest upgrade@: read the manifest in the
--- current directory, infer an origin for every recorded path, rewrite the
--- document, and — unless this is a dry run — write it back.
+-- current directory, run each adjacent step up to the requested schema,
+-- establish shared-write evidence once the document can record it, and —
+-- unless this is a dry run — write the result back.
 runManifestUpgrade :: ManifestUpgradeOpts -> IO UpgradeOutcome
 runManifestUpgrade opts = do
   projectRoot <- getCurrentDirectory
@@ -524,41 +659,134 @@ runManifestUpgrade opts = do
         )
     else do
       bytes <- LBS.readFile manifestPath
-      case readLegacyManifest bytes of
+      case Aeson.eitherDecode bytes >>= \document -> first (T.unpack . renderManifestUpgradeError) ((document,) <$> documentSchemaVersion document) of
         Left err -> pure (UpgradeFailed (T.pack manifestRelativePath <> " could not be read: " <> T.pack err))
-        Right Nothing -> pure UpgradeNotNeeded
-        Right (Just legacy) -> do
-          searchPaths <- defaultSearchPaths
-          conversions <-
-            traverse
-              (\ref -> (ref,) <$> inferOriginFromLegacyPath projectRoot searchPaths ref)
-              (legacy ^. #refs)
-          let result = applyUpgrade legacy conversions
-          case validateUpgrade result of
-            Left err -> pure (UpgradeFailed err)
-            Right manifest -> do
-              blocking <-
-                if opts ^. #force
-                  then pure []
-                  else blockingChecks <$> checkAppliedArtifacts projectRoot searchPaths manifest
-              if opts ^. #dryRun
-                then pure (UpgradeWouldWrite result blocking)
-                else
-                  if null blocking
-                    then do
-                      writeDocument manifestPath (result ^. #upgradedDocument)
-                      pure (UpgradeWritten result)
-                    else pure (UpgradeBlocked result blocking)
+        Right (document, source) -> do
+          let target = fromMaybe currentManifestVersion (opts ^. #targetVersion)
+          case planManifestUpgrade source target of
+            Left err -> pure (UpgradeFailed (renderManifestUpgradeError err))
+            Right steps -> do
+              searchPaths <- defaultSearchPaths
+              chained <- runSteps projectRoot searchPaths source document steps
+              case chained of
+                Left err -> pure (UpgradeFailed err)
+                Right (result, blocking)
+                  | not (null blocking) ->
+                      pure $
+                        if opts ^. #dryRun
+                          then UpgradeWouldWrite result blocking
+                          else UpgradeBlocked result blocking
+                  | otherwise -> do
+                      certified <- certifyDocument projectRoot searchPaths result
+                      case certified of
+                        Left err -> pure (UpgradeFailed err)
+                        Right final
+                          | null (final ^. #steps) && not (any changed (final ^. #certification)) ->
+                              pure (UpgradeNotNeeded (final ^. #toVersion) (final ^. #certification))
+                          | opts ^. #dryRun -> pure (UpgradeWouldWrite final [])
+                          | otherwise -> do
+                              writeDocument manifestPath (final ^. #upgradedDocument)
+                              pure (UpgradeWritten final)
+  where
+    runSteps projectRoot searchPaths source document =
+      go
+        UpgradeResult
+          { fromVersion = source,
+            toVersion = source,
+            steps = [],
+            entries = [],
+            certification = [],
+            upgradedDocument = document
+          }
+      where
+        go result [] = pure (Right (result, []))
+        go result (step : rest) = do
+          ran <- runStep projectRoot searchPaths step (result ^. #upgradedDocument)
+          case ran of
+            Left err -> pure (Left err)
+            Right (conversions, next, blocking) -> do
+              let advanced =
+                    result
+                      & #steps
+                      %~ (<> [stepReport step])
+                      & #entries
+                      %~ (<> conversions)
+                      & #toVersion
+                      .~ (step ^. #toVersion)
+                      & #upgradedDocument
+                      .~ next
+              if null blocking
+                then go advanced rest
+                else pure (Right (advanced, blocking))
 
--- | Decode the converted document with the ordinary manifest decoder, which
--- turns the write into a correctness check: whatever is about to land on disk
--- is proven readable by every command that will read it.
-validateUpgrade :: UpgradeResult -> Either Text Manifest
-validateUpgrade result =
-  case Aeson.fromJSON (result ^. #upgradedDocument) of
+    runStep projectRoot searchPaths step document = case step ^. #action of
+      ConvertMachineLocalPaths -> do
+        let legacy =
+              LegacyManifest
+                { schemaVersion = step ^. #fromVersion . #unManifestSchemaVersion,
+                  document = document,
+                  refs = collectRefs document
+                }
+        conversions <-
+          traverse
+            (\ref -> (ref,) <$> inferOriginFromLegacyPath projectRoot searchPaths ref)
+            (legacy ^. #refs)
+        let (reported, converted) = convertMachineLocalPaths legacy conversions
+        case validateDocument converted of
+          Left err -> pure (Left err)
+          Right manifest -> do
+            blocking <-
+              if opts ^. #force
+                then pure []
+                else blockingChecks <$> checkAppliedArtifacts projectRoot searchPaths manifest
+            pure (Right (reported, converted, blocking))
+      _ -> case applyLosslessUpgradeStep step document of
+        Left err -> pure (Left (renderManifestUpgradeError err))
+        Right next
+          | step ^. #toVersion >= oldestDecodableManifestVersion ->
+              pure ((\_ -> ([], next, [])) <$> validateDocument next)
+          | otherwise -> pure (Right ([], next, []))
+
+    -- Evidence is established only once the document is at a schema that
+    -- can record every answer, which is exactly the capability that needs it.
+    certifyDocument projectRoot searchPaths result
+      | result ^. #toVersion < oldestDecodableManifestVersion = pure (Right result)
+      | otherwise = case validateDocument (result ^. #upgradedDocument) of
+          Left err -> pure (Left err)
+          Right manifest
+            | not (manifestSupports TargetedAdditiveSharedPathUpdate manifest) -> pure (Right result)
+            | otherwise -> do
+                certification <-
+                  certifySharedWriteModesIO projectRoot searchPaths CertifyAllUnknownPaths manifest Map.empty
+                let document =
+                      foldl'
+                        (\current entry -> setRecordedSharedWriteMode (entry ^. #path) (entry ^. #certifiedMode) current)
+                        (result ^. #upgradedDocument)
+                        (certifiedChanges certification)
+                    reported = map (sharedWriteReportEntry manifest) (certification ^. #entries)
+                    certified = result & #certification .~ reported & #upgradedDocument .~ document
+                pure (certified <$ validateDocument document)
+
+    changed entry = entry ^. #previousMode /= entry ^. #certifiedMode
+
+-- | Set one file record's @sharedWriteMode@ in a schema-7 raw document,
+-- leaving every other member alone.
+setRecordedSharedWriteMode :: FilePath -> SharedWriteMode -> Aeson.Value -> Aeson.Value
+setRecordedSharedWriteMode path mode =
+  updateAt ["files", T.pack path] $ \case
+    Aeson.Object record ->
+      Aeson.Object (KeyMap.insert "sharedWriteMode" (Aeson.String (sharedWriteModeToText mode)) record)
+    other -> other
+
+-- | Decode a document with the ordinary manifest decoder, which turns every
+-- write into a correctness check: whatever is about to land on disk is
+-- proven readable by every command that will read it.
+validateDocument :: Aeson.Value -> Either Text Manifest
+validateDocument document =
+  case Aeson.fromJSON document of
     Aeson.Error err ->
       Left
-        ( "The converted manifest is not one this build can read, so nothing was\n\
+        ( "The upgraded manifest is not one this build can read, so nothing was\n\
           \written. This is a bug in 'seihou manifest upgrade'; please report it.\n\n\
           \  "
             <> T.pack err
@@ -604,14 +832,16 @@ handleManifestUpgrade :: ManifestUpgradeOpts -> IO ()
 handleManifestUpgrade opts = do
   outcome <- runManifestUpgrade opts
   case outcome of
-    UpgradeNotNeeded ->
+    UpgradeNotNeeded version stillUnknown -> do
       TIO.putStrLn
         ( "✓ "
             <> T.pack manifestRelativePath
             <> " is already at schema version "
-            <> T.pack (show (currentManifestVersion ^. #unManifestSchemaVersion))
+            <> showVersion version
             <> "; nothing to do."
         )
+      unless (null stillUnknown) $
+        TIO.putStr (formatStillUnknown stillUnknown)
     UpgradeWouldWrite result blocking -> do
       TIO.putStr (formatUpgradeReport result)
       unless (null blocking) $
@@ -631,13 +861,27 @@ handleManifestUpgrade opts = do
         ( "✓ Upgraded "
             <> T.pack manifestRelativePath
             <> " to schema version "
-            <> T.pack (show (currentManifestVersion ^. #unManifestSchemaVersion))
+            <> showVersion (result ^. #toVersion)
             <> "."
         )
       TIO.putStrLn ("  Review the diff and commit it: git diff " <> T.pack manifestRelativePath)
     UpgradeFailed message -> do
       TIO.putStrLn message
       exitFailure
+
+-- | The paths an up-to-date manifest still cannot answer for, and why.
+formatStillUnknown :: [SharedWriteReportEntry] -> Text
+formatStillUnknown entries =
+  T.unlines $
+    [ "",
+      "  The shared-write mode of these paths is still unknown, so a targeted",
+      "  update that leaves one of their owners out will be refused:"
+    ]
+      <> concat
+        [ ("    " <> T.pack (entry ^. #path)) : ["      " <> reason | reason <- entry ^. #reasons]
+        | entry <- entries,
+          entry ^. #certifiedMode == SharedWriteUnknown
+        ]
 
 -- ----------------------------------------------------------------------------
 -- Small JSON accessors

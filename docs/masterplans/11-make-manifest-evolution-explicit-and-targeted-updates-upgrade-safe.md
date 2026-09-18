@@ -136,7 +136,7 @@ reference.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 92 | Define manifest schema capabilities and ordered upgrade steps | docs/plans/92-define-manifest-schema-capabilities-and-ordered-upgrade-steps.md | None | None | Complete |
-| 93 | Upgrade legacy path manifests and backfill additive facts | docs/plans/93-upgrade-legacy-path-manifests-and-backfill-additive-facts.md | EP-92 | None | Not Started |
+| 93 | Upgrade legacy path manifests and backfill additive facts | docs/plans/93-upgrade-legacy-path-manifests-and-backfill-additive-facts.md | EP-92 | None | Complete |
 | 94 | Gate targeted updates on the minimum manifest schema | docs/plans/94-gate-targeted-updates-on-the-minimum-manifest-schema.md | EP-92, EP-93 | None | Not Started |
 | 95 | Make shared-owner diagnostics actionable and verify upgrades | docs/plans/95-make-shared-owner-diagnostics-actionable-and-verify-upgrades.md | EP-94 | EP-93 | Not Started |
 
@@ -212,9 +212,9 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-92 M1: Define schema versions, feature requirements, and explicit shared-write evidence.
 - [x] EP-92 M2: Make version-aware JSON round trips and ordered pure schema steps pass.
 - [x] EP-92 M3: Update every manifest producer and verify ADR 0014 without silently stamping incomplete state current.
-- [ ] EP-93 M1: Generalize the raw-document upgrader into an ordered, targetable step chain.
-- [ ] EP-93 M2: Preserve and strengthen machine-local-path-to-remote conversion for schema 5 and earlier.
-- [ ] EP-93 M3: Certify shared-write modes for all applications or a named target without touching project files.
+- [x] EP-93 M1: Generalize the raw-document upgrader into an ordered, targetable step chain.
+- [x] EP-93 M2: Preserve and strengthen machine-local-path-to-remote conversion for schema 5 and earlier.
+- [x] EP-93 M3: Certify shared-write modes for all applications or a named target without touching project files.
 - [ ] EP-94 M1: Split application matching from ownership-closure enforcement.
 - [ ] EP-94 M2: Stage the minimum required manifest upgrade inside targeted update planning and apply.
 - [ ] EP-94 M3: Prove targeted, dry-run, retry, and genuinely non-additive cases transactionally.

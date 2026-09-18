@@ -59,7 +59,7 @@ import Seihou.CLI.Registry (RegistryCommand (..))
 import Seihou.CLI.Registry.Sync (SyncVersionsOpts (..))
 import Seihou.CLI.Registry.Validate (ValidateRegistryOpts (..))
 import Seihou.CLI.Version (seihouVersionWithGit)
-import Seihou.Core.Types (ModuleName (..))
+import Seihou.Core.Types (ManifestSchemaVersion (..), ModuleName (..))
 import Seihou.Prelude
 
 data Command
@@ -1483,11 +1483,17 @@ manifestUpgradeInfo =
   info
     (manifestUpgradeParser <**> helper)
     ( fullDesc
-        <> progDesc "Convert a manifest written by an older seihou to the portable format"
+        <> progDesc "Upgrade a manifest written by an older seihou, one schema step at a time"
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Manifests written before schema version 6 record, for every applied" :: String),
+                [ pretty ("Every manifest schema change has one adjacent upgrade step, and this" :: String),
+                  pretty ("command runs each step in order up to the current schema, or up to" :: String),
+                  pretty ("--to VERSION. Once the manifest reaches schema 7 it also works out, for" :: String),
+                  pretty ("each path whose shared-write mode is unknown, whether every owner only" :: String),
+                  pretty ("appends to it; that needs each owner's recorded module version installed." :: String),
+                  line,
+                  pretty ("Manifests written before schema version 6 record, for every applied" :: String),
                   pretty ("module, the absolute directory that module occupied on the machine" :: String),
                   pretty ("that ran seihou. Those paths mean nothing in another clone, so this" :: String),
                   pretty ("command replaces each one with a portable origin: the git URL the" :: String),
@@ -1506,8 +1512,16 @@ manifestUpgradeParser :: Parser ManifestCommand
 manifestUpgradeParser =
   fmap ManifestUpgrade $
     ManifestUpgradeOpts
-      <$> switch (long "dry-run" <> help "Show every conversion without writing the manifest")
-      <*> switch (long "force" <> help "Write even when a converted artifact is missing or stale here")
+      <$> switch (long "dry-run" <> help "Show every step and conversion without writing the manifest")
+      <*> switch (long "force" <> help "Accept inferred origins even when an artifact is missing or stale here")
+      <*> optional
+        ( option
+            (ManifestSchemaVersion <$> auto)
+            ( long "to"
+                <> metavar "VERSION"
+                <> help "Stop at this schema version instead of the current one"
+            )
+        )
 
 registryInfo :: ParserInfo Command
 registryInfo =

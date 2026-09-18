@@ -1,5 +1,6 @@
 module Seihou.CLI.ManifestUpgradeSpec (tests) where
 
+import Control.Exception (bracket)
 import Control.Lens ((^.))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -15,19 +16,27 @@ import Seihou.CLI.ManifestUpgrade
   ( InferenceOutcome (..),
     LegacyManifest (..),
     LegacyRef (..),
+    ManifestUpgradeOpts (..),
+    UpgradeOutcome (..),
     UpgradeReportEntry (..),
     UpgradeResult (..),
+    UpgradeStepReport (..),
     applyUpgrade,
     formatUpgradeRefusal,
     formatUpgradeReport,
     inferOriginFromLegacyPath,
     readLegacyManifest,
+    runManifestUpgrade,
   )
+import Seihou.CLI.SeihouBinary (seihouBinary)
 import Seihou.Core.ArtifactRef (ArtifactRefError (..))
-import Seihou.Core.Types (ArtifactOrigin (..), Manifest (..), ModuleName (..))
-import System.Directory (createDirectoryIfMissing)
+import Seihou.Core.Types (ArtifactOrigin (..), Manifest (..), ManifestSchemaVersion (..), ModuleName (..))
+import Seihou.Manifest.Upgrade (UpgradeStepKind (..))
+import System.Directory (createDirectoryIfMissing, withCurrentDirectory)
+import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
+import System.Process (readProcess)
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -108,11 +117,12 @@ spec = do
           (legacy ^. #schemaVersion) `shouldBe` 5
           map describeRef (legacy ^. #refs) `shouldBe` expectedRefs
 
-    it "reports nothing to do for a manifest already at the current schema version" $
-      readLegacyManifest "{\"version\":6,\"modules\":[]}" `shouldBe` Right Nothing
+    it "reports nothing to convert for a manifest that is already portable" $ do
+      readLegacyManifest "{\"version\":6,\"modules\":[{\"name\":\"x\",\"source\":\"/abs\"}]}" `shouldBe` Right Nothing
+      readLegacyManifest "{\"version\":7,\"modules\":[]}" `shouldBe` Right Nothing
 
     it "reports nothing to do for a manifest from a newer seihou" $
-      readLegacyManifest "{\"version\":7,\"modules\":[]}" `shouldBe` Right Nothing
+      readLegacyManifest "{\"version\":8,\"modules\":[]}" `shouldBe` Right Nothing
 
     it "rejects a document with no version field" $
       readLegacyManifest "{\"modules\":[]}"
@@ -169,15 +179,16 @@ spec = do
         outcome `shouldBe` InferredAsUnverifiable (LocalOrigin "demo")
 
   describe "applyUpgrade" $ do
-    it "replaces every recorded path with its origin and bumps the schema version" $ do
+    it "replaces every recorded path with its origin and stamps schema 6" $ do
       result <- upgradedFixture
       let document = result ^. #upgradedDocument
-      (result ^. #fromVersion) `shouldBe` 5
+      (result ^. #fromVersion) `shouldBe` ManifestSchemaVersion 5
+      map (^. #fromVersion) (result ^. #steps) `shouldBe` [ManifestSchemaVersion 5]
       documentKeys document `shouldNotContain` ["source"]
       documentKeys document `shouldNotContain` ["targetSource"]
       documentKeys document `shouldContain` ["origin"]
       documentKeys document `shouldContain` ["targetOrigin"]
-      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 7)
+      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 6)
       lookupPath ["modules", "0", "origin"] document
         `shouldBe` Just (Aeson.toJSON (RemoteOrigin haskellBaseUrl "haskell-base" (Just "seihou-modules")))
       lookupPath ["applications", "1", "instances", "0", "origin"] document
@@ -235,6 +246,113 @@ spec = do
     it "does not offer --allow-downgrade, which is not a flag on this command" $
       formatUpgradeRefusal "✗" [missingDemo] `shouldSatisfy` (not . T.isInfixOf "--allow-downgrade")
 
+  describe "seihou manifest upgrade --help" $
+    it "explains --to, --dry-run, and --force separately" $ do
+      binary <- seihouBinary
+      helpText <- T.pack <$> readProcess binary ["manifest", "upgrade", "--help"] ""
+      helpText `shouldSatisfy` T.isInfixOf "--to VERSION"
+      helpText `shouldSatisfy` T.isInfixOf "Stop at this schema version"
+      helpText `shouldSatisfy` T.isInfixOf "--dry-run"
+      helpText `shouldSatisfy` T.isInfixOf "without writing the"
+      helpText `shouldSatisfy` T.isInfixOf "--force"
+      helpText `shouldSatisfy` T.isInfixOf "Accept inferred origins"
+
+  describe "runManifestUpgrade" $ do
+    it "runs only the lossless 6 -> 7 step on a schema-6 manifest and keeps unknown keys" $
+      withUpgradeProject schema6Manifest $ \manifestPath -> do
+        outcome <- runManifestUpgrade (opts False False Nothing)
+        case outcome of
+          UpgradeWritten result -> do
+            map stepVersions (result ^. #steps) `shouldBe` [(6, 7)]
+            (result ^. #entries) `shouldBe` []
+            (result ^. #toVersion) `shouldBe` ManifestSchemaVersion 7
+          other -> expectationFailure ("expected a write, got " <> show other)
+        document <- readDocument manifestPath
+        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 7)
+        lookupPath ["files", ".gitignore", "sharedWriteMode"] document `shouldBe` Just (Aeson.String "additive-only")
+        lookupPath ["files", "README.md", "sharedWriteMode"] document `shouldBe` Just (Aeson.String "unknown")
+        lookupPath ["files", ".gitignore", "additiveOnly"] document `shouldBe` Nothing
+        lookupPath ["producerOwned", "keep"] document `shouldBe` Just (Aeson.Bool True)
+
+    it "reports nothing to do when run again" $
+      withUpgradeProject schema6Manifest $ \manifestPath -> do
+        _ <- runManifestUpgrade (opts False False Nothing)
+        before <- LBS.readFile manifestPath
+        outcome <- runManifestUpgrade (opts False False Nothing)
+        case outcome of
+          UpgradeNotNeeded version _ -> version `shouldBe` ManifestSchemaVersion 7
+          other -> expectationFailure ("expected nothing to do, got " <> show other)
+        LBS.readFile manifestPath `shouldReturn` before
+
+    it "stops at --to 6 without touching a schema-6 manifest" $
+      withUpgradeProject schema6Manifest $ \manifestPath -> do
+        outcome <- runManifestUpgrade (opts False False (Just (ManifestSchemaVersion 6)))
+        case outcome of
+          UpgradeNotNeeded version _ -> version `shouldBe` ManifestSchemaVersion 6
+          other -> expectationFailure ("expected nothing to do, got " <> show other)
+        LBS.readFile manifestPath `shouldReturn` schema6Manifest
+
+    it "blocks a schema-5 conversion it cannot verify before any later step runs" $ do
+      bytes <- LBS.readFile fixturePath
+      withUpgradeProject bytes $ \manifestPath -> do
+        outcome <- runManifestUpgrade (opts False False Nothing)
+        case outcome of
+          UpgradeBlocked result blocking -> do
+            map stepVersions (result ^. #steps) `shouldBe` [(5, 6)]
+            blocking `shouldNotBe` []
+          other -> expectationFailure ("expected the upgrade to be blocked, got " <> show other)
+        LBS.readFile manifestPath `shouldReturn` bytes
+
+    it "chains 5 -> 6 -> 7 in order on a dry run and writes nothing" $ do
+      bytes <- LBS.readFile fixturePath
+      withUpgradeProject bytes $ \manifestPath -> do
+        outcome <- runManifestUpgrade (opts True True Nothing)
+        case outcome of
+          UpgradeWouldWrite result [] -> do
+            map stepVersions (result ^. #steps) `shouldBe` [(5, 6), (6, 7)]
+            map (^. #artifactName) (result ^. #entries)
+              `shouldBe` ["haskell-base", "project-lint", "haskell-service", "scratch-helper"]
+            let report = formatUpgradeReport result
+            T.breakOn "5 -> 6" report `shouldSatisfy` (\(before, _) -> not ("6 -> 7" `T.isInfixOf` before))
+            report `shouldSatisfy` T.isInfixOf "6 -> 7  explicit shared-write evidence"
+          other -> expectationFailure ("expected a dry-run report, got " <> show other)
+        LBS.readFile manifestPath `shouldReturn` bytes
+
+    it "stops a schema-5 conversion at --to 6" $ do
+      bytes <- LBS.readFile fixturePath
+      withUpgradeProject bytes $ \manifestPath -> do
+        outcome <- runManifestUpgrade (opts False True (Just (ManifestSchemaVersion 6)))
+        case outcome of
+          UpgradeWritten result -> map stepVersions (result ^. #steps) `shouldBe` [(5, 6)]
+          other -> expectationFailure ("expected a write, got " <> show other)
+        document <- readDocument manifestPath
+        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 6)
+        lookupPath ["files", "flake.nix", "sharedWriteMode"] document `shouldBe` Nothing
+
+    it "walks every adjacent step from schema 2" $
+      withUpgradeProject (schemaVersionDocument 2) $ \manifestPath -> do
+        outcome <- runManifestUpgrade (opts False True Nothing)
+        case outcome of
+          UpgradeWritten result ->
+            map stepVersions (result ^. #steps) `shouldBe` [(2, 3), (3, 4), (4, 5), (5, 6), (6, 7)]
+          other -> expectationFailure ("expected a write, got " <> show other)
+        document <- readDocument manifestPath
+        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 7)
+
+    it "rejects a target newer than this build or older than the document" $ do
+      withUpgradeProject schema6Manifest $ \_ ->
+        runManifestUpgrade (opts False False (Just (ManifestSchemaVersion 8)))
+          >>= (`shouldSatisfy` isFailure)
+      withUpgradeProject schema6Manifest $ \_ ->
+        runManifestUpgrade (opts False False (Just (ManifestSchemaVersion 5)))
+          >>= (`shouldSatisfy` isFailure)
+  where
+    opts dry forced target = ManifestUpgradeOpts {dryRun = dry, force = forced, targetVersion = target}
+    stepVersions step = (step ^. #fromVersion . #unManifestSchemaVersion, step ^. #toVersion . #unManifestSchemaVersion)
+    isFailure = \case
+      UpgradeFailed _ -> True
+      _ -> False
+
 -- | A recorded artifact that is not installed on this machine — the verdict
 -- an upgrade run on a fresh clone hits most often.
 missingDemo :: ArtifactCheck
@@ -244,6 +362,42 @@ missingDemo =
       origin = LocalOrigin "demo",
       verdict = ArtifactUnresolvable (ArtifactNotFoundLocally (LocalOrigin "demo") [])
     }
+
+-- | A schema-6 manifest with one additive path, one path with no evidence,
+-- and a key this build does not model.
+schema6Manifest :: LBS.ByteString
+schema6Manifest =
+  LBS.fromStrict . TE.encodeUtf8 . T.concat $
+    [ "{\"version\":6,\"generatedAt\":\"2026-07-01T12:00:00Z\",\"modules\":[],\"variables\":{}",
+      ",\"applications\":[],\"producerOwned\":{\"keep\":true}",
+      ",\"files\":{",
+      "\".gitignore\":{\"hash\":\"aaa\",\"module\":\"demo\",\"strategy\":\"template\"",
+      ",\"generatedAt\":\"2026-07-01T12:00:00Z\",\"additiveOnly\":true}",
+      ",\"README.md\":{\"hash\":\"bbb\",\"module\":\"demo\",\"strategy\":\"template\"",
+      ",\"generatedAt\":\"2026-07-01T12:00:00Z\"}",
+      "}}"
+    ]
+
+-- | Run an action from a temporary project holding the given manifest, with
+-- an empty seihou configuration directory so nothing installed on the
+-- machine running the tests is visible. Passes the manifest's path.
+withUpgradeProject :: LBS.ByteString -> (FilePath -> IO a) -> IO a
+withUpgradeProject bytes action =
+  withSystemTempDirectory "seihou-upgrade-driver" $ \root -> do
+    let project = root </> "project"
+        manifestPath = project </> ".seihou" </> "manifest.json"
+    createDirectoryIfMissing True (project </> ".seihou")
+    LBS.writeFile manifestPath bytes
+    withEnv "XDG_CONFIG_HOME" (root </> "xdg") $
+      withCurrentDirectory project (action manifestPath)
+  where
+    withEnv key value inner =
+      bracket (lookupEnv key <* setEnv key value) (maybe (unsetEnv key) (setEnv key)) (const inner)
+
+readDocument :: FilePath -> IO Aeson.Value
+readDocument path = do
+  bytes <- LBS.readFile path
+  either fail pure (Aeson.eitherDecode bytes)
 
 haskellBaseUrl :: Text
 haskellBaseUrl = "https://github.com/shinzui/seihou-modules.git"
@@ -263,7 +417,8 @@ schemaVersionDocument version =
     ]
 
 -- | One historical schema version reads, converts, and lands on version 6
--- with a portable origin in place of the recorded path.
+-- with a portable origin in place of the recorded path. Schema 6 is where the
+-- path conversion ends; the lossless steps above it are the driver's.
 convertsCleanly :: Int -> Expectation
 convertsCleanly version =
   case readLegacyManifest (schemaVersionDocument version) of
@@ -276,7 +431,7 @@ convertsCleanly version =
               legacy
               [(ref, InferredAsUnverifiable (LocalOrigin "demo")) | ref <- legacy ^. #refs]
           document = converted ^. #upgradedDocument
-      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 7)
+      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 6)
       lookupPath ["modules", "0", "origin"] document
         `shouldBe` Just (Aeson.toJSON (LocalOrigin "demo"))
       lookupPath ["modules", "0", "version"] document `shouldBe` Just (Aeson.String "1.0.0")
@@ -300,7 +455,17 @@ upgradedFixture = do
 exampleResult :: UpgradeResult
 exampleResult =
   UpgradeResult
-    { fromVersion = 5,
+    { fromVersion = ManifestSchemaVersion 5,
+      toVersion = ManifestSchemaVersion 6,
+      steps =
+        [ UpgradeStepReport
+            { fromVersion = ManifestSchemaVersion 5,
+              toVersion = ManifestSchemaVersion 6,
+              kind = InferenceBearingUpgrade,
+              summary = "portable artifact origins"
+            }
+        ],
+      certification = [],
       entries =
         [ UpgradeReportEntry
             { artifactName = "haskell-base",
@@ -326,6 +491,8 @@ exampleReport :: Text
 exampleReport =
   T.unlines
     [ "Reading .seihou/manifest.json (schema version 5)",
+      "",
+      "  5 -> 6  portable artifact origins  (inferred; review before committing)",
       "",
       "  haskell-base       /Users/shinzui/.config/seihou/installed/haskell-base",
       "                  →  remote https://github.com/shinzui/seihou-modules.git",

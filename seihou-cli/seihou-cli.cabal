@@ -79,6 +79,7 @@ library seihou-cli-internal
     Seihou.CLI.InstallShared
     Seihou.CLI.List
     Seihou.CLI.Manifest
+    Seihou.CLI.ManifestCapabilityUpgrade
     Seihou.CLI.ManifestGuard
     Seihou.CLI.ManifestUpgrade
     Seihou.CLI.Migrate
@@ -252,6 +253,7 @@ test-suite seihou-cli-test
     Seihou.CLI.InstallCollisionSpec
     Seihou.CLI.InstallHistorySpec
     Seihou.CLI.ListSpec
+    Seihou.CLI.ManifestCapabilityUpgradeSpec
     Seihou.CLI.ManifestGuardSpec
     Seihou.CLI.ManifestUpgradeSpec
     Seihou.CLI.MigrateSpec
