@@ -85,8 +85,8 @@ A human `seihou update` failure now ends with a line pointing at `seihou agent u
 - [x] (2026-09-18) M2: Add `seihou-cli/data/upgrade-prompt.md` and `seihou-cli/src-exe/Seihou/CLI/AgentUpgrade.hs`, with brief persistence and a launch path that never fails.
 - [x] (2026-09-18) M2: E2E tests in `seihou-cli/test/Seihou/CLI/AgentUpgradeE2ESpec.hs` for `--debug`, outside-a-project, corrupt manifest, invalid provider, and missing provider binary.
 - [x] (2026-09-18) M3: `--check` mode and the post-session readiness summary; E2E tests (healthy ready, schema-6 not ready then ready after `seihou update alpha --json`, empty directory). M2 and M3 landed in one commit because the handler shares one code path.
-- [ ] M4: Append the `seihou agent upgrade` hint to human `seihou update` failures; update `UpdateRenderSpec`.
-- [ ] M4: Documentation: `docs/cli/agent.md`, `docs/user/agent-assistance.md`, `docs/cli/update.md`, `seihou-cli/help/agent.md`, `CHANGELOG.md`, `docs/user/CHANGELOG.md`.
+- [x] (2026-09-18) M4: Append the `seihou agent upgrade` hint to human `seihou update` failures; update `UpdateRenderSpec` (new case over fifteen error constructors: human output ends with the hint, JSON never contains it). No `UpdateE2ESpec` assertion needed changing.
+- [x] (2026-09-18) M4: Documentation: `docs/cli/agent.md`, `docs/user/agent-assistance.md`, `docs/cli/update.md`, `seihou-cli/help/agent.md`, `CHANGELOG.md`, `docs/user/CHANGELOG.md`, plus pointers in `docs/user/manifest-upgrade.md` and `docs/user/teams.md`.
 - [ ] M5: Full validation (`nix fmt -- --fail-on-change`, `cabal build all`, `cabal test all`, `nix flake check`) and the manual acceptance scenario.
 - [ ] M5: Write ADR 0016 and fill in Outcomes & Retrospective.
 
@@ -241,6 +241,16 @@ A human `seihou update` failure now ends with a line pointing at `seihou agent u
   finding on any `Left` or exception. `Main.hs` calls it instead of
   `resolveAgentModelConfigFor`.
   Rationale: keeps the never-fail rule in one place beside the handler.
+  Date: 2026-09-18
+
+- Decision: The hint's target travels in the output value. `UpdateErrorView` became
+  `UpdateErrorView (Maybe Text) UpdateError` (the first named target), with a new
+  `errorOutputFor :: [Text] -> UpdateError -> UpdateOutput`. `errorOutput` is
+  `errorOutputFor []` and renders `<module>`. The hint text is `agentUpgradeHint`. The
+  diagnosis strips the hint from the update dry-run rendering it puts in the brief,
+  because the brief is already the agent path.
+  Rationale: the render module owns every human line, as the plan preferred, and JSON
+  rendering ignores the new field.
   Date: 2026-09-18
 
 

@@ -343,6 +343,60 @@ Use `setup` in a consumer project. The prompt guides the agent through
 selecting modules, configuring variables and context, previewing the run,
 verifying output, and committing changes when appropriate.
 
+### Upgrade
+
+```sh
+seihou agent upgrade nix-haskell-flake
+```
+
+Use `upgrade` when `seihou update <module>` fails, or when you want an upgrade done for
+you. Most failed upgrades are caused by the state of the manifest, not by the module:
+an old schema, a shared file whose write mode was never recorded, a co-owner whose
+recorded version is no longer installed, or an origin recorded as a path on someone's
+laptop. Seihou first diagnoses the project without changing anything. It writes the
+findings and a repair playbook into an *upgrade brief* and starts an agent session that
+repairs the state, performs the upgrade, and checks the result.
+
+Check first, if you like. `--check` changes nothing and contacts nothing:
+
+```text
+$ seihou agent upgrade nix-haskell-flake --check
+Upgrade readiness for nix-haskell-flake
+  ✓ manifest-readable        .seihou/manifest.json is schema 7 and decodes
+  ✓ manifest-schema-current  schema 7 is current
+  ✓ no-interrupted-update    no update transaction is waiting to be recovered
+  ✓ target-recorded          nix-haskell-flake
+  ✓ installed-copy-trusted   module nix-haskell-flake 0.13.2 is installed and matches the manifest's source
+  ✗ origins-portable         /Users/alice/src/seihou-modules is recorded for exec-plan; run seihou manifest repair-origins
+  ✓ shared-evidence-known    no path shared with another application has an unknown write mode
+  ✗ update-plans-cleanly     seihou update nix-haskell-flake --dry-run failed [shared_write_evidence_unavailable]: Seihou has to inspect how the owners of .gitignore write it ...
+Upgrade readiness: not ready (2 checks need attention)
+```
+
+Then let the agent do the work:
+
+```text
+$ seihou agent upgrade nix-haskell-flake
+Upgrade brief: /Users/you/.local/state/seihou/agent-upgrade/20260918T141503Z-nix-haskell-flake/brief.md
+... interactive Claude Code session: the agent runs seihou manifest repair-origins
+    --dry-run, shows you the proposed remote, repairs it, runs seihou upgrade and
+    seihou update nix-haskell-flake, and ends with a Repair report ...
+
+After the session:
+Upgrade readiness for nix-haskell-flake
+  ...
+Upgrade readiness: ready
+```
+
+When the report says `ready`, the next plain `seihou update nix-haskell-flake` needs no
+agent. The command never fails because of the state it finds. If `claude` is not
+installed or the provider cannot be reached, it prints where the brief was saved and how
+to give it to any agent. `seihou agent --debug upgrade <module>` prints the brief itself.
+The brief tells the agent to repair through seihou's own commands, to back up the
+manifest before any manual edit, and to ask you before anything that needs your consent
+(`--force`, `--allow-downgrade`, `--include-shared-owners`, a guessed URL). See
+[`seihou agent upgrade`](../cli/agent.md#agent-upgrade) for the full reference.
+
 ### Run
 
 ```sh

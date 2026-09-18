@@ -248,6 +248,20 @@ JSON mode is non-interactive. An unresolved conflict fails unless `--force`
 provides a permitted deterministic choice. A non-dry-run JSON plan applies
 without a final confirmation after all ambiguity has been removed.
 
+### When a failure's remedy is unclear
+
+Every human failure message leads with its remedy and ends with one more line:
+
+```text
+If this keeps failing, run 'seihou agent upgrade <target>' to have an agent repair the manifest state and finish the upgrade.
+```
+
+`<target>` is the first target you named, or `<module>` when you named none.
+[`seihou agent upgrade`](agent.md#agent-upgrade) diagnoses the project without changing it
+and starts an agent with a repair playbook keyed by the error codes above.
+`seihou agent upgrade <target> --check` reports whether a plain update would plan. JSON
+output never carries the line; `error.code` and `error.message` are unchanged.
+
 ## Transaction and commit behavior
 
 Before mutation, Seihou verifies that the manifest, project files, and staged

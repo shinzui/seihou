@@ -85,8 +85,8 @@ Show the resolved provider and model for every agent command.
 seihou agent config
 ```
 
-Prints one entry per command (`assist`, `bootstrap`, `setup`, `run`, `migrate`, and
-`prompt run`) with its resolved provider, model, reasoning effort, and trace
+Prints one entry per command (`assist`, `bootstrap`, `setup`, `run`, `migrate`,
+`upgrade`, and `prompt run`) with its resolved provider, model, reasoning effort, and trace
 destination, each labelled by the source that supplied the value — a config
 scope and key (for example `[local: agent.run.model]` or
 `[global: agent.effort]`), an environment variable, or `[built-in default]` —
@@ -129,6 +129,97 @@ seihou agent setup [PROMPT]
 ```
 
 Renders a prompt for using a Seihou module: selecting a module, configuring variables and context, running the module to generate files, verifying output, and committing changes to git.
+
+### agent upgrade
+
+Upgrade a module with an agent that repairs manifest state first.
+
+```text
+seihou agent upgrade MODULE [PROMPT] [--check] [--provider P] [--model M] [--effort E] [--trace T]
+```
+
+| Option | Description |
+|--------|-------------|
+| `MODULE` | The module or recorded target to upgrade, as you would name it to `seihou update`. |
+| `PROMPT` | Anything the agent should know, for example "stay on the 0.x line". It opens the session and is quoted in the brief. |
+| `--check` | Print the readiness report and exit 0. No brief is written and no provider is contacted. |
+| `--provider`, `--model`, `--effort`, `--trace` | As for every agent command. Configure defaults with `agent.upgrade.*`. |
+
+The command runs in three steps.
+
+1. **Diagnose, without changing anything.** Seihou reads the manifest (whether it
+   exists, parses, and decodes, and its schema), looks for an interrupted update
+   transaction, matches `MODULE` against the recorded applications, checks the installed
+   copy against the manifest (the artifact guard), lists paths shared with other
+   applications whose shared-write mode is unknown, lists origins recorded as local paths,
+   and runs `seihou manifest upgrade --dry-run` and `seihou update MODULE --dry-run`. The
+   two dry runs can fetch remotes and are bounded at 180 seconds each. When an interrupted
+   update is waiting, the update dry run is skipped, because planning would recover it.
+2. **Write the upgrade brief.** The findings, a repair playbook keyed by every
+   `seihou update` error code, the safety rules, and the definition of done go into a
+   Markdown file outside the project:
+   `$XDG_STATE_HOME/seihou/agent-upgrade/<UTC time>-<module>/brief.md` (normally under
+   `~/.local/state`), or the same name under the system temporary directory. The path is
+   printed to stderr as `Upgrade brief: <path>`. The directory also holds any manifest
+   backup the agent makes. It lives outside the project because the brief records
+   machine-local paths.
+3. **Start the agent.** For `claude-cli` and `codex-cli`, an interactive session starts
+   with the brief as its system prompt. For `anthropic` and `openai`, the brief is sent as
+   a one-shot completion and the response is printed. With `--debug`, the brief is
+   printed and nothing is contacted.
+
+**It never fails.** Project, machine, network, and configuration problems become findings
+in the brief instead of errors. This covers a missing or corrupt manifest, an unknown
+module, a timed-out dry run, a missing `claude` binary, and an invalid agent
+configuration, for which it falls back to the built-in `claude-cli` default. When no session can
+start, it prints the brief's path and how to hand it to an agent yourself, and exits 0:
+
+```text
+Could not start the agent: claude is not on PATH.
+The upgrade brief is saved at /home/alice/.local/state/seihou/agent-upgrade/20260918T141503Z-nix-haskell-flake/brief.md. To use it, run:
+
+  claude --append-system-prompt "$(cat /home/alice/.local/state/seihou/agent-upgrade/20260918T141503Z-nix-haskell-flake/brief.md)"
+
+or open the file in any coding agent.
+```
+
+The only non-zero exits are command-line syntax errors and the interactive session's own
+exit code, which is passed through as `agent setup` and `agent run` do.
+
+**The readiness report** is the definition of done. `--check` prints it, the agent is
+told to run it until it passes, and it is printed again under `After the session:` when
+an interactive session ends:
+
+```text
+Upgrade readiness for nix-haskell-flake
+  ✓ manifest-readable        .seihou/manifest.json is schema 6 and decodes
+  ✗ manifest-schema-current  schema 6 is older than 7; seihou update steps it forward, or run seihou manifest upgrade
+  ✓ no-interrupted-update    no update transaction is waiting to be recovered
+  ✓ target-recorded          nix-haskell-flake
+  ✓ installed-copy-trusted   module nix-haskell-flake 0.13.2 is installed and matches the manifest's source
+  ✓ origins-portable         every recorded origin is a remote URL or a project path
+  ✗ shared-evidence-known    .gitignore is shared with exec-plan [skill.name=exec-plan] and its write mode is unknown
+  ✓ update-plans-cleanly     seihou update nix-haskell-flake --dry-run: nix-haskell-flake 0.13.2 -> 0.24.0
+Upgrade readiness: not ready (2 checks need attention)
+```
+
+`✓` passes, `✗` needs attention, and `?` could not be determined. A `?` also counts as
+needing attention. The last line is exactly `Upgrade readiness: ready` or
+`Upgrade readiness: not ready (N check(s) need(s) attention)`, with no colour, so
+scripts should read it rather than the exit status, which is always 0. Git state appears
+in the brief but is not a check.
+
+**Safety rules the brief gives the agent.** Repair through seihou's commands
+(`seihou manifest upgrade`, `seihou manifest repair-origins`, `seihou update`, `seihou
+install`, `seihou upgrade`). Edit `.seihou/manifest.json` by hand only as a last resort,
+after backing it up into the brief directory. Never invent an origin, mark a path
+`additive-only` without reading every owner's operations, delete records to get past a
+gate, lower a recorded version, or change the install cache by hand. Never pass `--force`
+or `--allow-downgrade` without your agreement. The session ends with a `Repair report`
+that says what failed, what fixed it, and whether a manual edit was needed.
+
+Blueprint migrations (`agent migrate`) are a separate mechanism and are in scope only if
+you ask for them.
 
 ### agent run
 

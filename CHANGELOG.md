@@ -6,6 +6,22 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- **`seihou agent upgrade MODULE [PROMPT] [--check]`** (`Seihou.CLI.UpgradeDiagnosis`,
+  executable `Seihou.CLI.AgentUpgrade`, template `data/upgrade-prompt.md`). A read-only,
+  never-throwing diagnosis (guarded probes; the manifest-upgrade and update dry runs are
+  bounded at 180 seconds on a worker thread and skipped while
+  `pendingUpdateRecovery` finds an interrupted transaction) feeds eight readiness checks
+  and an upgrade brief. The brief is saved under
+  `$XDG_STATE_HOME/seihou/agent-upgrade/<stamp>-<module>/` (temporary directory as
+  fallback) and given to an interactive `claude-cli`/`codex-cli` session, or a one-shot API
+  completion. The command exits 0 on every project, configuration, or launch problem, and
+  only passes through the session's own exit code. `--check` prints the readiness report,
+  whose last line is the verdict. New config key segment `agent.upgrade.*`
+  (`AgentCmdUpgrade`) and `AgentLaunch.upgradeAllowedTools`. ADR 0016.
+- **`ManifestUpgrade.renderUpgradeOutcome`** (the command's output, unchanged, as a pure
+  function), **`Update.Recovery.pendingUpdateRecovery`**, and exports of
+  `Update.Render.errorCode` and `ManifestGuard.localModuleVersion`.
+
 - **`seihou manifest repair-origins [--dry-run] [--set NAME=URL]`**
   (`Seihou.CLI.ManifestRepairOrigins`). Rewrites every `RemoteOrigin` whose URL is a
   machine-local path, across all six origin-bearing record kinds, to one remote per path.
@@ -41,6 +57,10 @@ All notable changes to this project will be documented in this file.
   `ApplicationRef` gained `additionalModules`, so labels are unique by construction.
 
 ### Changed
+
+- **Human `seihou update` failures end with a `seihou agent upgrade <target>` hint**
+  (`Update.Render.agentUpgradeHint`, `errorOutputFor`). `UpdateErrorView` carries the
+  first named target. JSON output is unchanged.
 
 - **Shared-write certification fetches a co-owner's recorded release (plan 97).**
   `gatherApplicationEvidence` and `certifySharedWriteModesIO` take an `EvidencePolicy`.

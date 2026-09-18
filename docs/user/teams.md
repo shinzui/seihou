@@ -150,6 +150,11 @@ The message then says so and names the repair instead of an install:
 proposes the remote for each such path, with its evidence, and rewrites the
 manifest. Commit the result like any other manifest change.
 
+If you cannot tell which of these applies, `seihou agent upgrade <module> --check`
+lists every manifest-state problem standing between the project and a clean
+`seihou update <module>`, and `seihou agent upgrade <module>` hands them to an agent
+with a repair playbook. See [Agent assistance](agent-assistance.md#upgrade).
+
 A module you keep in your personal `~/.config/seihou/modules/` has no recorded
 upstream, so seihou cannot confirm or refute its identity. It reports that
 honestly — "no recorded provenance, so its identity cannot be verified" — and

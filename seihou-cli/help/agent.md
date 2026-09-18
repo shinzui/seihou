@@ -3,7 +3,8 @@ AGENT COMMANDS
 `seihou agent` renders Seihou-aware prompts and starts a configured
 provider. The agent commands are for AI-assisted
 module authoring, bootstrapping, project setup, running agent-driven
-blueprints, and applying ordered blueprint library migrations.
+blueprints, applying ordered blueprint library migrations, and
+repairing a project's manifest state to upgrade a module.
 
 CLI providers open interactive local Claude Code or Codex sessions.
 API providers send one rendered prompt as a batch completion and print
@@ -111,6 +112,20 @@ SUBCOMMANDS
       Render a prompt for using existing Seihou modules in a project:
       selecting modules, configuring variables, previewing, running,
       verifying, and committing.
+
+  seihou agent upgrade MODULE [PROMPT] [--check]
+      Diagnose the project for upgrading MODULE without changing
+      anything, write an upgrade brief (findings, a repair playbook
+      keyed by update error code, safety rules) outside the project,
+      print its path, and start an agent session that repairs the
+      manifest state and performs the upgrade. It never fails on
+      project or configuration state: problems become findings, and
+      when no session can start it says how to use the saved brief.
+
+      --check prints the readiness report and exits 0. Its last line
+      is 'Upgrade readiness: ready' or 'Upgrade readiness: not ready
+      (N ...)'. When it reads ready, a plain `seihou update MODULE`
+      needs no agent.
 
   seihou agent run BLUEPRINT [PROMPT] [--var KEY=VALUE] [--no-baseline]
       Resolve a blueprint, optionally apply its baseline modules,

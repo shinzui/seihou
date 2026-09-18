@@ -197,6 +197,15 @@ The command needs schema 7, so run `seihou manifest upgrade` first on an older
 manifest. See the [command reference](../cli/manifest.md#seihou-manifest-repair-origins)
 for the evidence rules and exit codes.
 
+## When you are not sure which repair applies
+
+`seihou agent upgrade <module> --check` reports every manifest-state problem between
+your project and a clean `seihou update <module>`: the schema, unknown shared-write
+modes, origins recorded as paths, the installed copy, and a dry run of the update. It
+changes nothing. `seihou agent upgrade <module>` hands the same findings, with a repair
+playbook that uses the commands on this page, to an agent that performs the repairs and
+the upgrade. See [Agent assistance](agent-assistance.md#upgrade).
+
 ## After the upgrade
 
 Once the manifest is at schema version 6 or later, every command reads it again, and it

@@ -24,7 +24,7 @@ import Seihou.CLI.Update.Interaction
   )
 import Seihou.CLI.Update.Render
   ( encodeUpdateOutput,
-    errorOutput,
+    errorOutputFor,
     planOutput,
     renderUpdateHuman,
     resultOutput,
@@ -77,8 +77,8 @@ requestFromOptions terminal opts =
 handlePlanned :: Bool -> UpdateOpts -> Either Service.UpdateError Service.UpdatePlan -> IO ()
 handlePlanned _ opts (Left err) = do
   if opts ^. #json
-    then LBS.putStrLn (encodeUpdateOutput (errorOutput err))
-    else TIO.hPutStr stderr (renderUpdateHuman False (errorOutput err))
+    then LBS.putStrLn (encodeUpdateOutput (errorOutputFor (opts ^. #targets) err))
+    else TIO.hPutStr stderr (renderUpdateHuman False (errorOutputFor (opts ^. #targets) err))
   exitFailure
 handlePlanned terminal opts (Right originalPlan) = do
   forced <-

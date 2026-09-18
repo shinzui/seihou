@@ -15,6 +15,7 @@ import Seihou.CLI.Update (UpdateError (..), UpdateWarning (..))
 import Seihou.CLI.Update.Render
   ( encodeUpdateOutput,
     errorOutput,
+    errorOutputFor,
     planOutput,
     renderUpdateHuman,
   )
@@ -171,6 +172,38 @@ spec = do
     it "leads the legacy-schema error with the explicit upgrade command" $
       renderUpdateHuman False (errorOutput (UpdateManifestUpgradeRequired ".seihou/manifest.json" (ManifestSchemaVersion 5)))
         `shouldSatisfy` T.isPrefixOf "Update failed [manifest_upgrade_required]: Run 'seihou manifest upgrade --dry-run'"
+
+    it "ends every human failure with the seihou agent upgrade hint, and keeps it out of JSON" $ do
+      let hint target =
+            "If this keeps failing, run 'seihou agent upgrade "
+              <> target
+              <> "' to have an agent repair the manifest state and finish the upgrade.\n"
+          failures =
+            [ UpdateManifestMissing ".seihou/manifest.json",
+              UpdateManifestUnreadable ".seihou/manifest.json" "bad",
+              UpdateManifestUpgradeRequired ".seihou/manifest.json" (ManifestSchemaVersion 5),
+              NoRecordedApplications,
+              LegacyUpdateRequiresOneTarget,
+              UpdateTargetNotFound "nope" ["alpha"],
+              SharedPathRequiresApplications ".gitignore" Set.empty (Set.singleton skillRef),
+              SharedWriteEvidenceUnavailable ".gitignore" [],
+              CandidateCloneFailed "https://example.invalid/r.git" "offline",
+              CandidateDowngrade "alpha" (Just "2.0.0") (Just "1.0.0"),
+              UpdateConfigurationFailed "broken",
+              UpdateHasUnresolvedPaths (Set.singleton "README.md"),
+              UpdatePlanStale (Set.singleton "README.md"),
+              UpdateCachePublicationFailed "disk full",
+              UpdateManifestWriteFailed "disk full"
+            ]
+      mapM_
+        ( \err -> do
+            let rendered = renderUpdateHuman False (errorOutputFor ["nix-haskell-flake"] err)
+            rendered `shouldSatisfy` T.isSuffixOf (hint "nix-haskell-flake")
+            rendered `shouldSatisfy` T.isPrefixOf "Update failed ["
+            renderUpdateHuman False (errorOutput err) `shouldSatisfy` T.isSuffixOf (hint "<module>")
+            show (encodeUpdateOutput (errorOutputFor ["nix-haskell-flake"] err)) `shouldNotSatisfy` isInfixOf "seihou agent upgrade"
+        )
+        failures
 
     it "keeps the machine error codes stable in JSON" $
       mapM_

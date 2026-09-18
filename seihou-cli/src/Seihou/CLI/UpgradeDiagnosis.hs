@@ -71,7 +71,7 @@ import Seihou.CLI.ManifestRepairOrigins (OriginSite (..), localOriginUrls)
 import Seihou.CLI.ManifestUpgrade (ManifestUpgradeOpts (..), renderUpgradeOutcome, runManifestUpgrade)
 import Seihou.CLI.Update (PromptPolicy (..), UpdateRequest (..), UpdateSelection (..), isUpdateNoOp, withProjectUpdate)
 import Seihou.CLI.Update.Recovery (pendingUpdateRecovery)
-import Seihou.CLI.Update.Render (errorCode, errorOutput, planOutput, renderUpdateHuman)
+import Seihou.CLI.Update.Render (agentUpgradeHint, errorCode, errorOutputFor, planOutput, renderUpdateHuman)
 import Seihou.CLI.Update.Selection (MatchedApplications (..), applicationRef, matchApplications)
 import Seihou.CLI.Update.Types (ApplicationRef (..), VersionChange (..))
 import Seihou.Core.ArtifactRef (resolveArtifactOrigin)
@@ -448,7 +448,13 @@ probeUpdate root target =
                 { errorCode = Just (errorCode err),
                   noOp = False,
                   headline = "",
-                  rendered = renderUpdateHuman False (errorOutput err)
+                  -- The brief is already the agent path, so the hint
+                  -- pointing at it is dropped.
+                  rendered =
+                    T.replace
+                      (agentUpgradeHint (Just target))
+                      ""
+                      (renderUpdateHuman False (errorOutputFor [target] err))
                 }
             Right plan ->
               UpdateProbe
@@ -614,7 +620,8 @@ readiness diagnosis =
 
     installedSummary = \case
       ProbeOk [] -> "no recorded module needs an installed copy"
-      ProbeOk copies -> T.intercalate "; " (map copyText copies) <> ", matching the manifest's source"
+      ProbeOk [copy] -> copyText copy <> " and matches the manifest's source"
+      ProbeOk copies -> T.intercalate "; " (map copyText copies) <> "; each matches the manifest's source"
       _ -> "the installed copy matches the manifest's source"
       where
         copyText copy =

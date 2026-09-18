@@ -6,6 +6,8 @@ module Seihou.CLI.Update.Render
     planOutput,
     resultOutput,
     errorOutput,
+    errorOutputFor,
+    agentUpgradeHint,
     renderUpdateHuman,
     encodeUpdateOutput,
     errorCode,
@@ -78,7 +80,9 @@ newtype UpdatePlanView = UpdatePlanView UpdatePlan
 
 newtype UpdateResultView = UpdateResultView UpdateResult
 
-newtype UpdateErrorView = UpdateErrorView UpdateError
+-- | A failure, and the first target the update named, which the human
+-- rendering's @seihou agent upgrade@ hint repeats.
+data UpdateErrorView = UpdateErrorView (Maybe Text) UpdateError
 
 data UpdateOutput
   = UpdatePlanOutput UpdatePlanView
@@ -92,7 +96,20 @@ resultOutput :: UpdateResult -> UpdateOutput
 resultOutput = UpdateAppliedOutput . UpdateResultView
 
 errorOutput :: UpdateError -> UpdateOutput
-errorOutput = UpdateFailedOutput . UpdateErrorView
+errorOutput = errorOutputFor []
+
+-- | 'errorOutput' for an update that named these targets.
+errorOutputFor :: [Text] -> UpdateError -> UpdateOutput
+errorOutputFor targets = UpdateFailedOutput . UpdateErrorView (case targets of target : _ -> Just target; [] -> Nothing)
+
+-- | The line every human update failure ends with, after the remedy-first
+-- message: the escape hatch when that remedy is unclear. JSON output never
+-- carries it, so @error.message@ stays stable.
+agentUpgradeHint :: Maybe Text -> Text
+agentUpgradeHint target =
+  "If this keeps failing, run 'seihou agent upgrade "
+    <> fromMaybe "<module>" target
+    <> "' to have an agent repair the manifest state and finish the upgrade.\n"
 
 renderUpdateHuman :: Bool -> UpdateOutput -> Text
 renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
@@ -119,8 +136,8 @@ renderUpdateHuman _ (UpdateAppliedOutput (UpdateResultView result)) =
         <> " disabled"
     ]
       <> warningLines (result ^. #warnings)
-renderUpdateHuman _ (UpdateFailedOutput (UpdateErrorView err)) =
-  "Update failed [" <> errorCode err <> "]: " <> errorMessage err <> "\n"
+renderUpdateHuman _ (UpdateFailedOutput (UpdateErrorView target err)) =
+  "Update failed [" <> errorCode err <> "]: " <> errorMessage err <> "\n" <> agentUpgradeHint target
 
 encodeUpdateOutput :: UpdateOutput -> ByteString
 encodeUpdateOutput = encode . outputValue
@@ -156,7 +173,7 @@ outputValue (UpdateAppliedOutput (UpdateResultView result)) =
       "touchedPaths" .= Set.toAscList (result ^. #touchedPaths),
       "warnings" .= map warningText (result ^. #warnings)
     ]
-outputValue (UpdateFailedOutput (UpdateErrorView err)) =
+outputValue (UpdateFailedOutput (UpdateErrorView _ err)) =
   object
     [ "schemaVersion" .= (1 :: Int),
       "outcome" .= ("error" :: Text),

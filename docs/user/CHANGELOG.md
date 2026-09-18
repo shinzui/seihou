@@ -12,6 +12,25 @@ packages in the workspace share a single version.
 
 ### Added
 
+- **`seihou agent upgrade <module>` upgrades a module and repairs the manifest state that
+  blocks it.** Seihou diagnoses the project first without changing anything: the
+  manifest schema, shared files with no recorded write mode, origins recorded as paths,
+  the installed copy, and a dry run of the update. It writes the findings and a repair
+  playbook to an upgrade brief outside the project, prints the brief's path, and starts a
+  Claude Code or Codex session that performs the repairs and the upgrade. It never fails
+  because of what it finds. If no agent can start, it tells you how to use the saved
+  brief. `--check` prints a readiness report that ends in `Upgrade readiness: ready` once
+  a plain `seihou update <module>` needs no agent:
+
+  ```text
+  $ seihou agent upgrade nix-haskell-flake --check
+  Upgrade readiness for nix-haskell-flake
+    ✓ manifest-readable        .seihou/manifest.json is schema 7 and decodes
+    ...
+    ✓ update-plans-cleanly     seihou update nix-haskell-flake --dry-run: nix-haskell-flake 0.13.2 -> 0.24.0
+  Upgrade readiness: ready
+  ```
+
 - **`seihou manifest repair-origins` replaces origins recorded as a path.** Installing from
   a local checkout used to record the checkout's path as the artifact's origin, and the
   path reached your committed manifest. Once the artifact was reinstalled from GitHub,
@@ -85,6 +104,11 @@ packages in the workspace share a single version.
   ```
 
 ### Changed
+
+- **A failed `seihou update` now points at `seihou agent upgrade`.** After the message
+  and its remedy, every failure ends with
+  `If this keeps failing, run 'seihou agent upgrade <target>' to have an agent repair the manifest state and finish the upgrade.`
+  `--json` output is unchanged.
 
 - **A targeted update no longer needs a co-owner's old release installed.** To leave
   another application out of `seihou update <target>`, seihou checks how that
