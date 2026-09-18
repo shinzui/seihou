@@ -13,8 +13,10 @@ import Seihou.CLI.UpdateSpec
   ( CoOwnerWriteMode (..),
     SharedPathFixture (..),
     UpdateFixture (..),
+    installBetaVersion,
     prepareSharedPathFixture,
     prepareUpdateFixture,
+    publishBetaReleases,
   )
 import Seihou.Core.Types (ManifestSchemaVersion (..), SharedWriteMode (..))
 import Seihou.Manifest.Types (manifestFromJSON, manifestToJSON)
@@ -337,6 +339,74 @@ spec = do
       expectSuccess "retried update" retryExit retryOut retryErr
       retryOut `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
 
+  it "certifies from the co-owner's recorded release when the install cache has moved past it" $
+    withSystemTempDirectory "seihou-update-recorded-release" $ \root -> do
+      -- The reported shape: beta's recorded 1.0.0 is no longer installed
+      -- because the machine upgraded it to 1.1.0, and the remote's history
+      -- still has the commit that declared 1.0.0.
+      fixture <- prepareSharedPathFixture CoOwnerAppendsPredatingEvidence root
+      remote <- publishBetaReleases fixture ["1.0.0", "1.1.0"]
+      installBetaVersion fixture "1.1.0"
+      binary <- seihouBinary
+      beforeBeta <- LBS.readFile (fixture ^. #betaFilePath)
+      beforeInstalled <- installedSnapshot fixture
+
+      (dryExit, dryOut, dryErr) <- runSeihouShared binary fixture ["update", "alpha", "--dry-run", "--json"]
+      expectSuccess "dry run" dryExit dryOut dryErr
+      dryOut `shouldSatisfy` T.isInfixOf "{\"from\":\"unknown\",\"path\":\".gitignore\",\"to\":\"additive-only\"}"
+      dryOut `shouldSatisfy` T.isInfixOf "\"evidenceSources\":[{"
+      dryOut `shouldSatisfy` T.isInfixOf "\"module\":\"beta\""
+      dryOut `shouldSatisfy` T.isInfixOf "\"version\":\"1.0.0\""
+      dryOut `shouldSatisfy` T.isInfixOf "\"revision\":\""
+
+      (humanExit, humanOut, humanErr) <- runSeihouShared binary fixture ["update", "alpha", "--dry-run"]
+      expectSuccess "human dry run" humanExit humanOut humanErr
+      humanOut `shouldSatisfy` T.isInfixOf ".gitignore evidence unknown -> additive-only"
+      humanOut `shouldSatisfy` T.isInfixOf ("(beta 1.0.0 read from " <> T.pack remote <> " at ")
+
+      (exitCode, stdoutText, stderrText) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      expectSuccess "targeted update" exitCode stdoutText stderrText
+      stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
+      TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` "/dist-newstyle\n/result\n/alpha-v2\n"
+      LBS.readFile (fixture ^. #betaFilePath) `shouldReturn` beforeBeta
+      -- Nothing was swapped into the install cache, even temporarily.
+      installedSnapshot fixture `shouldReturn` beforeInstalled
+
+  it "still refuses, naming what it searched, when no commit declares the recorded version" $
+    withSystemTempDirectory "seihou-update-recorded-release-missing" $ \root -> do
+      fixture <- prepareSharedPathFixture CoOwnerAppendsPredatingEvidence root
+      _ <- publishBetaReleases fixture ["1.1.0"]
+      installBetaVersion fixture "1.1.0"
+      binary <- seihouBinary
+      beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+      (exitCode, stdoutText, _) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      exitCode `shouldSatisfy` (/= ExitSuccess)
+      stdoutText `shouldSatisfy` T.isInfixOf "shared_write_evidence_unavailable"
+      stdoutText `shouldSatisfy` T.isInfixOf "no commit of"
+      stdoutText `shouldSatisfy` T.isInfixOf "declares beta 1.0.0"
+      stdoutText `shouldNotSatisfy` T.isInfixOf "--include-shared-owners"
+      LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+
+  it "certifies from the recorded release in seihou manifest upgrade too" $
+    withSystemTempDirectory "seihou-manifest-upgrade-recorded-release" $ \root -> do
+      fixture <- prepareSharedPathFixture CoOwnerAppendsPredatingEvidence root
+      -- A schema-7 manifest that still records the path as unknown.
+      decoded <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
+      case decoded of
+        Left err -> expectationFailure err
+        Right manifest -> LBS.writeFile (fixture ^. #manifestPath) (manifestToJSON (manifest & #version .~ ManifestSchemaVersion 7))
+      remote <- publishBetaReleases fixture ["1.0.0", "1.1.0"]
+      installBetaVersion fixture "1.1.0"
+      binary <- seihouBinary
+      beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+      beforeInstalled <- installedSnapshot fixture
+      (exitCode, stdoutText, stderrText) <- runSeihouShared binary fixture ["manifest", "upgrade", "--dry-run"]
+      expectSuccess "manifest upgrade dry run" exitCode stdoutText stderrText
+      stdoutText `shouldSatisfy` T.isInfixOf "unknown -> additive-only"
+      stdoutText `shouldSatisfy` T.isInfixOf ("(beta 1.0.0 read from " <> T.pack remote <> " at ")
+      LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+      installedSnapshot fixture `shouldReturn` beforeInstalled
+
   it "lists --include-shared-owners in update --help" $ do
     binary <- seihouBinary
     (exitCode, stdoutText, _) <- runProcessText binary ["update", "--help"] Nothing Nothing
@@ -387,6 +457,13 @@ expectSuccess _ ExitSuccess _ _ = pure ()
 expectSuccess label (ExitFailure code) stdoutText stderrText =
   expectationFailure
     (label <> " exited " <> show code <> "\nstdout:\n" <> T.unpack stdoutText <> "\nstderr:\n" <> T.unpack stderrText)
+
+-- | Every byte of beta's installed copy that identifies its release.
+installedSnapshot :: SharedPathFixture -> IO (LBS.ByteString, LBS.ByteString)
+installedSnapshot fixture =
+  (,)
+    <$> LBS.readFile (fixture ^. #betaInstalledPath </> "module.dhall")
+    <*> LBS.readFile (fixture ^. #betaInstalledPath </> ".seihou-origin.json")
 
 runSeihouShared :: FilePath -> SharedPathFixture -> [String] -> IO (ExitCode, T.Text, T.Text)
 runSeihouShared binary fixture args = do

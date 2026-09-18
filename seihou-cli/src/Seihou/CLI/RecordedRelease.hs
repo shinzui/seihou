@@ -34,7 +34,7 @@ where
 import Data.Containers.ListUtils (nubOrd)
 import Data.Generics.Labels ()
 import Data.List (find)
-import Data.Maybe (listToMaybe, mapMaybe)
+import Data.Maybe (fromMaybe, listToMaybe, mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
@@ -46,7 +46,7 @@ import Seihou.Prelude
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..))
-import System.FilePath (takeFileName)
+import System.FilePath (makeRelative, takeFileName)
 import System.Process (CreateProcess (..), proc, readCreateProcessWithExitCode)
 
 -- | An artifact's recorded release, checked out in the session directory.
@@ -122,14 +122,26 @@ locateRecordedRelease session url name definitionFile version = do
   case cloned of
     Left err -> pure (Left err)
     Right clone -> do
-      candidates <- candidateRevisions clone version
-      case candidates of
-        Left err -> pure (Left err)
-        Right revisions -> search clone revisions (0 :: Int)
+      tip <- git ["-C", clone, "rev-parse", "HEAD"]
+      case T.strip <$> tip of
+        Left err -> pure (Left (RecordedReleaseGitFailed "read the default branch" err))
+        Right tipRevision -> do
+          -- Where the artifact lives now narrows the search to its own
+          -- definition file. The tip is always a candidate, so this
+          -- evaluation is reused rather than repeated.
+          atTip <- declaredAt session clone name definitionFile tipRevision
+          case atTip of
+            Left err -> pure (Left err)
+            Right located -> do
+              let scope = (\(directory, _) -> makeRelative (worktreeFor session clone tipRevision) directory) <$> located
+              candidates <- candidateRevisions clone tipRevision version (fmap (</> definitionFile) scope) scope
+              case candidates of
+                Left err -> pure (Left err)
+                Right revisions -> search clone revisions (0 :: Int)
   where
     search _ [] searched = pure (Left (RecordedReleaseNotFound url name version searched))
     search clone (revision : rest) searched = do
-      evaluated <- declaredAt session clone name definitionFile revision (searched + 1)
+      evaluated <- declaredAt session clone name definitionFile revision
       case evaluated of
         Left err -> pure (Left err)
         Right (Just (directory, declared))
@@ -155,23 +167,35 @@ cloneForHistory session url = do
 
 -- | Revisions to evaluate, newest first.
 --
+-- With the artifact's current definition file and directory known, the
+-- literal is searched only in that file and the fallback walk only visits
+-- commits that touch that directory. Without them, which happens when the
+-- default branch no longer holds the artifact, every Dhall file and every
+-- commit is in scope.
+--
 -- Newest means topological order, children before parents, so commits made
 -- within the same second still come out in the order they were made.
-candidateRevisions :: FilePath -> Text -> IO (Either RecordedReleaseError [Text])
-candidateRevisions clone version = do
-  tip <- git ["-C", clone, "rev-parse", "HEAD"]
-  -- Definition files are Dhall, so the literal is only searched there.
-  hits <- git ["-C", clone, "log", "--all", "--format=%H %P", "-S\"" <> T.unpack version <> "\"", "--", "*.dhall"]
+candidateRevisions :: FilePath -> Text -> Text -> Maybe FilePath -> Maybe FilePath -> IO (Either RecordedReleaseError [Text])
+candidateRevisions clone tip version definitionPath artifactPath = do
+  hits <-
+    git
+      ( ["-C", clone, "log", "--all", "--format=%H %P", "-S\"" <> T.unpack version <> "\"", "--"]
+          <> [fromMaybe "*.dhall" definitionPath]
+      )
   history <- git ["-C", clone, "rev-list", "--all", "--topo-order"]
-  case (,,) <$> tip <*> hits <*> history of
+  case (,) <$> hits <*> history of
     Left err -> pure (Left (RecordedReleaseGitFailed "search the history" err))
-    Right (tipText, hitText, historyText) ->
-      let newestFirst = T.lines historyText
-       in pure $ Right $ case planRevisionSearch (T.strip tipText) (mapMaybe parseHit (T.lines hitText)) of
-            WalkRecentHistory -> take historyWalkLimit newestFirst
-            SearchRevisions revisions ->
-              let wanted = Set.fromList revisions
-               in filter (`Set.member` wanted) newestFirst
+    Right (hitText, historyText) ->
+      case planRevisionSearch tip (mapMaybe parseHit (T.lines hitText)) of
+        WalkRecentHistory ->
+          either (Left . RecordedReleaseGitFailed "list the history") (Right . T.lines)
+            <$> git
+              ( ["-C", clone, "rev-list", "--all", "--topo-order", "-n", show historyWalkLimit]
+                  <> maybe [] (\path -> ["--", path]) artifactPath
+              )
+        SearchRevisions revisions ->
+          let wanted = Set.fromList revisions
+           in pure (Right (filter (`Set.member` wanted) (T.lines historyText)))
   where
     parseHit line = case T.words line of
       commit : parents -> Just (commit, listToMaybe parents)
@@ -180,11 +204,16 @@ candidateRevisions clone version = do
 -- | Check a revision out and read the declared version of the named
 -- artifact there, with the artifact's directory. 'Nothing' when the
 -- revision holds no such artifact or its definition does not evaluate.
-declaredAt :: FilePath -> FilePath -> Text -> FilePath -> Text -> Int -> IO (Either RecordedReleaseError (Maybe (FilePath, Maybe Text)))
-declaredAt session clone name definitionFile revision ordinal = do
-  let worktree = releasesRoot session </> T.unpack ("wt-" <> T.take 7 revision <> "-" <> T.pack (show ordinal))
-  -- Worktrees are left in place: the whole session is removed at the end.
-  added <- git ["-C", clone, "worktree", "add", "--detach", "--quiet", worktree, T.unpack revision]
+declaredAt :: FilePath -> FilePath -> Text -> FilePath -> Text -> IO (Either RecordedReleaseError (Maybe (FilePath, Maybe Text)))
+declaredAt session clone name definitionFile revision = do
+  -- One worktree per commit, shared by every lookup in the session that
+  -- visits it, and left in place: the whole session is removed at the end.
+  let worktree = worktreeFor session clone revision
+  existing <- doesDirectoryExist worktree
+  added <-
+    if existing
+      then pure (Right "")
+      else git ["-C", clone, "worktree", "add", "--detach", "--quiet", worktree, T.unpack revision]
   case added of
     Left err -> pure (Left (RecordedReleaseGitFailed ("check out " <> T.take 7 revision) err))
     Right _ -> do
@@ -224,6 +253,12 @@ declaredIdentity path
   | otherwise =
       either (const Nothing) (\modul -> Just (modul ^. #name . #unModuleName, modul ^. #version))
         <$> evalModuleFromFile path
+
+-- | Where a commit of a clone is checked out. The clone's name keeps two
+-- origins' identical commits apart.
+worktreeFor :: FilePath -> FilePath -> Text -> FilePath
+worktreeFor session clone revision =
+  releasesRoot session </> ("wt-" <> takeFileName clone <> "-" <> T.unpack revision)
 
 releasesRoot :: FilePath -> FilePath
 releasesRoot session = session </> "recorded-releases"

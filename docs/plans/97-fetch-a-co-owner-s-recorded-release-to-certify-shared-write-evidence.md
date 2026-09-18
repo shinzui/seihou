@@ -72,7 +72,7 @@ with a message that says what was searched.
 - [x] (2026-09-18) M1: `Seihou.CLI.RecordedRelease` locates the newest commit at which a repository declares a given artifact at a given version (pure selection plus git plumbing), with tests against a local fixture repository.
 - [x] (2026-09-18) M2: `gatherApplicationEvidence` falls back to a fetched recorded release, with an `EvidencePolicy` parameter; update and manifest upgrade pass a session directory.
 - [x] (2026-09-18) M2: Evidence provenance reaches the human and JSON update output.
-- [ ] M3: E2E: the BUG-shaped fixture (co-owner installed at a newer version) updates cleanly; the no-matching-commit case refuses with the new message.
+- [x] (2026-09-18) M3: E2E: the BUG-shaped fixture (co-owner installed at a newer version) updates cleanly; the no-matching-commit case refuses with the new message.
 - [ ] M4: Docs (`docs/cli/update.md`, `docs/cli/manifest.md`), both changelogs, ADR 0012 amendment, ADR 0003 cross-reference; full validation.
 
 
@@ -92,6 +92,23 @@ with a message that says what was searched.
   `Update end-to-end`), so the patterns `UpdateRender` and `UpdateE2E` in
   Concrete Steps match nothing and report "All 0 tests passed". Use
   `-p Update`, `-p Render`, or `-p end-to-end` instead.
+- The existing E2E "reports unavailable evidence distinctly and never expands
+  for it" still passes unchanged. Beta's recorded origin in that fixture
+  (`CoOwnerAppendsPredatingEvidence`) is a local repository whose only commit
+  declares 2.0.0, so the fetch runs and finds no commit declaring 1.0.0; the
+  message still begins "module beta 1.0.0 is not installed here".
+- A manual run of `locateRecordedRelease` against the real
+  `https://github.com/shinzui/seihou-modules.git` found `nix-haskell-flake`
+  0.13.2 at `ec6435e` (the last commit before the bump) in about 17 seconds.
+  It also exposed two defects that the fixtures did not. First, a second
+  lookup in the same session that visited an already checked-out revision
+  failed with "already exists", because worktrees were named by visit
+  ordinal. They are now keyed by clone and full commit id and reused, and a
+  regression test covers it. Second, a version that was never released
+  (`0.0.1`) evaluated 93 revisions, because that literal appears in other
+  modules' Dhall files. The search is now scoped to the artifact's own
+  definition file (and the fallback walk to its directory) whenever the tip
+  holds the artifact, which cut that to 40 revisions and about 20 seconds.
 
 
 ## Decision Log
@@ -174,6 +191,18 @@ with a message that says what was searched.
   path on another machine" without attempting a clone.
   Rationale: The user needs both facts (why the cache copy is unusable, why the
   remote did not help), and the remedy belongs at the end.
+  Date: 2026-09-18
+
+- Decision: Evaluate the tip first. When it holds the artifact, run the
+  pickaxe only on that artifact's definition file, and make the fallback walk
+  visit only commits that touch its directory (`rev-list -- <dir>`, capped at
+  200). When the tip no longer holds the artifact, search every `*.dhall` file
+  and walk all history, as before.
+  Rationale: Version literals such as `0.0.1` recur across a registry's
+  modules, so an unscoped search evaluates many unrelated commits. An artifact
+  that has moved directories since the recorded release is missed by the
+  scoped search. That is accepted: the result is a reported gap, never a wrong
+  answer.
   Date: 2026-09-18
 
 

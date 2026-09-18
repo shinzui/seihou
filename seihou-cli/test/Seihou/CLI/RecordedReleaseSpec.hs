@@ -139,6 +139,15 @@ spec = do
         clones <- filter (T.isPrefixOf "clone-" . T.pack) <$> listDirectory (session </> "recorded-releases")
         length clones `shouldBe` 1
 
+    it "answers repeated lookups that visit the same revisions in one session" $
+      withRegistryHistory $ \session repository -> do
+        first <- locateRecordedRelease session (T.pack repository) "beta" "module.dhall" "0.9.0"
+        again <- locateRecordedRelease session (T.pack repository) "beta" "module.dhall" "0.9.0"
+        found <- locateRecordedRelease session (T.pack repository) "beta" "module.dhall" "1.0.0"
+        case (first, again, found) of
+          (Left RecordedReleaseNotFound {}, Left RecordedReleaseNotFound {}, Right _) -> pure ()
+          other -> expectationFailure ("expected not found twice, then found; got " <> show other)
+
 -- | A registry repository holding @beta@ at @modules/beta@: 1.0.0, then a
 -- template change that keeps 1.0.0, then 1.1.0.
 withRegistryHistory :: (FilePath -> FilePath -> IO a) -> IO a
