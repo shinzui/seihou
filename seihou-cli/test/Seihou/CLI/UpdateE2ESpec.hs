@@ -2,6 +2,7 @@ module Seihou.CLI.UpdateE2ESpec (tests) where
 
 import Control.Lens ((&), (.~), (^.))
 import Data.ByteString.Lazy qualified as LBS
+import Data.Char (isHexDigit)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
@@ -282,6 +283,26 @@ spec = do
       expectSuccess "repeated update" againExit againOut againErr
       againOut `shouldSatisfy` T.isInfixOf "\"alreadyUpToDate\":true"
 
+  it "explains a schema-6 targeted plan and a whole-file refusal in prose, by application name" $
+    withSystemTempDirectory "seihou-update-human" $ \root -> do
+      bug1 <- prepareSharedPathFixture CoOwnerAppendsPredatingEvidence (root </> "bug-1")
+      binary <- seihouBinary
+      (dryExit, dryOut, dryErr) <- runSeihouShared binary bug1 ["update", "alpha", "--dry-run"]
+      expectSuccess "human dry run" dryExit dryOut dryErr
+      dryOut `shouldSatisfy` T.isInfixOf "Manifest:    schema 6 -> 7"
+      dryOut `shouldSatisfy` T.isInfixOf ".gitignore evidence unknown -> additive-only"
+      (dryOut <> dryErr) `shouldNotSatisfy` leaksInternals
+
+      wholeFile <- prepareSharedPathFixture CoOwnerWritesWholeFile (root </> "whole-file")
+      (refusedExit, refusedOut, refusedErr) <- runSeihouShared binary wholeFile ["update", "alpha"]
+      refusedExit `shouldSatisfy` (/= ExitSuccess)
+      let refusal = refusedOut <> refusedErr
+      refusal `shouldSatisfy` T.isInfixOf "Update failed [shared_path_requires_applications]"
+      refusal `shouldSatisfy` T.isInfixOf "Selected: alpha. Also required: beta."
+      refusal `shouldSatisfy` T.isInfixOf "seihou update alpha beta"
+      refusal `shouldNotSatisfy` T.isInfixOf (wholeFile ^. #betaApplicationId . #unApplicationId)
+      refusal `shouldNotSatisfy` leaksInternals
+
   it "reports unavailable evidence distinctly and never expands for it" $
     withSystemTempDirectory "seihou-update-evidence-unavailable" $ \root -> do
       fixture <- prepareSharedPathFixture CoOwnerAppendsPredatingEvidence root
@@ -354,6 +375,12 @@ spec = do
           script `shouldSatisfy` T.isInfixOf "bash-completion"
       )
       ["bash", "zsh", "fish"]
+
+-- | Haskell constructor or record syntax, or a whole 64-character digest.
+leaksInternals :: T.Text -> Bool
+leaksInternals text =
+  any (`T.isInfixOf` text) ["ModuleName {", "unModuleName", "ApplicationId", "CrossApplicationLastWriter", "fromList"]
+    || any ((>= 64) . T.length) (T.split (not . isHexDigit) text)
 
 expectSuccess :: String -> ExitCode -> T.Text -> T.Text -> Expectation
 expectSuccess _ ExitSuccess _ _ = pure ()

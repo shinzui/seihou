@@ -33,10 +33,11 @@ import Seihou.Core.ArtifactRef (ArtifactRefError (..))
 import Seihou.Core.Types (ArtifactOrigin (..), Manifest (..), ManifestSchemaVersion (..), ModuleName (..))
 import Seihou.Manifest.Upgrade (UpgradeStepKind (..))
 import System.Directory (createDirectoryIfMissing, withCurrentDirectory)
-import System.Environment (lookupEnv, setEnv, unsetEnv)
+import System.Environment (getEnvironment, lookupEnv, setEnv, unsetEnv)
+import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
-import System.Process (readProcess)
+import System.Process (CreateProcess (..), proc, readCreateProcessWithExitCode, readProcess)
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -346,6 +347,52 @@ spec = do
       withUpgradeProject schema6Manifest $ \_ ->
         runManifestUpgrade (opts False False (Just (ManifestSchemaVersion 5)))
           >>= (`shouldSatisfy` isFailure)
+
+  describe "seihou manifest upgrade (executable)" $ do
+    it "names the recovered remote on a --to 6 dry run and writes nothing" $
+      withLegacyProject InstalledWithOrigin $ \run manifestPath -> do
+        before <- LBS.readFile manifestPath
+        (exitCode, output) <- run ["manifest", "upgrade", "--dry-run", "--to", "6"]
+        exitCode `shouldBe` ExitSuccess
+        output `shouldSatisfy` T.isInfixOf "https://example.com/demo-modules.git"
+        output `shouldSatisfy` T.isInfixOf "5 -> 6"
+        output `shouldNotSatisfy` T.isInfixOf "6 -> 7"
+        LBS.readFile manifestPath `shouldReturn` before
+
+    it "records the remote, chains through schema 7, and is then a no-op" $
+      withLegacyProject InstalledWithOrigin $ \run manifestPath -> do
+        (exitCode, output) <- run ["manifest", "upgrade"]
+        exitCode `shouldBe` ExitSuccess
+        output `shouldSatisfy` T.isInfixOf "5 -> 6"
+        output `shouldSatisfy` T.isInfixOf "6 -> 7"
+        document <- readDocument manifestPath
+        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 7)
+        lookupPath ["modules", "0", "origin"] document
+          `shouldBe` Just (Aeson.toJSON (RemoteOrigin "https://example.com/demo-modules.git" "demo" (Just "demo-modules")))
+        filter absoluteLooking (documentStrings document) `shouldBe` []
+        after <- LBS.readFile manifestPath
+        (againExit, _) <- run ["manifest", "upgrade"]
+        againExit `shouldBe` ExitSuccess
+        LBS.readFile manifestPath `shouldReturn` after
+
+    it "records an honest local origin when the installed copy has no provenance" $
+      withLegacyProject InstalledWithoutOrigin $ \run manifestPath -> do
+        (exitCode, output) <- run ["manifest", "upgrade"]
+        exitCode `shouldBe` ExitSuccess
+        output `shouldSatisfy` T.isInfixOf "no upstream recorded"
+        document <- readDocument manifestPath
+        lookupPath ["modules", "0", "origin"] document `shouldBe` Just (Aeson.toJSON (LocalOrigin "demo"))
+        filter (T.isPrefixOf "https://") (documentStrings document) `shouldBe` []
+
+    it "refuses without --force when nothing here can verify the artifact, and never invents a URL" $
+      withLegacyProject NotInstalled $ \run manifestPath -> do
+        before <- LBS.readFile manifestPath
+        (exitCode, output) <- run ["manifest", "upgrade"]
+        exitCode `shouldSatisfy` (/= ExitSuccess)
+        output `shouldSatisfy` T.isInfixOf "demo"
+        output `shouldSatisfy` T.isInfixOf "--force"
+        output `shouldNotSatisfy` T.isInfixOf "https://"
+        LBS.readFile manifestPath `shouldReturn` before
   where
     opts dry forced target = ManifestUpgradeOpts {dryRun = dry, force = forced, targetVersion = target}
     stepVersions step = (step ^. #fromVersion . #unManifestSchemaVersion, step ^. #toVersion . #unManifestSchemaVersion)
@@ -556,6 +603,43 @@ originJson =
   \,\"repoName\":\"demo-modules\"\
   \,\"installedAt\":\"2026-07-01T00:00:00Z\"\
   \,\"version\":\"1.0.0\",\"tags\":[]}"
+
+-- | What this machine has installed for the legacy fixture's @demo@.
+data LegacyInstall = InstalledWithOrigin | InstalledWithoutOrigin | NotInstalled
+
+-- | A schema-5 project whose @demo@ module is recorded at another machine's
+-- absolute path, with an isolated configuration directory that holds an
+-- installed @demo@ (with provenance when asked). Passes a runner for the
+-- built executable, returning its exit code and combined output.
+withLegacyProject ::
+  LegacyInstall ->
+  (([String] -> IO (ExitCode, Text)) -> FilePath -> IO a) ->
+  IO a
+withLegacyProject install action =
+  withSystemTempDirectory "seihou-upgrade-executable" $ \root -> do
+    let project = root </> "project"
+        xdg = root </> "xdg"
+        artifactDir = xdg </> "seihou" </> "installed" </> "demo"
+        manifestPath = project </> ".seihou" </> "manifest.json"
+    createDirectoryIfMissing True (project </> ".seihou")
+    createDirectoryIfMissing True xdg
+    case install of
+      NotInstalled -> pure ()
+      _ -> do
+        createDirectoryIfMissing True artifactDir
+        writeFile (artifactDir </> "module.dhall") "{ name = \"demo\" }"
+    case install of
+      InstalledWithOrigin -> writeFile (artifactDir </> ".seihou-origin.json") originJson
+      _ -> pure ()
+    LBS.writeFile manifestPath (schemaVersionDocument 5)
+    binary <- seihouBinary
+    inherited <- getEnvironment
+    let environment = ("XDG_CONFIG_HOME", xdg) : filter ((/= "XDG_CONFIG_HOME") . fst) inherited
+        run args = do
+          (exitCode, out, err) <-
+            readCreateProcessWithExitCode ((proc binary args) {cwd = Just project, env = Just environment}) ""
+          pure (exitCode, T.pack out <> T.pack err)
+    action run manifestPath
 
 -- | A project root plus a search path holding an installed @demo@, with or
 -- without the @.seihou-origin.json@ that records where it came from.
