@@ -53,6 +53,7 @@ import Seihou.CLI.Extension (ExtensionRunOpts (..))
 import Seihou.CLI.Help (HelpCommand, helpCommandParser)
 import Seihou.CLI.Kit (KitCommand, kitCommandParser)
 import Seihou.CLI.Manifest (ManifestCommand (..))
+import Seihou.CLI.ManifestRepairOrigins (RepairOriginsOpts (..))
 import Seihou.CLI.ManifestUpgrade (ManifestUpgradeOpts (..))
 import Seihou.CLI.Migrate (MigrateOpts (..))
 import Seihou.CLI.Registry (RegistryCommand (..))
@@ -1460,14 +1461,16 @@ manifestInfo =
                   pretty ("Current subcommands:" :: String),
                   indent 2 $
                     vsep
-                      [ pretty ("upgrade   Convert a manifest written by an older seihou" :: String)
+                      [ pretty ("upgrade          Convert a manifest written by an older seihou" :: String),
+                        pretty ("repair-origins   Replace origins recorded as a path on one machine" :: String)
                       ],
                   line,
                   pretty ("Examples:" :: String),
                   indent 2 $
                     vsep
                       [ pretty ("seihou manifest upgrade --dry-run" :: String),
-                        pretty ("seihou manifest upgrade" :: String)
+                        pretty ("seihou manifest upgrade" :: String),
+                        pretty ("seihou manifest repair-origins --dry-run" :: String)
                       ]
                 ]
           )
@@ -1476,7 +1479,59 @@ manifestInfo =
 manifestCommandParser :: Parser ManifestCommand
 manifestCommandParser =
   hsubparser
-    (command "upgrade" manifestUpgradeInfo)
+    ( command "upgrade" manifestUpgradeInfo
+        <> command "repair-origins" manifestRepairOriginsInfo
+    )
+
+manifestRepairOriginsInfo :: ParserInfo ManifestCommand
+manifestRepairOriginsInfo =
+  info
+    (manifestRepairOriginsParser <**> helper)
+    ( fullDesc
+        <> progDesc "Replace artifact origins recorded as a path on one machine with a remote URL"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("An artifact installed from a local checkout used to record that" :: String),
+                  pretty ("checkout's path as its origin, and the path reached the manifest." :: String),
+                  pretty ("A path means nothing on another machine and turns into an origin" :: String),
+                  pretty ("mismatch here once the artifact is reinstalled from its real remote." :: String),
+                  line,
+                  pretty ("For each recorded path this command proposes a remote, in order of" :: String),
+                  pretty ("preference: the path's own 'origin' remote if the checkout exists" :: String),
+                  pretty ("here, the remote the installed copy of an artifact recorded under the" :: String),
+                  pretty ("path records, or a URL you give with --set NAME=URL. Every origin" :: String),
+                  pretty ("recorded under the same path is rewritten to the same URL." :: String),
+                  line,
+                  pretty ("The report prints every proposal and its evidence. The command exits" :: String),
+                  pretty ("1 while any path is unresolved or conflicting, even if others were" :: String),
+                  pretty ("written. Needs a manifest at the current schema; run" :: String),
+                  pretty ("'seihou manifest upgrade' first if it is older." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou manifest repair-origins --dry-run" :: String),
+                        pretty ("seihou manifest repair-origins" :: String),
+                        pretty ("seihou manifest repair-origins --set nix-haskell-flake=https://github.com/shinzui/seihou-modules.git" :: String)
+                      ]
+                ]
+          )
+    )
+
+manifestRepairOriginsParser :: Parser ManifestCommand
+manifestRepairOriginsParser =
+  fmap ManifestRepairOrigins $
+    RepairOriginsOpts
+      <$> switch (long "dry-run" <> help "Print the proposed rewrites without writing the manifest")
+      <*> many
+        ( option
+            overridePair
+            ( long "set"
+                <> metavar "NAME=URL"
+                <> help "Use URL as the remote for the path the artifact NAME is recorded under (repeatable)"
+            )
+        )
 
 manifestUpgradeInfo :: ParserInfo ManifestCommand
 manifestUpgradeInfo =
@@ -2194,6 +2249,14 @@ varPair = eitherReader $ \s ->
       | T.null k -> Left "variable name cannot be empty"
       | T.null v -> Left "expected KEY=VALUE format"
       | otherwise -> Right (k, T.drop 1 v)
+
+overridePair :: ReadM (Text, Text)
+overridePair = eitherReader $ \s ->
+  case T.breakOn "=" (T.pack s) of
+    (name, url)
+      | T.null name -> Left "artifact name cannot be empty"
+      | T.null (T.drop 1 url) -> Left "expected NAME=URL format"
+      | otherwise -> Right (name, T.drop 1 url)
 
 providerOption :: Parser (Maybe Text)
 providerOption =

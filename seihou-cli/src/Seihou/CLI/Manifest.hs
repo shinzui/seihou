@@ -4,6 +4,7 @@ module Seihou.CLI.Manifest
   )
 where
 
+import Seihou.CLI.ManifestRepairOrigins (RepairOriginsOpts, handleRepairOrigins)
 import Seihou.CLI.ManifestUpgrade (ManifestUpgradeOpts, handleManifestUpgrade)
 import Seihou.Prelude
 
@@ -12,8 +13,10 @@ import Seihou.Prelude
 -- another CLI restructuring pass.
 data ManifestCommand
   = ManifestUpgrade ManifestUpgradeOpts
+  | ManifestRepairOrigins RepairOriginsOpts
   deriving stock (Eq, Show, Generic)
 
 -- | Dispatch the selected @manifest@ subcommand to its handler.
 handleManifest :: ManifestCommand -> IO ()
 handleManifest (ManifestUpgrade opts) = handleManifestUpgrade opts
+handleManifest (ManifestRepairOrigins opts) = handleRepairOrigins opts

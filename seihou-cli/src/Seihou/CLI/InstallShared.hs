@@ -17,6 +17,7 @@ module Seihou.CLI.InstallShared
     resolveRecordedSource,
     recordedSourceUrl,
     formatRecordedSourceNotice,
+    expandLocalPath,
 
     -- * Install primitives
     installModuleDir,

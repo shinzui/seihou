@@ -25,6 +25,7 @@ import Seihou.CLI.InstallSourceSpec qualified as InstallSourceSpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.ManifestCapabilityUpgradeSpec qualified as ManifestCapabilityUpgradeSpec
 import Seihou.CLI.ManifestGuardSpec qualified as ManifestGuardSpec
+import Seihou.CLI.ManifestRepairOriginsSpec qualified as ManifestRepairOriginsSpec
 import Seihou.CLI.ManifestUpgradeSpec qualified as ManifestUpgradeSpec
 import Seihou.CLI.MigrateSpec qualified as MigrateSpec
 import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
@@ -74,6 +75,7 @@ main = do
         ListSpec.tests,
         ManifestGuardSpec.tests,
         ManifestCapabilityUpgradeSpec.tests,
+        ManifestRepairOriginsSpec.tests,
         ManifestUpgradeSpec.tests,
         MigrateSpec.tests,
         PendingMigrationSpec.tests,

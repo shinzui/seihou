@@ -4,12 +4,17 @@
 module Seihou.CLI.RepairOriginsE2ESpec (tests) where
 
 import Control.Lens ((^.))
+import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.ManifestRepairOrigins (overManifestOrigins)
 import Seihou.CLI.SeihouBinary (seihouBinary)
-import System.Directory (createDirectoryIfMissing)
+import Seihou.CLI.UpdateSpec (CoOwnerWriteMode (..), SharedPathFixture (..), prepareSharedPathFixture)
+import Seihou.Core.Types (ArtifactOrigin (..))
+import Seihou.Manifest.Types (manifestFromJSON, manifestToJSON)
+import System.Directory (createDirectoryIfMissing, removeFile)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..))
 import System.FilePath ((</>))
@@ -77,6 +82,119 @@ spec = do
         manifest <- TIO.readFile (project </> ".seihou" </> "manifest.json")
         manifest `shouldSatisfy` T.isInfixOf "\"kind\":\"local\""
         manifest `shouldNotSatisfy` T.isInfixOf (T.pack checkout)
+
+  describe "seihou manifest repair-origins" $ do
+    it "repairs the reported path origin so a targeted update certifies again" $
+      withSystemTempDirectory "seihou-repair-origins" $ \root -> do
+        binary <- seihouBinary
+        fixture <- prepareDamagedFixture root
+        let run = runIn binary (fixture ^. #xdgHome) (fixture ^. #projectRoot) (remotesFor root)
+
+        -- The fixture is a schema-6 manifest, as in the report. The command
+        -- works on the current schema and says how to get there.
+        (oldCode, oldOut, _) <- run ["manifest", "repair-origins", "--dry-run"]
+        oldCode `shouldBe` ExitFailure 1
+        oldOut `shouldSatisfy` T.isInfixOf "seihou manifest upgrade"
+        (upgradeCode, upgradeOut, upgradeErr) <- run ["manifest", "upgrade"]
+        expectSuccess "manifest upgrade" upgradeCode upgradeOut upgradeErr
+
+        -- The reported failure: certifying the shared .gitignore needs beta's
+        -- recorded state, and beta's recorded origin is a path.
+        (failedCode, failedOut, _) <- run ["update", "alpha", "--dry-run", "--json"]
+        failedCode `shouldSatisfy` (/= ExitSuccess)
+        failedOut `shouldSatisfy` T.isInfixOf "different origin than recorded"
+
+        before <- LBS.readFile (fixture ^. #manifestPath)
+        (dryCode, dryOut, dryErr) <- run ["manifest", "repair-origins", "--dry-run"]
+        expectSuccess "repair-origins --dry-run" dryCode dryOut dryErr
+        dryOut `shouldSatisfy` T.isInfixOf (damagedPath <> "\n  -> " <> fakeRemote)
+        dryOut `shouldSatisfy` T.isInfixOf "evidence: the installed copy of beta"
+        dryOut `shouldSatisfy` T.isInfixOf "--dry-run: nothing was written."
+        LBS.readFile (fixture ^. #manifestPath) `shouldReturn` before
+
+        (repairCode, repairOut, repairErr) <- run ["manifest", "repair-origins"]
+        expectSuccess "repair-origins" repairCode repairOut repairErr
+        manifest <- TIO.readFile (fixture ^. #manifestPath)
+        manifest `shouldNotSatisfy` T.isInfixOf damagedPath
+        manifest `shouldSatisfy` T.isInfixOf fakeRemote
+
+        (updateCode, updateOut, updateErr) <- run ["update", "alpha", "--dry-run", "--json"]
+        expectSuccess "update after repair" updateCode updateOut updateErr
+        updateOut `shouldNotSatisfy` T.isInfixOf "different origin than recorded"
+
+        (againCode, againOut, againErr) <- run ["manifest", "repair-origins"]
+        expectSuccess "second repair" againCode againOut againErr
+        againOut `shouldSatisfy` T.isInfixOf "nothing to repair"
+
+    it "exits 1 for a path it cannot resolve and accepts --set for it" $
+      withSystemTempDirectory "seihou-repair-origins-set" $ \root -> do
+        binary <- seihouBinary
+        fixture <- prepareDamagedFixture root
+        let run = runIn binary (fixture ^. #xdgHome) (fixture ^. #projectRoot) (remotesFor root)
+        (upgradeCode, upgradeOut, upgradeErr) <- run ["manifest", "upgrade"]
+        expectSuccess "manifest upgrade" upgradeCode upgradeOut upgradeErr
+        removeFile (fixture ^. #betaInstalledPath </> ".seihou-origin.json")
+
+        before <- LBS.readFile (fixture ^. #manifestPath)
+        (code, out, _) <- run ["manifest", "repair-origins"]
+        code `shouldBe` ExitFailure 1
+        out `shouldSatisfy` T.isInfixOf "no remote found"
+        out `shouldSatisfy` T.isInfixOf "pass --set beta=<url>"
+        LBS.readFile (fixture ^. #manifestPath) `shouldReturn` before
+
+        (localCode, localOut, _) <- run ["manifest", "repair-origins", "--set", "beta=/elsewhere/modules"]
+        localCode `shouldBe` ExitFailure 1
+        localOut `shouldSatisfy` T.isInfixOf "is a path on this machine"
+
+        (setCode, setOut, setErr) <- run ["manifest", "repair-origins", "--set", "beta=" <> T.unpack fakeRemote]
+        expectSuccess "repair-origins --set" setCode setOut setErr
+        setOut `shouldSatisfy` T.isInfixOf ("evidence: --set beta=" <> fakeRemote)
+        TIO.readFile (fixture ^. #manifestPath) `shouldReturnSatisfy` (not . T.isInfixOf damagedPath)
+
+-- | The path the reported project recorded as beta's origin.
+damagedPath :: Text
+damagedPath = "/nonexistent/seihou-modules"
+
+-- | Alpha's origin once it is not a path: an https URL git maps back onto the
+-- fixture's local remote.
+alphaRemote :: Text
+alphaRemote = "https://example.invalid/alpha.git"
+
+-- | The two-application shared-path fixture, damaged the way the reported
+-- project was. Beta's manifest origins name a path on some other machine,
+-- while its installed copy records the real remote. Alpha is given a real
+-- (mapped) remote too, so only beta needs repairing.
+prepareDamagedFixture :: FilePath -> IO SharedPathFixture
+prepareDamagedFixture root = do
+  fixture <- prepareSharedPathFixture CoOwnerAppendsUnrecorded root
+  bytes <- LBS.readFile (fixture ^. #manifestPath)
+  manifest <- either fail pure (manifestFromJSON bytes)
+  let damage = \case
+        RemoteOrigin _ "alpha" _ -> RemoteOrigin alphaRemote "alpha" Nothing
+        RemoteOrigin _ "beta" _ -> RemoteOrigin damagedPath "beta" (Just "seihou-modules")
+        other -> other
+  LBS.writeFile (fixture ^. #manifestPath) (manifestToJSON (overManifestOrigins damage manifest))
+  let installed = fixture ^. #xdgHome </> "seihou" </> "installed"
+  TIO.writeFile
+    (installed </> "alpha" </> ".seihou-origin.json")
+    ("{\"sourceUrl\":\"" <> alphaRemote <> "\",\"version\":\"1.0.0\"}")
+  TIO.writeFile
+    (fixture ^. #betaInstalledPath </> ".seihou-origin.json")
+    ("{\"sourceUrl\":\"" <> fakeRemote <> "\",\"repoName\":\"seihou-modules\",\"version\":\"1.0.0\"}")
+  pure fixture
+
+-- | Map both fixture remotes' https URLs onto their local repositories.
+remotesFor :: FilePath -> [(String, String)]
+remotesFor root =
+  [ ("GIT_CONFIG_COUNT", "2"),
+    ("GIT_CONFIG_KEY_0", "url." <> (root </> "remote" </> "alpha") <> ".insteadOf"),
+    ("GIT_CONFIG_VALUE_0", T.unpack alphaRemote),
+    ("GIT_CONFIG_KEY_1", "url." <> (root </> "remote" </> "beta") <> ".insteadOf"),
+    ("GIT_CONFIG_VALUE_1", T.unpack fakeRemote)
+  ]
+
+shouldReturnSatisfy :: IO Text -> (Text -> Bool) -> Expectation
+shouldReturnSatisfy action predicate = action >>= (`shouldSatisfy` predicate)
 
 -- | A git checkout holding the single module @demo@, with one commit.
 prepareCheckout :: FilePath -> IO FilePath

@@ -69,7 +69,7 @@ After this plan, three things are true:
 
 - [x] M1: `isMachineLocalOriginUrl` in `Seihou.Core.ArtifactIdentity`; `detectArtifactOrigin` maps a machine-local `sourceUrl` to `LocalOrigin`; tests. (2026-09-18: new `seihou-core/test/Seihou/Core/ArtifactIdentitySpec.hs`; `cabal test seihou-core` 1154 passed.)
 - [x] M2: `seihou install <local path>` records the checkout's remote when the installed commit is published there; otherwise warns; tests. (2026-09-18: `resolveRecordedSource` in `InstallShared`; `InstallSourceSpec` (6 cases) and the two install cases of `RepairOriginsE2ESpec` pass, including a same-source reinstall from the recorded remote.)
-- [ ] M3: `seihou manifest repair-origins [--dry-run] [--set NAME=URL]` in `Seihou.CLI.ManifestRepairOrigins`; unit and E2E tests.
+- [x] M3: `seihou manifest repair-origins [--dry-run] [--set NAME=URL]` in `Seihou.CLI.ManifestRepairOrigins`; unit and E2E tests. (2026-09-18: `ManifestRepairOriginsSpec` 20 cases; `RepairOriginsE2ESpec` reproduces the reported certification failure, repairs it, and shows the targeted update succeeding; `cabal test seihou-cli` 677 passed.)
 - [ ] M4: Guard, certification-gap, and status messages point at the command for machine-local origins.
 - [ ] M5: Docs (`docs/cli/manifest.md`, `docs/cli/install.md`, `docs/user/manifest-upgrade.md`), both changelogs, ADR 0001 and ADR 0005 amendments; full validation.
 
@@ -155,6 +155,34 @@ After this plan, three things are true:
   Rationale: A bare repository's path would itself count as machine-local, and a network
   URL is unavailable in tests. `insteadOf` lets the manifest record an https URL while git
   reads a local directory.
+  Date: 2026-09-18
+
+
+- Decision: Evidence agrees when the URLs name the same repository regardless of
+  transport (`sameRepository`: `git@github.com:o/r.git`, `ssh://git@github.com/o/r` and
+  `https://github.com/o/r.git` agree). When they agree, the URL written is the installed
+  copy's spelling if there is one, otherwise the checkout remote's.
+  Rationale: The reported case is exactly a local checkout with an ssh remote and a
+  GitHub install over https. Comparing normalized URLs would call that a conflict and
+  write nothing. The guard compares the manifest with the installed copy through
+  `normalizeOriginUrl`, so writing the installed copy's spelling is what makes the guard
+  pass on this machine; the checkout remote's spelling would reproduce the mismatch.
+  Date: 2026-09-18
+
+- Decision: `OriginSite` carries three fields beyond the interface sketched below: `kind`
+  (which of the six record kinds), `recordedUrl` (the URL before normalization), and
+  `definitionFile` (`module.dhall`, `recipe.dhall`, or `blueprint.dhall`). `RepairOutcome`
+  gains `RepairUnwritten` for a real run in which no path had a remote.
+  Rationale: `kind` lets the report count instances and migration receipts instead of
+  listing each. `recordedUrl` is the path evidence (a) must inspect, since normalization
+  strips a trailing `.git`. `definitionFile` lets evidence (b) find the installed copy with
+  the same `resolveArtifactOrigin` lookup the guard uses. Printing
+  "--dry-run: nothing was written." for a run that was not a dry run would be wrong.
+  Date: 2026-09-18
+
+- Decision: `--set NAME=URL` for a name recorded under no local path is refused up front,
+  like a machine-local URL.
+  Rationale: Such an override would silently do nothing, and it is almost always a typo.
   Date: 2026-09-18
 
 

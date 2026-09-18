@@ -82,6 +82,7 @@ library seihou-cli-internal
     Seihou.CLI.Manifest
     Seihou.CLI.ManifestCapabilityUpgrade
     Seihou.CLI.ManifestGuard
+    Seihou.CLI.ManifestRepairOrigins
     Seihou.CLI.ManifestUpgrade
     Seihou.CLI.Migrate
     Seihou.CLI.MigrationCohort
@@ -257,6 +258,7 @@ test-suite seihou-cli-test
     Seihou.CLI.ListSpec
     Seihou.CLI.ManifestCapabilityUpgradeSpec
     Seihou.CLI.ManifestGuardSpec
+    Seihou.CLI.ManifestRepairOriginsSpec
     Seihou.CLI.ManifestUpgradeSpec
     Seihou.CLI.MigrateSpec
     Seihou.CLI.PendingMigrationSpec
