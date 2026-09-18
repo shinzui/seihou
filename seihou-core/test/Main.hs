@@ -7,6 +7,7 @@ import Seihou.Composition.RecipeSpec qualified as CompositionRecipeSpec
 import Seihou.Composition.ResolveSpec qualified as ResolveSpec
 import Seihou.Core.AgentPromptSpec qualified as AgentPromptSpec
 import Seihou.Core.ApplicationSpec qualified as ApplicationSpec
+import Seihou.Core.ArtifactIdentitySpec qualified as ArtifactIdentitySpec
 import Seihou.Core.ArtifactOriginDetectSpec qualified as ArtifactOriginDetectSpec
 import Seihou.Core.ArtifactRefSpec qualified as ArtifactRefSpec
 import Seihou.Core.BlueprintSpec qualified as BlueprintSpec
@@ -75,6 +76,7 @@ main = do
   resolveTests <- ResolveSpec.tests
   agentPromptTests <- AgentPromptSpec.tests
   applicationTests <- ApplicationSpec.tests
+  artifactIdentityTests <- ArtifactIdentitySpec.tests
   artifactOriginDetectTests <- ArtifactOriginDetectSpec.tests
   artifactRefTests <- ArtifactRefSpec.tests
   blueprintTests <- BlueprintSpec.tests
@@ -132,4 +134,4 @@ main = do
   manifestUpgradeTests <- ManifestUpgradeSpec.tests
   promptTests <- PromptSpec.tests
   confirmTests <- ConfirmSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, instanceTests, compositionPlanTests, compositionRecipeTests, resolveTests, agentPromptTests, applicationTests, artifactOriginDetectTests, artifactRefTests, blueprintTests, commandFingerprintTests, commandVarTests, typesTests, contextTests, entailmentTests, exprTests, installTests, listTests, migrationTests, moduleTests, recipeTests, registryTests, registryEmitTests, registrySyncTests, scaffoldTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, threeWayMergeTests, updateTransactionTests, planTests, previewTests, reconcileTests, sectionTests, validateTests, splitFlakeTests, dhallTextFlakeTests, typedDhallTextTests, conditionalTemplateTests, configTests, dhallEvalTests, migrationDecoderTests, configReaderTests, configWriterTests, baselineStoreTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, baselineTests, diffTests, executeTests, engineMigrateTests, removeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, manifestUpgradeTests, promptTests, confirmTests])
+  defaultMain (testGroup "seihou-core" [graphTests, instanceTests, compositionPlanTests, compositionRecipeTests, resolveTests, agentPromptTests, applicationTests, artifactIdentityTests, artifactOriginDetectTests, artifactRefTests, blueprintTests, commandFingerprintTests, commandVarTests, typesTests, contextTests, entailmentTests, exprTests, installTests, listTests, migrationTests, moduleTests, recipeTests, registryTests, registryEmitTests, registrySyncTests, scaffoldTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, threeWayMergeTests, updateTransactionTests, planTests, previewTests, reconcileTests, sectionTests, validateTests, splitFlakeTests, dhallTextFlakeTests, typedDhallTextTests, conditionalTemplateTests, configTests, dhallEvalTests, migrationDecoderTests, configReaderTests, configWriterTests, baselineStoreTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, baselineTests, diffTests, executeTests, engineMigrateTests, removeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, manifestUpgradeTests, promptTests, confirmTests])

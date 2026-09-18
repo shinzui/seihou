@@ -20,9 +20,11 @@ module Seihou.Core.ArtifactIdentity
   ( sameArtifactIdentity,
     normalizeOriginUrl,
     normalizeProjectPath,
+    isMachineLocalOriginUrl,
   )
 where
 
+import Data.Char (isAsciiLower, isAsciiUpper)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Seihou.Core.Types (ArtifactOrigin (..))
@@ -75,3 +77,31 @@ normalizeProjectPath =
         then Just (drop (length prefix) path)
         else Nothing
     dropWhileEnd' p = reverse . dropWhile p . reverse
+
+-- | Whether a recorded origin URL is a path on the machine that recorded it
+-- rather than a location every developer can reach.
+--
+-- @seihou install@ accepts a local checkout, and before plan 98 it stored
+-- that path verbatim as the installed copy's @sourceUrl@, which then reached
+-- the manifest as a 'RemoteOrigin'. A path means nothing on another machine
+-- (docs\/adr\/0001-manifest-is-a-checked-in-machine-independent-artifact.md)
+-- and turns into a false origin mismatch on this one as soon as the artifact
+-- is reinstalled from its real remote.
+--
+-- True for text that, once stripped, starts with @\/@, @.\/@, @..\/@, @~@
+-- or @file:@, is exactly @.@ or @..@, or is a Windows drive path
+-- (@C:\\@ or @C:\/@). False for URLs with a network scheme
+-- (@https:\/\/@, @ssh:\/\/@, @git:\/\/@) and for scp-style
+-- @user\@host:path@.
+isMachineLocalOriginUrl :: Text -> Bool
+isMachineLocalOriginUrl raw =
+  any (`T.isPrefixOf` url) ["/", "./", "../", "~", "file:"]
+    || url == "."
+    || url == ".."
+    || isDrivePath url
+  where
+    url = T.strip raw
+    isDrivePath text = case T.unpack (T.take 3 text) of
+      [letter, ':', sep] -> isDriveLetter letter && (sep == '\\' || sep == '/')
+      _ -> False
+    isDriveLetter c = isAsciiLower c || isAsciiUpper c

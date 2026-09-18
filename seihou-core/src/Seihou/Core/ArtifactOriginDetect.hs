@@ -26,6 +26,7 @@ import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Text qualified as T
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl)
 import Seihou.Core.Types (ArtifactOrigin (..))
 import Seihou.Prelude
 import System.Directory (canonicalizePath, doesFileExist)
@@ -69,11 +70,18 @@ readOriginInfo installedDir = do
 --      'ProjectOrigin' holding the path relative to @projectRoot@ with
 --      forward slashes.
 --   2. Otherwise, if @artifactDir@ contains a readable
---      @.seihou-origin.json@ with a @sourceUrl@, the result is a
---      'RemoteOrigin' carrying that URL, the directory's base name, and
---      the recorded @repoName@.
+--      @.seihou-origin.json@ with a @sourceUrl@ that is not a machine-local
+--      path, the result is a 'RemoteOrigin' carrying that URL, the
+--      directory's base name, and the recorded @repoName@.
 --   3. Otherwise the result is a 'LocalOrigin' holding the directory's
---      base name.
+--      base name. This includes a @sourceUrl@ that
+--      'isMachineLocalOriginUrl' recognises as a path (an install from a
+--      local checkout whose commit seihou could not trace to a published
+--      remote): the path is meaningful only on this machine, so recording it
+--      would break the manifest for everyone else and turn into a false
+--      origin mismatch here once the artifact is reinstalled from its real
+--      remote. 'LocalOrigin' says what is actually known — the provenance
+--      is not portable.
 detectArtifactOrigin :: FilePath -> FilePath -> IO ArtifactOrigin
 detectArtifactOrigin projectRoot artifactDir = do
   root <- canonicalizeOr projectRoot
@@ -84,8 +92,10 @@ detectArtifactOrigin projectRoot artifactDir = do
       originInfo <- readOriginInfo dir
       let name = T.pack (takeFileName dir)
       pure $ case originInfo of
-        Just info -> RemoteOrigin (info ^. #sourceUrl) name (info ^. #repoName)
-        Nothing -> LocalOrigin name
+        Just info
+          | not (isMachineLocalOriginUrl (info ^. #sourceUrl)) ->
+              RemoteOrigin (info ^. #sourceUrl) name (info ^. #repoName)
+        _ -> LocalOrigin name
 
 -- | 'canonicalizePath' throws when an intermediate component does not
 -- exist, which happens in tests and for artifacts that were removed between

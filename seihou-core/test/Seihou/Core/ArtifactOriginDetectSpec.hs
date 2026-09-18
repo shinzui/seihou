@@ -65,6 +65,16 @@ spec = do
         origin <- detectArtifactOrigin projectRoot moduleDir
         origin `shouldBe` LocalOrigin "haskell-base"
 
+    it "records an origin installed from a local path as a local origin" $ do
+      withRoots $ \projectRoot installedRoot -> do
+        let moduleDir = installedRoot </> "nix-haskell-flake"
+        createDirectoryIfMissing True moduleDir
+        writeFile
+          (moduleDir </> ".seihou-origin.json")
+          "{\"sourceUrl\":\"/Users/someone/src/modules\",\"repoName\":\"modules\"}"
+        origin <- detectArtifactOrigin projectRoot moduleDir
+        origin `shouldBe` LocalOrigin "nix-haskell-flake"
+
     it "falls back to a local origin when there is no metadata file" $ do
       withRoots $ \projectRoot installedRoot -> do
         let moduleDir = installedRoot </> "scratch-module"

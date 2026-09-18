@@ -153,6 +153,7 @@ test-suite seihou-core-test
     Seihou.Composition.ResolveSpec
     Seihou.Core.AgentPromptSpec
     Seihou.Core.ApplicationSpec
+    Seihou.Core.ArtifactIdentitySpec
     Seihou.Core.ArtifactOriginDetectSpec
     Seihou.Core.ArtifactRefSpec
     Seihou.Core.BlueprintSpec
