@@ -10,7 +10,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.CLI.ApplicationDisplay (applicationLabel)
-import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..))
+import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), EvidenceSource (..))
 import Seihou.CLI.Update (UpdateError (..), UpdateWarning (..))
 import Seihou.CLI.Update.Render
   ( encodeUpdateOutput,
@@ -187,6 +187,7 @@ spec = do
             { fromVersion = ManifestSchemaVersion 6,
               toVersion = ManifestSchemaVersion 7,
               modeChanges = Map.singleton ".gitignore" (SharedWriteUnknown, SharedWriteAdditiveOnly),
+              evidenceSources = [],
               preparedManifest = planWithWarnings [] ^. #snapshot . #originalManifest
             }
         plan = planWithWarnings [] & #manifestPreparation .~ Just preparation
@@ -197,6 +198,35 @@ spec = do
     json `shouldSatisfy` isInfixOf "\\\"fromSchema\\\":6"
     json `shouldSatisfy` isInfixOf "\\\"toSchema\\\":7"
     json `shouldSatisfy` isInfixOf "\\\"alreadyUpToDate\\\":false"
+    -- Nothing was fetched, so the output is exactly what it was before.
+    json `shouldNotSatisfy` isInfixOf "evidenceSources"
+    human `shouldNotSatisfy` T.isInfixOf "read from"
+
+  it "names each fetched recorded release in the human and JSON plan" $ do
+    let source =
+          EvidenceSource
+            { moduleName = ModuleName "nix-haskell-flake",
+              version = "0.13.2",
+              originUrl = "https://github.com/shinzui/seihou-modules.git",
+              revision = "08191d3"
+            }
+        preparation =
+          ManifestPreparation
+            { fromVersion = ManifestSchemaVersion 7,
+              toVersion = ManifestSchemaVersion 7,
+              modeChanges = Map.singleton ".gitignore" (SharedWriteUnknown, SharedWriteAdditiveOnly),
+              evidenceSources = [source],
+              preparedManifest = planWithWarnings [] ^. #snapshot . #originalManifest
+            }
+        plan = planWithWarnings [] & #manifestPreparation .~ Just preparation
+        human = renderUpdateHuman False (planOutput plan)
+        json = show (encodeUpdateOutput (planOutput plan))
+    human
+      `shouldSatisfy` T.isInfixOf
+        "             (nix-haskell-flake 0.13.2 read from https://github.com/shinzui/seihou-modules.git at 08191d3)"
+    json `shouldSatisfy` isInfixOf "\\\"evidenceSources\\\":[{"
+    json `shouldSatisfy` isInfixOf "\\\"revision\\\":\\\"08191d3\\\""
+    json `shouldSatisfy` isInfixOf "\\\"module\\\":\\\"nix-haskell-flake\\\""
 
 -- | One of every warning constructor. Adding a constructor without adding
 -- it here fails the exhaustiveness test below.

@@ -70,8 +70,8 @@ with a message that says what was searched.
 ## Progress
 
 - [x] (2026-09-18) M1: `Seihou.CLI.RecordedRelease` locates the newest commit at which a repository declares a given artifact at a given version (pure selection plus git plumbing), with tests against a local fixture repository.
-- [ ] M2: `gatherApplicationEvidence` falls back to a fetched recorded release, with an `EvidencePolicy` parameter; update and manifest upgrade pass a session directory.
-- [ ] M2: Evidence provenance reaches the human and JSON update output.
+- [x] (2026-09-18) M2: `gatherApplicationEvidence` falls back to a fetched recorded release, with an `EvidencePolicy` parameter; update and manifest upgrade pass a session directory.
+- [x] (2026-09-18) M2: Evidence provenance reaches the human and JSON update output.
 - [ ] M3: E2E: the BUG-shaped fixture (co-owner installed at a newer version) updates cleanly; the no-matching-commit case refuses with the new message.
 - [ ] M4: Docs (`docs/cli/update.md`, `docs/cli/manifest.md`), both changelogs, ADR 0012 amendment, ADR 0003 cross-reference; full validation.
 
@@ -84,6 +84,14 @@ with a message that says what was searched.
   Evidence: the plan's step 2 ordering; fixed before the first test run by
   ordering with `git rev-list --all --topo-order`, which puts children before
   parents regardless of timestamps.
+- The applied (non-dry-run) JSON output of `seihou update` has no
+  `manifestPreparation` object at all; only the plan output does. So
+  `evidenceSources` is observable in `--dry-run --json` and in the human plan,
+  and M3 asserts it there rather than on the applied output.
+- The tasty test groups are named after modules (`Seihou.CLI.Update.Render`,
+  `Update end-to-end`), so the patterns `UpdateRender` and `UpdateE2E` in
+  Concrete Steps match nothing and report "All 0 tests passed". Use
+  `-p Update`, `-p Render`, or `-p end-to-end` instead.
 
 
 ## Decision Log
@@ -149,6 +157,23 @@ with a message that says what was searched.
   Rationale: Committer dates tie within a second; topological order does not.
   Definition files are Dhall, and limiting the pickaxe to them keeps a
   blobless clone from fetching unrelated blobs.
+  Date: 2026-09-18
+
+- Decision: Print the provenance lines once after all certified path lines
+  rather than under each path, in both `seihou update` and
+  `seihou manifest upgrade`.
+  Rationale: Fetched sources belong to the certification round, not to one
+  path; one co-owner fetch commonly certifies several paths, and repeating the
+  line under each would only add noise.
+  Date: 2026-09-18
+
+- Decision: A failed fetch keeps the installed-copy reason and appends the fetch
+  reason after "; ". When the recorded origin is a machine-local path, the
+  existing repair-origins note (plan 98, already landed) is appended last, and a
+  path that does not exist here is reported as "its recorded origin <path> is a
+  path on another machine" without attempting a clone.
+  Rationale: The user needs both facts (why the cache copy is unusable, why the
+  remote did not help), and the remedy belongs at the end.
   Date: 2026-09-18
 
 

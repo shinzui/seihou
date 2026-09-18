@@ -513,6 +513,7 @@ exampleResult =
             }
         ],
       certification = [],
+      evidenceSources = [],
       entries =
         [ UpgradeReportEntry
             { artifactName = "haskell-base",

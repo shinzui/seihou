@@ -26,7 +26,7 @@ import Seihou.CLI.CommandExecution
     PlannedCommand (..),
     summarizeCommandPlan,
   )
-import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..))
+import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), EvidenceSource (..), renderEvidenceSource)
 import Seihou.CLI.Shared (formatVarError)
 import Seihou.CLI.Update.Types
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
@@ -175,6 +175,9 @@ preparationLines (Just preparation) =
           <> sharedWriteModeToText after
       | (path, (before, after)) <- Map.toAscList (preparation ^. #modeChanges)
       ]
+      <> [ "             (" <> renderEvidenceSource source <> ")"
+         | source <- preparation ^. #evidenceSources
+         ]
   where
     schemaChange p
       | p ^. #fromVersion == p ^. #toVersion = "schema " <> schemaText (p ^. #toVersion) <> " (evidence recorded)"
@@ -182,7 +185,7 @@ preparationLines (Just preparation) =
 
 preparationValue :: ManifestPreparation -> Value
 preparationValue preparation =
-  object
+  object $
     [ "fromSchema" .= (preparation ^. #fromVersion . #unManifestSchemaVersion),
       "toSchema" .= (preparation ^. #toVersion . #unManifestSchemaVersion),
       "sharedWriteModes"
@@ -194,6 +197,20 @@ preparationValue preparation =
            | (path, (before, after)) <- Map.toAscList (preparation ^. #modeChanges)
            ]
     ]
+      -- Additive and omitted when empty, so an update that fetched nothing
+      -- prints exactly what it printed before.
+      <> [ "evidenceSources" .= map evidenceSourceValue sources
+         | let sources = preparation ^. #evidenceSources,
+           not (null sources)
+         ]
+  where
+    evidenceSourceValue source =
+      object
+        [ "module" .= (source ^. #moduleName . #unModuleName),
+          "version" .= (source ^. #version),
+          "origin" .= (source ^. #originUrl),
+          "revision" .= (source ^. #revision)
+        ]
 
 schemaText :: ManifestSchemaVersion -> Text
 schemaText version = T.pack (show (version ^. #unManifestSchemaVersion))

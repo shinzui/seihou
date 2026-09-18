@@ -74,11 +74,14 @@ import Data.Text.IO qualified as TIO
 import Data.Vector qualified as V
 import Seihou.CLI.ManifestCapabilityUpgrade
   ( CertificationScope (..),
+    EvidencePolicy (..),
+    EvidenceSource (..),
     SharedWriteCertification (..),
     SharedWriteCertificationEntry (..),
     certifiedChanges,
     certifySharedWriteModesIO,
     renderCertificationGap,
+    renderEvidenceSource,
   )
 import Seihou.CLI.ManifestGuard
   ( ArtifactCheck,
@@ -116,6 +119,7 @@ import Seihou.Manifest.Upgrade
 import Seihou.Prelude
 import System.Directory (doesFileExist, getCurrentDirectory, renamePath)
 import System.Exit (exitFailure)
+import System.IO.Temp (withSystemTempDirectory)
 import Text.Read (readMaybe)
 
 -- ----------------------------------------------------------------------------
@@ -397,6 +401,9 @@ data UpgradeResult = UpgradeResult
     -- | Shared-write modes established after reaching schema 7, including
     -- paths that stayed unknown and why.
     certification :: ![SharedWriteReportEntry],
+    -- | The recorded releases fetched from their remotes to establish that
+    -- evidence, because no installed copy was the recorded version.
+    evidenceSources :: ![EvidenceSource],
     upgradedDocument :: !Aeson.Value
   }
   deriving stock (Eq, Show, Generic)
@@ -440,6 +447,7 @@ applyUpgrade legacy conversions =
       steps = either (const []) (map stepReport) (planManifestUpgrade source oldestDecodableManifestVersion),
       entries = reportEntries,
       certification = [],
+      evidenceSources = [],
       upgradedDocument = document
     }
   where
@@ -577,7 +585,13 @@ formatUpgradeReport result =
 
     certificationLines = case result ^. #certification of
       [] -> []
-      entries -> "" : "  shared-write evidence" : concatMap certificationEntryLines entries
+      entries ->
+        ""
+          : "  shared-write evidence"
+          : concatMap certificationEntryLines entries
+            <> [ "    (" <> renderEvidenceSource source <> ")"
+               | source <- result ^. #evidenceSources
+               ]
 
     pathColumn =
       maximum (5 : map (T.length . T.pack . (^. #path)) (result ^. #certification)) + 2
@@ -677,7 +691,12 @@ runManifestUpgrade opts = do
                           then UpgradeWouldWrite result blocking
                           else UpgradeBlocked result blocking
                   | otherwise -> do
-                      certified <- certifyDocument projectRoot searchPaths result
+                      -- A co-owner whose recorded release is no longer
+                      -- installed is read from its recorded remote into this
+                      -- temporary directory, never into the install cache.
+                      certified <-
+                        withSystemTempDirectory "seihou-manifest-upgrade" $ \session ->
+                          certifyDocument (FetchRecordedReleases session) projectRoot searchPaths result
                       case certified of
                         Left err -> pure (UpgradeFailed err)
                         Right final
@@ -696,6 +715,7 @@ runManifestUpgrade opts = do
             steps = [],
             entries = [],
             certification = [],
+            evidenceSources = [],
             upgradedDocument = document
           }
       where
@@ -749,7 +769,7 @@ runManifestUpgrade opts = do
 
     -- Evidence is established only once the document is at a schema that
     -- can record every answer, which is exactly the capability that needs it.
-    certifyDocument projectRoot searchPaths result
+    certifyDocument policy projectRoot searchPaths result
       | result ^. #toVersion < oldestDecodableManifestVersion = pure (Right result)
       | otherwise = case validateDocument (result ^. #upgradedDocument) of
           Left err -> pure (Left err)
@@ -757,14 +777,21 @@ runManifestUpgrade opts = do
             | not (manifestSupports TargetedAdditiveSharedPathUpdate manifest) -> pure (Right result)
             | otherwise -> do
                 certification <-
-                  certifySharedWriteModesIO projectRoot searchPaths CertifyAllUnknownPaths manifest Map.empty
+                  certifySharedWriteModesIO policy projectRoot searchPaths CertifyAllUnknownPaths manifest Map.empty
                 let document =
                       foldl'
                         (\current entry -> setRecordedSharedWriteMode (entry ^. #path) (entry ^. #certifiedMode) current)
                         (result ^. #upgradedDocument)
                         (certifiedChanges certification)
                     reported = map (sharedWriteReportEntry manifest) (certification ^. #entries)
-                    certified = result & #certification .~ reported & #upgradedDocument .~ document
+                    certified =
+                      result
+                        & #certification
+                        .~ reported
+                        & #evidenceSources
+                        .~ (certification ^. #fetchedSources)
+                        & #upgradedDocument
+                        .~ document
                 pure (certified <$ validateDocument document)
 
     changed entry = entry ^. #previousMode /= entry ^. #certifiedMode

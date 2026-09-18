@@ -14,7 +14,9 @@ import Seihou.CLI.ManifestUpgrade (ManifestUpgradeOpts (..), UpgradeOutcome (..)
 import Seihou.CLI.UpdateSpec
   ( CoOwnerWriteMode (..),
     SharedPathFixture (..),
+    installBetaVersion,
     prepareSharedPathFixture,
+    publishBetaReleases,
   )
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (hashContent)
@@ -86,6 +88,7 @@ evidence =
     [ ( appA,
         EvidenceOperations
           (map append [".gitignore", "flake.nix", "shared.txt", "gone.txt", "stranger.txt", "solo.txt", "closed.txt"])
+          []
       ),
       ( appB,
         EvidenceOperations
@@ -94,6 +97,7 @@ evidence =
             WriteFileOp "wholefile.txt" "all" Template,
             append "closed.txt"
           ]
+          []
       ),
       (appC, EvidenceUnavailable "c is not installed here")
     ]
@@ -178,6 +182,36 @@ spec = do
             reason `shouldSatisfy` T.isInfixOf "version 1.1.0 here but the manifest records version 1.0.0"
           other -> expectationFailure ("expected one version gap, got " <> show other)
 
+    it "certifies from the recorded release in the recorded remote once the cache has moved on" $
+      withSharedFixture CoOwnerAppendsUnrecorded $ \fixture manifest -> do
+        _ <- publishBetaReleases fixture ["1.0.0", "1.1.0"]
+        installBetaVersion fixture "1.1.0"
+        installedBefore <- TIO.readFile (fixture ^. #betaInstalledPath </> "module.dhall")
+        installedOnly <- certify fixture manifest
+        modeIn ".gitignore" installedOnly `shouldBe` Just SharedWriteUnknown
+        (installedOnly ^. #fetchedSources) `shouldBe` []
+        withSystemTempDirectory "seihou-certify-session" $ \session -> do
+          fetched <- certifyWith (FetchRecordedReleases session) fixture manifest
+          modeIn ".gitignore" fetched `shouldBe` Just SharedWriteAdditiveOnly
+          [(source ^. #moduleName, source ^. #version) | source <- fetched ^. #fetchedSources]
+            `shouldBe` [("beta", "1.0.0")]
+        -- The cache is exactly as it was: nothing was swapped in.
+        TIO.readFile (fixture ^. #betaInstalledPath </> "module.dhall") `shouldReturn` installedBefore
+
+    it "keeps the gap, naming what was searched, when no commit declares the recorded version" $
+      withSharedFixture CoOwnerAppendsUnrecorded $ \fixture manifest -> do
+        _ <- publishBetaReleases fixture ["1.1.0"]
+        installBetaVersion fixture "1.1.0"
+        withSystemTempDirectory "seihou-certify-session" $ \session -> do
+          certification <- certifyWith (FetchRecordedReleases session) fixture manifest
+          modeIn ".gitignore" certification `shouldBe` Just SharedWriteUnknown
+          case (^. #gaps) <$> entryFor ".gitignore" certification of
+            Just [OwnerEvidenceUnavailable _ reason] -> do
+              reason `shouldSatisfy` T.isInfixOf "version 1.1.0 here but the manifest records version 1.0.0"
+              reason `shouldSatisfy` T.isInfixOf "no commit of"
+              reason `shouldSatisfy` T.isInfixOf "declares beta 1.0.0"
+            other -> expectationFailure ("expected one gap, got " <> show other)
+
     it "leaves the path unknown when a recorded owner is not installed" $
       withSharedFixture CoOwnerAppendsUnrecorded $ \fixture manifest -> do
         removeDirectoryRecursive (installedRoot fixture </> "beta")
@@ -241,8 +275,10 @@ spec = do
         TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` gitignoreBefore
   where
     installedRoot fixture = fixture ^. #xdgHome </> "seihou" </> "installed"
-    certify fixture manifest =
+    certify = certifyWith InstalledReleasesOnly
+    certifyWith policy fixture manifest =
       certifySharedWriteModesIO
+        policy
         (fixture ^. #projectRoot)
         [installedRoot fixture]
         CertifyAllUnknownPaths

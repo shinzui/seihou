@@ -24,6 +24,7 @@ import Control.Monad (foldM, forM, forM_, when)
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
+import Data.Containers.ListUtils (nubOrd)
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
 import Data.List (find, isPrefixOf)
@@ -39,6 +40,8 @@ import Seihou.CLI.InstallShared (InstallOutcome (..), installModuleDir, summariz
 import Seihou.CLI.ManifestCapabilityUpgrade
   ( CertificationGap (..),
     CertificationScope (..),
+    EvidencePolicy (..),
+    EvidenceSource,
     SharedWriteCertification,
     certifiedChanges,
     certifySharedWriteModesIO,
@@ -213,7 +216,7 @@ planProjectUpdateIn sessionDirectory request = do
                                         request,
                                         snapshot,
                                         plannedApplications,
-                                        manifestPreparation = manifestPreparationFor manifest base
+                                        manifestPreparation = manifestPreparationFor manifest base (resolution ^. #evidenceSources)
                                       }
                                 )
 
@@ -237,7 +240,9 @@ data SelectionResolution = SelectionResolution
     warnings :: ![UpdateWarning],
     -- | Candidates already staged for exactly 'applications' while
     -- establishing evidence, so they are not cloned or compiled twice.
-    staged :: !(Maybe StagedSelection)
+    staged :: !(Maybe StagedSelection),
+    -- | Recorded releases fetched from their remotes to certify paths.
+    evidenceSources :: ![EvidenceSource]
   }
   deriving stock (Generic)
 
@@ -264,23 +269,23 @@ resolveSelection ::
 resolveSelection request sessionDirectory projectRoot installedDirectory manifestPath document manifest now =
   case matchApplications (request ^. #selection) manifest of
     Left err -> pure (Left err)
-    Right (MatchedAll applications) -> pure (Right (SelectionResolution manifest applications [] Nothing))
+    Right (MatchedAll applications) -> pure (Right (SelectionResolution manifest applications [] Nothing []))
     Right (MatchedLegacy name) -> do
       seeded <- seedLegacyApplication request projectRoot manifest now name
-      pure (fmap (\(applications, warnings) -> SelectionResolution manifest applications warnings Nothing) seeded)
+      pure (fmap (\(applications, warnings) -> SelectionResolution manifest applications warnings Nothing []) seeded)
     Right (MatchedNamed named) ->
       case prepareManifestSchema manifestPath TargetedAdditiveSharedPathUpdate document manifest of
         Left err -> pure (Left err)
-        Right prepared -> closeOver (1 :: Int) prepared Nothing named
+        Right prepared -> closeOver (1 :: Int) prepared Nothing [] named
   where
     policy
       | request ^. #includeSharedOwners = IncludeSharedOwners
       | otherwise = RequireNamedOwners
 
-    closeOver attempt current staged named = case enforceOwnershipClosure policy current named of
+    closeOver attempt current staged sources named = case enforceOwnershipClosure policy current named of
       Left err -> pure (Left err)
       Right (ClosureSatisfied ids warnings) ->
-        pure (Right (SelectionResolution current (applicationsWithIds current ids) warnings (reusable ids staged)))
+        pure (Right (SelectionResolution current (applicationsWithIds current ids) warnings (reusable ids staged) sources))
       Right (ClosureNeedsEvidence ids _ paths) -> do
         stagedResult <- case reusable ids staged of
           Just existing -> pure (Right existing)
@@ -301,13 +306,28 @@ resolveSelection request sessionDirectory projectRoot installedDirectory manifes
                     [ (planned ^. #candidate . #applicationId, planned ^. #operations)
                     | planned <- evidenceStage ^. #plannedApplications
                     ]
+            -- A co-owner whose recorded release is no longer installed is
+            -- read from its recorded remote into this session, never into
+            -- the install cache.
             certification <-
-              certifySharedWriteModesIO projectRoot searchPaths (CertifyPathsForApplications ids) current supplied
+              certifySharedWriteModesIO
+                (FetchRecordedReleases sessionDirectory)
+                projectRoot
+                searchPaths
+                (CertifyPathsForApplications ids)
+                current
+                supplied
             -- Certification only ever turns unknown into known, so a round
             -- that changes nothing cannot be followed by one that does.
             if null (certifiedChanges certification)
               then pure (Left (evidenceUnavailable current certification paths))
-              else closeOver (attempt + 1) (certification ^. #manifest) (Just evidenceStage) named
+              else
+                closeOver
+                  (attempt + 1)
+                  (certification ^. #manifest)
+                  (Just evidenceStage)
+                  (nubOrd (sources <> certification ^. #fetchedSources))
+                  named
 
     reusable ids staged = case staged of
       Just existing | existing ^. #applicationIds == ids -> Just existing
@@ -370,8 +390,8 @@ prepareManifestSchema path capability document manifest
         Aeson.Success prepared -> Right prepared
 
 -- | Describe what preparation changed, or 'Nothing' when it changed nothing.
-manifestPreparationFor :: Manifest -> Manifest -> Maybe ManifestPreparation
-manifestPreparationFor original prepared
+manifestPreparationFor :: Manifest -> Manifest -> [EvidenceSource] -> Maybe ManifestPreparation
+manifestPreparationFor original prepared evidenceSources
   | original ^. #version == prepared ^. #version && Map.null modeChanges = Nothing
   | otherwise =
       Just
@@ -379,6 +399,7 @@ manifestPreparationFor original prepared
           { fromVersion = original ^. #version,
             toVersion = prepared ^. #version,
             modeChanges,
+            evidenceSources,
             preparedManifest = prepared
           }
   where

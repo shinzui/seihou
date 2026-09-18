@@ -27,7 +27,7 @@ import Seihou.CLI.CommandExecution
     CommandPlan,
     CommandPolicy,
   )
-import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap)
+import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap, EvidenceSource)
 import Seihou.Composition.Instance (ModuleInstance)
 import Seihou.Core.ArtifactRef (ArtifactRefError)
 import Seihou.Core.Migration (MigrationPlan, MigrationPlanError)
@@ -177,6 +177,9 @@ data ManifestPreparation = ManifestPreparation
     toVersion :: !ManifestSchemaVersion,
     -- | Each certified path with its mode before and after.
     modeChanges :: !(Map FilePath (SharedWriteMode, SharedWriteMode)),
+    -- | The recorded releases fetched from their remotes to certify those
+    -- modes, because no installed copy was the recorded version.
+    evidenceSources :: ![EvidenceSource],
     -- | The manifest planning, migration, reconciliation, and the final
     -- manifest build start from instead of the on-disk one.
     preparedManifest :: !Manifest

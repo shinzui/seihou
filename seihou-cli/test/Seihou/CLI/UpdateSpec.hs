@@ -5,6 +5,8 @@ module Seihou.CLI.UpdateSpec
     SharedPathFixture (..),
     CoOwnerWriteMode (..),
     prepareSharedPathFixture,
+    publishBetaReleases,
+    installBetaVersion,
   )
 where
 
@@ -43,9 +45,9 @@ import Seihou.Engine.Reconcile
   )
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.Types (currentManifestVersion, emptyManifest, manifestFromJSON, manifestToJSON)
-import System.Directory (createDirectoryIfMissing, doesFileExist, withCurrentDirectory)
+import System.Directory (createDirectoryIfMissing, doesFileExist, removePathForcibly, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
-import System.FilePath ((</>))
+import System.FilePath (takeDirectory, (</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (callProcess)
 import Test.Hspec
@@ -932,6 +934,34 @@ prepareSharedPathFixture writeMode root = do
         alphaApplicationId,
         betaApplicationId
       }
+
+-- | Replace beta's published remote with a history of one commit per
+-- version, in order, each declaring that version with beta's recorded
+-- content. Returns the remote, which is also beta's recorded origin.
+publishBetaReleases :: SharedPathFixture -> [Text] -> IO FilePath
+publishBetaReleases fixture versions = do
+  let remote = takeDirectory (fixture ^. #projectRoot) </> "remote" </> "beta"
+  removePathForcibly remote
+  createDirectoryIfMissing True (remote </> "files")
+  callProcess "git" ["-C", remote, "init", "-q"]
+  forM_ versions $ \version -> do
+    TIO.writeFile (remote </> "module.dhall") (moduleDhallForGitignore "beta" version (Just "append-line-if-absent") (Just "beta.txt"))
+    TIO.writeFile (remote </> "files" </> "gitignore.tmpl") "/result\n"
+    TIO.writeFile (remote </> "files" </> "beta.txt") "beta v1\n"
+    callProcess "git" ["-C", remote, "add", "."]
+    callProcess "git" ["-C", remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "v" <> T.unpack version]
+  pure remote
+
+-- | Install beta at another version than the manifest records, as
+-- @seihou upgrade@ would: the install cache has moved on.
+installBetaVersion :: SharedPathFixture -> Text -> IO ()
+installBetaVersion fixture version = do
+  let installed = fixture ^. #betaInstalledPath
+      bump = T.replace "\"1.0.0\"" ("\"" <> version <> "\"")
+  moduleText <- TIO.readFile (installed </> "module.dhall")
+  originText <- TIO.readFile (installed </> ".seihou-origin.json")
+  TIO.writeFile (installed </> "module.dhall") (bump moduleText)
+  TIO.writeFile (installed </> ".seihou-origin.json") (bump originText)
 
 -- | A module whose step contributes to @.gitignore@, either through the
 -- given patch operation or, with 'Nothing', as a whole-file template, and
