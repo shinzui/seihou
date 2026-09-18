@@ -87,8 +87,10 @@ A human `seihou update` failure now ends with a line pointing at `seihou agent u
 - [x] (2026-09-18) M3: `--check` mode and the post-session readiness summary; E2E tests (healthy ready, schema-6 not ready then ready after `seihou update alpha --json`, empty directory). M2 and M3 landed in one commit because the handler shares one code path.
 - [x] (2026-09-18) M4: Append the `seihou agent upgrade` hint to human `seihou update` failures; update `UpdateRenderSpec` (new case over fifteen error constructors: human output ends with the hint, JSON never contains it). No `UpdateE2ESpec` assertion needed changing.
 - [x] (2026-09-18) M4: Documentation: `docs/cli/agent.md`, `docs/user/agent-assistance.md`, `docs/cli/update.md`, `seihou-cli/help/agent.md`, `CHANGELOG.md`, `docs/user/CHANGELOG.md`, plus pointers in `docs/user/manifest-upgrade.md` and `docs/user/teams.md`.
-- [ ] M5: Full validation (`nix fmt -- --fail-on-change`, `cabal build all`, `cabal test all`, `nix flake check`) and the manual acceptance scenario.
-- [ ] M5: Write ADR 0016 and fill in Outcomes & Retrospective.
+- [x] (2026-09-18) M5: Full validation: `nix fmt -- --fail-on-change` (0 changed), `cabal build all`, `cabal test all` (51 + 1154 + 721 passed), `nix flake check` (pre-commit, treefmt, cli-module-placement, record-conventions all pass).
+- [x] (2026-09-18) M5: Manual acceptance, read-only part: `--check` and `--debug` against this repository's own manifest (see Outcomes). `git status --porcelain` unchanged.
+- [ ] M5: Manual acceptance, interactive part: run `seihou agent upgrade <module>` in a real project that fails `seihou update` for a manifest-state reason, follow the session to `Upgrade readiness: ready`, and record the transcript's key lines here. Not run by the implementing agent, because it starts an interactive Claude Code session that changes a real project; left for the user.
+- [x] (2026-09-18) M5: Write ADR 0016 and fill in Outcomes & Retrospective.
 
 
 ## Surprises & Discoveries
@@ -256,7 +258,51 @@ A human `seihou update` failure now ends with a line pointing at `seihou agent u
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+(2026-09-18) Milestones 1–4 are implemented and M5's automated validation passes. The
+interactive half of the manual acceptance scenario remains open (see Progress).
+
+What exists now:
+
+- `seihou agent upgrade MODULE [PROMPT]` diagnoses, writes the brief under
+  `$XDG_STATE_HOME/seihou/agent-upgrade/<stamp>-<module>/brief.md`, prints
+  `Upgrade brief: <path>` to stderr, and launches the configured provider. `--debug`
+  prints the brief. `--check` prints the eight-check readiness report. Every path exits 0
+  except a session's own exit code.
+- Every human `seihou update` failure ends with the `seihou agent upgrade <target>` hint.
+- Tests: `UpgradeDiagnosisSpec` (12, including write-nothing over seven fixtures),
+  `AgentUpgradeE2ESpec` (8, including the schema-6 → `seihou update` → `ready` loop), and
+  a new `UpdateRenderSpec` case.
+
+Read-only run against this repository's own `.seihou/manifest.json` (built binary):
+
+```text
+$ seihou agent upgrade exec-plan --check
+Upgrade readiness for exec-plan
+  ✓ manifest-readable        .seihou/manifest.json is schema 6 and decodes
+  ✗ manifest-schema-current  schema 6 is older than 7; seihou update steps it forward, or run seihou manifest upgrade
+  ✓ no-interrupted-update    no update transaction is waiting to be recovered
+  ✓ target-recorded          master-plan
+  ✓ installed-copy-trusted   module exec-plan 0.10.0 is installed; module link-skill 0.2.0 is installed; ...; each matches the manifest's source
+  ✗ origins-portable         /Users/shinzui/Keikaku/bokuno/agent-seihou is recorded for update-docs, claude-skill-link; run seihou manifest repair-origins
+  ✗ shared-evidence-known    .gitignore is shared with nix-haskell-flake and its write mode is unknown
+  ✓ update-plans-cleanly     seihou update exec-plan --dry-run: no version changes
+Upgrade readiness: not ready (3 checks need attention)
+```
+
+It took about 34 seconds, mostly the two dry runs cloning remotes. The project was
+unchanged afterwards. The report found a real machine-local origin in this repository,
+which is exactly the failure shape plan 98 exists for.
+
+Lessons:
+
+- The planned diagnosis types were close but not sufficient. The brief needed the
+  installed directory and version per module, and the report needed a one-line version
+  headline. The Decision Log records each change.
+- Timeouts cannot interrupt code that catches `SomeException`. Bounding the wait instead
+  of the work is the robust pattern, and ADR 0016 records it.
+- The pre-existing test fixtures encode local-path origins, which the new
+  `origins-portable` check flags. Fixtures that model healthy projects should use
+  portable URLs mapped by `insteadOf`, as `UpgradeFixture` now does.
 
 
 ## Context and Orientation
