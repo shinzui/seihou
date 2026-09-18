@@ -108,6 +108,22 @@ Delivered by
   version explicitly. Schema 6 cannot express a closure requirement, so writing
   one at version 6 omits the key and reads back as unknown, which fails closed.
 
+Delivered by
+`docs/plans/94-gate-targeted-updates-on-the-minimum-manifest-schema.md`:
+
+- A feature stages its minimum schema in memory and never as a preflight write.
+  `seihou update <target>` asks `manifestSupports TargetedAdditiveSharedPathUpdate`
+  and, if the answer is no, runs `upgradeDocumentLosslessly` to
+  `minimumManifestVersion` on the raw document. The result, with any
+  shared-write certificates, is carried in the plan as `ManifestPreparation`.
+  A dry run only renders it; an apply publishes it as the update's own final
+  manifest, so a failed apply leaves the original bytes and schema on disk.
+  Preparation alone makes a plan real work rather than a no-op.
+- The raw schema is read before decoding, so a schema-5-or-earlier manifest
+  fails with its own error naming `seihou manifest upgrade` instead of a
+  generic decode failure. An inference-bearing step is never staged by a
+  feature command.
+
 ## Consequences
 
 Future manifest evolution carries a small, deliberate cost: even an apparently

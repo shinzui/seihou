@@ -15,7 +15,7 @@ import Data.Aeson (Value, encode, object, (.=))
 import Data.ByteString.Lazy (ByteString)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isNothing)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.CLI.CommandExecution
@@ -25,6 +25,7 @@ import Seihou.CLI.CommandExecution
     PlannedCommand (..),
     summarizeCommandPlan,
   )
+import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..))
 import Seihou.CLI.Update.Types
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
@@ -33,6 +34,7 @@ import Seihou.Core.Types
     AppliedTarget (..),
     BaselineRef (..),
     CommandFingerprint (..),
+    ManifestSchemaVersion (..),
     ModuleName (..),
     Operation (..),
     RecipeName (..),
@@ -50,6 +52,7 @@ import Seihou.Engine.Reconcile
     reconciliationSummary,
     recordedSharedWriteMode,
   )
+import Seihou.Manifest.Types (sharedWriteModeToText)
 import Seihou.Prelude
 
 newtype UpdatePlanView = UpdatePlanView UpdatePlan
@@ -75,7 +78,8 @@ errorOutput = UpdateFailedOutput . UpdateErrorView
 renderUpdateHuman :: Bool -> UpdateOutput -> Text
 renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
   T.unlines $
-    versionLines plan
+    preparationLines (plan ^. #manifestPreparation)
+      <> versionLines plan
       <> [ renderInputs (plan ^. #inputChanges),
            "Migrations:  " <> count (length (plan ^. #migrations)) <> migrationCaveat plan,
            renderFiles (reconciliationSummary (plan ^. #reconciliation)),
@@ -108,6 +112,7 @@ outputValue (UpdatePlanOutput (UpdatePlanView plan)) =
     [ "schemaVersion" .= (1 :: Int),
       "outcome" .= ("plan" :: Text),
       "alreadyUpToDate" .= planLooksUnchanged plan,
+      "manifestPreparation" .= fmap preparationValue (plan ^. #manifestPreparation),
       "applications" .= map applicationIdText (plan ^. #applications),
       "versions" .= map versionValue (plan ^. #versionChanges),
       "inputs" .= inputValue (plan ^. #inputChanges),
@@ -138,6 +143,42 @@ outputValue (UpdateFailedOutput (UpdateErrorView err)) =
       "outcome" .= ("error" :: Text),
       "error" .= object ["code" .= errorCode err, "message" .= errorMessage err]
     ]
+
+-- | The manifest change a targeted update stages before it plans.
+preparationLines :: Maybe ManifestPreparation -> [Text]
+preparationLines Nothing = []
+preparationLines (Just preparation) =
+  ("Manifest:    " <> schemaChange preparation)
+    : [ "             "
+          <> T.pack path
+          <> " evidence "
+          <> sharedWriteModeToText before
+          <> " -> "
+          <> sharedWriteModeToText after
+      | (path, (before, after)) <- Map.toAscList (preparation ^. #modeChanges)
+      ]
+  where
+    schemaChange p
+      | p ^. #fromVersion == p ^. #toVersion = "schema " <> schemaText (p ^. #toVersion) <> " (evidence recorded)"
+      | otherwise = "schema " <> schemaText (p ^. #fromVersion) <> " -> " <> schemaText (p ^. #toVersion)
+
+preparationValue :: ManifestPreparation -> Value
+preparationValue preparation =
+  object
+    [ "fromSchema" .= (preparation ^. #fromVersion . #unManifestSchemaVersion),
+      "toSchema" .= (preparation ^. #toVersion . #unManifestSchemaVersion),
+      "sharedWriteModes"
+        .= [ object
+               [ "path" .= path,
+                 "from" .= sharedWriteModeToText before,
+                 "to" .= sharedWriteModeToText after
+               ]
+           | (path, (before, after)) <- Map.toAscList (preparation ^. #modeChanges)
+           ]
+    ]
+
+schemaText :: ManifestSchemaVersion -> Text
+schemaText version = T.pack (show (version ^. #unManifestSchemaVersion))
 
 versionLines :: UpdatePlan -> [Text]
 versionLines plan
@@ -317,6 +358,19 @@ summaryValue summary =
       "sharedOwnership" .= (summary ^. #sharedOwnership)
     ]
 
+-- | A plain label for an application reference. EP-95 replaces this with
+-- the shared application display vocabulary.
+refText :: ApplicationRef -> Text
+refText ref = case ref ^. #target of
+  Just (AppliedModuleTarget name) -> name ^. #unModuleName
+  Just (AppliedRecipeTarget name) -> name ^. #unRecipeName
+  Nothing -> ref ^. #applicationId . #unApplicationId
+
+gapText :: CertificationGap -> Text
+gapText (OwnerNotRecorded _) = "not a recorded application"
+gapText (OwnerEvidenceUnavailable _ reason) = reason
+gapText (OwnerEmitsNoOperation _) = "no longer writes this path"
+
 applicationIdText :: AppliedComposition -> Text
 applicationIdText application = (application ^. #applicationId . #unApplicationId)
 
@@ -326,7 +380,7 @@ fingerprintText (CommandFingerprint (SHA256 value)) = value
 warningText :: UpdateWarning -> Text
 warningText (SelectionExpandedForSharedPath path owner) =
   "also updating "
-    <> (owner ^. #unApplicationId)
+    <> refText owner
     <> " because it co-owns "
     <> T.pack path
 warningText other = T.pack (show other)
@@ -334,10 +388,12 @@ warningText other = T.pack (show other)
 errorCode :: UpdateError -> Text
 errorCode UpdateManifestMissing {} = "manifest_missing"
 errorCode UpdateManifestUnreadable {} = "manifest_unreadable"
+errorCode UpdateManifestUpgradeRequired {} = "manifest_upgrade_required"
 errorCode NoRecordedApplications = "no_recorded_applications"
 errorCode LegacyUpdateRequiresOneTarget = "legacy_update_requires_one_target"
 errorCode UpdateTargetNotFound {} = "target_not_found"
 errorCode SharedPathRequiresApplications {} = "shared_path_requires_applications"
+errorCode SharedWriteEvidenceUnavailable {} = "shared_write_evidence_unavailable"
 errorCode CandidateCloneFailed {} = "candidate_clone_failed"
 errorCode CandidateRepositoryInvalid {} = "candidate_repository_invalid"
 errorCode CandidateArtifactMissing {} = "candidate_artifact_missing"
@@ -371,17 +427,29 @@ errorMessage (UpdateTargetNotFound target available) =
     <> target
     <> "'. Available targets: "
     <> T.intercalate ", " available
+errorMessage (UpdateManifestUpgradeRequired path version) =
+  "The manifest at "
+    <> T.pack path
+    <> " uses schema "
+    <> schemaText version
+    <> ", which records machine-specific artifact paths. Run 'seihou manifest upgrade'"
+    <> " to review and convert it, then update again."
 errorMessage (SharedPathRequiresApplications path selected required) =
   "Path "
     <> T.pack path
-    <> " is also owned by application(s) "
-    <> T.intercalate ", " (map (^. #unApplicationId) (Set.toAscList required))
-    <> ", and it is not recorded as written only by additive patches"
-    <> " -- either an owner writes the whole file, or the manifest predates that record,"
-    <> " in which case one seihou update with no targets will record it."
-    <> " Select every owner, pass --include-shared-owners, or run seihou update"
-    <> " with no targets. Selected: "
-    <> T.intercalate ", " (map (^. #unApplicationId) (Set.toAscList selected))
+    <> " is also owned by "
+    <> T.intercalate ", " (map refText (Set.toAscList required))
+    <> ", and at least one owner writes the whole file, so every owner has to be updated together."
+    <> " Select every owner, or pass --include-shared-owners to update their full applications too."
+    <> " Selected: "
+    <> T.intercalate ", " (map refText (Set.toAscList selected))
+errorMessage (SharedWriteEvidenceUnavailable path gaps) =
+  "Cannot establish how the owners of "
+    <> T.pack path
+    <> " write it, so a targeted update cannot leave any of them out. "
+    <> T.intercalate "; " [refText owner <> ": " <> gapText gap | (owner, gap) <- gaps]
+    <> ". Install each listed application's recorded version and update again,"
+    <> " or run 'seihou manifest upgrade' to see every unresolved path."
 errorMessage (UpdateHasUnresolvedPaths paths) =
   "Resolve these paths before apply: " <> T.intercalate ", " (map T.pack (Set.toAscList paths))
 errorMessage (UpdatePlanStale paths) =
@@ -390,7 +458,8 @@ errorMessage err = T.pack (show err)
 
 planLooksUnchanged :: UpdatePlan -> Bool
 planLooksUnchanged plan =
-  null (plan ^. #versionChanges)
+  isNothing (plan ^. #manifestPreparation)
+    && null (plan ^. #versionChanges)
     && null (plan ^. #migrations)
     && plan ^. #inputChanges . #overridden == 0
     && plan ^. #inputChanges . #newlyResolved == 0

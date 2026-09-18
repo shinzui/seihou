@@ -9,7 +9,7 @@ Two applications can own the same managed path. EP-66 and its successors gave
 `seihou update` an *ownership closure* requirement to keep that safe: for every
 managed path, if any selected application owns it, every application that owns
 it must also be selected. It is enforced twice — before anything is fetched by
-`ensureOwnershipClosure` in `seihou-cli/src/Seihou/CLI/Update/Selection.hs`, and
+`enforceOwnershipClosure` (formerly `ensureOwnershipClosure`) in `seihou-cli/src/Seihou/CLI/Update/Selection.hs`, and
 again as defence in depth by `validateOwner` in
 `seihou-core/src/Seihou/Engine/Reconcile.hs`.
 
@@ -151,6 +151,23 @@ applications the user did not name. When the closure requirement genuinely
 still applies, `seihou update <target> --include-shared-owners` expands the
 selection to exactly the applications required and reports each one it added.
 Without the flag, a named selection means that selection.
+
+**Missing evidence is established, never worked around by expansion.** The
+preflight has three answers, one per mode. An `additive-only` path passes. A
+`requires-ownership-closure` path refuses or, under `--include-shared-owners`,
+expands. An `unknown` path does neither: the targeted update certifies it inside
+its own plan, supplying the selected applications' *candidate* operations
+(that is what the update will write) and recompiling every other owner from its
+recorded state as described above, then enforces the closure again. The
+certificate is published with that update's manifest or not at all. When
+certification cannot settle the path, the update fails with a distinct
+evidence-unavailable error naming the owners and why; `--include-shared-owners`
+is not consulted for it, because updating whole applications does not supply a
+missing fact and was the misleading workaround behind
+`docs/bug-reports/additive-only-gate-breaks-targeted-update-on-preexisting-manifests.md`.
+Certifying may compile a co-owner, but it never reconciles, migrates, or runs
+commands for one: only the selected applications' files change. Delivered by
+`docs/plans/94-gate-targeted-updates-on-the-minimum-manifest-schema.md`.
 
 ## Consequences
 

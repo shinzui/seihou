@@ -10,6 +10,8 @@ module Seihou.CLI.Update.Types
     PlannedUpdateMigration (..),
     PlannedApplication (..),
     UpdateSnapshot (..),
+    ApplicationRef (..),
+    ManifestPreparation (..),
     UpdateWarning (..),
     UpdatePlan (..),
     CommandSummary (..),
@@ -25,6 +27,7 @@ import Seihou.CLI.CommandExecution
     CommandPlan,
     CommandPolicy,
   )
+import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap)
 import Seihou.Composition.Instance (ModuleInstance)
 import Seihou.Core.ArtifactRef (ArtifactRefError)
 import Seihou.Core.Migration (MigrationPlan, MigrationPlanError)
@@ -148,6 +151,34 @@ data UpdateSnapshot = UpdateSnapshot
   }
   deriving stock (Eq, Generic, Show)
 
+-- | A renderer-neutral reference to one recorded application: enough for a
+-- renderer to label it without ever showing only an opaque digest.
+data ApplicationRef = ApplicationRef
+  { applicationId :: !ApplicationId,
+    -- | The recorded root target, or 'Nothing' when a file record names an
+    -- owner the manifest does not record as an application.
+    target :: !(Maybe AppliedTarget),
+    -- | The parent variables of the target's root instance.
+    parentVars :: !ParentVars
+  }
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | The lossless manifest change a targeted update stages in memory before
+-- it enforces the ownership closure: the schema step the feature requires
+-- (docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md)
+-- and every shared-write mode certification established. It is published
+-- only with the update's own manifest, never as a separate write.
+data ManifestPreparation = ManifestPreparation
+  { fromVersion :: !ManifestSchemaVersion,
+    toVersion :: !ManifestSchemaVersion,
+    -- | Each certified path with its mode before and after.
+    modeChanges :: !(Map FilePath (SharedWriteMode, SharedWriteMode)),
+    -- | The manifest planning, migration, reconciliation, and the final
+    -- manifest build start from instead of the on-disk one.
+    preparedManifest :: !Manifest
+  }
+  deriving stock (Eq, Generic, Show)
+
 data UpdateWarning
   = LocalArtifactHasNoRemote Text
   | SameVersionContentChanged Text
@@ -160,7 +191,7 @@ data UpdateWarning
   | RecoveryCleanupDeferred Text
   | -- | @--include-shared-owners@ added this application to the selection
     --   because it co-owns the named path with something the user asked for.
-    SelectionExpandedForSharedPath FilePath ApplicationId
+    SelectionExpandedForSharedPath FilePath ApplicationRef
   deriving stock (Eq, Show)
 
 data UpdatePlan = UpdatePlan
@@ -174,7 +205,8 @@ data UpdatePlan = UpdatePlan
     warnings :: ![UpdateWarning],
     request :: !UpdateRequest,
     snapshot :: !UpdateSnapshot,
-    plannedApplications :: ![PlannedApplication]
+    plannedApplications :: ![PlannedApplication],
+    manifestPreparation :: !(Maybe ManifestPreparation)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -199,10 +231,21 @@ data UpdateResult = UpdateResult
 data UpdateError
   = UpdateManifestMissing FilePath
   | UpdateManifestUnreadable FilePath Text
+  | -- | The manifest is at a schema older than the ordinary decoder reads.
+    -- Converting it recovers artifact origins from machine-local paths,
+    -- which is inference and so only @seihou manifest upgrade@ may do it
+    -- (docs/adr/0005-legacy-manifests-convert-through-an-explicit-command.md).
+    UpdateManifestUpgradeRequired FilePath ManifestSchemaVersion
   | NoRecordedApplications
   | LegacyUpdateRequiresOneTarget
   | UpdateTargetNotFound Text [Text]
-  | SharedPathRequiresApplications FilePath (Set ApplicationId) (Set ApplicationId)
+  | -- | The path is known to require the ownership closure: selected
+    -- owners, then the owners missing from the selection.
+    SharedPathRequiresApplications FilePath (Set ApplicationRef) (Set ApplicationRef)
+  | -- | Nothing records how the path's owners write it, and certification
+    -- could not establish it: each owner whose evidence is missing, with why.
+    -- Selecting more applications would not supply the missing fact.
+    SharedWriteEvidenceUnavailable FilePath [(ApplicationRef, CertificationGap)]
   | CandidateCloneFailed Text Text
   | CandidateRepositoryInvalid Text [Text]
   | CandidateArtifactMissing CandidateArtifactKind Text

@@ -1,8 +1,10 @@
 module Seihou.CLI.UpdateE2ESpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
+import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.SeihouBinary (seihouBinary)
@@ -13,9 +15,12 @@ import Seihou.CLI.UpdateSpec
     prepareSharedPathFixture,
     prepareUpdateFixture,
   )
-import System.Directory (doesFileExist)
+import Seihou.Core.Types (ManifestSchemaVersion (..), SharedWriteMode (..))
+import Seihou.Manifest.Types (manifestFromJSON, manifestToJSON)
+import System.Directory (doesFileExist, renameDirectory)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..))
+import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (CreateProcess (..), callProcess, proc, readCreateProcessWithExitCode, readProcess)
 import Test.Hspec
@@ -189,45 +194,127 @@ spec = do
       stdoutText `shouldSatisfy` T.isInfixOf "because it co-owns .gitignore"
       stdoutText `shouldSatisfy` T.isInfixOf (fixture ^. #betaApplicationId . #unApplicationId)
 
-  it "records a missing shared-write answer instead of reporting nothing to do" $
+  it "records a missing shared-write answer when that record is the only work" $
     withSystemTempDirectory "seihou-update-shared-unrecorded" $ \root -> do
-      -- Every project in the wild has a manifest that predates the field. If
-      -- an up-to-date project reported "already up to date" and wrote
-      -- nothing, the answer would never be recorded and the exemption could
-      -- never take effect on an existing project.
+      -- Every project in the wild has a manifest that predates the evidence.
+      -- A targeted update certifies the path in its own plan instead of
+      -- refusing, and the certificate is real work rather than a no-op.
       fixture <- prepareSharedPathFixture CoOwnerAppendsUnrecorded root
       binary <- seihouBinary
       beforeGitignore <- TIO.readFile (fixture ^. #gitignorePath)
+      beforeBeta <- LBS.readFile (fixture ^. #betaFilePath)
 
-      -- The targeted update refuses first, as documented for a manifest with
-      -- no recorded answer.
-      (refusedExit, refusedOut, _) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
-      refusedExit `shouldSatisfy` (/= ExitSuccess)
-      refusedOut `shouldSatisfy` T.isInfixOf "shared_path_requires_applications"
-      refusedOut `shouldSatisfy` T.isInfixOf "manifest predates that record"
-
-      -- Nothing about the sources changed, so the only pending work is the
-      -- record itself -- which is still work, not a no-op.
-      (exitCode, stdoutText, stderrText) <- runSeihouShared binary fixture ["update", "--json"]
-      case exitCode of
-        ExitSuccess -> pure ()
-        ExitFailure code ->
-          expectationFailure
-            ("update exited " <> show code <> "\nstdout:\n" <> T.unpack stdoutText <> "\nstderr:\n" <> T.unpack stderrText)
+      (exitCode, stdoutText, stderrText) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      expectSuccess "targeted update" exitCode stdoutText stderrText
       stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
       manifestText <- TIO.readFile (fixture ^. #manifestPath)
+      manifestText `shouldSatisfy` T.isInfixOf "\"version\":7"
       manifestText `shouldSatisfy` T.isInfixOf "\"sharedWriteMode\":\"additive-only\""
       -- Recording an answer must not touch a single byte of the project.
       TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
+      LBS.readFile (fixture ^. #betaFilePath) `shouldReturn` beforeBeta
 
-      -- And now the targeted update the user wanted all along goes through.
-      (afterExit, afterOut, afterErr) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
-      case afterExit of
-        ExitSuccess -> pure ()
-        ExitFailure code ->
-          expectationFailure
-            ("targeted update exited " <> show code <> "\nstdout:\n" <> T.unpack afterOut <> "\nstderr:\n" <> T.unpack afterErr)
-      afterOut `shouldNotSatisfy` T.isInfixOf "shared_path_requires_applications"
+      -- Once recorded, the same request is an ordinary no-op.
+      (againExit, againOut, againErr) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      expectSuccess "repeated update" againExit againOut againErr
+      againOut `shouldSatisfy` T.isInfixOf "\"alreadyUpToDate\":true"
+
+  it "records a missing shared-write answer through a whole-project update" $
+    withSystemTempDirectory "seihou-update-shared-unrecorded-all" $ \root -> do
+      fixture <- prepareSharedPathFixture CoOwnerAppendsUnrecorded root
+      binary <- seihouBinary
+      beforeGitignore <- TIO.readFile (fixture ^. #gitignorePath)
+      (exitCode, stdoutText, stderrText) <- runSeihouShared binary fixture ["update", "--json"]
+      expectSuccess "whole-project update" exitCode stdoutText stderrText
+      stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
+      manifestText <- TIO.readFile (fixture ^. #manifestPath)
+      manifestText `shouldSatisfy` T.isInfixOf "\"sharedWriteMode\":\"additive-only\""
+      TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
+
+  it "updates one target on a schema-6 manifest without touching the co-owner's files (BUG-1)" $
+    withSystemTempDirectory "seihou-update-bug-1" $ \root -> do
+      fixture <- prepareSharedPathFixture CoOwnerAppendsPredatingEvidence root
+      binary <- seihouBinary
+      beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+      beforeGitignore <- LBS.readFile (fixture ^. #gitignorePath)
+      beforeBeta <- LBS.readFile (fixture ^. #betaFilePath)
+      beforeBetaInstalled <- LBS.readFile (fixture ^. #betaInstalledPath </> "module.dhall")
+
+      -- The dry run shows the schema step and the certificate, and writes
+      -- nothing at all.
+      (dryExit, dryOut, dryErr) <- runSeihouShared binary fixture ["update", "alpha", "--dry-run", "--json"]
+      expectSuccess "dry run" dryExit dryOut dryErr
+      dryOut `shouldSatisfy` T.isInfixOf "\"outcome\":\"plan\""
+      dryOut `shouldSatisfy` T.isInfixOf "\"alreadyUpToDate\":false"
+      dryOut `shouldSatisfy` T.isInfixOf "\"fromSchema\":6"
+      dryOut `shouldSatisfy` T.isInfixOf "\"toSchema\":7"
+      dryOut `shouldSatisfy` T.isInfixOf "{\"from\":\"unknown\",\"path\":\".gitignore\",\"to\":\"additive-only\"}"
+      dryOut `shouldNotSatisfy` T.isInfixOf "shared_path_requires_applications"
+      LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+      LBS.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
+      LBS.readFile (fixture ^. #betaFilePath) `shouldReturn` beforeBeta
+
+      (exitCode, stdoutText, stderrText) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      expectSuccess "targeted update" exitCode stdoutText stderrText
+      stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
+      stdoutText
+        `shouldSatisfy` T.isInfixOf ("\"applications\":[\"" <> fixture ^. #alphaApplicationId . #unApplicationId <> "\"]")
+      -- Alpha's new line lands next to beta's, which is left where it was.
+      TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` "/dist-newstyle\n/result\n/alpha-v2\n"
+      -- Beta has a newer release, but nobody asked to update beta.
+      LBS.readFile (fixture ^. #betaFilePath) `shouldReturn` beforeBeta
+      LBS.readFile (fixture ^. #betaInstalledPath </> "module.dhall") `shouldReturn` beforeBetaInstalled
+      decoded <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
+      case decoded of
+        Left err -> expectationFailure err
+        Right manifest -> do
+          (manifest ^. #version) `shouldBe` ManifestSchemaVersion 7
+          case Map.lookup ".gitignore" (manifest ^. #files) of
+            Nothing -> expectationFailure "the manifest lost .gitignore"
+            Just record -> do
+              (record ^. #sharedWriteMode) `shouldBe` SharedWriteAdditiveOnly
+              (record ^. #applicationIds)
+                `shouldBe` Set.fromList [fixture ^. #alphaApplicationId, fixture ^. #betaApplicationId]
+          [application ^. #targetVersion | application <- manifest ^. #applications]
+            `shouldBe` [Just "2.0.0", Just "1.0.0"]
+
+      (againExit, againOut, againErr) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      expectSuccess "repeated update" againExit againOut againErr
+      againOut `shouldSatisfy` T.isInfixOf "\"alreadyUpToDate\":true"
+
+  it "reports unavailable evidence distinctly and never expands for it" $
+    withSystemTempDirectory "seihou-update-evidence-unavailable" $ \root -> do
+      fixture <- prepareSharedPathFixture CoOwnerAppendsPredatingEvidence root
+      -- A schema-7 manifest that still records the path as unknown.
+      decoded <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
+      case decoded of
+        Left err -> expectationFailure err
+        Right manifest -> LBS.writeFile (fixture ^. #manifestPath) (manifestToJSON (manifest & #version .~ ManifestSchemaVersion 7))
+      let parked = root </> "parked-beta"
+      renameDirectory (fixture ^. #betaInstalledPath) parked
+      binary <- seihouBinary
+      beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+      beforeGitignore <- LBS.readFile (fixture ^. #gitignorePath)
+
+      (exitCode, stdoutText, _) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      exitCode `shouldSatisfy` (/= ExitSuccess)
+      stdoutText `shouldSatisfy` T.isInfixOf "shared_write_evidence_unavailable"
+      stdoutText `shouldSatisfy` T.isInfixOf ".gitignore"
+      stdoutText `shouldSatisfy` T.isInfixOf "beta: module beta 1.0.0 is not installed here"
+      stdoutText `shouldNotSatisfy` T.isInfixOf "--include-shared-owners"
+
+      -- Selecting more applications does not supply a missing fact.
+      (includeExit, includeOut, _) <- runSeihouShared binary fixture ["update", "alpha", "--include-shared-owners", "--json"]
+      includeExit `shouldSatisfy` (/= ExitSuccess)
+      includeOut `shouldSatisfy` T.isInfixOf "shared_write_evidence_unavailable"
+      LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+      LBS.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
+
+      -- Installing the recorded release again is enough to proceed.
+      renameDirectory parked (fixture ^. #betaInstalledPath)
+      (retryExit, retryOut, retryErr) <- runSeihouShared binary fixture ["update", "alpha", "--json"]
+      expectSuccess "retried update" retryExit retryOut retryErr
+      retryOut `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
 
   it "lists --include-shared-owners in update --help" $ do
     binary <- seihouBinary
@@ -267,6 +354,12 @@ spec = do
           script `shouldSatisfy` T.isInfixOf "bash-completion"
       )
       ["bash", "zsh", "fish"]
+
+expectSuccess :: String -> ExitCode -> T.Text -> T.Text -> Expectation
+expectSuccess _ ExitSuccess _ _ = pure ()
+expectSuccess label (ExitFailure code) stdoutText stderrText =
+  expectationFailure
+    (label <> " exited " <> show code <> "\nstdout:\n" <> T.unpack stdoutText <> "\nstderr:\n" <> T.unpack stderrText)
 
 runSeihouShared :: FilePath -> SharedPathFixture -> [String] -> IO (ExitCode, T.Text, T.Text)
 runSeihouShared binary fixture args = do

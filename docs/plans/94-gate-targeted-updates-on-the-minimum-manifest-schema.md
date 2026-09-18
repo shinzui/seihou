@@ -17,6 +17,11 @@ provenance:
       at: 2026-09-17T15:41:41Z
       mode: "update"
       note: "Linked ADR 0014 feature-minimum and lossless-upgrade requirements"
+    - model: "claude-opus-5[1m]"
+      harness: "claude-code"
+      at: 2026-09-18T04:37:52Z
+      mode: "implement"
+      note: "Implemented two-phase selection, in-plan manifest preparation, and targeted certification"
 ---
 
 # Gate targeted updates on the minimum manifest schema
@@ -50,9 +55,9 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: Split target matching from evidence resolution and ownership-closure enforcement.
-- [ ] M2: Stage the minimum schema/evidence upgrade inside update planning and publish it transactionally.
-- [ ] M3: Prove dry-run, retry, rollback, unknown, additive, and genuinely non-additive behavior end to end.
+- [x] M1: Split target matching from evidence resolution and ownership-closure enforcement. (2026-09-18) `matchApplications` returns `MatchedAll`, `MatchedNamed`, or `MatchedLegacy` without consulting ownership; `enforceOwnershipClosure` returns `ClosureSatisfied` or `ClosureNeedsEvidence`, or refuses a known requirement with `ApplicationRef` sets. Expansion follows only `requires-ownership-closure` paths.
+- [x] M2: Stage the minimum schema/evidence upgrade inside update planning and publish it transactionally. (2026-09-18) `readManifestForUpdate` inspects the raw schema first (`UpdateManifestUpgradeRequired` for schema 5 and earlier); `resolveSelection` prepares the capability's minimum losslessly, then loops closure enforcement and target-scoped certification; `UpdatePlan.manifestPreparation` feeds migrations, reconciliation, and the final manifest; both no-op checks treat preparation as work; minimal human/JSON rendering added.
+- [x] M3: Prove dry-run, retry, rollback, unknown, additive, and genuinely non-additive behavior end to end. (2026-09-18) 15 new or rewritten tests across `UpdateSpec`, `UpdateE2ESpec`, `UpdateRenderSpec`. `cabal test all`: core 1134, okf-extension 51, cli 631 pass; `nix fmt` and `nix flake check` pass.
 
 
 ## Surprises & Discoveries
@@ -60,7 +65,28 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Observation: Passing the closure preflight is not enough on its own; reconciliation
+  has to start from the certified manifest as well. On a partial update,
+  `recordedSharedWriteMode` keeps an `unknown` prior mode unchanged, and
+  `Reconcile.validateOwner` exempts a retained co-owner only when the record says
+  `additive-only`. If reconciliation read the on-disk manifest, it would refuse the update
+  that the preflight had just allowed. The prepared manifest is therefore the base for
+  migrations, reconciliation, and the final manifest (`planBaseManifest`), while
+  `UpdateSnapshot.originalManifest` stays the on-disk value for stale-plan checks and
+  rollback.
+
+- Observation: The existing E2E test "records a missing shared-write answer instead of
+  reporting nothing to do" asserted the BUG-1 refusal (`shared_path_requires_applications`
+  with "manifest predates that record") as the first step. After M2 that command succeeds,
+  so the test was split into a targeted-record case and a whole-project-record case
+  rather than weakened.
+
+- Observation: `.seihou/manifest.json` cannot join `transactionTargets`, because
+  `Reconcile.validateManagedPath` rejects `.seihou` control paths. The existing transaction
+  already covers it: the manifest is observed in `observedProjectHashes`, named through
+  `setCommitMarkers`, and written last. The rollback test injects a publication failure
+  after the managed files are written and gets back the schema-6 manifest bytes and the
+  original `.gitignore`.
 
 
 ## Decision Log
@@ -91,6 +117,53 @@ Record every decision made while working on the plan.
   misleading workaround in BUG-1.
   Date: 2026-09-17
 
+- Decision: Stage the lossless preparation only for named selections, where the
+  `TargetedAdditiveSharedPathUpdate` capability is required. A whole-project update and
+  a legacy seed use the on-disk manifest as before.
+  Rationale: No feature a whole-project update runs requires a newer schema. Its final
+  manifest is already stamped current whenever it does real work, and
+  `recordedSharedWriteMode` already records a known mode for every path it fully owns.
+  Date: 2026-09-18
+
+- Decision: Stage candidate sources for certification only when the closure actually
+  asks for evidence, and reuse that stage when the settled selection equals the staged
+  set. When `--include-shared-owners` grows the set after certification, the final set is
+  staged again in a fresh directory.
+  Rationale: The common case (a named target, no expansion) clones and compiles the
+  target exactly once, and a known refusal clones nothing. Merging two catalogs with
+  different search roots would complicate `planApplication` for a rare flag combination.
+  Date: 2026-09-18
+
+- Decision: The closure loop re-enforces after each certification round and stops with
+  `SharedWriteEvidenceUnavailable` when a round changes nothing.
+  Rationale: Certification only turns unknown into known, so a round without a change
+  cannot be followed by one with a change, and the loop terminates.
+  Date: 2026-09-18
+
+- Decision: Co-owner evidence comes only from EP-93's recorded-state recompilation of
+  locally installed exact versions. Co-owner remotes are not cloned.
+  Rationale: That service already refuses substituted or differently versioned artifacts
+  (ADR 0003). Cloning a co-owner's remote would fetch its latest release, which is not how
+  the project was written. "Install the recorded version and retry" is the documented
+  recovery.
+  Date: 2026-09-18
+
+- Decision: `ApplicationRef.target` is `Maybe AppliedTarget`, and
+  `SelectionExpandedForSharedPath` now carries an `ApplicationRef` as well.
+  Rationale: A file record can name an owner the manifest does not record as an
+  application, and a renderer must be able to say so without inventing a target. EP-95
+  renders both the error and the warning from the same reference.
+  Date: 2026-09-18
+
+- Decision: Add only minimal renderers for the new errors and for `ManifestPreparation`
+  (human `Manifest:` line; JSON `manifestPreparation` with `fromSchema`, `toSchema`, and
+  sorted `sharedWriteModes`). The update JSON envelope stays at `schemaVersion: 1`
+  because the key is additive.
+  Rationale: EP-95 owns presentation. Acceptance here needs the preparation to be
+  observable, and the remedies must no longer tell users to broaden the selection for
+  unknown evidence.
+  Date: 2026-09-18
+
 
 ## Outcomes & Retrospective
 
@@ -99,7 +172,34 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Completed 2026-09-18. BUG-1 no longer reproduces. With the `CoOwnerAppendsPredatingEvidence`
+fixture (schema 6, `.gitignore` co-owned by an appending `beta` with no `additiveOnly` key,
+`alpha` with a new release, and `beta` with a newer release that would rewrite its own
+`beta.txt`), `seihou update alpha --dry-run --json` returns a plan with
+`"alreadyUpToDate":false` and
+`"manifestPreparation":{"fromSchema":6,"toSchema":7,"sharedWriteModes":[{"from":"unknown","path":".gitignore","to":"additive-only"}]}`,
+and it changes no bytes. The real update applies only alpha: `.gitignore` becomes
+`/dist-newstyle\n/result\n/alpha-v2\n`, and `beta.txt` and beta's installed module stay
+byte-identical. The manifest is schema 7 with `.gitignore` recorded as additive-only and
+still owned by both applications. A third run is `alreadyUpToDate: true`.
+
+A publication failure injected after file writes restores the schema-6 manifest and
+`.gitignore` byte for byte, and the retry succeeds. On a schema-7 manifest whose
+co-owner is not installed, the update fails with `shared_write_evidence_unavailable`,
+naming `beta: module beta 1.0.0 is not installed here`, with or without
+`--include-shared-owners`. Reinstalling that version lets the retry apply. A schema-5
+manifest fails with `manifest_upgrade_required` for both targeted and whole-project
+updates. A candidate that turns a recorded additive path into a whole-file write is still
+refused by reconciliation. The existing known-closure refusal and fixed-point expansion
+tests pass against the new two-phase API.
+
+Remaining for EP-95: final prose and application labels (parent variables, digest
+disambiguation), exhaustive warning rendering, and the documentation surfaces. The
+renderers added here are deliberately minimal.
+
+Durable context promoted to ADRs. ADR 0012 gained the three-answer preflight and the rule
+that missing evidence is certified, never expanded around. ADR 0014's Implementation
+section gained the in-memory preparation contract and the explicit legacy-schema refusal.
 
 
 ## Context and Orientation
@@ -355,3 +455,9 @@ relationship. Do not move behavior into the executable adapter.
 
 - 2026-09-17: Linked accepted ADR 0014 as the authority for the feature minimum and the
   restriction that only deterministic, lossless upgrades may be staged transactionally.
+
+- 2026-09-18: Implemented all three milestones. Recorded the staging, preparation-scope,
+  evidence-source, and rendering decisions; the discovery that reconciliation must start
+  from the prepared manifest; and the outcome evidence. `ApplicationRef.target` became
+  `Maybe AppliedTarget`, and the manifest stays outside `transactionTargets` for the
+  reason given in Surprises & Discoveries.

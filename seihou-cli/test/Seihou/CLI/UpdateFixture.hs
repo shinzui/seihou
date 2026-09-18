@@ -77,7 +77,8 @@ minimalPlan reconciliation =
             observedProjectHashes = Map.empty,
             transactionTargets = Set.empty
           },
-      plannedApplications = []
+      plannedApplications = [],
+      manifestPreparation = Nothing
     }
 
 -- | The minimal plan, carrying the given warnings.

@@ -1,8 +1,12 @@
 module Seihou.CLI.UpdateRenderSpec (tests) where
 
+import Control.Lens ((&), (.~), (^.))
+import Data.Generics.Labels ()
 import Data.List (isInfixOf)
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..))
 import Seihou.CLI.Update (UpdateError (..), UpdateWarning (..))
 import Seihou.CLI.Update.Render
   ( encodeUpdateOutput,
@@ -10,8 +14,16 @@ import Seihou.CLI.Update.Render
     planOutput,
     renderUpdateHuman,
   )
+import Seihou.CLI.Update.Types (ApplicationRef (..), ManifestPreparation (..))
 import Seihou.CLI.UpdateFixture (conflictPlan, planWithWarnings)
-import Seihou.Core.Types (ApplicationId (..))
+import Seihou.Core.Types
+  ( ApplicationId (..),
+    AppliedTarget (..),
+    ManifestSchemaVersion (..),
+    ModuleName (..),
+    SharedWriteMode (..),
+    emptyParentVars,
+  )
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -40,20 +52,56 @@ spec = do
       `shouldSatisfy` T.isInfixOf "Update failed [manifest_missing]"
 
   it "renders an expanded selection as prose, not a shown constructor" $ do
-    let warning = SelectionExpandedForSharedPath ".gitignore" (ApplicationId "master-plan")
+    let warning = SelectionExpandedForSharedPath ".gitignore" (moduleRef "master-plan")
         rendered = renderUpdateHuman False (planOutput (planWithWarnings [warning]))
     rendered
       `shouldSatisfy` T.isInfixOf "Warning:     also updating master-plan because it co-owns .gitignore"
     rendered `shouldNotSatisfy` T.isInfixOf "SelectionExpandedForSharedPath"
 
-  it "names --include-shared-owners in the shared-path refusal" $ do
+  it "names --include-shared-owners only for a known whole-file refusal" $ do
     let err =
           SharedPathRequiresApplications
             ".gitignore"
-            (Set.singleton (ApplicationId "nix-haskell-flake"))
-            (Set.singleton (ApplicationId "master-plan"))
+            (Set.singleton (moduleRef "nix-haskell-flake"))
+            (Set.singleton (moduleRef "master-plan"))
         rendered = renderUpdateHuman False (errorOutput err)
     rendered `shouldSatisfy` T.isInfixOf "Update failed [shared_path_requires_applications]"
     rendered `shouldSatisfy` T.isInfixOf "--include-shared-owners"
-    -- The user also needs to know why the exemption did not apply.
-    rendered `shouldSatisfy` T.isInfixOf "not recorded as written only by additive patches"
+    rendered `shouldSatisfy` T.isInfixOf "writes the whole file"
+    rendered `shouldSatisfy` T.isInfixOf "master-plan"
+
+  it "reports missing evidence without offering to broaden the selection" $ do
+    let owner = moduleRef "master-plan"
+        err =
+          SharedWriteEvidenceUnavailable
+            ".gitignore"
+            [(owner, OwnerEvidenceUnavailable (ApplicationId "master-plan") "module master-plan 1.0.0 is not installed here")]
+        rendered = renderUpdateHuman False (errorOutput err)
+    rendered `shouldSatisfy` T.isInfixOf "Update failed [shared_write_evidence_unavailable]"
+    rendered `shouldSatisfy` T.isInfixOf "master-plan: module master-plan 1.0.0 is not installed here"
+    rendered `shouldNotSatisfy` T.isInfixOf "--include-shared-owners"
+
+  it "names the explicit upgrade command for a legacy-schema manifest" $ do
+    let rendered = renderUpdateHuman False (errorOutput (UpdateManifestUpgradeRequired ".seihou/manifest.json" (ManifestSchemaVersion 5)))
+    rendered `shouldSatisfy` T.isInfixOf "Update failed [manifest_upgrade_required]"
+    rendered `shouldSatisfy` T.isInfixOf "seihou manifest upgrade"
+
+  it "shows a staged manifest preparation in the human and JSON plan" $ do
+    let preparation =
+          ManifestPreparation
+            { fromVersion = ManifestSchemaVersion 6,
+              toVersion = ManifestSchemaVersion 7,
+              modeChanges = Map.singleton ".gitignore" (SharedWriteUnknown, SharedWriteAdditiveOnly),
+              preparedManifest = planWithWarnings [] ^. #snapshot . #originalManifest
+            }
+        plan = planWithWarnings [] & #manifestPreparation .~ Just preparation
+        human = renderUpdateHuman False (planOutput plan)
+        json = show (encodeUpdateOutput (planOutput plan))
+    human `shouldSatisfy` T.isInfixOf "Manifest:    schema 6 -> 7"
+    human `shouldSatisfy` T.isInfixOf ".gitignore evidence unknown -> additive-only"
+    json `shouldSatisfy` isInfixOf "\\\"fromSchema\\\":6"
+    json `shouldSatisfy` isInfixOf "\\\"toSchema\\\":7"
+    json `shouldSatisfy` isInfixOf "\\\"alreadyUpToDate\\\":false"
+
+moduleRef :: T.Text -> ApplicationRef
+moduleRef name = ApplicationRef (ApplicationId name) (Just (AppliedModuleTarget (ModuleName name))) emptyParentVars

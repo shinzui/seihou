@@ -137,7 +137,7 @@ reference.
 |---|-------|------|-----------|-----------|--------|
 | 92 | Define manifest schema capabilities and ordered upgrade steps | docs/plans/92-define-manifest-schema-capabilities-and-ordered-upgrade-steps.md | None | None | Complete |
 | 93 | Upgrade legacy path manifests and backfill additive facts | docs/plans/93-upgrade-legacy-path-manifests-and-backfill-additive-facts.md | EP-92 | None | Complete |
-| 94 | Gate targeted updates on the minimum manifest schema | docs/plans/94-gate-targeted-updates-on-the-minimum-manifest-schema.md | EP-92, EP-93 | None | Not Started |
+| 94 | Gate targeted updates on the minimum manifest schema | docs/plans/94-gate-targeted-updates-on-the-minimum-manifest-schema.md | EP-92, EP-93 | None | Complete |
 | 95 | Make shared-owner diagnostics actionable and verify upgrades | docs/plans/95-make-shared-owner-diagnostics-actionable-and-verify-upgrades.md | EP-94 | EP-93 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -215,9 +215,9 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-93 M1: Generalize the raw-document upgrader into an ordered, targetable step chain.
 - [x] EP-93 M2: Preserve and strengthen machine-local-path-to-remote conversion for schema 5 and earlier.
 - [x] EP-93 M3: Certify shared-write modes for all applications or a named target without touching project files.
-- [ ] EP-94 M1: Split application matching from ownership-closure enforcement.
-- [ ] EP-94 M2: Stage the minimum required manifest upgrade inside targeted update planning and apply.
-- [ ] EP-94 M3: Prove targeted, dry-run, retry, and genuinely non-additive cases transactionally.
+- [x] EP-94 M1: Split application matching from ownership-closure enforcement.
+- [x] EP-94 M2: Stage the minimum required manifest upgrade inside targeted update planning and apply.
+- [x] EP-94 M3: Prove targeted, dry-run, retry, and genuinely non-additive cases transactionally.
 - [ ] EP-95 M1: Render application labels and every update warning as intentional prose.
 - [ ] EP-95 M2: Correct remedies and lock the human and JSON contracts with regression tests.
 - [ ] EP-95 M3: Update all documentation and run the full repository acceptance matrix.
@@ -249,6 +249,21 @@ interactions between child plans. Provide concise evidence.
   `selectApplications`, and `selectApplications` calls `ensureOwnershipClosure` before
   `stageCandidateSources`. Targeted repair therefore requires a two-phase selection
   protocol rather than a local change to the error renderer.
+
+- Observation (EP-94): The certified manifest must be the base for reconciliation too,
+  not only for the preflight. `Reconcile.validateOwner` exempts a retained co-owner only
+  when the record says `additive-only`, and `recordedSharedWriteMode` keeps an unknown
+  prior on a partial run. EP-94 threads the prepared manifest through migrations,
+  reconciliation, and the final build, and keeps the on-disk one for stale-plan checks.
+
+- Observation (EP-94): Two interfaces EP-95 consumes differ from this plan's sketch.
+  `ApplicationRef.target` is `Maybe AppliedTarget` (a file record may name an unrecorded
+  owner), and `SelectionExpandedForSharedPath` carries an `ApplicationRef`. The JSON plan
+  gained an additive `manifestPreparation` key (`fromSchema`, `toSchema`,
+  `sharedWriteModes`) without bumping the envelope's `schemaVersion: 1`. The new error
+  codes are `manifest_upgrade_required` and `shared_write_evidence_unavailable`. EP-95
+  should replace the minimal `refText` label and the provisional error prose in
+  `Seihou.CLI.Update.Render`.
 
 
 ## Decision Log
@@ -293,6 +308,13 @@ plan.
   minimum, and a mechanical gap check for every semantic change prevents a future
   optional-field exception from recreating the schema-6 ambiguity.
   Date: 2026-09-17
+
+- Decision: Co-owner evidence during a targeted update comes only from exact installed
+  versions (EP-93's recorded-state recompilation); co-owner remotes are not cloned.
+  Rationale: A remote's current release is not how the project was written, and ADR 0003
+  forbids substitution. The recovery for missing evidence is to install the recorded
+  version and retry. Recorded in ADR 0012.
+  Date: 2026-09-18
 
 
 ## Outcomes & Retrospective

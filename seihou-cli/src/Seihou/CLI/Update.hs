@@ -21,11 +21,14 @@ where
 
 import Control.Exception (SomeException, displayException, throwIO, toException, try)
 import Control.Monad (foldM, forM, forM_, when)
+import Data.Aeson qualified as Aeson
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
 import Data.List (find, isPrefixOf)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isJust, mapMaybe, maybeToList)
+import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe, mapMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -33,6 +36,13 @@ import Data.Time (UTCTime, getCurrentTime)
 import Effectful (runEff)
 import Seihou.CLI.CommandExecution
 import Seihou.CLI.InstallShared (InstallOutcome (..), installModuleDir, summarizeInstallRefusal)
+import Seihou.CLI.ManifestCapabilityUpgrade
+  ( CertificationGap (..),
+    CertificationScope (..),
+    SharedWriteCertification,
+    certifiedChanges,
+    certifySharedWriteModesIO,
+  )
 import Seihou.CLI.Shared (deriveNamespace, toVarNameMap)
 import Seihou.CLI.Update.Migrations
 import Seihou.CLI.Update.Recovery
@@ -61,7 +71,7 @@ import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.FilesystemPure (PureFS (..))
-import Seihou.Effect.ManifestStore (readManifest, writeManifest)
+import Seihou.Effect.ManifestStore (writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Baseline (manifestBaselineRefs)
@@ -69,7 +79,14 @@ import Seihou.Engine.Migrate (ExecutedMigrationPlan (..), MigrationOpInstance (.
 import Seihou.Engine.Reconcile
 import Seihou.Engine.UpdateTransaction
 import Seihou.Manifest.Hash (hashContent)
-import Seihou.Manifest.Types (currentManifestVersion)
+import Seihou.Manifest.Types
+  ( currentManifestVersion,
+    manifestFromJSON,
+    manifestSupports,
+    minimumManifestVersion,
+    oldestDecodableManifestVersion,
+  )
+import Seihou.Manifest.Upgrade (documentSchemaVersion, renderManifestUpgradeError, upgradeDocumentLosslessly)
 import Seihou.Prelude
 import System.Directory qualified as Directory
 import System.Environment (getEnvironment)
@@ -108,89 +125,275 @@ planProjectUpdateIn sessionDirectory request = do
     Right () -> do
       let manifestPath = projectRoot </> ".seihou" </> "manifest.json"
           baselineDirectory = projectRoot </> ".seihou" </> "baselines"
-      manifestResult <- readManifestIO manifestPath
+      manifestResult <- readManifestForUpdate manifestPath
       case manifestResult of
         Left err -> pure (Left err)
-        Right manifest -> do
+        Right (document, manifest) -> do
           now <- getCurrentTime
-          seeded <- selectAndSeedLegacy request projectRoot manifest now
-          case seeded of
+          resolved <- resolveSelection request sessionDirectory projectRoot installedDirectory manifestPath document manifest now
+          case resolved of
             Left err -> pure (Left err)
-            Right (selected, seedWarnings) -> do
-              staged <- stageCandidateSources sessionDirectory projectRoot installedDirectory selected
-              case staged of
+            Right resolution -> do
+              let base = resolution ^. #manifest
+                  selected = resolution ^. #applications
+                  seedWarnings = resolution ^. #warnings
+              staging <- case resolution ^. #staged of
+                Just staged -> pure (Right staged)
+                Nothing -> stageSelection request sessionDirectory projectRoot installedDirectory now selected
+              case staging of
                 Left err -> pure (Left err)
-                Right (catalog, sourceWarnings) -> do
-                  plannedApplicationsResult <- traverse (planApplication request projectRoot catalog now) selected
-                  case sequence plannedApplicationsResult of
+                Right staged -> do
+                  let catalog = staged ^. #catalog
+                      sourceWarnings = staged ^. #warnings
+                      plannedApplications = staged ^. #plannedApplications
+                      applicationInputs =
+                        [ (Just previous, planned ^. #modulesInOrder)
+                        | (previous, planned) <- zip selected plannedApplications
+                        ]
+                  stagedMigrations <- planAndStageMigrations projectRoot base catalog applicationInputs
+                  case stagedMigrations of
                     Left err -> pure (Left err)
-                    Right plannedApplications -> do
-                      let applicationInputs =
-                            [ (Just previous, planned ^. #modulesInOrder)
-                            | (previous, planned) <- zip selected plannedApplications
-                            ]
-                      stagedMigrations <- planAndStageMigrations projectRoot manifest catalog applicationInputs
-                      case stagedMigrations of
-                        Left err -> pure (Left err)
-                        Right migrationStage -> do
-                          let (operations, owners, compositionWarnings) = combineApplicationPlans plannedApplications
-                              selectedIds = Set.fromList (map (^. #candidate . #applicationId) plannedApplications)
-                          stageRoot <- materializeStagedProject sessionDirectory projectRoot (migrationStage ^. #filesystem) operations
-                          reconciliationResult <-
-                            runEff $
-                              runFilesystem $
-                                runBaselineStore baselineDirectory $
-                                  planReconciliation stageRoot (migrationStage ^. #manifest) selectedIds operations owners
-                          case reconciliationResult of
-                            Left err -> pure (Left (UpdateReconciliationFailed err))
-                            Right reconciliation -> do
-                              evidence <- versionEvidence (request ^. #allowDowngrade) projectRoot catalog selected plannedApplications
-                              case evidence of
-                                Left err -> pure (Left err)
-                                Right (versionChanges, versionWarnings) -> do
-                                  let usedArtifacts = artifactsUsedBy catalog plannedApplications
-                                      priorReceipts = Map.unions (map (^. #commandReceipts) selected)
-                                      commandPlan = planCommands (request ^. #commandPolicy) priorReceipts operations
-                                      warnings =
-                                        seedWarnings
-                                          <> sourceWarnings
-                                          <> migrationStage ^. #warnings
-                                          <> compositionWarnings
-                                          <> versionWarnings
-                                      inputChanges = summarizeInputChanges seedWarnings plannedApplications
-                                      transactionTargets = transactionTargetPaths manifest reconciliation (migrationStage ^. #plans)
-                                  observedProjectHashes <-
-                                    observePaths
-                                      projectRoot
-                                      (Set.insert (".seihou" </> "manifest.json") transactionTargets)
-                                  let snapshot =
-                                        UpdateSnapshot
-                                          { sessionDirectory,
-                                            projectRoot,
-                                            manifestPath,
-                                            baselineDirectory,
-                                            installedDirectory,
-                                            originalManifest = manifest,
-                                            candidateHashes = Map.fromList [(artifact ^. #originalDirectory, artifact ^. #contentHash) | artifact <- usedArtifacts],
-                                            observedProjectHashes,
-                                            transactionTargets
-                                          }
-                                  pure
-                                    ( Right
-                                        UpdatePlan
-                                          { applications = map (^. #candidate) plannedApplications,
-                                            versionChanges,
-                                            inputChanges,
-                                            migrations = migrationStage ^. #plans,
-                                            reconciliation,
-                                            commandPlan,
-                                            candidateArtifacts = usedArtifacts,
-                                            warnings,
-                                            request,
-                                            snapshot,
-                                            plannedApplications
-                                          }
-                                    )
+                    Right migrationStage -> do
+                      let (operations, owners, compositionWarnings) = combineApplicationPlans plannedApplications
+                          selectedIds = Set.fromList (map (^. #candidate . #applicationId) plannedApplications)
+                      stageRoot <- materializeStagedProject sessionDirectory projectRoot (migrationStage ^. #filesystem) operations
+                      reconciliationResult <-
+                        runEff $
+                          runFilesystem $
+                            runBaselineStore baselineDirectory $
+                              planReconciliation stageRoot (migrationStage ^. #manifest) selectedIds operations owners
+                      case reconciliationResult of
+                        Left err -> pure (Left (UpdateReconciliationFailed err))
+                        Right reconciliation -> do
+                          evidence <- versionEvidence (request ^. #allowDowngrade) projectRoot catalog selected plannedApplications
+                          case evidence of
+                            Left err -> pure (Left err)
+                            Right (versionChanges, versionWarnings) -> do
+                              let usedArtifacts = artifactsUsedBy catalog plannedApplications
+                                  priorReceipts = Map.unions (map (^. #commandReceipts) selected)
+                                  commandPlan = planCommands (request ^. #commandPolicy) priorReceipts operations
+                                  warnings =
+                                    seedWarnings
+                                      <> sourceWarnings
+                                      <> migrationStage ^. #warnings
+                                      <> compositionWarnings
+                                      <> versionWarnings
+                                  inputChanges = summarizeInputChanges seedWarnings plannedApplications
+                                  transactionTargets = transactionTargetPaths base reconciliation (migrationStage ^. #plans)
+                              -- The manifest is observed as it is on disk, before
+                              -- any in-memory preparation, so an edit made between
+                              -- planning and apply is reported as a stale plan.
+                              observedProjectHashes <-
+                                observePaths
+                                  projectRoot
+                                  (Set.insert (".seihou" </> "manifest.json") transactionTargets)
+                              let snapshot =
+                                    UpdateSnapshot
+                                      { sessionDirectory,
+                                        projectRoot,
+                                        manifestPath,
+                                        baselineDirectory,
+                                        installedDirectory,
+                                        originalManifest = manifest,
+                                        candidateHashes = Map.fromList [(artifact ^. #originalDirectory, artifact ^. #contentHash) | artifact <- usedArtifacts],
+                                        observedProjectHashes,
+                                        transactionTargets
+                                      }
+                              pure
+                                ( Right
+                                    UpdatePlan
+                                      { applications = map (^. #candidate) plannedApplications,
+                                        versionChanges,
+                                        inputChanges,
+                                        migrations = migrationStage ^. #plans,
+                                        reconciliation,
+                                        commandPlan,
+                                        candidateArtifacts = usedArtifacts,
+                                        warnings,
+                                        request,
+                                        snapshot,
+                                        plannedApplications,
+                                        manifestPreparation = manifestPreparationFor manifest base
+                                      }
+                                )
+
+-- | Candidate sources staged for a set of applications, and those
+-- applications planned against them.
+data StagedSelection = StagedSelection
+  { applicationIds :: !(Set ApplicationId),
+    catalog :: !CandidateCatalog,
+    warnings :: ![UpdateWarning],
+    plannedApplications :: ![PlannedApplication]
+  }
+  deriving stock (Generic)
+
+-- | What an update will apply to, decided before anything outside the
+-- temporary session is touched.
+data SelectionResolution = SelectionResolution
+  { -- | The manifest planning starts from: the on-disk manifest, or the one
+    -- a targeted update prepared in memory.
+    manifest :: !Manifest,
+    applications :: ![AppliedComposition],
+    warnings :: ![UpdateWarning],
+    -- | Candidates already staged for exactly 'applications' while
+    -- establishing evidence, so they are not cloned or compiled twice.
+    staged :: !(Maybe StagedSelection)
+  }
+  deriving stock (Generic)
+
+-- | Match the request, then settle the ownership closure.
+--
+-- A targeted update needs the 'TargetedAdditiveSharedPathUpdate' capability,
+-- so an older manifest is first prepared in memory with the lossless schema
+-- steps that reach its minimum. Paths the closure cannot yet decide because
+-- their shared-write mode is unknown are certified for the selection: the
+-- selected applications' candidates are staged and compiled, the recorded
+-- co-owners are compiled from their recorded state, and the closure is
+-- enforced again on the certified manifest. Nothing here writes outside the
+-- session directory, runs a command, or reconciles a co-owner's files.
+resolveSelection ::
+  UpdateRequest ->
+  FilePath ->
+  FilePath ->
+  FilePath ->
+  FilePath ->
+  Aeson.Value ->
+  Manifest ->
+  UTCTime ->
+  IO (Either UpdateError SelectionResolution)
+resolveSelection request sessionDirectory projectRoot installedDirectory manifestPath document manifest now =
+  case matchApplications (request ^. #selection) manifest of
+    Left err -> pure (Left err)
+    Right (MatchedAll applications) -> pure (Right (SelectionResolution manifest applications [] Nothing))
+    Right (MatchedLegacy name) -> do
+      seeded <- seedLegacyApplication request projectRoot manifest now name
+      pure (fmap (\(applications, warnings) -> SelectionResolution manifest applications warnings Nothing) seeded)
+    Right (MatchedNamed named) ->
+      case prepareManifestSchema manifestPath TargetedAdditiveSharedPathUpdate document manifest of
+        Left err -> pure (Left err)
+        Right prepared -> closeOver (1 :: Int) prepared Nothing named
+  where
+    policy
+      | request ^. #includeSharedOwners = IncludeSharedOwners
+      | otherwise = RequireNamedOwners
+
+    closeOver attempt current staged named = case enforceOwnershipClosure policy current named of
+      Left err -> pure (Left err)
+      Right (ClosureSatisfied ids warnings) ->
+        pure (Right (SelectionResolution current (applicationsWithIds current ids) warnings (reusable ids staged)))
+      Right (ClosureNeedsEvidence ids _ paths) -> do
+        stagedResult <- case reusable ids staged of
+          Just existing -> pure (Right existing)
+          Nothing ->
+            stageSelection
+              request
+              (sessionDirectory </> ("evidence-" <> show attempt))
+              projectRoot
+              installedDirectory
+              now
+              (applicationsWithIds current ids)
+        case stagedResult of
+          Left err -> pure (Left err)
+          Right evidenceStage -> do
+            searchPaths <- defaultSearchPaths
+            let supplied =
+                  Map.fromList
+                    [ (planned ^. #candidate . #applicationId, planned ^. #operations)
+                    | planned <- evidenceStage ^. #plannedApplications
+                    ]
+            certification <-
+              certifySharedWriteModesIO projectRoot searchPaths (CertifyPathsForApplications ids) current supplied
+            -- Certification only ever turns unknown into known, so a round
+            -- that changes nothing cannot be followed by one that does.
+            if null (certifiedChanges certification)
+              then pure (Left (evidenceUnavailable current certification paths))
+              else closeOver (attempt + 1) (certification ^. #manifest) (Just evidenceStage) named
+
+    reusable ids staged = case staged of
+      Just existing | existing ^. #applicationIds == ids -> Just existing
+      _ -> Nothing
+
+-- | The first path the closure is waiting on that certification could not
+-- settle, with every owner whose evidence is missing.
+evidenceUnavailable :: Manifest -> SharedWriteCertification -> [FilePath] -> UpdateError
+evidenceUnavailable manifest certification paths =
+  case [entry | entry <- certification ^. #entries, entry ^. #path `elem` paths, entry ^. #certifiedMode == SharedWriteUnknown] of
+    entry : _ ->
+      SharedWriteEvidenceUnavailable
+        (entry ^. #path)
+        [(applicationRef manifest (gapOwner gap), gap) | gap <- entry ^. #gaps]
+    [] -> SharedWriteEvidenceUnavailable (fromMaybe "" (listToMaybe paths)) []
+  where
+    gapOwner (OwnerNotRecorded owner) = owner
+    gapOwner (OwnerEvidenceUnavailable owner _) = owner
+    gapOwner (OwnerEmitsNoOperation owner) = owner
+
+-- | Stage candidates for these applications and plan each of them.
+stageSelection ::
+  UpdateRequest ->
+  FilePath ->
+  FilePath ->
+  FilePath ->
+  UTCTime ->
+  [AppliedComposition] ->
+  IO (Either UpdateError StagedSelection)
+stageSelection request stagingDirectory projectRoot installedDirectory now selected = do
+  staged <- stageCandidateSources stagingDirectory projectRoot installedDirectory selected
+  case staged of
+    Left err -> pure (Left err)
+    Right (catalog, warnings) -> do
+      planned <- traverse (planApplication request projectRoot catalog now) selected
+      pure $ do
+        plannedApplications <- sequence planned
+        Right
+          StagedSelection
+            { applicationIds = Set.fromList (map (^. #applicationId) selected),
+              catalog,
+              warnings,
+              plannedApplications
+            }
+
+-- | Bring a manifest up to the schema a capability needs, in memory, using
+-- lossless steps only. The on-disk file is untouched; the result is
+-- published, if at all, with the update that needed it
+-- (docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md).
+prepareManifestSchema :: FilePath -> ManifestCapability -> Aeson.Value -> Manifest -> Either UpdateError Manifest
+prepareManifestSchema path capability document manifest
+  | manifestSupports capability manifest = Right manifest
+  | otherwise = do
+      (_, upgraded) <-
+        first
+          (UpdateManifestUnreadable path . renderManifestUpgradeError)
+          (upgradeDocumentLosslessly (minimumManifestVersion capability) document)
+      case Aeson.fromJSON upgraded of
+        Aeson.Error err -> Left (UpdateManifestUnreadable path (T.pack err))
+        Aeson.Success prepared -> Right prepared
+
+-- | Describe what preparation changed, or 'Nothing' when it changed nothing.
+manifestPreparationFor :: Manifest -> Manifest -> Maybe ManifestPreparation
+manifestPreparationFor original prepared
+  | original ^. #version == prepared ^. #version && Map.null modeChanges = Nothing
+  | otherwise =
+      Just
+        ManifestPreparation
+          { fromVersion = original ^. #version,
+            toVersion = prepared ^. #version,
+            modeChanges,
+            preparedManifest = prepared
+          }
+  where
+    modeChanges =
+      Map.fromList
+        [ (path, (before ^. #sharedWriteMode, after ^. #sharedWriteMode))
+        | (path, after) <- Map.toAscList (prepared ^. #files),
+          Just before <- [Map.lookup path (original ^. #files)],
+          before ^. #sharedWriteMode /= after ^. #sharedWriteMode
+        ]
+
+-- | The manifest an accepted plan applies on top of.
+planBaseManifest :: UpdatePlan -> Manifest
+planBaseManifest plan =
+  maybe (plan ^. #snapshot . #originalManifest) (^. #preparedManifest) (plan ^. #manifestPreparation)
 
 applyProjectUpdate :: UpdatePlan -> IO (Either UpdateError UpdateResult)
 applyProjectUpdate plan =
@@ -224,7 +427,7 @@ applyAcceptedPlan plan = do
         Left err -> abortUpdate transaction err
         Right () -> do
           now <- getCurrentTime
-          migrated <- runRealMigrations now (plan ^. #snapshot . #originalManifest) (plan ^. #migrations)
+          migrated <- runRealMigrations now (planBaseManifest plan) (plan ^. #migrations)
           case migrated of
             Left err -> abortUpdate transaction err
             Right migratedManifest -> do
@@ -421,21 +624,6 @@ loadConfigMaps namespace context =
       Right (toVarNameMap local', toVarNameMap namespace', toVarNameMap context', toVarNameMap global')
   where
     configResult = first (UpdateConfigurationFailed . T.pack . show)
-
-selectAndSeedLegacy ::
-  UpdateRequest ->
-  FilePath ->
-  Manifest ->
-  UTCTime ->
-  IO (Either UpdateError ([AppliedComposition], [UpdateWarning]))
-selectAndSeedLegacy request projectRoot manifest now = case selectApplications policy (request ^. #selection) manifest of
-  Left err -> pure (Left err)
-  Right (RecordedSelection selected, warnings) -> pure (Right (selected, warnings))
-  Right (LegacySelection name, _) -> seedLegacyApplication request projectRoot manifest now name
-  where
-    policy
-      | request ^. #includeSharedOwners = IncludeSharedOwners
-      | otherwise = RequireNamedOwners
 
 seedLegacyApplication ::
   UpdateRequest -> FilePath -> Manifest -> UTCTime -> Text -> IO (Either UpdateError ([AppliedComposition], [UpdateWarning]))
@@ -1002,14 +1190,28 @@ writeManifestIO path manifest = do
   result <- try @SomeException $ runEff $ runFilesystem $ runManifestStore path $ writeManifest manifest
   pure $ first (UpdateManifestWriteFailed . T.pack . displayException) result
 
-readManifestIO :: FilePath -> IO (Either UpdateError Manifest)
-readManifestIO path = do
-  result <- try @SomeException $ runEff $ runFilesystem $ runManifestStore path readManifest
-  pure $ case result of
-    Left err -> Left (UpdateManifestUnreadable path (T.pack (displayException err)))
-    Right (Left err) -> Left (UpdateManifestUnreadable path err)
-    Right (Right Nothing) -> Left (UpdateManifestMissing path)
-    Right (Right (Just manifest)) -> Right manifest
+-- | Read the manifest, keeping the raw document so a targeted update can
+-- run lossless schema steps on it. The schema is inspected before decoding,
+-- so a manifest only the explicit converter can read gets its own error
+-- naming that command rather than a generic decode failure.
+readManifestForUpdate :: FilePath -> IO (Either UpdateError (Aeson.Value, Manifest))
+readManifestForUpdate path = do
+  exists <- Directory.doesFileExist path
+  if not exists
+    then pure (Left (UpdateManifestMissing path))
+    else do
+      result <- try @SomeException (BS.readFile path)
+      pure $ case result of
+        Left err -> Left (UpdateManifestUnreadable path (T.pack (displayException err)))
+        Right strict -> do
+          let bytes = LBS.fromStrict strict
+          document <- first (UpdateManifestUnreadable path . T.pack) (Aeson.eitherDecode bytes)
+          case documentSchemaVersion document of
+            Right version
+              | version < oldestDecodableManifestVersion -> Left (UpdateManifestUpgradeRequired path version)
+            _ -> do
+              manifest <- first (UpdateManifestUnreadable path . T.pack) (manifestFromJSON bytes)
+              Right (document, manifest)
 
 abortUpdate :: UpdateTransaction -> UpdateError -> IO (Either UpdateError a)
 abortUpdate transaction original = do
@@ -1120,7 +1322,11 @@ commandSummaryForPlan commandPlan =
 
 isUpdateNoOp :: UpdatePlan -> Bool
 isUpdateNoOp plan =
-  null (plan ^. #versionChanges)
+  -- A lossless schema step or a newly certified shared-write mode is a
+  -- change to applied state that only this update will publish (ADR 0004),
+  -- so a plan carrying one is never a deliberate no-op (ADR 0007).
+  isNothing (plan ^. #manifestPreparation)
+    && null (plan ^. #versionChanges)
     && null (plan ^. #migrations)
     && plan ^. #inputChanges . #overridden == 0
     && plan ^. #inputChanges . #newlyResolved == 0

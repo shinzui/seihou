@@ -10,7 +10,9 @@ where
 
 import Control.Exception (bracket)
 import Control.Lens ((&), (.~), (^.))
+import Control.Monad (forM_)
 import Data.ByteString.Lazy qualified as LBS
+import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, listToMaybe)
@@ -56,45 +58,77 @@ tests = testSpec "Seihou.CLI.Update" spec
 spec :: Spec
 spec = do
   describe "application selection" $ do
-    it "selects every application containing a requested bare module" $ do
+    it "matches every application containing a requested bare module" $ do
       let first = application (AppliedModuleTarget "one") [instanceState "shared"]
           second = application (AppliedRecipeTarget "stack") [instanceState "shared"]
           manifest :: Manifest
           manifest = manifestForApplications [first, second] Map.empty
-      selectApplications RequireNamedOwners (NamedUpdateTargets ["shared"]) manifest
-        `shouldBe` Right (RecordedSelection [first, second], [])
+      matchApplications (NamedUpdateTargets ["shared"]) manifest
+        `shouldBe` Right (MatchedNamed (Set.fromList [first ^. #applicationId, second ^. #applicationId]))
 
     it "keeps manifest order for all applications and deduplicates repeated targets" $ do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
           second = application (AppliedModuleTarget "two") [instanceState "two"]
           manifest :: Manifest
           manifest = manifestForApplications [first, second] Map.empty
-      selectApplications RequireNamedOwners AllRecordedApplications manifest
-        `shouldBe` Right (RecordedSelection [first, second], [])
-      selectApplications RequireNamedOwners (NamedUpdateTargets ["two", "two", "one"]) manifest
-        `shouldBe` Right (RecordedSelection [first, second], [])
+      matchApplications AllRecordedApplications manifest
+        `shouldBe` Right (MatchedAll [first, second])
+      (applicationsWithIds manifest <$> namedIds (matchApplications (NamedUpdateTargets ["two", "two", "one"]) manifest))
+        `shouldBe` Right [first, second]
 
-    it "rejects a partial selection that shares an owned path" $ do
-      let first = application (AppliedModuleTarget "one") [instanceState "one"]
-          second = application (AppliedModuleTarget "two") [instanceState "two"]
-          owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteRequiresOwnershipClosure
-          manifest :: Manifest
-          manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
-      selectApplications RequireNamedOwners (NamedUpdateTargets ["one"]) manifest
-        `shouldBe` Left (SharedPathRequiresApplications "shared.txt" (Set.singleton (first ^. #applicationId)) (Set.singleton (second ^. #applicationId)))
+    it "matches a named target without consulting shared ownership" $ do
+      -- Matching is phase one. Even a path known to require the closure does
+      -- not stop it; that is phase two's decision.
+      let (first, second, manifest) = sharedPair SharedWriteRequiresOwnershipClosure
+      matchApplications (NamedUpdateTargets ["one"]) manifest
+        `shouldBe` Right (MatchedNamed (Set.singleton (first ^. #applicationId)))
+      second ^. #applicationId `shouldNotBe` first ^. #applicationId
+
+    it "rejects a partial selection that shares a path known to require the closure" $ do
+      let (first, second, manifest) = sharedPair SharedWriteRequiresOwnershipClosure
+      enforceOwnershipClosure RequireNamedOwners manifest (Set.singleton (first ^. #applicationId))
+        `shouldBe` Left
+          ( SharedPathRequiresApplications
+              "shared.txt"
+              (Set.singleton (applicationRef manifest (first ^. #applicationId)))
+              (Set.singleton (applicationRef manifest (second ^. #applicationId)))
+          )
+
+    it "names each owner by its recorded target, not only its id" $ do
+      let (_, second, manifest) = sharedPair SharedWriteRequiresOwnershipClosure
+      applicationRef manifest (second ^. #applicationId)
+        `shouldBe` ApplicationRef (second ^. #applicationId) (Just (AppliedModuleTarget "two")) emptyParentVars
+      applicationRef manifest (ApplicationId "unrecorded")
+        `shouldBe` ApplicationRef (ApplicationId "unrecorded") Nothing emptyParentVars
 
     it "accepts a partial selection when the shared path is additive-only" $ do
       -- Every owner reaches the path through an additive, non-overlapping
       -- patch, so reconciling one of them cannot disturb the other's bytes.
+      let (first, _, manifest) = sharedPair SharedWriteAdditiveOnly
+      enforceOwnershipClosure RequireNamedOwners manifest (Set.singleton (first ^. #applicationId))
+        `shouldBe` Right (ClosureSatisfied (Set.singleton (first ^. #applicationId)) [])
+
+    it "asks for evidence, not for more applications, when the shared path is unknown" $ do
+      let (first, _, manifest) = sharedPair SharedWriteUnknown
+          selected = Set.singleton (first ^. #applicationId)
+      enforceOwnershipClosure RequireNamedOwners manifest selected
+        `shouldBe` Right (ClosureNeedsEvidence selected [] ["shared.txt"])
+      -- --include-shared-owners is consulted only for a known requirement,
+      -- so an unknown path does not broaden the selection either.
+      enforceOwnershipClosure IncludeSharedOwners manifest selected
+        `shouldBe` Right (ClosureNeedsEvidence selected [] ["shared.txt"])
+
+    it "reports a known closure requirement before asking for evidence" $ do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
           second = application (AppliedModuleTarget "two") [instanceState "two"]
           owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteAdditiveOnly
+          unknown = FileRecord (hashContent "ignore") "one" Template testTime Nothing owners SharedWriteUnknown
+          wholeFile = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteRequiresOwnershipClosure
           manifest :: Manifest
-          manifest = manifestForApplications [first, second] (Map.singleton ".gitignore" record)
-      selectApplications RequireNamedOwners (NamedUpdateTargets ["one"]) manifest
-        `shouldBe` Right (RecordedSelection [first], [])
+          manifest = manifestForApplications [first, second] (Map.fromList [(".gitignore", unknown), ("shared.txt", wholeFile)])
+      case enforceOwnershipClosure RequireNamedOwners manifest (Set.singleton (first ^. #applicationId)) of
+        Left (SharedPathRequiresApplications path _ _) -> path `shouldBe` "shared.txt"
+        other -> expectationFailure ("expected a known closure refusal, got " <> show other)
 
     it "still rejects a partial selection when one shared path is not additive-only" $ do
       -- The exemption is per path: an additive shared path does not excuse a
@@ -109,25 +143,21 @@ spec = do
             manifestForApplications
               [first, second]
               (Map.fromList [(".gitignore", additive), ("shared.txt", wholeFile)])
-      selectApplications RequireNamedOwners (NamedUpdateTargets ["one"]) manifest
+      enforceOwnershipClosure RequireNamedOwners manifest (Set.singleton (first ^. #applicationId))
         `shouldBe` Left
           ( SharedPathRequiresApplications
               "shared.txt"
-              (Set.singleton (first ^. #applicationId))
-              (Set.singleton (second ^. #applicationId))
+              (Set.singleton (applicationRef manifest (first ^. #applicationId)))
+              (Set.singleton (applicationRef manifest (second ^. #applicationId)))
           )
 
     it "expands a named selection to the owners the closure requires" $ do
-      let first = application (AppliedModuleTarget "one") [instanceState "one"]
-          second = application (AppliedModuleTarget "two") [instanceState "two"]
-          owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteRequiresOwnershipClosure
-          manifest :: Manifest
-          manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
-      selectApplications IncludeSharedOwners (NamedUpdateTargets ["one"]) manifest
+      let (first, second, manifest) = sharedPair SharedWriteRequiresOwnershipClosure
+      enforceOwnershipClosure IncludeSharedOwners manifest (Set.singleton (first ^. #applicationId))
         `shouldBe` Right
-          ( RecordedSelection [first, second],
-            [SelectionExpandedForSharedPath "shared.txt" (second ^. #applicationId)]
+          ( ClosureSatisfied
+              (Set.fromList [first ^. #applicationId, second ^. #applicationId])
+              [SelectionExpandedForSharedPath "shared.txt" (applicationRef manifest (second ^. #applicationId))]
           )
 
     it "expands to a fixed point across a chain of shared paths" $ do
@@ -150,32 +180,55 @@ spec = do
             manifestForApplications
               [first, second, third]
               (Map.fromList [("a.txt", pair first second), ("b.txt", pair second third)])
-      case selectApplications IncludeSharedOwners (NamedUpdateTargets ["one"]) manifest of
-        Left err -> expectationFailure ("expected an expanded selection, got " <> show err)
-        Right (selected, warnings) -> do
-          selected `shouldBe` RecordedSelection [first, second, third]
+      case enforceOwnershipClosure IncludeSharedOwners manifest (Set.singleton (first ^. #applicationId)) of
+        Right (ClosureSatisfied selected warnings) -> do
+          applicationsWithIds manifest selected `shouldBe` [first, second, third]
           warnings
-            `shouldBe` [ SelectionExpandedForSharedPath "a.txt" (second ^. #applicationId),
-                         SelectionExpandedForSharedPath "b.txt" (third ^. #applicationId)
+            `shouldBe` [ SelectionExpandedForSharedPath "a.txt" (applicationRef manifest (second ^. #applicationId)),
+                         SelectionExpandedForSharedPath "b.txt" (applicationRef manifest (third ^. #applicationId))
                        ]
+        other -> expectationFailure ("expected an expanded selection, got " <> show other)
+
+    it "asks for evidence about a path an expansion exposed" $ do
+      -- One and two share a whole-file a.txt; two and three share b.txt,
+      -- whose mode nobody has recorded. Expanding for a.txt makes b.txt
+      -- relevant, and that one needs evidence rather than more expansion.
+      let first = application (AppliedModuleTarget "one") [instanceState "one"]
+          second = application (AppliedModuleTarget "two") [instanceState "two"]
+          third = application (AppliedModuleTarget "three") [instanceState "three"]
+          pair mode left right =
+            FileRecord (hashContent "old") "one" Template testTime Nothing (Set.fromList [left ^. #applicationId, right ^. #applicationId]) mode
+          manifest :: Manifest
+          manifest =
+            manifestForApplications
+              [first, second, third]
+              ( Map.fromList
+                  [ ("a.txt", pair SharedWriteRequiresOwnershipClosure first second),
+                    ("b.txt", pair SharedWriteUnknown second third)
+                  ]
+              )
+      enforceOwnershipClosure IncludeSharedOwners manifest (Set.singleton (first ^. #applicationId))
+        `shouldBe` Right
+          ( ClosureNeedsEvidence
+              (Set.fromList [first ^. #applicationId, second ^. #applicationId])
+              [SelectionExpandedForSharedPath "a.txt" (applicationRef manifest (second ^. #applicationId))]
+              ["b.txt"]
+          )
 
     it "does not expand for a shared path that is additive-only" $ do
       -- The path no longer requires the closure, so pulling the co-owner in
       -- would update an application the user neither asked for nor needed.
-      let first = application (AppliedModuleTarget "one") [instanceState "one"]
-          second = application (AppliedModuleTarget "two") [instanceState "two"]
-          owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteAdditiveOnly
-          manifest :: Manifest
-          manifest = manifestForApplications [first, second] (Map.singleton ".gitignore" record)
-      selectApplications IncludeSharedOwners (NamedUpdateTargets ["one"]) manifest
-        `shouldBe` Right (RecordedSelection [first], [])
+      let (first, _, manifest) = sharedPair SharedWriteAdditiveOnly
+      enforceOwnershipClosure IncludeSharedOwners manifest (Set.singleton (first ^. #applicationId))
+        `shouldBe` Right (ClosureSatisfied (Set.singleton (first ^. #applicationId)) [])
 
     it "requires one explicit target to seed a legacy manifest" $ do
-      selectApplications RequireNamedOwners AllRecordedApplications (emptyManifest testTime)
+      matchApplications AllRecordedApplications (emptyManifest testTime)
         `shouldBe` Left NoRecordedApplications
-      selectApplications RequireNamedOwners (NamedUpdateTargets ["one", "two"]) (emptyManifest testTime)
+      matchApplications (NamedUpdateTargets ["one", "two"]) (emptyManifest testTime)
         `shouldBe` Left LegacyUpdateRequiresOneTarget
+      matchApplications (NamedUpdateTargets ["one"]) (emptyManifest testTime)
+        `shouldBe` Right (MatchedLegacy "one")
 
   describe "candidate source staging" $ do
     it "keeps local artifacts as an explicit candidate-first fallback" $
@@ -466,6 +519,74 @@ spec = do
             TIO.readFile (fixture ^. #projectFile) `shouldReturn` beforeProject
             LBS.readFile (fixture ^. #installedModule </> "module.dhall") `shouldReturn` beforeInstalled
 
+  describe "targeted update on an older manifest" $ do
+    it "stages the schema step and certificate in the plan and rolls both back on failure" $
+      withSystemTempDirectory "seihou-update-prepared-rollback" $ \root -> do
+        fixture <- prepareSharedPathFixture CoOwnerAppendsPredatingEvidence root
+        let request = (updateRequest False) & #selection .~ NamedUpdateTargets ["alpha"]
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
+            beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+            beforeGitignore <- LBS.readFile (fixture ^. #gitignorePath)
+            -- Publication fails after the managed files have been written.
+            failed <- withProjectUpdate request $ \case
+              Left err -> pure (Left err)
+              Right plan -> do
+                (plan ^. #snapshot . #originalManifest . #version) `shouldBe` ManifestSchemaVersion 6
+                case plan ^. #manifestPreparation of
+                  Nothing -> expectationFailure "expected a manifest preparation"
+                  Just preparation -> do
+                    (preparation ^. #fromVersion) `shouldBe` ManifestSchemaVersion 6
+                    (preparation ^. #toVersion) `shouldBe` ManifestSchemaVersion 7
+                    (preparation ^. #modeChanges)
+                      `shouldBe` Map.singleton ".gitignore" (SharedWriteUnknown, SharedWriteAdditiveOnly)
+                map (^. #applicationId) (plan ^. #applications) `shouldBe` [fixture ^. #alphaApplicationId]
+                applyProjectUpdate (breakCandidatePublication plan)
+            failed `shouldSatisfy` \case
+              Left UpdateCachePublicationFailed {} -> True
+              _ -> False
+            LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+            LBS.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
+
+            retried <- withProjectUpdate request $ \case
+              Left err -> pure (Left err)
+              Right plan -> applyProjectUpdate plan
+            case retried of
+              Left err -> expectationFailure (show err)
+              Right result -> (result ^. #updatedApplications) `shouldBe` [fixture ^. #alphaApplicationId]
+            decoded <- manifestFromJSON <$> LBS.readFile (fixture ^. #manifestPath)
+            ((^. #version) <$> decoded) `shouldBe` Right currentManifestVersion
+
+    it "refuses a schema-5 manifest before staging, naming the explicit upgrade" $
+      withSystemTempDirectory "seihou-update-schema-5" $ \root -> do
+        fixture <- prepareSharedPathFixture CoOwnerAppends root
+        manifestText <- TIO.readFile (fixture ^. #manifestPath)
+        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":7" "\"version\":5" manifestText)
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
+            forM_ [NamedUpdateTargets ["alpha"], AllRecordedApplications] $ \selection -> do
+              result <- withProjectUpdate ((updateRequest True) & #selection .~ selection) (pure . fmap (const ()))
+              result `shouldSatisfy` \case
+                Left (UpdateManifestUpgradeRequired _ (ManifestSchemaVersion 5)) -> True
+                _ -> False
+
+    it "still refuses a candidate that turned a recorded additive path into a whole-file write" $
+      withSystemTempDirectory "seihou-update-candidate-whole-file" $ \root -> do
+        -- The manifest says additive-only, so the preflight passes; the
+        -- candidate's own operations are what reconciliation checks.
+        fixture <- prepareSharedPathFixture CoOwnerAppends root
+        let remote = root </> "remote" </> "alpha"
+        body <- TIO.readFile (remote </> "module.dhall")
+        TIO.writeFile (remote </> "module.dhall") (T.replace "patch = Some \"append-line-if-absent\"" "patch = None Text" body)
+        callProcess "git" ["-C", remote, "add", "module.dhall"]
+        callProcess "git" ["-C", remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "whole file"]
+        withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
+            result <- withProjectUpdate ((updateRequest True) & #selection .~ NamedUpdateTargets ["alpha"]) (pure . fmap (const ()))
+            result `shouldSatisfy` \case
+              Left (UpdateReconciliationFailed _) -> True
+              _ -> False
+
   describe "migration staging" $ do
     it "preserves parameterized instances while planning their shared transition once" $
       withSystemTempDirectory "seihou-update-shared-migration" $ \projectRoot -> do
@@ -653,12 +774,22 @@ data CoOwnerWriteMode
     --   so the /only/ thing a whole-project update has to do is write the
     --   missing record down.
     CoOwnerAppendsUnrecorded
+  | -- | The reported BUG-1 shape: a schema-6 manifest with no
+    --   @additiveOnly@ key, beta appending, alpha with a newer release to
+    --   apply, and beta /also/ published at a newer release that would
+    --   rewrite its own @beta.txt@. A targeted update of alpha must certify
+    --   @.gitignore@ from beta's recorded state without updating beta.
+    CoOwnerAppendsPredatingEvidence
   deriving stock (Eq, Show)
 
 -- | A project whose @.gitignore@ is co-owned by two recorded applications.
 data SharedPathFixture = SharedPathFixture
   { projectRoot :: !FilePath,
     gitignorePath :: !FilePath,
+    -- | A file only beta owns: an unrelated application's file.
+    betaFilePath :: !FilePath,
+    -- | Where beta's recorded 1.0.0 release is installed.
+    betaInstalledPath :: !FilePath,
     manifestPath :: !FilePath,
     xdgHome :: !FilePath,
     alphaApplicationId :: !ApplicationId,
@@ -678,6 +809,9 @@ prepareSharedPathFixture writeMode root = do
   let projectRoot = root </> "project"
       manifestPath = projectRoot </> ".seihou" </> "manifest.json"
       gitignorePath = projectRoot </> ".gitignore"
+      betaFilePath = projectRoot </> "beta.txt"
+      betaContent = "beta v1\n"
+      betaBaselineRef = BaselineRef (hashContent betaContent)
       xdgHome = root </> "xdg"
       installedRoot = xdgHome </> "seihou" </> "installed"
       remoteRoot = root </> "remote"
@@ -696,9 +830,9 @@ prepareSharedPathFixture writeMode root = do
             instances = [instanceStateFrom (ModuleName name) (originFor name)]
           }
       betaPatch = case writeMode of
-        CoOwnerAppends -> Just "append-line-if-absent"
-        CoOwnerAppendsUnrecorded -> Just "append-line-if-absent"
         CoOwnerWritesWholeFile -> Nothing
+        _ -> Just "append-line-if-absent"
+      predatesEvidence = writeMode `elem` [CoOwnerAppendsUnrecorded, CoOwnerAppendsPredatingEvidence]
       -- What alpha's remote publishes. Under 'CoOwnerAppendsUnrecorded' it
       -- matches the installed module exactly, so nothing about the sources
       -- has changed and the only pending work is the manifest record.
@@ -717,70 +851,93 @@ prepareSharedPathFixture writeMode root = do
               CoOwnerAppends -> SharedWriteAdditiveOnly
               CoOwnerWritesWholeFile -> SharedWriteRequiresOwnershipClosure
               CoOwnerAppendsUnrecorded -> SharedWriteUnknown
+              CoOwnerAppendsPredatingEvidence -> SharedWriteUnknown
           )
+      betaFileRecord =
+        FileRecord
+          (hashContent betaContent)
+          "beta"
+          Template
+          testTime
+          (Just betaBaselineRef)
+          (Set.singleton betaApplicationId)
+          (if predatesEvidence then SharedWriteUnknown else SharedWriteRequiresOwnershipClosure)
       manifest =
         ( (emptyManifest testTime)
             & #modules
               .~ [ AppliedModule "alpha" emptyParentVars (originFor "alpha") (Just "1.0.0") testTime Nothing,
                    AppliedModule "beta" emptyParentVars (originFor "beta") (Just "1.0.0") testTime Nothing
                  ]
-            & #files .~ Map.singleton ".gitignore" fileRecord
+            & #files .~ Map.fromList [(".gitignore", fileRecord), ("beta.txt", betaFileRecord)]
             & #applications
               .~ [ appliedFor "alpha" alphaTarget alphaApplicationId "1.0.0",
                    appliedFor "beta" betaTarget betaApplicationId "1.0.0"
                  ]
             -- An unrecorded answer is what a schema-6 file without the key says.
             & #version
-              .~ ( if writeMode == CoOwnerAppendsUnrecorded
+              .~ ( if predatesEvidence
                      then ManifestSchemaVersion 6
                      else currentManifestVersion
                  )
         )
       -- Install one module and publish the same content as its git remote.
-      installModule name version patchOp content = do
+      installModule name version patchOp content ownFile = do
         let installed = installedRoot </> T.unpack name
             remote = remoteRoot </> T.unpack name
         createDirectoryIfMissing True (installed </> "files")
-        TIO.writeFile (installed </> "module.dhall") (moduleDhallForGitignore name version patchOp)
+        TIO.writeFile (installed </> "module.dhall") (moduleDhallForGitignore name version patchOp (fst <$> ownFile))
         TIO.writeFile (installed </> "files" </> "gitignore.tmpl") content
+        traverse_ (\(file, fileContent) -> TIO.writeFile (installed </> "files" </> file) fileContent) ownFile
         TIO.writeFile
           (installed </> ".seihou-origin.json")
           ("{\"sourceUrl\":\"" <> T.pack remote <> "\",\"version\":\"" <> version <> "\"}")
         pure installed
-      publishRemote name version patchOp content = do
+      publishRemote name version patchOp content ownFile = do
         let remote = remoteRoot </> T.unpack name
         createDirectoryIfMissing True (remote </> "files")
-        TIO.writeFile (remote </> "module.dhall") (moduleDhallForGitignore name version patchOp)
+        TIO.writeFile (remote </> "module.dhall") (moduleDhallForGitignore name version patchOp (fst <$> ownFile))
         TIO.writeFile (remote </> "files" </> "gitignore.tmpl") content
+        traverse_ (\(file, fileContent) -> TIO.writeFile (remote </> "files" </> file) fileContent) ownFile
         callProcess "git" ["-C", remote, "init", "-q"]
         callProcess "git" ["-C", remote, "add", "."]
         callProcess "git" ["-C", remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "v" <> T.unpack version]
 
-  _ <- installModule "alpha" "1.0.0" (Just "append-line-if-absent") "/dist-newstyle\n"
-  _ <- installModule "beta" "1.0.0" betaPatch "/result\n"
-  publishRemote "alpha" alphaRemoteVersion (Just "append-line-if-absent") alphaRemoteContent
-  publishRemote "beta" "1.0.0" betaPatch "/result\n"
+  _ <- installModule "alpha" "1.0.0" (Just "append-line-if-absent") "/dist-newstyle\n" Nothing
+  betaInstalledPath <- installModule "beta" "1.0.0" betaPatch "/result\n" (Just ("beta.txt", betaContent))
+  publishRemote "alpha" alphaRemoteVersion (Just "append-line-if-absent") alphaRemoteContent Nothing
+  -- Beta's newer release would rewrite beta.txt; only an update of beta
+  -- itself may apply it.
+  if writeMode == CoOwnerAppendsPredatingEvidence
+    then publishRemote "beta" "2.0.0" betaPatch "/result\n" (Just ("beta.txt", "beta v2\n"))
+    else publishRemote "beta" "1.0.0" betaPatch "/result\n" (Just ("beta.txt", betaContent))
 
   createDirectoryIfMissing True (projectRoot </> ".seihou" </> "baselines")
   TIO.writeFile gitignorePath baselineContent
   TIO.writeFile
     (projectRoot </> ".seihou" </> "baselines" </> T.unpack (baselineRef ^. #unBaselineRef . #unSHA256))
     baselineContent
+  TIO.writeFile betaFilePath betaContent
+  TIO.writeFile
+    (projectRoot </> ".seihou" </> "baselines" </> T.unpack (betaBaselineRef ^. #unBaselineRef . #unSHA256))
+    betaContent
   LBS.writeFile manifestPath (manifestToJSON manifest)
   pure
     SharedPathFixture
       { projectRoot,
         gitignorePath,
+        betaFilePath,
+        betaInstalledPath,
         manifestPath,
         xdgHome,
         alphaApplicationId,
         betaApplicationId
       }
 
--- | A module whose only step contributes to @.gitignore@, either through the
--- given patch operation or, with 'Nothing', as a whole-file template.
-moduleDhallForGitignore :: Text -> Text -> Maybe Text -> Text
-moduleDhallForGitignore name version patchOp =
+-- | A module whose step contributes to @.gitignore@, either through the
+-- given patch operation or, with 'Nothing', as a whole-file template, and
+-- optionally writes one file of its own from a template of the same name.
+moduleDhallForGitignore :: Text -> Text -> Maybe Text -> Maybe FilePath -> Text
+moduleDhallForGitignore name version patchOp ownFile =
   T.unlines
     [ "{ name = \"" <> name <> "\"",
       ", version = Some \"" <> version <> "\"",
@@ -790,7 +947,12 @@ moduleDhallForGitignore name version patchOp =
       ", prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }",
       ", steps = [{ strategy = \"template\", src = \"gitignore.tmpl\", dest = \".gitignore\", when = None Text, patch = "
         <> maybe "None Text" (\op -> "Some \"" <> op <> "\"") patchOp
-        <> " }]",
+        <> " }"
+        <> maybe
+          ""
+          (\file -> ", { strategy = \"template\", src = \"" <> T.pack file <> "\", dest = \"" <> T.pack file <> "\", when = None Text, patch = None Text }")
+          ownFile
+        <> "]",
       ", commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }",
       ", dependencies = [] : List Text",
       ", removal = None { steps : List { action : Text, dest : Text, src : Optional Text }, commands : List { run : Text, workDir : Optional Text, when : Optional Text } }",
@@ -1041,7 +1203,8 @@ breakCandidatePublication plan =
       warnings = plan ^. #warnings,
       request = plan ^. #request,
       snapshot = plan ^. #snapshot,
-      plannedApplications = plan ^. #plannedApplications
+      plannedApplications = plan ^. #plannedApplications,
+      manifestPreparation = plan ^. #manifestPreparation
     }
   where
     breakArtifact artifact =
@@ -1073,6 +1236,22 @@ withoutApplications manifest =
       blueprint = manifest ^. #blueprint,
       blueprintMigrations = manifest ^. #blueprintMigrations
     }
+
+-- | Two applications, @one@ and @two@, co-owning @shared.txt@ with the
+-- given recorded mode.
+sharedPair :: SharedWriteMode -> (AppliedComposition, AppliedComposition, Manifest)
+sharedPair mode = (first, second, manifest)
+  where
+    first = application (AppliedModuleTarget "one") [instanceState "one"]
+    second = application (AppliedModuleTarget "two") [instanceState "two"]
+    owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
+    record = FileRecord (hashContent "old") "one" Template testTime Nothing owners mode
+    manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
+
+namedIds :: Either UpdateError MatchedApplications -> Either UpdateError (Set.Set ApplicationId)
+namedIds (Right (MatchedNamed ids)) = Right ids
+namedIds (Right other) = error ("expected a named match, got " <> show other)
+namedIds (Left err) = Left err
 
 testTime :: UTCTime
 testTime = UTCTime (fromGregorian 2026 7 19) 0
