@@ -106,6 +106,7 @@ library seihou-cli-internal
     Seihou.CLI.Update.Selection
     Seihou.CLI.Update.Source
     Seihou.CLI.Update.Types
+    Seihou.CLI.UpgradeDiagnosis
     Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
     Seihou.Effect.FzfInterp
@@ -280,6 +281,8 @@ test-suite seihou-cli-test
     Seihou.CLI.UpdateInteractionSpec
     Seihou.CLI.UpdateRenderSpec
     Seihou.CLI.UpdateSpec
+    Seihou.CLI.UpgradeDiagnosisSpec
+    Seihou.CLI.UpgradeFixture
     Seihou.CLI.UpgradeSpec
     Seihou.FzfSpec
 

@@ -3,6 +3,7 @@ module Seihou.CLI.Update.Recovery
     setServiceExpectedManifest,
     restoreServiceBackups,
     recoverServiceBackups,
+    pendingUpdateRecovery,
   )
 where
 
@@ -178,6 +179,22 @@ recoverServiceBackups projectRoot = do
                 if committed
                   then pure (Just (Right ()))
                   else Just <$> restoreJournal projectRoot transactionDirectory journal
+
+-- | Whether an update transaction is waiting under @.seihou\/transactions@,
+-- which the next planning call would roll back or clean up before doing
+-- anything else. Read-only: it performs the discovery 'recoverServiceBackups'
+-- and 'Seihou.Engine.UpdateTransaction.recoverIncompleteTransactions' share
+-- (every directory under that root is recovered, committed or not) and acts
+-- on nothing.
+pendingUpdateRecovery :: FilePath -> IO Bool
+pendingUpdateRecovery projectRoot = do
+  let transactionsRoot = projectRoot </> ".seihou" </> "transactions"
+  exists <- Directory.doesDirectoryExist transactionsRoot
+  if not exists
+    then pure False
+    else do
+      names <- Directory.listDirectory transactionsRoot
+      or <$> traverse (Directory.doesDirectoryExist . (transactionsRoot </>)) names
 
 restoreJournal :: FilePath -> FilePath -> ServiceJournal -> IO (Either UpdateError ())
 restoreJournal projectRoot transactionDirectory journal = do

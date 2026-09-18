@@ -27,6 +27,7 @@ module Seihou.CLI.ManifestGuard
     checkAppliedBlueprint,
     checkRecordedBlueprint,
     blockingChecks,
+    localModuleVersion,
 
     -- * Enforcing
     enforceArtifactGuard,

@@ -43,6 +43,7 @@ import Seihou.CLI.UpdateE2ESpec qualified as UpdateE2ESpec
 import Seihou.CLI.UpdateInteractionSpec qualified as UpdateInteractionSpec
 import Seihou.CLI.UpdateRenderSpec qualified as UpdateRenderSpec
 import Seihou.CLI.UpdateSpec qualified as UpdateSpec
+import Seihou.CLI.UpgradeDiagnosisSpec qualified as UpgradeDiagnosisSpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
 import Seihou.FzfSpec qualified as FzfSpec
 import Test.Tasty
@@ -95,6 +96,7 @@ main = do
         UpdateInteractionSpec.tests,
         UpdateE2ESpec.tests,
         UpdateRenderSpec.tests,
+        UpgradeDiagnosisSpec.tests,
         FzfSpec.tests
       ]
   defaultMain (testGroup "seihou-cli" tests)

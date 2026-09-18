@@ -54,6 +54,7 @@ module Seihou.CLI.ManifestUpgrade
     manifestRelativePath,
     formatUpgradeRefusal,
     runManifestUpgrade,
+    renderUpgradeOutcome,
     handleManifestUpgrade,
   )
 where
@@ -858,43 +859,44 @@ formatUpgradeRefusal leadIn checks =
 handleManifestUpgrade :: ManifestUpgradeOpts -> IO ()
 handleManifestUpgrade opts = do
   outcome <- runManifestUpgrade opts
+  TIO.putStr (renderUpgradeOutcome outcome)
   case outcome of
-    UpgradeNotNeeded version stillUnknown -> do
-      TIO.putStrLn
-        ( "✓ "
-            <> T.pack manifestRelativePath
-            <> " is already at schema version "
-            <> showVersion version
-            <> "; nothing to do."
-        )
-      unless (null stillUnknown) $
-        TIO.putStr (formatStillUnknown stillUnknown)
-    UpgradeWouldWrite result blocking -> do
-      TIO.putStr (formatUpgradeReport result)
-      unless (null blocking) $
-        TIO.putStr (formatUpgradeRefusal "! Without --force, this upgrade would be refused." blocking)
-      TIO.putStrLn "--dry-run: nothing was written."
-    UpgradeBlocked result blocking -> do
-      TIO.putStr (formatUpgradeReport result)
-      TIO.putStr
-        ( formatUpgradeRefusal
-            ("✗ Refusing to write " <> T.pack manifestRelativePath <> ".")
-            blocking
-        )
-      exitFailure
-    UpgradeWritten result -> do
-      TIO.putStr (formatUpgradeReport result)
-      TIO.putStrLn
-        ( "✓ Upgraded "
-            <> T.pack manifestRelativePath
-            <> " to schema version "
-            <> showVersion (result ^. #toVersion)
-            <> "."
-        )
-      TIO.putStrLn ("  Review the diff and commit it: git diff " <> T.pack manifestRelativePath)
-    UpgradeFailed message -> do
-      TIO.putStrLn message
-      exitFailure
+    UpgradeBlocked {} -> exitFailure
+    UpgradeFailed {} -> exitFailure
+    _ -> pure ()
+
+-- | Everything @seihou manifest upgrade@ prints for an outcome, exactly as
+-- the command prints it. Pure, so a reader other than the command (the
+-- upgrade diagnosis behind @seihou agent upgrade@) can show the same report.
+renderUpgradeOutcome :: UpgradeOutcome -> Text
+renderUpgradeOutcome = \case
+  UpgradeNotNeeded version stillUnknown ->
+    ( "✓ "
+        <> T.pack manifestRelativePath
+        <> " is already at schema version "
+        <> showVersion version
+        <> "; nothing to do.\n"
+    )
+      <> (if null stillUnknown then "" else formatStillUnknown stillUnknown)
+  UpgradeWouldWrite result blocking ->
+    formatUpgradeReport result
+      <> (if null blocking then "" else formatUpgradeRefusal "! Without --force, this upgrade would be refused." blocking)
+      <> "--dry-run: nothing was written.\n"
+  UpgradeBlocked result blocking ->
+    formatUpgradeReport result
+      <> formatUpgradeRefusal
+        ("✗ Refusing to write " <> T.pack manifestRelativePath <> ".")
+        blocking
+  UpgradeWritten result ->
+    formatUpgradeReport result
+      <> ( "✓ Upgraded "
+             <> T.pack manifestRelativePath
+             <> " to schema version "
+             <> showVersion (result ^. #toVersion)
+             <> ".\n"
+         )
+      <> ("  Review the diff and commit it: git diff " <> T.pack manifestRelativePath <> "\n")
+  UpgradeFailed message -> message <> "\n"
 
 -- | The paths an up-to-date manifest still cannot answer for, and why.
 formatStillUnknown :: [SharedWriteReportEntry] -> Text

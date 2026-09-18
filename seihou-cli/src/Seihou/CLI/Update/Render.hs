@@ -8,6 +8,7 @@ module Seihou.CLI.Update.Render
     errorOutput,
     renderUpdateHuman,
     encodeUpdateOutput,
+    errorCode,
   )
 where
 
