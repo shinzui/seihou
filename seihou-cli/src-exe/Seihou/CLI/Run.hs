@@ -396,7 +396,7 @@ handleRun runOpts = do
                                   generatedAt = now,
                                   baseline = Nothing,
                                   applicationIds = mempty,
-                                  additiveOnly = False
+                                  sharedWriteMode = SharedWriteUnknown
                                 }
                         )
                       | (c, KeepCurrent) <- conflictResolved

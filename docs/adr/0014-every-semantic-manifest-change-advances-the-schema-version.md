@@ -83,6 +83,31 @@ capability requires at least version 7. This supersedes only ADR 0012's
 decision to leave this field at schema version 6; its definition of safe
 additive co-writes and its two-layer safety check remain accepted.
 
+## Implementation
+
+Delivered by
+`docs/plans/92-define-manifest-schema-capabilities-and-ordered-upgrade-steps.md`:
+
+- The version is the `ManifestSchemaVersion` type, serialized as a bare
+  integer. `currentManifestVersion`, `oldestDecodableManifestVersion`,
+  `minimumManifestVersion`, and `manifestSupports` live in
+  `seihou-core/src/Seihou/Manifest/Types.hs`; `minimumManifestVersion` is the
+  one capability mapping.
+- The adjacent steps are the `manifestUpgradeSteps` table in
+  `seihou-core/src/Seihou/Manifest/Upgrade.hs`. Each step names an action whose
+  classification (`upgradeStepKind`) is fixed, so a step cannot be declared
+  lossless while doing inference. Steps 1 to 5 only stamp the version, because
+  the fields those schemas added decode from absence to the default an older
+  reader assumed. Step 5 to 6 is the inference-bearing path conversion, which
+  the core table declares but only the CLI implements. Step 6 to 7 is the
+  lossless shared-write transform. `Seihou.Manifest.UpgradeSpec` plans a path
+  from every supported version to current; a missing step fails it.
+- A decoded manifest keeps the version it was read at, and the encoder writes
+  that version's representation. Rewriting a schema-6 manifest therefore does
+  not claim schema 7; a producer that asserts complete schema-7 facts sets the
+  version explicitly. Schema 6 cannot express a closure requirement, so writing
+  one at version 6 omits the key and reads back as unknown, which fails closed.
+
 ## Consequences
 
 Future manifest evolution carries a small, deliberate cost: even an apparently

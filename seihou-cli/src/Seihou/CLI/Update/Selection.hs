@@ -88,7 +88,7 @@ expandToSharedOwners manifest = go []
     go warnings selected =
       case [ (path, owner)
            | (path, record) <- Map.toAscList (manifest ^. #files),
-             not (record ^. #additiveOnly),
+             record ^. #sharedWriteMode /= SharedWriteAdditiveOnly,
              not (Set.null (Set.intersection selected (record ^. #applicationIds))),
              owner <- Set.toAscList ((record ^. #applicationIds) Set.\\ selected)
            ] of
@@ -102,22 +102,23 @@ expandToSharedOwners manifest = go []
 -- other owner is selected too — because regenerating a file normally means
 -- rewriting all of it, which would discard an unselected owner's content.
 --
--- A path whose manifest record says @additiveOnly@ is exempt: every owner
+-- A path whose manifest record is 'SharedWriteAdditiveOnly' is exempt: every owner
 -- reaches it through an additive, non-overlapping patch, so reconciling one
 -- of them provably cannot disturb another. This is the preflight, and it runs
 -- before any candidate artifact is fetched, so the manifest is the only
 -- evidence available here; 'Seihou.Engine.Reconcile.validateOwner' checks the
 -- candidate's own operations later, once they are known.
 --
--- A @False@ cannot distinguish "an owner writes the whole file" from "this
--- manifest predates the field", so the refusal message names both.
+-- 'SharedWriteUnknown' and 'SharedWriteRequiresOwnershipClosure' both keep
+-- the closure enforced; only the first can be repaired by establishing the
+-- missing evidence.
 --
 -- See docs/adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md.
 ensureOwnershipClosure :: Manifest -> Set ApplicationId -> Either UpdateError ()
 ensureOwnershipClosure manifest selected =
   case [ (path, selectedOwners, missingOwners)
        | (path, record) <- Map.toAscList (manifest ^. #files),
-         not (record ^. #additiveOnly),
+         record ^. #sharedWriteMode /= SharedWriteAdditiveOnly,
          let selectedOwners = Set.intersection selected (record ^. #applicationIds),
          let missingOwners = (record ^. #applicationIds) Set.\\ selected,
          not (Set.null selectedOwners),

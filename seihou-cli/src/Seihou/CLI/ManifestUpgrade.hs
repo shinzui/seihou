@@ -73,7 +73,8 @@ import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (resolveArtifactOrigin)
 import Seihou.Core.Module (defaultSearchPaths)
 import Seihou.Core.Types (ArtifactOrigin (..), Manifest)
-import Seihou.Manifest.Types (currentManifestVersion)
+import Seihou.Manifest.Types (currentManifestVersion, oldestDecodableManifestVersion)
+import Seihou.Manifest.Upgrade (setDocumentSchemaVersion, upgradeDocumentLosslessly)
 import Seihou.Prelude
 import System.Directory (doesFileExist, getCurrentDirectory, renamePath)
 import System.Exit (exitFailure)
@@ -132,7 +133,7 @@ readLegacyManifest bytes = do
     Just _ -> Left "manifest 'version' is not a number"
     Nothing -> Left "manifest has no 'version' field"
   pure $
-    if schemaVersion >= currentManifestVersion
+    if schemaVersion >= oldestDecodableManifestVersion ^. #unManifestSchemaVersion
       then Nothing
       else
         Just
@@ -424,10 +425,13 @@ updateAt (step : rest) f value = case value of
       _ -> value
   _ -> value
 
+-- | Stamp the converted document as schema 6, the version the path
+-- conversion produces, and then run the lossless steps above it. If one of
+-- those fails the document stays at 6, which the decoder still reads.
 setSchemaVersion :: Aeson.Value -> Aeson.Value
-setSchemaVersion (Aeson.Object fields) =
-  Aeson.Object (KeyMap.insert "version" (Aeson.toJSON currentManifestVersion) fields)
-setSchemaVersion other = other
+setSchemaVersion document =
+  let converted = setDocumentSchemaVersion oldestDecodableManifestVersion document
+   in either (const converted) snd (upgradeDocumentLosslessly currentManifestVersion converted)
 
 -- | Render the conversion account shown in the terminal, without the closing
 -- line — whether the file was written is the caller's news to deliver.
@@ -605,7 +609,7 @@ handleManifestUpgrade opts = do
         ( "✓ "
             <> T.pack manifestRelativePath
             <> " is already at schema version "
-            <> T.pack (show currentManifestVersion)
+            <> T.pack (show (currentManifestVersion ^. #unManifestSchemaVersion))
             <> "; nothing to do."
         )
     UpgradeWouldWrite result blocking -> do
@@ -627,7 +631,7 @@ handleManifestUpgrade opts = do
         ( "✓ Upgraded "
             <> T.pack manifestRelativePath
             <> " to schema version "
-            <> T.pack (show currentManifestVersion)
+            <> T.pack (show (currentManifestVersion ^. #unManifestSchemaVersion))
             <> "."
         )
       TIO.putStrLn ("  Review the diff and commit it: git diff " <> T.pack manifestRelativePath)

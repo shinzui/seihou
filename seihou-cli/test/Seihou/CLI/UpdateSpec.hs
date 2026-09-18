@@ -40,7 +40,7 @@ import Seihou.Engine.Reconcile
     ReconciliationPlan (..),
   )
 import Seihou.Manifest.Hash (hashContent)
-import Seihou.Manifest.Types (emptyManifest, manifestFromJSON, manifestToJSON)
+import Seihou.Manifest.Types (currentManifestVersion, emptyManifest, manifestFromJSON, manifestToJSON)
 import System.Directory (createDirectoryIfMissing, doesFileExist, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.FilePath ((</>))
@@ -78,7 +78,7 @@ spec = do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
           second = application (AppliedModuleTarget "two") [instanceState "two"]
           owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners False
+          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteRequiresOwnershipClosure
           manifest :: Manifest
           manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
       selectApplications RequireNamedOwners (NamedUpdateTargets ["one"]) manifest
@@ -90,7 +90,7 @@ spec = do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
           second = application (AppliedModuleTarget "two") [instanceState "two"]
           owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners True
+          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteAdditiveOnly
           manifest :: Manifest
           manifest = manifestForApplications [first, second] (Map.singleton ".gitignore" record)
       selectApplications RequireNamedOwners (NamedUpdateTargets ["one"]) manifest
@@ -102,8 +102,8 @@ spec = do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
           second = application (AppliedModuleTarget "two") [instanceState "two"]
           owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          additive = FileRecord (hashContent "ignore") "one" Template testTime Nothing owners True
-          wholeFile = FileRecord (hashContent "old") "one" Template testTime Nothing owners False
+          additive = FileRecord (hashContent "ignore") "one" Template testTime Nothing owners SharedWriteAdditiveOnly
+          wholeFile = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteRequiresOwnershipClosure
           manifest :: Manifest
           manifest =
             manifestForApplications
@@ -121,7 +121,7 @@ spec = do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
           second = application (AppliedModuleTarget "two") [instanceState "two"]
           owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners False
+          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteRequiresOwnershipClosure
           manifest :: Manifest
           manifest = manifestForApplications [first, second] (Map.singleton "shared.txt" record)
       selectApplications IncludeSharedOwners (NamedUpdateTargets ["one"]) manifest
@@ -144,7 +144,7 @@ spec = do
               testTime
               Nothing
               (Set.fromList [left ^. #applicationId, right ^. #applicationId])
-              False
+              SharedWriteRequiresOwnershipClosure
           manifest :: Manifest
           manifest =
             manifestForApplications
@@ -165,7 +165,7 @@ spec = do
       let first = application (AppliedModuleTarget "one") [instanceState "one"]
           second = application (AppliedModuleTarget "two") [instanceState "two"]
           owners = Set.fromList [first ^. #applicationId, second ^. #applicationId]
-          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners True
+          record = FileRecord (hashContent "old") "one" Template testTime Nothing owners SharedWriteAdditiveOnly
           manifest :: Manifest
           manifest = manifestForApplications [first, second] (Map.singleton ".gitignore" record)
       selectApplications IncludeSharedOwners (NamedUpdateTargets ["one"]) manifest
@@ -302,17 +302,19 @@ spec = do
             LBS.readFile (fixture ^. #manifestPath) `shouldReturn` afterFirstApply
 
     it "is not a no-op when a file's recorded write mode is stale" $ do
-      -- A manifest that predates `additiveOnly` has no answer for any path.
+      -- A manifest that predates shared-write evidence has no answer for any path.
       -- If that counted as a no-op, nothing would ever write the answer down
       -- and the shared-path exemption could never take effect on an existing
       -- project. Recording a fact about applied state is a change to applied
       -- state (ADR 0004), so it is not a deliberate no-op (ADR 0007).
-      isUpdateNoOp (unchangedFilePlan False True) `shouldBe` False
-      isUpdateNoOp (unchangedFilePlan True False) `shouldBe` False
+      isUpdateNoOp (unchangedFilePlan SharedWriteUnknown True) `shouldBe` False
+      isUpdateNoOp (unchangedFilePlan SharedWriteUnknown False) `shouldBe` False
+      isUpdateNoOp (unchangedFilePlan SharedWriteRequiresOwnershipClosure True) `shouldBe` False
+      isUpdateNoOp (unchangedFilePlan SharedWriteAdditiveOnly False) `shouldBe` False
 
     it "is a no-op when the recorded write mode already agrees" $ do
-      isUpdateNoOp (unchangedFilePlan True True) `shouldBe` True
-      isUpdateNoOp (unchangedFilePlan False False) `shouldBe` True
+      isUpdateNoOp (unchangedFilePlan SharedWriteAdditiveOnly True) `shouldBe` True
+      isUpdateNoOp (unchangedFilePlan SharedWriteRequiresOwnershipClosure False) `shouldBe` True
 
     it "rejects a plan when its manifest snapshot changes" $
       withSystemTempDirectory "seihou-update-stale" $ \root -> do
@@ -516,9 +518,10 @@ spec = do
             map (^. #moduleVersion) (migrationStage ^. #manifest . #modules) `shouldBe` [Just "2.0.0", Just "2.0.0"]
 
 -- | A plan whose one file is byte-unchanged on disk, parameterized by the
--- @additiveOnly@ the manifest holds and the one this run would record.
-unchangedFilePlan :: Bool -> Bool -> UpdatePlan
-unchangedFilePlan priorAdditive desiredAdditive =
+-- shared-write mode the manifest holds and whether this run's contribution is
+-- additive.
+unchangedFilePlan :: SharedWriteMode -> Bool -> UpdatePlan
+unchangedFilePlan priorMode desiredAdditive =
   minimalPlan
     ( ReconciliationPlan
         { applicationIds = Set.empty,
@@ -547,7 +550,7 @@ unchangedFilePlan priorAdditive desiredAdditive =
         testTime
         Nothing
         Set.empty
-        priorAdditive
+        priorMode
 
 data UpdateFixture = UpdateFixture
   { projectRoot :: !FilePath,
@@ -605,7 +608,7 @@ prepareUpdateFixture root = do
           testTime
           (Just baselineRef)
           (Set.singleton applicationId)
-          False
+          SharedWriteRequiresOwnershipClosure
       manifest =
         ( (emptyManifest testTime)
             & #modules .~ [appliedModule]
@@ -636,15 +639,15 @@ prepareUpdateFixture root = do
 -- | How the co-owning application @beta@ writes the shared @.gitignore@.
 data CoOwnerWriteMode
   = -- | @append-line-if-absent@: beta occupies a disjoint slice of the file,
-    --   so the path records @additiveOnly = True@ and a targeted update of
+    --   so the path records 'SharedWriteAdditiveOnly' and a targeted update of
     --   @alpha@ alone is safe.
     CoOwnerAppends
   | -- | A whole-file @template@ step: regenerating the path on alpha's behalf
     --   would discard beta's content, so the path records
-    --   @additiveOnly = False@ and stays under the ownership closure.
+    --   'SharedWriteRequiresOwnershipClosure' and stays under the ownership closure.
     CoOwnerWritesWholeFile
-  | -- | Beta appends, exactly as 'CoOwnerAppends', but the manifest predates
-    --   the @additiveOnly@ record and so has no answer. This models every
+  | -- | Beta appends, exactly as 'CoOwnerAppends', but the manifest is a
+    --   schema-6 file with no @additiveOnly@ key and so has no answer. This models every
     --   project in the wild at the moment the field was introduced. Alpha's
     --   remote is published at the installed version with identical content,
     --   so the /only/ thing a whole-project update has to do is write the
@@ -710,7 +713,11 @@ prepareSharedPathFixture writeMode root = do
           testTime
           (Just baselineRef)
           (Set.fromList [alphaApplicationId, betaApplicationId])
-          (writeMode == CoOwnerAppends)
+          ( case writeMode of
+              CoOwnerAppends -> SharedWriteAdditiveOnly
+              CoOwnerWritesWholeFile -> SharedWriteRequiresOwnershipClosure
+              CoOwnerAppendsUnrecorded -> SharedWriteUnknown
+          )
       manifest =
         ( (emptyManifest testTime)
             & #modules
@@ -722,6 +729,12 @@ prepareSharedPathFixture writeMode root = do
               .~ [ appliedFor "alpha" alphaTarget alphaApplicationId "1.0.0",
                    appliedFor "beta" betaTarget betaApplicationId "1.0.0"
                  ]
+            -- An unrecorded answer is what a schema-6 file without the key says.
+            & #version
+              .~ ( if writeMode == CoOwnerAppendsUnrecorded
+                     then ManifestSchemaVersion 6
+                     else currentManifestVersion
+                 )
         )
       -- Install one module and publish the same content as its git remote.
       installModule name version patchOp content = do

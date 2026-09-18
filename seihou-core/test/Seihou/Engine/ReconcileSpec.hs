@@ -364,7 +364,7 @@ record content baseline owners' =
       generatedAt = fixedTime,
       baseline = baseline,
       applicationIds = Set.fromList owners',
-      additiveOnly = False
+      sharedWriteMode = SharedWriteUnknown
     }
 
 -- | A record for a path every owner reaches through an additive patch.
@@ -377,7 +377,7 @@ additiveRecord content baseline owners' =
       generatedAt = fixedTime,
       baseline = baseline,
       applicationIds = Set.fromList owners',
-      additiveOnly = True
+      sharedWriteMode = SharedWriteAdditiveOnly
     }
 
 owners :: FilePath -> [ApplicationId] -> Map.Map FilePath DesiredFileOwner

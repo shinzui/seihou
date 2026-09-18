@@ -22,10 +22,12 @@ import Seihou.Prelude
 -- map fall back to the default @moduleName'@ — this preserves single-
 -- module call-sites and test usage that do not build an ownership map.
 --
--- Each record's @additiveOnly@ is folded across /every/ operation that
+-- Each record's shared-write mode is folded across /every/ operation that
 -- targets the same destination, so a path a module both writes and patches
--- records 'False'. Only a path reached exclusively through additive patches
--- records 'True'.
+-- records 'SharedWriteRequiresOwnershipClosure'. Only a path reached
+-- exclusively through additive patches records 'SharedWriteAdditiveOnly'.
+-- The answer covers this plan's operations only; callers that retain prior
+-- owners merge it with 'mergeSharedWriteMode'.
 executePlan ::
   (Filesystem :> es) =>
   FilePath ->
@@ -36,8 +38,8 @@ executePlan ::
   Eff es (Map FilePath FileRecord)
 executePlan targetDir ops ownerMap moduleName' now = do
   let ownerFor dest = Map.findWithDefault moduleName' dest ownerMap
-      additiveFor dest = Map.findWithDefault False dest additiveMap
-  records <- mapM (executeOp targetDir ownerFor additiveFor now) ops
+      modeFor dest = knownSharedWriteMode (Map.findWithDefault False dest additiveMap)
+  records <- mapM (executeOp targetDir ownerFor modeFor now) ops
   pure (Map.fromList [(k, v) | Just (k, v) <- records])
   where
     additiveMap =
@@ -61,11 +63,11 @@ executeOp ::
   (Filesystem :> es) =>
   FilePath ->
   (FilePath -> ModuleName) ->
-  (FilePath -> Bool) ->
+  (FilePath -> SharedWriteMode) ->
   UTCTime ->
   Operation ->
   Eff es (Maybe (FilePath, FileRecord))
-executeOp targetDir ownerFor additiveFor now op = case op of
+executeOp targetDir ownerFor modeFor now op = case op of
   WriteFileOp dest content strat -> do
     let fullPath = targetDir </> dest
     writeFileText fullPath content
@@ -77,7 +79,7 @@ executeOp targetDir ownerFor additiveFor now op = case op of
               generatedAt = now,
               baseline = Nothing,
               applicationIds = mempty,
-              additiveOnly = additiveFor dest
+              sharedWriteMode = modeFor dest
             }
     pure (Just (dest, record))
   CreateDirOp path -> do
@@ -96,7 +98,7 @@ executeOp targetDir ownerFor additiveFor now op = case op of
               generatedAt = now,
               baseline = Nothing,
               applicationIds = mempty,
-              additiveOnly = additiveFor dest
+              sharedWriteMode = modeFor dest
             }
     pure (Just (dest, record))
   RunCommandOp {} -> do
@@ -123,7 +125,7 @@ executeOp targetDir ownerFor additiveFor now op = case op of
                   generatedAt = now,
                   baseline = Nothing,
                   applicationIds = mempty,
-                  additiveOnly = additiveFor dest
+                  sharedWriteMode = modeFor dest
                 }
         pure (Just (dest, record))
 

@@ -255,9 +255,6 @@ prepareCandidateManifest transaction plan manifest = do
             -- while an unselected one must keep it.
             retainedOwners = maybe Set.empty (^. #applicationIds) prior Set.\\ selected
             partial = not (Set.null retainedOwners)
-            -- The prior flag summarises every owner, including the ones absent
-            -- from this run, so a partial update can only weaken it.
-            priorAdditive = maybe False (^. #additiveOnly) prior
             record =
               FileRecord
                 { hash = state ^. #recordedHash,
@@ -273,7 +270,10 @@ prepareCandidateManifest transaction plan manifest = do
                   generatedAt = manifest ^. #genAt,
                   baseline = Just baseline,
                   applicationIds = (desired ^. #applicationIds) `Set.union` retainedOwners,
-                  additiveOnly = (desired ^. #additiveOnly) && (not partial || priorAdditive)
+                  -- The prior mode summarises every owner, including the ones
+                  -- absent from this run, so a partial update can only keep or
+                  -- weaken it.
+                  sharedWriteMode = recordedSharedWriteMode selected desired prior
                 }
         pure (Map.insert path record files)
       Nothing -> pure (applyOrphanManifestAction selected reconciliation files)
@@ -318,7 +318,7 @@ replaceRecordApplications record owners =
       generatedAt = record ^. #generatedAt,
       baseline = record ^. #baseline,
       applicationIds = owners,
-      additiveOnly = record ^. #additiveOnly
+      sharedWriteMode = record ^. #sharedWriteMode
     }
 
 replaceManifestFiles :: Manifest -> Map FilePath FileRecord -> Manifest

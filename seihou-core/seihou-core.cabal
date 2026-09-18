@@ -108,6 +108,7 @@ library
     Seihou.Interaction.Prompt
     Seihou.Manifest.Hash
     Seihou.Manifest.Types
+    Seihou.Manifest.Upgrade
     Seihou.Prelude
 
   build-depends:
@@ -208,6 +209,7 @@ test-suite seihou-core-test
     Seihou.Interaction.ConfirmSpec
     Seihou.Interaction.PromptSpec
     Seihou.Manifest.TypesSpec
+    Seihou.Manifest.UpgradeSpec
 
   build-depends:
     aeson >=2.1 && <3,

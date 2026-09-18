@@ -93,7 +93,8 @@ replaceAppliedComposition replacement existing
 -- The current record's baseline is preserved: EP-65 captures the exact
 -- post-execution generated content before ownership is attached.
 --
--- @additiveOnly@ can only be weakened here, never strengthened. This run
+-- The shared-write mode can only be kept or weakened here, never
+-- strengthened ('mergeSharedWriteMode'). This run
 -- executed only its own application's operations, so its answer covers only
 -- its own contributions; when a prior owner survives outside this run, the
 -- prior record is the only evidence about that owner's write mode, and a
@@ -105,12 +106,15 @@ attachApplication :: ApplicationId -> Maybe FileRecord -> FileRecord -> FileReco
 attachApplication applicationId previous current =
   current
     & #applicationIds .~ Set.insert applicationId (Set.union (current ^. #applicationIds) priorApplications)
-    & #additiveOnly .~ ((current ^. #additiveOnly) && (not partial || priorAdditive))
+    & #sharedWriteMode
+      .~ mergeSharedWriteMode
+        partial
+        ((^. #sharedWriteMode) <$> previous)
+        (current ^. #sharedWriteMode == SharedWriteAdditiveOnly)
   where
     priorApplications = maybe Set.empty (^. #applicationIds) previous
     retainedOwners = Set.delete applicationId priorApplications
     partial = not (Set.null retainedOwners)
-    priorAdditive = maybe False (^. #additiveOnly) previous
 
 varValueToText :: VarValue -> Text
 varValueToText (VText value) = value

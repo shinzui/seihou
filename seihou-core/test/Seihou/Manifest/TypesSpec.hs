@@ -148,7 +148,7 @@ manifestWithEveryStringPosition =
             fixedTime
             (Just (BaselineRef (hashContent "flake")))
             (Set.singleton (ApplicationId "app"))
-            False
+            SharedWriteRequiresOwnershipClosure
         )
     & #applications
       %~ map (withCommandReceipts (Map.singleton receiptFingerprint receipt))
@@ -265,7 +265,7 @@ spec = do
     it "creates a manifest with the current version" $ do
       let m = emptyManifest fixedTime
       (m ^. #version) `shouldBe` currentManifestVersion
-      (m ^. #version) `shouldBe` 6
+      (m ^. #version) `shouldBe` ManifestSchemaVersion 7
 
     it "creates a manifest with no modules, vars, or files" $ do
       let m = emptyManifest fixedTime
@@ -352,7 +352,7 @@ spec = do
       let m :: Manifest
           m =
             ( (emptyManifest fixedTime)
-                & #files .~ Map.fromList [("README.md", FileRecord {hash = SHA256 "abc123", moduleName = ModuleName "haskell-base", strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, additiveOnly = False}), ("my-app.cabal", FileRecord {hash = SHA256 "def456", moduleName = ModuleName "haskell-base", strategy = DhallText, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, additiveOnly = False})]
+                & #files .~ Map.fromList [("README.md", FileRecord {hash = SHA256 "abc123", moduleName = ModuleName "haskell-base", strategy = Template, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, sharedWriteMode = SharedWriteUnknown}), ("my-app.cabal", FileRecord {hash = SHA256 "def456", moduleName = ModuleName "haskell-base", strategy = DhallText, generatedAt = fixedTime, baseline = Nothing, applicationIds = mempty, sharedWriteMode = SharedWriteUnknown})]
             )
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
 
@@ -373,10 +373,10 @@ spec = do
                 files =
                   Map.fromList
                     [ ( "README.md",
-                        FileRecord (SHA256 "aaa") (ModuleName "haskell-base") Template fixedTime Nothing mempty False
+                        FileRecord (SHA256 "aaa") (ModuleName "haskell-base") Template fixedTime Nothing mempty SharedWriteUnknown
                       ),
                       ( "LICENSE",
-                        FileRecord (SHA256 "bbb") (ModuleName "haskell-base") Copy fixedTime Nothing mempty False
+                        FileRecord (SHA256 "bbb") (ModuleName "haskell-base") Copy fixedTime Nothing mempty SharedWriteUnknown
                       )
                     ],
                 applications = [],
@@ -389,7 +389,7 @@ spec = do
     it "roundtrips all strategy types" $ do
       let strategies = [Copy, Template, DhallText, Structured]
           makeRecord s =
-            FileRecord (SHA256 "hash") (ModuleName "mod") s fixedTime Nothing mempty False
+            FileRecord (SHA256 "hash") (ModuleName "mod") s fixedTime Nothing mempty SharedWriteUnknown
           m :: Manifest
           m =
             ( (emptyManifest fixedTime)
@@ -503,7 +503,7 @@ spec = do
                 generatedAt = fixedTime,
                 baseline = Just (BaselineRef (hashContent "generated baseline")),
                 applicationIds = Set.fromList [appId1, appId2],
-                additiveOnly = False
+                sharedWriteMode = SharedWriteUnknown
               }
           manifest =
             ( (emptyManifest fixedTime)
@@ -664,7 +664,7 @@ spec = do
                 commandReceipts = Map.empty,
                 appliedAt = fixedTime
               }
-          fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty False
+          fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty SharedWriteUnknown
           recipe = AppliedRecipe "recipe" (LocalOrigin "recipe") (Just "1.0.0") fixedTime
           normalBlueprint = AppliedBlueprint "payments" (LocalOrigin "payments") (Just "0.4.0") fixedTime [] False Nothing Nothing
           seed =
@@ -707,8 +707,8 @@ spec = do
         Right _ -> expectationFailure "a version-1 manifest should not decode directly"
         Left err -> err `shouldSatisfy` isInfixOf "seihou manifest upgrade"
 
-  describe "additive-only file records" $ do
-    let additiveRecord additive =
+  describe "shared-write evidence" $ do
+    let modeRecord mode =
           FileRecord
             { hash = SHA256 "aaa",
               moduleName = ModuleName "nix-haskell-flake",
@@ -716,46 +716,105 @@ spec = do
               generatedAt = fixedTime,
               baseline = Nothing,
               applicationIds = Set.fromList [ApplicationId "app-one", ApplicationId "app-two"],
-              additiveOnly = additive
+              sharedWriteMode = mode
             }
-        manifestWith additive =
-          (emptyManifest fixedTime) & #files .~ Map.singleton ".gitignore" (additiveRecord additive)
-        recordKeys manifest = case Aeson.decode (manifestToJSON manifest) of
+        manifestWith mode =
+          (emptyManifest fixedTime) & #files .~ Map.singleton ".gitignore" (modeRecord mode)
+        recordObject manifest = case Aeson.decode (manifestToJSON manifest) of
           Just (Aeson.Object top) -> case KeyMap.lookup "files" top of
             Just (Aeson.Object files) -> case KeyMap.lookup ".gitignore" files of
-              Just (Aeson.Object record) -> map Key.toText (KeyMap.keys record)
-              _ -> []
-            _ -> []
-          _ -> []
+              Just (Aeson.Object record) -> record
+              _ -> KeyMap.empty
+            _ -> KeyMap.empty
+          _ -> KeyMap.empty
+        schemaJson :: Int -> String -> String
+        schemaJson version recordTail =
+          "{\"version\":"
+            <> show version
+            <> ",\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[]"
+            <> ",\"variables\":{},\"applications\":[],\"files\":{\".gitignore\":{\"hash\":\"aaa\""
+            <> ",\"module\":\"nix-haskell-flake\",\"strategy\":\"template\""
+            <> ",\"generatedAt\":\"2026-03-01T10:30:00Z\""
+            <> recordTail
+            <> "}}}"
+        schema6Json = schemaJson 6
+        schema7Json = schemaJson 7
+        decodedMode json = case manifestFromJSON (LBS8.pack json) of
+          Left err -> Left err
+          Right decoded -> maybe (Left "no .gitignore record") (Right . (^. #sharedWriteMode)) (Map.lookup ".gitignore" (decoded ^. #files))
 
-    it "roundtrips a record whose additiveOnly is true" $ do
-      manifestFromJSON (manifestToJSON (manifestWith True)) `shouldBe` Right (manifestWith True)
+    forM_ [minBound .. maxBound] $ \mode ->
+      it ("roundtrips a schema-7 record whose mode is " <> show mode) $
+        manifestFromJSON (manifestToJSON (manifestWith mode)) `shouldBe` Right (manifestWith mode)
 
-    it "roundtrips a record whose additiveOnly is false" $ do
-      manifestFromJSON (manifestToJSON (manifestWith False)) `shouldBe` Right (manifestWith False)
+    it "always emits sharedWriteMode at schema 7, including unknown" $ do
+      KeyMap.lookup "sharedWriteMode" (recordObject (manifestWith SharedWriteUnknown))
+        `shouldBe` Just (Aeson.String "unknown")
+      KeyMap.lookup "sharedWriteMode" (recordObject (manifestWith SharedWriteAdditiveOnly))
+        `shouldBe` Just (Aeson.String "additive-only")
+      KeyMap.lookup "sharedWriteMode" (recordObject (manifestWith SharedWriteRequiresOwnershipClosure))
+        `shouldBe` Just (Aeson.String "requires-ownership-closure")
+      KeyMap.member "additiveOnly" (recordObject (manifestWith SharedWriteAdditiveOnly)) `shouldBe` False
 
-    it "emits the additiveOnly key only when the flag is true" $ do
-      recordKeys (manifestWith True) `shouldContain` ["additiveOnly"]
-      recordKeys (manifestWith False) `shouldNotContain` ["additiveOnly"]
+    it "decodes a schema-6 additiveOnly: true as certified additive-only" $
+      decodedMode (schema6Json ",\"additiveOnly\":true") `shouldBe` Right SharedWriteAdditiveOnly
 
-    it "decodes a record with no additiveOnly key as not additive-only" $ do
-      -- A manifest written before the field existed must keep every shared
-      -- path under the ownership closure, so the absent key must fail closed.
-      let json =
-            "{\"version\":6,\"generatedAt\":\"2026-03-01T10:30:00Z\",\"modules\":[]"
-              <> ",\"variables\":{},\"applications\":[],\"files\":{\".gitignore\":{\"hash\":\"aaa\""
-              <> ",\"module\":\"nix-haskell-flake\",\"strategy\":\"template\""
-              <> ",\"generatedAt\":\"2026-03-01T10:30:00Z\"}}}"
-      case manifestFromJSON json of
-        Left err -> expectationFailure ("expected the manifest to decode, got: " <> err)
-        Right decoded -> case Map.lookup ".gitignore" (decoded ^. #files) of
-          Nothing -> expectationFailure "expected a .gitignore record"
-          Just decodedRecord -> (decodedRecord ^. #additiveOnly) `shouldBe` False
+    it "decodes a schema-6 record with no additiveOnly key as unknown, not as closure-required" $
+      -- The version-6 encoder omitted false, so absence proves nothing.
+      decodedMode (schema6Json "") `shouldBe` Right SharedWriteUnknown
+
+    it "decodes a schema-6 additiveOnly: false as unknown" $
+      decodedMode (schema6Json ",\"additiveOnly\":false") `shouldBe` Right SharedWriteUnknown
+
+    it "keeps the decoded schema-6 version so capability checks see what the file proves" $
+      case manifestFromJSON (LBS8.pack (schema6Json "")) of
+        Left err -> expectationFailure err
+        Right decoded -> do
+          (decoded ^. #version) `shouldBe` ManifestSchemaVersion 6
+          manifestSupports TargetedAdditiveSharedPathUpdate decoded `shouldBe` False
+
+    it "re-encodes a schema-6 manifest in the schema-6 representation" $ do
+      let asSchema6 mode = manifestWith mode & #version .~ ManifestSchemaVersion 6
+      KeyMap.lookup "additiveOnly" (recordObject (asSchema6 SharedWriteAdditiveOnly)) `shouldBe` Just (Aeson.Bool True)
+      KeyMap.member "sharedWriteMode" (recordObject (asSchema6 SharedWriteAdditiveOnly)) `shouldBe` False
+      -- Schema 6 cannot say "closure required"; it fails closed to unknown.
+      KeyMap.member "additiveOnly" (recordObject (asSchema6 SharedWriteRequiresOwnershipClosure)) `shouldBe` False
+
+    it "rejects a schema-7 record without sharedWriteMode and names the record and key" $
+      case manifestFromJSON (LBS8.pack (schema7Json "")) of
+        Right _ -> expectationFailure "a schema-7 record without sharedWriteMode must not decode"
+        Left err -> do
+          err `shouldSatisfy` isInfixOf ".gitignore"
+          err `shouldSatisfy` isInfixOf "sharedWriteMode"
+
+    it "rejects a schema-7 record with an unrecognised sharedWriteMode" $
+      case manifestFromJSON (LBS8.pack (schema7Json ",\"sharedWriteMode\":\"maybe\"")) of
+        Right _ -> expectationFailure "an unknown sharedWriteMode value must not decode"
+        Left err -> do
+          err `shouldSatisfy` isInfixOf ".gitignore"
+          err `shouldSatisfy` isInfixOf "sharedWriteMode"
+          err `shouldSatisfy` isInfixOf "maybe"
+
+    it "does not read a schema-7 additiveOnly key as evidence" $
+      case manifestFromJSON (LBS8.pack (schema7Json ",\"additiveOnly\":true")) of
+        Right _ -> expectationFailure "schema 7 requires sharedWriteMode even when additiveOnly is present"
+        Left err -> err `shouldSatisfy` isInfixOf "sharedWriteMode"
+
+  describe "manifest capabilities" $ do
+    it "requires schema 7 for targeted additive shared-path updates" $
+      minimumManifestVersion TargetedAdditiveSharedPathUpdate `shouldBe` ManifestSchemaVersion 7
+
+    it "never requires a schema newer than this build" $
+      forM_ [minBound .. maxBound] $ \capability ->
+        minimumManifestVersion capability `shouldSatisfy` (<= currentManifestVersion)
+
+    it "is supported by a schema-7 manifest" $
+      manifestSupports TargetedAdditiveSharedPathUpdate (emptyManifest fixedTime) `shouldBe` True
 
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
       let base = emptyManifest fixedTime
-          m = Manifest {version = 99, genAt = base ^. #genAt, modules = base ^. #modules, vars = base ^. #vars, files = base ^. #files, applications = base ^. #applications, recipe = Nothing, blueprint = Nothing, blueprintMigrations = []}
+          m = Manifest {version = ManifestSchemaVersion 99, genAt = base ^. #genAt, modules = base ^. #modules, vars = base ^. #vars, files = base ^. #files, applications = base ^. #applications, recipe = Nothing, blueprint = Nothing, blueprintMigrations = []}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"

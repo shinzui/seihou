@@ -37,6 +37,11 @@ module Seihou.Core.Types
     isAdditiveOperation,
     ModuleLoadError (..),
     Manifest (..),
+    ManifestSchemaVersion (..),
+    ManifestCapability (..),
+    SharedWriteMode (..),
+    knownSharedWriteMode,
+    mergeSharedWriteMode,
     ApplicationId (..),
     ArtifactOrigin (..),
     AppliedTarget (..),
@@ -74,6 +79,7 @@ where
 import Control.Lens ((^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
+import Data.Maybe (fromMaybe)
 import Data.Set (Set)
 import Data.String (IsString)
 import Data.Text (Text)
@@ -521,7 +527,12 @@ data PlaceholderError
 -- | Tracks the state of generated files for incremental re-generation
 -- and conflict detection. Stored at @.seihou/manifest.json@.
 data Manifest = Manifest
-  { version :: !Int,
+  { -- | The schema the document was read as, or the schema a producer
+    -- asserts it can fully express. Decoding an older supported schema
+    -- keeps its version here so 'Seihou.Manifest.Types.manifestSupports'
+    -- can tell what the file actually proves; the encoder emits the
+    -- representation that belongs to this version.
+    version :: !ManifestSchemaVersion,
     genAt :: !UTCTime,
     modules :: ![AppliedModule],
     vars :: !(Map VarName Text),
@@ -532,6 +543,72 @@ data Manifest = Manifest
     blueprintMigrations :: ![AppliedBlueprintMigration]
   }
   deriving stock (Eq, Show, Generic)
+
+-- | The numeric schema of @.seihou/manifest.json@. Every semantic change to
+-- the serialized manifest advances it (see
+-- docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md).
+-- It is serialized as a bare integer.
+newtype ManifestSchemaVersion = ManifestSchemaVersion {unManifestSchemaVersion :: Int}
+  deriving stock (Eq, Ord, Show, Generic)
+
+-- | A feature whose behaviour depends on facts only some manifest schemas
+-- can express. Each capability names its minimum schema in exactly one
+-- place, 'Seihou.Manifest.Types.minimumManifestVersion', so no command
+-- carries its own numeric version comparison.
+data ManifestCapability
+  = -- | A targeted update may leave an unselected co-owner of a path out of
+    -- the selection when the path is certified additive-only. Requires the
+    -- explicit shared-write evidence introduced by schema 7.
+    TargetedAdditiveSharedPathUpdate
+  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
+
+-- | What the manifest knows about how the owners of a path write it.
+--
+-- Schema 6 recorded this as an optional Boolean whose absence meant both
+-- "an owner rewrites the whole file" and "this manifest predates the
+-- question". Schema 7 keeps the two apart, so the ownership gate can fail
+-- closed on 'SharedWriteUnknown' while still knowing the evidence can be
+-- established on demand.
+data SharedWriteMode
+  = -- | Nobody has established the answer yet. Every path decoded from a
+    -- schema-6 record without @additiveOnly: true@ starts here.
+    SharedWriteUnknown
+  | -- | Every contribution to the path goes through an additive,
+    -- non-overlapping patch ('isAdditivePatchOp'), so reconciling one
+    -- owner cannot disturb another's bytes.
+    SharedWriteAdditiveOnly
+  | -- | At least one contribution rewrites or repositions the file, so every
+    -- owner must be part of any update that touches the path.
+    SharedWriteRequiresOwnershipClosure
+  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
+
+-- | The mode a plan with complete knowledge of every contribution to a path
+-- records.
+knownSharedWriteMode :: Bool -> SharedWriteMode
+knownSharedWriteMode True = SharedWriteAdditiveOnly
+knownSharedWriteMode False = SharedWriteRequiresOwnershipClosure
+
+-- | Combine this run's answer for a path with what the manifest held.
+--
+-- A run that executed every current owner (@partial = False@) knows the
+-- whole answer and records it. A run that left a prior owner out knows only
+-- its own contributions: a non-additive contribution of its own settles the
+-- path as closure-required, but an additive one says nothing about the
+-- retained owners, so the prior mode stands. The prior mode can therefore
+-- only be kept or weakened here, never strengthened, and an unknown prior
+-- stays unknown rather than being guessed.
+mergeSharedWriteMode ::
+  -- | Did a prior owner survive outside this run?
+  Bool ->
+  -- | The prior record's mode, if the path had one.
+  Maybe SharedWriteMode ->
+  -- | Is every contribution this run made additive?
+  Bool ->
+  SharedWriteMode
+mergeSharedWriteMode partial prior candidateAdditive
+  | not candidateAdditive = SharedWriteRequiresOwnershipClosure
+  | not partial = SharedWriteAdditiveOnly
+  | otherwise = fromMaybe SharedWriteUnknown prior
 
 -- | Stable identity for one top-level module or recipe application.
 newtype ApplicationId = ApplicationId {unApplicationId :: Text}
@@ -753,12 +830,10 @@ data FileRecord = FileRecord
     generatedAt :: !UTCTime,
     baseline :: !(Maybe BaselineRef),
     applicationIds :: !(Set ApplicationId),
-    -- | Does /every/ contribution to this path go through an additive,
-    -- non-overlapping patch ('isAdditivePatchOp')? When true, reconciling
-    -- one owner provably cannot disturb another's bytes, so a targeted
-    -- update need not name every owner. Absent from older manifests, where
-    -- it decodes as 'False' and the closure keeps being enforced.
-    additiveOnly :: !Bool
+    -- | How the owners of this path write it. Only
+    -- 'SharedWriteAdditiveOnly' lets a targeted update leave a co-owner out
+    -- of its selection; the other two keep the ownership closure enforced.
+    sharedWriteMode :: !SharedWriteMode
   }
   deriving stock (Eq, Show, Generic)
 

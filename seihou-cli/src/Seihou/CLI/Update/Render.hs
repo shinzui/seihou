@@ -48,6 +48,7 @@ import Seihou.Engine.Reconcile
     ReconciliationSummary (..),
     ResolvedFileConflict (..),
     reconciliationSummary,
+    recordedSharedWriteMode,
   )
 import Seihou.Prelude
 
@@ -399,10 +400,10 @@ planLooksUnchanged plan =
   where
     -- Kept in step with 'Seihou.CLI.Update.isUpdateNoOp': a file whose bytes
     -- are unchanged still counts as a change when this plan would record a
-    -- different @additiveOnly@ than the manifest holds, so @alreadyUpToDate@
+    -- different shared-write mode than the manifest holds, so @alreadyUpToDate@
     -- does not claim otherwise.
     isUnchanged (FileUnchanged desired _ _ prior) =
-      maybe True (\record -> record ^. #additiveOnly == desired ^. #additiveOnly) prior
+      maybe True (\record -> record ^. #sharedWriteMode == recordedSharedWriteMode (plan ^. #reconciliation . #applicationIds) desired prior) prior
     isUnchanged _ = False
 
 count :: Int -> Text

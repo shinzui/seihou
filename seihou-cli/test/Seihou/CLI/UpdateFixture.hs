@@ -26,6 +26,7 @@ import Seihou.Core.Types
   ( FileRecord (..),
     ModuleName (..),
     SHA256 (..),
+    SharedWriteMode (..),
     Strategy (..),
   )
 import Seihou.Engine.Reconcile
@@ -127,7 +128,7 @@ orphanPlan = minimalPlan (oneFile orphan)
             generatedAt = fixedTime,
             baseline = Nothing,
             applicationIds = Set.empty,
-            additiveOnly = False
+            sharedWriteMode = SharedWriteUnknown
           }
         "user edit"
         (ObservedFile True (Just (SHA256 "current")))

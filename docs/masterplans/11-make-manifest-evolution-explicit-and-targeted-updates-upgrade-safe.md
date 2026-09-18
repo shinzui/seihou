@@ -16,6 +16,11 @@ provenance:
       at: 2026-09-17T15:41:41Z
       mode: "update"
       note: "Made ADR 0014 the initiative-wide manifest-evolution contract"
+    - model: "claude-opus-5[1m]"
+      harness: "claude-code"
+      at: 2026-09-18T03:48:18Z
+      mode: "implement"
+      note: "Coordinated implementation of child plans; registry and progress updated"
 ---
 
 # Make manifest evolution explicit and targeted updates upgrade-safe
@@ -130,7 +135,7 @@ reference.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 92 | Define manifest schema capabilities and ordered upgrade steps | docs/plans/92-define-manifest-schema-capabilities-and-ordered-upgrade-steps.md | None | None | Not Started |
+| 92 | Define manifest schema capabilities and ordered upgrade steps | docs/plans/92-define-manifest-schema-capabilities-and-ordered-upgrade-steps.md | None | None | Complete |
 | 93 | Upgrade legacy path manifests and backfill additive facts | docs/plans/93-upgrade-legacy-path-manifests-and-backfill-additive-facts.md | EP-92 | None | Not Started |
 | 94 | Gate targeted updates on the minimum manifest schema | docs/plans/94-gate-targeted-updates-on-the-minimum-manifest-schema.md | EP-92, EP-93 | None | Not Started |
 | 95 | Make shared-owner diagnostics actionable and verify upgrades | docs/plans/95-make-shared-owner-diagnostics-actionable-and-verify-upgrades.md | EP-94 | EP-93 | Not Started |
@@ -204,9 +209,9 @@ records only if the delivered behavior differs from their prospective wording.
 Track milestone-level progress across all child plans. Each entry names the child plan
 and the milestone. This section provides an at-a-glance view of the entire initiative.
 
-- [ ] EP-92 M1: Define schema versions, feature requirements, and explicit shared-write evidence.
-- [ ] EP-92 M2: Make version-aware JSON round trips and ordered pure schema steps pass.
-- [ ] EP-92 M3: Update every manifest producer and verify ADR 0014 without silently stamping incomplete state current.
+- [x] EP-92 M1: Define schema versions, feature requirements, and explicit shared-write evidence.
+- [x] EP-92 M2: Make version-aware JSON round trips and ordered pure schema steps pass.
+- [x] EP-92 M3: Update every manifest producer and verify ADR 0014 without silently stamping incomplete state current.
 - [ ] EP-93 M1: Generalize the raw-document upgrader into an ordered, targetable step chain.
 - [ ] EP-93 M2: Preserve and strengthen machine-local-path-to-remote conversion for schema 5 and earlier.
 - [ ] EP-93 M3: Certify shared-write modes for all applications or a named target without touching project files.

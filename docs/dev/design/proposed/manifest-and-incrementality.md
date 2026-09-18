@@ -53,7 +53,7 @@ and [ADR 0002](../../../adr/0002-artifact-identity-is-origin-url-plus-name.md).
 
 ```json
 {
-  "version": 6,
+  "version": 7,
   "generatedAt": "2026-03-01T10:30:00Z",
   "modules": [
     {
@@ -84,19 +84,22 @@ and [ADR 0002](../../../adr/0002-artifact-identity-is-origin-url-plus-name.md).
       "hash": "abc123...",
       "module": "haskell-base",
       "strategy": "template",
-      "generatedAt": "2026-03-01T10:30:00Z"
+      "generatedAt": "2026-03-01T10:30:00Z",
+      "sharedWriteMode": "requires-ownership-closure"
     },
     "my-app.cabal": {
       "hash": "def456...",
       "module": "haskell-base",
       "strategy": "dhall-text",
-      "generatedAt": "2026-03-01T10:30:00Z"
+      "generatedAt": "2026-03-01T10:30:00Z",
+      "sharedWriteMode": "requires-ownership-closure"
     },
     "flake.nix": {
       "hash": "789abc...",
       "module": "nix-flake",
       "strategy": "dhall-text",
-      "generatedAt": "2026-03-01T10:30:00Z"
+      "generatedAt": "2026-03-01T10:30:00Z",
+      "sharedWriteMode": "requires-ownership-closure"
     }
   },
   "recipe": {
@@ -107,11 +110,40 @@ and [ADR 0002](../../../adr/0002-artifact-identity-is-origin-url-plus-name.md).
 }
 ```
 
+### Schema version history
+
+The top-level `version` identifies what the document can express, not just which keys a
+lenient decoder accepts. Every semantic change advances it and adds exactly one adjacent
+upgrade step in `seihou-core/src/Seihou/Manifest/Upgrade.hs`
+([ADR 0014](../../../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md)).
+
+| Version | Change | Upgrade step into it |
+|---|---|---|
+| 1 | Initial manifest | — |
+| 2 | Per-instance `parentVars` | lossless (absent means none) |
+| 3 | Optional applied `blueprint` | lossless |
+| 4 | Reproducible `applications`, generated baselines, file ownership | lossless |
+| 5 | `blueprintMigrations` receipt ledger | lossless |
+| 6 | Portable `origin` replaces machine-local `source` / `targetSource` | inference-bearing; explicit `seihou manifest upgrade` only ([ADR 0005](../../../adr/0005-legacy-manifests-convert-through-an-explicit-command.md)) |
+| 7 | Required `sharedWriteMode` on every file record | lossless: `additiveOnly: true` becomes `additive-only`, anything else `unknown` |
+
+The ordinary decoder reads schemas 6 and 7. A schema-6 record's optional `additiveOnly: true`
+decodes as `additive-only`; a missing or false key decodes as `unknown`, because schema 6
+omitted false and absence therefore proves nothing. Schema 7 requires `sharedWriteMode` to
+be one of `unknown`, `additive-only`, or `requires-ownership-closure`, and a record that
+omits it is rejected. A decoded manifest keeps the version it was read at, and the encoder
+writes the representation of that version, so a command that merely rewrites a schema-6
+manifest does not silently claim schema 7.
+
+Features that rely on manifest evidence name their minimum schema in one mapping,
+`Seihou.Manifest.Types.minimumManifestVersion`, and ask `manifestSupports` rather than
+comparing numbers. The targeted additive shared-path update requires schema 7.
+
 ## Domain Model
 
 ```haskell
 data Manifest = Manifest
-  { manifestVersion   :: Int
+  { manifestVersion   :: ManifestSchemaVersion
   , manifestGenAt     :: UTCTime
   , manifestModules   :: [AppliedModule]
   , manifestVars      :: Map VarName Text    -- Serialized variable values
@@ -139,8 +171,14 @@ data FileRecord = FileRecord
   , fileModule       :: ModuleName
   , fileStrategy     :: Strategy
   , fileGeneratedAt  :: UTCTime
+  , fileSharedWriteMode :: SharedWriteMode  -- schema 7
   }
   deriving stock (Eq, Show, Generic)
+
+data SharedWriteMode
+  = SharedWriteUnknown                   -- not yet established (schema-6 default)
+  | SharedWriteAdditiveOnly              -- every owner appends additively
+  | SharedWriteRequiresOwnershipClosure  -- some owner rewrites the file
 
 newtype SHA256 = SHA256 { unSHA256 :: Text }
   deriving stock (Eq, Ord, Show, Generic)
@@ -305,7 +343,7 @@ Variables: 4 resolved
 - The manifest is created on first `seihou run` in a project
 - The manifest is updated atomically (write to temp file, rename)
 - If no manifest exists, all planned files are treated as "New"
-- The manifest version field enables future schema migrations
+- Every semantic manifest change advances the version and adds one adjacent upgrade step (ADR 0014)
 - `seihou init` creates the `.seihou/` directory but not the manifest (that's created by `run`)
 - Orphaned files (from active modules only) are reported but not automatically deleted (user must remove them)
 - Files from modules not in the current composition are preserved in the manifest across independent runs
@@ -324,6 +362,8 @@ Variables: 4 resolved
 | Two modules contribute to same file | Manifest records the primary module; contributors in composition metadata |
 | `.seihou/` directory missing | Created by `seihou init` or first `seihou run` |
 | Manifest version newer than tool | Error: "manifest was created by a newer version of seihou" |
+| Manifest at schema 5 or earlier | Error naming `seihou manifest upgrade`; never converted on read |
+| Schema-7 file record without `sharedWriteMode` | Error naming the file record and the missing key |
 | Disk file deleted by user | Conflict if manifest still tracks it; re-created if in plan |
 
 ## Testing Plan

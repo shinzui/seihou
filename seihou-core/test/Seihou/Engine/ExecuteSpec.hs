@@ -176,35 +176,35 @@ spec = do
       let content = (fs ^. #files) Map.! "/project/.gitignore"
       content `shouldBe` "node_modules/\n.claude/\n"
 
-  describe "executePlan additiveOnly" $ do
+  describe "executePlan sharedWriteMode" $ do
     it "records an additive patch as additive-only" $ do
       let ops = [PatchFileOp ".gitignore" "/result\n" AppendLineIfAbsent Template modName]
           (records, _) = runExecFS emptyFS ops
-      ((records Map.! ".gitignore") ^. #additiveOnly) `shouldBe` True
+      ((records Map.! ".gitignore") ^. #sharedWriteMode) `shouldBe` SharedWriteAdditiveOnly
 
     it "records an appended section as additive-only" $ do
       let ops = [PatchFileOp ".gitignore" "/dist\n" AppendSection Template modName]
           (records, _) = runExecFS emptyFS ops
-      ((records Map.! ".gitignore") ^. #additiveOnly) `shouldBe` True
+      ((records Map.! ".gitignore") ^. #sharedWriteMode) `shouldBe` SharedWriteAdditiveOnly
 
     it "does not record a position-dependent patch as additive-only" $ do
       -- AppendFile and PrependFile place bytes relative to whatever is
       -- already in the file, so replaying one owner can reorder the result.
       let appendOps = [PatchFileOp "notes.md" "tail\n" AppendFile Template modName]
           prependOps = [PatchFileOp "notes.md" "head\n" PrependFile Template modName]
-      ((fst (runExecFS emptyFS appendOps) Map.! "notes.md") ^. #additiveOnly) `shouldBe` False
-      ((fst (runExecFS emptyFS prependOps) Map.! "notes.md") ^. #additiveOnly) `shouldBe` False
+      ((fst (runExecFS emptyFS appendOps) Map.! "notes.md") ^. #sharedWriteMode) `shouldBe` SharedWriteRequiresOwnershipClosure
+      ((fst (runExecFS emptyFS prependOps) Map.! "notes.md") ^. #sharedWriteMode) `shouldBe` SharedWriteRequiresOwnershipClosure
 
     it "does not record a whole-file write as additive-only" $ do
       let ops = [WriteFileOp "README.md" "# Title\n" Template]
           (records, _) = runExecFS emptyFS ops
-      ((records Map.! "README.md") ^. #additiveOnly) `shouldBe` False
+      ((records Map.! "README.md") ^. #sharedWriteMode) `shouldBe` SharedWriteRequiresOwnershipClosure
 
     it "does not record a copied file as additive-only" $ do
       let initial = PureFS (Map.singleton "/source/file.txt" "copied") mempty
           ops = [CopyFileOp "/source/file.txt" "dest.txt"]
           (records, _) = runExecFS initial ops
-      ((records Map.! "dest.txt") ^. #additiveOnly) `shouldBe` False
+      ((records Map.! "dest.txt") ^. #sharedWriteMode) `shouldBe` SharedWriteRequiresOwnershipClosure
 
     it "folds the flag across every operation targeting one destination" $ do
       -- A path this module both writes and patches is not additive-only, and
@@ -214,7 +214,7 @@ spec = do
               PatchFileOp ".gitignore" "/result\n" AppendLineIfAbsent Template modName
             ]
           (records, _) = runExecFS emptyFS ops
-      ((records Map.! ".gitignore") ^. #additiveOnly) `shouldBe` False
+      ((records Map.! ".gitignore") ^. #sharedWriteMode) `shouldBe` SharedWriteRequiresOwnershipClosure
 
     it "keeps one destination's write mode out of another's record" $ do
       let ops =
@@ -222,8 +222,8 @@ spec = do
               PatchFileOp ".gitignore" "/result\n" AppendLineIfAbsent Template modName
             ]
           (records, _) = runExecFS emptyFS ops
-      ((records Map.! "README.md") ^. #additiveOnly) `shouldBe` False
-      ((records Map.! ".gitignore") ^. #additiveOnly) `shouldBe` True
+      ((records Map.! "README.md") ^. #sharedWriteMode) `shouldBe` SharedWriteRequiresOwnershipClosure
+      ((records Map.! ".gitignore") ^. #sharedWriteMode) `shouldBe` SharedWriteAdditiveOnly
 
   describe "dryRunPlan" $ do
     it "formats WriteFileOp" $ do

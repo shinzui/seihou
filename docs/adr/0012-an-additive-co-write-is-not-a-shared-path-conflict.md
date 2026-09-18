@@ -112,6 +112,15 @@ than replacing them with the current run's view. Getting either wrong is
 fail-open: it would flip a `False` to `True` for a path a co-owner rewrites
 wholesale, opening both gates for a later update that is not safe.
 
+Since schema 7 the same rule is expressed over `SharedWriteMode` by
+`mergeSharedWriteMode` in `seihou-core/src/Seihou/Core/Types.hs`, which both
+producers share (the update path through `recordedSharedWriteMode` in
+`seihou-core/src/Seihou/Engine/Reconcile.hs`). A run that selected every owner
+records the known answer. A run that retained an owner records
+`requires-ownership-closure` when its own contribution is not additive, and
+otherwise keeps the prior mode unchanged: `unknown` stays `unknown` and a
+closure requirement is never relaxed.
+
 **A plan that would record a different answer than the manifest holds is not a
 no-op.** Every project that existed when this field was introduced has a
 manifest with no recorded answer. If an otherwise-up-to-date project reported

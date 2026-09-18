@@ -158,7 +158,7 @@ spec = do
       -- drop the co-owner it did not touch.
       manifestText `shouldSatisfy` T.isInfixOf (fixture ^. #alphaApplicationId . #unApplicationId)
       manifestText `shouldSatisfy` T.isInfixOf (fixture ^. #betaApplicationId . #unApplicationId)
-      manifestText `shouldSatisfy` T.isInfixOf "\"additiveOnly\":true"
+      manifestText `shouldSatisfy` T.isInfixOf "\"sharedWriteMode\":\"additive-only\""
 
   it "still refuses a partial selection when a co-owner writes the shared path wholesale" $
     withSystemTempDirectory "seihou-update-shared-wholefile" $ \root -> do
@@ -189,7 +189,7 @@ spec = do
       stdoutText `shouldSatisfy` T.isInfixOf "because it co-owns .gitignore"
       stdoutText `shouldSatisfy` T.isInfixOf (fixture ^. #betaApplicationId . #unApplicationId)
 
-  it "records a missing additiveOnly answer instead of reporting nothing to do" $
+  it "records a missing shared-write answer instead of reporting nothing to do" $
     withSystemTempDirectory "seihou-update-shared-unrecorded" $ \root -> do
       -- Every project in the wild has a manifest that predates the field. If
       -- an up-to-date project reported "already up to date" and wrote
@@ -216,7 +216,7 @@ spec = do
             ("update exited " <> show code <> "\nstdout:\n" <> T.unpack stdoutText <> "\nstderr:\n" <> T.unpack stderrText)
       stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
       manifestText <- TIO.readFile (fixture ^. #manifestPath)
-      manifestText `shouldSatisfy` T.isInfixOf "\"additiveOnly\":true"
+      manifestText `shouldSatisfy` T.isInfixOf "\"sharedWriteMode\":\"additive-only\""
       -- Recording an answer must not touch a single byte of the project.
       TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
 

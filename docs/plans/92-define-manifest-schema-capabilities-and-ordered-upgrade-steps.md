@@ -17,6 +17,11 @@ provenance:
       at: 2026-09-17T15:39:42Z
       mode: "update"
       note: "Linked accepted ADR 0014 and made its schema-evolution rules authoritative"
+    - model: "claude-opus-5[1m]"
+      harness: "claude-code"
+      at: 2026-09-18T03:48:18Z
+      mode: "implement"
+      note: "Implemented schema 7, capabilities, SharedWriteMode, and ordered upgrade steps"
 ---
 
 # Define manifest schema capabilities and ordered upgrade steps
@@ -51,9 +56,9 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: Define typed manifest schema versions, feature requirements, and explicit shared-write evidence.
-- [ ] M2: Add version-aware decoding, schema-7 encoding, and ordered pure document upgrades with focused tests.
-- [ ] M3: Move every manifest producer to the new contract, verify it against the governing ADRs, and pass the core and repository checks.
+- [x] M1: Define typed manifest schema versions, feature requirements, and explicit shared-write evidence. (2026-09-18) `ManifestSchemaVersion`, `ManifestCapability`, `SharedWriteMode`, `knownSharedWriteMode`, and `mergeSharedWriteMode` in `Seihou.Core.Types`; `minimumManifestVersion` and `manifestSupports` in `Seihou.Manifest.Types`.
+- [x] M2: Add version-aware decoding, schema-7 encoding, and ordered pure document upgrades with focused tests. (2026-09-18) `Seihou.Manifest.Upgrade` with the adjacent step table, gap-checked planner, and pure 6-to-7 transform; `Seihou.Manifest.UpgradeSpec` and new `TypesSpec` cases.
+- [x] M3: Move every manifest producer to the new contract, verify it against the governing ADRs, and pass the core and repository checks. (2026-09-18) All producers and tests moved; ADR 0012 and ADR 0014 amended; design doc version history added. `cabal test all`: core 1134, okf-extension 51, cli 591, all passing; `nix fmt -- --fail-on-change` and `nix flake check` pass.
 
 
 ## Surprises & Discoveries
@@ -61,7 +66,23 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Observation: Bumping `currentManifestVersion` to 7 immediately made the existing
+  `seihou manifest upgrade` converter treat every schema-6 manifest as a legacy
+  absolute-path document, because `readLegacyManifest` compared against current.
+  Evidence: `ManifestUpgradeSpec` would have converted schema-6 fixtures. The interim fix
+  compares against `oldestDecodableManifestVersion` and, after the path conversion, stamps
+  6 and runs the lossless steps to current. EP-93 replaces this interim with the stepwise
+  driver.
+
+- Observation: The two no-op checks (`isUpdateNoOp` in `Seihou.CLI.Update` and
+  `planLooksUnchanged` in `Seihou.CLI.Update.Render`) compared the desired Boolean with the
+  prior record directly, so a partial update of a path whose prior answer could not change
+  would have been reported as pending work forever. Both now compare against
+  `recordedSharedWriteMode`, the same function the manifest writer uses.
+
+- Observation: With a three-state value a partial run whose own contribution is not
+  additive can record a *known* closure requirement, which the Boolean could only express
+  as the ambiguous `False`. This is strictly more information and still fails closed.
 
 
 ## Decision Log
@@ -101,6 +122,40 @@ Record every decision made while working on the plan.
   than leaving them as task-local choices in this plan.
   Date: 2026-09-17
 
+- Decision: A decoded manifest keeps the version it was read at, and the encoder emits the
+  representation of `Manifest.version` (schema 6: `additiveOnly: true` only; schema 7:
+  required `sharedWriteMode`).
+  Rationale: `manifestSupports` must be able to say that a decoded schema-6 file does not
+  prove schema-7 facts, and a command that merely rewrites a schema-6 manifest (remove,
+  migrate) must not silently claim schema 7. Producers that build a complete manifest
+  (`seihou run`, whole update, `writeAppliedBlueprintMigration`) still set
+  `currentManifestVersion`, which is lossless because every decoded record carries an
+  explicit mode. Encoding a closure requirement at schema 6 omits the key and reads back as
+  unknown, the fail-closed direction.
+  Date: 2026-09-18
+
+- Decision: Declare adjacent steps 1-to-2 through 4-to-5 as lossless version stamps, 5-to-6
+  as the inference-bearing path conversion (declared in core, implemented only by the CLI),
+  and 6-to-7 as the lossless shared-write transform. The kind is a total function of the
+  step's action.
+  Rationale: ADR 0014 requires one adjacent step per version and a gap test from every
+  supported version. The fields schemas 2 through 5 added all decode from absence to the
+  older reader's default, so stamping is honest; fixing the kind by action means no table
+  entry can claim to be lossless while doing inference.
+  Date: 2026-09-18
+
+- Decision: Share the partial-write merge rule as `mergeSharedWriteMode` (core types) and
+  `recordedSharedWriteMode` (reconcile), used by `attachApplication`,
+  `prepareCandidateManifest`, and both no-op checks.
+  Rationale: Four call sites previously re-derived the same conjunction; a single function
+  keeps the writer and the no-op checks from disagreeing.
+  Date: 2026-09-18
+
+- Decision: Records created for a `KeepCurrent` conflict resolution in `seihou run` and
+  `seihou agent run` get `SharedWriteUnknown`.
+  Rationale: No plan produced those bytes, so neither known mode is proven.
+  Date: 2026-09-18
+
 
 ## Outcomes & Retrospective
 
@@ -109,7 +164,25 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Completed 2026-09-18. Schema 7 is current. A schema-6 manifest decodes with
+`additiveOnly: true` as `SharedWriteAdditiveOnly` and everything else as
+`SharedWriteUnknown`, keeps version 6 in memory, and reports
+`manifestSupports TargetedAdditiveSharedPathUpdate == False`. A schema-7 record without
+`sharedWriteMode`, or with an unknown value, fails with the record path and key named.
+`Seihou.Manifest.Upgrade` plans contiguous paths from every supported version, refuses
+gaps, classifies each step, and implements the lossless 6-to-7 transform on raw JSON while
+keeping unmodelled keys. Every producer and consumer uses the three-state mode, and the
+partial-write rule is shared by one function.
+
+The public commands are unchanged in shape. The only behavioural changes a user can see
+are that manifests written by `seihou run` and whole updates now say `"version": 7` with
+`sharedWriteMode` on every file, and that `seihou manifest upgrade` on a schema-5 file now
+lands on schema 7. The stepwise command, `--to`, and certification are EP-93's.
+
+Durable context was promoted into ADR 0014 (a new Implementation section: where the
+mapping and step table live, how steps are classified, and the version-preserving
+encoder) and ADR 0012 (the schema-7 form of the partial-write rule). ADR 0005 needed no
+change: its wording already matched.
 
 
 ## Context and Orientation
@@ -357,3 +430,6 @@ record update syntax.
   steps, capability minimums, and upgrade classifications permanent requirements rather
   than decisions local to this implementation plan. Updated the relevant ADR context and
   implementation guidance accordingly.
+
+- 2026-09-18: Implemented all three milestones; recorded progress, discoveries, the
+  version-preserving encoder and step-classification decisions, and the outcome.

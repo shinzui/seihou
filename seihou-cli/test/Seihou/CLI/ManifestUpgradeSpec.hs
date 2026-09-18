@@ -177,7 +177,7 @@ spec = do
       documentKeys document `shouldNotContain` ["targetSource"]
       documentKeys document `shouldContain` ["origin"]
       documentKeys document `shouldContain` ["targetOrigin"]
-      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 6)
+      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 7)
       lookupPath ["modules", "0", "origin"] document
         `shouldBe` Just (Aeson.toJSON (RemoteOrigin haskellBaseUrl "haskell-base" (Just "seihou-modules")))
       lookupPath ["applications", "1", "instances", "0", "origin"] document
@@ -276,7 +276,7 @@ convertsCleanly version =
               legacy
               [(ref, InferredAsUnverifiable (LocalOrigin "demo")) | ref <- legacy ^. #refs]
           document = converted ^. #upgradedDocument
-      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 6)
+      lookupPath ["version"] document `shouldBe` Just (Aeson.Number 7)
       lookupPath ["modules", "0", "origin"] document
         `shouldBe` Just (Aeson.toJSON (LocalOrigin "demo"))
       lookupPath ["modules", "0", "version"] document `shouldBe` Just (Aeson.String "1.0.0")

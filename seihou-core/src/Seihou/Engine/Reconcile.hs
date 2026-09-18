@@ -18,6 +18,7 @@ module Seihou.Engine.Reconcile
     reconciliationSummary,
     reconciliationMutationPaths,
     unresolvedPaths,
+    recordedSharedWriteMode,
   )
 where
 
@@ -120,6 +121,25 @@ data ReconciliationPlan = ReconciliationPlan
     requiredDirectories :: !(Set FilePath)
   }
   deriving stock (Eq, Generic, Show)
+
+-- | The shared-write mode an update records for a desired path, given the
+-- applications it selected and the path's prior record.
+--
+-- Owners outside the selection are retained, and when any survive this run
+-- knows only its own contributions, so the prior mode can be kept or
+-- weakened but never strengthened ('mergeSharedWriteMode'). Both the
+-- manifest writer ('Seihou.Engine.UpdateTransaction') and the no-op checks
+-- use this one function so they cannot disagree about whether a plan would
+-- change the record.
+recordedSharedWriteMode :: Set ApplicationId -> DesiredFile -> Maybe FileRecord -> SharedWriteMode
+recordedSharedWriteMode selected desired prior =
+  mergeSharedWriteMode partial ((^. #sharedWriteMode) <$> prior) (desired ^. #additiveOnly)
+  where
+    -- Subtracting the /selection/ rather than the desired set matters: a
+    -- selected application that stopped writing the path must genuinely lose
+    -- ownership, while an unselected one must keep it.
+    retainedOwners = maybe Set.empty (^. #applicationIds) prior Set.\\ selected
+    partial = not (Set.null retainedOwners)
 
 data ReconciliationError
   = InvalidReconciliationPath FilePath Text
@@ -289,7 +309,7 @@ validateOwner selected ownerMap manifest (path, pathOperations) = case Map.looku
         Nothing -> Right ()
         Just record
           | Set.null ((record ^. #applicationIds) Set.\\ selected) -> Right ()
-          | record ^. #additiveOnly && all isAdditiveOperation pathOperations -> Right ()
+          | record ^. #sharedWriteMode == SharedWriteAdditiveOnly && all isAdditiveOperation pathOperations -> Right ()
           | otherwise -> Left (SharedPathRequiresApplications path (record ^. #applicationIds))
 
 validateManagedPath :: FilePath -> Either ReconciliationError ()

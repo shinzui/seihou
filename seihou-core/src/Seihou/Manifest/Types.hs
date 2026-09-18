@@ -1,6 +1,11 @@
 module Seihou.Manifest.Types
   ( emptyManifest,
     currentManifestVersion,
+    oldestDecodableManifestVersion,
+    minimumManifestVersion,
+    manifestSupports,
+    sharedWriteModeToText,
+    sharedWriteModeFromText,
     manifestToJSON,
     manifestFromJSON,
     writeAppliedBlueprint,
@@ -12,6 +17,7 @@ where
 
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
 import Data.Aeson.Types qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
@@ -53,15 +59,39 @@ import System.FilePath (takeFileName)
 -- Version-5-and-earlier manifests are not readable directly; see
 -- docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md.
 --
--- Deliberately /not/ bumped from 6 to 7 when 'FileRecord' gained
--- @additiveOnly@. The field is emitted only when true, so a manifest with no
--- additive-only paths is byte-identical to one written before it existed, and
--- a reader that predates it treats every path as requiring the full ownership
--- closure -- the conservative reading. Bumping would make every manifest this
--- release writes unreadable to 0.8.x binaries in exchange for nothing. See
--- docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md.
-currentManifestVersion :: Int
-currentManifestVersion = 6
+-- Bumped from 6 to 7 when every 'FileRecord' gained a required
+-- @sharedWriteMode@ (see
+-- docs/plans/92-define-manifest-schema-capabilities-and-ordered-upgrade-steps.md).
+-- Schema 6 carried the same fact as an optional @additiveOnly@ Boolean that
+-- was emitted only when true, so an absent key meant both "an owner rewrites
+-- the whole file" and "this manifest predates the question". Schema 6 still
+-- decodes directly: @additiveOnly: true@ becomes 'SharedWriteAdditiveOnly'
+-- and anything else becomes 'SharedWriteUnknown'. The adjacent raw-document
+-- step lives in "Seihou.Manifest.Upgrade"; the rule that every semantic
+-- change advances this number is
+-- docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md.
+currentManifestVersion :: ManifestSchemaVersion
+currentManifestVersion = ManifestSchemaVersion 7
+
+-- | The oldest schema the ordinary decoder reads. Anything older records
+-- machine-specific absolute paths and must go through the explicit
+-- @seihou manifest upgrade@ conversion first.
+oldestDecodableManifestVersion :: ManifestSchemaVersion
+oldestDecodableManifestVersion = ManifestSchemaVersion 6
+
+-- | The oldest schema that can express the facts a capability relies on.
+-- This is the only place a feature's manifest requirement is written down;
+-- commands ask 'manifestSupports' instead of comparing version numbers.
+minimumManifestVersion :: ManifestCapability -> ManifestSchemaVersion
+minimumManifestVersion TargetedAdditiveSharedPathUpdate = ManifestSchemaVersion 7
+
+-- | Whether a manifest's schema can express everything a capability needs.
+-- A decoded schema-6 manifest answers 'False' for
+-- 'TargetedAdditiveSharedPathUpdate' even though its records carry an
+-- explicit 'SharedWriteUnknown', because the file itself does not say so.
+manifestSupports :: ManifestCapability -> Manifest -> Bool
+manifestSupports capability manifest =
+  manifest ^. #version >= minimumManifestVersion capability
 
 -- | Create an empty manifest with the given timestamp.
 emptyManifest :: UTCTime -> Manifest
@@ -170,13 +200,15 @@ instance ToJSON Manifest where
         "generatedAt" .= (m ^. #genAt),
         "modules" .= (m ^. #modules),
         "variables" .= varsToJSON (m ^. #vars),
-        "files" .= filesToJSON (m ^. #files),
+        "files" .= filesToJSON (m ^. #version) (m ^. #files),
         "applications" .= (m ^. #applications),
         "blueprintMigrations" .= (m ^. #blueprintMigrations)
       ]
         ++ maybe [] (\r -> ["recipe" .= r]) (m ^. #recipe)
         ++ maybe [] (\b -> ["blueprint" .= b]) (m ^. #blueprint)
 
+-- | The version is read and checked before anything else, because the
+-- file-record representation depends on it.
 instance FromJSON Manifest where
   parseJSON = Aeson.withObject "Manifest" $ \o -> do
     v <- o .: "version"
@@ -186,7 +218,7 @@ instance FromJSON Manifest where
       <*> o .: "generatedAt"
       <*> o .: "modules"
       <*> (varsFromJSON =<< o .: "variables")
-      <*> (filesFromJSON =<< o .: "files")
+      <*> (filesFromJSON v =<< o .: "files")
       <*> o Aeson..:? "applications" Aeson..!= []
       <*> o Aeson..:? "recipe"
       <*> o Aeson..:? "blueprint"
@@ -194,25 +226,29 @@ instance FromJSON Manifest where
 
 -- | Reject a manifest this build cannot read, naming the remedy.
 --
--- Compatibility seam: schema-5-and-earlier manifests carry an absolute
--- @source@ path in place of the portable @origin@. Decoding those is owned
--- by docs/plans/79-upgrade-legacy-absolute-path-manifests-in-place.md; until
--- that plan lands an older manifest fails here with a clear message rather
--- than being silently misread. The @seihou manifest upgrade@ command the
--- message names is delivered by that same plan, so the remedy does not exist
--- yet.
-checkManifestVersion :: Int -> Aeson.Parser ()
+-- Schema-5-and-earlier manifests carry an absolute @source@ path in place of
+-- the portable @origin@; converting them is an inference that stays behind
+-- the explicit @seihou manifest upgrade@ command
+-- (docs/adr/0005-legacy-manifests-convert-through-an-explicit-command.md),
+-- so they fail here rather than being silently misread.
+checkManifestVersion :: ManifestSchemaVersion -> Aeson.Parser ()
 checkManifestVersion v
   | v > currentManifestVersion =
       fail "manifest was created by a newer version of seihou"
-  | v < 6 =
+  | v < oldestDecodableManifestVersion =
       fail
         ( "this manifest uses schema version "
-            <> show v
+            <> show (v ^. #unManifestSchemaVersion)
             <> ", which records machine-specific absolute paths; run "
             <> "'seihou manifest upgrade' to convert it"
         )
   | otherwise = pure ()
+
+instance ToJSON ManifestSchemaVersion where
+  toJSON (ManifestSchemaVersion v) = toJSON v
+
+instance FromJSON ManifestSchemaVersion where
+  parseJSON value = ManifestSchemaVersion <$> parseJSON value
 
 instance ToJSON AppliedTarget where
   toJSON (AppliedModuleTarget name) =
@@ -564,46 +600,76 @@ parseRemovalCommandJSON = Aeson.withObject "RemovalCommand" $ \o ->
     <*> o Aeson..:? "workDir"
     <*> pure Nothing
 
-instance ToJSON FileRecord where
-  toJSON fr =
-    Aeson.object $
-      [ "hash" .= (fr ^. #hash . #unSHA256),
-        "module" .= (fr ^. #moduleName . #unModuleName),
-        "strategy" .= strategyToText (fr ^. #strategy),
-        "generatedAt" .= (fr ^. #generatedAt)
-      ]
-        ++ maybe [] (\ref -> ["baseline" .= (ref ^. #unBaselineRef . #unSHA256)]) (fr ^. #baseline)
-        ++ applicationIdsField (fr ^. #applicationIds)
-        ++ additiveOnlyField (fr ^. #additiveOnly)
-    where
-      applicationIdsField ids
-        | Set.null ids = []
-        | otherwise = ["applications" .= map (^. #unApplicationId) (Set.toAscList ids)]
-      -- Emitted only when true, so a manifest with no additive-only paths is
-      -- byte-identical to one written before the field existed. A reader that
-      -- predates the field ignores it and keeps enforcing the ownership
-      -- closure everywhere, which is the conservative behaviour; that is why
-      -- 'currentManifestVersion' does not move for this field.
-      additiveOnlyField additive
-        | additive = ["additiveOnly" .= True]
-        | otherwise = []
+-- | Encode a file record in the representation of the given schema.
+--
+-- Schema 7 always emits @sharedWriteMode@, including @unknown@, so absence
+-- can never again stand for a value. Schema 6 can only say
+-- @additiveOnly: true@; a closure-required path is written without the key
+-- and reads back as unknown, which is the fail-closed direction.
+fileRecordToJSON :: ManifestSchemaVersion -> FileRecord -> Aeson.Value
+fileRecordToJSON schema fr =
+  Aeson.object $
+    [ "hash" .= (fr ^. #hash . #unSHA256),
+      "module" .= (fr ^. #moduleName . #unModuleName),
+      "strategy" .= strategyToText (fr ^. #strategy),
+      "generatedAt" .= (fr ^. #generatedAt)
+    ]
+      ++ maybe [] (\ref -> ["baseline" .= (ref ^. #unBaselineRef . #unSHA256)]) (fr ^. #baseline)
+      ++ applicationIdsField (fr ^. #applicationIds)
+      ++ sharedWriteField (fr ^. #sharedWriteMode)
+  where
+    applicationIdsField ids
+      | Set.null ids = []
+      | otherwise = ["applications" .= map (^. #unApplicationId) (Set.toAscList ids)]
+    sharedWriteField mode
+      | schema >= ManifestSchemaVersion 7 = ["sharedWriteMode" .= sharedWriteModeToText mode]
+      | mode == SharedWriteAdditiveOnly = ["additiveOnly" .= True]
+      | otherwise = []
 
-instance FromJSON FileRecord where
-  parseJSON = Aeson.withObject "FileRecord" $ \o -> do
-    baselineText <- o Aeson..:? "baseline"
-    baseline <- traverse parseBaselineRef baselineText
-    FileRecord
-      <$> (SHA256 <$> o .: "hash")
-      <*> (ModuleName <$> o .: "module")
-      <*> (strategyFromText =<< o .: "strategy")
-      <*> o .: "generatedAt"
-      <*> pure baseline
-      <*> (Set.fromList . map ApplicationId <$> o Aeson..:? "applications" Aeson..!= [])
-      <*> (o Aeson..:? "additiveOnly" Aeson..!= False)
-    where
-      parseBaselineRef value = case baselineRefFromText value of
-        Just ref -> pure ref
-        Nothing -> fail "baseline must be a 64-character hexadecimal SHA-256 digest"
+-- | Decode a file record in the representation of the given schema.
+parseFileRecord :: ManifestSchemaVersion -> Aeson.Value -> Aeson.Parser FileRecord
+parseFileRecord schema = Aeson.withObject "FileRecord" $ \o -> do
+  baselineText <- o Aeson..:? "baseline"
+  baseline <- traverse parseBaselineRef baselineText
+  FileRecord
+    <$> (SHA256 <$> o .: "hash")
+    <*> (ModuleName <$> o .: "module")
+    <*> (strategyFromText =<< o .: "strategy")
+    <*> o .: "generatedAt"
+    <*> pure baseline
+    <*> (Set.fromList . map ApplicationId <$> o Aeson..:? "applications" Aeson..!= [])
+    <*> parseSharedWrite o
+  where
+    parseBaselineRef value = case baselineRefFromText value of
+      Just ref -> pure ref
+      Nothing -> fail "baseline must be a 64-character hexadecimal SHA-256 digest"
+    parseSharedWrite o
+      | schema >= ManifestSchemaVersion 7 = do
+          raw <- o Aeson..:? "sharedWriteMode"
+          case raw of
+            Nothing -> fail "missing required key \"sharedWriteMode\" (schema 7 records it on every file)"
+            Just text -> case sharedWriteModeFromText text of
+              Just mode -> pure mode
+              Nothing ->
+                fail
+                  ( "invalid \"sharedWriteMode\" value "
+                      <> show text
+                      <> "; expected \"unknown\", \"additive-only\", or \"requires-ownership-closure\""
+                  )
+      | otherwise = do
+          -- Version 6 omitted false, so only an explicit true proves anything.
+          additive <- o Aeson..:? "additiveOnly" Aeson..!= False
+          pure (if additive then SharedWriteAdditiveOnly else SharedWriteUnknown)
+
+-- | The schema-7 wire spelling of a shared-write mode.
+sharedWriteModeToText :: SharedWriteMode -> Text
+sharedWriteModeToText SharedWriteUnknown = "unknown"
+sharedWriteModeToText SharedWriteAdditiveOnly = "additive-only"
+sharedWriteModeToText SharedWriteRequiresOwnershipClosure = "requires-ownership-closure"
+
+sharedWriteModeFromText :: Text -> Maybe SharedWriteMode
+sharedWriteModeFromText text =
+  lookup text [(sharedWriteModeToText mode, mode) | mode <- [minBound .. maxBound]]
 
 instance ToJSON SHA256 where
   toJSON (SHA256 t) = toJSON t
@@ -634,13 +700,23 @@ varsFromJSON v = do
 
 -- Helpers for FilePath-keyed maps
 
-filesToJSON :: Map FilePath FileRecord -> Aeson.Value
-filesToJSON = toJSON . Map.mapKeys T.pack
+filesToJSON :: ManifestSchemaVersion -> Map FilePath FileRecord -> Aeson.Value
+filesToJSON schema = toJSON . Map.map (fileRecordToJSON schema) . Map.mapKeys T.pack
 
-filesFromJSON :: Aeson.Value -> Aeson.Parser (Map FilePath FileRecord)
-filesFromJSON v = do
-  m <- parseJSON v :: Aeson.Parser (Map Text FileRecord)
-  pure (Map.mapKeys T.unpack m)
+-- | Each record is parsed under its path, so a malformed record's error
+-- names the file it belongs to.
+filesFromJSON :: ManifestSchemaVersion -> Aeson.Value -> Aeson.Parser (Map FilePath FileRecord)
+filesFromJSON schema v = do
+  m <- parseJSON v :: Aeson.Parser (Map Text Aeson.Value)
+  records <-
+    Map.traverseWithKey
+      ( \path value ->
+          Aeson.modifyFailure
+            (\err -> "file record " <> show path <> ": " <> err)
+            (parseFileRecord schema value Aeson.<?> Aeson.Key (Key.fromText path))
+      )
+      m
+  pure (Map.mapKeys T.unpack records)
 
 -- Strategy serialization
 

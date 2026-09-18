@@ -33,7 +33,7 @@ sampleManifest =
   (emptyManifest fixedTime)
     & #modules .~ [AppliedModule (ModuleName "haskell-base") emptyParentVars (LocalOrigin "haskell-base") Nothing fixedTime Nothing]
     & #vars .~ Map.fromList [(VarName "project.name", "my-app")]
-    & #files .~ Map.fromList [("README.md", FileRecord (SHA256 "abc123") (ModuleName "haskell-base") Template fixedTime Nothing mempty False)]
+    & #files .~ Map.fromList [("README.md", FileRecord (SHA256 "abc123") (ModuleName "haskell-base") Template fixedTime Nothing mempty SharedWriteUnknown)]
 
 spec :: Spec
 spec = do
@@ -88,7 +88,7 @@ spec = do
                 runManifestStore manifestPath (writeManifest sampleManifest)
                 c <- readFileText manifestPath
                 pure ((), c)
-      T.isInfixOf "\"version\":6" content `shouldBe` True
+      T.isInfixOf "\"version\":7" content `shouldBe` True
       T.isInfixOf "haskell-base" content `shouldBe` True
       T.isInfixOf "my-app" content `shouldBe` True
 

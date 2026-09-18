@@ -33,7 +33,7 @@ mkRecord content =
       generatedAt = fixedTime,
       baseline = Nothing,
       applicationIds = mempty,
-      additiveOnly = False
+      sharedWriteMode = SharedWriteUnknown
     }
 
 runStatus :: PureFS -> Manifest -> [TrackedFile]
