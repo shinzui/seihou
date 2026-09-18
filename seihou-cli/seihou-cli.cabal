@@ -23,6 +23,7 @@ extra-source-files:
   data/bootstrap-prompt.md
   data/prompt-run-prompt.md
   data/setup-prompt.md
+  data/upgrade-prompt.md
   help/agent.md
   help/blueprints.md
   help/config.md
@@ -166,6 +167,7 @@ executable seihou
     Seihou.CLI.AgentLaunchExec
     Seihou.CLI.AgentMigrate
     Seihou.CLI.AgentRun
+    Seihou.CLI.AgentUpgrade
     Seihou.CLI.Assist
     Seihou.CLI.Bootstrap
     Seihou.CLI.Browse
@@ -244,6 +246,7 @@ test-suite seihou-cli-test
     Seihou.CLI.AgentModelsSpec
     Seihou.CLI.AgentTraceE2ESpec
     Seihou.CLI.AgentTraceSpec
+    Seihou.CLI.AgentUpgradeE2ESpec
     Seihou.CLI.AppliedBlueprintMigrationSpec
     Seihou.CLI.AppliedBlueprintSpec
     Seihou.CLI.BlueprintMigrationSpec

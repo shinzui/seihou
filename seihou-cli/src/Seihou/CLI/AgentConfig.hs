@@ -203,6 +203,7 @@ data AgentCommandName
   | AgentCmdSetup
   | AgentCmdRun
   | AgentCmdMigrate
+  | AgentCmdUpgrade
   | AgentCmdPromptRun
   deriving stock (Eq, Show, Enum, Bounded)
 
@@ -214,6 +215,7 @@ agentCommandSegment AgentCmdBootstrap = "bootstrap"
 agentCommandSegment AgentCmdSetup = "setup"
 agentCommandSegment AgentCmdRun = "run"
 agentCommandSegment AgentCmdMigrate = "migrate"
+agentCommandSegment AgentCmdUpgrade = "upgrade"
 agentCommandSegment AgentCmdPromptRun = "prompt-run"
 
 -- | Human-facing label for display, e.g. @"prompt run"@ for the two-word

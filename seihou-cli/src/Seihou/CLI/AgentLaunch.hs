@@ -4,6 +4,7 @@ module Seihou.CLI.AgentLaunch
     gatherAgentContext,
     defaultAllowedTools,
     setupAllowedTools,
+    upgradeAllowedTools,
     bootstrapAllowedTools,
     substitute,
     formatSeihouProjectState,
@@ -99,6 +100,23 @@ setupAllowedTools =
     "EnterWorktree",
     "ExitWorktree"
   ]
+
+-- | Allowed tools for @seihou agent upgrade@: setup's, plus what backing up
+-- and comparing a manifest needs. Anything else (a project build, say) asks
+-- the user in the session as usual.
+upgradeAllowedTools :: [String]
+upgradeAllowedTools =
+  nub $
+    setupAllowedTools
+      <> [ "Bash(cp *)",
+           "Bash(mv *)",
+           "Bash(diff *)",
+           "Bash(mktemp *)",
+           "Bash(find *)",
+           "Bash(head *)",
+           "Bash(tail *)",
+           "Bash(jq *)"
+         ]
 
 -- | Allowed tools for the bootstrap command — grants full git access, temp directories,
 -- and common shell utilities so the agent can scaffold, test, and commit without prompting.

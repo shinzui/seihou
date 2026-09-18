@@ -28,6 +28,7 @@ module Seihou.CLI.Commands
     AssistOpts (..),
     BootstrapOpts (..),
     SetupOpts (..),
+    AgentUpgradeOpts (..),
     BlueprintRunOpts (..),
     BlueprintMigrationOpts (..),
     PromptCommand (..),
@@ -128,6 +129,7 @@ data AgentCommand
   | AgentSetup SetupOpts
   | AgentRun BlueprintRunOpts
   | AgentMigrate BlueprintMigrationOpts
+  | AgentUpgrade AgentUpgradeOpts
   | AgentModels AgentModelsOpts
   | AgentConfigShow
   deriving stock (Eq, Show, Generic)
@@ -358,6 +360,20 @@ data BootstrapOpts = BootstrapOpts
 
 data SetupOpts = SetupOpts
   { prompt :: !(Maybe Text),
+    provider :: !(Maybe Text),
+    model :: !(Maybe Text),
+    effort :: !(Maybe Text),
+    trace :: !(Maybe Text)
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Flags parsed for @seihou agent upgrade MODULE [PROMPT]@.
+data AgentUpgradeOpts = AgentUpgradeOpts
+  { -- | The MODULE argument; named target because module is a Haskell keyword.
+    target :: !Text,
+    prompt :: !(Maybe Text),
+    -- | Print the readiness report and exit, contacting no provider.
+    check :: !Bool,
     provider :: !(Maybe Text),
     model :: !(Maybe Text),
     effort :: !(Maybe Text),
@@ -1713,6 +1729,7 @@ agentInfo =
                         pretty ("setup       Guided project setup: configure, run, and commit" :: String),
                         pretty ("run         Run an agent-driven blueprint" :: String),
                         pretty ("migrate     Run ordered library-upgrade blueprint migrations" :: String),
+                        pretty ("upgrade     Upgrade a module with an agent that repairs manifest state" :: String),
                         pretty ("models      List known agent models" :: String)
                       ]
                 ]
@@ -1752,6 +1769,7 @@ agentCommandParser =
         <> command "setup" agentSetupInfo
         <> command "run" agentRunInfo
         <> command "migrate" agentMigrateInfo
+        <> command "upgrade" agentUpgradeInfo
         <> command "models" agentModelsInfo
         <> command "config" agentConfigInfo
     )
@@ -1868,6 +1886,52 @@ agentSetupParser =
   fmap AgentSetup $
     SetupOpts
       <$> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Description of what you want to set up"))
+      <*> providerOption
+      <*> modelOption
+      <*> effortOption
+      <*> traceOption
+
+agentUpgradeInfo :: ParserInfo AgentCommand
+agentUpgradeInfo =
+  info
+    (agentUpgradeParser <**> helper)
+    ( fullDesc
+        <> progDesc "Upgrade a module with an agent that repairs manifest state"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Diagnoses the project for MODULE without changing anything: the manifest," :: String),
+                  pretty ("the installed copy, shared-write evidence, recorded origins, and a dry run" :: String),
+                  pretty ("of the update. Writes the findings, a repair playbook, and safety rules into" :: String),
+                  pretty ("an upgrade brief outside the project, prints its path, and starts an agent" :: String),
+                  pretty ("session with the brief as its system prompt." :: String),
+                  line,
+                  pretty ("The command never fails because of project state: a missing or corrupt" :: String),
+                  pretty ("manifest, a missing agent binary, or a bad agent configuration becomes a" :: String),
+                  pretty ("finding in the brief. --debug prints the brief without contacting a provider." :: String),
+                  line,
+                  pretty ("--check prints the readiness report and exits 0. Its last line is" :: String),
+                  pretty ("'Upgrade readiness: ready' or 'Upgrade readiness: not ready (N ...)'." :: String),
+                  line,
+                  pretty ("Examples:" :: String),
+                  indent 2 $
+                    vsep
+                      [ pretty ("seihou agent upgrade nix-haskell-flake" :: String),
+                        pretty ("seihou agent upgrade nix-haskell-flake \"stay on the 0.x line\"" :: String),
+                        pretty ("seihou agent upgrade nix-haskell-flake --check" :: String),
+                        pretty ("seihou agent --debug upgrade nix-haskell-flake" :: String)
+                      ]
+                ]
+          )
+    )
+
+agentUpgradeParser :: Parser AgentCommand
+agentUpgradeParser =
+  fmap AgentUpgrade $
+    AgentUpgradeOpts
+      <$> argument (T.pack <$> str) (metavar "MODULE" <> help "The module (or recorded target) to upgrade")
+      <*> optional (argument (T.pack <$> str) (metavar "PROMPT" <> help "Anything the agent should know about this upgrade"))
+      <*> switch (long "check" <> help "Print the upgrade readiness report and exit 0 without starting an agent")
       <*> providerOption
       <*> modelOption
       <*> effortOption

@@ -15,6 +15,7 @@ import Seihou.CLI.AgentConfigShow (handleAgentConfigShow)
 import Seihou.CLI.AgentMigrate (handleAgentMigrate)
 import Seihou.CLI.AgentModels qualified as AgentModels
 import Seihou.CLI.AgentRun (handleAgentRun)
+import Seihou.CLI.AgentUpgrade (handleAgentUpgrade, upgradeModelConfig)
 import Seihou.CLI.Assist (handleAssist)
 import Seihou.CLI.Bootstrap (handleBootstrap)
 import Seihou.CLI.Browse (handleBrowse)
@@ -49,6 +50,7 @@ import Seihou.CLI.Validate (handleValidateModule)
 import Seihou.CLI.ValidateBlueprint (handleValidateBlueprint)
 import Seihou.CLI.ValidatePrompt (handleValidatePrompt)
 import Seihou.CLI.Vars (handleVars)
+import Seihou.CLI.Version (seihouVersionWithGit)
 import Seihou.Core.Module (RunnableKind (..))
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
@@ -153,6 +155,13 @@ dispatch cmd =
         AgentMigrate migrationOpts -> do
           pending <- pendingAgentConfigFor AgentCmdMigrate (parentAgentFlags agentOpts) (AgentSettingFlags (migrationOpts ^. #provider) (migrationOpts ^. #model) (migrationOpts ^. #effort) (migrationOpts ^. #trace))
           handleAgentMigrate (agentOpts ^. #debug) pending migrationOpts
+        AgentUpgrade upgradeOpts -> do
+          -- Never 'resolveAgentModelConfigFor': it exits on a configuration
+          -- error, and this command must not fail on configuration state.
+          (modelConfig, configProblem) <-
+            upgradeModelConfig $
+              loadAgentModelConfigFor AgentCmdUpgrade (parentAgentFlags agentOpts) (AgentSettingFlags (upgradeOpts ^. #provider) (upgradeOpts ^. #model) (upgradeOpts ^. #effort) (upgradeOpts ^. #trace))
+          handleAgentUpgrade (agentOpts ^. #debug) seihouVersionWithGit modelConfig configProblem upgradeOpts
         AgentModels modelsOpts ->
           case agentOpts ^. #model of
             Just _ -> do

@@ -9,6 +9,7 @@ import Seihou.CLI.AgentMigrateE2ESpec qualified as AgentMigrateE2ESpec
 import Seihou.CLI.AgentModelsSpec qualified as AgentModelsSpec
 import Seihou.CLI.AgentTraceE2ESpec qualified as AgentTraceE2ESpec
 import Seihou.CLI.AgentTraceSpec qualified as AgentTraceSpec
+import Seihou.CLI.AgentUpgradeE2ESpec qualified as AgentUpgradeE2ESpec
 import Seihou.CLI.AppliedBlueprintMigrationSpec qualified as AppliedBlueprintMigrationSpec
 import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
 import Seihou.CLI.BlueprintMigrationSpec qualified as BlueprintMigrationSpec
@@ -97,6 +98,7 @@ main = do
         UpdateE2ESpec.tests,
         UpdateRenderSpec.tests,
         UpgradeDiagnosisSpec.tests,
+        AgentUpgradeE2ESpec.tests,
         FzfSpec.tests
       ]
   defaultMain (testGroup "seihou-cli" tests)

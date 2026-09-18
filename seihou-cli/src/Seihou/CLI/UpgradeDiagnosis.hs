@@ -55,7 +55,7 @@ import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Control.Exception (SomeException, displayException, evaluate, try)
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
-import Data.Char (isAlphaNum)
+import Data.Char (isAlphaNum, toUpper)
 import Data.Generics.Labels ()
 import Data.List (nub)
 import Data.Map.Strict qualified as Map
@@ -768,7 +768,7 @@ briefSections diagnosis callerFindings =
           <> ", and "
           <> countOf (Map.size (recorded ^. #files)) "managed file"
           <> "."
-      other -> "The manifest could not be read: " <> probeProblem other <> "."
+      other -> "The manifest could not be read. " <> sentence other
 
     targetSection = case diagnosis ^. #targetState of
       ProbeOk (TargetMatched refs versions) ->
@@ -791,20 +791,20 @@ briefSections diagnosis callerFindings =
         \ One `seihou update "
           <> target
           <> "` seeds the record."
-      other -> "Not determined: " <> probeProblem other <> "."
+      other -> sentence other
 
     installedSection =
       T.unlines $
         ( case diagnosis ^. #installedCopies of
             ProbeOk [] -> ["No recorded module instance of `" <> target <> "` needs an installed copy."]
             ProbeOk copies -> map copyLine copies
-            other -> ["Installed copies were not located: " <> probeProblem other <> "."]
+            other -> ["Installed copies were not located. " <> sentence other]
         )
           <> ( case diagnosis ^. #installedChecks of
                  ProbeOk checks -> case mapMaybe summarizeCheck checks of
                    [] -> ["The artifact guard has nothing to report: each installed copy matches the manifest's source and is not older than recorded."]
                    summaries -> "The artifact guard reports:" : map ("- " <>) summaries
-                 other -> ["The artifact guard did not run: " <> probeProblem other <> "."]
+                 other -> ["The artifact guard did not run. " <> sentence other]
              )
 
     copyLine copy =
@@ -833,7 +833,7 @@ briefSections diagnosis callerFindings =
                       <> T.intercalate ", " (map applicationLabel (shared ^. #otherOwners))
                   | shared <- paths
                   ]
-            other -> ["Not determined: " <> probeProblem other <> "."]
+            other -> [sentence other]
         )
           <> ( case diagnosis ^. #projectUnknownCount of
                  ProbeOk count
@@ -847,12 +847,12 @@ briefSections diagnosis callerFindings =
                      : [ "- `" <> record ^. #url <> "`: recorded for " <> T.intercalate ", " (record ^. #artifacts)
                        | record <- records
                        ]
-                 other -> ["Recorded origins were not read: " <> probeProblem other <> "."]
+                 other -> ["Recorded origins were not read. " <> sentence other]
              )
 
     upgradeSection = case diagnosis ^. #manifestUpgrade of
       ProbeOk rendered -> "`seihou manifest upgrade --dry-run` reports:\n\n" <> fenced rendered
-      other -> "`seihou manifest upgrade --dry-run` did not run: " <> probeProblem other <> "."
+      other -> "`seihou manifest upgrade --dry-run` did not run. " <> sentence other
 
     updateSection = case diagnosis ^. #updateDryRun of
       ProbeOk probe ->
@@ -862,7 +862,7 @@ briefSections diagnosis callerFindings =
           <> maybe "planned:" (\code -> "failed with `" <> code <> "`:") (probe ^. #errorCode)
           <> "\n\n"
           <> fenced (probe ^. #rendered)
-      other -> "`seihou update " <> target <> " --dry-run` did not run: " <> probeProblem other <> "."
+      other -> "`seihou update " <> target <> " --dry-run` did not run. " <> sentence other
 
     gitSection = case diagnosis ^. #git of
       ProbeOk state
@@ -872,7 +872,7 @@ briefSections diagnosis callerFindings =
         | otherwise ->
             "The git working tree has uncommitted changes. Ask the user before working on top of them:\n\n"
               <> fenced (T.unlines (take 40 (state ^. #dirtyPaths)))
-      other -> "Git state was not read: " <> probeProblem other <> "."
+      other -> "Git state was not read. " <> sentence other
 
     findingsSection = case probeFindings <> callerFindings of
       [] -> "None. Every probe ran."
@@ -900,6 +900,12 @@ briefSections diagnosis callerFindings =
       probe@ProbeFailed {} -> Just (probeProblem probe)
       probe@ProbeTimedOut {} -> Just (probeProblem probe)
       _ -> Nothing
+
+-- | 'probeProblem' as a sentence of its own.
+sentence :: Probe a -> Text
+sentence probe = case T.uncons (probeProblem probe) of
+  Just (initial, rest) -> T.cons (toUpper initial) rest <> "."
+  Nothing -> ""
 
 fenced :: Text -> Text
 fenced body = "```text\n" <> T.stripEnd body <> "\n```"

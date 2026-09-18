@@ -81,10 +81,10 @@ A human `seihou update` failure now ends with a line pointing at `seihou agent u
 - [x] (2026-09-18) M1: Add `seihou-cli/src/Seihou/CLI/UpgradeDiagnosis.hs` with the diagnosis types, guarded probes, readiness checks, and a read-only recovery-journal probe (`pendingUpdateRecovery` in `Update/Recovery.hs`; no core helper was needed). Also `renderUpgradeOutcome` in `ManifestUpgrade`, and exports of `errorCode` and `localModuleVersion`. `ManifestUpgradeSpec` passes unchanged (30 tests).
 - [x] (2026-09-18) M1: Unit tests in `seihou-cli/test/Seihou/CLI/UpgradeDiagnosisSpec.hs` cover healthy, schema-6, evidence-unavailable, schema-5, missing-manifest, corrupt-manifest, local-origin, unknown-target, and interrupted-transaction projects, and prove diagnosis writes nothing (12 tests pass). Shared fixture helpers in `seihou-cli/test/Seihou/CLI/UpgradeFixture.hs`.
 - [x] (2026-09-18) M1: Add the `origins-portable` probe and readiness check (uses `ManifestRepairOrigins.localOriginUrls` from plan 98, which had landed).
-- [ ] M2: Add `AgentUpgradeOpts`, the `agent upgrade` parser, and `AgentCmdUpgrade` config keys.
-- [ ] M2: Add `seihou-cli/data/upgrade-prompt.md` and `seihou-cli/src-exe/Seihou/CLI/AgentUpgrade.hs`, with brief persistence and a launch path that never fails.
-- [ ] M2: E2E tests in `seihou-cli/test/Seihou/CLI/AgentUpgradeE2ESpec.hs` for `--debug`, outside-a-project, corrupt manifest, and missing provider binary.
-- [ ] M3: `--check` mode and the post-session readiness summary; E2E tests.
+- [x] (2026-09-18) M2: Add `AgentUpgradeOpts`, the `agent upgrade` parser, and `AgentCmdUpgrade` config keys. `AgentConfigShowSpec` needed no change: its fixture lists its own commands.
+- [x] (2026-09-18) M2: Add `seihou-cli/data/upgrade-prompt.md` and `seihou-cli/src-exe/Seihou/CLI/AgentUpgrade.hs`, with brief persistence and a launch path that never fails.
+- [x] (2026-09-18) M2: E2E tests in `seihou-cli/test/Seihou/CLI/AgentUpgradeE2ESpec.hs` for `--debug`, outside-a-project, corrupt manifest, invalid provider, and missing provider binary.
+- [x] (2026-09-18) M3: `--check` mode and the post-session readiness summary; E2E tests (healthy ready, schema-6 not ready then ready after `seihou update alpha --json`, empty directory). M2 and M3 landed in one commit because the handler shares one code path.
 - [ ] M4: Append the `seihou agent upgrade` hint to human `seihou update` failures; update `UpdateRenderSpec`.
 - [ ] M4: Documentation: `docs/cli/agent.md`, `docs/user/agent-assistance.md`, `docs/cli/update.md`, `seihou-cli/help/agent.md`, `CHANGELOG.md`, `docs/user/CHANGELOG.md`.
 - [ ] M5: Full validation (`nix fmt -- --fail-on-change`, `cabal build all`, `cabal test all`, `nix flake check`) and the manual acceptance scenario.
@@ -227,6 +227,20 @@ A human `seihou update` failure now ends with a line pointing at `seihou agent u
   `writeBrief :: Either Text FilePath -> Text -> IO BriefLocation`.
   Rationale: the brief names its own directory as `{{backup_dir}}`, so the directory must
   exist before the brief is rendered. Both still never throw.
+  Date: 2026-09-18
+
+- Decision: When the user gives no `PROMPT`, the interactive session opens with the
+  initial message "Upgrade MODULE by following the upgrade brief in your system prompt."
+  Rationale: an empty initial prompt leaves the session waiting for input, and the user
+  asked seihou to do the upgrade. A given `PROMPT` is used as the initial message and is
+  also quoted in the brief as the user's request.
+  Date: 2026-09-18
+
+- Decision: Configuration fallback lives in `AgentUpgrade.upgradeModelConfig`, which wraps
+  `loadAgentModelConfigFor` and returns the built-in `defaultAgentModelConfig` plus a
+  finding on any `Left` or exception. `Main.hs` calls it instead of
+  `resolveAgentModelConfigFor`.
+  Rationale: keeps the never-fail rule in one place beside the handler.
   Date: 2026-09-18
 
 
