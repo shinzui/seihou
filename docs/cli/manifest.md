@@ -149,17 +149,33 @@ instances — the exact recorded version, parent variables, and saved values —
 and inspects the operations without writing anything or running any command.
 If every owner only appends, the path becomes `additive-only`; if any owner
 writes the whole file, it becomes `requires-ownership-closure` (one such owner
-is proof enough on its own). Otherwise, if an owner's recorded module version is
-not installed here, or it no longer writes the path, the path stays `unknown` and
-the report says why:
+is proof enough on its own).
+
+When an owner's recorded version is not installed here, usually because
+`seihou upgrade` has since installed a newer one, the command fetches that exact
+release instead. It clones the owner's recorded remote into a temporary
+directory, finds the newest commit at which the module declares the recorded
+version, and compiles it from there. The install cache is never changed. The
+report names every release it read this way:
+
+```text
+  shared-write evidence
+  .gitignore  unknown -> additive-only
+    (nix-haskell-flake 0.13.2 read from https://github.com/shinzui/seihou-modules.git at ec6435e)
+```
+
+If neither an installed copy nor the recorded remote supplies that version, or
+an owner no longer writes the path, the path stays `unknown` and the report
+says why:
 
 ```text
   shared-write evidence
   flake.nix  unknown (unchanged)
-               haskell-base: module haskell-base 1.4.0 is not installed here
+               haskell-base: module haskell-base 1.4.0 is not installed here; no commit of
+               https://github.com/shinzui/seihou-modules.git declares haskell-base 1.4.0 (searched 6 revisions)
 ```
 
-Install the named version (`seihou install`, `seihou upgrade`) and run the
+Install the named version, or make its recorded origin reachable, and run the
 command again to fill it in. Nothing turns `unknown` into `additive-only`
 without evidence from every owner, and a known answer is never revisited.
 

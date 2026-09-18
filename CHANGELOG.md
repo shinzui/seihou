@@ -42,6 +42,21 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Shared-write certification fetches a co-owner's recorded release (plan 97).**
+  `gatherApplicationEvidence` and `certifySharedWriteModesIO` take an `EvidencePolicy`.
+  Under `FetchRecordedReleases <session>`, which `seihou update` and
+  `seihou manifest upgrade` pass, an instance whose installed copy is missing or at
+  another version is compiled from the recorded remote. The new
+  `Seihou.CLI.RecordedRelease` makes a blobless clone and pickaxe-searches (`git log -S`)
+  the artifact's definition file for the version literal. It evaluates each hit, its
+  parent, and the tip, newest first in topological order, and falls back to walking up
+  to 200 commits that touch the artifact's directory. `EvidenceOperations` carries
+  `[EvidenceSource]`, `SharedWriteCertification` gains `fetchedSources`,
+  `ManifestPreparation` and `UpgradeResult` gain `evidenceSources`, and the JSON
+  `manifestPreparation` gains an optional `evidenceSources` array. It is omitted when
+  empty, and the envelope stays `schemaVersion: 1`. The
+  `shared_write_evidence_unavailable` message now leads with the cause and names both
+  remedies. ADRs 0003 and 0012 amended.
 - **`seihou install <local path>` records a published remote.**
   `InstallShared.resolveRecordedSource` returns `RecordPublishedRemote` when the
   checkout's `origin` URL is non-local and `git branch -r --contains HEAD --list 'origin/*'`

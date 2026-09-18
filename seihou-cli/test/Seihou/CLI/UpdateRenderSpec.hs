@@ -155,14 +155,15 @@ spec = do
       rendered `shouldNotSatisfy` leaksInternals
       rendered `shouldNotSatisfy` T.isInfixOf "no targets"
 
-    it "leads the evidence error with the repair and never offers expansion" $ do
+    it "names the evidence error's repair and never offers expansion" $ do
       let err =
             SharedWriteEvidenceUnavailable
               ".gitignore"
               [(skillRef, OwnerEvidenceUnavailable (skillRef ^. #applicationId) "module exec-plan 1.2.0 is not installed here")]
           rendered = renderUpdateHuman False (errorOutput err)
-      rendered `shouldSatisfy` T.isPrefixOf "Update failed [shared_write_evidence_unavailable]: Install the recorded version"
+      rendered `shouldSatisfy` T.isPrefixOf "Update failed [shared_write_evidence_unavailable]: Seihou has to inspect how the owners of"
       rendered `shouldSatisfy` T.isInfixOf "exec-plan [skill.name=exec-plan]: module exec-plan 1.2.0 is not installed here"
+      rendered `shouldSatisfy` T.isInfixOf "Install that exact version, or make its recorded origin reachable"
       rendered `shouldSatisfy` T.isInfixOf "does not update it"
       rendered `shouldNotSatisfy` T.isInfixOf "--include-shared-owners"
       rendered `shouldNotSatisfy` leaksInternals

@@ -2,6 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-09-16
+- Amended: 2026-09-18 — certification may read a co-owner's exact recorded
+  release from its recorded remote when that version is not installed.
 
 ## Context
 
@@ -131,6 +133,24 @@ other way proves `requires-ownership-closure` by itself. Any other gap, such as
 an owner whose recorded version is not installed or that no longer writes the
 path, leaves it `unknown`. A known mode is never recomputed this way.
 
+*Amended 2026-09-18 (`docs/plans/97-fetch-a-co-owner-s-recorded-release-to-certify-shared-write-evidence.md`):*
+the exact recorded version need not be installed. The install cache holds one
+version per module, so `seihou upgrade` routinely replaces a co-owner's recorded
+release on the machine. When no installed copy is that release, certification
+in `seihou update` and `seihou manifest upgrade` clones the recorded remote
+(a blobless clone, full history) into that command's temporary session. It
+takes the newest commit at which a module of the recorded name declares the
+recorded version, and compiles the co-owner from that checkout
+(`Seihou.CLI.RecordedRelease`). The release is identified by the declared
+version, not by a tag, because registries such as `seihou-modules` have none.
+Nothing else changes. Another version is still never substituted, the fetched
+copy never enters `~/.config/seihou/installed/`
+([ADR 0006](0006-the-install-cache-will-not-silently-substitute-an-artifact.md)),
+and nothing is generated from it. An origin that names no remote, a remote that
+cannot be cloned, and a history with no commit declaring the version all remain
+gaps, reported with what was searched. The plan and the upgrade report name every
+release read this way (`evidenceSources` in the JSON plan).
+
 **A plan that would record a different answer than the manifest holds is not a
 no-op.** Every project that existed when this field was introduced has a
 manifest with no recorded answer. If an otherwise-up-to-date project reported
@@ -201,6 +221,11 @@ would not be.
 - [ADR 0001](0001-manifest-is-a-checked-in-machine-independent-artifact.md) —
   the field is derived from declared steps, so it records nothing
   machine-specific.
+- [ADR 0003](0003-a-stale-or-substituted-artifact-is-a-hard-error.md) — the
+  rejection of automatic fetching concerns generating commands; the 2026-09-18
+  amendment above fetches for evidence only.
+- [ADR 0006](0006-the-install-cache-will-not-silently-substitute-an-artifact.md)
+  — why a fetched recorded release stays in the session and out of the cache.
 - [ADR 0004](0004-the-manifest-is-the-only-record-of-applied-state.md) — the
   direct authority for putting the flag in the manifest.
 - [ADR 0005](0005-legacy-manifests-convert-through-an-explicit-command.md) —

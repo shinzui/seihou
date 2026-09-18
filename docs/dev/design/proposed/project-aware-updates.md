@@ -51,8 +51,11 @@ ownership closure enforced. Certification inspects co-owners and never
 reconciles their files. The resulting schema step and certified modes form a
 `ManifestPreparation` that planning, migration, reconciliation, and the final
 manifest all start from, and it is published only with the update's manifest.
-A co-owner whose recorded version is not installed yields
-`shared_write_evidence_unavailable` rather than an expansion; a path proven
+A co-owner whose recorded version is not installed is read from the commit of
+its recorded remote that declares that version, cloned into the update's
+temporary session (`Seihou.CLI.RecordedRelease`, plan 97); one that neither
+source supplies yields `shared_write_evidence_unavailable` rather than an
+expansion; a path proven
 `requires-ownership-closure` yields `shared_path_requires_applications`, which
 `--include-shared-owners` resolves by expanding to a fixed point.
 

@@ -86,6 +86,30 @@ packages in the workspace share a single version.
 
 ### Changed
 
+- **A targeted update no longer needs a co-owner's old release installed.** To leave
+  another application out of `seihou update <target>`, seihou checks how that
+  application writes a shared file such as `.gitignore`, using the version your manifest
+  records. That version used to have to be installed. After `seihou upgrade` replaced it
+  with a newer one, every project that still recorded the older one failed:
+
+  ```text
+  Update failed [shared_write_evidence_unavailable]: Install the recorded version of each
+  application below, then update again: ... nix-haskell-flake: module nix-haskell-flake is
+  version 0.24.0 here but the manifest records version 0.13.2 ...
+  ```
+
+  Now seihou reads the recorded release from the module's recorded repository. It finds
+  the commit that declared that version and uses it from a temporary directory. Your
+  installed modules are not touched. The plan says where the evidence came from:
+
+  ```text
+  Manifest:    .gitignore evidence unknown -> additive-only
+               (nix-haskell-flake 0.13.2 read from https://github.com/shinzui/seihou-modules.git at ec6435e)
+  ```
+
+  `seihou manifest upgrade` does the same. The update still stops, and says what it
+  searched, when no commit declares the recorded version or the repository cannot be
+  reached.
 - **`seihou install <local checkout>` records the checkout's published remote.** When the
   checkout has an `origin` remote and the installed commit is on one of its `origin/*`
   branches, the installed copy records that remote, and install says so. A later

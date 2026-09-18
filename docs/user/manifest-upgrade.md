@@ -96,18 +96,28 @@ file, without writing anything but the manifest. The report shows the result:
   shared-write evidence
   .gitignore  unknown -> additive-only
   flake.nix   unknown (unchanged)
-                haskell-base: module haskell-base 1.4.0 is not installed here
+                haskell-base: module haskell-base 1.4.0 is not installed here; no commit of
+                https://github.com/shinzui/seihou-modules.git declares haskell-base 1.4.0 (searched 6 revisions)
 ```
 
-A file stays `unknown` when one of its owners' recorded versions is not
-installed here. Install that version and run the command again.
+You do not need every owner's recorded version installed. When the installed
+copy is a different version, seihou reads the recorded release from the
+owner's recorded remote: it finds the commit at which the module declared that
+version and uses it, in a temporary directory that is deleted afterwards. The
+report adds a line such as
+`(nix-haskell-flake 0.13.2 read from https://github.com/shinzui/seihou-modules.git at ec6435e)`
+for each release read this way. A file stays `unknown` only when neither an
+installed copy nor the remote has the recorded version, as for `flake.nix`
+above. Install that version, or make its remote reachable, and run the command
+again.
 
 You do not have to run the upgrade before a targeted update. `seihou update
 nix-haskell-flake` does the same work for just the shared files that update
 touches, records the answer (and the step to schema 7) together with the
 update itself, and inspects the other owners without updating any of their
-files. If an owner's recorded version is missing there too, the update stops
-with `shared_write_evidence_unavailable` and names it, rather than updating
+files. It fetches a missing recorded release the same way. If the release
+cannot be found there either, the update stops with
+`shared_write_evidence_unavailable` and names it, rather than updating
 anything it cannot vouch for. The upgrade command is how you settle every
 shared file in the project at once, and review the result first.
 

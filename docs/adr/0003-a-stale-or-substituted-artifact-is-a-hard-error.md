@@ -69,6 +69,19 @@ on the machine, as a side effect. A developer who ran seihou in one project
 would find another project's modules changed underneath them, with no obvious
 way to undo it. Seihou reports what to run and leaves the developer in control.
 
+*Amended 2026-09-18 (`docs/plans/97-fetch-a-co-owner-s-recorded-release-to-certify-shared-write-evidence.md`):*
+this rejection concerns *generating* commands, such as `seihou run`, which stay
+local and offline and never fetch. It does not forbid fetching for *evidence*
+inside commands that already use the network. When certifying how co-owners
+write a shared path, `seihou update` and `seihou manifest upgrade` may read a
+co-owner's exact recorded release from its recorded remote
+([ADR 0012](0012-an-additive-co-write-is-not-a-shared-path-conflict.md), 2026-09-18
+amendment). Both objections above are met. Neither command is offline: an
+update already clones candidates, and the fetch runs only when an `unknown`
+path needs evidence. The fetched copy lives in the command's temporary session
+and never touches the install cache, so no other project can observe it. It is
+the exact recorded version, never a substitute, and nothing is generated from it.
+
 ### Rejected: refusing a *newer* local copy
 
 Only a strictly older local copy blocks. A newer one is the ordinary upgrade

@@ -73,7 +73,7 @@ with a message that says what was searched.
 - [x] (2026-09-18) M2: `gatherApplicationEvidence` falls back to a fetched recorded release, with an `EvidencePolicy` parameter; update and manifest upgrade pass a session directory.
 - [x] (2026-09-18) M2: Evidence provenance reaches the human and JSON update output.
 - [x] (2026-09-18) M3: E2E: the BUG-shaped fixture (co-owner installed at a newer version) updates cleanly; the no-matching-commit case refuses with the new message.
-- [ ] M4: Docs (`docs/cli/update.md`, `docs/cli/manifest.md`), both changelogs, ADR 0012 amendment, ADR 0003 cross-reference; full validation.
+- [x] (2026-09-18) M4: Docs (`docs/cli/update.md`, `docs/cli/manifest.md`), both changelogs, ADR 0012 amendment, ADR 0003 cross-reference; full validation.
 
 
 ## Surprises & Discoveries
@@ -205,10 +205,55 @@ with a message that says what was searched.
   answer.
   Date: 2026-09-18
 
+- Decision: Reword the `shared_write_evidence_unavailable` message. It now
+  states the cause first ("Seihou has to inspect how the owners of <path> write
+  it … and it could not read the recorded version of each application below,
+  either installed here or from its recorded origin"), then the gaps, then both
+  remedies ("Install that exact version, or make its recorded origin
+  reachable"). The error code is unchanged.
+  Rationale: The old lead-in, "Install the recorded version…", was the only
+  remedy before this plan. Now that seihou tries the remote first, that advice
+  is incomplete and, for a remote that could not be reached, wrong.
+  Date: 2026-09-18
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Delivered as planned in four commits. A targeted `seihou update`, and
+`seihou manifest upgrade`, now certify an `unknown` shared path even when a
+co-owner's recorded release is no longer installed. They read that release from
+the commit of the recorded remote that declares it, in the command's temporary
+session. The install cache is untouched, which the E2E asserts byte for byte.
+The plan and report name each release read that way. The refusal remains, with
+the search described, when neither source has the version.
+
+Validation, 2026-09-18: `nix fmt -- --fail-on-change`, `cabal build all`, and
+`cabal test all` pass (seihou-cli 700 tests, seihou-core 1154, extension 51), and
+so does `nix flake check`. New coverage: `RecordedReleaseSpec` (13),
+two `ManifestCapabilityUpgradeSpec` cases, one `UpdateRenderSpec` case, and three
+`Update end-to-end` cases.
+
+The manual check against `mori://tan/mls-service-v2` could not be run as
+written, because that project no longer fails: it records `nix-haskell-flake`
+0.24.0 and has no `unknown` shared path. Instead `locateRecordedRelease` was run
+directly against `https://github.com/shinzui/seihou-modules.git`:
+
+```text
+Right (RecordedRelease {directory = ".../modules/haskell/nix-haskell-flake", revision = "ec6435e"})   17.4s
+"no commit of https://github.com/shinzui/seihou-modules.git declares nix-haskell-flake 0.0.1 (searched 40 revisions)"   20.0s
+```
+
+`ec6435e` is the last commit before `nix-haskell-flake` was bumped past 0.13.2,
+and its `module.dhall` reads `version = Some "0.13.2"`.
+
+Lessons. The fixtures could not reveal the two defects the real registry did:
+colliding worktree names on repeated lookups, and unscoped pickaxe hits from
+other modules' identical version literals. A run against one real, large history
+was worth more than another fixture. Timing is dominated by the clone and by the
+partial clone lazily fetching blobs for the pickaxe. That is acceptable for a
+command that already clones candidates, but it is the first thing to optimise if
+it bites, for example by caching clones across sessions (the cache itself would
+still be off limits).
 
 
 ## Context and Orientation
@@ -640,3 +685,12 @@ certifySharedWriteModesIO ::
   Map ApplicationId [Operation] -> IO SharedWriteCertification
 -- SharedWriteCertification gains: fetchedSources :: ![EvidenceSource]
 ```
+
+
+---
+
+Revision 2026-09-18 (implementation): Progress, Surprises & Discoveries, Decision
+Log, and Outcomes updated as milestones 1-4 landed. Recorded the switch to
+topological ordering, the per-commit worktree reuse and scoped search found by
+running against the real registry, the reworded evidence error, and the
+provenance line placement.

@@ -59,20 +59,45 @@ object (`fromSchema`, `toSchema`, and one `{path, from, to}` per certified
 path). A plan whose only work is recording an answer is not reported as
 already up to date.
 
-If a co-owner's recorded version is not installed on this machine, there is
-nothing to inspect, and the update stops with
-`shared_write_evidence_unavailable`, naming each owner and why:
+A co-owner's recorded version is often no longer installed. The install cache
+keeps one version of each module, so `seihou upgrade` replaces it on this
+machine long before every project has moved on. In that case the update fetches
+the recorded release itself. It clones the co-owner's recorded remote into its
+own temporary directory, finds the newest commit at which that module declares
+the recorded version, and compiles the co-owner from there. The install cache is
+not read for that version and is never changed, and the temporary copy is
+deleted when planning ends. The plan says where the evidence came from:
 
 ```text
-Update failed [shared_write_evidence_unavailable]: Install the recorded version of each
-application below, then update again: ... exec-plan [skill.name=exec-plan]: module
-exec-plan 1.2.0 is not installed here. ...
+Manifest:    .gitignore evidence unknown -> additive-only
+             (nix-haskell-flake 0.13.2 read from https://github.com/shinzui/seihou-modules.git at ec6435e)
 ```
 
-Make that exact version available under `~/.config/seihou/installed/` (for
-example by reinstalling it from its origin while that release is current, or by
-restoring the directory) and retry. A different version is not substituted,
-because it is not how the project was written.
+The JSON `manifestPreparation` object then carries an `evidenceSources` array,
+one `{module, version, origin, revision}` per fetched release. The key is
+omitted when nothing was fetched. Fetching needs `git` and network access to
+the recorded remote, which the update already uses to fetch candidates, and it
+happens on a dry run too, because the evidence is part of the plan.
+
+If neither an installed copy nor the recorded remote supplies the recorded
+version, the update stops with `shared_write_evidence_unavailable` and names
+each owner and why. That happens when no commit declares the version, when the
+recorded origin names no remote (a `local` or in-project artifact), or when the
+remote cannot be reached:
+
+```text
+Update failed [shared_write_evidence_unavailable]: Seihou has to inspect how the owners of
+.gitignore write it before a targeted update may leave any of them out, and it could not
+read the recorded version of each application below, either installed here or from its
+recorded origin: exec-plan [skill.name=exec-plan]: module exec-plan 1.2.0 is not
+installed here; no commit of https://github.com/shinzui/seihou-modules.git declares
+exec-plan 1.2.0 (searched 6 revisions). Install that exact version, or make its recorded
+origin reachable, then update again. ...
+```
+
+A different version is not substituted, because it is not how the project was
+written. When the recorded origin is a path on the machine that wrote the
+manifest, the message ends by pointing at `seihou manifest repair-origins`.
 Selecting more applications does not help here, so this error never suggests
 `--include-shared-owners`. `seihou manifest upgrade --dry-run` lists every path
 still unresolved across the whole project.

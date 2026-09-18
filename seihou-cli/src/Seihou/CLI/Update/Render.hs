@@ -522,12 +522,13 @@ errorMessage (SharedPathRequiresApplications path selected required) =
   where
     labels = T.intercalate ", " . map applicationLabel . Set.toAscList
 errorMessage (SharedWriteEvidenceUnavailable path gaps) =
-  "Install the recorded version of each application below, then update again: seihou has to"
-    <> " inspect how the owners of "
+  "Seihou has to inspect how the owners of "
     <> T.pack path
-    <> " write it before a targeted update may leave any of them out. "
+    <> " write it before a targeted update may leave any of them out, and it could not read the"
+    <> " recorded version of each application below, either installed here or from its recorded origin: "
     <> T.intercalate "; " [applicationLabel owner <> ": " <> gapText gap | (owner, gap) <- gaps]
-    <> ". Inspecting an owner does not update it, and selecting more applications would not"
+    <> ". Install that exact version, or make its recorded origin reachable, then update again."
+    <> " Inspecting an owner does not update it, and selecting more applications would not"
     <> " supply the missing evidence. 'seihou manifest upgrade --dry-run' lists every path still unresolved."
 errorMessage (CandidateCloneFailed url reason) =
   "Could not clone " <> url <> ": " <> reason
