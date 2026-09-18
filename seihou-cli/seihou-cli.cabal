@@ -61,6 +61,7 @@ library seihou-cli-internal
     Seihou.CLI.AgentLaunch
     Seihou.CLI.AgentModels
     Seihou.CLI.AgentTrace
+    Seihou.CLI.ApplicationDisplay
     Seihou.CLI.AppliedBlueprint
     Seihou.CLI.AppliedBlueprintMigration
     Seihou.CLI.BlueprintExecution

@@ -10,7 +10,7 @@ where
 
 import Control.Lens (to, (^.))
 import Data.Generics.Labels ()
-import Data.List (intersperse, nub)
+import Data.List (nub)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (isJust, listToMaybe, mapMaybe)
@@ -18,6 +18,7 @@ import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.Format (defaultTimeLocale, formatTime)
+import Seihou.CLI.ApplicationDisplay (appliedTargetName, parentVarsText)
 import Seihou.CLI.ManifestGuard (ArtifactCheck, summarizeCheck)
 import Seihou.CLI.Style (dim, green, red, yellow)
 import Seihou.CLI.VersionCompare
@@ -307,28 +308,15 @@ formatModuleLine color annotation am =
         "    (applied "
           <> T.pack (formatTime defaultTimeLocale "%Y-%m-%d" (am ^. #appliedAt))
           <> ")"
-      parentVarsText =
-        let m = (am ^. #parentVars . #unParentVars)
-         in if Map.null m
-              then ""
-              else
-                let pairs =
-                      T.concat
-                        ( intersperse
-                            ", "
-                            [ vn ^. #unVarName <> "=" <> v
-                            | (vn, v) <- Map.toAscList m
-                            ]
-                        )
-                    rendered = " [" <> pairs <> "]"
-                 in applyColor color dim rendered
+      contextText =
+        maybe "" (applyColor color dim . (" " <>)) (parentVarsText (am ^. #parentVars))
       updateText = case annotation of
         NoCheck -> ""
         NoOrigin -> "  " <> applyColor color dim "(no origin)"
         Entry e -> "  " <> renderEntry color e
    in "  "
         <> am ^. #name . #unModuleName
-        <> parentVarsText
+        <> contextText
         <> verText
         <> appliedText
         <> updateText
@@ -404,15 +392,11 @@ projectAdviceList manifest entryMap pendingMap
           pending = listToMaybe (mapMaybe (`Map.lookup` pendingMap) names)
           outdated = any (maybe False ((== OutdatedSt) . (^. #status)) . (`Map.lookup` entryMap)) names
        in if outdated || isJust pending
-            then Just (AdviceProjectUpdate (targetText (application ^. #target)) pending)
+            then Just (AdviceProjectUpdate (appliedTargetName (application ^. #target)) pending)
             else Nothing
 
 deduplicateModules :: [AppliedModule] -> [AppliedModule]
 deduplicateModules = Map.elems . Map.fromList . map (\applied -> (applied ^. #name . #unModuleName, applied))
-
-targetText :: AppliedTarget -> Text
-targetText (AppliedModuleTarget name) = (name ^. #unModuleName)
-targetText (AppliedRecipeTarget name) = (name ^. #unRecipeName)
 
 renderEntry :: Bool -> OutdatedEntry -> Text
 renderEntry color e = case e ^. #status of

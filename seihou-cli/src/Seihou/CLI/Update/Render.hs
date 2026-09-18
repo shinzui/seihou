@@ -18,6 +18,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isNothing)
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Seihou.CLI.ApplicationDisplay (applicationLabel, appliedTargetName, moduleNameText)
 import Seihou.CLI.CommandExecution
   ( CommandDisposition (..),
     CommandPlan (..),
@@ -26,8 +27,10 @@ import Seihou.CLI.CommandExecution
     summarizeCommandPlan,
   )
 import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..))
+import Seihou.CLI.Shared (formatVarError)
 import Seihou.CLI.Update.Types
-import Seihou.Core.Migration (MigrationPlan (..))
+import Seihou.Core.ArtifactRef (renderArtifactRefError)
+import Seihou.Core.Migration (MigrationPlan (..), MigrationPlanError (..))
 import Seihou.Core.Types
   ( ApplicationId (..),
     AppliedComposition (..),
@@ -35,23 +38,38 @@ import Seihou.Core.Types
     BaselineRef (..),
     CommandFingerprint (..),
     ManifestSchemaVersion (..),
+    ModuleLoadError (..),
     ModuleName (..),
     Operation (..),
-    RecipeName (..),
     SHA256 (..),
     VarName (..),
   )
+import Seihou.Core.Version (renderVersion)
+import Seihou.Engine.Migrate (MigrationExecError (..))
 import Seihou.Engine.Reconcile
   ( DesiredFile (..),
     FileConflictChoice (..),
     FileReconciliation (..),
     OrphanChoice (..),
+    ReconciliationError
+      ( CopySourceUnavailable,
+        DesiredOwnerOutsideSelection,
+        InvalidReconciliationPath,
+        MissingDesiredOwner,
+        NotAFileConflict,
+        NotAnEditedOrphan,
+        PatchMaterializationFailed,
+        ReconciliationPathNotFound,
+        UpdateAborted
+      ),
     ReconciliationPlan (..),
     ReconciliationSummary (..),
     ResolvedFileConflict (..),
     reconciliationSummary,
     recordedSharedWriteMode,
   )
+import Seihou.Engine.Reconcile qualified as Reconcile
+import Seihou.Engine.UpdateTransaction (TransactionError (..))
 import Seihou.Manifest.Types (sharedWriteModeToText)
 import Seihou.Prelude
 
@@ -358,18 +376,10 @@ summaryValue summary =
       "sharedOwnership" .= (summary ^. #sharedOwnership)
     ]
 
--- | A plain label for an application reference. EP-95 replaces this with
--- the shared application display vocabulary.
-refText :: ApplicationRef -> Text
-refText ref = case ref ^. #target of
-  Just (AppliedModuleTarget name) -> name ^. #unModuleName
-  Just (AppliedRecipeTarget name) -> name ^. #unRecipeName
-  Nothing -> ref ^. #applicationId . #unApplicationId
-
 gapText :: CertificationGap -> Text
-gapText (OwnerNotRecorded _) = "not a recorded application"
+gapText (OwnerNotRecorded _) = "the manifest does not record it as an application, so nothing describes how it writes"
 gapText (OwnerEvidenceUnavailable _ reason) = reason
-gapText (OwnerEmitsNoOperation _) = "no longer writes this path"
+gapText (OwnerEmitsNoOperation _) = "its recorded version no longer writes this path"
 
 applicationIdText :: AppliedComposition -> Text
 applicationIdText application = (application ^. #applicationId . #unApplicationId)
@@ -377,13 +387,51 @@ applicationIdText application = (application ^. #applicationId . #unApplicationI
 fingerprintText :: CommandFingerprint -> Text
 fingerprintText (CommandFingerprint (SHA256 value)) = value
 
+-- | Every warning, as a sentence a person can act on. Deliberately
+-- exhaustive, with no fallback to 'show': a new constructor must not compile
+-- its way into the terminal as Haskell syntax.
 warningText :: UpdateWarning -> Text
+warningText (LocalArtifactHasNoRemote name) =
+  name
+    <> " has no recorded remote, so the locally installed copy is the update candidate;"
+    <> " record its origin to update it from upstream"
+warningText (SameVersionContentChanged name) =
+  name <> " changed content without changing its declared version"
+warningText (AmbiguousLegacyValue name) =
+  "the legacy manifest value for "
+    <> name ^. #unVarName
+    <> " is declared by more than one module, so it was not reused; it is resolved again"
+warningText (MissingLegacyValue name) =
+  "the legacy manifest has no value for required variable " <> name ^. #unVarName <> "; it is resolved again"
+warningText (MigrationCommandNotSimulated name command) =
+  "a migration of "
+    <> moduleNameText name
+    <> " runs '"
+    <> command
+    <> "', which a dry run cannot simulate; the file summary assumes it changes nothing"
+warningText (CrossApplicationLastWriter path earlier later)
+  | earlier == later = T.pack path <> " is written more than once by " <> moduleNameText later
+  | otherwise =
+      T.pack path
+        <> " receives content from both "
+        <> moduleNameText earlier
+        <> " and "
+        <> moduleNameText later
+        <> "; "
+        <> moduleNameText later
+        <> " is recorded as its last writer (ownership attribution only, not a content change)"
+warningText ArbitraryCommandSideEffectsMayRemain =
+  "a command ran before the failure; managed files were restored, but anything else it changed was not"
+warningText (BaselinePruneFailed reason) =
+  "the update succeeded, but old update baselines could not be pruned: " <> reason
+warningText (RecoveryCleanupDeferred reason) =
+  "the update succeeded, but cleaning up its recovery data was deferred: " <> reason
 warningText (SelectionExpandedForSharedPath path owner) =
   "also updating "
-    <> refText owner
+    <> applicationLabel owner
     <> " because it co-owns "
     <> T.pack path
-warningText other = T.pack (show other)
+    <> " (--include-shared-owners)"
 
 errorCode :: UpdateError -> Text
 errorCode UpdateManifestMissing {} = "manifest_missing"
@@ -419,42 +467,225 @@ errorCode UpdateCommandFailed {} = "command_failed"
 errorCode UpdateCachePublicationFailed {} = "cache_publication_failed"
 errorCode UpdateManifestWriteFailed {} = "manifest_write_failed"
 
+-- | Every error, as prose that leads with the repair. Deliberately
+-- exhaustive, like 'warningText'.
 errorMessage :: UpdateError -> Text
 errorMessage (UpdateManifestMissing path) =
   "No Seihou manifest was found at " <> T.pack path <> ". Run seihou run first."
+errorMessage (UpdateManifestUnreadable path reason) =
+  "The manifest at " <> T.pack path <> " could not be read: " <> reason
+errorMessage (UpdateManifestUpgradeRequired path version) =
+  "Run 'seihou manifest upgrade --dry-run' to review the conversion, then 'seihou manifest upgrade',"
+    <> " then update again. The manifest at "
+    <> T.pack path
+    <> " uses schema "
+    <> schemaText version
+    <> ", which records machine-specific artifact paths; converting them to portable origins"
+    <> " is inference, so it is never done implicitly."
+errorMessage NoRecordedApplications =
+  "The manifest records no applications to update. Run seihou run <target> first."
+errorMessage LegacyUpdateRequiresOneTarget =
+  "This manifest predates recorded applications. Name exactly one target to update, and"
+    <> " seihou records it as the first application."
 errorMessage (UpdateTargetNotFound target available) =
   "No recorded application matches '"
     <> target
     <> "'. Available targets: "
     <> T.intercalate ", " available
-errorMessage (UpdateManifestUpgradeRequired path version) =
-  "The manifest at "
-    <> T.pack path
-    <> " uses schema "
-    <> schemaText version
-    <> ", which records machine-specific artifact paths. Run 'seihou manifest upgrade'"
-    <> " to review and convert it, then update again."
 errorMessage (SharedPathRequiresApplications path selected required) =
-  "Path "
+  "At least one owner of "
     <> T.pack path
-    <> " is also owned by "
-    <> T.intercalate ", " (map refText (Set.toAscList required))
-    <> ", and at least one owner writes the whole file, so every owner has to be updated together."
-    <> " Select every owner, or pass --include-shared-owners to update their full applications too."
-    <> " Selected: "
-    <> T.intercalate ", " (map refText (Set.toAscList selected))
+    <> " writes the whole file, so its owners have to be updated together. Selected: "
+    <> labels selected
+    <> ". Also required: "
+    <> labels required
+    <> ". Name them as targets"
+    <> maybe "" (\command -> " (" <> command <> ")") (selectionCommand (selected <> required))
+    <> ", or pass --include-shared-owners to update their full applications too."
+  where
+    labels = T.intercalate ", " . map applicationLabel . Set.toAscList
 errorMessage (SharedWriteEvidenceUnavailable path gaps) =
-  "Cannot establish how the owners of "
+  "Install the recorded version of each application below, then update again: seihou has to"
+    <> " inspect how the owners of "
     <> T.pack path
-    <> " write it, so a targeted update cannot leave any of them out. "
-    <> T.intercalate "; " [refText owner <> ": " <> gapText gap | (owner, gap) <- gaps]
-    <> ". Install each listed application's recorded version and update again,"
-    <> " or run 'seihou manifest upgrade' to see every unresolved path."
+    <> " write it before a targeted update may leave any of them out. "
+    <> T.intercalate "; " [applicationLabel owner <> ": " <> gapText gap | (owner, gap) <- gaps]
+    <> ". Inspecting an owner does not update it, and selecting more applications would not"
+    <> " supply the missing evidence. 'seihou manifest upgrade --dry-run' lists every path still unresolved."
+errorMessage (CandidateCloneFailed url reason) =
+  "Could not clone " <> url <> ": " <> reason
+errorMessage (CandidateRepositoryInvalid source problems) =
+  source <> " is not a usable Seihou artifact source: " <> T.intercalate "; " problems
+errorMessage (CandidateArtifactMissing kind name) =
+  "No candidate " <> kindText kind <> " named " <> name <> " was found in its recorded source."
+errorMessage (CandidateArtifactUnresolved err) =
+  renderArtifactRefError err
+errorMessage (CandidateArtifactAmbiguous kind name locations) =
+  "More than one candidate "
+    <> kindText kind
+    <> " named "
+    <> name
+    <> " was found: "
+    <> T.intercalate ", " locations
+errorMessage (CandidateLoadFailed name err) =
+  "Candidate " <> name <> " could not be loaded: " <> loadErrorText err
+errorMessage (CandidateDowngrade name recorded candidate) =
+  "Updating "
+    <> name
+    <> " would move it from "
+    <> fromMaybe "unversioned" recorded
+    <> " back to "
+    <> fromMaybe "unversioned" candidate
+    <> ". Pass --allow-downgrade if that is intended."
+errorMessage (CandidateVersionInvalid name version) =
+  "Candidate " <> name <> " declares a version seihou cannot parse: '" <> version <> "'"
+errorMessage (UpdateConflictingPriorVersions name versions) =
+  "Module "
+    <> moduleNameText name
+    <> " is recorded at more than one version ("
+    <> T.intercalate ", " versions
+    <> "), so there is no single starting point to plan its migrations from."
+errorMessage (UpdateVariableErrors errors) =
+  "Variables could not be resolved: " <> T.intercalate "; " (map formatVarError errors)
+errorMessage (UpdateConfigurationFailed reason) =
+  "Configuration could not be loaded: " <> reason
+errorMessage (UpdateMigrationPlanFailed name err) =
+  "Cannot plan migrations for " <> moduleNameText name <> ": " <> migrationPlanErrorText err
+errorMessage (UpdateMigrationStageFailed name err) =
+  "Staging the migrations for " <> moduleNameText name <> " failed: " <> migrationExecErrorText err
+errorMessage (UpdateCompositionFailed problems) =
+  "The candidate composition is invalid: " <> T.intercalate "; " problems
+errorMessage (UpdateReconciliationFailed err) =
+  reconciliationErrorText err
 errorMessage (UpdateHasUnresolvedPaths paths) =
   "Resolve these paths before apply: " <> T.intercalate ", " (map T.pack (Set.toAscList paths))
+errorMessage (UpdateRecoveryFailed errors) =
+  "An interrupted update could not be recovered: " <> T.intercalate "; " (map transactionErrorText errors)
 errorMessage (UpdatePlanStale paths) =
   "The project changed after planning: " <> T.intercalate ", " (map T.pack (Set.toAscList paths))
-errorMessage err = T.pack (show err)
+errorMessage (UpdateTransactionFailed err) =
+  "Publishing the update failed: " <> transactionErrorText err
+errorMessage (UpdateMigrationFailed name err) =
+  "A migration of " <> moduleNameText name <> " failed and the update was rolled back: " <> migrationExecErrorText err
+errorMessage (UpdateChangedAfterMigrationCommand planned actual) =
+  "A migration command changed the project in a way the plan did not show (planned "
+    <> summaryText planned
+    <> "; found "
+    <> summaryText actual
+    <> "). The update was rolled back; review the migration and plan again."
+errorMessage (UpdateCommandFailed failure warnings) =
+  "Command"
+    <> maybe "" (\command -> " '" <> command <> "'") (commandText (failure ^. #command . #operation))
+    <> " exited with code "
+    <> count (failure ^. #exitCode)
+    <> " and the update was rolled back"
+    <> stderrText (failure ^. #stderr)
+    <> T.concat [". Warning: " <> warningText warning | warning <- warnings]
+  where
+    stderrText output
+      | T.null (T.strip output) = ""
+      | otherwise = ": " <> T.strip output
+errorMessage (UpdateCachePublicationFailed reason) =
+  "The installed module cache could not be updated, so the update was rolled back: " <> reason
+errorMessage (UpdateManifestWriteFailed reason) =
+  "The manifest could not be written, so the update was rolled back: " <> reason
+
+-- | A command line that names every recorded target among these owners,
+-- when each has one.
+selectionCommand :: Set.Set ApplicationRef -> Maybe Text
+selectionCommand refs = do
+  targets <- traverse (^. #target) (Set.toAscList refs)
+  pure ("seihou update " <> T.unwords (Set.toAscList (Set.fromList (map appliedTargetName targets))))
+
+kindText :: CandidateArtifactKind -> Text
+kindText CandidateModule = "module"
+kindText CandidateRecipe = "recipe"
+
+loadErrorText :: ModuleLoadError -> Text
+loadErrorText (ModuleNotFound name searched) =
+  "module " <> moduleNameText name <> " was not found (searched " <> T.intercalate ", " (map T.pack searched) <> ")"
+loadErrorText (DhallEvalError name reason) = "evaluating " <> moduleNameText name <> " failed: " <> reason
+loadErrorText (DhallDecodeError name reason) = "decoding " <> moduleNameText name <> " failed: " <> reason
+loadErrorText (ValidationError name problems) =
+  moduleNameText name <> " is invalid: " <> T.intercalate "; " problems
+loadErrorText (CircularDependency names) =
+  "circular dependency: " <> T.intercalate " -> " (map moduleNameText names)
+loadErrorText (MissingSourceFile name path) =
+  moduleNameText name <> " is missing its source file " <> T.pack path
+loadErrorText (RegistryEvalError source reason) =
+  "evaluating registry " <> source <> " failed: " <> reason
+
+migrationPlanErrorText :: MigrationPlanError -> Text
+migrationPlanErrorText (MigrationVersionUnparseable version) =
+  "a migration declares an unparseable version '" <> version <> "'"
+migrationPlanErrorText (MigrationDowngradeNotSupported installed target) =
+  "migrating down from " <> renderVersion installed <> " to " <> renderVersion target <> " is not supported"
+migrationPlanErrorText (MigrationDuplicateEdge from _) =
+  "more than one migration starts at " <> renderVersion from <> ", so the chain is ambiguous"
+
+migrationExecErrorText :: MigrationExecError -> Text
+migrationExecErrorText (MigrationConflict paths) =
+  "these files were edited since they were generated: " <> T.intercalate ", " (map T.pack paths)
+migrationExecErrorText (MigrationCommandFailed output code) =
+  "a migration command exited with code " <> count code <> ": " <> output
+migrationExecErrorText (MigrationUnsafePath label path reason) =
+  "unsafe migration " <> label <> " '" <> T.pack path <> "': " <> reason
+
+reconciliationErrorText :: ReconciliationError -> Text
+reconciliationErrorText (InvalidReconciliationPath path reason) =
+  "Path " <> T.pack path <> " cannot be reconciled: " <> reason
+reconciliationErrorText (MissingDesiredOwner path) =
+  "No selected application claims " <> T.pack path <> "."
+reconciliationErrorText (DesiredOwnerOutsideSelection path owners) =
+  T.pack path <> " would be written by " <> ownerCount owners <> " outside the selection."
+reconciliationErrorText (Reconcile.SharedPathRequiresApplications path owners) =
+  T.pack path
+    <> " is also owned by "
+    <> ownerCount owners
+    <> " outside the selection and is not written only by additive patches."
+    <> " Name those owners as targets, or pass --include-shared-owners."
+reconciliationErrorText (CopySourceUnavailable path) =
+  "The source for " <> T.pack path <> " is unavailable."
+reconciliationErrorText (PatchMaterializationFailed path _ name reason) =
+  "The patch " <> moduleNameText name <> " applies to " <> T.pack path <> " could not be applied: " <> reason
+reconciliationErrorText (ReconciliationPathNotFound path) =
+  "No planned change exists for " <> T.pack path <> "."
+reconciliationErrorText (NotAFileConflict path) =
+  T.pack path <> " is not a conflict, so it cannot be resolved as one."
+reconciliationErrorText (NotAnEditedOrphan path) =
+  T.pack path <> " is not an edited orphan, so it cannot be resolved as one."
+reconciliationErrorText (UpdateAborted path) =
+  "The update was aborted at " <> T.pack path <> "."
+
+-- | Count, never list, application ids the engine hands over bare: a digest
+-- is not a name.
+ownerCount :: Set.Set ApplicationId -> Text
+ownerCount owners = count (Set.size owners) <> " other application(s)"
+
+transactionErrorText :: TransactionError -> Text
+transactionErrorText (InvalidTransactionPath path reason) = T.pack path <> ": " <> reason
+transactionErrorText (TransactionStartFailed reason) = "the update transaction could not start: " <> reason
+transactionErrorText (TransactionJournalMalformed path reason) =
+  "the update journal " <> T.pack path <> " is malformed: " <> reason
+transactionErrorText (TransactionUnjournaledPaths paths) =
+  "these paths are not covered by the update journal: " <> T.intercalate ", " (map T.pack (Set.toAscList paths))
+transactionErrorText (TransactionUnresolvedPaths paths) =
+  "these paths are unresolved: " <> T.intercalate ", " (map T.pack (Set.toAscList paths))
+transactionErrorText (TransactionStalePlan path _ _) =
+  T.pack path <> " changed after planning"
+transactionErrorText (TransactionApplyFailed reason rollback) =
+  reason <> maybe "; the project was restored" ("; restoring the project also failed: " <>) rollback
+transactionErrorText (TransactionRollbackFailed reason) = "restoring the project failed: " <> reason
+transactionErrorText (TransactionCompletionFailed reason) = "finishing the update failed: " <> reason
+
+summaryText :: ReconciliationSummary -> Text
+summaryText summary =
+  count (summary ^. #creates)
+    <> " created, "
+    <> count (summary ^. #updates)
+    <> " updated, "
+    <> count (summary ^. #safeDeletes)
+    <> " deleted"
 
 planLooksUnchanged :: UpdatePlan -> Bool
 planLooksUnchanged plan =

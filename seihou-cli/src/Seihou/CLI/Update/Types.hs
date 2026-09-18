@@ -159,7 +159,11 @@ data ApplicationRef = ApplicationRef
     -- owner the manifest does not record as an application.
     target :: !(Maybe AppliedTarget),
     -- | The parent variables of the target's root instance.
-    parentVars :: !ParentVars
+    parentVars :: !ParentVars,
+    -- | The modules applied alongside the target. Together with the target
+    -- they are the whole of the application id, so a label built from both
+    -- is unique among recorded applications.
+    additionalModules :: ![ModuleName]
   }
   deriving stock (Eq, Ord, Show, Generic)
 

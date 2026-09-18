@@ -11,6 +11,12 @@ provenance:
     model: "gpt-5.6-sol"
     harness: "codex-cli"
     at: 2026-09-17T14:17:06Z
+  revisions:
+    - model: "claude-opus-5[1m]"
+      harness: "claude-code"
+      at: 2026-09-18T12:35:18Z
+      mode: "implement"
+      note: "Implemented labels, prose warnings and errors, legacy upgrade fixture, docs"
 ---
 
 # Make shared-owner diagnostics actionable and verify upgrades
@@ -44,8 +50,15 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] M1: Introduce shared application labels and exhaustive prose rendering for update warnings.
-- [ ] M2: Make error remedies and JSON/human output reflect manifest preparation and proven closure states.
+- [x] M1: Introduce shared application labels and exhaustive prose rendering for update warnings.
+  (2026-09-18) `Seihou.CLI.ApplicationDisplay` added; `StatusRender` and `Update.Render`
+  both use it; `warningText` is exhaustive with no `show` fallback.
+- [x] M2: Make error remedies and JSON/human output reflect manifest preparation and proven closure states.
+  (2026-09-18) `errorMessage` is exhaustive too; the closure error lists selected and
+  required labels and a concrete `seihou update ...` line; the evidence and legacy-schema
+  errors lead with their repair. The `manifestPreparation` JSON projection and human
+  `Manifest:` lines came from EP-94 and are unchanged. `cabal test seihou-cli-test`:
+  642 tests pass.
 - [ ] M3: Add full regression fixtures, update every documentation surface, and pass release-level validation.
 
 
@@ -54,7 +67,30 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Observation: An application id is `mkApplicationId target additionalModules`
+  (`seihou-core/src/Seihou/Core/Application.hs`), so parent variables are not part of it
+  and two recorded applications can never share target plus additional modules. The
+  planned "(application N)" disambiguation has nothing to disambiguate once the label
+  includes the additional modules. Only an owner that a file record names but the
+  manifest does not record as an application has no label, and it gets a 12-character
+  digest prefix.
+
+- Observation: `errorMessage` had the same `T.pack (show err)` fallback as `warningText`,
+  covering 25 of 32 constructors, so an update error such as a migration or transaction
+  failure printed Haskell syntax too. It is now exhaustive, with local prose renderers
+  for `ModuleLoadError`, `MigrationPlanError`, `MigrationExecError`,
+  `ReconciliationError`, and `TransactionError`.
+
+- Observation: EP-94 had already placed most of the binary-level BUG-1 matrix in
+  `seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs` (schema-6 targeted dry-run, apply, retry,
+  known whole-file refusal, unavailable evidence, and injected-failure rollback at service
+  level). M3 therefore adds only what was still missing: a human-output check that no
+  digest or constructor leaks, and a binary-level legacy `seihou manifest upgrade` fixture.
+
+- Observation: The CLI test suite reads fixtures relative to `seihou-cli/`. Running the
+  test binary from the repository root fails nine `ManifestUpgrade` tests with
+  `test/fixtures/legacy-manifest-v5.json: does not exist`; `cabal test` runs it from the
+  right directory.
 
 
 ## Decision Log
@@ -84,6 +120,28 @@ Record every decision made while working on the plan.
   Rationale: The new projection is additive, while gratuitously changing the envelope
   version would create migration work unrelated to this bug.
   Date: 2026-09-17
+
+- Decision: Add `additionalModules` to `ApplicationRef` and render it as
+  `target [k=v] (with a, b)` instead of disambiguating colliding labels by manifest
+  ordinal.
+  Rationale: Target plus additional modules is exactly what the application id hashes, so
+  the label is unique by construction and uses words the user typed. An ordinal would
+  change when the manifest is reordered and means nothing outside one message.
+  Date: 2026-09-18
+
+- Decision: Make `errorMessage` exhaustive as well, not only `warningText`.
+  Rationale: The reasoning that removed the warning fallback applies equally to errors,
+  and the fallback was reachable from ordinary failures (migration, transaction,
+  candidate load).
+  Date: 2026-09-18
+
+- Decision: The known-closure error suggests naming the owners as targets with a concrete
+  `seihou update <targets>` line, or `--include-shared-owners`. It no longer suggests
+  "seihou update with no targets".
+  Rationale: With schema 7, a whole-project update is no longer the way to record a fact;
+  for a genuine whole-file co-write the two honest options are an explicit selection or the
+  expansion flag.
+  Date: 2026-09-18
 
 
 ## Outcomes & Retrospective

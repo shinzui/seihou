@@ -179,12 +179,13 @@ applicationsWithIds manifest ids =
 applicationRef :: Manifest -> ApplicationId -> ApplicationRef
 applicationRef manifest applicationId =
   case find ((== applicationId) . (^. #applicationId)) (manifest ^. #applications) of
-    Nothing -> ApplicationRef applicationId Nothing emptyParentVars
+    Nothing -> ApplicationRef applicationId Nothing emptyParentVars []
     Just application ->
       ApplicationRef
         { applicationId,
           target = Just (application ^. #target),
-          parentVars = maybe emptyParentVars (^. #parentVars) (rootInstance application)
+          parentVars = maybe emptyParentVars (^. #parentVars) (rootInstance application),
+          additionalModules = application ^. #additionalModules
         }
 
 -- | The instance a composition was applied for: the one named after a

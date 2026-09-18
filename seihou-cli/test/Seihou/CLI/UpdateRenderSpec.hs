@@ -1,11 +1,15 @@
+{-# LANGUAGE LambdaCase #-}
+
 module Seihou.CLI.UpdateRenderSpec (tests) where
 
 import Control.Lens ((&), (.~), (^.))
+import Data.Char (isHexDigit)
 import Data.Generics.Labels ()
 import Data.List (isInfixOf)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Seihou.CLI.ApplicationDisplay (applicationLabel)
 import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..))
 import Seihou.CLI.Update (UpdateError (..), UpdateWarning (..))
 import Seihou.CLI.Update.Render
@@ -21,7 +25,10 @@ import Seihou.Core.Types
     AppliedTarget (..),
     ManifestSchemaVersion (..),
     ModuleName (..),
+    ParentVars (..),
+    RecipeName (..),
     SharedWriteMode (..),
+    VarName (..),
     emptyParentVars,
   )
 import Test.Hspec
@@ -86,6 +93,94 @@ spec = do
     rendered `shouldSatisfy` T.isInfixOf "Update failed [manifest_upgrade_required]"
     rendered `shouldSatisfy` T.isInfixOf "seihou manifest upgrade"
 
+  describe "application labels" $ do
+    it "names an application by its target and parent variables, never its digest" $
+      applicationLabel skillRef `shouldBe` "exec-plan [skill.name=exec-plan]"
+
+    it "sorts parent variables and names additional modules" $ do
+      let ref =
+            ApplicationRef
+              (ApplicationId (T.replicate 64 "b"))
+              (Just (AppliedRecipeTarget (RecipeName "haskell-service")))
+              (ParentVars (Map.fromList [(VarName "z", "2"), (VarName "a", "1")]))
+              [ModuleName "direnv", ModuleName "just"]
+      applicationLabel ref `shouldBe` "haskell-service [a=1, z=2] (with direnv, just)"
+
+    it "shows only a short digest prefix for an owner the manifest does not record" $ do
+      let label = applicationLabel (ApplicationRef (ApplicationId (T.replicate 64 "c")) Nothing emptyParentVars [])
+      label `shouldBe` "unrecorded application cccccccccccc"
+      label `shouldNotSatisfy` leaksInternals
+
+  describe "warnings" $ do
+    it "covers every constructor" $
+      all coveredWarning everyWarning `shouldBe` True
+
+    it "renders every constructor as prose in both human and JSON output" $
+      mapM_
+        ( \warning -> do
+            let human = renderUpdateHuman False (planOutput (planWithWarnings [warning]))
+                json = T.pack (show (encodeUpdateOutput (planOutput (planWithWarnings [warning]))))
+            human `shouldNotSatisfy` leaksInternals
+            json `shouldNotSatisfy` T.isInfixOf "ModuleName {"
+            json `shouldNotSatisfy` T.isInfixOf "CrossApplicationLastWriter"
+        )
+        everyWarning
+
+    it "explains a cross-application last writer as attribution, not a content change" $ do
+      let rendered =
+            renderUpdateHuman
+              False
+              (planOutput (planWithWarnings [CrossApplicationLastWriter "ADR.md" (ModuleName "exec-plan") (ModuleName "link-skill")]))
+      rendered
+        `shouldSatisfy` T.isInfixOf
+          "ADR.md receives content from both exec-plan and link-skill; link-skill is recorded as its last writer"
+      rendered `shouldSatisfy` T.isInfixOf "not a content change"
+
+    it "labels an expanded owner with its parent variables" $
+      renderUpdateHuman False (planOutput (planWithWarnings [SelectionExpandedForSharedPath ".gitignore" skillRef]))
+        `shouldSatisfy` T.isInfixOf "also updating exec-plan [skill.name=exec-plan] because it co-owns .gitignore"
+
+  describe "closure and evidence errors" $ do
+    it "lists selected and required owners by label and offers a concrete selection" $ do
+      let err =
+            SharedPathRequiresApplications
+              ".gitignore"
+              (Set.singleton (moduleRef "nix-haskell-flake"))
+              (Set.singleton skillRef)
+          rendered = renderUpdateHuman False (errorOutput err)
+      rendered `shouldSatisfy` T.isInfixOf "Selected: nix-haskell-flake"
+      rendered `shouldSatisfy` T.isInfixOf "Also required: exec-plan [skill.name=exec-plan]"
+      rendered `shouldSatisfy` T.isInfixOf "(seihou update exec-plan nix-haskell-flake)"
+      rendered `shouldSatisfy` T.isInfixOf "--include-shared-owners to update their full applications"
+      rendered `shouldNotSatisfy` leaksInternals
+      rendered `shouldNotSatisfy` T.isInfixOf "no targets"
+
+    it "leads the evidence error with the repair and never offers expansion" $ do
+      let err =
+            SharedWriteEvidenceUnavailable
+              ".gitignore"
+              [(skillRef, OwnerEvidenceUnavailable (skillRef ^. #applicationId) "module exec-plan 1.2.0 is not installed here")]
+          rendered = renderUpdateHuman False (errorOutput err)
+      rendered `shouldSatisfy` T.isPrefixOf "Update failed [shared_write_evidence_unavailable]: Install the recorded version"
+      rendered `shouldSatisfy` T.isInfixOf "exec-plan [skill.name=exec-plan]: module exec-plan 1.2.0 is not installed here"
+      rendered `shouldSatisfy` T.isInfixOf "does not update it"
+      rendered `shouldNotSatisfy` T.isInfixOf "--include-shared-owners"
+      rendered `shouldNotSatisfy` leaksInternals
+
+    it "leads the legacy-schema error with the explicit upgrade command" $
+      renderUpdateHuman False (errorOutput (UpdateManifestUpgradeRequired ".seihou/manifest.json" (ManifestSchemaVersion 5)))
+        `shouldSatisfy` T.isPrefixOf "Update failed [manifest_upgrade_required]: Run 'seihou manifest upgrade --dry-run'"
+
+    it "keeps the machine error codes stable in JSON" $
+      mapM_
+        ( \(err, code) ->
+            show (encodeUpdateOutput (errorOutput err)) `shouldSatisfy` isInfixOf ("\\\"code\\\":\\\"" <> code <> "\\\"")
+        )
+        [ (SharedPathRequiresApplications ".gitignore" Set.empty (Set.singleton skillRef), "shared_path_requires_applications"),
+          (SharedWriteEvidenceUnavailable ".gitignore" [], "shared_write_evidence_unavailable"),
+          (UpdateManifestUpgradeRequired "m" (ManifestSchemaVersion 5), "manifest_upgrade_required")
+        ]
+
   it "shows a staged manifest preparation in the human and JSON plan" $ do
     let preparation =
           ManifestPreparation
@@ -103,5 +198,53 @@ spec = do
     json `shouldSatisfy` isInfixOf "\\\"toSchema\\\":7"
     json `shouldSatisfy` isInfixOf "\\\"alreadyUpToDate\\\":false"
 
+-- | One of every warning constructor. Adding a constructor without adding
+-- it here fails the exhaustiveness test below.
+everyWarning :: [UpdateWarning]
+everyWarning =
+  [ LocalArtifactHasNoRemote "demo",
+    SameVersionContentChanged "demo",
+    AmbiguousLegacyValue (VarName "project.name"),
+    MissingLegacyValue (VarName "project.name"),
+    MigrationCommandNotSimulated (ModuleName "demo") "cabal gen-bounds",
+    CrossApplicationLastWriter "agents/skills/exec-plan/ADR.md" (ModuleName "exec-plan") (ModuleName "exec-plan#bfa0a336"),
+    ArbitraryCommandSideEffectsMayRemain,
+    BaselinePruneFailed "permission denied",
+    RecoveryCleanupDeferred "permission denied",
+    SelectionExpandedForSharedPath ".gitignore" skillRef
+  ]
+
+-- | Whether a warning is one of 'everyWarning's constructors. Written as a
+-- total match so GHC's incomplete-pattern warning names a new constructor.
+coveredWarning :: UpdateWarning -> Bool
+coveredWarning = \case
+  LocalArtifactHasNoRemote {} -> True
+  SameVersionContentChanged {} -> True
+  AmbiguousLegacyValue {} -> True
+  MissingLegacyValue {} -> True
+  MigrationCommandNotSimulated {} -> True
+  CrossApplicationLastWriter {} -> True
+  ArbitraryCommandSideEffectsMayRemain -> True
+  BaselinePruneFailed {} -> True
+  RecoveryCleanupDeferred {} -> True
+  SelectionExpandedForSharedPath {} -> True
+
+-- | Text that must never reach a person: Haskell constructor or record
+-- syntax, or a whole application digest.
+leaksInternals :: T.Text -> Bool
+leaksInternals text =
+  any
+    (`T.isInfixOf` text)
+    ["ApplicationId", "ModuleName {", "unModuleName", "CrossApplicationLastWriter", "SelectionExpandedForSharedPath", "fromList"]
+    || any ((>= 64) . T.length) (T.split (not . isHexDigit) text)
+
+skillRef :: ApplicationRef
+skillRef =
+  ApplicationRef
+    (ApplicationId (T.replicate 64 "a"))
+    (Just (AppliedModuleTarget (ModuleName "exec-plan")))
+    (ParentVars (Map.fromList [(VarName "skill.name", "exec-plan")]))
+    []
+
 moduleRef :: T.Text -> ApplicationRef
-moduleRef name = ApplicationRef (ApplicationId name) (Just (AppliedModuleTarget (ModuleName name))) emptyParentVars
+moduleRef name = ApplicationRef (ApplicationId name) (Just (AppliedModuleTarget (ModuleName name))) emptyParentVars []

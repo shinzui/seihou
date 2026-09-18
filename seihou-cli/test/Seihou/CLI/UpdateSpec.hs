@@ -97,9 +97,9 @@ spec = do
     it "names each owner by its recorded target, not only its id" $ do
       let (_, second, manifest) = sharedPair SharedWriteRequiresOwnershipClosure
       applicationRef manifest (second ^. #applicationId)
-        `shouldBe` ApplicationRef (second ^. #applicationId) (Just (AppliedModuleTarget "two")) emptyParentVars
+        `shouldBe` ApplicationRef (second ^. #applicationId) (Just (AppliedModuleTarget "two")) emptyParentVars []
       applicationRef manifest (ApplicationId "unrecorded")
-        `shouldBe` ApplicationRef (ApplicationId "unrecorded") Nothing emptyParentVars
+        `shouldBe` ApplicationRef (ApplicationId "unrecorded") Nothing emptyParentVars []
 
     it "accepts a partial selection when the shared path is additive-only" $ do
       -- Every owner reaches the path through an additive, non-overlapping
