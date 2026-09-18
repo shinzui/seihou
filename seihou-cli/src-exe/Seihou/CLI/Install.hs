@@ -19,7 +19,10 @@ import Seihou.CLI.InstallShared
     cloneRepo,
     copyDirectoryRecursive,
     formatInstallRefusal,
+    formatRecordedSourceNotice,
     installModuleDir,
+    recordedSourceUrl,
+    resolveRecordedSource,
   )
 import Seihou.CLI.Registry.Sync (checkRegistryVersionDrift)
 import Seihou.CLI.Shared (logIO)
@@ -47,6 +50,13 @@ handleInstall iopts = do
 
   TIO.putStrLn $ "Installing from " <> source <> "..."
 
+  -- The clone reads from the argument as given; what the installed copy
+  -- records as its origin may differ. A local checkout records its published
+  -- remote so no machine-local path reaches a project's manifest.
+  recordedSource <- resolveRecordedSource source
+  mapM_ TIO.putStrLn (formatRecordedSourceNotice recordedSource)
+  let recorded = recordedSourceUrl recordedSource
+
   -- Clone into a temporary directory
   withSystemTempDirectory "seihou-install" $ \tmpDir -> do
     let repoName = parseModuleName source
@@ -68,19 +78,19 @@ handleInstall iopts = do
       SingleModule rootDir -> do
         when (not (null (iopts ^. #modules)) || iopts ^. #all) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-module repositories.")
-        installSingleModule iopts rootDir source Nothing
+        installSingleModule iopts rootDir source recorded Nothing
       SingleRecipe rootDir -> do
         when (not (null (iopts ^. #modules)) || iopts ^. #all) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-recipe repositories.")
-        installSingleRecipe iopts rootDir source
+        installSingleRecipe iopts rootDir source recorded
       SingleBlueprint rootDir -> do
         when (not (null (iopts ^. #modules)) || iopts ^. #all) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-blueprint repositories.")
-        installSingleBlueprint iopts rootDir source
+        installSingleBlueprint iopts rootDir source recorded
       SinglePrompt rootDir -> do
         when (not (null (iopts ^. #modules)) || iopts ^. #all) $
           logIO LogNormal (logWarn "--module and --all flags are ignored for single-prompt repositories.")
-        installSinglePrompt iopts rootDir source
+        installSinglePrompt iopts rootDir source recorded
       MultiModule registry -> do
         regErrors <- validateRegistry cloneDir registry
         if not (null regErrors)
@@ -92,7 +102,7 @@ handleInstall iopts = do
           else do
             driftWarnings <- checkRegistryVersionDrift cloneDir registry
             logIO LogNormal (mapM_ logWarn driftWarnings)
-            installFromRegistry iopts cloneDir registry source
+            installFromRegistry iopts cloneDir registry recorded
 
   -- Record URL in history for future recall (only reached on success)
   recordUrl source
@@ -159,8 +169,8 @@ promptUrlSelection entries = do
       exitFailure
 
 -- | Install a single-module repo (legacy behavior).
-installSingleModule :: InstallOpts -> FilePath -> Text -> Maybe Text -> IO ()
-installSingleModule iopts rootDir source registryName = do
+installSingleModule :: InstallOpts -> FilePath -> Text -> Text -> Maybe Text -> IO ()
+installSingleModule iopts rootDir source recorded registryName = do
   let name = case iopts ^. #name of
         Just n -> T.unpack n
         Nothing -> parseModuleName source
@@ -188,14 +198,14 @@ installSingleModule iopts rootDir source registryName = do
     Right _ -> pure ()
   TIO.putStrLn "  Validated module definition"
 
-  outcome <- installModuleDir (iopts ^. #force) rootDir name source registryName (modul ^. #version) []
-  reportSingleInstall name source outcome
+  outcome <- installModuleDir (iopts ^. #force) rootDir name recorded registryName (modul ^. #version) []
+  reportSingleInstall name recorded outcome
   TIO.putStrLn ""
   TIO.putStrLn $ "Module available as: " <> T.pack name
 
 -- | Install a single-recipe repo.
-installSingleRecipe :: InstallOpts -> FilePath -> Text -> IO ()
-installSingleRecipe iopts rootDir source = do
+installSingleRecipe :: InstallOpts -> FilePath -> Text -> Text -> IO ()
+installSingleRecipe iopts rootDir source recorded = do
   let name = case iopts ^. #name of
         Just n -> T.unpack n
         Nothing -> parseModuleName source
@@ -203,14 +213,14 @@ installSingleRecipe iopts rootDir source = do
   -- Validate recipe.dhall exists (discoverRepoContents already confirmed it)
   TIO.putStrLn "  Validated recipe definition"
 
-  outcome <- installModuleDir (iopts ^. #force) rootDir name source Nothing Nothing []
-  reportSingleInstall name source outcome
+  outcome <- installModuleDir (iopts ^. #force) rootDir name recorded Nothing Nothing []
+  reportSingleInstall name recorded outcome
   TIO.putStrLn ""
   TIO.putStrLn $ "Recipe available as: " <> T.pack name
 
 -- | Install a single-blueprint repo.
-installSingleBlueprint :: InstallOpts -> FilePath -> Text -> IO ()
-installSingleBlueprint iopts rootDir source = do
+installSingleBlueprint :: InstallOpts -> FilePath -> Text -> Text -> IO ()
+installSingleBlueprint iopts rootDir source recorded = do
   let name = case iopts ^. #name of
         Just n -> T.unpack n
         Nothing -> parseModuleName source
@@ -239,14 +249,14 @@ installSingleBlueprint iopts rootDir source = do
   TIO.putStrLn "  Validated blueprint definition"
 
   let bpVersion = (bp ^. #version)
-  outcome <- installModuleDir (iopts ^. #force) rootDir name source Nothing bpVersion []
-  reportSingleInstall name source outcome
+  outcome <- installModuleDir (iopts ^. #force) rootDir name recorded Nothing bpVersion []
+  reportSingleInstall name recorded outcome
   TIO.putStrLn ""
   TIO.putStrLn $ "Blueprint available as: " <> T.pack name
 
 -- | Install a single-prompt repo.
-installSinglePrompt :: InstallOpts -> FilePath -> Text -> IO ()
-installSinglePrompt iopts rootDir source = do
+installSinglePrompt :: InstallOpts -> FilePath -> Text -> Text -> IO ()
+installSinglePrompt iopts rootDir source recorded = do
   let name = case iopts ^. #name of
         Just n -> T.unpack n
         Nothing -> parseModuleName source
@@ -274,8 +284,8 @@ installSinglePrompt iopts rootDir source = do
     Right _ -> pure ()
   TIO.putStrLn "  Validated prompt definition"
 
-  outcome <- installModuleDir (iopts ^. #force) rootDir name source Nothing (prompt ^. #version) []
-  reportSingleInstall name source outcome
+  outcome <- installModuleDir (iopts ^. #force) rootDir name recorded Nothing (prompt ^. #version) []
+  reportSingleInstall name recorded outcome
   TIO.putStrLn ""
   TIO.putStrLn $ "Prompt available as: " <> T.pack name
 

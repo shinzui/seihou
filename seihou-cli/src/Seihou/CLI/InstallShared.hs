@@ -12,6 +12,12 @@ module Seihou.CLI.InstallShared
     formatInstallOverride,
     summarizeInstallRefusal,
 
+    -- * Recorded install source
+    RecordedSource (..),
+    resolveRecordedSource,
+    recordedSourceUrl,
+    formatRecordedSourceNotice,
+
     -- * Install primitives
     installModuleDir,
     installModuleDirInto,
@@ -30,7 +36,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (getCurrentTime)
 import Data.Time.Format.ISO8601 (iso8601Show)
-import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, normalizeOriginUrl)
 import Seihou.Core.ArtifactOriginDetect (OriginInfo (..), readOriginInfo)
 import Seihou.Prelude
 import System.Directory
@@ -38,6 +44,7 @@ import System.Directory
     copyFile,
     createDirectoryIfMissing,
     doesDirectoryExist,
+    getHomeDirectory,
     getXdgDirectory,
     listDirectory,
     removeDirectoryRecursive,
@@ -213,6 +220,101 @@ formatInstallOverride name incomingUrl = \case
       ]
   NoExistingInstall -> ""
   SameSource _ -> ""
+
+-- ----------------------------------------------------------------------------
+-- Recorded install source
+-- ----------------------------------------------------------------------------
+
+-- | What @seihou install@ records as an installed copy's @sourceUrl@.
+--
+-- @git clone@ accepts a local checkout, so @seihou install ~\/src\/modules@
+-- works. A path recorded verbatim, though, is meaningful only on this
+-- machine. It used to reach the checked-in manifest and turn into a false
+-- origin mismatch once the artifact was reinstalled from its real remote. So
+-- for a local checkout, install records the checkout's @origin@ remote
+-- instead. It does that only when the commit being installed is published
+-- there, because only then does the remote really hold the installed content.
+data RecordedSource
+  = -- | Record this URL; the clone reads from the argument as given.
+    RecordSource !Text
+  | -- | A local checkout whose installed commit is published at this remote.
+    RecordPublishedRemote !Text !Text -- remote url, local path
+  | -- | A local path with no remote that holds the installed commit.
+    RecordLocalPath !Text !Text -- path as given, why no remote
+  deriving stock (Eq, Show, Generic)
+
+-- | The URL to write into @.seihou-origin.json@ and to compare against an
+-- existing install. A local path stays a path here: the install cache is
+-- machine-local by design, and 'Seihou.Core.ArtifactOriginDetect' keeps the
+-- path out of the manifest.
+recordedSourceUrl :: RecordedSource -> Text
+recordedSourceUrl = \case
+  RecordSource url -> url
+  RecordPublishedRemote remote _ -> remote
+  RecordLocalPath path _ -> path
+
+-- | Decide what to record for an install argument. A URL is recorded as
+-- given. For a machine-local path, ask git whether the checkout's @origin@
+-- remote holds the commit that @git clone@ will copy (the checkout's @HEAD@).
+resolveRecordedSource :: Text -> IO RecordedSource
+resolveRecordedSource source
+  | not (isMachineLocalOriginUrl source) = pure (RecordSource source)
+  | otherwise = do
+      dir <- expandLocalPath (T.strip source)
+      headRes <- git dir ["rev-parse", "--verify", "HEAD"]
+      case headRes of
+        Nothing -> pure (RecordLocalPath source "not a git repository")
+        Just _ -> do
+          remoteRes <- git dir ["remote", "get-url", "origin"]
+          case T.strip <$> remoteRes of
+            Nothing -> pure (RecordLocalPath source "no origin remote")
+            Just remote
+              | T.null remote -> pure (RecordLocalPath source "no origin remote")
+              | isMachineLocalOriginUrl remote ->
+                  pure (RecordLocalPath source ("its origin remote " <> remote <> " is itself a local path"))
+              | otherwise -> do
+                  containing <- git dir ["branch", "-r", "--contains", "HEAD", "--list", "origin/*"]
+                  pure $ case filter (not . T.null) . map T.strip . T.lines <$> containing of
+                    Just (_ : _) -> RecordPublishedRemote remote source
+                    _ -> RecordLocalPath source "HEAD is not on any remote branch; push it first"
+  where
+    git dir args = do
+      (code, out, _err) <- readProcessWithExitCode "git" (["-C", dir] <> args) ""
+      pure $ case code of
+        ExitSuccess -> Just (T.pack out)
+        ExitFailure _ -> Nothing
+
+-- | Turn an install argument that names a local path into something @git -C@
+-- accepts: expand a leading @~@ and drop a @file:\/\/@ scheme.
+expandLocalPath :: Text -> IO FilePath
+expandLocalPath path
+  | Just rest <- T.stripPrefix "file://" path = pure (T.unpack rest)
+  | Just rest <- T.stripPrefix "file:" path = pure (T.unpack rest)
+  | path == "~" = getHomeDirectory
+  | Just rest <- T.stripPrefix "~/" path = do
+      home <- getHomeDirectory
+      pure (home </> T.unpack rest)
+  | otherwise = pure (T.unpack path)
+
+-- | The line install prints about what it recorded, if any. A URL argument is
+-- recorded as given and needs no comment.
+formatRecordedSourceNotice :: RecordedSource -> Maybe Text
+formatRecordedSourceNotice = \case
+  RecordSource _ -> Nothing
+  RecordPublishedRemote remote path ->
+    Just $
+      "note: recording origin "
+        <> remote
+        <> " (the 'origin' remote of "
+        <> path
+        <> ", which contains the installed commit)"
+  RecordLocalPath path reason ->
+    Just $
+      "warning: "
+        <> path
+        <> " is recorded as a local path ("
+        <> reason
+        <> "); projects generated from it record its origin as unknown"
 
 -- ----------------------------------------------------------------------------
 -- Install primitives

@@ -68,7 +68,7 @@ After this plan, three things are true:
 ## Progress
 
 - [x] M1: `isMachineLocalOriginUrl` in `Seihou.Core.ArtifactIdentity`; `detectArtifactOrigin` maps a machine-local `sourceUrl` to `LocalOrigin`; tests. (2026-09-18: new `seihou-core/test/Seihou/Core/ArtifactIdentitySpec.hs`; `cabal test seihou-core` 1154 passed.)
-- [ ] M2: `seihou install <local path>` records the checkout's remote when the installed commit is published there; otherwise warns; tests.
+- [x] M2: `seihou install <local path>` records the checkout's remote when the installed commit is published there; otherwise warns; tests. (2026-09-18: `resolveRecordedSource` in `InstallShared`; `InstallSourceSpec` (6 cases) and the two install cases of `RepairOriginsE2ESpec` pass, including a same-source reinstall from the recorded remote.)
 - [ ] M3: `seihou manifest repair-origins [--dry-run] [--set NAME=URL]` in `Seihou.CLI.ManifestRepairOrigins`; unit and E2E tests.
 - [ ] M4: Guard, certification-gap, and status messages point at the command for machine-local origins.
 - [ ] M5: Docs (`docs/cli/manifest.md`, `docs/cli/install.md`, `docs/user/manifest-upgrade.md`), both changelogs, ADR 0001 and ADR 0005 amendments; full validation.
@@ -130,6 +130,31 @@ After this plan, three things are true:
   conflict and write nothing for that path.
   Rationale: Each source is something this machine can observe. A conflict means one
   local checkout fed two unrelated repositories, and choosing between them would be a guess.
+  Date: 2026-09-18
+
+- Decision: `resolveRecordedSource` asks only whether HEAD is on an `origin/*`
+  remote-tracking branch (`git branch -r --contains HEAD --list 'origin/*'`), not on any
+  remote's branch, and adds a fourth `RecordLocalPath` reason: "its origin remote <url> is
+  itself a local path". It also accepts `file://` and `file:` arguments by stripping the
+  scheme before calling `git -C`.
+  Rationale: The URL recorded is `origin`'s. A commit that is only on `upstream/main` is
+  not proven to be at `origin`, so recording `origin` for it would be false provenance. A
+  checkout cloned from another local directory has a path as its remote, which is no more
+  portable than the checkout's own path.
+  Date: 2026-09-18
+
+- Decision: The single-artifact install paths still derive a default install name from
+  the argument as given (`parseModuleName source`); only the recorded URL changes.
+  Rationale: Changing the install name for local installs would silently move where an
+  artifact lands in the cache. That is out of scope and unrelated to provenance.
+  Date: 2026-09-18
+
+- Decision: The E2E tests reach the fake `https://example.invalid/...` remote through
+  git's environment configuration (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0`
+  setting `url.<dir>.insteadOf`), so commands that clone the recorded remote run offline.
+  Rationale: A bare repository's path would itself count as machine-local, and a network
+  URL is unavailable in tests. `insteadOf` lets the manifest record an https URL while git
+  reads a local directory.
   Date: 2026-09-18
 
 

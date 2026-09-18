@@ -21,6 +21,7 @@ import Seihou.CLI.GitSpec qualified as GitSpec
 import Seihou.CLI.InitSpec qualified as InitSpec
 import Seihou.CLI.InstallCollisionSpec qualified as InstallCollisionSpec
 import Seihou.CLI.InstallHistorySpec qualified as InstallHistorySpec
+import Seihou.CLI.InstallSourceSpec qualified as InstallSourceSpec
 import Seihou.CLI.ListSpec qualified as ListSpec
 import Seihou.CLI.ManifestCapabilityUpgradeSpec qualified as ManifestCapabilityUpgradeSpec
 import Seihou.CLI.ManifestGuardSpec qualified as ManifestGuardSpec
@@ -31,6 +32,7 @@ import Seihou.CLI.PromptRenderSpec qualified as PromptRenderSpec
 import Seihou.CLI.Registry.SyncSpec qualified as RegistrySyncSpec
 import Seihou.CLI.Registry.ValidateSpec qualified as RegistryValidateSpec
 import Seihou.CLI.RemoteVersionSpec qualified as RemoteVersionSpec
+import Seihou.CLI.RepairOriginsE2ESpec qualified as RepairOriginsE2ESpec
 import Seihou.CLI.RunBlueprintRefusalSpec qualified as RunBlueprintRefusalSpec
 import Seihou.CLI.SavePromptedSpec qualified as SavePromptedSpec
 import Seihou.CLI.SharedManifestE2ESpec qualified as SharedManifestE2ESpec
@@ -68,6 +70,7 @@ main = do
         InitSpec.tests,
         InstallCollisionSpec.tests,
         InstallHistorySpec.tests,
+        InstallSourceSpec.tests,
         ListSpec.tests,
         ManifestGuardSpec.tests,
         ManifestCapabilityUpgradeSpec.tests,
@@ -78,6 +81,7 @@ main = do
         RegistrySyncSpec.tests,
         RegistryValidateSpec.tests,
         RemoteVersionSpec.tests,
+        RepairOriginsE2ESpec.tests,
         RunBlueprintRefusalSpec.tests,
         SavePromptedSpec.tests,
         SharedManifestE2ESpec.tests,

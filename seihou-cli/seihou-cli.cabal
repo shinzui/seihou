@@ -253,6 +253,7 @@ test-suite seihou-cli-test
     Seihou.CLI.InitSpec
     Seihou.CLI.InstallCollisionSpec
     Seihou.CLI.InstallHistorySpec
+    Seihou.CLI.InstallSourceSpec
     Seihou.CLI.ListSpec
     Seihou.CLI.ManifestCapabilityUpgradeSpec
     Seihou.CLI.ManifestGuardSpec
@@ -263,6 +264,7 @@ test-suite seihou-cli-test
     Seihou.CLI.Registry.SyncSpec
     Seihou.CLI.Registry.ValidateSpec
     Seihou.CLI.RemoteVersionSpec
+    Seihou.CLI.RepairOriginsE2ESpec
     Seihou.CLI.RunBlueprintRefusalSpec
     Seihou.CLI.SavePromptedSpec
     Seihou.CLI.SeihouBinary
