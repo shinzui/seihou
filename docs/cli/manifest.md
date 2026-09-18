@@ -13,9 +13,10 @@ seihou manifest COMMAND [OPTIONS]
 | Command | Description |
 |---------|-------------|
 | `upgrade` | Upgrade a manifest written by an older seihou, one schema step at a time |
+| `repair-origins` | Replace artifact origins recorded as a path on one machine with a remote URL |
 
-The `manifest` group is designed to extend. Future subcommands (inspection,
-repair) will live on this page.
+The `manifest` group is designed to extend. Future subcommands will live on
+this page.
 
 ## Description
 
@@ -235,6 +236,137 @@ git add .seihou/manifest.json && git commit -m "chore: upgrade seihou manifest"
 
 # Convert on a machine that deliberately lacks some artifacts
 seihou manifest upgrade --force
+```
+
+---
+
+## seihou manifest repair-origins
+
+Replace every artifact origin the manifest records as a path on the machine
+that wrote it with the remote URL other developers install that artifact from.
+
+### Usage
+
+```
+seihou manifest repair-origins [--dry-run] [--set NAME=URL]...
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `--dry-run` | Print the report but leave the manifest untouched. |
+| `--set NAME=URL` | Use `URL` as the remote for the path the artifact `NAME` is recorded under. Repeatable. `URL` must not itself be a local path, and `NAME` must be recorded under one. |
+
+### Why it exists
+
+Earlier versions of seihou recorded, for `seihou install ~/src/seihou-modules`, the checkout's
+path as the installed copy's source. Every command that records applied
+state copied that path into the manifest as the artifact's origin:
+
+```json
+{"kind":"remote","url":"/Users/alice/Keikaku/bokuno/seihou-modules","name":"nix-haskell-flake"}
+```
+
+The path means nothing on anyone else's machine. On the machine that wrote it,
+it also breaks once the artifact is reinstalled from its real remote: the
+installed copy then records `https://github.com/...` while the manifest still
+records the path. Every command that checks the installed copy against the
+manifest reports a different origin, for example when certifying a shared
+`.gitignore`:
+
+```text
+beta: module beta is installed here from a different origin than recorded.
+The manifest records /Users/alice/Keikaku/bokuno/seihou-modules, a path on the
+machine that wrote it; run 'seihou manifest repair-origins'.
+```
+
+Current seihou never records a path (see [`seihou install`](install.md#installing-from-a-local-checkout)).
+This command repairs manifests written before that change.
+
+### Description
+
+The command finds every origin whose URL is a machine-local path: one starting
+with `/`, `./`, `../`, `~`, or `file:`, or a Windows drive path. It proposes a
+remote for each path. The evidence, in the order the report lists it:
+
+1. The recorded path exists here, is a git checkout, and its `origin` remote is
+   not itself a path.
+2. The installed copy of an artifact recorded under that path records a
+   non-local source URL, and its repository name agrees with the one the
+   manifest records.
+3. `--set NAME=URL`, which wins over anything the command found.
+
+Evidence agrees when every URL names the same repository, whatever the
+transport: `git@github.com:o/r.git` and `https://github.com/o/r.git` agree. The
+URL written is the installed copy's spelling when there is one, because that is
+what seihou compares the manifest against on this machine. Evidence naming two
+different repositories is a conflict. Seihou writes nothing for that path and
+asks for `--set`.
+
+Every origin recorded under one path is rewritten to the same URL, in all six
+kinds of record that carry one: applied modules, applications, the module
+instances inside them, the recipe, the blueprint, and blueprint migration
+receipts. A migration receipt's origin is part of which edge it stands for, so
+rewriting the blueprint and not its receipts would split one blueprint in two.
+The artifact name is kept. A missing repository name is filled in from the
+installed copy that supplied the URL.
+
+The report prints each path, the URL it becomes, the evidence, and the records
+it covers:
+
+```text
+$ seihou manifest repair-origins --dry-run
+/Users/alice/Keikaku/bokuno/seihou-modules
+  -> https://github.com/shinzui/seihou-modules.git
+     evidence: the installed copy of nix-haskell-flake records this remote
+     records: modules[nix-haskell-flake], applications[nix-haskell-flake], 2 application instances
+--dry-run: nothing was written.
+```
+
+A path with no evidence is reported with its remedy:
+
+```text
+/nonexistent/seihou-modules
+  ! no remote found for this path
+     records: modules[beta], applications[beta], 1 application instance
+     pass --set beta=<url> for the artifact recorded under this path
+```
+
+The command needs a manifest at the current schema (7). An older one is
+refused with a pointer to [`seihou manifest upgrade`](#seihou-manifest-upgrade),
+whose step to schema 7 is lossless.
+
+### Why it is explicit
+
+Choosing a remote for a recorded path is inference. Seihou never does that
+silently inside a committed file, so this command only runs when you ask for
+it and prints every conclusion. It is the same rule `seihou manifest upgrade`
+follows ([ADR 0005](../adr/0005-legacy-manifests-convert-through-an-explicit-command.md)).
+Review the result with `git diff .seihou/manifest.json` before committing it.
+The write is atomic, and `git checkout -- .seihou/manifest.json` undoes it.
+A second run finds nothing to repair.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Nothing to repair, or every recorded path was (or with `--dry-run`, would be) rewritten. |
+| 1 | No manifest here, it could not be read or is at an older schema, an override was refused, or any path is unresolved or conflicting. The others are still written. |
+
+### Examples
+
+```sh
+# See what would change
+seihou manifest repair-origins --dry-run
+
+# Rewrite, review, commit
+seihou manifest repair-origins
+git diff .seihou/manifest.json
+git commit -am "chore: replace machine-local artifact origins"
+
+# Supply a remote seihou could not work out
+seihou manifest repair-origins --set nix-haskell-flake=https://github.com/shinzui/seihou-modules.git
 ```
 
 ## See also

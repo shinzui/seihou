@@ -10,7 +10,37 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+### Added
+
+- **`seihou manifest repair-origins` replaces origins recorded as a path.** Installing from
+  a local checkout used to record the checkout's path as the artifact's origin, and the
+  path reached your committed manifest. Once the artifact was reinstalled from GitHub,
+  commands reported it as "installed here from a different origin than recorded", and
+  the only fix was hand-editing the manifest. The command proposes a remote for each path:
+  the checkout's own `origin` remote, the remote the installed copy records, or one you
+  pass with `--set NAME=URL`. It prints the evidence and rewrites every record under that
+  path to the same URL:
+
+  ```text
+  $ seihou manifest repair-origins --dry-run
+  /Users/alice/Keikaku/bokuno/seihou-modules
+    -> https://github.com/shinzui/seihou-modules.git
+       evidence: the installed copy of nix-haskell-flake records this remote
+       records: modules[nix-haskell-flake], applications[nix-haskell-flake], 2 application instances
+  --dry-run: nothing was written.
+  ```
+
+  It exits 1 while any path is unresolved or conflicting. Review the result with
+  `git diff .seihou/manifest.json`.
+
 ### Fixed
+
+- **A path on your machine no longer reaches the manifest.** An installed copy whose
+  recorded source is a directory is recorded in the manifest as a `local` origin (known
+  by name, provenance unverifiable) instead of as a "remote" that is really a path. When
+  a manifest written earlier still records a path, refusals, `seihou status` and update
+  errors end with "The manifest records <path>, a path on the machine that wrote it; run
+  'seihou manifest repair-origins'." They no longer suggest `seihou install <path>`.
 
 - **A targeted update now works on a manifest written by an earlier Seihou.** In 0.9.0.0,
   `seihou update nix-haskell-flake` refused whenever a co-owned `.gitignore` was recorded
@@ -55,6 +85,13 @@ packages in the workspace share a single version.
   ```
 
 ### Changed
+
+- **`seihou install <local checkout>` records the checkout's published remote.** When the
+  checkout has an `origin` remote and the installed commit is on one of its `origin/*`
+  branches, the installed copy records that remote, and install says so. A later
+  `seihou install` of the same remote is an ordinary reinstall. Otherwise install warns
+  (`HEAD is not on any remote branch; push it first`, `no origin remote`, ...), and
+  projects generated from that copy record its origin as unknown instead of as your path.
 
 - **Manifest schema 7.** Every file record now carries `sharedWriteMode`: `additive-only`,
   `requires-ownership-closure`, or `unknown`. Schema 6's optional `additiveOnly` flag

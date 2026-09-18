@@ -70,13 +70,39 @@ After this plan, three things are true:
 - [x] M1: `isMachineLocalOriginUrl` in `Seihou.Core.ArtifactIdentity`; `detectArtifactOrigin` maps a machine-local `sourceUrl` to `LocalOrigin`; tests. (2026-09-18: new `seihou-core/test/Seihou/Core/ArtifactIdentitySpec.hs`; `cabal test seihou-core` 1154 passed.)
 - [x] M2: `seihou install <local path>` records the checkout's remote when the installed commit is published there; otherwise warns; tests. (2026-09-18: `resolveRecordedSource` in `InstallShared`; `InstallSourceSpec` (6 cases) and the two install cases of `RepairOriginsE2ESpec` pass, including a same-source reinstall from the recorded remote.)
 - [x] M3: `seihou manifest repair-origins [--dry-run] [--set NAME=URL]` in `Seihou.CLI.ManifestRepairOrigins`; unit and E2E tests. (2026-09-18: `ManifestRepairOriginsSpec` 20 cases; `RepairOriginsE2ESpec` reproduces the reported certification failure, repairs it, and shows the targeted update succeeding; `cabal test seihou-cli` 677 passed.)
-- [x] M4: Guard, certification-gap, and status messages point at the command for machine-local origins. (2026-09-18: `machineLocalOriginNote` in `ManifestGuard`; asserted in `ManifestGuardSpec`, `StatusSpec`, and the `RepairOriginsE2ESpec` update output; `cabal test seihou-cli` 682 passed.)
-- [ ] M5: Docs (`docs/cli/manifest.md`, `docs/cli/install.md`, `docs/user/manifest-upgrade.md`), both changelogs, ADR 0001 and ADR 0005 amendments; full validation.
+- [x] M4: Guard, certification-gap, and status messages point at the command for machine-local origins. (2026-09-18: `machineLocalOriginNote` in `ManifestGuard`; asserted in `ManifestGuardSpec`, `StatusSpec`, and the `RepairOriginsE2ESpec` update output; `cabal test seihou-cli` 681 passed.)
+- [x] M5: Docs (`docs/cli/manifest.md`, `docs/cli/install.md`, `docs/user/manifest-upgrade.md`), both changelogs, ADR 0001 and ADR 0005 amendments; full validation. (2026-09-18: also `docs/user/teams.md` and the embedded help topic `seihou-cli/help/manifest.md`; `cabal test all` 51 + 1154 + 681 passed; `nix flake check` and `nix fmt` clean.)
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The shared test fixtures (`prepareSharedPathFixture` in
+  `seihou-cli/test/Seihou/CLI/UpdateSpec.hs`, and others) record every origin as a local
+  directory, because their "remotes" are local git repositories. After M1, those installed
+  copies detect as `LocalOrigin`, so the guard judges a recorded path against them as
+  unverifiable rather than as a match. Unverifiable is non-blocking, and all 653 existing
+  CLI tests still passed unchanged.
+  Evidence: `cabal test seihou-cli` after the M1 commit: `All 653 tests passed`.
+
+- `docs/user/teams.md` had an offline two-developer walkthrough that installed from
+  `/tmp/seihou-teams/demo-modules` and showed the manifest recording that path as a
+  "remote" origin, which is exactly the state this plan forbids. The walkthrough now
+  exports git's environment configuration so `https://example.com/demo-modules.git`
+  resolves to the local repository. I ran it end to end with the built binary in the
+  scratchpad: the manifest records the https URL, and Ben's stale refusal prints
+  `Origin: https://example.com/demo-modules.git`.
+
+- The reporting project (`mori://tan/mls-service-v2`, at
+  `/Users/shinzui/Keikaku/work/microtan/mls-service-v2-master`) no longer records any path:
+  its manifest has only `https://github.com/shinzui/...` URLs after the hand edit. It is
+  still at schema 6, and `seihou manifest repair-origins --dry-run` there refuses correctly:
+
+  ```text
+  .seihou/manifest.json is at schema version 6; this command needs schema version 7.
+  Run 'seihou manifest upgrade' first, then run this again.
+  ```
+
+  I did not run `manifest upgrade` there, because it would write to that repository.
 
 
 ## Decision Log
@@ -201,7 +227,44 @@ After this plan, three things are true:
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All five milestones landed on 2026-09-18, and the three promises in Purpose hold.
+
+1. No path reaches the manifest. `detectArtifactOrigin` turns a path `sourceUrl` into
+   `LocalOrigin`. `seihou install <checkout>` records the checkout's `origin` remote when
+   HEAD is on `origin/*`, and warns otherwise. `RepairOriginsE2ESpec` installs from a local
+   checkout through the real binary and runs a module. The manifest records the https
+   remote when HEAD is published and `"kind":"local"` when it is not; neither contains the
+   checkout path. Reinstalling from the recorded remote is a same-source reinstall.
+2. Existing damage has a command. `seihou manifest repair-origins` reproduces the reported
+   failure's report exactly:
+
+   ```text
+   /nonexistent/seihou-modules
+     -> https://example.invalid/r.git
+        evidence: the installed copy of beta records this remote
+        records: modules[beta], applications[beta], 1 application instance
+   --dry-run: nothing was written.
+   ```
+
+   The E2E test shows `seihou update alpha --dry-run` failing with
+   `shared_write_evidence_unavailable` ("module beta is installed here from a different
+   origin than recorded") before the repair and succeeding after it. It also covers
+   `--dry-run` leaving the manifest byte-identical, exit 1 for an unresolved path with the
+   `--set` remedy, refusal of a local `--set` URL, and `--set` resolving the path.
+3. Failures point at the command. `ManifestGuard.machineLocalOriginNote` is appended to
+   guard blocks, `summarizeCheck` lines (and so `seihou status`), and certification
+   reasons. Remote-URL mismatches are unchanged, and a test asserts that.
+
+What differed from the plan: `OriginSite` gained three fields and `RepairOutcome` one
+constructor. Evidence agreement is transport-insensitive. Install checks `origin/*` only.
+`teams.md` and the embedded help topic needed updates the plan did not list. All are
+recorded in the Decision Log and Surprises.
+
+Left for others: plan 97, when it adds its "path on another machine" certification
+reason, should use `machineLocalOriginNote`. Plan 96 can use `repair-origins` in its
+playbook as it planned. Promoted to durable context: the 2026-09-18 amendments to ADR 0001
+(the funnel must judge the value, not only its position) and ADR 0005 (`repair-origins`
+is a second explicit inference-bearing command).
 
 
 ## Context and Orientation

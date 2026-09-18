@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-07-28
+- Amended: 2026-09-18 — closed the hole through which an installed copy's
+  path-valued `sourceUrl` reached the manifest as a `RemoteOrigin`
+  (`docs/plans/98-repair-machine-local-artifact-origins-and-stop-recording-them.md`).
 
 ## Context
 
@@ -107,6 +110,38 @@ applied recipe, an applied blueprint, a migration receipt — walks the whole
 document, and reports the JSON path of any string, key or value, that is
 machine-specific. A new field that records a location has to express it relative
 to the project root or through an `ArtifactOrigin`, or that test fails.
+
+*Amended 2026-09-18 (`docs/plans/98-repair-machine-local-artifact-origins-and-stop-recording-them.md`):*
+the decision is unchanged; a path had been getting past it through an origin's
+URL. `seihou install <local checkout>` stored the checkout's path as the
+installed copy's `sourceUrl`, and `detectArtifactOrigin` copied any `sourceUrl`
+into a `RemoteOrigin`. The machine-independence tests could not see it, because
+they check what a manifest built in memory encodes, not what the detector
+builds. A real project recorded
+`/Users/…/bokuno/seihou-modules` that way. Once the module was reinstalled from
+GitHub, certifying a shared `.gitignore` failed with "installed here from a
+different origin than recorded" until an agent hand-edited the manifest. Three
+changes close it:
+
+- `detectArtifactOrigin` records an installed copy whose `sourceUrl` satisfies
+  `Seihou.Core.ArtifactIdentity.isMachineLocalOriginUrl` (text starting with
+  `/`, `./`, `../`, `~`, or `file:`, or a Windows drive path) as `LocalOrigin`.
+  It is the single funnel for manifest origins, so no path can reach the
+  manifest from any command. `LocalOrigin` says what is actually known: the
+  provenance is not portable.
+- `seihou install <local checkout>` records the checkout's `origin` remote when
+  the installed commit is on an `origin/*` remote-tracking branch. Otherwise it
+  keeps the path in the machine-local install cache, where a path is fine, and
+  warns.
+- `seihou manifest repair-origins` rewrites manifests written before the fix.
+  It is an explicit, reporting command under
+  [ADR 0005](0005-legacy-manifests-convert-through-an-explicit-command.md).
+  Guard, status, and certification messages caused by a recorded path name it
+  (`ManifestGuard.machineLocalOriginNote`).
+
+The lesson for future origin sources: the funnel has to judge the value, not
+only its position. Any new way of learning an artifact's source must pass its
+URL through `isMachineLocalOriginUrl` before it can become a `RemoteOrigin`.
 
 ## References
 

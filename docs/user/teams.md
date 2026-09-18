@@ -73,7 +73,7 @@ your machine. If yours is older, the command stops without touching a file:
 
   Recorded in .seihou/manifest.json:  2.0.0
   Installed on this machine:          1.0.0
-  Origin: /tmp/seihou-teams/demo-modules
+  Origin: https://example.com/demo-modules.git
 
   Update your local copy first:
     seihou upgrade demo
@@ -137,6 +137,19 @@ different module, and seihou says so instead of generating from it:
 
 The fix is in the message: install from the URL the manifest records.
 
+A manifest written by an older seihou may record a directory instead of a URL,
+because installing from a local checkout used to record the checkout's path.
+The message then says so and names the repair instead of an install:
+
+```text
+  The manifest records /Users/ana/src/your-modules, a path on the machine that wrote it;
+  run 'seihou manifest repair-origins'.
+```
+
+[`seihou manifest repair-origins`](../cli/manifest.md#seihou-manifest-repair-origins)
+proposes the remote for each such path, with its evidence, and rewrites the
+manifest. Commit the result like any other manifest change.
+
 A module you keep in your personal `~/.config/seihou/modules/` has no recorded
 upstream, so seihou cannot confirm or refute its identity. It reports that
 honestly — "no recorded provenance, so its identity cannot be verified" — and
@@ -197,11 +210,25 @@ write_demo 1.0.0
 git init -q && git add -A && git commit -qm "demo 1.0.0"
 ```
 
+A real team installs from a URL everyone can reach, and that URL is what the
+manifest records. A directory on one laptop would mean nothing to anyone else,
+so seihou never records one (see
+[installing from a local checkout](../cli/install.md#installing-from-a-local-checkout)).
+To stay offline, point a made-up URL at the local repository through git's
+environment configuration, in the shell you use for the rest of the
+walkthrough:
+
+```sh
+export GIT_CONFIG_COUNT=1 \
+  GIT_CONFIG_KEY_0=url./tmp/seihou-teams/demo-modules.insteadOf \
+  GIT_CONFIG_VALUE_0=https://example.com/demo-modules.git
+```
+
 Both developers install version 1.0.0:
 
 ```sh
-XDG_CONFIG_HOME=/tmp/seihou-teams/ana seihou install /tmp/seihou-teams/demo-modules --name demo
-XDG_CONFIG_HOME=/tmp/seihou-teams/ben seihou install /tmp/seihou-teams/demo-modules --name demo
+XDG_CONFIG_HOME=/tmp/seihou-teams/ana seihou install https://example.com/demo-modules.git --name demo
+XDG_CONFIG_HOME=/tmp/seihou-teams/ben seihou install https://example.com/demo-modules.git --name demo
 ```
 
 Ana scaffolds the project and commits:
@@ -216,7 +243,7 @@ Look at what she committed. The module's origin is a URL and an artifact name,
 not a directory on Ana's laptop:
 
 ```json
-"origin": {"artifact": "demo", "kind": "remote", "url": "/tmp/seihou-teams/demo-modules"}
+"origin": {"artifact": "demo", "kind": "remote", "url": "https://example.com/demo-modules.git"}
 ```
 
 The module publishes 2.0.0:
@@ -247,7 +274,7 @@ $ XDG_CONFIG_HOME=/tmp/seihou-teams/ben seihou run demo
 
   Recorded in .seihou/manifest.json:  2.0.0
   Installed on this machine:          1.0.0
-  Origin: /tmp/seihou-teams/demo-modules
+  Origin: https://example.com/demo-modules.git
 
   Update your local copy first:
     seihou upgrade demo
@@ -278,6 +305,7 @@ Clean up:
 
 ```sh
 rm -rf /tmp/seihou-teams
+unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 ```
 
 ## Related reading

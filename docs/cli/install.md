@@ -12,7 +12,7 @@ seihou install [GIT-URL] [OPTIONS]
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `GIT-URL` | No | Git repository URL to clone. If omitted, an interactive picker selects from install history. |
+| `GIT-URL` | No | Git repository URL to clone, or the path of a local git checkout. If omitted, an interactive picker selects from install history. |
 
 ## Options
 
@@ -40,6 +40,43 @@ For registries, module, recipe, blueprint, and prompt entries are presented for 
 If neither `--module` nor `--all` is specified, an interactive picker is shown.
 The `--all` flag installs all registry entries. The `--module` flag name is kept
 for compatibility, but it can select any registry entry kind.
+
+### Installing from a local checkout
+
+`GIT-URL` can be the path of a git checkout on this machine, which is handy
+while developing a module. The installed copy is always the checkout's
+committed `HEAD`; uncommitted changes are not installed.
+
+Every project generated from an installed artifact records where the artifact
+came from in its `.seihou/manifest.json`. That file is checked into git, so it
+must not name a directory on your machine. Seihou therefore records the
+checkout's published remote rather than its path, when the remote really holds
+what was installed. If the checkout has an `origin` remote and `HEAD` is on one
+of its `origin/*` remote-tracking branches, seihou records that remote and says
+so:
+
+```text
+Installing from /Users/alice/src/seihou-modules...
+note: recording origin git@github.com:alice/seihou-modules.git (the 'origin' remote of /Users/alice/src/seihou-modules, which contains the installed commit)
+```
+
+A later `seihou install` of that same remote is then an ordinary reinstall of
+the same artifact rather than a different-source refusal.
+
+Otherwise seihou keeps the path, but only in the machine-local
+`~/.config/seihou/installed/<name>/.seihou-origin.json`, and warns:
+
+```text
+warning: /Users/alice/src/seihou-modules is recorded as a local path (HEAD is not on any remote branch; push it first); projects generated from it record its origin as unknown
+```
+
+The other reasons are `no origin remote`, `not a git repository`, and an
+`origin` remote that is itself a local path. A project generated from such an
+installed copy records the artifact's origin as `local <name>`: known by name,
+with provenance nobody can verify. Push the commit and install again to record
+the remote instead. For a manifest written by an older seihou that still
+records a path, run
+[`seihou manifest repair-origins`](manifest.md#seihou-manifest-repair-origins).
 
 ### When the name is already taken
 
@@ -137,6 +174,9 @@ seihou install https://github.com/user/seihou-modules.git --all
 
 # Install a prompt entry from a registry
 seihou install https://github.com/user/team-prompts.git --module review-changes
+
+# Install from a local checkout whose HEAD is pushed; records its origin remote
+seihou install ~/src/seihou-modules --module haskell
 
 # Reinstall from history (opens fzf picker)
 seihou install

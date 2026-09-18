@@ -81,6 +81,23 @@ SHARED-WRITE EVIDENCE
   paths it touches and records it with the update, so running this first is
   optional. It inspects co-owners; it never updates their files.
 
+ORIGINS RECORDED AS A PATH
+
+  Installing from a local checkout used to record the checkout's path as the
+  artifact's origin, and the path reached the manifest. Current seihou records
+  the checkout's published remote instead, or an unknown (local) origin when
+  the installed commit is not pushed. Repair a manifest that still names a
+  path:
+
+    seihou manifest repair-origins --dry-run    # proposed rewrites + evidence
+    seihou manifest repair-origins              # write them
+    seihou manifest repair-origins --set NAME=URL   # when seihou finds no remote
+
+  Evidence comes from the path's own 'origin' remote, if the checkout is here,
+  and from the installed copy of each artifact recorded under the path. Every
+  record under one path is rewritten to the same URL. The command exits 1 while
+  any path is unresolved or conflicting.
+
 INSTALL FIRST
 
   The upgrade can only record what this machine can see. If an artifact the
@@ -107,3 +124,4 @@ SEE ALSO
 
   seihou help migrations       moving a project between module versions
   seihou manifest upgrade -h   the full flag reference
+  seihou manifest repair-origins -h

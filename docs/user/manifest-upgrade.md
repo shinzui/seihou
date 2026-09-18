@@ -154,6 +154,39 @@ git checkout -- .seihou/manifest.json
 The write itself is atomic — seihou writes a complete temporary file and renames
 it over the manifest — so an interrupted run cannot leave a truncated one.
 
+## Origins recorded as a path
+
+A manifest at the current schema can still name a directory on one machine.
+Before seihou recorded a local checkout's published remote, `seihou install
+~/src/seihou-modules` stored the checkout's path, and the path reached the
+manifest as the artifact's origin. It fails the same way the old absolute paths
+did, just later. Once the artifact is reinstalled from its real remote, commands
+report that it is "installed here from a different origin than recorded", and
+the message names the fix:
+
+```sh
+seihou manifest repair-origins --dry-run   # show the proposed rewrites
+seihou manifest repair-origins             # write them
+```
+
+For each recorded path, the command proposes a remote. It uses the path's own
+`origin` remote when the checkout is still here, or the remote the installed
+copy records. It prints the evidence and rewrites every record under that path
+to the same URL:
+
+```text
+/Users/alice/Keikaku/bokuno/seihou-modules
+  -> https://github.com/shinzui/seihou-modules.git
+     evidence: the installed copy of nix-haskell-flake records this remote
+     records: modules[nix-haskell-flake], applications[nix-haskell-flake], 2 application instances
+```
+
+When nothing on this machine points at a remote, supply it:
+`seihou manifest repair-origins --set nix-haskell-flake=https://github.com/shinzui/seihou-modules.git`.
+The command needs schema 7, so run `seihou manifest upgrade` first on an older
+manifest. See the [command reference](../cli/manifest.md#seihou-manifest-repair-origins)
+for the evidence rules and exit codes.
+
 ## After the upgrade
 
 Once the manifest is at schema version 6 or later, every command reads it again, and it

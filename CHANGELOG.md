@@ -4,7 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **`seihou manifest repair-origins [--dry-run] [--set NAME=URL]`**
+  (`Seihou.CLI.ManifestRepairOrigins`). Rewrites every `RemoteOrigin` whose URL is a
+  machine-local path, across all six origin-bearing record kinds, to one remote per path.
+  Evidence, in order: the path's own `origin` remote, the installed copy's non-local
+  `sourceUrl` with a matching `repoName`, and `--set`. Evidence agrees by repository
+  (`sameRepository`, transport-insensitive), and the installed copy's spelling is
+  preferred. It requires schema 7, writes atomically, and exits 1 on any unresolved or
+  conflicting path. ADR 0005 amended.
+- **`isMachineLocalOriginUrl`** in `Seihou.Core.ArtifactIdentity`.
+
 ### Fixed
+
+- **Machine-local paths no longer reach the manifest (ADR 0001).** `detectArtifactOrigin`
+  maps a `.seihou-origin.json` whose `sourceUrl` is a path to `LocalOrigin` rather than
+  `RemoteOrigin <path>`. `ManifestGuard.machineLocalOriginNote` appends a
+  `seihou manifest repair-origins` pointer to guard blocks, `summarizeCheck` lines, and
+  shared-write certification reasons whose recorded origin is a path. For those, the
+  `seihou install <path>` remedy is dropped.
 
 - **Targeted `seihou update` on pre-schema-7 manifests (BUG-1).** Manifest schema 7
   replaces `FileRecord.additiveOnly :: Bool` with a required three-state
@@ -23,6 +42,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **`seihou install <local path>` records a published remote.**
+  `InstallShared.resolveRecordedSource` returns `RecordPublishedRemote` when the
+  checkout's `origin` URL is non-local and `git branch -r --contains HEAD --list 'origin/*'`
+  is non-empty. Otherwise it returns `RecordLocalPath` with a reason and prints a warning.
+  The recorded URL is written to `.seihou-origin.json` and used for
+  `classifyInstallCollision`; the clone still reads the argument.
 - **`seihou manifest upgrade` is an ordered step chain** (`Seihou.Manifest.Upgrade`)
   with `--to VERSION`. Each adjacent step is classified lossless or inference-bearing
   (ADR 0014), and unknown JSON keys are preserved.

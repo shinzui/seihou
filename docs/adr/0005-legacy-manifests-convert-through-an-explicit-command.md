@@ -2,6 +2,9 @@
 
 - Status: Accepted
 - Date: 2026-07-28
+- Amended: 2026-09-18 — `seihou manifest repair-origins` is a second explicit,
+  inference-bearing manifest command under the same rule
+  (`docs/plans/98-repair-machine-local-artifact-origins-and-stop-recording-them.md`).
 
 ## Context
 
@@ -77,6 +80,21 @@ Positive decoding coverage for schema versions 1 through 5 lives with the
 converter, in `seihou-cli/test/Seihou/CLI/ManifestUpgradeSpec.hs`, not with the
 manifest decoder — those versions are no longer decodable by the ordinary
 decoder at all, so what can be asserted about them is that they convert.
+
+*Amended 2026-09-18 (`docs/plans/98-repair-machine-local-artifact-origins-and-stop-recording-them.md`):*
+the same rule governs `seihou manifest repair-origins`, which replaces origins
+recorded as a path on one machine (see the 2026-09-18 amendment to
+[ADR 0001](0001-manifest-is-a-checked-in-machine-independent-artifact.md)).
+Choosing a remote for such a path is inference, from the checkout's `origin`
+remote or the installed copy's recorded source. The command therefore never runs
+implicitly. It prints each proposal with its evidence, has `--dry-run`, and
+writes nothing for a path whose evidence conflicts or is missing unless the user
+supplies `--set NAME=URL`. It differs from `seihou manifest upgrade` in two
+ways. It works on a decoded manifest at the current schema and refuses an older
+one, naming `seihou manifest upgrade`, because the step to schema 7 is lossless
+and cheap. It also rewrites by URL rather than by record, so every record under
+one path receives the same new identity
+([ADR 0002](0002-artifact-identity-is-origin-url-plus-name.md)).
 
 ## References
 
