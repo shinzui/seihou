@@ -42,16 +42,27 @@ TARGET SELECTION
   Otherwise the update stops, because regenerating the file for one owner
   would discard another's content. That covers any path an owner writes
   wholesale, and the position-dependent `append-file` / `prepend-file`
-  patches. A manifest written before Seihou recorded this distinction has no
-  answer and is treated conservatively. One no-target update records it: a
-  missing answer counts as pending work even when nothing else has changed,
-  and writing it down touches no project file.
+  patches.
 
-  When the refusal is genuine, name every required owner, run the no-target
-  form, or pass `--include-shared-owners` to expand the selection to exactly
-  the owners required. Each added application is reported. Seihou will not
-  guess how to reconstruct an omitted layer, and never broadens a named
-  selection without being asked.
+  The answer is recorded per path as `sharedWriteMode`: `additive-only`,
+  `requires-ownership-closure`, or `unknown` for a manifest that predates it.
+  A targeted update resolves `unknown` itself: it compiles each co-owner from
+  its recorded version, reads how it writes the path, and records the answer
+  (upgrading a schema-6 manifest to 7) with its own manifest. It inspects the
+  co-owners but never updates their files. `--dry-run` shows this as
+  `Manifest: schema 6 -> 7` and writes nothing.
+
+  If a co-owner's recorded version is not installed here, the update stops
+  with `shared_write_evidence_unavailable`: install that version and retry.
+  A schema-5 or older manifest stops with `manifest_upgrade_required`: run
+  `seihou manifest upgrade --dry-run`, review, then `seihou manifest upgrade`.
+
+  When the refusal is genuine (`shared_path_requires_applications`), name the
+  required owners as targets, or pass `--include-shared-owners` to expand the
+  selection to exactly the owners required, updating their full
+  applications. Each added application is reported. Owners are named as
+  `seihou status` names them, e.g. `exec-plan [skill.name=exec-plan]`.
+  Seihou never broadens a named selection without being asked.
 
 SAVED INPUTS
 

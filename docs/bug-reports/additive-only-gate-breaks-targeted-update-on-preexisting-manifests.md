@@ -11,7 +11,19 @@ affects: mori://shinzui/seihou
 affectedVersion: 0.9.0.0
 origin: mori://tan/mls-service-v2
 severity: degraded
-status: reported
+status: fixed
+fixedVersion: unreleased
+resolution: >-
+  Fixed by mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe
+  (unreleased after 0.9.0.0). Manifest schema 7 records `sharedWriteMode` (`unknown`, `additive-only`,
+  `requires-ownership-closure`) on every file; a targeted `seihou update` certifies `unknown` shared
+  paths by compiling co-owners at their recorded versions, without updating them, and publishes the
+  6 -> 7 step with its own manifest. Missing evidence is `shared_write_evidence_unavailable` and never
+  offers `--include-shared-owners`; owners are named like `seihou status` names them; every warning,
+  including `CrossApplicationLastWriter`, renders as prose. Regression:
+  `seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs` ("updates one target on a schema-6 manifest without
+  touching the co-owner's files (BUG-1)" and "explains a schema-6 targeted plan and a whole-file
+  refusal in prose, by application name").
 generated:
   by: process:claude-code
   at: "2026-09-17T13:39:06Z"
@@ -144,3 +156,31 @@ behavior and its reproduction.
   gate, the flag, and the fail-closed-when-absent decode this report is the fallout of.
 - Masterplan 8 (`docs/masterplans/8-make-module-updates-seamless-and-conflict-aware.md`) and plans
   66/68/69 — establish the ownership closure and the "never silently broaden a bare selection" rule.
+
+## Resolution
+
+Fixed after 0.9.0.0 by
+`mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe`
+(plans 92 to 95). Each of the four defects above was addressed:
+
+1. **Targeted backfill.** Manifest schema 7 makes the answer explicit per file as
+   `sharedWriteMode`. A schema-6 manifest's paths start `unknown`. `seihou update
+   nix-haskell-flake` certifies an unknown shared path inside its own plan by compiling each
+   co-owner from its recorded version and reading how it writes the path. It then publishes
+   the 6 -> 7 step and the certified mode with the update's manifest. The co-owners are
+   inspected, not updated. The dry run shows `Manifest: schema 6 -> 7` and
+   `.gitignore evidence unknown -> additive-only` and writes nothing.
+2. **`--include-shared-owners`** is offered only for a path proven
+   `requires-ownership-closure`. If evidence is missing (the co-owner's recorded version is
+   not installed), the update fails with `shared_write_evidence_unavailable`, names the owner
+   and the reason, and does not offer expansion.
+3. **Guidance** leads with the repair, and owners are named the way `seihou status` names
+   them (`exec-plan [skill.name=exec-plan]`), never by application id.
+4. **`CrossApplicationLastWriter`** now reads as ownership-attribution prose. Every warning
+   and error renderer is exhaustive, with no `show` fallback.
+
+The regression fixture in `seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs` runs the built
+binary against a schema-6 manifest whose `.gitignore` is co-owned by an appending
+application with a newer release. The targeted dry run writes nothing. The apply updates only
+the target and leaves the co-owner's files and installed module byte-identical. It records
+schema 7 and `additive-only`, and the retry is already up to date.

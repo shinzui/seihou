@@ -59,7 +59,13 @@ This section must always reflect the actual current state of the work.
   errors lead with their repair. The `manifestPreparation` JSON projection and human
   `Manifest:` lines came from EP-94 and are unchanged. `cabal test seihou-cli-test`:
   642 tests pass.
-- [ ] M3: Add full regression fixtures, update every documentation surface, and pass release-level validation.
+- [x] M3: Add full regression fixtures, update every documentation surface, and pass release-level validation.
+  (2026-09-18) Binary-level human-output test for the BUG-1 and whole-file fixtures;
+  binary-level `seihou manifest upgrade` fixture (dry-run `--to 6`, full chain to 7,
+  unprovenanced install, nothing installed). Docs, help, design notes, both changelogs,
+  BUG-1 (`fixed`, `fixedVersion: unreleased`), and ADR 0015 updated.
+  `nix fmt -- --fail-on-change`, `cabal build all`, `cabal test all` (51 + 1134 + 647
+  tests), and `nix flake check` pass.
 
 
 ## Surprises & Discoveries
@@ -86,6 +92,18 @@ implementation. Provide concise evidence.
   known whole-file refusal, unavailable evidence, and injected-failure rollback at service
   level). M3 therefore adds only what was still missing: a human-output check that no
   digest or constructor leaks, and a binary-level legacy `seihou manifest upgrade` fixture.
+
+- Observation: "A missing origin blocks without `--force`" is narrower than the plan
+  assumed. When the recorded artifact is installed here without `.seihou-origin.json`,
+  `seihou manifest upgrade` succeeds and records the honest `{"kind":"local"}` origin,
+  reported as `local demo (no upstream recorded)`. It blocks (exit 1, manifest untouched)
+  only when nothing on this machine can verify the artifact. Neither path invents a URL,
+  which is the ADR 0005 requirement, so the fixture asserts both behaviors separately.
+
+- Observation: `seihou install` has no version selector, so "install the recorded
+  version" cannot be a one-line command. The docs say to make that exact version
+  available (reinstall while it is current, or restore the directory), and explain that a
+  different version is not substituted (ADR 0003).
 
 - Observation: The CLI test suite reads fixtures relative to `seihou-cli/`. Running the
   test binary from the repository root fails nine `ManifestUpgrade` tests with
@@ -151,7 +169,38 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Completed 2026-09-18. Human update output no longer contains a digest or Haskell syntax.
+Running the built binary against the BUG-1 schema-6 fixture, `seihou update alpha --dry-run`
+prints `Manifest:    schema 6 -> 7` and `.gitignore evidence unknown -> additive-only`. The
+whole-file fixture refuses with:
+
+```text
+Update failed [shared_path_requires_applications]: At least one owner of .gitignore writes
+the whole file, so its owners have to be updated together. Selected: alpha. Also required:
+beta. Name them as targets (seihou update alpha beta), or pass --include-shared-owners to
+update their full applications too.
+```
+
+The evidence-unavailable error leads with "Install the recorded version…", never mentions
+`--include-shared-owners`, and says inspection does not update the owner.
+`CrossApplicationLastWriter` renders as ownership-attribution prose. Every other warning and
+every error has an explicit sentence, and the render spec asserts that for every warning
+constructor. The legacy fixture shows `seihou manifest upgrade --dry-run --to 6` naming the
+recovered `https://example.com/demo-modules.git` and writing nothing. The real run records
+that `RemoteOrigin` and ends at schema 7, and a second run changes nothing.
+
+The plan's scope was met, with one deliberate change: labels include additional modules
+instead of a manifest-order ordinal (see Decision Log). The plan listed M2's JSON
+projection as work, but EP-94 had already delivered it. Most of M3's integrated fixtures
+also existed from EP-94, so this plan added only the missing human-output and legacy
+upgrade coverage.
+
+The lesson is that the two `show` fallbacks were one design mistake, not two bugs. The
+durable rule (one display vocabulary, exhaustive renderers, cause-specific remedies) is
+recorded in
+[ADR 0015](../adr/0015-diagnostics-name-things-as-users-do-and-never-fall-back-to-show.md)
+and linked from ADR 0012. Remaining `show` fallbacks outside update rendering, such as
+`renderTransactionPathError`, fall under that ADR as they are touched.
 
 
 ## Context and Orientation
@@ -393,3 +442,10 @@ No new library dependency is required. Tests use existing `hspec`, `temporary`, 
 `seihou` test tool, and local git-remote helpers already present in
 `UpdateFixture`. Documentation changes use repository-local links and the canonical
 `mori://tan/mls-service-v2` reference for the external reproducer.
+
+
+## Revision Notes
+
+- 2026-09-18: Implemented all three milestones. Recorded the `ApplicationRef.additionalModules`
+  labelling decision, the exhaustive `errorMessage`, the narrower legacy-refusal behavior, and
+  the missing install version selector. Distilled the presentation rules into ADR 0015.

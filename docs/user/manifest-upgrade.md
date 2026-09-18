@@ -100,8 +100,16 @@ file, without writing anything but the manifest. The report shows the result:
 ```
 
 A file stays `unknown` when one of its owners' recorded versions is not
-installed here. Install that version and run the command again. An unknown
-file is safe — updates simply keep treating it as needing every owner.
+installed here. Install that version and run the command again.
+
+You do not have to run the upgrade before a targeted update. `seihou update
+nix-haskell-flake` does the same work for just the shared files that update
+touches, records the answer (and the step to schema 7) together with the
+update itself, and inspects the other owners without updating any of their
+files. If an owner's recorded version is missing there too, the update stops
+with `shared_write_evidence_unavailable` and names it, rather than updating
+anything it cannot vouch for. The upgrade command is how you settle every
+shared file in the project at once, and review the result first.
 
 ## Install your modules first
 

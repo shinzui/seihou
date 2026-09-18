@@ -10,6 +10,67 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+### Fixed
+
+- **A targeted update now works on a manifest written by an earlier Seihou.** In 0.9.0.0,
+  `seihou update nix-haskell-flake` refused whenever a co-owned `.gitignore` was recorded
+  before Seihou tracked how its owners write it. That covered every project that upgraded
+  rather than started fresh:
+
+  ```text
+  Update failed [shared_path_requires_applications]: Path .gitignore is also owned by
+  application(s) 808a1fc3258b2289be8d629e7275f3faedc130093bbf6b0fe93b2483bb8e1d1e, ...
+  ```
+
+  The update now works out the missing answer itself. It compiles each co-owner from the
+  version your manifest records, sees that it only appends, and records that. The
+  co-owners are only inspected: none of their files are regenerated, and their versions
+  do not move. The dry run shows it and writes nothing:
+
+  ```text
+  Manifest:    schema 6 -> 7
+               .gitignore evidence unknown -> additive-only
+  ```
+
+  The manifest change is published with the update itself, so a failed update leaves your
+  old manifest exactly as it was. A file that some owner really rewrites wholesale still
+  requires every owner. If a co-owner's recorded version is not installed on this machine,
+  the update says so (`shared_write_evidence_unavailable`) and tells you to install it,
+  instead of suggesting that you update more applications.
+
+- **Update messages name applications the way `seihou status` does.** Owners appear as
+  `exec-plan [skill.name=exec-plan]`, not as 64-character application ids. The
+  "owners must be updated together" error lists what you selected, what is still
+  required, and a command you can paste (`seihou update master-plan nix-haskell-flake`).
+  `--include-shared-owners` is offered only when it would actually help.
+
+- **No more Haskell syntax in update output.** Every warning and error is now written as a
+  sentence. The most common one, which used to print
+  `CrossApplicationLastWriter "…" (ModuleName {unModuleName = "exec-plan"}) …`, now reads:
+
+  ```text
+  Warning:     agents/skills/exec-plan/ADR.md receives content from both exec-plan and
+               link-skill; link-skill is recorded as its last writer (ownership
+               attribution only, not a content change)
+  ```
+
+### Changed
+
+- **Manifest schema 7.** Every file record now carries `sharedWriteMode`: `additive-only`,
+  `requires-ownership-closure`, or `unknown`. Schema 6's optional `additiveOnly` flag
+  could not tell "requires every owner" apart from "recorded before we asked". Seihou
+  still reads schema-6 manifests. A targeted update moves one to 7 when it needs to, and
+  `seihou manifest upgrade` does it explicitly for the whole project.
+
+- **`seihou manifest upgrade` walks each schema step in order and can stop early.** It
+  reports every step it takes (`5 -> 6  portable artifact origins`, `6 -> 7  explicit
+  shared-write evidence`) and accepts `--to VERSION` to stop at an intermediate schema.
+  Converting machine-local paths from schema 5 and earlier still happens only here, where
+  you can review it. A remote is recorded only when local install metadata proves it,
+  and the command refuses without `--force` when nothing on this machine can verify an
+  artifact. Review the result with `git diff .seihou/manifest.json`; restoring that file
+  from version control undoes it.
+
 ## [0.9.0.0] - 2026-09-16
 
 ### Changed

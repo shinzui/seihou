@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Targeted `seihou update` on pre-schema-7 manifests (BUG-1).** Manifest schema 7
+  replaces `FileRecord.additiveOnly :: Bool` with a required three-state
+  `sharedWriteMode` (`SharedWriteUnknown | SharedWriteAdditiveOnly |
+  SharedWriteRequiresOwnershipClosure`). Update selection is now two-phase: match the
+  requested applications, certify `unknown` shared paths by compiling co-owners at their
+  recorded versions (`Seihou.CLI.ManifestCapabilityUpgrade`), then enforce the ownership
+  closure. The lossless 6 -> 7 step and certified modes travel as a `ManifestPreparation`
+  inside `UpdatePlan` and are published only with the update's manifest. The JSON plan
+  gains an additive `manifestPreparation` key; the envelope stays `schemaVersion: 1`. New
+  error codes: `manifest_upgrade_required` and `shared_write_evidence_unavailable`.
+- **Update rendering is exhaustive.** `warningText` and `errorMessage` in
+  `Seihou.CLI.Update.Render` no longer fall back to `show`. Applications are labelled
+  by the new `Seihou.CLI.ApplicationDisplay`, which `Seihou.CLI.StatusRender` shares.
+  `ApplicationRef` gained `additionalModules`, so labels are unique by construction.
+
+### Changed
+
+- **`seihou manifest upgrade` is an ordered step chain** (`Seihou.Manifest.Upgrade`)
+  with `--to VERSION`. Each adjacent step is classified lossless or inference-bearing
+  (ADR 0014), and unknown JSON keys are preserved.
+
 ### Packaging
 
 - **`streamly` and `streamly-core` now resolve from Hackage.** `cabal.project`

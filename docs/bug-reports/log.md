@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-09-18
+* **Update**: BUG-1 status reported -> fixed. Resolved by mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe: schema 7 sharedWriteMode, targeted in-plan certification of unknown shared paths without updating co-owners, labels instead of application ids, and prose for every update warning. Regression in seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs.
+
 ## 2026-09-17
 * **Addition**: BUG-1 reported against seihou v0.9.0.0 (`9979f8d`) by `mori://tan/mls-service-v2`.
 On a manifest written before the plan 90 / IR-8 `FileRecord.additiveOnly` field existed, every owner

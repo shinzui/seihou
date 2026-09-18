@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | **Status** | Implemented |
-| **Updated** | 2026-07-19 |
+| **Updated** | 2026-09-18 |
 | **Created** | 2026-07-19 |
 | **Subsystem** | CLI, manifest, generation engine |
 
@@ -16,8 +16,9 @@ commands succeed.
 
 ## Persistent model
 
-Manifest schema version 4 retains the legacy applied-module and flat-variable
-views while adding top-level applications. An application is identified by the
+Manifest schema version 4 added top-level applications while retaining the
+legacy applied-module and flat-variable views; the current schema is 7 (see
+[manifest and incrementality](manifest-and-incrementality.md)). An application is identified by the
 requested module or recipe plus ordered explicit additional roots. Versions,
 resolved values, and recipe-expanded dependency membership are deliberately
 excluded so a later update replaces the same application.
@@ -39,9 +40,25 @@ conflict, never an overwrite.
 
 Repeated generation and patch operations are materialized into one desired
 state per path before classification. Unchanged obsolete files are deleted;
-edited orphans remain tracked until explicitly deleted or detached. A targeted
-update is rejected if the selected applications do not include every owner of
-a shared or colliding path.
+edited orphans remain tracked until explicitly deleted or detached.
+
+A targeted update may leave out a co-owner of a shared path only when the
+manifest records that path as `additive-only` (schema 7's `sharedWriteMode`).
+Selection is two-phase: the requested applications are matched first; then,
+for every shared path they touch whose mode is `unknown`, each co-owner is
+compiled from its exact recorded version to certify the mode; only then is the
+ownership closure enforced. Certification inspects co-owners and never
+reconciles their files. The resulting schema step and certified modes form a
+`ManifestPreparation` that planning, migration, reconciliation, and the final
+manifest all start from, and it is published only with the update's manifest.
+A co-owner whose recorded version is not installed yields
+`shared_write_evidence_unavailable` rather than an expansion; a path proven
+`requires-ownership-closure` yields `shared_path_requires_applications`, which
+`--include-shared-owners` resolves by expanding to a fixed point.
+
+Every error and warning renders as prose. Applications are labelled through
+`Seihou.CLI.ApplicationDisplay`, shared with `seihou status`: target, parent
+variables, additional modules. The application id is never the label.
 
 ## Staging and publication
 

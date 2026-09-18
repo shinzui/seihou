@@ -77,6 +77,10 @@ SHARED-WRITE EVIDENCE
   manifest, and records what it finds. An owner whose recorded version is not
   installed here leaves the file unknown, and the report names it.
 
+  seihou update <target> performs the same certification for just the shared
+  paths it touches and records it with the update, so running this first is
+  optional. It inspects co-owners; it never updates their files.
+
 INSTALL FIRST
 
   The upgrade can only record what this machine can see. If an artifact the

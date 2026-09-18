@@ -21,6 +21,11 @@ provenance:
       at: 2026-09-18T03:48:18Z
       mode: "implement"
       note: "Coordinated implementation of child plans; registry and progress updated"
+    - model: "claude-opus-5[1m]"
+      harness: "claude-code"
+      at: 2026-09-18T12:50:44Z
+      mode: "implement"
+      note: "EP-95 completed; registry, progress, outcomes, ADR distillation"
 ---
 
 # Make manifest evolution explicit and targeted updates upgrade-safe
@@ -138,7 +143,7 @@ reference.
 | 92 | Define manifest schema capabilities and ordered upgrade steps | docs/plans/92-define-manifest-schema-capabilities-and-ordered-upgrade-steps.md | None | None | Complete |
 | 93 | Upgrade legacy path manifests and backfill additive facts | docs/plans/93-upgrade-legacy-path-manifests-and-backfill-additive-facts.md | EP-92 | None | Complete |
 | 94 | Gate targeted updates on the minimum manifest schema | docs/plans/94-gate-targeted-updates-on-the-minimum-manifest-schema.md | EP-92, EP-93 | None | Complete |
-| 95 | Make shared-owner diagnostics actionable and verify upgrades | docs/plans/95-make-shared-owner-diagnostics-actionable-and-verify-upgrades.md | EP-94 | EP-93 | In Progress |
+| 95 | Make shared-owner diagnostics actionable and verify upgrades | docs/plans/95-make-shared-owner-diagnostics-actionable-and-verify-upgrades.md | EP-94 | EP-93 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -218,9 +223,9 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-94 M1: Split application matching from ownership-closure enforcement.
 - [x] EP-94 M2: Stage the minimum required manifest upgrade inside targeted update planning and apply.
 - [x] EP-94 M3: Prove targeted, dry-run, retry, and genuinely non-additive cases transactionally.
-- [ ] EP-95 M1: Render application labels and every update warning as intentional prose.
-- [ ] EP-95 M2: Correct remedies and lock the human and JSON contracts with regression tests.
-- [ ] EP-95 M3: Update all documentation and run the full repository acceptance matrix.
+- [x] EP-95 M1: Render application labels and every update warning as intentional prose.
+- [x] EP-95 M2: Correct remedies and lock the human and JSON contracts with regression tests.
+- [x] EP-95 M3: Update all documentation and run the full repository acceptance matrix.
 
 
 ## Surprises & Discoveries
@@ -265,6 +270,16 @@ interactions between child plans. Provide concise evidence.
   should replace the minimal `refText` label and the provisional error prose in
   `Seihou.CLI.Update.Render`.
 
+
+- Observation (EP-95): `ApplicationRef` needed one more field than EP-94 gave it. An
+  application id hashes target plus additional modules, so EP-95 added
+  `additionalModules` and the label `target [k=v] (with a, b)` is unique by
+  construction. `errorMessage` had the same `show` fallback as `warningText`, so both are
+  now exhaustive. Most of EP-95's planned binary fixtures already existed from EP-94.
+
+- Observation (EP-95): `seihou manifest upgrade` on schema 5 blocks only when nothing on
+  this machine can verify an artifact. An installed copy without provenance is recorded
+  as an honest `local` origin. Neither case invents a remote, which satisfies ADR 0005.
 
 ## Decision Log
 
@@ -324,7 +339,41 @@ Compare the result against the original vision. Before marking the MasterPlan co
 distill durable project context from this MasterPlan and its child ExecPlans into
 docs/adr/. Keep task-local execution and coordination details here.
 
-(To be filled during and after implementation.)
+Completed 2026-09-18. All four child plans are complete, and BUG-1 is marked `fixed`
+(`fixedVersion: unreleased`).
+
+The vision was met. The manifest is at schema 7, and every file record states its
+shared-write evidence as `unknown`, `additive-only`, or `requires-ownership-closure`.
+Features declare minimum schemas through one core mapping (EP-92). `seihou manifest upgrade`
+walks contiguous classified steps, can stop with `--to`, preserves unknown JSON keys, and
+keeps the reviewable 5 -> 6 origin inference explicit (EP-93). A targeted update against a
+schema-6 manifest certifies the shared paths it touches by compiling co-owners at their
+recorded versions. It never reconciles those co-owners' files, and it publishes the lossless
+6 -> 7 step with its own manifest (EP-94). Human and JSON output name applications as
+`seihou status` does, lead each error with its repair, and contain no Haskell syntax
+(EP-95).
+
+Verified on 2026-09-18 by `nix fmt -- --fail-on-change`, `cabal build all`, `cabal test all`
+(seihou-okf-extension 51, seihou-core 1134, seihou-cli 647 tests), and `nix flake check`.
+Regressions are pinned at binary level in `seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs` and
+`seihou-cli/test/Seihou/CLI/ManifestUpgradeSpec.hs`.
+
+Gaps: `seihou install` cannot select a version, so recovering from
+`shared_write_evidence_unavailable` for an old co-owner release is manual. Other commands
+still have `show`-based renderers, which ADR 0015 covers as they are touched. No release
+number is assigned yet; both changelogs list the change under Unreleased.
+
+The main lesson was decomposition order. Putting the wire contract (EP-92) before the
+command, orchestration, and presentation plans meant each later plan consumed a settled
+interface. The two interface surprises (`ApplicationRef.target` being `Maybe`, and the
+missing `additionalModules`) were additive and caught at compile time.
+
+ADR distillation: ADR 0014 (manifest evolution) and ADR 0012 (three-answer shared-path
+rule, certification never expands) were updated during EP-92 to EP-94. ADR 0005 records
+the lossless-versus-inference distinction. EP-95 added
+[ADR 0015](../adr/0015-diagnostics-name-things-as-users-do-and-never-fall-back-to-show.md)
+for the display vocabulary, exhaustive renderers, and cause-specific remedies. Task-local
+details stay in the child plans.
 
 
 ## Revision Notes
@@ -332,3 +381,5 @@ docs/adr/. Keep task-local execution and coordination details here.
 - 2026-09-17: Recorded accepted ADR 0014 as the initiative-wide manifest-evolution
   contract, replaced prospective ADR-creation language, and assigned its implementation
   responsibilities across EP-92, EP-93, and EP-94.
+- 2026-09-18: Marked EP-95 complete. Recorded its cross-plan discoveries, filled in Outcomes &
+  Retrospective, and completed the ADR distillation (new ADR 0015). The initiative is complete.

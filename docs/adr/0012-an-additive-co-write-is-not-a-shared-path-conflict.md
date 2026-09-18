@@ -210,6 +210,9 @@ would not be.
 - [ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md)
   — supersedes the decision not to advance schema version 6 and governs future
   manifest evolution.
+- [ADR 0015](0015-diagnostics-name-things-as-users-do-and-never-fall-back-to-show.md)
+  — how the three answers are explained to a person: owners by label, the repair
+  first, and `--include-shared-owners` only where expansion repairs the cause.
 - `docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md`
   — the implementation, with the full decision log.
 - `docs/improvement-requests/exempt-additive-patch-paths-from-shared-ownership-closure.md`

@@ -28,14 +28,75 @@ additive, non-overlapping patch?
   position-dependent patches `append-file` and `prepend-file`, whose result
   depends on what is already in the file.
 
-The answer is recorded per path in `.seihou/manifest.json`, as `additiveOnly`
-on the file's record. A manifest written before that field existed has no
-answer, so Seihou takes the conservative one and refuses. One `seihou update`
-with no targets records it — a project whose sources are otherwise unchanged is
-*not* reported as already up to date while an answer is still missing, and the
-update that writes it down changes no project file. When the refusal is genuine, either
-name every required owner, run the no-target form, or pass
-`--include-shared-owners` to let Seihou expand the selection for you.
+The answer is recorded per path in `.seihou/manifest.json` as `sharedWriteMode`,
+which schema 7 requires on every file record. It has three values:
+
+- `additive-only` — every owner appends, so a targeted update may leave the
+  others out;
+- `requires-ownership-closure` — some owner writes the whole file, so every
+  owner must be updated together;
+- `unknown` — the manifest predates the answer (every path of a schema-6
+  manifest starts here, since schema 6 could only say `additiveOnly: true`).
+
+An `unknown` answer does not make a targeted update refuse. The update works it
+out as part of its own plan: it compiles each co-owner from the exact version
+the manifest records, reads which operations reach the shared path, and records
+the result. It only *inspects* those co-owners. Their other files are neither
+regenerated nor rewritten, and their recorded versions stay the same. A
+schema-6 manifest is moved to schema 7 in the same step, and both changes are
+published with the update's own manifest, so a dry run writes nothing and a
+failed update leaves the old manifest in place:
+
+```text
+Manifest:    schema 6 -> 7
+             .gitignore evidence unknown -> additive-only
+nix-haskell-flake  0.23.2 -> 0.24.0
+...
+```
+
+The JSON plan carries the same facts as an optional `manifestPreparation`
+object (`fromSchema`, `toSchema`, and one `{path, from, to}` per certified
+path). A plan whose only work is recording an answer is not reported as
+already up to date.
+
+If a co-owner's recorded version is not installed on this machine, there is
+nothing to inspect, and the update stops with
+`shared_write_evidence_unavailable`, naming each owner and why:
+
+```text
+Update failed [shared_write_evidence_unavailable]: Install the recorded version of each
+application below, then update again: ... exec-plan [skill.name=exec-plan]: module
+exec-plan 1.2.0 is not installed here. ...
+```
+
+Make that exact version available under `~/.config/seihou/installed/` (for
+example by reinstalling it from its origin while that release is current, or by
+restoring the directory) and retry. A different version is not substituted,
+because it is not how the project was written.
+Selecting more applications does not help here, so this error never suggests
+`--include-shared-owners`. `seihou manifest upgrade --dry-run` lists every path
+still unresolved across the whole project.
+
+A manifest at schema 5 or earlier stops with `manifest_upgrade_required`.
+Converting it records where each artifact came from, which is inferred from
+paths on the machine that wrote it, so only `seihou manifest upgrade` does that,
+where you can review it (see [`seihou manifest`](manifest.md)).
+
+When the refusal is genuine (`shared_path_requires_applications`), the error
+names the owners you selected and the ones still required, and offers a
+concrete command:
+
+```text
+Update failed [shared_path_requires_applications]: At least one owner of Makefile writes
+the whole file, so its owners have to be updated together. Selected: nix-haskell-flake.
+Also required: master-plan. Name them as targets (seihou update master-plan
+nix-haskell-flake), or pass --include-shared-owners to update their full applications too.
+```
+
+Applications are always named the way `seihou status` names them: the target,
+then any parent variables in brackets, then any additional modules, as in
+`exec-plan [skill.name=exec-plan]`. The application id digest is never used as
+a name.
 
 ## Options
 
@@ -65,8 +126,28 @@ Warning:     also updating master-plan because it co-owns .gitignore
 
 The expansion iterates to a fixed point, because an application pulled in
 through one path may co-own a different path with a third application. Paths
-that are already additive-only are skipped, so the flag never drags in an owner
-the update did not need. Without the flag a named selection is never broadened.
+that are additive-only are skipped, so the flag never drags in an owner the
+update did not need. Expansion is for a path that really requires every owner:
+it updates each added application in full, all of its files, not only the
+shared one. Missing evidence is never a reason to expand. Without the flag a
+named selection is never broadened.
+
+## Warnings
+
+Every warning is a sentence. The ones you are most likely to meet:
+
+```text
+Warning:     agents/skills/exec-plan/ADR.md receives content from both exec-plan and
+             link-skill; link-skill is recorded as its last writer (ownership
+             attribution only, not a content change)
+Warning:     demo changed content without changing its declared version
+Warning:     a migration of demo runs 'cabal gen-bounds', which a dry run cannot
+             simulate; the file summary assumes it changes nothing
+```
+
+The first says which module the manifest will credit for a file two modules
+contribute to. It does not mean the file's bytes change; the `Files:` summary
+says that.
 
 ## Saved inputs and migrations
 

@@ -162,6 +162,11 @@ Install the named version (`seihou install`, `seihou upgrade`) and run the
 command again to fill it in. Nothing turns `unknown` into `additive-only`
 without evidence from every owner, and a known answer is never revisited.
 
+A targeted `seihou update` performs the same certification on its own, for the
+shared paths it touches, and publishes the result with the update (see
+[`seihou update`](update.md)). Running this command first is optional; it settles
+every path at once and lets you review the result before any update.
+
 Running the command on a manifest that is already current reports that there
 is nothing to do, lists any path that is still `unknown` with its reason, and
 exits zero.
