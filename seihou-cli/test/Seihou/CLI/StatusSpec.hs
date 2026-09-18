@@ -459,6 +459,19 @@ spec = describe "formatStatus" $ do
     out `shouldSatisfy` T.isInfixOf "Artifacts that differ from what this project records:"
     out `shouldSatisfy` T.isInfixOf "seihou upgrade demo"
 
+  it "names repair-origins for an artifact whose recorded origin is a path" $ do
+    let check =
+          ArtifactCheck
+            { name = ModuleName "demo",
+              origin = RemoteOrigin "/Users/alice/src/demo-modules" "demo" Nothing,
+              verdict =
+                ArtifactOriginMismatch
+                  (RemoteOrigin "/Users/alice/src/demo-modules" "demo" Nothing)
+                  (RemoteOrigin "https://example.com/demo.git" "demo" Nothing)
+            }
+        out = formatArtifactChecks False [check]
+    out `shouldSatisfy` T.isInfixOf "run 'seihou manifest repair-origins'"
+
   it "prints nothing at all when every artifact is healthy" $ do
     let check =
           ArtifactCheck

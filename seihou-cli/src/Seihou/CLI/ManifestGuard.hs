@@ -35,6 +35,7 @@ module Seihou.CLI.ManifestGuard
     formatGuardRefusal,
     formatGuardOverride,
     summarizeCheck,
+    machineLocalOriginNote,
   )
 where
 
@@ -45,7 +46,7 @@ import Data.Ord (comparing)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.Core.ArtifactIdentity (normalizeOriginUrl, normalizeProjectPath)
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, normalizeOriginUrl, normalizeProjectPath)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef
   ( ArtifactRefError,
@@ -431,7 +432,21 @@ formatGuardOverride checks =
 -- carries its own status symbol, because a refusal and a deliberate override
 -- print the same body but are not the same news.
 refusalBlock :: Text -> ArtifactCheck -> Text
-refusalBlock leadIn check = case check ^. #verdict of
+refusalBlock leadIn check = withLocalOriginNote (verdictBlock leadIn check)
+  where
+    -- A recorded path explains most verdicts better than the verdict does:
+    -- the path is why nothing here matches it, and no install can fix it.
+    withLocalOriginNote block
+      | T.null block = block
+      | otherwise = case machineLocalOriginNote (check ^. #origin) of
+          Just note -> block <> "\n\n" <> wrapNote note
+          Nothing -> block
+    wrapNote note = case T.breakOn "; " note of
+      (before, after) | not (T.null after) -> "  " <> before <> ";\n  " <> T.drop 2 after
+      _ -> "  " <> note
+
+verdictBlock :: Text -> ArtifactCheck -> Text
+verdictBlock leadIn check = case check ^. #verdict of
   ArtifactStale recordedVersion localVersion ->
     T.intercalate "\n" $
       [ leadIn <> ": your local copy of '" <> label <> "' is older than the",
@@ -456,10 +471,13 @@ refusalBlock leadIn check = case check ^. #verdict of
         "  These are different artifacts that happen to share a name."
       ]
         <> case recorded of
-          RemoteOrigin url _ _ ->
-            [ "  Install the one this project records:",
-              "    seihou install " <> url
-            ]
+          RemoteOrigin url _ _
+            -- Installing a path from another machine is no remedy; the
+            -- note 'refusalBlock' appends names the one that is.
+            | not (isMachineLocalOriginUrl url) ->
+                [ "  Install the one this project records:",
+                  "    seihou install " <> url
+                ]
           _ -> []
   ArtifactUnresolvable refErr ->
     leadIn <> ".\n\n" <> renderArtifactRefError refErr
@@ -491,7 +509,13 @@ refusalBlock leadIn check = case check ^. #verdict of
 -- like @seihou status@ that must never fail on a verdict. 'Nothing' means
 -- there is nothing to say.
 summarizeCheck :: ArtifactCheck -> Maybe Text
-summarizeCheck check = case check ^. #verdict of
+summarizeCheck check = withLocalOriginNote <$> summarizeVerdict check
+  where
+    withLocalOriginNote summary =
+      maybe summary (\note -> summary <> ". " <> note) (machineLocalOriginNote (check ^. #origin))
+
+summarizeVerdict :: ArtifactCheck -> Maybe Text
+summarizeVerdict check = case check ^. #verdict of
   ArtifactOk -> Nothing
   ArtifactStale recordedVersion localVersion ->
     Just $
@@ -519,6 +543,25 @@ summarizeCheck check = case check ^. #verdict of
     Just (label <> ": no recorded provenance, so its identity cannot be verified")
   where
     label = check ^. #name . #unModuleName
+
+-- | The sentence every message about an artifact appends when the manifest
+-- records its origin as a path on the machine that wrote it.
+--
+-- Such a path cannot match anything installed from a real remote, and no
+-- install can make it match, so the ordinary remedies a verdict names do not
+-- apply. The explicit repair command does: see
+-- "Seihou.CLI.ManifestRepairOrigins". 'Nothing' for every other origin, whose
+-- messages stay exactly as they were.
+machineLocalOriginNote :: ArtifactOrigin -> Maybe Text
+machineLocalOriginNote = \case
+  RemoteOrigin url _ _
+    | isMachineLocalOriginUrl url ->
+        Just
+          ( "The manifest records "
+              <> url
+              <> ", a path on the machine that wrote it; run 'seihou manifest repair-origins'."
+          )
+  _ -> Nothing
 
 -- | How to name an origin in a comparison line.
 originDescription :: ArtifactOrigin -> Text

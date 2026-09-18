@@ -52,7 +52,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
-import Seihou.CLI.ManifestGuard (ArtifactVerdict (..), judgeArtifact)
+import Seihou.CLI.ManifestGuard (ArtifactVerdict (..), judgeArtifact, machineLocalOriginNote)
 import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Composition.Plan (compileComposedPlan)
 import Seihou.Composition.Resolve (PromptPermission (..), resolveWithPromptPermission)
@@ -272,10 +272,13 @@ gatherApplicationEvidence projectRoot searchPaths manifest wanted =
         Left _ ->
           pure
             ( Left
-                ( "module "
-                    <> name ^. #unModuleName
-                    <> maybe "" (" " <>) recordedVersion
-                    <> " is not installed here"
+                ( withLocalOriginNote
+                    recordedOrigin
+                    ( "module "
+                        <> name ^. #unModuleName
+                        <> maybe "" (" " <>) recordedVersion
+                        <> " is not installed here"
+                    )
                 )
             )
         Right directory -> do
@@ -285,7 +288,7 @@ gatherApplicationEvidence projectRoot searchPaths manifest wanted =
             Left _ -> Left ("module " <> name ^. #unModuleName <> " installed here does not evaluate")
             Right modul -> case judgeArtifact recordedOrigin recordedVersion localOrigin (modul ^. #version) of
               ArtifactOriginMismatch _ _ ->
-                Left ("module " <> name ^. #unModuleName <> " is installed here from a different origin than recorded")
+                Left (withLocalOriginNote recordedOrigin ("module " <> name ^. #unModuleName <> " is installed here from a different origin than recorded"))
               _
                 | modul ^. #version /= recordedVersion ->
                     Left
@@ -300,6 +303,12 @@ gatherApplicationEvidence projectRoot searchPaths manifest wanted =
 
     fromMaybeText = fromMaybe ""
     describeVersion = maybe "unversioned" ("version " <>)
+
+    -- A path recorded as the origin is why the installed copy cannot be
+    -- matched, and installing the recorded version will not fix that.
+    withLocalOriginNote recordedOrigin reason = case machineLocalOriginNote recordedOrigin of
+      Just note -> reason <> ". " <> note
+      Nothing -> reason
 
 -- | Certify a scope, compiling every owner the scope needs except those the
 -- caller already supplies operations for. A targeted update supplies the

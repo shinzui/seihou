@@ -103,6 +103,7 @@ spec = do
         (failedCode, failedOut, _) <- run ["update", "alpha", "--dry-run", "--json"]
         failedCode `shouldSatisfy` (/= ExitSuccess)
         failedOut `shouldSatisfy` T.isInfixOf "different origin than recorded"
+        failedOut `shouldSatisfy` T.isInfixOf "run 'seihou manifest repair-origins'"
 
         before <- LBS.readFile (fixture ^. #manifestPath)
         (dryCode, dryOut, dryErr) <- run ["manifest", "repair-origins", "--dry-run"]

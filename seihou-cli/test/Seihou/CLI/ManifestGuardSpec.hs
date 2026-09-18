@@ -160,6 +160,22 @@ spec = do
       message `shouldSatisfy` T.isInfixOf "different source"
       message `shouldSatisfy` (not . T.isInfixOf "older than")
 
+    it "points a mismatch against a recorded path at repair-origins, not at installing the path" $ do
+      let recordedPath = remote "/Users/alice/src/demo-modules"
+          message =
+            formatGuardRefusal
+              [check recordedPath (ArtifactOriginMismatch recordedPath (remote demoUrl))]
+      message `shouldSatisfy` T.isInfixOf "The manifest records /Users/alice/src/demo-modules, a path on the machine that wrote it;"
+      message `shouldSatisfy` T.isInfixOf "run 'seihou manifest repair-origins'."
+      message `shouldSatisfy` (not . T.isInfixOf "seihou install /Users/alice")
+
+    it "keeps a mismatch between two remote URLs exactly as it was" $ do
+      let message =
+            formatGuardRefusal
+              [check (remote demoUrl) (ArtifactOriginMismatch (remote demoUrl) (remote otherUrl))]
+      message `shouldSatisfy` T.isInfixOf ("seihou install " <> demoUrl)
+      message `shouldSatisfy` (not . T.isInfixOf "repair-origins")
+
     it "embeds the resolver's own wording for an unresolvable artifact" $ do
       let notFound = ArtifactNotFoundLocally (remote demoUrl) ["/nowhere/demo"]
           message = formatGuardRefusal [check (remote demoUrl) (ArtifactUnresolvable notFound)]
@@ -177,6 +193,17 @@ spec = do
     it "reports a stale artifact on one line" $
       summarizeCheck (check (remote demoUrl) (ArtifactStale "2.0.0" "1.4.0"))
         `shouldSatisfy` maybe False (T.isInfixOf "seihou upgrade demo")
+
+    it "appends the repair-origins sentence for a recorded path" $ do
+      let recordedPath = remote "/Users/alice/src/demo-modules"
+      summarizeCheck (check recordedPath (ArtifactOriginMismatch recordedPath (remote demoUrl)))
+        `shouldSatisfy` maybe
+          False
+          ( T.isSuffixOf
+              ". The manifest records /Users/alice/src/demo-modules, a path on the machine that wrote it; run 'seihou manifest repair-origins'."
+          )
+      summarizeCheck (check (remote demoUrl) (ArtifactOriginMismatch (remote demoUrl) (remote otherUrl)))
+        `shouldSatisfy` maybe False (not . T.isInfixOf "repair-origins")
 
     it "reports an unverifiable artifact without implying a fault" $
       summarizeCheck (check (LocalOrigin "demo") ArtifactUnverifiableOrigin)

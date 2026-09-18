@@ -70,7 +70,7 @@ After this plan, three things are true:
 - [x] M1: `isMachineLocalOriginUrl` in `Seihou.Core.ArtifactIdentity`; `detectArtifactOrigin` maps a machine-local `sourceUrl` to `LocalOrigin`; tests. (2026-09-18: new `seihou-core/test/Seihou/Core/ArtifactIdentitySpec.hs`; `cabal test seihou-core` 1154 passed.)
 - [x] M2: `seihou install <local path>` records the checkout's remote when the installed commit is published there; otherwise warns; tests. (2026-09-18: `resolveRecordedSource` in `InstallShared`; `InstallSourceSpec` (6 cases) and the two install cases of `RepairOriginsE2ESpec` pass, including a same-source reinstall from the recorded remote.)
 - [x] M3: `seihou manifest repair-origins [--dry-run] [--set NAME=URL]` in `Seihou.CLI.ManifestRepairOrigins`; unit and E2E tests. (2026-09-18: `ManifestRepairOriginsSpec` 20 cases; `RepairOriginsE2ESpec` reproduces the reported certification failure, repairs it, and shows the targeted update succeeding; `cabal test seihou-cli` 677 passed.)
-- [ ] M4: Guard, certification-gap, and status messages point at the command for machine-local origins.
+- [x] M4: Guard, certification-gap, and status messages point at the command for machine-local origins. (2026-09-18: `machineLocalOriginNote` in `ManifestGuard`; asserted in `ManifestGuardSpec`, `StatusSpec`, and the `RepairOriginsE2ESpec` update output; `cabal test seihou-cli` 682 passed.)
 - [ ] M5: Docs (`docs/cli/manifest.md`, `docs/cli/install.md`, `docs/user/manifest-upgrade.md`), both changelogs, ADR 0001 and ADR 0005 amendments; full validation.
 
 
@@ -183,6 +183,19 @@ After this plan, three things are true:
 - Decision: `--set NAME=URL` for a name recorded under no local path is refused up front,
   like a machine-local URL.
   Rationale: Such an override would silently do nothing, and it is almost always a typo.
+  Date: 2026-09-18
+
+
+- Decision: The repair sentence is appended to every guard block and one-line summary
+  whose recorded origin is a path, not only to origin mismatches, and a mismatch against a
+  recorded path no longer suggests `seihou install <path>`. `seihou status` gets the
+  sentence through `summarizeCheck` rather than through `StatusRender.adviceCommand`.
+  Rationale: A recorded path also explains an unresolvable or unverifiable verdict, and
+  installing another machine's path is never the remedy. `adviceCommand` only renders
+  advice derived from outdated-module checks and has no hook for artifact checks;
+  `formatArtifactChecks` already prints each `summarizeCheck` line. Plan 97 has not
+  landed, so its "path on another machine" reason does not exist yet; 97 should call
+  `machineLocalOriginNote` when it adds that reason.
   Date: 2026-09-18
 
 
