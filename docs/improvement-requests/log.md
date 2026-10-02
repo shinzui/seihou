@@ -1,5 +1,14 @@
 # Bundle Update Log
 
+## 2026-10-02
+* **Addition**: IR-9 requests that module command receipts reach `.seihou/manifest.json` before a
+module's own commands can commit or push it. `seihou run` and `seihou update` write receipts only
+after the whole command phase, so `git-init`'s initial commit and `gh repo create --push` capture a
+manifest with no receipts. The tree is dirty right after the run, and a clone's later update treats
+those commands as never run. Because every receipt's `completedAt` is the run's `now`, the
+final receipt set is known up front. Records two options without choosing: write the expected receipts
+first and roll back on failure, or add a final command phase that runs after the receipt write.
+
 ## 2026-09-16
 * **Update**: IR-7 is implemented. truncateReason and reasonWidth are hoisted out of formatBlueprintMigrations' where clause into a module-level truncateForSummary that the receipt reason and the blueprint Prompt line now share; the prompt is collapsed to one line and bounded at 72 characters while the reason keeps 60. .seihou/manifest.json is untouched - userPrompt still holds the whole prompt and seihou status writes nothing. The optional escape hatch ships as seihou status --full-prompt rather than the suggested --full, because status renders six blocks and bounds one value so a bare --full does not say which; -u and -v are both taken on this command and its siblings. ADR 0013 records the underlying rule.
 * **Update**: IR-8 is accepted and planned in docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md. The plan persists the per-path write mode in the manifest as a single boolean FileRecord.additiveOnly (option (a), fail-closed when absent, no schema version bump), checks the exemption in two layers — the CLI preflight against the manifest and reconciliation against the candidate's own operations — and sequences two fail-open defects the closure had been masking ahead of the gate change: prepareCandidateManifest must union surviving owners into the rewritten record instead of replacing them, and may only carry additiveOnly forward when the prior record agreed. Part 2 lands as seihou update <target> --include-shared-owners, expanding to a fixed point and reporting each application it adds.
