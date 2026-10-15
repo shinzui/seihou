@@ -4,14 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.0.0] - 2026-10-15
+
 ### Added
 
 - Manifest-only `seihou sync [--dry-run] [--json]` restores ignored checkout directory links without artifacts, commands, tracked writes or manifest changes. Schema 9 stores typed declarations and application/instance ownership; run, update, remove and status share observation and reconciliation.
 - Update recovery journals snapshot literal symlink targets while retaining version-1 compatibility.
 - Optional step lifecycle with backward-compatible decoding and seed declaration validation.
 - Manifest schema 8 seed receipts and lossless 7-to-8 upgrade; runtime seed creation is separate.
-
-### Added
 
 - **`seihou agent upgrade MODULE [PROMPT] [--check]`** (`Seihou.CLI.UpgradeDiagnosis`,
   executable `Seihou.CLI.AgentUpgrade`, template `data/upgrade-prompt.md`). A read-only,
@@ -65,6 +65,12 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- **Breaking core API changes.** `Step` gains a required `lifecycle` field;
+  `Manifest.version` becomes `ManifestSchemaVersion`, and `Manifest` gains
+  `seeds` and `checkoutOutputs`. `FileRecord.additiveOnly` is replaced by
+  `sharedWriteMode`. `Strategy` and `Operation` gain checkout constructors.
+  Downstream record construction and exhaustive pattern matches need updating.
+  Newly written schema-9 manifests require this release or later to read.
 - Upgrade `mori://shinzui/okf/packages/okf-core` to 0.10.0.0,
   `mori://shinzui/baikai/packages/baikai` to 0.8.0.0,
   `mori://shinzui/baikai/packages/baikai-kit` to 0.4.0.1, and both provider
@@ -1121,7 +1127,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.9.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.10.0.0...HEAD
+[0.10.0.0]: https://github.com/shinzui/seihou/compare/v0.9.0.0...v0.10.0.0
 [0.9.0.0]: https://github.com/shinzui/seihou/compare/v0.8.0.0...v0.9.0.0
 [0.8.0.0]: https://github.com/shinzui/seihou/compare/v0.7.0.0...v0.8.0.0
 [0.7.0.0]: https://github.com/shinzui/seihou/compare/v0.6.0.0...v0.7.0.0

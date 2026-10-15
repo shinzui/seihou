@@ -10,7 +10,22 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+## [0.10.0.0] - 2026-10-15
+
 ### Added
+
+- **`seihou sync` restores declared directory links in a fresh checkout.** Apply a
+  module with checkout output declarations once and commit its manifest, source
+  directories and ignore rules. Each clone can then restore its ignored links:
+
+  ```bash
+  seihou sync --dry-run
+  seihou sync
+  ```
+
+  Run at the Git working-tree root. Sync uses the manifest without fetching
+  modules, running commands or changing tracked files. It refuses collisions
+  with real files and directories. `--json` provides a machine-readable report.
 
 - **`seihou agent upgrade <module>` upgrades a module and repairs the manifest state that
   blocks it.** Seihou diagnoses the project first without changing anything: the
@@ -104,6 +119,18 @@ packages in the workspace share a single version.
   ```
 
 ### Changed
+
+- **New manifests use schema 9.** This release reads schemas 6 through 9;
+  older Seihou binaries cannot read newly written schema-9 manifests. Upgrade
+  Seihou on each machine that shares the project. Older machine-local manifests
+  still require `seihou manifest upgrade`. Schema 8 adds seed receipts, and
+  schema 9 records checkout directory outputs; creating seed files at runtime
+  remains pending.
+
+  Existing Dhall modules continue to work unchanged: omitted step lifecycles
+  keep managed behavior. Checkout directory outputs are an opt-in replacement
+  for directory-link shell commands; old command receipts do not become
+  checkout declarations automatically.
 
 - **A failed `seihou update` now points at `seihou agent upgrade`.** After the message
   and its remedy, every failure ends with
@@ -1034,6 +1061,8 @@ regeneration.
 
 ---
 
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.10.0.0...HEAD
+[0.10.0.0]: https://github.com/shinzui/seihou/compare/v0.9.0.0...v0.10.0.0
 [0.9.0.0]: https://github.com/shinzui/seihou/compare/v0.8.0.0...v0.9.0.0
 [0.8.0.0]: https://github.com/shinzui/seihou/compare/v0.7.0.0...v0.8.0.0
 [0.7.0.0]: https://github.com/shinzui/seihou/compare/v0.6.0.0...v0.7.0.0
