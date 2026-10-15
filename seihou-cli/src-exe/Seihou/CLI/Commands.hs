@@ -308,7 +308,7 @@ data BrowseOpts = BrowseOpts
   }
   deriving stock (Eq, Show, Generic)
 
-data SyncOpts = SyncOpts {dryRun :: !Bool, json :: !Bool}
+data SyncOpts = SyncOpts {dryRun :: !Bool, json :: !Bool, yes :: !Bool}
   deriving stock (Eq, Show, Generic)
 
 data StatusOpts = StatusOpts
@@ -2377,7 +2377,7 @@ syncInfo =
     (syncParser <**> helper)
     ( fullDesc
         <> progDesc "Restore declared local links for this checkout"
-        <> footer "Run at the Git working-tree root. No producer installation is needed. If links have not been declared yet, run seihou update TARGET once and commit the resulting manifest; later clones need only seihou sync."
+        <> footer "Run at the Git working-tree root. No producer installation is needed. Older projects get a one-time link setup preview and confirmation. Commit the adopted manifest and sources; teammates use the same command. Existing declarations sync offline."
     )
   where
     syncParser =
@@ -2385,4 +2385,5 @@ syncInfo =
         <$> ( SyncOpts
                 <$> switch (long "dry-run" <> help "Show planned links without changing anything")
                 <*> switch (long "json" <> help "Print one JSON report")
+                <*> switch (long "yes" <> help "Accept one-time link setup without prompting")
             )

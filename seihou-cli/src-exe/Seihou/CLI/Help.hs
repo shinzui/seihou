@@ -43,7 +43,7 @@ helpTopics =
     HelpTopic "prompts" "Reusable agent-session prompt artifacts" promptsContent,
     HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent,
     HelpTopic "workflow" "Choose commands for generation, updates, and recovery" workflowContent,
-    HelpTopic "sync" "Restore ignored directory links in clones and worktrees" syncContent,
+    HelpTopic "sync" "Set up and restore local checkout links" syncContent,
     HelpTopic "recipes" "Compose existing modules into one named application" recipesContent,
     HelpTopic "registry" "Publish and validate multi-artifact repository metadata" registryContent,
     HelpTopic "extensions" "Run external extensions and find their help" extensionsContent,

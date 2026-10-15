@@ -1,6 +1,6 @@
 module Seihou.CLI.CheckoutSyncE2ESpec (tests) where
 
-import Control.Monad (forM_, unless)
+import Control.Monad (forM_, unless, when)
 import Data.Aeson qualified as A
 import Data.Aeson.KeyMap qualified as KM
 import Data.ByteString qualified as BS
@@ -86,7 +86,9 @@ prepare root home source destination secondSource secondDestination = do
 
 -- Establish a real old command-producing application, then publish a declaring
 -- release. Adoption itself runs in a different, empty personal configuration.
-prepareAdoption temp failing = do
+prepareAdoption temp failing = prepareAdoptionWithTracking temp failing True
+
+prepareAdoptionWithTracking temp failing tracked = do
   binary <- seihouBinary
   cwd <- D.getCurrentDirectory
   schema <- D.canonicalizePath (takeDirectory cwd </> "schema")
@@ -127,7 +129,10 @@ prepareAdoption temp failing = do
   _ <- success binary root initialHome ["install", remoteUrl]
   _ <- success binary root initialHome ["run", "demo", "--force"]
   D.createDirectoryLink "../config/editor" (root </> ".local/unrelated")
-  _ <- git root ["add", "-f", ".local/config", ".local/unrelated"]
+  when tracked $ do
+    _ <- git root ["add", "-f", ".local/config"]
+    pure ()
+  _ <- git root ["add", "-f", ".local/unrelated"]
   _ <- commit root "test: record legacy application and discovery links"
   let commands = if failing then "[S.Command::{run = \"exit 42\"}]" else "[] : List S.Command.Type"
   TIO.writeFile
@@ -141,13 +146,98 @@ prepareAdoption temp failing = do
   pure (binary, root, home)
 
 tests :: IO TestTree
-tests = testSpec "manifest-only checkout sync" $ do
+tests = testSpec "checkout sync and adoption" $ do
+  it "owns adoption from an old clone and restores a teammate's fresh clone" $
+    withSystemTempDirectory "sync-team-adoption" $ \temp -> do
+      (binary, original, home) <- prepareAdoptionWithTracking temp True False
+      let root = temp </> "older-clone"
+      _ <- git original ["clone", "-q", original, root]
+      before <- snapshot root
+      D.doesPathExist (root </> ".local/config") `shouldReturn` False
+      status <- success binary root home ["status"]
+      status `shouldSatisfy` isInfixOf "Checkout outputs: none declared."
+      status `shouldSatisfy` isInfixOf "Run seihou sync"
+      dry <- success binary root home ["sync", "--dry-run", "--json"]
+      dry `shouldSatisfy` isInfixOf "\"approvalRequired\":true"
+      dry `shouldSatisfy` isInfixOf "\"plannedAction\":\"create\""
+      snapshot root `shouldReturn` before
+      D.doesPathExist (root </> ".local/config") `shouldReturn` False
+      (cancelCode, _, _) <- invoke binary root home ["sync"]
+      cancelCode `shouldSatisfy` (/= ExitSuccess)
+      (jsonCode, _, _) <- invoke binary root home ["sync", "--json"]
+      jsonCode `shouldSatisfy` (/= ExitSuccess)
+      snapshot root `shouldReturn` before
+      adopted <- success binary root home ["sync", "--yes"]
+      adopted `shouldSatisfy` isInfixOf "Links: 1 created, 0 repaired, 0 unchanged."
+      D.getSymbolicLinkTarget (root </> ".local/config") `shouldReturn` "../config/editor"
+      TIO.readFile (root </> ".local/config/sentinel") `shouldReturn` "tracked source\n"
+      _ <- git root ["add", ".seihou"]
+      _ <- git root ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "test: share link setup"]
+      let clone = temp </> "teammate"; cloneHome = temp </> "teammate-home"
+      D.createDirectoryIfMissing True cloneHome
+      _ <- git root ["clone", "-q", root, clone]
+      cloneBefore <- snapshot clone
+      first <- success binary clone cloneHome ["sync"]
+      first `shouldSatisfy` isInfixOf "Links: 1 created, 0 repaired, 0 unchanged."
+      second <- success binary clone cloneHome ["sync"]
+      second `shouldSatisfy` isInfixOf "Links: 0 created, 0 repaired, 1 unchanged."
+      snapshot clone `shouldReturn` cloneBefore
+      D.doesDirectoryExist (cloneHome </> "config/seihou/installed") `shouldReturn` False
+  it "adopts tracked links through sync while preserving unrelated staging" $
+    withSystemTempDirectory "sync-tracked-adoption" $ \temp -> do
+      (binary, root, home) <- prepareAdoption temp False
+      TIO.writeFile (root </> "unrelated") "staged edit\n"
+      _ <- git root ["add", "unrelated"]
+      TIO.writeFile (root </> "unrelated") "unstaged edit\n"
+      dry <- success binary root home ["sync", "--dry-run"]
+      dry `shouldSatisfy` isInfixOf "Adopt link: .local/config"
+      _ <- success binary root home ["sync", "--yes", "--json"]
+      git root ["ls-files", "--", ".local/config"] `shouldReturn` ""
+      git root ["show", ":unrelated"] `shouldReturn` "staged edit\n"
+      TIO.readFile (root </> "unrelated") `shouldReturn` "unstaged edit\n"
+      D.getSymbolicLinkTarget (root </> ".local/config") `shouldReturn` "../config/editor"
+  it "does not upgrade or prompt for an unrelated application during link setup" $
+    withSystemTempDirectory "sync-unrelated-application" $ \temp -> do
+      (binary, root, home) <- prepareAdoption temp False
+      let other = root </> ".seihou/modules/other"
+          body version vars = "let S = ./schema/package.dhall in S.Module::{name = \"other\", version = Some \"" <> version <> "\", vars = " <> vars <> ", steps = [S.Step::{strategy = \"copy\", src = \"sentinel\", dest = \"other-output\"}]}"
+      D.createDirectoryIfMissing True (other </> "files")
+      D.createDirectoryIfMissing True (other </> "schema")
+      schemaFiles <- D.listDirectory (temp </> "producer/schema")
+      forM_ schemaFiles $ \file -> D.copyFile (temp </> "producer/schema" </> file) (other </> "schema" </> file)
+      TIO.writeFile (other </> "files/sentinel") "original other output\n"
+      TIO.writeFile (other </> "module.dhall") (body "1.0.0" "[] : List S.VarDecl.Type")
+      _ <- success binary root home ["run", "other", "--force"]
+      oldManifest <- A.eitherDecode <$> LBS.readFile (root </> ".seihou/manifest.json")
+      TIO.writeFile (other </> "files/sentinel") "unrelated proposed update\n"
+      TIO.writeFile (other </> "module.dhall") (body "2.0.0" "[S.VarDecl::{name = \"new-input\", type = \"text\", required = True}]")
+      _ <- success binary root home ["sync", "--yes"]
+      TIO.readFile (root </> "other-output") `shouldReturn` "original other output\n"
+      newManifest <- A.eitherDecode <$> LBS.readFile (root </> ".seihou/manifest.json")
+      let otherApplication decoded = case decoded of
+            Right (A.Object fields) -> case KM.lookup "applications" fields of
+              Just (A.Array applications) -> [app | app@(A.Object values) <- foldr (:) [] applications, KM.lookup "target" values == Just (A.object ["kind" A..= ("module" :: T.Text), "name" A..= ("other" :: T.Text)])]
+              _ -> []
+            _ -> []
+      length (otherApplication oldManifest) `shouldBe` 1
+      otherApplication newManifest `shouldBe` otherApplication oldManifest
+  it "refuses occupied directories during adoption without losing user files" $
+    withSystemTempDirectory "sync-adoption-collision" $ \temp -> do
+      (binary, root, home) <- prepareAdoptionWithTracking temp False False
+      D.removeDirectoryLink (root </> ".local/config")
+      D.createDirectoryIfMissing True (root </> ".local/config")
+      TIO.writeFile (root </> ".local/config/user-file") "keep me\n"
+      before <- snapshot root
+      (code, _, _) <- invoke binary root home ["sync", "--yes"]
+      code `shouldSatisfy` (/= ExitSuccess)
+      snapshot root `shouldReturn` before
+      TIO.readFile (root </> ".local/config/user-file") `shouldReturn` "keep me\n"
   it "adopts a tracked link using remote update alone, then syncs a fresh clone" $
     withSystemTempDirectory "checkout-adoption" $ \temp -> do
       (binary, root, home) <- prepareAdoption temp False
       D.doesDirectoryExist (home </> "config/seihou/installed") `shouldReturn` False
-      notice <- success binary root home ["sync"]
-      notice `shouldSatisfy` isInfixOf "seihou update demo"
+      notice <- success binary root home ["sync", "--dry-run"]
+      notice `shouldSatisfy` isInfixOf "One-time link setup is available"
       TIO.writeFile (root </> "unrelated") "staged edit\n"
       _ <- git root ["add", "unrelated"]
       TIO.writeFile (root </> "unrelated") "unstaged edit\n"

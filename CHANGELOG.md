@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `seihou sync` now owns first-time checkout-link adoption: it discovers declaring
+  compositions from recorded sources, reuses inputs, previews the changes, and
+  creates links after confirmation. Other applications are not upgraded. Existing
+  declarations continue to restore offline. Automation can accept with `--yes`.
+- Status reports absent link declarations with the ordinary `seihou sync` remedy,
+  rather than presenting zero declarations as zero problems.
 - Audit embedded agent guidance and help against current behavior: share the module
   reference across assist/bootstrap/setup; correct removal fields, migration windows,
   variable/config precedence, pinned CLI models, update and checkout adoption workflows.

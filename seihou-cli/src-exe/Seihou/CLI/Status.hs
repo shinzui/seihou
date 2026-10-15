@@ -7,6 +7,7 @@ import Control.Exception (SomeException, try)
 import Data.Generics.Labels ()
 import Data.Maybe (maybeToList)
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.CheckoutSync (checkoutAdoptionNotices)
 import Seihou.CLI.Commands (StatusOpts (..))
 import Seihou.CLI.ManifestGuard (ArtifactCheck, checkAppliedArtifacts, checkAppliedBlueprint)
 import Seihou.CLI.Outdated (checkInstalledModulesForUpdates)
@@ -57,7 +58,9 @@ handleStatus opts = do
       checkout <- runEff $ runFilesystem $ runProcessIO $ prepareCheckoutPlan Rebuild SyncIgnoredOnly root manifest manifest []
       case checkout of
         Left err -> TIO.putStrLn ("Checkout outputs: " <> err ^. #message)
-        Right plan -> TIO.putStr (formatCheckoutStatus plan)
+        Right plan -> do
+          TIO.putStr (formatCheckoutStatus plan)
+          mapM_ TIO.putStrLn (checkoutAdoptionNotices manifest)
       mEntries <-
         if opts ^. #statusCheckUpdates && not (null (manifest ^. #modules))
           then fetchUpdateEntries

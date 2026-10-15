@@ -8,7 +8,17 @@ packaging.
 Versions follow the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`). All
 packages in the workspace share a single version.
 
+
 ## Unreleased
+
+### Fixed
+
+- `seihou sync` now owns first-time checkout-link adoption: it discovers declaring
+  compositions from recorded sources, reuses inputs, previews the changes, and
+  creates links after confirmation. Other applications are not upgraded. Existing
+  declarations continue to restore offline. Automation can accept with `--yes`.
+- Status reports absent link declarations with the ordinary `seihou sync` remedy,
+  rather than presenting zero declarations as zero problems.
 
 ### Fixed
 

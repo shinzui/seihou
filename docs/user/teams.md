@@ -6,6 +6,20 @@ so it belongs in git alongside the code it describes. This guide covers what a
 team commits, what each developer needs installed, and what happens when
 somebody is out of date.
 
+## Local links for every checkout
+
+Run `seihou sync` from the project root after cloning or updating the checkout.
+It creates or repairs the recorded skill and tool links. If the project still uses
+older setup commands, the same command discovers link declarations and previews a
+one-time adoption. Accept the preview and commit the resulting project changes;
+teammates then receive that commit and use the same `seihou sync` command. Nobody
+needs to install producer modules, identify transitive dependencies, edit the
+manifest, or manipulate the Git index to restore links.
+
+Recorded links restore offline without changing tracked files. For automated
+first-time adoption, use `seihou sync --yes`; `--dry-run` previews all setup changes.
+
+
 ## What to commit
 
 | Path | Commit it? | Why |

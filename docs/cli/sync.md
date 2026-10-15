@@ -1,9 +1,11 @@
 # seihou sync
 
-Rebuild directory links declared in the committed manifest for this working copy.
+Set up and restore this project's local directory links. Older projects get a
+one-time setup preview in the same command; adopted projects restore their
+recorded links offline.
 
 ```bash
-seihou sync [--dry-run] [--json]
+seihou sync [--dry-run] [--json] [--yes]
 ```
 
 Run at the Git working-tree root, including linked worktrees. Sources must already be real
@@ -20,8 +22,9 @@ An ordinary apply failure rolls back this attempt's links and empty parents when
 match its own writes. A killed process can leave a subset of correct links; rerunning converges.
 These checks assume a single cooperating filesystem writer, not a hostile concurrent writer.
 
-No installed module, config evaluation, migration, network fetch or recorded shell command is
-involved. Sync never upgrades artifacts or rewrites the manifest. There is no command-replay
+For recorded declarations, no installed module, config evaluation, migration, network fetch
+or recorded shell command is involved. Restoration does not upgrade artifacts or rewrite
+the manifest. Older projects with no declarations use the adoption workflow below. There is no command-replay
 option and no completion receipt. A deleted link is detected again on the next invocation.
 
 A module can declare the wiring for an editor directory:
@@ -49,8 +52,9 @@ Dry-run and refused preflights report zero applied changes. Execution outcomes i
 `not-applied`, `unchanged`, `applied`, `failed`, `rolled-back` and `rollback-conflicted`.
 Refusal or execution failure exits nonzero; empty and already-correct plans succeed.
 
-Older supported manifests have no checkout declarations and report zero work. Apply a declaring
-module release once to record them. Sync never infers declarations from shell receipts. Older
+Older supported manifests with recorded applications but no checkout declarations trigger
+automatic discovery of link setup from their recorded sources. Sync never infers
+declarations from shell receipts. Older
 machine-local manifests require explicit `seihou manifest upgrade`; a newer unsupported schema
 requires a newer binary. Metadata must be a real `.seihou` directory with a real manifest file.
 
@@ -63,21 +67,34 @@ uses `agents/skills/`; the latter, used by update-docs, keeps `claude/skills/`.
 Use Seihou 0.10.1.0 or newer for automatic tracked-link adoption and the clearer
 sync/status guidance described below.
 
-For an existing master-plan application, update its recorded root target once:
+For an existing project, use the same command as a fresh clone:
 
 ```bash
-seihou update master-plan
+seihou sync
 ```
 
-Update fetches the recorded remote and its module dependencies, reuses saved inputs,
-and shows a preview before asking to apply. No producer installation is needed for
-an existing remote-backed application, including in a fresh clone. Use
-`seihou update master-plan --dry-run` for a separate preview if desired.
-This records four discovery declarations even though master-plan and exec-plan
-remain at 0.12.0. For a first application, install the producer and use
-`seihou run master-plan`. For another composition, update its recorded root target instead.
-Installing the module or running `seihou manifest upgrade` alone cannot infer
-checkout intent from command receipts.
+When no links are recorded, sync checks the project's recorded producer sources,
+finds compositions that declare checkout links, and previews the required changes.
+It reuses saved inputs and resolves dependencies without asking you to name modules
+or install them. Accept `Apply link setup?` to adopt the declarations and create the
+links. Other recorded applications are not selected merely because they have updates.
+The preview includes any source changes and migrations needed by the declaring
+composition. Necessary owners of shared files are included automatically and
+identified in the preview; developers do not have to enumerate them. Ordinary setup shell commands are disabled for this link adoption.
+
+This one-time adoption can change the manifest and managed source files. Commit
+those changes for the team. Teammates receive the commit through the team's normal
+Git workflow, then run `seihou sync`; already-adopted projects need no network or
+installed producers. Sync does not pull or merge Git branches.
+
+`seihou sync --dry-run` previews without applying. For automation, use
+`seihou sync --yes`, optionally with `--json`. JSON alone does not consent to a
+one-time project update: it returns the adoption preview with `approvalRequired`
+and exits nonzero. Cancellation also exits nonzero without applying setup.
+Normal restoration of existing declarations needs no confirmation or extra flag.
+
+For a first application, install and run the desired module as usual. Installing
+modules or upgrading manifest schema alone does not record link intent.
 
 When a newly declared destination is an unchanged tracked symlink matching the
 declaration, update previews `Adopt link: … (stop tracking in Git; keep working link)`.
@@ -96,9 +113,8 @@ seihou sync
 ```
 
 The human output lists the links and summarizes how many were created, repaired
-or already correct. When a manifest has no declarations, sync shows its recorded
-update targets so you can check for a declaring release. It does not fetch or
-apply an update itself.
+or already correct. When a manifest has no declarations, sync discovers and previews setup within
+the command. If no recorded composition declares links, it reports that explicitly.
 
 No installed producers are needed. Sync restores
 deleted links and repairs wrong targets while preserving tracked bytes and the

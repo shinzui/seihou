@@ -58,7 +58,7 @@ If durable project context changes, update or create ADRs in docs/adr/ in the sa
 
 ## Purpose / Big Picture
 
-Completed on 2026-10-15, including the reopened developer-experience work.
+Reopened on 2026-10-15: repairing one checkout did not satisfy the team developer-experience requirement. Milestones 1–7 below are historical implementation evidence, not proof that the ordinary team workflow is complete.
 Existing projects use ordinary `seihou update master-plan`, accept its preview,
 and commit the resulting changes. Fresh clones and worktrees then need only
 `seihou sync`: no dependency installation list, manual index surgery, or JSON
@@ -92,6 +92,20 @@ module syntax alone is not completion.
 - [x] Milestone 5 (2026-10-15): ordinary remote-backed update with an empty producer cache previews and confirms eligible tracked-link adoption. Executable tests preserve unrelated staging/working edits and cover dry-run, cancellation, failed-command rollback and protected modified objects. Five core adoption tests cover interrupted/committed recovery and later index/working-link edits. An interactive real-consumer rehearsal also refuses an index change made after preview without writing the index or manifest.
 - [x] Milestone 6 (2026-10-15): empty-declaration sync names recorded update targets; normal output summarizes created/repaired/unchanged links. CLI help, guides, changelogs and ADRs describe ordinary update followed by clone sync. The pre-adoption consumer passes ordinary interactive update without installation or manual untracking; its fresh clone creates four links, then reports four unchanged, and repairs deletion and retarget drift individually.
 - [x] Milestone 7 (2026-10-15): published Seihou 0.10.1.0 (c3bb42b), all three Hackage packages and documentation, and the GitHub release. The user’s normal Nix-profile executable now reports that exact release. Installed-release interactive update passes with empty caches for both the tracked-link consumer and the screenshot’s schema-6 consumer; fresh clones/worktrees create four links, repeated sync changes nothing, and deletion/retarget repair preserves tracked bytes, index and manifest. All 20 producer tests (330 assertions) and five module validations pass with the installed release. The local consumer copy is adopted and pushed at 529fd6d; normal update now reports Already up to date.
+
+- [ ] Milestone 8: an untouched older checkout with empty producer caches needs only `seihou sync`. The command discovers declaring compositions, previews the necessary adoption, reuses recorded inputs, and creates links after confirmation. It leaves unrelated applications unchanged. Cancellation and dry-run preserve the project; existing declarations continue to sync offline without changing the manifest. Status explains absent declarations. Verify the ordinary interactive command on the real pre-adoption consumer and repeat from a fresh clone after committing adoption.
+- [ ] Milestone 9: publish the workflow fix and verify the released executable available to the team. A repaired individual checkout or a source-only build does not complete delivery.
+
+Team acceptance: a developer starts in an older supported checkout with committed
+skill sources, historical command receipts, and no local producers or skill links.
+They run `seihou sync` and accept one preview of the adoption. The command creates
+the four links and explains the project changes to commit. Other developers receive
+that commit through ordinary Git collaboration and run the same `seihou sync`.
+No developer needs to name a root module or dependency, edit JSON, untrack links
+manually, or run a separate migration command. Already-adopted checkouts remain
+offline and manifest-read-only. Automatic discovery must never apply an unrelated
+application upgrade; all adoption changes remain subject to the update transaction
+and its existing collision, stale-state, and recovery checks.
 
 
 Release delivery (2026-10-15): 0.10.1.0 includes a screenshot-driven status fix:
@@ -195,6 +209,17 @@ identical. No inference-bearing manifest conversion is required.
 
 ## Decision Log
 
+
+Decision (2026-10-15, team workflow): the user rejected the individual-checkout
+repair as a substitute for a product fix. The normal sync CLI now owns discovery
+and explicitly accepted adoption when declarations are absent. This supersedes
+the earlier CLI restriction that empty-declaration sync could only suggest an
+update command. The restoration engine remains offline and manifest-read-only;
+adoption uses the existing checked update transaction and includes necessary
+shared owners automatically in its preview. JSON alone does not approve adoption;
+`--yes` is available for automation. No paths or shell receipts are interpreted as
+link declarations, and no Git pull is hidden inside sync.
+
 Decision (2026-10-15, reopening): the user rejected the manual adoption workflow
 and requested a fix. Extend this plan rather than declaring a separate completed
 mechanism sufficient. Remote-backed update already fetches candidate artifacts;
@@ -230,6 +255,22 @@ fixture cannot silently replace the required schema-upgrade proof.
 
 
 ## Outcomes & Retrospective
+
+
+Team workflow remains open for final release delivery. The source candidate was
+exercised with the ordinary interactive `seihou sync` command from a disposable
+copy of the real schema-6 consumer at 5cb50ca, empty XDG configuration/cache, and
+no discovery links. One acceptance created all four links. Committing that result
+and cloning it with a second empty configuration let a teammate run the same
+command: four links created, then four unchanged, with manifest bytes and tracked
+state preserved. A second real consumer at c7c315a^ includes Nix scaffolding;
+sync selected only the planning-skill composition and previewed tracked-link
+adoption. Its Nix application and exclusively owned file records stayed identical;
+no managed source bytes changed. Evidence checkouts are under
+`/tmp/seihou-107-team-proof-wck7hbzy`. The CLI suite passed 746 cases, including
+adoption, no-consent refusal, dry-run, unrelated required inputs, collisions,
+tracked-link staging preservation and a fresh teammate clone. Final integrated
+release checks and published-executable acceptance remain outstanding.
 
 All seven original milestones completed on 2026-10-15; the affected remote
 checkout was repaired and verified separately later that day, as recorded below. The reopened workflow is delivered

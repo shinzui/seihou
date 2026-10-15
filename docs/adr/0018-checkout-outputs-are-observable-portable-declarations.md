@@ -47,7 +47,7 @@ select intent and render structured outcomes. These layers are shared by sync, r
 remove, and status. Checkout destinations never enter managed-file content hashing,
 baseline storage, text merging, or additive-write certification.
 
-Sync rebuilds the current recorded declaration. It needs a Git working tree, ignored and
+The checkout sync engine rebuilds the current recorded declaration. It needs a Git working tree, ignored and
 untracked destinations, available real source directories, and safe ancestors. It can
 replace an incorrect destination symlink but cannot replace a regular object or follow a
 symlinked ancestor. It writes only declared link entries and necessary parents. It neither
@@ -126,9 +126,16 @@ checks compare tracked symlink text without following targets, and account for p
 that already exist because they hold unrelated tracked entries.
 
 Remote-backed updates fetch their candidates and dependencies without a prerequisite
-installation. Empty-declaration sync guidance names recorded update targets but
-does not assert that a newer declaring producer exists and never infers wiring from
-shell receipts. The original plan-107 manual untracking procedure is historical;
+installation. When declarations are absent, the normal sync CLI now discovers declaring
+compositions from recorded sources and offers the necessary application update
+within the same command. It selects only compositions with checkout steps and
+reuses saved inputs. A preview and explicit acceptance precede any adoption,
+including managed file changes and eligible index transitions. This delegates to
+the existing update transaction; it does not infer wiring from shell receipts.
+Dry-run only previews adoption; JSON automation requires explicit `--yes` to accept
+it. Once declarations exist, sync uses the offline, manifest-read-only engine
+without fetching producers. Status remains offline and points to `seihou sync`
+when setup has not been recorded. The original plan-107 manual untracking procedure is historical;
 the reopened plan requires adoption through the normal accepted update flow.
 Status treats absent remotely fetchable producers as an optional local cache,
 summarized once rather than as project damage. This does not weaken command guards

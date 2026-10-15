@@ -76,7 +76,7 @@ import Seihou.Engine.Reconcile
   )
 import Seihou.Engine.Reconcile qualified as Reconcile
 import Seihou.Engine.UpdateTransaction (TransactionError (..))
-import Seihou.Manifest.Types (sharedWriteModeToText)
+import Seihou.Manifest.Types (currentManifestVersion, sharedWriteModeToText)
 import Seihou.Prelude
 
 newtype UpdatePlanView = UpdatePlanView UpdatePlan
@@ -117,7 +117,7 @@ agentUpgradeHint target =
 renderUpdateHuman :: Bool -> UpdateOutput -> Text
 renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
   T.unlines $
-    preparationLines (plan ^. #manifestPreparation)
+    preparationLines (displayedPreparation plan)
       <> versionLines plan
       <> [ renderInputs (plan ^. #inputChanges),
            "Migrations:  " <> count (length (plan ^. #migrations)) <> migrationCaveat plan,
@@ -154,7 +154,7 @@ outputValue (UpdatePlanOutput (UpdatePlanView plan)) =
     [ "schemaVersion" .= (1 :: Int),
       "outcome" .= ("plan" :: Text),
       "alreadyUpToDate" .= planLooksUnchanged plan,
-      "manifestPreparation" .= fmap preparationValue (plan ^. #manifestPreparation),
+      "manifestPreparation" .= fmap preparationValue (displayedPreparation plan),
       "applications" .= map applicationIdText (plan ^. #applications),
       "versions" .= map versionValue (plan ^. #versionChanges),
       "inputs" .= inputValue (plan ^. #inputChanges),
@@ -190,6 +190,17 @@ outputValue (UpdateFailedOutput (UpdateErrorView _ err)) =
     ]
 
 -- | The manifest change a targeted update stages before it plans.
+-- Checkout adoption publishes the current schema, even when the preliminary
+-- ownership check needed only an earlier schema. Show the resulting version.
+displayedPreparation :: UpdatePlan -> Maybe ManifestPreparation
+displayedPreparation plan
+  | Map.null (plan ^. #checkoutOutputs) = plan ^. #manifestPreparation
+  | original ^. #version == currentManifestVersion = plan ^. #manifestPreparation
+  | otherwise = Just (preparation & #toVersion .~ currentManifestVersion)
+  where
+    original = plan ^. #snapshot . #originalManifest
+    preparation = fromMaybe (ManifestPreparation (original ^. #version) currentManifestVersion Map.empty [] original) (plan ^. #manifestPreparation)
+
 preparationLines :: Maybe ManifestPreparation -> [Text]
 preparationLines Nothing = []
 preparationLines (Just preparation) =

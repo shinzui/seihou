@@ -15,6 +15,7 @@ module Seihou.CLI.Update
     planProjectUpdate,
     applyProjectUpdate,
     withProjectUpdate,
+    withCheckoutAdoption,
     isUpdateNoOp,
   )
 where
@@ -29,7 +30,7 @@ import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
 import Data.List (find, isPrefixOf)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, isJust, isNothing, listToMaybe, mapMaybe, maybeToList)
+import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, listToMaybe, mapMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
@@ -109,6 +110,50 @@ withProjectUpdate ::
 withProjectUpdate request callback =
   withSystemTempDirectory "seihou-project-update" $ \sessionDirectory ->
     planProjectUpdateIn sessionDirectory request >>= callback
+
+-- | Discover declaring compositions for an older checkout, then use the normal
+-- transactional update planner for just those applications. Discovery does not
+-- resolve inputs or apply upgrades for unrelated applications. The callback owns
+-- preview and consent; no project changes happen merely by discovering a plan.
+withCheckoutAdoption ::
+  UpdateRequest ->
+  (Either UpdateError (Maybe UpdatePlan) -> IO a) ->
+  IO a
+withCheckoutAdoption request callback =
+  withSystemTempDirectory "seihou-checkout-adoption" $ \sessionDirectory -> do
+    projectRoot <- Directory.getCurrentDirectory
+    installedDirectory <- standardInstalledDirectory
+    original <- readManifestForUpdate (projectRoot </> ".seihou/manifest.json")
+    case original of
+      Left err -> callback (Left err)
+      Right (_, manifest)
+        | not (Map.null (manifest ^. #checkoutOutputs)) -> callback (Right Nothing)
+        | null (manifest ^. #applications) -> callback (Right Nothing)
+        | otherwise -> do
+            staged <- stageCandidateSources (sessionDirectory </> "discovery") projectRoot installedDirectory (manifest ^. #applications)
+            case staged of
+              Left err -> callback (Left err)
+              Right (catalog, _) -> do
+                candidates <- traverse (declaresCheckout catalog) (manifest ^. #applications)
+                case sequence candidates of
+                  Left err -> callback (Left err)
+                  Right names -> case catMaybes names of
+                    [] -> callback (Right Nothing)
+                    targets -> do
+                      planned <- planProjectUpdateIn (sessionDirectory </> "update") (request & #selection .~ NamedUpdateTargets (nubOrd targets))
+                      callback $ fmap (\plan -> if Map.null (plan ^. #checkoutOutputs) then Nothing else Just plan) planned
+  where
+    declaresCheckout catalog application = case candidateRoot catalog application of
+      Left err -> pure (Left err)
+      Right (primary, additional, _, _) -> do
+        fallback <- defaultSearchPaths
+        loaded <- loadComposition (catalog ^. #searchRoot : fallback) primary (additional <> application ^. #additionalModules)
+        pure $ do
+          modules <- first (CandidateLoadFailed (primary ^. #unModuleName)) loaded
+          Right $
+            if any (\(_, modul, _) -> any ((== Checkout) . (^. #lifecycle)) (modul ^. #steps)) modules
+              then Just (targetName application)
+              else Nothing
 
 -- | Internal/test-facing planner. Prefer 'withProjectUpdate'; this form keeps
 -- its temporary session until process exit or a test removes it.

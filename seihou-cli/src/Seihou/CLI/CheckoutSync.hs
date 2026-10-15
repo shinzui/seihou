@@ -17,7 +17,6 @@ import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
-import Seihou.CLI.ApplicationDisplay (appliedTargetName)
 import Seihou.Core.Checkout
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem hiding (CreateDirectoryLink)
@@ -65,24 +64,14 @@ runCheckoutSync dryRun = do
     Left err -> Left (checkoutError "checkout_io_failed" ("cannot inspect checkout: " <> T.pack (displayException err)))
     Right value -> value
 
--- | Suggest a check of recorded targets, without claiming that their remotes
--- necessarily contain a declaring release or inferring intent from receipts.
+-- | Status stays offline. The normal sync command owns discovery and adoption.
 checkoutAdoptionNotices :: Manifest -> [Text]
 checkoutAdoptionNotices manifest
   | not (Map.null (manifest ^. #checkoutOutputs)) = []
   | null (manifest ^. #applications) =
-      ["No links are declared in this manifest. Apply a module that declares checkout links, then commit its manifest and source files."]
+      ["No checkout links are recorded. Apply a module that declares links first."]
   | otherwise =
-      [ "No links are declared in this manifest. Sync can restore links after a declaring module update has been adopted.",
-        "Check for an update using the recorded target below; review its preview before accepting:"
-      ]
-        <> map ("  seihou update " <>) targets
-        <> ["Commit the adopted manifest and source files. Future clones need only seihou sync; no producer installation is required."]
-  where
-    targets = Map.keys (Map.fromList [(shellWord (appliedTargetName (app ^. #target)), ()) | app <- manifest ^. #applications])
-    shellWord word
-      | T.all (\c -> c `elem` ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_." :: String)) word = word
-      | otherwise = "'" <> T.replace "'" "'\\''" word <> "'"
+      ["Link setup has not been recorded. Run seihou sync to check the recorded sources and review any required setup."]
 
 checkoutFailureJSON :: Bool -> CheckoutError -> A.Value
 checkoutFailureJSON dryRun err = A.object ["mode" A..= mode dryRun, "outputs" A..= ([] :: [A.Value]), "errors" A..= [errorJSON err], "summary" A..= A.object ["planned" A..= counts [], "applied" A..= counts []]]
@@ -211,16 +200,18 @@ renderCheckoutReport report =
             <> " unchanged.\n"
 
 renderCheckoutStatus :: CheckoutPlan -> Text
-renderCheckoutStatus plan =
-  let affected = filter ((/= UnchangedLink) . (^. #action)) (plan ^. #entries)
-      count = length affected
-   in "Checkout outputs: "
-        <> T.pack (show (length (plan ^. #entries)))
-        <> " declared, "
-        <> T.pack (show count)
-        <> " need attention.\n"
-        <> T.concat ["  " <> T.pack (entry ^. #dest) <> ": " <> reason entry <> "\n" | entry <- take 10 affected]
-        <> (if count > 10 then "  … " <> T.pack (show (count - 10)) <> " more affected paths\n" else "")
+renderCheckoutStatus plan
+  | null (plan ^. #entries) = "Checkout outputs: none declared.\n"
+  | otherwise =
+      let affected = filter ((/= UnchangedLink) . (^. #action)) (plan ^. #entries)
+          count = length affected
+       in "Checkout outputs: "
+            <> T.pack (show (length (plan ^. #entries)))
+            <> " declared, "
+            <> T.pack (show count)
+            <> " need attention.\n"
+            <> T.concat ["  " <> T.pack (entry ^. #dest) <> ": " <> reason entry <> "\n" | entry <- take 10 affected]
+            <> (if count > 10 then "  … " <> T.pack (show (count - 10)) <> " more affected paths\n" else "")
   where
     reason entry = case entry ^. #errors of
       err : _ -> err ^. #message

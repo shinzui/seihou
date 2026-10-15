@@ -159,3 +159,6 @@ SEE ALSO
   seihou help migrations
   seihou status --help
   docs/cli/update.md
+
+For local checkout links, use `seihou sync`. It restores declared links or, for
+older projects, discovers and previews the required adoption in the same command.
