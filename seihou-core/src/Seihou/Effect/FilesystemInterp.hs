@@ -3,16 +3,31 @@ module Seihou.Effect.FilesystemInterp
   )
 where
 
+import Control.Exception (IOException, catch, throwIO)
 import Control.Monad (when)
 import Data.Text.IO qualified as TIO
-import Seihou.Effect.Filesystem (Filesystem (..))
+import Seihou.Effect.Filesystem (Filesystem (..), PathEntry (..))
 import Seihou.Prelude
 import System.Directory qualified as Dir
+import System.IO.Error (isDoesNotExistError)
 
 -- | Real IO interpreter for the Filesystem effect.
 -- Delegates to System.Directory and Data.Text.IO.
 runFilesystem :: (IOE :> es) => Eff (Filesystem : es) a -> Eff es a
 runFilesystem = interpret $ \_ -> \case
+  InspectPath path -> liftIO $ do
+    linked <- Dir.pathIsSymbolicLink path `catch` \(err :: IOException) -> if isDoesNotExistError err then pure False else throwIO err
+    if linked
+      then EntrySymlink <$> Dir.getSymbolicLinkTarget path
+      else do
+        directory <- Dir.doesDirectoryExist path
+        file <- Dir.doesFileExist path
+        pure (if directory then EntryDirectory else if file then EntryFile else EntryMissing)
+  CreateDirectoryLink target path -> liftIO (Dir.createDirectoryLink target path)
+  RemoveLink path -> liftIO $ do
+    linked <- Dir.pathIsSymbolicLink path
+    if linked then Dir.removeDirectoryLink path else ioError (userError "refusing to unlink a regular entry")
+  NormalizePath path -> liftIO (Dir.canonicalizePath path)
   ReadFileText path -> liftIO (TIO.readFile path)
   WriteFileText path content -> liftIO (TIO.writeFile path content)
   CopyFile src dest -> liftIO (Dir.copyFile src dest)

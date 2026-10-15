@@ -48,7 +48,7 @@ spec = do
       exists `shouldBe` True
 
     it "copyFile copies content" $ do
-      let initial = PureFS (Map.singleton "src.txt" "source content") Set.empty
+      let initial = PureFS (Map.singleton "src.txt" "source content") Set.empty Map.empty
           (content, _) = runPure initial $ do
             copyFile "src.txt" "dest.txt"
             readFileText "dest.txt"

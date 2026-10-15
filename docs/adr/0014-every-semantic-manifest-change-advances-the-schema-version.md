@@ -85,6 +85,11 @@ additive co-writes and its two-layer safety check remain accepted.
 
 ## Implementation
 
+Schema 9 adds typed checkout declarations and qualified application ownership, a `CheckoutLocalOutputs` capability, required version-selected codec, duplicate-aware raw decoding, and a lossless adjacent 8-to-9 step. No shell receipt is used to infer intent.
+
+Schema 8 adds seed receipts with a version-selected codec, `SeedReceipts` capability, and lossless adjacent 7-to-8 upgrade. Older schemas retain their representation.
+
+
 Delivered by
 `docs/plans/92-define-manifest-schema-capabilities-and-ordered-upgrade-steps.md`:
 

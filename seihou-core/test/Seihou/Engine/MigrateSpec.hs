@@ -62,7 +62,7 @@ mkManifest entries =
 
 -- | Build an in-memory filesystem from (path, content) pairs.
 mkFS :: [(FilePath, Text)] -> PureFS
-mkFS entries = PureFS (Map.fromList entries) Set.empty
+mkFS entries = PureFS (Map.fromList entries) Set.empty Map.empty
 
 -- | Single-step plan wrapping the supplied ops.
 chain1 :: Text -> Text -> [MigrationOp] -> MigrationPlan

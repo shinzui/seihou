@@ -11,6 +11,12 @@ provenance:
     model: "claude-opus-5[1m]"
     harness: "claude-code"
     at: 2026-09-19T13:59:13Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-15T15:30:07Z
+      mode: "implement"
+      note: "Implement lifecycle prerequisite for plan 105"
 ---
 
 # Declare seed steps in the module schema and validate them
@@ -51,22 +57,22 @@ accepted values.
 
 ## Progress
 
-- [ ] Milestone 1: add `lifecycle` to `schema/Step.dhall`, document it in `schema/README.md`,
+- [x] (2026-10-15 15:40Z) Milestone 1: add `lifecycle` to `schema/Step.dhall`, document it in `schema/README.md`,
       type-check, commit and push in the submodule.
-- [ ] Milestone 1: re-pin `seihou-cli/src/Seihou/CLI/SchemaVersion.hs` and `flake.lock`.
-- [ ] Milestone 2: add `StepLifecycle` and `Step.lifecycle` in `Seihou.Core.Types`; update
+- [x] (2026-10-15 15:40Z) Milestone 1: re-pin `seihou-cli/src/Seihou/CLI/SchemaVersion.hs` and `flake.lock`.
+- [x] (2026-10-15 15:40Z) Milestone 2: add `StepLifecycle` and `Step.lifecycle` in `Seihou.Core.Types`; update
       every `Step` construction site.
-- [ ] Milestone 2: decode `lifecycle` in `Seihou.Dhall.Eval.stepDecoder` with a default for
+- [x] (2026-10-15 15:40Z) Milestone 2: decode `lifecycle` in `Seihou.Dhall.Eval.stepDecoder` with a default for
       older modules; force it in `evalModuleFromFile`; decoder tests.
-- [ ] Milestone 3: add the "Seed steps" check to `Seihou.Engine.Validate.buildReport`; make
+- [x] (2026-10-15 15:40Z) Milestone 3: add the "Seed steps" check to `Seihou.Engine.Validate.buildReport`; make
       `lintDuplicateDestinations` lifecycle-aware; tests.
-- [ ] Milestone 4: write ADR 0017; document the field in `docs/user/module-authoring.md`;
+- [x] (2026-10-15 15:40Z) Milestone 4: write ADR 0017; document the field in `docs/user/module-authoring.md`;
       add a root `CHANGELOG.md` entry.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+Implementation evidence (2026-10-15): `cabal build all` passed and all 1,163 core tests passed. The schema is published at revision 1d686cf9e3019cec061c1f4a4d83be53cb606e8b. The actual flake input is pinned to GitHub, so both flake.nix and flake.lock were updated with SchemaVersion.hs.
 
 
 ## Decision Log
@@ -103,7 +109,7 @@ accepted values.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Implemented and validated as a prerequisite of plan 105. Lifecycle declarations retain old-module compatibility; schema 8 records seed settlement without content tracking and has a lossless adjacent upgrade. Runtime seed behavior remains intentionally delegated to plans 101–104. ADRs 0017 and 0014 contain the durable ownership and versioning decisions. Validation: `cabal build all` and `cabal test seihou-core-test --test-show-details=direct` passed (1,163 tests).
 
 
 ## Context and Orientation
@@ -439,3 +445,5 @@ At the end of this plan these exist:
 
 Later plans consume `Step.lifecycle` (EP-3 compiles it into an operation, EP-5 reuses that)
 and amend ADR 0017. No new library dependency is introduced.
+
+Revision note (2026-10-15): Implemented the declaration and receipt foundations required by plan 105; validated old-module compatibility, seed invariants, round trips, adjacent upgrade behavior, and schema pins. Tests use generated local-schema fixtures instead of duplicating static fixture files.

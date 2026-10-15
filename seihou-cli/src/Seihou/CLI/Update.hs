@@ -64,6 +64,7 @@ import Seihou.Composition.Resolve
 import Seihou.Core.Application (buildAppliedComposition, replaceAppliedComposition)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (renderArtifactRefError, resolveArtifactOrigin)
+import Seihou.Core.Checkout
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Version (parseVersion)
@@ -72,16 +73,19 @@ import Seihou.Effect.BaselineStoreInterp (runBaselineStore)
 import Seihou.Effect.ConfigReader
 import Seihou.Effect.ConfigReaderInterp (runConfigReader)
 import Seihou.Effect.ConsoleInterp (runConsole)
+import Seihou.Effect.Filesystem (PathEntry (..), inspectPath)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.FilesystemPure (PureFS (..))
 import Seihou.Effect.ManifestStore (writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Baseline (manifestBaselineRefs)
+import Seihou.Engine.Checkout
 import Seihou.Engine.Migrate (ExecutedMigrationPlan (..), MigrationOpInstance (..), classifyMigration, executeMigration)
 import Seihou.Engine.Reconcile
 import Seihou.Engine.UpdateTransaction
 import Seihou.Manifest.Hash (hashContent)
+import Seihou.Manifest.JSON (decodeManifestValue)
 import Seihou.Manifest.Types
   ( currentManifestVersion,
     manifestFromJSON,
@@ -168,57 +172,64 @@ planProjectUpdateIn sessionDirectory request = do
                       case reconciliationResult of
                         Left err -> pure (Left (UpdateReconciliationFailed err))
                         Right reconciliation -> do
-                          evidence <- versionEvidence (request ^. #allowDowngrade) projectRoot catalog selected plannedApplications
-                          case evidence of
+                          checkoutSetup <- planCheckoutUpdate projectRoot base plannedApplications
+                          case checkoutSetup of
                             Left err -> pure (Left err)
-                            Right (versionChanges, versionWarnings) -> do
-                              let usedArtifacts = artifactsUsedBy catalog plannedApplications
-                                  priorReceipts = Map.unions (map (^. #commandReceipts) selected)
-                                  commandPlan = planCommands (request ^. #commandPolicy) priorReceipts operations
-                                  warnings =
-                                    seedWarnings
-                                      <> sourceWarnings
-                                      <> migrationStage ^. #warnings
-                                      <> compositionWarnings
-                                      <> versionWarnings
-                                  inputChanges = summarizeInputChanges seedWarnings plannedApplications
-                                  transactionTargets = transactionTargetPaths base reconciliation (migrationStage ^. #plans)
-                              -- The manifest is observed as it is on disk, before
-                              -- any in-memory preparation, so an edit made between
-                              -- planning and apply is reported as a stale plan.
-                              observedProjectHashes <-
-                                observePaths
-                                  projectRoot
-                                  (Set.insert (".seihou" </> "manifest.json") transactionTargets)
-                              let snapshot =
-                                    UpdateSnapshot
-                                      { sessionDirectory,
-                                        projectRoot,
-                                        manifestPath,
-                                        baselineDirectory,
-                                        installedDirectory,
-                                        originalManifest = manifest,
-                                        candidateHashes = Map.fromList [(artifact ^. #originalDirectory, artifact ^. #contentHash) | artifact <- usedArtifacts],
-                                        observedProjectHashes,
-                                        transactionTargets
-                                      }
-                              pure
-                                ( Right
-                                    UpdatePlan
-                                      { applications = map (^. #candidate) plannedApplications,
-                                        versionChanges,
-                                        inputChanges,
-                                        migrations = migrationStage ^. #plans,
-                                        reconciliation,
-                                        commandPlan,
-                                        candidateArtifacts = usedArtifacts,
-                                        warnings,
-                                        request,
-                                        snapshot,
-                                        plannedApplications,
-                                        manifestPreparation = manifestPreparationFor manifest base (resolution ^. #evidenceSources)
-                                      }
-                                )
+                            Right (checkoutCandidate, checkoutPlan) -> do
+                              evidence <- versionEvidence (request ^. #allowDowngrade) projectRoot catalog selected plannedApplications
+                              case evidence of
+                                Left err -> pure (Left err)
+                                Right (versionChanges, versionWarnings) -> do
+                                  let usedArtifacts = artifactsUsedBy catalog plannedApplications
+                                      priorReceipts = Map.unions (map (^. #commandReceipts) selected)
+                                      commandPlan = planCommands (request ^. #commandPolicy) priorReceipts operations
+                                      warnings =
+                                        seedWarnings
+                                          <> sourceWarnings
+                                          <> migrationStage ^. #warnings
+                                          <> compositionWarnings
+                                          <> versionWarnings
+                                          <> map CheckoutWarning (concatMap (^. #warnings) (checkoutPlan ^. #entries))
+                                      inputChanges = summarizeInputChanges seedWarnings plannedApplications
+                                      transactionTargets = transactionTargetPaths base reconciliation (migrationStage ^. #plans) `Set.union` Set.fromList [entry ^. #dest | entry <- checkoutPlan ^. #entries, entry ^. #action `elem` [CreateLink, ReplaceLink, RetireLink]]
+                                  -- The manifest is observed as it is on disk, before
+                                  -- any in-memory preparation, so an edit made between
+                                  -- planning and apply is reported as a stale plan.
+                                  observedProjectHashes <-
+                                    observePaths
+                                      projectRoot
+                                      (Set.insert (".seihou" </> "manifest.json") transactionTargets)
+                                  let snapshot =
+                                        UpdateSnapshot
+                                          { sessionDirectory,
+                                            projectRoot,
+                                            manifestPath,
+                                            baselineDirectory,
+                                            installedDirectory,
+                                            originalManifest = manifest,
+                                            candidateHashes = Map.fromList [(artifact ^. #originalDirectory, artifact ^. #contentHash) | artifact <- usedArtifacts],
+                                            observedProjectHashes,
+                                            transactionTargets
+                                          }
+                                  pure
+                                    ( Right
+                                        UpdatePlan
+                                          { applications = map (^. #candidate) plannedApplications,
+                                            versionChanges,
+                                            inputChanges,
+                                            migrations = migrationStage ^. #plans,
+                                            reconciliation,
+                                            checkoutPlan,
+                                            checkoutOutputs = checkoutCandidate ^. #checkoutOutputs,
+                                            commandPlan,
+                                            candidateArtifacts = usedArtifacts,
+                                            warnings,
+                                            request,
+                                            snapshot,
+                                            plannedApplications,
+                                            manifestPreparation = manifestPreparationFor manifest base (resolution ^. #evidenceSources)
+                                          }
+                                    )
 
 -- | Candidate sources staged for a set of applications, and those
 -- applications planned against them.
@@ -477,29 +488,33 @@ applyAcceptedPlan plan = do
                         case appliedFiles of
                           Left err -> abortUpdate transaction (UpdateTransactionFailed err)
                           Right filesManifest -> do
-                            commandResult <-
-                              runEff $
-                                runProcessIO $
-                                  executeCommandPlan now (plan ^. #commandPlan)
-                            case commandResult of
-                              Left err ->
-                                abortUpdate
-                                  transaction
-                                  (UpdateCommandFailed err [ArbitraryCommandSideEffectsMayRemain])
-                              Right completedReceipts -> do
-                                let finalManifest = buildFinalManifest now plan filesManifest completedReceipts
-                                markerResult <- setCommitMarkers transaction finalManifest
-                                case markerResult of
-                                  Left err -> abortUpdate transaction err
-                                  Right () -> do
-                                    publication <- publishCandidates (plan ^. #candidateArtifacts)
-                                    case publication of
+                            linkResult <- applyUpdateCheckout plan migratedManifest filesManifest
+                            case linkResult of
+                              Left err -> abortUpdate transaction err
+                              Right () -> do
+                                commandResult <-
+                                  runEff $
+                                    runProcessIO $
+                                      executeCommandPlan now (plan ^. #commandPlan)
+                                case commandResult of
+                                  Left err ->
+                                    abortUpdate
+                                      transaction
+                                      (UpdateCommandFailed err [ArbitraryCommandSideEffectsMayRemain])
+                                  Right completedReceipts -> do
+                                    let finalManifest = buildFinalManifest now plan filesManifest completedReceipts
+                                    markerResult <- setCommitMarkers transaction finalManifest
+                                    case markerResult of
                                       Left err -> abortUpdate transaction err
                                       Right () -> do
-                                        written <- writeManifestIO (plan ^. #snapshot . #manifestPath) finalManifest
-                                        case written of
+                                        publication <- publishCandidates (plan ^. #candidateArtifacts)
+                                        case publication of
                                           Left err -> abortUpdate transaction err
-                                          Right () -> finishCommitted transaction plan finalManifest completedReceipts
+                                          Right () -> do
+                                            written <- writeManifestIO (plan ^. #snapshot . #manifestPath) finalManifest
+                                            case written of
+                                              Left err -> abortUpdate transaction err
+                                              Right () -> finishCommitted transaction plan finalManifest completedReceipts
 
 planApplication ::
   UpdateRequest ->
@@ -967,8 +982,11 @@ observePaths projectRoot paths =
   where
     observe path = do
       let fullPath = projectRoot </> path
-      exists <- Directory.doesFileExist fullPath
-      hash <- if exists then Just . hashContent <$> TIO.readFile fullPath else pure Nothing
+      entry <- runEff $ runFilesystem $ inspectPath fullPath
+      hash <- case entry of
+        EntrySymlink target -> pure (Just (hashContent ("symlink\0" <> T.pack target)))
+        EntryFile -> Just . hashContent <$> TIO.readFile fullPath
+        _ -> pure Nothing
       pure (path, hash)
 
 stalePlanPaths :: UpdatePlan -> IO (Set FilePath)
@@ -1041,6 +1059,8 @@ buildFinalManifest now plan filesManifest completedReceipts =
       applications = foldl' (flip replaceAppliedComposition) (filesManifest ^. #applications) finalApplications,
       recipe = updatedRecipe,
       blueprint = filesManifest ^. #blueprint,
+      seeds = filesManifest ^. #seeds,
+      checkoutOutputs = plan ^. #checkoutOutputs,
       blueprintMigrations = filesManifest ^. #blueprintMigrations
     }
   where
@@ -1226,7 +1246,7 @@ readManifestForUpdate path = do
         Left err -> Left (UpdateManifestUnreadable path (T.pack (displayException err)))
         Right strict -> do
           let bytes = LBS.fromStrict strict
-          document <- first (UpdateManifestUnreadable path . T.pack) (Aeson.eitherDecode bytes)
+          document <- first (UpdateManifestUnreadable path . T.pack) (decodeManifestValue bytes)
           case documentSchemaVersion document of
             Right version
               | version < oldestDecodableManifestVersion -> Left (UpdateManifestUpgradeRequired path version)
@@ -1346,7 +1366,9 @@ isUpdateNoOp plan =
   -- A lossless schema step or a newly certified shared-write mode is a
   -- change to applied state that only this update will publish (ADR 0004),
   -- so a plan carrying one is never a deliberate no-op (ADR 0007).
-  isNothing (plan ^. #manifestPreparation)
+  plan ^. #checkoutOutputs == plan ^. #snapshot . #originalManifest . #checkoutOutputs
+    && all ((== UnchangedLink) . (^. #action)) (plan ^. #checkoutPlan . #entries)
+    && isNothing (plan ^. #manifestPreparation)
     && null (plan ^. #versionChanges)
     && null (plan ^. #migrations)
     && plan ^. #inputChanges . #overridden == 0
@@ -1397,3 +1419,27 @@ varValueToText (VBool True) = "true"
 varValueToText (VBool False) = "false"
 varValueToText (VInt value) = T.pack (show value)
 varValueToText (VList values) = T.intercalate "," (map varValueToText values)
+
+planCheckoutUpdate :: FilePath -> Manifest -> [PlannedApplication] -> IO (Either UpdateError (Manifest, CheckoutPlan))
+planCheckoutUpdate root prior applications = case replaceCheckoutApplications prior [(app ^. #candidate, app ^. #operations) | app <- applications] of
+  Left err -> pure (Left (UpdateCheckoutFailed err))
+  Right candidate -> do
+    planned <- runEff $ runFilesystem $ runProcessIO $ prepareCheckoutApplication root prior candidate (concatMap (^. #operations) applications)
+    pure $ do
+      plan <- first UpdateCheckoutFailed planned
+      case concatMap (^. #errors) (plan ^. #entries) of
+        err : _ -> Left (UpdateCheckoutFailed err)
+        [] -> Right (candidate, plan)
+
+applyUpdateCheckout :: UpdatePlan -> Manifest -> Manifest -> IO (Either UpdateError ())
+applyUpdateCheckout plan prior filesManifest = runEff $ runFilesystem $ runProcessIO $ do
+  let candidate = filesManifest & #checkoutOutputs .~ plan ^. #checkoutOutputs & #applications .~ foldl' (flip replaceAppliedComposition) (filesManifest ^. #applications) (plan ^. #applications)
+      root = plan ^. #snapshot . #projectRoot
+  checked <- prepareCheckoutPlan Reconcile ApplyDeclaration root prior candidate []
+  case checked of
+    Left err -> pure (Left (UpdateCheckoutFailed err))
+    Right links -> case concatMap (^. #errors) (links ^. #entries) of
+      err : _ -> pure (Left (UpdateCheckoutFailed err))
+      [] -> do
+        applied <- applyCheckoutPlan ApplyDeclaration root links
+        pure $ maybe (Right ()) (Left . UpdateCheckoutFailed) (applied ^. #failure)

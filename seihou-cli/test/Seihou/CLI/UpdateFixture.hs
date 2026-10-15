@@ -22,6 +22,7 @@ import Seihou.CLI.Update
     UpdateWarning (..),
   )
 import Seihou.CLI.Update.Types (UpdateSnapshot (..))
+import Seihou.Core.Checkout (CheckoutPlan (..))
 import Seihou.Core.Types
   ( FileRecord (..),
     ModuleName (..),
@@ -51,6 +52,8 @@ minimalPlan reconciliation =
       inputChanges = InputChangeSummary 0 0 0 0 [],
       migrations = [],
       reconciliation,
+      checkoutPlan = CheckoutPlan [],
+      checkoutOutputs = Map.empty,
       commandPlan = CommandPlan [],
       candidateArtifacts = [],
       warnings = [],

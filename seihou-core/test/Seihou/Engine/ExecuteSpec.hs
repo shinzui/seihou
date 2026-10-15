@@ -95,7 +95,7 @@ spec = do
       Map.size records `shouldBe` 0
 
     it "handles CopyFileOp by reading source and writing dest" $ do
-      let initial = PureFS (Map.singleton "/source/file.txt" "copied content") mempty
+      let initial = PureFS (Map.singleton "/source/file.txt" "copied content") mempty Map.empty
           ops = [CopyFileOp "/source/file.txt" "dest.txt"]
           (records, fs) = runExecFS initial ops
       Map.member "dest.txt" records `shouldBe` True
@@ -126,7 +126,7 @@ spec = do
       (record ^. #strategy) `shouldBe` Structured
 
     it "executes PatchFileOp AppendFile on existing file" $ do
-      let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty
+      let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty Map.empty
           ops = [PatchFileOp "README.md" "extra line\n" AppendFile Template modName]
           (records, fs) = runExecFS initial ops
       Map.member "README.md" records `shouldBe` True
@@ -135,7 +135,7 @@ spec = do
       T.isInfixOf "extra line" content `shouldBe` True
 
     it "executes PatchFileOp PrependFile on existing file" $ do
-      let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty
+      let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty Map.empty
           ops = [PatchFileOp "README.md" "header\n" PrependFile Template modName]
           (records, fs) = runExecFS initial ops
       Map.member "README.md" records `shouldBe` True
@@ -144,7 +144,7 @@ spec = do
       T.isInfixOf "# Title" content `shouldBe` True
 
     it "executes PatchFileOp AppendSection with section markers" $ do
-      let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty
+      let initial = PureFS (Map.singleton "/project/README.md" "# Title\n") mempty Map.empty
           ops = [PatchFileOp "README.md" "section content\n" AppendSection Template modName]
           (records, fs) = runExecFS initial ops
       Map.member "README.md" records `shouldBe` True
@@ -161,7 +161,7 @@ spec = do
       T.isInfixOf "new content" content `shouldBe` True
 
     it "executes PatchFileOp AppendLineIfAbsent, skipping existing lines" $ do
-      let initial = PureFS (Map.singleton "/project/.gitignore" "node_modules/\n.env\n") mempty
+      let initial = PureFS (Map.singleton "/project/.gitignore" "node_modules/\n.env\n") mempty Map.empty
           ops = [PatchFileOp ".gitignore" ".env\n.claude/\n" AppendLineIfAbsent Template modName]
           (records, fs) = runExecFS initial ops
       Map.member ".gitignore" records `shouldBe` True
@@ -169,7 +169,7 @@ spec = do
       content `shouldBe` "node_modules/\n.env\n.claude/\n"
 
     it "executes PatchFileOp AppendLineIfAbsent idempotently" $ do
-      let initial = PureFS (Map.singleton "/project/.gitignore" "node_modules/\n.claude/\n") mempty
+      let initial = PureFS (Map.singleton "/project/.gitignore" "node_modules/\n.claude/\n") mempty Map.empty
           ops = [PatchFileOp ".gitignore" ".claude/\n" AppendLineIfAbsent Template modName]
           (records, fs) = runExecFS initial ops
       Map.member ".gitignore" records `shouldBe` True
@@ -201,7 +201,7 @@ spec = do
       ((records Map.! "README.md") ^. #sharedWriteMode) `shouldBe` SharedWriteRequiresOwnershipClosure
 
     it "does not record a copied file as additive-only" $ do
-      let initial = PureFS (Map.singleton "/source/file.txt" "copied") mempty
+      let initial = PureFS (Map.singleton "/source/file.txt" "copied") mempty Map.empty
           ops = [CopyFileOp "/source/file.txt" "dest.txt"]
           (records, _) = runExecFS initial ops
       ((records Map.! "dest.txt") ^. #sharedWriteMode) `shouldBe` SharedWriteRequiresOwnershipClosure

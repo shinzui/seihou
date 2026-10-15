@@ -40,7 +40,8 @@ goodModule =
               src = "README.md.tpl",
               dest = "README.md",
               condition = Nothing,
-              patch = Nothing
+              patch = Nothing,
+              lifecycle = Managed
             }
         ],
       commands = [],
@@ -180,7 +181,7 @@ spec = do
         let bad =
               goodModule
                 & #steps
-                  .~ [Step Template "README.md.tpl" "../etc/passwd" Nothing Nothing]
+                  .~ [Step Template "README.md.tpl" "../etc/passwd" Nothing Nothing Managed]
         result <- validateModule tmpDir bad
         case result of
           Left (ValidationError _ errs) ->
@@ -195,7 +196,7 @@ spec = do
         let bad =
               goodModule
                 & #steps
-                  .~ [Step Template "README.md.tpl" "/etc/passwd" Nothing Nothing]
+                  .~ [Step Template "README.md.tpl" "/etc/passwd" Nothing Nothing Managed]
         result <- validateModule tmpDir bad
         case result of
           Left (ValidationError _ errs) ->
@@ -210,7 +211,7 @@ spec = do
         let dotted =
               goodModule
                 & #steps
-                  .~ [Step Template "README.md.tpl" "docs/README.v2.md" Nothing Nothing]
+                  .~ [Step Template "README.md.tpl" "docs/README.v2.md" Nothing Nothing Managed]
         result <- validateModule tmpDir dotted
         case result of
           Right m -> (m ^. #name) `shouldBe` "test-module"
@@ -223,7 +224,7 @@ spec = do
         let bad =
               goodModule
                 & #steps
-                  .~ [Step Template "README.md.tpl" "src/{{unknown}}/Main.hs" Nothing Nothing]
+                  .~ [Step Template "README.md.tpl" "src/{{unknown}}/Main.hs" Nothing Nothing Managed]
         result <- validateModule tmpDir bad
         case result of
           Left (ValidationError _ errs) ->
@@ -241,7 +242,7 @@ spec = do
                   vars = [],
                   exports = [VarExport {var = "missing", alias = Nothing}],
                   prompts = [Prompt {var = "missing", text = "?", condition = Nothing, choices = Nothing}],
-                  steps = [Step Template "nonexistent.tpl" "/bad/dest" Nothing Nothing],
+                  steps = [Step Template "nonexistent.tpl" "/bad/dest" Nothing Nothing Managed],
                   commands = [],
                   dependencies = [],
                   removal = Nothing,

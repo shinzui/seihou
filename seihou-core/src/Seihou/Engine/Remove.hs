@@ -5,6 +5,8 @@ module Seihou.Engine.Remove
     RemovalOp (..),
     RemovalFileStatus (..),
     ExecutedRemovalPlan (..),
+    CheckoutRemovalSelection (..),
+    selectCheckoutRemoval,
     computeRemovalPlan,
     executeRemoval,
     buildRemovalOps,
@@ -16,11 +18,14 @@ import Control.Monad (foldM)
 import Data.Generics.Labels ()
 import Data.List (nub, sortBy)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (listToMaybe, mapMaybe, maybeToList)
 import Data.Ord (Down (..))
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
+import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
+import Seihou.Core.Checkout
 import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText, removeDirectoryIfEmpty, removeFile, writeFileText)
@@ -109,7 +114,10 @@ computeRemovalPlan manifest modName = do
   case findApplied manifest modName of
     Nothing -> pure (Left (ModuleNotApplied modName))
     Just am
-      | Nothing <- am ^. #removal -> pure (Left (ModuleNotRemovable modName))
+      | Nothing <- am ^. #removal ->
+          if any (\record -> any (Set.member modName) (Map.elems (record ^. #owners))) (Map.elems (manifest ^. #checkoutOutputs))
+            then pure (Right (RemovalPlan modName []))
+            else pure (Left (ModuleNotRemovable modName))
       | otherwise -> do
           let ownedFiles = moduleFiles manifest modName
           classified <- mapM classifyForRemoval ownedFiles
@@ -357,3 +365,56 @@ removeFromManifest manifest modName now =
     %~ Map.filter (\rec -> rec ^. #moduleName /= modName)
     & #genAt
     .~ now
+
+-- | A single recorded application/instance selected for checkout cleanup.
+data CheckoutRemovalSelection = CheckoutRemovalSelection
+  { applicationId :: !ApplicationId,
+    instanceName :: !ModuleName,
+    moduleName :: !ModuleName,
+    removal :: !(Maybe Removal),
+    candidateManifest :: !Manifest
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Resolve a name against recorded qualified instances, never installed modules.
+-- Ambiguous bare names and application choices require explicit selection.
+selectCheckoutRemoval :: Manifest -> ModuleName -> Maybe ApplicationId -> Either CheckoutError (Maybe CheckoutRemovalSelection)
+selectCheckoutRemoval manifest requested selectedApplication = case candidates of
+  []
+    | selectedApplication /= Nothing -> Left (checkoutError "checkout_remove_selection" "no matching checkout-owning instance in the selected application")
+    | otherwise -> Right Nothing
+  [(app, state, qualified)] -> do
+    let appId = app ^. #applicationId
+        selected = Map.singleton appId (Set.singleton qualified)
+        outputs = dropCheckoutOwners selected (manifest ^. #checkoutOutputs)
+        keepFile record
+          | record ^. #moduleName /= qualified || not (Set.member appId (record ^. #applicationIds)) = Just record
+          | otherwise =
+              let retained = Set.delete appId (record ^. #applicationIds)
+               in if Set.null retained then Nothing else Just (record & #applicationIds .~ retained)
+        keepApplication other
+          | other ^. #applicationId /= appId = Just other
+          | otherwise =
+              let retained = filter (\instanceState -> qualifiedName (ModuleInstance (instanceState ^. #name) (instanceState ^. #parentVars)) /= qualified) (other ^. #instances)
+               in if null retained then Nothing else Just (other & #instances .~ retained & #commandReceipts %~ Map.filter ((/= qualified) . (^. #moduleName)))
+        applications = mapMaybe keepApplication (manifest ^. #applications)
+        files = Map.mapMaybe keepFile (manifest ^. #files)
+        stillNeeded applied =
+          any (\other -> any (\instanceState -> instanceState ^. #name == applied ^. #name && instanceState ^. #parentVars == applied ^. #parentVars) (other ^. #instances)) applications
+            || any ((== qualifiedName (ModuleInstance (applied ^. #name) (applied ^. #parentVars))) . (^. #moduleName)) (Map.elems files)
+        removeSelected applied = applied ^. #name /= state ^. #name || applied ^. #parentVars /= state ^. #parentVars || stillNeeded applied
+        candidate = manifest & #checkoutOutputs .~ outputs & #applications .~ applications & #files .~ files & #modules %~ filter removeSelected
+        custom = listToMaybe [spec | applied <- manifest ^. #modules, applied ^. #name == state ^. #name, applied ^. #parentVars == state ^. #parentVars, spec <- maybeToList (applied ^. #removal)]
+    validateCheckoutRecords candidate []
+    pure (Just (CheckoutRemovalSelection appId qualified (state ^. #name) custom candidate))
+  matches -> Left (checkoutError "checkout_remove_ambiguous" ("checkout removal is ambiguous; select one recorded instance/application: " <> T.intercalate "; " ["seihou remove " <> qualified ^. #unModuleName <> " --application " <> app ^. #applicationId . #unApplicationId | (app, _, qualified) <- matches]))
+  where
+    candidates =
+      [ (app, state, qualified)
+      | app <- manifest ^. #applications,
+        maybe True (== app ^. #applicationId) selectedApplication,
+        state <- app ^. #instances,
+        let qualified = qualifiedName (ModuleInstance (state ^. #name) (state ^. #parentVars)),
+        requested == qualified || requested == state ^. #name,
+        any (\record -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) (record ^. #owners))) (Map.elems (manifest ^. #checkoutOutputs))
+      ]

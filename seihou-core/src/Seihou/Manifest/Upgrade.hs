@@ -56,6 +56,8 @@ data UpgradeStepAction
   | -- | Schema 6 to 7: the optional @additiveOnly@ Boolean becomes a
     -- required @sharedWriteMode@ on every file record.
     MakeSharedWriteEvidenceExplicit
+  | AddEmptySeedReceipts
+  | AddEmptyCheckoutOutputs
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
 -- | Whether a step may be staged automatically.
@@ -113,7 +115,9 @@ manifestUpgradeSteps =
     step 3 StampVersion "reproducible applications and generated baselines",
     step 4 StampVersion "blueprint migration receipts",
     step 5 ConvertMachineLocalPaths "portable artifact origins",
-    step 6 MakeSharedWriteEvidenceExplicit "explicit shared-write evidence"
+    step 6 MakeSharedWriteEvidenceExplicit "explicit shared-write evidence",
+    step 7 AddEmptySeedReceipts "seed receipts",
+    step 8 AddEmptyCheckoutOutputs "checkout outputs"
   ]
   where
     step from stepAction =
@@ -123,6 +127,8 @@ upgradeStepKind :: UpgradeStepAction -> UpgradeStepKind
 upgradeStepKind StampVersion = LosslessUpgrade
 upgradeStepKind ConvertMachineLocalPaths = InferenceBearingUpgrade
 upgradeStepKind MakeSharedWriteEvidenceExplicit = LosslessUpgrade
+upgradeStepKind AddEmptySeedReceipts = LosslessUpgrade
+upgradeStepKind AddEmptyCheckoutOutputs = LosslessUpgrade
 
 -- | The contiguous steps from @source@ to @target@. Planning from a version
 -- to itself is an empty path.
@@ -178,6 +184,18 @@ applyLosslessUpgradeStep upgradeStep document = do
     Left (StepVersionMismatch upgradeStep actual)
   transformed <- case upgradeStep ^. #action of
     StampVersion -> Right document
+    AddEmptyCheckoutOutputs -> case document of
+      Aeson.Object fields -> case KeyMap.lookup "checkoutOutputs" fields of
+        Nothing -> Right (Aeson.Object (KeyMap.insert "checkoutOutputs" (Aeson.object []) fields))
+        Just (Aeson.Object _) -> Right document
+        _ -> Left (MalformedDocument actual "checkoutOutputs must be an object")
+      _ -> Left (MalformedDocument actual "manifest must be an object")
+    AddEmptySeedReceipts -> case document of
+      Aeson.Object fields -> case KeyMap.lookup "seeds" fields of
+        Nothing -> Right (Aeson.Object (KeyMap.insert "seeds" (Aeson.object []) fields))
+        Just (Aeson.Object _) -> Right document
+        _ -> Left (MalformedDocument actual "seeds must be an object")
+      _ -> Left (MalformedDocument actual "cannot add empty seeds: field already exists or document is not an object")
     MakeSharedWriteEvidenceExplicit ->
       first (MalformedDocument actual) (makeSharedWriteEvidenceExplicit document)
     ConvertMachineLocalPaths -> Left (StepRequiresInference upgradeStep)

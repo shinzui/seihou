@@ -30,6 +30,7 @@ import Seihou.CLI.CommandExecution
 import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap, EvidenceSource)
 import Seihou.Composition.Instance (ModuleInstance)
 import Seihou.Core.ArtifactRef (ArtifactRefError)
+import Seihou.Core.Checkout (CheckoutError, CheckoutPlan)
 import Seihou.Core.Migration (MigrationPlan, MigrationPlanError)
 import Seihou.Core.Types
 import Seihou.Engine.Migrate (ExecutedMigrationPlan, MigrationExecError)
@@ -196,6 +197,7 @@ data UpdateWarning
   | ArbitraryCommandSideEffectsMayRemain
   | BaselinePruneFailed Text
   | RecoveryCleanupDeferred Text
+  | CheckoutWarning Text
   | -- | @--include-shared-owners@ added this application to the selection
     --   because it co-owns the named path with something the user asked for.
     SelectionExpandedForSharedPath FilePath ApplicationRef
@@ -207,6 +209,8 @@ data UpdatePlan = UpdatePlan
     inputChanges :: !InputChangeSummary,
     migrations :: ![PlannedUpdateMigration],
     reconciliation :: !ReconciliationPlan,
+    checkoutPlan :: !CheckoutPlan,
+    checkoutOutputs :: !(Map FilePath CheckoutOutputRecord),
     commandPlan :: !CommandPlan,
     candidateArtifacts :: ![CandidateArtifact],
     warnings :: ![UpdateWarning],
@@ -269,6 +273,7 @@ data UpdateError
   | UpdateMigrationPlanFailed ModuleName MigrationPlanError
   | UpdateMigrationStageFailed ModuleName MigrationExecError
   | UpdateCompositionFailed [Text]
+  | UpdateCheckoutFailed CheckoutError
   | UpdateReconciliationFailed ReconciliationError
   | UpdateHasUnresolvedPaths (Set FilePath)
   | UpdateRecoveryFailed [TransactionError]

@@ -76,6 +76,7 @@ import Seihou.CLI.Update.Selection (MatchedApplications (..), applicationRef, ma
 import Seihou.CLI.Update.Types (ApplicationRef (..), VersionChange (..))
 import Seihou.Core.ArtifactRef (resolveArtifactOrigin)
 import Seihou.Core.Types
+import Seihou.Manifest.JSON (decodeManifestValue)
 import Seihou.Manifest.Types (currentManifestVersion, manifestFromJSON, oldestDecodableManifestVersion)
 import Seihou.Manifest.Upgrade (documentSchemaVersion, renderManifestUpgradeError)
 import Seihou.Prelude
@@ -333,7 +334,7 @@ probeManifest root = do
     then pure ManifestAbsent
     else do
       bytes <- LBS.readFile path
-      pure $ case Aeson.eitherDecode @Aeson.Value bytes of
+      pure $ case decodeManifestValue bytes of
         Left err -> ManifestNotJson (T.pack err)
         Right document -> case documentSchemaVersion document of
           Left err -> ManifestSchemaUnreadable (renderManifestUpgradeError err)

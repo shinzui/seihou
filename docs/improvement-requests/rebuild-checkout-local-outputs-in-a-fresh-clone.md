@@ -9,9 +9,10 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-09-28T17:49:14Z"
-timestamp: 2026-10-15T15:09:14Z
+timestamp: 2026-10-15T16:11:30Z
 requestId: IR-10
-status: accepted
+status: completed
+completedAt: 2026-10-15T16:11:30Z
 targetPlan: docs/plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md
 origin: mori://shinzui/keiro
 acceptanceCriteria:
@@ -72,12 +73,8 @@ reviews:
 
 ## Status
 
-Accepted and planned in [ExecPlan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md).
-The plan has six implementation milestones and requires the declaration and manifest
-foundations in [ExecPlan 99](../plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md)
-and [ExecPlan 100](../plans/100-record-seed-receipts-in-manifest-schema-8.md) first.
-Implementation has not started; all implementation milestones remain unchecked as
-of the 2026-10-15 audit.
+Completed in [ExecPlan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md).
+The implementation includes prerequisite declaration/schema foundations in plans 99 and 100, typed schema-9 checkout declarations, and `seihou sync [--dry-run] [--json]`. The same observer and planner support run, update, remove and bounded status diagnostics. Real-binary tests prove clean clones without installed producers, independence from newer caches, no command replay, unchanged tracked blobs/index/manifest bytes, idempotence, repair, shared ownership, safe retirement and rollback. Core tests trace permitted effects and recovery snapshots. Validation passed on macOS; Linux platform execution remains a downstream check. Producer adoption is a separate release operation.
 
 ## Context
 

@@ -765,3 +765,7 @@ The diff engine compares three sources: the manifest (last known generated state
 - [Manifest and Incrementality](../design/proposed/manifest-and-incrementality.md) — Manifest format, three-state model
 - [CLI Commands](../design/proposed/cli-commands.md) — Command specifications
 - [V1 Milestones](../roadmap/v1-milestones.md) — Implementation plan
+
+## Checkout output lifecycle
+
+Step strategy and lifecycle are independent. Managed outputs enter content reconciliation; seeds have their separate receipt foundation; checkout outputs record portable typed intent. `Core.Checkout` validates paths and ownership and plans from declarations and observations. `Engine.Checkout` observes through Filesystem/Process effects and applies guarded link mutations with in-memory rollback. Run, update, remove and status reuse it. Sync starts directly at the manifest boundary and requires no module/config evaluation, installed artifact, command receipt or manifest writer. The reusable `Seihou.CLI.CheckoutSync` library renders structured outcomes; `src-exe/Seihou/CLI/Sync.hs` is trapped by its Commands import. Update's version-2 recovery journal snapshots literal link targets and retains a version-1 decoder. See [ADR 0018](../../adr/0018-checkout-outputs-are-observable-portable-declarations.md).

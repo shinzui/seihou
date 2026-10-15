@@ -55,6 +55,7 @@ operationDestination :: Operation -> Maybe FilePath
 operationDestination (WriteFileOp dest _ _) = Just dest
 operationDestination (CopyFileOp _ dest) = Just dest
 operationDestination (PatchFileOp dest _ _ _ _) = Just dest
+operationDestination CheckoutOutputOp {} = Nothing
 operationDestination CreateDirOp {} = Nothing
 operationDestination RunCommandOp {} = Nothing
 
@@ -68,6 +69,7 @@ executeOp ::
   Operation ->
   Eff es (Maybe (FilePath, FileRecord))
 executeOp targetDir ownerFor modeFor now op = case op of
+  CheckoutOutputOp {} -> pure Nothing
   WriteFileOp dest content strat -> do
     let fullPath = targetDir </> dest
     writeFileText fullPath content
@@ -138,6 +140,7 @@ dryRunPlan ops =
   where
     formatOp :: Operation -> Text
     formatOp (WriteFileOp dest _ _) = "  write " <> T.pack dest
+    formatOp (CheckoutOutputOp dest (DirectorySymlink source) _) = "  link  " <> T.pack dest <> " -> " <> T.pack source
     formatOp (CreateDirOp path) = "  mkdir " <> T.pack path
     formatOp (CopyFileOp src dest) = "  copy  " <> T.pack src <> " -> " <> T.pack dest
     formatOp RunCommandOp {command = cmd} = "  run   " <> cmd

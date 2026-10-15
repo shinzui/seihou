@@ -13,6 +13,8 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
+import Effectful.Exception qualified as E
+import Seihou.CLI.CheckoutSync (renderCheckoutPlan)
 import Seihou.CLI.CommandExecution
   ( CommandDisposition (..),
     CommandExecutionError (..),
@@ -51,6 +53,7 @@ import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
+import Seihou.Core.Checkout
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
@@ -71,6 +74,7 @@ import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Baseline (manifestBaselineRefs, recordGeneratedBaselines)
+import Seihou.Engine.Checkout
 import Seihou.Engine.Conflict (resolveConflicts)
 import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
@@ -326,6 +330,22 @@ handleRun runOpts = do
       candidateCommandReceipts =
         finalizeCommandReceipts commandPlan [] priorCommandReceipts
 
+  let declarationApplication =
+        buildAppliedComposition appliedTarget targetOrigin targetVersion additional (Just namespace) context originedModules resolved now
+  checkoutCandidate <- case replaceCheckoutApplications manifest [(declarationApplication, opsFiltered)] of
+    Left err -> TIO.putStrLn (err ^. #message) >> exitFailure
+    Right candidate -> pure candidate
+  checkoutPreflight <-
+    runEff $
+      runFilesystem $
+        runProcessIO $
+          prepareCheckoutApplication projectRoot manifest checkoutCandidate opsFiltered
+  checkoutPlan <- case checkoutPreflight of
+    Left err -> TIO.putStrLn (err ^. #message) >> exitFailure
+    Right plan -> pure plan
+  TIO.putStr (renderCheckoutPlan (runOpts ^. #dryRun || runOpts ^. #diff) checkoutPlan)
+  when (not (checkoutApplicable checkoutPlan)) exitFailure
+
   -- 6d. Compute the diff against the (possibly post-migration) manifest.
   diff <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     -- Diff needs every name that could own a manifest file. Each
@@ -412,69 +432,81 @@ handleRun runOpts = do
                 try @IOException $
                   runEff $
                     runFilesystem $
-                      runBaselineStore baselineDir $
-                        runManifestStore manifestPath $ do
-                          recs <- executePlan "" opsForExec ownerMap modName now
-                          baselineResult <- recordGeneratedBaselines "" recs
-                          case baselineResult of
-                            Left err -> pure (Left err)
-                            Right baselineRecords -> do
-                              -- Build updated manifest with all composed modules.
-                              let orphanedPaths = map (^. #path) (diff ^. #orphaned)
-                                  cleanedFiles = foldr Map.delete (manifest ^. #files) orphanedPaths
-                                  allModuleEntries = updateAllModules (manifest ^. #modules) originedModules now
-                                  allResolvedVals =
-                                    Map.unions
-                                      [Map.map (^. #value) vs | vs <- Map.elems resolved]
-                                  appliedRecipe = case recipeInfo of
-                                    Just (rName, rVersion) ->
-                                      -- targetOrigin is the recipe's own origin
-                                      -- here: recipeInfo is Just only on the
-                                      -- branch where targetInfo was built from
-                                      -- the discovered recipe directory.
-                                      Just AppliedRecipe {name = rName, origin = targetOrigin, recipeVersion = rVersion, appliedAt = now}
-                                    Nothing -> (manifest ^. #recipe)
-                                  appliedCompositionWithoutReceipts =
-                                    buildAppliedComposition
-                                      appliedTarget
-                                      targetOrigin
-                                      targetVersion
-                                      additional
-                                      (Just namespace)
-                                      context
-                                      originedModules
-                                      resolved
-                                      now
-                                  appliedComposition =
-                                    ( appliedCompositionWithoutReceipts
-                                        & #commandReceipts
-                                        .~ candidateCommandReceipts
-                                    )
-                                  applicationDestinations =
-                                    Set.fromList [path | Just path <- map operationDestination opsFiltered]
-                                  combinedFiles = Map.unions [baselineRecords, keepRecords, cleanedFiles]
-                                  ownedFiles =
-                                    Map.mapWithKey
-                                      ( \path record ->
-                                          if Set.member path applicationDestinations
-                                            then attachApplication (appliedComposition ^. #applicationId) (Map.lookup path (manifest ^. #files)) record
-                                            else record
+                      runProcessIO $
+                        runBaselineStore baselineDir $
+                          runManifestStore manifestPath $ do
+                            recs <- executePlan "" opsForExec ownerMap modName now
+                            baselineResult <- recordGeneratedBaselines "" recs
+                            case baselineResult of
+                              Left err -> pure (Left err)
+                              Right baselineRecords -> do
+                                -- Build updated manifest with all composed modules.
+                                let orphanedPaths = map (^. #path) (diff ^. #orphaned)
+                                    cleanedFiles = foldr Map.delete (manifest ^. #files) orphanedPaths
+                                    allModuleEntries = updateAllModules (manifest ^. #modules) originedModules now
+                                    allResolvedVals =
+                                      Map.unions
+                                        [Map.map (^. #value) vs | vs <- Map.elems resolved]
+                                    appliedRecipe = case recipeInfo of
+                                      Just (rName, rVersion) ->
+                                        -- targetOrigin is the recipe's own origin
+                                        -- here: recipeInfo is Just only on the
+                                        -- branch where targetInfo was built from
+                                        -- the discovered recipe directory.
+                                        Just AppliedRecipe {name = rName, origin = targetOrigin, recipeVersion = rVersion, appliedAt = now}
+                                      Nothing -> (manifest ^. #recipe)
+                                    appliedCompositionWithoutReceipts =
+                                      buildAppliedComposition
+                                        appliedTarget
+                                        targetOrigin
+                                        targetVersion
+                                        additional
+                                        (Just namespace)
+                                        context
+                                        originedModules
+                                        resolved
+                                        now
+                                    appliedComposition =
+                                      ( appliedCompositionWithoutReceipts
+                                          & #commandReceipts
+                                          .~ candidateCommandReceipts
                                       )
-                                      combinedFiles
-                                  newManifest =
-                                    Manifest
-                                      { version = currentManifestVersion,
-                                        genAt = now,
-                                        modules = allModuleEntries,
-                                        vars = Map.union (Map.map varValueToText allResolvedVals) (manifest ^. #vars),
-                                        files = ownedFiles,
-                                        applications = replaceAppliedComposition appliedComposition (manifest ^. #applications),
-                                        recipe = appliedRecipe,
-                                        blueprint = manifest ^. #blueprint,
-                                        blueprintMigrations = manifest ^. #blueprintMigrations
-                                      }
-                              writeManifest newManifest
-                              pure (Right newManifest)
+                                    applicationDestinations =
+                                      Set.fromList [path | Just path <- map operationDestination opsFiltered]
+                                    combinedFiles = Map.unions [baselineRecords, keepRecords, cleanedFiles]
+                                    ownedFiles =
+                                      Map.mapWithKey
+                                        ( \path record ->
+                                            if Set.member path applicationDestinations
+                                              then attachApplication (appliedComposition ^. #applicationId) (Map.lookup path (manifest ^. #files)) record
+                                              else record
+                                        )
+                                        combinedFiles
+                                    newManifest =
+                                      Manifest
+                                        { version = currentManifestVersion,
+                                          genAt = now,
+                                          modules = allModuleEntries,
+                                          vars = Map.union (Map.map varValueToText allResolvedVals) (manifest ^. #vars),
+                                          files = ownedFiles,
+                                          applications = replaceAppliedComposition appliedComposition (manifest ^. #applications),
+                                          recipe = appliedRecipe,
+                                          blueprint = manifest ^. #blueprint,
+                                          seeds = manifest ^. #seeds,
+                                          checkoutOutputs = checkoutCandidate ^. #checkoutOutputs,
+                                          blueprintMigrations = manifest ^. #blueprintMigrations
+                                        }
+                                actual <- prepareCheckoutPlan Reconcile ApplyDeclaration projectRoot manifest checkoutCandidate []
+                                checked <- case actual of
+                                  Left err -> E.throwIO (userError (T.unpack (err ^. #message)))
+                                  Right plan | checkoutApplicable plan -> pure plan
+                                  Right plan -> E.throwIO (userError (T.unpack (renderCheckoutPlan False plan)))
+                                links <- applyCheckoutPlan ApplyDeclaration projectRoot checked
+                                case links ^. #failure of
+                                  Just err -> E.throwIO (userError (T.unpack (err ^. #message)))
+                                  Nothing -> pure ()
+                                writeManifest newManifest `E.onException` (rollbackCheckout projectRoot (links ^. #undo) >> pure ())
+                                pure (Right newManifest)
 
               newManifest <- case generationAttempt of
                 Left err -> do

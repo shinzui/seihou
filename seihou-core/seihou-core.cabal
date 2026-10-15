@@ -44,6 +44,7 @@ library
     Seihou.Core.ArtifactOriginDetect
     Seihou.Core.ArtifactRef
     Seihou.Core.Blueprint
+    Seihou.Core.Checkout
     Seihou.Core.CommandFingerprint
     Seihou.Core.CommandVar
     Seihou.Core.Context
@@ -56,6 +57,7 @@ library
     Seihou.Core.Registry
     Seihou.Core.Scaffold
     Seihou.Core.SchemaUpgrade
+    Seihou.Core.Seed
     Seihou.Core.Status
     Seihou.Core.Types
     Seihou.Core.Variable
@@ -89,6 +91,7 @@ library
     Seihou.Effect.ProcessInterp
     Seihou.Effect.ProcessPure
     Seihou.Engine.Baseline
+    Seihou.Engine.Checkout
     Seihou.Engine.Conflict
     Seihou.Engine.DhallJSON
     Seihou.Engine.Diff
@@ -107,12 +110,13 @@ library
     Seihou.Interaction.Confirm
     Seihou.Interaction.Prompt
     Seihou.Manifest.Hash
+    Seihou.Manifest.JSON
     Seihou.Manifest.Types
     Seihou.Manifest.Upgrade
     Seihou.Prelude
 
   build-depends:
-    aeson >=2.1 && <3,
+    aeson >=2.1.2 && <3,
     aeson-pretty >=0.8 && <1,
     base >=4.18 && <5,
     base16-bytestring >=1.0 && <2,
@@ -157,6 +161,7 @@ test-suite seihou-core-test
     Seihou.Core.ArtifactOriginDetectSpec
     Seihou.Core.ArtifactRefSpec
     Seihou.Core.BlueprintSpec
+    Seihou.Core.CheckoutSpec
     Seihou.Core.CommandFingerprintSpec
     Seihou.Core.CommandVarSpec
     Seihou.Core.ContextSpec
@@ -172,6 +177,7 @@ test-suite seihou-core-test
     Seihou.Core.RegistrySyncSpec
     Seihou.Core.ScaffoldSpec
     Seihou.Core.SchemaUpgradeSpec
+    Seihou.Core.SeedSpec
     Seihou.Core.StatusSpec
     Seihou.Core.TypesSpec
     Seihou.Core.VariableSpec
@@ -186,6 +192,7 @@ test-suite seihou-core-test
     Seihou.Effect.LoggerSpec
     Seihou.Effect.ManifestStoreSpec
     Seihou.Engine.BaselineSpec
+    Seihou.Engine.CheckoutSpec
     Seihou.Engine.ConflictSpec
     Seihou.Engine.DiffSpec
     Seihou.Engine.ExecuteSpec
@@ -213,7 +220,7 @@ test-suite seihou-core-test
     Seihou.Manifest.UpgradeSpec
 
   build-depends:
-    aeson >=2.1 && <3,
+    aeson >=2.1.2 && <3,
     base >=4.18 && <5,
     bytestring >=0.11 && <1,
     containers >=0.6 && <1,
@@ -224,6 +231,7 @@ test-suite seihou-core-test
     generic-lens >=2.2 && <3,
     hspec >=2.11 && <3,
     lens >=5.2 && <6,
+    process >=1.6 && <1.7,
     seihou-core,
     tasty >=1.4 && <2,
     tasty-hspec >=1.2 && <2,

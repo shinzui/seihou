@@ -17,6 +17,7 @@ module Seihou.CLI.Commands
     ContextAction (..),
     ListOpts (..),
     StatusOpts (..),
+    SyncOpts (..),
     BrowseOpts (..),
     OutdatedOpts (..),
     UpgradeOpts (..),
@@ -61,7 +62,7 @@ import Seihou.CLI.Registry (RegistryCommand (..))
 import Seihou.CLI.Registry.Sync (SyncVersionsOpts (..))
 import Seihou.CLI.Registry.Validate (ValidateRegistryOpts (..))
 import Seihou.CLI.Version (seihouVersionWithGit)
-import Seihou.Core.Types (ManifestSchemaVersion (..), ModuleName (..))
+import Seihou.Core.Types (ApplicationId (..), ManifestSchemaVersion (..), ModuleName (..))
 import Seihou.Prelude
 
 data Command
@@ -72,6 +73,7 @@ data Command
   | Vars VarsOpts
   | Install InstallOpts
   | Status StatusOpts
+  | Sync SyncOpts
   | Diff
   | List ListOpts
   | NewModule NewModuleOpts
@@ -198,6 +200,7 @@ data UpdateOpts = UpdateOpts
 
 data RemoveOpts = RemoveOpts
   { module_ :: !ModuleName,
+    application :: !(Maybe ApplicationId),
     dryRun :: !Bool,
     force :: !Bool,
     verbose :: !Bool
@@ -303,6 +306,9 @@ data BrowseOpts = BrowseOpts
   { source :: !Text,
     tag :: !(Maybe Text)
   }
+  deriving stock (Eq, Show, Generic)
+
+data SyncOpts = SyncOpts {dryRun :: !Bool, json :: !Bool}
   deriving stock (Eq, Show, Generic)
 
 data StatusOpts = StatusOpts
@@ -487,6 +493,7 @@ commandParser =
         <> command "update" updateInfo
         <> command "remove" removeInfo
         <> command "status" statusInfo
+        <> command "sync" syncInfo
         <> command "diff" diffInfo
         <> command "manifest" manifestInfo
     )
@@ -655,6 +662,7 @@ removeParser =
   fmap Remove $
     RemoveOpts
       <$> argument moduleNameReader (metavar "MODULE" <> help "Module to remove")
+      <*> optional (ApplicationId . T.pack <$> strOption (long "application" <> metavar "ID" <> help "Select a checkout-owning recorded application"))
       <*> switch (long "dry-run" <> help "Show removal plan without executing")
       <*> switch (long "force" <> help "Delete conflicted files without prompting")
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
@@ -2361,3 +2369,13 @@ traceOption =
           <> metavar "SETTING"
           <> help "Record model calls: off, file, stdout, or stderr (file path: agent.tracePath)"
       )
+
+syncInfo :: ParserInfo Command
+syncInfo = info (syncParser <**> helper) (fullDesc <> progDesc "Rebuild ignored checkout outputs from the manifest")
+  where
+    syncParser =
+      Sync
+        <$> ( SyncOpts
+                <$> switch (long "dry-run" <> help "Show planned links without changing anything")
+                <*> switch (long "json" <> help "Print one JSON report")
+            )

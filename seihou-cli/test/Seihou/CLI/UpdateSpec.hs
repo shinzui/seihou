@@ -563,7 +563,7 @@ spec = do
       withSystemTempDirectory "seihou-update-schema-5" $ \root -> do
         fixture <- prepareSharedPathFixture CoOwnerAppends root
         manifestText <- TIO.readFile (fixture ^. #manifestPath)
-        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":7" "\"version\":5" manifestText)
+        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":9" "\"version\":5" manifestText)
         withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
           withCurrentDirectory (fixture ^. #projectRoot) $ do
             forM_ [NamedUpdateTargets ["alpha"], AllRecordedApplications] $ \selection -> do
@@ -627,6 +627,8 @@ spec = do
                   applications = [previous],
                   recipe = Nothing,
                   blueprint = Nothing,
+                  seeds = Map.empty,
+                  checkoutOutputs = Map.empty,
                   blueprintMigrations = []
                 }
             catalog = CandidateCatalog (projectRoot </> "search") Map.empty Map.empty
@@ -1031,6 +1033,8 @@ prepareRecipeUpdateFixture root = do
             applications = [app],
             recipe = Just (AppliedRecipe "stack" (remoteOrigin "stack") (Just "1.0.0") testTime),
             blueprint = Nothing,
+            seeds = Map.empty,
+            checkoutOutputs = Map.empty,
             blueprintMigrations = []
           }
       sourceUrl = T.pack remote
@@ -1217,6 +1221,8 @@ manifestForApplications applicationRecords fileRecords =
           applications = applicationRecords,
           recipe = base ^. #recipe,
           blueprint = base ^. #blueprint,
+          seeds = base ^. #seeds,
+          checkoutOutputs = base ^. #checkoutOutputs,
           blueprintMigrations = base ^. #blueprintMigrations
         }
 
@@ -1234,6 +1240,8 @@ breakCandidatePublication plan =
       request = plan ^. #request,
       snapshot = plan ^. #snapshot,
       plannedApplications = plan ^. #plannedApplications,
+      checkoutPlan = plan ^. #checkoutPlan,
+      checkoutOutputs = plan ^. #checkoutOutputs,
       manifestPreparation = plan ^. #manifestPreparation
     }
   where
@@ -1264,6 +1272,8 @@ withoutApplications manifest =
       applications = [],
       recipe = manifest ^. #recipe,
       blueprint = manifest ^. #blueprint,
+      seeds = manifest ^. #seeds,
+      checkoutOutputs = manifest ^. #checkoutOutputs,
       blueprintMigrations = manifest ^. #blueprintMigrations
     }
 

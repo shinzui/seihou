@@ -170,3 +170,7 @@ Recommended actions:
   seihou update example
   seihou update
 ```
+
+## Checkout outputs
+
+Status observes checkout declarations independently of installed artifact checks. It shows counts and at most ten affected paths, with an elision count for the rest. Missing or wrong links name `seihou sync`; blocked objects name their cause and manual remedy. Status never repairs links or writes the manifest. See [sync](sync.md).

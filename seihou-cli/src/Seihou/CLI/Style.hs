@@ -89,6 +89,7 @@ renderColorLine maxPath (FilePreview status path annotation mMod) =
 renderColorLine _ other = renderNonFileColor other
 
 renderNonFileColor :: PreviewLine -> Text
+renderNonFileColor (LinkPreview dest source) = "    " <> cyan "link" <> "   " <> cyan (T.pack dest) <> " -> " <> cyan (T.pack source)
 renderNonFileColor (DirPreview path) =
   "    " <> cyan "mkdir" <> "  " <> cyan (T.pack path)
 renderNonFileColor (CommandPreview cmd mOwner) =

@@ -311,3 +311,7 @@ Exit status 0 means the plan, no-op, dry-run, declined interactive confirmation,
 or apply completed as reported. Invalid options, missing input, unsafe partial
 selection, unresolved non-interactive conflicts, stale state, apply failure, or
 requested Git commit failure exit non-zero.
+
+## Checkout declarations
+
+Update reconciles prior declarations, candidate declarations and disk through the shared checkout planner. Link-only and ownership-only changes are real updates. Unchanged specifications do not repair unrelated drift; use [sync](sync.md). A retarget accepts an absent path, the expected old link, or the already-correct new link; a third local target refuses. Last-owner retirement removes only the expected literal old link, even if its source is gone. Edited links and real objects survive with a warning. Surviving owners must agree. Managed/seed/checkout transitions require explicit manual resolution. The existing update recovery journal uses version 2 with absent/file/literal-link entries and still reads version 1. Recovery restores link entries without reading their target directories.

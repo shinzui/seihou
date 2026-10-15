@@ -47,7 +47,7 @@ mkManifestWithRemoval removal fileContents =
 
 -- | Helper: create a PureFS with files.
 mkFS :: [(FilePath, Text)] -> PureFS
-mkFS fileContents = PureFS (Map.fromList fileContents) Set.empty
+mkFS fileContents = PureFS (Map.fromList fileContents) Set.empty Map.empty
 
 -- | Run computeRemovalPlan in the pure filesystem.
 runPlan :: PureFS -> Manifest -> ModuleName -> Either RemovalError RemovalPlan
@@ -169,6 +169,8 @@ spec = do
                 applications = base ^. #applications,
                 recipe = base ^. #recipe,
                 blueprint = base ^. #blueprint,
+                seeds = base ^. #seeds,
+                checkoutOutputs = base ^. #checkoutOutputs,
                 blueprintMigrations = base ^. #blueprintMigrations
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]
@@ -352,6 +354,8 @@ spec = do
                 applications = base ^. #applications,
                 recipe = base ^. #recipe,
                 blueprint = base ^. #blueprint,
+                seeds = base ^. #seeds,
+                checkoutOutputs = base ^. #checkoutOutputs,
                 blueprintMigrations = base ^. #blueprintMigrations
               }
           fs = mkFS [("mine.txt", "mine"), ("other.txt", "other")]

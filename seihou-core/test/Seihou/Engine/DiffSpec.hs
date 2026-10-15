@@ -57,6 +57,8 @@ manifestWithFiles recs =
           applications = base ^. #applications,
           recipe = base ^. #recipe,
           blueprint = base ^. #blueprint,
+          seeds = base ^. #seeds,
+          checkoutOutputs = base ^. #checkoutOutputs,
           blueprintMigrations = base ^. #blueprintMigrations
         }
 
@@ -75,7 +77,7 @@ spec = do
     it "classifies file in plan + on disk (not in manifest) as Conflict" $ do
       let manifest = emptyManifest fixedTime
           planned = [("README.md", "# Hello", modName, Nothing)]
-          fs = PureFS (Map.singleton "README.md" "existing content") mempty
+          fs = PureFS (Map.singleton "README.md" "existing content") mempty Map.empty
           result = runDiff fs manifest active planned
       length (result ^. #conflicts) `shouldBe` 1
       ((head (result ^. #conflicts)) ^. #path) `shouldBe` "README.md"
@@ -83,7 +85,7 @@ spec = do
     it "classifies patch op on existing file (not in manifest) as New, not Conflict" $ do
       let manifest = emptyManifest fixedTime
           planned = [(".gitignore", ".claude/\n", modName, Just AppendSection)]
-          fs = PureFS (Map.singleton ".gitignore" ".seihou/\n") mempty
+          fs = PureFS (Map.singleton ".gitignore" ".seihou/\n") mempty Map.empty
           result = runDiff fs manifest active planned
       length (result ^. #conflicts) `shouldBe` 0
       length (result ^. #new) `shouldBe` 1
@@ -95,7 +97,7 @@ spec = do
           patchContent = "new section"
           manifest = manifestWithFiles (Map.singleton "config.txt" (mkRecord originalContent))
           planned = [("config.txt", patchContent, modName, Just AppendSection)]
-          fs = PureFS (Map.singleton "config.txt" userContent) mempty
+          fs = PureFS (Map.singleton "config.txt" userContent) mempty Map.empty
           result = runDiff fs manifest active planned
       length (result ^. #conflicts) `shouldBe` 0
       length (result ^. #modified) `shouldBe` 1
@@ -105,7 +107,7 @@ spec = do
       let content = "# Hello World"
           manifest = manifestWithFiles (Map.singleton "README.md" (mkRecord content))
           planned = [("README.md", content, modName, Nothing)]
-          fs = PureFS (Map.singleton "README.md" content) mempty
+          fs = PureFS (Map.singleton "README.md" content) mempty Map.empty
           result = runDiff fs manifest active planned
       length (result ^. #unchanged) `shouldBe` 1
       head (result ^. #unchanged) `shouldBe` "README.md"
@@ -116,7 +118,7 @@ spec = do
           manifest = manifestWithFiles (Map.singleton "README.md" (mkRecord oldContent))
           planned = [("README.md", newContent, modName, Nothing)]
           -- Disk matches manifest (user didn't touch it)
-          fs = PureFS (Map.singleton "README.md" oldContent) mempty
+          fs = PureFS (Map.singleton "README.md" oldContent) mempty Map.empty
           result = runDiff fs manifest active planned
       length (result ^. #modified) `shouldBe` 1
       ((head (result ^. #modified)) ^. #path) `shouldBe` "README.md"
@@ -129,7 +131,7 @@ spec = do
           manifest = manifestWithFiles (Map.singleton "README.md" (mkRecord originalContent))
           planned = [("README.md", planContent, modName, Nothing)]
           -- Disk was modified by user (doesn't match manifest)
-          fs = PureFS (Map.singleton "README.md" userContent) mempty
+          fs = PureFS (Map.singleton "README.md" userContent) mempty Map.empty
           result = runDiff fs manifest active planned
       length (result ^. #conflicts) `shouldBe` 1
       ((head (result ^. #conflicts)) ^. #path) `shouldBe` "README.md"
@@ -142,7 +144,7 @@ spec = do
                 & #files .~ Map.singleton "old-file.txt" (mkRecord content)
             )
           planned = [] :: [(FilePath, Text, ModuleName, Maybe PatchOp)] -- module no longer produces this file
-          fs = PureFS (Map.singleton "old-file.txt" content) mempty
+          fs = PureFS (Map.singleton "old-file.txt" content) mempty Map.empty
           result = runDiff fs manifest active planned
       length (result ^. #orphaned) `shouldBe` 1
       ((head (result ^. #orphaned)) ^. #path) `shouldBe` "old-file.txt"
@@ -183,6 +185,7 @@ spec = do
             PureFS
               (Map.fromList [("unchanged.txt", existingContent), ("orphaned.txt", "orphan")])
               mempty
+              Map.empty
           result = runDiff fs manifest active planned
       length (result ^. #new) `shouldBe` 1
       length (result ^. #unchanged) `shouldBe` 1
@@ -215,7 +218,7 @@ spec = do
           manifest = manifestWithFiles (Map.singleton "other.txt" record)
           planned = [("new.txt", "new content", modName, Nothing)]
           activeModules = Set.singleton modName -- "test-module", NOT "other-module"
-          fs = PureFS (Map.singleton "other.txt" content) mempty
+          fs = PureFS (Map.singleton "other.txt" content) mempty Map.empty
           result = runDiff fs manifest activeModules planned
       length (result ^. #orphaned) `shouldBe` 0
       length (result ^. #new) `shouldBe` 1
@@ -225,7 +228,7 @@ spec = do
           manifest = manifestWithFiles (Map.singleton "old.txt" (mkRecord content))
           planned = [("new.txt", "new content", modName, Nothing)]
           activeModules = Set.singleton modName -- file belongs to active module
-          fs = PureFS (Map.singleton "old.txt" content) mempty
+          fs = PureFS (Map.singleton "old.txt" content) mempty Map.empty
           result = runDiff fs manifest activeModules planned
       length (result ^. #orphaned) `shouldBe` 1
       ((head (result ^. #orphaned)) ^. #path) `shouldBe` "old.txt"
@@ -256,6 +259,7 @@ spec = do
             PureFS
               (Map.fromList [("active-old.txt", "active old"), ("other.txt", "other content")])
               mempty
+              Map.empty
           result = runDiff fs manifest activeModules planned
       -- active-old.txt is orphaned (active module no longer produces it)
       length (result ^. #orphaned) `shouldBe` 1
@@ -280,7 +284,7 @@ spec = do
           -- active module wants to write to same path owned by inactive module
           planned = [("shared.txt", "new content from active", modName, Nothing)]
           activeModules = Set.singleton modName
-          fs = PureFS (Map.singleton "shared.txt" "other content") mempty
+          fs = PureFS (Map.singleton "shared.txt" "other content") mempty Map.empty
           result = runDiff fs manifest activeModules planned
       -- File exists on disk but not in active manifest → Conflict
       length (result ^. #conflicts) `shouldBe` 1
@@ -320,6 +324,7 @@ spec = do
                   ]
               )
               mempty
+              Map.empty
           result = runDiff fs manifest activeModules planned
       -- from-a.txt unchanged (active, still produced)
       length (result ^. #unchanged) `shouldBe` 1

@@ -32,6 +32,7 @@ data PreviewLine
         annotation :: !Text,
         module_ :: !(Maybe ModuleName)
       }
+  | LinkPreview FilePath FilePath
   | DirPreview FilePath
   | CommandPreview Text (Maybe ModuleName)
   | OrphanPreview FilePath ModuleName
@@ -72,6 +73,7 @@ opToPreview mDiff ownerMap _ (WriteFileOp dest _ strat) =
       annotation = strategyName strat,
       module_ = Map.lookup dest ownerMap
     }
+opToPreview _ _ _ (CheckoutOutputOp dest (DirectorySymlink source) _) = LinkPreview dest source
 opToPreview _ _ _ (CreateDirOp path) = DirPreview path
 opToPreview mDiff ownerMap _ (CopyFileOp _ dest) =
   FilePreview
@@ -128,6 +130,7 @@ renderPlainLine maxPath (FilePreview status path annotation mMod) =
 renderPlainLine _ other = renderNonFileLine other
 
 renderNonFileLine :: PreviewLine -> Text
+renderNonFileLine (LinkPreview dest source) = "    link   " <> T.pack dest <> " -> " <> T.pack source
 renderNonFileLine (DirPreview path) =
   "    mkdir  " <> T.pack path
 renderNonFileLine (CommandPreview cmd mOwner) =
@@ -155,6 +158,7 @@ strategyName Copy = "copy"
 strategyName Template = "template"
 strategyName DhallText = "dhall-text"
 strategyName Structured = "structured"
+strategyName Symlink = "symlink"
 
 -- | Format a complete plan view with header, variables, operations, and summary.
 formatPlanView :: [ModuleName] -> Map VarName VarValue -> [PreviewLine] -> DiffResult -> Text

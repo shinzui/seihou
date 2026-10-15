@@ -3,6 +3,8 @@ module Seihou.Engine.UpdateTransactionSpec (tests) where
 import Control.Exception (throwIO)
 import Control.Lens ((&), (.~), (^.))
 import Control.Monad (unless, when)
+import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
@@ -34,6 +36,44 @@ tests = testSpec "Seihou.Engine.UpdateTransaction" spec
 
 spec :: Spec
 spec = do
+  describe "literal symlink journal snapshots" $ do
+    it "restores a dangling target without traversing it" $ withSystemTempDirectory "checkout-journal" $ \root -> do
+      Directory.createDirectoryLink "missing-old-target" (root </> "local-link")
+      Right transaction <- beginUpdateTransaction root (Set.singleton "local-link")
+      Directory.removeDirectoryLink (root </> "local-link")
+      Directory.createDirectoryLink "missing-new-target" (root </> "local-link")
+      restored <- recoverIncompleteTransactions root
+      restored `shouldBe` [Right ()]
+      Directory.getSymbolicLinkTarget (root </> "local-link") `shouldReturn` "missing-old-target"
+    it "retains the version-1 regular-file recovery contract" $ withSystemTempDirectory "legacy-journal" $ \root -> do
+      TIO.writeFile (root </> "managed.txt") "before"
+      Right transaction <- beginUpdateTransaction root (Set.singleton "managed.txt")
+      let journal = transaction ^. #transactionDirectory </> "journal.json"
+      Right (Aeson.Object object) <- Aeson.eitherDecode <$> LBS.readFile journal
+      let stripEntry (Aeson.Object fields) = Aeson.Object (KeyMap.delete "kind" (KeyMap.delete "target" fields))
+          stripEntry other = other
+          legacy = KeyMap.mapWithKey (\key value -> case (key, value) of ("version", _) -> Aeson.Number 1; ("entries", Aeson.Array values) -> Aeson.Array (fmap stripEntry values); _ -> value) object
+      LBS.writeFile journal (Aeson.encode (Aeson.Object legacy))
+      TIO.writeFile (root </> "managed.txt") "after"
+      recoverIncompleteTransactions root `shouldReturn` [Right ()]
+      TIO.readFile (root </> "managed.txt") `shouldReturn` "before"
+    it "rejects an unknown version-2 kind before recovery writes" $ withSystemTempDirectory "unknown-journal" $ \root -> do
+      TIO.writeFile (root </> "managed.txt") "before"
+      Right transaction <- beginUpdateTransaction root (Set.singleton "managed.txt")
+      let journal = transaction ^. #transactionDirectory </> "journal.json"
+      bytes <- TIO.readFile journal
+      TIO.writeFile journal (T.replace "\"kind\":\"file\"" "\"kind\":\"unknown\"" bytes)
+      TIO.writeFile (root </> "managed.txt") "after"
+      restored <- rollbackUpdateTransaction transaction
+      restored `shouldSatisfy` \case Left TransactionJournalMalformed {} -> True; _ -> False
+      TIO.readFile (root </> "managed.txt") `shouldReturn` "after"
+    it "removes a newly created dangling link when restoring an absent snapshot" $ withSystemTempDirectory "checkout-journal" $ \root -> do
+      Right transaction <- beginUpdateTransaction root (Set.singleton "local-link")
+      Directory.createDirectoryLink "missing-target" (root </> "local-link")
+      restored <- rollbackUpdateTransaction transaction
+      restored `shouldBe` Right ()
+      Directory.listDirectory root `shouldReturn` [".seihou"]
+
   describe "applyReconciliation" $ do
     it "writes resolved files and updates baselines, hashes, ownership, and orphans" $
       withSystemTempDirectory "seihou-update-transaction" $ \projectRoot -> do
@@ -354,6 +394,8 @@ spec = do
                   applications = candidate ^. #applications,
                   recipe = candidate ^. #recipe,
                   blueprint = candidate ^. #blueprint,
+                  seeds = candidate ^. #seeds,
+                  checkoutOutputs = candidate ^. #checkoutOutputs,
                   blueprintMigrations = candidate ^. #blueprintMigrations
                 }
         setUpdateTransactionExpectedManifest transaction finalManifest `shouldReturn` Right ()
@@ -450,6 +492,8 @@ manifestWithFiles fileRecords =
           applications = manifest ^. #applications,
           recipe = manifest ^. #recipe,
           blueprint = manifest ^. #blueprint,
+          seeds = manifest ^. #seeds,
+          checkoutOutputs = manifest ^. #checkoutOutputs,
           blueprintMigrations = manifest ^. #blueprintMigrations
         }
 

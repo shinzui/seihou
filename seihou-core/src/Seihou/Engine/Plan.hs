@@ -20,7 +20,9 @@ import Data.Yaml qualified as Yaml
 import Dhall qualified
 import Dhall.Core qualified as DhallCore
 import Dhall.Src (Src)
+import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutPaths)
 import Seihou.Core.Expr (evalExpr)
+import Seihou.Core.Module (checkCheckoutSteps, checkSeedSteps)
 import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Engine.DhallJSON (dhallExprToJSON)
@@ -38,7 +40,10 @@ compilePlan ::
   IO (Either [Text] [Operation])
 compilePlan baseDir modul vars = do
   let modName = (modul ^. #name)
-  results <- mapM (compileStep baseDir modName vars) (modul ^. #steps)
+  results <-
+    if null (checkSeedSteps modul <> checkCheckoutSteps modul)
+      then mapM (compileStep baseDir modName vars) (modul ^. #steps)
+      else pure [Left (checkSeedSteps modul <> checkCheckoutSteps modul)]
   let (allErrors, allOps) = partitionResults results
   if null allErrors
     then case compileCommands modName vars (modul ^. #commands) of
@@ -115,6 +120,12 @@ compileStep baseDir modName vars step = do
         Template -> compileTemplateStep baseDir vars step
         DhallText -> compileDhallTextStep baseDir vars step
         Structured -> compileStructuredStep baseDir vars step
+        Symlink -> pure $ case (renderCommand (T.pack (step ^. #src)) vars, renderCommand (step ^. #dest) vars) of
+          (Right source, Right dest) -> case validateCheckoutPaths (T.unpack source) (T.unpack dest) of
+            Left err -> Left [err ^. #message]
+            Right () -> Right [CheckoutOutputOp (T.unpack dest) (DirectorySymlink (T.unpack source)) modName]
+          (Left errors, _) -> Left (map formatPlaceholderError errors)
+          (_, Left errors) -> Left (map formatPlaceholderError errors)
 
 -- | Compile a Copy step: read the source file and write it to the destination.
 compileCopyStep ::

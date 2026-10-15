@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Manifest-only `seihou sync [--dry-run] [--json]` restores ignored checkout directory links without artifacts, commands, tracked writes or manifest changes. Schema 9 stores typed declarations and application/instance ownership; run, update, remove and status share observation and reconciliation.
+- Update recovery journals snapshot literal symlink targets while retaining version-1 compatibility.
+- Optional step lifecycle with backward-compatible decoding and seed declaration validation.
+- Manifest schema 8 seed receipts and lossless 7-to-8 upgrade; runtime seed creation is separate.
+
+### Added
+
 - **`seihou agent upgrade MODULE [PROMPT] [--check]`** (`Seihou.CLI.UpgradeDiagnosis`,
   executable `Seihou.CLI.AgentUpgrade`, template `data/upgrade-prompt.md`). A read-only,
   never-throwing diagnosis (guarded probes; the manifest-upgrade and update dry runs are

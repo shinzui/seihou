@@ -88,15 +88,31 @@ spec = do
       planUpgradeWith gappy (v 7) (v 5) (v 7) `shouldBe` Left (MissingUpgradeStep (v 6))
 
     it "rejects targets above current and below the source" $ do
-      planManifestUpgrade (v 6) (v 8) `shouldBe` Left (TargetAboveCurrent (v 8))
+      planManifestUpgrade (v 6) (v 99) `shouldBe` Left (TargetAboveCurrent (v 99))
       planManifestUpgrade (v 7) (v 6) `shouldBe` Left (TargetBelowSource (v 7) (v 6))
-      planManifestUpgrade (v 8) (v 8) `shouldBe` Left (SourceNewerThanBinary (v 8))
+      planManifestUpgrade (v 99) (v 99) `shouldBe` Left (SourceNewerThanBinary (v 99))
       planManifestUpgrade (v 0) (v 7) `shouldBe` Left (SourceVersionUnsupported (v 0))
 
     it "classifies the path conversion as inference-bearing and 6 -> 7 as lossless" $ do
       let kindFrom source = upgradeStepKind . (^. #action) <$> lookup (v source) [(s ^. #fromVersion, s) | s <- manifestUpgradeSteps]
       kindFrom 5 `shouldBe` Just InferenceBearingUpgrade
       kindFrom 6 `shouldBe` Just LosslessUpgrade
+
+  describe "the 7 -> 8 step" $ do
+    it "preserves unrelated raw fields and adds seed receipts" $ do
+      Right (_, upgraded) <- pure (upgradeDocumentLosslessly (v 8) schema6Document)
+      documentSchemaVersion upgraded `shouldBe` Right (v 8)
+      case upgraded of
+        Aeson.Object fields -> do
+          KeyMap.lookup "seeds" fields `shouldBe` Just (Aeson.object [])
+          KeyMap.lookup "producerOwned" fields `shouldBe` Just (Aeson.object ["keep" Aeson..= True])
+        _ -> expectationFailure "expected object"
+      case Aeson.fromJSON upgraded :: Aeson.Result Manifest of
+        Aeson.Success manifest -> manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
+        Aeson.Error err -> expectationFailure err
+    it "rejects malformed seed containers before stamping" $ do
+      let document = Aeson.object ["version" Aeson..= (7 :: Int), "seeds" Aeson..= False]
+      upgradeDocumentLosslessly (v 8) document `shouldSatisfy` either (const True) (const False)
 
   describe "the 6 -> 7 step" $ do
     let upgraded = upgradeDocumentLosslessly (v 7) schema6Document

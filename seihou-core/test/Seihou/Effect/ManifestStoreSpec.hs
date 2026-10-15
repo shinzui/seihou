@@ -88,7 +88,7 @@ spec = do
                 runManifestStore manifestPath (writeManifest sampleManifest)
                 c <- readFileText manifestPath
                 pure ((), c)
-      T.isInfixOf "\"version\":7" content `shouldBe` True
+      T.isInfixOf "\"version\":9" content `shouldBe` True
       T.isInfixOf "haskell-base" content `shouldBe` True
       T.isInfixOf "my-app" content `shouldBe` True
 
@@ -104,7 +104,7 @@ spec = do
 
     it "returns Left for corrupt JSON" $ do
       let manifestPath = ".seihou/manifest.json"
-          corruptFS = PureFS (Map.fromList [(manifestPath, "{ this is not json }")]) Set.empty
+          corruptFS = PureFS (Map.fromList [(manifestPath, "{ this is not json }")]) Set.empty Map.empty
           (result, _) =
             runPureEff $
               runFilesystemPure corruptFS $

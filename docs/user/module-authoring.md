@@ -863,3 +863,15 @@ guarantee — see [migrations.md](migrations.md) or run
 **Use conditional steps.** The `when` field lets you build flexible modules that adapt to the user's configuration without requiring separate modules for each variation.
 
 **Use DhallText for complex output.** When simple placeholder substitution isn't enough, the DhallText strategy gives you Dhall's full expression language — conditionals, string interpolation, and let bindings.
+
+### Step lifecycle
+
+`lifecycle : Optional Text` defaults to managed when omitted. `Some "seed"` declares a whole file created once and handed to the project. Seeds support copy, template, and dhall-text without patches. See [ADR 0017](../adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md); runtime seed behavior requires the remaining seed implementation plans.
+
+### Checkout directory outputs
+
+Use `strategy = "symlink"` together with `lifecycle = Some "checkout"`, with no patch. Both source and destination support variable placeholders; `when` can enable or retire a declaration. The source names a consuming-project directory, not a file in the module's installed `files/` directory. Paths must be canonical forward-slash relative paths without empty, dot, dot-dot, drive, backslash or NUL components; `.git` and `.seihou` components are reserved. Source and destination cannot overlap. Destinations cannot overlap managed files, seeds or other checkout destinations, and sources cannot overlap any checkout destination.
+
+Ignore destinations in Git and commit sources. Run may establish source directories through deterministic ordinary file generation before linking; arbitrary commands cannot supply missing sources. Agreeing applications share ownership. Removing the last claim retires only the expected link and preserves modified objects. Sources must be real directories without symlinked ancestors. New output kinds need explicit typed validation, observation, application, retirement, rollback, rendering and a manifest schema advance. File links and arbitrary command outputs are not currently supported.
+
+For the producer at `mori://shinzui/agent-seihou`, project-relative file `modules/link-skill/module.dhall` (artifact-level URI pending), replace each skill-link shell command with a normal symlink/checkout step whose source is the project's skill directory and whose destination is the consumer's ignored discovery path. Validate with a supporting Seihou release, publish the declaring module release, apply it once in each consumer and commit the new manifest. Old shell receipts do not create declarations. Producer adoption and release numbering are separate work.

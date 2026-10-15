@@ -14,6 +14,8 @@ import Seihou.CLI.AppliedBlueprintMigrationSpec qualified as AppliedBlueprintMig
 import Seihou.CLI.AppliedBlueprintSpec qualified as AppliedBlueprintSpec
 import Seihou.CLI.BlueprintMigrationSpec qualified as BlueprintMigrationSpec
 import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
+import Seihou.CLI.CheckoutSyncE2ESpec qualified as CheckoutSyncE2ESpec
+import Seihou.CLI.CheckoutSyncSpec qualified as CheckoutSyncSpec
 import Seihou.CLI.CommandExecutionSpec qualified as CommandExecutionSpec
 import Seihou.CLI.CommitMessageSpec qualified as CommitMessageSpec
 import Seihou.CLI.DiffSpec qualified as DiffSpec
@@ -90,6 +92,8 @@ main = do
         RepairOriginsE2ESpec.tests,
         RunBlueprintRefusalSpec.tests,
         SavePromptedSpec.tests,
+        CheckoutSyncSpec.tests,
+        CheckoutSyncE2ESpec.tests,
         SharedManifestE2ESpec.tests,
         StatusSpec.tests,
         UpgradeSpec.tests,

@@ -94,3 +94,7 @@ VERSIONING AND MIGRATIONS
   its migrations, regenerates files, and preserves user edits in one
   operation. Run `seihou help update` for the project workflow or
   `seihou help migrations` for the authoring reference.
+
+## Checkout directory links
+
+A step with strategy `symlink` and lifecycle `Some "checkout"` declares a link from a real project source directory to an ignored local path. Run records portable intent; `seihou sync` reconstructs it in fresh clones without modules or commands. For example, link `config/editor` to `.editor-local/config` and ignore `.editor-local/`. Links have no patches or content hashes.

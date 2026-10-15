@@ -68,6 +68,7 @@ library seihou-cli-internal
     Seihou.CLI.BlueprintExecution
     Seihou.CLI.BlueprintMigration
     Seihou.CLI.BrowseFormat
+    Seihou.CLI.CheckoutSync
     Seihou.CLI.CommandExecution
     Seihou.CLI.CommitMessage
     Seihou.CLI.Completions.Bash
@@ -189,6 +190,7 @@ executable seihou
     Seihou.CLI.SchemaUpgrade
     Seihou.CLI.Setup
     Seihou.CLI.Status
+    Seihou.CLI.Sync
     Seihou.CLI.Update
     Seihou.CLI.Upgrade
     Seihou.CLI.Validate
@@ -251,6 +253,8 @@ test-suite seihou-cli-test
     Seihou.CLI.AppliedBlueprintSpec
     Seihou.CLI.BlueprintMigrationSpec
     Seihou.CLI.BrowseFormatSpec
+    Seihou.CLI.CheckoutSyncE2ESpec
+    Seihou.CLI.CheckoutSyncSpec
     Seihou.CLI.CommandExecutionSpec
     Seihou.CLI.CommitMessageSpec
     Seihou.CLI.DiffSpec

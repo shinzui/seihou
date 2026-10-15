@@ -352,6 +352,8 @@ withFile path fileRecord manifest =
       applications = manifest ^. #applications,
       recipe = manifest ^. #recipe,
       blueprint = manifest ^. #blueprint,
+      seeds = manifest ^. #seeds,
+      checkoutOutputs = manifest ^. #checkoutOutputs,
       blueprintMigrations = manifest ^. #blueprintMigrations
     }
 

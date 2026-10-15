@@ -43,7 +43,7 @@ spec = do
       withFixture CoOwnerAppendsPredatingEvidence noDamage $ \_ _ diagnose -> do
         checks <- readiness <$> diagnose "alpha"
         statusOf "manifest-schema-current" checks `shouldBe` NeedsAttention
-        detailOf "manifest-schema-current" checks `shouldSatisfy` T.isInfixOf "schema 6 is older than 7"
+        detailOf "manifest-schema-current" checks `shouldSatisfy` T.isInfixOf "schema 6 is older than 9"
         statusOf "shared-evidence-known" checks `shouldBe` NeedsAttention
         detailOf "shared-evidence-known" checks `shouldBe` ".gitignore is shared with beta and its write mode is unknown"
         statusOf "update-plans-cleanly" checks `shouldBe` Ready
@@ -59,7 +59,7 @@ spec = do
         ((^. #errorCode) <$> diagnosis ^. #updateDryRun) `shouldBe` ProbeOk (Just "shared_write_evidence_unavailable")
 
     it "reports a schema-5 manifest as needing seihou manifest upgrade" $
-      withFixture CoOwnerAppends (withManifestText (T.replace "\"version\":7" "\"version\":5")) $ \_ _ diagnose -> do
+      withFixture CoOwnerAppends (withManifestText (T.replace "\"version\":9" "\"version\":5")) $ \_ _ diagnose -> do
         diagnosis <- diagnose "alpha"
         let checks = readiness diagnosis
         statusOf "manifest-readable" checks `shouldBe` NeedsAttention
@@ -154,7 +154,7 @@ spec = do
       [ ("healthy" :: Text, CoOwnerAppends, const (pure ())),
         ("schema 6", CoOwnerAppendsPredatingEvidence, const (pure ())),
         ("evidence unavailable", CoOwnerAppendsPredatingEvidence, evidenceUnavailable),
-        ("schema 5", CoOwnerAppends, withManifestText (T.replace "\"version\":7" "\"version\":5")),
+        ("schema 5", CoOwnerAppends, withManifestText (T.replace "\"version\":9" "\"version\":5")),
         ("not json", CoOwnerAppends, withManifestText (const "{not json")),
         ("local origin", CoOwnerAppends, localBetaOrigin),
         ("pending transaction", CoOwnerAppends, pendingTransaction)

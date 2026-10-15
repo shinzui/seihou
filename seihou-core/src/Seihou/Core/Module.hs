@@ -25,6 +25,8 @@ module Seihou.Core.Module
     checkSafeDestinations,
     checkDestVarRefs,
     checkCommandSafety,
+    checkSeedSteps,
+    checkCheckoutSteps,
     isValidModuleName,
     extractPlaceholders,
     validateProjectRelativePath,
@@ -33,8 +35,10 @@ where
 
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutPaths)
 import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalAgentPromptFromFile, evalBlueprintFromFile, evalModuleFromFile, evalRecipeFromFile)
@@ -177,6 +181,8 @@ validateModule baseDir m = do
           <> checkSafeDestinations m
           <> checkDestVarRefs m
           <> checkCommandSafety m
+          <> checkSeedSteps m
+          <> checkCheckoutSteps m
       allErrors = pureErrors <> fileErrors
   pure $
     if null allErrors
@@ -235,13 +241,16 @@ checkFileExistence :: FilePath -> Module -> IO [Text]
 checkFileExistence baseDir m =
   concat
     <$> mapM
-      ( \s -> do
-          let p = baseDir </> "files" </> (s ^. #src)
-          exists <- doesFileExist p
-          pure $
-            if exists
-              then []
-              else ["step source file not found: " <> T.pack (s ^. #src)]
+      ( \s ->
+          if s ^. #strategy == Symlink
+            then pure []
+            else do
+              let p = baseDir </> "files" </> (s ^. #src)
+              exists <- doesFileExist p
+              pure $
+                if exists
+                  then []
+                  else ["step source file not found: " <> T.pack (s ^. #src)]
       )
       (m ^. #steps)
 
@@ -563,3 +572,39 @@ discoverAllRunnables searchPaths = do
     briefLoadError (MissingSourceFile _ _) = "missing source file"
     briefLoadError (CircularDependency _) = "circular dependency"
     briefLoadError (RegistryEvalError _ _) = "registry eval failed"
+
+-- | A seed creates an entire file and must never be subject to automatic removal.
+checkSeedSteps :: Module -> [Text]
+checkSeedSteps m = concatMap checkStep seedSteps <> mixed <> removals
+  where
+    seedSteps = filter ((== Seed) . (^. #lifecycle)) (m ^. #steps)
+    checkStep s =
+      ["step writing '" <> s ^. #dest <> "' is a seed but has a patch; a seed creates a whole file once and cannot patch one" | isJust (s ^. #patch)]
+        <> ["step writing '" <> s ^. #dest <> "' is a seed but uses the structured strategy; seeds support copy, template, and dhall-text" | s ^. #strategy == Structured]
+    mixed =
+      [ "steps writing '" <> dest <> "' mix the seed and managed lifecycles; use one lifecycle per destination"
+      | dest <- Set.toAscList (Set.fromList (map (^. #dest) seedSteps)),
+        any (\s -> s ^. #dest == dest && s ^. #lifecycle == Managed) (m ^. #steps)
+      ]
+    removals =
+      [ "removal step deletes '" <> s ^. #dest <> "', which a seed step creates; seihou never deletes seed files"
+      | removal <- maybeToList (m ^. #removal),
+        r <- removal ^. #steps,
+        r ^. #action == RemoveFileAction,
+        s <- seedSteps,
+        s ^. #dest == r ^. #dest
+      ]
+
+-- | Directory links are declarations about the consuming project, not cached files.
+checkCheckoutSteps :: Module -> [Text]
+checkCheckoutSteps m = concatMap check (m ^. #steps)
+  where
+    check s
+      | s ^. #strategy /= Symlink && s ^. #lifecycle /= Checkout = []
+      | otherwise =
+          [label s <> "requires strategy symlink and lifecycle checkout together" | s ^. #strategy /= Symlink || s ^. #lifecycle /= Checkout]
+            <> [label s <> "cannot carry a patch" | isJust (s ^. #patch)]
+            <> [label s <> err ^. #message | Left err <- [validateCheckoutPaths (s ^. #src) (T.unpack (s ^. #dest))]]
+            <> [label s <> "source references undeclared variable: " <> name | name <- extractPlaceholders (T.pack (s ^. #src)), name `notElem` map (^. #name . #unVarName) (m ^. #vars)]
+            <> [label s <> "has malformed placeholders" | path <- [T.pack (s ^. #src), s ^. #dest], T.count "{{" path /= T.count "}}" path]
+    label s = "step writing '" <> s ^. #dest <> "' "

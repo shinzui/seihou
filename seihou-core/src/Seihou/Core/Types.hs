@@ -9,6 +9,12 @@ module Seihou.Core.Types
     Prompt (..),
     Expr (..),
     Strategy (..),
+    StepLifecycle (..),
+    CheckoutOutputSpec (..),
+    CheckoutOutputRecord (..),
+    lifecycleToText,
+    SeedOutcome (..),
+    SeedRecord (..),
     PatchOp (..),
     isAdditivePatchOp,
     Step (..),
@@ -168,6 +174,7 @@ data Strategy
   | Template
   | DhallText
   | Structured
+  | Symlink
   deriving stock (Eq, Show, Generic)
 
 -- | Patch operations for modifying existing files during composition.
@@ -200,13 +207,23 @@ isAdditivePatchOp AppendLineIfAbsent = True
 isAdditivePatchOp AppendFile = False
 isAdditivePatchOp PrependFile = False
 
+-- | Ownership of an output, independent of its materialization strategy.
+data StepLifecycle = Managed | Seed | Checkout
+  deriving stock (Eq, Ord, Show, Generic)
+
+lifecycleToText :: StepLifecycle -> Text
+lifecycleToText Managed = "managed"
+lifecycleToText Seed = "seed"
+lifecycleToText Checkout = "checkout"
+
 -- | A generation step within a module.
 data Step = Step
   { strategy :: !Strategy,
     src :: !FilePath,
     dest :: !Text,
     condition :: !(Maybe Expr),
-    patch :: !(Maybe PatchOp)
+    patch :: !(Maybe PatchOp),
+    lifecycle :: !StepLifecycle
   }
   deriving stock (Eq, Show, Generic)
 
@@ -425,7 +442,12 @@ recipeNameToModuleName (RecipeName t) = ModuleName t
 
 -- | Filesystem operations produced by the generation engine.
 data Operation
-  = WriteFileOp
+  = CheckoutOutputOp
+      { dest :: !FilePath,
+        spec :: !CheckoutOutputSpec,
+        moduleName :: !ModuleName
+      }
+  | WriteFileOp
       { dest :: !FilePath,
         content :: !Text,
         strategy :: !Strategy
@@ -463,6 +485,7 @@ data Operation
 -- never ask.
 isAdditiveOperation :: Operation -> Bool
 isAdditiveOperation (PatchFileOp _ _ op' _ _) = isAdditivePatchOp op'
+isAdditiveOperation CheckoutOutputOp {} = False
 isAdditiveOperation WriteFileOp {} = False
 isAdditiveOperation CopyFileOp {} = False
 isAdditiveOperation CreateDirOp {} = False
@@ -537,6 +560,8 @@ data Manifest = Manifest
     modules :: ![AppliedModule],
     vars :: !(Map VarName Text),
     files :: !(Map FilePath FileRecord),
+    seeds :: !(Map FilePath SeedRecord),
+    checkoutOutputs :: !(Map FilePath CheckoutOutputRecord),
     applications :: ![AppliedComposition],
     recipe :: !(Maybe AppliedRecipe),
     blueprint :: !(Maybe AppliedBlueprint),
@@ -560,6 +585,8 @@ data ManifestCapability
     -- the selection when the path is certified additive-only. Requires the
     -- explicit shared-write evidence introduced by schema 7.
     TargetedAdditiveSharedPathUpdate
+  | SeedReceipts
+  | CheckoutLocalOutputs
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
 -- | What the manifest knows about how the owners of a path write it.
@@ -942,5 +969,27 @@ data TrackedFile = TrackedFile
   { path :: !FilePath,
     moduleName :: !ModuleName,
     status :: !TrackedFileStatus
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A seed's first settlement, with no content tracking.
+data SeedOutcome = SeedCreated | SeedFoundExisting | SeedReleasedFromManaged
+  deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
+
+data SeedRecord = SeedRecord
+  { moduleName :: !ModuleName,
+    applicationIds :: !(Set ApplicationId),
+    outcome :: !SeedOutcome,
+    settledAt :: !UTCTime
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A typed, portable specification reconstructed in each working copy.
+data CheckoutOutputSpec = DirectorySymlink FilePath
+  deriving stock (Eq, Ord, Show, Generic)
+
+data CheckoutOutputRecord = CheckoutOutputRecord
+  { spec :: !CheckoutOutputSpec,
+    owners :: !(Map ApplicationId (Set ModuleName))
   }
   deriving stock (Eq, Show, Generic)

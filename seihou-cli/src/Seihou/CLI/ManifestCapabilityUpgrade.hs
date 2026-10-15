@@ -229,6 +229,7 @@ operationDestination :: Operation -> Maybe FilePath
 operationDestination (WriteFileOp path _ _) = Just path
 operationDestination (CopyFileOp _ path) = Just path
 operationDestination (PatchFileOp path _ _ _ _) = Just path
+operationDestination CheckoutOutputOp {} = Nothing
 operationDestination CreateDirOp {} = Nothing
 operationDestination RunCommandOp {} = Nothing
 
