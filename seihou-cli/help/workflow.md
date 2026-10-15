@@ -31,7 +31,8 @@ EXISTING PROJECTS
 
   At the Git working-tree root, sync restores declared ignored directory links
   from the committed manifest, including in fresh clones and linked worktrees.
-  No producer installation is needed. See sync for one-time adoption.
+  No producer installation is needed. When declarations are absent, the same
+  command discovers and previews the required one-time adoption.
 
 INSPECTION AND RECOVERY
 

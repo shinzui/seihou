@@ -113,12 +113,12 @@ LIBRARY UPGRADE MIGRATIONS
 
     migrations =
       [ S.BlueprintMigration::{
-        , from = "1.0.0"
+          from = "1.0.0"
         , to = "2.0.0"
         , prompt = ./migrations/1-to-2.md as Text
         }
       , S.BlueprintMigration::{
-        , from = "2.5.0"
+          from = "2.5.0"
         , to = "3.0.0"
         , prompt = ./migrations/2-5-to-3.md as Text
         }

@@ -72,8 +72,10 @@ Adapt to the user's situation, but the general flow is:
 
 10. **Fresh clones and worktrees**: At the Git root, run `seihou sync` to rebuild
     declared ignored checkout links. No installed producers are needed. If no
-    declarations exist yet, update the recorded target once and commit the
-    manifest/ignore rules/source files and any accepted tracked-link removals.
+    declarations exist yet, the same sync command discovers and previews the
+    required setup. Accept it and commit the manifest/baselines/ignore rules/source
+    files and any previewed tracked-link removals. Do not make the user identify
+    module targets or run a separate update before sync.
     Do not hand-edit manifest JSON or the Git index for routine adoption.
 
 Skip steps that don't apply. If the user already knows which module and variables
@@ -128,7 +130,7 @@ Suggest these commands when the user needs to run them locally:
 ### Updates, checkout restoration, and recovery
 - `seihou update [TARGET] [--dry-run] [--var K=V]` — normal recorded-project update
 - `seihou update TARGET --reconfigure` — intentionally resolve inputs afresh
-- `seihou sync [--dry-run] [--json]` — restore declared checkout links from the manifest
+- `seihou sync [--dry-run] [--json] [--yes]` — restore links or preview/accept first-time adoption; --yes accepts adoption for automation
 - `seihou agent upgrade TARGET --check` — diagnose update readiness without repairs
 - `seihou agent upgrade TARGET` — launch assistance when ordinary update is blocked
 - `seihou manifest upgrade [--dry-run]` — explicitly convert older manifest schemas

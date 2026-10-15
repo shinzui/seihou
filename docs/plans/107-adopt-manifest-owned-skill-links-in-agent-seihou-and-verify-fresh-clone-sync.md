@@ -59,15 +59,15 @@ If durable project context changes, update or create ADRs in docs/adr/ in the sa
 ## Purpose / Big Picture
 
 Reopened on 2026-10-15: repairing one checkout did not satisfy the team developer-experience requirement. Milestones 1–7 below are historical implementation evidence, not proof that the ordinary team workflow is complete.
-Existing projects use ordinary `seihou update master-plan`, accept its preview,
-and commit the resulting changes. Fresh clones and worktrees then need only
-`seihou sync`: no dependency installation list, manual index surgery, or JSON
-inspection is required. Released Seihou 0.10.1.0 is installed through the user's
-Nix profile and passed these workflows against both the original consumer and
-a local copy of the schema-6 consumer shown in the user's screenshot. The affected
-remote checkout was verified separately on yujin.local as recorded below. The original four
-milestones below remain historical evidence of the engine and producer; the
-reopened delivery is verified separately with the installed release.
+The required ordinary command is `seihou sync` for both older projects and fresh
+clones. On an older project it discovers and previews one-time link adoption,
+then creates the links after confirmation. Developers commit the resulting
+project changes; teammates receive them through Git and run the same command.
+No dependency installation list, module-name knowledge, manual index surgery,
+or JSON inspection is required. The source implementation passes this workflow;
+the supporting 0.10.2.0 release remains outstanding. Released 0.10.1.0 and the
+separate yujin.local repair below are historical evidence, not delivery of this
+one-command workflow.
 
 Make the skill modules people already use benefit from `seihou sync`. After a one-time
 application of updated producer modules, a developer clones a project, runs `seihou sync`,
@@ -93,7 +93,7 @@ module syntax alone is not completion.
 - [x] Milestone 6 (2026-10-15): empty-declaration sync names recorded update targets; normal output summarizes created/repaired/unchanged links. CLI help, guides, changelogs and ADRs describe ordinary update followed by clone sync. The pre-adoption consumer passes ordinary interactive update without installation or manual untracking; its fresh clone creates four links, then reports four unchanged, and repairs deletion and retarget drift individually.
 - [x] Milestone 7 (2026-10-15): published Seihou 0.10.1.0 (c3bb42b), all three Hackage packages and documentation, and the GitHub release. The user’s normal Nix-profile executable now reports that exact release. Installed-release interactive update passes with empty caches for both the tracked-link consumer and the screenshot’s schema-6 consumer; fresh clones/worktrees create four links, repeated sync changes nothing, and deletion/retarget repair preserves tracked bytes, index and manifest. All 20 producer tests (330 assertions) and five module validations pass with the installed release. The local consumer copy is adopted and pushed at 529fd6d; normal update now reports Already up to date.
 
-- [ ] Milestone 8: an untouched older checkout with empty producer caches needs only `seihou sync`. The command discovers declaring compositions, previews the necessary adoption, reuses recorded inputs, and creates links after confirmation. It leaves unrelated applications unchanged. Cancellation and dry-run preserve the project; existing declarations continue to sync offline without changing the manifest. Status explains absent declarations. Verify the ordinary interactive command on the real pre-adoption consumer and repeat from a fresh clone after committing adoption.
+- [x] Milestone 8 (2026-10-15): ordinary interactive `seihou sync` on the real pre-adoption schema-6 consumer with empty caches discovers the declaring compositions, reuses seven saved inputs, previews schema 6 -> 9 and four links, then creates all four after one confirmation. Committing that result and cloning it with another empty cache lets a teammate run the same command: four created, then four unchanged; manifest bytes and Git state stay unchanged. A mixed real consumer preserves its unrelated Nix application. Executable regressions cover no consent, dry-run, collisions, unrelated required inputs and existing tracked-link staging. Status points to the ordinary command.
 - [ ] Milestone 9: publish the workflow fix and verify the released executable available to the team. A repaired individual checkout or a source-only build does not complete delivery.
 
 Team acceptance: a developer starts in an older supported checkout with committed
@@ -136,7 +136,8 @@ c3bb42bd2525e29d93657f1e48b3bf8552ed727e. A normal Nix profile install of that
 public tag, at priority 4 above the existing Home Manager package, activates the
 release without replacing a Nix-managed file in place. `command -v seihou` remains
 `/Users/shinzui/.nix-profile/bin/seihou`; `seihou --version` reports
-`seihou v0.10.1.0 (c3bb42b)`. No release or installation work remains.
+`seihou v0.10.1.0 (c3bb42b)`. This closed milestone 7 at the time; milestone 9
+still requires delivery of the subsequently requested one-command workflow.
 
 
 ## Surprises & Discoveries
@@ -270,12 +271,22 @@ no managed source bytes changed. Evidence checkouts are under
 `/tmp/seihou-107-team-proof-wck7hbzy`. The CLI suite passed 746 cases, including
 adoption, no-consent refusal, dry-run, unrelated required inputs, collisions,
 tracked-link staging preservation and a fresh teammate clone. Final integrated
-release checks and published-executable acceptance remain outstanding.
+release gates pass: format, build, 1,997 tests (1,200 core, 746 CLI, 51 extension),
+four native Nix checks, all three warning-free cabal checks, and whitespace
+validation. Published-executable acceptance remains outstanding. The rebuilt
+0.10.2.0 (30b0d5b) candidate repeated the untouched schema-6 interactive acceptance
+and teammate-clone proof; retained result:
+`/var/folders/fn/022xr90s5mz417hz7fllrhv80000gn/T/seihou-107-release-proof-de_y6bxa/result.json`.
+Its complete guidance audit passes: 18 help topics, 32 command-help pages,
+26 packaged assets, four validated module examples and eight provider-free
+prompt renders. Semantic review also corrected a malformed blueprint migration
+example and an over-specific schema-transition claim; the corrected blueprint
+validates through the candidate executable.
 
 All seven original milestones completed on 2026-10-15; the affected remote
-checkout was repaired and verified separately later that day, as recorded below. The reopened workflow is delivered
-in released and installed Seihou 0.10.1.0, with no remaining publication or
-installation prerequisite. Published producer commit
+checkout was repaired and verified separately later that day, as recorded below.
+That earlier update-then-sync workflow was delivered in released and installed
+Seihou 0.10.1.0. The current one-command workflow still needs milestone 9. Published producer commit
 455d2d6c50ddea5f658443d19d71b05733fc620b in `mori://shinzui/agent-seihou`
 provides link-skill 0.3.0 and claude-skill-link 0.2.0. The unchanged parent versions
 (master-plan/exec-plan 0.12.0 and update-docs 0.1.0) discover their updated link

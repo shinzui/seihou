@@ -46,8 +46,9 @@ ignored and untracked. Declare an ignore rule as a managed step when needed.
 Run/update records portable intent in the manifest; fresh clones and worktrees
 restore links with `seihou sync`, without installed modules or shell commands.
 Do not implement this with `ln -s` commands or command receipts.
-Existing applications adopt declarations through `seihou update TARGET`, which
-fetches dependencies and reuses saved inputs. Its preview can propose untracking
+For existing applications, `seihou sync` discovers missing declarations and
+previews the necessary adoption, fetching dependencies and reusing saved inputs.
+The same command restores already-declared links offline. Its preview can propose untracking
 unchanged matching symlinks while retaining working links; do not manipulate the
 index manually for normal adoption. Commit the manifest, source and ignore rules,
 and any accepted tracked-link removals. See `seihou help sync`.

@@ -60,9 +60,9 @@ TARGET SELECTION
   `requires-ownership-closure`, or `unknown` for a manifest that predates it.
   A targeted update resolves `unknown` itself: it compiles each co-owner from
   its recorded version, reads how it writes the path, and records the answer
-  (preparing lossless upgrades through the current schema, version 9) with its own manifest. It inspects the
-  co-owners but never updates their files. `--dry-run` shows this as
-  `Manifest: schema 6 -> 9` and writes nothing.
+  with the required lossless manifest preparation. It inspects the co-owners
+  but never updates their files. `--dry-run` shows any required schema
+  transition and writes nothing.
 
   If a co-owner's recorded version is not installed here, update fetches its
   exact recorded release from its origin for certification. It does not update

@@ -183,9 +183,10 @@ does, and decide together whether to fix the project first or to upgrade to an
 intermediate version.
 
 ### Checkout link refusal or missing links
-Run `seihou help sync` and inspect the reported destination. Ordinary
-`seihou update {{module}}` adopts unchanged matching tracked discovery links in
-its preview and stages their removal while keeping the working link. Preserve
+Run `seihou sync` to restore links or discover and preview missing link setup.
+It owns the necessary adoption without a separate target-selection or installation
+step. Its preview can adopt unchanged matching tracked discovery links, staging
+their removal while keeping the working link. Preserve
 modified/staged links and regular files. Do not manually alter the Git index,
 edit checkoutOutputs JSON or replace declarations with shell commands. After
 adoption, commit the manifest, ignore rules, source directories and accepted
