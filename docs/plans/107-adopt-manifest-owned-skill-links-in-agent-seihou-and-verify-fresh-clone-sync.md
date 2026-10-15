@@ -51,6 +51,15 @@ provenance:
 
 # Adopt manifest-owned skill links in agent-seihou and verify fresh-clone sync
 
+Superseded on 2026-10-15 by
+[plan 108](108-restore-module-declared-checkout-effects-without-reapplying-modules.md).
+The implementation and release evidence below is historical: it did not satisfy
+the full team workflow, and the four-link assertions omitted the required Codex
+destinations. The update-inside-sync design and proposed 0.10.2.0 delivery below
+are withdrawn. Plan 108 owns all remaining architecture, producer, adoption,
+release and user-workflow acceptance; this plan must not be read as proof that
+the problem is fixed.
+
 This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
 Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
 If durable project context changes, update or create ADRs in docs/adr/ in the same change.
