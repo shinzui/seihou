@@ -16,6 +16,17 @@ provenance:
       at: 2026-10-15T17:54:56Z
       mode: "other"
       note: "Create four-milestone producer adoption and published existing-consumer fresh-clone acceptance plan"
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-15T18:13:48Z
+      mode: "update"
+      note: "Address review with a legacy 0.9.0.0 schema-6 fixture and explicit transition assertions; refresh released runtime candidate and committed checkout context."
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-15T18:11:47Z
+      verdict: "changes-requested"
+      note: "Milestone 1 must establish and assert a pre-schema-9 fixture; applying an old producer with the current binary already writes schema 9. Verified producer definitions, update path, ADRs, and published 0.10.0.0 availability."
 ---
 
 # Adopt manifest-owned skill links in agent-seihou and verify fresh-clone sync
@@ -43,7 +54,7 @@ module syntax alone is not completion.
 
 ## Progress
 
-- [ ] Milestone 1: the real link-skill module records both checkout declarations and upgrades an old command-based application without replaying shell commands.
+- [ ] Milestone 1: the real link-skill module records both checkout declarations and upgrades a verified pre-schema-9 command-based application without replaying shell commands.
 - [ ] Milestone 2: claude-skill-link and its update-docs composition work declaratively; exec-plan/master-plan composition and meaningful regression cases pass against the real binary.
 - [ ] Milestone 3: versioned producer changes, compatible runtime availability, and consistent generated/user documentation are published and verified through a remote installation.
 - [ ] Milestone 4: this repository's existing master-plan application records the new declarations; its committed state restores all four discovery links in a fresh clone and a linked worktree without producer installations or tracked changes.
@@ -51,6 +62,16 @@ module syntax alone is not completion.
 
 ## Surprises & Discoveries
 
+Review (2026-10-15): applying an old producer with the current runtime does not create an
+old-schema fixture. `seihou-cli/src-exe/Seihou/CLI/Run.hs` writes
+`currentManifestVersion`, currently 9, regardless of the producer version. The released
+v0.9.0.0 runtime writes schema 6; use it to establish the legacy application before switching
+to the supporting runtime. This repository's committed schema-7 application supplies a
+separate real-consumer transition in Milestone 4.
+
+Review (2026-10-15): Seihou 0.10.0.0 is published on Hackage and its upstream v0.10.0.0 tag
+includes checkout sync. It is the released runtime candidate for the acceptance tests;
+publication alone does not prove the new producer compositions work with it.
 
 
 ## Decision Log
@@ -67,6 +88,10 @@ update-docs to a different source tree would introduce an unnecessary content mi
 Decision (2026-10-15): record intent through ordinary module application/update, never by
 editing checkoutOutputs by hand or parsing command receipts. Keep historical content-move
 migrations in exec-plan/master-plan; remove only the current link producers' shell setup.
+
+Decision (2026-10-15): use separate legacy and supporting executables for the transition
+test. Assert the legacy schema and command receipts before updating, so a current-runtime
+fixture cannot silently replace the required schema-upgrade proof.
 
 
 ## Outcomes & Retrospective
@@ -138,9 +163,11 @@ The committed Seihou manifest at planning time is schema 7. It records a master-
 application with exec-plan/link-skill instances and a separate nix-haskell-flake application.
 It also retains older module records including claude-skill-link. Update the master-plan
 application through the public command, preserve other applications and legacy records,
-and do not use a no-target update. The working tree already has unrelated manifest,
-baseline, and Nix edits; preserve them and prove the transition in a disposable copy before
-adopting in the real checkout.
+and do not use a no-target update. At review time the manifest, baseline, and Nix changes
+were already committed in d70ada4 and b628fd4, and the working tree was clean before the
+review metadata was appended. Recheck current state at implementation time, preserve any
+new unrelated edits, and prove the transition in a disposable copy before adopting in the
+real checkout.
 
 Relevant local decisions are [ADR 0001](../adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md),
 which prohibits machine-local values in the committed manifest;
@@ -177,13 +204,23 @@ Keep the existing .gitignore patch. Neither mkdir nor ln remains in the current 
 list. Parent creation and target calculation belong to Seihou. Choose a new module version
 after inspecting current upstream declarations; do not reuse 0.2.0 with changed behavior.
 
-Add `tests/checkout-links.test.ts` in that producer project, invoking a real Seihou binary
-selected by SEIHOU_TEST_BIN. Build a temporary Git project from the old committed module
-version, apply it to establish real command receipts, then replace the module with the
-candidate and use the public update path. Never manufacture the old manifest JSON. Verify
-the same existing correct links can be adopted, missing links are created, schema advances
-to at least 9, both declarations carry the chosen skill name, and --no-commands still
-materializes links. Old receipts may remain as history but cannot suppress the declarations.
+Add `tests/checkout-links.test.ts` in that producer project. SEIHOU_TEST_BIN selects the
+supporting executable; SEIHOU_LEGACY_TEST_BIN selects the released Seihou 0.9.0.0 executable
+used only to create the old application. Record both executables' version output. Copy the
+real link-skill 0.2.0 module and its dependencies from a fixed pre-conversion producer commit
+into a temporary Git project's local module directory; record that commit in the fixture
+setup. Create the real skill source directory and apply the old module with the legacy
+executable, allowing its setup commands to establish real links and command receipts.
+
+Before invoking the supporting executable, assert that the manifest is schema 6, has no
+checkoutOutputs field, records link-skill 0.2.0 and its mkdir/ln command receipts, and that
+the expected links exist. Never manufacture the old manifest JSON or downgrade its version
+by hand. Then replace the local producer with the candidate and use the supporting
+executable's public update path with --no-commands. Exercise both existing-correct-link
+adoption and missing-link creation from independent copies of the legacy fixture. Assert
+that the manifest advances from the verified starting version to at least 9 and records
+both declarations with the chosen skill name. Old receipts may remain as history but cannot
+suppress the declarations, and their shell commands must not be replayed.
 The test must fail for the old producer. This early real producer/consumer check is required
 before expanding the conversion to the other modules.
 
@@ -229,10 +266,13 @@ clones use only sync. Document the minimum tested released Seihou version; the s
 does not by itself establish runtime compatibility. Confirm an older binary fails on the
 unknown symlink strategy rather than silently recording file output.
 
-Verify runtime availability against Hackage and upstream release tags, using the release
-workflow if a supporting release is still needed. Publication is required acceptance, not
-an implicit claim that plan 105 was already released. Prepare all checks before any release
-action; follow the release skill when actually cutting a Seihou release. Commit and publish
+Use Seihou 0.10.0.0 as the initial released runtime candidate. Review verified its
+[Hackage publication](https://hackage.haskell.org/package/seihou-cli-0.10.0.0) and upstream
+v0.10.0.0 tag at de4c4cf0ea9d89120e6d2d1f9938541fa97a5fa8, whose changelog includes checkout
+sync. Recheck availability and run the acceptance cases against that release. If a required
+fix makes a newer runtime necessary, publish that supporting release and repeat the affected
+acceptance cases. Prepare all checks before any release action; follow the release skill
+when actually cutting a Seihou release. Commit and publish
 the producer changes using its established branch/version conventions, then install from
 the published remote into an isolated configuration and rerun the representative tests.
 Record actual runtime version, schema commit/hash, producer commit, and module versions.
@@ -283,8 +323,19 @@ cabal list-bin exe:seihou-okf-extension
 git ls-remote https://github.com/shinzui/seihou-schema.git HEAD
 ```
 
-Set SEIHOU_TEST_BIN to the absolute executable printed by list-bin. From the producer
-checkout reported by Mori, run these commands after implementing the modules and test:
+Export SEIHOU_TEST_BIN as the absolute executable printed by list-bin. Obtain Seihou
+0.9.0.0 from its released package or build upstream tag v0.9.0.0 in a separate checkout,
+and export SEIHOU_LEGACY_TEST_BIN as its absolute executable path. Keep the legacy executable
+separate from the current build and the user's default installation. Verify the versions:
+
+```bash
+"$SEIHOU_LEGACY_TEST_BIN" --version
+"$SEIHOU_TEST_BIN" --version
+```
+
+The first command must report 0.9.0.0; the second must identify the supporting candidate
+(initially 0.10.0.0). From the producer checkout reported by Mori, run these commands after
+implementing the modules and test:
 
 ```bash
 git status --short
@@ -301,8 +352,9 @@ git diff --check
 
 Use the just-built extension's absolute path if the installed extension cannot read the
 new schema. Regenerate a second time and require identical output. The integration test
-must fail with an actionable message when SEIHOU_TEST_BIN is missing; it must not silently
-skip its acceptance cases. Isolate all project/cache writes in temporary directories.
+must fail with an actionable message when either executable variable is missing, the legacy
+version is wrong, or the fixture's starting-schema/receipt assertions fail; it must not
+silently skip its acceptance cases. Isolate all project/cache writes in temporary directories.
 
 After publication, from a disposable consumer use a fresh configuration and the supporting
 released binary to install actual remote artifacts:
@@ -362,7 +414,11 @@ Intention: intention_01m50b28ccem2axbbn5tj3k1wt
 The required regression suite is the producer's real-binary Bun integration test, followed
 by its ordinary Bun suite and module validation. It must exercise both original command
 producers, an old application with real command receipts, update-docs composition, and the
-master-plan/exec-plan composition. Declaration application must work under --no-commands.
+master-plan/exec-plan composition. The legacy transition must assert schema 6 and absent
+checkoutOutputs before update, then schema 9 or later and the expected declarations after
+update. A fixture created with the supporting runtime cannot satisfy this criterion.
+Milestone 4 separately proves adoption from this repository's committed schema-7 application.
+Declaration application must work under --no-commands.
 Do not replace actual module evaluation with a handwritten representative module; that
 would repeat the adoption gap this plan exists to close.
 
@@ -427,3 +483,8 @@ At completion, update this plan's evidence and relevant user documentation/ADR c
 show that producer adoption now exists. Keep plan 105's historical implementation boundary
 accurate; its completed engine milestone must not be rewritten as proof of this follow-up's
 consumer adoption.
+
+Revision (2026-10-15): addressed the pre-implementation review by requiring a legacy-runtime
+fixture with explicit before/after schema assertions, naming published 0.10.0.0 as the
+runtime candidate, and refreshing the committed checkout state. These changes prevent a
+false-positive upgrade test and remove stale implementation context.
