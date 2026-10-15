@@ -7,6 +7,7 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.List (isInfixOf)
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.SeihouBinary (seihouBinary)
 import System.Directory qualified as D
@@ -35,7 +36,14 @@ git root args = readProcess "git" (["-C", root] <> args) ""
 
 snapshot root = do
   names <- filter (not . null) . splitNul <$> git root ["ls-files", "-z"]
-  blobs <- mapM (\path -> (path,) <$> BS.readFile (root </> path)) names
+  blobs <-
+    mapM
+      ( \path -> do
+          linked <- D.pathIsSymbolicLink (root </> path)
+          bytes <- if linked then TE.encodeUtf8 . T.pack <$> D.getSymbolicLinkTarget (root </> path) else BS.readFile (root </> path)
+          pure (path, bytes)
+      )
+      names
   index <- git root ["ls-files", "--stage", "-z"]
   pure (blobs, index)
   where
@@ -76,8 +84,128 @@ prepare root home source destination secondSource secondDestination = do
   _ <- git root ["commit", "-qm", "test: record checkout output declarations"]
   pure (binary, moduleDir)
 
+-- Establish a real old command-producing application, then publish a declaring
+-- release. Adoption itself runs in a different, empty personal configuration.
+prepareAdoption temp failing = do
+  binary <- seihouBinary
+  cwd <- D.getCurrentDirectory
+  schema <- D.canonicalizePath (takeDirectory cwd </> "schema")
+  let root = temp </> "project"
+      remote = temp </> "producer"
+      initialHome = temp </> "initial-home"
+      home = temp </> "empty-home"
+      remoteUrl = "https://seihou-fixture.invalid/demo.git"
+      moduleBody version steps commands =
+        T.unlines
+          [ "let S = ./schema/package.dhall in S.Module::{name = \"demo\", version = Some \"" <> version <> "\",",
+            "steps = " <> steps <> ", commands = " <> commands <> "}"
+          ]
+      commit repo message = do
+        _ <- git repo ["add", "."]
+        git repo ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", message]
+  forM_ [root </> "config/editor", remote </> "schema", initialHome, home] (D.createDirectoryIfMissing True)
+  -- Keep the recorded origin portable while Git routes this fixture remote to
+  -- disk. The adoption home has Git configuration but no producer cache.
+  forM_ [initialHome, home] $ \gitHome -> do
+    _ <- git gitHome ["config", "--file", gitHome </> ".gitconfig", "url." <> remote <> ".insteadOf", remoteUrl]
+    pure ()
+  files <- D.listDirectory schema
+  forM_ files $ \file -> if takeExtension file == ".dhall" then D.copyFile (schema </> file) (remote </> "schema" </> file) else pure ()
+  TIO.writeFile
+    (remote </> "module.dhall")
+    ( moduleBody
+        "1.0.0"
+        "[] : List S.Step.Type"
+        "[S.Command::{run = \"mkdir -p .local && ln -s ../config/editor .local/config\"}]"
+    )
+  _ <- git remote ["init", "-q"]
+  _ <- commit remote "test: publish command producer"
+  _ <- git root ["init", "-q"]
+  TIO.writeFile (root </> ".gitignore") ".local/\n.seihou/transactions/\n"
+  TIO.writeFile (root </> "config/editor/sentinel") "tracked source\n"
+  TIO.writeFile (root </> "unrelated") "committed\n"
+  _ <- success binary root initialHome ["install", remoteUrl]
+  _ <- success binary root initialHome ["run", "demo", "--force"]
+  D.createDirectoryLink "../config/editor" (root </> ".local/unrelated")
+  _ <- git root ["add", "-f", ".local/config", ".local/unrelated"]
+  _ <- commit root "test: record legacy application and discovery links"
+  let commands = if failing then "[S.Command::{run = \"exit 42\"}]" else "[] : List S.Command.Type"
+  TIO.writeFile
+    (remote </> "module.dhall")
+    ( moduleBody
+        "2.0.0"
+        "[S.Step::{strategy = \"symlink\", lifecycle = Some \"checkout\", src = \"config/editor\", dest = \".local/config\"}]"
+        commands
+    )
+  _ <- commit remote "test: publish checkout declarations"
+  pure (binary, root, home)
+
 tests :: IO TestTree
 tests = testSpec "manifest-only checkout sync" $ do
+  it "adopts a tracked link using remote update alone, then syncs a fresh clone" $
+    withSystemTempDirectory "checkout-adoption" $ \temp -> do
+      (binary, root, home) <- prepareAdoption temp False
+      D.doesDirectoryExist (home </> "config/seihou/installed") `shouldReturn` False
+      notice <- success binary root home ["sync"]
+      notice `shouldSatisfy` isInfixOf "seihou update demo"
+      TIO.writeFile (root </> "unrelated") "staged edit\n"
+      _ <- git root ["add", "unrelated"]
+      TIO.writeFile (root </> "unrelated") "unstaged edit\n"
+      indexBefore <- git root ["ls-files", "--stage", "-z"]
+      manifestBefore <- BS.readFile (root </> ".seihou/manifest.json")
+      dry <- success binary root home ["update", "demo", "--dry-run"]
+      dry `shouldSatisfy` isInfixOf "Adopt link: .local/config"
+      git root ["ls-files", "--stage", "-z"] `shouldReturn` indexBefore
+      BS.readFile (root </> ".seihou/manifest.json") `shouldReturn` manifestBefore
+      _ <- success binary root home ["update", "demo"]
+      git root ["ls-files", "--stage", "-z"] `shouldReturn` indexBefore
+      BS.readFile (root </> ".seihou/manifest.json") `shouldReturn` manifestBefore
+      applied <- success binary root home ["update", "demo", "--json"]
+      applied `shouldSatisfy` isInfixOf "\"adoptedLinks\":[\".local/config\"]"
+      git root ["ls-files", "--", ".local/config"] `shouldReturn` ""
+      git root ["ls-files", "--", ".local/unrelated"] `shouldReturn` ".local/unrelated\n"
+      git root ["show", ":unrelated"] `shouldReturn` "staged edit\n"
+      TIO.readFile (root </> "unrelated") `shouldReturn` "unstaged edit\n"
+      D.getSymbolicLinkTarget (root </> ".local/config") `shouldReturn` "../config/editor"
+      _ <- git root ["add", ".seihou/manifest.json"]
+      _ <- git root ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "test: adopt links"]
+      let clone = temp </> "clone"; cloneHome = temp </> "clone-home"
+      D.createDirectoryIfMissing True cloneHome
+      _ <- git root ["clone", "-q", root, clone]
+      before <- snapshot clone
+      D.doesPathExist (clone </> ".local/config") `shouldReturn` False
+      first <- success binary clone cloneHome ["sync"]
+      first `shouldSatisfy` isInfixOf "Links: 1 created, 0 repaired, 0 unchanged."
+      second <- success binary clone cloneHome ["sync"]
+      second `shouldSatisfy` isInfixOf "Links: 0 created, 0 repaired, 1 unchanged."
+      snapshot clone `shouldReturn` before
+      D.doesDirectoryExist (cloneHome </> "config/seihou/installed") `shouldReturn` False
+  it "restores the original index and working links if an adopted update fails" $
+    withSystemTempDirectory "checkout-adoption-failed" $ \temp -> do
+      (binary, root, home) <- prepareAdoption temp True
+      before <- snapshot root
+      (code, _, _) <- invoke binary root home ["update", "demo", "--json"]
+      code `shouldSatisfy` (/= ExitSuccess)
+      snapshot root `shouldReturn` before
+  forM_ ["staged link", "unstaged link", "regular file"] $ \kind ->
+    it ("protects a " <> kind <> " during adoption") $
+      withSystemTempDirectory "checkout-adoption-refused" $ \temp -> do
+        (binary, root, home) <- prepareAdoption temp False
+        D.removeDirectoryLink (root </> ".local/config")
+        if kind == "regular file"
+          then TIO.writeFile (root </> ".local/config") "user bytes"
+          else D.createDirectoryLink "../other-target" (root </> ".local/config")
+        if kind == "staged link"
+          then do
+            _ <- git root ["add", "-f", ".local/config"]
+            -- The working link matches the new declaration, but the index does not.
+            D.removeDirectoryLink (root </> ".local/config")
+            D.createDirectoryLink "../config/editor" (root </> ".local/config")
+          else pure ()
+        before <- snapshot root
+        (code, _, _) <- invoke binary root home ["update", "demo", "--json"]
+        code `shouldSatisfy` (/= ExitSuccess)
+        snapshot root `shouldReturn` before
   forM_ [("agent", "agents/skills/demo", ".claude/skills/demo", "agents/skills/demo", ".agents/skills/demo"), ("editor and assets", "config/editor", ".editor-local/config", "assets/shared", ".tool-local/assets")] $ \(domain, source, destination, secondSource, secondDestination) ->
     it ("restores " <> domain <> " links in a clean clone without a producer or commands") $
       withSystemTempDirectory "checkout-clone" $ \temp -> do

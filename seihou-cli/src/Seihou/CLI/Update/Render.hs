@@ -125,6 +125,7 @@ renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
            renderCommands (summarizeCommandPlan (plan ^. #commandPlan))
          ]
       <> T.lines (renderCheckoutPlan True (plan ^. #checkoutPlan))
+      <> ["Adopt link: " <> T.pack path <> " (stop tracking in Git; keep working link)" | path <- Map.keys (plan ^. #checkoutAdoptions)]
       <> conflictLines (plan ^. #reconciliation)
       <> warningLines (plan ^. #warnings)
 renderUpdateHuman _ (UpdateAppliedOutput (UpdateResultView result)) =
@@ -139,6 +140,7 @@ renderUpdateHuman _ (UpdateAppliedOutput (UpdateResultView result)) =
         <> count (result ^. #commandSummary . #skippedDisabled)
         <> " disabled"
     ]
+      <> ["Adopted " <> count (length (result ^. #adoptedLinks)) <> " link(s): Git removals staged; working links kept. Commit with the updated manifest." | not (null (result ^. #adoptedLinks))]
       <> warningLines (result ^. #warnings)
 renderUpdateHuman _ (UpdateFailedOutput (UpdateErrorView target err)) =
   "Update failed [" <> errorCode err <> "]: " <> errorMessage err <> "\n" <> agentUpgradeHint target
@@ -158,6 +160,7 @@ outputValue (UpdatePlanOutput (UpdatePlanView plan)) =
       "inputs" .= inputValue (plan ^. #inputChanges),
       "migrations" .= map migrationValue (plan ^. #migrations),
       "checkout" .= checkoutReportJSON (CheckoutSyncResult (plan ^. #snapshot . #projectRoot) True (plan ^. #checkoutPlan) (CheckoutExecution Map.empty [] Nothing) []),
+      "checkoutAdoptions" .= Map.keys (plan ^. #checkoutAdoptions),
       "files" .= map fileValue (Map.toAscList (plan ^. #reconciliation . #files)),
       "commands" .= map commandValue (plan ^. #commandPlan . #commands),
       "warnings" .= map warningText (plan ^. #warnings)
@@ -176,6 +179,7 @@ outputValue (UpdateAppliedOutput (UpdateResultView result)) =
             "skippedDisabled" .= (result ^. #commandSummary . #skippedDisabled)
           ],
       "touchedPaths" .= Set.toAscList (result ^. #touchedPaths),
+      "adoptedLinks" .= (result ^. #adoptedLinks),
       "warnings" .= map warningText (result ^. #warnings)
     ]
 outputValue (UpdateFailedOutput (UpdateErrorView _ err)) =
@@ -734,6 +738,7 @@ summaryText summary =
 planLooksUnchanged :: UpdatePlan -> Bool
 planLooksUnchanged plan =
   plan ^. #checkoutOutputs == plan ^. #snapshot . #originalManifest . #checkoutOutputs
+    && Map.null (plan ^. #checkoutAdoptions)
     && all ((== UnchangedLink) . (^. #action)) (plan ^. #checkoutPlan . #entries)
     && isNothing (plan ^. #manifestPreparation)
     && null (plan ^. #versionChanges)

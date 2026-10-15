@@ -211,6 +211,7 @@ data UpdatePlan = UpdatePlan
     reconciliation :: !ReconciliationPlan,
     checkoutPlan :: !CheckoutPlan,
     checkoutOutputs :: !(Map FilePath CheckoutOutputRecord),
+    checkoutAdoptions :: !(Map FilePath Text),
     commandPlan :: !CommandPlan,
     candidateArtifacts :: ![CandidateArtifact],
     warnings :: ![UpdateWarning],
@@ -235,6 +236,7 @@ data UpdateResult = UpdateResult
     fileSummary :: !ReconciliationSummary,
     commandSummary :: !CommandSummary,
     touchedPaths :: !(Set FilePath),
+    adoptedLinks :: ![FilePath],
     warnings :: ![UpdateWarning]
   }
   deriving stock (Eq, Generic, Show)

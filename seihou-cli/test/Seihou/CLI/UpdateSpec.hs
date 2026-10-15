@@ -403,6 +403,26 @@ spec = do
                 (plan ^. #versionChanges) `shouldSatisfy` any (^. #sameVersionContentChanged)
                 (plan ^. #warnings) `shouldContain` [SameVersionContentChanged "demo"]
 
+    it "does not invent same-version content changes when the producer cache is empty" $
+      withSystemTempDirectory "seihou-update-empty-cache" $ \root -> do
+        fixture <- prepareUpdateFixture root
+        let modulePath = fixture ^. #remote </> "module.dhall"
+        body <- TIO.readFile modulePath
+        TIO.writeFile modulePath (T.replace "Some \"2.0.0\"" "Some \"1.0.0\"" body)
+        callProcess "git" ["-C", fixture ^. #remote, "add", "module.dhall"]
+        callProcess "git" ["-C", fixture ^. #remote, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "test: same-version candidate"]
+        withSavedEnv "XDG_CONFIG_HOME" (Just (root </> "empty-config")) $
+          withCurrentDirectory (fixture ^. #projectRoot) $ do
+            withProjectUpdate (updateRequest False) $ \case
+              Left err -> expectationFailure (show err)
+              Right plan -> do
+                (plan ^. #warnings) `shouldNotContain` [SameVersionContentChanged "demo"]
+                (plan ^. #versionChanges) `shouldNotSatisfy` any (^. #sameVersionContentChanged)
+                isUpdateNoOp plan `shouldBe` False
+                applied <- applyProjectUpdate plan
+                applied `shouldSatisfy` \case Right {} -> True; _ -> False
+            TIO.readFile (fixture ^. #projectFile) `shouldReturn` "hello accepted\nkeep\nv2\n"
+
     it "re-expands a candidate recipe and removes dependencies dropped by it" $
       withSystemTempDirectory "seihou-update-recipe" $ \root -> do
         fixture <- prepareRecipeUpdateFixture root
@@ -1242,6 +1262,7 @@ breakCandidatePublication plan =
       plannedApplications = plan ^. #plannedApplications,
       checkoutPlan = plan ^. #checkoutPlan,
       checkoutOutputs = plan ^. #checkoutOutputs,
+      checkoutAdoptions = plan ^. #checkoutAdoptions,
       manifestPreparation = plan ^. #manifestPreparation
     }
   where

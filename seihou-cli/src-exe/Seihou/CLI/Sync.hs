@@ -25,7 +25,5 @@ handleSync opts = do
       if opts ^. #json
         then LBS.putStrLn (A.encode (checkoutReportJSON report))
         else do
-          TIO.putStr (renderCheckoutPlan (opts ^. #dryRun) (report ^. #plan))
-          mapM_ TIO.putStrLn (report ^. #notices)
-          mapM_ (TIO.putStrLn . (^. #message)) (report ^. #execution . #failure)
+          TIO.putStr (renderCheckoutReport report)
       if not (checkoutApplicable (report ^. #plan)) || isJust (report ^. #execution . #failure) then exitFailure else pure ()

@@ -10,6 +10,11 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+### Fixed
+
+- **Adopt skill links with `seihou update master-plan`.** Update fetches the recorded remote and dependencies, reuses saved inputs, and previews adoption of unchanged tracked links. Accepting keeps their working copies and stages their removal from Git; commit those removals with the manifest. Future clones need only `seihou sync`.
+- Sync explains which recorded target to update when links have not yet been declared, and summarizes created, repaired and unchanged links in normal output.
+
 ## [0.10.0.0] - 2026-10-15
 
 ### Added

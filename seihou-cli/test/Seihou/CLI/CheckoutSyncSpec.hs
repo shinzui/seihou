@@ -36,6 +36,14 @@ tests = testSpec "checkout reports" $ do
     mapM_ (\action -> renderCheckoutPlan True (CheckoutPlan [entry action]) `shouldSatisfy` (not . T.null)) actions
     let report = checkoutReportJSON (result False (CheckoutPlan [entry CreateLink]) (Map.singleton ".local/config" "rolled-back"))
     T.pack (show report) `shouldSatisfy` T.isInfixOf "rolled-back"
+  it "never counts a failed or rolled-back mutation as a created link" $ do
+    let rendered = renderCheckoutReport (result False (CheckoutPlan [entry CreateLink]) (Map.singleton ".local/config" "rolled-back"))
+    rendered `shouldSatisfy` T.isInfixOf "0 created"
+    rendered `shouldSatisfy` T.isInfixOf "rolled-back"
+    rendered `shouldNotSatisfy` T.isInfixOf "1 created"
+  it "summarizes proposed dry-run work without claiming writes" $ do
+    renderCheckoutReport (result True (CheckoutPlan [entry CreateLink]) Map.empty)
+      `shouldSatisfy` T.isInfixOf "Would sync links: 1 created"
   it "bounds status to ten sorted paths and supplies the sync remedy" $ do
     let entries = [entry CreateLink & #dest .~ ("path-" <> show n) | n <- [1 :: Int .. 12]]
         rendered = renderCheckoutStatus (CheckoutPlan entries)

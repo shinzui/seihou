@@ -13,6 +13,24 @@ With no target, Seihou updates every recorded top-level application in manifest
 order. A target may name a recorded module or recipe, or a module contained in
 an application. Repeated targets select a deduplicated subset.
 
+An existing remote-backed application needs no separate `seihou install` or
+dependency list. Update fetches its recorded remote, resolves dependencies, reuses
+saved inputs, and previews the result before asking to apply:
+
+```bash
+seihou update master-plan
+```
+
+When adopting checkout declarations, the preview can include `Adopt link:` for a
+new destination that is an unchanged tracked symlink matching the declaration.
+Accepting stages its removal from Git while retaining the working link. HEAD,
+index and working link must agree, and the destination must be ignored. Regular
+objects, modified or staged links, and tracked ancestors are protected. Unrelated
+index entries are preserved. Dry-run and cancellation leave the index untouched;
+failure and recovery restore only the adopted entries. Commit their staged
+removals with the updated manifest. Each subsequent clone uses `seihou sync`.
+See [sync](sync.md) for the complete adoption and restoration workflow.
+
 When a generated path is also owned by an application you did not select,
 Seihou asks one question: does *every* owner reach that path through an
 additive, non-overlapping patch?

@@ -130,10 +130,13 @@ for inspecting a prompt on a machine that has never installed the artifact.
 baseline and still records applied-blueprint provenance — so it is checked like
 any other run. The rule is that the check follows the writes, not the flag.
 
-Advisory consumers never block. `seihou status`, pending-migration detection,
-and `seihou update`'s same-version content comparison report what they cannot
-resolve and carry on, so a developer with one missing module can still ask what
-state the project is in. The division is: resolving *where* an artifact is is
+Advisory consumers never block. `seihou status` and pending-migration detection
+report what they cannot resolve and carry on, so a developer with one missing
+module can still ask what state the project is in. Update's same-version content
+warning requires evidence from both artifact copies; an absent installed copy
+does not establish changed content. Output reconciliation still compares candidate
+bytes against the project's recorded baselines, including with an empty producer
+cache. The division is: resolving *where* an artifact is is
 `Seihou.Core.ArtifactRef`'s question, deciding *whether to generate from it* is
 `Seihou.CLI.ManifestGuard`'s, and only the second one stops a command.
 

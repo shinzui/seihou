@@ -19,12 +19,15 @@ import Seihou.Core.Types hiding (KeepCurrent)
 import Seihou.Effect.BaselineStore (putBaseline)
 import Seihou.Effect.BaselineStoreInterp (runBaselineStore)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
+import Seihou.Effect.Process (runProcess)
+import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Reconcile
 import Seihou.Engine.UpdateTransaction
 import Seihou.Manifest.Hash (baselineRefForContent, hashContent)
 import Seihou.Manifest.Types (emptyManifest, manifestToJSON)
 import System.Directory (findExecutable)
 import System.Directory qualified as Directory
+import System.Exit (ExitCode (..))
 import System.FilePath (takeDirectory, (</>))
 import System.IO.Temp (withSystemTempDirectory)
 import Test.Hspec
@@ -36,6 +39,77 @@ tests = testSpec "Seihou.Engine.UpdateTransaction" spec
 
 spec :: Spec
 spec = do
+  describe "tracked checkout-link adoption recovery" $ do
+    let git root args = do
+          (code, out, err) <- runEff $ runProcessIO $ runProcess "git" args (Just root)
+          unless (code == ExitSuccess) (expectationFailure (T.unpack err))
+          pure out
+        prepare root = do
+          _ <- git root ["init", "-q"]
+          Directory.createDirectoryLink "missing-target" (root </> "discovery")
+          TIO.writeFile (root </> "unrelated") "committed\n"
+          _ <- git root ["add", "."]
+          _ <- git root ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "test: initial links"]
+          TIO.writeFile (root </> "unrelated") "staged edit\n"
+          _ <- git root ["add", "unrelated"]
+          Just oid <- trackedLinkIdentity root "discovery"
+          pure oid
+    it "recovers an interrupted adoption without changing unrelated staging" $
+      withSystemTempDirectory "adoption-recovery" $ \root -> do
+        oid <- prepare root
+        before <- git root ["ls-files", "--stage", "-z"]
+        Right transaction <- beginUpdateTransaction root (Set.singleton "discovery")
+        adoptTrackedLinks transaction (Map.singleton "discovery" oid) `shouldReturn` Right ()
+        git root ["ls-files", "--", "discovery"] `shouldReturn` ""
+        Directory.getSymbolicLinkTarget (root </> "discovery") `shouldReturn` "missing-target"
+        recoverIncompleteTransactions root `shouldReturn` [Right ()]
+        git root ["ls-files", "--stage", "-z"] `shouldReturn` before
+    it "refuses modified working links and changed index entries" $
+      withSystemTempDirectory "adoption-stale" $ \root -> do
+        oid <- prepare root
+        Directory.removeDirectoryLink (root </> "discovery")
+        Directory.createDirectoryLink "user-target" (root </> "discovery")
+        trackedLinkIdentity root "discovery" `shouldReturn` Nothing
+        Right transaction <- beginUpdateTransaction root (Set.singleton "discovery")
+        refused <- adoptTrackedLinks transaction (Map.singleton "discovery" oid)
+        refused `shouldSatisfy` \case Left {} -> True; _ -> False
+        _ <- git root ["add", "-f", "discovery"]
+        trackedLinkIdentity root "discovery" `shouldReturn` Nothing
+    it "keeps an adoption when the final manifest was published before interruption" $
+      withSystemTempDirectory "adoption-committed" $ \root -> do
+        oid <- prepare root
+        Right transaction <- beginUpdateTransaction root (Set.singleton "discovery")
+        adoptTrackedLinks transaction (Map.singleton "discovery" oid) `shouldReturn` Right ()
+        let manifest = emptyManifest fixedTime
+        setUpdateTransactionExpectedManifest transaction manifest `shouldReturn` Right ()
+        LBS.writeFile (root </> ".seihou/manifest.json") (manifestToJSON manifest)
+        recoverIncompleteTransactions root `shouldReturn` [Right ()]
+        git root ["ls-files", "--", "discovery"] `shouldReturn` ""
+        Directory.getSymbolicLinkTarget (root </> "discovery") `shouldReturn` "missing-target"
+    it "preserves a later working-link edit during recovery" $
+      withSystemTempDirectory "adoption-working-conflict" $ \root -> do
+        oid <- prepare root
+        Right transaction <- beginUpdateTransaction root (Set.singleton "discovery")
+        adoptTrackedLinks transaction (Map.singleton "discovery" oid) `shouldReturn` Right ()
+        Directory.removeDirectoryLink (root </> "discovery")
+        Directory.createDirectoryLink "user-target" (root </> "discovery")
+        recovered <- rollbackUpdateTransaction transaction
+        recovered `shouldSatisfy` \case Left TransactionRollbackFailed {} -> True; _ -> False
+        git root ["ls-files", "--", "discovery"] `shouldReturn` ""
+        Directory.getSymbolicLinkTarget (root </> "discovery") `shouldReturn` "user-target"
+    it "preserves a later staged edit instead of overwriting it during recovery" $
+      withSystemTempDirectory "adoption-recovery-conflict" $ \root -> do
+        oid <- prepare root
+        Right transaction <- beginUpdateTransaction root (Set.singleton "discovery")
+        adoptTrackedLinks transaction (Map.singleton "discovery" oid) `shouldReturn` Right ()
+        Directory.removeDirectoryLink (root </> "discovery")
+        Directory.createDirectoryLink "user-target" (root </> "discovery")
+        _ <- git root ["add", "discovery"]
+        before <- git root ["ls-files", "--stage", "-z"]
+        recovered <- rollbackUpdateTransaction transaction
+        recovered `shouldSatisfy` \case Left TransactionRollbackFailed {} -> True; _ -> False
+        git root ["ls-files", "--stage", "-z"] `shouldReturn` before
+        Directory.getSymbolicLinkTarget (root </> "discovery") `shouldReturn` "user-target"
   describe "literal symlink journal snapshots" $ do
     it "restores a dangling target without traversing it" $ withSystemTempDirectory "checkout-journal" $ \root -> do
       Directory.createDirectoryLink "missing-old-target" (root </> "local-link")

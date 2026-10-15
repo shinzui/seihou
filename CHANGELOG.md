@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Existing skill applications adopt checkout links through ordinary `seihou update TARGET`, without a prerequisite installation list. The preview proposes removing unchanged matching discovery symlinks from Git's index while keeping their working copies. Acceptance journals those removals for rollback and interrupted-update recovery, preserving unrelated staging.
+- `seihou sync` with no declarations names recorded update targets. Human sync output summarizes successful link creation, repair and unchanged links without requiring JSON.
+
 ## [0.10.0.0] - 2026-10-15
 
 ### Added

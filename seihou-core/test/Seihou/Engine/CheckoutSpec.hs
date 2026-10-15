@@ -98,7 +98,7 @@ tests = testSpec "checkout filesystem contract" $ do
             cmd == "git" && case args of
               ["rev-parse", "--show-toplevel"] -> True
               ["ls-files", "--cached", "-z"] -> True
-              ["check-ignore", "-q", "--", path] -> "./" `T.isPrefixOf` path
+              ["check-ignore", "--no-index", "-q", "--", path] -> "./" `T.isPrefixOf` path
               _ -> False
         )
   it "creates portable links and converges without following their contents" $ withFixture $ \root -> do

@@ -26,6 +26,11 @@ provenance:
       at: 2026-10-15T18:21:18Z
       mode: "implement"
       note: "Implement and publish real producer checkout declarations, validate legacy transition, and adopt the existing consumer."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-15T20:55:55Z
+      mode: "implement"
+      note: "Reopen at user request: ordinary update must adopt links without manual installation or Git index surgery; sync must give actionable adoption guidance."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -42,6 +47,14 @@ If durable project context changes, update or create ADRs in docs/adr/ in the sa
 
 
 ## Purpose / Big Picture
+
+Reopened on 2026-10-15 at the user's request. The original four milestones proved
+the mechanism, but the manual adoption experience is not accepted as usable. The
+remaining delivery is an ordinary `seihou update master-plan` followed by
+`seihou sync` in clones: no dependency installation list, manual index surgery,
+or JSON inspection is required for the normal path. Preserve the original evidence
+below as historical acceptance of the engine and producer, not completion of this
+reopened plan.
 
 Make the skill modules people already use benefit from `seihou sync`. After a one-time
 application of updated producer modules, a developer clones a project, runs `seihou sync`,
@@ -63,9 +76,25 @@ module syntax alone is not completion.
 - [x] Milestone 2 (2026-10-15): claude-skill-link 0.2.0 and update-docs retain claude/skills sources; master-plan/exec-plan produce four distinct owned links. All 20 Bun tests pass, including both real legacy command producers, non-default release names, agreeing-owner removal, collision/missing-source atomic refusal, clone/worktree restoration, and old-runtime unknown-strategy refusal. All five module validations pass on released 0.10.0.0.
 - [x] Milestone 3 (2026-10-15): producer commit 455d2d6 published to mori://shinzui/agent-seihou on master; remote installation into isolated config reports link-skill 0.3.0, claude-skill-link 0.2.0, unchanged parents, and the full eight-case checkout suite passes against those installed bytes and released runtime 0.10.0.0. README/module/Mori/registry documentation is synchronized and two extension generations are identical across all 18 output files.
 - [x] Milestone 4 (2026-10-15): adoption commit c7c315a updates only the existing master-plan application and untracks its discovery link. A fresh clone of that commit with empty XDG config/cache creates four links, then reports four unchanged; deletion and wrong-target repair each change one link. A linked worktree creates all four. Tracked bytes, index entries, manifest bytes and unrelated application state are preserved. ADR 0018 and sync documentation now explain the one-time adoption and intentional untracking prerequisite.
+- [x] Milestone 5 (2026-10-15): ordinary remote-backed update with an empty producer cache previews and confirms eligible tracked-link adoption. Executable tests preserve unrelated staging/working edits and cover dry-run, cancellation, failed-command rollback and protected modified objects. Five core adoption tests cover interrupted/committed recovery and later index/working-link edits. An interactive real-consumer rehearsal also refuses an index change made after preview without writing the index or manifest.
+- [x] Milestone 6 (2026-10-15): empty-declaration sync names recorded update targets; normal output summarizes created/repaired/unchanged links. CLI help, guides, changelogs and ADRs describe ordinary update followed by clone sync. The pre-adoption consumer passes ordinary interactive update without installation or manual untracking; its fresh clone creates four links, then reports four unchanged, and repairs deletion and retarget drift individually.
+- [ ] Milestone 7: publish a supporting runtime containing the reopened UX changes and repeat the ordinary-update/fresh-clone proof with that released executable. The currently installed Nix-profile 0.10.0.0 executable does not contain this source change; do not claim the released runtime already offers tracked-link adoption.
 
 
 ## Surprises & Discoveries
+
+Reopening (2026-10-15): remote-backed update already resolves the producer catalog
+without installation. The real consumer's empty-cache preview nevertheless claimed
+unchanged-version producers had changed content, because a missing old cache hash
+was treated as evidence of change. The fix only emits that warning when both hashes
+exist and differ; output reconciliation still detects same-version generated-byte
+changes against project baselines. Both evidence-present and empty-cache cases pass.
+
+Reopening (2026-10-15): adoption only removes an index entry; it never changes the
+working link. Recovery must therefore preserve a later working-link edit rather
+than blindly restoring its snapshot. Version-3 journals retain individual index
+object IDs, restore only missing entries, and refuse conflicts before restoration.
+Existing version-1 and version-2 recovery remains supported.
 
 Review (2026-10-15): applying an old producer with the current runtime does not create an
 old-schema fixture. `seihou-cli/src-exe/Seihou/CLI/Run.hs` writes
@@ -105,6 +134,22 @@ identical. No inference-bearing manifest conversion is required.
 
 ## Decision Log
 
+Decision (2026-10-15, reopening): the user rejected the manual adoption workflow
+and requested a fix. Extend this plan rather than declaring a separate completed
+mechanism sufficient. Remote-backed update already fetches candidate artifacts;
+remove redundant prerequisite installation instructions and prove the empty-cache
+path. A tracked-symlink transition must be a visible, accepted update operation,
+limited to eligible matching links, with stale-state checks and rollback/recovery.
+Sync remains manifest-read-only and must never mutate the Git index or infer desired
+links from historical shell commands. Update ADR 0018 to distinguish an explicit
+accepted adoption from silently untracking arbitrary paths.
+
+Decision (2026-10-15, reopened delivery): the source implementation and released
+delivery are distinct milestones. Engine/CLI changes now require a supporting
+runtime release under the original release requirement, so leave this plan open
+for milestone 7. Do not silently replace the user's Nix-profile executable or
+describe an unreleased source build as the already-installed fix.
+
 Decision (2026-10-15): completion includes published producer adoption and one committed
 existing consumer, followed by fresh-clone proof. Plan 105's engine tests cannot substitute
 for that outcome. This repository is the concrete consumer; a fleet-wide upgrade of other
@@ -125,7 +170,9 @@ fixture cannot silently replace the required schema-upgrade proof.
 
 ## Outcomes & Retrospective
 
-Completed all four milestones on 2026-10-15. Published producer commit
+The original four milestones completed on 2026-10-15. Reopened milestones 5 and 6
+are implemented and verified; milestone 7 (supporting runtime publication and
+released-binary acceptance) remains open. Published producer commit
 455d2d6c50ddea5f658443d19d71b05733fc620b in `mori://shinzui/agent-seihou`
 provides link-skill 0.3.0 and claude-skill-link 0.2.0. The unchanged parent versions
 (master-plan/exec-plan 0.12.0 and update-docs 0.1.0) discover their updated link
@@ -179,6 +226,36 @@ symlink must deliberately leave the index. These lessons are distilled into
 [ADR 0018](../adr/0018-checkout-outputs-are-observable-portable-declarations.md) and
 [the sync guide](../cli/sync.md); historical plan 105's engine-only boundary is preserved.
 
+
+Reopened implementation evidence is retained at
+`/tmp/seihou-107-ux-mowg21vl/result.json`. In a disposable checkout of the actual
+pre-adoption consumer (`c7c315a^`), the current source executable completed ordinary
+interactive `seihou update master-plan` with empty XDG configuration/cache. Its
+preview proposed adopting `.agents/skills/master-plan`; acceptance staged just that
+removal and changed the manifest. All other tracked content, the unrelated Nix
+application/version and the source skill bytes were preserved. Eleven managed files
+were unchanged; zero commands executed; the final preview had no false same-version
+warnings. A separate pending preview detected a newly staged link target and
+returned `plan_stale`, preserving the changed index and manifest byte-for-byte.
+
+The adopted disposable commit is bf082cd9732022d4b50b733260201b5366a2aee8. Its
+fresh clone has an empty producer cache and reports:
+
+```text
+Links: 4 created, 0 repaired, 0 unchanged.
+Links: 0 created, 0 repaired, 4 unchanged.
+Links: 1 created, 0 repaired, 3 unchanged.  (after deletion)
+Links: 0 created, 1 repaired, 3 unchanged. (after wrong-target replacement)
+```
+
+The clone's manifest and index remain byte-identical through sync; every link
+reaches its committed SKILL.md. Executable regression fixtures also prove the
+legacy command-to-declaration transition with empty-cache remote update, cancellation,
+dry-run, unrelated staged/unstaged edits, safe refusal and failed-command rollback.
+Final-candidate validation: `cabal test all --test-options=--hide-successes`
+passes all 1,991 tests (1,200 core, 740 CLI, 51 extension); the focused checkout
+suite passes 33 core and 23 CLI cases. Fourmolu checks and `git diff --check` pass.
+No supporting release has been cut in this reopened implementation session.
 
 ## Context and Orientation
 
@@ -264,6 +341,52 @@ Sync never replays receipts or rewrites the manifest. No new architecture is req
 
 
 ## Plan of Work
+
+### Reopened delivery: usable update and sync
+
+Start in `seihou-cli/src/Seihou/CLI/Update.hs`, where `planCheckoutUpdate`
+currently fails on tracked destinations before a preview can be rendered, and
+`seihou-cli/src-exe/Seihou/CLI/Update.hs`, which already previews and confirms an
+ordinary human update. Carry explicit adoption operations through the update plan
+and renderer. Only a newly declared destination whose HEAD/index/working entry is
+an unchanged symlink matching the candidate's canonical relative target is eligible;
+regular objects, staged edits, conflicting links, tracked ancestors, and unrelated
+entries remain protected. Check ignore rules as though the eligible path were
+untracked. Preserve the working link, remove only the accepted index entry, and
+include that operation in transaction recovery. Dry-run and cancellation must not
+touch the index. Keep sync's existing strict tracked-path refusal.
+
+Inspect `seihou-core/src/Seihou/Engine/UpdateTransaction.hs` for durable recovery,
+`seihou-cli/src/Seihou/CLI/Update/Types.hs` and
+`seihou-cli/src/Seihou/CLI/Update/Render.hs` for plan/output changes, and
+`seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs` plus
+`seihou-cli/test/Seihou/CLI/CheckoutSyncE2ESpec.hs` for existing real-command fixtures.
+Extend focused tests rather than duplicating the legacy producer suite. Prove the
+empty-cache remote update before broadening variants; expose dependency resolution
+defects if that representative path fails.
+
+In `seihou-cli/src/Seihou/CLI/CheckoutSync.hs`, replace the generic empty-declaration
+notice with actionable commands derived from recorded application targets. Do not
+claim that an arbitrary old application has an available newer declaring release.
+Provide a concise human summary of actual sync outcomes while preserving JSON's
+planned/applied distinction. Update `docs/cli/sync.md`, `docs/cli/update.md`, CLI
+help, and ADR 0018 to teach ordinary update for existing projects and sync for
+clones. Original multi-module installation commands below remain historical test
+setup, not the recommended existing-project interface.
+
+From the repository root run `cabal build exe:seihou` and focused CLI/core test
+patterns while iterating, then `cabal test all` and `git diff --check`. Use the
+repository development environment if the current shell lacks dependencies. Show
+that the first sync in a fresh adopted clone creates the expected links, a second
+sync changes nothing, and tracked bytes and manifest bytes are preserved. Record
+concise results here before checking off milestones 5 and 6. Milestone 7 retains
+the original supporting-release obligation now that runtime code has changed:
+follow the release skill, verify current upstream versions before choosing the
+PVP release and bounds, then repeat the ordinary-update and fresh-clone proof
+with the released executable. Until that delivery, use the built executable
+reported by `cabal list-bin exe:seihou` from the consumer's root; the installed
+Nix-profile executable still predates the UX fix. Preserve producer versions
+unless their definitions change, and do not replace a Nix-managed binary in place.
 
 ### Milestone 1: prove the real link-skill transition first
 
@@ -493,6 +616,18 @@ Intention: intention_01m50b28ccem2axbbn5tj3k1wt
 
 ## Validation and Acceptance
 
+Reopened acceptance additionally requires milestones 5–7 above. Exercise an
+existing remote-backed application with no installed producer modules using only
+the public update command. Its preview must explain any eligible tracked-link
+transition; accepting updates intent and stages exactly those removals while
+preserving working links and unrelated staged/unstaged changes. Dry-run,
+cancellation, ineligible paths, stale plans and failed transactions must not leave
+partial index transitions. Recovery must restore an interrupted uncommitted
+transition. After adoption, a clone needs only sync, and the human result explains
+what changed. An old manifest with no declarations must name its recorded update
+target instead of making the user discover producer dependencies. Existing engine
+refusal and immutable-sync tests continue to apply.
+
 The required regression suite is the producer's real-binary Bun integration test, followed
 by its ordinary Bun suite and module validation. It must exercise both original command
 producers, an old application with real command receipts, update-docs composition, and the
@@ -566,6 +701,7 @@ show that producer adoption now exists. Keep plan 105's historical implementatio
 accurate; its completed engine milestone must not be rewritten as proof of this follow-up's
 consumer adoption.
 
+
 Revision (2026-10-15): addressed the pre-implementation review by requiring a legacy-runtime
 fixture with explicit before/after schema assertions, naming published 0.10.0.0 as the
 runtime candidate, and refreshing the committed checkout state. These changes prevent a
@@ -576,3 +712,13 @@ released-runtime acceptance and consumer adoption. The real consumer's pre-exist
 tracked discovery link required intentional untracking while retaining its working link;
 final snapshot checks preserve unrelated tracked symlink text and existing parents.
 All original functional acceptance criteria remain satisfied.
+
+Revision (2026-10-15, reopening): the user rejected the delivered adoption UX.
+Retained milestones 1–4 as historical evidence and added unfinished milestones 5–6
+for a normal update flow, explicit recoverable tracked-link adoption, actionable
+sync guidance, and real-command acceptance without manual setup.
+
+Revision (2026-10-15, reopened implementation): completed and verified source
+milestones 5–6, including the real interactive pre-adoption consumer and fresh
+clone. Added milestone 7 to retain the original runtime-release requirement now
+that the fix changes runtime code. The plan remains open for released delivery.

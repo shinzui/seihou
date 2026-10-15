@@ -2371,7 +2371,13 @@ traceOption =
       )
 
 syncInfo :: ParserInfo Command
-syncInfo = info (syncParser <**> helper) (fullDesc <> progDesc "Rebuild ignored checkout outputs from the manifest")
+syncInfo =
+  info
+    (syncParser <**> helper)
+    ( fullDesc
+        <> progDesc "Restore declared local links for this checkout"
+        <> footer "Run at the Git working-tree root. No producer installation is needed. If links have not been declared yet, run seihou update TARGET once and commit the resulting manifest; later clones need only seihou sync."
+    )
   where
     syncParser =
       Sync

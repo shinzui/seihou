@@ -3,6 +3,8 @@ module Seihou.CLI.CheckoutSync
     runCheckoutSync,
     checkoutReportJSON,
     renderCheckoutPlan,
+    renderCheckoutReport,
+    checkoutAdoptionNotices,
     renderCheckoutStatus,
     checkoutFailureJSON,
   )
@@ -15,6 +17,7 @@ import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
+import Seihou.CLI.ApplicationDisplay (appliedTargetName)
 import Seihou.Core.Checkout
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem hiding (CreateDirectoryLink)
@@ -56,11 +59,30 @@ runCheckoutSync dryRun = do
                   Left err -> pure (Left err)
                   Right plan -> do
                     execution <- if dryRun then pure (CheckoutExecution Map.empty [] Nothing) else applyCheckoutPlan SyncIgnoredOnly root plan
-                    let notices = ["No checkout declarations. Apply a declaring module release once before future clones can use seihou sync." | Map.null (manifest ^. #checkoutOutputs)]
+                    let notices = checkoutAdoptionNotices manifest
                     pure (Right (CheckoutSyncResult root dryRun plan execution notices))
   pure $ case result of
     Left err -> Left (checkoutError "checkout_io_failed" ("cannot inspect checkout: " <> T.pack (displayException err)))
     Right value -> value
+
+-- | Suggest a check of recorded targets, without claiming that their remotes
+-- necessarily contain a declaring release or inferring intent from receipts.
+checkoutAdoptionNotices :: Manifest -> [Text]
+checkoutAdoptionNotices manifest
+  | not (Map.null (manifest ^. #checkoutOutputs)) = []
+  | null (manifest ^. #applications) =
+      ["No links are declared in this manifest. Apply a module that declares checkout links, then commit its manifest and source files."]
+  | otherwise =
+      [ "No links are declared in this manifest. Sync can restore links after a declaring module update has been adopted.",
+        "Check for an update using the recorded target below; review its preview before accepting:"
+      ]
+        <> map ("  seihou update " <>) targets
+        <> ["Commit the adopted manifest and source files. Future clones need only seihou sync; no producer installation is required."]
+  where
+    targets = Map.keys (Map.fromList [(shellWord (appliedTargetName (app ^. #target)), ()) | app <- manifest ^. #applications])
+    shellWord word
+      | T.all (\c -> c `elem` ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_." :: String)) word = word
+      | otherwise = "'" <> T.replace "'" "'\\''" word <> "'"
 
 checkoutFailureJSON :: Bool -> CheckoutError -> A.Value
 checkoutFailureJSON dryRun err = A.object ["mode" A..= mode dryRun, "outputs" A..= ([] :: [A.Value]), "errors" A..= [errorJSON err], "summary" A..= A.object ["planned" A..= counts [], "applied" A..= counts []]]
@@ -141,6 +163,52 @@ renderCheckoutPlan dryRun plan =
         <> T.concat ["; " <> warning | warning <- entry ^. #warnings]
     | entry <- plan ^. #entries
     ]
+
+renderCheckoutReport :: CheckoutSyncResult -> Text
+renderCheckoutReport report =
+  renderCheckoutPlan (report ^. #dryRun) displayedPlan
+    <> summary
+    <> T.unlines (report ^. #notices)
+    <> T.unlines (map (^. #message) (maybe [] pure (report ^. #execution . #failure)))
+  where
+    entries = report ^. #plan . #entries
+    outcomes = report ^. #execution . #outcomes
+    -- A failed or rolled-back apply must never print a proposed create as
+    -- though it succeeded. The summary counts successful mutations only.
+    displayedPlan =
+      if report ^. #dryRun
+        then report ^. #plan
+        else
+          CheckoutPlan
+            [ entry
+                & #warnings
+                %~ (<> [outcome | outcome `notElem` ["applied", "unchanged"]])
+                & #action
+                .~ (if outcome `elem` ["applied", "unchanged"] then entry ^. #action else RefusedLink)
+            | entry <- entries,
+              let outcome = Map.findWithDefault "not-applied" (entry ^. #dest) outcomes
+            ]
+    countAction action =
+      T.pack
+        ( show
+            ( length
+                [ ()
+                | entry <- entries,
+                  entry ^. #action == action,
+                  report ^. #dryRun || Map.lookup (entry ^. #dest) outcomes `elem` [Just "applied", Just "unchanged"]
+                ]
+            )
+        )
+    summary
+      | null entries = ""
+      | otherwise =
+          (if report ^. #dryRun then "Would sync links: " else "Links: ")
+            <> countAction CreateLink
+            <> " created, "
+            <> countAction ReplaceLink
+            <> " repaired, "
+            <> countAction UnchangedLink
+            <> " unchanged.\n"
 
 renderCheckoutStatus :: CheckoutPlan -> Text
 renderCheckoutStatus plan =

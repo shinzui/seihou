@@ -61,30 +61,44 @@ The published [link-skill](mori://shinzui/agent-seihou/templates/link-skill) 0.3
 producers declare checkout links and require Seihou 0.10.0.0 or newer. The former
 uses `agents/skills/`; the latter, used by update-docs, keeps `claude/skills/`.
 
-For an existing master-plan application, install its producers and update its
-recorded root target once, preserving saved inputs:
+For an existing master-plan application, update its recorded root target once:
 
 ```bash
-seihou install https://github.com/shinzui/agent-seihou.git --module master-plan --module exec-plan --module link-skill --module agent-gitignore --module claude-gitignore
-seihou update master-plan --dry-run --json --no-commands
-seihou update master-plan --json --no-commands
+seihou update master-plan
 ```
 
+Update fetches the recorded remote and its module dependencies, reuses saved inputs,
+and shows a preview before asking to apply. No producer installation is needed for
+an existing remote-backed application, including in a fresh clone. Use
+`seihou update master-plan --dry-run` for a separate preview if desired.
 This records four discovery declarations even though master-plan and exec-plan
-remain at 0.12.0. For a first application, use `seihou run master-plan` after
-installation. For another composition, update its recorded root target instead.
+remain at 0.12.0. For a first application, install the producer and use
+`seihou run master-plan`. For another composition, update its recorded root target instead.
 Installing the module or running `seihou manifest upgrade` alone cannot infer
 checkout intent from command receipts.
 
-A previously tracked discovery symlink needs deliberate untracking before update,
-for example `git rm --cached .agents/skills/master-plan`. That keeps the local
-link while making its destination eligible for an ignored checkout declaration.
-Seihou never untracks a path automatically. Preserve unrelated tracked discovery
-entries, and resolve real file/directory collisions explicitly.
+When a newly declared destination is an unchanged tracked symlink matching the
+declaration, update previews `Adopt link: … (stop tracking in Git; keep working link)`.
+Accepting the update stages that link's removal from Git and keeps its working copy.
+The path must be ignored; HEAD, the index and the working link must agree. Staged
+edits, modified links, regular objects, tracked ancestors and unrelated entries stay
+protected. Dry-run and cancellation leave the index alone; failed updates and
+interrupted uncommitted updates restore the adopted entries through recovery.
 
 Commit the updated manifest, ignore rules and source skill files, together with
 any intentional removal of discovery links from the index. Subsequent clones and
-linked worktrees use only `seihou sync`, without installed producers. Sync restores
+linked worktrees use only:
+
+```bash
+seihou sync
+```
+
+The human output lists the links and summarizes how many were created, repaired
+or already correct. When a manifest has no declarations, sync shows its recorded
+update targets so you can check for a declaring release. It does not fetch or
+apply an update itself.
+
+No installed producers are needed. Sync restores
 deleted links and repairs wrong targets while preserving tracked bytes and the
 manifest. Historical source-move migrations remain distinct from this one-time
 adoption and are included by update when applicable.

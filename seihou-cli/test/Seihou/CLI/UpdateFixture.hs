@@ -54,6 +54,7 @@ minimalPlan reconciliation =
       reconciliation,
       checkoutPlan = CheckoutPlan [],
       checkoutOutputs = Map.empty,
+      checkoutAdoptions = Map.empty,
       commandPlan = CommandPlan [],
       candidateArtifacts = [],
       warnings = [],

@@ -110,12 +110,26 @@ composition once with its saved inputs, then commit the manifest, real source co
 and ignore rules. A dependency-only producer change must be discoverable through the
 ordinary update path even when the parent module version is unchanged.
 
-A previously committed discovery symlink remains a tracked path and is refused just
-like any other tracked destination. The project must deliberately remove that index
-entry, retaining the working link if desired, before adoption. The engine cannot
-silently untrack it. Unrelated tracked discovery entries remain protected. Snapshot
+A previously committed discovery symlink remains protected during sync. Ordinary
+update can explicitly propose adoption of a newly declared destination when HEAD,
+index and the working copy contain the same literal symlink matching the candidate,
+and its destination is ignored. The normal update preview and acceptance authorize
+removing just that index entry while retaining the working link. Dry-run and
+cancellation never untrack it. Modified or staged entries, real objects, indexed
+ancestors and unrelated tracked discovery entries remain protected. The update
+journal records each adopted path's original Git object ID before any removal;
+rollback and recovery restore only those entries, preserving unrelated staging
+and refusing to overwrite a later index or working-link edit at an adopted path.
+Adoption never writes the working link, so recovery does not replace it. Journal version 3 adds
+these index snapshots while retaining readers for versions 1 and 2. Snapshot
 checks compare tracked symlink text without following targets, and account for parents
 that already exist because they hold unrelated tracked entries.
+
+Remote-backed updates fetch their candidates and dependencies without a prerequisite
+installation. Empty-declaration sync guidance names recorded update targets but
+does not assert that a newer declaring producer exists and never infers wiring from
+shell receipts. The original plan-107 manual untracking procedure is historical;
+the reopened plan requires adoption through the normal accepted update flow.
 
 ## Rejected Alternatives
 

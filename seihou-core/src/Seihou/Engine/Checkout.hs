@@ -76,7 +76,7 @@ observeCheckoutOutputs root prior candidate = do
         if gitRoot == Nothing
           then pure (False, [])
           else do
-            (code, _, _) <- runProcess "git" ["check-ignore", "-q", "--", "./" <> T.pack dest] (Just root)
+            (code, _, _) <- runProcess "git" ["check-ignore", "--no-index", "-q", "--", "./" <> T.pack dest] (Just root)
             pure $ case code of
               ExitSuccess -> (True, [])
               ExitFailure 1 -> (False, [])

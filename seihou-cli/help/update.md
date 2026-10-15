@@ -16,6 +16,18 @@ BASIC WORKFLOW
 
     seihou update master-plan
 
+  No separate installation is needed for an existing remote-backed application:
+  update fetches its remote and dependencies and reuses saved inputs. Review the
+  preview and accept it. After adoption, fresh clones restore declared links with:
+
+    seihou sync
+
+  An `Adopt link:` preview means update will stop tracking an unchanged matching
+  symlink in Git while keeping the working link. Accepting stages that removal;
+  commit it with the manifest. Modified or staged links and regular objects remain
+  protected. Dry-run/cancellation leave the index untouched; failed or interrupted
+  uncommitted updates recover the adopted entries without replacing unrelated staging.
+
   Apply every recorded application in manifest order:
 
     seihou update

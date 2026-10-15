@@ -175,7 +175,7 @@ planProjectUpdateIn sessionDirectory request = do
                           checkoutSetup <- planCheckoutUpdate projectRoot base plannedApplications
                           case checkoutSetup of
                             Left err -> pure (Left err)
-                            Right (checkoutCandidate, checkoutPlan) -> do
+                            Right (checkoutCandidate, checkoutPlan, checkoutAdoptions) -> do
                               evidence <- versionEvidence (request ^. #allowDowngrade) projectRoot catalog selected plannedApplications
                               case evidence of
                                 Left err -> pure (Left err)
@@ -191,7 +191,7 @@ planProjectUpdateIn sessionDirectory request = do
                                           <> versionWarnings
                                           <> map CheckoutWarning (concatMap (^. #warnings) (checkoutPlan ^. #entries))
                                       inputChanges = summarizeInputChanges seedWarnings plannedApplications
-                                      transactionTargets = transactionTargetPaths base reconciliation (migrationStage ^. #plans) `Set.union` Set.fromList [entry ^. #dest | entry <- checkoutPlan ^. #entries, entry ^. #action `elem` [CreateLink, ReplaceLink, RetireLink]]
+                                      transactionTargets = transactionTargetPaths base reconciliation (migrationStage ^. #plans) `Set.union` Map.keysSet checkoutAdoptions `Set.union` Set.fromList [entry ^. #dest | entry <- checkoutPlan ^. #entries, entry ^. #action `elem` [CreateLink, ReplaceLink, RetireLink]]
                                   -- The manifest is observed as it is on disk, before
                                   -- any in-memory preparation, so an edit made between
                                   -- planning and apply is reported as a stale plan.
@@ -221,6 +221,7 @@ planProjectUpdateIn sessionDirectory request = do
                                             reconciliation,
                                             checkoutPlan,
                                             checkoutOutputs = checkoutCandidate ^. #checkoutOutputs,
+                                            checkoutAdoptions,
                                             commandPlan,
                                             candidateArtifacts = usedArtifacts,
                                             warnings,
@@ -458,8 +459,11 @@ applyAcceptedPlan plan = do
       case backupResult of
         Left err -> abortUpdate transaction err
         Right () -> do
+          adopted <- adoptTrackedLinks transaction (plan ^. #checkoutAdoptions)
           now <- getCurrentTime
-          migrated <- runRealMigrations now (planBaseManifest plan) (plan ^. #migrations)
+          migrated <- case adopted of
+            Left err -> pure (Left (UpdateTransactionFailed err))
+            Right () -> runRealMigrations now (planBaseManifest plan) (plan ^. #migrations)
           case migrated of
             Left err -> abortUpdate transaction err
             Right migratedManifest -> do
@@ -836,10 +840,9 @@ versionEvidence allowDowngrade projectRoot catalog previousApplications plannedA
 
     -- The manifest records no path, so the already-applied artifact has to be
     -- located from its recorded origin before its content can be hashed. A
-    -- resolution failure keeps the existing conservative behaviour of treating
-    -- the artifact as changed: this produces an advisory warning, not a
-    -- correctness gate. Aborting on a stale or missing artifact is the job of
-    -- docs/plans/78-refuse-accidental-module-downgrades-and-origin-mismatches.md.
+    -- missing installed copy supplies no evidence of a same-version change.
+    -- Reconciliation still compares candidate output with project baselines;
+    -- absent cache bytes must not manufacture a content-change warning.
     compareArtifact name fromVersion toVersion oldOrigin kind = do
       searchPaths <- defaultSearchPaths
       resolved <- resolveArtifactOrigin projectRoot searchPaths (definitionFileFor kind) oldOrigin
@@ -849,7 +852,7 @@ versionEvidence allowDowngrade projectRoot catalog previousApplications plannedA
       let candidateHash = (^. #contentHash) <$> Map.lookup (kind, name) (catalog ^. #artifacts)
           changed = case (oldHashResult, candidateHash) of
             (Right oldHash, Just newHash) -> oldHash /= newHash
-            _ -> True
+            _ -> False
       pure
         ( Right
             VersionChange
@@ -991,6 +994,9 @@ observePaths projectRoot paths =
 
 stalePlanPaths :: UpdatePlan -> IO (Set FilePath)
 stalePlanPaths plan = do
+  indexChecks <- forM (Map.toAscList (plan ^. #checkoutAdoptions)) $ \(path, oid) -> do
+    current <- trackedLinkIdentity (plan ^. #snapshot . #projectRoot) path
+    pure [path | current /= Just oid]
   currentProject <-
     observePaths
       (plan ^. #snapshot . #projectRoot)
@@ -1003,7 +1009,7 @@ stalePlanPaths plan = do
   let projectChanges =
         Map.keysSet
           (Map.filterWithKey (\path observed -> Map.lookup path currentProject /= Just observed) (plan ^. #snapshot . #observedProjectHashes))
-  pure (Set.union projectChanges (Set.fromList (concat candidateChecks)))
+  pure (Set.union projectChanges (Set.fromList (concat candidateChecks <> concat indexChecks)))
 
 planActualReconciliation :: UpdatePlan -> Manifest -> IO (Either UpdateError ReconciliationPlan)
 planActualReconciliation plan manifest = do
@@ -1311,6 +1317,7 @@ finishCommitted transaction plan manifest completedReceipts = do
                   skippedDisabled = summary ^. #skippedDisabled
                 },
             touchedPaths = touched,
+            adoptedLinks = Map.keys (plan ^. #checkoutAdoptions),
             warnings = plan ^. #warnings <> cleanupWarnings <> pruneWarnings
           }
     )
@@ -1353,6 +1360,7 @@ noOpResult plan =
       fileSummary = reconciliationSummary (plan ^. #reconciliation),
       commandSummary = CommandSummary 0 0 0,
       touchedPaths = Set.empty,
+      adoptedLinks = [],
       warnings = plan ^. #warnings
     }
 
@@ -1367,6 +1375,7 @@ isUpdateNoOp plan =
   -- change to applied state that only this update will publish (ADR 0004),
   -- so a plan carrying one is never a deliberate no-op (ADR 0007).
   plan ^. #checkoutOutputs == plan ^. #snapshot . #originalManifest . #checkoutOutputs
+    && Map.null (plan ^. #checkoutAdoptions)
     && all ((== UnchangedLink) . (^. #action)) (plan ^. #checkoutPlan . #entries)
     && isNothing (plan ^. #manifestPreparation)
     && null (plan ^. #versionChanges)
@@ -1420,16 +1429,44 @@ varValueToText (VBool False) = "false"
 varValueToText (VInt value) = T.pack (show value)
 varValueToText (VList values) = T.intercalate "," (map varValueToText values)
 
-planCheckoutUpdate :: FilePath -> Manifest -> [PlannedApplication] -> IO (Either UpdateError (Manifest, CheckoutPlan))
+planCheckoutUpdate :: FilePath -> Manifest -> [PlannedApplication] -> IO (Either UpdateError (Manifest, CheckoutPlan, Map FilePath Text))
 planCheckoutUpdate root prior applications = case replaceCheckoutApplications prior [(app ^. #candidate, app ^. #operations) | app <- applications] of
   Left err -> pure (Left (UpdateCheckoutFailed err))
   Right candidate -> do
     planned <- runEff $ runFilesystem $ runProcessIO $ prepareCheckoutApplication root prior candidate (concatMap (^. #operations) applications)
+    adoptions <- case planned of
+      Left _ -> pure Map.empty
+      Right plan -> fmap Map.fromList $ fmap concat $ forM (plan ^. #entries) $ \entry ->
+        if eligible entry
+          then do
+            identity <- trackedLinkIdentity root (entry ^. #dest)
+            pure [(entry ^. #dest, oid) | Just oid <- [identity]]
+          else pure []
     pure $ do
-      plan <- first UpdateCheckoutFailed planned
-      case concatMap (^. #errors) (plan ^. #entries) of
-        err : _ -> Left (UpdateCheckoutFailed err)
-        [] -> Right (candidate, plan)
+      original <- first UpdateCheckoutFailed planned
+      let observations =
+            Map.fromList
+              [ ( entry ^. #dest,
+                  if Map.member (entry ^. #dest) adoptions
+                    then entry ^. #observation & #problems %~ filter ((/= "checkout_path_tracked") . (^. #code))
+                    else entry ^. #observation
+                )
+              | entry <- original ^. #entries
+              ]
+          plan = planCheckoutOutputs Reconcile ApplyDeclaration (prior ^. #checkoutOutputs) (candidate ^. #checkoutOutputs) observations
+      case [(entry ^. #dest, err) | entry <- plan ^. #entries, err <- entry ^. #errors] of
+        (path, err) : _ -> Left (UpdateCheckoutFailed (err & #message %~ (("checkout link '" <> T.pack path <> "': ") <>)))
+        [] -> Right (candidate, plan, adoptions)
+  where
+    eligible entry =
+      entry ^. #previous == Nothing
+        && entry ^. #observation . #ignored
+        && entry ^. #observation . #sourceDirectory
+        && not (null (entry ^. #observation . #problems))
+        && all ((== "checkout_path_tracked") . (^. #code)) (entry ^. #observation . #problems)
+        && case entry ^. #candidate of
+          Just spec -> entry ^. #observation . #entry == EntrySymlink (expectedTarget (entry ^. #dest) spec)
+          Nothing -> False
 
 applyUpdateCheckout :: UpdatePlan -> Manifest -> Manifest -> IO (Either UpdateError ())
 applyUpdateCheckout plan prior filesManifest = runEff $ runFilesystem $ runProcessIO $ do

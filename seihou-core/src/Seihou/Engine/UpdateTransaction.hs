@@ -8,6 +8,8 @@ module Seihou.Engine.UpdateTransaction
     setUpdateTransactionExpectedManifest,
     completeUpdateTransaction,
     recoverIncompleteTransactions,
+    trackedLinkIdentity,
+    adoptTrackedLinks,
   )
 where
 
@@ -31,11 +33,14 @@ import Seihou.Effect.BaselineStore (putBaseline)
 import Seihou.Effect.BaselineStoreInterp (runBaselineStore)
 import Seihou.Effect.Filesystem (PathEntry (..), inspectPath)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
+import Seihou.Effect.Process (runProcess)
+import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Reconcile
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.Types (manifestFromJSON)
 import Seihou.Prelude
 import System.Directory qualified as Directory
+import System.Exit (ExitCode (..))
 import System.FilePath (splitDirectories, takeDirectory, takeFileName)
 import System.IO (hClose, hSetEncoding, utf8)
 import System.IO.Temp (createTempDirectory, openTempFile)
@@ -71,6 +76,7 @@ data JournalMetadata = JournalMetadata
     createdAt :: !UTCTime,
     entries :: ![JournalEntry],
     newDirectories :: ![FilePath],
+    indexLinks :: !(Map FilePath Text),
     expectedManifest :: !(Maybe Manifest)
   }
   deriving stock (Eq, Generic, Show)
@@ -111,18 +117,20 @@ instance ToJSON JournalMetadata where
         "createdAt" .= (metadata ^. #createdAt),
         "entries" .= (metadata ^. #entries),
         "newDirectories" .= (metadata ^. #newDirectories),
+        "indexLinks" .= (metadata ^. #indexLinks),
         "expectedManifest" .= (metadata ^. #expectedManifest)
       ]
 
 instance FromJSON JournalMetadata where
   parseJSON = Aeson.withObject "JournalMetadata" $ \object -> do
     version <- object .: "version"
-    unless (version `elem` [1, 2]) (fail "unsupported transaction journal version")
+    unless (version `elem` [1, 2, 3]) (fail "unsupported transaction journal version")
     JournalMetadata
       <$> pure version
       <*> object .: "createdAt"
       <*> (mapM (parseJournalEntry version) =<< object .: "entries")
       <*> object .: "newDirectories"
+      <*> (if version < 3 then pure Map.empty else object .: "indexLinks")
       <*> object .:? "expectedManifest"
 
 beginUpdateTransaction :: FilePath -> Set FilePath -> IO (Either TransactionError UpdateTransaction)
@@ -164,8 +172,73 @@ initializeJournal transaction safeTargets = do
         createdAt = now,
         entries = entries,
         newDirectories = missingDirectories,
+        indexLinks = Map.empty,
         expectedManifest = Nothing
       }
+
+-- | Only unchanged HEAD/index symlinks with ordinary index flags can be adopted.
+-- The checkout planner additionally checks path safety and the candidate target.
+trackedLinkIdentity :: FilePath -> FilePath -> IO (Maybe Text)
+trackedLinkIdentity root path = do
+  indexed <- gitOutput root ["ls-files", "--stage", "-z", "--", literal path]
+  headed <- gitOutput root ["ls-tree", "-z", "HEAD", "--", literal path]
+  flags <- gitOutput root ["ls-files", "-v", "-z", "--", literal path]
+  working <- runEff $ runFilesystem $ inspectPath (root </> path)
+  let identity = do
+        record <- indexed
+        let (prefix, suffix) = T.breakOn "\t" record
+        case T.words prefix of
+          ["120000", oid, "0"] | suffix == "\t" <> T.pack path <> "\0" -> Just oid
+          _ -> Nothing
+  blob <- case identity of
+    Nothing -> pure Nothing
+    Just oid -> gitOutput root ["cat-file", "blob", oid]
+  pure $ do
+    oid <- identity
+    if headed == Just ("120000 blob " <> oid <> "\t" <> T.pack path <> "\0")
+      && flags == Just ("H " <> T.pack path <> "\0")
+      && (case working of EntrySymlink target -> blob == Just (T.pack target); _ -> False)
+      then Just oid
+      else Nothing
+
+literal :: FilePath -> Text
+literal path = ":(literal)" <> T.pack path
+
+gitOutput :: FilePath -> [Text] -> IO (Maybe Text)
+gitOutput root args = do
+  (code, out, _) <- runEff $ runProcessIO $ runProcess "git" args (Just root)
+  pure (if code == ExitSuccess then Just out else Nothing)
+
+-- | Journal the exact entries before removing any of them. Recovery restores
+-- just these paths, preserving unrelated staging and linked-worktree indexes.
+adoptTrackedLinks :: UpdateTransaction -> Map FilePath Text -> IO (Either TransactionError ())
+adoptTrackedLinks _ links | Map.null links = pure (Right ())
+adoptTrackedLinks transaction links = do
+  result <- try @SomeException $ do
+    forM_ (Map.toAscList links) $ \(path, oid) -> do
+      either (ioError . userError . show) (const (pure ())) (validateTransactionPath path)
+      unless (path `Set.member` (transaction ^. #targets)) (ioError (userError "unjournaled adoption path"))
+      actual <- trackedLinkIdentity (transaction ^. #projectRoot) path
+      unless (actual == Just oid) (ioError (userError ("Git index changed for " <> path)))
+    metadata <- readJournal (transaction ^. #transactionDirectory) >>= either (ioError . userError . show) pure
+    writeJournal (transaction ^. #transactionDirectory) (metadata & #journalVersion .~ 3 & #indexLinks .~ links)
+    removed <- gitOutput (transaction ^. #projectRoot) (["update-index", "--force-remove", "--"] <> map T.pack (Map.keys links))
+    when (removed == Nothing) (ioError (userError "could not adopt tracked links in Git's index"))
+  pure $ first (\err -> TransactionApplyFailed (exceptionText err) Nothing) result
+
+restoreIndexLinks :: FilePath -> Map FilePath Text -> IO ()
+restoreIndexLinks root links = do
+  -- Preflight the whole set before restoring any entry. A later user edit is
+  -- preserved and leaves the journal available for deliberate recovery.
+  missing <- fmap concat $ forM (Map.toAscList links) $ \(path, oid) -> do
+    current <- gitOutput root ["ls-files", "--stage", "-z", "--", literal path]
+    unless
+      (current `elem` [Just "", Just ("120000 " <> oid <> " 0\t" <> T.pack path <> "\0")])
+      (ioError (userError ("Git index changed during recovery for " <> path)))
+    pure [(path, oid) | current == Just ""]
+  forM_ missing $ \(path, oid) -> do
+    restored <- gitOutput root ["update-index", "--add", "--cacheinfo", "120000", oid, T.pack path]
+    when (restored == Nothing) (ioError (userError ("cannot restore Git index entry " <> path)))
 
 missingParentDirectories :: FilePath -> [FilePath] -> IO [FilePath]
 missingParentDirectories projectRoot paths = do
@@ -393,6 +466,7 @@ setExpectedManifestAndDirectories metadata additionalDirectories candidate =
       newDirectories =
         sortOn pathDepth . Set.toList $
           Set.fromList (metadata ^. #newDirectories <> additionalDirectories),
+      indexLinks = metadata ^. #indexLinks,
       expectedManifest = Just candidate
     }
 
@@ -438,7 +512,15 @@ rollbackUpdateTransaction transaction = do
     Right metadata -> do
       result <- try @SomeException $ do
         forM_ (metadata ^. #entries) (verifySafeParents (transaction ^. #projectRoot) . (^. #targetPath))
-        forM_ (metadata ^. #entries) (restoreEntry transaction)
+        -- Adoption never writes the working link. Preserve a later edit rather
+        -- than restoring a snapshot over something this transition did not own.
+        forM_ (metadata ^. #entries) $ \entry -> when (Map.member (entry ^. #targetPath) (metadata ^. #indexLinks)) $ do
+          current <- runEff $ runFilesystem $ inspectPath (transaction ^. #projectRoot </> entry ^. #targetPath)
+          unless
+            (Just current == (EntrySymlink <$> entry ^. #linkTarget))
+            (ioError (userError ("adopted working link changed during recovery: " <> entry ^. #targetPath)))
+        restoreIndexLinks (transaction ^. #projectRoot) (metadata ^. #indexLinks)
+        forM_ (filter (\entry -> Map.notMember (entry ^. #targetPath) (metadata ^. #indexLinks)) (metadata ^. #entries)) (restoreEntry transaction)
         removeNewDirectories (transaction ^. #projectRoot) (metadata ^. #newDirectories)
         cleanupDirectory (transaction ^. #transactionDirectory)
       pure $ first (TransactionRollbackFailed . exceptionText) result
@@ -512,6 +594,7 @@ setUpdateTransactionExpectedManifest transaction expected = do
                 createdAt = metadata ^. #createdAt,
                 entries = metadata ^. #entries,
                 newDirectories = metadata ^. #newDirectories,
+                indexLinks = metadata ^. #indexLinks,
                 expectedManifest = Just expected
               }
       result <- try @SomeException (writeJournal (transaction ^. #transactionDirectory) updated)
@@ -589,11 +672,19 @@ readJournal transactionDirectory = do
 
 validateJournal :: JournalMetadata -> Either Text JournalMetadata
 validateJournal metadata = do
+  traverse_ (first renderTransactionPathError . validateTransactionPath) (Map.keys (metadata ^. #indexLinks))
+  traverse_ validateObjectId (Map.elems (metadata ^. #indexLinks))
+  unless
+    (Map.keysSet (metadata ^. #indexLinks) `Set.isSubsetOf` Set.fromList [entry ^. #targetPath | entry <- metadata ^. #entries, entry ^. #linkTarget /= Nothing])
+    (Left "index adoption paths must have journaled symlink snapshots")
   traverse_ (validateJournalEntry . (^. #targetPath)) (metadata ^. #entries)
   traverse_ validateBackupName [name | JournalEntry _ (Just name) _ <- metadata ^. #entries]
   traverse_ (first renderTransactionPathError . validateTransactionPath) (metadata ^. #newDirectories)
   pure metadata
   where
+    validateObjectId oid
+      | T.length oid `elem` [40, 64] && T.all (`elem` ("0123456789abcdef" :: String)) oid = Right ()
+      | otherwise = Left "invalid Git object id in checkout adoption journal"
     validateJournalEntry path = first renderTransactionPathError (validateTransactionPath path)
     validateBackupName name
       | takeFileName name == name && name /= "." && name /= ".." = Right ()
