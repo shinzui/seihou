@@ -53,13 +53,15 @@ If durable project context changes, update or create ADRs in docs/adr/ in the sa
 
 ## Purpose / Big Picture
 
-Reopened on 2026-10-15 at the user's request. The original four milestones proved
-the mechanism, but the manual adoption experience is not accepted as usable. The
-remaining delivery is an ordinary `seihou update master-plan` followed by
-`seihou sync` in clones: no dependency installation list, manual index surgery,
-or JSON inspection is required for the normal path. Preserve the original evidence
-below as historical acceptance of the engine and producer, not completion of this
-reopened plan.
+Completed on 2026-10-15, including the reopened developer-experience work.
+Existing projects use ordinary `seihou update master-plan`, accept its preview,
+and commit the resulting changes. Fresh clones and worktrees then need only
+`seihou sync`: no dependency installation list, manual index surgery, or JSON
+inspection is required. Released Seihou 0.10.1.0 is installed through the user's
+Nix profile and passed these workflows against both the original consumer and
+the actual schema-6 consumer shown in the user's screenshot. The original four
+milestones below remain historical evidence of the engine and producer; the
+reopened delivery is verified separately with the installed release.
 
 Make the skill modules people already use benefit from `seihou sync`. After a one-time
 application of updated producer modules, a developer clones a project, runs `seihou sync`,
@@ -83,11 +85,10 @@ module syntax alone is not completion.
 - [x] Milestone 4 (2026-10-15): adoption commit c7c315a updates only the existing master-plan application and untracks its discovery link. A fresh clone of that commit with empty XDG config/cache creates four links, then reports four unchanged; deletion and wrong-target repair each change one link. A linked worktree creates all four. Tracked bytes, index entries, manifest bytes and unrelated application state are preserved. ADR 0018 and sync documentation now explain the one-time adoption and intentional untracking prerequisite.
 - [x] Milestone 5 (2026-10-15): ordinary remote-backed update with an empty producer cache previews and confirms eligible tracked-link adoption. Executable tests preserve unrelated staging/working edits and cover dry-run, cancellation, failed-command rollback and protected modified objects. Five core adoption tests cover interrupted/committed recovery and later index/working-link edits. An interactive real-consumer rehearsal also refuses an index change made after preview without writing the index or manifest.
 - [x] Milestone 6 (2026-10-15): empty-declaration sync names recorded update targets; normal output summarizes created/repaired/unchanged links. CLI help, guides, changelogs and ADRs describe ordinary update followed by clone sync. The pre-adoption consumer passes ordinary interactive update without installation or manual untracking; its fresh clone creates four links, then reports four unchanged, and repairs deletion and retarget drift individually.
-- [ ] Milestone 7: publish a supporting runtime containing the reopened UX changes and repeat the ordinary-update/fresh-clone proof with that released executable. The currently installed Nix-profile 0.10.0.0 executable does not contain this source change; do not claim the released runtime already offers tracked-link adoption.
+- [x] Milestone 7 (2026-10-15): published Seihou 0.10.1.0 (c3bb42b), all three Hackage packages and documentation, and the GitHub release. The user’s normal Nix-profile executable now reports that exact release. Installed-release interactive update passes with empty caches for both the tracked-link consumer and the screenshot’s schema-6 consumer; fresh clones/worktrees create four links, repeated sync changes nothing, and deletion/retarget repair preserves tracked bytes, index and manifest. All 20 producer tests (330 assertions) and five module validations pass with the installed release. The actual screenshot consumer is adopted and pushed at 529fd6d; normal update now reports Already up to date.
 
 
-Release delivery (2026-10-15): user approval of 0.10.1.0 is recorded in the
-conversation. The bumped candidate includes a screenshot-driven status fix:
+Release delivery (2026-10-15): 0.10.1.0 includes a screenshot-driven status fix:
 absent remote producers are summarized once as an optional cache, while missing
 project-owned producers, machine-local origins and stale/substituted installed
 artifacts retain warnings. Regressions cover the distinction and real clone status.
@@ -108,7 +109,14 @@ optional-cache notice (`/tmp/seihou-107-status-proof-jjzilpkn/status.txt`).
 The final 0.10.1.0 candidate passes `just format`, `just build`, `just test`
 (all 1,993 tests: 1,200 core, 742 CLI, 51 extension), all four native `just check`
 checks, all three warning-free `cabal check` commands and `git diff --check`.
-Release publication and released-binary acceptance are in progress.
+All three package archives and Haddock bundles are published on Hackage; downloaded
+source archives match the uploaded bytes exactly. The public v0.10.1.0 tag and
+[GitHub release](https://github.com/shinzui/seihou/releases/tag/v0.10.1.0) identify
+c3bb42bd2525e29d93657f1e48b3bf8552ed727e. A normal Nix profile install of that
+public tag, at priority 4 above the existing Home Manager package, activates the
+release without replacing a Nix-managed file in place. `command -v seihou` remains
+`/Users/shinzui/.nix-profile/bin/seihou`; `seihou --version` reports
+`seihou v0.10.1.0 (c3bb42b)`. No release or installation work remains.
 
 
 ## Surprises & Discoveries
@@ -205,9 +213,9 @@ fixture cannot silently replace the required schema-upgrade proof.
 
 ## Outcomes & Retrospective
 
-The original four milestones completed on 2026-10-15. Reopened milestones 5 and 6
-are implemented and verified; milestone 7 (supporting runtime publication and
-released-binary acceptance) remains open. Published producer commit
+All seven milestones completed on 2026-10-15. The reopened workflow is delivered
+in released and installed Seihou 0.10.1.0, with no remaining publication or
+installation prerequisite. Published producer commit
 455d2d6c50ddea5f658443d19d71b05733fc620b in `mori://shinzui/agent-seihou`
 provides link-skill 0.3.0 and claude-skill-link 0.2.0. The unchanged parent versions
 (master-plan/exec-plan 0.12.0 and update-docs 0.1.0) discover their updated link
@@ -292,7 +300,33 @@ dry-run, unrelated staged/unstaged edits, safe refusal and failed-command rollba
 Final-candidate validation: `cabal test all --test-options=--hide-successes`
 passes all 1,991 tests (1,200 core, 740 CLI, 51 extension); the focused checkout
 suite passes 33 core and 23 CLI cases. Fourmolu checks and `git diff --check` pass.
-No supporting release has been cut in this reopened implementation session.
+The subsequent release delivery below supersedes this source-only checkpoint.
+
+
+Final installed-release acceptance (2026-10-15) uses only
+`/Users/shinzui/.nix-profile/bin/seihou`, reporting 0.10.1.0 (c3bb42b).
+`/tmp/seihou-107-haskell-nix-ordinary-0oo4fry2/result.json` proves the screenshot
+consumer's exact pre-change commit (5cb50ca, schema 6) with an empty cache: the
+ordinary interactive command `seihou update master-plan` and its one acceptance
+prompt record four declarations, preserve saved inputs, index, `.gitignore`
+customizations and unrelated tracked bytes, and require no manual preparation.
+`/tmp/seihou-107-release-proof-nyj3cphs/result.json` repeats the original tracked-link
+consumer transition with that installed release, including previewed index adoption.
+`/tmp/seihou-107-proof-3wesvty2/result.json` proves the committed screenshot consumer
+in an empty-cache clone and linked worktree: four creations, four unchanged on the
+second sync, one creation after deletion and one replacement after retargeting.
+Tracked bytes, index and manifest remain identical throughout sync. All 20 producer
+Bun tests (330 assertions) and five actual module validations pass with the installed
+release. In the real screenshot checkout, ordinary update now says `Already up to
+date.`, status says `Checkout outputs: 4 declared, 0 need attention.`, and sync
+reports four unchanged. Both the runtime release and consumer adoption are pushed.
+
+The final ADR distillation confirms ADR 0018 already captures recoverable explicit
+adoption, immutable manifest-driven sync, and the distinction between optional remote
+producer caches and actual project damage. No additional architecture decision is
+needed. The delivery lesson is to prove the installed executable against the actual
+reported consumer before declaring the user-facing workflow complete.
+
 
 ## Context and Orientation
 
@@ -420,9 +454,10 @@ concise results here before checking off milestones 5 and 6. Milestone 7 retains
 the original supporting-release obligation now that runtime code has changed:
 follow the release skill, verify current upstream versions before choosing the
 PVP release and bounds, then repeat the ordinary-update and fresh-clone proof
-with the released executable. Until that delivery, use the built executable
-reported by `cabal list-bin exe:seihou` from the consumer's root; the installed
-Nix-profile executable still predates the UX fix. Preserve producer versions
+with the released executable. This delivery is now Seihou 0.10.1.0 (c3bb42b),
+including the installed Nix-profile executable. For source-development reproduction,
+use the executable reported by `cabal list-bin exe:seihou` from the consumer's root
+and distinguish it from the installed release. Preserve producer versions
 unless their definitions change, and do not replace a Nix-managed binary in place.
 
 ### Milestone 1: prove the real link-skill transition first
