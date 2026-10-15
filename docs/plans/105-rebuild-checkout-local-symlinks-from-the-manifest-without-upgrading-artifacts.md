@@ -26,6 +26,11 @@ provenance:
       at: 2026-10-15T15:28:06Z
       mode: "implement"
       note: "Implement required seed foundations and checkout outputs"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-15T16:19:51Z
+      mode: "implement"
+      note: "Verify completed checkout implementation against current integrated working tree"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -83,6 +88,7 @@ separate. The implementation is complete and unreleased; producer adoption remai
 - [x] (2026-10-15 16:12Z) Milestone 4: expose manifest-only sync and read-only status diagnostics.
 - [x] (2026-10-15 16:12Z) Milestone 5: integrate declaration ownership and link operations with run, update, diff, and remove.
 - [x] (2026-10-15 16:12Z) Milestone 6: prove clean fresh-clone setup across agent, editor, and asset use cases, finish documentation, and distill ADRs.
+- [x] (2026-10-15 16:20Z) Reverify the integrated implementation at c12abc5: full build, all 1,977 tests, sync help, improvement-request profile/log validation, and whitespace checks pass.
 
 
 ## Surprises & Discoveries
@@ -185,6 +191,8 @@ Validation on macOS: `cabal build all` passed; `cabal test all --test-show-detai
 The real binary and committed E2E suites prove clean clones with empty and newer producer caches, poisoned config, both agent and editor/shared-asset domains, no command sentinel execution, unchanged tracked blobs/index/manifest bytes, idempotence, deletion/wrong-target repair, blocked regular objects, linked worktrees, same-run generated sources, agreeing application ownership, conflicting retarget refusal, last-owner no-spec removal, condition retirement, preservation of edited links, and failed-update rollback. Core effects trace only link/parent mutations and fixed read-only Git calls. Version-1 journals remain readable; version-2 snapshots recover dangling links and reject unknown kinds before writes. Native alias handling was exercised on the macOS temporary volume. Linux execution was unavailable in this session and remains downstream platform verification; no Linux result is claimed.
 
 Source adoption at `mori://shinzui/agent-seihou` and a package release are deliberately separate. Seed runtime plans 101–104 remain unimplemented. The useful lesson is to keep desired portable wiring distinct from observed disk state and command receipts, and to distinguish explicit repair from declaration evolution so user edits survive retirement.
+
+Reverification (2026-10-15 16:20Z): this implementation request resumed with all six milestones already committed and a clean working tree at c12abc5. A fresh `cabal build all` and `cabal test all --test-show-details=direct` passed on the integrated checkout: 1,195 core, 731 CLI, and 51 extension tests. Both real-binary fresh-clone domains passed, along with shared ownership, generated sources, retirement, and failed-update rollback. Sync help, improvement-request profile/log validation, and `git diff --check` also passed. No feature changes or new architectural decisions were required; the existing Linux verification limitation remains.
 
 
 ## Context and Orientation
@@ -967,3 +975,5 @@ Revision note (2026-10-15, implementation): Began the explicitly required seed f
 Revision note (2026-10-15, core implementation): Completed seed prerequisites and the directory-link core, codecs, versioning, filesystem effects, shared planner, safety checks and rollback; record actual Git check-ignore behavior and successful core/manual validation.
 
 Revision note (2026-10-15, completion): Finished manifest-only CLI, lifecycle integration, real clone/ownership/recovery proofs, documentation and ADR distillation. Recorded passing build/test/format/convention/OKF gates and the explicit macOS-only execution limit.
+
+Revision note (2026-10-15, integrated verification): Confirmed that the requested implementation was already committed, reran the complete build and test suites in the integrated checkout, and recorded the passing results without changing feature behavior.
