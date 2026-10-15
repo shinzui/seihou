@@ -36,6 +36,11 @@ provenance:
       at: 2026-10-15T21:19:40Z
       mode: "implement"
       note: "Prepare supporting release: verify published versions, run release gates, correct stale formatter-cache omissions, and prepare released-binary acceptance."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-15T22:00:33Z
+      mode: "implement"
+      note: "Correct local-versus-remote acceptance claims; repair and verify all four skill links on yujin.local after receiving the committed adoption."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -59,7 +64,8 @@ and commit the resulting changes. Fresh clones and worktrees then need only
 `seihou sync`: no dependency installation list, manual index surgery, or JSON
 inspection is required. Released Seihou 0.10.1.0 is installed through the user's
 Nix profile and passed these workflows against both the original consumer and
-the actual schema-6 consumer shown in the user's screenshot. The original four
+a local copy of the schema-6 consumer shown in the user's screenshot. The affected
+remote checkout was verified separately on yujin.local as recorded below. The original four
 milestones below remain historical evidence of the engine and producer; the
 reopened delivery is verified separately with the installed release.
 
@@ -85,7 +91,7 @@ module syntax alone is not completion.
 - [x] Milestone 4 (2026-10-15): adoption commit c7c315a updates only the existing master-plan application and untracks its discovery link. A fresh clone of that commit with empty XDG config/cache creates four links, then reports four unchanged; deletion and wrong-target repair each change one link. A linked worktree creates all four. Tracked bytes, index entries, manifest bytes and unrelated application state are preserved. ADR 0018 and sync documentation now explain the one-time adoption and intentional untracking prerequisite.
 - [x] Milestone 5 (2026-10-15): ordinary remote-backed update with an empty producer cache previews and confirms eligible tracked-link adoption. Executable tests preserve unrelated staging/working edits and cover dry-run, cancellation, failed-command rollback and protected modified objects. Five core adoption tests cover interrupted/committed recovery and later index/working-link edits. An interactive real-consumer rehearsal also refuses an index change made after preview without writing the index or manifest.
 - [x] Milestone 6 (2026-10-15): empty-declaration sync names recorded update targets; normal output summarizes created/repaired/unchanged links. CLI help, guides, changelogs and ADRs describe ordinary update followed by clone sync. The pre-adoption consumer passes ordinary interactive update without installation or manual untracking; its fresh clone creates four links, then reports four unchanged, and repairs deletion and retarget drift individually.
-- [x] Milestone 7 (2026-10-15): published Seihou 0.10.1.0 (c3bb42b), all three Hackage packages and documentation, and the GitHub release. The user’s normal Nix-profile executable now reports that exact release. Installed-release interactive update passes with empty caches for both the tracked-link consumer and the screenshot’s schema-6 consumer; fresh clones/worktrees create four links, repeated sync changes nothing, and deletion/retarget repair preserves tracked bytes, index and manifest. All 20 producer tests (330 assertions) and five module validations pass with the installed release. The actual screenshot consumer is adopted and pushed at 529fd6d; normal update now reports Already up to date.
+- [x] Milestone 7 (2026-10-15): published Seihou 0.10.1.0 (c3bb42b), all three Hackage packages and documentation, and the GitHub release. The user’s normal Nix-profile executable now reports that exact release. Installed-release interactive update passes with empty caches for both the tracked-link consumer and the screenshot’s schema-6 consumer; fresh clones/worktrees create four links, repeated sync changes nothing, and deletion/retarget repair preserves tracked bytes, index and manifest. All 20 producer tests (330 assertions) and five module validations pass with the installed release. The local consumer copy is adopted and pushed at 529fd6d; normal update now reports Already up to date.
 
 
 Release delivery (2026-10-15): 0.10.1.0 includes a screenshot-driven status fix:
@@ -120,6 +126,18 @@ release without replacing a Nix-managed file in place. `command -v seihou` remai
 
 
 ## Surprises & Discoveries
+
+
+Remote-machine correction (2026-10-15): earlier evidence used a local copy of
+`mori://shinzui/haskell-nix`, not the affected checkout on yujin.local. Identical
+repository names and manifest state do not establish that the user's other machine
+has received an adoption commit. SSH inspection found a clean master at 5cb50ca,
+schema 6, link-skill 0.2.0, and zero checkout declarations. The installed executable
+reported `seihou v0.10.1.0 (824368c)`. Fetching origin revealed the already-published
+adoption commit 529fd6d as the sole missing commit. Fast-forwarding to that commit
+and running the ordinary sync command created all four discovery links; no new
+runtime release or manual symlink creation was required for this repair.
+
 
 Release preflight (2026-10-15): cached `nix fmt` missed three required blank lines
 in two existing Haskell files. `nix fmt -- --no-cache` made those whitespace-only
@@ -213,7 +231,8 @@ fixture cannot silently replace the required schema-upgrade proof.
 
 ## Outcomes & Retrospective
 
-All seven milestones completed on 2026-10-15. The reopened workflow is delivered
+All seven original milestones completed on 2026-10-15; the affected remote
+checkout was repaired and verified separately later that day, as recorded below. The reopened workflow is delivered
 in released and installed Seihou 0.10.1.0, with no remaining publication or
 installation prerequisite. Published producer commit
 455d2d6c50ddea5f658443d19d71b05733fc620b in `mori://shinzui/agent-seihou`
@@ -317,7 +336,7 @@ in an empty-cache clone and linked worktree: four creations, four unchanged on t
 second sync, one creation after deletion and one replacement after retargeting.
 Tracked bytes, index and manifest remain identical throughout sync. All 20 producer
 Bun tests (330 assertions) and five actual module validations pass with the installed
-release. In the real screenshot checkout, ordinary update now says `Already up to
+release. In the local copy of the screenshot consumer, ordinary update says `Already up to
 date.`, status says `Checkout outputs: 4 declared, 0 need attention.`, and sync
 reports four unchanged. Both the runtime release and consumer adoption are pushed.
 
@@ -326,6 +345,30 @@ adoption, immutable manifest-driven sync, and the distinction between optional r
 producer caches and actual project damage. No additional architecture decision is
 needed. The delivery lesson is to prove the installed executable against the actual
 reported consumer before declaring the user-facing workflow complete.
+
+
+Actual remote acceptance (2026-10-15): connected as shinzui@yujin.local and
+located `mori://shinzui/haskell-nix` through that machine's Mori registry. The normal
+workflow for this existing clean checkout was to receive the committed adoption
+and materialize its checkout outputs:
+
+```bash
+git fetch origin
+git merge --ff-only origin/master
+seihou sync
+seihou sync
+seihou status
+```
+
+The first sync reported `Links: 4 created, 0 repaired, 0 unchanged.` The second
+reported `Links: 0 created, 0 repaired, 4 unchanged.` Status reported
+`Checkout outputs: 4 declared, 0 need attention.` Both exec-plan and master-plan
+were verified with `test -L`, `readlink`, and a reachable `SKILL.md` in each of
+`.agents/skills` and `.claude/skills`. Their literal targets are
+`../../agents/skills/exec-plan` and `../../agents/skills/master-plan` respectively.
+Git status remained clean and the existing `.gitignore` customization remained.
+This is the first acceptance evidence from the actual affected machine; prior
+local and disposable proofs must not be described as remote verification.
 
 
 ## Context and Orientation
