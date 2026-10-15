@@ -1,0 +1,124 @@
+# ADR 0018 — Checkout outputs are observable, portable declarations
+
+- Status: Proposed
+- Date: 2026-10-15
+
+## Context
+
+Seihou applies typed, composable module declarations and records the resulting project
+state in a portable manifest. Some outputs are intentionally absent from a clone: ignored
+links that expose project directories to local tools. A committed command receipt proves
+that a command ran during an application, but cannot establish that its output exists in
+another working copy. Reapplying or upgrading the declaring module to repair such state
+also changes project intent and requires installed artifacts unnecessarily.
+
+Agent skill links exposed this gap in
+[IR-10](../improvement-requests/rebuild-checkout-local-outputs-in-a-fresh-clone.md).
+Editor configuration links and local tool views of shared assets have the same lifecycle.
+The architecture must express that lifecycle without encoding any consumer's directory
+names, parsing old shell commands, or creating a second applied-state record.
+
+This decision is proposed by
+[ExecPlan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md).
+It records the implementation contract, not shipped behavior. ADR 0017 is reserved by
+[ExecPlan 99](../plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md)
+for the seed lifecycle; 0018 is the next unreserved filesystem ADR number. This repository's
+ADR directory is not a profiled OKF bundle.
+
+## Decision
+
+Strategy and lifecycle remain separate dimensions of a step. Strategy describes its
+materialization; lifecycle describes ownership and subsequent maintenance. Managed files
+participate in content reconciliation, seeds are handed to the project after creation,
+and checkout outputs describe state reconstructed in each working copy. Initially only
+`strategy = "symlink"` with `lifecycle = Some "checkout"` is valid for checkout outputs,
+and its source must be a real project directory.
+
+The manifest stores a destination-keyed `checkoutOutputs` map. Each record contains a typed,
+tagged specification and application/module-instance owners. The initial specification is
+`DirectorySymlink`, encoded with kind `directory-symlink` and a project-relative source.
+Ownership belongs to the lifecycle record, outside the specification. There are no observed
+timestamps, hashes, completion receipts, or machine-specific paths. Agreement on the entire
+specification permits co-ownership; disagreement or overlapping output paths is an error.
+
+The declaration, observation, pure plan, and checked application are separate layers.
+Domain rules live in `seihou-core`; effects inspect and mutate the filesystem; CLI adapters
+select intent and render structured outcomes. These layers are shared by sync, run, update,
+remove, and status. Checkout destinations never enter managed-file content hashing,
+baseline storage, text merging, or additive-write certification.
+
+Sync rebuilds the current recorded declaration. It needs a Git working tree, ignored and
+untracked destinations, available real source directories, and safe ancestors. It can
+replace an incorrect destination symlink but cannot replace a regular object or follow a
+symlinked ancestor. It writes only declared link entries and necessary parents. It neither
+resolves artifacts nor evaluates module/config variables, executes recorded commands,
+changes tracked content, nor writes the manifest. A correct link is established by its
+literal canonical relative target, not by a receipt or the target directory's contents.
+Initial application can precede Git initialization under a distinct, warning-producing
+policy; that does not weaken sync's contract.
+
+Declaration changes use three inputs: prior intent, candidate intent, and disk. Candidate
+intent replaces selected owners' claims while retaining all unselected claims. A false
+condition, removed dependency, or renamed destination retires obsolete claims. Last-owner
+retirement removes only a link still matching the old declaration; modified objects survive
+with a warning. Retirement does not require its old source to exist. Changing a link's
+meaning refuses a user-edited third target rather than treating it as an ordinary repair.
+Unchanged specifications and owner-only changes perform no filesystem repair during
+reconciliation; explicit sync repairs such drift. Automatic checkout cleanup requires no custom removal spec and cannot authorize unrelated
+managed-file deletion. Application/instance selection must be unambiguous.
+
+Plans retain all path classifications, including refusals. A refusal prevents application
+of the whole plan. Dry-run reports proposed work with zero applied writes; execution and
+rollback outcomes are separate from proposals. Sync uses no durable setup journal: it can
+converge again from the manifest after interruption. Update extends its existing recovery
+journal with literal-link snapshots. Neither repair nor rollback traverses a link target.
+Portable precondition rechecks assume no hostile concurrent filesystem writer; they are
+not a general filesystem sandbox.
+
+Extension uses a closed typed specification with explicit versioning. A new output kind
+must provide portable validation, observable satisfaction, safe materialization and
+retirement, recovery, rendering, and common contract tests. Unknown kinds fail before
+mutation. A new kind or changed semantic meaning advances the manifest schema under
+[ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md), even when
+the tagged object shape stays the same. Arbitrary JSON payloads, shell replay, and plugin
+callbacks are not extension mechanisms for this contract.
+
+## Consequences
+
+Agent, editor, and asset use cases share an engine and can be composed through ordinary
+module variables and dependencies. The first implementation remains directory-only;
+file links or generated local files need new specifications and evidence rather than a
+silent broadening of the directory-link contract. No general resource framework is needed
+to deliver or test the present capability.
+
+The manifest remains the single portable record under
+[ADR 0001](0001-manifest-is-a-checked-in-machine-independent-artifact.md) and
+[ADR 0004](0004-the-manifest-is-the-only-record-of-applied-state.md). It records that a
+module established a desired checkout output, not that all clones already materialized it.
+Status reports observations independently of installed artifact availability and uses
+bounded, cause-specific diagnostics under ADRs 0013 and 0015.
+
+Requiring Git and invocation at the working-tree root limits initial sync support to that
+well-defined boundary, including linked worktrees. Non-Git repair, nested Seihou projects,
+external sources, and outputs requiring downloads or secrets need separate designs.
+Ordinary non-Git scaffolding remains available through run's existing root semantics.
+
+## Rejected Alternatives
+
+A skill-specific command or path-discovery loop would bypass declared ownership and
+solve only one consumer's convention. Replaying shell commands would require trust and
+idempotence rules that cannot be inferred from a receipt. A local completion file would
+still become stale when an output is deleted and duplicate applied-state authority.
+
+A symlink-only manifest map would be sufficient for this first output but would couple
+shared ownership to one output representation. A tagged specification within a lifecycle
+record supplies a small extension point without implementing speculative output kinds.
+A generic plugin resource manager would expand the execution and compatibility contracts
+before another concrete kind establishes its needs.
+
+## References
+
+- [Architecture overview](../dev/architecture/overview.md)
+- [ADR 0013](0013-status-is-a-bounded-summary-the-manifest-is-the-record.md)
+- [ADR 0015](0015-diagnostics-name-things-as-users-do-and-never-fall-back-to-show.md)
+- [ExecPlan 100](../plans/100-record-seed-receipts-in-manifest-schema-8.md)
