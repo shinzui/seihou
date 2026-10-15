@@ -55,6 +55,7 @@ library
     Seihou.Core.Recipe
     Seihou.Core.Registry
     Seihou.Core.Scaffold
+    Seihou.Core.Seed
     Seihou.Core.SchemaUpgrade
     Seihou.Core.Status
     Seihou.Core.Types
@@ -171,6 +172,7 @@ test-suite seihou-core-test
     Seihou.Core.RegistrySpec
     Seihou.Core.RegistrySyncSpec
     Seihou.Core.ScaffoldSpec
+    Seihou.Core.SeedSpec
     Seihou.Core.SchemaUpgradeSpec
     Seihou.Core.StatusSpec
     Seihou.Core.TypesSpec

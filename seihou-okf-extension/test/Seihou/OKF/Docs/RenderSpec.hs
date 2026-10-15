@@ -532,14 +532,14 @@ richModule =
               src = "flake.nix.tpl",
               dest = "flake.nix",
               condition = Nothing,
-              patch = Nothing
+              patch = Nothing, lifecycle = Managed
             },
           Step
             { strategy = Copy,
               src = "gitignore.tpl",
               dest = ".gitignore",
               condition = Just (ExprEq "license" (VText "MIT")),
-              patch = Just AppendLineIfAbsent
+              patch = Just AppendLineIfAbsent, lifecycle = Managed
             }
         ],
       commands =

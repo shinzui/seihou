@@ -354,6 +354,7 @@ spec = do
                   applications = candidate ^. #applications,
                   recipe = candidate ^. #recipe,
                   blueprint = candidate ^. #blueprint,
+                  seeds = candidate ^. #seeds,
                   blueprintMigrations = candidate ^. #blueprintMigrations
                 }
         setUpdateTransactionExpectedManifest transaction finalManifest `shouldReturn` Right ()
@@ -450,6 +451,7 @@ manifestWithFiles fileRecords =
           applications = manifest ^. #applications,
           recipe = manifest ^. #recipe,
           blueprint = manifest ^. #blueprint,
+          seeds = manifest ^. #seeds,
           blueprintMigrations = manifest ^. #blueprintMigrations
         }
 

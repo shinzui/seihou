@@ -68,6 +68,7 @@ manifestWithFiles t recs =
           applications = base ^. #applications,
           recipe = base ^. #recipe,
           blueprint = base ^. #blueprint,
+          seeds = base ^. #seeds,
           blueprintMigrations = base ^. #blueprintMigrations
         }
 

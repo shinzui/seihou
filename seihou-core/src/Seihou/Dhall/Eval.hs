@@ -98,7 +98,7 @@ evalModuleFromFile path = do
       Success m -> do
         -- Force lazy decoder thunks that may contain 'error' calls
         mapM_ (\v -> evaluate (v ^. #type_)) (m ^. #vars)
-        mapM_ (\s -> evaluate (s ^. #strategy) >> evaluate (s ^. #condition) >> mapM_ evaluate (s ^. #patch)) (m ^. #steps)
+        mapM_ (\s -> evaluate (s ^. #lifecycle) >> evaluate (s ^. #strategy) >> evaluate (s ^. #condition) >> mapM_ evaluate (s ^. #patch)) (m ^. #steps)
         mapM_ (\c -> mapM_ evaluate (c ^. #condition)) (m ^. #commands)
         mapM_ (\p -> evaluate (p ^. #condition)) (m ^. #prompts)
         pure m
@@ -676,23 +676,29 @@ patchOpDecoder = parsePatchOp <$> strictText
 -- The @patch@ field is an optional patch operation string.
 stepDecoder :: Decoder Step
 stepDecoder =
-  record
+  withDefaults [("lifecycle", noneText)] $ record
     ( mkStep
         <$> field "strategy" strategyDecoder
         <*> field "src" string
         <*> field "dest" strictText
         <*> field "when" (maybe strictText)
         <*> field "patch" (maybe strictText)
+        <*> field "lifecycle" (maybe strictText)
     )
   where
-    mkStep strat src dest whenText patchText =
+    mkStep strat src dest whenText patchText lifecycleText =
       Step
         { strategy = strat,
           src = src,
           dest = dest,
           condition = parseWhen whenText,
-          patch = fmap parsePatchOp patchText
+          patch = fmap parsePatchOp patchText,
+          lifecycle = parseLifecycle lifecycleText
         }
+    parseLifecycle Nothing = Managed
+    parseLifecycle (Just "managed") = Managed
+    parseLifecycle (Just "seed") = Seed
+    parseLifecycle (Just other) = error ("Unknown step lifecycle " <> T.unpack other <> "; expected one of: managed, seed")
     parsePatchOp "append-file" = AppendFile
     parsePatchOp "prepend-file" = PrependFile
     parsePatchOp "append-section" = AppendSection

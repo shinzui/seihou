@@ -471,6 +471,7 @@ handleRun runOpts = do
                                         applications = replaceAppliedComposition appliedComposition (manifest ^. #applications),
                                         recipe = appliedRecipe,
                                         blueprint = manifest ^. #blueprint,
+                                        seeds = manifest ^. #seeds,
                                         blueprintMigrations = manifest ^. #blueprintMigrations
                                       }
                               writeManifest newManifest

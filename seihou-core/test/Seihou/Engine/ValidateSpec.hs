@@ -40,7 +40,8 @@ goodModule =
               src = "README.md.tpl",
               dest = "README.md",
               condition = Nothing,
-              patch = Nothing
+              patch = Nothing,
+          lifecycle = Managed
             }
         ],
       commands = [],
@@ -62,7 +63,7 @@ badModule =
         ],
       exports = [VarExport {var = "nonexistent", alias = Nothing}],
       prompts = [Prompt {var = "undeclared", text = "?", condition = Nothing, choices = Nothing}],
-      steps = [Step Template "missing.tpl" "/absolute/path" Nothing Nothing],
+      steps = [Step Template "missing.tpl" "/absolute/path" Nothing Nothing Managed],
       commands = [],
       dependencies = [],
       removal = Nothing,
@@ -222,8 +223,8 @@ spec = do
         writeFile (tmpDir </> "files" </> "b.tpl") "stub"
         let m =
               withSteps
-                [ Step Template "a.tpl" "out.txt" Nothing Nothing,
-                  Step Template "b.tpl" "out.txt" Nothing Nothing
+                [ Step Template "a.tpl" "out.txt" Nothing Nothing Managed,
+                  Step Template "b.tpl" "out.txt" Nothing Nothing Managed
                 ]
                 goodModule
         report <- buildReport True tmpDir m
@@ -236,8 +237,8 @@ spec = do
         writeFile (tmpDir </> "files" </> "b.tpl") "stub"
         let m =
               withSteps
-                [ Step Template "a.tpl" "out.txt" Nothing Nothing,
-                  Step Template "b.tpl" "out.txt" Nothing (Just AppendFile)
+                [ Step Template "a.tpl" "out.txt" Nothing Nothing Managed,
+                  Step Template "b.tpl" "out.txt" Nothing (Just AppendFile) Managed
                 ]
                 goodModule
         report <- buildReport True tmpDir m
@@ -281,7 +282,7 @@ spec = do
           ]
         stepWithCondition cond =
           withSteps
-            [Step Template "README.md.tpl" "README.md" cond Nothing]
+            [Step Template "README.md.tpl" "README.md" cond Nothing Managed]
             (withVars baseVars goodModule)
 
     it "flags a bool variable compared against a string literal in a when clause" $ do

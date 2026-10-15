@@ -21,6 +21,11 @@ provenance:
       at: 2026-10-15T15:10:34Z
       mode: "update"
       note: "Validate architecture; generalize typed checkout outputs and specify reconciliation, ownership, reporting, recovery, and cross-domain acceptance"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-15T15:28:06Z
+      mode: "implement"
+      note: "Implement required seed foundations and checkout outputs"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -70,6 +75,8 @@ separate. This document plans implementation; no checkout feature has shipped.
 
 - [x] (2026-10-15 15:15Z) Validate architecture and current source; revise the general output model, lifecycle transitions, removal, reporting, and cross-domain acceptance; record proposed ADR 0018.
 - [ ] Verify prerequisite plans 99 and 100 are implemented; record their commits and actual schema version.
+- [x] (2026-10-15 15:40Z) Implement prerequisite lifecycle/seed types, compatibility decoder, validation, schema-8 receipt codec/helpers and adjacent upgrade; publish schema revision 1d686cf9e3019cec061c1f4a4d83be53cb606e8b.
+- [x] (2026-10-15 15:40Z) Prerequisite validation passed: cabal build all and all 1,163 core tests; commit the foundation before enabling checkout declarations.
 - [ ] Milestone 1: accept and validate checkout symlink declarations, including old-module compatibility.
 - [ ] Milestone 2: persist typed portable checkout-output declarations with ownership and an adjacent manifest upgrade.
 - [ ] Milestone 3: observe, reconcile, and safely rebuild or retire links through shared library functions and filesystem effects.
@@ -80,6 +87,8 @@ separate. This document plans implementation; no checkout feature has shipped.
 
 ## Surprises & Discoveries
 
+
+Implementation findings (2026-10-15): concurrent plan archiving temporarily stashed tracked edits. Continue in the detached worktree `/tmp/seihou-checkout-105` and integrate commits onto the current branch after validation, preserving unrelated changes. The current `flake.nix` uses a pinned GitHub schema input, unlike the older schema-update instructions describing `git+file`; update both flake.nix and flake.lock alongside SchemaVersion.hs.
 
 Validation findings (2026-10-15): `Step` still has no lifecycle and `currentManifestVersion` is
 still 7. Plans 99 and 100 remain prerequisites, so this review has validated a design rather
@@ -953,3 +962,5 @@ first bounded kind. Added non-agent acceptance, explicit extension obligations,
 Rebuild/Reconcile semantics, declaration retirement and owner selection, truthful dry-run and
 failure reporting, distinct CLI module names, and proposed ADR 0018. Verified these changes
 against current source and local architecture/ADRs; no feature code was implemented.
+
+Revision note (2026-10-15, implementation): Began the explicitly required seed foundations before checkout work; isolated concurrent working-tree edits and corrected the schema pin procedure to match the actual GitHub input.

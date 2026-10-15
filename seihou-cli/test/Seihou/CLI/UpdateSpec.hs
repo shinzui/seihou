@@ -627,6 +627,7 @@ spec = do
                   applications = [previous],
                   recipe = Nothing,
                   blueprint = Nothing,
+                  seeds = Map.empty,
                   blueprintMigrations = []
                 }
             catalog = CandidateCatalog (projectRoot </> "search") Map.empty Map.empty
@@ -1031,6 +1032,7 @@ prepareRecipeUpdateFixture root = do
             applications = [app],
             recipe = Just (AppliedRecipe "stack" (remoteOrigin "stack") (Just "1.0.0") testTime),
             blueprint = Nothing,
+            seeds = Map.empty,
             blueprintMigrations = []
           }
       sourceUrl = T.pack remote
@@ -1217,6 +1219,7 @@ manifestForApplications applicationRecords fileRecords =
           applications = applicationRecords,
           recipe = base ^. #recipe,
           blueprint = base ^. #blueprint,
+          seeds = base ^. #seeds,
           blueprintMigrations = base ^. #blueprintMigrations
         }
 
@@ -1264,6 +1267,7 @@ withoutApplications manifest =
       applications = [],
       recipe = manifest ^. #recipe,
       blueprint = manifest ^. #blueprint,
+      seeds = manifest ^. #seeds,
       blueprintMigrations = manifest ^. #blueprintMigrations
     }
 

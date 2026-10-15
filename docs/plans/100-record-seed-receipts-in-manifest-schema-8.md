@@ -11,6 +11,12 @@ provenance:
     model: "claude-opus-5[1m]"
     harness: "claude-code"
     at: 2026-09-19T13:59:13Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-15T15:30:07Z
+      mode: "implement"
+      note: "Implement schema 8 prerequisite for plan 105"
 ---
 
 # Record seed receipts in manifest schema 8
@@ -51,22 +57,22 @@ Nothing yet writes a non-empty `seeds` map; `docs/plans/101-create-seed-files-on
 
 ## Progress
 
-- [ ] Milestone 1: `SeedOutcome`, `SeedRecord`, and `Manifest.seeds` in `Seihou.Core.Types`;
+- [x] (2026-10-15 15:40Z) Milestone 1: `SeedOutcome`, `SeedRecord`, and `Manifest.seeds` in `Seihou.Core.Types`;
       every `Manifest` construction updated.
-- [ ] Milestone 1: `Seihou.Core.Seed` helpers `mergeSeedRecord`, `dropSeedOwner`,
+- [x] (2026-10-15 15:40Z) Milestone 1: `Seihou.Core.Seed` helpers `mergeSeedRecord`, `dropSeedOwner`,
       `validateManifestInvariants`; unit tests.
-- [ ] Milestone 2: JSON codec for `seeds`, version-selected; `currentManifestVersion = 8`;
+- [x] (2026-10-15 15:40Z) Milestone 2: JSON codec for `seeds`, version-selected; `currentManifestVersion = 8`;
       decoder invariant; round-trip and rejection tests.
-- [ ] Milestone 2: upgrade step 7 → 8 (`AddEmptySeedReceipts`, lossless); capability
+- [x] (2026-10-15 15:40Z) Milestone 2: upgrade step 7 → 8 (`AddEmptySeedReceipts`, lossless); capability
       `SeedReceipts`; upgrade-registry tests.
-- [ ] Milestone 3: machine-independence test extended; `docs/cli/manifest.md`,
+- [x] (2026-10-15 15:40Z) Milestone 3: machine-independence test extended; `docs/cli/manifest.md`,
       `docs/user/manifest-upgrade.md`, design-doc version history; ADR 0014 implementation
       note; ADR 0017 amendment; root `CHANGELOG.md`.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+Implementation evidence (2026-10-15): `cabal build all` passed and all 1,163 core tests passed. The schema is published at revision 1d686cf9e3019cec061c1f4a4d83be53cb606e8b. The actual flake input is pinned to GitHub, so both flake.nix and flake.lock were updated with SchemaVersion.hs.
 
 
 ## Decision Log
@@ -102,7 +108,7 @@ Nothing yet writes a non-empty `seeds` map; `docs/plans/101-create-seed-files-on
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Implemented and validated as a prerequisite of plan 105. Lifecycle declarations retain old-module compatibility; schema 8 records seed settlement without content tracking and has a lossless adjacent upgrade. Runtime seed behavior remains intentionally delegated to plans 101–104. ADRs 0017 and 0014 contain the durable ownership and versioning decisions. Validation: `cabal build all` and `cabal test seihou-core-test --test-show-details=direct` passed (1,163 tests).
 
 
 ## Context and Orientation
@@ -409,3 +415,5 @@ Consumers: `docs/plans/101-create-seed-files-once-during-seihou-run.md` (EP-3) w
 receipts; `docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md` (EP-4) reads and
 drops them; `docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md`
 (EP-5) writes, drops, and stages schema 8 through `SeedReceipts`. No new library dependency.
+
+Revision note (2026-10-15): Implemented the declaration and receipt foundations required by plan 105; validated old-module compatibility, seed invariants, round trips, adjacent upgrade behavior, and schema pins. Tests use generated local-schema fixtures instead of duplicating static fixture files.

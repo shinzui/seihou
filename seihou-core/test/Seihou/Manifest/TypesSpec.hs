@@ -50,7 +50,7 @@ paymentsOrigin = RemoteOrigin "https://github.com/acme/payments" "payments" Noth
 -- | Helper to set modules on a Manifest without ambiguous record update.
 withManifestModules :: [AppliedModule] -> Manifest -> Manifest
 withManifestModules mods m =
-  Manifest (m ^. #version) (m ^. #genAt) mods (m ^. #vars) (m ^. #files) (m ^. #applications) (m ^. #recipe) (m ^. #blueprint) (m ^. #blueprintMigrations)
+  Manifest (m ^. #version) (m ^. #genAt) mods (m ^. #vars) (m ^. #files) (m ^. #seeds) (m ^. #applications) (m ^. #recipe) (m ^. #blueprint) (m ^. #blueprintMigrations)
 
 -- | Every string that appears anywhere inside a value keyed @origin@ or
 -- @targetOrigin@, at any depth.
@@ -122,6 +122,7 @@ manifestWithEveryOriginPosition =
 manifestWithEveryStringPosition :: Manifest
 manifestWithEveryStringPosition =
   manifestWithEveryOriginPosition
+    & #seeds .~ Map.singleton "CHANGELOG.md" (SeedRecord "haskell-base" (Set.singleton (ApplicationId "app")) SeedCreated fixedTime)
     & #modules
       .~ [ AppliedModule
              { name = ModuleName "haskell-base",
@@ -265,7 +266,7 @@ spec = do
     it "creates a manifest with the current version" $ do
       let m = emptyManifest fixedTime
       (m ^. #version) `shouldBe` currentManifestVersion
-      (m ^. #version) `shouldBe` ManifestSchemaVersion 7
+      (m ^. #version) `shouldBe` currentManifestVersion
 
     it "creates a manifest with no modules, vars, or files" $ do
       let m = emptyManifest fixedTime
@@ -344,6 +345,7 @@ spec = do
                 applications = base ^. #applications,
                 recipe = Nothing,
                 blueprint = Nothing,
+                seeds = Map.empty,
                 blueprintMigrations = []
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
@@ -382,6 +384,7 @@ spec = do
                 applications = [],
                 recipe = Nothing,
                 blueprint = Nothing,
+                seeds = Map.empty,
                 blueprintMigrations = []
               }
       manifestFromJSON (manifestToJSON m) `shouldBe` Right m
@@ -814,7 +817,7 @@ spec = do
   describe "version checking" $ do
     it "rejects manifests with version higher than current" $ do
       let base = emptyManifest fixedTime
-          m = Manifest {version = ManifestSchemaVersion 99, genAt = base ^. #genAt, modules = base ^. #modules, vars = base ^. #vars, files = base ^. #files, applications = base ^. #applications, recipe = Nothing, blueprint = Nothing, blueprintMigrations = []}
+          m = Manifest {version = ManifestSchemaVersion 99, genAt = base ^. #genAt, modules = base ^. #modules, vars = base ^. #vars, files = base ^. #files, applications = base ^. #applications, recipe = Nothing, blueprint = Nothing, seeds = Map.empty, blueprintMigrations = []}
           result = manifestFromJSON (manifestToJSON m)
       case result of
         Left err -> err `shouldContain` "newer version"

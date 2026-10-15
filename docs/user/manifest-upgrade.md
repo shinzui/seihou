@@ -216,3 +216,7 @@ change rather than a change of laptop.
 Commit the upgraded manifest in its own commit if you can — it touches every
 recorded artifact at once, and a reviewer can check it against this page rather
 than untangling it from a feature change.
+
+## Schema 8: seed receipts
+
+The lossless 7 → 8 upgrade adds `seeds: {}`. Receipts record portable paths, module and application ownership, first settlement outcome (`created`, `found-existing`, or `released-from-managed`), and time. They carry no content hash or baseline. A path cannot appear in both `files` and `seeds`. Declaration and receipt support alone do not activate runtime seed behavior.

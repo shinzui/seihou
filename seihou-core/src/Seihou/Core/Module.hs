@@ -25,6 +25,7 @@ module Seihou.Core.Module
     checkSafeDestinations,
     checkDestVarRefs,
     checkCommandSafety,
+    checkSeedSteps,
     isValidModuleName,
     extractPlaceholders,
     validateProjectRelativePath,
@@ -32,6 +33,7 @@ module Seihou.Core.Module
 where
 
 import Data.Generics.Labels ()
+import Data.Maybe (isJust, maybeToList)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
@@ -177,6 +179,7 @@ validateModule baseDir m = do
           <> checkSafeDestinations m
           <> checkDestVarRefs m
           <> checkCommandSafety m
+          <> checkSeedSteps m
       allErrors = pureErrors <> fileErrors
   pure $
     if null allErrors
@@ -563,3 +566,18 @@ discoverAllRunnables searchPaths = do
     briefLoadError (MissingSourceFile _ _) = "missing source file"
     briefLoadError (CircularDependency _) = "circular dependency"
     briefLoadError (RegistryEvalError _ _) = "registry eval failed"
+
+-- | A seed creates an entire file and must never be subject to automatic removal.
+checkSeedSteps :: Module -> [Text]
+checkSeedSteps m = concatMap checkStep seedSteps <> mixed <> removals
+  where
+    seedSteps = filter ((== Seed) . (^. #lifecycle)) (m ^. #steps)
+    checkStep s =
+      ["step writing '" <> s ^. #dest <> "' is a seed but has a patch; a seed creates a whole file once and cannot patch one" | isJust (s ^. #patch)] <>
+      ["step writing '" <> s ^. #dest <> "' is a seed but uses the structured strategy; seeds support copy, template, and dhall-text" | s ^. #strategy == Structured]
+    mixed = ["steps writing '" <> dest <> "' mix the seed and managed lifecycles; use one lifecycle per destination" |
+      dest <- Set.toAscList (Set.fromList (map (^. #dest) seedSteps)),
+      any (\s -> s ^. #dest == dest && s ^. #lifecycle == Managed) (m ^. #steps)]
+    removals = ["removal step deletes '" <> s ^. #dest <> "', which a seed step creates; seihou never deletes seed files" |
+      removal <- maybeToList (m ^. #removal), r <- removal ^. #steps, r ^. #action == RemoveFileAction,
+      s <- seedSteps, s ^. #dest == r ^. #dest]

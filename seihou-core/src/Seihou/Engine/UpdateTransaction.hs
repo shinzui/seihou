@@ -332,6 +332,7 @@ replaceManifestFiles manifest nextFiles =
       applications = manifest ^. #applications,
       recipe = manifest ^. #recipe,
       blueprint = manifest ^. #blueprint,
+      seeds = manifest ^. #seeds,
       blueprintMigrations = manifest ^. #blueprintMigrations
     }
 

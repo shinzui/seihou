@@ -1041,6 +1041,7 @@ buildFinalManifest now plan filesManifest completedReceipts =
       applications = foldl' (flip replaceAppliedComposition) (filesManifest ^. #applications) finalApplications,
       recipe = updatedRecipe,
       blueprint = filesManifest ^. #blueprint,
+      seeds = filesManifest ^. #seeds,
       blueprintMigrations = filesManifest ^. #blueprintMigrations
     }
   where

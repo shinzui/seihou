@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Optional step lifecycle with backward-compatible decoding and seed declaration validation.
+- Manifest schema 8 seed receipts and lossless 7-to-8 upgrade; runtime seed creation is separate.
+
+### Added
+
 - **`seihou agent upgrade MODULE [PROMPT] [--check]`** (`Seihou.CLI.UpgradeDiagnosis`,
   executable `Seihou.CLI.AgentUpgrade`, template `data/upgrade-prompt.md`). A read-only,
   never-throwing diagnosis (guarded probes; the manifest-upgrade and update dry runs are

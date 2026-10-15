@@ -391,3 +391,7 @@ seihou manifest repair-origins --set nix-haskell-flake=https://github.com/shinzu
 - [Migrations](../user/migrations.md) — moving a project across module versions,
   and why seihou refuses to go backwards.
 - `seihou help manifest` — the same material in the built-in help.
+
+## Schema 8: seed receipts
+
+The lossless 7 → 8 upgrade adds `seeds: {}`. Receipts record portable paths, module and application ownership, first settlement outcome (`created`, `found-existing`, or `released-from-managed`), and time. They carry no content hash or baseline. A path cannot appear in both `files` and `seeds`. Declaration and receipt support alone do not activate runtime seed behavior.

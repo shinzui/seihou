@@ -3,6 +3,7 @@ module Seihou.Engine.Validate
     DiagCheck (..),
     ValidateReport (..),
     buildReport,
+    checkSeedSteps,
     renderReportPlain,
     reportHasErrors,
   )
@@ -16,7 +17,8 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.Core.Expr (exprRefs, parseExpr)
 import Seihou.Core.Module
-  ( checkCommandSafety,
+  ( checkSeedSteps,
+    checkCommandSafety,
     checkDependencyNames,
     checkDestVarRefs,
     checkExportRefs,
@@ -75,6 +77,7 @@ buildReport lint baseDir m = do
           DiagCheck "Source file existence" DiagError fileErrors,
           DiagCheck "Dependency names" DiagError (checkDependencyNames m),
           DiagCheck "Safe step destinations" DiagError (checkSafeDestinations m),
+          DiagCheck "Seed steps" DiagError (checkSeedSteps m),
           DiagCheck "Destination variable references" DiagError (checkDestVarRefs m),
           DiagCheck "Command safety" DiagError (checkCommandSafety m)
         ]
@@ -212,7 +215,7 @@ lintDuplicateDestinations :: Module -> [Text]
 lintDuplicateDestinations m =
   let nonPatchDests = [s ^. #dest | s <- m ^. #steps, isNothing (s ^. #patch)]
       dupes = findDuplicates Set.empty Set.empty nonPatchDests
-   in map (\d -> "multiple steps write to '" <> d <> "'") dupes
+   in map (\d -> "multiple steps write to '" <> d <> "'") [d | d <- dupes, Set.size (Set.fromList [s ^. #lifecycle | s <- m ^. #steps, s ^. #dest == d]) == 1]
 
 findDuplicates :: Set.Set Text -> Set.Set Text -> [Text] -> [Text]
 findDuplicates _ _ [] = []

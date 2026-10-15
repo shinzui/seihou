@@ -863,3 +863,7 @@ guarantee — see [migrations.md](migrations.md) or run
 **Use conditional steps.** The `when` field lets you build flexible modules that adapt to the user's configuration without requiring separate modules for each variation.
 
 **Use DhallText for complex output.** When simple placeholder substitution isn't enough, the DhallText strategy gives you Dhall's full expression language — conditionals, string interpolation, and let bindings.
+
+### Step lifecycle
+
+`lifecycle : Optional Text` defaults to managed when omitted. `Some "seed"` declares a whole file created once and handed to the project. Seeds support copy, template, and dhall-text without patches. See [ADR 0017](../adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md); runtime seed behavior requires the remaining seed implementation plans.
