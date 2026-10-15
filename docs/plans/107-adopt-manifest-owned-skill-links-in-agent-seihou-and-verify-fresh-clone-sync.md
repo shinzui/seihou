@@ -86,21 +86,29 @@ module syntax alone is not completion.
 - [ ] Milestone 7: publish a supporting runtime containing the reopened UX changes and repeat the ordinary-update/fresh-clone proof with that released executable. The currently installed Nix-profile 0.10.0.0 executable does not contain this source change; do not claim the released runtime already offers tracked-link adoption.
 
 
-Release handoff (2026-10-15): source release preflight passes `just format`,
-`just build`, `just test` (1,991 tests), `just check` (four native Nix checks),
-all three `cabal check` commands, and `git diff --check`. Registry and upstream
-tag verification still find 0.10.0.0 as the latest release. Proposed 0.10.1.0
-adds two core exports without changing existing signatures. The release skill
-requires version and changelog approval; the proposal is pending, so versions,
-tags and uploads remain unchanged. The reviewable proposed package/changelog diff
-is `/tmp/seihou-107-release-0.10.1.0.patch`. After approval, apply that diff, rerun
-the gates on the bumped candidate, then publish and repeat acceptance with the
-released executable. `/tmp/seihou-107-release-proof.py <absolute-executable>`
-rehearses ordinary interactive update from `c7c315a^`, then fresh-clone and linked-
-worktree restoration, deletion and retarget repair with empty producer caches.
-Its source-binary rehearsal passed; evidence is
-`/tmp/seihou-107-release-proof-g51frssp/result.json`. This source rehearsal does
-not satisfy the released-runtime requirement.
+Release delivery (2026-10-15): user approval of 0.10.1.0 is recorded in the
+conversation. The bumped candidate includes a screenshot-driven status fix:
+absent remote producers are summarized once as an optional cache, while missing
+project-owned producers, machine-local origins and stale/substituted installed
+artifacts retain warnings. Regressions cover the distinction and real clone status.
+The screenshot's concrete consumer, `mori://shinzui/haskell-nix`, was schema 6
+with master-plan/exec-plan 0.10.0 and link-skill 0.2.0. Ordinary update succeeds
+without installation, preserves the `.gitignore` customization, runs zero shell
+commands and records four outputs. Consumer commit 529fd6d retains that adoption.
+Sync now reports four unchanged links there. The earlier claim that the installed
+0.10.0.0 binary could not update this consumer was too broad: both installed and
+candidate dry runs succeed for its already-untracked discovery links. The new
+runtime is required for tracked-link adoption and corrected status presentation.
+The bumped source candidate also passes the real consumer clone/worktree proof
+(`/tmp/seihou-107-proof-oqz9fslo/result.json`): first sync creates four links,
+second sync changes nothing, deletion and wrong-target repair each change one link,
+and tracked bytes/index/manifest remain identical. Empty-cache status in the actual
+consumer now reports four declared outputs with zero needing attention and one
+optional-cache notice (`/tmp/seihou-107-status-proof-jjzilpkn/status.txt`).
+The final 0.10.1.0 candidate passes `just format`, `just build`, `just test`
+(all 1,993 tests: 1,200 core, 742 CLI, 51 extension), all four native `just check`
+checks, all three warning-free `cabal check` commands and `git diff --check`.
+Release publication and released-binary acceptance are in progress.
 
 
 ## Surprises & Discoveries

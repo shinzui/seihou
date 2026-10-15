@@ -19,6 +19,7 @@ import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
     OutdatedStatus (..),
   )
+import Seihou.Core.ArtifactRef (ArtifactRefError (..))
 import Seihou.Core.Migration
   ( Migration (..),
     MigrationOp (..),
@@ -481,3 +482,29 @@ spec = describe "formatStatus" $ do
             }
     formatArtifactChecks False [check] `shouldBe` ""
     formatArtifactChecks False [] `shouldBe` ""
+
+  it "treats an empty remote producer cache as optional rather than project damage" $ do
+    let origin = RemoteOrigin "https://example.com/demo.git" "demo" Nothing
+        missing = ArtifactCheck (ModuleName "demo") origin (ArtifactUnresolvable (ArtifactNotFoundLocally origin []))
+        out = formatArtifactChecks False [missing]
+    out `shouldSatisfy` T.isInfixOf "Remote producer cache: 1 not cached locally (optional)"
+    out `shouldSatisfy` T.isInfixOf "Sync needs no producers; update fetches its remote candidates."
+    out `shouldNotSatisfy` T.isInfixOf "Artifacts that differ"
+    out `shouldNotSatisfy` T.isInfixOf "not installed"
+    let stale = ArtifactCheck (ModuleName "other") origin (ArtifactStale "2.0.0" "1.0.0")
+        mixed = formatArtifactChecks False [missing, stale]
+    mixed `shouldSatisfy` T.isInfixOf "other: this project expects 2.0.0"
+    mixed `shouldSatisfy` T.isInfixOf "Remote producer cache: 1"
+
+  it "keeps missing project-owned and machine-local producers visible as problems" $ do
+    let projectOrigin = ProjectOrigin "modules/demo"
+        localOrigin = RemoteOrigin "/Users/alice/demo" "local" Nothing
+        checks =
+          [ ArtifactCheck (ModuleName "demo") projectOrigin (ArtifactUnresolvable (ProjectArtifactMissing projectOrigin "/project/modules/demo")),
+            ArtifactCheck (ModuleName "local") localOrigin (ArtifactUnresolvable (ArtifactNotFoundLocally localOrigin []))
+          ]
+        out = formatArtifactChecks False checks
+    out `shouldSatisfy` T.isInfixOf "Artifacts that differ"
+    out `shouldSatisfy` T.isInfixOf "demo:"
+    out `shouldSatisfy` T.isInfixOf "seihou manifest repair-origins"
+    out `shouldNotSatisfy` T.isInfixOf "Remote producer cache"

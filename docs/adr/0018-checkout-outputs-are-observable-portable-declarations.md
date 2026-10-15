@@ -130,6 +130,10 @@ installation. Empty-declaration sync guidance names recorded update targets but
 does not assert that a newer declaring producer exists and never infers wiring from
 shell receipts. The original plan-107 manual untracking procedure is historical;
 the reopened plan requires adoption through the normal accepted update flow.
+Status treats absent remotely fetchable producers as an optional local cache,
+summarized once rather than as project damage. This does not weaken command guards
+or hide stale/substituted installed artifacts, missing project-owned sources, or
+non-portable machine-local origins.
 
 ## Rejected Alternatives
 

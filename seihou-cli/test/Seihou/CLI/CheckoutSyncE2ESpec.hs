@@ -178,6 +178,10 @@ tests = testSpec "manifest-only checkout sync" $ do
       first `shouldSatisfy` isInfixOf "Links: 1 created, 0 repaired, 0 unchanged."
       second <- success binary clone cloneHome ["sync"]
       second `shouldSatisfy` isInfixOf "Links: 0 created, 0 repaired, 1 unchanged."
+      status <- success binary clone cloneHome ["status"]
+      status `shouldSatisfy` isInfixOf "Checkout outputs: 1 declared, 0 need attention."
+      status `shouldSatisfy` isInfixOf "Remote producer cache: 1 not cached locally (optional)"
+      status `shouldNotSatisfy` isInfixOf "Artifacts that differ"
       snapshot clone `shouldReturn` before
       D.doesDirectoryExist (cloneHome </> "config/seihou/installed") `shouldReturn` False
   it "restores the original index and working links if an adopted update fails" $

@@ -21,12 +21,14 @@ import Data.Text qualified as T
 import Data.Time.Format (defaultTimeLocale, formatTime)
 import Seihou.CLI.ApplicationDisplay (appliedTargetName, parentVarsText)
 import Seihou.CLI.CheckoutSync (renderCheckoutStatus)
-import Seihou.CLI.ManifestGuard (ArtifactCheck, summarizeCheck)
+import Seihou.CLI.ManifestGuard (ArtifactCheck (..), ArtifactVerdict (..), summarizeCheck)
 import Seihou.CLI.Style (dim, green, red, yellow)
 import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
     OutdatedStatus (..),
   )
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl)
+import Seihou.Core.ArtifactRef (ArtifactRefError (..))
 import Seihou.Core.Checkout (CheckoutPlan)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
@@ -37,6 +39,7 @@ import Seihou.Core.Types
     AppliedModule (..),
     AppliedRecipe (..),
     AppliedTarget (..),
+    ArtifactOrigin (..),
     Manifest (..),
     MigrationOutcome (..),
     ModuleName (..),
@@ -269,12 +272,20 @@ recommendedActionsSection advices =
 -- text when every artifact is healthy, so the section disappears entirely
 -- rather than printing a reassuring "0 problems".
 formatArtifactChecks :: Bool -> [ArtifactCheck] -> Text
-formatArtifactChecks color checks = case mapMaybe summarizeCheck checks of
-  [] -> ""
-  summaries ->
-    T.unlines $
-      ["", applyColor color yellow "Artifacts that differ from what this project records:"]
-        ++ map ("  " <>) summaries
+formatArtifactChecks color checks = warnings <> cacheNotice
+  where
+    summaries = mapMaybe summarizeCheck (filter (not . remoteCacheMiss) checks)
+    warnings = case summaries of
+      [] -> ""
+      _ -> T.unlines (["", applyColor color yellow "Artifacts that differ from what this project records:"] ++ map ("  " <>) summaries)
+    missing = length (filter remoteCacheMiss checks)
+    cacheNotice
+      | missing == 0 = ""
+      | otherwise =
+          "\n" <> applyColor color dim ("Remote producer cache: " <> T.pack (show missing) <> " not cached locally (optional). Sync needs no producers; update fetches its remote candidates.") <> "\n"
+    remoteCacheMiss check = case (check ^. #origin, check ^. #verdict) of
+      (RemoteOrigin url _ _, ArtifactUnresolvable (ArtifactNotFoundLocally _ _)) -> not (isMachineLocalOriginUrl url)
+      _ -> False
 
 adviceCommand :: ModuleAdvice -> Maybe Text
 adviceCommand AdviceNone = Nothing

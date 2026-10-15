@@ -10,8 +10,11 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+## [0.10.1.0] - 2026-10-15
+
 ### Fixed
 
+- **A fresh clone no longer looks broken because producers are not cached.** Status reports the empty remote cache as optional. Sync needs no producers, and update fetches its remote candidates automatically.
 - **Adopt skill links with `seihou update master-plan`.** Update fetches the recorded remote and dependencies, reuses saved inputs, and previews adoption of unchanged tracked links. Accepting keeps their working copies and stages their removal from Git; commit those removals with the manifest. Future clones need only `seihou sync`.
 - Sync explains which recorded target to update when links have not yet been declared, and summarizes created, repaired and unchanged links in normal output.
 
@@ -1066,7 +1069,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.10.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.10.1.0...HEAD
+[0.10.1.0]: https://github.com/shinzui/seihou/compare/v0.10.0.0...v0.10.1.0
 [0.10.0.0]: https://github.com/shinzui/seihou/compare/v0.9.0.0...v0.10.0.0
 [0.9.0.0]: https://github.com/shinzui/seihou/compare/v0.8.0.0...v0.9.0.0
 [0.8.0.0]: https://github.com/shinzui/seihou/compare/v0.7.0.0...v0.8.0.0

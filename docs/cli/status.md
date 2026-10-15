@@ -85,6 +85,13 @@ If no manifest exists (i.e., `seihou run` has not been executed in this
 directory), Seihou prints `No Seihou manifest found` and exits
 successfully.
 
+An empty remote producer cache is normal in a fresh clone. Status summarizes
+absent remote producers in one informational line rather than reporting them as
+project damage. `seihou sync` uses only recorded declarations, and ordinary
+`seihou update TARGET` fetches remote candidates and dependencies when needed.
+Stale or substituted installed producers, missing project-owned producers, and
+machine-local origins still appear in the artifact warning section.
+
 ### Pending migrations
 
 Pending-migration detection runs on every `seihou status` invocation —

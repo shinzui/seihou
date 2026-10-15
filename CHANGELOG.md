@@ -4,8 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.10.1.0] - 2026-10-15
+
+### Added
+
+- `Seihou.Engine.UpdateTransaction` exports `trackedLinkIdentity` and `adoptTrackedLinks` for checked, recoverable adoption of matching tracked symlinks.
+
 ### Fixed
 
+- Status treats an empty remote producer cache as optional and summarizes it once, while retaining warnings for stale, substituted, project-owned and machine-local artifacts.
 - Existing skill applications adopt checkout links through ordinary `seihou update TARGET`, without a prerequisite installation list. The preview proposes removing unchanged matching discovery symlinks from Git's index while keeping their working copies. Acceptance journals those removals for rollback and interrupted-update recovery, preserving unrelated staging.
 - `seihou sync` with no declarations names recorded update targets. Human sync output summarizes successful link creation, repair and unchanged links without requiring JSON.
 
@@ -1132,7 +1139,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.10.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.10.1.0...HEAD
+[0.10.1.0]: https://github.com/shinzui/seihou/compare/v0.10.0.0...v0.10.1.0
 [0.10.0.0]: https://github.com/shinzui/seihou/compare/v0.9.0.0...v0.10.0.0
 [0.9.0.0]: https://github.com/shinzui/seihou/compare/v0.8.0.0...v0.9.0.0
 [0.8.0.0]: https://github.com/shinzui/seihou/compare/v0.7.0.0...v0.8.0.0

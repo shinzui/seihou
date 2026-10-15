@@ -60,6 +60,8 @@ The published [link-skill](mori://shinzui/agent-seihou/templates/link-skill) 0.3
 [claude-skill-link](mori://shinzui/agent-seihou/templates/claude-skill-link) 0.2.0
 producers declare checkout links and require Seihou 0.10.0.0 or newer. The former
 uses `agents/skills/`; the latter, used by update-docs, keeps `claude/skills/`.
+Use Seihou 0.10.1.0 or newer for automatic tracked-link adoption and the clearer
+sync/status guidance described below.
 
 For an existing master-plan application, update its recorded root target once:
 
