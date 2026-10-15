@@ -590,6 +590,7 @@ renderStrategy Copy = "Copy"
 renderStrategy Template = "Template"
 renderStrategy DhallText = "DhallText"
 renderStrategy Structured = "Structured"
+renderStrategy Symlink = "Symlink"
 
 renderPatchOp :: PatchOp -> T.Text
 renderPatchOp AppendFile = "appends to a file another module owns"

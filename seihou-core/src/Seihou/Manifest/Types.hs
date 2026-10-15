@@ -16,9 +16,11 @@ module Seihou.Manifest.Types
   )
 where
 
+import Control.Monad (unless)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
+import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Types qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
@@ -28,9 +30,11 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
+import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutRecords)
 import Seihou.Core.Seed (ManifestInvariantError (..), validateManifestInvariants)
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (baselineRefFromText)
+import Seihou.Manifest.JSON (decodeManifestValue)
 import Seihou.Prelude hiding ((.=))
 import System.FilePath (takeFileName)
 
@@ -73,7 +77,7 @@ import System.FilePath (takeFileName)
 -- change advances this number is
 -- docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md.
 currentManifestVersion :: ManifestSchemaVersion
-currentManifestVersion = ManifestSchemaVersion 8
+currentManifestVersion = ManifestSchemaVersion 9
 
 -- | The oldest schema the ordinary decoder reads. Anything older records
 -- machine-specific absolute paths and must go through the explicit
@@ -87,6 +91,7 @@ oldestDecodableManifestVersion = ManifestSchemaVersion 6
 minimumManifestVersion :: ManifestCapability -> ManifestSchemaVersion
 minimumManifestVersion TargetedAdditiveSharedPathUpdate = ManifestSchemaVersion 7
 minimumManifestVersion SeedReceipts = ManifestSchemaVersion 8
+minimumManifestVersion CheckoutLocalOutputs = ManifestSchemaVersion 9
 
 -- | Whether a manifest's schema can express everything a capability needs.
 -- A decoded schema-6 manifest answers 'False' for
@@ -109,6 +114,7 @@ emptyManifest now =
       recipe = Nothing,
       blueprint = Nothing,
       seeds = Map.empty,
+      checkoutOutputs = Map.empty,
       blueprintMigrations = []
     }
 
@@ -128,6 +134,7 @@ writeAppliedBlueprint ab m =
       recipe = m ^. #recipe,
       blueprint = Just ab,
       seeds = m ^. #seeds,
+      checkoutOutputs = m ^. #checkoutOutputs,
       blueprintMigrations = m ^. #blueprintMigrations
     }
 
@@ -150,7 +157,8 @@ writeAppliedBlueprintMigration receipt manifest =
       applications = manifest ^. #applications,
       recipe = manifest ^. #recipe,
       blueprint = manifest ^. #blueprint,
-      seeds = Map.empty,
+      seeds = manifest ^. #seeds,
+      checkoutOutputs = manifest ^. #checkoutOutputs,
       blueprintMigrations = upsert (manifest ^. #blueprintMigrations)
     }
   where
@@ -195,7 +203,7 @@ manifestToJSON = Aeson.encode
 
 -- | Decode a manifest from JSON bytes.
 manifestFromJSON :: LBS.ByteString -> Either String Manifest
-manifestFromJSON = Aeson.eitherDecode
+manifestFromJSON bytes = decodeManifestValue bytes >>= Aeson.parseEither parseJSON
 
 -- JSON instances
 
@@ -210,6 +218,7 @@ instance ToJSON Manifest where
         "applications" .= (m ^. #applications),
         "blueprintMigrations" .= (m ^. #blueprintMigrations)
       ]
+        ++ ["checkoutOutputs" .= Map.map checkoutToJSON (m ^. #checkoutOutputs) | m ^. #version >= ManifestSchemaVersion 9]
         ++ ["seeds" .= Map.map seedToJSON (m ^. #seeds) | m ^. #version >= ManifestSchemaVersion 8]
         ++ maybe [] (\r -> ["recipe" .= r]) (m ^. #recipe)
         ++ maybe [] (\b -> ["blueprint" .= b]) (m ^. #blueprint)
@@ -220,20 +229,24 @@ instance FromJSON Manifest where
   parseJSON = Aeson.withObject "Manifest" $ \o -> do
     v <- o .: "version"
     checkManifestVersion v
-    manifest <- Manifest
-      <$> pure v
-      <*> o .: "generatedAt"
-      <*> o .: "modules"
-      <*> (varsFromJSON =<< o .: "variables")
-      <*> (filesFromJSON v =<< o .: "files")
-      <*> (if v >= ManifestSchemaVersion 8 then Map.traverseWithKey (\_ -> parseSeed) =<< o .: "seeds" else pure Map.empty)
-      <*> o Aeson..:? "applications" Aeson..!= []
-      <*> o Aeson..:? "recipe"
-      <*> o Aeson..:? "blueprint"
-      <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
+    manifest <-
+      Manifest
+        <$> pure v
+        <*> o .: "generatedAt"
+        <*> o .: "modules"
+        <*> (varsFromJSON =<< o .: "variables")
+        <*> (filesFromJSON v =<< o .: "files")
+        <*> (if v >= ManifestSchemaVersion 8 then Map.traverseWithKey (\_ -> parseSeed) =<< o .: "seeds" else pure Map.empty)
+        <*> (if v >= ManifestSchemaVersion 9 then Map.traverseWithKey (\_ -> parseCheckout) =<< o .: "checkoutOutputs" else pure Map.empty)
+        <*> o Aeson..:? "applications" Aeson..!= []
+        <*> o Aeson..:? "recipe"
+        <*> o Aeson..:? "blueprint"
+        <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
     case validateManifestInvariants manifest of
       Left (PathBothManagedAndSeeded path) -> fail ("path " <> path <> " is recorded both as a tracked file and as a seed")
-      Right () -> pure manifest
+      Right () -> case validateCheckoutRecords manifest [] of
+        Left err -> fail (T.unpack (err ^. #message))
+        Right () -> pure manifest
 
 -- | Reject a manifest this build cannot read, naming the remedy.
 --
@@ -736,21 +749,24 @@ strategyToText Copy = "copy"
 strategyToText Template = "template"
 strategyToText DhallText = "dhall-text"
 strategyToText Structured = "structured"
+strategyToText Symlink = "symlink"
 
 strategyFromText :: Text -> Aeson.Parser Strategy
 strategyFromText "copy" = pure Copy
 strategyFromText "template" = pure Template
 strategyFromText "dhall-text" = pure DhallText
 strategyFromText "structured" = pure Structured
+strategyFromText "symlink" = fail "checkout symlinks cannot be managed file records"
 strategyFromText other = fail ("unknown strategy: " <> T.unpack other)
 
 seedToJSON :: SeedRecord -> Aeson.Value
-seedToJSON record = Aeson.object
-  [ "module" .= (record ^. #moduleName . #unModuleName),
-    "applications" .= map (^. #unApplicationId) (Set.toAscList (record ^. #applicationIds)),
-    "outcome" .= seedOutcomeToText (record ^. #outcome),
-    "settledAt" .= (record ^. #settledAt)
-  ]
+seedToJSON record =
+  Aeson.object
+    [ "module" .= (record ^. #moduleName . #unModuleName),
+      "applications" .= map (^. #unApplicationId) (Set.toAscList (record ^. #applicationIds)),
+      "outcome" .= seedOutcomeToText (record ^. #outcome),
+      "settledAt" .= (record ^. #settledAt)
+    ]
 
 seedOutcomeToText :: SeedOutcome -> Text
 seedOutcomeToText SeedCreated = "created"
@@ -759,16 +775,44 @@ seedOutcomeToText SeedReleasedFromManaged = "released-from-managed"
 
 parseSeed :: Aeson.Value -> Aeson.Parser SeedRecord
 parseSeed = Aeson.withObject "seed receipt" $ \o -> do
-  outcome <- o .: "outcome" >>= \case
-    "created" -> pure SeedCreated
-    "found-existing" -> pure SeedFoundExisting
-    "released-from-managed" -> pure SeedReleasedFromManaged
-    (other :: Text) -> fail ("unknown seed outcome: " <> T.unpack other <> "; expected created, found-existing, released-from-managed")
-  SeedRecord <$> (ModuleName <$> o .: "module")
+  outcome <-
+    o .: "outcome" >>= \case
+      "created" -> pure SeedCreated
+      "found-existing" -> pure SeedFoundExisting
+      "released-from-managed" -> pure SeedReleasedFromManaged
+      (other :: Text) -> fail ("unknown seed outcome: " <> T.unpack other <> "; expected created, found-existing, released-from-managed")
+  SeedRecord
+    <$> (ModuleName <$> o .: "module")
     <*> (Set.fromList . map ApplicationId <$> o .: "applications")
-    <*> pure outcome <*> o .: "settledAt"
+    <*> pure outcome
+    <*> o .: "settledAt"
 
 -- | Facts that would be lost if a caller encoded a value at its stated schema.
 manifestEncodingLoss :: Manifest -> [Text]
 manifestEncodingLoss manifest =
-  ["seed receipts require manifest schema 8" | manifest ^. #version < ManifestSchemaVersion 8, not (Map.null (manifest ^. #seeds))]
+  ["checkout outputs require manifest schema 9" | manifest ^. #version < ManifestSchemaVersion 9, not (Map.null (manifest ^. #checkoutOutputs))]
+    <> ["seed receipts require manifest schema 8" | manifest ^. #version < ManifestSchemaVersion 8, not (Map.null (manifest ^. #seeds))]
+
+checkoutToJSON :: CheckoutOutputRecord -> Aeson.Value
+checkoutToJSON record =
+  Aeson.object
+    [ "spec" .= case record ^. #spec of
+        DirectorySymlink source -> Aeson.object ["kind" .= ("directory-symlink" :: Text), "source" .= source],
+      "owners" .= Map.mapKeys (^. #unApplicationId) (Map.map (map (^. #unModuleName) . Set.toAscList) (record ^. #owners))
+    ]
+
+parseCheckout :: Aeson.Value -> Aeson.Parser CheckoutOutputRecord
+parseCheckout = Aeson.withObject "checkout output" $ \o -> do
+  unless (Set.fromList (KM.keys o) == Set.fromList ["spec", "owners"]) $ fail "checkout output requires exactly spec and owners"
+  spec <-
+    o .: "spec"
+      >>= Aeson.withObject
+        "checkout spec"
+        ( \fields -> do
+            kind <- fields .: "kind" :: Aeson.Parser Text
+            unless (kind == "directory-symlink") $ fail ("unknown checkout output kind: " <> T.unpack kind)
+            unless (Set.fromList (KM.keys fields) == Set.fromList ["kind", "source"]) $ fail "directory-symlink requires exactly kind and source"
+            DirectorySymlink <$> fields .: "source"
+        )
+  owners <- o .: "owners" :: Aeson.Parser (Map Text [Text])
+  pure (CheckoutOutputRecord spec (Map.mapKeys ApplicationId (Map.map (Set.fromList . map ModuleName) owners)))

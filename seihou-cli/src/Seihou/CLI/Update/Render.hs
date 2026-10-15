@@ -22,6 +22,7 @@ import Data.Maybe (fromMaybe, isNothing)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.CLI.ApplicationDisplay (applicationLabel, appliedTargetName, moduleNameText)
+import Seihou.CLI.CheckoutSync (CheckoutSyncResult (..), checkoutReportJSON, renderCheckoutPlan)
 import Seihou.CLI.CommandExecution
   ( CommandDisposition (..),
     CommandPlan (..),
@@ -33,6 +34,7 @@ import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), EvidenceSour
 import Seihou.CLI.Shared (formatVarError)
 import Seihou.CLI.Update.Types
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
+import Seihou.Core.Checkout (CheckoutAction (..), CheckoutEntry (..), CheckoutError (..), CheckoutPlan (..))
 import Seihou.Core.Migration (MigrationPlan (..), MigrationPlanError (..))
 import Seihou.Core.Types
   ( ApplicationId (..),
@@ -48,6 +50,7 @@ import Seihou.Core.Types
     VarName (..),
   )
 import Seihou.Core.Version (renderVersion)
+import Seihou.Engine.Checkout (CheckoutExecution (..))
 import Seihou.Engine.Migrate (MigrationExecError (..))
 import Seihou.Engine.Reconcile
   ( DesiredFile (..),
@@ -121,6 +124,7 @@ renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
            renderFiles (reconciliationSummary (plan ^. #reconciliation)),
            renderCommands (summarizeCommandPlan (plan ^. #commandPlan))
          ]
+      <> T.lines (renderCheckoutPlan True (plan ^. #checkoutPlan))
       <> conflictLines (plan ^. #reconciliation)
       <> warningLines (plan ^. #warnings)
 renderUpdateHuman _ (UpdateAppliedOutput (UpdateResultView result)) =
@@ -153,6 +157,7 @@ outputValue (UpdatePlanOutput (UpdatePlanView plan)) =
       "versions" .= map versionValue (plan ^. #versionChanges),
       "inputs" .= inputValue (plan ^. #inputChanges),
       "migrations" .= map migrationValue (plan ^. #migrations),
+      "checkout" .= checkoutReportJSON (CheckoutSyncResult (plan ^. #snapshot . #projectRoot) True (plan ^. #checkoutPlan) (CheckoutExecution Map.empty [] Nothing) []),
       "files" .= map fileValue (Map.toAscList (plan ^. #reconciliation . #files)),
       "commands" .= map commandValue (plan ^. #commandPlan . #commands),
       "warnings" .= map warningText (plan ^. #warnings)
@@ -459,6 +464,7 @@ warningText ArbitraryCommandSideEffectsMayRemain =
   "a command ran before the failure; managed files were restored, but anything else it changed was not"
 warningText (BaselinePruneFailed reason) =
   "the update succeeded, but old update baselines could not be pruned: " <> reason
+warningText (CheckoutWarning reason) = reason
 warningText (RecoveryCleanupDeferred reason) =
   "the update succeeded, but cleaning up its recovery data was deferred: " <> reason
 warningText (SelectionExpandedForSharedPath path owner) =
@@ -490,6 +496,7 @@ errorCode UpdateVariableErrors {} = "variable_errors"
 errorCode UpdateConfigurationFailed {} = "configuration_failed"
 errorCode UpdateMigrationPlanFailed {} = "migration_plan_failed"
 errorCode UpdateMigrationStageFailed {} = "migration_stage_failed"
+errorCode (UpdateCheckoutFailed err) = err ^. #code
 errorCode UpdateCompositionFailed {} = "composition_failed"
 errorCode UpdateReconciliationFailed {} = "reconciliation_failed"
 errorCode UpdateHasUnresolvedPaths {} = "unresolved_paths"
@@ -589,6 +596,7 @@ errorMessage (UpdateMigrationPlanFailed name err) =
   "Cannot plan migrations for " <> moduleNameText name <> ": " <> migrationPlanErrorText err
 errorMessage (UpdateMigrationStageFailed name err) =
   "Staging the migrations for " <> moduleNameText name <> " failed: " <> migrationExecErrorText err
+errorMessage (UpdateCheckoutFailed err) = err ^. #message
 errorMessage (UpdateCompositionFailed problems) =
   "The candidate composition is invalid: " <> T.intercalate "; " problems
 errorMessage (UpdateReconciliationFailed err) =
@@ -725,7 +733,9 @@ summaryText summary =
 
 planLooksUnchanged :: UpdatePlan -> Bool
 planLooksUnchanged plan =
-  isNothing (plan ^. #manifestPreparation)
+  plan ^. #checkoutOutputs == plan ^. #snapshot . #originalManifest . #checkoutOutputs
+    && all ((== UnchangedLink) . (^. #action)) (plan ^. #checkoutPlan . #entries)
+    && isNothing (plan ^. #manifestPreparation)
     && null (plan ^. #versionChanges)
     && null (plan ^. #migrations)
     && plan ^. #inputChanges . #overridden == 0

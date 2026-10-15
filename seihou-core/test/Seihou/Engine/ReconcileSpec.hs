@@ -353,6 +353,7 @@ withFile path fileRecord manifest =
       recipe = manifest ^. #recipe,
       blueprint = manifest ^. #blueprint,
       seeds = manifest ^. #seeds,
+      checkoutOutputs = manifest ^. #checkoutOutputs,
       blueprintMigrations = manifest ^. #blueprintMigrations
     }
 

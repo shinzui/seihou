@@ -12,9 +12,10 @@ import Seihou.CLI.ManifestGuard (ArtifactCheck, checkAppliedArtifacts, checkAppl
 import Seihou.CLI.Outdated (checkInstalledModulesForUpdates)
 import Seihou.CLI.PendingMigrations (detectPendingMigrations)
 import Seihou.CLI.Shared (logIO)
-import Seihou.CLI.StatusRender (PromptDisplay (..), formatArtifactChecks, formatStatusWith)
+import Seihou.CLI.StatusRender (PromptDisplay (..), formatArtifactChecks, formatCheckoutStatus, formatStatusWith)
 import Seihou.CLI.Style (useColor)
 import Seihou.CLI.VersionCompare (OutdatedEntry (..))
+import Seihou.Core.Checkout
 import Seihou.Core.Module (defaultSearchPaths, discoverAllModules)
 import Seihou.Core.Status (computeTrackedFileStatuses)
 import Seihou.Core.Types
@@ -22,6 +23,8 @@ import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.Logger (logError)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import Seihou.Effect.ProcessInterp (runProcessIO)
+import Seihou.Engine.Checkout
 import Seihou.Prelude
 import System.Directory (getCurrentDirectory)
 import System.Exit (exitFailure)
@@ -50,6 +53,11 @@ handleStatus opts = do
     Right Nothing ->
       TIO.putStrLn "No Seihou manifest found. Run 'seihou run <module>' to generate a project."
     Right (Just (manifest, tracked)) -> do
+      root <- getCurrentDirectory
+      checkout <- runEff $ runFilesystem $ runProcessIO $ prepareCheckoutPlan Rebuild SyncIgnoredOnly root manifest manifest []
+      case checkout of
+        Left err -> TIO.putStrLn ("Checkout outputs: " <> err ^. #message)
+        Right plan -> TIO.putStr (formatCheckoutStatus plan)
       mEntries <-
         if opts ^. #statusCheckUpdates && not (null (manifest ^. #modules))
           then fetchUpdateEntries

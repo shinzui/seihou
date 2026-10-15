@@ -49,7 +49,7 @@ spec = do
             ( (emptyManifest fixedTime :: Manifest)
                 & #files .~ Map.singleton "README.md" (mkRecord content)
             )
-          fs = PureFS (Map.singleton "README.md" content) mempty
+          fs = PureFS (Map.singleton "README.md" content) mempty Map.empty
           result = runStatus fs manifest
       length result `shouldBe` 1
       ((head result) ^. #path) `shouldBe` "README.md"
@@ -63,7 +63,7 @@ spec = do
             ( (emptyManifest fixedTime :: Manifest)
                 & #files .~ Map.singleton "README.md" (mkRecord originalContent)
             )
-          fs = PureFS (Map.singleton "README.md" modifiedContent) mempty
+          fs = PureFS (Map.singleton "README.md" modifiedContent) mempty Map.empty
           result = runStatus fs manifest
       length result `shouldBe` 1
       ((head result) ^. #status) `shouldBe` TfsModified
@@ -95,6 +95,7 @@ spec = do
                   ]
               )
               mempty
+              Map.empty
           result = runStatus fs manifest
       length result `shouldBe` 3
       -- Results are sorted by path

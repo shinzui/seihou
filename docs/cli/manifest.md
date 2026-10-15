@@ -395,3 +395,7 @@ seihou manifest repair-origins --set nix-haskell-flake=https://github.com/shinzu
 ## Schema 8: seed receipts
 
 The lossless 7 → 8 upgrade adds `seeds: {}`. Receipts record portable paths, module and application ownership, first settlement outcome (`created`, `found-existing`, or `released-from-managed`), and time. They carry no content hash or baseline. A path cannot appear in both `files` and `seeds`. Declaration and receipt support alone do not activate runtime seed behavior.
+
+## Schema 9: checkout outputs
+
+The lossless 8 → 9 step adds a required empty `checkoutOutputs` object. Each project-relative destination maps to `spec: {kind: "directory-symlink", source: "config/editor"}` and `owners: {APPLICATION_ID: ["qualified-instance"]}`. Owners must belong to that application's recorded instances. No timestamps, hashes, baselines or observed completion facts are stored. Duplicate keys, unknown kinds, unexpected specification fields, empty owners and overlapping managed/seed/checkout destinations refuse. Older schemas retain their version and omit this field when encoded. [Sync](sync.md) observes desired wiring without writing the manifest.

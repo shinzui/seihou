@@ -1,6 +1,6 @@
 # ADR 0018 — Checkout outputs are observable, portable declarations
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-15
 
 ## Context
@@ -18,11 +18,11 @@ Editor configuration links and local tool views of shared assets have the same l
 The architecture must express that lifecycle without encoding any consumer's directory
 names, parsing old shell commands, or creating a second applied-state record.
 
-This decision is proposed by
+This decision is implemented by
 [ExecPlan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md).
-It records the implementation contract, not shipped behavior. ADR 0017 is reserved by
+It records the implemented, unreleased contract. ADR 0017 is implemented by
 [ExecPlan 99](../plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md)
-for the seed lifecycle; 0018 is the next unreserved filesystem ADR number. This repository's
+for the seed lifecycle. This repository's
 ADR directory is not a profiled OKF bundle.
 
 ## Decision
@@ -122,3 +122,9 @@ before another concrete kind establishes its needs.
 - [ADR 0013](0013-status-is-a-bounded-summary-the-manifest-is-the-record.md)
 - [ADR 0015](0015-diagnostics-name-things-as-users-do-and-never-fall-back-to-show.md)
 - [ExecPlan 100](../plans/100-record-seed-receipts-in-manifest-schema-8.md)
+
+## Implementation evidence
+
+Schema 9 and the adjacent 8-to-9 upgrade implement this record after the schema-8 seed prerequisite. Core tests cover portable declarations, ownership laws, literal target observation, indexed tracked paths, native aliases on the macOS temporary volume, complete preflight, rollback and literal-link recovery; version-1 journals remain readable and unknown version-2 kinds fail before writes. A trace permits only declared link writes/parents and fixed read-only Git calls. Case-fold-equivalent checkout destinations are conservatively refused on every filesystem to keep declarations portable. Git check-ignore receives one `./`-prefixed pathname after `--`, because that command rejects literal pathspec magic.
+
+Real-binary tests cover both agent discovery and editor/shared-asset wiring, clean clones with empty and newer producer caches, poisoned config, linked worktrees, same-run generated sources, agreeing owners, conflicting retarget refusal, condition retirement, preserved local edits, no-spec removal and failed-update rollback. No producer repository is adopted or released by this implementation. Validation ran on macOS; Linux execution remains a downstream CI/platform verification obligation. These changes extend [ADR 0017](0017-a-seed-file-is-created-once-and-belongs-to-the-project.md) and preserve ADRs 0001, 0004 and 0014.

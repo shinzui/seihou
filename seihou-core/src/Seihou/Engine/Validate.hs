@@ -17,7 +17,7 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.Core.Expr (exprRefs, parseExpr)
 import Seihou.Core.Module
-  ( checkSeedSteps,
+  ( checkCheckoutSteps,
     checkCommandSafety,
     checkDependencyNames,
     checkDestVarRefs,
@@ -26,6 +26,7 @@ import Seihou.Core.Module
     checkNameFormat,
     checkPromptRefs,
     checkSafeDestinations,
+    checkSeedSteps,
     checkUniqueVars,
     checkVersionPresent,
     extractPlaceholders,
@@ -77,6 +78,7 @@ buildReport lint baseDir m = do
           DiagCheck "Source file existence" DiagError fileErrors,
           DiagCheck "Dependency names" DiagError (checkDependencyNames m),
           DiagCheck "Safe step destinations" DiagError (checkSafeDestinations m),
+          DiagCheck "Checkout steps" DiagError (checkCheckoutSteps m),
           DiagCheck "Seed steps" DiagError (checkSeedSteps m),
           DiagCheck "Destination variable references" DiagError (checkDestVarRefs m),
           DiagCheck "Command safety" DiagError (checkCommandSafety m)

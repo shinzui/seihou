@@ -1,6 +1,7 @@
 module Seihou.CLI.StatusRender
   ( formatStatus,
     formatStatusWith,
+    formatCheckoutStatus,
     formatArtifactChecks,
     formatBlueprintMigrations,
     ModuleAdvice (..),
@@ -19,12 +20,14 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time.Format (defaultTimeLocale, formatTime)
 import Seihou.CLI.ApplicationDisplay (appliedTargetName, parentVarsText)
+import Seihou.CLI.CheckoutSync (renderCheckoutStatus)
 import Seihou.CLI.ManifestGuard (ArtifactCheck, summarizeCheck)
 import Seihou.CLI.Style (dim, green, red, yellow)
 import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
     OutdatedStatus (..),
   )
+import Seihou.Core.Checkout (CheckoutPlan)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Types
   ( AppliedBlueprint (..),
@@ -477,3 +480,7 @@ promptWidth = 72
 applyColor :: Bool -> (Text -> Text) -> Text -> Text
 applyColor True f = f
 applyColor False _ = id
+
+-- | Bounded checkout diagnostics, observed independently of artifact availability.
+formatCheckoutStatus :: CheckoutPlan -> Text
+formatCheckoutStatus = renderCheckoutStatus

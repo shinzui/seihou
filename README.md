@@ -130,6 +130,7 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 | [`run`](docs/cli/run.md) | Apply a module or recipe initially, or deliberately reconfigure it. |
 | [`update`](docs/cli/update.md) | Reconcile recorded applications with newer sources while preserving user edits. |
 | [`remove`](docs/cli/remove.md) | Reverse an applied module via its declared `removal` steps. |
+| [`sync`](docs/cli/sync.md) | Rebuild ignored checkout links from the manifest in a fresh clone. |
 | [`status`](docs/cli/status.md) | Show applied modules, tracked-file state, and resolved variables. |
 | [`diff`](docs/cli/diff.md) | Show files changed on disk since the last generation. |
 | [`manifest`](docs/cli/manifest.md) | Maintain `.seihou/manifest.json` (`upgrade` converts one written by an older seihou). |
@@ -250,3 +251,7 @@ seihou/
 
 Seihou is licensed under the BSD-3-Clause license. See [`LICENSE`](LICENSE) for
 details.
+
+### Rebuild local project wiring
+
+Modules can declare directory links such as `config/editor` → `.editor-local/config` with strategy `symlink` and lifecycle `Some "checkout"`. Ignore the destination, apply once and commit the source and manifest. In each fresh clone, `seihou sync --dry-run` previews setup and `seihou sync` restores the links without installed modules, upgrades or shell commands. [Sync reference](docs/cli/sync.md).

@@ -40,7 +40,7 @@ spec = do
                 applicationIds = Set.singleton applicationId,
                 sharedWriteMode = SharedWriteUnknown
               }
-          initialFS = PureFS (Map.singleton ("/project/" <> path) content) Set.empty
+          initialFS = PureFS (Map.singleton ("/project/" <> path) content) Set.empty Map.empty
           ((result, stored), _) =
             runPureEff $
               runFilesystemPure initialFS $
@@ -60,7 +60,7 @@ spec = do
       let record = FileRecord (hashContent "planned") "module" Template fixedTime Nothing Set.empty SharedWriteUnknown
           ((result, stored), _) =
             runPureEff $
-              runFilesystemPure (PureFS Map.empty Set.empty) $
+              runFilesystemPure (PureFS Map.empty Set.empty Map.empty) $
                 runBaselineStorePure Map.empty $
                   recordGeneratedBaselines "/project" (Map.singleton "missing.txt" record)
       result `shouldSatisfy` isStoreFailure
@@ -69,7 +69,7 @@ spec = do
     it "stores content that can be read back through the baseline effect" $ do
       let content = "round trip"
           record = FileRecord (hashContent content) "module" Copy fixedTime Nothing Set.empty SharedWriteUnknown
-          initialFS = PureFS (Map.singleton "copy.txt" content) Set.empty
+          initialFS = PureFS (Map.singleton "copy.txt" content) Set.empty Map.empty
           ((result, readBack), _) =
             runPureEff $
               runFilesystemPure initialFS $

@@ -1,7 +1,11 @@
 module Seihou.Core.Seed
-  ( mergeSeedRecord, dropSeedOwner, seedsOwnedByModule,
-    ManifestInvariantError (..), validateManifestInvariants,
-  ) where
+  ( mergeSeedRecord,
+    dropSeedOwner,
+    seedsOwnedByModule,
+    ManifestInvariantError (..),
+    validateManifestInvariants,
+  )
+where
 
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map

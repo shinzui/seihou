@@ -1,9 +1,11 @@
 module Seihou.Core.SeedSpec (tests) where
 
+import Data.Either (isLeft)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime (..), fromGregorian)
 import Seihou.Core.Module (checkSeedSteps)
 import Seihou.Core.Seed
@@ -11,11 +13,9 @@ import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Manifest.Types
 import Seihou.Prelude
-import Data.Either (isLeft)
 import System.Directory (getCurrentDirectory)
 import System.FilePath (takeDirectory)
 import System.IO.Temp (withSystemTempDirectory)
-import Data.Text.IO qualified as TIO
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -50,9 +50,11 @@ tests = testSpec "seed foundations" $ do
     withSystemTempDirectory "lifecycle" $ \dir -> do
       cwd <- getCurrentDirectory
       let schema = takeDirectory cwd </> "schema/package.dhall"
-          source field = T.unlines
-            [ "let S = " <> T.pack schema,
-              "in S.Module::{ name = \"demo\", version = Some \"1.0\", steps = [S.Step::{ strategy = \"template\", src = \"a\", dest = \"b\"" <> field <> " }] }" ]
+          source field =
+            T.unlines
+              [ "let S = " <> T.pack schema,
+                "in S.Module::{ name = \"demo\", version = Some \"1.0\", steps = [S.Step::{ strategy = \"template\", src = \"a\", dest = \"b\"" <> field <> " }] }"
+              ]
       TIO.writeFile (dir </> "module.dhall") (source "")
       Right old <- evalModuleFromFile (dir </> "module.dhall")
       map (^. #lifecycle) (old ^. #steps) `shouldBe` [Managed]

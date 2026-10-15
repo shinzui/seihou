@@ -129,7 +129,9 @@ upgrade step in `seihou-core/src/Seihou/Manifest/Upgrade.hs`
 
 | 8 | Portable seed receipts without content tracking | lossless: add empty `seeds` map |
 
-The ordinary decoder reads schemas 6 through 8. A schema-6 record's optional `additiveOnly: true`
+| 9 | Typed portable checkout outputs with application/instance ownership | lossless: add empty `checkoutOutputs` map |
+
+The ordinary decoder reads schemas 6 through 9. A schema-6 record's optional `additiveOnly: true`
 decodes as `additive-only`; a missing or false key decodes as `unknown`, because schema 6
 omitted false and absence therefore proves nothing. Schema 7 requires `sharedWriteMode` to
 be one of `unknown`, `additive-only`, or `requires-ownership-closure`, and a record that

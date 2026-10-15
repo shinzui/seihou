@@ -18,6 +18,7 @@ import Data.Text.Lazy qualified as TL
 import Data.Text.Lazy.Encoding qualified as TLE
 import Data.Yaml qualified as Yaml
 import Seihou.Composition.Instance (ModuleInstance, qualifiedName)
+import Seihou.Core.Checkout (CheckoutError (..), checkoutClaims, pathsOverlap)
 import Seihou.Core.Types
 import Seihou.Engine.Plan (compilePlan)
 import Seihou.Engine.Section (applyTextPatch)
@@ -40,7 +41,15 @@ compileComposedPlan modules = do
   results <- mapM compileOne modules
   let (errs, opsPerModule) = partitionResults results
   if null errs
-    then pure (Right (mergeOperations opsPerModule))
+    then do
+      let ops = concatMap snd opsPerModule
+          links = [dest | CheckoutOutputOp {dest} <- ops]
+          bytes = [dest | op <- ops, Just dest <- [destOfOp op]]
+          overlaps = ["checkout output '" <> T.pack link <> "' overlaps byte-writing output '" <> T.pack path <> "'" | link <- links, path <- bytes, pathsOverlap link path]
+      pure $ case checkoutClaims (ApplicationId "composition") ops of
+        Left err -> Left [err ^. #message]
+        Right _ | not (null overlaps) -> Left overlaps
+        Right _ -> Right (mergeOperations opsPerModule)
     else pure (Left (concat errs))
   where
     compileOne (inst, m, dir, vars) = do
@@ -83,6 +92,7 @@ mergeOperations moduleOps =
     go [] fileOwner _ opsAcc warningsAcc = (opsAcc, warningsAcc, fileOwner)
     go ((name, op) : rest) fileOwner seenDirs opsAcc warningsAcc =
       case op of
+        CheckoutOutputOp {} -> go rest fileOwner seenDirs (op : opsAcc) warningsAcc
         CreateDirOp p
           | Set.member p seenDirs -> go rest fileOwner seenDirs opsAcc warningsAcc
           | otherwise -> go rest fileOwner (Set.insert p seenDirs) (op : opsAcc) warningsAcc

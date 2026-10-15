@@ -562,8 +562,9 @@ strategyDecoder = parseStrategy <$> strictText
       "template" -> Template
       "dhall-text" -> DhallText
       "structured" -> Structured
+      "symlink" -> Symlink
       -- Caught by 'try' in 'evalModuleFromFile'
-      other -> error ("Unknown strategy \"" <> T.unpack other <> "\"; expected one of: copy, template, dhall-text, structured")
+      other -> error ("Unknown strategy \"" <> T.unpack other <> "\"; expected one of: copy, template, dhall-text, structured, symlink")
 
 -- | Decoder for VarDecl from a Dhall record.
 --
@@ -676,15 +677,16 @@ patchOpDecoder = parsePatchOp <$> strictText
 -- The @patch@ field is an optional patch operation string.
 stepDecoder :: Decoder Step
 stepDecoder =
-  withDefaults [("lifecycle", noneText)] $ record
-    ( mkStep
-        <$> field "strategy" strategyDecoder
-        <*> field "src" string
-        <*> field "dest" strictText
-        <*> field "when" (maybe strictText)
-        <*> field "patch" (maybe strictText)
-        <*> field "lifecycle" (maybe strictText)
-    )
+  withDefaults [("lifecycle", noneText)] $
+    record
+      ( mkStep
+          <$> field "strategy" strategyDecoder
+          <*> field "src" string
+          <*> field "dest" strictText
+          <*> field "when" (maybe strictText)
+          <*> field "patch" (maybe strictText)
+          <*> field "lifecycle" (maybe strictText)
+      )
   where
     mkStep strat src dest whenText patchText lifecycleText =
       Step
@@ -698,7 +700,8 @@ stepDecoder =
     parseLifecycle Nothing = Managed
     parseLifecycle (Just "managed") = Managed
     parseLifecycle (Just "seed") = Seed
-    parseLifecycle (Just other) = error ("Unknown step lifecycle " <> T.unpack other <> "; expected one of: managed, seed")
+    parseLifecycle (Just "checkout") = Checkout
+    parseLifecycle (Just other) = error ("Unknown step lifecycle " <> T.unpack other <> "; expected one of: managed, seed, checkout")
     parsePatchOp "append-file" = AppendFile
     parsePatchOp "prepend-file" = PrependFile
     parsePatchOp "append-section" = AppendSection

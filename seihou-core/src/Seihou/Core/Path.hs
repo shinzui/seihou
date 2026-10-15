@@ -1,5 +1,6 @@
 module Seihou.Core.Path
   ( validateProjectRelativePath,
+    validateCanonicalProjectPath,
   )
 where
 
@@ -27,3 +28,15 @@ pathSegments :: Text -> [Text]
 pathSegments =
   filter (not . T.null)
     . T.split (\c -> c == '/' || c == '\\')
+
+-- | Checkout declarations use a canonical, portable spelling and reserve metadata.
+-- This deliberately strengthens rather than changes the legacy validator above.
+validateCanonicalProjectPath :: Text -> Either Text ()
+validateCanonicalProjectPath raw = do
+  _ <- validateProjectRelativePath raw
+  if T.null raw
+    || raw /= T.strip raw
+    || T.any (\c -> c == '\\' || c == '\0' || c == ':') raw
+    || any (\part -> T.null part || part == "." || part == ".." || T.toCaseFold part `elem` [".git", ".seihou"]) (T.splitOn "/" raw)
+    then Left ("path must use canonical project-relative components outside .git and .seihou: " <> raw)
+    else Right ()

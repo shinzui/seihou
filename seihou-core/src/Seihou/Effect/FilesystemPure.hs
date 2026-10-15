@@ -9,19 +9,20 @@ import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Effectful.State.Static.Local (State, get, modify, put, runState)
-import Seihou.Effect.Filesystem (Filesystem (..))
+import Seihou.Effect.Filesystem (Filesystem (..), PathEntry (..))
 import Seihou.Prelude
 
 -- | In-memory filesystem state for testing.
 data PureFS = PureFS
   { files :: !(Map FilePath Text),
-    dirs :: !(Set FilePath)
+    dirs :: !(Set FilePath),
+    links :: !(Map FilePath FilePath)
   }
   deriving stock (Eq, Generic, Show)
 
 -- | An empty in-memory filesystem.
 emptyFS :: PureFS
-emptyFS = PureFS Map.empty Set.empty
+emptyFS = PureFS Map.empty Set.empty Map.empty
 
 -- | Pure in-memory interpreter for the Filesystem effect.
 -- Useful for testing without touching the real filesystem.
@@ -30,6 +31,21 @@ runFilesystemPure initial = reinterpret (runState initial) handler
   where
     handler :: (State PureFS :> es') => EffectHandler Filesystem es'
     handler _ = \case
+      InspectPath path -> do
+        fs <- get @PureFS
+        pure $ case Map.lookup path (fs ^. #links) of
+          Just target -> EntrySymlink target
+          Nothing
+            | Map.member path (fs ^. #files) -> EntryFile
+            | Set.member path (fs ^. #dirs) -> EntryDirectory
+            | otherwise -> EntryMissing
+      CreateDirectoryLink target path -> do
+        fs <- get @PureFS
+        if Map.member path (fs ^. #links) || Map.member path (fs ^. #files) || Set.member path (fs ^. #dirs)
+          then error ("runFilesystemPure: destination exists: " <> path)
+          else modify @PureFS (#links %~ Map.insert path target)
+      RemoveLink path -> modify @PureFS (#links %~ Map.delete path)
+      NormalizePath path -> pure path
       ReadFileText path -> do
         fs <- get @PureFS
         case Map.lookup path (fs ^. #files) of
@@ -48,7 +64,7 @@ runFilesystemPure initial = reinterpret (runState initial) handler
         let prefix = if null path then "" else path <> "/"
             filesInDir =
               [ drop (length prefix) fp
-              | fp <- Map.keys (fs ^. #files),
+              | fp <- Map.keys (fs ^. #files) <> Map.keys (fs ^. #links),
                 isDirectChild prefix fp
               ]
             dirsInDir =
@@ -114,6 +130,8 @@ renameInPureFS src dest fs =
         .~ renamedFiles
         & #dirs
         .~ renamedDirs
+        & #links
+        %~ Map.mapKeys (renameKey src dest)
   where
     renameKey s d k
       | k == s = d
@@ -129,6 +147,8 @@ removeRecursivelyFromPureFS path fs =
       keepDir d = d /= path && not (prefix `isPrefixOfPath` d)
    in fs
         & #files
+        %~ Map.filterWithKey (\k _ -> keepFile k)
+        & #links
         %~ Map.filterWithKey (\k _ -> keepFile k)
         & #dirs
         %~ Set.filter keepDir

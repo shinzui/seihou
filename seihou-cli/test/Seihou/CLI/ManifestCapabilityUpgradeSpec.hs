@@ -255,7 +255,7 @@ spec = do
         modeIn ".gitignore" unsaved `shouldBe` Just SharedWriteUnknown
 
   describe "seihou manifest upgrade" $
-    it "upgrades a schema-6 manifest to 7 and records the certified mode, touching only the manifest" $
+    it "upgrades a schema-6 manifest to current and records the certified mode, touching only the manifest" $
       withSharedFixture CoOwnerAppendsUnrecorded $ \fixture _ -> do
         gitignoreBefore <- TIO.readFile (fixture ^. #gitignorePath)
         outcome <-
@@ -269,7 +269,7 @@ spec = do
         case manifestFromJSON written of
           Left err -> expectationFailure err
           Right upgraded -> do
-            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 7
+            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 9
             (^. #sharedWriteMode) <$> Map.lookup ".gitignore" (upgraded ^. #files)
               `shouldBe` Just SharedWriteAdditiveOnly
         TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` gitignoreBefore

@@ -10,6 +10,12 @@ provenance:
     model: "claude-opus-5[1m]"
     harness: "claude-code"
     at: 2026-09-19T13:59:13Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-15T16:10:15Z
+      mode: "update"
+      note: "Record completed seed declaration and schema prerequisites and checkout integration constraints"
 ---
 
 # Seed files: module outputs created once and owned by the project
@@ -166,8 +172,8 @@ found no other relevant decision. Local ADRs:
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Declare seed steps in the module schema and validate them | docs/plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md | None | None | Not Started |
-| 2 | Record seed receipts in manifest schema 8 | docs/plans/100-record-seed-receipts-in-manifest-schema-8.md | None | EP-1 | Not Started |
+| 1 | Declare seed steps in the module schema and validate them | docs/plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md | None | None | Complete |
+| 2 | Record seed receipts in manifest schema 8 | docs/plans/100-record-seed-receipts-in-manifest-schema-8.md | None | EP-1 | Complete |
 | 3 | Create seed files once during seihou run | docs/plans/101-create-seed-files-once-during-seihou-run.md | EP-1, EP-2 | None | Not Started |
 | 4 | Keep seed files out of status, diff, and remove | docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md | EP-2 | EP-3 | Not Started |
 | 5 | Reconcile seed steps during seihou update and release managed files to seeds | docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md | EP-1, EP-2, EP-3 | EP-4 | Not Started |
@@ -209,8 +215,8 @@ filling in alongside EP-3 or EP-5.
 
 **The `lifecycle` Dhall field and `StepLifecycle` Haskell type.** Owned by EP-1. The Dhall
 field is `lifecycle : Optional Text` on `schema/Step.dhall` with default `None Text`; the
-accepted values are exactly `"managed"` and `"seed"`. The Haskell type is
-`data StepLifecycle = Managed | Seed` in `seihou-core/src/Seihou/Core/Types.hs`, and `Step`
+seed initiative uses values `"managed"` and `"seed"`; plan 105 adds `"checkout"` for its separate observable-output lifecycle. The Haskell type is
+`data StepLifecycle = Managed | Seed | Checkout` in `seihou-core/src/Seihou/Core/Types.hs`, and `Step`
 gains the strict field `lifecycle :: !StepLifecycle` (absent or `None` decodes to `Managed`).
 EP-3 and EP-5 read it through `step ^. #lifecycle`; EP-6 writes it in `module.dhall` files.
 The schema commit EP-1 pushes to `shinzui/seihou-schema` is the pin EP-6's modules import.
@@ -280,11 +286,11 @@ is extended by EP-2.
 
 ## Progress
 
-- [ ] EP-1: Schema field authored, pushed, and re-pinned
-- [ ] EP-1: `Step.lifecycle` decoded; `validate-module` rules and tests
-- [ ] EP-1: ADR 0017 and field reference docs
-- [ ] EP-2: `SeedRecord` types, codec, and invariant
-- [ ] EP-2: Schema 8, upgrade step 7 → 8, capability, docs
+- [x] (2026-10-15) EP-1: Schema field authored, pushed, and re-pinned
+- [x] (2026-10-15) EP-1: `Step.lifecycle` decoded; `validate-module` rules and tests
+- [x] (2026-10-15) EP-1: ADR 0017 and field reference docs
+- [x] (2026-10-15) EP-2: `SeedRecord` types, codec, and invariant
+- [x] (2026-10-15) EP-2: Schema 8, upgrade step 7 → 8, capability, docs
 - [ ] EP-3: `SeedFileOp` compiled and merged across a composition
 - [ ] EP-3: `seihou run` creates, keeps, and records seeds; dry-run output
 - [ ] EP-4: status and diff ignore seeds; status summary line
@@ -298,10 +304,12 @@ is extended by EP-2.
 
 ## Surprises & Discoveries
 
-(None yet.)
+EP-1 and EP-2 were completed in commit 66466b4 as prerequisites of [plan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md). The checkout extension adds `Checkout` to StepLifecycle, `Symlink` to Strategy and `CheckoutOutputOp` to Operation, and advances the manifest through the adjacent schema 8 to 9. Remaining seed plans must preserve checkout declarations/owners and keep checkout operations out of managed content reconciliation. Schema 8 remains the seed-receipt capability boundary; do not renumber it. The actual flake schema input is a pinned GitHub revision, so re-pinning changes flake.nix as well as flake.lock and SchemaVersion.hs.
 
 
 ## Decision Log
+
+Decision (2026-10-15): Complete only EP-1 and EP-2 as prerequisites of plan 105. Preserve the six-plan seed decomposition and do not enable runtime seeds through the checkout implementation. Future seed work extends the existing lifecycle and schema contracts rather than replacing them.
 
 - Decision: Name the concept "seed file" and declare it with `lifecycle = Some "seed"` on
   `Step`, not with a boolean or a new strategy.
@@ -360,4 +368,6 @@ is extended by EP-2.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Two of six child plans are complete: declarations/validation and portable schema-8 receipts. The current binary also supports schema 9 checkout outputs from the separate plan 105. Runtime seed creation, reporting, release reconciliation and producer adoption remain unimplemented under EP-3 through EP-6; completion of the foundations is not completion of the seed initiative. ADR 0017 defines seeds, while ADR 0018 defines checkout outputs independently.
+
+Revision note (2026-10-15): Reconcile EP-1/EP-2 completion with implementation evidence and record the schema-9 checkout interfaces that subsequent seed plans must preserve. The remaining seed initiative stays unimplemented.

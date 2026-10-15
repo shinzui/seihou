@@ -291,6 +291,7 @@ coveredWarning = \case
   ArbitraryCommandSideEffectsMayRemain -> True
   BaselinePruneFailed {} -> True
   RecoveryCleanupDeferred {} -> True
+  CheckoutWarning {} -> True
   SelectionExpandedForSharedPath {} -> True
 
 -- | Text that must never reach a person: Haskell constructor or record

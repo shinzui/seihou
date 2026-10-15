@@ -41,7 +41,7 @@ goodModule =
               dest = "README.md",
               condition = Nothing,
               patch = Nothing,
-          lifecycle = Managed
+              lifecycle = Managed
             }
         ],
       commands = [],

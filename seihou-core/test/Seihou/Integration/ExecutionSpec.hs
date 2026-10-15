@@ -69,6 +69,7 @@ manifestWithFiles t recs =
           recipe = base ^. #recipe,
           blueprint = base ^. #blueprint,
           seeds = base ^. #seeds,
+          checkoutOutputs = base ^. #checkoutOutputs,
           blueprintMigrations = base ^. #blueprintMigrations
         }
 
@@ -171,7 +172,7 @@ spec = do
                 executePlan "" ops Map.empty modName fixedTime
           manifest = manifestWithFiles fixedTime records
           -- Simulate user editing README.md
-          fs2 = PureFS (Map.insert "README.md" "user edit" (fs1 ^. #files)) (fs1 ^. #dirs)
+          fs2 = PureFS (Map.insert "README.md" "user edit" (fs1 ^. #files)) (fs1 ^. #dirs) Map.empty
           -- Compute diff → should detect conflict
           (diff, _) =
             runPureEff $

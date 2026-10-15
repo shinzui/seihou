@@ -67,25 +67,29 @@ commands or an untyped plugin payload.
 This implements
 [IR-10](../improvement-requests/rebuild-checkout-local-outputs-in-a-fresh-clone.md), validated
 and merged through PR #1. The existing IR-9 concerns command receipt ordering and remains
-separate. This document plans implementation; no checkout feature has shipped.
+separate. The implementation is complete and unreleased; producer adoption remains separate.
 
 
 ## Progress
 
 
 - [x] (2026-10-15 15:15Z) Validate architecture and current source; revise the general output model, lifecycle transitions, removal, reporting, and cross-domain acceptance; record proposed ADR 0018.
-- [ ] Verify prerequisite plans 99 and 100 are implemented; record their commits and actual schema version.
+- [x] (2026-10-15 15:40Z) Prerequisites 99 and 100 implemented in commit 66466b4; schema 8 established before adding schema 9.
 - [x] (2026-10-15 15:40Z) Implement prerequisite lifecycle/seed types, compatibility decoder, validation, schema-8 receipt codec/helpers and adjacent upgrade; publish schema revision 1d686cf9e3019cec061c1f4a4d83be53cb606e8b.
 - [x] (2026-10-15 15:40Z) Prerequisite validation passed: cabal build all and all 1,163 core tests; commit the foundation before enabling checkout declarations.
-- [ ] Milestone 1: accept and validate checkout symlink declarations, including old-module compatibility.
-- [ ] Milestone 2: persist typed portable checkout-output declarations with ownership and an adjacent manifest upgrade.
-- [ ] Milestone 3: observe, reconcile, and safely rebuild or retire links through shared library functions and filesystem effects.
-- [ ] Milestone 4: expose manifest-only sync and read-only status diagnostics.
-- [ ] Milestone 5: integrate declaration ownership and link operations with run, update, diff, and remove.
-- [ ] Milestone 6: prove clean fresh-clone setup across agent, editor, and asset use cases, finish documentation, and distill ADRs.
+- [x] (2026-10-15 15:55Z) Milestone 1: accept and validate checkout symlink declarations, including old-module compatibility.
+- [x] (2026-10-15 15:55Z) Milestone 2: persist typed portable checkout-output declarations with ownership and an adjacent manifest upgrade.
+- [x] (2026-10-15 15:55Z) Milestone 3: observe, reconcile, and safely rebuild or retire links through shared library functions and filesystem effects.
+- [x] (2026-10-15 16:12Z) Milestone 4: expose manifest-only sync and read-only status diagnostics.
+- [x] (2026-10-15 16:12Z) Milestone 5: integrate declaration ownership and link operations with run, update, diff, and remove.
+- [x] (2026-10-15 16:12Z) Milestone 6: prove clean fresh-clone setup across agent, editor, and asset use cases, finish documentation, and distill ADRs.
 
 
 ## Surprises & Discoveries
+
+Implementation evidence: all 1,195 core tests pass, including portable path validation, ownership merge laws, rendered traversal refusal, no installed-source requirement, complete classifications, dangling repair/retirement, Git tracked paths, rollback/retry, and version-2 literal-link recovery snapshots. `git check-ignore` rejects `--literal-pathspecs` with exit 128; it accepts a single `./`-prefixed literal pathname after `--`. Index inspection uses fixed `ls-files --cached -z` output without pathspec interpolation. Sources are never read or hashed for checkout outputs.
+
+The schema lifecycle change is published as 1d686cf9e3019cec061c1f4a4d83be53cb606e8b and checkout documentation as 367b0a1390ac1ed3dda6e2cacfdf3e72b1f624df; all consumer pins use the latter. Its Dhall integrity hash is unchanged by the documentation-only second commit. Aeson token APIs are available since 2.1.2; upstream tags and Hackage confirm that minimum and current releases through 2.3.2.0. The existing build uses 2.2.5.1; only the minimum API bound changes, with no dependency upgrade.
 
 
 Implementation findings (2026-10-15): concurrent plan archiving temporarily stashed tracked edits. Continue in the detached worktree `/tmp/seihou-checkout-105` and integrate commits onto the current branch after validation, preserving unrelated changes. The current `flake.nix` uses a pinned GitHub schema input, unlike the older schema-update instructions describing `git+file`; update both flake.nix and flake.lock alongside SchemaVersion.hs.
@@ -174,16 +178,13 @@ declaring module release once before future clones can use sync.
 ## Outcomes & Retrospective
 
 
-Architecture validation and plan update are complete. The original author is recorded as
-`gpt-6.1-sol`; there were no review entries when this pass began. The design aligns with
-Seihou's typed declarations, explicit composition, portable manifest, and separation of planning
-from effects. This revision fixes implementation gaps and makes reuse beyond IR-10 an acceptance
-requirement. Proposed ADR 0018 records the durable design without claiming it has shipped. All
-six implementation milestones and their behavioral tests remain unimplemented; the feature is
-not approved as working software. Validation of this documentation change passed local link,
-section-order, fenced-block, and shell-syntax checks plus `git diff --check`. No Haskell
-build or behavioral tests were run because only planning documents changed; the listed
-implementation commands and fixtures are acceptance obligations, not reported test results.
+Implementation is complete. Prerequisites 99 and 100 landed in commit 66466b4 before checkout schema 9. The same typed declaration, ownership and observation/planning pipeline serves sync, status, run, update and remove. Sync needs only the manifest and project sources, writes only declared links/parents, and does not evaluate config, fetch artifacts, replay commands, hash link targets or write the manifest. ADR 0018 is Accepted; ADRs 0014 and 0017 record the versioning/lifecycle foundations.
+
+Validation on macOS: `cabal build all` passed; `cabal test all --test-show-details=direct` passed 1,194 core, 731 CLI and 51 extension tests. The final audit removed even the installed-files existence probe for checkout steps and added unsupported-link creation coverage; the focused core suite then passed all 1,195 tests and the full build passed again. `cabal run seihou -- sync --help`, `nix fmt`, both repository convention checks, `git diff --check` and ordinary strict-profile/log-enforcement OKF validation passed. Strict OKF additionally reports the nine pre-existing missing-review diagnostics on older requests; IR-10 adds none. No historical reviews were invented.
+
+The real binary and committed E2E suites prove clean clones with empty and newer producer caches, poisoned config, both agent and editor/shared-asset domains, no command sentinel execution, unchanged tracked blobs/index/manifest bytes, idempotence, deletion/wrong-target repair, blocked regular objects, linked worktrees, same-run generated sources, agreeing application ownership, conflicting retarget refusal, last-owner no-spec removal, condition retirement, preservation of edited links, and failed-update rollback. Core effects trace only link/parent mutations and fixed read-only Git calls. Version-1 journals remain readable; version-2 snapshots recover dangling links and reject unknown kinds before writes. Native alias handling was exercised on the macOS temporary volume. Linux execution was unavailable in this session and remains downstream platform verification; no Linux result is claimed.
+
+Source adoption at `mori://shinzui/agent-seihou` and a package release are deliberately separate. Seed runtime plans 101–104 remain unimplemented. The useful lesson is to keep desired portable wiring distinct from observed disk state and command receipts, and to distinguish explicit repair from declaration evolution so user edits survive retirement.
 
 
 ## Context and Orientation
@@ -221,9 +222,7 @@ upstream again before pinning.
 `Step.lifecycle`, `StepLifecycle = Managed | Seed`, missing-field compatibility, validation, and
 the schema pin workflow. [Plan 100](100-record-seed-receipts-in-manifest-schema-8.md) defines
 `Manifest.seeds`, a schema-8 codec, the adjacent 7-to-8 lossless upgrade, and seed invariants.
-Both were entirely unchecked when this plan was written. They are hard prerequisites, not
-evidence of existing APIs. A novice must complete those checked-in plans first if their
-interfaces are absent. This plan is standalone rather than a child of MasterPlan 12 and retains
+Both were unchecked when this plan was written and are now implemented in commit 66466b4. Their APIs are present; schema 8 is retained as the seed capability boundary and schema 9 adds checkout outputs. This plan is standalone rather than a child of MasterPlan 12 and retains
 its own intention. Plans 101–104 can coexist with this work; review every added Operation
 constructor when either series lands. Do not enable seed behavior or discard seed records as a
 side effect of checkout implementation.
@@ -252,7 +251,7 @@ excluded.
 
 `seihou-core/src/Seihou/Effect/Filesystem.hs` abstracts disk operations. Its real interpreter is
 `seihou-core/src/Seihou/Effect/FilesystemInterp.hs`; its in-memory interpreter is
-`seihou-core/src/Seihou/Effect/FilesystemPure.hs`. Neither currently models links.
+`seihou-core/src/Seihou/Effect/FilesystemPure.hs`. Both now model literal link entries alongside real files and directories.
 `seihou-core/src/Seihou/Core/Status.hs` hashes managed files only.
 `seihou-cli/src/Seihou/CLI/CommandExecution.hs` skips commands with matching receipts under
 RunChangedCommands. It does not inspect command outputs; this is the confirmed fresh-clone gap.
@@ -964,3 +963,7 @@ failure reporting, distinct CLI module names, and proposed ADR 0018. Verified th
 against current source and local architecture/ADRs; no feature code was implemented.
 
 Revision note (2026-10-15, implementation): Began the explicitly required seed foundations before checkout work; isolated concurrent working-tree edits and corrected the schema pin procedure to match the actual GitHub input.
+
+Revision note (2026-10-15, core implementation): Completed seed prerequisites and the directory-link core, codecs, versioning, filesystem effects, shared planner, safety checks and rollback; record actual Git check-ignore behavior and successful core/manual validation.
+
+Revision note (2026-10-15, completion): Finished manifest-only CLI, lifecycle integration, real clone/ownership/recovery proofs, documentation and ADR distillation. Recorded passing build/test/format/convention/OKF gates and the explicit macOS-only execution limit.

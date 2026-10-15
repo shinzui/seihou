@@ -11,6 +11,7 @@ import Seihou.Core.ArtifactIdentitySpec qualified as ArtifactIdentitySpec
 import Seihou.Core.ArtifactOriginDetectSpec qualified as ArtifactOriginDetectSpec
 import Seihou.Core.ArtifactRefSpec qualified as ArtifactRefSpec
 import Seihou.Core.BlueprintSpec qualified as BlueprintSpec
+import Seihou.Core.CheckoutSpec qualified as CheckoutSpec
 import Seihou.Core.CommandFingerprintSpec qualified as CommandFingerprintSpec
 import Seihou.Core.CommandVarSpec qualified as CommandVarSpec
 import Seihou.Core.ContextSpec qualified as ContextSpec
@@ -25,8 +26,8 @@ import Seihou.Core.RegistryEmitSpec qualified as RegistryEmitSpec
 import Seihou.Core.RegistrySpec qualified as RegistrySpec
 import Seihou.Core.RegistrySyncSpec qualified as RegistrySyncSpec
 import Seihou.Core.ScaffoldSpec qualified as ScaffoldSpec
-import Seihou.Core.SeedSpec qualified as SeedSpec
 import Seihou.Core.SchemaUpgradeSpec qualified as SchemaUpgradeSpec
+import Seihou.Core.SeedSpec qualified as SeedSpec
 import Seihou.Core.StatusSpec qualified as StatusSpec
 import Seihou.Core.TypesSpec qualified as TypesSpec
 import Seihou.Core.VariableSpec qualified as VariableSpec
@@ -41,6 +42,7 @@ import Seihou.Effect.FilesystemSpec qualified as FilesystemSpec
 import Seihou.Effect.LoggerSpec qualified as LoggerSpec
 import Seihou.Effect.ManifestStoreSpec qualified as ManifestStoreSpec
 import Seihou.Engine.BaselineSpec qualified as BaselineSpec
+import Seihou.Engine.CheckoutSpec qualified as CheckoutEngineSpec
 import Seihou.Engine.ConflictSpec qualified as ConflictSpec
 import Seihou.Engine.DiffSpec qualified as DiffSpec
 import Seihou.Engine.ExecuteSpec qualified as ExecuteSpec
@@ -96,6 +98,8 @@ main = do
   registryEmitTests <- RegistryEmitSpec.tests
   registrySyncTests <- RegistrySyncSpec.tests
   scaffoldTests <- ScaffoldSpec.tests
+  checkoutEngineTests <- CheckoutEngineSpec.tests
+  checkoutTests <- CheckoutSpec.tests
   seedTests <- SeedSpec.tests
   schemaUpgradeTests <- SchemaUpgradeSpec.tests
   statusTests <- StatusSpec.tests
@@ -136,4 +140,4 @@ main = do
   manifestUpgradeTests <- ManifestUpgradeSpec.tests
   promptTests <- PromptSpec.tests
   confirmTests <- ConfirmSpec.tests
-  defaultMain (testGroup "seihou-core" [graphTests, instanceTests, compositionPlanTests, compositionRecipeTests, resolveTests, agentPromptTests, applicationTests, artifactIdentityTests, artifactOriginDetectTests, artifactRefTests, blueprintTests, commandFingerprintTests, commandVarTests, typesTests, contextTests, entailmentTests, exprTests, installTests, listTests, migrationTests, moduleTests, recipeTests, registryTests, registryEmitTests, registrySyncTests, scaffoldTests, seedTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, threeWayMergeTests, updateTransactionTests, planTests, previewTests, reconcileTests, sectionTests, validateTests, splitFlakeTests, dhallTextFlakeTests, typedDhallTextTests, conditionalTemplateTests, configTests, dhallEvalTests, migrationDecoderTests, configReaderTests, configWriterTests, baselineStoreTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, baselineTests, diffTests, executeTests, engineMigrateTests, removeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, manifestUpgradeTests, promptTests, confirmTests])
+  defaultMain (testGroup "seihou-core" [graphTests, instanceTests, compositionPlanTests, compositionRecipeTests, resolveTests, agentPromptTests, applicationTests, artifactIdentityTests, artifactOriginDetectTests, artifactRefTests, blueprintTests, commandFingerprintTests, commandVarTests, typesTests, contextTests, entailmentTests, exprTests, installTests, listTests, migrationTests, moduleTests, recipeTests, registryTests, registryEmitTests, registrySyncTests, scaffoldTests, checkoutEngineTests, checkoutTests, seedTests, schemaUpgradeTests, statusTests, variableTests, versionTests, templateTests, threeWayMergeTests, updateTransactionTests, planTests, previewTests, reconcileTests, sectionTests, validateTests, splitFlakeTests, dhallTextFlakeTests, typedDhallTextTests, conditionalTemplateTests, configTests, dhallEvalTests, migrationDecoderTests, configReaderTests, configWriterTests, baselineStoreTests, filesystemTests, loggerTests, manifestStoreTests, conflictTests, baselineTests, diffTests, executeTests, engineMigrateTests, removeTests, compositionTests, executionTests, integrationTests, generationTests, manifestTypesTests, manifestUpgradeTests, promptTests, confirmTests])

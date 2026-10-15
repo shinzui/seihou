@@ -100,6 +100,7 @@ import Seihou.Core.Types
     ManifestSchemaVersion (..),
     SharedWriteMode (..),
   )
+import Seihou.Manifest.JSON (decodeManifestValue)
 import Seihou.Manifest.Types
   ( currentManifestVersion,
     manifestSupports,
@@ -167,7 +168,7 @@ data LegacyManifest = LegacyManifest
 -- to convert, and complaining about it is the step planner's job.
 readLegacyManifest :: LBS.ByteString -> Either String (Maybe LegacyManifest)
 readLegacyManifest bytes = do
-  value <- Aeson.eitherDecode bytes
+  value <- decodeManifestValue bytes
   fields <- case value of
     Aeson.Object fields -> Right fields
     _ -> Left "manifest is not a JSON object"
@@ -674,7 +675,7 @@ runManifestUpgrade opts = do
         )
     else do
       bytes <- LBS.readFile manifestPath
-      case Aeson.eitherDecode bytes >>= \document -> first (T.unpack . renderManifestUpgradeError) ((document,) <$> documentSchemaVersion document) of
+      case decodeManifestValue bytes >>= \document -> first (T.unpack . renderManifestUpgradeError) ((document,) <$> documentSchemaVersion document) of
         Left err -> pure (UpgradeFailed (T.pack manifestRelativePath <> " could not be read: " <> T.pack err))
         Right (document, source) -> do
           let target = fromMaybe currentManifestVersion (opts ^. #targetVersion)

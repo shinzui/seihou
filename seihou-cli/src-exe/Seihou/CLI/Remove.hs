@@ -3,20 +3,27 @@ module Seihou.CLI.Remove
   )
 where
 
-import Control.Monad (foldM, when)
+import Control.Exception (IOException, try)
+import Control.Monad (foldM, forM_, unless, when)
 import Data.Generics.Labels ()
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Time.Clock (getCurrentTime)
+import Seihou.CLI.CheckoutSync (renderCheckoutPlan)
 import Seihou.CLI.Commands (RemoveOpts (..))
 import Seihou.CLI.Style (bold, dim, green, useColor, yellow)
+import Seihou.Core.Checkout
 import Seihou.Core.Types
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import Seihou.Effect.ProcessInterp (runProcessIO)
+import Seihou.Engine.Checkout
 import Seihou.Engine.Remove
 import Seihou.Prelude
+import System.Directory (getCurrentDirectory)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.IO (hFlush, hIsTerminalDevice, stdin, stdout)
 
@@ -35,6 +42,11 @@ handleRemove opts = do
       TIO.putStrLn "No Seihou manifest found. Nothing to remove."
       exitFailure
     Right (Just m) -> pure m
+
+  case selectCheckoutRemoval manifest modName (opts ^. #application) of
+    Left err -> TIO.putStrLn (err ^. #message) >> exitFailure
+    Right (Just selected) -> handleCheckoutRemoval opts manifest selected >> exitWith ExitSuccess
+    Right Nothing -> pure ()
 
   -- Find the module's removal spec
   let mApplied = findAppliedModule manifest modName
@@ -193,3 +205,65 @@ resolveConflictsInteractively paths = do
 applyColor :: Bool -> (Text -> Text) -> Text -> Text
 applyColor True f t = f t
 applyColor False _ t = t
+
+-- | Automatic cleanup uses recorded declarations even without a custom spec.
+handleCheckoutRemoval :: RemoveOpts -> Manifest -> CheckoutRemovalSelection -> IO ()
+handleCheckoutRemoval opts manifest selected = do
+  root <- getCurrentDirectory
+  let candidate = selected ^. #candidateManifest
+  checked <- runEff $ runFilesystem $ runProcessIO $ prepareCheckoutPlan Reconcile ApplyDeclaration root manifest candidate []
+  plan <- case checked of
+    Left err -> TIO.putStrLn (err ^. #message) >> exitFailure
+    Right plan -> pure plan
+  TIO.putStr (renderCheckoutPlan (opts ^. #dryRun) plan)
+  unless (checkoutApplicable plan) exitFailure
+  ordinary <- case selected ^. #removal of
+    Nothing -> pure (ExecutedRemovalPlan (selected ^. #moduleName) [])
+    Just spec -> do
+      forM_ (spec ^. #steps) $ \step ->
+        when (any (pathsOverlap (T.unpack (step ^. #dest))) (Map.keys (manifest ^. #checkoutOutputs))) $ do
+          TIO.putStrLn "Custom removal overlaps a checkout destination; remove that custom step because checkout links are retired automatically."
+          exitFailure
+      result <- runEff $ runFilesystem $ buildRemovalOps manifest (selected ^. #moduleName) spec
+      case result of
+        Left _ -> TIO.putStrLn "Cannot plan the module's custom removal; correct its declared paths first." >> exitFailure
+        Right removal -> pure removal
+  -- A selected application's removal cannot delete another application's files.
+  forM_ (ordinary ^. #ops) $ \op -> forM_ (removalDestination op) $ \path ->
+    case Map.lookup path (manifest ^. #files) of
+      Just record
+        | not (Set.null (Set.delete (selected ^. #applicationId) (record ^. #applicationIds))) ->
+            TIO.putStrLn ("Removal path has surviving application owners: " <> T.pack path) >> exitFailure
+      _ -> pure ()
+  color <- useColor
+  mapM_ (displayOp color) (ordinary ^. #ops)
+  when (opts ^. #dryRun) (exitWith ExitSuccess)
+  interactive <- hIsTerminalDevice stdin
+  when (not (opts ^. #force) && interactive) $ do
+    TIO.putStr "\n  Proceed? [y/N] "
+    hFlush stdout
+    response <- T.strip . T.pack <$> getLine
+    unless (T.toLower response == "y") (exitWith (ExitFailure 3))
+  let conflicts = [path | DeleteFileOp path RFConflict <- ordinary ^. #ops]
+  unless (null conflicts || opts ^. #force) $ do
+    TIO.putStrLn "Custom removal has modified files; use --force after reviewing them."
+    exitFailure
+  now <- getCurrentTime
+  applied <- runEff $ runFilesystem $ runProcessIO $ applyCheckoutPlan ApplyDeclaration root plan
+  case applied ^. #failure of
+    Just err -> TIO.putStrLn (err ^. #message) >> exitFailure
+    Nothing -> pure ()
+  result <- try @IOException $ do
+    _ <- runEff $ runFilesystem $ executeRemovalOps manifest ordinary Set.empty now
+    runEff $ runFilesystem $ runManifestStore ".seihou/manifest.json" $ writeManifest (candidate & #genAt .~ now)
+  case result of
+    Left err -> do
+      _ <- runEff $ runFilesystem $ rollbackCheckout root (applied ^. #undo)
+      TIO.putStrLn ("Removal failed: " <> T.pack (show err))
+      exitFailure
+    Right () -> TIO.putStrLn ("Removed checkout ownership for " <> selected ^. #instanceName . #unModuleName <> ".")
+  where
+    removalDestination (DeleteFileOp path _) = Just path
+    removalDestination (StripSectionOp path) = Just path
+    removalDestination (RewriteOp path _) = Just path
+    removalDestination RemovalCommandOp {} = Nothing

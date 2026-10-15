@@ -500,6 +500,7 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
                                 recipe = manifest ^. #recipe,
                                 blueprint = manifest ^. #blueprint,
                                 seeds = manifest ^. #seeds,
+                                checkoutOutputs = manifest ^. #checkoutOutputs,
                                 blueprintMigrations = manifest ^. #blueprintMigrations
                               }
                       writeManifest newManifest

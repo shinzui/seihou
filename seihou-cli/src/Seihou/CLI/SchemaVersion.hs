@@ -9,7 +9,7 @@ import Data.Text (Text)
 
 -- | Raw URL for the seihou-schema package.dhall at a pinned commit
 schemaUrl :: Text
-schemaUrl = "https://raw.githubusercontent.com/shinzui/seihou-schema/1d686cf9e3019cec061c1f4a4d83be53cb606e8b/package.dhall"
+schemaUrl = "https://raw.githubusercontent.com/shinzui/seihou-schema/367b0a1390ac1ed3dda6e2cacfdf3e72b1f624df/package.dhall"
 
 -- | SHA256 integrity hash for the schema import
 schemaHash :: Text

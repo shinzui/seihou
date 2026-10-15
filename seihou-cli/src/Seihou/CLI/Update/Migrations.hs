@@ -205,7 +205,7 @@ snapshotTrackedFiles projectRoot manifest = do
           | path <- Map.keys files,
             directory <- parents path
           ]
-  pure PureFS {files, dirs = directories}
+  pure PureFS {files, dirs = directories, links = Map.empty}
   where
     readTracked path = do
       let fullPath = projectRoot </> path

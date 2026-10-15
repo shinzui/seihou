@@ -1,5 +1,10 @@
 module Seihou.Effect.Filesystem
   ( Filesystem (..),
+    PathEntry (..),
+    inspectPath,
+    createLink,
+    removeLink,
+    normalizePath,
     readFileText,
     writeFileText,
     copyFile,
@@ -17,7 +22,15 @@ where
 
 import Seihou.Prelude
 
+-- | A filesystem entry, observed without following its final component.
+data PathEntry = EntryMissing | EntryFile | EntryDirectory | EntrySymlink FilePath
+  deriving stock (Eq, Show, Generic)
+
 data Filesystem :: Effect where
+  InspectPath :: FilePath -> Filesystem m PathEntry
+  CreateDirectoryLink :: FilePath -> FilePath -> Filesystem m ()
+  RemoveLink :: FilePath -> Filesystem m ()
+  NormalizePath :: FilePath -> Filesystem m FilePath
   ReadFileText :: FilePath -> Filesystem m Text
   WriteFileText :: FilePath -> Text -> Filesystem m ()
   CopyFile :: FilePath -> FilePath -> Filesystem m ()
@@ -73,3 +86,15 @@ renamePath src dest = send (RenamePath src dest)
 
 removeDirectoryRecursive :: (Filesystem :> es) => FilePath -> Eff es ()
 removeDirectoryRecursive path = send (RemoveDirectoryRecursive path)
+
+inspectPath :: (Filesystem :> es) => FilePath -> Eff es PathEntry
+inspectPath = send . InspectPath
+
+createLink :: (Filesystem :> es) => FilePath -> FilePath -> Eff es ()
+createLink target path = send (CreateDirectoryLink target path)
+
+removeLink :: (Filesystem :> es) => FilePath -> Eff es ()
+removeLink = send . RemoveLink
+
+normalizePath :: (Filesystem :> es) => FilePath -> Eff es FilePath
+normalizePath = send . NormalizePath

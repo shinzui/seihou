@@ -15,6 +15,7 @@ import Control.Exception (SomeException, bracketOnError, displayException, onExc
 import Control.Monad (foldM, forM, forM_, unless, when)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.:?), (.=))
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Types qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
@@ -28,6 +29,7 @@ import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Effect.BaselineStore (putBaseline)
 import Seihou.Effect.BaselineStoreInterp (runBaselineStore)
+import Seihou.Effect.Filesystem (PathEntry (..), inspectPath)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Engine.Reconcile
 import Seihou.Manifest.Hash (hashContent)
@@ -59,7 +61,8 @@ data TransactionError
 
 data JournalEntry = JournalEntry
   { targetPath :: !FilePath,
-    backupFile :: !(Maybe FilePath)
+    backupFile :: !(Maybe FilePath),
+    linkTarget :: !(Maybe FilePath)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -76,12 +79,30 @@ instance ToJSON JournalEntry where
   toJSON entry =
     Aeson.object
       [ "path" .= (entry ^. #targetPath),
-        "backup" .= (entry ^. #backupFile)
+        "backup" .= (entry ^. #backupFile),
+        "target" .= (entry ^. #linkTarget),
+        "kind"
+          .= ( case (entry ^. #backupFile, entry ^. #linkTarget) of
+                 (_, Just _) -> "symlink" :: Text
+                 (Just _, _) -> "file"
+                 _ -> "absent"
+             )
       ]
 
-instance FromJSON JournalEntry where
-  parseJSON = Aeson.withObject "JournalEntry" $ \object ->
-    JournalEntry <$> object .: "path" <*> object .:? "backup"
+parseJournalEntry :: Int -> Aeson.Value -> Aeson.Parser JournalEntry
+parseJournalEntry version = Aeson.withObject "JournalEntry" $ \object -> do
+  path <- object .: "path"
+  backup <- object .:? "backup"
+  if version == 1
+    then pure (JournalEntry path backup Nothing)
+    else do
+      kind <- object .: "kind" :: Aeson.Parser Text
+      target <- object .:? "target"
+      case (kind, backup, target) of
+        ("absent", Nothing, Nothing) -> pure (JournalEntry path Nothing Nothing)
+        ("file", Just _, Nothing) -> pure (JournalEntry path backup Nothing)
+        ("symlink", Nothing, Just _) -> pure (JournalEntry path Nothing target)
+        _ -> fail "unknown or malformed transaction entry kind"
 
 instance ToJSON JournalMetadata where
   toJSON metadata =
@@ -96,11 +117,11 @@ instance ToJSON JournalMetadata where
 instance FromJSON JournalMetadata where
   parseJSON = Aeson.withObject "JournalMetadata" $ \object -> do
     version <- object .: "version"
-    unless (version == 1) (fail "unsupported transaction journal version")
+    unless (version `elem` [1, 2]) (fail "unsupported transaction journal version")
     JournalMetadata
       <$> pure version
       <*> object .: "createdAt"
-      <*> object .: "entries"
+      <*> (mapM (parseJournalEntry version) =<< object .: "entries")
       <*> object .: "newDirectories"
       <*> object .:? "expectedManifest"
 
@@ -125,18 +146,21 @@ initializeJournal transaction safeTargets = do
     let fullPath = transaction ^. #projectRoot </> relativePath
         backupName = show index <> ".txt"
         backupPath = backupDirectory </> backupName
-    exists <- Directory.doesFileExist fullPath
-    if exists
-      then do
+    verifySafeParents (transaction ^. #projectRoot) relativePath
+    entry <- runEff $ runFilesystem $ inspectPath fullPath
+    case entry of
+      EntrySymlink target -> pure (JournalEntry relativePath Nothing (Just target))
+      EntryFile -> do
         TIO.readFile fullPath >>= TIO.writeFile backupPath
-        pure (JournalEntry relativePath (Just backupName))
-      else pure (JournalEntry relativePath Nothing)
+        pure (JournalEntry relativePath (Just backupName) Nothing)
+      EntryMissing -> pure (JournalEntry relativePath Nothing Nothing)
+      EntryDirectory -> ioError (userError ("transaction target is a directory: " <> relativePath))
   missingDirectories <- missingParentDirectories (transaction ^. #projectRoot) safeTargets
   now <- getCurrentTime
   writeJournal
     (transaction ^. #transactionDirectory)
     JournalMetadata
-      { journalVersion = 1,
+      { journalVersion = 2,
         createdAt = now,
         entries = entries,
         newDirectories = missingDirectories,
@@ -333,6 +357,7 @@ replaceManifestFiles manifest nextFiles =
       recipe = manifest ^. #recipe,
       blueprint = manifest ^. #blueprint,
       seeds = manifest ^. #seeds,
+      checkoutOutputs = manifest ^. #checkoutOutputs,
       blueprintMigrations = manifest ^. #blueprintMigrations
     }
 
@@ -412,6 +437,7 @@ rollbackUpdateTransaction transaction = do
     Left err -> pure (Left err)
     Right metadata -> do
       result <- try @SomeException $ do
+        forM_ (metadata ^. #entries) (verifySafeParents (transaction ^. #projectRoot) . (^. #targetPath))
         forM_ (metadata ^. #entries) (restoreEntry transaction)
         removeNewDirectories (transaction ^. #projectRoot) (metadata ^. #newDirectories)
         cleanupDirectory (transaction ^. #transactionDirectory)
@@ -419,23 +445,49 @@ rollbackUpdateTransaction transaction = do
 
 restoreEntry :: UpdateTransaction -> JournalEntry -> IO ()
 restoreEntry transaction entry = do
-  let target = transaction ^. #projectRoot </> (entry ^. #targetPath)
-  case entry ^. #backupFile of
-    Nothing -> do
-      exists <- Directory.doesFileExist target
-      when exists (Directory.removeFile target)
-    Just backupName -> do
+  let root = transaction ^. #projectRoot
+      target = root </> (entry ^. #targetPath)
+  verifySafeParents root (entry ^. #targetPath)
+  current <- runEff $ runFilesystem $ inspectPath target
+  -- Never follow a current link while restoring a file snapshot or a link.
+  case current of
+    EntrySymlink _ -> Directory.removeDirectoryLink target
+    EntryDirectory -> ioError (userError ("refusing to restore over directory: " <> target))
+    _ -> pure ()
+  case (entry ^. #linkTarget, entry ^. #backupFile) of
+    (Just link, _) -> do
+      when (current == EntryFile) (ioError (userError ("refusing to restore link over a regular file: " <> target)))
+      Directory.createDirectoryIfMissing True (takeDirectory target)
+      Directory.createDirectoryLink link target
+    (_, Just backupName) -> do
       let backupPath = transaction ^. #transactionDirectory </> "backups" </> backupName
+      backupEntry <- runEff $ runFilesystem $ inspectPath backupPath
+      unless (backupEntry == EntryFile) (ioError (userError "transaction backup is not a real file"))
       content <- TIO.readFile backupPath
       atomicWriteText target content
+    _ -> when (current == EntryFile) (Directory.removeFile target)
+
+-- | Recovery must not traverse a substituted parent. Check from the root down.
+verifySafeParents :: FilePath -> FilePath -> IO ()
+verifySafeParents root path = go (reverse (relativeParents path))
+  where
+    go [] = pure ()
+    go (parent : rest) = do
+      entry <- runEff $ runFilesystem $ inspectPath (root </> parent)
+      case entry of
+        EntrySymlink _ -> ioError (userError ("transaction parent is a symlink: " <> parent))
+        EntryFile -> ioError (userError ("transaction parent is not a directory: " <> parent))
+        EntryMissing -> pure ()
+        EntryDirectory -> go rest
 
 removeNewDirectories :: FilePath -> [FilePath] -> IO ()
 removeNewDirectories projectRoot = mapM_ removeIfEmpty . reverse . sortOn pathDepth
   where
     removeIfEmpty relativePath = do
       let fullPath = projectRoot </> relativePath
-      exists <- Directory.doesDirectoryExist fullPath
-      when exists $ do
+      verifySafeParents projectRoot relativePath
+      entry <- runEff $ runFilesystem $ inspectPath fullPath
+      when (entry == EntryDirectory) $ do
         contents <- Directory.listDirectory fullPath
         when (null contents) (Directory.removeDirectory fullPath)
 
@@ -538,7 +590,7 @@ readJournal transactionDirectory = do
 validateJournal :: JournalMetadata -> Either Text JournalMetadata
 validateJournal metadata = do
   traverse_ (validateJournalEntry . (^. #targetPath)) (metadata ^. #entries)
-  traverse_ validateBackupName [name | JournalEntry _ (Just name) <- metadata ^. #entries]
+  traverse_ validateBackupName [name | JournalEntry _ (Just name) _ <- metadata ^. #entries]
   traverse_ (first renderTransactionPathError . validateTransactionPath) (metadata ^. #newDirectories)
   pure metadata
   where

@@ -44,6 +44,7 @@ import Seihou.CLI.Run (handleRun)
 import Seihou.CLI.SchemaUpgrade (handleSchemaUpgrade)
 import Seihou.CLI.Setup (handleSetup)
 import Seihou.CLI.Status (handleStatus)
+import Seihou.CLI.Sync (handleSync)
 import Seihou.CLI.Update (handleUpdate)
 import Seihou.CLI.Upgrade (handleUpgrade)
 import Seihou.CLI.Validate (handleValidateModule)
@@ -93,6 +94,8 @@ dispatch cmd =
       handleVars varsOpts
     Install installOpts ->
       handleInstall installOpts
+    Sync syncOpts ->
+      handleSync syncOpts
     Status statusOpts ->
       handleStatus statusOpts
     Diff ->
