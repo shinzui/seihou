@@ -9,9 +9,9 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-09-28T17:49:14Z"
-timestamp: 2026-10-15T14:49:03Z
+timestamp: 2026-10-15T14:54:36Z
 requestId: IR-10
-status: proposed
+status: accepted
 origin: mori://shinzui/keiro
 acceptanceCriteria:
   - id: AC-1
@@ -47,13 +47,33 @@ reviews:
       seihou v0.6.0.0 (`update --run-all-commands --dry-run`, targeted and untargeted, with and
       without `--force`, and `run link-skill --dry-run`) in a fresh working copy of mori://shinzui/keiro at
       6b9f5b38, and read link-skill 0.2.0 at mori://shinzui/agent-seihou 4e0a1d7.
+  - kind: model
+    reviewer: codex-cli
+    reviewed_at: "2026-10-15T14:54:36Z"
+    document_timestamp: "2026-10-15T14:54:36Z"
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: gpt-6.1-sol
+    effort: high
+    context: >-
+      Independent validation of the original PR against current command planning,
+      Step/Strategy decoding, filesystem effects, manifest schema 7, seed plans 99
+      and 100, and ADRs 0001, 0004, 0013, 0014, and 0015. Corrected the colliding
+      request ID to IR-10, the claude-gitignore dependency name, and unsafe ambiguity
+      in rebuild/removal behavior. The old command transcript was not rerun.
+      The request is accepted and planned in ExecPlan 105; this is not approval
+      or completion of its future implementation.
+
 ---
 
 # Rebuild checkout-local outputs, such as skill symlinks, in a fresh clone
 
 ## Status
 
-Proposed. No plan implements this request.
+Accepted and planned in [ExecPlan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md).
+The plan has six implementation milestones and requires the declaration and manifest
+foundations in plans 99 and 100 first. Implementation has not started.
 
 ## Context
 

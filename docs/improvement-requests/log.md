@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-15
+* **Update**: IR-10 is accepted and planned in docs/plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md after PR #1 was validated, updated, and merged. Six milestones cover declarations, versioned manifest ownership, checked link operations, sync/status, command integration, and fresh-clone acceptance. Plans 99 and 100 supply prerequisite lifecycle/schema foundations. Implementation remains pending.
 * **Update**: IR-10 was renumbered from the PR’s colliding IR-9 using okf id next; the existing receipt-ordering IR-9 is unchanged. Current-source validation confirms the rebuild gap, corrects claude-gitignore, distinguishes historical evidence from current behavior, and requires tracked-path, containment, collision, and schema-evolution checks.
 
 ## 2026-10-02
