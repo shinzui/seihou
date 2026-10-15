@@ -65,6 +65,17 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Upgrade `mori://shinzui/okf/packages/okf-core` to 0.10.0.0,
+  `mori://shinzui/baikai/packages/baikai` to 0.8.0.0,
+  `mori://shinzui/baikai/packages/baikai-kit` to 0.4.0.1, and both provider
+  adapters to 0.7.1.1 in Cabal and Nix. Kit commands expose JSON output and
+  visibility options; interactive and batch Codex launches enable Seihou's
+  tool-only skills for the session.
+- Update `mori://shinzui/haskell-nix` to revision `5cb50cab752945d1a0278c9347edaa5918f6d158`
+  and use its OKF package. Baikai declares a packaged `ps` runtime dependency;
+  Darwin reports unavailable thread states explicitly so batch cleanup works
+  inside the Nix sandbox while preserving stopped and zombie states.
+
 - **Human `seihou update` failures end with a `seihou agent upgrade <target>` hint**
   (`Update.Render.agentUpgradeHint`, `errorOutputFor`). `UpdateErrorView` carries the
   first named target. JSON output is unchanged.

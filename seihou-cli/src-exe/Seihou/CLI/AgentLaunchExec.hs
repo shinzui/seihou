@@ -11,13 +11,7 @@ import Baikai.Interactive
     CodexSandboxMode (CodexWorkspaceWrite),
     InteractiveLaunchResult (..),
     InteractiveSafety (ClaudeAllowedTools, CodexSandbox),
-    effort,
-    extraDirs,
     interactiveLaunchRequest,
-    modelId,
-    safety,
-    systemPrompt,
-    workingDir,
   )
 import Baikai.Kit.Session qualified as KitSession
 import Baikai.Provider.Claude.Interactive
@@ -75,16 +69,20 @@ launchClaude addDirs tools model effortLevel systemPrompt initialPrompt = do
       launchExitCode
         =<< launchClaudeInteractive
           defaultClaudeInteractiveConfig
-          -- InteractiveLaunchRequest comes from baikai and has no Generic instance,
-          -- so these fields have no labels. Record update syntax is the only option.
-          (interactiveLaunchRequest (promptOrEmpty initialPrompt))
-            { systemPrompt = Just systemPrompt,
-              modelId = model,
-              effort = effortLevel,
-              workingDir = Just cwd,
-              extraDirs = addDirs,
-              safety = ClaudeAllowedTools (map T.pack tools)
-            }
+          ( interactiveLaunchRequest (promptOrEmpty initialPrompt)
+              & #systemPrompt
+              .~ Just systemPrompt
+              & #modelId
+              .~ model
+              & #effort
+              .~ effortLevel
+              & #workingDir
+              .~ Just cwd
+              & #extraDirs
+              .~ addDirs
+              & #safety
+              .~ ClaudeAllowedTools (map T.pack tools)
+          )
 
 launchCodex :: [FilePath] -> Maybe Text -> Maybe ThinkingLevel -> Text -> Maybe Text -> IO ExitCode
 launchCodex addDirs model effortLevel systemPrompt initialPrompt = do
@@ -96,19 +94,26 @@ launchCodex addDirs model effortLevel systemPrompt initialPrompt = do
       exitFailure
     Just _ -> do
       cwd <- getCurrentDirectory
+      sessionArgs <- KitSession.codexSessionArgs seihouKitConfig
       launchExitCode
         =<< launchCodexInteractive
           defaultCodexInteractiveConfig
-          -- InteractiveLaunchRequest comes from baikai and has no Generic instance,
-          -- so these fields have no labels. Record update syntax is the only option.
-          (interactiveLaunchRequest (promptOrEmpty initialPrompt))
-            { systemPrompt = Just systemPrompt,
-              modelId = model,
-              effort = effortLevel,
-              workingDir = Just cwd,
-              extraDirs = addDirs,
-              safety = CodexSandbox CodexWorkspaceWrite CodexApprovalOnRequest
-            }
+          ( interactiveLaunchRequest (promptOrEmpty initialPrompt)
+              & #systemPrompt
+              .~ Just systemPrompt
+              & #modelId
+              .~ model
+              & #effort
+              .~ effortLevel
+              & #workingDir
+              .~ Just cwd
+              & #extraDirs
+              .~ addDirs
+              & #extraArgs
+              .~ sessionArgs
+              & #safety
+              .~ CodexSandbox CodexWorkspaceWrite CodexApprovalOnRequest
+          )
 
 -- | The launched session's exit code. A 'Left' means baikai refused to render
 -- the launch (the provider cannot honor the requested safety policy), so no

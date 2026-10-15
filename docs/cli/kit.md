@@ -14,17 +14,21 @@ Running `seihou kit` with no subcommand is equivalent to `seihou kit list`.
 
 | Subcommand | Description |
 |------------|-------------|
-| `list` | List available skills and subagents (default) |
+| `list [--json]` | List available skills and subagents (default) |
 | `install NAME [--project]` | Install a skill or subagent |
-| `update [NAME]` | Pull latest and reinstall (all by default) |
+| `update [NAME] [--force] [--json]` | Pull latest and reinstall (all by default) |
 | `uninstall NAME [--project]` | Remove an installed skill or subagent |
-| `status` | Show installed items with their scope and provider coverage |
+| `status [--json]` | Show installed items with their scope and provider coverage |
 
 ## Options
 
 | Option | Description |
 |--------|-------------|
 | `--project` | Target project scope instead of user scope (available on `install` and `uninstall`) |
+| `--json` | Print one JSON document (`list`, `status`, and `update`) |
+| `--force` | Overwrite local edits during `update` |
+| `--shared` / `--tool-only` | Override the manifest visibility during `install` |
+| `--accept-shared-codex` | Accept shared visibility for Codex custom agents, which cannot be isolated |
 
 ## Description
 
@@ -32,9 +36,10 @@ Seihou Kit installs curated skills and subagents from a remote repository
 (`https://github.com/shinzui/seihou-kit`). Install writes provider-native
 copies for both Claude Code and Codex. Claude Code content is exposed to
 interactive sessions through Seihou's agent directories and `--add-dir`.
-Codex content is written to Codex's documented discovery locations, so
-`seihou agent --provider codex-cli ...` sessions launched from the same
-project can discover project-scoped skills and custom agents.
+Codex skills are tool-only by default: Seihou enables its installed skills
+for its own interactive and batch Codex sessions. Use `--shared` to expose an
+item to other sessions. Codex custom agents require shared visibility or
+explicit acceptance with `--accept-shared-codex`.
 
 The kit repository is shallow-cloned to `~/.cache/seihou/kit/` on first use
 and refreshed with `git pull --ff-only` on subsequent invocations. A
@@ -51,9 +56,9 @@ commands continue with cached data.
 | **Project** (`--project`) | Claude Code | `.seihou/agents/.claude/skills/<name>/` | `.seihou/agents/.claude/agents/<name>.md` |
 | **Project** (`--project`) | Codex | `.agents/skills/<name>/` | `.codex/agents/<name>.toml` |
 
-User-scope items are available across every project. Project-scope items are
-checked in with the project and only activated when running `seihou` from
-that project directory.
+User scope applies across projects; project scope uses the current project
+directory. Tool-only visibility limits activation to Seihou sessions. Shared
+Claude items also receive tracked links under the scope's `.claude` directory.
 
 `seihou kit status` groups installed rows by name, type, and scope, then shows
 a `PROVIDERS` column such as `claude,codex`. If one provider copy is missing,

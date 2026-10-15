@@ -27,7 +27,7 @@
     # module alongside haskell-nix-dev, so it moves only with a nix-haskell-flake release;
     # both follows keep the lock to a single haskell-nix-dev and a single nixpkgs.
     haskell-nix = {
-      url = "github:shinzui/haskell-nix/7b696dc80f8aaccaf1783fda0ab6a7f978a67134";
+      url = "github:shinzui/haskell-nix/5cb50cab752945d1a0278c9347edaa5918f6d158";
       inputs.haskell-nix-dev.follows = "haskell-nix-dev";
       inputs.nixpkgs.follows = "nixpkgs";
     };

@@ -4,7 +4,7 @@
 # seihou-cli is built from a ghc9124 Haskell package set extended with two
 # overlays: the shared haskell-nix registry (patch management) composed with
 # ./nix/haskell-overlay.nix (seihou-core / seihou-cli / seihou-okf-extension via
-# callCabal2nix, Baikai and OKF packages fetched from Hackage, the seihou-schema
+# callCabal2nix, Baikai releases from Hackage, OKF from the shared registry, the seihou-schema
 # submodule staged at ../schema, and the git revision baked into the binary).
 #
 # The default (`seihou`) package is a symlinkJoin bundling the CLI with the OKF

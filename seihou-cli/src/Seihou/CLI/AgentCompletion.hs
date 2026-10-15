@@ -24,6 +24,7 @@ module Seihou.CLI.AgentCompletion
 where
 
 import Baikai qualified
+import Baikai.Kit.Session qualified as KitSession
 import Baikai.Options qualified as BaikaiOptions
 import Baikai.Provider.Claude.Api qualified as ClaudeApi
 import Baikai.Provider.Claude.Cli qualified as ClaudeCli
@@ -34,12 +35,13 @@ import Baikai.ThinkingLevel (ThinkingLevel (..), renderThinkingLevel)
 import Baikai.Trace qualified as BaikaiTrace
 import Baikai.Trace.Sink (TraceSink, silent)
 import Control.Exception (try)
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
+import Seihou.CLI.KitConfig (seihouKitConfig)
 import System.Directory (getCurrentDirectory)
 
 data AgentProvider
@@ -306,13 +308,16 @@ responseText =
 registerAgentProviders :: IO ()
 registerAgentProviders = do
   ClaudeCli.register
-  CodexCli.register
+  sessionArgs <- KitSession.codexSessionArgs seihouKitConfig
+  Baikai.registerApiProvider $
+    CodexCli.codexCliProvider (CodexCli.defaultCodexCliConfig & #extraArgs .~ sessionArgs)
   ClaudeApi.register
   OpenAIApi.register
 
 registerAgentProvidersWithCliAccess :: [FilePath] -> [String] -> IO ()
 registerAgentProvidersWithCliAccess extraDirs tools = do
   cwd <- getCurrentDirectory
+  sessionArgs <- KitSession.codexSessionArgs seihouKitConfig
   Baikai.registerApiProvider $
     ClaudeCli.claudeCliProvider
       ClaudeCli.defaultClaudeCliConfig
@@ -323,7 +328,7 @@ registerAgentProvidersWithCliAccess extraDirs tools = do
     CodexCli.codexCliProvider
       CodexCli.defaultCodexCliConfig
         { CodexCli.workingDir = Just cwd,
-          CodexCli.extraArgs = codexAccessArgs extraDirs
+          CodexCli.extraArgs = codexAccessArgs extraDirs <> sessionArgs
         }
   ClaudeApi.register
   OpenAIApi.register

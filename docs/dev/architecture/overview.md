@@ -506,11 +506,13 @@ GHC's own `HasField` is more permissive here — it solves for a partial field
 and hands back a partial selector — which is why these sites compiled under
 `OverloadedRecordDot`. The pattern match is total; the selector was not.
 
-Third-party types are the other exclusion. `System.Process.CreateProcess`,
-`System.Directory.Permissions` and baikai's `InteractiveLaunchRequest` have no
+Third-party types are the other exclusion. `System.Process.CreateProcess`
+and `System.Directory.Permissions` have no
 `Generic` instance, so they have no labels and record update syntax is the
-only option. Those eight sites carry an inline comment saying so, and their
+only option. Those sites carry an inline comment saying so, and their
 field names are listed in `EXEMPT_UPDATE_FIELDS` in the enforcement script.
+`InteractiveLaunchRequest` from `mori://shinzui/baikai/packages/baikai` now
+provides `Generic`, so interactive launches use labels too.
 
 ### Enforcement
 
@@ -540,10 +542,13 @@ wrong fit for `seihou agent`'s interactive workflow.
 The kit work reinforced the same boundary from the filesystem side.
 Claude Code and Codex do not share a portable "agent content" layout,
 so provider-native copies, sidecar metadata, and status aggregation live
-in `baikai-kit`. Seihou supplies `toolName = "seihou"`, its kit
+in `mori://shinzui/baikai/packages/baikai-kit`. `Seihou.CLI.KitConfig`
+supplies `toolName = "seihou"`, its kit
 repository URL, and `[InteractiveClaude, InteractiveCodex]`; the shared
 package maps those settings to Seihou's user/project agent directories
-and Codex's native skill and agent locations.
+and Codex's native skill and agent locations. Interactive and batch Codex
+launches append `codexSessionArgs` so Seihou's tool-only skills are enabled
+for those sessions.
 
 Validation should match the boundary being tested. `seihou agent
 --debug` proves Seihou rendered the prompt and resolved the provider,

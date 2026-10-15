@@ -4,6 +4,20 @@
 }:
 let
   inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck dontHaddock;
+
+  # Packaged Darwin ps has no privileged thread details in the sandbox. Print
+  # an explicit unknown state instead of a blank column; keep the existing
+  # stopped/zombie cases so process-group cleanup retains its guarantees.
+  processTools =
+    if pkgs.stdenv.hostPlatform.isDarwin then
+      pkgs.darwin.ps.overrideAttrs
+        (old: {
+          postPatch = (old.postPatch or "") + ''
+            substituteInPlace ps/print.c \
+              --replace-fail '*cp = mach_state_table[k->state];' "*cp = k->state == 0 ? '?' : mach_state_table[k->state];"
+          '';
+        })
+    else pkgs.procps;
 in
 final: prev:
 let
@@ -17,11 +31,25 @@ let
       { });
 in
 {
-  # baikai, baikai-claude, baikai-openai, and baikai-kit are supplied by the
-  # shared haskell-nix registry overlay (composed ahead of this one in
-  # ../flake.module.nix), which builds the whole baikai family from its GitHub
-  # source — baikai, baikai-claude and baikai-openai 0.7.0.0, baikai-kit
-  # 0.2.0.1 — already wrapped with dontCheck + doJailbreak.
+  # Keep the published releases of mori://shinzui/baikai aligned with the
+  # Cabal bounds, independently of the older shared registry source pin.
+  baikai = pkgs.haskell.lib.compose.overrideCabal
+    (drv: {
+      # mori://shinzui/baikai/packages/baikai 0.8.0.0 hardcodes /bin/ps.
+      # Declare the runtime tool for Linux and sandbox-compatible Darwin builds.
+      postPatch = (drv.postPatch or "") + ''
+        substituteInPlace src/Baikai/Provider/Cli/Process/Internal.hs \
+          --replace-fail 'P.proc "/bin/ps"' 'P.proc "${processTools}/bin/ps"'
+      '';
+    })
+    (dontCheck (hackagePackage "baikai" "0.8.0.0"
+      "1ymsin43khbq1bmnp70mgwmfclvz0diy0bji2q3rgwv7m598kmpn"));
+  baikai-claude = dontCheck (hackagePackage "baikai-claude" "0.7.1.1"
+    "1z6x0aad1cljwscjwxz45lzjjkbcxa7v6vckdshnkv3sqyl93ak4");
+  baikai-openai = dontCheck (hackagePackage "baikai-openai" "0.7.1.1"
+    "0syv4a7by9grd9bxc9q2vimi4canmaa1x255rqfsqin9jip78n0r");
+  baikai-kit = dontCheck (hackagePackage "baikai-kit" "0.4.0.1"
+    "037fwpq4h8xdls0svv50sp0v8daa7hcf2axvly9rj9mz6kzlskq4");
 
   # effectful-core 2.7.x: the ghc9124 package set still carries 2.6.1.0, which
   # is below the `>=2.7.1.1` bound seihou-core/seihou-cli declare (2.7.0.0 has a
@@ -44,16 +72,7 @@ in
   effectful = hackagePackage "effectful" "2.7.1.0"
     "sha256-1jr7uWldG/qzNljv41c8ustRFNLnD9DuOFBmL3BYT6g=";
 
-  # okf-core keeps a local pin to the Hackage 0.8.0.0 release this repository
-  # builds against, rather than the shared overlay's okf family, which builds
-  # okf-core from the okf repository's GitHub revision.
-
-  # dontCheck: this repository has no reason to run a dependency's own test
-  # suite on every build. (The 0.8.0.0 sdist does ship dhall/ and
-  # test/fixtures/, unlike 0.1.2.0, so the old justification no longer
-  # applies -- the flag is kept purely for build time.)
-  okf-core = dontCheck (hackagePackage "okf-core" "0.8.0.0"
-    "sha256-ADugvEouY5r+o1W0K09M7IX0GTVuZ1OXvA+Vem/QnBI=");
+  # mori://shinzui/okf/packages/okf-core is supplied by the shared registry.
 
   seihou-core = pkgs.haskell.lib.compose.overrideCabal
     (drv: {

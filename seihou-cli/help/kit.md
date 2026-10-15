@@ -6,14 +6,21 @@ for both Claude Code and Codex.
 
 COMMANDS
 
-  seihou kit list                     List available skills and agents
+  seihou kit list [--json]            List available skills and agents
   seihou kit install NAME             Install to user scope (global)
   seihou kit install NAME --project   Install to project scope (local)
   seihou kit update                   Pull latest and re-install all
   seihou kit update NAME              Pull latest and re-install one
   seihou kit uninstall NAME           Remove from user scope
   seihou kit uninstall NAME --project Remove from project scope
-  seihou kit status                   Show installed items with scope, providers, and state
+  seihou kit status [--json]          Show installed items with scope, providers, and state
+
+OPTIONS
+
+  --json                  JSON output for list, status, and update
+  --force                 Overwrite local edits during update
+  --shared / --tool-only  Override item visibility during install
+  --accept-shared-codex   Accept shared Codex custom agents during install
 
 SCOPES
 
@@ -48,6 +55,11 @@ HOW IT WORKS
   Claude scope directories are passed to Claude Code via --add-dir
   flags. Claude Code discovers .claude/skills/ and .claude/agents/
   within each add-dir automatically.
+
+  Skills are tool-only by default. Seihou enables its own Codex skills
+  in interactive and batch sessions. Use --shared to expose items in
+  other sessions. Codex custom agents require shared visibility or
+  --accept-shared-codex because Codex cannot isolate them.
 
   Codex discovers skills from .agents/skills and custom agents from
   .codex/agents in the project, or from ~/.agents/skills and

@@ -17,7 +17,8 @@ import Seihou.Core.Types
   )
 import Seihou.Manifest.Types (manifestFromJSON)
 import System.Directory
-  ( createDirectoryIfMissing,
+  ( canonicalizePath,
+    createDirectoryIfMissing,
     doesFileExist,
     executable,
     getPermissions,
@@ -42,6 +43,51 @@ tests = testSpec "Agent migrate end-to-end" $ do
     exitCode `shouldBe` ExitSuccess
     output `shouldSatisfy` T.isInfixOf "--batch"
     output `shouldSatisfy` T.isInfixOf "stdin is not a terminal"
+
+  it "enables Seihou's tool-only Codex skills in interactive and batch launches" $
+    withSystemTempDirectory "seihou-codex-kit-session" $ \root -> do
+      binary <- seihouBinary
+      let blueprintDir = root </> ".seihou" </> "modules" </> "payments"
+          skillDir = root </> ".agents" </> "skills" </> "seihou-test-skill"
+          fakeBin = root </> "bin"
+          fakeCodex = fakeBin </> "codex"
+          launchLog = root </> "codex.args"
+          xdgHome = root </> "xdg"
+      mapM_ (createDirectoryIfMissing True) [blueprintDir, skillDir, fakeBin, xdgHome]
+      TIO.writeFile (blueprintDir </> "blueprint.dhall") migrationBlueprintDhall
+      TIO.writeFile (skillDir </> "SKILL.md") "---\nname: seihou-test-skill\ndescription: Test skill\n---\n"
+      TIO.writeFile
+        (skillDir </> ".seihou-kit.json")
+        "{\"name\":\"seihou-test-skill\",\"kind\":\"skill\",\"hash\":\"test\",\"installedAt\":\"2026-10-15T00:00:00Z\",\"visibility\":\"tool-only\"}"
+      TIO.writeFile
+        fakeCodex
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'codex-cli 1.0.0\\n'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"kit session complete\"}}'\n"
+      permissions <- getPermissions fakeCodex
+      -- Permissions comes from directory and has no Generic instance.
+      setPermissions fakeCodex (permissions {executable = True})
+      inherited <- getEnvironment
+      let overriddenNames = ["PATH", "XDG_CONFIG_HOME", "SEIHOU_AGENT_PROVIDER", "SEIHOU_AGENT_MODEL", "SEIHOU_CONTEXT", "SEIHOU_FAKE_AGENT_LOG"]
+          environment =
+            ("PATH", fakeBin <> [searchPathSeparator] <> fromMaybe "" (lookup "PATH" inherited))
+              : ("XDG_CONFIG_HOME", xdgHome)
+              : ("SEIHOU_AGENT_PROVIDER", "codex-cli")
+              : ("SEIHOU_FAKE_AGENT_LOG", launchLog)
+              : filter (\(key, _) -> key `notElem` overriddenNames) inherited
+          run args = runProcessText binary args (Just root) (Just environment)
+      skillPath <- canonicalizePath (skillDir </> "SKILL.md")
+      let checkSession = do
+            args <- T.lines <$> TIO.readFile launchLog
+            args `shouldSatisfy` elem "-c"
+            args `shouldSatisfy` any (T.isInfixOf (T.pack skillPath))
+            args `shouldSatisfy` any (T.isInfixOf "enabled=true")
+      (interactiveExit, interactiveOutput, interactiveError) <-
+        run ["agent", "migrate", "payments", "--from", "1.0.0", "--to", "2.0.0", "--var", "library.name=baikai"]
+      expectSuccess "Codex kit interactive launch" interactiveExit interactiveOutput interactiveError
+      checkSession
+      (batchExit, batchOutput, batchError) <- run ["agent", "run", "payments", "--batch", "--var", "library.name=baikai"]
+      expectSuccess "Codex kit batch launch" batchExit batchOutput batchError
+      batchOutput `shouldSatisfy` T.isInfixOf "kit session complete"
+      checkSession
 
   it "automatically uses the batch CLI provider when stdin is not a terminal" $
     withSystemTempDirectory "seihou-agent-run-batch" $ \root -> do

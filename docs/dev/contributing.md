@@ -117,9 +117,10 @@ themselves need no import in modules that use the prelude.
 Two things cannot use labels. `generic-lens` builds a lens only for a field
 present in every constructor, so `Operation`, `MigrationOp` and `PreviewLine`
 are reached by pattern matching. Third-party types (`CreateProcess`,
-`Permissions`, baikai's `InteractiveLaunchRequest`) have no `Generic`
+`Permissions`) have no `Generic`
 instance, so those few sites keep record update syntax and carry a comment
-saying why.
+saying why. `InteractiveLaunchRequest` from
+`mori://shinzui/baikai/packages/baikai` now has `Generic` and uses labels.
 
 `nix/check-record-conventions.sh` enforces this in the pre-commit hook and in
 `nix flake check`. To exempt a third-party type's record update, add its field
