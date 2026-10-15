@@ -8,7 +8,7 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-08-06T17:12:58Z"
-timestamp: 2026-08-16T00:00:00Z
+timestamp: 2026-10-15T15:09:14Z
 requestId: IR-2
 status: completed
 completedAt: "2026-08-16T00:00:00Z"
@@ -29,9 +29,10 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Implemented in `docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md`, under
-`docs/masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md`. See Resolution
-below.
+Completed 2026-08-16 by
+[ExecPlan 81](../plans/81-record-artifact-origin-for-agent-applied-artifacts.md), under
+[MasterPlan 10](../masterplans/10-blueprint-migration-fan-out-across-a-library-cohort.md).
+See [Resolution](#resolution) below.
 
 ## Context
 

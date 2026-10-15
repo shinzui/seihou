@@ -8,13 +8,24 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-08-17T14:00:00Z"
-timestamp: 2026-08-17T14:00:00Z
+timestamp: 2026-10-15T15:09:14Z
 requestId: IR-5
 status: proposed
 origin: mori://shinzui/okf-profiles
 ---
 
 # Improvement Request: Verify an Entailed Edge Is Reachable by Consumers
+
+## Status
+
+Proposed; no implementation plan found in `docs/plans/` or `docs/masterplans/` as
+of the 2026-10-15 audit. Neither requested capability is implemented:
+`formatBlueprintMigrationDebugOutput` still labels steps without their resolved
+origin, and `validate-blueprint` has no remote entailment-resolution option.
+
+[ExecPlan 85](../plans/85-fan-out-a-blueprint-migration-edge-to-entailed-cohort-edges.md)
+delivered the existing entailment mechanism; it does not implement this authoring-time
+reachability check and is not this request's target plan.
 
 ## Context
 

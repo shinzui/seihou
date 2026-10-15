@@ -9,9 +9,10 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-09-28T17:49:14Z"
-timestamp: 2026-10-15T14:54:36Z
+timestamp: 2026-10-15T15:09:14Z
 requestId: IR-10
 status: accepted
+targetPlan: docs/plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md
 origin: mori://shinzui/keiro
 acceptanceCriteria:
   - id: AC-1
@@ -73,7 +74,10 @@ reviews:
 
 Accepted and planned in [ExecPlan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md).
 The plan has six implementation milestones and requires the declaration and manifest
-foundations in plans 99 and 100 first. Implementation has not started.
+foundations in [ExecPlan 99](../plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md)
+and [ExecPlan 100](../plans/100-record-seed-receipts-in-manifest-schema-8.md) first.
+Implementation has not started; all implementation milestones remain unchecked as
+of the 2026-10-15 audit.
 
 ## Context
 

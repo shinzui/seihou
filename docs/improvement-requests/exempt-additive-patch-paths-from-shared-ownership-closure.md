@@ -9,10 +9,21 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-09-16T00:00:00Z"
-timestamp: 2026-09-16T12:51:16Z
+timestamp: 2026-10-15T15:09:14Z
 requestId: IR-8
-status: accepted
+status: completed
+completedAt: "2026-09-16T14:07:57Z"
 targetPlan: docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md
+resolution: >-
+  ExecPlan 90 delivered both requested behaviors on 2026-09-16: targeted updates
+  exempt certified additive-only paths from ownership closure, and
+  --include-shared-owners explicitly expands paths that require it. Both selection
+  and reconciliation enforce the rule, and partial manifest writes preserve
+  unselected owners. UpdateE2ESpec verifies that the co-owner's lines and ownership
+  survive, whole-file paths refuse, and opt-in expansion reports added applications.
+  Subsequent plans 92–94 replaced the original additiveOnly boolean with schema-7
+  sharedWriteMode evidence and staged certification of unknown paths; plan 97 added
+  certification from a co-owner's recorded remote release. ADR 0012 records the rule.
 origin: mori://shinzui/okf-profiles
 ---
 
@@ -20,33 +31,35 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Accepted 2026-09-16 and planned in
+Completed 2026-09-16 by
 [`docs/plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md`](../plans/90-exempt-additive-patch-paths-from-the-shared-ownership-closure.md),
-which implements both parts across four milestones.
+which delivered both parts across four milestones. Its Progress and Outcomes sections
+record the implementation and validation; `UpdateE2ESpec` covers the additive-path exemption,
+preservation of co-owners, whole-file refusal, and explicit expansion.
 
-The plan takes option (a) from [Requested change](#1-exempt-non-overlapping-additive-patch-paths-from-the-closure-requirement):
-the per-path write mode is persisted in the manifest, but as a single boolean
-`FileRecord.additiveOnly` rather than a per-`ApplicationId` map. Both gates only ever ask the
-conjunctive question — does *every* contribution to this path go through an additive,
-non-overlapping patch — so one flag answers it, decodes as `False` when absent, and therefore
-fails closed on a manifest written before the field existed. The manifest schema version stays
-at 6: the key is emitted only when true and an older seihou that ignores it simply keeps
-enforcing the closure everywhere, which is the conservative reading.
+The initial implementation took option (a) from
+[Requested change](#1-exempt-non-overlapping-additive-patch-paths-from-the-closure-requirement):
+it persisted a per-path `FileRecord.additiveOnly` boolean in schema 6. That representation
+is historical. [ExecPlan 92](../plans/92-define-manifest-schema-capabilities-and-ordered-upgrade-steps.md)
+replaced it with schema 7's required `sharedWriteMode`: `additive-only`,
+`requires-ownership-closure`, or `unknown`.
+[ExecPlan 93](../plans/93-upgrade-legacy-path-manifests-and-backfill-additive-facts.md)
+added manifest upgrade and shared-write certification, and
+[ExecPlan 94](../plans/94-gate-targeted-updates-on-the-minimum-manifest-schema.md)
+stages the minimum schema upgrade and certification inside targeted update planning.
+Unknown evidence must be certified before the exemption can apply; expansion is reserved
+for paths known to require ownership closure.
+[ExecPlan 97](../plans/97-fetch-a-co-owner-s-recorded-release-to-certify-shared-write-evidence.md)
+also permits certification from the co-owner's recorded remote release when the installed
+copy is a different version. These are implemented follow-ups, not outstanding IR-8 work.
 
-Two additions the request did not name, both recorded in the plan's Decision Log. First, the
-exemption is checked in two layers: the CLI preflight reads the manifest, since selection
-happens before anything is fetched, while reconciliation additionally requires every operation
-the *candidate* contributes to the path to be additive — so a module whose new version changed
-`.gitignore` from a patch step to a template step is refused rather than trusted on the strength
-of the previous release's record. Second, `Seihou.Engine.UpdateTransaction.prepareCandidateManifest`
-must union the surviving owners into the rewritten `FileRecord` instead of replacing them with
-the selection's view, and may only carry `additiveOnly = True` forward when the prior record
-agreed. Without that, the first targeted update of an exempted path would silently drop the
-unselected co-owner from the manifest and could flip the flag open for a path that is not
-additive at all. Both are fail-open defects that the closure requirement had been masking, and
-the plan sequences them ahead of the gate change.
+The safety rule remains layered: selection consults the recorded evidence, reconciliation
+checks the candidate's actual operations, and partial manifest writes preserve surviving
+owners without strengthening evidence from the selected contribution alone.
+[ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md)
+records the current rule.
 
-Part 2 lands as `seihou update <target> --include-shared-owners`, expanding the named selection
+Part 2 ships as `seihou update <target> --include-shared-owners`, expanding the named selection
 to a fixed point over the paths that still require closure and reporting each application it
 added, so a bare selection is still never broadened silently.
 

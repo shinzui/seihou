@@ -8,13 +8,28 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-08-17T16:30:00Z"
-timestamp: 2026-08-17T16:30:00Z
+timestamp: 2026-10-15T15:09:14Z
 requestId: IR-6
 status: proposed
 origin: mori://shinzui/okf-profiles
 ---
 
 # Improvement Request: Supply an Initial Instruction to CLI Providers, or Require One
+
+## Status
+
+Proposed; no implementation plan found in `docs/plans/` or `docs/masterplans/` as
+of the 2026-10-15 audit. No shared fallback instruction or provider-specific
+requirement has been added.
+
+The failure below is historical evidence from seihou 0.7.0.0, not a reproduction
+against the current tree. `AgentMigrate.launchMigration` now dispatches CLI providers
+through the interactive launcher rather than `claude -p`. However,
+`AgentLaunchExec.promptOrEmpty` still maps an omitted prompt to empty text, and
+`AgentCompletion.runAgentCompletionWith` still sends no user messages when
+`initialPrompt` is absent. `agent run --batch` uses that completion path. These
+branches do not establish that the requested default instruction has been supplied;
+the exact current provider behavior has not been retested with a live session.
 
 ## Context
 

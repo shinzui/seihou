@@ -9,13 +9,27 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-10-02T21:01:33Z"
-timestamp: 2026-10-02T21:01:33Z
+timestamp: 2026-10-15T15:09:14Z
 requestId: IR-9
 status: proposed
 origin: mori://shinzui/okf-profiles
 ---
 
 # Improvement Request: Record Command Receipts in a Manifest a Module Command Can Commit
+
+## Status
+
+Proposed; no implementation plan found in `docs/plans/` or `docs/masterplans/` as
+of the 2026-10-15 audit. The current `Run.hs` still calls
+`executeCommandPlanWithOutput` before writing `receiptManifest`; `Update.hs` still
+calls `executeCommandPlan` before building and writing `finalManifest`.
+Neither option below has been implemented.
+
+[ExecPlan 67](../plans/67-track-generated-commands-and-skip-unchanged-executions.md)
+introduced receipts and is background, not a plan to fix their publication order.
+[ExecPlan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md)
+explicitly leaves IR-9's receipt timing unchanged; it implements
+[IR-10](rebuild-checkout-local-outputs-in-a-fresh-clone.md).
 
 ## Context
 

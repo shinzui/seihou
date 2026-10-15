@@ -8,10 +8,18 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-09-14T00:00:00Z"
-timestamp: 2026-09-16T16:06:23Z
+timestamp: 2026-10-15T15:09:14Z
 requestId: IR-7
 targetPlan: docs/plans/91-truncate-the-blueprint-prompt-in-status-output.md
-status: accepted
+status: completed
+completedAt: "2026-09-16T16:07:16Z"
+resolution: >-
+  ExecPlan 91 delivered all three milestones on 2026-09-16. Status collapses whitespace
+  and bounds the blueprint prompt at 72 characters through truncateForSummary, shared
+  with migration reasons. --full-prompt displays the complete stored value; neither
+  mode changes the manifest. StatusSpec covers the bounded and full forms, and the
+  plan records a real-binary walkthrough with an unchanged manifest hash. ADR 0013
+  records the summary-versus-record rule.
 origin: mori://shinzui/okf-profiles
 ---
 
@@ -19,7 +27,7 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Accepted 2026-09-16 and implemented by
+Completed 2026-09-16 by
 [`docs/plans/91-truncate-the-blueprint-prompt-in-status-output.md`](../plans/91-truncate-the-blueprint-prompt-in-status-output.md)
 across three milestones.
 
