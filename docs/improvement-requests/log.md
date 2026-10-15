@@ -1,7 +1,19 @@
 # Bundle Update Log
 
+## 2026-10-15
+* **Update**: IR-10 was renumbered from the PR’s colliding IR-9 using okf id next; the existing receipt-ordering IR-9 is unchanged. Current-source validation confirms the rebuild gap, corrects claude-gitignore, distinguishes historical evidence from current behavior, and requires tracked-path, containment, collision, and schema-evolution checks.
+
+## 2026-10-02
+* **Addition**: IR-9 requests that module command receipts reach `.seihou/manifest.json` before a
+module's own commands can commit or push it. `seihou run` and `seihou update` write receipts only
+after the whole command phase, so `git-init`'s initial commit and `gh repo create --push` capture a
+manifest with no receipts. The tree is dirty right after the run, and a clone's later update treats
+those commands as never run. Because every receipt's `completedAt` is the run's `now`, the
+final receipt set is known up front. Records two options without choosing: write the expected receipts
+first and roll back on failure, or add a final command phase that runs after the receipt write.
+
 ## 2026-09-28
-* **Addition**: IR-9 requests a checkout-local output lifetime and a command that rebuilds those outputs in a fresh clone. `link-skill` links skills into gitignored `.claude/skills` and `.agents/skills` with shell commands whose receipts are committed, so `planCommands` skips them in every clone, and the only built-in way to re-run them (`update --run-all-commands`) also upgrades artifacts. Observed in a fresh clone of `mori://shinzui/keiro`, where that route meant three module upgrades, three migrations, and a generated `flake.lock`. The preferred shape is a declarative symlink step with `lifecycle = Some "checkout"` (extending MasterPlan 12), observed on disk rather than receipted (ADR 0004), plus a manifest-only rebuild command. A Justfile-recipe module in `mori://shinzui/agent-seihou` is recorded as a stopgap.
+* **Addition**: IR-10 requests a checkout-local output lifetime and a command that rebuilds those outputs in a fresh clone. `link-skill` links skills into gitignored `.claude/skills` and `.agents/skills` with shell commands whose receipts are committed, so `planCommands` skips them in every clone, and the only built-in way to re-run them (`update --run-all-commands`) also upgrades artifacts. Observed in a fresh clone of `mori://shinzui/keiro`, where that route meant three module upgrades, three migrations, and a generated `flake.lock`. The preferred shape is a declarative symlink step with `lifecycle = Some "checkout"` (extending MasterPlan 12), observed on disk rather than receipted (ADR 0004), plus a manifest-only rebuild command. A Justfile-recipe module in `mori://shinzui/agent-seihou` is recorded as a stopgap.
 
 ## 2026-09-16
 * **Update**: IR-7 is implemented. truncateReason and reasonWidth are hoisted out of formatBlueprintMigrations' where clause into a module-level truncateForSummary that the receipt reason and the blueprint Prompt line now share; the prompt is collapsed to one line and bounded at 72 characters while the reason keeps 60. .seihou/manifest.json is untouched - userPrompt still holds the whole prompt and seihou status writes nothing. The optional escape hatch ships as seihou status --full-prompt rather than the suggested --full, because status renders six blocks and bounds one value so a bare --full does not say which; -u and -v are both taken on this command and its siblings. ADR 0013 records the underlying rule.

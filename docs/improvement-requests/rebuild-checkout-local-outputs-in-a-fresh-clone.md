@@ -9,7 +9,8 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-09-28T17:49:14Z"
-requestId: IR-9
+timestamp: 2026-10-15T14:49:03Z
+requestId: IR-10
 status: proposed
 origin: mori://shinzui/keiro
 acceptanceCriteria:
@@ -68,7 +69,7 @@ commands =
   ]
 ```
 
-`agent-gitignore`, a dependency, adds `.claude/` and `.agents/` to `.gitignore`. The skill
+`claude-gitignore`, a dependency, adds `.claude/` and `.agents/` to `.gitignore`. The skill
 source is committed, but the links are not, and they cannot be: they are one working copy's
 wiring. `exec-plan` and `master-plan` depend on `link-skill`, so any project that uses them is
 in the same position.
@@ -133,6 +134,17 @@ that the skills are missing. Nothing in `seihou status` shows the gap.
   but ADR 0004 rules out a second record of applied state, and a receipt would still only say
   "ran here once", not "is present now".
 
+## Validation against the current implementation
+
+Reviewed on 2026-10-15 against Seihou 0.9.0.0 source. `planCommands` still skips
+matching command receipts, and `schema/Step.dhall` and `Step` still have no lifecycle
+field or symlink strategy. MasterPlan 12 is planned, not implemented. The original
+0.6.0.0 command transcript above is historical evidence, not a replay against the
+current binary. IR-8 now has an implementation; removing its ownership refusal does
+not provide a manifest-only rebuild operation. The original PR used IR-9, which
+collides with the later request about recording command receipts before commands
+can commit them. This request is assigned IR-10; the existing IR-9 is unchanged.
+
 ## Requested change
 
 ### Part 1: a checkout-local output lifetime
@@ -158,9 +170,14 @@ The names are illustrative. The properties that matter are:
   requires. It records no receipt, because whether a link exists in a working copy is not a fact
   about the project.
 - seihou creates missing parent directories itself, so the `mkdir -p` commands go away.
-- `validate-module` requires both paths to stay inside the project, and `seihou run` warns when
-  `dest` is not gitignored.
-- `seihou remove` deletes the links it recorded, which it cannot do reliably for arbitrary shell.
+- `validate-module` checks path syntax, and execution validates both rendered paths
+  inside the project, including symlinked ancestors. The source is relative to the
+  project root, not the installed module’s `files/` directory. `seihou run` warns
+  when `dest` is not gitignored; the rebuild command refuses a destination that
+  is tracked or not ignored.
+- `seihou remove` deletes only a recorded link that still has the expected target
+  and has no remaining owner. A regular file, directory, or modified link is left
+  in place and reported.
 
 If a declarative link is too narrow, a fallback is a `lifecycle`-style marker on `Command` that
 says "re-run in every working copy". The declaring module must guarantee the command is
@@ -176,6 +193,16 @@ A command, for example `seihou sync` or `seihou setup`, that:
 - needs nothing beyond the manifest, so it works before any module is installed,
 - is idempotent and reports what it created, replaced, or found already correct,
 - supports `--dry-run` and `--json` like `update`.
+
+Rebuilding refuses malformed or escaping paths, missing sources, symlinked
+ancestors, reserved metadata destinations (`.git` and `.seihou`), and destinations
+that are regular files or directories. A wrong symlink may be replaced only when
+its destination is ignored and untracked. Checks apply to manifest input as well
+as module declarations. Refusals leave the conflicting object untouched. These
+checks are part of AC-2’s no-tracked-writes promise, not an optional force mode.
+Adding the declaration map advances the manifest schema through an adjacent
+lossless upgrade and a capability entry as required by ADR 0014; `sync` itself
+never writes that upgrade back to disk.
 
 `seihou status` should report missing or wrong checkout-local outputs and name this command.
 
@@ -193,9 +220,11 @@ explicit flag (AC-5).
 This alternative belongs in mori://shinzui/agent-seihou and is recorded here until a
 corresponding request is filed there.
 
-A small module adds a `setup-skills` recipe to the project's Justfile with `append-section`.
-It is a dependency of a new `link-skill` 0.3.0, so every project that links a skill through
-seihou gets it:
+An illustrative module could add a `setup-skills` recipe to the project's Justfile with `append-section`.
+It could become a dependency of a future `link-skill` release. The version is
+not allocated here. The following is historical pseudocode, not an approved
+automatic setup command: it needs collision checks, empty-glob handling, and
+must not delete unrelated broken links before adoption:
 
 ```just
 # Link every skill in agents/skills/ into .claude/skills and .agents/skills
