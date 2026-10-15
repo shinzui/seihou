@@ -1,5 +1,17 @@
 # Bundle Update Log
 
+## 2026-10-05
+* **Addition**: BUG-2 reported against seihou v0.9.0.0 (`01173c3`) by `mori://shinzui/seihou-modules`.
+`seihou install --module github-repo` installs only the named recipe and never its declared
+`modules`/`dependencies` closure, so `seihou run github-repo` fails with `Module 'repo-dir' not found`
+even though `repo-dir` lives in the same registry. Root cause in
+`seihou-cli/src-exe/Seihou/CLI/Install.hs`: `selectModules` (lines 353-374) selects only the names
+passed to `--module`, and `installRegistryEntry` (lines 454-494) installs a recipe's `recipe.dhall`
+(or a module's `module.dhall`) without resolving its dependency closure the way `seihou run` does.
+Severity `degraded`: the workaround is to install each dependency explicitly (`--module repo-dir`) or
+install the whole registry with `--all`. Reproduced with `--dry-run`. Status `reported` — not yet
+confirmed by seihou.
+
 ## 2026-09-18
 * **Update**: BUG-1 status reported -> fixed. Resolved by mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe: schema 7 sharedWriteMode, targeted in-plan certification of unknown shared paths without updating co-owners, labels instead of application ids, and prose for every update warning. Regression in seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs.
 
