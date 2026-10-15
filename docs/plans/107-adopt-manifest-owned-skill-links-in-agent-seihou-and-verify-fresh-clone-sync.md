@@ -281,7 +281,12 @@ Its complete guidance audit passes: 18 help topics, 32 command-help pages,
 26 packaged assets, four validated module examples and eight provider-free
 prompt renders. Semantic review also corrected a malformed blueprint migration
 example and an over-specific schema-transition claim; the corrected blueprint
-validates through the candidate executable.
+validates through the candidate executable. All three 0.10.2.0 source archives
+and Haddock bundles are prepared; the two private-library bundles are repacked
+for Hackage. Packaged help/context bytes match the reviewed sources, and the
+dependency plan has only released registry dependencies plus local workspace
+components. Release version/changelog confirmation and publication remain open;
+no 0.10.2.0 tag, upload or installed-release claim has been made.
 
 All seven original milestones completed on 2026-10-15; the affected remote
 checkout was repaired and verified separately later that day, as recorded below.
