@@ -7,9 +7,15 @@ use one library-upgrade prompt per version edge and `seihou agent migrate`.
 BLUEPRINT MIGRATIONS
 
   A library blueprint declares entries with `from`, `to`, and a Markdown
-  `prompt`. Consumers always supply explicit dotted numeric versions:
+  `prompt`. Consumers can supply explicit dotted numeric versions:
 
     seihou agent migrate my-library --from 1.0.0 --to 3.0.0
+
+  Omit --to to use the blueprint's read-only versionProbe; omit --from to use
+  the highest recorded receipt version. With no starting receipt, supply --from.
+  Edges may entail edges owned by other blueprints. A not-applicable session
+  records a reason and continues, but does not mark that edge applied; it can
+  run again later. See `seihou help blueprints` and `seihou help agent`.
 
   The planner orders in-window entries by `from` and permits gaps. Each entry
   runs in its own provider session, then receives an exact-edge receipt before

@@ -21,6 +21,7 @@ extra-source-files:
   data/blueprint-migration-prompt.md
   data/blueprint-prompt.md
   data/bootstrap-prompt.md
+  data/module-reference.md
   data/prompt-run-prompt.md
   data/setup-prompt.md
   data/upgrade-prompt.md
@@ -28,15 +29,20 @@ extra-source-files:
   help/blueprints.md
   help/config.md
   help/contexts.md
+  help/extensions.md
   help/git-repository.md
   help/kit.md
   help/manifest.md
   help/migrations.md
   help/modules.md
   help/prompts.md
+  help/recipes.md
+  help/registry.md
+  help/sync.md
   help/templating.md
   help/update.md
   help/variables.md
+  help/workflow.md
 
 source-repository head
   type: git

@@ -16,6 +16,11 @@ format:
 check:
   nix flake check
 
+# Check command/topic coverage and inspect help and prompts from the current build.
+audit-cli-docs:
+  cabal build exe:seihou
+  python3 scripts/audit-cli-docs.py --executable "$(cabal list-bin exe:seihou)"
+
 # `cabal haddock --haddock-for-hackage` nests the HTML of a package whose only
 # library is a private sublibrary under <pkg>-<ver>-docs/<sublibrary>/ and names
 # the Hoogle file with a colon; Hackage rejects both, and refuses GNU-format

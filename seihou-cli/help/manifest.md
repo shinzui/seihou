@@ -59,7 +59,10 @@ OLDER MANIFESTS
       shared-write evidence
       .gitignore  unknown -> additive-only
 
-    ✓ Upgraded .seihou/manifest.json to schema version 7.
+      7 -> 8  seed receipts
+      8 -> 9  checkout output declarations
+
+    ✓ Upgraded .seihou/manifest.json to schema version 9.
       Review the diff and commit it: git diff .seihou/manifest.json
 
   Running it on a manifest that is already current reports that there is
@@ -75,7 +78,8 @@ SHARED-WRITE EVIDENCE
   After reaching schema 7 the upgrade compiles each unknown file's owners from
   their recorded module versions and saved values, writes nothing but the
   manifest, and records what it finds. An owner whose recorded version is not
-  installed here leaves the file unknown, and the report names it.
+  installed here is fetched at its recorded release from its remote origin.
+  If that also fails, the file stays unknown and the report gives the reason.
 
   seihou update <target> performs the same certification for just the shared
   paths it touches and records it with the update, so running this first is
@@ -119,6 +123,15 @@ RECOVERING
 
   The write is atomic: a complete temporary file is renamed over the manifest,
   so an interrupted run cannot leave a truncated one.
+
+SCHEMA 8 AND 9
+
+  Schema 8 adds seed receipts (the create-once runtime workflow is unfinished).
+  Schema 9 adds portable checkout directory-link declarations and ownership.
+  A lossless schema upgrade adds empty collections; it cannot infer declarations
+  from old shell command receipts. Apply a declaring module release through
+  `seihou update TARGET` once, review/accept, and commit. Later clones/worktrees
+  need only `seihou sync`, without installed producer modules. See `seihou help sync`.
 
 SEE ALSO
 

@@ -30,9 +30,9 @@ Description: {{prompt_description}}
 ## Reference Files
 
 The prompt includes the following reference files in its `files/`
-subdirectory. They may be available to the user beside the prompt. When
-you need information from a reference that is not shown in this prompt, ask
-the user to provide it rather than claiming to have read it.
+subdirectory. When tools can access the installed artifact, read the relevant
+files directly. Otherwise ask the user for any reference content needed but
+not shown here; do not claim to have read inaccessible files.
 
 {{reference_files}}
 

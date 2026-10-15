@@ -71,10 +71,11 @@ this session:
 Work through these steps in order. Repair a failing check with the playbook
 below before moving on, and diagnose again after each repair.
 
-1. If the git working tree has uncommitted changes, ask the user before touching
-   anything, and suggest committing or stashing them first.
-2. Run `seihou outdated` to find the newest release of `{{module}}`.
-3. Run `seihou upgrade {{module}}` to refresh the installed copy.
+1. Review `git status` and preserve unrelated user changes. Resolve only changes
+   that block this upgrade with the user; do not require a blanket stash.
+2. Use the diagnosis below and `seihou help update` to identify required repairs.
+3. Do not pre-install dependencies or refresh the cache: ordinary update owns
+   fetching the recorded source/dependencies and publishing the cache on success.
 4. Run `seihou update {{module}} --dry-run` and walk the user through the plan:
    version changes, migrations, files, commands, and warnings.
 5. Run `seihou update {{module}}`. Resolve any conflicts with the user.
@@ -180,6 +181,16 @@ A module migration between the recorded and the new version failed. The update
 rolled back. Read the migration named in the message, show the user what it
 does, and decide together whether to fix the project first or to upgrade to an
 intermediate version.
+
+### Checkout link refusal or missing links
+Run `seihou help sync` and inspect the reported destination. Ordinary
+`seihou update {{module}}` adopts unchanged matching tracked discovery links in
+its preview and stages their removal while keeping the working link. Preserve
+modified/staged links and regular files. Do not manually alter the Git index,
+edit checkoutOutputs JSON or replace declarations with shell commands. After
+adoption, commit the manifest, ignore rules, source directories and accepted
+link removals. Fresh clones/worktrees restore declared links with `seihou sync`
+without producers, commands or manifest changes.
 
 ### composition_failed and reconciliation_failed
 The new release does not compose with the rest of the project, or its files

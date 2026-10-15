@@ -6,28 +6,30 @@ from multiple sources.
 
 DECLARING VARIABLES
 
-  Each variable in module.dhall has:
-
-    name         Dotted name like "project.name" or "author.email"
-    type         Text (the only type currently supported)
-    default      Optional default value
-    description  Human-readable explanation (shown in prompts)
-
-  Variables without defaults are required — Seihou will prompt for them
-  interactively or fail if no value is available.
+  Each declaration has name, type, optional default/description/validation,
+  and a required flag. Supported CLI types are text, bool, int, list text,
+  and choice. Text lists are comma-separated; choices use a prompt's choices.
+  list bool/list int decode as types but their CLI coercion is not implemented.
+  Required variables with no resolved value prompt interactively or fail when
+  no prompt can supply a value. Optional variables may remain unset.
 
 RESOLUTION ORDER
 
-  When resolving a variable's value, Seihou checks these sources in order:
+  Highest precedence first:
 
   1. CLI overrides       --var project.name=my-app
-  2. Config values       From config.dhall (local, namespace, or global)
-  3. Context values      From the active context's config.dhall
-  4. Exported values     From dependency modules that export the variable
-  5. Default value       Declared in module.dhall
-  6. Interactive prompt  If running in a TTY, prompt the user
+  2. Saved inputs        Ordinary update only (unless --reconfigure)
+  3. Environment         SEIHOU_VAR_PROJECT_NAME
+  4. Local config        .seihou/config.dhall
+  5. Namespace config    ~/.config/seihou/namespaces/<ns>/config.dhall
+  6. Context config      ~/.config/seihou/contexts/<ctx>/config.dhall
+  7. Global config       ~/.config/seihou/config.dhall
+  8. Parent bindings     Parameterized dependencies
+  9. Default value       Declared in the artifact
 
-  The first source that provides a value wins.
+  Interactive prompts fill missing values after this resolution. Initial
+  generation has no saved-input tier. Agent provider/model/effort/trace
+  settings use a different precedence chain; see `seihou help agent`.
 
 EXPORTS
 
@@ -46,7 +48,6 @@ INSPECTING VARIABLES
 
 NAMESPACING
 
-  When composing multiple modules, variables are scoped by module namespace
-  to avoid collisions. The namespace defaults to the module name but can be
-  overridden with --namespace. Config keys under a namespace are looked up
-  as namespace.variable.name.
+  The namespace selects a separate config file, not a prefix added to every
+  variable name. Use --namespace NS to override the artifact's default
+  namespace. `seihou vars NAME --explain` reports the resolved source.

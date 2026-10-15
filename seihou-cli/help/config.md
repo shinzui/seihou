@@ -42,8 +42,9 @@ INITIALIZATION
 HOW CONFIG FEEDS INTO MODULES
 
   When you run a module, Seihou resolves each declared variable by
-  checking (in order): CLI overrides, config scopes, exported values
-  from dependencies, and finally defaults or prompts. Use 'seihou vars
+  checking (in order): CLI overrides, saved application values on ordinary
+  update, SEIHOU_VAR_* environment, the config scopes above, parent
+  dependency bindings, and defaults. Prompts fill missing values. Use 'seihou vars
   MODULE --explain' to see where each value comes from.
 
 TYPICAL SETUP

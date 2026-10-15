@@ -40,11 +40,13 @@ SCHEMA FIELDS
     files          Reference files under the blueprint's files/ directory.
     allowedTools   Extra tools to pre-approve in addition to the base set.
     tags           Optional discovery tags.
-    migrations     Agent-guided library version edges (from, to, prompt).
+    migrations     Agent-guided library edges (from, to, prompt, optional entails).
+    versionProbe   Optional read-only command to infer the target library version.
+    launch         Optional provider/model/effort preferences; mode is reserved.
 
   Blueprints share the same name lookup namespace as modules and recipes.
   If a directory contains more than one runnable definition, lookup prefers
-  `module.dhall`, then `recipe.dhall`, then `blueprint.dhall`.
+  `module.dhall`, then `recipe.dhall`, then `blueprint.dhall`, then `prompt.dhall`.
 
 VARIABLES AND PROMPTS
 
@@ -125,6 +127,12 @@ LIBRARY UPGRADE MIGRATIONS
   Run an installed library blueprint with explicit versions:
 
     seihou agent migrate my-library --from 1.0.0 --to 3.0.0
+
+  --to can be inferred by versionProbe; --from can be inferred from receipts.
+  With no previous receipts, pass --from explicitly. An edge may declare
+  `entails` to schedule another blueprint's edges in the same plan. Receipts
+  belong to the blueprint owning each edge. A not-applicable result records
+  the reason without suppressing a future run when its precondition is met.
 
   Edges run in ascending `from` order and gaps are allowed. Duplicate starts
   are invalid; overlaps already passed by the cursor and edges overshooting the

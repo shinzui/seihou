@@ -17,8 +17,8 @@ PROMPT STRUCTURE
 
     review-changes/
       prompt.dhall      Prompt definition (required)
-  prompt.md         Markdown body imported by prompt.dhall
-  files/            Optional reference files for the agent
+      prompt.md         Markdown body imported by prompt.dhall
+      files/            Optional reference files for the agent
 
   `seihou new-prompt review-changes` creates this layout.
 
@@ -35,7 +35,7 @@ SCHEMA FIELDS
   files          Reference files under the prompt's files/ directory.
   allowedTools   Optional tool allow-list metadata.
   tags           Optional discovery tags.
-  launch         Optional provider/mode/model hints.
+  launch         Optional provider/model/effort preferences; mode is reserved and ignored.
 
   Prompts share the same name lookup namespace as modules, recipes, and
   blueprints. If a directory contains multiple runnable definitions, lookup
@@ -109,6 +109,17 @@ PUBLISHING
 
   The selector flag is still named `--module` for compatibility, but it can
   select any registry entry kind.
+
+LAUNCH AND DEBUG
+
+  launch.{provider,model,effort} overrides config but loses to CLI flags and
+  SEIHOU_AGENT_* environment variables, independently per field. Trace is an
+  operator setting, not an artifact launch field. Run `seihou agent config`
+  for configured defaults and add --verbose to a prompt run for its resolved
+  settings/sources. See `seihou help agent`.
+
+  --debug skips the provider, but still runs commandVars to render the prompt.
+  Review their commands before inspecting an unfamiliar prompt.
 
 FURTHER READING
 

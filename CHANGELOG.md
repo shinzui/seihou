@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Audit embedded agent guidance and help against current behavior: share the module
+  reference across assist/bootstrap/setup; correct removal fields, migration windows,
+  variable/config precedence, pinned CLI models, update and checkout adoption workflows.
+  Explicitly distinguish seed schema support from the unfinished create-once runtime.
+- Add workflow, recipes, sync, registry and extensions help topics, and restore manifest
+  in the documented index. All 32 top-level commands map to the 18-topic catalog.
+
+### Development
+
+- Release skill requires a full semantic audit of help and all agent templates.
+  `just audit-cli-docs` verifies command/topic coverage, packaged assets and eight
+  provider-free rendered prompt cases against the current build.
+
 ## [0.10.1.0] - 2026-10-15
 
 ### Added

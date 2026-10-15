@@ -19,122 +19,7 @@ Working directory: {{cwd}}
 {{available_modules}}
 
 
-## Module Schema Reference
-
-A Seihou module is a directory containing a `module.dhall` file and a `files/` subdirectory.
-Module names must match `[a-z][a-z0-9-]*`.
-
-### module.dhall format
-
-```dhall
-{ name = "my-module"
-, description = Some "What this module does"
-, vars =
-  [ { name = "project.name"
-    , type = "text"       -- text | bool | int | list | choice
-    , default = None Text  -- or Some "value"
-    , description = Some "Description"
-    , required = True
-    , validation = None Text  -- or Some "[a-z][a-z0-9-]*" (regex)
-    }
-  ]
-, exports = [] : List { var : Text, alias : Optional Text }
-, prompts =
-  [ { var = "project.name"
-    , text = "What is your project name?"
-    , when = None Text  -- or Some "IsSet variable" or Some "Eq var value"
-    , choices = None (List Text)  -- or Some ["opt1", "opt2"]
-    }
-  ]
-, steps =
-  [ { strategy = "template"  -- copy | template | dhall-text | structured
-    , src = "README.md.tpl"  -- relative to files/
-    , dest = "README.md"     -- output path, supports \{{var}} in path
-    , when = None Text
-    , patch = None Text  -- append-file | prepend-file | append-section | append-line-if-absent | replace-section
-    }
-  ]
-, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
-, migrations = [] : List Migration.Type
-, removal = None Removal.Type
-}
-```
-
-### Module removal
-
-Declare a `removal` section to make a module removable via `seihou remove <module>`. The removal section lists steps that reverse the module's effects:
-
-```dhall
-, removal = Some
-    { steps =
-      [ { action = "remove-file", path = "README.md", content = None Text }
-      , { action = "remove-section", path = ".gitignore", content = None Text }
-      ]
-    }
-```
-
-Actions: `remove-file` (delete a file), `remove-section` (strip tagged section markers), `rewrite-file` (transform file content). If `removal = None Removal.Type`, the module cannot be removed.
-
-### Migrations
-
-Declare `migrations` to move a consumer's project files between module versions. Each entry has a `from` version, a `to` version, and an ordered `ops` list. The planner picks a contiguous chain (no graph search, no skipping); duplicate `from` edges or jumps past the target are rejected.
-
-```dhall
-, migrations =
-    [ S.Migration::{ from = "1.0.0"
-                   , to = "2.0.0"
-                   , ops =
-                       [ S.MigrationOp.MoveDir { src = "app", dest = "src" }
-                       , S.MigrationOp.DeleteFile { path = "Setup.hs" }
-                       ]
-                   }
-    ]
-```
-
-Operations: `MoveFile { src, dest }`, `MoveDir { src, dest }`, `DeleteFile { path }`, `DeleteDir { path }`, `RunCommand { run, workDir : Optional Text }`. Moves rewrite the manifest's `files` map keys. Conflicts mirror `seihou remove` — Safe / Conflict / Gone — and `--force` is required to overwrite user-edited files.
-
-Add migrations only when a new module version changes file *layout* (renames, deletions). Content-only changes don't need migrations; re-running `seihou run` already updates content. See `seihou help migrations` for full detail.
-
-### Dependencies
-
-Dependencies use the record form `{ module, vars }`. For simple deps without variable bindings:
-  dependencies = [ { module = "nix-base", vars = [] : List { name : Text, value : Text } } ]
-
-For parameterized deps that supply values to the child module:
-  dependencies = [ { module = "nix-flake", vars = [ { name = "nix.system", value = "x86_64-linux" } ] } ]
-
-### Schema package and record completion
-
-Seihou publishes its Dhall schema at `github.com/shinzui/seihou-schema`. Modules import it via a pinned HTTPS URL with an integrity hash and use record completion (`::`) for concise authoring:
-```dhall
-let S =
-      https://raw.githubusercontent.com/shinzui/seihou-schema/<commit>/package.dhall
-        sha256:<hash>
-
-in  S.Module::{
-    , name = "my-module"
-    , steps = [ S.Step::{ strategy = "template", src = "foo.tpl", dest = "foo" } ]
-    , dependencies = [ S.Dependency::{ module = "nix-base" } ]
-    }
-```
-Running `seihou new-module` generates modules in this format automatically.
-Available types: S.Module, S.Step, S.VarDecl, S.VarExport, S.Prompt, S.Command, S.Dependency, S.Migration, S.MigrationOp.
-
-### Empty list type annotations
-
-Dhall requires type annotations on empty lists. Common patterns:
-  exports = [] : List { var : Text, alias : Optional Text }
-  commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-  dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
-
-### Variable types
-
-- text: String value
-- bool: true/false/yes/no/1/0
-- int: Integer
-- list: Comma-separated values
-- choice: Must match one of the prompt's choices list
+{{module_reference}}
 
 
 ### Blueprints and prompts
@@ -177,6 +62,7 @@ choices to the target repository.
 - **template**: Replaces `\{{var}}` placeholders with values (most common)
 - **dhall-text**: Replaces placeholders, then evaluates as Dhall expression to Text
 - **structured**: Replaces placeholders, evaluates Dhall to record, serializes to JSON/YAML
+- **symlink** with checkout lifecycle: declares an ignored project directory link (see Module Schema Reference)
 
 ### Conditional expressions (when field)
 - `IsSet variable.name` — true if variable has a value
@@ -199,7 +85,7 @@ Suggest these commands when the user needs to run them locally:
 - `seihou new-module NAME` — scaffold a new module with boilerplate
 - `seihou new-blueprint NAME [--path DIR]` — scaffold a new blueprint (agent-driven)
 - `seihou new-prompt NAME [--path DIR]` — scaffold a reusable agent-session prompt
-- `seihou validate-module [PATH]` — validate module.dhall (9 checks)
+- `seihou validate-module [PATH]` — validate module.dhall
 - `seihou validate-blueprint [PATH]` — validate blueprint.dhall
 - `seihou validate-prompt [PATH]` — validate prompt.dhall
 - `seihou prompt run PROMPT [--debug] [--var K=V]` — render and launch a reusable prompt
@@ -207,6 +93,9 @@ Suggest these commands when the user needs to run them locally:
 - `seihou run MODULE --dry-run [--var K=V]` — preview generation without writing
 - `seihou run MODULE [--var K=V]` — generate project
 - `seihou list` — list all available modules, recipes, blueprints, and prompts
+- `seihou update [TARGET] [--dry-run]` — update recorded applications and preserve user edits
+- `seihou sync [--dry-run]` — restore manifest-declared checkout links
+- `seihou help` — discover conceptual help; use `seihou COMMAND --help` for flags
 - `seihou status` — show manifest state
 - `seihou diff` — compare manifest vs disk
 - `seihou config set|get|unset|list KEY [VALUE] [--global]` — manage config

@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a release of the seihou packages and publish them to Hackage following the Haskell PVP. Updates cabal versions, internal dependency bounds, and the changelog; runs the format/build/test/check gates; commits, tags, pushes; uploads to Hackage in dependency order (seihou-core, then seihou-cli and seihou-okf-extension); and creates the GitHub release.
+description: Cut a release of the seihou packages and publish them to Hackage following the Haskell PVP. Updates cabal versions, internal dependency bounds, and the changelog; audits embedded agent context and help against current behavior; runs the format/build/test/check gates; commits, tags, pushes; uploads to Hackage in dependency order (seihou-core, then seihou-cli and seihou-okf-extension); and creates the GitHub release.
 argument-hint: "[major|minor|patch]"
 disable-model-invocation: true
 allowed-tools: Read, Bash, Edit, Glob, Grep, Write, AskUserQuestion
@@ -136,6 +136,23 @@ since `$LAST_TAG` and nothing under `[Unreleased]`, there is nothing to
 release — tell the user and stop. Categorize the changes (Added / Changed /
 Fixed / breaking) to drive the bump.
 
+### 2a. Audit agent context and help against current behavior
+
+Before cutting the changelogs, follow
+[the CLI context and help audit](references/cli-context-audit.md). Review the
+whole current guidance as well as changes since the last release: a recent
+release may already contain stale instructions. Correct discrepancies in the
+release work, including missing help topics and packaging entries. A changelog
+entry alone does not update the prompts compiled into the executable.
+
+Acceptance: from a fresh checkout/build, `seihou help` discovers a topic for
+every command family, each topic describes the current ordinary workflow, and
+agent assist/bootstrap/setup plus artifact/upgrade renderers receive current
+instructions. `just audit-cli-docs` must pass without launching providers.
+Record the executable/version tested, topic/command/render counts, substantive
+corrections and remaining limitations. Source-only fixes are not installed or
+published delivery. Do not publish with known misleading guidance.
+
 ### 3. Compute the PVP bump
 
 Current version (all packages share it):
@@ -189,6 +206,9 @@ With the confirmed `NEW = A.B.C.D`:
     (`git show vX:docs/user/CHANGELOG.md`) — entries present at tag *N* but not
     at *N-1* shipped in *N*.
 
+Include reviewed prompt/help corrections, their source/packaging changes and
+audit tooling in the release diff; stage those explicit paths in step 7 too.
+
 Show the diff and get the user's confirmation of the bump + changelog before
 committing.
 
@@ -197,6 +217,7 @@ committing.
 ```bash
 just format    # nix fmt via treefmt (fourmolu + cabal-gild + nixpkgs-fmt)
 just build     # cabal build all
+just audit-cli-docs # built help, command coverage, packaged context, provider-free renders
 just test      # cabal test all
 just check     # nix flake check (includes CLI module-placement check)
 ```
@@ -333,7 +354,9 @@ section — no internal implementation detail.
 - **Always publish in dependency order** — `seihou-core` before `seihou-cli`
   and `seihou-okf-extension`. Never upload a dependent after its upstream
   upload failed.
-- **Never skip the gates** (`just format`/`build`/`test`/`check` and
+- **Audit agent context and all help topics**, including inherited drift,
+  following [the audit reference](references/cli-context-audit.md).
+- **Never skip the gates** (`just format`/`build`/`audit-cli-docs`/`test`/`check` and
   `cabal check`). Stop on the first failure; do not commit or publish past it.
 - **`--publish` is irreversible.** Prefer a non-published candidate upload
   first. A wrong upload can only be fixed by a new version.

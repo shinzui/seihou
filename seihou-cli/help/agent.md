@@ -12,13 +12,15 @@ one assistant response.
 
 USAGE
 
-  seihou agent [--debug] [--provider PROVIDER] [--model MODEL] <subcommand> [options]
+  seihou agent [--debug] [--provider PROVIDER] [--model MODEL] [--effort LEVEL] [--trace SETTING] <subcommand> [options]
 
 PARENT OPTIONS
 
   --debug
       Print the resolved system prompt and exit without contacting any
-      provider. Use this to inspect what Seihou would send.
+      provider. Use this to inspect what Seihou would send. Artifact
+      debug renders still run declared commandVars/version probes;
+      agent upgrade also saves its brief outside the project.
 
   --provider PROVIDER
       Select the provider for this invocation. Accepted values:
@@ -28,7 +30,17 @@ PARENT OPTIONS
       Select a provider-specific model name or alias for this
       invocation. Run `seihou agent models` to list known choices.
 
-Provider and model options may appear on the parent command or on the
+  --effort LEVEL
+      Reasoning effort: minimal, low, medium, high, xhigh, or max.
+      Omitted effort leaves the provider's choice in effect.
+
+  --trace SETTING
+      Record model calls: off (default), file, stdout, or stderr.
+      File output uses agent.tracePath (local, then global), default
+      .seihou/trace.jsonl. Traces cover batch/API calls; interactive
+      CLI sessions emit no call events. --debug contacts no provider.
+
+Provider, model, effort and trace options may appear on the parent command or on the
 subcommand:
 
   seihou agent --provider codex-cli --model gpt-5 assist "create a module"
@@ -40,12 +52,12 @@ PROVIDERS
   claude-cli
       Starts an interactive Claude Code session. Requires the
       `claude` binary on PATH and a working local login. With no
-      explicit model, the CLI chooses its own default.
+      explicit model, Seihou passes its pinned default, `claude-opus-4-8`.
 
   codex-cli
       Starts an interactive Codex session. Requires the `codex`
       binary on PATH and a working local login. With no explicit
-      model, the CLI chooses its own default. Seihou launches Codex
+      model, Seihou passes its pinned default, `gpt-5.6-terra`. Seihou launches Codex
       with workspace-write sandboxing and on-request approvals.
 
   anthropic
@@ -60,27 +72,43 @@ PROVIDERS
 
 CONFIGURATION
 
-Provider and model values resolve independently from module variables.
-The first non-blank value wins:
+Provider, model, effort and trace resolve independently of module variables.
+The first non-blank value wins for each field:
 
-  1. Subcommand CLI flags: `--provider`, `--model`
-  2. Parent CLI flags: `--provider`, `--model`
-  3. Environment: `SEIHOU_AGENT_PROVIDER`, `SEIHOU_AGENT_MODEL`
-  4. Local config: `.seihou/config.dhall`
-  5. Global config: `~/.config/seihou/config.dhall`
-  6. Built-in defaults: provider `claude-cli`, no explicit model
+  1. Subcommand CLI flag
+  2. Parent agent CLI flag
+  3. SEIHOU_AGENT_PROVIDER / MODEL / EFFORT / TRACE environment variables
+     (each name has the SEIHOU_AGENT_ prefix)
+  4. blueprint.dhall or prompt.dhall launch.{provider,model,effort}
+  5. Local agent.<command>.{provider,model,effort,trace}
+  6. Local agent.{provider,model,effort,trace}
+  7. Global agent.<command>.{provider,model,effort,trace}
+  8. Global agent.{provider,model,effort,trace}
+  9. Built-in defaults (provider claude-cli; pinned CLI models above;
+     API models as above; effort unset; trace off)
 
-Set personal defaults globally:
+Local config is .seihou/config.dhall; global is ~/.config/seihou/config.dhall.
+Artifact launch declarations apply only to agent run, agent migrate and
+prompt run. launch.mode is reserved and ignored; launch has no trace field.
+Use `--verbose` on artifact runs to see resolved settings and sources.
+Command key segments are assist, bootstrap, setup, upgrade, run, migrate,
+and prompt-run (for `seihou prompt run`).
 
+  seihou agent config
   seihou config set agent.provider codex-cli --global
-  seihou config set agent.model gpt-5 --global
+  seihou config set agent.bootstrap.effort high --global
+  seihou config set agent.prompt-run.trace file
+  seihou config set agent.tracePath .seihou/trace.jsonl
 
-Use environment variables for a temporary shell session:
-
-  export SEIHOU_AGENT_PROVIDER=openai
-  export SEIHOU_AGENT_MODEL=gpt-4o-mini
+`seihou agent config` is read-only and shows each command's provider, model,
+effort, trace and source. Its table cannot include a specific artifact's
+launch declaration; use the run's --verbose output for that.
 
 SUBCOMMANDS
+
+  seihou agent config
+      Inspect resolved per-command settings and their sources without
+      starting a provider or changing configuration.
 
   seihou agent models [--provider PROVIDER]
       List the Anthropic and OpenAI models in Seihou's compiled Baikai

@@ -42,6 +42,11 @@ helpTopics =
     HelpTopic "migrations" "Migrating a project between module versions" migrationsContent,
     HelpTopic "prompts" "Reusable agent-session prompt artifacts" promptsContent,
     HelpTopic "templating" "Placeholder substitution, {{#if}} blocks, and patterns" templatingContent,
+    HelpTopic "workflow" "Choose commands for generation, updates, and recovery" workflowContent,
+    HelpTopic "sync" "Restore ignored directory links in clones and worktrees" syncContent,
+    HelpTopic "recipes" "Compose existing modules into one named application" recipesContent,
+    HelpTopic "registry" "Publish and validate multi-artifact repository metadata" registryContent,
+    HelpTopic "extensions" "Run external extensions and find their help" extensionsContent,
     HelpTopic "update" "Safely update recorded project applications" updateContent
   ]
 
@@ -83,6 +88,21 @@ templatingContent = $(embedStringFile "help/templating.md")
 
 updateContent :: Text
 updateContent = $(embedStringFile "help/update.md")
+
+workflowContent :: Text
+workflowContent = $(embedStringFile "help/workflow.md")
+
+syncContent :: Text
+syncContent = $(embedStringFile "help/sync.md")
+
+recipesContent :: Text
+recipesContent = $(embedStringFile "help/recipes.md")
+
+registryContent :: Text
+registryContent = $(embedStringFile "help/registry.md")
+
+extensionsContent :: Text
+extensionsContent = $(embedStringFile "help/extensions.md")
 
 helpCommandParser :: Parser HelpCommand
 helpCommandParser =

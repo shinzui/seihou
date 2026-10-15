@@ -57,9 +57,10 @@ subdirectory.
    when it is available; otherwise ask the user to paste the relevant file.
 
 2. **Examine the baseline.** If the Baseline section above lists applied
-   modules, the project already contains files generated from them. Suggest
-   `seihou status` and `git status`, and ask the user for key file contents
-   when the requested change depends on them.
+   modules, the project already contains files generated from them. Inspect
+   `seihou status`, `git status` and relevant files when tools are available;
+   otherwise ask for the needed output. Preserve user changes and declared
+   checkout links; fresh clones restore those with `seihou sync`.
 
 3. **Draft.** Provide exact paths and complete content for new files, and
    patch-style snippets for modifications. Prefer additive changes: leave
@@ -73,7 +74,7 @@ subdirectory.
 
 5. **Commit.** Suggest `git add` and `git commit` commands to record the
    work. Reference the blueprint name in the commit message:
-   "Apply blueprint {{blueprint_name}} for <user-supplied summary>".
+   "chore(seihou): apply blueprint {{blueprint_name}} for <user-supplied summary>".
 
 
 ## Response Guidelines

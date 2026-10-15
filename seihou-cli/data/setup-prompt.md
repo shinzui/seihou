@@ -47,7 +47,7 @@ Adapt to the user's situation, but the general flow is:
    - Global defaults: `seihou config set KEY VALUE --global`
    - Namespace-specific: `seihou config set KEY VALUE --namespace NS`
    - Context-specific: First set context with `seihou context set NAME`, then
-     edit `~/.config/seihou/contexts/NAME/config.dhall`
+     use `seihou config set KEY VALUE --context NAME`
    - One-off overrides: pass `--var KEY=VALUE` to `seihou run`
 
 5. **Preview**: Run `seihou run MODULE --dry-run [--var K=V]` to show what files
@@ -62,22 +62,19 @@ Adapt to the user's situation, but the general flow is:
 8. **Commit**: Stage and commit the generated files to git. See the Git Workflow
    section below for details.
 
-9. **Stay current**: When a module's source repository ships a new version, the
-   user has two surfaces that surface migrations:
-   - `seihou outdated` lists installed modules whose source has advanced.
-   - `seihou upgrade` (or `seihou upgrade <module>`) replaces the central
-     installed copy. If the new version declares `migrations` covering the
-     project's applied version, the upgrade output ends with an advisory:
-     `note: <module> has N migration(s) pending; run 'seihou migrate <module>'`.
-   - `seihou status` then shows a `Pending migrations: …` sub-line under that
-     module until the migrations are applied.
-   - `seihou migrate <module> --dry-run` previews the plan; `seihou migrate
-     <module>` applies it (rewrites files, updates the manifest, bumps
-     `moduleVersion`). If the user wants both upgrade and migrate in one shot,
-     pass `--with-migrations` to `seihou upgrade`.
-   - When a migration's classifier reports `Conflict` for a file (the user has
-     edited it since generation), `seihou migrate` refuses without `--force`.
-     Confirm with the user before passing `--force`.
+9. **Stay current**: Run `seihou update TARGET`. It fetches the recorded remote
+   and dependencies, reuses saved inputs, includes migrations, preserves user
+   edits, and previews before confirmation. No prerequisite `install`, `upgrade`,
+   or `migrate` sequence is needed for a recorded remote-backed application.
+   Use `--dry-run` for a separate preview and `--reconfigure` only to change
+   inputs deliberately. If blocked, `seihou agent upgrade TARGET --check` gives
+   a read-only diagnosis; `seihou agent upgrade TARGET` starts repair assistance.
+
+10. **Fresh clones and worktrees**: At the Git root, run `seihou sync` to rebuild
+    declared ignored checkout links. No installed producers are needed. If no
+    declarations exist yet, update the recorded target once and commit the
+    manifest/ignore rules/source files and any accepted tracked-link removals.
+    Do not hand-edit manifest JSON or the Git index for routine adoption.
 
 Skip steps that don't apply. If the user already knows which module and variables
 they want, go directly to preview and execution.
@@ -128,22 +125,21 @@ Suggest these commands when the user needs to run them locally:
   - Discovers the prompt, resolves variables, runs command-derived variables, renders the prompt body, then starts the configured provider
   - `--debug`: print the rendered prompt without contacting the provider
 
-### Upgrade and migration
-- `seihou outdated` — show installed modules whose source repos have newer versions
-- `seihou upgrade [MODULE] [--dry-run] [--with-migrations]` — replace the central installed copy of a module with the latest from its source
-  - Operates on `~/.config/seihou/installed/`, not on any project's working tree
-  - When the new version ships migrations covering an applied module, prints a one-line advisory: `note: <module> has N migration(s) pending; run 'seihou migrate <module>'`
-  - `--with-migrations`: after each upgrade, also run `seihou migrate` against the current project for any applied module that has pending migrations
-- `seihou migrate MODULE [--dry-run] [--force] [--to VERSION] [--json]` — apply author-declared migrations to the current project
-  - Reads `migrations` from the installed module.dhall, plans a contiguous chain from the manifest's recorded version up to the installed version (or `--to`), classifies files (Safe / Conflict / Gone — mirrors `seihou remove`), and executes
-  - `--dry-run`: preview the plan (per-step op breakdown, total counts)
-  - `--force`: proceed even when files have user edits
-  - `--to VERSION`: stop at an intermediate version
-  - `--json`: machine-readable plan
-  - See `seihou help migrations`
+### Updates, checkout restoration, and recovery
+- `seihou update [TARGET] [--dry-run] [--var K=V]` — normal recorded-project update
+- `seihou update TARGET --reconfigure` — intentionally resolve inputs afresh
+- `seihou sync [--dry-run] [--json]` — restore declared checkout links from the manifest
+- `seihou agent upgrade TARGET --check` — diagnose update readiness without repairs
+- `seihou agent upgrade TARGET` — launch assistance when ordinary update is blocked
+- `seihou manifest upgrade [--dry-run]` — explicitly convert older manifest schemas
+- `seihou manifest repair-origins [--dry-run] [--set NAME=URL]` — repair machine-local recorded origins
+- `seihou outdated` — inspect installed copies against their sources
+- `seihou upgrade [MODULE] [--dry-run]` — deliberate installed-cache maintenance
+- `seihou migrate MODULE [--dry-run] [--to VERSION]` — lower-level migration control
+- See `seihou help update`, `seihou help sync`, and `seihou help manifest`.
 
 ### Status and diagnostics
-- `seihou status` — show manifest state (applied modules, tracked files, variables); also surfaces a `Pending migrations: N migration(s) pending: X → Y` sub-line under any applied module whose installed copy has advanced past the manifest's recorded version with a covering chain
+- `seihou status [--full-prompt]` — inspect recorded applications, artifact identity/version warnings, pending migrations and checkout links; pending updates name the recorded root target
 - `seihou diff` — compare tracked files against disk (modified, deleted, orphaned)
 - `seihou validate-module [PATH]` — validate a module definition
 - `seihou schema-upgrade [PATH] [--dry-run] [--all]` — upgrade module.dhall to current schema
@@ -154,16 +150,11 @@ Suggest these commands when the user needs to run them locally:
 
 ## Variable Resolution
 
-Variables resolve through a 9-level precedence chain (highest to lowest):
-
-1. CLI flags (`--var key=value`)
-2. Environment variables (`SEIHOU_VAR_*`)
-3. Local project config (`.seihou/config.dhall`)
-4. Namespace config (`~/.config/seihou/namespaces/<ns>/config.dhall`)
-5. Context config (`~/.config/seihou/contexts/<ctx>/config.dhall`)
-6. Global config (`~/.config/seihou/config.dhall`)
-7. Parent-supplied vars (from parameterized dependencies)
-8. Module defaults / interactive prompts
+Initial variable resolution checks CLI flags, environment, local, namespace,
+context and global config, parent dependency bindings, then defaults. Interactive
+prompts fill missing values. Updates put saved application values immediately
+after CLI overrides unless `--reconfigure` is requested. See the Module Schema
+Reference below and `seihou help variables`.
 
 When helping users configure variables, choose the right scope:
 - **Project-specific** values (project.name, project.description) → local config
@@ -172,59 +163,7 @@ When helping users configure variables, choose the right scope:
 - **Domain** defaults (haskell version, nix settings) → namespace config
 
 
-## Module Schema Reference
-
-A Seihou module is a directory containing a `module.dhall` file and a `files/` subdirectory.
-
-### module.dhall format
-
-```dhall
-{ name = "my-module"
-, description = Some "What this module does"
-, vars =
-  [ { name = "project.name"
-    , type = "text"       -- text | bool | int | list | choice
-    , default = None Text  -- or Some "value"
-    , description = Some "Description"
-    , required = True
-    , validation = None Text  -- or Some "[a-z][a-z0-9-]*" (regex)
-    }
-  ]
-, exports = [] : List { var : Text, alias : Optional Text }
-, prompts =
-  [ { var = "project.name"
-    , text = "What is your project name?"
-    , when = None Text
-    , choices = None (List Text)
-    }
-  ]
-, steps =
-  [ { strategy = "template"  -- copy | template | dhall-text | structured
-    , src = "README.md.tpl"  -- relative to files/
-    , dest = "README.md"     -- output path
-    , when = None Text
-    , patch = None Text
-    }
-  ]
-, commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }
-, dependencies = [] : List { module : Text, vars : List { name : Text, value : Text } }
-, migrations = [] : List Migration.Type
-}
-```
-
-Modules may declare `migrations` — author-supplied steps that move a project's existing files between module versions. Consumers apply them with `seihou migrate <module>`. Run `seihou help migrations` for detail.
-
-### Dependencies
-
-Dependencies use the record form `{ module, vars }`:
-  dependencies = [ { module = "nix-base", vars = [] : List { name : Text, value : Text } } ]
-
-### Variable types
-- text: String value
-- bool: true/false/yes/no/1/0
-- int: Integer
-- list: Comma-separated values
-- choice: Must match one of the prompt's choices list
+{{module_reference}}
 
 
 ## Git Workflow
@@ -237,13 +176,14 @@ After generating files with `seihou run`, help the user commit the changes:
    to confirm they look right.
 
 3. **Stage files**: Stage the generated files. The `.seihou/` directory should be
-   committed — it contains the manifest that tracks applied modules and enables
-   incremental updates.
+   reviewed: commit the portable manifest and project configuration. Commit real
+   source directories and ignore rules; leave ignored discovery links, trace
+   files, caches and temporary state untracked. Do not blindly stage `.seihou/`.
 
-4. **Commit**: Write a clear commit message that mentions:
+4. **Commit**: Use a Conventional Commit (for example `chore(seihou): apply my-stack`) that mentions:
    - Which module(s) were applied
    - Key variable values (e.g., project name)
-   - Example: "Apply haskell-base module for my-project"
+   - Example: "chore(seihou): apply haskell-base for my-project"
 
 5. **Multiple modules**: If composing multiple modules, you can either commit after
    each module or after all modules are applied. Committing after each gives a
@@ -255,7 +195,8 @@ After generating files with `seihou run`, help the user commit the changes:
 
 ## Response Guidelines
 
-- Provide exact commands for `seihou`, `git`, and related checks instead of claiming to run them.
+- When tools are available, run the authorized workflow and report actual results.
+  Otherwise provide exact local commands and do not claim they were executed.
 - Recommend previewing with `--dry-run` before running for real unless the user explicitly wants to skip.
 - Recommend `seihou status` after generation to confirm what was applied.
 - Use `seihou vars MODULE --explain` in suggested workflows when the user needs to understand variable resolution.

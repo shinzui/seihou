@@ -29,9 +29,11 @@ RESOLUTION CHAIN
 
   Seihou determines the active context by checking:
 
-  1. Project context     .seihou/context file in the current directory
-  2. Global default      ~/.config/seihou/default-context
-  3. None                No context is active
+  1. CLI context         --context / -c on commands that support it
+  2. Environment         SEIHOU_CONTEXT
+  3. Project context     .seihou/context file in the current directory
+  4. Global default      ~/.config/seihou/default-context
+  5. None                No context is active
 
   The project context takes priority, so you can have a global default of
   "personal" but override it to "work" in specific project directories.

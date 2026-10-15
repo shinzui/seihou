@@ -46,7 +46,8 @@ handleAssist debug modelConfig assistOpts = do
 renderPrompt :: AgentContext -> Text
 renderPrompt ctx =
   substitute
-    [ ("cwd", ctx ^. #cwd),
+    [ ("module_reference", TE.decodeUtf8 $(embedFile "data/module-reference.md")),
+      ("cwd", ctx ^. #cwd),
       ("seihou_project_state", formatSeihouProjectState ctx),
       ("manifest_state", formatManifestState ctx),
       ("module_dhall_state", formatModuleDhallState ctx),

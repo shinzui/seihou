@@ -30,12 +30,15 @@ MODULE STRUCTURE
 
 GENERATION STRATEGIES
 
-  Each step in a module uses one of four strategies:
+  Ordinary file steps use one of four content strategies:
 
   Copy        Copy a file verbatim from the module to the output.
-  Template    Render a Mustache-style template with resolved variables.
+  Template    Render placeholders and {{#if}} blocks with resolved variables.
   DhallText   Evaluate a Dhall expression that produces Text output.
-  Structured  (Reserved for future structured merge support.)
+  Structured  Evaluate a Dhall record and serialize JSON/YAML; supports composition.
+
+  The strategy field selects processing; source extensions are conventions.
+  A fifth strategy, symlink, is for checkout directory links (see below).
 
 DEPENDENCIES
 
@@ -78,7 +81,7 @@ COMMON COMMANDS
   seihou list                          List all available modules
   seihou new-module my-template        Scaffold a new module
   seihou validate-module ./my-module   Check a module is well-formed
-  seihou install <git-url>             Install modules, recipes, or blueprints from git
+  seihou install <git-url>             Install modules, recipes, blueprints, or prompts from git
   seihou run <module> --var k=v        Run a module to generate files
   seihou update [target]                Update a recorded application and preserve user edits
   seihou remove <module>               Remove an applied module and its files
@@ -95,6 +98,16 @@ VERSIONING AND MIGRATIONS
   operation. Run `seihou help update` for the project workflow or
   `seihou help migrations` for the authoring reference.
 
-## Checkout directory links
+STEP LIFECYCLES
+
+  Omitted lifecycle means managed. Some "seed" is accepted for whole-file
+  copy/template/dhall-text steps without patches, and schema 8 has seed
+  receipts, but create-once handoff behavior is not implemented yet. Do not
+  rely on it to preserve a project-owned file across reruns or updates.
+
+CHECKOUT DIRECTORY LINKS
 
 A step with strategy `symlink` and lifecycle `Some "checkout"` declares a link from a real project source directory to an ignored local path. Run records portable intent; `seihou sync` reconstructs it in fresh clones without modules or commands. For example, link `config/editor` to `.editor-local/config` and ignore `.editor-local/`. Links have no patches or content hashes.
+
+Run `seihou help sync` for fresh clones, worktrees and existing tracked-link adoption.
+Run `seihou help recipes` for named compositions of modules.

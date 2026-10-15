@@ -47,7 +47,8 @@ handleBootstrap debug modelConfig bootstrapOpts = do
 renderPrompt :: AgentContext -> BootstrapOpts -> Text
 renderPrompt ctx bootstrapOpts =
   substitute
-    [ ("cwd", ctx ^. #cwd),
+    [ ("module_reference", TE.decodeUtf8 $(embedFile "data/module-reference.md")),
+      ("cwd", ctx ^. #cwd),
       ("seihou_project_state", formatSeihouProjectState ctx),
       ("manifest_state", formatManifestState ctx),
       ("module_dhall_state", formatModuleDhallState ctx),

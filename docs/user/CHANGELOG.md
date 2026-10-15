@@ -10,6 +10,20 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+### Fixed
+
+- **Agent guidance now matches ordinary update and checkout workflows.** Assist,
+  bootstrap and setup share current module guidance, including ignored directory
+  links and `seihou sync`. Routine updates use `seihou update TARGET`, which fetches
+  dependencies and reuses saved inputs. Guidance also corrects schema examples,
+  migration rules, variable types and agent configuration. Seed create-once behavior
+  is explicitly identified as unfinished.
+- **Help covers every command family.** Run `seihou help workflow` to choose a
+  command, `seihou help sync` for clones and worktrees, or the new `recipes`,
+  `registry` and `extensions` topics. Agent help now explains per-command settings,
+  effort, tracing and launch preferences. Releases now audit the whole help catalog
+  and rendered agent prompts for drift.
+
 ## [0.10.1.0] - 2026-10-15
 
 ### Fixed

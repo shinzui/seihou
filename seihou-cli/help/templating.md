@@ -1,8 +1,7 @@
 TEMPLATING
 
-The Template strategy is the middle rung of Seihou's four generation
-strategies. It is dispatched by the .tpl file extension and gives a step
-two powers: replace {{variable.name}} with the resolved value, and gate
+A step with strategy = "template" processes its source regardless of file
+extension (.tpl is a naming convention). It gives a step two powers: replace {{variable.name}} with the resolved value, and gate
 regions of text on a boolean expression via {{#if ...}} blocks.
 
 Templates stay intentionally dumb. Anything richer -- loops, arithmetic,

@@ -1738,7 +1738,8 @@ agentInfo =
                         pretty ("run         Run an agent-driven blueprint" :: String),
                         pretty ("migrate     Run ordered library-upgrade blueprint migrations" :: String),
                         pretty ("upgrade     Upgrade a module with an agent that repairs manifest state" :: String),
-                        pretty ("models      List known agent models" :: String)
+                        pretty ("models      List known agent models" :: String),
+                        pretty ("config      Inspect resolved per-command agent settings" :: String)
                       ]
                 ]
           )

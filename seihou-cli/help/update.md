@@ -60,12 +60,16 @@ TARGET SELECTION
   `requires-ownership-closure`, or `unknown` for a manifest that predates it.
   A targeted update resolves `unknown` itself: it compiles each co-owner from
   its recorded version, reads how it writes the path, and records the answer
-  (upgrading a schema-6 manifest to 7) with its own manifest. It inspects the
+  (preparing lossless upgrades through the current schema, version 9) with its own manifest. It inspects the
   co-owners but never updates their files. `--dry-run` shows this as
-  `Manifest: schema 6 -> 7` and writes nothing.
+  `Manifest: schema 6 -> 9` and writes nothing.
 
-  If a co-owner's recorded version is not installed here, the update stops
-  with `shared_write_evidence_unavailable`: install that version and retry.
+  If a co-owner's recorded version is not installed here, update fetches its
+  exact recorded release from its origin for certification. It does not update
+  that co-owner. Only if evidence still cannot be obtained does it stop with
+  `shared_write_evidence_unavailable`; fix the reported origin/network problem
+  or deliberately include the co-owner. Machine-local origins can be repaired
+  with `seihou manifest repair-origins --dry-run`, then the apply command.
   A schema-5 or older manifest stops with `manifest_upgrade_required`: run
   `seihou manifest upgrade --dry-run`, review, then `seihou manifest upgrade`.
 
