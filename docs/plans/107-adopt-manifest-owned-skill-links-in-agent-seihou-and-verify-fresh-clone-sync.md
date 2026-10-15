@@ -21,6 +21,11 @@ provenance:
       at: 2026-10-15T18:13:48Z
       mode: "update"
       note: "Address review with a legacy 0.9.0.0 schema-6 fixture and explicit transition assertions; refresh released runtime candidate and committed checkout context."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-15T18:21:18Z
+      mode: "implement"
+      note: "Implement and publish real producer checkout declarations, validate legacy transition, and adopt the existing consumer."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -54,10 +59,10 @@ module syntax alone is not completion.
 
 ## Progress
 
-- [ ] Milestone 1: the real link-skill module records both checkout declarations and upgrades a verified pre-schema-9 command-based application without replaying shell commands.
-- [ ] Milestone 2: claude-skill-link and its update-docs composition work declaratively; exec-plan/master-plan composition and meaningful regression cases pass against the real binary.
-- [ ] Milestone 3: versioned producer changes, compatible runtime availability, and consistent generated/user documentation are published and verified through a remote installation.
-- [ ] Milestone 4: this repository's existing master-plan application records the new declarations; its committed state restores all four discovery links in a fresh clone and a linked worktree without producer installations or tracked changes.
+- [x] Milestone 1 (2026-10-15): link-skill 0.3.0 records both checkout declarations. Real-binary Bun acceptance passed with released 0.9.0.0 (3fe7576) creating schema 6 and four mkdir/ln receipts, then released 0.10.0.0 (de4c4cf) updating existing-correct and missing-link copies under --no-commands. The release-named clone/worktree restoration also passed.
+- [x] Milestone 2 (2026-10-15): claude-skill-link 0.2.0 and update-docs retain claude/skills sources; master-plan/exec-plan produce four distinct owned links. All 20 Bun tests pass, including both real legacy command producers, non-default release names, agreeing-owner removal, collision/missing-source atomic refusal, clone/worktree restoration, and old-runtime unknown-strategy refusal. All five module validations pass on released 0.10.0.0.
+- [x] Milestone 3 (2026-10-15): producer commit 455d2d6 published to mori://shinzui/agent-seihou on master; remote installation into isolated config reports link-skill 0.3.0, claude-skill-link 0.2.0, unchanged parents, and the full eight-case checkout suite passes against those installed bytes and released runtime 0.10.0.0. README/module/Mori/registry documentation is synchronized and two extension generations are identical across all 18 output files.
+- [x] Milestone 4 (2026-10-15): adoption commit c7c315a updates only the existing master-plan application and untracks its discovery link. A fresh clone of that commit with empty XDG config/cache creates four links, then reports four unchanged; deletion and wrong-target repair each change one link. A linked worktree creates all four. Tracked bytes, index entries, manifest bytes and unrelated application state are preserved. ADR 0018 and sync documentation now explain the one-time adoption and intentional untracking prerequisite.
 
 
 ## Surprises & Discoveries
@@ -72,6 +77,30 @@ separate real-consumer transition in Milestone 4.
 Review (2026-10-15): Seihou 0.10.0.0 is published on Hackage and its upstream v0.10.0.0 tag
 includes checkout sync. It is the released runtime candidate for the acceptance tests;
 publication alone does not prove the new producer compositions work with it.
+
+
+Implementation (2026-10-15): the released 0.10.0.0 runtime supports both actual
+producer compositions without engine changes. Parent module definitions remain at their
+existing versions; only link-skill (0.3.0) and claude-skill-link (0.2.0) advance.
+The selected published schema is 367b0a1390ac1ed3dda6e2cacfdf3e72b1f624df, integrity
+sha256:ef20d62c240dfe0e1126e05534d58c467188af4198307ad3c2a4a713bcd93505.
+
+The unmodified documentation generator emits a final blank line in section indexes,
+including existing indexes. Regeneration adds that convention to the changed modules
+index, so ordinary git diff --check reports only that line. Generation is byte-stable;
+`git -c core.whitespace=-blank-at-eof diff --check` validates other whitespace without
+hand-editing generated output or changing repository configuration.
+
+
+Consumer rehearsal (2026-10-15): the existing consumer tracks
+`.agents/skills/master-plan` as a Git symlink. Targeted update correctly refuses it with
+checkout_path_tracked. Removing only that index entry (`git rm --cached`, retaining the
+working link) is required to adopt the ignored checkout declaration. The unrelated tracked
+`.claude/skills/update-seihou-schema` stays intact; final snapshots therefore preserve literal
+tracked symlink bytes and account for its already-existing parent directory. After untracking,
+the remote-producer rehearsal upgrades schema 7 to 9, adds four declarations, preserves all
+managed file bytes and saved variables, and leaves the Nix application and file records
+identical. No inference-bearing manifest conversion is required.
 
 
 ## Decision Log
@@ -96,6 +125,59 @@ fixture cannot silently replace the required schema-upgrade proof.
 
 ## Outcomes & Retrospective
 
+Completed all four milestones on 2026-10-15. Published producer commit
+455d2d6c50ddea5f658443d19d71b05733fc620b in `mori://shinzui/agent-seihou`
+provides link-skill 0.3.0 and claude-skill-link 0.2.0. The unchanged parent versions
+(master-plan/exec-plan 0.12.0 and update-docs 0.1.0) discover their updated link
+dependencies through ordinary application/update. No engine change or additional
+runtime release was necessary. Released Seihou 0.10.0.0 (de4c4cf) is the minimum
+tested runtime; 0.9.0.0 (3fe7576) establishes the legacy schema-6 fixtures and
+refuses the new strategy before recording outputs.
+
+Validation passed: 20 Bun cases with 330 assertions; eight real-binary checkout cases
+with 241 assertions repeated using remotely installed producer bytes; five module
+validations; Mori descriptor type checking; and byte-stable regeneration of all 18
+generated documentation files. Running the schema-6 transition test against the fixed
+old producer snapshot fails specifically on absent checkout declarations. Both runtime
+builds succeeded. Producer whitespace validation retains only the unchanged generator's
+section-index EOF convention described above. Seihou's normal diff and commit hooks pass.
+
+Consumer adoption commit c7c315a2b72608490a008acd684bb25d1dfc8a0e contains only
+`.seihou/manifest.json` and removal of the tracked `.agents/skills/master-plan` entry.
+It advances schema 7 to 9, records the four required outputs, and preserves the source
+files, saved variables, unrelated Nix application/file records, and legacy module records.
+The isolated rehearsal and real update both reported 11 unchanged files, zero generated
+file changes, zero commands executed, and no warnings.
+
+The committed-consumer proof is retained at `/tmp/seihou-107-proof-hbn7su1d/result.json`;
+its isolated clone has no installed producer artifacts. It records these concise outcomes:
+
+```json
+{
+  "runtime": "seihou v0.10.0.0 (de4c4cf)",
+  "dryRun": {"plannedCreated": 4, "appliedCreated": 0},
+  "firstSync": {"plannedCreated": 4, "appliedCreated": 4},
+  "secondSync": {"plannedUnchanged": 4, "appliedCreated": 0, "appliedReplaced": 0},
+  "afterDeletion": {"appliedCreated": 1},
+  "afterWrongTarget": {"appliedReplaced": 1},
+  "linkedWorktree": {"appliedCreated": 4},
+  "trackedBytesIndexAndManifestUnchanged": true,
+  "producerArtifactsPresent": false
+}
+```
+
+Every link has the literal target ../../agents/skills/exec-plan or
+../../agents/skills/master-plan and resolves to its source SKILL.md. Dry-run creates
+neither links nor new parents; existing parents for the unrelated tracked schema skill
+remain intact. Git porcelain is empty after each consumer proof. Source files and
+manifest are committed; discovery links are ignored and absent in the clone before sync.
+The producer checkout and Seihou acceptance run were on macOS.
+
+The durable lesson is that a correct engine and installed producer do not themselves
+adopt a consumer. The application must record intent once, and a previously tracked
+symlink must deliberately leave the index. These lessons are distilled into
+[ADR 0018](../adr/0018-checkout-outputs-are-observable-portable-declarations.md) and
+[the sync guide](../cli/sync.md); historical plan 105's engine-only boundary is preserved.
 
 
 ## Context and Orientation
@@ -291,7 +373,7 @@ unrelated Nix artifact upgrade or new flake.lock is acceptable as a consequence 
 adoption. If the saved manifest requires inference-bearing origin conversion, report and
 perform the explicit manifest command with its dry run rather than editing JSON.
 
-Apply the proven update in this real checkout while preserving unrelated working changes.
+Untrack the existing `.agents/skills/master-plan` discovery symlink with `git rm --cached .agents/skills/master-plan`, retaining its working-copy link; it cannot remain a tracked destination under the checkout contract. Preserve the unrelated tracked `.claude/skills/update-seihou-schema` link. Apply the proven update in this real checkout while preserving unrelated working changes.
 Record only the intended adoption changes in a reviewable commit. If concurrent changes
 prevent safe separation, finish the proof in a disposable checkout and leave the real
 adoption milestone unfinished with a concrete handoff; never stash, reset, or overwrite
@@ -488,3 +570,9 @@ Revision (2026-10-15): addressed the pre-implementation review by requiring a le
 fixture with explicit before/after schema assertions, naming published 0.10.0.0 as the
 runtime candidate, and refreshing the committed checkout state. These changes prevent a
 false-positive upgrade test and remove stale implementation context.
+
+Revision (2026-10-15, implementation): recorded verified producer publication,
+released-runtime acceptance and consumer adoption. The real consumer's pre-existing
+tracked discovery link required intentional untracking while retaining its working link;
+final snapshot checks preserve unrelated tracked symlink text and existing parents.
+All original functional acceptance criteria remain satisfied.

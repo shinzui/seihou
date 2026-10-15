@@ -20,7 +20,7 @@ names, parsing old shell commands, or creating a second applied-state record.
 
 This decision is implemented by
 [ExecPlan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md).
-It records the implemented, unreleased contract. ADR 0017 is implemented by
+The engine contract is released in Seihou 0.10.0.0. ADR 0017 is implemented by
 [ExecPlan 99](../plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md)
 for the seed lifecycle. This repository's
 ADR directory is not a profiled OKF bundle.
@@ -103,6 +103,20 @@ well-defined boundary, including linked worktrees. Non-Git repair, nested Seihou
 external sources, and outputs requiring downloads or secrets need separate designs.
 Ordinary non-Git scaffolding remains available through run's existing root semantics.
 
+Producer adoption is a separate delivery obligation from engine availability.
+Installing a declaring producer or upgrading an empty checkoutOutputs field cannot
+infer desired wiring from historical command receipts. Apply or update the recorded
+composition once with its saved inputs, then commit the manifest, real source content,
+and ignore rules. A dependency-only producer change must be discoverable through the
+ordinary update path even when the parent module version is unchanged.
+
+A previously committed discovery symlink remains a tracked path and is refused just
+like any other tracked destination. The project must deliberately remove that index
+entry, retaining the working link if desired, before adoption. The engine cannot
+silently untrack it. Unrelated tracked discovery entries remain protected. Snapshot
+checks compare tracked symlink text without following targets, and account for parents
+that already exist because they hold unrelated tracked entries.
+
 ## Rejected Alternatives
 
 A skill-specific command or path-discovery loop would bypass declared ownership and
@@ -128,3 +142,17 @@ before another concrete kind establishes its needs.
 Schema 9 and the adjacent 8-to-9 upgrade implement this record after the schema-8 seed prerequisite. Core tests cover portable declarations, ownership laws, literal target observation, indexed tracked paths, native aliases on the macOS temporary volume, complete preflight, rollback and literal-link recovery; version-1 journals remain readable and unknown version-2 kinds fail before writes. A trace permits only declared link writes/parents and fixed read-only Git calls. Case-fold-equivalent checkout destinations are conservatively refused on every filesystem to keep declarations portable. Git check-ignore receives one `./`-prefixed pathname after `--`, because that command rejects literal pathspec magic.
 
 Real-binary tests cover both agent discovery and editor/shared-asset wiring, clean clones with empty and newer producer caches, poisoned config, linked worktrees, same-run generated sources, agreeing owners, conflicting retarget refusal, condition retirement, preserved local edits, no-spec removal and failed-update rollback. No producer repository is adopted or released by this implementation. Validation ran on macOS; Linux execution remains a downstream CI/platform verification obligation. These changes extend [ADR 0017](0017-a-seed-file-is-created-once-and-belongs-to-the-project.md) and preserve ADRs 0001, 0004 and 0014.
+
+The producer follow-up is [ExecPlan 107](../plans/107-adopt-manifest-owned-skill-links-in-agent-seihou-and-verify-fresh-clone-sync.md).
+It publishes [link-skill](mori://shinzui/agent-seihou/templates/link-skill) 0.3.0 and
+[claude-skill-link](mori://shinzui/agent-seihou/templates/claude-skill-link) 0.2.0,
+using released Seihou 0.10.0.0. Real-binary producer tests establish legacy schema-6
+command applications, adopt declarations without shell replay, and cover generated
+sources, shared ownership, refusal, clones and linked worktrees. This adds producer
+adoption evidence without changing the original engine implementation's boundary.
+
+The committed Seihou consumer now records all four planning-skill discovery outputs.
+An empty-cache fresh clone and a linked worktree restore them with sync, and deletion
+or wrong-target repair changes only the affected link. Tracked bytes, the index and
+manifest bytes remain unchanged. The previously tracked master-plan discovery entry
+was deliberately untracked for adoption; unrelated tracked entries remain intact.

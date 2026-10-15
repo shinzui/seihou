@@ -53,3 +53,38 @@ Older supported manifests have no checkout declarations and report zero work. Ap
 module release once to record them. Sync never infers declarations from shell receipts. Older
 machine-local manifests require explicit `seihou manifest upgrade`; a newer unsupported schema
 requires a newer binary. Metadata must be a real `.seihou` directory with a real manifest file.
+
+## Adopting existing skill modules
+
+The published [link-skill](mori://shinzui/agent-seihou/templates/link-skill) 0.3.0 and
+[claude-skill-link](mori://shinzui/agent-seihou/templates/claude-skill-link) 0.2.0
+producers declare checkout links and require Seihou 0.10.0.0 or newer. The former
+uses `agents/skills/`; the latter, used by update-docs, keeps `claude/skills/`.
+
+For an existing master-plan application, install its producers and update its
+recorded root target once, preserving saved inputs:
+
+```bash
+seihou install https://github.com/shinzui/agent-seihou.git --module master-plan --module exec-plan --module link-skill --module agent-gitignore --module claude-gitignore
+seihou update master-plan --dry-run --json --no-commands
+seihou update master-plan --json --no-commands
+```
+
+This records four discovery declarations even though master-plan and exec-plan
+remain at 0.12.0. For a first application, use `seihou run master-plan` after
+installation. For another composition, update its recorded root target instead.
+Installing the module or running `seihou manifest upgrade` alone cannot infer
+checkout intent from command receipts.
+
+A previously tracked discovery symlink needs deliberate untracking before update,
+for example `git rm --cached .agents/skills/master-plan`. That keeps the local
+link while making its destination eligible for an ignored checkout declaration.
+Seihou never untracks a path automatically. Preserve unrelated tracked discovery
+entries, and resolve real file/directory collisions explicitly.
+
+Commit the updated manifest, ignore rules and source skill files, together with
+any intentional removal of discovery links from the index. Subsequent clones and
+linked worktrees use only `seihou sync`, without installed producers. Sync restores
+deleted links and repairs wrong targets while preserving tracked bytes and the
+manifest. Historical source-move migrations remain distinct from this one-time
+adoption and are included by update when applicable.
