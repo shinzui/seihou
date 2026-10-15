@@ -16,6 +16,17 @@ provenance:
       at: 2026-10-15T23:38:46Z
       mode: "other"
       note: "Complete the code-grounded plan for module-declared checkout effects, portability, legacy compatibility, real consumer adoption and published team acceptance."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-15T23:48:18Z
+      mode: "update"
+      note: "Close code-grounded gaps in update no-ops, receipt identity, command-only removal, versioned decoding, failure recovery and final consumer delivery."
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-15T23:53:05Z
+      verdict: "approved"
+      note: "Reviewed revised plan against code, ADRs, producer specs and immutable consumers; lifecycle, persistence, removal and delivery gaps addressed; implementation acceptance remains open."
 ---
 
 # Restore module-declared checkout effects without reapplying modules
@@ -91,6 +102,14 @@ versions from actual upstream state at implementation time. Existing work remain
 in the tree until implementation deliberately replaces it; do not blindly revert
 whole commits containing unrelated guidance improvements.
 
+Review baseline (2026-10-15): this revision was checked against source `8d2fbe6`,
+with a clean working tree before the review. The installed PATH executable reports
+`seihou v0.10.1.0 (c3bb42b)` and exposes only `sync --dry-run` and `sync --json`;
+it is distinct from both the source tree and the remote source build described below.
+The original author and first revision were `gpt-6-astra`; no review entries existed
+before this pass. This is a code-grounded revision, not independent implementation
+acceptance. All five delivery milestones remain open.
+
 
 ## Surprises & Discoveries
 
@@ -117,6 +136,33 @@ runtime ignored the extra field. A command record with a tagged `action` instead
 of the old `run` field failed extraction with exit 1. Neither experiment executed
 a shell command. An optional extra field alone is therefore not a safe public
 encoding for this feature. Preserve this negative control in executable tests.
+
+Review (2026-10-15): `isUpdateNoOp` in
+`seihou-cli/src/Seihou/CLI/Update.hs` requires the command plan's `willRun` count
+to be zero. Merely exempting checkout commands from receipts would make every update
+actionable. Also, `compileCommands` currently counts duplicate occurrences by rendered
+body and working directory; sharing that counter across lifecycles would change an
+ordinary command's receipt identity when a checkout command is inserted before it.
+Both behaviors need explicit separation in this plan.
+
+Review (2026-10-15): `selectCheckoutRemoval` in
+`seihou-core/src/Seihou/Engine/Remove.hs` selects only instances owning entries in
+`checkoutOutputs`. It removes one qualified instance from a surviving application,
+not necessarily the whole application. Command-only ownership and filtering that
+instance's command list must be added; application replacement alone is insufficient.
+
+Review (2026-10-15): `executeCommands` in
+`seihou-cli/src/Seihou/CLI/CommandExecution.hs` returns only the failed command on
+failure and returns receipts only when the entire phase succeeds. Its current result
+cannot report sync's completed prefix and unrun tail. Run publishes generated state
+before this phase; update publishes only after it succeeds. Reuse shell invocation,
+but preserve these distinct publication boundaries and add transient execution outcomes.
+
+Review (2026-10-15): the standalone `AppliedComposition` JSON instances have no
+enclosing manifest-version argument. A defaulted `checkoutCommands` field there would
+silently accept a malformed new-schema application; an unconditional required field
+would break older schemas. The version-selected codec must reach application records.
+The proposed Dhall action type and authoring example type-check together with `dhall type`.
 
 
 ## Decision Log
@@ -158,6 +204,20 @@ own filesystem operations; it cannot prove the behavior of an arbitrary shell
 program or roll it back. Report partial execution accurately and leave retry under
 the same ordinary sync command.
 
+Decision (2026-10-15, review): update first decides whether accepted project state
+changes, using ordinary command receipt policy but excluding repeatable checkout
+execution as a reason to update. A declaration change is project-state change. A
+true default-update no-op executes neither lifecycle; an accepted actionable update executes its
+selected applications' checkout commands unless `--no-commands` is set. Sync remains
+the explicit way to repeat local setup without a project update.
+
+Decision (2026-10-15, review): first run retains accepted desired declarations if
+its subsequent command phase fails; transactional update rolls back its proposed
+declarations on failure. Sync reads whichever manifest is actually committed to disk.
+It never resumes an unaccepted update or substitutes proposed setup for accepted setup.
+Removing a declaration stops future execution but does not invent an inverse shell
+command to remove arbitrary local effects.
+
 
 ## Outcomes & Retrospective
 
@@ -189,7 +249,8 @@ fields within its existing exception boundary. `seihou-core/src/Seihou/Core/Modu
 validates specs, including `checkCheckoutSteps` and ordinary command validation.
 
 `seihou-core/src/Seihou/Composition/Resolve.hs` resolves dependencies and inputs;
-`Composition/Instance.hs` defines qualified instance identity. `Composition/Plan.hs`
+`seihou-core/src/Seihou/Composition/Instance.hs` defines qualified instance identity.
+`seihou-core/src/Seihou/Composition/Plan.hs`
 compiles instances in dependency order. `seihou-core/src/Seihou/Engine/Plan.hs`
 contains `compilePlan`, `compileStep`, and `compileCommands`. It evaluates `when`
 conditions and substitutes resolved variables, producing `CheckoutOutputOp` for
@@ -206,6 +267,14 @@ Its existing `replaceCheckoutApplications` path already replaces selected owners
 complete link declarations while retaining other owners. Use the analogous application
 boundary for checkout command replacement; do not append stale commands forever.
 
+`seihou-core/src/Seihou/Core/Application.hs` builds and replaces application records.
+`seihou-core/src/Seihou/Core/CommandFingerprint.hs` defines ordinary receipt identity.
+`seihou-core/src/Seihou/Engine/Remove.hs` and
+`seihou-cli/src-exe/Seihou/CLI/Remove.hs` select and remove recorded instances,
+including without an installed producer. Extend their link-only ownership selection
+to cover checkout commands. `seihou-cli/src/Seihou/CLI/Update/Recovery.hs` exposes the
+read-only `pendingUpdateRecovery` query; do not call update planning from sync to use it.
+
 `seihou-core/src/Seihou/Core/Checkout.hs` owns pure declaration/observation/planning
 rules. `seihou-core/src/Seihou/Engine/Checkout.hs` observes paths and executes checked
 link mutations. `seihou-cli/src/Seihou/CLI/CheckoutSync.hs` reads the manifest and
@@ -216,7 +285,8 @@ service. Remove that dependency while preserving truthful status and link summar
 
 The manifest codec and capability registry are in
 `seihou-core/src/Seihou/Manifest/Types.hs`, duplicate-aware raw decoding is in
-`Manifest/JSON.hs`, and adjacent schema transforms are in `Manifest/Upgrade.hs`.
+`seihou-core/src/Seihou/Manifest/JSON.hs`, and adjacent schema transforms are in
+`seihou-core/src/Seihou/Manifest/Upgrade.hs`.
 The current manifest schema is 9. Schema 10 is the intended next version if still
 unallocated when implementation starts; otherwise use the next contiguous version
 and update every example and capability reference together.
@@ -241,6 +311,8 @@ Relevant decisions are [ADR 0001](../adr/0001-manifest-is-a-checked-in-machine-i
 (portable committed state), [ADR 0004](../adr/0004-the-manifest-is-the-only-record-of-applied-state.md)
 (one applied-state record), [ADR 0009](../adr/0009-seihou-reads-no-package-manager-format-artifacts-declare-the-command.md)
 (artifact-declared behavior instead of ecosystem guesses),
+[ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md)
+(certify additive co-writes inside a targeted update without expanding its scope),
 [ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md)
 (version semantics and adjacent upgrades), and
 [ADR 0018](../adr/0018-checkout-outputs-are-observable-portable-declarations.md)
@@ -296,6 +368,16 @@ qualified instance identity, and duplicate occurrence identity. Reuse command-bo
 rendering and process execution helpers; do not route sync through receipt selection
 or full update/application planning.
 
+Define occurrence identity before wiring persistence. Count equal rendered commands
+within a qualified instance separately for each lifecycle, preserving today's
+application-command fingerprint bytes and duplicate numbering. A checkout record
+uses its qualified instance plus rendered body, normalized working directory and
+checkout-local occurrence number; list position supplies execution order. The containing
+application supplies the outer identity. Adding a checkout command with identical
+shell text before an ordinary command must not invalidate or borrow the ordinary
+receipt. Changing an ordinary command to checkout execution drops its obsolete receipt
+and records replayable intent even if that body previously succeeded.
+
 Keep the rendered setup portable under ADR 0001. Resolve project paths relative to
 the receiving checkout, never to the applying machine's absolute project directory,
 producer installation or cache. Reuse existing path validation rather than parsing
@@ -315,6 +397,15 @@ The link map and per-application command lists are the two typed parts of the re
 checkout setup. Build a transient `CheckoutSetupPlan` from them for execution; it is
 not another persistent artifact. Unknown owners and duplicate command identities
 within an application are invalid.
+
+Use explicit version-selected application encoders/decoders at the manifest boundary,
+including every path that rebuilds `AppliedComposition`. At the new schema the list
+must be present even when empty; `null`, a missing list, malformed records, duplicate
+application IDs, unknown instance owners and duplicate checkout identities fail before
+effects. A legacy-version round trip omits the new field and cannot emit nonempty
+checkout commands under the old version. Do not accept a nonempty new field smuggled
+into an old-schema document. Extend `manifestEncodingLoss` and the manifest-store
+write guards as well as normal decoding, so journal and library callers share these rules.
 
 Introduce the adjacent manifest schema upgrade and capability mapping. New-schema
 applications require `checkoutCommands`; the new runtime maps its absence in old-schema
@@ -336,7 +427,10 @@ remain identical. Use an unreachable producer origin or an instrumented resolver
 prove sync does not fetch. This must work through the executable before expanding
 coverage. The same fixture must fail the new-local-effect assertion on the previous
 released implementation; an old binary must reject the new tagged spec and manifest
-without running either sentinel.
+without running either sentinel. Keep these two negative controls distinct: a valid
+legacy ordinary-command application demonstrates missing local effects in a fresh
+clone, while a new tagged command and new manifest demonstrate old-runtime refusal.
+A schema-decode error alone does not prove the restoration regression.
 
 Remove `withCheckoutAdoption` and the sync CLI's update orchestration in this slice.
 Keep normal restoration independent of whether the link map is empty, partial, or
@@ -356,7 +450,8 @@ commands, for these observable links. Both planning skills must point to their a
 source directories with valid literal relative targets. The runtime must contain no
 agent-tool directory constants. Preserve the separate source convention of the
 Claude-specific `claude-skill-link` producer; do not move its source or broaden that
-module's declared purpose incidentally.
+module's declared purpose incidentally. Preserve that producer's legacy-to-declarative
+adoption tests and same-source behavior while adapting shared command/schema code.
 
 Publish no producer until candidate validation and ordinary-command acceptance
 pass. Before broad tests, rehearse normal update from immutable real consumer states:
@@ -368,6 +463,18 @@ evidence. Test from untouched disposable clones; record any producer publication
 staging honestly. Do not silently install dependencies, edit manifests or ignore
 rules, pre-untrack paths, or accept file conflicts in fixture preparation.
 
+The verified full fixture identities are
+`5cb50cab752945d1a0278c9347edaa5918f6d158` (schema 6, eight command receipts) and
+`529fd6d87c414a95223f24c622daaedb50c3ad57` (schema 9, four links, no receipts)
+in `mori://shinzui/haskell-nix`, and local commit
+`188fbcf60c84661a90748eff3a1e8131076c9bd2` (schema 7, both master-plan and
+nix-haskell-flake applications). Use detached disposable clones at these commits,
+not a regenerated approximation. Before publication, the harness may map the recorded
+producer Git URL to a temporary candidate remote using isolated Git configuration;
+retain the canonical URL in consumer data and record the candidate revision. This is
+test transport, not a user setup step. It must not preinstall modules or modify the
+consumer. After publication repeat without URL mapping against the real remote.
+
 For each starting state run ordinary interactive `seihou update master-plan`, with
 empty producer caches and saved inputs. The normal preview must include the necessary
 source/dependency changes, ignore changes, declaration additions, and any safe index
@@ -376,6 +483,17 @@ Additive `.gitignore` co-ownership must not require user enumeration. A genuine
 whole-file ownership conflict must be named and left unchanged, not solved by
 silently upgrading unrelated applications. If update cannot meet this workflow,
 correct its selection/certification path in this milestone.
+
+Keep the non-default direct `link-skill` test, and test the full planning composition
+with its saved source-name inputs. The current parent specs hard-code `link-skill`
+dependency values to `exec-plan` and `master-plan`, although their generated source
+paths use variables. `collectParentVars` uses literal dependency bindings; do not
+invent parent-variable interpolation syntax. Where names diverge, place the typed
+link steps in the module generating that source, use the same resolved variable for
+source and destination, supply its ignore preparation, and remove its superseded
+hard-coded link dependency. Preserve the exec-plan dependency itself and all unrelated
+module behavior. This is a producer-spec correction, not a new variable-resolution
+feature. Update replaces old owners through its ordinary declaration reconciliation.
 
 Commit the accepted setup in the disposable project and test a fresh teammate clone
 and linked worktree with only `seihou sync`. For the two default planning skills,
@@ -389,7 +507,7 @@ update, while an unadopted newer producer cannot change another developer's sync
 ### Milestone 3 — Complete lifecycle, compatibility and failure semantics
 
 
-Normal run and accepted update execute each selected checkout command as part of
+Normal run and an accepted actionable update execute each selected checkout command as part of
 the declared command sequence, once per occurrence, without putting it in ordinary
 success receipts. Preserve the relative order of application and checkout commands
 during normal execution; splitting all application commands ahead of all checkout
@@ -401,20 +519,52 @@ relying on incidental manifest array order.
 
 Normal update must still recognize a no-op: the mere presence of a repeatable local
 command must not force regeneration or make every update actionable. Changes to the
-recorded checkout declaration do make an update actionable. `--no-commands` on run
+recorded checkout declaration do make an update actionable. Compare ordered checkout
+declarations in `sameApplication`; exclude checkout-command run counts from the
+default `isUpdateNoOp` decision. A no-op reports no project changes and executes no commands.
+For actionable updates, show the selected checkout executions in the preview and
+run them in the original mixed sequence after acceptance. Preview, cancellation and
+dry-run execute neither lifecycle. `--no-commands` on run
 or update suppresses execution of both command lifecycles but does not discard
 checkout declarations from the accepted manifest. Ordinary commands retain their
 existing receipt policies and identity. A shared module instance within one
 composition runs once; distinct instances and separate applications retain their
 explicit occurrences. No global deduplication by shell text is allowed.
 
+Preserve the existing explicit `update --run-all-commands` override: an intentional
+request to run all commands is actionable when either lifecycle has commands, even
+if project content is unchanged. Its preview and acceptance still apply. Do not
+recommend this flag for ordinary local restoration; the normal command there is sync.
+Retain the existing mutual exclusion with `--no-commands` and test checkout-only
+applications under default, disabled and run-all policies.
+
+Persist declarations from the complete compiled operations, before the run path's
+`opsFiltered` execution filter. Otherwise `run --no-commands` would silently lose
+the only instructions a teammate needs. Verify both run and update with that flag,
+followed by a new clone where plain sync performs the recorded local setup.
+
 Replacing or removing an application replaces or removes its command list together
 with its other owned state. Removed/false-condition commands cannot survive as stale
-instructions. Removal never executes a checkout setup command. Existing link
+instructions. Extend `selectCheckoutRemoval` to recognize command-only owners and
+filter the removed qualified instance's commands while preserving sibling instances
+and other applications. Prove removal with no installed producer and ambiguous
+bare-name selection, using the existing `--application` option when needed. Existing
+declared application-lifecycle removal commands keep their semantics; a checkout
+action in `Removal.commands` is rejected during module validation and manifest
+decoding, including when no producer is available. Removal never executes a checkout
+setup command and does not claim to delete its arbitrary local effects. Existing link
 co-ownership and safe retirement remain intact. A schema upgrade alone never invents
 local setup from historical commands. Interrupted update recovery must complete or
 be explicitly resolved before sync can execute a mixed old/new project state; reuse
 the existing recovery query and supported recovery path, without an implicit update.
+
+Use `pendingUpdateRecovery` after checking the real project metadata path and before
+link/command execution, including on sync dry-run. Refuse pending transactions without
+modifying them and name the supported recovery command, `seihou update --dry-run`,
+whose entry path performs recovery before previewing an update. Explain that recovery
+may restore the prior transaction's files/index even though no new update is applied.
+Test that path against an actual interrupted journal; after it succeeds, sync may run.
+Do not invent a recovery subcommand or suggest deleting the transaction directory.
 
 The sync service validates the entire recorded setup before mutation. Preflight links
 and declared working directories, reject invalid owners/paths and unavailable command
@@ -424,6 +574,14 @@ is the current project root. Do not evaluate shell or probe external tools durin
 preflight. Commands requiring artifacts from an earlier command keep that relationship
 inside the shell command or within existing real working directories; no new general
 resource scheduler is introduced.
+
+Normal application may create a command's working directory through managed steps;
+validate its path at compilation and recheck the resulting real directory before
+execution. Sync requires it to exist in the received checkout already. For checkout
+commands, recheck the declared working directory and ancestors immediately before
+each invocation, since an earlier command may have changed them. A launch or working
+directory failure is a named failed command with the remaining tail unrun, even when
+there is no child-process exit code.
 
 Materialize the checked declarative links, then execute checkout commands in order.
 Link sources must therefore exist before execution; a checkout command cannot be
@@ -436,9 +594,23 @@ unrun tail. Existing link-phase failure rollback remains in force; do not claim 
 roll back shell effects or undo links after shell commands may have used them.
 A retry runs the complete recorded checkout-command phase again, which is why the
 producer must declare only repeatable commands. No global or per-machine receipt
-can cause the retry to skip required work. A failed first application must retain
-or roll back desired declarations consistently with its existing run/update
-publication boundary; never record local success because the manifest was written.
+can cause the retry to skip required work. Introduce transient per-command outcomes
+at the shared executor boundary: succeeded, failed (exit or launch error), skipped
+by policy, and not run after failure. Keep completed stdout/stderr and identity for
+the prefix; an `Either` containing only the failing command cannot meet this contract.
+Adapt ordinary callers to retain their existing all-phase receipt publication rule;
+checkout outcomes never become receipts.
+
+On run, persist the complete desired command list with generated state before command
+execution, as the existing run publication boundary does. If commands fail, return
+nonzero and keep those declarations, with no new ordinary success receipts; a later
+sync can retry local setup only. If an ordinary command failed, explain that sync
+does not retry it and name the corresponding run command. On update, a command failure
+aborts the existing transaction: retain the prior manifest, files, baselines and index,
+and report that arbitrary shell effects may remain. The next sync therefore executes
+the prior setup; retry the rejected change through the original update command.
+Test failure in each lifecycle after a successful prefix and verify the exact
+persisted command list, not merely the nonzero exit status.
 
 Sync's own code writes only local declarative outputs and necessary parents; it
 never writes managed bytes, the Git index, baselines or the manifest. Arbitrary shell
@@ -461,6 +633,15 @@ macOS and Linux; record unavailable platform proof as unfinished, not implicitly
 passed. Hostile concurrent filesystem writers and sandboxing arbitrary shell are
 outside the existing engine's guarantees.
 
+Three focused regressions must demonstrate the lifecycle boundaries visibly. In a
+command-only application, an unchanged update must report a no-op, preserve manifest
+bytes and leave the command's marker untouched; deleting the local result still does
+not turn update into setup, while sync recreates it. A checkout-declaration-only change
+(body, order, working directory or enabled condition) must appear in update's preview
+and persist on acceptance even when managed bytes are unchanged. Finally, remove one
+command-owning instance from a composition, delete its local result, and sync: that
+result stays absent while retained sibling/application commands still execute.
+
 
 ### Milestone 4 — Make the interface and architecture agree
 
@@ -478,6 +659,13 @@ execution/available setup, not as healthy or broken based on shared receipts. Wi
 no recorded checkout effects it says that explicitly and distinguishes absence of
 instructions from successful restoration. Any suggested adoption command must refer
 to a recorded root application and actually work through the public CLI.
+
+Use neutral wording such as `2 repeatable checkout commands declared; run seihou sync
+to execute them`. Running sync must not make the next status imply those commands
+have become permanently satisfied or leave a perpetual warning that setup is broken.
+An empty declaration set is a successful zero-work sync with an explicit message;
+it must not trigger fetching, a confirmation prompt, or a claim that undeclared
+effects were restored. Cover that case on schema 6 as well as the new schema.
 
 Update `docs/cli/sync.md`, `docs/cli/status.md`, `docs/user/teams.md`, the module
 specification/authoring documentation, both changelogs, embedded help, all affected
@@ -515,6 +703,14 @@ consumer projects through ordinary public update commands, review and commit the
 state, and deliver those commits through the normal authorized Git workflow.
 The runtime, producer and consumer transitions are one delivery obligation.
 
+The known delivery consumers are this Seihou repository and
+`mori://shinzui/haskell-nix`; the reported receiving checkout is the latter on
+`shinzui@yujin.local`. Locate it through that machine's Mori registry. Record
+hostname/platform, checkout path, branch/commit and executable identity separately
+from local disposable evidence. Receive the published adoption commit through normal
+Git collaboration before testing plain sync there, preserving unrelated work.
+Do not silently expand this into updating every registered dependent repository.
+
 Repeat the immutable legacy/partial-consumer adoption and fresh-clone/worktree
 acceptance with an executable obtained from the published artifact, not the build
 used during development. Record its version and revision, acquisition command,
@@ -525,6 +721,15 @@ when access remains authorized; never label a local copy as the remote machine.
 If consumer publication, platform proof, installable runtime or authorized installation
 remains, keep this milestone open and state that specific gap. Do not substitute a
 manual `ln` repair or another source test count for delivery.
+
+Before marking this milestone complete, compare the final result to the original
+user-visible problem: both planning skills are reachable at all three declared tool
+destinations on the receiving machine, and the published runtime also restores the
+generic command fixture in a fresh checkout. Record any command or manual action
+needed beyond maintainer update/commit, receiving that commit, and teammate sync.
+Any necessary preparation missing from the public workflow is a defect to resolve
+here. Close the superseded plan 107 delivery obligation only by pointing to this
+evidence; preserve its historical results without counting them as six-link proof.
 
 
 ## Concrete Steps
@@ -538,7 +743,6 @@ git status --short
 mori registry show shinzui/seihou-schema --full
 mori registry show shinzui/agent-seihou --full
 mori registry show shinzui/haskell-nix --full
-mori registry show shinzui/keiro --full
 ```
 
 Inspect applicable instructions in each discovered checkout before editing it.
@@ -556,8 +760,10 @@ focused acceptance with the existing Cabal/Tasty harness, then the final gates:
 ```sh
 cabal build exe:seihou
 cabal list-bin exe:seihou
+cabal test seihou-cli-test --test-options='--list-tests --pattern checkout'
 cabal test seihou-cli-test --test-options='--pattern checkout'
 just format
+nix fmt -- --no-cache
 just build
 just test
 just audit-cli-docs
@@ -565,7 +771,9 @@ just check
 ```
 
 Confirm the focused suite selector actually matches the new tests before treating
-it as evidence. Run `cabal check` from each of `seihou-core/`, `seihou-cli/`, and
+it as evidence. The uncached formatter invocation is deliberate: plan 107 recorded
+a cached formatting pass that missed required changes. Run `cabal check` from each
+of `seihou-core/`, `seihou-cli/`, and
 `seihou-okf-extension/`. Validate changed producer modules and run their Bun
 acceptance from `mori://shinzui/agent-seihou`, following its checked-in test entry
 points. Its existing checkout test requires explicit `SEIHOU_TEST_BIN` and
@@ -681,3 +889,12 @@ one is needed; verify released package availability and upstream tags before cha
 bounds. Existing schema, producer and consumer repositories are explicit integration
 dependencies described above. Their release/adoption work stays under this plan's
 acceptance obligation rather than becoming follow-up planning work.
+
+Revision note (2026-10-15): reviewed the plan against source `8d2fbe6`, installed
+release `0.10.1.0 (c3bb42b)`, producer specifications and immutable consumer manifests.
+Made update no-op gating, receipt-stable occurrence identity, command-only instance
+removal, version-selected application codecs and the distinct run/update failure
+boundaries explicit. Added reproducible candidate transport, full fixture identities,
+source-name alignment, concrete recovery guidance and final receiving-machine checks.
+These close implementation and acceptance gaps within the existing five milestones;
+they do not mark the feature implemented or authorize a release.

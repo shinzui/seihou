@@ -27,6 +27,18 @@ ADR directory is not a profiled OKF bundle.
 
 ## Decision
 
+Planned amendment (2026-10-15):
+[ExecPlan 108](../plans/108-restore-module-declared-checkout-effects-without-reapplying-modules.md)
+replaces the update-inside-sync approach described below and adds explicit repeatable
+checkout commands alongside observable links. Its design records resolved commands
+in the same portable manifest, excludes them from completion receipts, and restores
+them without producer resolution. True no-op updates execute no commands; failed run
+and failed transactional update preserve their respective publication boundaries.
+This amendment is planned, not implemented or released. Until its acceptance passes,
+the implementation evidence below remains historical evidence for the link engine,
+not proof of command restoration or complete three-tool skill discovery. Amend the
+operative decision and evidence together during implementation of Plan 108.
+
 Strategy and lifecycle remain separate dimensions of a step. Strategy describes its
 materialization; lifecycle describes ownership and subsequent maintenance. Managed files
 participate in content reconciliation, seeds are handed to the project after creation,
