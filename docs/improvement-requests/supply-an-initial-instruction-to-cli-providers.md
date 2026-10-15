@@ -8,9 +8,10 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-08-17T16:30:00Z"
-timestamp: 2026-10-15T15:09:14Z
+timestamp: 2026-10-15T15:18:34Z
 requestId: IR-6
-status: proposed
+status: accepted
+targetPlan: docs/plans/106-supply-default-initial-instructions-to-cli-agent-providers.md
 origin: mori://shinzui/okf-profiles
 ---
 
@@ -18,9 +19,16 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Proposed; no implementation plan found in `docs/plans/` or `docs/masterplans/` as
-of the 2026-10-15 audit. No shared fallback instruction or provider-specific
-requirement has been added.
+Accepted 2026-10-15 and planned in
+[ExecPlan 106](../plans/106-supply-default-initial-instructions-to-cli-agent-providers.md).
+Four milestones cover a shared fallback for CLI providers, interactive launch and
+migration preview, end-to-end regression evidence, and documentation. Implementation
+has not started.
+
+The plan supplies `Follow the instructions in the system prompt.` for omitted or blank
+CLI prompts, preserves nonblank user text exactly, and keeps API-provider behavior
+unchanged. The fallback is resolved at dispatch and is not recorded as user-authored
+manifest provenance.
 
 The failure below is historical evidence from seihou 0.7.0.0, not a reproduction
 against the current tree. `AgentMigrate.launchMigration` now dispatches CLI providers
