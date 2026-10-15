@@ -4,6 +4,7 @@ import Control.Lens ((^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Effectful
+
 -- Re-use the real loader for end-to-end tests
 import Seihou.Core.Module (loadModule)
 import Seihou.Core.Types

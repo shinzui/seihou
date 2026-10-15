@@ -31,6 +31,11 @@ provenance:
       at: 2026-10-15T20:55:55Z
       mode: "implement"
       note: "Reopen at user request: ordinary update must adopt links without manual installation or Git index surgery; sync must give actionable adoption guidance."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-15T21:19:40Z
+      mode: "implement"
+      note: "Prepare supporting release: verify published versions, run release gates, correct stale formatter-cache omissions, and prepare released-binary acceptance."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -81,7 +86,29 @@ module syntax alone is not completion.
 - [ ] Milestone 7: publish a supporting runtime containing the reopened UX changes and repeat the ordinary-update/fresh-clone proof with that released executable. The currently installed Nix-profile 0.10.0.0 executable does not contain this source change; do not claim the released runtime already offers tracked-link adoption.
 
 
+Release handoff (2026-10-15): source release preflight passes `just format`,
+`just build`, `just test` (1,991 tests), `just check` (four native Nix checks),
+all three `cabal check` commands, and `git diff --check`. Registry and upstream
+tag verification still find 0.10.0.0 as the latest release. Proposed 0.10.1.0
+adds two core exports without changing existing signatures. The release skill
+requires version and changelog approval; the proposal is pending, so versions,
+tags and uploads remain unchanged. The reviewable proposed package/changelog diff
+is `/tmp/seihou-107-release-0.10.1.0.patch`. After approval, apply that diff, rerun
+the gates on the bumped candidate, then publish and repeat acceptance with the
+released executable. `/tmp/seihou-107-release-proof.py <absolute-executable>`
+rehearses ordinary interactive update from `c7c315a^`, then fresh-clone and linked-
+worktree restoration, deletion and retarget repair with empty producer caches.
+Its source-binary rehearsal passed; evidence is
+`/tmp/seihou-107-release-proof-g51frssp/result.json`. This source rehearsal does
+not satisfy the released-runtime requirement.
+
+
 ## Surprises & Discoveries
+
+Release preflight (2026-10-15): cached `nix fmt` missed three required blank lines
+in two existing Haskell files. `nix fmt -- --no-cache` made those whitespace-only
+changes; the subsequent clean Nix treefmt and all other native checks pass. A
+cached formatting success alone is insufficient evidence for the release gate.
 
 Reopening (2026-10-15): remote-backed update already resolves the producer catalog
 without installation. The real consumer's empty-cache preview nevertheless claimed
@@ -177,7 +204,9 @@ released-binary acceptance) remains open. Published producer commit
 provides link-skill 0.3.0 and claude-skill-link 0.2.0. The unchanged parent versions
 (master-plan/exec-plan 0.12.0 and update-docs 0.1.0) discover their updated link
 dependencies through ordinary application/update. No engine change or additional
-runtime release was necessary. Released Seihou 0.10.0.0 (de4c4cf) is the minimum
+runtime release was necessary for the original four milestones; the reopened
+tracked-link adoption requires the additional runtime release in milestone 7.
+Released Seihou 0.10.0.0 (de4c4cf) is the minimum
 tested runtime; 0.9.0.0 (3fe7576) establishes the legacy schema-6 fixtures and
 refuses the new strategy before recording outputs.
 

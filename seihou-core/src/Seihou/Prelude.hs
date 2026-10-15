@@ -44,6 +44,7 @@ module Seihou.Prelude
 where
 
 import "base" Data.Bifunctor (first)
+
 -- Every record type in the project derives Generic, both because the house
 -- style requires it and because generic-lens synthesises #label lenses from
 -- the Generic representation. Re-exporting it here keeps the derive clauses
@@ -54,6 +55,7 @@ import "containers" Data.Set (Set)
 import "effectful-core" Effectful (Dispatch (Dynamic), DispatchOf, Eff, Effect, IOE, MonadIO, liftIO, runEff, type (:>), type (:>>))
 import "effectful-core" Effectful.Dispatch.Dynamic (EffectHandler, HasCallStack, interpret, reinterpret, send)
 import "filepath" System.FilePath ((</>))
+
 -- Re-export the whole lens API. PackageImports pins the package so that
 -- `Control.Lens` unambiguously means the `lens` package's module.
 --
