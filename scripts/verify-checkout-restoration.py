@@ -184,7 +184,7 @@ def main():
     parser.add_argument("--area", required=True, type=pathlib.Path, help="New directory retaining transcripts and disposable clones")
     parser.add_argument("--published", action="store_true", help="Use public producer origins without candidate Git URL routing")
     args = parser.parse_args()
-    args.binary = args.binary.resolve()
+    args.binary = args.binary.absolute()
     producer = args.producer.resolve()
     consumer = args.consumer.resolve()
     root = pathlib.Path(__file__).resolve().parents[1]

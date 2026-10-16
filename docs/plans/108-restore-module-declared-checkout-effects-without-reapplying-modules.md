@@ -100,13 +100,15 @@ or an unrelated upgrade, fix that friction here before declaring adoption comple
 - [ ] Milestone 4: help, agent guidance, diagnostics and ADRs describe one coherent workflow; distribution checks and the semantic guidance audit pass against the release candidate.
 - [ ] Milestone 5: schema, producers, runtime and consumer adoption are delivered in dependency order; the installable released executable repeats the untouched-consumer and teammate acceptance, with evidence identifying exact revisions and artifacts.
 
-Source acceptance checkpoint (2026-10-16 UTC): milestones 1–3 are implemented
-and verified from source; they do not establish published delivery. The source
-binary reports `seihou v0.10.1.0 (a3a28e8)` because version editing awaits the release
-confirmation. The candidate includes all working changes recorded by this plan.
-Milestone 4's source audit and distribution checks pass, but its final versioned
-release-candidate audit remains open. Milestone 5 remains open for publication,
-installation and actual consumer adoption.
+Installed-source acceptance checkpoint (2026-10-16 UTC): milestones 1–3 are
+implemented and verified. The public runtime source is
+`c3cbd9bd202e87d6fd7fc0ede1d997d2c2140e0b`. The installed PATH executable on
+sungkyung and yujin reports `seihou v0.10.1.0 (c3cbd9b)`; the unchanged package
+version must not be confused with the older tagged 0.10.1.0 release. Both actual
+maintained local consumers and the actual yujin receiving checkout now have all six
+links, verified through ordinary update/Git collaboration/plain sync. Milestone 4's
+source and installed guidance audits pass; its final versioned release-candidate
+audit and milestone 5's versioned package release remain open.
 
 The regression `restores recorded checkout commands in a fresh clone without
 producers or application replay` applies a generic tagged command, makes the
@@ -153,6 +155,18 @@ it is distinct from both the source tree and the remote source build described b
 The original author and first revision were `gpt-6-astra`; no review entries existed
 before this pass. This is a code-grounded revision, not independent implementation
 acceptance. All five delivery milestones remain open.
+
+A user-reported failure after the source commit exposed an incomplete handoff:
+plain sync in the actual checkout still did nothing because its schema-9 manifest
+recorded only four already-correct links, the producer was unpublished, and the
+local installed binary was the old tagged release. Even the new source runtime's
+public-origin update reported "Already up to date" before producer publication.
+Disposable candidate acceptance had not delivered any change to the user's command.
+This was resolved by publishing the producer, installing the public source revision,
+performing ordinary adoption in the maintained consumers and delivering the adoption
+commit to yujin. The concrete installed/remote evidence above, rather than source
+suite counts, establishes the now-working sync workflow. Formal versioned release
+criteria remain open and must not be represented as completed.
 
 
 ## Surprises & Discoveries
@@ -274,7 +288,8 @@ command to remove arbitrary local effects.
 ## Outcomes & Retrospective
 
 
-The source implementation is complete; installable delivery remains open.
+The source implementation is published, installed and adopted in the actual
+maintained checkouts; the versioned Hackage/GitHub release remains open.
 Modules explicitly distinguish application commands from repeatable checkout
 commands. Schema 10 records resolved checkout declarations per application and
 qualified instance. Sync consumes only accepted manifest state, restores links,
@@ -301,20 +316,49 @@ Exact external state:
   `sha256:5a24b98eada6628e3e7da267f4e6c31c1e169179d2bacd5fed7254fc4cc55183`.
   Runtime schema pins agree. The author's other registered checkout has an unrelated
   dirty `Step.dhall` comment and was preserved.
-- `mori://shinzui/agent-seihou` commit
-  `033daafec0776c1641e07625e90c36cb69f5d292` is committed but unpublished. It supplies
+- `mori://shinzui/agent-seihou` implementation commit
+  `033daafec0776c1641e07625e90c36cb69f5d292` and guidance correction
+  `a8e1b55b0f10a8d186f7bab310403b97be5b8b2c` are published. They supply
   `link-skill` 0.4.0, `agent-gitignore` 0.2.0, and `exec-plan`/`master-plan` 0.13.0.
-  Parent modules own all three discovery destinations and retain the actual exec-plan
-  dependency without hard-coded transitive discovery names. Publish only after the
-  supporting runtime; remove the README release-pending marker then.
-- Installed local released binary remains `0.10.1.0 (c3bb42b)`. Negative controls
-  demonstrate that old sync misses ordinary shell effects, accepts/ignores an extra
-  optional lifecycle field, and refuses both tagged commands and schema 10 before
-  mutation. The legacy producer control uses `0.9.0.0 (3fe7576)`.
-- Receiving host `yujin.local` was inspected read-only: Darwin, clean
-  `mori://shinzui/haskell-nix` master at `529fd6d87c414a95223f24c622daaedb50c3ad57`,
-  installed source build `0.10.1.0 (104bda6)`. It has not received the new runtime or
-  consumer adoption. Earlier four-link evidence does not count as six-link delivery.
+  The root README's stale manual dependency installation list for adoption was
+  corrected to ordinary `seihou update master-plan`. Documentation identifies the
+  required source revision and explicitly distinguishes it from the unavailable
+  proposed 0.11.0.0 release.
+- On sungkyung, the actual installed executable is now obtained directly from the
+  published Git source using
+  `nix profile install github:shinzui/seihou/c3cbd9bd202e87d6fd7fc0ede1d997d2c2140e0b#seihou --priority 3`.
+  Profile entry `seihou-1` supplies this source revision; the original tagged
+  0.10.1.0 profile entry `seihou` is retained at lower priority 4 for reversibility.
+  The final versioned release installation must replace this temporary source
+  selection and verify the resulting profile and PATH identity.
+- Ordinary interactive `seihou update master-plan` has adopted the public producer
+  in this repository and the actual local `mori://shinzui/haskell-nix` checkout.
+  Only `.gitignore`, its generated baseline and the manifest changed. Saved inputs
+  were reused, unrelated application state and project edits were preserved, and
+  no manual manifest/index repair was performed. Both newly created Codex links
+  were then deleted deliberately. The installed PATH command `seihou sync` recreated
+  them with `Links: 2 created, 0 repaired, 4 unchanged.` All six literal link targets
+  and source `SKILL.md` files were verified, with tracked bytes, index entries and
+  manifest bytes unchanged by sync. A repeated sync reports six unchanged links.
+- `mori://shinzui/haskell-nix` adoption commit
+  `915ea7d42c79e9bab4a88bb1e99054a3310c6545` is published. The actual receiving
+  checkout on `shinzui@yujin.local` (Darwin) fast-forwarded from
+  `529fd6d87c414a95223f24c622daaedb50c3ad57` to that commit. Its already installed
+  `0.10.1.0 (c3cbd9b)` executable ran plain sync and created both missing Codex
+  links. All six links and real source files were independently verified there;
+  tracked bytes, index and manifest were unchanged, and the receiving tree is clean.
+- The installed public source executable repeated the immutable schema-6, schema-9
+  and mixed schema-7 consumer acceptance with `--published` and empty caches,
+  without local URL routing. The same installed executable also generated a module
+  from the public schema pin, applied a saved-input generic checkout command,
+  committed the result, made the applying checkout unavailable and cloned a
+  producer-free receiver. Plain sync twice (deleting the local result between
+  attempts) restored the saved value without replaying its ordinary Apply command
+  or changing tracked bytes, index or manifest.
+- Negative controls used the older tagged `0.10.1.0 (c3bb42b)` and legacy
+  `0.9.0.0 (3fe7576)` executables. The former misses ordinary shell effects, ignores
+  an extra optional lifecycle field, and refuses tagged commands/schema 10 before
+  mutation. These controls are distinct from the active installed source revision.
 
 The proposed shared PVP release is `0.10.1.0 -> 0.11.0.0`, required by the changed
 public command API and manifest contract. Authoritative Hackage package listings
@@ -323,9 +367,9 @@ changelog sections and the full semantic guidance audit are prepared. The releas
 skill requires version confirmation before edits and bump/changelog confirmation
 before the release commit; confirmation is requested. No cabal versions or internal
 bounds have been changed yet. After approval, cut both changelogs, rebuild and
-re-audit the exact candidate, publish all three packages in dependency order, publish
-the producer, adopt through ordinary update and Git collaboration in the maintained
-consumers, and verify the installed released executable on the receiving host.
+re-audit the exact candidate, publish all three packages in dependency order, replace
+the temporary installed source selection with the versioned release, and repeat the
+installed acceptance. Producer publication and actual consumer adoption are now done.
 Keep milestone 5 and plan 107's delivery obligation open until that evidence exists.
 
 Reviewable source evidence is retained in `/tmp/seihou108-tests-last.log`,
@@ -333,7 +377,14 @@ Reviewable source evidence is retained in `/tmp/seihou108-tests-last.log`,
 `/tmp/seihou108-audit-last.log`, `/tmp/seihou108-producer-all.log`,
 `/tmp/seihou108-negative/result.json`, `/tmp/seihou108-public-scaffold.log`, and
 `/tmp/seihou108-warning-verified/` (human update and teammate sync transcripts).
-These are local run artifacts, not published release proof. The durable harness is
+Actual installed delivery evidence is `/tmp/seihou108-install-source.log`,
+`/tmp/seihou108-maintained-adoption.log`,
+`/tmp/seihou108-maintained-adoption-verified/`,
+`/tmp/seihou108-installed-public-acceptance.log`,
+`/tmp/seihou108-installed-generic.log`, `/tmp/seihou108-installed-audit.log`, and
+`/tmp/seihou108-yujin-delivery.txt`.
+These are local run artifacts, including transcripts from the actual remote host;
+they prove installed public-source behavior, not a versioned package release. The durable harness is
 `scripts/verify-checkout-restoration.py`; rerun with `--published` after release.
 
 
