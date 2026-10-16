@@ -23,7 +23,7 @@ import Dhall.Src (Src)
 import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutPaths)
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Module (checkCheckoutSteps, checkSeedSteps)
-import Seihou.Core.Path (validateProjectRelativePath)
+import Seihou.Core.Path (validateCanonicalProjectPath, validateProjectRelativePath)
 import Seihou.Core.Types
 import Seihou.Engine.DhallJSON (dhallExprToJSON)
 import Seihou.Engine.Template (renderCommand, renderDestPath, renderTemplate, renderTemplateText)
@@ -66,14 +66,15 @@ compileCommands modName vars commands =
           Left cmdErrs -> let (counts, ops, _) = state in (counts, ops, errs ++ cmdErrs)
           Right (runText, commandWorkDir) ->
             let (counts, ops, _) = state
-                key = (runText, commandWorkDir)
+                key = (cmd ^. #lifecycle, runText, if cmd ^. #lifecycle == CheckoutCommandLifecycle then Just (maybe "." id commandWorkDir) else commandWorkDir)
                 occurrence = Map.findWithDefault 0 key counts
                 operation =
                   RunCommandOp
                     { command = runText,
                       workDir = commandWorkDir,
                       moduleName = modName,
-                      occurrence = occurrence
+                      occurrence = occurrence,
+                      lifecycle = cmd ^. #lifecycle
                     }
              in (Map.insert key (occurrence + 1) counts, ops ++ [operation], errs)
 
@@ -95,7 +96,9 @@ compileOneCommand vars cmd =
             Right renderedWd ->
               case validateRenderedCommandWorkDir renderedWd of
                 Left err -> Left [err]
-                Right safeWd -> Right (runText, Just (T.unpack safeWd))
+                Right safeWd -> do
+                  if cmd ^. #lifecycle == CheckoutCommandLifecycle && safeWd /= "." then first pure (validateCanonicalProjectPath safeWd) else Right ()
+                  Right (runText, Just (T.unpack safeWd))
 
 -- | Compile a single step into operations (or skip it).
 -- If the step has a patch operation, it produces a 'PatchFileOp'; otherwise

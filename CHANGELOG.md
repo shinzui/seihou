@@ -4,14 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Breaking core API: typed command lifecycle on `Command`/`RunCommandOp`, ordered
+  `AppliedComposition.checkoutCommands`, and version-selected application codecs.
+  Tagged Dhall `Action.Apply`/`Action.Checkout` ensures older decoders refuse new specs;
+  pinned legacy command records retain application semantics.
+
 ### Fixed
 
-- `seihou sync` now owns first-time checkout-link adoption: it discovers declaring
-  compositions from recorded sources, reuses inputs, previews the changes, and
-  creates links after confirmation. Other applications are not upgraded. Existing
-  declarations continue to restore offline. Automation can accept with `--yes`.
-- Status reports absent link declarations with the ordinary `seihou sync` remedy,
-  rather than presenting zero declarations as zero problems.
+- Module commands can explicitly declare repeatable checkout setup. Application
+  records resolved instructions in manifest schema 10; `seihou sync` executes them
+  in a fresh clone without producer installation, configuration or receipt replay.
+  Dry-run executes nothing; reports retain command output, failures and the unrun tail.
+- Sync only restores accepted declarations. A maintainer adopts changed specs through
+  ordinary `seihou update ROOT` and commits them; teammates receive the commit and
+  sync. Empty declarations mean zero work. The unpublished automatic-update fallback
+  and its `sync --yes` flag are removed. Status describes declared commands neutrally.
 - Audit embedded agent guidance and help against current behavior: share the module
   reference across assist/bootstrap/setup; correct removal fields, migration windows,
   variable/config precedence, pinned CLI models, update and checkout adoption workflows.

@@ -21,6 +21,11 @@ provenance:
       at: 2026-10-15T23:48:18Z
       mode: "update"
       note: "Close code-grounded gaps in update no-ops, receipt identity, command-only removal, versioned decoding, failure recovery and final consumer delivery."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-15T23:55:13Z
+      mode: "implement"
+      note: "Implement recorded checkout command lifecycle and verify ordinary cross-checkout restoration."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -89,11 +94,50 @@ or an unrelated upgrade, fix that friction here before declaring adoption comple
 ## Progress
 
 
-- [ ] Milestone 1: a minimal module-defined checkout command and declarative link survive application and a fresh clone; ordinary sync executes only the recorded local setup, with legacy command behavior preserved and old-runtime refusal demonstrated.
-- [ ] Milestone 2: real producer specs and normal adoption work from both the original schema-6 consumer and the partially adopted schema-9 consumer; all intended destinations are verified by name and target, followed by a teammate clone with empty caches.
-- [ ] Milestone 3: composition, persistence, update/removal, retry, compatibility and failure contracts pass the focused and full suites, including a non-skill consumer and supported native platforms.
+- [x] Milestone 1: a minimal module-defined checkout command and declarative link survive application and a fresh clone; ordinary sync executes only the recorded local setup, with legacy command behavior preserved and old-runtime refusal demonstrated.
+- [x] Milestone 2: real producer specs and normal adoption work from both the original schema-6 consumer and the partially adopted schema-9 consumer; all intended destinations are verified by name and target, followed by a teammate clone with empty caches.
+- [x] Milestone 3: composition, persistence, update/removal, retry, compatibility and failure contracts pass the focused and full suites, including a non-skill consumer and supported native platforms.
 - [ ] Milestone 4: help, agent guidance, diagnostics and ADRs describe one coherent workflow; distribution checks and the semantic guidance audit pass against the release candidate.
 - [ ] Milestone 5: schema, producers, runtime and consumer adoption are delivered in dependency order; the installable released executable repeats the untouched-consumer and teammate acceptance, with evidence identifying exact revisions and artifacts.
+
+Source acceptance checkpoint (2026-10-16 UTC): milestones 1–3 are implemented
+and verified from source; they do not establish published delivery. The source
+binary reports `seihou v0.10.1.0 (a3a28e8)` because version editing awaits the release
+confirmation. The candidate includes all working changes recorded by this plan.
+Milestone 4's source audit and distribution checks pass, but its final versioned
+release-candidate audit remains open. Milestone 5 remains open for publication,
+installation and actual consumer adoption.
+
+The regression `restores recorded checkout commands in a fresh clone without
+producers or application replay` applies a generic tagged command, makes the
+applying checkout unavailable, then uses a different clone with empty caches.
+Plain sync twice restores a deleted local sentinel without altering tracked bytes,
+index entries or the manifest. Legacy application receipts never suppress checkout
+commands and ordinary application commands are never replayed by sync.
+
+Normal interactive `seihou update master-plan`, acceptance, commit, and teammate
+plain sync twice pass from these untouched immutable states:
+
+- `mori://shinzui/haskell-nix`, schema 6, `5cb50cab752945d1a0278c9347edaa5918f6d158`.
+- `mori://shinzui/haskell-nix`, schema 9, `529fd6d87c414a95223f24c622daaedb50c3ad57`.
+- This repository, mixed schema 7, `188fbcf60c84661a90748eff3a1e8131076c9bd2`.
+
+Each teammate clone independently verifies all six `.claude`, `.codex`, `.agents`
+links for `exec-plan` and `master-plan`, exact relative targets and real source
+files, without producers. Repeated sync preserves literal tracked bytes, index
+entries and manifest bytes. The mixed consumer retains its unrelated Nix
+application. Candidate transport uses isolated Git URL routing only; the consumer
+needs no manual dependency installs, conflict resolutions, JSON edits or index
+surgery. The schema-9 consumer deliberately retains update's unchanged-declaration
+rule: sync repairs absent existing links; update creates only newly declared ones.
+
+An early ordinary schema-6 update exposed a real `.gitignore` conflict: a new
+append-line-if-absent declaration collided at EOF with unrelated project additions.
+Line-set additions now commute with current project text while retaining the
+independent generated baseline; unrelated patch strategies keep ordinary three-way
+conflict handling. A focused regression and all three real consumers pass. The
+successful update result also uses checkout warnings observed after managed files
+are written, avoiding stale missing-ignore warnings when update has added the rule.
 
 Planning baseline: source HEAD was `104bda6` during investigation. The earlier
 0.10.2.0 proposal and its prepared archives test the withdrawn update-inside-sync
@@ -165,6 +209,14 @@ would break older schemas. The version-selected codec must reach application rec
 The proposed Dhall action type and authoring example type-check together with `dhall type`.
 
 
+Discovery (2026-10-15, implementation): the early schema-6 consumer's `.gitignore`
+contains user-added `.mina/`, Cabal and Python ignore entries after its generated
+baseline. Diff3 treats adding `.codex/` at that same EOF as overlapping edits, even
+though every candidate contribution is append-line-if-absent. A line-set update can
+apply only newly declared lines to current bytes, preserving user additions and
+intentional deletion of older lines, while retaining the independently generated
+baseline. This does not relax whole-file or section-edit conflicts.
+
 ## Decision Log
 
 
@@ -222,11 +274,67 @@ command to remove arbitrary local effects.
 ## Outcomes & Retrospective
 
 
-The plan is authored; implementation and delivery remain open. The acceptance is
-about reproducing module-defined local effects across checkouts, not merely adding
-a missing tool directory. Preserve the existing useful link engine, remove the
-incorrect update orchestration, and judge completion by published producer/consumer
-behavior. Record implementation evidence here as milestones are actually accepted.
+The source implementation is complete; installable delivery remains open.
+Modules explicitly distinguish application commands from repeatable checkout
+commands. Schema 10 records resolved checkout declarations per application and
+qualified instance. Sync consumes only accepted manifest state, restores links,
+runs checkout commands in deterministic order, reports partial execution and permits
+ordinary retry. It neither fetches producers nor invokes update. Default update
+no-ops do not execute either lifecycle; explicit run-all and declaration changes
+remain actionable. First-run failures retain desired declarations; failed update
+rolls back proposed state. Removal handles command-only owners without producers.
+
+Source validation passes on macOS and native x86_64 Linux. The macOS suites contain
+1,211 core, 759 CLI and 51 extension tests. The Linux build runs the 1,211 core and
+759 CLI tests natively. Producer acceptance contains 21 Bun tests and 474 assertions,
+including literal symlink snapshots, linked worktrees and custom names. Guidance
+audit covers 18 topics, 32 command help pages, 26 packaged assets, five validated
+example modules and eight provider-free prompt renders. All package `cabal check`
+runs are clean. Source archives at the old version are inspection artifacts only;
+all 26 CLI Markdown assets were verified inside the archive. They must be rebuilt
+at the ratified release version before publication.
+
+Exact external state:
+
+- `mori://shinzui/seihou-schema` source commit
+  `7d02695f5a716384ec2174a018c20ee680ab3d13` is published; package hash is
+  `sha256:5a24b98eada6628e3e7da267f4e6c31c1e169179d2bacd5fed7254fc4cc55183`.
+  Runtime schema pins agree. The author's other registered checkout has an unrelated
+  dirty `Step.dhall` comment and was preserved.
+- `mori://shinzui/agent-seihou` commit
+  `033daafec0776c1641e07625e90c36cb69f5d292` is committed but unpublished. It supplies
+  `link-skill` 0.4.0, `agent-gitignore` 0.2.0, and `exec-plan`/`master-plan` 0.13.0.
+  Parent modules own all three discovery destinations and retain the actual exec-plan
+  dependency without hard-coded transitive discovery names. Publish only after the
+  supporting runtime; remove the README release-pending marker then.
+- Installed local released binary remains `0.10.1.0 (c3bb42b)`. Negative controls
+  demonstrate that old sync misses ordinary shell effects, accepts/ignores an extra
+  optional lifecycle field, and refuses both tagged commands and schema 10 before
+  mutation. The legacy producer control uses `0.9.0.0 (3fe7576)`.
+- Receiving host `yujin.local` was inspected read-only: Darwin, clean
+  `mori://shinzui/haskell-nix` master at `529fd6d87c414a95223f24c622daaedb50c3ad57`,
+  installed source build `0.10.1.0 (104bda6)`. It has not received the new runtime or
+  consumer adoption. Earlier four-link evidence does not count as six-link delivery.
+
+The proposed shared PVP release is `0.10.1.0 -> 0.11.0.0`, required by the changed
+public command API and manifest contract. Authoritative Hackage package listings
+and upstream release tags still identify 0.10.1.0 as latest. Both Unreleased
+changelog sections and the full semantic guidance audit are prepared. The release
+skill requires version confirmation before edits and bump/changelog confirmation
+before the release commit; confirmation is requested. No cabal versions or internal
+bounds have been changed yet. After approval, cut both changelogs, rebuild and
+re-audit the exact candidate, publish all three packages in dependency order, publish
+the producer, adopt through ordinary update and Git collaboration in the maintained
+consumers, and verify the installed released executable on the receiving host.
+Keep milestone 5 and plan 107's delivery obligation open until that evidence exists.
+
+Reviewable source evidence is retained in `/tmp/seihou108-tests-last.log`,
+`/tmp/seihou108-linux-last.log`, `/tmp/seihou108-check-last.log`,
+`/tmp/seihou108-audit-last.log`, `/tmp/seihou108-producer-all.log`,
+`/tmp/seihou108-negative/result.json`, `/tmp/seihou108-public-scaffold.log`, and
+`/tmp/seihou108-warning-verified/` (human update and teammate sync transcripts).
+These are local run artifacts, not published release proof. The durable harness is
+`scripts/verify-checkout-restoration.py`; rerun with `--published` after release.
 
 
 ## Context and Orientation
@@ -779,6 +887,22 @@ acceptance from `mori://shinzui/agent-seihou`, following its checked-in test ent
 points. Its existing checkout test requires explicit `SEIHOU_TEST_BIN` and
 `SEIHOU_LEGACY_TEST_BIN`; retain real legacy producer/runtime provenance and update
 that harness honestly for the new support version.
+
+The durable real-consumer acceptance driver resolves external owners with Mori:
+
+```sh
+producer=$(mori path mori://shinzui/agent-seihou)
+consumer=$(mori path mori://shinzui/haskell-nix)
+python3 scripts/verify-checkout-restoration.py \
+  --binary "$(cabal list-bin exe:seihou)" \
+  --producer "$producer" --consumer "$consumer" \
+  --area /tmp/seihou108-new-acceptance
+```
+
+Use a new area on each run. Add `--published` and point `--binary` to the installed
+released executable for final delivery proof; default candidate transport is source
+acceptance only. The driver retains transcripts and disposable clones and never
+prepares consumer state on behalf of the public workflow.
 
 For the human workflow, the commands run inside consumer checkouts are ordinary:
 

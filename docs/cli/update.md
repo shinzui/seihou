@@ -29,7 +29,7 @@ objects, modified or staged links, and tracked ancestors are protected. Unrelate
 index entries are preserved. Dry-run and cancellation leave the index untouched;
 failure and recovery restore only the adopted entries. Commit their staged
 removals with the updated manifest. Each subsequent clone uses `seihou sync`.
-See [sync](sync.md) for the complete adoption and restoration workflow.
+Adopt changed checkout declarations through the ordinary update preview, commit them, then teammates run [sync](sync.md) to reproduce local effects. Unchanged updates run no commands; repeatable checkout execution alone does not make an update actionable.
 
 When a generated path is also owned by an application you did not select,
 Seihou asks one question: does *every* owner reach that path through an
@@ -236,8 +236,11 @@ referenced by the manifest.
 
 ## Commands
 
-The default policy runs only new or changed rendered commands. Successful
-receipts in the manifest identify unchanged commands, which are skipped.
+The default policy runs new or changed application commands, using successful
+receipts to skip unchanged ones. An accepted actionable update also executes its
+selected repeatable checkout commands in the original mixed order. Their presence
+alone does not make an update actionable; a changed declaration does. A true no-op
+executes neither lifecycle. Use sync to repeat local setup.
 `--run-all-commands` replays everything and `--no-commands` disables execution.
 Receipts are published only after the whole command phase succeeds.
 

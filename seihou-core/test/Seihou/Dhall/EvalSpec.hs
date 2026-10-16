@@ -1,9 +1,11 @@
 module Seihou.Dhall.EvalSpec (tests) where
 
 import Control.Lens ((^.))
+import Control.Monad (forM_)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalDhallExpr, evalModuleFromFile, evalRecipeFromFile)
 import System.Directory (createDirectoryIfMissing)
@@ -57,6 +59,26 @@ spec = do
       result <- evalDhallExpr "{ name = \"my-project\", version = \"0.1.0\" }"
       Map.lookup "name" result `shouldBe` Just "my-project"
       Map.lookup "version" result `shouldBe` Just "0.1.0"
+
+  describe "command lifecycle decoding" $ do
+    let source command = T.replace "commands = [] : List { run : Text, workDir : Optional Text, when : Optional Text }" ("commands = [" <> command <> "]") (T.pack (moduleWithVar "value" "text" "None Text"))
+        action variant = "{ action = < Apply : Text | Checkout : Text >." <> variant <> " \"echo setup\", workDir = None Text, when = None Text }"
+    forM_ [("Apply", ApplicationCommand), ("Checkout", CheckoutCommandLifecycle)] $ \(variant, lifecycle) ->
+      it ("decodes tagged " <> T.unpack variant <> " commands") $
+        withSystemTempDirectory "command-decoder" $ \directory -> do
+          let file = directory </> "module.dhall"
+          TIO.writeFile file (source (action variant))
+          result <- evalModuleFromFile file
+          case result of
+            Right modul -> map (^. #lifecycle) (modul ^. #commands) `shouldBe` [lifecycle]
+            Left err -> expectationFailure (show err)
+    forM_ ["{ run = \"echo legacy\", action = < Apply : Text | Checkout : Text >.Checkout \"echo setup\", workDir = None Text, when = None Text }", "{ action = < Unknown : Text >.Unknown \"echo setup\", workDir = None Text, when = None Text }"] $ \bad ->
+      it "rejects ambiguous or unknown tagged commands inside the module exception boundary" $
+        withSystemTempDirectory "command-decoder-invalid" $ \directory -> do
+          let file = directory </> "module.dhall"
+          TIO.writeFile file (source bad)
+          result <- evalModuleFromFile file
+          result `shouldSatisfy` either (const True) (const False)
 
   describe "evalModuleFromFile" $ do
     it "decodes the haskell-base fixture module" $ do

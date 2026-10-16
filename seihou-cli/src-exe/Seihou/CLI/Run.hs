@@ -54,6 +54,7 @@ import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkAp
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
 import Seihou.Core.Checkout
+import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations, isCheckoutCommand)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
@@ -470,6 +471,8 @@ handleRun runOpts = do
                                       ( appliedCompositionWithoutReceipts
                                           & #commandReceipts
                                           .~ candidateCommandReceipts
+                                          & #checkoutCommands
+                                          .~ checkoutCommandsFromOperations ops
                                       )
                                     applicationDestinations =
                                       Set.fromList [path | Just path <- map operationDestination opsFiltered]
@@ -569,6 +572,9 @@ handleRun runOpts = do
                         <> T.pack (show (commandError ^. #exitCode))
                         <> "): "
                         <> plannedCommandText (commandError ^. #command)
+                  if isCheckoutCommand (commandError ^. #command . #operation)
+                    then TIO.putStrLn "Accepted checkout declarations remain recorded. Correct the failure and retry seihou sync; ordinary application commands are not retried by sync."
+                    else TIO.putStrLn ("Ordinary application commands are not retried by sync. Correct the failure and rerun seihou run " <> modName ^. #unModuleName <> "; accepted checkout declarations remain recorded.")
                   exitFailure
 
               let finalCommandReceipts =

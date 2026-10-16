@@ -264,12 +264,12 @@ spec = do
         outcome <- runManifestUpgrade (opts False False Nothing)
         case outcome of
           UpgradeWritten result -> do
-            map stepVersions (result ^. #steps) `shouldBe` [(6, 7), (7, 8), (8, 9)]
+            map stepVersions (result ^. #steps) `shouldBe` [(6, 7), (7, 8), (8, 9), (9, 10)]
             (result ^. #entries) `shouldBe` []
-            (result ^. #toVersion) `shouldBe` ManifestSchemaVersion 9
+            (result ^. #toVersion) `shouldBe` ManifestSchemaVersion 10
           other -> expectationFailure ("expected a write, got " <> show other)
         document <- readDocument manifestPath
-        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 9)
+        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 10)
         lookupPath ["files", ".gitignore", "sharedWriteMode"] document `shouldBe` Just (Aeson.String "additive-only")
         lookupPath ["files", "README.md", "sharedWriteMode"] document `shouldBe` Just (Aeson.String "unknown")
         lookupPath ["files", ".gitignore", "additiveOnly"] document `shouldBe` Nothing
@@ -281,7 +281,7 @@ spec = do
         before <- LBS.readFile manifestPath
         outcome <- runManifestUpgrade (opts False False Nothing)
         case outcome of
-          UpgradeNotNeeded version _ -> version `shouldBe` ManifestSchemaVersion 9
+          UpgradeNotNeeded version _ -> version `shouldBe` ManifestSchemaVersion 10
           other -> expectationFailure ("expected nothing to do, got " <> show other)
         LBS.readFile manifestPath `shouldReturn` before
 
@@ -310,7 +310,7 @@ spec = do
         outcome <- runManifestUpgrade (opts True True Nothing)
         case outcome of
           UpgradeWouldWrite result [] -> do
-            map stepVersions (result ^. #steps) `shouldBe` [(5, 6), (6, 7), (7, 8), (8, 9)]
+            map stepVersions (result ^. #steps) `shouldBe` [(5, 6), (6, 7), (7, 8), (8, 9), (9, 10)]
             map (^. #artifactName) (result ^. #entries)
               `shouldBe` ["haskell-base", "project-lint", "haskell-service", "scratch-helper"]
             let report = formatUpgradeReport result
@@ -335,14 +335,14 @@ spec = do
         outcome <- runManifestUpgrade (opts False True Nothing)
         case outcome of
           UpgradeWritten result ->
-            map stepVersions (result ^. #steps) `shouldBe` [(2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9)]
+            map stepVersions (result ^. #steps) `shouldBe` [(2, 3), (3, 4), (4, 5), (5, 6), (6, 7), (7, 8), (8, 9), (9, 10)]
           other -> expectationFailure ("expected a write, got " <> show other)
         document <- readDocument manifestPath
-        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 9)
+        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 10)
 
     it "rejects a target newer than this build or older than the document" $ do
       withUpgradeProject schema6Manifest $ \_ ->
-        runManifestUpgrade (opts False False (Just (ManifestSchemaVersion 99)))
+        runManifestUpgrade (opts False False (Just (ManifestSchemaVersion 109)))
           >>= (`shouldSatisfy` isFailure)
       withUpgradeProject schema6Manifest $ \_ ->
         runManifestUpgrade (opts False False (Just (ManifestSchemaVersion 5)))
@@ -366,7 +366,7 @@ spec = do
         output `shouldSatisfy` T.isInfixOf "5 -> 6"
         output `shouldSatisfy` T.isInfixOf "6 -> 7"
         document <- readDocument manifestPath
-        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 9)
+        lookupPath ["version"] document `shouldBe` Just (Aeson.Number 10)
         lookupPath ["modules", "0", "origin"] document
           `shouldBe` Just (Aeson.toJSON (RemoteOrigin "https://example.com/demo-modules.git" "demo" (Just "demo-modules")))
         filter absoluteLooking (documentStrings document) `shouldBe` []

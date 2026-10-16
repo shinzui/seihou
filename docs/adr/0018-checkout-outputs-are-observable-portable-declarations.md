@@ -27,17 +27,16 @@ ADR directory is not a profiled OKF bundle.
 
 ## Decision
 
-Planned amendment (2026-10-15):
-[ExecPlan 108](../plans/108-restore-module-declared-checkout-effects-without-reapplying-modules.md)
-replaces the update-inside-sync approach described below and adds explicit repeatable
-checkout commands alongside observable links. Its design records resolved commands
-in the same portable manifest, excludes them from completion receipts, and restores
-them without producer resolution. True no-op updates execute no commands; failed run
-and failed transactional update preserve their respective publication boundaries.
-This amendment is planned, not implemented or released. Until its acceptance passes,
-the implementation evidence below remains historical evidence for the link engine,
-not proof of command restoration or complete three-tool skill discovery. Amend the
-operative decision and evidence together during implementation of Plan 108.
+Amended 2026-10-15 by
+[ExecPlan 108](../plans/108-restore-module-declared-checkout-effects-without-reapplying-modules.md):
+checkout setup includes explicit repeatable shell commands alongside typed observable
+links. Commands are resolved during application and recorded per application in the
+single portable manifest, with qualified instance/occurrence identity and ordered
+payloads. They have no completion ledger. Application and checkout command occurrence
+counters are separate, preserving ordinary receipt identity. True no-op updates run
+neither lifecycle; `--no-commands` suppresses execution while preserving declarations.
+First run publishes declarations before commands; transactional update publishes only
+on success. Failed sync retains completed effects and reports the unrun tail.
 
 Strategy and lifecycle remain separate dimensions of a step. Strategy describes its
 materialization; lifecycle describes ownership and subsequent maintenance. Managed files
@@ -63,7 +62,7 @@ The checkout sync engine rebuilds the current recorded declaration. It needs a G
 untracked destinations, available real source directories, and safe ancestors. It can
 replace an incorrect destination symlink but cannot replace a regular object or follow a
 symlinked ancestor. It writes only declared link entries and necessary parents. It neither
-resolves artifacts nor evaluates module/config variables, executes recorded commands,
+resolves artifacts nor evaluates module/config variables, replays ordinary application commands,
 changes tracked content, nor writes the manifest. A correct link is established by its
 literal canonical relative target, not by a receipt or the target directory's contents.
 Initial application can precede Git initialization under a distinct, warning-producing
@@ -92,15 +91,16 @@ must provide portable validation, observable satisfaction, safe materialization 
 retirement, recovery, rendering, and common contract tests. Unknown kinds fail before
 mutation. A new kind or changed semantic meaning advances the manifest schema under
 [ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md), even when
-the tagged object shape stays the same. Arbitrary JSON payloads, shell replay, and plugin
+the tagged object shape stays the same. Arbitrary JSON payloads, inferred historical shell replay, and plugin
 callbacks are not extension mechanisms for this contract.
 
 ## Consequences
 
 Agent, editor, and asset use cases share an engine and can be composed through ordinary
-module variables and dependencies. The first implementation remains directory-only;
-file links or generated local files need new specifications and evidence rather than a
-silent broadening of the directory-link contract. No general resource framework is needed
+module variables and dependencies. Observable typed outputs remain directory links;
+other observable kinds need new specifications and evidence. Explicit checkout shell
+can create arbitrary local effects, but Seihou has no observation/retirement contract
+for those effects and never reports them permanently satisfied. No general resource framework is needed
 to deliver or test the present capability.
 
 The manifest remains the single portable record under
@@ -112,7 +112,9 @@ bounded, cause-specific diagnostics under ADRs 0013 and 0015.
 
 Requiring Git and invocation at the working-tree root limits initial sync support to that
 well-defined boundary, including linked worktrees. Non-Git repair, nested Seihou projects,
-external sources, and outputs requiring downloads or secrets need separate designs.
+and external link sources remain unsupported. Declared commands own any external
+tool/network requirements; their shell payloads must not embed machine-specific paths
+or secrets in the committed manifest.
 Ordinary non-Git scaffolding remains available through run's existing root semantics.
 
 Producer adoption is a separate delivery obligation from engine availability.
@@ -137,18 +139,22 @@ these index snapshots while retaining readers for versions 1 and 2. Snapshot
 checks compare tracked symlink text without following targets, and account for parents
 that already exist because they hold unrelated tracked entries.
 
-Remote-backed updates fetch their candidates and dependencies without a prerequisite
-installation. When declarations are absent, the normal sync CLI now discovers declaring
-compositions from recorded sources and offers the necessary application update
-within the same command. It selects only compositions with checkout steps and
-reuses saved inputs. A preview and explicit acceptance precede any adoption,
-including managed file changes and eligible index transitions. This delegates to
-the existing update transaction; it does not infer wiring from shell receipts.
-Dry-run only previews adoption; JSON automation requires explicit `--yes` to accept
-it. Once declarations exist, sync uses the offline, manifest-read-only engine
-without fetching producers. Status remains offline and points to `seihou sync`
-when setup has not been recorded. The original plan-107 manual untracking procedure is historical;
-the reopened plan requires adoption through the normal accepted update flow.
+Remote-backed updates fetch candidates and dependencies without prerequisite
+installation. A maintainer uses ordinary update to adopt changed declarations with
+saved inputs, previewing managed changes and safe tracked-link adoption, and commits
+the resulting project state. Sync never calls update, even for an empty or partial
+link map: zero declarations means zero recorded work. Status stays observational.
+
+Sync validates all links and command working directories before mutation, materializes
+links, then invokes recorded checkout shell sequentially. Working directories are
+real project-relative directories and are rechecked before each invocation. Commands
+run with the invoking user's environment and permissions and may use tools/network;
+authors must make them repeatable and keep intended writes outside tracked/managed
+state. Seihou cannot sandbox or undo shell. Links retain link-phase rollback; command
+failure does not roll links back after commands may have used them. No automatic hook
+is installed. Pending update recovery blocks even dry-run; the supported recovery path
+is `seihou update --dry-run`, which restores prior files/index before preview.
+
 Status treats absent remotely fetchable producers as an optional local cache,
 summarized once rather than as project damage. This does not weaken command guards
 or hide stale/substituted installed artifacts, missing project-owned sources, or

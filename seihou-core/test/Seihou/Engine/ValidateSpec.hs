@@ -1,6 +1,6 @@
 module Seihou.Engine.ValidateSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Text qualified as T
 import Seihou.Core.Types
@@ -461,11 +461,17 @@ spec = do
       reportHasErrors report `shouldBe` True
 
   describe "command safety" $ do
+    it "rejects repeatable setup in removal commands" $ do
+      let modul = goodModule & #removal .~ Just (Removal [] [Command "echo setup" Nothing Nothing CheckoutCommandLifecycle])
+      withSystemTempDirectory "seihou-removal-checkout" $ \baseDir -> do
+        report <- buildReport False baseDir modul
+        hasFailedCheck "Command safety" (report ^. #checks) `shouldBe` True
+
     it "passes for valid commands" $ do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
-        let m = withCommands [Command "echo hello" Nothing Nothing] goodModule
+        let m = withCommands [Command "echo hello" Nothing Nothing ApplicationCommand] goodModule
         report <- buildReport False tmpDir m
         hasPassedCheck "Command safety" (report ^. #checks) `shouldBe` True
 
@@ -473,7 +479,7 @@ spec = do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
-        let m = withCommands [Command "  " Nothing Nothing] goodModule
+        let m = withCommands [Command "  " Nothing Nothing ApplicationCommand] goodModule
         report <- buildReport False tmpDir m
         hasFailedCheck "Command safety" (report ^. #checks) `shouldBe` True
 
@@ -481,7 +487,7 @@ spec = do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
-        let m = withCommands [Command "echo hi" (Just "/usr/local") Nothing] goodModule
+        let m = withCommands [Command "echo hi" (Just "/usr/local") Nothing ApplicationCommand] goodModule
         report <- buildReport False tmpDir m
         hasFailedCheck "Command safety" (report ^. #checks) `shouldBe` True
 
@@ -489,6 +495,6 @@ spec = do
       withSystemTempDirectory "seihou-validate" $ \tmpDir -> do
         createDirectoryIfMissing True (tmpDir </> "files")
         writeFile (tmpDir </> "files" </> "README.md.tpl") "stub"
-        let m = withCommands [Command "echo hi" (Just "../escape") Nothing] goodModule
+        let m = withCommands [Command "echo hi" (Just "../escape") Nothing ApplicationCommand] goodModule
         report <- buildReport False tmpDir m
         hasFailedCheck "Command safety" (report ^. #checks) `shouldBe` True

@@ -107,6 +107,7 @@ manifestWithEveryOriginPosition =
                      }
                  ],
                commandReceipts = Map.empty,
+               checkoutCommands = [],
                appliedAt = fixedTime
              }
          ]
@@ -135,7 +136,7 @@ manifestWithEveryStringPosition =
                  Just
                    ( Removal
                        [RemovalStep RemoveFileAction "flake.nix" (Just "files/flake.nix")]
-                       [Command "cabal clean" (Just "backend") Nothing]
+                       [Command "cabal clean" (Just "backend") Nothing ApplicationCommand]
                    )
              }
          ]
@@ -193,6 +194,7 @@ withCommandReceipts receipts composition =
       context = composition ^. #context,
       instances = composition ^. #instances,
       commandReceipts = receipts,
+      checkoutCommands = [],
       appliedAt = composition ^. #appliedAt
     }
 
@@ -262,6 +264,35 @@ spec = do
       encoded `shouldSatisfy` not . isInfixOf "/Users/someone"
       encoded `shouldSatisfy` not . isInfixOf "\"source\""
       encoded `shouldSatisfy` not . isInfixOf "\"targetSource\""
+
+  describe "checkout command codec" $ do
+    let command = CheckoutCommand "demo" 0 "mkdir -p .local/setup" Nothing
+        application commands = AppliedComposition (ApplicationId "setup") (AppliedModuleTarget "demo") (ProjectOrigin "modules/demo") (Just "1") [] Nothing Nothing [AppliedInstanceState "demo" emptyParentVars (ProjectOrigin "modules/demo") (Just "1") Map.empty] Map.empty commands fixedTime
+        manifest commands = emptyManifest fixedTime & #applications .~ [application commands]
+        mutateApp transform value = case value of
+          Aeson.Object fields -> case KeyMap.lookup "applications" fields of
+            Just (Aeson.Array apps) -> Aeson.Object (KeyMap.insert "applications" (Aeson.Array (fmap (\case Aeson.Object obj -> Aeson.Object (transform obj); other -> other) apps)) fields)
+            _ -> value
+          other -> other
+        decoded transform = manifestFromJSON (Aeson.encode (mutateApp transform (Aeson.toJSON (manifest [command]))))
+        rejected result = result `shouldSatisfy` either (const True) (const False)
+    it "roundtrips resolved setup with no completion receipts" $ do
+      manifestFromJSON (manifestToJSON (manifest [command])) `shouldBe` Right (manifest [command])
+    it "requires a list at schema 10, even when empty" $ do
+      rejected (decoded (KeyMap.delete "checkoutCommands"))
+      rejected (decoded (KeyMap.insert "checkoutCommands" Aeson.Null))
+    it "refuses unknown kinds, missing fields, owners, duplicate identities and duplicate applications" $ do
+      let wire = KeyMap.fromList [("kind", Aeson.String "shell"), ("module", Aeson.String "demo"), ("occurrence", Aeson.toJSON (0 :: Int)), ("command", Aeson.String "echo setup"), ("workDir", Aeson.Null)]
+      forM_ [KeyMap.insert "kind" (Aeson.String "unknown") wire, KeyMap.delete "workDir" wire, KeyMap.insert "module" (Aeson.String "missing") wire, KeyMap.insert "occurrence" (Aeson.toJSON (-1 :: Int)) wire] $ \bad -> rejected (decoded (KeyMap.insert "checkoutCommands" (Aeson.toJSON [Aeson.Object bad])))
+      rejected (manifestFromJSON (manifestToJSON (manifest [command, command])))
+      rejected (manifestFromJSON (manifestToJSON (manifest [] & #applications .~ [application [], application []])))
+    it "keeps legacy encodings empty and reports downgrade loss" $ do
+      let old = manifest [] & #version .~ ManifestSchemaVersion 9
+      manifestFromJSON (manifestToJSON old) `shouldBe` Right old
+      LBS8.unpack (manifestToJSON old) `shouldNotSatisfy` isInfixOf "checkoutCommands"
+      manifestEncodingLoss (manifest [command] & #version .~ ManifestSchemaVersion 9) `shouldSatisfy` (not . null)
+      let smuggled = mutateApp (KeyMap.insert "checkoutCommands" (Aeson.toJSON [Aeson.object ["kind" Aeson..= ("shell" :: T.Text)]])) (Aeson.toJSON old)
+      rejected (manifestFromJSON (Aeson.encode smuggled))
 
   describe "emptyManifest" $ do
     it "creates a manifest with the current version" $ do
@@ -486,6 +517,7 @@ spec = do
                     AppliedInstanceState (ModuleName "link-skill") pv2 (LocalOrigin "link-skill") (Just "1") (Map.singleton (VarName "skill.name") "master-plan")
                   ],
                 commandReceipts = Map.singleton fingerprint receipt,
+                checkoutCommands = [],
                 appliedAt = fixedTime
               }
           application2 =
@@ -499,6 +531,7 @@ spec = do
                 context = Nothing,
                 instances = [],
                 commandReceipts = Map.empty,
+                checkoutCommands = [],
                 appliedAt = fixedTime2
               }
           fileRecord =
@@ -668,6 +701,7 @@ spec = do
                 context = Nothing,
                 instances = [],
                 commandReceipts = Map.empty,
+                checkoutCommands = [],
                 appliedAt = fixedTime
               }
           fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty SharedWriteUnknown

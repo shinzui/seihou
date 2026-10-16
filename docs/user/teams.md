@@ -6,18 +6,32 @@ so it belongs in git alongside the code it describes. This guide covers what a
 team commits, what each developer needs installed, and what happens when
 somebody is out of date.
 
-## Local links for every checkout
+## Local setup for every checkout
 
-Run `seihou sync` from the project root after cloning or updating the checkout.
-It creates or repairs the recorded skill and tool links. If the project still uses
-older setup commands, the same command discovers link declarations and previews a
-one-time adoption. Accept the preview and commit the resulting project changes;
-teammates then receive that commit and use the same `seihou sync` command. Nobody
-needs to install producer modules, identify transitive dependencies, edit the
-manifest, or manipulate the Git index to restore links.
+After cloning or receiving project changes, run one command at the Git root:
 
-Recorded links restore offline without changing tracked files. For automated
-first-time adoption, use `seihou sync --yes`; `--dry-run` previews all setup changes.
+```sh
+seihou sync
+```
+
+It repairs the recorded ignored links and runs explicitly repeatable checkout
+commands with saved inputs. No producer installation, dependency enumeration or
+configuration prompts are needed. Sync does not fetch modules or change project
+intent. Its shell commands run with your permissions and may need external tools
+or network access; authors must make them repeatable. `--dry-run` previews the work,
+and `--json` captures command output in one report.
+
+For an existing project whose modules have gained checkout declarations, a maintainer
+runs ordinary `seihou update master-plan` (using the project's recorded root target),
+reviews the preview and commits the resulting assets, ignore rules, baselines and
+manifest. Update owns source/dependency resolution, saved inputs and safe tracked-link
+adoption. Teammates receive that commit and only run sync. An empty declaration set
+means nothing has been recorded; sync never infers setup from historical commands.
+
+A failed checkout command leaves completed local effects and reports the unrun tail.
+Correct the cause and retry sync. A failed transactional update preserves the previous
+accepted project state, so retry the original update to accept new declarations.
+See [sync](../cli/sync.md) for recovery and command author obligations.
 
 
 ## What to commit

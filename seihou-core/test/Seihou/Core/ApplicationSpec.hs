@@ -69,6 +69,7 @@ mkComposition target additional =
       context = Nothing,
       instances = [],
       commandReceipts = Map.empty,
+      checkoutCommands = [],
       appliedAt = fixedTime
     }
 

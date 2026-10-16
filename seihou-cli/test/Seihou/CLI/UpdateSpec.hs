@@ -583,7 +583,7 @@ spec = do
       withSystemTempDirectory "seihou-update-schema-5" $ \root -> do
         fixture <- prepareSharedPathFixture CoOwnerAppends root
         manifestText <- TIO.readFile (fixture ^. #manifestPath)
-        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":9" "\"version\":5" manifestText)
+        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":10" "\"version\":5" manifestText)
         withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
           withCurrentDirectory (fixture ^. #projectRoot) $ do
             forM_ [NamedUpdateTargets ["alpha"], AllRecordedApplications] $ \selection -> do
@@ -725,7 +725,7 @@ prepareUpdateFixture root = do
       xdgHome = root </> "xdg"
       installedModule = xdgHome </> "seihou" </> "installed" </> "demo"
       unchangedCommand = "printf should-not-run >> command.log"
-      commandOperation = RunCommandOp unchangedCommand Nothing "demo" 0
+      commandOperation = RunCommandOp unchangedCommand Nothing "demo" 0 ApplicationCommand
       commandFingerprint = fromMaybe (error "test fixture command fingerprint") (fingerprintCommand commandOperation)
       commandReceipt = CommandReceipt commandFingerprint "demo" unchangedCommand Nothing testTime
       baselineContent = "hello accepted\nkeep\nv1\n"
@@ -1037,6 +1037,7 @@ prepareRecipeUpdateFixture root = do
                 instanceStateFrom "one" (remoteOrigin "one")
               ],
             commandReceipts = Map.empty,
+            checkoutCommands = [],
             appliedAt = testTime
           }
       base = emptyManifest testTime
@@ -1139,6 +1140,7 @@ application target instances =
       context = Nothing,
       instances,
       commandReceipts = Map.empty,
+      checkoutCommands = [],
       appliedAt = testTime
     }
   where

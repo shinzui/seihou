@@ -31,8 +31,9 @@ EXISTING PROJECTS
 
   At the Git working-tree root, sync restores declared ignored directory links
   from the committed manifest, including in fresh clones and linked worktrees.
-  No producer installation is needed. When declarations are absent, the same
-  command discovers and previews the required one-time adoption.
+  It also executes explicitly repeatable checkout commands. No producer installation
+  is needed. No declarations means zero recorded work. A maintainer adopts changed
+  specs through ordinary update and commits them before teammates sync.
 
 INSPECTION AND RECOVERY
 
@@ -52,7 +53,8 @@ REMOVAL AND COMMITS
   seihou remove NAME --dry-run
   seihou remove NAME
 
-  Removal requires the module's removal declaration and protects conflicts.
+  Managed-file removal follows the module's removal declaration and protects
+  conflicts. Recorded checkout-only owners can be removed without a custom spec.
   Review changes and commit portable manifest/config, real source directories
   and ignore rules. Accepted link adoption can stage tracked-link removals.
   Ignore discovery links and transient caches/traces. See modules and sync.

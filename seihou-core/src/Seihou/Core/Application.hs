@@ -65,6 +65,7 @@ buildAppliedComposition target targetOrigin targetVersion additional namespace c
       context = context,
       instances = map buildInstance modulesInOrder,
       commandReceipts = Map.empty,
+      checkoutCommands = [],
       appliedAt = now
     }
   where

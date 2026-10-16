@@ -19,6 +19,8 @@ module Seihou.Core.Types
     isAdditivePatchOp,
     Step (..),
     Command (..),
+    CommandLifecycle (..),
+    CheckoutCommand (..),
     Dependency (..),
     simpleDep,
     depModuleNames,
@@ -227,11 +229,16 @@ data Step = Step
   }
   deriving stock (Eq, Show, Generic)
 
+-- | Application commands use success receipts; checkout commands repeat on explicit sync.
+data CommandLifecycle = ApplicationCommand | CheckoutCommandLifecycle
+  deriving stock (Eq, Ord, Show, Generic)
+
 -- | A shell command to run after file generation.
 data Command = Command
   { run :: !Text,
     workDir :: !(Maybe Text),
-    condition :: !(Maybe Expr)
+    condition :: !(Maybe Expr),
+    lifecycle :: !CommandLifecycle
   }
   deriving stock (Eq, Show, Generic)
 
@@ -463,7 +470,8 @@ data Operation
       { command :: !Text,
         workDir :: !(Maybe FilePath),
         moduleName :: !ModuleName,
-        occurrence :: !Int
+        occurrence :: !Int,
+        lifecycle :: !CommandLifecycle
       }
   | PatchFileOp
       { dest :: !FilePath,
@@ -587,6 +595,7 @@ data ManifestCapability
     TargetedAdditiveSharedPathUpdate
   | SeedReceipts
   | CheckoutLocalOutputs
+  | CheckoutLocalCommands
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
 -- | What the manifest knows about how the owners of a path write it.
@@ -702,6 +711,16 @@ data CommandReceipt = CommandReceipt
   }
   deriving stock (Eq, Show, Generic)
 
+-- | Resolved repeatable setup, owned by a qualified instance in its application.
+-- List order is execution order, never completion history.
+data CheckoutCommand = CheckoutCommand
+  { moduleName :: !ModuleName,
+    occurrence :: !Int,
+    command :: !Text,
+    workDir :: !(Maybe FilePath)
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | Reproducible state for one module instance in an application.
 --
 -- @origin@ is the module's portable identity. Turning it back into a
@@ -727,6 +746,7 @@ data AppliedComposition = AppliedComposition
     context :: !(Maybe Text),
     instances :: ![AppliedInstanceState],
     commandReceipts :: !(Map CommandFingerprint CommandReceipt),
+    checkoutCommands :: ![CheckoutCommand],
     appliedAt :: !UTCTime
   }
   deriving stock (Eq, Show, Generic)

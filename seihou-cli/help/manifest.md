@@ -60,9 +60,10 @@ OLDER MANIFESTS
       .gitignore  unknown -> additive-only
 
       7 -> 8  seed receipts
-      8 -> 9  checkout output declarations
+      8 -> 9  checkout outputs
+      9 -> 10 repeatable checkout commands
 
-    ✓ Upgraded .seihou/manifest.json to schema version 9.
+    ✓ Upgraded .seihou/manifest.json to schema version 10.
       Review the diff and commit it: git diff .seihou/manifest.json
 
   Running it on a manifest that is already current reports that there is
@@ -124,14 +125,16 @@ RECOVERING
   The write is atomic: a complete temporary file is renamed over the manifest,
   so an interrupted run cannot leave a truncated one.
 
-SCHEMA 8 AND 9
+SCHEMA 8, 9 AND 10
 
   Schema 8 adds seed receipts (the create-once runtime workflow is unfinished).
   Schema 9 adds portable checkout directory-link declarations and ownership.
   A lossless schema upgrade adds empty collections; it cannot infer declarations
-  from old shell command receipts. Run `seihou sync` to discover a declaring
-  release, review/accept the setup preview, and commit its changes. Later clones/worktrees
-  need only `seihou sync`, without installed producer modules. See `seihou help sync`.
+  from old shell command receipts. Schema 10 adds a required checkoutCommands list
+  to each application; the adjacent upgrade adds empty lists, never inferred setup.
+  A maintainer adopts changed declarations through ordinary update and commits
+  them. Teammates receive that commit and run seihou sync, without producers.
+  Sync does not fetch, upgrade or write the manifest. See seihou help sync.
 
 SEE ALSO
 

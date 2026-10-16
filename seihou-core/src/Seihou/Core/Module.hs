@@ -316,7 +316,7 @@ checkDestVarRefs m =
 
 -- Rule 9: Command text must be non-empty and workDir must be safe
 checkCommandSafety :: Module -> [Text]
-checkCommandSafety m = concatMap checkCmd (m ^. #commands)
+checkCommandSafety m = concatMap checkCmd (m ^. #commands) <> ["Removal.commands cannot declare checkout setup" | removal <- maybeToList (m ^. #removal), command <- removal ^. #commands, command ^. #lifecycle == CheckoutCommandLifecycle]
   where
     checkCmd c = checkEmptyRun c <> checkWorkDir (c ^. #workDir)
 

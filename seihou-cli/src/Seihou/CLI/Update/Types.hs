@@ -17,28 +17,37 @@ module Seihou.CLI.Update.Types
     CommandSummary (..),
     UpdateResult (..),
     UpdateError (..),
+    isUpdateNoOp,
   )
 where
 
+import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (isNothing, mapMaybe)
 import Data.Set (Set)
 import Seihou.CLI.CommandExecution
-  ( CommandExecutionError,
-    CommandPlan,
-    CommandPolicy,
+  ( CommandDisposition (..),
+    CommandExecutionError,
+    CommandPlan (..),
+    CommandPolicy (..),
+    PlannedCommand (..),
   )
 import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap, EvidenceSource)
 import Seihou.Composition.Instance (ModuleInstance)
 import Seihou.Core.ArtifactRef (ArtifactRefError)
-import Seihou.Core.Checkout (CheckoutError, CheckoutPlan)
+import Seihou.Core.Checkout (CheckoutAction (..), CheckoutEntry (..), CheckoutError, CheckoutPlan (..))
+import Seihou.Core.CommandFingerprint (isCheckoutCommand)
 import Seihou.Core.Migration (MigrationPlan, MigrationPlanError)
 import Seihou.Core.Types
 import Seihou.Engine.Migrate (ExecutedMigrationPlan, MigrationExecError)
 import Seihou.Engine.Reconcile
   ( DesiredFileOwner,
+    FileReconciliation (..),
     ReconciliationError,
-    ReconciliationPlan,
+    ReconciliationPlan (..),
     ReconciliationSummary,
+    recordedSharedWriteMode,
   )
 import Seihou.Engine.UpdateTransaction (TransactionError)
 import Seihou.Prelude
@@ -287,3 +296,55 @@ data UpdateError
   | UpdateCachePublicationFailed Text
   | UpdateManifestWriteFailed Text
   deriving stock (Eq, Show)
+
+isUpdateNoOp :: UpdatePlan -> Bool
+isUpdateNoOp plan =
+  -- A lossless schema step or a newly certified shared-write mode is a
+  -- change to applied state that only this update will publish (ADR 0004),
+  -- so a plan carrying one is never a deliberate no-op (ADR 0007).
+  plan ^. #checkoutOutputs == plan ^. #snapshot . #originalManifest . #checkoutOutputs
+    && Map.null (plan ^. #checkoutAdoptions)
+    && all ((== UnchangedLink) . (^. #action)) (plan ^. #checkoutPlan . #entries)
+    && isNothing (plan ^. #manifestPreparation)
+    && null (plan ^. #versionChanges)
+    && null (plan ^. #migrations)
+    && plan ^. #inputChanges . #overridden == 0
+    && plan ^. #inputChanges . #newlyResolved == 0
+    && plan ^. #inputChanges . #removed == 0
+    && not (any actionableCommand (plan ^. #commandPlan . #commands))
+    && all unchangedFile (Map.elems (plan ^. #reconciliation . #files))
+    && and (zipWith sameApplication (mapMaybe (^. #previous) (plan ^. #plannedApplications)) (plan ^. #applications))
+  where
+    actionableCommand command = command ^. #disposition == CommandWillRun && (plan ^. #request . #commandPolicy == RunAllCommands || not (isCheckoutCommand (command ^. #operation)))
+    -- A file whose content is unchanged can still carry a manifest record
+    -- that is out of date. The shared-write mode is the case that matters: a
+    -- project whose manifest predates the evidence has no answer for any path, and
+    -- treating that as a no-op would mean the answer is never written, so the
+    -- shared-path exemption could never take effect on an existing project.
+    -- Recording a fact about applied state is a change to applied state
+    -- (ADR 0004), so such a plan is not a deliberate no-op (ADR 0007).
+    unchangedFile (FileUnchanged desired _ _ prior) =
+      maybe True (\record -> record ^. #sharedWriteMode == recordedSharedWriteMode (plan ^. #reconciliation . #applicationIds) desired prior) prior
+    unchangedFile _ = False
+    -- Compare only what the manifest actually records. Anything derived from
+    -- where an artifact happens to sit on this machine would differ between a
+    -- decoded application and a freshly loaded candidate, and would report
+    -- every re-run as a change.
+    sameApplication previous candidate =
+      previous ^. #target == candidate ^. #target
+        && previous ^. #targetOrigin == candidate ^. #targetOrigin
+        && previous ^. #targetVersion == candidate ^. #targetVersion
+        && previous ^. #additionalModules == candidate ^. #additionalModules
+        && previous ^. #namespace == candidate ^. #namespace
+        && previous ^. #context == candidate ^. #context
+        && length (previous ^. #instances) == length (candidate ^. #instances)
+        && and (zipWith sameInstance (previous ^. #instances) (candidate ^. #instances))
+        && previous ^. #commandReceipts == (candidate ^. #commandReceipts)
+        && previous ^. #checkoutCommands == candidate ^. #checkoutCommands
+
+    sameInstance previous candidate =
+      previous ^. #name == candidate ^. #name
+        && previous ^. #parentVars == candidate ^. #parentVars
+        && previous ^. #origin == candidate ^. #origin
+        && previous ^. #moduleVersion == candidate ^. #moduleVersion
+        && previous ^. #resolvedVars == candidate ^. #resolvedVars

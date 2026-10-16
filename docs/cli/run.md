@@ -161,3 +161,14 @@ no variable is default- or parent-sourced.
 ## Checkout directory links
 
 Run compiles `symlink`/`checkout` steps into portable desired declarations. It validates the full candidate before generation, writes ordinary files first, and then applies checked links. A deterministic generated file can establish its source directory in the same run; shell commands cannot satisfy that dependency. Dry-run shows link actions without creating link parents. Reapplying replaces the selected application's claims, so a false condition, dropped dependency or renamed destination retires obsolete claims. Unselected application owners survive. Nonignored destinations or initial application before git-init warn; tracked collisions still refuse. Future clones use [sync](sync.md), which requires ignored destinations.
+
+
+Commands have a separate execution lifecycle: `S.Command.Action.Apply` uses ordinary
+application receipts; `S.Command.Action.Checkout` records resolved repeatable local
+setup for sync. Run executes both in composition order after file/link generation.
+`--no-commands` suppresses execution while retaining every checkout declaration.
+Run publishes desired declarations before its command phase. A failure returns
+nonzero and retains them; sync retries only checkout commands. Fix an ordinary
+application-command failure through the original run command. Arbitrary shell effects
+cannot be undone by Seihou; checkout commands must be repeatable and keep intended
+writes outside managed/tracked state. See [sync](sync.md).

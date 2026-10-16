@@ -16,7 +16,8 @@ commandOp command workDir moduleName occurrence =
     { command = command,
       workDir = workDir,
       moduleName = moduleName,
-      occurrence = occurrence
+      occurrence = occurrence,
+      lifecycle = ApplicationCommand
     }
 
 spec :: Spec

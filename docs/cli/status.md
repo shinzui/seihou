@@ -87,7 +87,7 @@ successfully.
 
 An empty remote producer cache is normal in a fresh clone. Status summarizes
 absent remote producers in one informational line rather than reporting them as
-project damage. `seihou sync` restores recorded declarations offline and offers setup when none exist; ordinary
+project damage. `seihou sync` restores recorded links and executes declared repeatable commands without producer resolution; ordinary
 `seihou update TARGET` fetches remote candidates and dependencies when needed.
 Stale or substituted installed producers, missing project-owned producers, and
 machine-local origins still appear in the artifact warning section.
@@ -182,6 +182,11 @@ Recommended actions:
 
 Status observes checkout declarations independently of installed artifact checks. It shows counts and at most ten affected paths, with an elision count for the rest. Missing or wrong links name `seihou sync`; blocked objects name their cause and manual remedy. Status never repairs links or writes the manifest. See [sync](sync.md).
 
-When no checkout outputs are recorded, status says `none declared` and points to
-`seihou sync` to discover and preview link setup. It does not report that expected
-links are healthy merely because the manifest has no declarations.
+When no checkout effects are recorded, status says so. Maintainers can adopt changed
+specifications through ordinary update of the recorded root application. It never discovers new setup or
+infers successful restoration from absent declarations or historical receipts.
+
+Repeatable checkout commands are reported as declared instructions, for example
+`2 repeatable checkout commands declared; run seihou sync to execute them`.
+Status never executes them or labels their arbitrary effects healthy or broken.
+The same neutral message remains after sync because commands have no completion ledger.

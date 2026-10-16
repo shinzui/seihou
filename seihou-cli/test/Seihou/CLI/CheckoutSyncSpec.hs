@@ -17,7 +17,7 @@ import Test.Tasty.Hspec (testSpec)
 tests :: IO TestTree
 tests = testSpec "checkout reports" $ do
   let entry action = CheckoutEntry ".local/config" Nothing Nothing (CheckoutObservation EntryMissing True [] True True) action [] []
-      result dry plan outcomes = CheckoutSyncResult "/project" dry plan (CheckoutExecution outcomes [] Nothing) []
+      result dry plan outcomes = CheckoutSyncResult "/project" dry plan (CheckoutExecution outcomes [] Nothing) [] [] []
   it "distinguishes proposed dry-run work from successful writes" $ do
     let report = checkoutReportJSON (result True (CheckoutPlan [entry CreateLink]) Map.empty)
     case report of

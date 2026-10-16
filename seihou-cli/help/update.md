@@ -34,7 +34,8 @@ BASIC WORKFLOW
 
   Seihou stages newer source repositories before changing the installed cache,
   reuses the saved inputs for each module instance, plans migrations, renders
-  new generated content, reconciles files, and runs only new or changed commands.
+  new generated content, reconciles files, and runs new or changed application commands plus selected repeatable checkout
+  commands on an actionable update.
   The installed cache and manifest are published only after the managed update
   succeeds.
 
@@ -119,10 +120,14 @@ THREE-WAY FILE RECONCILIATION
 
 COMMANDS
 
-  By default, only new or changed generated commands run. `--run-all-commands`
-  executes every command and `--no-commands` executes none; those flags are
-  mutually exclusive. Successful command receipts are published only when the
-  entire command phase succeeds.
+  By default, only new or changed application commands run; checkout commands
+  repeat during an accepted actionable update, in their original mixed order.
+  Their presence alone does not make update actionable. A declaration change does.
+  A true no-op executes neither lifecycle; use sync to repeat recorded local setup.
+  --run-all-commands explicitly makes command execution actionable; --no-commands
+  suppresses both lifecycles while retaining checkout declarations. Those flags
+  are mutually exclusive. Only application commands receive success receipts,
+  published after the entire phase succeeds.
 
 PREVIEW, AUTOMATION, AND COMMITS
 
@@ -160,5 +165,7 @@ SEE ALSO
   seihou status --help
   docs/cli/update.md
 
-For local checkout links, use `seihou sync`. It restores declared links or, for
-older projects, discovers and previews the required adoption in the same command.
+For recorded local setup, use `seihou sync`: it repairs links and executes declared
+repeatable commands without producer resolution. Maintainers adopt changed specs
+through ordinary update and commit them before teammates sync. A true no-op update
+executes neither command lifecycle; --no-commands preserves setup declarations.

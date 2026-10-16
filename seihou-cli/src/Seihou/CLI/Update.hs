@@ -15,7 +15,6 @@ module Seihou.CLI.Update
     planProjectUpdate,
     applyProjectUpdate,
     withProjectUpdate,
-    withCheckoutAdoption,
     isUpdateNoOp,
   )
 where
@@ -66,6 +65,7 @@ import Seihou.Core.Application (buildAppliedComposition, replaceAppliedCompositi
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (renderArtifactRefError, resolveArtifactOrigin)
 import Seihou.Core.Checkout
+import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
 import Seihou.Core.Version (parseVersion)
@@ -110,50 +110,6 @@ withProjectUpdate ::
 withProjectUpdate request callback =
   withSystemTempDirectory "seihou-project-update" $ \sessionDirectory ->
     planProjectUpdateIn sessionDirectory request >>= callback
-
--- | Discover declaring compositions for an older checkout, then use the normal
--- transactional update planner for just those applications. Discovery does not
--- resolve inputs or apply upgrades for unrelated applications. The callback owns
--- preview and consent; no project changes happen merely by discovering a plan.
-withCheckoutAdoption ::
-  UpdateRequest ->
-  (Either UpdateError (Maybe UpdatePlan) -> IO a) ->
-  IO a
-withCheckoutAdoption request callback =
-  withSystemTempDirectory "seihou-checkout-adoption" $ \sessionDirectory -> do
-    projectRoot <- Directory.getCurrentDirectory
-    installedDirectory <- standardInstalledDirectory
-    original <- readManifestForUpdate (projectRoot </> ".seihou/manifest.json")
-    case original of
-      Left err -> callback (Left err)
-      Right (_, manifest)
-        | not (Map.null (manifest ^. #checkoutOutputs)) -> callback (Right Nothing)
-        | null (manifest ^. #applications) -> callback (Right Nothing)
-        | otherwise -> do
-            staged <- stageCandidateSources (sessionDirectory </> "discovery") projectRoot installedDirectory (manifest ^. #applications)
-            case staged of
-              Left err -> callback (Left err)
-              Right (catalog, _) -> do
-                candidates <- traverse (declaresCheckout catalog) (manifest ^. #applications)
-                case sequence candidates of
-                  Left err -> callback (Left err)
-                  Right names -> case catMaybes names of
-                    [] -> callback (Right Nothing)
-                    targets -> do
-                      planned <- planProjectUpdateIn (sessionDirectory </> "update") (request & #selection .~ NamedUpdateTargets (nubOrd targets))
-                      callback $ fmap (\plan -> if Map.null (plan ^. #checkoutOutputs) then Nothing else Just plan) planned
-  where
-    declaresCheckout catalog application = case candidateRoot catalog application of
-      Left err -> pure (Left err)
-      Right (primary, additional, _, _) -> do
-        fallback <- defaultSearchPaths
-        loaded <- loadComposition (catalog ^. #searchRoot : fallback) primary (additional <> application ^. #additionalModules)
-        pure $ do
-          modules <- first (CandidateLoadFailed (primary ^. #unModuleName)) loaded
-          Right $
-            if any (\(_, modul, _) -> any ((== Checkout) . (^. #lifecycle)) (modul ^. #steps)) modules
-              then Just (targetName application)
-              else Nothing
 
 -- | Internal/test-facing planner. Prefer 'withProjectUpdate'; this form keeps
 -- its temporary session until process exit or a test removes it.
@@ -540,7 +496,7 @@ applyAcceptedPlan plan = do
                             linkResult <- applyUpdateCheckout plan migratedManifest filesManifest
                             case linkResult of
                               Left err -> abortUpdate transaction err
-                              Right () -> do
+                              Right checkoutWarnings -> do
                                 commandResult <-
                                   runEff $
                                     runProcessIO $
@@ -563,7 +519,7 @@ applyAcceptedPlan plan = do
                                             written <- writeManifestIO (plan ^. #snapshot . #manifestPath) finalManifest
                                             case written of
                                               Left err -> abortUpdate transaction err
-                                              Right () -> finishCommitted transaction plan finalManifest completedReceipts
+                                              Right () -> finishCommitted transaction plan finalManifest checkoutWarnings
 
 planApplication ::
   UpdateRequest ->
@@ -612,6 +568,8 @@ planApplication request projectRoot catalog now previous = do
                           originedModules
                           resolvedValues
                           now
+                          & #checkoutCommands
+                          .~ checkoutCommandsFromOperations operations
                           & #applicationId
                           .~ (previous ^. #applicationId)
                       candidate =
@@ -1208,6 +1166,7 @@ setCompositionState instances receipts composition =
       context = composition ^. #context,
       instances,
       commandReceipts = receipts,
+      checkoutCommands = composition ^. #checkoutCommands,
       appliedAt = composition ^. #appliedAt
     }
 
@@ -1318,9 +1277,9 @@ finishCommitted ::
   UpdateTransaction ->
   UpdatePlan ->
   Manifest ->
-  [CommandReceipt] ->
+  [UpdateWarning] ->
   IO (Either UpdateError UpdateResult)
-finishCommitted transaction plan manifest completedReceipts = do
+finishCommitted transaction plan manifest checkoutWarnings = do
   completion <- completeUpdateTransaction transaction
   pruneResult <-
     try @SomeException $
@@ -1357,13 +1316,13 @@ finishCommitted transaction plan manifest completedReceipts = do
             fileSummary = reconciliationSummary (plan ^. #reconciliation),
             commandSummary =
               CommandSummary
-                { executed = length completedReceipts,
+                { executed = summary ^. #willRun,
                   skippedUnchanged = summary ^. #skippedUnchanged,
                   skippedDisabled = summary ^. #skippedDisabled
                 },
             touchedPaths = touched,
             adoptedLinks = Map.keys (plan ^. #checkoutAdoptions),
-            warnings = plan ^. #warnings <> cleanupWarnings <> pruneWarnings
+            warnings = filter (\case CheckoutWarning _ -> False; _ -> True) (plan ^. #warnings) <> checkoutWarnings <> cleanupWarnings <> pruneWarnings
           }
     )
 
@@ -1414,56 +1373,6 @@ commandSummaryForPlan commandPlan =
   let summary = summarizeCommandPlan commandPlan
    in CommandSummary (summary ^. #willRun) (summary ^. #skippedUnchanged) (summary ^. #skippedDisabled)
 
-isUpdateNoOp :: UpdatePlan -> Bool
-isUpdateNoOp plan =
-  -- A lossless schema step or a newly certified shared-write mode is a
-  -- change to applied state that only this update will publish (ADR 0004),
-  -- so a plan carrying one is never a deliberate no-op (ADR 0007).
-  plan ^. #checkoutOutputs == plan ^. #snapshot . #originalManifest . #checkoutOutputs
-    && Map.null (plan ^. #checkoutAdoptions)
-    && all ((== UnchangedLink) . (^. #action)) (plan ^. #checkoutPlan . #entries)
-    && isNothing (plan ^. #manifestPreparation)
-    && null (plan ^. #versionChanges)
-    && null (plan ^. #migrations)
-    && plan ^. #inputChanges . #overridden == 0
-    && plan ^. #inputChanges . #newlyResolved == 0
-    && plan ^. #inputChanges . #removed == 0
-    && (summarizeCommandPlan (plan ^. #commandPlan)) ^. #willRun == 0
-    && all unchangedFile (Map.elems (plan ^. #reconciliation . #files))
-    && and (zipWith sameApplication (mapMaybe (^. #previous) (plan ^. #plannedApplications)) (plan ^. #applications))
-  where
-    -- A file whose content is unchanged can still carry a manifest record
-    -- that is out of date. The shared-write mode is the case that matters: a
-    -- project whose manifest predates the evidence has no answer for any path, and
-    -- treating that as a no-op would mean the answer is never written, so the
-    -- shared-path exemption could never take effect on an existing project.
-    -- Recording a fact about applied state is a change to applied state
-    -- (ADR 0004), so such a plan is not a deliberate no-op (ADR 0007).
-    unchangedFile (FileUnchanged desired _ _ prior) =
-      maybe True (\record -> record ^. #sharedWriteMode == recordedSharedWriteMode (plan ^. #reconciliation . #applicationIds) desired prior) prior
-    unchangedFile _ = False
-    -- Compare only what the manifest actually records. Anything derived from
-    -- where an artifact happens to sit on this machine would differ between a
-    -- decoded application and a freshly loaded candidate, and would report
-    -- every re-run as a change.
-    sameApplication previous candidate =
-      previous ^. #target == candidate ^. #target
-        && previous ^. #targetOrigin == candidate ^. #targetOrigin
-        && previous ^. #targetVersion == candidate ^. #targetVersion
-        && previous ^. #additionalModules == candidate ^. #additionalModules
-        && previous ^. #namespace == candidate ^. #namespace
-        && previous ^. #context == candidate ^. #context
-        && length (previous ^. #instances) == length (candidate ^. #instances)
-        && and (zipWith sameInstance (previous ^. #instances) (candidate ^. #instances))
-        && previous ^. #commandReceipts == (candidate ^. #commandReceipts)
-
-    sameInstance previous candidate =
-      previous ^. #name == candidate ^. #name
-        && previous ^. #parentVars == candidate ^. #parentVars
-        && previous ^. #origin == candidate ^. #origin
-        && previous ^. #moduleVersion == candidate ^. #moduleVersion
-        && previous ^. #resolvedVars == candidate ^. #resolvedVars
-
 isStructuredNoOp :: UpdatePlan -> Bool
 isStructuredNoOp = isUpdateNoOp
 
@@ -1513,7 +1422,7 @@ planCheckoutUpdate root prior applications = case replaceCheckoutApplications pr
           Just spec -> entry ^. #observation . #entry == EntrySymlink (expectedTarget (entry ^. #dest) spec)
           Nothing -> False
 
-applyUpdateCheckout :: UpdatePlan -> Manifest -> Manifest -> IO (Either UpdateError ())
+applyUpdateCheckout :: UpdatePlan -> Manifest -> Manifest -> IO (Either UpdateError [UpdateWarning])
 applyUpdateCheckout plan prior filesManifest = runEff $ runFilesystem $ runProcessIO $ do
   let candidate = filesManifest & #checkoutOutputs .~ plan ^. #checkoutOutputs & #applications .~ foldl' (flip replaceAppliedComposition) (filesManifest ^. #applications) (plan ^. #applications)
       root = plan ^. #snapshot . #projectRoot
@@ -1524,4 +1433,4 @@ applyUpdateCheckout plan prior filesManifest = runEff $ runFilesystem $ runProce
       err : _ -> pure (Left (UpdateCheckoutFailed err))
       [] -> do
         applied <- applyCheckoutPlan ApplyDeclaration root links
-        pure $ maybe (Right ()) (Left . UpdateCheckoutFailed) (applied ^. #failure)
+        pure $ maybe (Right (map CheckoutWarning (concatMap (^. #warnings) (links ^. #entries)))) (Left . UpdateCheckoutFailed) (applied ^. #failure)

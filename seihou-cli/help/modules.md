@@ -107,7 +107,17 @@ STEP LIFECYCLES
 
 CHECKOUT DIRECTORY LINKS
 
-A step with strategy `symlink` and lifecycle `Some "checkout"` declares a link from a real project source directory to an ignored local path. Run records portable intent; `seihou sync` reconstructs it in fresh clones without modules or commands. For example, link `config/editor` to `.editor-local/config` and ignore `.editor-local/`. Links have no patches or content hashes.
+A step with strategy `symlink` and lifecycle `Some "checkout"` declares a link from a real project source directory to an ignored local path. Run records portable intent; `seihou sync` reconstructs it in fresh clones without producer resolution or application command replay. For example, link `config/editor` to `.editor-local/config` and ignore `.editor-local/`. Links have no patches or content hashes.
 
 Run `seihou help sync` for fresh clones, worktrees and existing tracked-link adoption.
 Run `seihou help recipes` for named compositions of modules.
+
+
+Commands use `S.Command::{ action = S.Command.Action.Apply "echo applied" }`
+or `S.Command::{ action = S.Command.Action.Checkout "mkdir -p .local/setup" }`.
+The latter is explicitly repeatable local setup, resolved and recorded during run
+or update for teammates to execute with sync. It runs with user permissions and
+may need tools/network. Keep intended writes outside tracked/managed state and
+working directories real and project-relative. Ordinary receipts never suppress
+checkout commands. `--no-commands` suppresses both lifecycles while retaining setup;
+a true no-op update executes neither. Removal accepts application commands only.

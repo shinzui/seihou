@@ -548,7 +548,8 @@ richModule =
         [ Command
             { run = "cabal build",
               workDir = Just "app",
-              condition = Just (ExprIsSet "license")
+              condition = Just (ExprIsSet "license"),
+              lifecycle = ApplicationCommand
             }
         ],
       dependencies = [],
@@ -560,7 +561,7 @@ richModule =
                   RemovalStep {action = RemoveSectionAction, dest = ".gitignore", src = Nothing}
                 ],
               commands =
-                [Command {run = "rm -rf dist-newstyle", workDir = Nothing, condition = Nothing}]
+                [Command {run = "rm -rf dist-newstyle", workDir = Nothing, condition = Nothing, lifecycle = ApplicationCommand}]
             },
       migrations =
         [ Migration

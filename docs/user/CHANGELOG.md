@@ -13,15 +13,14 @@ packages in the workspace share a single version.
 
 ### Fixed
 
-- `seihou sync` now owns first-time checkout-link adoption: it discovers declaring
-  compositions from recorded sources, reuses inputs, previews the changes, and
-  creates links after confirmation. Other applications are not upgraded. Existing
-  declarations continue to restore offline. Automation can accept with `--yes`.
-- Status reports absent link declarations with the ordinary `seihou sync` remedy,
-  rather than presenting zero declarations as zero problems.
-
-### Fixed
-
+- Module commands can explicitly declare repeatable checkout setup. Application
+  records resolved instructions in manifest schema 10; `seihou sync` executes them
+  in a fresh clone without producer installation, configuration or receipt replay.
+  Dry-run executes nothing; reports retain command output, failures and the unrun tail.
+- Sync only restores accepted declarations. A maintainer adopts changed specs through
+  ordinary `seihou update ROOT` and commits them; teammates receive the commit and
+  sync. Empty declarations mean zero work. The unpublished automatic-update fallback
+  and its `sync --yes` flag are removed. Status describes declared commands neutrally.
 - **Agent guidance now matches ordinary update and checkout workflows.** Assist,
   bootstrap and setup share current module guidance, including ignored directory
   links and `seihou sync`. Routine updates use `seihou update TARGET`, which fetches

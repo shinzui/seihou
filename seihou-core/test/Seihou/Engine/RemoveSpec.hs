@@ -239,7 +239,7 @@ spec = do
         Right plan -> (plan ^. #ops) `shouldBe` [StripSectionOp ".gitignore"]
 
     it "builds RemovalCommandOp for removal commands" $ do
-      let removal = Removal [] [Command "cabal clean" Nothing Nothing]
+      let removal = Removal [] [Command "cabal clean" Nothing Nothing ApplicationCommand]
           manifest = mkManifestWithRemoval removal []
           result = runBuildOps emptyFS manifest modName removal
       case result of
@@ -261,7 +261,7 @@ spec = do
       Map.member "../outside" (fs ^. #files) `shouldBe` True
 
     it "rejects a removal command workDir with a parent directory segment" $ do
-      let removal = Removal [] [Command "echo unsafe" (Just "../outside") Nothing]
+      let removal = Removal [] [Command "echo unsafe" (Just "../outside") Nothing ApplicationCommand]
           manifest = mkManifestWithRemoval removal []
           result = runBuildOps emptyFS manifest modName removal
       result
@@ -276,7 +276,7 @@ spec = do
       let removal =
             Removal
               [RemovalStep RemoveFileAction "a.txt" Nothing, RemovalStep RemoveSectionAction ".gitignore" Nothing]
-              [Command "echo done" Nothing Nothing]
+              [Command "echo done" Nothing Nothing ApplicationCommand]
           manifest = mkManifestWithRemoval removal [("a.txt", "aaa")]
           fs = mkFS [("a.txt", "aaa"), (".gitignore", "stuff")]
           result = runBuildOps fs manifest modName removal

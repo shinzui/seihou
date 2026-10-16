@@ -72,7 +72,6 @@ choices to the target repository.
 
 ### Composition patching (patch field)
 - `append-section` — wraps in section markers, appends
-- `replace-section` — replaces content between existing section markers
 - `append-file` — appends to end without markers
 - `prepend-file` — prepends to beginning
 - `append-line-if-absent` — appends only lines not already present (idempotent, no markers)
@@ -94,7 +93,7 @@ Suggest these commands when the user needs to run them locally:
 - `seihou run MODULE [--var K=V]` — generate project
 - `seihou list` — list all available modules, recipes, blueprints, and prompts
 - `seihou update [TARGET] [--dry-run]` — update recorded applications and preserve user edits
-- `seihou sync [--dry-run]` — restore links or discover and preview one-time link setup
+- `seihou sync [--dry-run]` — restore recorded links and execute declared repeatable checkout commands
 - `seihou help` — discover conceptual help; use `seihou COMMAND --help` for flags
 - `seihou status` — show manifest state
 - `seihou diff` — compare manifest vs disk

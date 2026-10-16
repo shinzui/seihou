@@ -399,3 +399,16 @@ The lossless 7 → 8 upgrade adds `seeds: {}`. Receipts record portable paths, m
 ## Schema 9: checkout outputs
 
 The lossless 8 → 9 step adds a required empty `checkoutOutputs` object. Each project-relative destination maps to `spec: {kind: "directory-symlink", source: "config/editor"}` and `owners: {APPLICATION_ID: ["qualified-instance"]}`. Owners must belong to that application's recorded instances. No timestamps, hashes, baselines or observed completion facts are stored. Duplicate keys, unknown kinds, unexpected specification fields, empty owners and overlapping managed/seed/checkout destinations refuse. Older schemas retain their version and omit this field when encoded. [Sync](sync.md) observes desired wiring without writing the manifest.
+
+
+## Schema 10: repeatable checkout commands
+
+The adjacent lossless 9 → 10 step adds an empty `checkoutCommands` list to every
+application without inferring instructions from receipts. New-schema application
+records require the list, even when empty. Each command is a tagged `shell` record
+with qualified `module`, nonnegative `occurrence`, rendered `command` and nullable
+project-relative `workDir`. Its application owns the list; order is execution order.
+Unknown kinds/owners, duplicate identities and missing/malformed fields refuse
+before effects. Older-schema round trips omit empty lists and cannot carry nonempty
+checkout commands. Sync reads supported old schemas without writing an upgrade.
+Apply/update records declarations; sync executes them without storing completion.

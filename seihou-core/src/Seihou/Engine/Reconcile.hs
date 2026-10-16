@@ -262,7 +262,8 @@ data DesiredContext = DesiredContext
     baseline :: !(Maybe Text),
     priorRecord :: !(Maybe FileRecord),
     observed :: !ObservedFile,
-    missingTrustedBaseline :: !Bool
+    missingTrustedBaseline :: !Bool,
+    lineSetPatch :: !Bool
   }
   deriving stock (Generic)
 
@@ -403,7 +404,8 @@ materializeOne readDisk readCopy readStoredBaseline ownerMap manifest pathOperat
           baseline = trusted,
           priorRecord = prior,
           observed = observe current,
-          missingTrustedBaseline = missing
+          missingTrustedBaseline = missing,
+          lineSetPatch = all (\case PatchFileOp {op = AppendLineIfAbsent} -> True; _ -> False) pathOperations
         }
   where
     operationPath (operation : _) = case operationDestination operation of
@@ -490,6 +492,14 @@ classifyDesired mergeContents context = case context ^. #current of
            in pure (Right (path, FileUnchanged desired state observed prior))
       | current == generated =
           pure (Right (path, FileUnchanged desired (unchangedState generated current) observed prior))
+      -- Line-set additions commute with project edits, including an append at
+      -- the same EOF. Apply only newly declared lines, preserving intentional
+      -- removal of older lines. Other patches retain ordinary three-way merge.
+      | context ^. #lineSetPatch =
+          let additions = filter (\line -> T.stripEnd line `notElem` map T.stripEnd (T.lines baseline)) (T.lines generated)
+           in pure $ case applyTextPatch AppendLineIfAbsent (desired ^. #moduleName) "#" current (T.unlines additions) of
+                Right merged -> Right (path, fromMerge current (MergeClean merged))
+                Left reason -> Left (PatchMaterializationFailed path AppendLineIfAbsent (desired ^. #moduleName) reason)
       | otherwise = do
           outcome <- mergeContents baseline current generated
           pure $ Right (path, fromMerge current outcome)

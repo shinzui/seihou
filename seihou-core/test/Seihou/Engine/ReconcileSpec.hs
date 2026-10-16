@@ -39,6 +39,21 @@ spec = do
             other -> expectationFailure ("expected one update, got " <> show other)
         Left err -> expectationFailure (show err)
 
+    it "adds newly declared ignore lines without conflicting with user appends or restoring deleted old lines" $ do
+      let base = ".claude/\n.agents/\n"
+          current = ".claude/\n.mina/\n# user rules\ndist-newstyle/\n"
+          ref = baselineRefForContent base
+          manifest = withFile ".gitignore" (record base (Just ref) [appA]) empty
+          operations = [patch ".claude/\n.agents/\n.codex/" "owner"]
+          result = planWith (Map.singleton ".gitignore" current) Map.empty (Map.singleton ref base) manifest [appA] operations (owners ".gitignore" [appA]) (\_ _ _ -> error "line additions must not invoke diff3")
+      case result of
+        Right reconciliation -> case (reconciliation ^. #files) Map.! ".gitignore" of
+          FileAutoMerge _ state _ _ -> do
+            state ^. #appliedContent `shouldBe` current <> ".codex/\n"
+            state ^. #generatedBaseline `shouldBe` base <> ".codex/\n"
+          other -> expectationFailure (show other)
+        Left err -> expectationFailure (show err)
+
     it "replays a patch after a complete write" $ do
       let operations =
             [ WriteFileOp "README.md" "generated\n" Template,

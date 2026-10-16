@@ -182,16 +182,17 @@ rolled back. Read the migration named in the message, show the user what it
 does, and decide together whether to fix the project first or to upgrade to an
 intermediate version.
 
-### Checkout link refusal or missing links
-Run `seihou sync` to restore links or discover and preview missing link setup.
-It owns the necessary adoption without a separate target-selection or installation
-step. Its preview can adopt unchanged matching tracked discovery links, staging
-their removal while keeping the working link. Preserve
-modified/staged links and regular files. Do not manually alter the Git index,
-edit checkoutOutputs JSON or replace declarations with shell commands. After
-adoption, commit the manifest, ignore rules, source directories and accepted
-link removals. Fresh clones/worktrees restore declared links with `seihou sync`
-without producers, commands or manifest changes.
+### Checkout setup refusal or missing declarations
+Run `seihou sync` to restore recorded links and repeatable checkout commands.
+An empty declaration set is zero work. A maintainer adopts changed producer specs
+with ordinary `seihou update ROOT`, using the recorded application target. That
+preview owns source/dependency resolution, saved inputs and safe tracked-link
+adoption. Preserve modified/staged links and regular files. Do not manually alter
+the Git index or manifest JSON. Commit accepted manifest, baselines, assets and
+ignore rules, then teammates receive that commit and sync without producer lookup.
+Checkout shell may use tools/network and cannot be rolled back; correct failure
+and retry sync. For an interrupted update, `seihou update --dry-run` recovers the
+prior transaction before previewing new work; then retry sync.
 
 ### composition_failed and reconciliation_failed
 The new release does not compose with the rest of the project, or its files

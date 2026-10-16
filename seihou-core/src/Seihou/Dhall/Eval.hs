@@ -99,7 +99,7 @@ evalModuleFromFile path = do
         -- Force lazy decoder thunks that may contain 'error' calls
         mapM_ (\v -> evaluate (v ^. #type_)) (m ^. #vars)
         mapM_ (\s -> evaluate (s ^. #lifecycle) >> evaluate (s ^. #strategy) >> evaluate (s ^. #condition) >> mapM_ evaluate (s ^. #patch)) (m ^. #steps)
-        mapM_ (\c -> mapM_ evaluate (c ^. #condition)) (m ^. #commands)
+        mapM_ (\c -> evaluate (c ^. #lifecycle) >> mapM_ evaluate (c ^. #condition)) ((m ^. #commands) <> concatMap (^. #commands) (m ^. #removal))
         mapM_ (\p -> evaluate (p ^. #condition)) (m ^. #prompts)
         pure m
       Failure e -> throwIO e
@@ -711,20 +711,19 @@ stepDecoder =
 -- | Decoder for Command from a Dhall record.
 -- The @when@ field is parsed via 'parseExpr' into an 'Expr' AST.
 commandDecoder :: Decoder Command
-commandDecoder =
-  record
-    ( mkCommand
-        <$> field "run" strictText
-        <*> field "workDir" (maybe strictText)
-        <*> field "when" (maybe strictText)
-    )
+commandDecoder = Decoder decode (expected tagged)
   where
-    mkCommand run workDir whenText =
-      Command
-        { run = run,
-          workDir = workDir,
-          condition = parseWhen whenText
-        }
+    decode expr@(Dhall.RecordLit fields)
+      | DhallMap.member "action" fields && DhallMap.member "run" fields =
+          error "Command must contain either action or run, not both"
+      | DhallMap.member "action" fields = extract tagged expr
+      | otherwise = extract legacy expr
+    decode expr = extract tagged expr
+    tagged = record (mkTagged <$> field "action" actionDecoder <*> field "workDir" (maybe strictText) <*> field "when" (maybe strictText))
+    legacy = record (mkLegacy <$> field "run" strictText <*> field "workDir" (maybe strictText) <*> field "when" (maybe strictText))
+    actionDecoder = union (((\text -> (ApplicationCommand, text)) <$> constructor "Apply" strictText) <> ((\text -> (CheckoutCommandLifecycle, text)) <$> constructor "Checkout" strictText))
+    mkTagged (lifecycle, run) workDir whenText = Command {run, workDir, lifecycle, condition = parseWhen whenText}
+    mkLegacy run workDir whenText = Command {run, workDir, lifecycle = ApplicationCommand, condition = parseWhen whenText}
 
 -- | Parse an optional @when@ expression text into an 'Expr'.
 -- Returns 'Nothing' for 'Nothing' input, 'Just expr' on success, or calls

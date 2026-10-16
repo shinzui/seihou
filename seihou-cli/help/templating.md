@@ -33,7 +33,8 @@ PLACEHOLDERS
 
     Template bodies   the .tpl file contents
     Destination path  the `dest` field of a step
-    Shell commands    the `run` and `workDir` fields of command steps
+    Shell commands    the action shell text and `workDir` fields of commands
+                      (legacy records use `run`)
 
 ESCAPING {{
 
@@ -64,7 +65,7 @@ CONDITIONAL BLOCKS
   referenced inside the gate.
 
   Conditional blocks work in template bodies only. They do NOT work in
-  `dest`, `run`, or `workDir`; those positions accept placeholders only
+  `dest`, action shell text, legacy `run`, or `workDir`; those positions accept placeholders only
   and will treat {{#if}} as a placeholder name that fails to resolve.
   The dhall-text and structured strategies express conditionals with
   Dhall's own if/then/else after placeholder substitution.

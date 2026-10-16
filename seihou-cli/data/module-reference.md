@@ -28,7 +28,7 @@ Ordinary file steps read `src` from the module's `files/` directory and write
 (Text output), and `structured` (Dhall record to JSON/YAML with composition).
 The strategy field selects processing; filename extensions are conventions.
 `when : Optional Text` gates a step. `patch : Optional Text` selects
-`append-section`, `replace-section`, `append-file`, `prepend-file`, or
+`append-section`, `append-file`, `prepend-file`, or
 `append-line-if-absent`. The default `lifecycle = None Text` means managed.
 
 For ignored directory links, use `strategy = "symlink"` with
@@ -44,14 +44,42 @@ module. Source and destination must be safe, non-overlapping project-relative
 paths; `.git` and `.seihou` components are reserved. The destination must be
 ignored and untracked. Declare an ignore rule as a managed step when needed.
 Run/update records portable intent in the manifest; fresh clones and worktrees
-restore links with `seihou sync`, without installed modules or shell commands.
-Do not implement this with `ln -s` commands or command receipts.
-For existing applications, `seihou sync` discovers missing declarations and
-previews the necessary adoption, fetching dependencies and reusing saved inputs.
-The same command restores already-declared links offline. Its preview can propose untracking
-unchanged matching symlinks while retaining working links; do not manipulate the
-index manually for normal adoption. Commit the manifest, source and ignore rules,
-and any accepted tracked-link removals. See `seihou help sync`.
+restore links with `seihou sync`, without installed modules. Use typed links for
+observable directory wiring rather than shell `ln` commands or command receipts.
+For existing applications, a maintainer runs ordinary `seihou update ROOT` for the
+recorded application, accepts the preview, and commits manifest, baselines, source
+assets, ignore rules and any previewed tracked-link adoption. Teammates receive
+that commit and run sync. Sync never fetches or updates specifications.
+
+### Commands and execution lifecycle
+
+The current schema uses a tagged action; new runtimes also accept pinned legacy
+`{ run, workDir, when }` records as ordinary application commands.
+
+```dhall
+commands =
+  [ S.Command::{ action = S.Command.Action.Apply "echo applied" }
+  , S.Command::{ action = S.Command.Action.Checkout "mkdir -p .local; echo ready > .local/setup" }
+  ]
+```
+
+Application commands use successful receipts during update; checkout commands are
+explicitly repeatable local setup. Run and accepted actionable update execute both
+in declaration/dependency order, while `--no-commands` suppresses both and retains
+checkout declarations. A true no-op update executes neither. Sync executes only the
+resolved checkout subset stored in manifest schema 10, without module/configuration
+resolution or receipts. Repeated sync reruns all of it. Commit scripts needed by
+these commands as project assets; never depend on a producer cache path.
+
+Checkout working directories must be real project-relative directories already
+present in a receiving clone, with no symlink ancestors. Sync preflights all links
+and working directories, creates links first, then executes commands sequentially.
+A first failure stops the phase and reports the completed prefix and unrun tail;
+retry with sync after correcting it. Arbitrary shell runs with user permissions,
+may use the network and external tools, and cannot be undone by Seihou. Authors
+must keep it repeatable and keep intended writes outside managed/tracked state.
+Removal commands accept only application actions. Removing a checkout declaration
+stops future execution and does not invent an inverse shell action.
 
 The schema also accepts `lifecycle = Some "seed"` for whole-file copy, template,
 or dhall-text steps without patches, and schema 8 introduces seed receipts.
@@ -90,7 +118,8 @@ removal = Some S.Removal::{ steps =
 
 Removal steps use `action`, `dest`, and optional `src` (a Dhall rewrite function
 under `files/` for `rewrite-file`). `S.Removal` also has `commands`.
-Without a removal declaration, `seihou remove NAME` refuses. Preview with
+Managed-file removal requires a removal declaration. Recorded checkout-only owners
+can be removed without one; this stops future setup without inventing inverse shell. Preview with
 `seihou remove NAME --dry-run`; review conflicts before using `--force`.
 
 ### Versioning and migrations

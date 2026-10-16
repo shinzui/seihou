@@ -85,6 +85,13 @@ additive co-writes and its two-layer safety check remain accepted.
 
 ## Implementation
 
+Schema 10 adds ordered resolved `checkoutCommands` to every application, the
+`CheckoutLocalCommands` capability and an adjacent lossless 9-to-10 step adding
+empty lists. Application codecs are version-selected: new-schema lists are required,
+legacy encodings omit them and cannot carry nonempty setup. Completion receipts are
+never promoted into declarations. Unknown kinds, owners and duplicate identities
+fail before effects. Sync reads supported old schemas without writing upgrades.
+
 Schema 9 adds typed checkout declarations and qualified application ownership, a `CheckoutLocalOutputs` capability, required version-selected codec, duplicate-aware raw decoding, and a lossless adjacent 8-to-9 step. No shell receipt is used to infer intent.
 
 Schema 8 adds seed receipts with a version-selected codec, `SeedReceipts` capability, and lossless adjacent 7-to-8 upgrade. Older schemas retain their representation.

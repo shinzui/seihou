@@ -1,5 +1,8 @@
 module Seihou.Core.CommandFingerprint
   ( fingerprintCommand,
+    checkoutCommandsFromOperations,
+    checkoutCommandOperation,
+    isCheckoutCommand,
   )
 where
 
@@ -23,3 +26,18 @@ fingerprintCommand RunCommandOp {command, workDir, moduleName, occurrence} =
         "occurrence=" <> T.pack (show occurrence)
       ]
 fingerprintCommand _ = Nothing
+
+-- | Capture declarations from the complete compiled plan, even when execution is disabled.
+checkoutCommandsFromOperations :: [Operation] -> [CheckoutCommand]
+checkoutCommandsFromOperations operations =
+  [ CheckoutCommand moduleName occurrence command workDir
+  | RunCommandOp {moduleName, occurrence, command, workDir, lifecycle = CheckoutCommandLifecycle} <- operations
+  ]
+
+checkoutCommandOperation :: CheckoutCommand -> Operation
+checkoutCommandOperation CheckoutCommand {moduleName, occurrence, command, workDir} =
+  RunCommandOp {moduleName, occurrence, command, workDir, lifecycle = CheckoutCommandLifecycle}
+
+isCheckoutCommand :: Operation -> Bool
+isCheckoutCommand RunCommandOp {lifecycle = CheckoutCommandLifecycle} = True
+isCheckoutCommand _ = False

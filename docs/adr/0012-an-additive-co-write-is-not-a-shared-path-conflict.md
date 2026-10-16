@@ -189,6 +189,16 @@ Certifying may compile a co-owner, but it never reconciles, migrates, or runs
 commands for one: only the selected applications' files change. Delivered by
 `docs/plans/94-gate-targeted-updates-on-the-minimum-manifest-schema.md`.
 
+Amendment (2026-10-15): when every selected contribution is
+`append-line-if-absent`, newly declared lines are a commutative set addition.
+Reconciliation adds only lines introduced since the trusted generated baseline to
+current project bytes. This preserves unrelated user appends at the same EOF and
+intentional deletion of older declared lines, without a false diff3 conflict. The
+stored generated baseline remains independent of user bytes. Other patches and
+whole-file changes retain ordinary three-way merge and ownership checks. This was
+proved by untouched-consumer adoption in
+[ExecPlan 108](../plans/108-restore-module-declared-checkout-effects-without-reapplying-modules.md).
+
 ## Consequences
 
 `seihou update <one-module>` works in the ordinary case. The rail still exists,

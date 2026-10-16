@@ -4,8 +4,10 @@ module Seihou.CLI.Status
 where
 
 import Control.Exception (SomeException, try)
+import Control.Monad (when)
 import Data.Generics.Labels ()
 import Data.Maybe (maybeToList)
+import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.CheckoutSync (checkoutAdoptionNotices)
 import Seihou.CLI.Commands (StatusOpts (..))
@@ -61,6 +63,8 @@ handleStatus opts = do
         Right plan -> do
           TIO.putStr (formatCheckoutStatus plan)
           mapM_ TIO.putStrLn (checkoutAdoptionNotices manifest)
+      let checkoutCommandCount = sum (map (length . (^. #checkoutCommands)) (manifest ^. #applications))
+      when (checkoutCommandCount > 0) (TIO.putStrLn (T.pack (show checkoutCommandCount) <> " repeatable checkout commands declared; run seihou sync to execute them."))
       mEntries <-
         if opts ^. #statusCheckUpdates && not (null (manifest ^. #modules))
           then fetchUpdateEntries

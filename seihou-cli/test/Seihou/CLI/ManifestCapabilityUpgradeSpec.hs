@@ -52,6 +52,7 @@ recordedApplication applicationId =
       context = Nothing,
       instances = [],
       commandReceipts = Map.empty,
+      checkoutCommands = [],
       appliedAt = testTime
     }
 
@@ -269,7 +270,7 @@ spec = do
         case manifestFromJSON written of
           Left err -> expectationFailure err
           Right upgraded -> do
-            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 9
+            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 10
             (^. #sharedWriteMode) <$> Map.lookup ".gitignore" (upgraded ^. #files)
               `shouldBe` Just SharedWriteAdditiveOnly
         TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` gitignoreBefore

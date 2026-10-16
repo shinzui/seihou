@@ -4,7 +4,7 @@ import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
-import Effectful (runPureEff)
+import Effectful (runEff)
 import Seihou.CLI.CommandExecution
 import Seihou.Core.CommandFingerprint (fingerprintCommand)
 import Seihou.Core.Types
@@ -26,7 +26,7 @@ laterTime = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-0
 
 commandOp :: Text -> Maybe FilePath -> ModuleName -> Int -> Operation
 commandOp command workDir moduleName occurrence =
-  RunCommandOp {command, workDir, moduleName, occurrence}
+  RunCommandOp {command, workDir, moduleName, occurrence, lifecycle = ApplicationCommand}
 
 fingerprintOf :: Operation -> CommandFingerprint
 fingerprintOf = fromJust . fingerprintCommand
@@ -78,6 +78,14 @@ spec = do
       map (^. #disposition) (plan ^. #commands)
         `shouldBe` [CommandSkippedUnchanged, CommandWillRun]
 
+    it "never lets an application receipt suppress or become checkout completion" $ do
+      let ordinary = commandOp "echo same" Nothing "app" 0
+          checkout = RunCommandOp "echo same" Nothing "app" 0 CheckoutCommandLifecycle
+          prior = Map.singleton (fingerprintOf ordinary) (receiptFor fixedTime ordinary)
+          plan = planCommands RunChangedCommands prior [checkout, ordinary]
+      map (^. #disposition) (plan ^. #commands) `shouldBe` [CommandWillRun, CommandSkippedUnchanged]
+      finalizeCommandReceipts (planCommands DisableCommands prior [checkout]) [] prior `shouldBe` Map.empty
+
     it "marks every command disabled without minting receipts" $ do
       let operations = [commandOp "echo one" Nothing "app" 0, commandOp "echo two" Nothing "app" 0]
           plan = planCommands DisableCommands Map.empty operations
@@ -89,10 +97,10 @@ spec = do
       let first = commandOp "echo first" Nothing "app" 0
           second = commandOp "echo second" (Just "subdir") "app" 0
           plan = planCommands RunAllCommands Map.empty [first, second]
-          result =
-            runPureEff $
-              runProcessPure [successMock "echo first", successMock "echo second"] $
-                executeCommandPlan laterTime plan
+      result <-
+        runEff $
+          runProcessPure [successMock "echo first", successMock "echo second"] $
+            executeCommandPlan laterTime plan
       case result of
         Right receipts -> do
           map (^. #fingerprint) receipts `shouldBe` map fingerprintOf [first, second]
@@ -104,7 +112,7 @@ spec = do
           priorReceipt = receiptFor fixedTime operation
           prior = Map.singleton (priorReceipt ^. #fingerprint) priorReceipt
           plan = planCommands RunChangedCommands prior [operation]
-          result = runPureEff $ runProcessPure [] $ executeCommandPlan laterTime plan
+      result <- runEff $ runProcessPure [] $ executeCommandPlan laterTime plan
       result `shouldBe` Right []
 
     it "returns a structured error at the first failure" $ do
@@ -119,7 +127,7 @@ spec = do
                 },
               successMock "echo later"
             ]
-          result = runPureEff $ runProcessPure mocks $ executeCommandPlan laterTime plan
+      result <- runEff $ runProcessPure mocks $ executeCommandPlan laterTime plan
       case result of
         Left err -> do
           (err ^. #exitCode) `shouldBe` 7

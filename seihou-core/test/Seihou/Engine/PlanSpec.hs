@@ -6,6 +6,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as T
 import Data.Yaml qualified as Yaml
+import Seihou.Core.CommandFingerprint (fingerprintCommand)
 import Seihou.Core.Module (loadModule)
 import Seihou.Core.Types
 import Seihou.Engine.Plan
@@ -728,6 +729,21 @@ spec = do
             T.isInfixOf "Structured" (errs !! 0) `shouldBe` True
           Right _ -> expectationFailure "Expected Left"
 
+    it "keeps checkout occurrences separate without invalidating application fingerprints" $ do
+      let ordinary = Command "echo {{value}}" Nothing Nothing ApplicationCommand
+          checkout = Command "echo {{value}}" Nothing Nothing CheckoutCommandLifecycle
+          disabled = Command "never" Nothing (Just (ExprLit False)) CheckoutCommandLifecycle
+          modul commands = Module "test" Nothing Nothing [] [] [] [] commands [] Nothing []
+          values = Map.singleton "value" (VText "resolved")
+      plain <- compilePlan "." (modul [ordinary, ordinary]) values
+      mixed <- compilePlan "." (modul [checkout, ordinary, disabled, ordinary, checkout]) values
+      case (plain, mixed) of
+        (Right old, Right operations) -> do
+          [(lifecycle, occurrence) | RunCommandOp {lifecycle, occurrence} <- operations] `shouldBe` [(CheckoutCommandLifecycle, 0), (ApplicationCommand, 0), (ApplicationCommand, 1), (CheckoutCommandLifecycle, 1)]
+          map fingerprintCommand [operation | operation@RunCommandOp {lifecycle = ApplicationCommand} <- operations] `shouldBe` map fingerprintCommand old
+          [command | RunCommandOp {command} <- operations] `shouldBe` replicate 4 "echo resolved"
+        other -> expectationFailure (show other)
+
     it "compiles unconditional command to RunCommandOp" $ do
       withFixture [("data.txt", "content")] $ \baseDir -> do
         let modul =
@@ -739,7 +755,7 @@ spec = do
                   exports = [],
                   prompts = [],
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing Managed],
-                  commands = [Command "echo hello" Nothing Nothing],
+                  commands = [Command "echo hello" Nothing Nothing ApplicationCommand],
                   dependencies = [],
                   removal = Nothing,
                   migrations = []
@@ -765,9 +781,9 @@ spec = do
                   prompts = [],
                   steps = [],
                   commands =
-                    [ Command "echo same" Nothing Nothing,
-                      Command "echo other" Nothing Nothing,
-                      Command "echo same" Nothing Nothing
+                    [ Command "echo same" Nothing Nothing ApplicationCommand,
+                      Command "echo other" Nothing Nothing ApplicationCommand,
+                      Command "echo same" Nothing Nothing ApplicationCommand
                     ],
                   dependencies = [],
                   removal = Nothing,
@@ -792,7 +808,7 @@ spec = do
                   exports = [],
                   prompts = [],
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing Managed],
-                  commands = [Command "echo skip" Nothing (Just (ExprLit False))],
+                  commands = [Command "echo skip" Nothing (Just (ExprLit False)) ApplicationCommand],
                   dependencies = [],
                   removal = Nothing,
                   migrations = []
@@ -816,7 +832,7 @@ spec = do
                   exports = [],
                   prompts = [],
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing Managed],
-                  commands = [Command "echo yes" Nothing (Just (ExprIsSet "name"))],
+                  commands = [Command "echo yes" Nothing (Just (ExprIsSet "name")) ApplicationCommand],
                   dependencies = [],
                   removal = Nothing,
                   migrations = []
@@ -840,7 +856,7 @@ spec = do
                   exports = [],
                   prompts = [],
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing Managed],
-                  commands = [Command "echo post" Nothing Nothing],
+                  commands = [Command "echo post" Nothing Nothing ApplicationCommand],
                   dependencies = [],
                   removal = Nothing,
                   migrations = []
@@ -873,7 +889,7 @@ spec = do
                   exports = [],
                   prompts = [],
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing Managed],
-                  commands = [Command "npm install" (Just "subdir") Nothing],
+                  commands = [Command "npm install" (Just "subdir") Nothing ApplicationCommand],
                   dependencies = [],
                   removal = Nothing,
                   migrations = []
@@ -898,7 +914,7 @@ spec = do
                   exports = [],
                   prompts = [],
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing Managed],
-                  commands = [Command "echo {{name}}" Nothing Nothing],
+                  commands = [Command "echo {{name}}" Nothing Nothing ApplicationCommand],
                   dependencies = [],
                   removal = Nothing,
                   migrations = []
@@ -923,7 +939,7 @@ spec = do
                   exports = [],
                   prompts = [],
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing Managed],
-                  commands = [Command "cabal build" (Just "{{name}}") Nothing],
+                  commands = [Command "cabal build" (Just "{{name}}") Nothing ApplicationCommand],
                   dependencies = [],
                   removal = Nothing,
                   migrations = []
@@ -948,7 +964,7 @@ spec = do
                   exports = [],
                   prompts = [],
                   steps = [],
-                  commands = [Command "cabal build" (Just "{{project.name}}") Nothing],
+                  commands = [Command "cabal build" (Just "{{project.name}}") Nothing ApplicationCommand],
                   dependencies = [],
                   removal = Nothing,
                   migrations = []
@@ -973,7 +989,7 @@ spec = do
                   exports = [],
                   prompts = [],
                   steps = [Step Copy "data.txt" "data.txt" Nothing Nothing Managed],
-                  commands = [Command "echo {{missing}}" Nothing Nothing],
+                  commands = [Command "echo {{missing}}" Nothing Nothing ApplicationCommand],
                   dependencies = [],
                   removal = Nothing,
                   migrations = []

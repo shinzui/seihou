@@ -6,22 +6,36 @@ module Seihou.CLI.CommandExecution
     CommandPlanSummary (..),
     CommandExecutionError (..),
     planCommands,
+    planCheckoutCommands,
     summarizeCommandPlan,
     executeCommandPlan,
     executeCommandPlanWithOutput,
     finalizeCommandReceipts,
+    CommandOutcome (..),
+    CommandOutcomeStatus (..),
+    executeCommandOutcomes,
+    commandOutcomesFailed,
+    checkCheckoutWorkDir,
   )
 where
 
+import Control.Exception (IOException, displayException, try)
+import Control.Monad (forM, forM_, when)
 import Data.Generics.Labels ()
+import Data.List (find)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (mapMaybe)
+import Data.Maybe (fromMaybe, mapMaybe)
+import Data.Text qualified as T
 import Data.Time (UTCTime)
-import Seihou.Core.CommandFingerprint (fingerprintCommand)
+import Effectful.Exception qualified as E
+import Seihou.Core.CommandFingerprint (checkoutCommandOperation, fingerprintCommand, isCheckoutCommand)
+import Seihou.Core.Path (validateCanonicalProjectPath)
 import Seihou.Core.Types
 import Seihou.Effect.Process (Process, runProcess)
 import Seihou.Prelude
+import System.Directory qualified as Directory
 import System.Exit (ExitCode (..))
+import System.FilePath qualified as Path
 
 -- | Whether a command phase runs every declaration, only declarations that
 -- lack a successful receipt, or no declarations.
@@ -85,10 +99,21 @@ planCommands policy priorReceipts =
       let disposition = case policy of
             RunAllCommands -> CommandWillRun
             RunChangedCommands
-              | Map.member fingerprint priorReceipts -> CommandSkippedUnchanged
+              | not (isCheckoutCommand operation), Map.member fingerprint priorReceipts -> CommandSkippedUnchanged
               | otherwise -> CommandWillRun
             DisableCommands -> CommandSkippedDisabled
       pure PlannedCommand {operation, fingerprint, disposition}
+
+-- | Resolved checkout instructions always run on explicit sync. This boundary
+-- accepts neither a receipt map nor an application command policy. Conversion
+-- produces only RunCommandOp, for which fingerprintCommand always returns Just.
+planCheckoutCommands :: [CheckoutCommand] -> CommandPlan
+planCheckoutCommands declarations = CommandPlan (mapMaybe planned declarations)
+  where
+    planned declaration = do
+      let operation = checkoutCommandOperation declaration
+      fingerprint <- fingerprintCommand operation
+      pure (PlannedCommand operation fingerprint CommandWillRun)
 
 -- | Count each command disposition without changing command order.
 summarizeCommandPlan :: CommandPlan -> CommandPlanSummary
@@ -104,7 +129,7 @@ summarizeCommandPlan commandPlan =
 -- | Execute runnable commands sequentially with @sh -c@. Stop at the first
 -- failure. The caller receives receipts only if the entire phase succeeds.
 executeCommandPlan ::
-  (Process :> es) =>
+  (Process :> es, IOE :> es) =>
   UTCTime ->
   CommandPlan ->
   Eff es (Either CommandExecutionError [CommandReceipt])
@@ -117,7 +142,7 @@ executeCommandPlan completedAt commandPlan = go [] (commandPlan ^. #commands)
 -- stdout behavior; library callers that only need receipts use
 -- 'executeCommandPlan'.
 executeCommandPlanWithOutput ::
-  (Process :> es) =>
+  (Process :> es, IOE :> es) =>
   UTCTime ->
   (PlannedCommand -> Text -> Text -> Eff es ()) ->
   CommandPlan ->
@@ -125,45 +150,91 @@ executeCommandPlanWithOutput ::
 executeCommandPlanWithOutput completedAt onSuccess commandPlan =
   executeCommands completedAt onSuccess [] (commandPlan ^. #commands)
 
+-- | Transient outcomes are never persisted as checkout completion history.
+data CommandOutcomeStatus = CommandSucceeded | CommandFailed | CommandSkipped | CommandNotRun
+  deriving stock (Eq, Show, Generic)
+
+data CommandOutcome = CommandOutcome
+  { command :: !PlannedCommand,
+    status :: !CommandOutcomeStatus,
+    exitCode :: !(Maybe Int),
+    stdout :: !Text,
+    stderr :: !Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+commandOutcomesFailed :: [CommandOutcome] -> Bool
+commandOutcomesFailed = any ((== CommandFailed) . (^. #status))
+
+-- | Check every component without following symlinks. Repeated immediately
+-- before checkout invocations because a preceding shell may change the path.
+checkCheckoutWorkDir :: FilePath -> Maybe FilePath -> IO (Either Text ())
+checkCheckoutWorkDir root workDir = do
+  let path = fromMaybe "." workDir
+  case if path == "." then Right () else validateCanonicalProjectPath (T.pack path) of
+    Left reason -> pure (Left reason)
+    Right () -> do
+      result <- try @IOException $ do
+        let parts = if path == "." then [] else Path.splitDirectories path
+            paths = scanl (Path.</>) root parts
+        safe <-
+          and
+            <$> forM
+              paths
+              ( \part -> do
+                  link <- Directory.pathIsSymbolicLink part
+                  directory <- Directory.doesDirectoryExist part
+                  pure (not link && directory)
+              )
+        pure $ if safe then Right () else Left ("checkout command workDir must be an existing real directory with real ancestors: " <> T.pack path)
+      pure $ either (Left . T.pack . displayException) id result
+
+-- | One shared shell executor. Capture the completed prefix and unrun tail,
+-- including launch errors; callers choose receipt publication separately.
+executeCommandOutcomes :: (Process :> es, IOE :> es) => CommandPlan -> Eff es [CommandOutcome]
+executeCommandOutcomes commandPlan = go False (commandPlan ^. #commands)
+  where
+    go _ [] = pure []
+    go failed (planned : remaining)
+      | failed = (emptyOutcome planned CommandNotRun :) <$> go True remaining
+      | planned ^. #disposition /= CommandWillRun = (emptyOutcome planned CommandSkipped :) <$> go False remaining
+      | otherwise = case planned ^. #operation of
+          operation@RunCommandOp {command, workDir} -> do
+            ready <-
+              if isCheckoutCommand operation
+                then liftIO (Directory.getCurrentDirectory >>= (\root -> checkCheckoutWorkDir root workDir))
+                else pure (Right ())
+            outcome <- case ready of
+              Left reason -> pure ((emptyOutcome planned CommandFailed) & #stderr .~ reason)
+              Right () -> do
+                launched <- E.try @IOException (runProcess "sh" ["-c", command] workDir)
+                pure $ case launched of
+                  Left err -> (emptyOutcome planned CommandFailed) & #stderr .~ T.pack (displayException err)
+                  Right (processExit, stdout, stderr) -> CommandOutcome planned (if processExit == ExitSuccess then CommandSucceeded else CommandFailed) (Just (case processExit of ExitSuccess -> 0; ExitFailure code -> code)) stdout stderr
+            (outcome :) <$> go (outcome ^. #status == CommandFailed) remaining
+          _ -> (emptyOutcome planned CommandSkipped :) <$> go False remaining
+    emptyOutcome command status = CommandOutcome command status Nothing "" ""
+
 executeCommands ::
-  (Process :> es) =>
+  (Process :> es, IOE :> es) =>
   UTCTime ->
   (PlannedCommand -> Text -> Text -> Eff es ()) ->
   [CommandReceipt] ->
   [PlannedCommand] ->
   Eff es (Either CommandExecutionError [CommandReceipt])
-executeCommands completedAt onSuccess = go
+executeCommands completedAt onSuccess completed commands = do
+  outcomes <- executeCommandOutcomes (CommandPlan commands)
+  forM_ outcomes $ \outcome -> when (outcome ^. #status == CommandSucceeded) (onSuccess (outcome ^. #command) (outcome ^. #stdout) (outcome ^. #stderr))
+  pure $ case find ((== CommandFailed) . (^. #status)) outcomes of
+    Just failed -> Left (CommandExecutionError (failed ^. #command) (fromMaybe 127 (failed ^. #exitCode)) (failed ^. #stdout) (failed ^. #stderr))
+    Nothing -> Right (reverse completed <> mapMaybe receipt outcomes)
   where
-    go completed [] = pure (Right (reverse completed))
-    go completed (planned : remaining) = case planned ^. #disposition of
-      CommandSkippedUnchanged -> go completed remaining
-      CommandSkippedDisabled -> go completed remaining
-      CommandWillRun -> case planned ^. #operation of
-        RunCommandOp {command, workDir, moduleName} -> do
-          (processExit, stdout, stderr) <- runProcess "sh" ["-c", command] workDir
-          case processExit of
-            ExitSuccess -> do
-              onSuccess planned stdout stderr
-              let receipt =
-                    CommandReceipt
-                      { fingerprint = planned ^. #fingerprint,
-                        moduleName,
-                        command,
-                        workDir,
-                        completedAt
-                      }
-              go (receipt : completed) remaining
-            ExitFailure exitCode ->
-              pure
-                ( Left
-                    CommandExecutionError
-                      { command = planned,
-                        exitCode,
-                        stdout,
-                        stderr
-                      }
-                )
-        _ -> go completed remaining
+    receipt outcome
+      | outcome ^. #status /= CommandSucceeded = Nothing
+      | isCheckoutCommand (outcome ^. #command . #operation) = Nothing
+      | otherwise = case outcome ^. #command . #operation of
+          RunCommandOp {moduleName, command, workDir} -> Just (CommandReceipt (outcome ^. #command . #fingerprint) moduleName command workDir completedAt)
+          _ -> Nothing
 
 -- | Produce the accepted receipt map for the plan's current declaration set.
 -- Removed commands are dropped. Fresh successes replace old receipts;
@@ -178,13 +249,14 @@ finalizeCommandReceipts commandPlan completed priorReceipts =
   where
     completedByFingerprint = Map.fromList [(receipt ^. #fingerprint, receipt) | receipt <- completed]
 
-    receiptFor planned =
-      case Map.lookup (planned ^. #fingerprint) completedByFingerprint of
-        Just receipt -> Just (planned ^. #fingerprint, receipt)
-        Nothing -> case planned ^. #disposition of
-          CommandWillRun -> Nothing
-          CommandSkippedUnchanged -> retainPrior planned
-          CommandSkippedDisabled -> retainPrior planned
+    receiptFor planned
+      | isCheckoutCommand (planned ^. #operation) = Nothing
+      | otherwise = case Map.lookup (planned ^. #fingerprint) completedByFingerprint of
+          Just receipt -> Just (planned ^. #fingerprint, receipt)
+          Nothing -> case planned ^. #disposition of
+            CommandWillRun -> Nothing
+            CommandSkippedUnchanged -> retainPrior planned
+            CommandSkippedDisabled -> retainPrior planned
 
     retainPrior planned =
       (planned ^. #fingerprint,) <$> Map.lookup (planned ^. #fingerprint) priorReceipts

@@ -71,12 +71,13 @@ Adapt to the user's situation, but the general flow is:
    a read-only diagnosis; `seihou agent upgrade TARGET` starts repair assistance.
 
 10. **Fresh clones and worktrees**: At the Git root, run `seihou sync` to rebuild
-    declared ignored checkout links. No installed producers are needed. If no
-    declarations exist yet, the same sync command discovers and previews the
-    required setup. Accept it and commit the manifest/baselines/ignore rules/source
-    files and any previewed tracked-link removals. Do not make the user identify
-    module targets or run a separate update before sync.
-    Do not hand-edit manifest JSON or the Git index for routine adoption.
+    declared ignored checkout links and execute recorded repeatable commands.
+    No installed producers are needed. With no declarations sync reports zero work.
+    A maintainer adopts changed specifications through `seihou update ROOT`, using
+    the recorded application target and saved inputs, then commits manifest,
+    baselines, ignore rules and source assets. Teammates receive the commit and sync.
+    Do not hand-edit manifest JSON or the Git index for routine adoption. Review
+    checkout shell instructions; they run with user permissions and must be repeatable.
 
 Skip steps that don't apply. If the user already knows which module and variables
 they want, go directly to preview and execution.
@@ -116,7 +117,7 @@ Suggest these commands when the user needs to run them locally:
   - `-c CTX`: override context for config lookup
   - `--no-commands`: skip shell command steps
 - `seihou remove MODULE [--dry-run] [--force]` — remove an applied module by executing its declared removal steps
-  - Only works for modules with a `removal` section (not `None`)
+  - Managed-file removal needs a `removal` section; recorded checkout-only owners can be removed without a custom spec. Removal stops future setup and does not undo arbitrary shell effects.
   - `--dry-run`: preview the removal plan (Delete, Strip, Rewrite, Run operations)
   - `--force`: skip confirmation prompts
 - `seihou agent run BLUEPRINT [PROMPT] [--var K=V] [--no-baseline]` — run a blueprint
@@ -130,7 +131,7 @@ Suggest these commands when the user needs to run them locally:
 ### Updates, checkout restoration, and recovery
 - `seihou update [TARGET] [--dry-run] [--var K=V]` — normal recorded-project update
 - `seihou update TARGET --reconfigure` — intentionally resolve inputs afresh
-- `seihou sync [--dry-run] [--json] [--yes]` — restore links or preview/accept first-time adoption; --yes accepts adoption for automation
+- `seihou sync [--dry-run] [--json]` — restore recorded links and execute repeatable checkout commands; maintainer adoption uses ordinary update
 - `seihou agent upgrade TARGET --check` — diagnose update readiness without repairs
 - `seihou agent upgrade TARGET` — launch assistance when ordinary update is blocked
 - `seihou manifest upgrade [--dry-run]` — explicitly convert older manifest schemas

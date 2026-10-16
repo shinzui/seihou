@@ -35,6 +35,7 @@ import Seihou.CLI.Shared (formatVarError)
 import Seihou.CLI.Update.Types
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
 import Seihou.Core.Checkout (CheckoutAction (..), CheckoutEntry (..), CheckoutError (..), CheckoutPlan (..))
+import Seihou.Core.CommandFingerprint (isCheckoutCommand)
 import Seihou.Core.Migration (MigrationPlan (..), MigrationPlanError (..))
 import Seihou.Core.Types
   ( ApplicationId (..),
@@ -122,8 +123,10 @@ renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
       <> [ renderInputs (plan ^. #inputChanges),
            "Migrations:  " <> count (length (plan ^. #migrations)) <> migrationCaveat plan,
            renderFiles (reconciliationSummary (plan ^. #reconciliation)),
-           renderCommands (summarizeCommandPlan (plan ^. #commandPlan))
+           if isUpdateNoOp plan then "Commands:    0 will run (no project update)" else renderCommands (summarizeCommandPlan (plan ^. #commandPlan))
          ]
+      <> ["Checkout declarations changed: " <> application ^. #candidate . #applicationId . #unApplicationId | application <- plan ^. #plannedApplications, maybe [] (^. #checkoutCommands) (application ^. #previous) /= application ^. #candidate . #checkoutCommands]
+      <> ["  checkout " <> (if isUpdateNoOp plan then "not-run-no-update" else dispositionText (command ^. #disposition)) <> ": " <> fromMaybe "" (commandText (command ^. #operation)) | command <- plan ^. #commandPlan . #commands, isCheckoutCommand (command ^. #operation)]
       <> T.lines (renderCheckoutPlan True (plan ^. #checkoutPlan))
       <> ["Adopt link: " <> T.pack path <> " (stop tracking in Git; keep working link)" | path <- Map.keys (plan ^. #checkoutAdoptions)]
       <> conflictLines (plan ^. #reconciliation)
@@ -153,16 +156,16 @@ outputValue (UpdatePlanOutput (UpdatePlanView plan)) =
   object
     [ "schemaVersion" .= (1 :: Int),
       "outcome" .= ("plan" :: Text),
-      "alreadyUpToDate" .= planLooksUnchanged plan,
+      "alreadyUpToDate" .= isUpdateNoOp plan,
       "manifestPreparation" .= fmap preparationValue (displayedPreparation plan),
       "applications" .= map applicationIdText (plan ^. #applications),
       "versions" .= map versionValue (plan ^. #versionChanges),
       "inputs" .= inputValue (plan ^. #inputChanges),
       "migrations" .= map migrationValue (plan ^. #migrations),
-      "checkout" .= checkoutReportJSON (CheckoutSyncResult (plan ^. #snapshot . #projectRoot) True (plan ^. #checkoutPlan) (CheckoutExecution Map.empty [] Nothing) []),
+      "checkout" .= checkoutReportJSON (CheckoutSyncResult (plan ^. #snapshot . #projectRoot) True (plan ^. #checkoutPlan) (CheckoutExecution Map.empty [] Nothing) [] [] []),
       "checkoutAdoptions" .= Map.keys (plan ^. #checkoutAdoptions),
       "files" .= map fileValue (Map.toAscList (plan ^. #reconciliation . #files)),
-      "commands" .= map commandValue (plan ^. #commandPlan . #commands),
+      "commands" .= map (commandValue (isUpdateNoOp plan)) (plan ^. #commandPlan . #commands),
       "warnings" .= map warningText (plan ^. #warnings)
     ]
 outputValue (UpdateAppliedOutput (UpdateResultView result)) =
@@ -384,13 +387,14 @@ resolutionFor (FileConflict _ _ _ _ _ _ resolution) = resolutionText . (^. #choi
 resolutionFor (FileOrphanEdited _ _ _ _ choice) = orphanChoiceText <$> choice
 resolutionFor _ = Nothing
 
-commandValue :: PlannedCommand -> Value
-commandValue planned =
+commandValue :: Bool -> PlannedCommand -> Value
+commandValue noUpdate planned =
   object
     [ "fingerprint" .= fingerprintText (planned ^. #fingerprint),
-      "status" .= dispositionText (planned ^. #disposition),
+      "status" .= (if noUpdate && planned ^. #disposition == CommandWillRun then "not-run-no-update" else dispositionText (planned ^. #disposition)),
       "module" .= commandModule (planned ^. #operation),
-      "command" .= commandText (planned ^. #operation)
+      "command" .= commandText (planned ^. #operation),
+      "lifecycle" .= (if isCheckoutCommand (planned ^. #operation) then "checkout" else "application" :: Text)
     ]
 
 commandModule :: Operation -> Maybe Text
@@ -745,28 +749,6 @@ summaryText summary =
     <> " updated, "
     <> count (summary ^. #safeDeletes)
     <> " deleted"
-
-planLooksUnchanged :: UpdatePlan -> Bool
-planLooksUnchanged plan =
-  plan ^. #checkoutOutputs == plan ^. #snapshot . #originalManifest . #checkoutOutputs
-    && Map.null (plan ^. #checkoutAdoptions)
-    && all ((== UnchangedLink) . (^. #action)) (plan ^. #checkoutPlan . #entries)
-    && isNothing (plan ^. #manifestPreparation)
-    && null (plan ^. #versionChanges)
-    && null (plan ^. #migrations)
-    && plan ^. #inputChanges . #overridden == 0
-    && plan ^. #inputChanges . #newlyResolved == 0
-    && plan ^. #inputChanges . #removed == 0
-    && (summarizeCommandPlan (plan ^. #commandPlan)) ^. #willRun == 0
-    && all isUnchanged (Map.elems (plan ^. #reconciliation . #files))
-  where
-    -- Kept in step with 'Seihou.CLI.Update.isUpdateNoOp': a file whose bytes
-    -- are unchanged still counts as a change when this plan would record a
-    -- different shared-write mode than the manifest holds, so @alreadyUpToDate@
-    -- does not claim otherwise.
-    isUnchanged (FileUnchanged desired _ _ prior) =
-      maybe True (\record -> record ^. #sharedWriteMode == recordedSharedWriteMode (plan ^. #reconciliation . #applicationIds) desired prior) prior
-    isUnchanged _ = False
 
 count :: Int -> Text
 count = T.pack . show

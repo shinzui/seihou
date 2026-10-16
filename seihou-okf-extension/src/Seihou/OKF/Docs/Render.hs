@@ -53,6 +53,7 @@ import Seihou.Core.Types
     Blueprint (..),
     BlueprintFile (..),
     Command (..),
+    CommandLifecycle (..),
     CommandVar (..),
     Dependency (..),
     Expr,
@@ -602,8 +603,8 @@ renderCommands :: [Command] -> T.Text
 renderCommands commands = T.unlines (renderCommand <$> commands)
 
 renderCommand :: Command -> T.Text
-renderCommand Command {run, workDir, condition} =
-  "- `" <> run <> "`" <> renderWorkDir workDir <> renderCondition condition
+renderCommand Command {run, workDir, condition, lifecycle} =
+  "- `" <> run <> "`" <> renderWorkDir workDir <> renderCondition condition <> (if lifecycle == CheckoutCommandLifecycle then " (repeatable checkout setup; seihou sync)" else "")
 
 renderWorkDir :: Maybe T.Text -> T.Text
 renderWorkDir = foldMap (\dir -> " in `" <> dir <> "`")

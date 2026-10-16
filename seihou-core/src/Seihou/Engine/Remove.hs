@@ -193,10 +193,11 @@ buildStepOp manifest _modName step = case step ^. #action of
       Right (RewriteOp dest src)
 
 buildCommandOp :: Command -> Either RemovalError RemovalOp
-buildCommandOp command =
-  case traverse (validateRemovalPath "remove-command workDir") (command ^. #workDir) of
-    Left err -> Left err
-    Right safeWorkDir -> Right (RemovalCommandOp (command ^. #run) (fmap T.pack safeWorkDir))
+buildCommandOp command
+  | command ^. #lifecycle == CheckoutCommandLifecycle = Left (RemovalUnsafePath "remove-command" "" "checkout setup is not a removal command")
+  | otherwise = case traverse (validateRemovalPath "remove-command workDir") (command ^. #workDir) of
+      Left err -> Left err
+      Right safeWorkDir -> Right (RemovalCommandOp (command ^. #run) (fmap T.pack safeWorkDir))
 
 validateRemovalPath :: Text -> Text -> Either RemovalError FilePath
 validateRemovalPath label path =
@@ -396,7 +397,7 @@ selectCheckoutRemoval manifest requested selectedApplication = case candidates o
           | other ^. #applicationId /= appId = Just other
           | otherwise =
               let retained = filter (\instanceState -> qualifiedName (ModuleInstance (instanceState ^. #name) (instanceState ^. #parentVars)) /= qualified) (other ^. #instances)
-               in if null retained then Nothing else Just (other & #instances .~ retained & #commandReceipts %~ Map.filter ((/= qualified) . (^. #moduleName)))
+               in if null retained then Nothing else Just (other & #instances .~ retained & #commandReceipts %~ Map.filter ((/= qualified) . (^. #moduleName)) & #checkoutCommands %~ filter ((/= qualified) . (^. #moduleName)))
         applications = mapMaybe keepApplication (manifest ^. #applications)
         files = Map.mapMaybe keepFile (manifest ^. #files)
         stillNeeded applied =
@@ -416,5 +417,5 @@ selectCheckoutRemoval manifest requested selectedApplication = case candidates o
         state <- app ^. #instances,
         let qualified = qualifiedName (ModuleInstance (state ^. #name) (state ^. #parentVars)),
         requested == qualified || requested == state ^. #name,
-        any (\record -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) (record ^. #owners))) (Map.elems (manifest ^. #checkoutOutputs))
+        any ((== qualified) . (^. #moduleName)) (app ^. #checkoutCommands) || any (\record -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) (record ^. #owners))) (Map.elems (manifest ^. #checkoutOutputs))
       ]

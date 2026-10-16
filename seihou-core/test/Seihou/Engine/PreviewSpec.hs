@@ -117,7 +117,7 @@ spec = do
         _ -> expectationFailure "Expected DirPreview"
 
     it "produces CommandPreview for RunCommandOp" $ do
-      let ops = [RunCommandOp "cabal build" Nothing modName 0]
+      let ops = [RunCommandOp "cabal build" Nothing modName 0 ApplicationCommand]
           result = buildPreview ops Nothing Map.empty
       length result `shouldBe` 1
       case head result of
@@ -128,9 +128,9 @@ spec = do
 
     it "shows command ownership only when identical text has multiple owners" $ do
       let ops =
-            [ RunCommandOp "cabal build" Nothing modName 0,
-              RunCommandOp "cabal build" Nothing modName2 0,
-              RunCommandOp "cabal test" Nothing modName 0
+            [ RunCommandOp "cabal build" Nothing modName 0 ApplicationCommand,
+              RunCommandOp "cabal build" Nothing modName2 0 ApplicationCommand,
+              RunCommandOp "cabal test" Nothing modName 0 ApplicationCommand
             ]
           result = buildPreview ops Nothing Map.empty
       result

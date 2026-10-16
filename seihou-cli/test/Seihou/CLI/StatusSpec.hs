@@ -86,6 +86,7 @@ mkApplication target modules =
       context = Nothing,
       instances = map mkInstance modules,
       commandReceipts = Map.empty,
+      checkoutCommands = [],
       appliedAt = fixedTime
     }
   where

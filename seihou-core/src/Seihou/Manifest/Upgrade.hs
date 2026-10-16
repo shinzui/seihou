@@ -33,7 +33,7 @@ module Seihou.Manifest.Upgrade
   )
 where
 
-import Control.Monad (foldM, unless)
+import Control.Monad (foldM, forM, unless)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -58,6 +58,7 @@ data UpgradeStepAction
     MakeSharedWriteEvidenceExplicit
   | AddEmptySeedReceipts
   | AddEmptyCheckoutOutputs
+  | AddEmptyCheckoutCommands
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
 -- | Whether a step may be staged automatically.
@@ -117,7 +118,8 @@ manifestUpgradeSteps =
     step 5 ConvertMachineLocalPaths "portable artifact origins",
     step 6 MakeSharedWriteEvidenceExplicit "explicit shared-write evidence",
     step 7 AddEmptySeedReceipts "seed receipts",
-    step 8 AddEmptyCheckoutOutputs "checkout outputs"
+    step 8 AddEmptyCheckoutOutputs "checkout outputs",
+    step 9 AddEmptyCheckoutCommands "repeatable checkout commands"
   ]
   where
     step from stepAction =
@@ -129,6 +131,7 @@ upgradeStepKind ConvertMachineLocalPaths = InferenceBearingUpgrade
 upgradeStepKind MakeSharedWriteEvidenceExplicit = LosslessUpgrade
 upgradeStepKind AddEmptySeedReceipts = LosslessUpgrade
 upgradeStepKind AddEmptyCheckoutOutputs = LosslessUpgrade
+upgradeStepKind AddEmptyCheckoutCommands = LosslessUpgrade
 
 -- | The contiguous steps from @source@ to @target@. Planning from a version
 -- to itself is an empty path.
@@ -184,6 +187,19 @@ applyLosslessUpgradeStep upgradeStep document = do
     Left (StepVersionMismatch upgradeStep actual)
   transformed <- case upgradeStep ^. #action of
     StampVersion -> Right document
+    AddEmptyCheckoutCommands -> case document of
+      Aeson.Object fields -> do
+        applications <- case KeyMap.lookup "applications" fields of
+          Nothing -> Right []
+          Just value -> first (MalformedDocument actual . T.pack) (Aeson.fromJSON value & \case Aeson.Error err -> Left err; Aeson.Success xs -> Right (xs :: [Aeson.Value]))
+        upgraded <- forM applications $ \case
+          Aeson.Object app -> case KeyMap.lookup "checkoutCommands" app of
+            Nothing -> Right (Aeson.Object (KeyMap.insert "checkoutCommands" (Aeson.toJSON ([] :: [Aeson.Value])) app))
+            Just (Aeson.Array xs) | null xs -> Right (Aeson.Object app)
+            _ -> Left (MalformedDocument actual "schema 9 cannot contain checkout commands")
+          _ -> Left (MalformedDocument actual "application must be an object")
+        Right (Aeson.Object (KeyMap.insert "applications" (Aeson.toJSON upgraded) fields))
+      _ -> Left (MalformedDocument actual "manifest must be an object")
     AddEmptyCheckoutOutputs -> case document of
       Aeson.Object fields -> case KeyMap.lookup "checkoutOutputs" fields of
         Nothing -> Right (Aeson.Object (KeyMap.insert "checkoutOutputs" (Aeson.object []) fields))

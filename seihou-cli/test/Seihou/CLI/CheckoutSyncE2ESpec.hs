@@ -6,10 +6,12 @@ import Data.Aeson.KeyMap qualified as KM
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.List (isInfixOf)
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.SeihouBinary (seihouBinary)
+import Seihou.Engine.UpdateTransaction (beginUpdateTransaction)
 import System.Directory qualified as D
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..))
@@ -57,7 +59,7 @@ fixtureModule name source destination secondSource secondDestination version ena
       "vars = [S.VarDecl::{name = \"source\", type = \"text\", default = Some \"" <> source <> "\"}, S.VarDecl::{name = \"enabled\", type = \"bool\", default = Some \"" <> enabled <> "\"}],",
       "steps = [ S.Step::{strategy = \"symlink\", src = \"{{source}}\", dest = \"" <> destination <> "\", lifecycle = Some \"checkout\", when = Some \"Eq enabled true\"},",
       "S.Step::{strategy = \"symlink\", src = \"" <> secondSource <> "\", dest = \"" <> secondDestination <> "\", lifecycle = Some \"checkout\"}],",
-      "commands = [S.Command::{run = \"touch command-sentinel\"}] }"
+      "commands = [S.Command::{action = S.Command.Action.Apply \"touch command-sentinel\"}] }"
     ]
 
 prepare root home source destination secondSource secondDestination = do
@@ -118,7 +120,7 @@ prepareAdoptionWithTracking temp failing tracked = do
     ( moduleBody
         "1.0.0"
         "[] : List S.Step.Type"
-        "[S.Command::{run = \"mkdir -p .local && ln -s ../config/editor .local/config\"}]"
+        "[S.Command::{action = S.Command.Action.Apply \"mkdir -p .local && ln -s ../config/editor .local/config\"}]"
     )
   _ <- git remote ["init", "-q"]
   _ <- commit remote "test: publish command producer"
@@ -134,7 +136,7 @@ prepareAdoptionWithTracking temp failing tracked = do
     pure ()
   _ <- git root ["add", "-f", ".local/unrelated"]
   _ <- commit root "test: record legacy application and discovery links"
-  let commands = if failing then "[S.Command::{run = \"exit 42\"}]" else "[] : List S.Command.Type"
+  let commands = if failing then "[S.Command::{action = S.Command.Action.Apply \"exit 42\"}]" else "[] : List S.Command.Type"
   TIO.writeFile
     (remote </> "module.dhall")
     ( moduleBody
@@ -145,30 +147,263 @@ prepareAdoptionWithTracking temp failing tracked = do
   _ <- commit remote "test: publish checkout declarations"
   pure (binary, root, home)
 
+-- A small command-only producer using the same schema and compiler as all modules.
+setupCommand lifecycle text = "S.Command::{action = S.Command.Action." <> lifecycle <> " \"" <> text <> "\"}"
+
+commandModuleBody name commands dependencies =
+  "let S = ./schema/package.dhall in S.Module::{name = \"" <> name <> "\", version = Some \"1.0.0\", commands = [" <> T.intercalate "," commands <> "], dependencies = " <> dependencies <> "}"
+
 tests :: IO TestTree
 tests = testSpec "checkout sync and adoption" $ do
-  it "owns adoption from an old clone and restores a teammate's fresh clone" $
+  it "restores recorded checkout commands in a fresh clone without producers or application replay" $
+    withSystemTempDirectory "checkout-command-clone" $ \temp -> do
+      let original = temp </> "original"
+          clone = temp </> "different-checkout"
+          home = temp </> "empty-home"
+      D.createDirectoryIfMissing True original
+      (binary, moduleDir) <- prepare original home "config/editor" ".editor/config" "shared/assets" ".local/assets"
+      let action = "< Apply : Text | Checkout : Text >"
+          command lifecycle text = "{action = " <> action <> "." <> lifecycle <> " \"" <> text <> "\", workDir = None Text, when = None Text}"
+          body = T.replace "commands = [S.Command::{action = S.Command.Action.Apply \"touch command-sentinel\"}]" ("commands = [" <> command "Checkout" "mkdir -p .local; printf '{{source}}' > .local/setup" <> "," <> command "Apply" "touch command-sentinel" <> "]") (fixtureModule "demo" "config/editor" ".editor/config" "shared/assets" ".local/assets" "2.0.0" "true")
+      TIO.writeFile (moduleDir </> "module.dhall") body
+      _ <- success binary original home ["update", "demo", "--json"]
+      D.doesPathExist (original </> "command-sentinel") `shouldReturn` False
+      TIO.readFile (original </> ".local/setup") `shouldReturn` "config/editor"
+      _ <- git original ["add", "."]
+      _ <- git original ["commit", "-qm", "test: record repeatable setup"]
+      _ <- git original ["clone", "-q", original, clone]
+      -- The producer and original checkout are now unavailable to the receiver.
+      D.renameDirectory original (temp </> "unavailable-original")
+      before <- snapshot clone
+      manifest <- BS.readFile (clone </> ".seihou/manifest.json")
+      dry <- success binary clone (temp </> "receiver-home") ["sync", "--dry-run", "--json"]
+      dry `shouldSatisfy` isInfixOf "would-run"
+      D.doesPathExist (clone </> ".local/setup") `shouldReturn` False
+      _ <- success binary clone (temp </> "receiver-home") ["sync"]
+      TIO.readFile (clone </> ".local/setup") `shouldReturn` "config/editor"
+      D.getSymbolicLinkTarget (clone </> ".editor/config") `shouldReturn` "../config/editor"
+      D.doesPathExist (clone </> "command-sentinel") `shouldReturn` False
+      D.removeFile (clone </> ".local/setup")
+      _ <- success binary clone (temp </> "receiver-home") ["sync"]
+      TIO.readFile (clone </> ".local/setup") `shouldReturn` "config/editor"
+      snapshot clone `shouldReturn` before
+      BS.readFile (clone </> ".seihou/manifest.json") `shouldReturn` manifest
+
+  it "keeps command-only updates as no-ops, previews declaration changes and persists disabled setup" $
+    withSystemTempDirectory "checkout-command-noop" $ \temp -> do
+      let root = temp </> "project"; home = temp </> "home"
+      D.createDirectoryIfMissing True root
+      (binary, moduleDir) <- prepare root home "config/editor" ".editor/config" "shared/assets" ".local/assets"
+      let body value = commandModuleBody "demo" [setupCommand "Checkout" ("mkdir -p .local; printf '" <> value <> "' > .local/setup")] "[] : List S.Dependency.Type"
+      TIO.writeFile (moduleDir </> "module.dhall") (body "first")
+      _ <- success binary root home ["run", "demo", "--force", "--no-commands"]
+      D.doesPathExist (root </> ".local/setup") `shouldReturn` False
+      manifest <- BS.readFile (root </> ".seihou/manifest.json")
+      forM_ [False, True] $ \deleted -> do
+        when deleted $ do
+          _ <- success binary root home ["sync"]
+          D.removeFile (root </> ".local/setup")
+        output <- success binary root home ["update", "demo"]
+        output `shouldSatisfy` isInfixOf "Already up to date."
+        json <- success binary root home ["update", "demo", "--json"]
+        json `shouldSatisfy` isInfixOf "not-run-no-update"
+        BS.readFile (root </> ".seihou/manifest.json") `shouldReturn` manifest
+        D.doesPathExist (root </> ".local/setup") `shouldReturn` False
+      _ <- success binary root home ["sync"]
+      TIO.readFile (root </> ".local/setup") `shouldReturn` "first"
+      TIO.writeFile (moduleDir </> "module.dhall") (body "second")
+      dry <- success binary root home ["update", "demo", "--dry-run", "--json"]
+      dry `shouldSatisfy` isInfixOf "second"
+      dry `shouldSatisfy` isInfixOf "\"alreadyUpToDate\":false"
+      _ <- success binary root home ["update", "demo", "--no-commands", "--json"]
+      TIO.readFile (root </> ".local/setup") `shouldReturn` "first"
+      _ <- success binary root home ["sync"]
+      TIO.readFile (root </> ".local/setup") `shouldReturn` "second"
+      D.removeFile (root </> ".local/setup")
+      _ <- success binary root home ["update", "demo", "--run-all-commands", "--json"]
+      TIO.readFile (root </> ".local/setup") `shouldReturn` "second"
+
+  it "reports a completed prefix and unrun tail, then repeats setup on retry without receipts" $
+    withSystemTempDirectory "checkout-command-retry" $ \temp -> do
+      let root = temp </> "project"; home = temp </> "home"
+      D.createDirectoryIfMissing True root
+      (binary, moduleDir) <- prepare root home "config/editor" ".editor/config" "shared/assets" ".local/assets"
+      TIO.writeFile
+        (moduleDir </> "module.dhall")
+        ( commandModuleBody
+            "demo"
+            [setupCommand "Checkout" "mkdir -p .local; echo prefix > .local/prefix", setupCommand "Checkout" "echo captured-output; test -f .local/allow", setupCommand "Checkout" "echo tail > .local/tail"]
+            "[] : List S.Dependency.Type"
+        )
+      _ <- success binary root home ["run", "demo", "--force", "--no-commands"]
+      before <- snapshot root
+      manifest <- BS.readFile (root </> ".seihou/manifest.json")
+      (code, output, _) <- invoke binary root home ["sync", "--json"]
+      code `shouldSatisfy` (/= ExitSuccess)
+      (A.eitherDecode (LBS.fromStrict (TE.encodeUtf8 (T.pack output))) :: Either String A.Value) `shouldSatisfy` either (const False) (const True)
+      forM_ ["succeeded", "failed", "not-run", "captured-output"] $ \expected -> output `shouldSatisfy` isInfixOf expected
+      D.doesPathExist (root </> ".local/tail") `shouldReturn` False
+      TIO.writeFile (root </> ".local/allow") "retry\n"
+      D.removeFile (root </> ".local/prefix")
+      _ <- success binary root home ["sync"]
+      TIO.readFile (root </> ".local/prefix") `shouldReturn` "prefix\n"
+      TIO.readFile (root </> ".local/tail") `shouldReturn` "tail\n"
+      snapshot root `shouldReturn` before
+      BS.readFile (root </> ".seihou/manifest.json") `shouldReturn` manifest
+
+  it "removes a command-only dependency instance without a producer while retaining sibling setup" $
+    withSystemTempDirectory "checkout-command-remove" $ \temp -> do
+      let root = temp </> "project"; home = temp </> "home"
+      D.createDirectoryIfMissing True root
+      (binary, moduleDir) <- prepare root home "config/editor" ".editor/config" "shared/assets" ".local/assets"
+      let child = root </> ".seihou/modules/child"
+      D.createDirectoryIfMissing True (child </> "schema")
+      schemaFiles <- D.listDirectory (moduleDir </> "schema")
+      forM_ schemaFiles $ \file -> D.copyFile (moduleDir </> "schema" </> file) (child </> "schema" </> file)
+      TIO.writeFile (child </> "module.dhall") (commandModuleBody "child" [setupCommand "Checkout" "mkdir -p .local; echo child > .local/child; echo child >> .local/order"] "[] : List S.Dependency.Type")
+      TIO.writeFile (moduleDir </> "module.dhall") (commandModuleBody "demo" [setupCommand "Checkout" "mkdir -p .local; echo parent > .local/parent; echo parent >> .local/order"] "[S.Dependency::{module = \"child\"}]")
+      _ <- success binary root home ["run", "demo", "--force"]
+      TIO.readFile (root </> ".local/order") `shouldReturn` "child\nparent\n"
+      D.renameDirectory (root </> ".seihou/modules") (temp </> "unavailable-producers")
+      _ <- success binary root home ["remove", "child", "--force"]
+      D.removeFile (root </> ".local/child")
+      D.removeFile (root </> ".local/parent")
+      _ <- success binary root home ["sync"]
+      D.doesPathExist (root </> ".local/child") `shouldReturn` False
+      TIO.readFile (root </> ".local/parent") `shouldReturn` "parent\n"
+
+  forM_ ["Apply", "Checkout"] $ \failingLifecycle -> do
+    it ("retains accepted run declarations after " <> T.unpack failingLifecycle <> " failure and sync retries only setup") $
+      withSystemTempDirectory "checkout-run-failure" $ \temp -> do
+        let root = temp </> "project"; home = temp </> "home"
+        D.createDirectoryIfMissing True root
+        (binary, moduleDir) <- prepare root home "config/editor" ".editor/config" "shared/assets" ".local/assets"
+        TIO.writeFile
+          (moduleDir </> "module.dhall")
+          ( commandModuleBody
+              "demo"
+              [setupCommand "Checkout" "mkdir -p .local; echo prefix > .local/prefix", setupCommand failingLifecycle "test -f .local/allow", setupCommand "Checkout" "echo tail > .local/tail"]
+              "[] : List S.Dependency.Type"
+          )
+        (code, _, _) <- invoke binary root home ["run", "demo", "--force"]
+        code `shouldSatisfy` (/= ExitSuccess)
+        recorded <- TIO.readFile (root </> ".seihou/manifest.json")
+        recorded `shouldSatisfy` T.isInfixOf "echo prefix"
+        recorded `shouldSatisfy` T.isInfixOf "echo tail"
+        if failingLifecycle == "Checkout" then recorded `shouldSatisfy` T.isInfixOf "test -f .local/allow" else recorded `shouldNotSatisfy` T.isInfixOf "test -f .local/allow"
+        D.doesPathExist (root </> ".local/tail") `shouldReturn` False
+        when (failingLifecycle == "Checkout") $ TIO.writeFile (root </> ".local/allow") "retry\n"
+        _ <- success binary root home ["sync"]
+        TIO.readFile (root </> ".local/tail") `shouldReturn` "tail\n"
+        TIO.readFile (root </> ".seihou/manifest.json") `shouldReturn` recorded
+
+    it ("rolls back proposed checkout declarations on " <> T.unpack failingLifecycle <> " update failure") $
+      withSystemTempDirectory "checkout-update-failure" $ \temp -> do
+        let root = temp </> "project"; home = temp </> "home"
+        D.createDirectoryIfMissing True root
+        (binary, moduleDir) <- prepare root home "config/editor" ".editor/config" "shared/assets" ".local/assets"
+        TIO.writeFile (moduleDir </> "module.dhall") (commandModuleBody "demo" [setupCommand "Checkout" "mkdir -p .local; echo accepted > .local/accepted"] "[] : List S.Dependency.Type")
+        _ <- success binary root home ["run", "demo", "--force"]
+        manifest <- BS.readFile (root </> ".seihou/manifest.json")
+        before <- snapshot root
+        TIO.writeFile
+          (moduleDir </> "module.dhall")
+          ( commandModuleBody
+              "demo"
+              [setupCommand "Checkout" "mkdir -p .local; echo proposed > .local/proposed", setupCommand failingLifecycle "exit 42", setupCommand "Checkout" "echo tail > .local/tail"]
+              "[] : List S.Dependency.Type"
+          )
+        (code, _, _) <- invoke binary root home ["update", "demo", "--json"]
+        code `shouldSatisfy` (/= ExitSuccess)
+        BS.readFile (root </> ".seihou/manifest.json") `shouldReturn` manifest
+        snapshot root `shouldReturn` before
+        TIO.readFile (root </> ".local/proposed") `shouldReturn` "proposed\n"
+        D.removeFile (root </> ".local/accepted")
+        _ <- success binary root home ["sync"]
+        TIO.readFile (root </> ".local/accepted") `shouldReturn` "accepted\n"
+        D.doesPathExist (root </> ".local/tail") `shouldReturn` False
+
+  it "preflights all working directories and rechecks each after earlier checkout shell" $
+    withSystemTempDirectory "checkout-command-workdir" $ \temp -> do
+      let root = temp </> "project"; home = temp </> "home"
+      D.createDirectoryIfMissing True root
+      (binary, moduleDir) <- prepare root home "config/editor" ".editor/config" "shared/assets" ".local/assets"
+      D.createDirectoryIfMissing True (root </> ".local/wd")
+      let second = "S.Command::{action = S.Command.Action.Checkout \"touch launched\", workDir = Some \".local/wd\"}"
+      TIO.writeFile
+        (moduleDir </> "module.dhall")
+        ( commandModuleBody
+            "demo"
+            [setupCommand "Checkout" "mv .local/wd .local/real; ln -s real .local/wd", second, setupCommand "Checkout" "touch .local/tail"]
+            "[] : List S.Dependency.Type"
+        )
+      _ <- success binary root home ["run", "demo", "--force", "--no-commands"]
+      (code, output, _) <- invoke binary root home ["sync", "--json"]
+      code `shouldSatisfy` (/= ExitSuccess)
+      forM_ ["succeeded", "failed", "not-run", "existing real directory"] $ \expected -> output `shouldSatisfy` isInfixOf expected
+      D.doesPathExist (root </> ".local/real/launched") `shouldReturn` False
+      D.doesPathExist (root </> ".local/tail") `shouldReturn` False
+      -- A subsequent preflight rejects the symlink before even the first command.
+      (again, _, _) <- invoke binary root home ["sync", "--dry-run"]
+      again `shouldSatisfy` (/= ExitSuccess)
+
+  forM_ ["run", "update"] $ \mode ->
+    it ("records checkout declarations under " <> T.unpack mode <> " --no-commands for a fresh teammate clone") $
+      withSystemTempDirectory "checkout-disabled-clone" $ \temp -> do
+        let root = temp </> "project"; home = temp </> "home"; clone = temp </> "teammate"
+        D.createDirectoryIfMissing True root
+        (binary, moduleDir) <- prepare root home "config/editor" ".editor/config" "shared/assets" ".local/assets"
+        TIO.writeFile (moduleDir </> "module.dhall") (commandModuleBody "demo" [setupCommand "Checkout" "mkdir -p .local; echo setup > .local/setup", setupCommand "Apply" "touch command-sentinel"] "[] : List S.Dependency.Type")
+        _ <- success binary root home (if mode == "run" then ["run", "demo", "--force", "--no-commands"] else ["update", "demo", "--no-commands", "--json"])
+        D.doesPathExist (root </> ".local/setup") `shouldReturn` False
+        _ <- git root ["add", "."]
+        _ <- git root ["commit", "-qm", "test: share disabled checkout declarations"]
+        _ <- git root ["clone", "-q", root, clone]
+        before <- snapshot clone
+        _ <- success binary clone (temp </> "empty-receiver") ["sync"]
+        TIO.readFile (clone </> ".local/setup") `shouldReturn` "setup\n"
+        D.doesPathExist (clone </> "command-sentinel") `shouldReturn` False
+        snapshot clone `shouldReturn` before
+
+  it "refuses an actual interrupted update until the documented recovery entry restores prior files" $
+    withSystemTempDirectory "checkout-sync-recovery" $ \temp -> do
+      let root = temp </> "project"; home = temp </> "home"
+      D.createDirectoryIfMissing True root
+      (binary, _) <- prepare root home "config/editor" ".editor/config" "shared/assets" ".local/assets"
+      manifest <- BS.readFile (root </> ".seihou/manifest.json")
+      transaction <- beginUpdateTransaction root (Set.singleton "config/editor/sentinel")
+      transaction `shouldSatisfy` either (const False) (const True)
+      TIO.writeFile (root </> "config/editor/sentinel") "interrupted write\n"
+      D.removeDirectoryLink (root </> ".editor/config")
+      forM_ [["sync"], ["sync", "--dry-run"]] $ \args -> do
+        (code, output, _) <- invoke binary root home args
+        code `shouldSatisfy` (/= ExitSuccess)
+        output `shouldSatisfy` isInfixOf "seihou update --dry-run"
+        TIO.readFile (root </> "config/editor/sentinel") `shouldReturn` "interrupted write\n"
+        D.doesPathExist (root </> ".editor/config") `shouldReturn` False
+        BS.readFile (root </> ".seihou/manifest.json") `shouldReturn` manifest
+      _ <- success binary root home ["update", "demo", "--dry-run"]
+      TIO.readFile (root </> "config/editor/sentinel") `shouldReturn` "source bytes\n"
+      _ <- success binary root home ["sync"]
+      D.getSymbolicLinkTarget (root </> ".editor/config") `shouldReturn` "../config/editor"
+      BS.readFile (root </> ".seihou/manifest.json") `shouldReturn` manifest
+
+  it "keeps empty sync read-only, then adopts through update and restores a teammate clone" $
     withSystemTempDirectory "sync-team-adoption" $ \temp -> do
-      (binary, original, home) <- prepareAdoptionWithTracking temp True False
+      (binary, original, home) <- prepareAdoptionWithTracking temp False False
       let root = temp </> "older-clone"
       _ <- git original ["clone", "-q", original, root]
       before <- snapshot root
       D.doesPathExist (root </> ".local/config") `shouldReturn` False
       status <- success binary root home ["status"]
       status `shouldSatisfy` isInfixOf "Checkout outputs: none declared."
-      status `shouldSatisfy` isInfixOf "Run seihou sync"
-      dry <- success binary root home ["sync", "--dry-run", "--json"]
-      dry `shouldSatisfy` isInfixOf "\"approvalRequired\":true"
-      dry `shouldSatisfy` isInfixOf "\"plannedAction\":\"create\""
-      snapshot root `shouldReturn` before
-      D.doesPathExist (root </> ".local/config") `shouldReturn` False
-      (cancelCode, _, _) <- invoke binary root home ["sync"]
-      cancelCode `shouldSatisfy` (/= ExitSuccess)
-      (jsonCode, _, _) <- invoke binary root home ["sync", "--json"]
-      jsonCode `shouldSatisfy` (/= ExitSuccess)
-      snapshot root `shouldReturn` before
-      adopted <- success binary root home ["sync", "--yes"]
-      adopted `shouldSatisfy` isInfixOf "Links: 1 created, 0 repaired, 0 unchanged."
+      status `shouldSatisfy` isInfixOf "No checkout effects are recorded"
+      forM_ [["sync"], ["sync", "--dry-run"], ["sync", "--json"]] $ \args -> do
+        output <- success binary root home args
+        output `shouldSatisfy` isInfixOf "No checkout effects are recorded"
+        snapshot root `shouldReturn` before
+        D.doesPathExist (root </> ".local/config") `shouldReturn` False
+      _ <- success binary root home ["update", "demo", "--json"]
       D.getSymbolicLinkTarget (root </> ".local/config") `shouldReturn` "../config/editor"
       TIO.readFile (root </> ".local/config/sentinel") `shouldReturn` "tracked source\n"
       _ <- git root ["add", ".seihou"]
@@ -183,15 +418,15 @@ tests = testSpec "checkout sync and adoption" $ do
       second `shouldSatisfy` isInfixOf "Links: 0 created, 0 repaired, 1 unchanged."
       snapshot clone `shouldReturn` cloneBefore
       D.doesDirectoryExist (cloneHome </> "config/seihou/installed") `shouldReturn` False
-  it "adopts tracked links through sync while preserving unrelated staging" $
+  it "adopts tracked links through update while preserving unrelated staging" $
     withSystemTempDirectory "sync-tracked-adoption" $ \temp -> do
       (binary, root, home) <- prepareAdoption temp False
       TIO.writeFile (root </> "unrelated") "staged edit\n"
       _ <- git root ["add", "unrelated"]
       TIO.writeFile (root </> "unrelated") "unstaged edit\n"
-      dry <- success binary root home ["sync", "--dry-run"]
+      dry <- success binary root home ["update", "demo", "--dry-run"]
       dry `shouldSatisfy` isInfixOf "Adopt link: .local/config"
-      _ <- success binary root home ["sync", "--yes", "--json"]
+      _ <- success binary root home ["update", "demo", "--json"]
       git root ["ls-files", "--", ".local/config"] `shouldReturn` ""
       git root ["show", ":unrelated"] `shouldReturn` "staged edit\n"
       TIO.readFile (root </> "unrelated") `shouldReturn` "unstaged edit\n"
@@ -211,7 +446,7 @@ tests = testSpec "checkout sync and adoption" $ do
       oldManifest <- A.eitherDecode <$> LBS.readFile (root </> ".seihou/manifest.json")
       TIO.writeFile (other </> "files/sentinel") "unrelated proposed update\n"
       TIO.writeFile (other </> "module.dhall") (body "2.0.0" "[S.VarDecl::{name = \"new-input\", type = \"text\", required = True}]")
-      _ <- success binary root home ["sync", "--yes"]
+      _ <- success binary root home ["update", "demo", "--json"]
       TIO.readFile (root </> "other-output") `shouldReturn` "original other output\n"
       newManifest <- A.eitherDecode <$> LBS.readFile (root </> ".seihou/manifest.json")
       let otherApplication decoded = case decoded of
@@ -228,7 +463,7 @@ tests = testSpec "checkout sync and adoption" $ do
       D.createDirectoryIfMissing True (root </> ".local/config")
       TIO.writeFile (root </> ".local/config/user-file") "keep me\n"
       before <- snapshot root
-      (code, _, _) <- invoke binary root home ["sync", "--yes"]
+      (code, _, _) <- invoke binary root home ["update", "demo", "--json"]
       code `shouldSatisfy` (/= ExitSuccess)
       snapshot root `shouldReturn` before
       TIO.readFile (root </> ".local/config/user-file") `shouldReturn` "keep me\n"
@@ -237,7 +472,7 @@ tests = testSpec "checkout sync and adoption" $ do
       (binary, root, home) <- prepareAdoption temp False
       D.doesDirectoryExist (home </> "config/seihou/installed") `shouldReturn` False
       notice <- success binary root home ["sync", "--dry-run"]
-      notice `shouldSatisfy` isInfixOf "One-time link setup is available"
+      notice `shouldSatisfy` isInfixOf "No checkout effects are recorded"
       TIO.writeFile (root </> "unrelated") "staged edit\n"
       _ <- git root ["add", "unrelated"]
       TIO.writeFile (root </> "unrelated") "unstaged edit\n"

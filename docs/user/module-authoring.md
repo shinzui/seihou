@@ -321,30 +321,41 @@ Variables not listed in `exports` are private to the module.
 
 ## Commands
 
-Shell commands run after all file generation is complete:
+Commands execute after file and link generation, in composition/declaration order.
+The current schema makes their lifecycle explicit:
 
 ```dhall
 commands =
-  [ { run = "git init"
+  [ S.Command::{ action = S.Command.Action.Apply "cabal build" }
+  , S.Command::{
+      action = S.Command.Action.Checkout "mkdir -p .local; echo '{{project.name}}' > .local/setup"
     , workDir = None Text
-    , when = None Text
-    }
-  , { run = "cabal build"
-    , workDir = Some "{{project.name}}"
-    , when = Some "IsSet enableBuild"
+    , when = Some "IsSet project.name"
     }
   ]
 ```
 
-### Fields
+`action` is `Apply Text` for ordinary application work or `Checkout Text` for
+repeatable setup. Both shell text and optional `workDir` accept placeholders;
+`when` selects commands during application. Pinned legacy `{ run, workDir, when }`
+records remain readable as application commands. When moving an authoring module
+to the new schema, convert its ordinary commands to `Action.Apply` too. Generate a
+new module to obtain the current pinned import; never invent schema hashes.
 
-**run** (Text): The shell command to execute. May contain `{{variable}}` placeholders.
+Run executes both lifecycles. Update uses success receipts for application commands
+and repeats checkout commands during an accepted actionable update. A true no-op
+executes neither. `--no-commands` suppresses both while retaining checkout instructions
+in manifest schema 10. Fresh clones need only `seihou sync` to repair recorded links
+and execute the resolved checkout subset, without producers or config prompts.
 
-**workDir** (Optional Text): Working directory for the command. If `None Text`, uses the generation target directory. May contain `{{variable}}` placeholders.
-
-**when** (Optional Text): Conditional expression. See [Expression language](#expression-language).
-
-Commands execute in declaration order, after all steps. Use the `--no-commands` flag to skip them.
+Checkout commands must be repeatable and keep intended writes outside managed/tracked
+state. Commit any scripts they need as project assets. Their working directories
+must be real project-relative directories already present in the receiving checkout,
+with no symlinked ancestry. Sync validates all work before mutation, creates links
+first, then runs commands sequentially and stops on failure. It reports completed and
+unrun work; correct the failure and retry sync. Shell has the user's environment and
+permissions, may need network/tools and cannot be undone by Seihou. Completion history
+never suppresses checkout setup. `Removal.commands` permits application actions only.
 
 
 ## Dependencies and composition

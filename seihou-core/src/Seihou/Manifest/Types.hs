@@ -16,7 +16,7 @@ module Seihou.Manifest.Types
   )
 where
 
-import Control.Monad (unless)
+import Control.Monad (forM_, unless)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -29,8 +29,11 @@ import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
+import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
 import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutRecords)
+import Seihou.Core.CommandFingerprint (checkoutCommandOperation, fingerprintCommand)
+import Seihou.Core.Path (validateCanonicalProjectPath)
 import Seihou.Core.Seed (ManifestInvariantError (..), validateManifestInvariants)
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (baselineRefFromText)
@@ -77,7 +80,7 @@ import System.FilePath (takeFileName)
 -- change advances this number is
 -- docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md.
 currentManifestVersion :: ManifestSchemaVersion
-currentManifestVersion = ManifestSchemaVersion 9
+currentManifestVersion = ManifestSchemaVersion 10
 
 -- | The oldest schema the ordinary decoder reads. Anything older records
 -- machine-specific absolute paths and must go through the explicit
@@ -92,6 +95,7 @@ minimumManifestVersion :: ManifestCapability -> ManifestSchemaVersion
 minimumManifestVersion TargetedAdditiveSharedPathUpdate = ManifestSchemaVersion 7
 minimumManifestVersion SeedReceipts = ManifestSchemaVersion 8
 minimumManifestVersion CheckoutLocalOutputs = ManifestSchemaVersion 9
+minimumManifestVersion CheckoutLocalCommands = ManifestSchemaVersion 10
 
 -- | Whether a manifest's schema can express everything a capability needs.
 -- A decoded schema-6 manifest answers 'False' for
@@ -215,7 +219,7 @@ instance ToJSON Manifest where
         "modules" .= (m ^. #modules),
         "variables" .= varsToJSON (m ^. #vars),
         "files" .= filesToJSON (m ^. #version) (m ^. #files),
-        "applications" .= (m ^. #applications),
+        "applications" .= map (applicationToJSON (m ^. #version)) (m ^. #applications),
         "blueprintMigrations" .= (m ^. #blueprintMigrations)
       ]
         ++ ["checkoutOutputs" .= Map.map checkoutToJSON (m ^. #checkoutOutputs) | m ^. #version >= ManifestSchemaVersion 9]
@@ -238,7 +242,7 @@ instance FromJSON Manifest where
         <*> (filesFromJSON v =<< o .: "files")
         <*> (if v >= ManifestSchemaVersion 8 then Map.traverseWithKey (\_ -> parseSeed) =<< o .: "seeds" else pure Map.empty)
         <*> (if v >= ManifestSchemaVersion 9 then Map.traverseWithKey (\_ -> parseCheckout) =<< o .: "checkoutOutputs" else pure Map.empty)
-        <*> o Aeson..:? "applications" Aeson..!= []
+        <*> (o Aeson..:? "applications" Aeson..!= [] >>= mapM (parseApplication v))
         <*> o Aeson..:? "recipe"
         <*> o Aeson..:? "blueprint"
         <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
@@ -246,7 +250,7 @@ instance FromJSON Manifest where
       Left (PathBothManagedAndSeeded path) -> fail ("path " <> path <> " is recorded both as a tracked file and as a seed")
       Right () -> case validateCheckoutRecords manifest [] of
         Left err -> fail (T.unpack (err ^. #message))
-        Right () -> pure manifest
+        Right () -> validateCheckoutCommands manifest >> pure manifest
 
 -- | Reject a manifest this build cannot read, naming the remedy.
 --
@@ -376,37 +380,52 @@ instance FromJSON AppliedInstanceState where
       <*> (varsFromJSON =<< o Aeson..:? "resolvedVars" Aeson..!= Aeson.object [])
 
 instance ToJSON AppliedComposition where
-  toJSON composition =
-    Aeson.object $
-      [ "applicationId" .= (composition ^. #applicationId . #unApplicationId),
-        "target" .= (composition ^. #target),
-        "targetOrigin" .= (composition ^. #targetOrigin),
-        "additionalModules" .= map (^. #unModuleName) (composition ^. #additionalModules),
-        "instances" .= (composition ^. #instances),
-        "appliedAt" .= (composition ^. #appliedAt)
-      ]
-        ++ maybe [] (\v -> ["targetVersion" .= v]) (composition ^. #targetVersion)
-        ++ maybe [] (\v -> ["namespace" .= v]) (composition ^. #namespace)
-        ++ maybe [] (\v -> ["context" .= v]) (composition ^. #context)
-        ++ commandReceiptsField (composition ^. #commandReceipts)
-    where
-      commandReceiptsField receipts
-        | Map.null receipts = []
-        | otherwise = ["commandReceipts" .= commandReceiptsToJSON receipts]
+  toJSON = applicationToJSON currentManifestVersion
+
+applicationToJSON :: ManifestSchemaVersion -> AppliedComposition -> Aeson.Value
+applicationToJSON schema composition =
+  Aeson.object $
+    [ "applicationId" .= (composition ^. #applicationId . #unApplicationId),
+      "target" .= (composition ^. #target),
+      "targetOrigin" .= (composition ^. #targetOrigin),
+      "additionalModules" .= map (^. #unModuleName) (composition ^. #additionalModules),
+      "instances" .= (composition ^. #instances),
+      "appliedAt" .= (composition ^. #appliedAt)
+    ]
+      ++ maybe [] (\v -> ["targetVersion" .= v]) (composition ^. #targetVersion)
+      ++ maybe [] (\v -> ["namespace" .= v]) (composition ^. #namespace)
+      ++ maybe [] (\v -> ["context" .= v]) (composition ^. #context)
+      ++ ["checkoutCommands" .= map checkoutCommandToJSON (composition ^. #checkoutCommands) | schema >= ManifestSchemaVersion 10]
+      ++ commandReceiptsField (composition ^. #commandReceipts)
+  where
+    commandReceiptsField receipts
+      | Map.null receipts = []
+      | otherwise = ["commandReceipts" .= commandReceiptsToJSON receipts]
 
 instance FromJSON AppliedComposition where
-  parseJSON = Aeson.withObject "AppliedComposition" $ \o ->
-    AppliedComposition
-      <$> (ApplicationId <$> o .: "applicationId")
-      <*> o .: "target"
-      <*> o .: "targetOrigin"
-      <*> o Aeson..:? "targetVersion"
-      <*> (map ModuleName <$> o Aeson..:? "additionalModules" Aeson..!= [])
-      <*> o Aeson..:? "namespace"
-      <*> o Aeson..:? "context"
-      <*> o Aeson..:? "instances" Aeson..!= []
-      <*> (commandReceiptsFromJSON =<< o Aeson..:? "commandReceipts" Aeson..!= Aeson.object [])
-      <*> o .: "appliedAt"
+  parseJSON = parseApplication currentManifestVersion
+
+parseApplication :: ManifestSchemaVersion -> Aeson.Value -> Aeson.Parser AppliedComposition
+parseApplication schema = Aeson.withObject "AppliedComposition" $ \o -> do
+  commands <-
+    if schema >= ManifestSchemaVersion 10
+      then o .: "checkoutCommands" >>= mapM parseCheckoutCommand
+      else do
+        legacy <- o Aeson..:? "checkoutCommands" Aeson..!= ([] :: [Aeson.Value])
+        unless (null legacy) (fail "checkout commands require manifest schema 10")
+        pure []
+  AppliedComposition
+    <$> (ApplicationId <$> o .: "applicationId")
+    <*> o .: "target"
+    <*> o .: "targetOrigin"
+    <*> o Aeson..:? "targetVersion"
+    <*> (map ModuleName <$> o Aeson..:? "additionalModules" Aeson..!= [])
+    <*> o Aeson..:? "namespace"
+    <*> o Aeson..:? "context"
+    <*> o Aeson..:? "instances" Aeson..!= []
+    <*> (commandReceiptsFromJSON =<< o Aeson..:? "commandReceipts" Aeson..!= Aeson.object [])
+    <*> pure commands
+    <*> o .: "appliedAt"
 
 instance ToJSON CommandReceipt where
   toJSON receipt =
@@ -618,11 +637,13 @@ parseRemovalActionText "rewrite-file" = pure RewriteFileAction
 parseRemovalActionText other = fail ("unknown removal action: " <> T.unpack other)
 
 parseRemovalCommandJSON :: Aeson.Value -> Aeson.Parser Command
-parseRemovalCommandJSON = Aeson.withObject "RemovalCommand" $ \o ->
+parseRemovalCommandJSON = Aeson.withObject "RemovalCommand" $ \o -> do
+  unless (all (`elem` ["run", "workDir"]) (KM.keys o)) (fail "removal commands only support application execution")
   Command
     <$> o .: "run"
     <*> o Aeson..:? "workDir"
     <*> pure Nothing
+    <*> pure ApplicationCommand
 
 -- | Encode a file record in the representation of the given schema.
 --
@@ -790,7 +811,10 @@ parseSeed = Aeson.withObject "seed receipt" $ \o -> do
 -- | Facts that would be lost if a caller encoded a value at its stated schema.
 manifestEncodingLoss :: Manifest -> [Text]
 manifestEncodingLoss manifest =
-  ["checkout outputs require manifest schema 9" | manifest ^. #version < ManifestSchemaVersion 9, not (Map.null (manifest ^. #checkoutOutputs))]
+  either (pure . T.pack) (const []) (Aeson.parseEither (const (validateCheckoutCommands manifest)) Aeson.Null)
+    <> ["removal commands cannot declare checkout setup" | applied <- manifest ^. #modules, removal <- maybe [] pure (applied ^. #removal), any ((== CheckoutCommandLifecycle) . (^. #lifecycle)) (removal ^. #commands)]
+    <> ["checkout commands require manifest schema 10" | manifest ^. #version < ManifestSchemaVersion 10, any (not . null . (^. #checkoutCommands)) (manifest ^. #applications)]
+    <> ["checkout outputs require manifest schema 9" | manifest ^. #version < ManifestSchemaVersion 9, not (Map.null (manifest ^. #checkoutOutputs))]
     <> ["seed receipts require manifest schema 8" | manifest ^. #version < ManifestSchemaVersion 8, not (Map.null (manifest ^. #seeds))]
 
 checkoutToJSON :: CheckoutOutputRecord -> Aeson.Value
@@ -816,3 +840,30 @@ parseCheckout = Aeson.withObject "checkout output" $ \o -> do
         )
   owners <- o .: "owners" :: Aeson.Parser (Map Text [Text])
   pure (CheckoutOutputRecord spec (Map.mapKeys ApplicationId (Map.map (Set.fromList . map ModuleName) owners)))
+
+checkoutCommandToJSON :: CheckoutCommand -> Aeson.Value
+checkoutCommandToJSON CheckoutCommand {moduleName, occurrence, command, workDir} =
+  Aeson.object ["kind" .= ("shell" :: Text), "module" .= (moduleName ^. #unModuleName), "occurrence" .= occurrence, "command" .= command, "workDir" .= workDir]
+
+parseCheckoutCommand :: Aeson.Value -> Aeson.Parser CheckoutCommand
+parseCheckoutCommand = Aeson.withObject "checkout command" $ \o -> do
+  unless (Set.fromList (KM.keys o) == Set.fromList ["kind", "module", "occurrence", "command", "workDir"]) (fail "checkout command requires exactly kind, module, occurrence, command and workDir")
+  kind <- o .: "kind" :: Aeson.Parser Text
+  unless (kind == "shell") (fail ("unknown checkout command kind: " <> T.unpack kind))
+  CheckoutCommand <$> (ModuleName <$> o .: "module") <*> o .: "occurrence" <*> o .: "command" <*> o .: "workDir"
+
+validateCheckoutCommands :: Manifest -> Aeson.Parser ()
+validateCheckoutCommands manifest = do
+  let applications = manifest ^. #applications
+      ids = map (^. #applicationId) applications
+  unless (length ids == Set.size (Set.fromList ids)) (fail "duplicate application IDs")
+  forM_ applications $ \application -> do
+    let commands = application ^. #checkoutCommands
+        identities = map (fingerprintCommand . checkoutCommandOperation) commands
+        owners = Set.fromList [qualifiedName (ModuleInstance (i ^. #name) (i ^. #parentVars)) | i <- application ^. #instances]
+    unless (length identities == Set.size (Set.fromList identities)) (fail "duplicate checkout command identity")
+    forM_ commands $ \command -> do
+      unless (Set.member (command ^. #moduleName) owners) (fail "unknown checkout command instance owner")
+      unless (command ^. #occurrence >= 0 && not (T.null (T.strip (command ^. #command)))) (fail "invalid checkout command occurrence or empty shell text")
+      forM_ (command ^. #workDir) $ \path ->
+        unless (path == ".") $ either (fail . T.unpack) pure (validateCanonicalProjectPath (T.pack path))

@@ -37,7 +37,7 @@ fixtureManifest :: Manifest
 fixtureManifest = emptyManifest now & #applications .~ [app] & #checkoutOutputs .~ Map.fromList [(dest, record source) | (dest, source) <- [(".local/config", "config/editor"), (".tool/assets", "assets/shared")]]
   where
     now = UTCTime (fromGregorian 2026 10 15) 0
-    app = AppliedComposition (ApplicationId "a") (AppliedModuleTarget "demo") (LocalOrigin "demo") (Just "1") [] Nothing Nothing [AppliedInstanceState "demo" emptyParentVars (LocalOrigin "demo") (Just "1") Map.empty] Map.empty now
+    app = AppliedComposition (ApplicationId "a") (AppliedModuleTarget "demo") (LocalOrigin "demo") (Just "1") [] Nothing Nothing [AppliedInstanceState "demo" emptyParentVars (LocalOrigin "demo") (Just "1") Map.empty] Map.empty [] now
     record source = CheckoutOutputRecord (DirectorySymlink source) (Map.singleton (ApplicationId "a") (Set.singleton "demo"))
 
 withFixture :: (FilePath -> IO a) -> IO a

@@ -11,12 +11,16 @@ module Seihou.CLI.CheckoutSync
 where
 
 import Control.Exception (IOException, displayException, try)
+import Control.Monad (forM)
 import Data.Aeson qualified as A
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
+import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
+import Seihou.CLI.CommandExecution
+import Seihou.CLI.Update.Recovery (pendingUpdateRecovery)
 import Seihou.Core.Checkout
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem hiding (CreateDirectoryLink)
@@ -32,7 +36,9 @@ data CheckoutSyncResult = CheckoutSyncResult
     dryRun :: !Bool,
     plan :: !CheckoutPlan,
     execution :: !CheckoutExecution,
-    notices :: ![Text]
+    notices :: ![Text],
+    commands :: ![(ApplicationId, PlannedCommand)],
+    commandOutcomes :: ![(ApplicationId, CommandOutcome)]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -49,29 +55,43 @@ runCheckoutSync dryRun = do
         case safe of
           Left err -> pure (Left err)
           Right () -> do
-            bytes <- readFileText (root </> ".seihou/manifest.json")
-            case manifestFromJSON (LBS.fromStrict (TE.encodeUtf8 bytes)) of
-              Left err -> pure (Left (checkoutError "checkout_manifest_invalid" (T.pack err <> "; use seihou manifest upgrade for an older manifest, or a newer seihou for a newer schema")))
-              Right manifest -> do
-                planned <- prepareCheckoutPlan Rebuild SyncIgnoredOnly root manifest manifest []
-                case planned of
-                  Left err -> pure (Left err)
-                  Right plan -> do
-                    execution <- if dryRun then pure (CheckoutExecution Map.empty [] Nothing) else applyCheckoutPlan SyncIgnoredOnly root plan
-                    let notices = checkoutAdoptionNotices manifest
-                    pure (Right (CheckoutSyncResult root dryRun plan execution notices))
+            pending <- liftIO (pendingUpdateRecovery root)
+            if pending
+              then pure (Left (checkoutError "checkout_update_recovery_pending" "An interrupted update needs recovery. Run seihou update --dry-run; its entry path recovers the prior transaction's files/index before previewing any new update. Then retry seihou sync."))
+              else do
+                bytes <- readFileText (root </> ".seihou/manifest.json")
+                case manifestFromJSON (LBS.fromStrict (TE.encodeUtf8 bytes)) of
+                  Left err -> pure (Left (checkoutError "checkout_manifest_invalid" (T.pack err <> "; use seihou manifest upgrade for an older manifest, or a newer seihou for a newer schema")))
+                  Right manifest -> do
+                    let commands = [(application ^. #applicationId, command) | application <- sortOn (^. #applicationId) (manifest ^. #applications), command <- planCheckoutCommands (application ^. #checkoutCommands) ^. #commands]
+                    readiness <- forM commands $ \(application, command) -> case command ^. #operation of
+                      RunCommandOp {workDir, moduleName} -> do
+                        ready <- liftIO (checkCheckoutWorkDir root workDir)
+                        pure (first (checkoutError "checkout_command_workdir" . (("application " <> application ^. #unApplicationId <> ", instance " <> moduleName ^. #unModuleName <> ": ") <>)) ready)
+                      _ -> pure (Right ())
+                    case sequence readiness of
+                      Left err -> pure (Left err)
+                      Right _ -> do
+                        planned <- prepareCheckoutPlan Rebuild SyncIgnoredOnly root manifest manifest []
+                        case planned of
+                          Left err -> pure (Left err)
+                          Right plan -> do
+                            execution <- if dryRun then pure (CheckoutExecution Map.empty [] Nothing) else applyCheckoutPlan SyncIgnoredOnly root plan
+                            outcomes <- if dryRun || not (checkoutApplicable plan) || execution ^. #failure /= Nothing then pure [] else executeCommandOutcomes (CommandPlan (map snd commands))
+                            let notices = checkoutAdoptionNotices manifest
+                            pure (Right (CheckoutSyncResult root dryRun plan execution notices commands (zip (map fst commands) outcomes)))
   pure $ case result of
     Left err -> Left (checkoutError "checkout_io_failed" ("cannot inspect checkout: " <> T.pack (displayException err)))
     Right value -> value
 
--- | Status stays offline. The normal sync command owns discovery and adoption.
+-- | Absence of declarations is zero recorded work, never authority to update.
 checkoutAdoptionNotices :: Manifest -> [Text]
 checkoutAdoptionNotices manifest
-  | not (Map.null (manifest ^. #checkoutOutputs)) = []
-  | null (manifest ^. #applications) =
-      ["No checkout links are recorded. Apply a module that declares links first."]
-  | otherwise =
-      ["Link setup has not been recorded. Run seihou sync to check the recorded sources and review any required setup."]
+  | Map.null (manifest ^. #checkoutOutputs) && commandCount == 0 =
+      ["No checkout effects are recorded. Nothing to sync."]
+  | otherwise = []
+  where
+    commandCount = sum (map (length . (^. #checkoutCommands)) (manifest ^. #applications))
 
 checkoutFailureJSON :: Bool -> CheckoutError -> A.Value
 checkoutFailureJSON dryRun err = A.object ["mode" A..= mode dryRun, "outputs" A..= ([] :: [A.Value]), "errors" A..= [errorJSON err], "summary" A..= A.object ["planned" A..= counts [], "applied" A..= counts []]]
@@ -83,6 +103,7 @@ checkoutReportJSON result =
       "root" A..= (result ^. #root),
       "applicable" A..= checkoutApplicable (result ^. #plan),
       "outputs" A..= map entryJSON entries,
+      "commands" A..= map commandJSON (result ^. #commands),
       "errors" A..= map errorJSON (maybe [] pure (result ^. #execution . #failure)),
       "notices" A..= (result ^. #notices),
       "summary"
@@ -93,6 +114,10 @@ checkoutReportJSON result =
     ]
   where
     entries = result ^. #plan . #entries
+    commandJSON (application, planned) =
+      let outcome = lookupOutcome application planned
+       in A.object ["application" A..= (application ^. #unApplicationId), "instance" A..= commandOwner planned, "command" A..= commandText planned, "outcome" A..= maybe (if result ^. #dryRun then "would-run" else "not-run") outcomeText outcome, "exitCode" A..= (outcome >>= (^. #exitCode)), "stdout" A..= maybe "" (^. #stdout) outcome, "stderr" A..= maybe "" (^. #stderr) outcome]
+    lookupOutcome application planned = lookup (application, planned) [((owner, outcome ^. #command), outcome) | (owner, outcome) <- result ^. #commandOutcomes]
     entryJSON entry =
       A.object
         [ "destination" A..= (entry ^. #dest),
@@ -157,6 +182,7 @@ renderCheckoutReport :: CheckoutSyncResult -> Text
 renderCheckoutReport report =
   renderCheckoutPlan (report ^. #dryRun) displayedPlan
     <> summary
+    <> renderCommands report
     <> T.unlines (report ^. #notices)
     <> T.unlines (map (^. #message) (maybe [] pure (report ^. #execution . #failure)))
   where
@@ -223,3 +249,38 @@ renderCheckoutStatus plan
         PreserveModified -> "modified entry preserved"
         UnchangedLink -> "correct"
         RefusedLink -> "repair refused; inspect this path"
+
+commandOwner :: PlannedCommand -> Text
+commandOwner planned = case planned ^. #operation of
+  RunCommandOp {moduleName} -> moduleName ^. #unModuleName
+  _ -> ""
+
+commandText :: PlannedCommand -> Text
+commandText planned = case planned ^. #operation of
+  RunCommandOp {command} -> command
+  _ -> ""
+
+outcomeText :: CommandOutcome -> Text
+outcomeText outcome = case outcome ^. #status of
+  CommandSucceeded -> "succeeded"
+  CommandFailed -> "failed"
+  CommandSkipped -> "skipped"
+  CommandNotRun -> "not-run"
+
+renderCommands :: CheckoutSyncResult -> Text
+renderCommands report =
+  T.concat
+    [ let outcome = lookup (application, planned) [((owner, value ^. #command), value) | (owner, value) <- report ^. #commandOutcomes]
+          label = if report ^. #dryRun then "would-run" else maybe "not-run" outcomeText outcome
+       in label
+            <> " checkout command ["
+            <> application ^. #unApplicationId
+            <> "/"
+            <> commandOwner planned
+            <> "]: "
+            <> commandText planned
+            <> "\n"
+            <> maybe "" (\value -> maybe "" (\code -> "  exit " <> T.pack (show code) <> "\n") (value ^. #exitCode) <> value ^. #stdout <> value ^. #stderr) outcome
+    | (application, planned) <- report ^. #commands
+    ]
+    <> if commandOutcomesFailed (map snd (report ^. #commandOutcomes)) then "Checkout command failed. Completed local effects remain; retry with seihou sync after correcting the failure.\n" else ""
