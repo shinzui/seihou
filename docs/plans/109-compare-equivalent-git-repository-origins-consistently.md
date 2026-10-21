@@ -10,6 +10,18 @@ provenance:
     model: "gpt-6.1-sol"
     harness: "codex-cli"
     at: 2026-10-21T12:58:00Z
+  revisions:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-21T13:53:02Z
+      mode: "update"
+      note: "Specify parse-before-normalize boundaries, classify raw update comparisons, and tighten validation evidence."
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-21T13:53:22Z
+      verdict: "approved"
+      note: "Approved revised plan after checking code consumers, ADRs, upstream URL documentation, fixtures, and test selectors; implementation tests remain pending."
 ---
 
 # Compare equivalent Git repository origins consistently
@@ -51,7 +63,17 @@ rather than suppressing the warning in the renderer.
 
 ## Surprises & Discoveries
 
-(None yet.)
+Validation on 2026-10-21 confirmed the separate guard/install and repair comparison
+paths. It also found raw origin equality in
+`seihou-cli/src/Seihou/CLI/Update/Source.hs` and
+`seihou-cli/src/Seihou/CLI/Update/Types.hs`, which a search for the existing helper
+names alone misses. Their distinct purposes are classified below.
+
+The existing cosmetic helper operates on the whole string. Applying it before
+parsing can erase a path component (`owner/repo/.git` becomes `owner/repo`) or
+change a query ending in `.git`. The new comparator must parse first and normalize
+only the appropriate components; retaining the helper for old callers does not make
+it suitable as the parser's preprocessing step.
 
 
 ## Decision Log
@@ -109,6 +131,17 @@ not an identity verdict. Keep its current transport-specific key: failure or cre
 for one connection method must not be hidden by sharing another's cached connection.
 Repair's grouping of machine-local paths likewise remains lexical.
 
+`seihou-cli/src/Seihou/CLI/Update/Source.hs` keys clones by the recorded connection
+URL. Its `verifyRemoteRequirements` checks that a candidate was staged from that
+exact requested URL; candidates inherit it directly from the clone operation. Keep
+that construction check and clone keys exact. `insertCandidate` rejects duplicate
+artifact names across staged catalogs before this check. Consequently, combining
+multiple recorded URL spellings of one catalog in a single update can still produce
+an ambiguity; this plan does not redesign candidate staging or promise to fix that
+separate workflow. `seihou-cli/src/Seihou/CLI/Update/Types.hs` compares stored origins
+structurally in `isUpdateNoOp` to detect a manifest change; retain that equality
+so a changed URL spelling is not hidden from the apply decision.
+
 Relevant local decisions are [ADR 0002](../adr/0002-artifact-identity-is-origin-url-plus-name.md)
 (identity includes artifact name and comparison is shared),
 [ADR 0003](../adr/0003-a-stale-or-substituted-artifact-is-a-hard-error.md)
@@ -152,6 +185,16 @@ Use a total parser: every input produces a deterministic key without exceptions.
 Keep `normalizeOriginUrl` as the existing cosmetic helper; do not turn its result
 into a clone URL or broaden every cache and path-grouping call implicitly.
 
+After trimming surrounding whitespace, parse the original text before applying
+cosmetic normalization. Recognize scheme URLs only for `https`, `http`, `ssh`, and
+`git`; unsupported schemes fall back to opaque input. Separate authority, path,
+query, and fragment, retaining the distinction between an absent delimiter and an
+empty query or fragment. Validate an explicit port as nonempty ASCII decimal digits
+with a value from 1 through 65535 before normalizing default ports. Do not decode
+escapes, resolve dot segments, collapse internal slashes, or reinterpret a rejected
+scheme URL as scp syntax. In particular, recognize local and Windows paths before
+considering scp syntax.
+
 For public GitHub, accept HTTPS on `github.com` with absent port or port 443,
 SSH on `github.com` with user `git` and absent port or port 22, scp-style
 `git@github.com:OWNER/REPO`, and SSH with user `git` on `ssh.github.com:443`.
@@ -171,13 +214,26 @@ Do not infer equivalence for redirects, renamed repositories, HTTP or git-protoc
 URLs, lookalike domains, DNS aliases, local Git configuration, or user SSH aliases.
 Only the documented SSH endpoint above is a host alias.
 
+For the GitHub key, remove the one structural leading slash from a scheme URL's
+path, then trailing slashes, require exactly two components, and strip at most one
+terminal `.git` from the repository component. Validate both resulting components,
+including nonemptiness. Scp form must have `OWNER/REPO` directly after the colon;
+an absolute or tilde-prefixed scp path is outside this hosted mapping. Thus
+`https://github.com/owner/repo/.git`, `https://github.com/owner/.git`, and
+`https://github.com//owner/repo` cannot become recognized GitHub identities through
+cleanup. Reject a query or fragment delimiter even when its value is empty.
+
 For other well-formed network URLs, retain scheme, user information, non-default
 port, and complete path; lowercase scheme and DNS hostname and normalize only that
 scheme's default port (`https:443`, `http:80`, `ssh:22`, `git:9418`). Preserve path
 case, escapes, query, and fragment information. Retain existing `.git`/trailing-slash
-cosmetic compatibility. Never discard arbitrary numeric ports or globally remove
-users. Keep generic scp-style paths distinct from absolute SSH URL paths and from
-HTTPS, even when host and apparent path match. Handle bracketed IPv6 authorities
+cosmetic compatibility on the path component alone; never strip a suffix from query
+or fragment text. Never discard arbitrary numeric ports or globally remove users.
+Represent generic scp forms separately, retaining the user (including its absence),
+lowercased DNS host, and path with its relative/absolute distinction intact; apply
+the same path-only cosmetic normalization. Keep generic scp-style paths distinct
+from absolute SSH URL paths and from HTTPS, even when host and apparent path match.
+Handle bracketed IPv6 authorities
 without splitting an address at its first colon; unsupported or malformed syntax
 falls back conservatively. Local paths, `file:` inputs, Windows drive paths, and
 unrecognized forms use an opaque key with existing cosmetic normalization and never
@@ -205,7 +261,9 @@ user stripping behavior must become conservative outside documented mappings.
 
 Audit identity comparisons with the search in Concrete Steps. Classify lexical
 serialization, cache keys, and repair path grouping explicitly instead of replacing
-every equality. Verify shared-write certification reaches the updated comparator.
+every equality, including the update construction and change-detection checks
+described in Context and Orientation. Verify shared-write certification reaches the
+updated comparator.
 Exercise receipt lookup, upsert, and pending-edge filtering with SSH-recorded receipts
 and an HTTPS-installed blueprint, and in reverse. Existing completed work stays done;
 an equivalent URL does not append a second receipt. Unrelated origins and artifacts
@@ -219,6 +277,11 @@ Test hostile authorities such as `github.com.evil.example` and
 IPv6, empty host or path, repeated separators, unknown schemes, local paths, and
 nonstandard SSH users. Verify different generic SSH users and ports remain different.
 Ensure malformed input cannot gain equivalence to a recognized GitHub repository.
+Include cleanup traps such as a third `.git` path component, an empty repository
+after suffix removal, empty query/fragment delimiters, and
+`https://example.com/repo?ref=topic.git` versus
+`https://example.com/repo?ref=topic` (different). Include generic relative and absolute
+scp paths and unknown schemes as negative controls.
 Preserve `.git`/slash compatibility and unchanged project/local-origin behavior.
 
 Add behavior regressions in `seihou-cli/test/Seihou/CLI/ManifestGuardSpec.hs`,
@@ -249,7 +312,8 @@ against unchanged project state. Record the source executable path, version, rev
 and observed output. Inspect the current installed executable separately. Keep delivery
 open until an authorized release/installation supplies the fix to the executable the
 user ordinarily runs; follow the repository's release skill when a release is authorized.
-The present request authorizes creating this plan, not publishing or installation.
+The present request authorizes validating and updating this plan, not implementation,
+publishing, or installation.
 At handoff state exactly which of source, release, and installed verification passed.
 
 
@@ -260,6 +324,7 @@ executable used for binary tests:
 
 ```bash
 rg -n 'normalizeOriginUrl|sameArtifactIdentity|sameRepository|repositoryKey' seihou-core seihou-cli
+rg -n '(sourceUrl|originUrl|targetOrigin|#origin)' seihou-core/src seihou-cli/src
 command -v seihou
 seihou --version
 cabal build all
@@ -282,11 +347,20 @@ Focused integration checks and final gates, from this repository root:
 cabal test seihou-cli --test-options='-p "ManifestGuard"'
 cabal test seihou-cli --test-options='-p "InstallCollision"'
 cabal test seihou-cli --test-options='-p "ManifestRepairOrigins"'
+cabal test seihou-core --test-options='-p "Seihou.Manifest.Types"'
+cabal test seihou-cli --test-options='-p "BlueprintMigration"'
 cabal test all
 nix fmt -- --fail-on-change
 nix flake check
 git diff --check
 ```
+
+Each focused command must run a nonzero number of tests and report success; a
+successful invocation selecting zero tests is not evidence. The binary regression
+uses the Cabal-built executable located by
+`seihou-cli/test/Seihou/CLI/SeihouBinary.hs`, never an installed fallback. The fixture
+currently seeds a generic `demo` source; explicitly arrange the reported GitHub
+URLs before the status assertion, without changing its existing callers' defaults.
 
 Record meaningful-boundary commits on the current branch with Conventional Commit
 messages and these trailers:
@@ -356,3 +430,13 @@ No unfinished plan blocks this work. Plan 98's repair behavior is background con
 the comparison contract here supersedes its overly permissive repair-only parser.
 This plan does not change fetching, remote resolution, persistent schema layout, or
 the trust represented by `LocalOrigin` and `ProjectOrigin`.
+
+
+Revision note (2026-10-21): Validated the named comparison consumers, ADRs, fixture,
+test group names, Mori template reference, and linked Git/GitHub documentation.
+Specified parsing before normalization and added adversarial examples to prevent
+cleanup from manufacturing equivalence. Broadened the comparison audit and documented
+the exact update checks and remaining mixed-URL catalog limitation. No implementation
+milestone is complete. `cabal list-bin exe:seihou` resolved the source build path;
+the focused core test invocation triggered dependency rebuilds and was interrupted,
+so this plan review records no passing runtime tests.
