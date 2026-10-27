@@ -2,6 +2,7 @@ module Seihou.Engine.UpdateTransaction
   ( UpdateTransaction (..),
     TransactionError (..),
     beginUpdateTransaction,
+    beginSeedUpdateTransaction,
     applyReconciliation,
     applyReconciliationWithHook,
     rollbackUpdateTransaction,
@@ -18,6 +19,7 @@ import Control.Monad (foldM, forM, forM_, unless, when)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.:?), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types qualified as Aeson
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
@@ -25,17 +27,21 @@ import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime, getCurrentTime)
 import Seihou.Core.Path (validateProjectRelativePath)
+import Seihou.Core.Seed (renderSeedOwnershipError, replaceSelectedSeedClaims)
 import Seihou.Core.Types
 import Seihou.Effect.BaselineStore (putBaseline)
 import Seihou.Effect.BaselineStoreInterp (runBaselineStore)
-import Seihou.Effect.Filesystem (PathEntry (..), inspectPath)
+import Seihou.Effect.Filesystem (ExclusiveCreateResult (..), PathEntry (..), inspectPath)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.Process (runProcess)
 import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Reconcile
+import Seihou.Engine.Seed (SeedDecision (..))
+import Seihou.Filesystem.Exclusive (createFileExclusiveAnchored)
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.Types (manifestFromJSON)
 import Seihou.Prelude
@@ -44,6 +50,7 @@ import System.Exit (ExitCode (..))
 import System.FilePath (splitDirectories, takeDirectory, takeFileName)
 import System.IO (hClose, hSetEncoding, utf8)
 import System.IO.Temp (createTempDirectory, openTempFile)
+import System.Posix.Files qualified as Posix
 
 data UpdateTransaction = UpdateTransaction
   { projectRoot :: !FilePath,
@@ -77,6 +84,7 @@ data JournalMetadata = JournalMetadata
     entries :: ![JournalEntry],
     newDirectories :: ![FilePath],
     indexLinks :: !(Map FilePath Text),
+    seedCreations :: !(Map FilePath (Maybe (SHA256, Integer, Integer))),
     expectedManifest :: !(Maybe Manifest)
   }
   deriving stock (Eq, Generic, Show)
@@ -118,23 +126,28 @@ instance ToJSON JournalMetadata where
         "entries" .= (metadata ^. #entries),
         "newDirectories" .= (metadata ^. #newDirectories),
         "indexLinks" .= (metadata ^. #indexLinks),
+        "seedCreations" .= (metadata ^. #seedCreations),
         "expectedManifest" .= (metadata ^. #expectedManifest)
       ]
 
 instance FromJSON JournalMetadata where
   parseJSON = Aeson.withObject "JournalMetadata" $ \object -> do
     version <- object .: "version"
-    unless (version `elem` [1, 2, 3]) (fail "unsupported transaction journal version")
+    unless (version `elem` [1, 2, 3, 4]) (fail "unsupported transaction journal version")
     JournalMetadata
       <$> pure version
       <*> object .: "createdAt"
       <*> (mapM (parseJournalEntry version) =<< object .: "entries")
       <*> object .: "newDirectories"
       <*> (if version < 3 then pure Map.empty else object .: "indexLinks")
+      <*> (if version < 4 then pure Map.empty else object .: "seedCreations")
       <*> object .:? "expectedManifest"
 
 beginUpdateTransaction :: FilePath -> Set FilePath -> IO (Either TransactionError UpdateTransaction)
-beginUpdateTransaction projectRoot targets = case traverse validateTransactionPath (Set.toAscList targets) of
+beginUpdateTransaction root targets = beginSeedUpdateTransaction root targets Set.empty
+
+beginSeedUpdateTransaction :: FilePath -> Set FilePath -> Set FilePath -> IO (Either TransactionError UpdateTransaction)
+beginSeedUpdateTransaction projectRoot targets seedPaths = case traverse validateTransactionPath (Set.toAscList targets) of
   Left err -> pure (Left err)
   Right safeTargets -> do
     result <- try @SomeException $ do
@@ -142,15 +155,15 @@ beginUpdateTransaction projectRoot targets = case traverse validateTransactionPa
       Directory.createDirectoryIfMissing True transactionsRoot
       transactionDirectory <- createTempDirectory transactionsRoot "update-"
       let transaction = UpdateTransaction projectRoot transactionDirectory (Set.fromList safeTargets)
-      initializeJournal transaction safeTargets `onException` cleanupDirectory transactionDirectory
+      initializeJournal transaction seedPaths safeTargets `onException` cleanupDirectory transactionDirectory
       pure transaction
     pure $ first (TransactionStartFailed . exceptionText) result
 
-initializeJournal :: UpdateTransaction -> [FilePath] -> IO ()
-initializeJournal transaction safeTargets = do
+initializeJournal :: UpdateTransaction -> Set FilePath -> [FilePath] -> IO ()
+initializeJournal transaction seedPaths safeTargets = do
   let backupDirectory = transaction ^. #transactionDirectory </> "backups"
   Directory.createDirectoryIfMissing True backupDirectory
-  entries <- forM (zip [0 :: Int ..] safeTargets) $ \(index, relativePath) -> do
+  entries <- forM (zip [0 :: Int ..] (filter (`Set.notMember` seedPaths) safeTargets)) $ \(index, relativePath) -> do
     let fullPath = transaction ^. #projectRoot </> relativePath
         backupName = show index <> ".txt"
         backupPath = backupDirectory </> backupName
@@ -168,11 +181,12 @@ initializeJournal transaction safeTargets = do
   writeJournal
     (transaction ^. #transactionDirectory)
     JournalMetadata
-      { journalVersion = 2,
+      { journalVersion = if Set.null seedPaths then 2 else 4,
         createdAt = now,
         entries = entries,
         newDirectories = missingDirectories,
         indexLinks = Map.empty,
+        seedCreations = Map.empty,
         expectedManifest = Nothing
       }
 
@@ -221,7 +235,7 @@ adoptTrackedLinks transaction links = do
       actual <- trackedLinkIdentity (transaction ^. #projectRoot) path
       unless (actual == Just oid) (ioError (userError ("Git index changed for " <> path)))
     metadata <- readJournal (transaction ^. #transactionDirectory) >>= either (ioError . userError . show) pure
-    writeJournal (transaction ^. #transactionDirectory) (metadata & #journalVersion .~ 3 & #indexLinks .~ links)
+    writeJournal (transaction ^. #transactionDirectory) (metadata & #journalVersion %~ max 3 & #indexLinks .~ links)
     removed <- gitOutput (transaction ^. #projectRoot) (["update-index", "--force-remove", "--"] <> map T.pack (Map.keys links))
     when (removed == Nothing) (ioError (userError "could not adopt tracked links in Git's index"))
   pure $ first (\err -> TransactionApplyFailed (exceptionText err) Nothing) result
@@ -293,31 +307,46 @@ transactionPreflight transaction plan = case traverse validateTransactionPath (S
     | not (Set.null unresolved) -> pure (Left (TransactionUnresolvedPaths unresolved))
     | otherwise -> verifyObservedFiles transaction plan
   where
-    unjournaled = Map.keysSet (plan ^. #files) Set.\\ (transaction ^. #targets)
+    unjournaled = reconciliationMutationPaths plan Set.\\ (transaction ^. #targets)
     unresolved = unresolvedPaths plan
 
 verifyObservedFiles :: UpdateTransaction -> ReconciliationPlan -> IO (Either TransactionError ())
 verifyObservedFiles transaction plan = go (Map.toAscList (plan ^. #files))
   where
     go [] = pure (Right ())
+    go ((_, FileSeedSettle {}) : rest) = go rest
+    go ((_, FileSeedRelease {}) : rest) = go rest
+    go ((_, FileSeedAbandon {}) : rest) = go rest
+    go ((path, FileSeedCreate _ _) : rest) = do
+      entry <- runEff $ runFilesystem $ inspectPath (transaction ^. #projectRoot </> path)
+      if entry == EntryMissing
+        then go rest
+        else do
+          clearPendingSeed transaction path
+          pure (Left (TransactionApplyFailed ("seed path became occupied after preview: " <> T.pack path <> "; rerun update to review it") Nothing))
     go ((path, reconciliation) : rest) = do
       current <- observeDiskFile (transaction ^. #projectRoot </> path)
       let planned = reconciliationObservation reconciliation
-      if current == planned
-        then go rest
-        else pure (Left (TransactionStalePlan path planned current))
+      case planned of
+        Nothing -> go rest
+        Just expected | current == expected -> go rest
+        Just expected -> pure (Left (TransactionStalePlan path expected current))
 
-reconciliationObservation :: FileReconciliation -> ObservedFile
+reconciliationObservation :: FileReconciliation -> Maybe ObservedFile
 reconciliationObservation reconciliation = case reconciliation of
-  FileCreate _ _ observed -> observed
-  FileUpdate _ _ observed _ -> observed
-  FileAutoMerge _ _ observed _ -> observed
-  FileUnchanged _ _ observed _ -> observed
-  FileConflict _ _ _ _ observed _ _ -> observed
-  FileDeleteSafe _ _ observed -> observed
-  FileOrphanEdited _ _ _ observed _ -> observed
-  FileReleaseSharedOwnership _ _ observed -> observed
-  FileAlreadyAbsent _ _ observed -> observed
+  FileSeedCreate {} -> Nothing
+  FileSeedSettle {} -> Nothing
+  FileSeedRelease {} -> Nothing
+  FileSeedAbandon {} -> Nothing
+  FileCreate _ _ observed -> Just observed
+  FileUpdate _ _ observed _ -> Just observed
+  FileAutoMerge _ _ observed _ -> Just observed
+  FileUnchanged _ _ observed _ -> Just observed
+  FileConflict _ _ _ _ observed _ _ -> Just observed
+  FileDeleteSafe _ _ observed -> Just observed
+  FileOrphanEdited _ _ _ observed _ -> Just observed
+  FileReleaseSharedOwnership _ _ observed -> Just observed
+  FileAlreadyAbsent _ _ observed -> Just observed
 
 observeDiskFile :: FilePath -> IO ObservedFile
 observeDiskFile path = do
@@ -339,7 +368,11 @@ observeDiskFile path = do
 prepareCandidateManifest :: UpdateTransaction -> ReconciliationPlan -> Manifest -> IO Manifest
 prepareCandidateManifest transaction plan manifest = do
   nextFiles <- foldM applyManifestAction (manifest ^. #files) (Map.toAscList (plan ^. #files))
-  pure (replaceManifestFiles manifest nextFiles)
+  let withFiles = replaceManifestFiles manifest nextFiles
+      candidates = seedCandidateReceipts (manifest ^. #genAt) manifest plan
+  case replaceSelectedSeedClaims (plan ^. #applicationIds) candidates withFiles of
+    Left err -> ioError (userError (T.unpack (renderSeedOwnershipError err)))
+    Right candidate -> pure candidate
   where
     selected = plan ^. #applicationIds
     applyManifestAction files (path, reconciliation) = case desiredState reconciliation of
@@ -390,6 +423,7 @@ applyOrphanManifestAction ::
   Map FilePath FileRecord ->
   Map FilePath FileRecord
 applyOrphanManifestAction selected reconciliation files = case reconciliation of
+  FileSeedRelease action _ -> Map.delete (action ^. #path) files
   FileDeleteSafe path _ _ -> Map.delete path files
   FileAlreadyAbsent path _ _ -> Map.delete path files
   FileReleaseSharedOwnership path record _ ->
@@ -467,6 +501,7 @@ setExpectedManifestAndDirectories metadata additionalDirectories candidate =
         sortOn pathDepth . Set.toList $
           Set.fromList (metadata ^. #newDirectories <> additionalDirectories),
       indexLinks = metadata ^. #indexLinks,
+      seedCreations = metadata ^. #seedCreations,
       expectedManifest = Just candidate
     }
 
@@ -479,6 +514,19 @@ applyMutations afterMutation transaction plan = do
   where
     applyOne count (path, reconciliation) = case mutationFor reconciliation of
       NoMutation -> pure count
+      CreateSeedMutation content -> do
+        let fullPath = transaction ^. #projectRoot </> path
+        verifySafeParents (transaction ^. #projectRoot) path
+        markPendingSeed transaction path
+        (result, identity) <- createFileExclusiveAnchored (Just (transaction ^. #transactionDirectory </> ("seed-" <> T.unpack (hashContent (T.pack path) ^. #unSHA256)))) (\handle -> BS.hPut handle (TE.encodeUtf8 content)) fullPath
+        case (result, identity) of
+          (ExclusiveCreated, Just (device, inode)) -> recordCreatedSeed transaction path (hashContent content, device, inode)
+          (ExclusiveOccupied, _) -> clearPendingSeed transaction path >> ioError (userError ("seed path became occupied after preview: " <> path <> "; rerun update"))
+          (ExclusiveFailure reason, _) -> clearPendingSeed transaction path >> ioError (userError (T.unpack reason))
+          _ -> ioError (userError "exclusive creation returned no ownership evidence")
+        let next = count + 1
+        afterMutation next
+        pure next
       WriteMutation content -> do
         atomicWriteText (transaction ^. #projectRoot </> path) content
         let next = count + 1
@@ -492,9 +540,10 @@ applyMutations afterMutation transaction plan = do
         afterMutation next
         pure next
 
-data FileMutation = NoMutation | WriteMutation Text | DeleteMutation
+data FileMutation = NoMutation | WriteMutation Text | CreateSeedMutation Text | DeleteMutation
 
 mutationFor :: FileReconciliation -> FileMutation
+mutationFor (FileSeedCreate action _) = maybe NoMutation CreateSeedMutation (action ^. #newContent)
 mutationFor reconciliation = case desiredState reconciliation of
   Just (_, state)
     | state ^. #writeToDisk -> WriteMutation (state ^. #appliedContent)
@@ -519,6 +568,23 @@ rollbackUpdateTransaction transaction = do
           unless
             (Just current == (EntrySymlink <$> entry ^. #linkTarget))
             (ioError (userError ("adopted working link changed during recovery: " <> entry ^. #targetPath)))
+        -- Only transaction-owned creations may be removed. A crash before
+        -- completion evidence leaves uncertainty explicit and preserves bytes.
+        forM_ (Map.toAscList (metadata ^. #seedCreations)) $ \(path, expected) -> do
+          verifySafeParents (transaction ^. #projectRoot) path
+          let fullPath = transaction ^. #projectRoot </> path
+          entry <- runEff $ runFilesystem $ inspectPath fullPath
+          case (entry, expected) of
+            (EntryMissing, _) -> pure ()
+            (EntryFile, Just (digest, device, inode)) -> do
+              status <- Posix.getSymbolicLinkStatus fullPath
+              let changed = ioError (userError ("created seed changed during recovery: " <> path <> "; preserve it outside the destination and retry update --dry-run"))
+              if fromIntegral (Posix.deviceID status) /= device || fromIntegral (Posix.fileID status) /= inode
+                then changed
+                else do
+                  content <- TIO.readFile fullPath
+                  if hashContent content == digest then Directory.removeFile fullPath else changed
+            _ -> ioError (userError ("seed creation outcome is uncertain: " <> path <> "; preserve the object outside the destination and retry update --dry-run"))
         restoreIndexLinks (transaction ^. #projectRoot) (metadata ^. #indexLinks)
         forM_ (filter (\entry -> Map.notMember (entry ^. #targetPath) (metadata ^. #indexLinks)) (metadata ^. #entries)) (restoreEntry transaction)
         removeNewDirectories (transaction ^. #projectRoot) (metadata ^. #newDirectories)
@@ -595,6 +661,7 @@ setUpdateTransactionExpectedManifest transaction expected = do
                 entries = metadata ^. #entries,
                 newDirectories = metadata ^. #newDirectories,
                 indexLinks = metadata ^. #indexLinks,
+                seedCreations = metadata ^. #seedCreations,
                 expectedManifest = Just expected
               }
       result <- try @SomeException (writeJournal (transaction ^. #transactionDirectory) updated)
@@ -672,6 +739,8 @@ readJournal transactionDirectory = do
 
 validateJournal :: JournalMetadata -> Either Text JournalMetadata
 validateJournal metadata = do
+  unless (Set.null (Map.keysSet (metadata ^. #seedCreations) `Set.intersection` Set.fromList (map (^. #targetPath) (metadata ^. #entries)))) (Left "seed creations must not also have restoring snapshots")
+  traverse_ (first renderTransactionPathError . validateTransactionPath) (Map.keys (metadata ^. #seedCreations))
   traverse_ (first renderTransactionPathError . validateTransactionPath) (Map.keys (metadata ^. #indexLinks))
   traverse_ validateObjectId (Map.elems (metadata ^. #indexLinks))
   unless
@@ -773,3 +842,20 @@ pathDepth = length . splitDirectories
 
 exceptionText :: SomeException -> Text
 exceptionText = T.pack . displayException
+
+-- Completion evidence is temporary recovery state, never a seed receipt hash.
+recordCreatedSeed :: UpdateTransaction -> FilePath -> (SHA256, Integer, Integer) -> IO ()
+recordCreatedSeed transaction path digest = do
+  metadata <- readJournal (transaction ^. #transactionDirectory) >>= either (ioError . userError . show) pure
+  writeJournal (transaction ^. #transactionDirectory) (metadata & #journalVersion %~ max 4 & #seedCreations %~ Map.insert path (Just digest))
+
+-- Explicitly failed exclusive publication owns no object at this path.
+clearPendingSeed :: UpdateTransaction -> FilePath -> IO ()
+clearPendingSeed transaction path = do
+  metadata <- readJournal (transaction ^. #transactionDirectory) >>= either (ioError . userError . show) pure
+  writeJournal (transaction ^. #transactionDirectory) (metadata & #seedCreations %~ Map.delete path)
+
+markPendingSeed :: UpdateTransaction -> FilePath -> IO ()
+markPendingSeed transaction path = do
+  metadata <- readJournal (transaction ^. #transactionDirectory) >>= either (ioError . userError . show) pure
+  writeJournal (transaction ^. #transactionDirectory) (metadata & #journalVersion %~ max 4 & #seedCreations %~ Map.insert path Nothing)

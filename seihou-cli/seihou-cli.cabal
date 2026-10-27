@@ -288,6 +288,7 @@ test-suite seihou-cli-test
     Seihou.CLI.RunBlueprintRefusalSpec
     Seihou.CLI.SavePromptedSpec
     Seihou.CLI.SeedRunE2ESpec
+    Seihou.CLI.SeedUpdateE2ESpec
     Seihou.CLI.SeihouBinary
     Seihou.CLI.SharedManifestE2ESpec
     Seihou.CLI.StatusSpec

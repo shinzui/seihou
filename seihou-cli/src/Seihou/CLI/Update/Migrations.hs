@@ -1,6 +1,7 @@
 module Seihou.CLI.Update.Migrations
   ( StagedMigrations (..),
     planAndStageMigrations,
+    planAndStageMigrationsWithSeeds,
     migrationTouchedPaths,
     migrationTouchesDirectories,
   )
@@ -26,6 +27,7 @@ import Seihou.Engine.Migrate
     MigrationOpInstance (..),
     classifyMigration,
     executeMigration,
+    validateSeedMigration,
   )
 import Seihou.Prelude
 import System.Directory qualified as Directory
@@ -59,11 +61,15 @@ planAndStageMigrations ::
   CandidateCatalog ->
   [(Maybe AppliedComposition, [(ModuleInstance, Module, FilePath)])] ->
   IO (Either UpdateError StagedMigrations)
-planAndStageMigrations projectRoot manifest catalog applications = do
-  initialFilesystem <- snapshotTrackedFiles projectRoot manifest
+planAndStageMigrations root manifest catalog applications = planAndStageMigrationsWithSeeds root manifest catalog applications (Map.keysSet (manifest ^. #seeds))
+
+planAndStageMigrationsWithSeeds :: FilePath -> Manifest -> CandidateCatalog -> [(Maybe AppliedComposition, [(ModuleInstance, Module, FilePath)])] -> Set FilePath -> IO (Either UpdateError StagedMigrations)
+planAndStageMigrationsWithSeeds projectRoot manifest catalog applications protected = do
+  initialFilesystem <- snapshotTrackedFiles projectRoot (manifest & #files %~ (`Map.withoutKeys` protected))
   pure $ do
     transitions <- collectTransitions catalog applications
     planned <- traverse planTransition (deduplicateTransitions transitions)
+    mapM_ (\(transition, sourcePlan) -> first (UpdateMigrationStageFailed (transition ^. #moduleName)) (validateSeedMigration protected (concatMap (^. #ops) (sourcePlan ^. #steps)))) planned
     let processMocks = concatMap commandMocks planned
         ((stageResult, finalFilesystem)) =
           runPureEff $

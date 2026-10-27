@@ -108,3 +108,34 @@ and preserves seed objects even through direct declarative removal operations.
 Seed-only owners need no custom removal specification; managed files retain their
 explicit removal policy. Full seed update and released-producer acceptance remain
 separate open gates; intermediate update refuses selected seed changes safely.
+
+## Update implementation (2026-10-27)
+
+Update partitions seed actions before managed content materialization, migration
+snapshots and orphan classification. Release/settlement/retirement are metadata-only:
+the transaction never snapshots or restores those project bytes. New creations use
+exclusive publication and journal version 4 records actual creation evidence. A
+private hard-link anchor retains object identity until commit/recovery, preventing
+inode reuse from making an identical replacement appear transaction-owned. Rollback
+removes only its unchanged original creation; later edits, replacements and uncertain
+interrupted publication are preserved with an actionable recovery error. Journal
+versions 1–3 remain readable.
+
+Reverse adoption always requires explicit consent, including equal or missing
+content. Keep-current records the candidate generated ancestor for future merges;
+accept writes generated content. Missing content permits accept/recreate or abort.
+Force/JSON cannot consent. Every declarative migration source/destination is checked
+against old seed and candidate release paths before mutation. Shell remains unsandboxed.
+
+Ordinary adoption was verified against an isolated actual working-state copy of
+`mori://shinzui/reiko` with schema 10, saved inputs, mixed legacy/new application
+records and an empty installed cache. One `seihou update haskell-cli-app` fetched the
+candidate, included its matching recorded dependency, previewed releases, and preserved
+the edited changelog and both Cabal files. The repeat was a no-op. Public GitHub
+transport normalization follows [ADR 0002](0002-artifact-identity-is-origin-url-plus-name.md).
+Legacy adoption resolves sources from saved origins; dependency edge bindings join the
+normal preview and become saved standalone inputs, while conflicting bindings refuse.
+The loader deduplicates exact dependency instances, not module names alone.
+
+These are source implementation results. Runtime release, producer publication and
+installed-binary acceptance remain the delivery gate in MasterPlan 12.

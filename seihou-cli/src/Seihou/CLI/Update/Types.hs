@@ -39,6 +39,7 @@ import Seihou.Core.ArtifactRef (ArtifactRefError)
 import Seihou.Core.Checkout (CheckoutAction (..), CheckoutEntry (..), CheckoutError, CheckoutPlan (..))
 import Seihou.Core.CommandFingerprint (isCheckoutCommand)
 import Seihou.Core.Migration (MigrationPlan, MigrationPlanError)
+import Seihou.Core.Seed (replaceSelectedSeedClaims)
 import Seihou.Core.Types
 import Seihou.Engine.Migrate (ExecutedMigrationPlan, MigrationExecError)
 import Seihou.Engine.Reconcile
@@ -48,6 +49,7 @@ import Seihou.Engine.Reconcile
     ReconciliationPlan (..),
     ReconciliationSummary,
     recordedSharedWriteMode,
+    seedCandidateReceipts,
   )
 import Seihou.Engine.UpdateTransaction (TransactionError)
 import Seihou.Prelude
@@ -197,7 +199,8 @@ data ManifestPreparation = ManifestPreparation
   deriving stock (Eq, Generic, Show)
 
 data UpdateWarning
-  = LocalArtifactHasNoRemote Text
+  = DependencyApplicationIncluded ApplicationRef (Map VarName Text)
+  | LocalArtifactHasNoRemote Text
   | SameVersionContentChanged Text
   | AmbiguousLegacyValue VarName
   | MissingLegacyValue VarName
@@ -285,6 +288,7 @@ data UpdateError
   | UpdateMigrationStageFailed ModuleName MigrationExecError
   | UpdateCompositionFailed [Text]
   | UpdateCheckoutFailed CheckoutError
+  | UpdateSeedReleaseBlocked FilePath (Set ApplicationRef)
   | UpdateReconciliationFailed ReconciliationError
   | UpdateHasUnresolvedPaths (Set FilePath)
   | UpdateRecoveryFailed [TransactionError]
@@ -312,6 +316,7 @@ isUpdateNoOp plan =
     && plan ^. #inputChanges . #newlyResolved == 0
     && plan ^. #inputChanges . #removed == 0
     && not (any actionableCommand (plan ^. #commandPlan . #commands))
+    && seedClaimsUnchanged
     && all unchangedFile (Map.elems (plan ^. #reconciliation . #files))
     && and (zipWith sameApplication (mapMaybe (^. #previous) (plan ^. #plannedApplications)) (plan ^. #applications))
   where
@@ -323,6 +328,14 @@ isUpdateNoOp plan =
     -- shared-path exemption could never take effect on an existing project.
     -- Recording a fact about applied state is a change to applied state
     -- (ADR 0004), so such a plan is not a deliberate no-op (ADR 0007).
+    seedClaimsUnchanged =
+      let original = plan ^. #snapshot . #originalManifest
+          reconciliation = plan ^. #reconciliation
+          candidate = seedCandidateReceipts (original ^. #genAt) original reconciliation
+       in case replaceSelectedSeedClaims (reconciliation ^. #applicationIds) candidate original of
+            Right next -> next ^. #seeds == original ^. #seeds
+            Left _ -> False
+    unchangedFile FileSeedSettle {} = True
     unchangedFile (FileUnchanged desired _ _ prior) =
       maybe True (\record -> record ^. #sharedWriteMode == recordedSharedWriteMode (plan ^. #reconciliation . #applicationIds) desired prior) prior
     unchangedFile _ = False

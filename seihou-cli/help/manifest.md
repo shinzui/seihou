@@ -125,9 +125,10 @@ RECOVERING
   The write is atomic: a complete temporary file is renamed over the manifest,
   so an interrupted run cannot leave a truncated one.
 
-SCHEMA 8, 9 AND 10
+SCHEMA 8 THROUGH 11
 
-  Schema 8 adds seed receipts (the create-once runtime workflow is unfinished).
+  Schema 8 adds content-free seed receipts; schema 11 records exact application/
+  qualified-instance claims and explicitly preserves legacy ownership uncertainty.
   Schema 9 adds portable checkout directory-link declarations and ownership.
   A lossless schema upgrade adds empty collections; it cannot infer declarations
   from old shell command receipts. Schema 10 adds a required checkoutCommands list

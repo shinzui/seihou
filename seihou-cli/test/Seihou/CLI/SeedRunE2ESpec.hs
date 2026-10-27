@@ -1,4 +1,4 @@
-module Seihou.CLI.SeedRunE2ESpec (tests) where
+module Seihou.CLI.SeedRunE2ESpec (tests, prepare, body, invoke, success, readManifest) where
 
 import Control.Monad (forM_)
 import Data.Aeson qualified as A
@@ -132,7 +132,7 @@ tests = testSpec "seed run end-to-end" $ do
       first <- readManifest root
       let Just firstReceipt = Map.lookup "nested/start.txt" (first ^. #seeds)
       case firstReceipt ^. #ownership of
-        KnownSeedOwners owners -> map length (Map.elems owners) `shouldBe` [3]
+        KnownSeedOwners owners -> owners `shouldSatisfy` ((== [3]) . map length . Map.elems)
         _ -> expectationFailure "expected exact owners"
       firstReceipt ^. #moduleName . #unModuleName `shouldSatisfy` T.isPrefixOf "child#"
       TIO.readFile (root </> "nested/start.txt") `shouldReturn` "child supplies first\n"

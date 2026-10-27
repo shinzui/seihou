@@ -8,6 +8,8 @@
   completion key gained it too
   (`docs/plans/81-record-artifact-origin-for-agent-applied-artifacts.md`).
 
+- Amended: 2026-10-27 — public GitHub SSH/HTTPS transport equivalence for recorded dependency adoption.
+
 ## Context
 
 [ADR 0001](0001-manifest-is-a-checked-in-machine-independent-artifact.md)
@@ -109,7 +111,12 @@ distinct outcome:
   normalising a trailing `.git` and trailing slashes, because
   `https://host/repo`, `https://host/repo.git` and `https://host/repo/` are the
   same repository and a manifest must not read as a different module to a
-  developer who typed a different spelling.
+  developer who typed a different spelling. Public GitHub URLs also normalize
+  `git@github.com:owner/repo` and `ssh://git@github.com/owner/repo` to
+  `https://github.com/owner/repo`. This is a fixed transport equivalence on
+  that public host; other hosts, repository paths, forks, redirects and content
+  similarity do not establish identity. Fetching retains the recorded transport,
+  and updating preserves each application’s recorded spelling.
 - A recorded `RemoteOrigin` that resolves to a copy carrying no provenance is
   *unverifiable*, not a mismatch. Seihou searches all three roots by name, so a
   developer deliberately shadowing an installed module with a personal copy in

@@ -11,6 +11,12 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+### Added
+
+- **Starter files can belong to your project.** Seed steps create files once and preserve edits or deliberate deletion through reruns, force, update and removal. Status/diff count receipts without comparing seed content. Producers can use seed steps for changelogs, Cabal files and source stubs.
+- **Adopt seed ownership through ordinary update.** Run `seihou update haskell-cli-app`; the preview says `release to project`, then normal confirmation drops managed tracking without rewriting your files. No prerequisite installation, manifest edits or dependency target list is needed. Commit the manifest for clones. Reverse adoption asks explicitly whether to keep or accept content; force cannot consent.
+- Supporting runtime release and seed-producing module publication are pending. The proposed minimum release is 0.11.0.0; older clients can ignore lifecycle and overwrite content.
+
 ### Fixed
 
 - Module commands can explicitly declare repeatable checkout setup. Application
@@ -25,8 +31,7 @@ packages in the workspace share a single version.
   bootstrap and setup share current module guidance, including ignored directory
   links and `seihou sync`. Routine updates use `seihou update TARGET`, which fetches
   dependencies and reuses saved inputs. Guidance also corrects schema examples,
-  migration rules, variable types and agent configuration. Seed create-once behavior
-  is explicitly identified as unfinished.
+  migration rules, variable types and agent configuration. Seed guidance distinguishes source implementation from the pending supporting runtime release.
 - **Help covers every command family.** Run `seihou help workflow` to choose a
   command, `seihou help sync` for clones and worktrees, or the new `recipes`,
   `registry` and `extensions` topics. Agent help now explains per-command settings,

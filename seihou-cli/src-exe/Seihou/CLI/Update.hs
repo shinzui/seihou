@@ -177,6 +177,7 @@ commitUpdate opts result = do
 
 failInteraction :: UpdateOpts -> InteractionError -> IO a
 failInteraction opts err = case err of
+  SeedAdoptionRequiresInteraction paths -> failCli opts "seed_adoption_requires_interaction" ("Seed adoption requires explicit consent for: " <> T.intercalate ", " (map T.pack (Set.toAscList paths)) <> ". Run an interactive seihou update to choose keep or accept; --force does not consent to adoption.")
   InteractionRequired paths ->
     failCli
       opts

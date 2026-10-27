@@ -81,10 +81,20 @@ must keep it repeatable and keep intended writes outside managed/tracked state.
 Removal commands accept only application actions. Removing a checkout declaration
 stops future execution and does not invent an inverse shell action.
 
-The schema also accepts `lifecycle = Some "seed"` for whole-file copy, template,
-or dhall-text steps without patches, and schema 8 introduces seed receipts.
-Create-once handoff behavior is not implemented yet: do not promise that seed
-files will be preserved on reruns/updates or recommend seeds for that purpose.
+`lifecycle = Some "seed"` on a whole-file copy, template or dhall-text step
+creates an absent file once and hands it to the project. No patches, structured
+merges or symlinks are allowed. Existing regular files are kept. Manifest receipts
+remember settlement and exact owning instances without hashes/baselines; edits
+and deliberate deletion stay with the project through rerun, force, update,
+status, diff and removal. Last-claim retirement forgets settlement, preserving disk.
+An ordinary `seihou update TARGET` fetches producers/dependencies and previews
+`release to project` for managed-to-seed transitions; no install or file-by-file
+release prompts are needed. Reverse adoption requires explicit interactive
+keep/accept consent, even with force. Declarative migrations/removal cannot mutate
+seeds; arbitrary shell commands are unsandboxed and authors must keep them away.
+Runtime support is in development source, with proposed minimum release 0.11.0.0
+pending publication. Older binaries can ignore lifecycle and overwrite content;
+publish seed-producing modules only after the supporting runtime release.
 
 ### Variables and dependencies
 

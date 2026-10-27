@@ -207,6 +207,7 @@ test-suite seihou-core-test
     Seihou.Engine.RemoveSpec
     Seihou.Engine.SectionSpec
     Seihou.Engine.SeedSpec
+    Seihou.Engine.SeedTransactionSpec
     Seihou.Engine.TemplateSpec
     Seihou.Engine.ThreeWayMergeSpec
     Seihou.Engine.UpdateTransactionSpec

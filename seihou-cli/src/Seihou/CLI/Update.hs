@@ -37,15 +37,7 @@ import Data.Time (UTCTime, getCurrentTime)
 import Effectful (runEff)
 import Seihou.CLI.CommandExecution
 import Seihou.CLI.InstallShared (InstallOutcome (..), installModuleDir, summarizeInstallRefusal)
-import Seihou.CLI.ManifestCapabilityUpgrade
-  ( CertificationGap (..),
-    CertificationScope (..),
-    EvidencePolicy (..),
-    EvidenceSource,
-    SharedWriteCertification,
-    certifiedChanges,
-    certifySharedWriteModesIO,
-  )
+import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), CertificationScope (..), EvidencePolicy (..), EvidenceSource, SharedWriteCertification, certifiedChanges, certifySharedWriteModesIO, prepareRecordedSeedOwnership)
 import Seihou.CLI.Shared (deriveNamespace, toVarNameMap)
 import Seihou.CLI.Update.Migrations
 import Seihou.CLI.Update.Recovery
@@ -61,7 +53,8 @@ import Seihou.Composition.Resolve
     loadComposition,
     resolveWithPromptPermission,
   )
-import Seihou.Core.Application (buildAppliedComposition, replaceAppliedComposition)
+import Seihou.Core.Application (buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
+import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (renderArtifactRefError, resolveArtifactOrigin)
 import Seihou.Core.Checkout
@@ -85,6 +78,7 @@ import Seihou.Engine.Baseline (manifestBaselineRefs)
 import Seihou.Engine.Checkout
 import Seihou.Engine.Migrate (ExecutedMigrationPlan (..), MigrationOpInstance (..), classifyMigration, executeMigration)
 import Seihou.Engine.Reconcile
+import Seihou.Engine.Seed (seedOperationClaims)
 import Seihou.Engine.UpdateTransaction
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.JSON (decodeManifestValue)
@@ -146,12 +140,9 @@ planProjectUpdateIn sessionDirectory request = do
               let base = resolution ^. #manifest
                   selected = resolution ^. #applications
                   seedWarnings = resolution ^. #warnings
-              staging <-
-                if any (\receipt -> not (Set.null (seedApplicationIds receipt `Set.intersection` Set.fromList (map (^. #applicationId) selected)))) (Map.elems (base ^. #seeds))
-                  then pure (Left (UpdateCompositionFailed ["seed ownership update is not yet supported by this development build; use a runtime release with seed update support"]))
-                  else case resolution ^. #staged of
-                    Just staged -> pure (Right staged)
-                    Nothing -> stageSelection request sessionDirectory projectRoot installedDirectory now selected
+              staging <- case resolution ^. #staged of
+                Just staged -> pure (Right staged)
+                Nothing -> stageSelection request sessionDirectory projectRoot installedDirectory now selected
               case staging of
                 Left err -> pure (Left err)
                 Right staged -> do
@@ -162,7 +153,20 @@ planProjectUpdateIn sessionDirectory request = do
                         [ (Just previous, planned ^. #modulesInOrder)
                         | (previous, planned) <- zip selected plannedApplications
                         ]
-                  stagedMigrations <- planAndStageMigrations projectRoot base catalog applicationInputs
+                  let claims = applicationSeedClaims plannedApplications
+                      selectedIdsForSeeds = Set.fromList (map (^. #candidate . #applicationId) plannedApplications)
+                      neededLegacy = Set.fromList [path | (path, receipt) <- Map.toAscList (base ^. #seeds), LegacySeedOwners apps <- [receipt ^. #ownership], Map.member path claims || not (Set.null (apps `Set.intersection` selectedIdsForSeeds))]
+                      relevant = not (Map.null claims) || any (\receipt -> not (Set.null (seedApplicationIds receipt `Set.intersection` selectedIdsForSeeds))) (Map.elems (base ^. #seeds))
+                      structurallyPrepared = if relevant then prepareManifestSchema manifestPath SeedOwnerClaims document base else Right base
+                  paths <- defaultSearchPaths
+                  preparedResult <- case structurallyPrepared of
+                    Left err -> pure (Left err)
+                    Right prepared -> fmap (first (UpdateCompositionFailed . pure)) (prepareRecordedSeedOwnership projectRoot paths neededLegacy prepared)
+                  let preparedBase = either (const base) id preparedResult
+                      protectedSeeds = Map.keysSet claims `Set.union` Map.keysSet (preparedBase ^. #seeds)
+                  stagedMigrations <- case preparedResult of
+                    Left err -> pure (Left err)
+                    Right prepared -> planAndStageMigrationsWithSeeds projectRoot prepared catalog applicationInputs protectedSeeds
                   case stagedMigrations of
                     Left err -> pure (Left err)
                     Right migrationStage -> do
@@ -173,11 +177,11 @@ planProjectUpdateIn sessionDirectory request = do
                         runEff $
                           runFilesystem $
                             runBaselineStore baselineDirectory $
-                              planReconciliation stageRoot (migrationStage ^. #manifest) selectedIds operations owners
+                              planSeedReconciliation projectRoot stageRoot (migrationStage ^. #manifest) selectedIds operations owners claims
                       case reconciliationResult of
-                        Left err -> pure (Left (UpdateReconciliationFailed err))
+                        Left err -> pure (Left (reconciliationUpdateError preparedBase err))
                         Right reconciliation -> do
-                          checkoutSetup <- planCheckoutUpdate projectRoot base plannedApplications
+                          checkoutSetup <- planCheckoutUpdate projectRoot preparedBase plannedApplications
                           case checkoutSetup of
                             Left err -> pure (Left err)
                             Right (checkoutCandidate, checkoutPlan, checkoutAdoptions) -> do
@@ -196,7 +200,7 @@ planProjectUpdateIn sessionDirectory request = do
                                           <> versionWarnings
                                           <> map CheckoutWarning (concatMap (^. #warnings) (checkoutPlan ^. #entries))
                                       inputChanges = summarizeInputChanges seedWarnings plannedApplications
-                                      transactionTargets = transactionTargetPaths base reconciliation (migrationStage ^. #plans) `Set.union` Map.keysSet checkoutAdoptions `Set.union` Set.fromList [entry ^. #dest | entry <- checkoutPlan ^. #entries, entry ^. #action `elem` [CreateLink, ReplaceLink, RetireLink]]
+                                      transactionTargets = transactionTargetPaths preparedBase reconciliation (migrationStage ^. #plans) `Set.union` Map.keysSet checkoutAdoptions `Set.union` Set.fromList [entry ^. #dest | entry <- checkoutPlan ^. #entries, entry ^. #action `elem` [CreateLink, ReplaceLink, RetireLink]]
                                   -- The manifest is observed as it is on disk, before
                                   -- any in-memory preparation, so an edit made between
                                   -- planning and apply is reported as a stale plan.
@@ -233,7 +237,7 @@ planProjectUpdateIn sessionDirectory request = do
                                             request,
                                             snapshot,
                                             plannedApplications,
-                                            manifestPreparation = manifestPreparationFor manifest base (resolution ^. #evidenceSources)
+                                            manifestPreparation = manifestPreparationFor manifest preparedBase (resolution ^. #evidenceSources)
                                           }
                                     )
 
@@ -288,8 +292,13 @@ resolveSelection request sessionDirectory projectRoot installedDirectory manifes
     Left err -> pure (Left err)
     Right (MatchedAll applications) -> pure (Right (SelectionResolution manifest applications [] Nothing []))
     Right (MatchedLegacy name) -> do
-      seeded <- seedLegacyApplication request projectRoot manifest now name
-      pure (fmap (\(applications, warnings) -> SelectionResolution manifest applications warnings Nothing []) seeded)
+      seeded <- seedLegacyApplication request sessionDirectory projectRoot installedDirectory manifest now name
+      case seeded of
+        Left err -> pure (Left err)
+        Right (applications, warnings, Nothing) -> pure (Right (SelectionResolution manifest applications warnings Nothing []))
+        Right (applications, warnings, Just staged) -> do
+          included <- includeLegacyDependencies request projectRoot manifest now applications staged
+          pure (fmap (\(allApplications, next, additions) -> SelectionResolution manifest allApplications (warnings <> additions) (Just next) []) included)
     Right (MatchedNamed named) ->
       case prepareManifestSchema manifestPath TargetedAdditiveSharedPathUpdate document manifest of
         Left err -> pure (Left err)
@@ -404,12 +413,12 @@ prepareManifestSchema path capability document manifest
           (upgradeDocumentLosslessly (minimumManifestVersion capability) document)
       case Aeson.fromJSON upgraded of
         Aeson.Error err -> Left (UpdateManifestUnreadable path (T.pack err))
-        Aeson.Success prepared -> Right prepared
+        Aeson.Success prepared -> Right (prepared & #files .~ (manifest ^. #files))
 
 -- | Describe what preparation changed, or 'Nothing' when it changed nothing.
 manifestPreparationFor :: Manifest -> Manifest -> [EvidenceSource] -> Maybe ManifestPreparation
 manifestPreparationFor original prepared evidenceSources
-  | original ^. #version == prepared ^. #version && Map.null modeChanges = Nothing
+  | original ^. #version == prepared ^. #version && original ^. #seeds == prepared ^. #seeds && Map.null modeChanges = Nothing
   | otherwise =
       Just
         ManifestPreparation
@@ -456,7 +465,7 @@ applyProjectUpdate plan =
 
 applyAcceptedPlan :: UpdatePlan -> IO (Either UpdateError UpdateResult)
 applyAcceptedPlan plan = do
-  transactionResult <- beginUpdateTransaction (plan ^. #snapshot . #projectRoot) (plan ^. #snapshot . #transactionTargets)
+  transactionResult <- beginSeedUpdateTransaction (plan ^. #snapshot . #projectRoot) (plan ^. #snapshot . #transactionTargets) (Map.keysSet (Map.filter (\case FileSeedCreate {} -> True; _ -> False) (plan ^. #reconciliation . #files)))
   case transactionResult of
     Left err -> pure (Left (UpdateTransactionFailed err))
     Right transaction -> do
@@ -492,7 +501,7 @@ applyAcceptedPlan plan = do
                               (reconciliationSummary resolvedActual)
                           )
                     | otherwise -> do
-                        let reconciliationManifest = (migratedManifest & #genAt .~ now)
+                        let reconciliationManifest = migratedManifest & #genAt .~ now & #applications .~ foldl' (flip replaceAppliedComposition) (migratedManifest ^. #applications) (plan ^. #applications)
                         appliedFiles <- applyReconciliation transaction resolvedActual reconciliationManifest
                         case appliedFiles of
                           Left err -> abortUpdate transaction (UpdateTransactionFailed err)
@@ -558,47 +567,47 @@ planApplication request projectRoot catalog now previous = do
                   ]
               case compiled of
                 Left errors -> pure (Left (UpdateCompositionFailed errors))
-                Right ComposedPlan {operations, warnings = compositionWarnings, managedOwners = rawOwners, seedOwners}
-                  | not (Map.null seedOwners) -> pure (Left (UpdateCompositionFailed ["seed lifecycle update is not yet supported by this development build; use a runtime release with seed update support"]))
-                  | otherwise -> do
-                      targetOrigin <- publishedArtifactOrigin projectRoot targetArtifact
-                      originedModules <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
-                      let candidate0 =
-                            buildAppliedComposition
-                              (previous ^. #target)
-                              targetOrigin
-                              (targetArtifact ^. #version)
-                              (previous ^. #additionalModules)
-                              (Just namespace)
-                              (previous ^. #context)
-                              originedModules
-                              resolvedValues
-                              now
-                              & #checkoutCommands
-                              .~ checkoutCommandsFromOperations operations
-                              & #applicationId
-                              .~ (previous ^. #applicationId)
-                          candidate =
-                            setCompositionState
-                              (candidate0 ^. #instances)
-                              (previous ^. #commandReceipts)
-                              candidate0
-                          desiredOwners =
-                            Map.map
-                              (\owner -> DesiredFileOwner owner (Set.singleton (candidate ^. #applicationId)))
-                              rawOwners
-                          renderedWarnings = map compositionWarning compositionWarnings
-                      pure
-                        ( Right
-                            PlannedApplication
-                              { previous = Just previous,
-                                candidate,
-                                modulesInOrder,
-                                resolvedValues,
-                                operations,
-                                desiredOwners
-                              }
-                        )
+                Right ComposedPlan {operations, warnings = compositionWarnings, managedOwners = rawOwners, seedOwners} -> do
+                  proposedOrigin <- publishedArtifactOrigin projectRoot targetArtifact
+                  let targetOrigin = if sameArtifactIdentity proposedOrigin (previous ^. #targetOrigin) then previous ^. #targetOrigin else proposedOrigin
+                  proposedModules <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
+                  let originedModules = [(instanceId, modul, maybe origin (\state -> if sameArtifactIdentity origin (state ^. #origin) then state ^. #origin else origin) (find (\state -> state ^. #name == instanceId ^. #module_ && state ^. #parentVars == instanceId ^. #parentVars) (previous ^. #instances))) | (instanceId, modul, origin) <- proposedModules]
+                  let candidate0 =
+                        buildAppliedComposition
+                          (previous ^. #target)
+                          targetOrigin
+                          (targetArtifact ^. #version)
+                          (previous ^. #additionalModules)
+                          (Just namespace)
+                          (previous ^. #context)
+                          originedModules
+                          resolvedValues
+                          now
+                          & #checkoutCommands
+                          .~ checkoutCommandsFromOperations operations
+                          & #applicationId
+                          .~ (previous ^. #applicationId)
+                      candidate =
+                        setCompositionState
+                          (candidate0 ^. #instances)
+                          (previous ^. #commandReceipts)
+                          candidate0
+                      desiredOwners =
+                        Map.map
+                          (\owner -> DesiredFileOwner owner (Set.singleton (candidate ^. #applicationId)))
+                          rawOwners
+                      renderedWarnings = map compositionWarning compositionWarnings
+                  pure
+                    ( Right
+                        PlannedApplication
+                          { previous = Just previous,
+                            candidate,
+                            modulesInOrder,
+                            resolvedValues,
+                            operations = expandSeedClaims seedOwners operations,
+                            desiredOwners
+                          }
+                    )
   where
     compositionWarning (FileOverwritten path old new) = CrossApplicationLastWriter path old new
     compositionWarning (ContentMerged path old new) = CrossApplicationLastWriter path old new
@@ -675,9 +684,42 @@ loadConfigMaps namespace context =
   where
     configResult = first (UpdateConfigurationFailed . T.pack . show)
 
-seedLegacyApplication ::
+seedLegacyApplication :: UpdateRequest -> FilePath -> FilePath -> FilePath -> Manifest -> UTCTime -> Text -> IO (Either UpdateError ([AppliedComposition], [UpdateWarning], Maybe StagedSelection))
+seedLegacyApplication request session projectRoot installed manifest now requested = case roots of
+  [] -> fmap (fmap (\(apps, warnings) -> (apps, warnings, Nothing))) (seedInstalledLegacyApplication request projectRoot manifest now requested)
+  (target, origin, version) : _ -> do
+    let provisional = AppliedComposition (mkApplicationId target []) target origin version [] (Just (deriveNamespace (ModuleName requested))) Nothing [] Map.empty [] now
+    staged <- stageCandidateSources (session </> "legacy-candidate") projectRoot installed [provisional]
+    case staged of
+      Left err -> pure (Left err)
+      Right (catalog, sourceWarnings) -> case candidateRoot catalog provisional of
+        Left err -> pure (Left err)
+        Right (primary, additional, overrides, _) -> do
+          paths <- defaultSearchPaths
+          loaded <- loadComposition (catalog ^. #searchRoot : paths) primary additional
+          case loaded of
+            Left err -> pure (Left (CandidateLoadFailed requested err))
+            Right modulesInOrder -> do
+              let (saved, legacyWarnings) = legacySavedValues manifest modulesInOrder
+                  namespace = deriveNamespace primary
+              resolved <- resolveApplicationValues request namespace "" saved overrides modulesInOrder
+              case resolved of
+                Left err -> pure (Left err)
+                Right values -> do
+                  origined <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
+                  let recorded = buildAppliedComposition target origin version additional (Just namespace) Nothing origined values now & #instances %~ map (restoreLegacyVersion manifest)
+                  planned <- planApplication request projectRoot catalog now recorded
+                  pure $ do
+                    candidate <- planned
+                    Right ([recorded], legacyWarnings, Just (StagedSelection (Set.singleton (recorded ^. #applicationId)) catalog sourceWarnings [candidate]))
+  where
+    roots =
+      [(AppliedModuleTarget (applied ^. #name), applied ^. #origin, applied ^. #moduleVersion) | applied <- manifest ^. #modules, applied ^. #name == ModuleName requested, applied ^. #parentVars == emptyParentVars]
+        <> [(AppliedRecipeTarget (recipe ^. #name), recipe ^. #origin, recipe ^. #recipeVersion) | recipe <- maybeToList (manifest ^. #recipe), recipe ^. #name == RecipeName requested]
+
+seedInstalledLegacyApplication ::
   UpdateRequest -> FilePath -> Manifest -> UTCTime -> Text -> IO (Either UpdateError ([AppliedComposition], [UpdateWarning]))
-seedLegacyApplication request projectRoot manifest now requested = do
+seedInstalledLegacyApplication request projectRoot manifest now requested = do
   searchPaths <- defaultSearchPaths
   discovered <- discoverRunnable searchPaths (ModuleName requested)
   case discovered of
@@ -724,18 +766,22 @@ legacySavedValues manifest modulesInOrder = (saved, warnings)
   where
     declarations = [(instanceId, declaration) | (instanceId, modul, _) <- modulesInOrder, declaration <- modul ^. #vars]
     counts = Map.fromListWith (+) [(declaration ^. #name, 1 :: Int) | (_, declaration) <- declarations]
+    reusable name = Map.lookup name counts == Just 1 || (sharedExport name && sameTypes name && not (any (Map.member name . (^. #parentVars . #unParentVars) . (\(instanceId, _, _) -> instanceId)) modulesInOrder))
+    sharedExport name = any (\(_, modul, _) -> any (\export -> export ^. #var == name && maybe True (== name) (export ^. #alias)) (modul ^. #exports)) modulesInOrder
+    sameTypes name = case [declaration ^. #type_ | (_, declaration) <- declarations, declaration ^. #name == name] of firstType : rest -> all (== firstType) rest; [] -> False
     saved =
       Map.fromListWith
         Map.union
         [ (instanceId, Map.singleton (declaration ^. #name) value)
         | (instanceId, declaration) <- declarations,
-          Map.lookup (declaration ^. #name) counts == Just 1,
+          reusable (declaration ^. #name),
           Just value <- [Map.lookup (declaration ^. #name) (manifest ^. #vars)]
         ]
     ambiguous =
       [ AmbiguousLegacyValue name
       | (name, count) <- Map.toAscList counts,
         count > 1,
+        not (reusable name),
         Map.member name (manifest ^. #vars)
       ]
     missing =
@@ -749,7 +795,7 @@ legacySavedValues manifest modulesInOrder = (saved, warnings)
 restoreLegacyVersion :: Manifest -> AppliedInstanceState -> AppliedInstanceState
 restoreLegacyVersion manifest state =
   case find (\applied -> applied ^. #name == state ^. #name && applied ^. #parentVars == state ^. #parentVars) (manifest ^. #modules) of
-    Nothing -> state
+    Nothing -> state & #moduleVersion .~ Nothing
     Just applied ->
       AppliedInstanceState
         { name = state ^. #name,
@@ -967,7 +1013,7 @@ summarizeInputChanges seedWarnings planned =
 
 transactionTargetPaths :: Manifest -> ReconciliationPlan -> [PlannedUpdateMigration] -> Set FilePath
 transactionTargetPaths manifest reconciliation migrations =
-  Map.keysSet (reconciliation ^. #files) `Set.union` Set.fromList (concatMap migrationTargets migrations)
+  reconciliationMutationPaths reconciliation `Set.union` Set.fromList (concatMap migrationTargets migrations)
   where
     migrationTargets migration = concatMap targets (migration ^. #stagedPlan . #ops)
     targets (MoveFileInst source destination _) = [source, destination]
@@ -1029,8 +1075,8 @@ planActualReconciliation plan manifest = do
     runEff $
       runFilesystem $
         runBaselineStore (plan ^. #snapshot . #baselineDirectory) $
-          planReconciliation (plan ^. #snapshot . #projectRoot) manifest selected operations owners
-  pure (first UpdateReconciliationFailed result)
+          planSeedReconciliation (plan ^. #snapshot . #projectRoot) (plan ^. #snapshot . #projectRoot) manifest selected operations owners (applicationSeedClaims (plan ^. #plannedApplications))
+  pure (first (reconciliationUpdateError manifest) result)
 
 -- | Reapply choices gathered after the initial read-only plan to the
 -- reconciliation rebuilt after real migration commands. Exact equality is
@@ -1441,3 +1487,50 @@ applyUpdateCheckout plan prior filesManifest = runEff $ runFilesystem $ runProce
       [] -> do
         applied <- applyCheckoutPlan ApplyDeclaration root links
         pure $ maybe (Right (map CheckoutWarning (concatMap (^. #warnings) (links ^. #entries)))) (Left . UpdateCheckoutFailed) (applied ^. #failure)
+
+expandSeedClaims :: Map FilePath (Set ModuleName) -> [Operation] -> [Operation]
+expandSeedClaims claims = concatMap $ \case
+  op@SeedFileOp {dest, content, strategy, moduleName} -> op : [SeedFileOp dest content strategy owner | owner <- Set.toAscList (Map.findWithDefault Set.empty dest claims), owner /= moduleName]
+  op -> [op]
+
+applicationSeedClaims :: [PlannedApplication] -> Map FilePath (Map ApplicationId (Set ModuleName))
+applicationSeedClaims = Map.unionsWith (Map.unionWith Set.union) . map claims
+  where
+    claims application = Map.map (Map.singleton (application ^. #candidate . #applicationId)) (seedOperationClaims (application ^. #operations))
+
+-- Existing standalone dependency applications join legacy adoption's ordinary
+-- preview. Declared edge bindings become saved inputs for that standalone root,
+-- so both recorded applications describe the same shared producer output.
+includeLegacyDependencies :: UpdateRequest -> FilePath -> Manifest -> UTCTime -> [AppliedComposition] -> StagedSelection -> IO (Either UpdateError ([AppliedComposition], StagedSelection, [UpdateWarning]))
+includeLegacyDependencies request root manifest now legacy staged = do
+  let candidates =
+        [ (app, instanceId ^. #parentVars . #unParentVars)
+        | planned <- staged ^. #plannedApplications,
+          (instanceId, _, _) <- planned ^. #modulesInOrder,
+          instanceId ^. #module_ /= case planned ^. #candidate . #target of AppliedModuleTarget name -> name; _ -> ModuleName "",
+          app <- manifest ^. #applications,
+          app ^. #target == AppliedModuleTarget (instanceId ^. #module_),
+          Just artifact <- [Map.lookup (CandidateModule, instanceId ^. #module_ . #unModuleName) (staged ^. #catalog . #artifacts)],
+          Just url <- [artifact ^. #sourceUrl],
+          sameArtifactIdentity (app ^. #targetOrigin) (RemoteOrigin url (instanceId ^. #module_ . #unModuleName) (artifact ^. #repoName))
+        ]
+      bindingSets = Map.fromListWith Set.union [(app ^. #applicationId, Set.singleton bindings) | (app, bindings) <- candidates]
+      unique = [(app, bindings) | app <- manifest ^. #applications, Just values <- [Map.lookup (app ^. #applicationId) bindingSets], bindings <- take 1 (Set.toList values)]
+  case [app | app <- manifest ^. #applications, maybe False ((> 1) . Set.size) (Map.lookup (app ^. #applicationId) bindingSets)] of
+    app : _ -> pure (Left (UpdateCompositionFailed ["dependency application '" <> targetName app <> "' is required with different input bindings; select compatible producer declarations before updating"]))
+    [] -> do
+      planned <- forM unique $ \(app, bindings) ->
+        planApplication (request & #varOverrides %~ (<> [(name ^. #unVarName, value) | (name, value) <- Map.toAscList bindings])) root (staged ^. #catalog) now app
+      pure $ do
+        added <- sequence planned
+        let previous = map fst unique <> legacy
+            allPlanned = added <> staged ^. #plannedApplications
+        Right
+          ( previous,
+            staged & #applicationIds .~ Set.fromList (map (^. #applicationId) previous) & #plannedApplications .~ allPlanned,
+            [DependencyApplicationIncluded (applicationRef manifest (app ^. #applicationId)) bindings | (app, bindings) <- unique]
+          )
+
+reconciliationUpdateError :: Manifest -> ReconciliationError -> UpdateError
+reconciliationUpdateError manifest (SeedReleaseBlockedByOwners path owners) = UpdateSeedReleaseBlocked path (Set.map (applicationRef manifest) owners)
+reconciliationUpdateError _ err = UpdateReconciliationFailed err

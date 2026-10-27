@@ -7,6 +7,8 @@
 module Seihou.Filesystem.Exclusive
   ( ExclusiveCreateResult (..),
     createFileExclusiveWith,
+    createFileExclusiveWithIdentity,
+    createFileExclusiveAnchored,
   )
 where
 
@@ -27,14 +29,32 @@ data ExclusiveCreateResult = ExclusiveCreated | ExclusiveOccupied | ExclusiveFai
 -- link(2) publishes all bytes at once and fails for every existing entry, including
 -- dangling symlinks. Cleanup never removes the public destination.
 createFileExclusiveWith :: (Handle -> IO ()) -> FilePath -> IO ExclusiveCreateResult
-createFileExclusiveWith writeContent path = do
+createFileExclusiveWith writeContent path = fst <$> createFileExclusiveWithIdentity writeContent path
+
+-- | Device/inode evidence comes from the private object, never a later lookup
+-- of the public path, so recovery can distinguish an identical replacement.
+createFileExclusiveWithIdentity :: (Handle -> IO ()) -> FilePath -> IO (ExclusiveCreateResult, Maybe (Integer, Integer))
+createFileExclusiveWithIdentity = createFileExclusiveAnchored Nothing
+
+-- | A transaction may retain a private hard-link anchor until commit/recovery.
+-- Keeping the original inode alive prevents inode reuse from making an identical
+-- replacement look like this transaction's object.
+createFileExclusiveAnchored :: Maybe FilePath -> (Handle -> IO ()) -> FilePath -> IO (ExclusiveCreateResult, Maybe (Integer, Integer))
+createFileExclusiveAnchored anchor writeContent path = do
   result <-
     try @IOException $
       bracket
         (openBinaryTempFile (takeDirectory path) ".seihou-seed")
         (\(temporary, handle) -> hClose handle >> (removeFile temporary `catch` \(_ :: IOException) -> pure ()))
-        (\(temporary, handle) -> writeContent handle >> hClose handle >> Posix.createLink temporary path)
+        ( \(temporary, handle) -> do
+            writeContent handle
+            hClose handle
+            status <- Posix.getFileStatus temporary
+            maybe (pure ()) (Posix.createLink temporary) anchor
+            Posix.createLink temporary path
+            pure (fromIntegral (Posix.deviceID status), fromIntegral (Posix.fileID status))
+        )
   pure $ case result of
-    Right () -> ExclusiveCreated
-    Left err | isAlreadyExistsError err -> ExclusiveOccupied
-    Left err -> ExclusiveFailure (T.pack (show err))
+    Right identity -> (ExclusiveCreated, Just identity)
+    Left err | isAlreadyExistsError err -> (ExclusiveOccupied, Nothing)
+    Left err -> (ExclusiveFailure (T.pack (show err)), Nothing)

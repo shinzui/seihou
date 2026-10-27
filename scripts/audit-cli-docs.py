@@ -20,6 +20,23 @@ def require(condition, message):
         raise SystemExit(f'CLI documentation audit failed: {message}')
 
 
+def pinned_schema(destination):
+    """Use the CLI's published schema pin without changing a developer checkout."""
+    source = (CLI / 'src/Seihou/CLI/SchemaVersion.hs').read_text()
+    revision = re.search(r'seihou-schema/([0-9a-f]{40})/package.dhall', source).group(1)
+    repository = ROOT / 'schema'
+    paths = subprocess.check_output(['git', '-C', str(repository), 'ls-tree', '-r',
+                                     '--name-only', revision], text=True).splitlines()
+    for name in paths:
+        if not name.endswith('.dhall'):
+            continue
+        path = destination / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(subprocess.check_output(['git', '-C', str(repository),
+                                                  'show', f'{revision}:{name}']))
+    return (destination / 'package.dhall').as_posix()
+
+
 def source_audit():
     help_source = (CLI / 'src-exe/Seihou/CLI/Help.hs').read_text()
     entries = re.findall(r'HelpTopic "([\w-]+)" "[^"]+" (\w+)', help_source)
@@ -96,7 +113,7 @@ def runtime_audit(executable, topics, commands, report):
         # Explicit local-schema fixtures exercise renderers without a network or provider.
         modules = project / '.seihou/modules'
         modules.mkdir(parents=True)
-        schema = (ROOT / 'schema/package.dhall').as_posix()
+        schema = pinned_schema(project / 'schema')
         for name, definition, body in [
             ('audit-module', 'module', 'S.Module::{ name = "audit-module", version = Some "1.0.0" }'),
             ('audit-blueprint', 'blueprint', 'S.Blueprint::{ name = "audit-blueprint", prompt = "Audit blueprint", migrations = [ S.BlueprintMigration::{ from = "1.0.0", to = "2.0.0", prompt = "Audit migration" } ] }'),

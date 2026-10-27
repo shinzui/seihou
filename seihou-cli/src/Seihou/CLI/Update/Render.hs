@@ -72,6 +72,7 @@ import Seihou.Engine.Reconcile
     ReconciliationPlan (..),
     ReconciliationSummary (..),
     ResolvedFileConflict (..),
+    SeedAction (..),
     reconciliationSummary,
     recordedSharedWriteMode,
   )
@@ -118,7 +119,8 @@ agentUpgradeHint target =
 renderUpdateHuman :: Bool -> UpdateOutput -> Text
 renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
   T.unlines $
-    preparationLines (displayedPreparation plan)
+    seedLines (plan ^. #reconciliation)
+      <> preparationLines (displayedPreparation plan)
       <> versionLines plan
       <> [ renderInputs (plan ^. #inputChanges),
            "Migrations:  " <> count (length (plan ^. #migrations)) <> migrationCaveat plan,
@@ -332,7 +334,7 @@ conflictLines reconciliation = concatMap renderOne (Map.toAscList (reconciliatio
     renderOne _ = []
 
 warningLines :: [UpdateWarning] -> [Text]
-warningLines = map (("Warning:     " <>) . warningText)
+warningLines = map (\case warning@DependencyApplicationIncluded {} -> "Dependency:  " <> warningText warning; warning -> "Warning:     " <> warningText warning)
 
 versionValue :: VersionChange -> Value
 versionValue change =
@@ -372,6 +374,10 @@ fileValue (path, reconciliation) =
     ]
 
 classification :: FileReconciliation -> Text
+classification FileSeedCreate {} = "seedCreate"
+classification FileSeedSettle {} = "seedSettle"
+classification FileSeedRelease {} = "seedRelease"
+classification FileSeedAbandon {} = "seedAbandon"
 classification FileCreate {} = "create"
 classification FileUpdate {} = "update"
 classification FileAutoMerge {} = "autoMerge"
@@ -450,6 +456,11 @@ fingerprintText (CommandFingerprint (SHA256 value)) = value
 -- exhaustive, with no fallback to 'show': a new constructor must not compile
 -- its way into the terminal as Haskell syntax.
 warningText :: UpdateWarning -> Text
+warningText (DependencyApplicationIncluded application bindings) =
+  "include "
+    <> applicationLabel application
+    <> " from the selected application's dependency graph"
+    <> if Map.null bindings then "" else "; declared bindings: " <> T.intercalate ", " [name ^. #unVarName <> "=" <> value | (name, value) <- Map.toAscList bindings]
 warningText (LocalArtifactHasNoRemote name) =
   name
     <> " has no recorded remote, so the locally installed copy is the update candidate;"
@@ -517,6 +528,7 @@ errorCode UpdateMigrationPlanFailed {} = "migration_plan_failed"
 errorCode UpdateMigrationStageFailed {} = "migration_stage_failed"
 errorCode (UpdateCheckoutFailed err) = err ^. #code
 errorCode UpdateCompositionFailed {} = "composition_failed"
+errorCode UpdateSeedReleaseBlocked {} = "seed_release_blocked_by_owners"
 errorCode UpdateReconciliationFailed {} = "reconciliation_failed"
 errorCode UpdateHasUnresolvedPaths {} = "unresolved_paths"
 errorCode UpdateRecoveryFailed {} = "recovery_failed"
@@ -618,6 +630,8 @@ errorMessage (UpdateMigrationStageFailed name err) =
 errorMessage (UpdateCheckoutFailed err) = err ^. #message
 errorMessage (UpdateCompositionFailed problems) =
   "The candidate composition is invalid: " <> T.intercalate "; " problems
+errorMessage (UpdateSeedReleaseBlocked path owners) =
+  "Cannot release '" <> T.pack path <> "' while these managed application owners remain outside the selection: " <> T.intercalate ", " (map applicationLabel (Set.toAscList owners)) <> ". Review seihou update --include-shared-owners for the selected target; every candidate owner must declare seed ownership."
 errorMessage (UpdateReconciliationFailed err) =
   reconciliationErrorText err
 errorMessage (UpdateHasUnresolvedPaths paths) =
@@ -694,7 +708,20 @@ migrationExecErrorText (MigrationCommandFailed output code) =
 migrationExecErrorText (MigrationUnsafePath label path reason) =
   "unsafe migration " <> label <> " '" <> T.pack path <> "': " <> reason
 
+seedLines :: ReconciliationPlan -> [Text]
+seedLines plan = ["Seed:        " <> label item <> " " <> T.pack path | (path, item) <- Map.toAscList (plan ^. #files), case item of FileSeedCreate {} -> True; FileSeedSettle {} -> True; FileSeedRelease {} -> True; FileSeedAbandon {} -> True; _ -> False]
+  where
+    label FileSeedCreate {} = "create once"
+    label FileSeedSettle {} = "keep project file"
+    label FileSeedRelease {} = "release to project"
+    label FileSeedAbandon {} = "retire claim; keep project file"
+    label _ = ""
+
 reconciliationErrorText :: ReconciliationError -> Text
+reconciliationErrorText (Reconcile.SeedReconciliationFailed reason) = reason
+reconciliationErrorText (Reconcile.SeedReleaseBlockedByOwners path owners) = "cannot release '" <> T.pack path <> "' while unselected managed application owners remain: " <> T.intercalate ", " (map (^. #unApplicationId) (Set.toAscList owners)) <> "; review an update with --include-shared-owners"
+reconciliationErrorText (Reconcile.SeedPathAlsoManaged path) = "seed path '" <> T.pack path <> "' also has a managed or overlapping claim; publish compatible producer declarations"
+reconciliationErrorText (Reconcile.InvalidSeedAdoptionChoice path) = "adopting seed '" <> T.pack path <> "' requires an explicit supported keep or accept choice; a missing seed can only be accepted for recreation or the update aborted"
 reconciliationErrorText (InvalidReconciliationPath path reason) =
   "Path " <> T.pack path <> " cannot be reconciled: " <> reason
 reconciliationErrorText (MissingDesiredOwner path) =

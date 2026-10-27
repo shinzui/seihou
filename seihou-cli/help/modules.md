@@ -101,9 +101,14 @@ VERSIONING AND MIGRATIONS
 STEP LIFECYCLES
 
   Omitted lifecycle means managed. Some "seed" is accepted for whole-file
-  copy/template/dhall-text steps without patches, and schema 8 has seed
-  receipts, but create-once handoff behavior is not implemented yet. Do not
-  rely on it to preserve a project-owned file across reruns or updates.
+  copy/template/dhall-text steps without patches. Run creates absent seeds
+  once and keeps existing regular files. Receipts preserve edits and deliberate
+  deletion through reruns, force, update and removal. Status/diff count receipts
+  without comparing seed contents. Update TARGET previews "release to project"
+  for managed-to-seed adoption; reverse adoption requires explicit consent.
+  Shell commands are unsandboxed: authors must not mutate seed-owned files.
+  This is development-source behavior; supporting release publication is pending.
+  Older clients can ignore lifecycle and overwrite content.
 
 CHECKOUT DIRECTORY LINKS
 

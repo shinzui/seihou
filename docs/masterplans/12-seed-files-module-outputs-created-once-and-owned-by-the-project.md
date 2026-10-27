@@ -125,7 +125,7 @@ seeds. The local ADR corpus has no OKF profile, verified with `mori show --full`
 | 2 | Record seed receipts; correct exact ownership before runtime use | docs/plans/100-record-seed-receipts-in-manifest-schema-8.md | None | EP-1 vocabulary | Complete |
 | 3 | Create seed files once during run | docs/plans/101-create-seed-files-once-during-seihou-run.md | EP-1, EP-2 including M4 | EP-5 consumes common APIs | Complete |
 | 4 | Report and remove seed ownership | docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md | EP-2 including M4 | EP-3 real-command acceptance | Complete |
-| 5 | Reconcile seeds and release managed files | docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md | EP-1, EP-2 including M4, EP-3; M2 also needs EP-6 M1 candidate | EP-4 status acceptance | Not Started |
+| 5 | Reconcile seeds and release managed files | docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md | EP-1, EP-2 including M4, EP-3; M2 also needs EP-6 M1 candidate | EP-4 status acceptance | Complete |
 | 6 | Adopt producers and verify delivery | docs/plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring.md | M1: none; M2–M4: EP-3, EP-4, EP-5 | EP-5 M2 consumer proof | In Progress |
 
 Status values are Not Started, In Progress, Complete, Cancelled. EP-2 includes the accepted
@@ -141,7 +141,7 @@ Only after that early proof expand EP-5 M3/M4. Complete EP-4/EP-5 integration be
 publish/adopt and verify released behavior. Whole-child states remain In Progress until all their
 acceptance criteria pass; no dependency is silently weakened.
 
-EP-2 M4 is implemented and accepted in source. EP-3 and EP-4 are accepted in source, including native macOS/Linux creation and ordinary command tests. The next implementation work is EP-5 M1/M2. EP-6 M1 is ready independent preparation. Release
+EP-2 M4 is implemented and accepted in source. EP-3 and EP-4 are accepted in source, including native macOS/Linux creation and ordinary command tests. EP-5 is now accepted in source, including one-command adoption against the real Reiko working state, transition/recovery checks and the CLI help audit. EP-6 M1 prepared the early candidate; EP-6 M2–M4 remain the producer and delivery work. Release
 readiness requires EP-3, EP-4, and EP-5 together; the interim refusal is a safe development
 boundary, not a delivered seed workflow. A source build and a candidate checkout do not close
 the delivery gate.
@@ -273,3 +273,11 @@ MasterPlan and EP-1/EP-2. None had recorded review entries before this pass.
 Revision note (2026-10-26): correct unsafe intermediate writes, receipt ownership and race
 semantics; preserve current checkout/schema APIs; schedule early real adoption and require
 published/installed delivery evidence. Reopened EP-2 is reflected consistently in the registry.
+
+### Cross-plan friction evidence (2026-10-27)
+
+[FRIC-1](../friction-log/1-checkout-tests-require-a-newer-schema-than-the-local-submodule.md)
+recurred under EP-5 after EP-2: both checkout command fixtures and the CLI help
+audit depended on a mutable local schema. Both now materialize the executable's
+published pin from Git objects, preserving developer checkout state. The resolved
+entry records this shared testing constraint; no user workaround is required.

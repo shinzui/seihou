@@ -17,6 +17,7 @@ import Data.List (find)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Seihou.CLI.Update.Types
+import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
 import Seihou.Core.Types
 import Seihou.Prelude
 
@@ -73,8 +74,24 @@ matchApplications selection manifest = case selection of
     | null (manifest ^. #applications) -> case nubOrd names of
         [name] -> Right (MatchedLegacy name)
         _ -> Left LegacyUpdateRequiresOneTarget
-    | otherwise -> MatchedNamed <$> foldM selectName Set.empty (nubOrd names)
+    | [name] <- nubOrd names, not (any (\app -> targetName app == name || containsModule name app) (manifest ^. #applications)), any ((== name) . (^. #name . #unModuleName)) (manifest ^. #modules) -> Right (MatchedLegacy name)
+    | otherwise -> MatchedNamed . expandDependencies <$> foldM selectName Set.empty (nubOrd names)
   where
+    expandDependencies selected =
+      let required =
+            Set.fromList
+              [ other ^. #applicationId
+              | app <- manifest ^. #applications,
+                Set.member (app ^. #applicationId) selected,
+                state <- app ^. #instances,
+                AppliedModuleTarget root <- [app ^. #target],
+                state ^. #name /= root,
+                other <- manifest ^. #applications,
+                other ^. #target == AppliedModuleTarget (state ^. #name),
+                sameArtifactIdentity (state ^. #origin) (other ^. #targetOrigin)
+              ]
+          next = selected `Set.union` required
+       in if next == selected then selected else expandDependencies next
     selectName selected name =
       let exact = filter ((== name) . targetName) (manifest ^. #applications)
           matches =
@@ -206,7 +223,7 @@ targetName application = case application ^. #target of
   AppliedRecipeTarget name -> (name ^. #unRecipeName)
 
 availableTargets :: Manifest -> [Text]
-availableTargets manifest = nubOrd (map targetName (manifest ^. #applications) <> instanceNames)
+availableTargets manifest = nubOrd (map targetName (manifest ^. #applications) <> instanceNames <> map (^. #name . #unModuleName) (manifest ^. #modules))
   where
     instanceNames =
       [ state ^. #name . #unModuleName

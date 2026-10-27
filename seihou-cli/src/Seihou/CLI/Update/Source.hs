@@ -18,6 +18,7 @@ import Seihou.CLI.InstallShared
     copyDirectoryRecursive,
   )
 import Seihou.CLI.Update.Types
+import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
 import Seihou.Core.ArtifactRef (ArtifactRefError, resolveArtifactOrigin)
 import Seihou.Core.Module (defaultSearchPaths, validateModule)
 import Seihou.Core.Recipe (validateRecipe)
@@ -58,7 +59,7 @@ stageCandidateSources sessionRoot projectRoot installedDirectory selected = do
   requirements <- requirementsFor projectRoot installedDirectory selected
   let remoteOrigins =
         Map.fromList
-          [ (origin ^. #sourceUrl, origin)
+          [ (normalizeOriginUrl (origin ^. #sourceUrl), origin)
           | requirement <- requirements,
             Just origin <- [requirement ^. #origin]
           ]
@@ -66,7 +67,7 @@ stageCandidateSources sessionRoot projectRoot installedDirectory selected = do
       searchRoot = sessionRoot </> "search"
   Directory.createDirectoryIfMissing True clonesRoot
   Directory.createDirectoryIfMissing True searchRoot
-  remoteResult <- stageRemoteOrigins clonesRoot searchRoot (Map.toAscList remoteOrigins)
+  remoteResult <- stageRemoteOrigins clonesRoot searchRoot [(origin ^. #sourceUrl, origin) | origin <- Map.elems remoteOrigins]
   case remoteResult of
     Left err -> pure (Left err)
     Right (remoteArtifacts, clones) -> do
@@ -358,7 +359,7 @@ verifyRemoteRequirements requirements artifacts = traverse_ verify requirements
       Just candidate -> case requirement ^. #origin of
         Nothing -> Right ()
         Just origin
-          | candidate ^. #sourceUrl == Just (origin ^. #sourceUrl) -> Right ()
+          | fmap normalizeOriginUrl (candidate ^. #sourceUrl) == Just (normalizeOriginUrl (origin ^. #sourceUrl)) -> Right ()
           | otherwise -> Left (CandidateArtifactMissing (requirement ^. #kind) (requirement ^. #name))
 
 gitRevision :: FilePath -> IO (Maybe Text)

@@ -877,7 +877,24 @@ guarantee — see [migrations.md](migrations.md) or run
 
 ### Step lifecycle
 
-`lifecycle : Optional Text` defaults to managed when omitted. `Some "seed"` declares a whole file created once and handed to the project. Seeds support copy, template, and dhall-text without patches. See [ADR 0017](../adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md); runtime seed behavior requires the remaining seed implementation plans.
+`lifecycle : Optional Text` defaults to managed when omitted. `Some "seed"` declares a whole file created once and handed to the project. Seeds support copy, template, and dhall-text without patches:
+
+```dhall
+S.Step::{ strategy = "template", src = "CHANGELOG.md.tpl",
+          dest = "CHANGELOG.md", lifecycle = Some "seed" }
+```
+
+Run creates an absent, unsettled seed using exclusive publication. It keeps an existing regular file; an initially occupied directory or symlink blocks creation. Once a receipt is committed in `.seihou/manifest.json`, reruns, force, update, status, diff and removal preserve project edits and intentional deletion. Seed receipts carry exact application/instance claims and settlement provenance, with no content hash or baseline. Removing the last claim forgets settlement without deleting the file; reintroduction may create an absent file again.
+
+Existing projects adopt a producer's seed declarations with one ordinary command:
+
+```bash
+seihou update haskell-cli-app
+```
+
+Its normal preview includes `release to project`; confirmation drops managed tracking while preserving bytes or absence. Update fetches recorded sources/dependencies and prepares supported manifests automatically. Repeat unchanged updates are no-ops. Commit the resulting manifest so clones preserve the same settlement. Seed-only removal needs no custom removal specification. Seed-to-managed adoption requires an explicit interactive keep/accept choice; force and JSON cannot supply consent. Retained managed/checkout claims and overlapping output paths block inconsistent declarations.
+
+Declarative migrations and removal actions must not mutate seeds. Arbitrary shell commands run with user permissions and are not sandboxed by lifecycle; audit commands and dependencies before publishing seeds. This runtime is implemented in the development source; the proposed minimum supporting release is **0.11.0.0**, pending publication and installed-binary acceptance. Do not publish seed-producing modules before that gate: older binaries may ignore lifecycle and overwrite project content. See [ADR 0017](../adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md).
 
 ### Checkout directory outputs
 

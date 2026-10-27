@@ -17,6 +17,11 @@ provenance:
       at: 2026-10-27T00:43:50Z
       mode: "update"
       note: "Specify content-free release, transactional creation and early ordinary consumer acceptance"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-27T02:58:44Z
+      mode: "implement"
+      note: "Implement transactional seed reconciliation and early real-consumer adoption before expanding variants"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -55,12 +60,40 @@ is a no-op. Missing legacy origin information still uses the existing manifest m
 
 ## Progress
 
-- [ ] Milestone 1: seed reconciliation and exclusive transactional creation preserve bytes, claims, and rollback; interim refusal is removed safely.
-- [ ] Milestone 2: a representative existing Haskell consumer adopts seed declarations through ordinary update before expanding variant coverage.
-- [ ] Milestone 3: shared-owner transitions, retirement, adoption, migration protection, automation, and human output meet the complete contract.
-- [ ] Milestone 4: combined command acceptance, docs, and recovery checks pass; release readiness handed to EP-6.
+- [x] (2026-10-27) Milestone 1: seed reconciliation and exclusive transactional creation preserve bytes, claims, and rollback; interim refusal is removed safely.
+- [x] (2026-10-27) Milestone 2: a representative existing Haskell consumer adopts seed declarations through ordinary update before expanding variant coverage.
+- [x] (2026-10-27) Milestone 3: shared-owner transitions, retirement, adoption, migration protection, automation, and human output meet the complete contract.
+- [x] (2026-10-27) Milestone 4: combined command acceptance, docs, and recovery checks pass; release readiness handed to EP-6.
 
 ## Surprises & Discoveries
+
+Milestone 2 evidence (2026-10-27): an isolated copy of the actual tracked working
+state of `mori://shinzui/reiko` at `eb3f9cb54534c68f4c0c67e64856273edcb30f71`
+adopted the EP-6 M1 full-history producer candidate through ordinary
+`seihou update haskell-cli-app`, one normal confirmation, and no producer installation,
+manifest/index repair or transitive target list. Empty installed cache was retained;
+Git transport rewrites redirected recorded public remotes to the disposable producer.
+Preview included 12 seed paths and schema 10→11; root CHANGELOG and both Cabal files
+matched their pre-update bytes. Apply recorded 12 content-free receipts and repeat
+returned `Already up to date`. This is a source-built 0.10.1.0 executable with working
+changes, not a published runtime acceptance. The real project's mixed legacy/new
+records exposed missing legacy target selection, remote fetching and recorded dependency
+adoption; these are now owned by ordinary update. The public GitHub SSH and HTTPS
+spellings normalize to one repository identity (ADR 0002), preserving recorded spelling.
+
+
+Milestone 1 evidence (2026-10-27): a built executable released an edited managed
+file without changing bytes, created a second new seed, previewed both actions
+without mutation, and returned `Already up to date` on repeat. Focused native
+transaction tests pass for directory-valued project replacements, deliberate
+absence, an object appearing after preview, unchanged creation rollback, restart
+recovery, later edits, and an identical replacement object. The latter requires a
+private hard-link anchor: device/inode plus a hash alone cannot exclude inode reuse
+after replacement. Recovery keeps the anchored original alive until commit/rollback;
+uncertain interrupted publication preserves the destination and reports recovery
+steps. Journal version 4 retains readers for versions 1–3 and keeps seed creation
+evidence separate from restoring snapshots. Metadata-only paths are excluded from
+transaction targets and snapshots. Broad variants remain after the early consumer gate.
 
 Review (2026-10-26): `buildFinalManifest` already carries `filesManifest.seeds`. Current
 schema is 10, not 8. `ObservedFile` represents presence plus a text hash, so it is unsuitable
@@ -70,6 +103,14 @@ that recovery behavior. An ordinary `WriteMutation` still replaces a concurrentl
 file even if an earlier snapshot check passed.
 
 ## Decision Log
+
+Decision (2026-10-27): a legacy root with saved remote provenance can be adopted even
+when other applications already have newer records. Fetch from that origin and reuse
+saved inputs through normal candidate staging. Existing standalone applications that
+match declared dependency identity join the normal preview; explicit edge bindings
+become their saved root inputs. Conflicting requirements refuse rather than selecting
+one arbitrarily. Recorded application order governs dependency planning. Unrelated
+shared owners retain the existing explicit closure policy.
 
 Decision (2026-10-26): seeds use the existing transaction and recovery journal, with an explicit
 exclusive-create mutation. Metadata-only settlement/release never snapshots or hashes seed
@@ -88,7 +129,24 @@ JSON mode do not imply consent. Adoption of directories/symlinks refuses with a 
 
 ## Outcomes & Retrospective
 
-Planning correction only; no runtime delivery claimed.
+Implemented and accepted in source. All three Cabal suites passed, followed by
+focused seed suites after the final automation/baseline assertions (46 core and
+21 CLI tests). Native macOS/Linux creation checks, flake formatting/conventions/
+placement/pre-commit checks and the provider-free CLI documentation audit pass.
+The latter covers 18 topics, 32 command help pages, five example modules and eight
+prompt renders. Recovery tests exercise actual journal restart, stale creation,
+partial failure, edits and identical replacement preservation. End-to-end checks
+include release of edits/absence/directory replacements, creation, retirement,
+reintroduction, no-op, mixed owners, force/JSON adoption refusal and auto-commit
+excluding edits to released files. Keep-current adoption retains the generated
+candidate baseline, never edited project content. Distinct direct dependency
+instances now survive loading and retain every seed claim.
+
+The real-consumer evidence in Milestone 2 closes the ordinary source workflow gate.
+EP-6 owns producer changes, release and installed-binary acceptance. No supporting
+runtime release or producer publication is claimed. FRIC-1 recurred in the CLI
+documentation audit; its fixture now also uses the executable-pinned schema from
+Git objects, preserving the pre-existing schema checkout.
 
 ## Context and Orientation
 
@@ -200,9 +258,9 @@ adoption in noninteractive mode explains that an interactive ordinary update is 
 
 Protect seed paths before declarative migrations, staged generation, and removal-like mutations:
 no move/delete/rewrite/patch may mutate a seed, or a path being released to one, as a side effect.
-Report incompatible producer migrations before applying anything. Staged projects copy current
-seed bytes when present, preserve deliberate absence, and materialize only newly created seed
-candidates. They must not replace existing seeds with rendered template bytes. Shell commands
+Report incompatible producer migrations before applying anything. Staged managed projects exclude seed/release bytes from their snapshots. Seed classification
+uses the actual project and never materializes settled/released seed candidates. This preserves
+deliberate absence and metadata-only behavior without reading existing seed content. Shell commands
 remain unsandboxed; audit adopting producers and document that they must not mutate seeds.
 Do not claim that lifecycle protection can police arbitrary shell.
 

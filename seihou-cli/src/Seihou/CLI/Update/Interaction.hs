@@ -34,7 +34,8 @@ data InteractionMode = Interactive | NonInteractive
   deriving stock (Eq, Show)
 
 data InteractionError
-  = InteractionRequired (Set FilePath)
+  = SeedAdoptionRequiresInteraction (Set FilePath)
+  | InteractionRequired (Set FilePath)
   | InteractionAborted FilePath
   | InteractionResolutionFailed ReconciliationError
   | InteractionInputFailed Text
@@ -63,6 +64,8 @@ forceResolveUpdatePlan plan = applyResolutionDecisions decisions plan
   where
     decisions = concatMap forceOne (Map.toAscList (plan ^. #reconciliation . #files))
     forceOne (path, FileConflict _ _ _ reason _ _ Nothing) = case reason of
+      AdoptingSeedFile -> []
+      AdoptingMissingSeedFile -> []
       MergeDriverUnavailable _ -> []
       _ -> [ResolveFile path AcceptGenerated]
     forceOne (path, FileOrphanEdited _ _ _ _ Nothing) =
@@ -75,9 +78,11 @@ resolveInteractively ::
   IO (Either InteractionError UpdatePlan)
 resolveInteractively mode plan
   | Set.null remaining = pure (Right plan)
+  | mode == NonInteractive && not (Set.null adoptions) = pure (Left (SeedAdoptionRequiresInteraction adoptions))
   | mode == NonInteractive = pure (Left (InteractionRequired remaining))
   | otherwise = go plan (Map.toAscList (plan ^. #reconciliation . #files))
   where
+    adoptions = Map.keysSet (Map.filter (\case FileConflict _ _ _ reason _ _ Nothing -> reason `elem` [AdoptingSeedFile, AdoptingMissingSeedFile]; _ -> False) (plan ^. #reconciliation . #files))
     remaining = unresolvedPaths (plan ^. #reconciliation)
     go current [] = pure (Right current)
     go current ((path, reconciliation) : rest) = case reconciliation of
@@ -103,6 +108,13 @@ promptConflict ::
   Text ->
   ReconciliationReason ->
   IO (Either InteractionError FileConflictChoice)
+promptConflict path _ _ AdoptingMissingSeedFile = do
+  TIO.hPutStrLn stderr ("Adopt deleted project seed: " <> T.pack path)
+  promptChoice path "Choose [g]enerated (recreate and manage), [a]bort: " (\case "g" -> Just AcceptGenerated; "generated" -> Just AcceptGenerated; _ -> Nothing)
+promptConflict path current _ AdoptingSeedFile = do
+  TIO.hPutStrLn stderr ("Adopt project seed: " <> T.pack path <> "; the producer proposes managed ownership")
+  TIO.hPutStrLn stderr (indentPreview current)
+  promptChoice path "Choose [g]enerated, [k]eep current and manage, [a]bort: " (\case "g" -> Just AcceptGenerated; "generated" -> Just AcceptGenerated; "k" -> Just KeepCurrent; "keep" -> Just KeepCurrent; _ -> Nothing)
 promptConflict path current markers reason = do
   TIO.hPutStrLn stderr ("Conflict: " <> T.pack path <> " (" <> T.pack (show reason) <> ")")
   TIO.hPutStrLn stderr "  Labels: baseline = previous generated, current = project, generated = candidate"

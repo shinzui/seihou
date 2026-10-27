@@ -11,6 +11,7 @@ import Seihou.Filesystem.Exclusive
 import System.Directory qualified as D
 import System.FilePath ((</>))
 import System.IO (hClose, openBinaryTempFile)
+import System.Posix.Files qualified as Posix
 
 check condition message = unless condition (ioError (userError message))
 
@@ -41,6 +42,15 @@ main = bracket setup D.removeDirectoryRecursive $ \root -> do
     check (length (filter (== ExclusiveCreated) outcomes) == 1) "concurrent publication had multiple or no winners"
     check (length (filter (== ExclusiveOccupied) outcomes) == 7) "concurrent publication reported an unexpected error"
     D.removeFile path
+  let anchor = root </> "private-anchor"
+  (anchored, identity) <- createFileExclusiveAnchored (Just anchor) (\handle -> BS.hPutStr handle (BS.pack "same bytes")) path
+  check (anchored == ExclusiveCreated) "anchored publication failed"
+  status <- Posix.getFileStatus anchor
+  check (identity == Just (fromIntegral (Posix.deviceID status), fromIntegral (Posix.fileID status))) "anchor does not retain creation identity"
+  D.removeFile path
+  BS.writeFile path (BS.pack "same bytes")
+  replacement <- Posix.getFileStatus path
+  check (Posix.fileID replacement /= Posix.fileID status) "identical replacement reused the anchored inode"
   putStrLn "Native exclusive seed creation passed: complete bytes, occupied paths, partial failure and concurrent creators."
   where
     setup = do

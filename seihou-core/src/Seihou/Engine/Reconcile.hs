@@ -1,6 +1,9 @@
 module Seihou.Engine.Reconcile
   ( DesiredFileOwner (..),
     DesiredFile (..),
+    SeedAction (..),
+    planSeedReconciliation,
+    seedCandidateReceipts,
     ReconciliationReason (..),
     ObservedFile (..),
     PlannedFileState (..),
@@ -22,18 +25,22 @@ module Seihou.Engine.Reconcile
   )
 where
 
-import Control.Monad (foldM)
+import Control.Monad (foldM, forM, forM_, unless, when)
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
 import Data.List (foldl')
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as T
-import Seihou.Core.Path (validateProjectRelativePath)
+import Data.Time (UTCTime)
+import Seihou.Core.Checkout (pathsOverlap)
+import Seihou.Core.Path (pathsHaveConflictingSpelling, validateProjectRelativePath)
+import Seihou.Core.Seed (seedApplicationIds)
 import Seihou.Core.Types hiding (KeepCurrent)
 import Seihou.Effect.BaselineStore (BaselineError, BaselineStore, readBaseline)
-import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText)
+import Seihou.Effect.Filesystem (Filesystem, PathEntry (..), doesFileExist, inspectPath, readFileText)
 import Seihou.Engine.Section (applyTextPatch)
+import Seihou.Engine.Seed
 import Seihou.Engine.ThreeWayMerge (MergeOutcome (..), threeWayMerge)
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Prelude
@@ -64,7 +71,9 @@ data DesiredFile = DesiredFile
   deriving stock (Eq, Generic, Show)
 
 data ReconciliationReason
-  = MissingTrustedBaseline
+  = AdoptingSeedFile
+  | AdoptingMissingSeedFile
+  | MissingTrustedBaseline
   | CurrentFileMissing
   | MergeDriverUnavailable Text
   | OverlappingEdits
@@ -96,8 +105,24 @@ data ResolvedFileConflict = ResolvedFileConflict
   }
   deriving stock (Eq, Generic, Show)
 
+-- | Metadata-only seed actions carry neither bytes nor content snapshots.
+-- Only creation carries a candidate payload. Supplier is explicit; claims may
+-- include multiple qualified instances per application.
+data SeedAction = SeedAction
+  { path :: !FilePath,
+    supplier :: !ModuleName,
+    claims :: !(Map ApplicationId (Set ModuleName)),
+    decision :: !SeedDecision,
+    newContent :: !(Maybe Text)
+  }
+  deriving stock (Eq, Show, Generic)
+
 data FileReconciliation
-  = FileCreate DesiredFile PlannedFileState ObservedFile
+  = FileSeedCreate SeedAction PathEntry
+  | FileSeedSettle SeedAction
+  | FileSeedRelease SeedAction FileRecord
+  | FileSeedAbandon FilePath SeedRecord
+  | FileCreate DesiredFile PlannedFileState ObservedFile
   | FileUpdate DesiredFile PlannedFileState ObservedFile (Maybe FileRecord)
   | FileAutoMerge DesiredFile PlannedFileState ObservedFile (Maybe FileRecord)
   | FileUnchanged DesiredFile PlannedFileState ObservedFile (Maybe FileRecord)
@@ -142,7 +167,11 @@ recordedSharedWriteMode selected desired prior =
     partial = not (Set.null retainedOwners)
 
 data ReconciliationError
-  = InvalidReconciliationPath FilePath Text
+  = SeedReconciliationFailed Text
+  | SeedReleaseBlockedByOwners FilePath (Set ApplicationId)
+  | SeedPathAlsoManaged FilePath
+  | InvalidSeedAdoptionChoice FilePath
+  | InvalidReconciliationPath FilePath Text
   | MissingDesiredOwner FilePath
   | DesiredOwnerOutsideSelection FilePath (Set ApplicationId)
   | SharedPathRequiresApplications FilePath (Set ApplicationId)
@@ -210,6 +239,91 @@ planReconciliation projectRoot manifest selected operations ownerMap =
       if exists
         then Right <$> readFileText sourcePath
         else pure (Left (CopySourceUnavailable sourcePath))
+
+-- | Partition lifecycle operations before managed materialization or orphan
+-- classification. Seed observation never reads project contents. Across selected
+-- applications, operations arrive in recorded application order.
+planSeedReconciliation ::
+  (Filesystem :> es, BaselineStore :> es, IOE :> es) =>
+  FilePath ->
+  FilePath ->
+  Manifest ->
+  Set ApplicationId ->
+  [Operation] ->
+  Map FilePath DesiredFileOwner ->
+  Map FilePath (Map ApplicationId (Set ModuleName)) ->
+  Eff es (Either ReconciliationError ReconciliationPlan)
+planSeedReconciliation root managedRoot manifest selected operations ownerMap claims = do
+  let seedOps = firstSeeds Set.empty operations
+      seedPaths = Map.keysSet claims
+      managedOps = filter (\case SeedFileOp {} -> False; _ -> True) operations
+      checkoutPaths = Set.fromList [dest | CheckoutOutputOp {dest} <- operations]
+      managedPaths = Map.keysSet (groupFileOperations managedOps) `Set.union` checkoutPaths
+      overlaps a b = pathsOverlap a b || pathsHaveConflictingSpelling a b
+      retainedOwners receipt = seedApplicationIds receipt Set.\\ selected
+      gate = do
+        forM_ (Set.toAscList seedPaths) $ \path -> do
+          when (any (overlaps path) (Set.toAscList managedPaths)) (Left (SeedPathAlsoManaged path))
+          case Map.lookup path (manifest ^. #files) of
+            Just record | not (Set.null (Set.difference (record ^. #applicationIds) selected)) -> Left (SeedReleaseBlockedByOwners path (Set.difference (record ^. #applicationIds) selected))
+            _ -> Right ()
+        forM_ (Map.toAscList (manifest ^. #seeds)) $ \(path, receipt) ->
+          forM_ (Set.toAscList managedPaths) $ \managed ->
+            when (overlaps path managed && (Set.member managed checkoutPaths || path /= managed || not (Set.null (retainedOwners receipt)))) (Left (SeedPathAlsoManaged path))
+  case gate of
+    Left err -> pure (Left err)
+    Right () -> do
+      seeded <- planSeeds root manifest (Map.map (Set.unions . Map.elems) claims) seedOps
+      adoptionEntries <- forM (Set.toAscList (managedPaths `Set.intersection` Map.keysSet (manifest ^. #seeds))) $ \path -> do
+        entry <- inspectPath (root </> path)
+        pure (path, entry)
+      case [path | (path, entry) <- adoptionEntries, entry `notElem` [EntryFile, EntryMissing]] of
+        path : _ -> pure (Left (SeedReconciliationFailed ("seed adoption '" <> T.pack path <> "' requires a regular file or absence; move the directory or symlink aside")))
+        [] -> case seeded of
+          Left errors -> pure (Left (SeedReconciliationFailed (T.intercalate "; " (map (^. #message) errors))))
+          Right seedPlans -> do
+            managed <- planReconciliation managedRoot (manifest & #files %~ (`Map.withoutKeys` seedPaths)) selected managedOps ownerMap
+            pure $ do
+              plan <- managed
+              let actions = Map.fromList [(planned ^. #dest, action planned) | planned <- seedPlans]
+                  abandoned = Map.mapWithKey FileSeedAbandon (Map.filterWithKey (\path receipt -> Set.notMember path seedPaths && Set.notMember path managedPaths && not (Set.null (seedApplicationIds receipt `Set.intersection` selected))) (manifest ^. #seeds))
+                  adoptions = foldl' makeAdoption (plan ^. #files) adoptionEntries
+              Right (plan & #files .~ Map.unions [actions, adoptions, abandoned] & #requiredDirectories %~ Set.union (Set.fromList [takeDirectory (planned ^. #dest) | planned <- seedPlans, planned ^. #decision == SeedWrite, takeDirectory (planned ^. #dest) /= "."]))
+  where
+    firstSeeds _ [] = []
+    firstSeeds seen (op@SeedFileOp {dest} : rest)
+      | Set.member dest seen = firstSeeds seen rest
+      | otherwise = op : firstSeeds (Set.insert dest seen) rest
+    firstSeeds seen (_ : rest) = firstSeeds seen rest
+    action planned =
+      let path = planned ^. #dest
+          seed = SeedAction path (planned ^. #supplier) (Map.findWithDefault Map.empty path claims) (planned ^. #decision) (if planned ^. #decision == SeedWrite then Just (planned ^. #content) else Nothing)
+       in case planned ^. #decision of
+            SeedWrite -> FileSeedCreate seed EntryMissing
+            SeedReleaseManaged -> case Map.lookup path (manifest ^. #files) of Just record -> FileSeedRelease seed record; Nothing -> FileSeedSettle seed
+            _ -> FileSeedSettle seed
+    makeAdoption files (path, entry) = Map.adjust (adopt (entry == EntryMissing)) path files
+    adopt missing reconciliation = case desiredFor reconciliation of
+      Just (desired, current, observed) -> FileConflict desired current "" (if missing then AdoptingMissingSeedFile else AdoptingSeedFile) observed Nothing Nothing
+      Nothing -> reconciliation
+    desiredFor reconciliation = case reconciliation of
+      FileCreate desired _ observed -> Just (desired, "", observed)
+      FileUpdate desired state observed _ -> Just (desired, state ^. #appliedContent, observed)
+      FileAutoMerge desired state observed _ -> Just (desired, state ^. #appliedContent, observed)
+      FileUnchanged desired state observed _ -> Just (desired, state ^. #appliedContent, observed)
+      FileConflict desired current _ _ observed _ _ -> Just (desired, current, observed)
+      _ -> Nothing
+
+-- | Complete candidate claims, preserving prior settlement on every surviving
+-- path. Used once by update's manifest fold, never as a successful preview receipt.
+seedCandidateReceipts :: UTCTime -> Manifest -> ReconciliationPlan -> Map FilePath SeedRecord
+seedCandidateReceipts now manifest plan = Map.fromList [receipt action | reconciliation <- Map.elems (plan ^. #files), action <- case reconciliation of FileSeedCreate a _ -> [a]; FileSeedSettle a -> [a]; FileSeedRelease a _ -> [a]; _ -> []]
+  where
+    receipt action =
+      let path = action ^. #path
+          prior = Map.lookup path (manifest ^. #seeds)
+          outcome = case action ^. #decision of SeedWrite -> SeedCreated; SeedReleaseManaged -> SeedReleasedFromManaged; _ -> SeedFoundExisting
+       in (path, SeedRecord (maybe (action ^. #supplier) (^. #moduleName) prior) (KnownSeedOwners (action ^. #claims)) (maybe outcome (^. #outcome) prior) (maybe now (^. #settledAt) prior))
 
 -- | Backend-parametric planner. Tests use maps for disk, copy-source, and
 -- baseline reads while production supplies effects. The function is read-only.
@@ -561,6 +675,7 @@ resolveFileConflict ::
 resolveFileConflict path choice plan = case Map.lookup path (plan ^. #files) of
   Nothing -> Left (ReconciliationPathNotFound path)
   Just (FileConflict _ _ _ _ _ _ _) | choice == AbortUpdate -> Left (UpdateAborted path)
+  Just (FileConflict _ _ _ reason _ _ _) | (reason == AdoptingMissingSeedFile && choice /= AcceptGenerated) || (reason == AdoptingSeedFile && choice == WriteConflictMarkers) -> Left (InvalidSeedAdoptionChoice path)
   Just (FileConflict desired current markers reason observed prior _) ->
     let applied = case choice of
           AcceptGenerated -> (desired ^. #generatedContent)
@@ -602,6 +717,10 @@ reconciliationSummary = foldl' count emptySummary . Map.elems . (^. #files)
   where
     emptySummary = ReconciliationSummary 0 0 0 0 0 0 0 0
     count summary reconciliation = case reconciliation of
+      FileSeedCreate _ _ -> addCreate summary
+      FileSeedRelease _ _ -> addSharedOwnership summary
+      FileSeedAbandon _ _ -> addSharedOwnership summary
+      FileSeedSettle _ -> addUnchanged summary
       FileCreate _ _ _ -> addCreate summary
       FileUpdate _ _ _ _ -> addUpdate summary
       FileAutoMerge _ _ _ _ -> addMerge summary
@@ -635,7 +754,7 @@ replacePlanFiles plan newFiles =
     }
 
 reconciliationMutationPaths :: ReconciliationPlan -> Set FilePath
-reconciliationMutationPaths = Map.keysSet . (^. #files)
+reconciliationMutationPaths = Map.keysSet . Map.filter (\case FileSeedSettle {} -> False; FileSeedRelease {} -> False; FileSeedAbandon {} -> False; _ -> True) . (^. #files)
 
 unresolvedPaths :: ReconciliationPlan -> Set FilePath
 unresolvedPaths plan = Map.keysSet (Map.filter unresolved (plan ^. #files))

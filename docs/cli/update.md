@@ -21,6 +21,27 @@ saved inputs, and previews the result before asking to apply:
 seihou update master-plan
 ```
 
+When a producer changes a managed starter file to a seed, the preview says
+`release to project`. The normal confirmation drops managed tracking and baseline
+references while preserving edited bytes, deliberate absence or a project replacement.
+No per-file release prompt is needed. New absent seeds are created exclusively;
+settled seeds are never regenerated, hashed, merged or treated as orphans. Commit
+`.seihou/manifest.json` so every clone retains settlement. A disappearing last
+claim retires its receipt while preserving the project file. Repeat unchanged
+updates are no-ops.
+
+The reverse transition asks explicitly whether to keep current content and manage
+it, or accept generated content. An absent seed offers recreation or abort.
+`--force` and noninteractive/JSON mode cannot consent. Unselected owners and mixed
+candidate lifecycles block a transition; incompatible producer declarations need
+correction. Declarative migrations cannot touch settled seeds or release paths.
+Arbitrary migration/application shell commands remain unsandboxed.
+
+An older recorded root can be adopted by name even alongside newer application
+records. A matching recorded standalone dependency joins the normal preview;
+declared edge bindings become its saved inputs. Other shared owners retain the
+explicit closure policy described below.
+
 When adopting checkout declarations, the preview can include `Adopt link:` for a
 new destination that is an unchanged tracked symlink matching the declaration.
 Accepting stages its removal from Git while retaining the working link. HEAD,

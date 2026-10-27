@@ -14,11 +14,14 @@ affects: "mori://shinzui/seihou"
 affectedVersion: "unreleased"
 plan: "docs/plans/100-record-seed-receipts-in-manifest-schema-8.md"
 workaround: "Make checkout fixtures import the published schema pinned by the executable, preserving the pre-existing schema submodule checkout."
-resolution: "Checkout fixtures read the executable-pinned published schema from Git objects instead of the mutable submodule checkout; checkout acceptance passes without changing the checkout."
+resolution: "Checkout tests and CLI documentation audit fixtures read the executable-pinned schema from Git objects, preserving the existing schema checkout."
 amended:
   - by: "codex-cli/gpt-6.1-sol"
     at: "2026-10-27T02:23:15Z"
     change: "Use the pinned fixture schema and verify the full CLI suite"
+  - by: "codex-cli/gpt-6.1-sol"
+    at: "2026-10-27T03:40:06Z"
+    change: "The same mutable-schema dependency recurred during plan 103 help acceptance; apply the pinned fixture strategy to the audit script too."
 ---
 # Checkout tests require a newer schema than the local submodule
 

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Reconcile seed declarations in ordinary update: release managed files without touching project bytes, create new seeds exclusively, retire exact claims and require explicit reverse adoption. Journal native creation identity safely across rollback/recovery.
+- Adopt remote-backed legacy roots alongside newer application records, fetch candidates without an installed cache and include matching recorded dependency applications with explicit edge bindings in the normal preview.
+- Preserve differently bound instances of the same direct dependency; normalize public GitHub SSH/HTTPS repository transport spellings while preserving recorded origins.
+
 - Compile and create project-owned seed files once during run and agent baseline generation, preserving edits, deletion, and exact co-owner claims.
 - Report bounded seed receipt counts in status/diff and retire exact seed ownership through ordinary removal without changing project files.
 

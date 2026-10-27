@@ -50,7 +50,7 @@ loadComposition ::
 loadComposition searchPaths primary additional = runExceptT $ do
   (primaryMod, primaryDir) <- ExceptT $ loadModuleWithDir searchPaths primary
   let effectiveDeps = primaryMod ^. #dependencies ++ map simpleDep additional
-      effectivePrimary = (primaryMod & #dependencies .~ nubOrdBy (^. #module_) effectiveDeps)
+      effectivePrimary = (primaryMod & #dependencies .~ nubOrdBy (\dep -> (dep ^. #module_, parentVarsFromDep dep)) effectiveDeps)
       primaryInst = primaryInstance primary
       loaded = Map.singleton primaryInst (effectivePrimary, primaryDir)
       seeds = [(mkInstance (dep ^. #module_) (parentVarsFromDep dep)) | dep <- effectivePrimary ^. #dependencies]

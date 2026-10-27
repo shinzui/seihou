@@ -169,3 +169,13 @@ For recorded local setup, use `seihou sync`: it repairs links and executes decla
 repeatable commands without producer resolution. Maintainers adopt changed specs
 through ordinary update and commit them before teammates sync. A true no-op update
 executes neither command lifecycle; --no-commands preserves setup declarations.
+
+PROJECT-OWNED SEEDS
+
+  Update TARGET previews "release to project" when a producer hands managed
+  starter files to the project. Normal confirmation preserves bytes or absence
+  and removes managed hashes/baselines. New absent seeds are created once;
+  receipts preserve later edits and deletion. Commit the manifest for clones.
+  Last-claim retirement keeps disk contents. Reverse seed-to-managed adoption
+  requires an explicit interactive keep/accept choice; --force/JSON cannot consent.
+  Declarative migrations cannot touch seeds. Arbitrary shell is unsandboxed.

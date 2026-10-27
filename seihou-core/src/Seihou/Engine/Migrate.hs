@@ -8,6 +8,7 @@ module Seihou.Engine.Migrate
     -- * Engine entry points
     classifyMigration,
     executeMigration,
+    validateSeedMigration,
   )
 where
 
@@ -15,14 +16,16 @@ import Data.Generics.Labels ()
 import Data.List (nub, sortBy)
 import Data.Map.Strict qualified as Map
 import Data.Ord (Down (..))
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
+import Seihou.Core.Checkout (pathsOverlap)
 import Seihou.Core.Migration
   ( Migration (..),
     MigrationOp (..),
     MigrationPlan (..),
   )
-import Seihou.Core.Path (validateProjectRelativePath)
+import Seihou.Core.Path (pathsHaveConflictingSpelling, validateProjectRelativePath)
 import Seihou.Core.Types
   ( AppliedModule (..),
     FileRecord (..),
@@ -45,6 +48,7 @@ import Seihou.Manifest.Hash (hashContent)
 import Seihou.Prelude
 import System.Exit (ExitCode (..))
 import System.FilePath (takeDirectory)
+import System.FilePath.Posix qualified as P
 
 -- ----------------------------------------------------------------------------
 -- Types
@@ -106,7 +110,12 @@ classifyMigration ::
   Manifest ->
   MigrationPlan ->
   Eff es (Either MigrationExecError ExecutedMigrationPlan)
-classifyMigration manifest plan = do
+classifyMigration manifest plan = case validateSeedMigration (Map.keysSet (manifest ^. #seeds)) (concatMap (^. #ops) (plan ^. #steps)) of
+  Left err -> pure (Left err)
+  Right () -> classifyUnprotectedMigration manifest plan
+
+classifyUnprotectedMigration :: (Filesystem :> es) => Manifest -> MigrationPlan -> Eff es (Either MigrationExecError ExecutedMigrationPlan)
+classifyUnprotectedMigration manifest plan = do
   opsResult <- traverse (classifyOp manifest) (concatMap (^. #ops) (plan ^. #steps))
   pure $ do
     ops <- sequence opsResult
@@ -204,7 +213,18 @@ executeMigration ::
   -- | New @genAt@ timestamp to stamp on the rewritten manifest.
   UTCTime ->
   Eff es (Either MigrationExecError Manifest)
-executeMigration force plan manifest now = do
+executeMigration force plan manifest now = case validateProtectedMutationPaths (Map.keysSet (manifest ^. #seeds)) (concatMap instancePaths (plan ^. #ops)) of
+  Left err -> pure (Left err)
+  Right () -> executeUnprotectedMigration force plan manifest now
+  where
+    instancePaths (MoveFileInst source dest _) = [source, dest]
+    instancePaths (MoveDirInst source dest) = [source, dest]
+    instancePaths (DeleteFileInst path _) = [path]
+    instancePaths (DeleteDirInst path) = [path]
+    instancePaths RunCommandInst {} = []
+
+executeUnprotectedMigration :: (Filesystem :> es, Process :> es) => Bool -> ExecutedMigrationPlan -> Manifest -> UTCTime -> Eff es (Either MigrationExecError Manifest)
+executeUnprotectedMigration force plan manifest now = do
   let conflicts =
         [ p
         | inst <- plan ^. #ops,
@@ -367,3 +387,17 @@ isPrefixOfPath :: String -> String -> Bool
 isPrefixOfPath [] _ = True
 isPrefixOfPath _ [] = False
 isPrefixOfPath (x : xs) (y : ys) = x == y && isPrefixOfPath xs ys
+
+validateSeedMigration :: Set FilePath -> [MigrationOp] -> Either MigrationExecError ()
+validateSeedMigration seeds = validateProtectedMutationPaths seeds . concatMap paths
+  where
+    paths MoveFile {src, dest} = [src, dest]
+    paths MoveDir {src, dest} = [src, dest]
+    paths DeleteFile {path} = [path]
+    paths DeleteDir {path} = [path]
+    paths RunCommand {} = []
+
+validateProtectedMutationPaths :: Set FilePath -> [FilePath] -> Either MigrationExecError ()
+validateProtectedMutationPaths seeds paths = case [path | path <- paths, seed <- Set.toAscList seeds, pathsOverlap (P.normalise path) (P.normalise seed) || pathsHaveConflictingSpelling (P.normalise path) (P.normalise seed)] of
+  path : _ -> Left (MigrationUnsafePath "seed ownership" path "declarative migrations must not mutate a project-owned seed or a path being released to the project; publish a compatible producer migration")
+  [] -> Right ()

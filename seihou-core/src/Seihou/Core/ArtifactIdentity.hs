@@ -57,11 +57,16 @@ sameArtifactIdentity left right = case (left, right) of
 -- @https:\/\/host\/repo@, @https:\/\/host\/repo.git@ and
 -- @https:\/\/host\/repo\/@ all name the same repository, and a manifest
 -- written by a developer who typed one of them must not read as a different
--- artifact to a developer who typed another.
+-- artifact to a developer who typed another. Public GitHub SSH spellings also
+-- normalize to HTTPS; no equivalence is inferred for other hosts or paths.
 normalizeOriginUrl :: Text -> Text
 normalizeOriginUrl =
-  dropTrailingSlashes . dropGitSuffix . dropTrailingSlashes . T.strip
+  dropTrailingSlashes . dropGitSuffix . dropTrailingSlashes . githubTransport . T.strip
   where
+    githubTransport url
+      | Just path <- T.stripPrefix "git@github.com:" url = "https://github.com/" <> path
+      | Just path <- T.stripPrefix "ssh://git@github.com/" url = "https://github.com/" <> path
+      | otherwise = url
     dropTrailingSlashes = T.dropWhileEnd (== '/')
     dropGitSuffix url = fromMaybe url (T.stripSuffix ".git" url)
 
