@@ -16,36 +16,29 @@ provenance:
       at: 2026-10-15T16:10:15Z
       mode: "update"
       note: "Record completed seed declaration and schema prerequisites and checkout integration constraints"
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-27T00:43:50Z
+      mode: "update"
+      note: "Correct shared ownership, safe creation and transitions, milestone ordering, ordinary adoption and delivery gates"
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-27T00:43:50Z
+      verdict: "approved"
+      note: "Reviewed revised plan against current source and cross-plan contracts; approval is for implementation design, not runtime delivery"
 ---
 
 # Seed files: module outputs created once and owned by the project
 
-This MasterPlan is a living document. The sections Progress, Surprises & Discoveries,
-Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
-If durable project context changes, update or create ADRs in docs/adr/ in the same change.
-
+This MasterPlan is a living coordination document. Child plans own implementation milestones;
+this document owns dependencies, shared contracts, and delivery acceptance.
 
 ## Vision & Scope
 
-Today every file a Seihou module generates is *managed*: `seihou run` records its content
-hash and generated baseline in `.seihou/manifest.json`, `seihou status` reports it as
-`modified by user` the moment anyone edits it, `seihou update` three-way-merges new module
-releases into it, and `seihou run` treats an unmanaged copy already on disk as a conflict.
-That model is right for files the module keeps owning, such as a Nix flake, a formatter
-configuration, or a `.gitignore` block. It is wrong for a large class of files a module only
-*starts*. The `haskell-cli-app` module in the `seihou-modules` registry
-(`mori://shinzui/seihou-modules`, directory `modules/haskell/haskell-cli-app/`) generates
-`CHANGELOG.md`, `README.md`, both `.cabal` files, `app/Main.hs`, `Cli.hs`, and `Prelude.hs`.
-A developer must edit every one of these on day one — a changelog entry, a new dependency, a
-new module in `other-modules`. From then on `seihou status` shows them all as
-`modified by user`, forever, and the signal the command exists to give ("which generated
-files have drifted?") drowns in files that were always meant to drift.
-
-After this initiative a module author can mark a generation step as a **seed**. A *seed file*
-is a file a module creates once, when the path does not exist yet, and then hands to the
-project. Seihou never overwrites it, never content-tracks it, never merges into it, never
-reports it as modified, and never deletes it. The step is declared in `module.dhall` by one
-new optional field on the existing `Step` record:
+Modules generate starting files such as changelogs, Cabal files, and application sources that
+projects immediately edit. Keeping those files managed creates permanent drift noise and lets
+later module updates change content the project should own. A seed step declares that ownership:
 
 ```dhall
 S.Step::{
@@ -56,318 +49,217 @@ S.Step::{
 }
 ```
 
-Omitting the field, or writing `lifecycle = Some "managed"`, keeps today's behavior exactly.
+Omitted lifecycle remains managed. Seed supports copy, template, and dhall-text whole files;
+patches, structured merges, and symlink strategies are excluded. Checkout remains the separate
+lifecycle for reproducible local outputs. A seed is created only when absent and not previously
+settled; a pre-existing regular file is kept. A content-free manifest receipt remembers first
+settlement and active application/module-instance claims. While that receipt exists, edits and
+deletion belong to the project. Last-claim retirement forgets settlement without touching disk;
+later reintroduction may seed an absent path again. No reseed or general untrack command is added.
 
-The user-visible behaviors enabled are:
+The ordinary acceptance workflow is designed before implementation. A fresh user installs the
+registry once, runs a module with normal variable prompts, and edits its starting files. Re-run,
+force, status, diff, update, and remove preserve those files. An existing remote-backed project
+with saved inputs and edited files adopts with one command:
 
-1. `seihou validate-module` accepts `lifecycle = Some "seed"` on `copy`, `template`, and
-   `dhall-text` steps and rejects nonsensical combinations (a seed step with a `patch`, a
-   `structured` seed, two steps of different lifecycles writing the same destination, a
-   removal step deleting a seed destination).
-2. `seihou run` creates a seed file only when its path is absent, never reports an existing
-   file at a seed path as a conflict, and records a lightweight *seed receipt* in the manifest
-   (path, owning module, owning applications, how the path was settled) with no content hash
-   and no baseline. A seed the developer later deletes is not resurrected by a re-run.
-3. `seihou status` and `seihou diff` no longer list seed files among tracked files; status
-   prints one bounded line saying how many seed files the project has. `seihou remove`
-   leaves seed files on disk and says so.
-4. `seihou update` never touches an existing seed file, creates a seed newly added by a module
-   release when its path is absent, and — the migration path for every project that already
-   exists — when a module release turns a previously managed file into a seed, *releases*
-   the file: it drops the content record and baseline, keeps the bytes on disk exactly as
-   they are (edited or not, with no prompt), and records a seed receipt instead.
-5. The `seihou-modules` registry marks the files that projects are expected to own as seeds
-   (starting with `haskell-cli-app`, `haskell-library`, and `haskell-keiro-project`), and the
-   module-authoring guide explains when to choose a seed.
+```bash
+seihou update haskell-cli-app
+```
 
-Explicitly out of scope: a project-side command that lets a developer detach an arbitrary
-managed file on their own (the existing edited-orphan `DetachAndKeepOrphan` choice already
-covers the orphan case; a general `seihou untrack` is recorded as a future enhancement);
-re-creating a deleted seed on request (`--reseed`); a `lifecycle` value other than `managed`
-and `seed` (for example "regenerate on every run"); seed semantics for `structured` steps and
-for patch steps; and any per-module minimum-Seihou-version gate (an older Seihou binary
-ignores the unknown `lifecycle` field and treats the step as managed, which is exactly
-today's behavior — see the Decision Log).
+Update owns remote candidate/dependency fetching and lossless manifest preparation. Its normal
+preview includes `release to project`; accepting that update drops managed tracking and baseline
+references while preserving bytes or deliberate absence. There is no prerequisite install/upgrade,
+per-file release prompt, manual JSON/index edit, or transitive target list. A second unchanged
+update is a no-op. Clones/worktrees use committed receipts, including intentional deletion;
+checkout setup remains `seihou sync`. Receipt retirement works through ordinary remove, including
+a seed-only module with no custom removal specification. Ambiguous selection uses the existing
+application/qualified-instance selector and gives an exact supported command.
 
+Seihou's declarative operations must not overwrite, patch, migrate, or delete a settled seed.
+Seed-to-managed adoption is an explicit keep/accept transition in update, never implied by force.
+Arbitrary shell commands are not sandboxed by lifecycle semantics; adopting producers must be
+audited and documented accordingly. No new module minimum-client-version schema is introduced,
+but a runtime-supporting release and documented minimum version are required before publishing
+seed-producing modules. Older clients ignoring lifecycle can overwrite seeds; this is not a safe
+fallback. Delivery includes the runtime release, producers, and installed-binary acceptance.
 
 ## Decomposition Strategy
 
-The initiative is decomposed along the life of a seed file, one functional concern per plan,
-so that each plan leaves the repository in a working, testable state:
+Keep six functional concerns. EP-1 declares and validates the field; it is complete. EP-2 owns
+receipts and versioning; its original schema-8 work is complete, but it is reopened for exact
+application/instance claims before runtime production. A first supplier plus application set
+cannot represent two modules seeding the same path within one recipe. EP-3 owns first creation,
+composition, common classification, and no-replace filesystem effects. EP-4 owns reporting and
+instance-aware removal. EP-5 owns lifecycle evolution within the existing update transaction.
+EP-6 owns real producer classification, adoption, release, and installed developer acceptance.
 
-EP-1 (the *declaration*) is the author-facing contract: the Dhall schema field, the Haskell
-`Step` type, the decoder, and `validate-module` rules. It also writes the ADR that defines
-what a seed file is, because every later plan implements a clause of that definition.
+This keeps update's reconciliation/recovery risk separate from run, without permitting unsafe
+intermediate behavior. EP-3 refuses update of selected seed candidates/owners until EP-5 lands;
+it must never convert seeds to managed writes. A tiny early producer candidate and real consumer
+proof run before broad reconciliation variants, instead of postponing all usability checks to
+EP-6. No additional plan or generic resource framework is needed.
 
-EP-2 (the *record*) is the manifest-facing contract: a new `seeds` map of seed receipts in
-`.seihou/manifest.json`, which is a semantic manifest change and therefore, under
-[ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md),
-advances the schema from 7 to 8 with one lossless upgrade step. EP-2 does not depend on EP-1:
-it defines a record type, not how steps produce it.
-
-EP-3 (the *first write*) makes `seihou run` compile seed steps into a new `SeedFileOp`
-operation, classify them against disk and the receipts, create absent files, and record
-receipts. This is where the concept first becomes observable end to end.
-
-EP-4 (the *reporting and removal* surface) makes `status`, `diff`, and `remove` treat seed
-files as the project's. It needs only EP-2's record, so it can proceed in parallel with EP-3.
-
-EP-5 (the *evolution*) teaches `seihou update` about seeds, including the managed-to-seed
-release that existing projects need. It is split from EP-3 because the update engine
-(`Seihou.Engine.Reconcile`, `Seihou.Engine.UpdateTransaction`, three-way merge, baselines,
-the ownership closure, shared-write certification) is a separate, much larger subsystem from
-`seihou run`'s three-state diff; folding both into one plan would give one plan most of the
-initiative's risk.
-
-EP-6 (the *adoption*) changes the modules users actually install and writes the authoring
-guide. It lives mostly in another repository (`mori://shinzui/seihou-modules`) and is only
-meaningful once a Seihou build can execute seeds.
-
-Alternatives considered and rejected. *A boolean field* (`track = False` or `seed = True`)
-was rejected in favor of `lifecycle : Optional Text` because the value space is likely to
-grow (see Future Enhancements in EP-1) and because the existing `strategy` and `patch` fields
-already use short text enumerations, so authors meet one convention. *Not recording seeds in
-the manifest at all* was rejected: [ADR 0004](../adr/0004-the-manifest-is-the-only-record-of-applied-state.md)
-says every fact about applied state belongs in the manifest, and without a receipt Seihou
-cannot tell "the developer deleted the seed on purpose" from "this path was never seeded",
-cannot let `seihou remove` explain what it leaves behind, and cannot release a managed file
-to a seed idempotently. What the receipt deliberately omits is the *content* hash, which is
-what makes a file "tracked". *A project-side ignore list* (a `.seihouignore` that hides paths
-from status) was rejected because it hides the symptom per project instead of letting the
-module author state intent once for every project, and because hidden files would still be
-merged into and conflict on update. *One plan per command* (run, status, diff, remove,
-update) was rejected as decomposition by file rather than by concern.
-
-Relevant ADRs consulted. One cross-repository record applies: `seihou-modules` ADR 2,
-"Separate Keiro project seeds from domain implementation" (`mori://shinzui/seihou-modules`,
-project-relative path `docs/adr/2-separate-keiro-project-seeds-from-domain-implementation.md`;
-its artifact-level Mori URI is pending because `mori registry concepts` does not index that
-bundle yet). It already calls `haskell-keiro-project`'s generated libraries "seeds" that
-"become hand-owned during implementation" and asks users to respect Seihou's conflict
-protection on reapplication; this initiative makes that intent mechanical, and EP-6 amends
-that ADR. `mori registry concepts` searches for "seed" and "unmanaged file" on 2026-09-19
-found no other relevant decision. Local ADRs:
-
-- [ADR 0001](../adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md): the
-  manifest is committed and machine-independent. Seed receipts record project-relative
-  paths only, and EP-2 must extend the machine-independence test that walks every serialized
-  string.
-- [ADR 0004](../adr/0004-the-manifest-is-the-only-record-of-applied-state.md): the reason
-  seed receipts exist and live in the manifest rather than in a side file.
-- [ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md): shared-path
-  ownership closure and shared-write evidence apply to managed paths. Seed paths are not in
-  the `files` map and must not participate; EP-5 must ensure certification recompiles ignore
-  seed operations.
-- [ADR 0013](../adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md): status
-  is a bounded summary. EP-4 prints one count line for seeds rather than a list.
-- [ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md): the
-  `seeds` map advances the schema to 8 with a lossless adjacent step, a capability entry, and
-  tests; EP-2 owns this.
-- [ADR 0015](../adr/0015-diagnostics-name-things-as-users-do-and-never-fall-back-to-show.md):
-  new diagnostics (validation findings, update refusals) name modules and paths as users
-  write them.
-
+Relevant local decisions are [ADR 0001](../adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md)
+(portable state), [ADR 0004](../adr/0004-the-manifest-is-the-only-record-of-applied-state.md)
+(one record), [ADR 0012](../adr/0012-an-additive-co-write-is-not-a-shared-path-conflict.md)
+(managed ownership), [ADR 0013](../adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md)
+(bounded reporting), [ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md)
+(version semantics), [ADR 0015](../adr/0015-diagnostics-name-things-as-users-do-and-never-fall-back-to-show.md)
+(diagnostics), [ADR 0017](../adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md)
+(seed contract), and [ADR 0018](../adr/0018-checkout-outputs-are-observable-portable-declarations.md)
+(checkout compatibility). The relevant producer record is in `mori://shinzui/seihou-modules`,
+project-relative `docs/adr/2-separate-keiro-project-seeds-from-domain-implementation.md`
+(artifact-level URI pending); it already defines Keiro starters as project-owned implementation
+seeds. The local ADR corpus has no OKF profile, verified with `mori show --full`.
 
 ## Exec-Plan Registry
 
-| # | Title | Path | Hard Deps | Soft Deps | Status |
-|---|-------|------|-----------|-----------|--------|
-| 1 | Declare seed steps in the module schema and validate them | docs/plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md | None | None | Complete |
-| 2 | Record seed receipts in manifest schema 8 | docs/plans/100-record-seed-receipts-in-manifest-schema-8.md | None | EP-1 | Complete |
-| 3 | Create seed files once during seihou run | docs/plans/101-create-seed-files-once-during-seihou-run.md | EP-1, EP-2 | None | Not Started |
-| 4 | Keep seed files out of status, diff, and remove | docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md | EP-2 | EP-3 | Not Started |
-| 5 | Reconcile seed steps during seihou update and release managed files to seeds | docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md | EP-1, EP-2, EP-3 | EP-4 | Not Started |
-| 6 | Adopt seed steps in seihou-modules and document seed authoring | docs/plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring.md | EP-3, EP-4, EP-5 | None | Not Started |
+| # | Title | Path | Hard Deps | Soft / Integration Deps | Status |
+|---|-------|------|-----------|-------------------------|--------|
+| 1 | Declare seed steps and validate them | docs/plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md | None | None | Complete |
+| 2 | Record seed receipts; correct exact ownership before runtime use | docs/plans/100-record-seed-receipts-in-manifest-schema-8.md | None | EP-1 vocabulary | In Progress |
+| 3 | Create seed files once during run | docs/plans/101-create-seed-files-once-during-seihou-run.md | EP-1, EP-2 including M4 | EP-5 consumes common APIs | Not Started |
+| 4 | Report and remove seed ownership | docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md | EP-2 including M4 | EP-3 real-command acceptance | Not Started |
+| 5 | Reconcile seeds and release managed files | docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md | EP-1, EP-2 including M4, EP-3; M2 also needs EP-6 M1 candidate | EP-4 status acceptance | Not Started |
+| 6 | Adopt producers and verify delivery | docs/plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring.md | M1: none; M2–M4: EP-3, EP-4, EP-5 | EP-5 M2 consumer proof | Not Started |
 
-Status values: Not Started, In Progress, Complete, Cancelled.
-Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
-
+Status values are Not Started, In Progress, Complete, Cancelled. EP-2's In Progress means its
+original milestones are accepted and its ownership correction remains; no new code was implemented
+in this review. M1/M2/M4 refer to the named milestones in the linked child, not whole-plan completion.
 
 ## Dependency Graph
 
-EP-1 and EP-2 have no hard dependencies and can be implemented in parallel. EP-2 lists EP-1
-as a soft dependency only because the ADR EP-1 writes defines the vocabulary EP-2's
-`SeedOutcome` values use; EP-2 embeds that vocabulary itself, so it does not wait.
+The graph is acyclic at milestone granularity. Complete EP-2 M4, then EP-3. EP-4 can implement
+reporting/removal once EP-2 completes; its final producer-command proof waits for EP-3. EP-6 M1
+can classify the current producers and prepare a disposable candidate now. EP-5 M1 consumes the
+completed EP-3 APIs; EP-5 M2 uses EP-6 M1's candidate for an ordinary existing-consumer update.
+Only after that early proof expand EP-5 M3/M4. Complete EP-4/EP-5 integration before EP-6 M2–M4
+publish/adopt and verify released behavior. Whole-child states remain In Progress until all their
+acceptance criteria pass; no dependency is silently weakened.
 
-EP-3 hard-depends on EP-1 because it compiles `Step.lifecycle` (EP-1's field) into a
-`SeedFileOp`, and on EP-2 because it writes `SeedRecord`s into `Manifest.seeds` (EP-2's
-types and codec). Without both, the code does not compile.
-
-EP-4 hard-depends only on EP-2: it reads `Manifest.seeds` and builds its test manifests
-directly, so it does not need `seihou run` to produce seeds. It lists EP-3 as soft because
-its end-to-end acceptance scenario is most convincing when a real `seihou run` produced the
-seeds; if EP-3 is not complete, EP-4 validates with hand-written schema-8 manifests.
-
-EP-5 hard-depends on EP-1, EP-2, and EP-3: it reuses EP-3's `SeedFileOp`, EP-3's shared seed
-classification function, and EP-2's receipt merge helpers. It lists EP-4 as soft because the
-update acceptance scenario checks `seihou status` afterwards.
-
-EP-6 hard-depends on EP-3, EP-4, and EP-5: marking real registry modules as seeds is only
-safe once every command a consumer runs (`run`, `status`, `update`, `remove`) understands
-seeds, and in particular once `seihou update` releases the files existing projects already
-track. It also requires the schema commit EP-1 pushes.
-
-The critical path is EP-1 → EP-3 → EP-5 → EP-6, with EP-2 needed before EP-3 and EP-4
-filling in alongside EP-3 or EP-5.
-
+The next implementation work is EP-2 M4. EP-6 M1 is ready independent preparation. Release
+readiness requires EP-3, EP-4, and EP-5 together; the interim refusal is a safe development
+boundary, not a delivered seed workflow. A source build and a candidate checkout do not close
+the delivery gate.
 
 ## Integration Points
 
-**The `lifecycle` Dhall field and `StepLifecycle` Haskell type.** Owned by EP-1. The Dhall
-field is `lifecycle : Optional Text` on `schema/Step.dhall` with default `None Text`; the
-seed initiative uses values `"managed"` and `"seed"`; plan 105 adds `"checkout"` for its separate observable-output lifecycle. The Haskell type is
-`data StepLifecycle = Managed | Seed | Checkout` in `seihou-core/src/Seihou/Core/Types.hs`, and `Step`
-gains the strict field `lifecycle :: !StepLifecycle` (absent or `None` decodes to `Managed`).
-EP-3 and EP-5 read it through `step ^. #lifecycle`; EP-6 writes it in `module.dhall` files.
-The schema commit EP-1 pushes to `shinzui/seihou-schema` is the pin EP-6's modules import.
+**Declaration and validation — EP-1 foundation, EP-3 runtime extension.** Existing `Step.lifecycle`
+is `Managed | Seed | Checkout`; existing `Strategy` includes `Symlink`. `Core.Module.checkSeedSteps`
+is consumed by validation and compilation. EP-3 extends unsupported-strategy/removal checks and
+validates resolved active paths; literal Dhall destination comparisons cannot establish collision
+safety. Preserve checkout APIs and existing schema pins. EP-6 authors only supported seed steps.
 
-**The `SeedFileOp` operation.** Owned by EP-3, defined in
-`seihou-core/src/Seihou/Core/Types.hs` as a new `Operation` constructor:
-`SeedFileOp { dest :: !FilePath, content :: !Text, strategy :: !Strategy, moduleName :: !ModuleName }`.
-It is produced by `Seihou.Engine.Plan.compileStep` for a `Seed` step and passed through
-`Seihou.Composition.Plan.mergeOperations`, which keeps the first seed for a path, records every
-seeding module in a new *seed owners* result (`Map FilePath (Set ModuleName)`) returned by
-`compileComposedPlan`, and fails composition when one module seeds a path another manages.
-EP-5 consumes it when splitting candidate operations into managed and seed sets. Because
-`seihou update` and shared-write certification would otherwise drop the new constructor
-through wildcard matches (and could then treat the file as an orphan and delete it), EP-3 adds
-an interim `Seihou.Engine.Seed.seedAsManagedWrite` applied in
-`seihou-cli/src/Seihou/CLI/Update.hs` and `seihou-cli/src/Seihou/CLI/ManifestCapabilityUpgrade.hs`,
-which makes those paths treat a seed as today's managed write; EP-5 deletes it. Every function that pattern-matches `Operation` with a
-wildcard must be reviewed by EP-3 (for run paths) and EP-5 (for update paths); notably
-`Seihou.Engine.Reconcile.operationDestination` returns `Nothing` for unknown constructors,
-which would silently drop seeds from update if EP-5 forgot them.
+**Receipts and ownership — EP-2.** `Manifest.seeds` remains a separate content-free path map.
+`SeedRecord.moduleName`, `outcome`, and `settledAt` describe first settlement. Active ownership
+is `SeedOwnership = LegacySeedOwners (Set ApplicationId) | KnownSeedOwners (Map ApplicationId
+(Set ModuleName))`, with qualified instance names. EP-2 owns codec, exact merge/drop/replace
+helpers, legacy evidence preparation, and invariant checks; EP-3/EP-4/EP-5 use those helpers.
+Do not use supplier provenance as an ownership index. Last exact claim removal drops the receipt;
+unknown legacy owners are retained until evidence resolves them.
 
-**Seed receipts in the manifest.** Owned by EP-2. `Manifest` gains
-`seeds :: !(Map FilePath SeedRecord)`, serialized under the top-level key `seeds` from schema
-8 on. `SeedRecord` has `moduleName :: !ModuleName`, `applicationIds :: !(Set ApplicationId)`,
-`outcome :: !SeedOutcome`, and `settledAt :: !UTCTime`; `SeedOutcome` is
-`SeedCreated | SeedFoundExisting | SeedReleasedFromManaged`, serialized as `created`,
-`found-existing`, `released-from-managed`. EP-2 also owns the manifest invariant that a path
-appears in at most one of `files` and `seeds` (checked when decoding and by a pure
-`validateManifestInvariants`), the helpers `mergeSeedRecord` and `dropSeedOwner` (in
-`seihou-core/src/Seihou/Core/Seed.hs`), and the capability `SeedReceipts` with
-`minimumManifestVersion SeedReceipts = 8`. EP-3 and EP-5 write receipts only through those
-helpers; EP-4 reads and removes them only through them.
+Current schema is 10. Preserve historical `SeedReceipts = 8`, add `SeedOwnerClaims` at the next
+adjacent schema (11 absent intervening changes), and wrap old application-only ownership in an
+explicit legacy variant losslessly. Exact historical instance inference is separate and never
+faked by the structural upgrade. EP-2 tests that service with injected evidence; EP-3 connects
+compiled seed claims, preventing a dependency cycle. Normal commands own evidence lookup when
+needed, using exact recorded origins/versions and saved inputs. New writers emit known claims.
 
-**The seed classification function.** Owned by EP-3, in
-`seihou-core/src/Seihou/Engine/Seed.hs`:
-`classifySeed :: Maybe SeedRecord -> Maybe FileRecord -> Bool -> SeedDecision`, where the
-`Bool` says whether the path exists on disk and `SeedDecision` is
-`SeedWrite | SeedKeepExisting | SeedRespectDeletion | SeedAlreadySettled | SeedReleaseManaged`.
-EP-5 must call the same function so `run` and `update` agree on what a seed step does; EP-5
-may add a decision only by extending this type in EP-3's module.
+**Composition and common engine — EP-3.** `SeedFileOp` carries destination, rendered content,
+strategy, and explicit supplier. `ComposedPlan` replaces the positional tuple with named
+operations, warnings, managed-owner and seed-owner fields. First seed in composition execution
+order supplies bytes; every qualified seeder is recorded. Across applications EP-5 preserves
+manifest application order. Mixed seed/managed/checkout claims and path overlaps refuse before
+mutation, including retained manifest claims. EP-3 updates all compile consumers together.
 
-**Update reconciliation of seeds.** Owned by EP-5, in
-`seihou-core/src/Seihou/Engine/Reconcile.hs`: new `FileReconciliation` constructors
-`FileSeedCreate`, `FileSeedSettle`, `FileSeedRelease`, `FileSeedAbandon`, the
-`ReconciliationReason` `AdoptingSeedFile`, and the errors `SeedReleaseBlockedByOwners` and
-`SeedPathAlsoManaged`. Seeds ride the existing update transaction (snapshot verification,
-journal, rollback). EP-5 must also exclude seed paths from `classifyOrphans`, since a managed
-path whose step became a seed would otherwise be an orphan and, if unedited, deleted.
+`Seihou.Engine.Seed.classifySeed :: Maybe SeedRecord -> Maybe FileRecord -> PathEntry ->
+Either SeedError SeedDecision` is shared by run and update. Managed record means release;
+receipt means already-settled or respect-deletion; otherwise missing means create, regular file
+means keep, and symlink/directory means refuse. Planned seeds retain the explicit supplier and
+owners; effectful helpers take project root explicitly. Existing `PathEntry`/`inspectPath`
+replace a Boolean existence test. EP-3 owns exclusive no-replace creation and pure/IO interpreter
+contracts. A check followed by ordinary write/rename is not sufficient.
 
-**`seihou status` rendering.** EP-4 owns the new seed summary line in
-`seihou-cli/src/Seihou/CLI/StatusRender.hs`. EP-5 and EP-6 only observe it.
+**Update/recovery — EP-5.** Owns `FileSeedCreate/Settle/Release/Abandon`, explicit reverse-adoption
+choices, content-free metadata actions, exclusive-create transaction mutation, and recovery
+journal changes. Seed releases cannot enter orphan deletion or generated baselines. A released
+baseline blob is pruned only when unreferenced. Snapshot verification is not exclusive creation.
+Rollback only removes an unchanged object the transaction actually created; metadata-only paths
+are never restored. Preserve checkout snapshots/index recovery, declarations, commands, and
+current schema. Seed claims do not constitute additive managed-write evidence. Every declarative
+migration/staging mutation and automatic commit path selection must honor project ownership.
 
-**Documentation.** Each plan updates the user documentation for the command it changes:
-EP-1 `docs/user/module-authoring.md` (the field reference only) and `schema/README.md`; EP-2
-`docs/cli/manifest.md` and `docs/user/manifest-upgrade.md`; EP-3 `docs/cli/run.md`; EP-4
-`docs/cli/status.md`, `docs/cli/diff.md`, `docs/cli/remove.md`; EP-5 `docs/cli/update.md`;
-EP-6 the "choosing a lifecycle" guidance in `docs/user/module-authoring.md` and the
-`docs/user/CHANGELOG.md` entry for the release. Each plan adds its own entry under
-`## [Unreleased]` in the repository-root `CHANGELOG.md`.
+**Removal/reporting — EP-4.** Generalize existing recorded checkout instance selection instead
+of adding another algorithm; seed-only retirement works without custom removal. All declarative
+mutation forms preserve seed paths, including other owners' paths. One receipt count line does
+not assert files exist. Status/diff never read seed content. EP-5/EP-6 consume these summaries;
+normal use does not require JSON inspection.
 
-**ADRs.** EP-1 creates `docs/adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md`,
-which records the definition, the lifecycle field, and the exclusions. EP-2 amends it with the
-receipt rationale (why a receipt without a hash), EP-5 amends it with the release rule (a
-managed-to-seed transition never prompts and never deletes). ADR 0014's version history list
-is extended by EP-2.
+**Producer/consumer proof and delivery — EP-6 with EP-5.** EP-6 M1 owns a minimal current producer
+candidate; EP-5 M2 owns first ordinary existing-consumer execution before variant expansion.
+EP-6 owns final published-registry and installed-runtime evidence for all three producers:
+`mori://shinzui/seihou-modules/templates/haskell-cli-app`,
+`mori://shinzui/seihou-modules/templates/haskell-library`, and
+`mori://shinzui/seihou-modules/templates/haskell-keiro-project`. Empty caches and older supported
+manifest state are part of acceptance. Local fixture preparation is disclosed, never treated as
+a user-facing feature. No code or producer release is performed by this planning update.
 
+**Documentation/ADRs.** Each child owns documentation for its command and root changelog entry.
+EP-2 owns manifest/version docs; EP-3 run docs; EP-4 status/diff/remove; EP-5 update/automation;
+EP-6 author guidance/user release notes and producer docs. ADR 0017 carries shared ownership,
+creation, transition, and shell boundaries; ADR 0014 records actual version implementation when
+it lands. Child plans amend evidence, without claiming proposed APIs are already implemented.
 
 ## Progress
 
-- [x] (2026-10-15) EP-1: Schema field authored, pushed, and re-pinned
-- [x] (2026-10-15) EP-1: `Step.lifecycle` decoded; `validate-module` rules and tests
-- [x] (2026-10-15) EP-1: ADR 0017 and field reference docs
-- [x] (2026-10-15) EP-2: `SeedRecord` types, codec, and invariant
-- [x] (2026-10-15) EP-2: Schema 8, upgrade step 7 → 8, capability, docs
-- [ ] EP-3: `SeedFileOp` compiled and merged across a composition
-- [ ] EP-3: `seihou run` creates, keeps, and records seeds; dry-run output
-- [ ] EP-4: status and diff ignore seeds; status summary line
-- [ ] EP-4: remove leaves seeds and drops receipts
-- [ ] EP-5: reconcile seed steps (create, keep, respect deletion)
-- [ ] EP-5: managed → seed release and seed → managed adoption
-- [ ] EP-5: certification and agent upgrade diagnosis ignore seeds
-- [ ] EP-6: schema re-pinned and seeds adopted in seihou-modules
-- [ ] EP-6: end-to-end verification against a real project; authoring guide
-
+EP-1 is complete. EP-2's schema-8 foundation is complete and its new ownership milestone is
+open. EP-3–EP-6 runtime/adoption work is not started. Next: finish precise receipt ownership,
+then prove run and ordinary existing-consumer update. The final cross-plan gate is released
+runtime plus published producers verified through the installed executable, including fresh use,
+existing edits, deletion, repeated use, clone/worktree setup, removal, and recovery.
 
 ## Surprises & Discoveries
 
-EP-1 and EP-2 were completed in commit 66466b4 as prerequisites of [plan 105](../plans/105-rebuild-checkout-local-symlinks-from-the-manifest-without-upgrading-artifacts.md). The checkout extension adds `Checkout` to StepLifecycle, `Symlink` to Strategy and `CheckoutOutputOp` to Operation, and advances the manifest through the adjacent schema 8 to 9. Remaining seed plans must preserve checkout declarations/owners and keep checkout operations out of managed content reconciliation. Schema 8 remains the seed-receipt capability boundary; do not renumber it. The actual flake schema input is a pinned GitHub revision, so re-pinning changes flake.nix as well as flake.lock and SchemaVersion.hs.
-
+The 2026-10-26 review verified these mismatches against the working tree: schema 10 and checkout
+selection/recovery have superseded the old schema-8-only assumptions; `checkSeedSteps` moved to
+`Core.Module`; `buildFinalManifest` already preserves seeds; remote update fetches dependencies;
+producer versions and destination lists changed. More seriously, original ownership loses
+co-seeders in one application, the temporary managed adapter violates seed guarantees, and
+check-then-write cannot prevent replacement. Original removal guarded delete but not section
+writes; original adoption left missing-file behavior unspecified. These are required corrections
+within the initiative, not additional optional follow-up plans.
 
 ## Decision Log
 
-Decision (2026-10-15): Complete only EP-1 and EP-2 as prerequisites of plan 105. Preserve the six-plan seed decomposition and do not enable runtime seeds through the checkout implementation. Future seed work extends the existing lifecycle and schema contracts rather than replacing them.
+Decision (2026-10-26): retain six concerns but reopen EP-2 and specify an interleaved early
+producer/consumer check. This preserves the intended outcome and API ownership while finding
+workflow failures before expanding tests and releasing producers.
 
-- Decision: Name the concept "seed file" and declare it with `lifecycle = Some "seed"` on
-  `Step`, not with a boolean or a new strategy.
-  Rationale: Seeding is orthogonal to how bytes are produced (copy, template, dhall-text), so
-  it cannot be a strategy. A text enumeration matches `strategy` and `patch`, leaves room for
-  future lifecycles, and reads as intent in `module.dhall`.
-  Date: 2026-09-19
+Decision (2026-10-26): separate immutable first-settlement provenance from exact live claims;
+represent legacy uncertainty explicitly and version the semantic change. This corrects the
+original schema-8 design without rewriting history or guessing lost information.
 
-- Decision: Record a content-free seed receipt in the manifest (`seeds` map), advancing the
-  manifest schema to 8.
-  Rationale: ADR 0004 puts every applied-state fact in the manifest. The receipt is what lets
-  a re-run respect a deliberate deletion, lets `remove` report what it leaves, and makes the
-  managed-to-seed release idempotent. It omits the hash, which is what "not tracked" means.
-  ADR 0014 requires the version advance.
-  Date: 2026-09-19
+Decision (2026-10-26): remove the original `seedAsManagedWrite` decision. Unsupported intermediate
+update refuses before mutation; runtime seed support ships only with run/report/remove/update
+accepted together. Older-client compatibility is a release constraint, not permission to overwrite.
 
-- Decision: A path is in at most one of `files` and `seeds`; a composition in which one
-  module seeds a path another module manages is refused at compile time.
-  Rationale: Mixed ownership has no coherent answer to "does status report edits here?".
-  Refusing is cheap and explicit; no real module needs it.
-  Date: 2026-09-19
+Decision (2026-10-26): run refuses lifecycle transitions before publishing candidate metadata;
+update owns managed release and explicit reverse adoption. Normal release requires no additional
+per-file confirmation beyond ordinary update acceptance.
 
-- Decision: Releasing a managed file to a seed on update never prompts, never deletes, and
-  keeps the disk bytes exactly as they are.
-  Rationale: The module author has declared that the project owns the file. A prompt would
-  ask the developer to confirm what they already do (own their changelog); deleting or
-  resetting would destroy their work.
-  Date: 2026-09-19
-
-- Decision: A deleted seed file is not re-created by `run` or `update` while its receipt
-  exists.
-  Rationale: The project owns the file, and deleting it is a legitimate project decision
-  (for example, a project that keeps no changelog). Re-creating on request is a future
-  `--reseed` flag.
-  Date: 2026-09-19
-
-- Decision: No minimum-Seihou-version gate for modules that use `lifecycle`.
-  Rationale: Dhall record extraction in `Seihou.Dhall.Eval.stepDecoder` ignores fields it does
-  not ask for, so an older binary reads a seed step as managed — today's behavior, which is
-  safe (it merely keeps the status noise). A gate would be a larger, separate feature.
-  Date: 2026-09-19
-
-- Decision: Between EP-3 and EP-5, `seihou update` treats a seed operation as the managed
-  write it used to be (`seedAsManagedWrite`).
-  Rationale: EP-3 introduces `SeedFileOp` into compiled plans that update also consumes;
-  wildcard matches there would drop it and classify the file as an orphan. Managed behavior
-  is today's behavior and is safe; no published module uses seeds until EP-6.
-  Date: 2026-09-19
-
-- Decision: Six child plans, split by life-cycle concern (declare, record, first write,
-  report/remove, evolve, adopt) with `seihou update` isolated in its own plan.
-  Rationale: Keeps each plan independently verifiable and keeps the update engine's risk
-  from dominating the plan that first makes seeds observable.
-  Date: 2026-09-19
-
+Historical foundation: EP-1 and EP-2 M1–M3 landed on 2026-10-15 in commit `66466b4` as prerequisites
+of plan 105. Their completion did not implement runtime seeds. The original lifecycle-as-text,
+content-free receipt, and six-concern decomposition decisions remain; the unsafe fallback and
+application-only ownership assumptions are superseded above.
 
 ## Outcomes & Retrospective
 
-Two of six child plans are complete: declarations/validation and portable schema-8 receipts. The current binary also supports schema 9 checkout outputs from the separate plan 105. Runtime seed creation, reporting, release reconciliation and producer adoption remain unimplemented under EP-3 through EP-6; completion of the foundations is not completion of the seed initiative. ADR 0017 defines seeds, while ADR 0018 defines checkout outputs independently.
+This update reviewed all six child plans against source, current producer declarations, and
+relevant ADRs, and reconciled the shared contracts and developer workflow. It changes plans and
+ADR 0017 only; runtime code, releases, and installations remain open work. Original authorship is
+`claude-opus-5[1m]` for the MasterPlan and all children; prior `gpt-6.1-sol` revisions cover the
+MasterPlan and EP-1/EP-2. None had recorded review entries before this pass.
 
-Revision note (2026-10-15): Reconcile EP-1/EP-2 completion with implementation evidence and record the schema-9 checkout interfaces that subsequent seed plans must preserve. The remaining seed initiative stays unimplemented.
+Revision note (2026-10-26): correct unsafe intermediate writes, receipt ownership and race
+semantics; preserve current checkout/schema APIs; schedule early real adoption and require
+published/installed delivery evidence. Reopened EP-2 is reflected consistently in the registry.

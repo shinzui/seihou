@@ -11,325 +11,242 @@ provenance:
     model: "claude-opus-5[1m]"
     harness: "claude-code"
     at: 2026-09-19T13:59:13Z
+  revisions:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-27T00:43:50Z
+      mode: "update"
+      note: "Refresh producers and require one-command adoption plus released installed-binary evidence"
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-27T00:43:50Z
+      verdict: "approved"
+      note: "Reviewed revised plan against current source and cross-plan contracts; approval is for implementation design, not runtime delivery"
 ---
 
 # Adopt seed steps in seihou-modules and document seed authoring
 
-This ExecPlan is a living document. The sections Progress, Surprises & Discoveries,
-Decision Log, and Outcomes & Retrospective must be kept up to date as work proceeds.
-If durable project context changes, update or create ADRs in docs/adr/ in the same change.
+This ExecPlan is a living document. Maintain Progress, Surprises & Discoveries,
+Decision Log, and Outcomes & Retrospective.
 
-This plan is EP-6 of the MasterPlan
-`docs/masterplans/12-seed-files-module-outputs-created-once-and-owned-by-the-project.md`.
-Hard dependencies, all of which must be Complete:
-`docs/plans/101-create-seed-files-once-during-seihou-run.md` (EP-3),
-`docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md` (EP-4), and
-`docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md`
-(EP-5). It also relies on the schema commit pushed by
-`docs/plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md` (EP-1).
-
-Most of the work happens in a second repository, the `seihou-modules` registry
-(`mori://shinzui/seihou-modules`, checked out at `/Users/shinzui/Keikaku/bokuno/seihou-modules`;
-confirm the path with `mori registry show shinzui/seihou-modules`). The rest is documentation
-in this repository (`mori://shinzui/seihou`).
-
+This is EP-6 of [MasterPlan 12](../masterplans/12-seed-files-module-outputs-created-once-and-owned-by-the-project.md).
+Milestone 1 is read-only classification plus a disposable candidate for early integration and
+has no hard dependency. Milestones 2–4 require completed
+[plan 101](101-create-seed-files-once-during-seihou-run.md),
+[plan 102](102-keep-seed-files-out-of-status-diff-and-remove.md), and
+[plan 103](103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md).
+The declaration is provided by [plan 99](99-declare-seed-steps-in-the-module-schema-and-validate-them.md).
 
 ## Purpose / Big Picture
 
-Seihou now supports *seed files*: a step marked `lifecycle = Some "seed"` in `module.dhall`
-creates its file once, when the path is absent, and then hands it to the project. Seihou never
-overwrites, content-tracks, merges into, reports, or deletes a seed; `seihou status` shows only
-a count of them; and `seihou update` *releases* files that an earlier module release managed.
-None of that helps users until the modules they install use it.
+Project authors receive editable starter files without permanent drift warnings or future
+module updates overwriting them. Producers declare `lifecycle = Some "seed"`; existing
+projects adopt through one ordinary command:
 
-The trigger for this initiative was the `haskell-cli-app` module: it generates `CHANGELOG.md`,
-`README.md`, two `.cabal` files, and three Haskell sources that every project edits on day one,
-so `seihou status` reports them as `modified by user` forever. After this plan:
+```bash
+seihou update haskell-cli-app
+```
 
-- `haskell-cli-app`, `haskell-library`, and `haskell-keiro-project` in `seihou-modules` declare
-  their project-owned files as seeds and bump their versions.
-- A new project generated from `haskell-cli-app` can edit its changelog, cabal files, and
-  sources and still see a clean `seihou status` for the files the module keeps managing.
-- An existing project upgrades with `seihou upgrade haskell-cli-app` followed by
-  `seihou update haskell-cli-app`, and the formerly managed files are released without a
-  prompt, keeping every edit.
-- `docs/user/module-authoring.md` in this repository explains how to choose between a seed and
-  a managed step, and `docs/user/CHANGELOG.md` announces the feature.
-
+That command fetches candidates/dependencies and reuses saved inputs. Its normal confirmation
+includes managed-to-seed releases; no per-file release prompts or manual manifest/index work
+are required. Fresh users still install the registry once and run their chosen module. A
+fresh clone of an adopted project uses committed receipts: an absent settled seed stays absent,
+even with an empty cache; checkout setup remains the separate ordinary `seihou sync` workflow.
 
 ## Progress
 
-- [ ] Milestone 1: classify every step of the three Haskell modules (and survey the other
-      modules); record the classification in this plan's Decision Log.
-- [ ] Milestone 2: re-pin the schema in the three modules, add `lifecycle`, bump versions,
-      validate, and regenerate the registry's OKF docs; commit in `seihou-modules`.
-- [ ] Milestone 3: verify with the real CLI — a fresh project and an upgrade of an existing
-      project (edited files survive, status is clean).
-- [ ] Milestone 4: authoring guidance and user changelog in this repository; seihou-modules
-      ADR update; MasterPlan distillation hand-off.
-
+- [ ] Milestone 1: current three-module classification and command/removal audit produce a disposable candidate for EP-5's early real-consumer check.
+- [ ] Milestone 2: after engine acceptance, the three producer modules declare seeds, validate, and have reviewed release changes ready.
+- [ ] Milestone 3: fresh, existing, cloned, and repeated ordinary workflows pass using released artifacts and the installed executable.
+- [ ] Milestone 4: author guidance, release notes, and cross-repository ADR evidence describe the delivered behavior and limits.
 
 ## Surprises & Discoveries
 
-(None yet.)
-
+Review (2026-10-26): Mori's registry snapshot lagged the producer working tree. Direct reads
+show `haskell-cli-app` 0.3.1 with additional root-module/test, per-package changelog/license,
+and managed `nix/haskell-cli-app.nix` steps; `haskell-library` is 0.2.0. The old plan's ten-step
+0.2.0 CLI list is obsolete. `docs/cli/update.md` already promises direct remote fetching, so
+requiring `seihou upgrade` first is unnecessary. `git diff --exit-code` against HEAD cannot
+prove preservation of edits that already existed before update.
 
 ## Decision Log
 
-- Decision: Choose seeds by one test: "Will every project edit this file as part of normal
-  development, in ways the module cannot predict?" Yes → seed. No, or the module must keep
-  changing it across releases → managed.
-  Rationale: The failure being fixed is status noise from files that were always meant to
-  diverge. Files a module continues to own (formatter configuration, license text, Nix
-  plumbing, `.gitignore` blocks) must stay managed so module releases keep reaching them.
-  Date: 2026-09-19
+Decision (2026-10-26): classify current destinations by ongoing ownership, not file extension.
+Cabal files, application sources/tests, changelogs, README, and domain implementation starters
+are seed candidates. Generated package integration such as `nix/haskell-cli-app.nix`, policy
+licenses, and shared configuration remain managed where releases must continue updating them.
+Review `cabal.project`, `justfile`, workspace declarations, and implementation briefs against
+actual producer intent. Do not freeze a stale list or assume every generated Nix file is a seed.
 
-- Decision: Initial classification for `haskell-cli-app` (confirm against the working tree in
-  Milestone 1): seeds — `CHANGELOG.md`, `README.md`, `{{project.name}}-core/{{project.name}}-core.cabal`,
-  `{{project.name}}-cli/{{project.name}}-cli.cabal`, `{{project.name}}-cli/app/Main.hs`,
-  `{{project.name}}-cli/src/{{project.namespace}}/Cli.hs`,
-  `{{project.name}}-core/src/{{project.namespace}}/Prelude.hs`, and `cabal.project`;
-  managed — `LICENSE`, `fourmolu.yaml`. Apply the same reasoning to `haskell-library`
-  (seeds: `cabal.project`, the `.cabal` file, `Prelude.hs`, the library root module,
-  `test/Spec.hs`, `CHANGELOG.md`, `README.md`; managed: `LICENSE`, `fourmolu.yaml`) and to
-  `haskell-keiro-project` (per-package `.cabal` files, sources, `README.md`, and any
-  implementation brief are seeds; per-package `LICENSE` files stay managed).
-  Rationale: `cabal.project` gains packages and `source-repository-package` stanzas as the
-  project grows; the license and formatter configuration are policy the module maintains.
-  Date: 2026-09-19
-
-- Decision: Bump each changed module's minor version (for example `haskell-cli-app`
-  0.2.0 → 0.3.0) and declare no module `migrations` for the change.
-  Rationale: The lifecycle change is applied by `seihou update` itself (EP-5 releases the
-  files); a module migration would duplicate it. A minor bump signals a behavior change
-  without a breaking file change.
-  Date: 2026-09-19
-
+Decision (2026-10-26): release runtime support before publishing producers that promise seeds.
+Older binaries can ignore the field and overwrite project-owned files; that is not a harmless
+status-only fallback. This initiative does not add a module minimum-client-version schema,
+but producer docs state the verified minimum release and a compatibility check records old-client
+behavior. Keep delivery open until the authorized publication/install steps are completed.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
-
+Planning update only. No producer files, releases, or user installation were changed in this
+review. Local source verification and published/installed delivery are separate gates.
 
 ## Context and Orientation
 
-**Seihou and modules.** Seihou is a project scaffolding CLI. A *module* is a directory with a
-`module.dhall` file and a `files/` directory of sources. Each entry in the module's `steps`
-generates one file; `strategy` says how (`copy`, `template`, `dhall-text`, `structured`),
-`src` names the source in `files/`, and `dest` the path in the user's project (it may contain
-`{{variable}}` placeholders). A *registry* is a repository publishing many modules through a
-`seihou-registry.dhall`; users install from it with
-`seihou install https://github.com/shinzui/seihou-modules.git --all` into
-`~/.config/seihou/installed/`, apply with `seihou run <module>` in a project, refresh installed
-copies with `seihou upgrade <module>`, and re-apply newer releases to a project with
-`seihou update <module>`. The project's record of what was applied is the committed
-`.seihou/manifest.json`.
+Discover the producer with Mori, then read its own agent instructions before editing:
 
-**Seeds (delivered by EP-1 to EP-5).** A step with `lifecycle = Some "seed"` is a seed:
-`seihou run` writes it only when the path is absent and records a *seed receipt* in the
-manifest's `seeds` map instead of a content record in `files`; `seihou status` prints
-`Seed files: N (created once; owned by the project, not tracked)` instead of listing them;
-`seihou remove` never deletes them; `seihou update` never writes an existing seed and
-*releases* a formerly managed file (drops its record and baseline, keeps the bytes, records
-outcome `released-from-managed`). `seihou validate-module` rejects a seed step that has a
-`patch`, uses `structured`, shares a `dest` with a managed step, or is deleted by a removal
-step. The field is new in the schema commit EP-1 pushed; `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`
-in this repository holds that commit (`schemaUrl`) and its integrity hash (`schemaHash`).
-
-**The registry repository.** `seihou-modules` has `modules/haskell/{haskell-cli-app,haskell-library,haskell-keiro-project,nix-haskell-flake}`,
-`modules/typescript/{fumadocs,nix-bun-flake}`, `modules/git/git-init`, `recipes/`,
-`blueprints/`, `okf-docs/` (generated documentation per module and recipe, produced by
-`seihou okf-docs`; see `docs/cli/okf-docs.md` in this repository), and its own `docs/adr/` and
-`docs/plans/`. Each `module.dhall` imports the schema by URL and hash, for example:
-
-```dhall
-let S =
-      https://raw.githubusercontent.com/shinzui/seihou-schema/b83079d377f22c77292ad5ccf88d1061a58f0c1c/package.dhall
-        sha256:1d46697ed3e7ca1b0d9922020e2da034ae6e33f7b482ee454c68d94b536e8c2a
+```bash
+mori registry show shinzui/seihou-modules --full
+mori registry docs shinzui/seihou-modules
 ```
 
-and several different commits are pinned across modules today. A module must import a schema
-commit whose `Step` has `lifecycle` before record completion (`S.Step::{ …, lifecycle = Some "seed" }`)
-type-checks. Read the repository's own `README.md` and any `CLAUDE.md`/`AGENTS.md` in it before
-editing; follow its commit conventions (Conventional Commits).
+Canonical artifacts are `mori://shinzui/seihou-modules/templates/haskell-cli-app`,
+`mori://shinzui/seihou-modules/templates/haskell-library`, and
+`mori://shinzui/seihou-modules/templates/haskell-keiro-project`. At review time the checkout is
+`/Users/shinzui/Keikaku/bokuno/seihou-modules`; paths in commands are locators, not durable
+cross-repository identities. Their module directories contain `module.dhall`, templates,
+README, commands, and optional removal declarations. Read recipes and the Keiro blueprint
+that compose them; their public workflow must retain dependencies and saved inputs.
 
-`haskell-cli-app` today (`modules/haskell/haskell-cli-app/module.dhall`, version `0.2.0`) has
-ten steps: `cabal.project`, `{{project.name}}-core/{{project.name}}-core.cabal`,
-`{{project.name}}-core/src/{{project.namespace}}/Prelude.hs`,
-`{{project.name}}-cli/{{project.name}}-cli.cabal`, `{{project.name}}-cli/app/Main.hs`,
-`{{project.name}}-cli/src/{{project.namespace}}/Cli.hs`, `LICENSE`, `fourmolu.yaml` (copy),
-`CHANGELOG.md`, `README.md`. It depends on `nix-haskell-flake`. The recipe
-`recipes/haskell-cli-app-repo/recipe.dhall` composes it.
+The schema pin is recorded in this repository's `seihou-cli/src/Seihou/CLI/SchemaVersion.hs`;
+use an already published compatible schema, preserving checkout command fields. Re-pinning
+must not change the user's dirty schema submodule incidentally. The receipt minimum is
+historically schema 8; current code is schema 10 and plan 100 adds exact-owner versioning.
+Use the implemented current version in acceptance, never assert every manifest is version 8.
 
-**Relevant decisions.** In this repository: ADR 0017
-(`docs/adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md`, created by EP-1
-and amended by EP-2 to EP-5) defines seeds;
-[ADR 0013](../adr/0013-status-is-a-bounded-summary-the-manifest-is-the-record.md) explains why
-status shows only a count. In `seihou-modules`: ADR 2, "Separate Keiro project seeds from
-domain implementation" (`mori://shinzui/seihou-modules`, project-relative path
-`docs/adr/2-separate-keiro-project-seeds-from-domain-implementation.md`; an artifact-level Mori
-URI for this ADR is pending because the registry does not yet index that bundle) already
-describes `haskell-keiro-project`'s generated libraries as *seeds* that "become hand-owned
-during implementation" and asks that "Seihou conflict protection must be respected on
-reapplication". This plan makes that intent mechanical, and Milestone 4 amends that ADR to say
-so.
-
+[ADR 0017](../adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md) defines
+settlement and lifecycle transitions; [ADR 0018](../adr/0018-checkout-outputs-are-observable-portable-declarations.md)
+separates checkout repair. Relevant producer decision: `mori://shinzui/seihou-modules`,
+project-relative `docs/adr/2-separate-keiro-project-seeds-from-domain-implementation.md`
+(artifact-level URI pending because this plain ADR corpus has no discovered artifact handle).
+It makes generated Keiro libraries project-owned starters, rather than complete domain implementations.
 
 ## Plan of Work
 
-### Milestone 1 — classify
+### Milestone 1 — classify and supply early integration
 
-In the `seihou-modules` checkout, list every step of every module
-(`grep -n 'dest' modules/*/*/module.dhall`) and apply the test from the Decision Log. Record the
-final list per module in this plan's Decision Log, replacing the "initial classification"
-entry's details if the working tree differs (steps may have been added since 2026-09-19). For
-modules other than the three Haskell ones, record the classification even if the answer is
-"no seeds" (likely for `nix-haskell-flake`, `nix-bun-flake`, and `git-init`, whose files are
-plumbing the module keeps maintaining; `fumadocs` may have content pages that are seeds —
-decide and record). Only the three Haskell modules are changed in this plan unless the survey
-finds an equally clear case; any other module goes into Future work in Outcomes.
+Read current `module.dhall` files and list each resolved destination, conditional step, its
+proposed lifecycle, and any command/removal/migration that mutates it. Record the result here.
+Survey other modules for conflicts only; changing additional producers is outside this initial
+three-module scope. Check generated seeds are included by normal Git staging/documentation.
 
-Acceptance: the Decision Log lists, per module, each `dest` and its lifecycle.
+In a disposable producer checkout, mark a minimal representative CLI candidate without
+publishing it or changing the user's installations. Supply that candidate and its exact source
+revision to EP-5 Milestone 2, together with an actual pre-seed consumer. This is an integration
+artifact, not a release. Neither this milestone nor EP-5 waits for EP-6's completion, avoiding
+a dependency cycle. Any integration failure remains work in the owning engine plan.
 
-### Milestone 2 — change the modules
+### Milestone 2 — author and prepare releases
 
-For each module being changed:
+After EP-3/EP-4/EP-5 complete, mark the agreed steps as seeds, use the compatible schema pin,
+bump each module from its *then-current* version, and update producer README/generated docs.
+Verify available versions against the upstream registry history and release tags where they
+exist; Mori's local snapshot alone is insufficient. No dependency bounds are selected here.
 
-1. Replace its schema import with the commit and hash from this repository's
-   `seihou-cli/src/Seihou/CLI/SchemaVersion.hs` (the commit EP-1 pushed, or a later one).
-   Check that no other field the module uses changed meaning between its old pin and the new
-   one (read `git -C /Users/shinzui/Keikaku/bokuno/seihou-project/seihou/schema log --oneline <old>..<new>`).
-2. Add `, lifecycle = Some "seed"` to each seed step.
-3. Bump `version` (minor).
-4. Update the module's `README.md` in the registry to say which files are seeds.
-5. Run `seihou validate-module <module-dir> --lint` with a Seihou build that includes EP-1 to
-   EP-5 and confirm `Seed steps` passes.
+Validate with the tested binary (`seihou validate-module <module-dir> --lint`) and regenerate
+registry documentation using its current documented commands. Remove or revise declarative
+removal/migration actions that would touch seeds; audit shell commands too, because lifecycle
+checks cannot sandbox shell. No migration script should duplicate automatic managed-to-seed
+release. Preserve useful managed Nix/package integration and verify fresh generated packages
+still meet the producer's existing build acceptance.
 
-Then regenerate the registry's generated documentation with `seihou okf-docs` as the registry
-does (see `docs/cli/okf-docs.md` in this repository for the invocation and `--check`), and
-commit in `seihou-modules` with a Conventional Commit per module, for example:
+Prepare Seihou release notes and producer changes as concrete reviewable artifacts. Record
+which runtime release implements every command, not merely the lifecycle decoder. If publishing
+or installing needs authorization under the active task, complete the local work first and
+request only that remaining action; leave this milestone/delivery gate open until done. Follow
+Conventional Commits with canonical cross-repository trailers:
 
 ```text
-feat(haskell-cli-app): hand project-owned files to the project as seeds
-
-Mark CHANGELOG.md, README.md, cabal.project, both .cabal files and the three
-Haskell sources as seed steps so seihou status stops reporting them as
-modified by user. LICENSE and fourmolu.yaml stay managed. Bump to 0.3.0.
-
 MasterPlan: mori://shinzui/seihou/masterplans/12-seed-files-module-outputs-created-once-and-owned-by-the-project
 ExecPlan: mori://shinzui/seihou/plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring
 Intention: intention_01m2wz5ww3ezmvpf0aenfbgcjx
 ```
 
-The trailers use `mori://` URIs because the plans live in another repository (see the global
-cross-repository reference rule). Push only when the user asks.
+### Milestone 3 — verify what a developer can run
 
-Acceptance: every changed module validates; `seihou okf-docs --check` (or the registry's
-equivalent) reports no drift.
+Use disposable projects and isolated configuration/cache for acceptance. A local registry path
+is suitable for source testing but does not prove remote fetching or release availability.
+For delivery, use the published registry and the actual installed Seihou executable. Record
+executable path/version, runtime source tag, producer declared versions and revisions, schema,
+and all preparation commands. No prerequisite manual cache filling or internal JSON editing.
 
-### Milestone 3 — verify with the real CLI
+Fresh use has the ordinary one-time install followed by run (normal variable prompts are allowed):
 
-Install the changed registry from the local checkout into a throwaway configuration directory
-so the user's real installation is untouched (set `XDG_CONFIG_HOME` to a temporary directory
-for these commands; check `seihou install --help` for installing from a local path).
+```bash
+seihou install https://github.com/shinzui/seihou-modules.git --all
+seihou run haskell-cli-app
+```
 
-Fresh project: in an empty temporary directory, `git init`, run
-`seihou run haskell-cli-app` (answer the prompts, or pass variables as `seihou run --help`
-describes), then confirm `jq '.seeds | keys' .seihou/manifest.json` lists the seeded paths and
-`jq '.files | keys'` lists only `LICENSE`, `fourmolu.yaml`, and the `nix-haskell-flake` files.
-Edit `CHANGELOG.md` and a `.cabal` file, run `seihou status`, and confirm neither appears and
-the `Seed files:` line shows the expected count.
+Edit a changelog and Cabal file, repeat run with force, and prove exact byte preservation;
+delete a seed and prove no resurrection. Check status and diff show only managed drift. Repeat
+the seed behavior for library and the Keiro baseline workflow using their current public commands.
+Do not execute unrelated remote-creation commands as test preparation.
 
-Existing project: in another temporary directory, install the **previous** registry commit
-(`git -C <seihou-modules> worktree add <tmp> <old-commit>` and install from it), apply
-`haskell-cli-app` 0.2.0, commit, edit `CHANGELOG.md` and the core `.cabal` file, and confirm
-`seihou status` shows them as `modified by user`. Then install the new registry commit, run
-`seihou update haskell-cli-app --dry-run` and confirm each seed path shows `release to project`;
-run `seihou update haskell-cli-app`; confirm the edited files are byte-identical to before
-(`git diff --exit-code -- CHANGELOG.md`), `seihou status` no longer lists them, and a second
-`seihou update haskell-cli-app` reports the project is already up to date. Record the
-transcripts in Surprises & Discoveries or Outcomes.
+For existing use, preserve a real pre-change consumer with its remote origin and edits. From
+an empty optional cache run only `seihou update haskell-cli-app`, accepting the normal preview.
+No `seihou upgrade`, extra installation, transitive targets, or flag is part of the happy path.
+Compare edited bytes with separately saved before-update snapshots using `cmp`; verify released
+paths disappear from managed records, new absent seeds appear once, and a second update is a
+no-op. A missing managed file becoming a seed remains missing. Exercise supported older
+manifest schemas through the command's automatic lossless preparation; origin inference for
+pre-schema-6 manifests remains the documented explicit migration boundary.
 
-Acceptance: both scenarios behave as described. Any deviation is a bug in EP-3 to EP-5; record
-it in the MasterPlan's Surprises & Discoveries and fix it there before continuing.
+Commit the accepted fixture state, clone it and create a linked worktree with empty caches,
+and verify receipts preserve deletion and seed edits. Run sync only for recorded checkout
+setup; it must never seed or reapply modules. Test removal leaves seed bytes and removes only
+the selected claims. Count commands and prompts separately for initial install, adoption,
+repeat use, clone setup, and recovery; include unavoidable setup in the evidence.
 
-### Milestone 4 — documentation and records
+### Milestone 4 — docs and durable evidence
 
-In this repository: add a "Choosing a lifecycle: seed or managed" subsection under "Steps and
-strategies" in `docs/user/module-authoring.md`, with the one-question test, a short table-free
-list of typical seeds and typical managed files, what users see (`Seed files:` line, release
-on update), the fact that an older Seihou binary treats a seed as managed, and a link to
-ADR 0017. Add a user-facing entry under `## Unreleased` → `### Added` in
-`docs/user/CHANGELOG.md` summarizing seed files end to end (field, run, status, update
-release, remove). Run the `seihou-update-docs` skill's check if it applies to the range.
+In `docs/user/module-authoring.md`, explain when to choose managed/seed/checkout, supported
+seed strategies, composition precedence, receipt lifetime, no reseed flag, explicit reverse
+adoption, and shell limitations. Show one short seed declaration and ordinary adoption command.
+Update `docs/user/CHANGELOG.md` and root release notes. State the minimum tested runtime release
+and that older clients may still manage seed declarations. Do not describe unreleased work as available.
 
-In `seihou-modules`: amend ADR 2 with a dated note that `haskell-keiro-project`'s seeds are now
-declared with `lifecycle = Some "seed"`, which replaces "conflict protection must be respected
-on reapplication" with Seihou leaving those files alone, citing
-`mori://shinzui/seihou/adrs/0017-a-seed-file-is-created-once-and-belongs-to-the-project`
-(the artifact-level URI shape for ADRs is pending in Mori; also give the project URI
-`mori://shinzui/seihou` with path `docs/adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md`).
-
-Then hand off to the MasterPlan's completion: its Outcomes & Retrospective and the ADR
-distillation pass are done by whoever marks the MasterPlan complete, per the master-plan skill.
-
+Update the producer Keiro ADR using its discovered local contract and cite this repository
+with canonical Mori references. The current plain ADR fallback is project URI
+`mori://shinzui/seihou` plus project-relative
+`docs/adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md`, with artifact URI
+pending; do not invent an unverified `adrs/...` handle. Record implementation/delivery evidence
+in ADR 0017 and the MasterPlan, and distill durable lessons without copying task transcripts.
 
 ## Concrete Steps
 
+From the producer checkout located through Mori:
+
 ```bash
-# in the registry checkout
-cd /Users/shinzui/Keikaku/bokuno/seihou-modules
-git status --short                       # expect clean before starting
-grep -n 'dest' modules/*/*/module.dhall
-grep -n 'schemaUrl\|schemaHash' -A1 /Users/shinzui/Keikaku/bokuno/seihou-project/seihou/seihou-cli/src/Seihou/CLI/SchemaVersion.hs
-# after editing a module
+rg -n 'dest|lifecycle|commands|removal' modules/haskell/haskell-cli-app/module.dhall modules/haskell/haskell-library/module.dhall modules/haskell/haskell-keiro-project/module.dhall
 seihou validate-module modules/haskell/haskell-cli-app --lint
+seihou validate-module modules/haskell/haskell-library --lint
+seihou validate-module modules/haskell/haskell-keiro-project --lint
 ```
 
-Expected validation excerpt:
-
-```text
-  ✓ Seed steps
-```
-
-Verification scenario (fresh project), with a temporary configuration root:
-
-```bash
-export XDG_CONFIG_HOME="$(mktemp -d)"
-seihou install /Users/shinzui/Keikaku/bokuno/seihou-modules --all
-cd "$(mktemp -d)" && git init -q
-seihou run haskell-cli-app
-jq '.version, (.seeds | keys), (.files | keys)' .seihou/manifest.json
-echo '- note' >> CHANGELOG.md
-seihou status
-```
-
-Expected: `version` is 8, `seeds` lists the seeded paths, `files` does not, and `seihou status`
-does not mention `CHANGELOG.md`.
-
+Resolve the source binary using `cabal list-bin exe:seihou` in this repository for local proofs.
+Use the installed release for final delivery checks. Run the producer's existing generated-doc
+and package checks, then this repository's `git diff --check` and relevant documentation checks.
 
 ## Validation and Acceptance
 
-The Milestone 3 scenarios are the acceptance: a new project and an upgraded project both end
-with the project-owned files absent from `Tracked files:` and present in the `Seed files:`
-count, with every developer edit intact. `seihou validate-module --lint` passes for every
-changed module, the registry's generated docs have no drift, and this repository's
-`nix flake check` still passes after the documentation edits.
-
+All three producers declare the correct files, preserve ongoing managed integration, and
+pass their existing validation/build workflow. Fresh and existing consumers, clones/worktrees,
+and removal show project ownership using ordinary supported commands. Runtime release,
+published producers, and installed executable are recorded separately and all must pass before
+calling this initiative delivered. No schema-only or local-checkout proof substitutes for that.
 
 ## Idempotence and Recovery
 
-All verification uses temporary directories and a temporary `XDG_CONFIG_HOME`, so the user's
-installed modules and real projects are never touched. Registry commits are local until the
-user asks to push. If a module change proves wrong after being pushed, fix forward with a new
-module version; do not rewrite published registry history, because projects record the origin
-and version they applied.
-
+Acceptance uses disposable consumers/configuration. Preserve unrelated checkout changes and
+fix published producer mistakes with a new version. Retrying update follows its normal recovery;
+seed edits never require manual baseline repair. Removing the final receipt intentionally ends
+settlement memory; document that later reapplication can create a missing path again.
 
 ## Interfaces and Dependencies
 
-Consumes: the `lifecycle` field (EP-1), seed behavior of `run` (EP-3), `status`/`remove`
-(EP-4), and `update` release (EP-5), all in a Seihou build from this repository. Produces: new
-versions of `haskell-cli-app`, `haskell-library`, and `haskell-keiro-project` in
-`mori://shinzui/seihou-modules`; the authoring guidance in `docs/user/module-authoring.md`; the
-user changelog entry. No code interfaces change in this repository.
+Milestone 1 supplies EP-5's candidate artifact without enabling published seed use. Later
+milestones consume complete engine/reporting behavior and own producer release/adoption evidence.
+No new core API is defined here. Local authoring-guide edits stay in this repository; producer
+changes carry canonical project/artifact references.
+
+Revision note (2026-10-26): refresh actual producers, move minimal consumer proof early, make
+ordinary update own adoption, and keep publication/install evidence in the completion scope.

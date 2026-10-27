@@ -17,6 +17,17 @@ provenance:
       at: 2026-10-15T15:30:07Z
       mode: "implement"
       note: "Implement lifecycle prerequisite for plan 105"
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-27T00:43:50Z
+      mode: "update"
+      note: "Reconcile completed declaration handoff with checkout APIs and runtime compatibility"
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-27T00:43:50Z
+      verdict: "approved"
+      note: "Reviewed revised plan against current source and cross-plan contracts; approval is for implementation design, not runtime delivery"
 ---
 
 # Declare seed steps in the module schema and validate them
@@ -29,6 +40,22 @@ This plan is EP-1 of the MasterPlan
 `docs/masterplans/12-seed-files-module-outputs-created-once-and-owned-by-the-project.md`.
 It has no hard dependencies.
 
+
+## Current handoff (2026-10-26)
+
+The declaration work remains complete. The implementation now includes
+`StepLifecycle = Managed | Seed | Checkout` and `Strategy.Symlink` from the independent
+checkout work. Seed validation lives in `seihou-core/src/Seihou/Core/Module.hs` (consumed by
+`Engine.Validate` and `Engine.Plan`), not in a new `Engine.Validate.checkSeedSteps` implementation.
+The historical milestones below describe the original two-lifecycle change; do not remove
+checkout support or reapply schema edits. EP-3 extends validation for all declarative mutation
+forms and resolved path overlaps before enabling runtime seeds.
+
+Older clients ignoring lifecycle is decoder compatibility only, not safe seed support:
+force/update can overwrite project-owned files. EP-6 must publish/verify a supporting runtime
+before adopting producers and document its minimum version. No new minimum-client schema gate
+is added by this initiative. Current schema pins and the user's existing submodule changes
+must be preserved; never reset a dirty schema checkout as a recovery step.
 
 ## Purpose / Big Picture
 
@@ -422,8 +449,8 @@ above shows the new finding.
 
 ## Idempotence and Recovery
 
-Every edit is additive and can be re-applied. If the schema commit was made but not pushed,
-`git -C schema reset --hard origin/master` discards it. If it was pushed and is wrong, fix
+The completed work must not be reapplied blindly. Preserve existing schema changes and use
+a reviewed corrective commit for any unpublished mistake. If it was pushed and is wrong, fix
 forward with a new schema commit and re-pin; never force-push a published schema commit,
 because module files in the wild pin it by hash. The Haskell changes compile only once every
 `Step` construction site passes `lifecycle`; the compiler lists any that were missed.
@@ -447,3 +474,5 @@ Later plans consume `Step.lifecycle` (EP-3 compiles it into an operation, EP-5 r
 and amend ADR 0017. No new library dependency is introduced.
 
 Revision note (2026-10-15): Implemented the declaration and receipt foundations required by plan 105; validated old-module compatibility, seed invariants, round trips, adjacent upgrade behavior, and schema pins. Tests use generated local-schema fixtures instead of duplicating static fixture files.
+
+Revision note (2026-10-26): reconcile completed declaration APIs with checkout support and correct unsafe old-client/recovery assumptions; runtime validation follow-up stays in EP-3.

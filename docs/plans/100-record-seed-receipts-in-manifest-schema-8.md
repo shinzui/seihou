@@ -17,6 +17,17 @@ provenance:
       at: 2026-10-15T15:30:07Z
       mode: "implement"
       note: "Implement schema 8 prerequisite for plan 105"
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-27T00:43:50Z
+      mode: "update"
+      note: "Reopen exact seed-owner claims with versioned legacy representation and shared helpers"
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-27T00:43:50Z
+      verdict: "approved"
+      note: "Reviewed revised plan against current source and cross-plan contracts; approval is for implementation design, not runtime delivery"
 ---
 
 # Record seed receipts in manifest schema 8
@@ -32,6 +43,14 @@ It has no hard dependencies. It lists
 dependency only because EP-1 writes the ADR that names the concept; everything this plan
 needs from it is restated below.
 
+
+## Current handoff (2026-10-26)
+
+Milestones 1–3 below are completed historical work. Current schema is 10 (checkout outputs
+and commands were added later), and `SeedReceipts` remains capability 8. This plan is reopened
+only for Milestone 4 below: the existing singular supplier plus application-ID set cannot
+identify multiple seeders in one application. EP-3 and EP-4 require Milestone 4, not merely
+the original schema-8 codec. No runtime seed writer is implemented yet.
 
 ## Purpose / Big Picture
 
@@ -69,6 +88,8 @@ Nothing yet writes a non-empty `seeds` map; `docs/plans/101-create-seed-files-on
       `docs/user/manifest-upgrade.md`, design-doc version history; ADR 0014 implementation
       note; ADR 0017 amendment; root `CHANGELOG.md`.
 
+
+- [ ] Milestone 4: exact application/instance claims, explicit legacy ownership, versioned codec/upgrade, and invariant-preserving helpers support correct removal before runtime seed production.
 
 ## Surprises & Discoveries
 
@@ -108,7 +129,7 @@ Implementation evidence (2026-10-15): `cabal build all` passed and all 1,163 cor
 
 ## Outcomes & Retrospective
 
-Implemented and validated as a prerequisite of plan 105. Lifecycle declarations retain old-module compatibility; schema 8 records seed settlement without content tracking and has a lossless adjacent upgrade. Runtime seed behavior remains intentionally delegated to plans 101–104. ADRs 0017 and 0014 contain the durable ownership and versioning decisions. Validation: `cabal build all` and `cabal test seihou-core-test --test-show-details=direct` passed (1,163 tests).
+Milestones 1–3 were implemented and validated as a prerequisite of plan 105; Milestone 4 remains required before this plan is Complete. Lifecycle declarations retain old-module compatibility; schema 8 records seed settlement without content tracking and has a lossless adjacent upgrade. Runtime seed behavior remains intentionally delegated to plans 101–104. ADRs 0017 and 0014 contain the durable ownership and versioning decisions. Validation: `cabal build all` and `cabal test seihou-core-test --test-show-details=direct` passed (1,163 tests).
 
 
 ## Context and Orientation
@@ -343,77 +364,129 @@ is in `files` or `seeds`, never both. Add an entry under `## [Unreleased]` in th
 Acceptance: `nix flake check` passes; the documents describe schema 8.
 
 
+### Milestone 4 — preserve precise seed claims before enabling runtime writers
+
+This is the authoritative API for later seed plans; earlier signatures document the shipped
+schema-8 foundation and must not constrain the correction. Keep first supplier/outcome/time
+as settlement provenance, independent of active claims. Add in `Seihou.Core.Types`:
+
+```haskell
+data SeedOwnership
+  = LegacySeedOwners !(Set ApplicationId)
+  | KnownSeedOwners !(Map ApplicationId (Set ModuleName))
+  deriving stock (Eq, Show, Generic)
+```
+
+`SeedRecord` keeps `moduleName`, `outcome`, and `settledAt`, and replaces the raw
+`applicationIds` field with `ownership :: !SeedOwnership`. Qualified module-instance names
+come from `Seihou.Composition.Instance.qualifiedName`. A total accessor derives application
+IDs for either representation. The supplier remains the original supplier even after that
+instance leaves; never use it as an ownership query or select it from set order.
+
+Advance the *then-current* schema by one (11 if no intervening change), add the
+`SeedOwnerClaims` capability, and preserve `SeedReceipts = 8`. Schemas 8–10 decode their
+`applications` list as `LegacySeedOwners`; never guess each application's contributing
+module from the first supplier. The new schema writes a required tagged `ownership` object:
+`kind = "instances"` with an `owners` object mapping application IDs to sorted qualified
+module-name arrays, or `kind = "legacy-applications"` with sorted `applications`. Keep
+`module`, `outcome`, and `settledAt` unchanged. Do not serialize duplicate authoritative owner
+fields. Encoding old schema preserves its old representation; `manifestEncodingLoss` must
+report attempting to encode exact claims below the new capability, and write boundaries
+must refuse that loss. New runtime writers always use `KnownSeedOwners`.
+
+The adjacent upgrade is lossless: wrap existing application lists in the explicit legacy
+variant without inventing owner facts, preserve all unknown fields and checkout state, and
+validate malformed input. Empty seed maps upgrade automatically in the normal command.
+Add old/new round trips, malformed owner/kind rejection, downgrade-loss checks, contiguous
+registry checks, and machine-independence coverage. Do not rewrite the historical 7→8 step.
+
+Precise ownership needed for removal/transition of a nonempty legacy receipt is inferred only
+from exact recorded artifacts, qualified instances, conditions, and saved inputs. Add a
+service in `seihou-cli/src/Seihou/CLI/ManifestCapabilityUpgrade.hs` using the existing
+`RecordedRelease` evidence path. EP-3's compiler later supplies seed claims to this service;
+Milestone 4 tests an injected evidence provider so it has no hard dependency on EP-3. Unknown
+or unavailable evidence remains explicit and blocks only operations requiring precise owner
+subtraction, with an actionable named error. Never silently discard unknown owners, use a
+candidate release as historical evidence, or force users to edit the manifest. Rendering and
+preserving bytes need no inference. Stage inferred facts in the same accepted transaction;
+dry-run and failed apply do not publish them.
+
+In `Seihou.Core.Seed`, replace `dropSeedOwner` with
+`dropSeedOwners :: Map ApplicationId (Set ModuleName) -> FilePath -> Manifest -> Either SeedOwnershipError Manifest`.
+It subtracts only named claims, prunes empty application sets, and removes the receipt only
+when no claim remains; unresolved legacy owners return an error. Make `mergeSeedRecord`
+return `Either SeedOwnershipError Manifest` too when legacy and exact claims cannot be merged
+without inference. It unions exact maps but preserves first settlement metadata. Rename or
+replace `seedsOwnedByModule` with an application/qualified-instance query; the current
+supplier-only filter is not a removal API. Add a pure selected-application claim replacement
+helper for update (replace selected claims, retain all unselected claims, retire empty receipts).
+Expose exact ownership queries to callers instead of reimplementing subtraction in CLI adapters.
+
+Extend `validateManifestInvariants` and final write validation for canonical project-relative
+seed paths, managed/seed disjointness, checkout overlaps, nonempty known claims, and references
+to recorded applications/qualified instances. Reuse `Core.Checkout` path validation where
+appropriate without creating cyclic imports. Preserve all previously valid legacy documents;
+new stronger referential checks apply to known claims. No hash or baseline belongs in a receipt.
+
+Acceptance in `Core/SeedSpec.hs`, `Manifest/TypesSpec.hs`, `Manifest/UpgradeSpec.hs`, and CLI
+capability tests: two seeders in one application; two applications; removal of the first
+supplier; unrelated seeds in the same application; condition retirement; exact merge laws;
+legacy inference success/failure; and old-schema round trips. All existing checkout tests pass.
+Update `docs/cli/manifest.md`, `docs/user/manifest-upgrade.md`, version history, ADRs 0014/0017,
+and root changelog. Record implementation evidence before marking the reopened plan Complete.
+
 ## Concrete Steps
 
-From the repository root, `/Users/shinzui/Keikaku/bokuno/seihou-project/seihou`, in the Nix
-dev shell:
+From this repository root in its Nix development shell:
 
 ```bash
 cabal build all
-cabal test seihou-core-test
-cabal test seihou-cli-test
+cabal test seihou-core-test --test-options='-p Seed'
+cabal test seihou-core-test --test-options='-p Manifest'
+cabal test seihou-cli-test --test-options='-p ManifestCapabilityUpgrade'
+cabal test all
 nix flake check
 ```
 
-Manual demonstration on a scratch project that has a schema-7 manifest (any project where
-`seihou run` was used with the previous build; or copy one):
-
-```bash
-cd "$TMPDIR" && rm -rf seed-manifest-demo && mkdir seed-manifest-demo && cd seed-manifest-demo
-git init -q
-# create any small module run with the *previous* seihou build, or copy a schema-7
-# .seihou/manifest.json from an existing project into .seihou/
-cabal run -v0 --project-dir /Users/shinzui/Keikaku/bokuno/seihou-project/seihou seihou -- manifest upgrade --dry-run
-```
-
-Expected transcript excerpt:
-
-```text
-Reading .seihou/manifest.json (schema version 7)
-
-  7 -> 8  seed receipts
-```
-
-and after running without `--dry-run`, `jq '.version, .seeds' .seihou/manifest.json` prints
-`8` and `{}`.
-
+For an isolated old-schema upgrade check, resolve the executable with `cabal list-bin exe:seihou`
+in this checkout and use that absolute path from a disposable consumer. Do not use destructive
+fixed temporary directories or assume Cabal supports `--project-dir`. The original 7→8 fixture
+still proves the historical step; the new acceptance also traverses 8→9→10 and the next adjacent
+ownership step while retaining checkout fields.
 
 ## Validation and Acceptance
 
-The new `SeedSpec`, `TypesSpec`, and `UpgradeSpec` cases fail before this plan and pass after.
-All existing tests pass once their expectations about the *current* version are moved to 8.
-`seihou manifest upgrade` on a schema-7 project reports the 7 → 8 step as lossless and writes
-`"seeds": {}` with `"version": 8`; `seihou status` and `seihou update --dry-run` still work on
-both a schema-7 and a schema-8 manifest.
-
+Historical schema-8 codec/upgrade coverage remains passing. Milestone 4 adds precise ownership,
+lossless legacy representation, supported old-schema round trips, and refusal of lossy encodes.
+Removing one of two qualified seeders within an application preserves the other; supplier
+retirement never loses settlement provenance. Unknown legacy ownership is never silently
+strengthened or discarded. Native command integration is accepted in the dependent runtime plans.
 
 ## Idempotence and Recovery
 
-All changes are code and documentation. `seihou manifest upgrade` on a schema-8 manifest is a
-no-op. A developer who upgraded a project's manifest to 8 and then runs an older Seihou build
-gets that build's standard "manifest was created by a newer version of seihou" error; the fix
-is to use the newer build (there is no downgrade step, consistent with ADR 0014).
-
+Structural upgrades are deterministic and staged through existing capability preparation. Known
+claims cannot be serialized below their minimum schema. Legacy evidence gathering is read-only;
+its results publish only with accepted state. Use the newer binary for newer manifests; there is
+no implicit downgrade or manual-JSON workaround. Do not alter the accepted historical 7→8 step.
 
 ## Interfaces and Dependencies
 
-At the end of this plan these exist, and later plans must use them rather than re-deriving
-them:
+Milestone 4 supersedes the historical helper signatures earlier in this document. The final
+contract is `SeedRecord { moduleName, ownership, outcome, settledAt }`, `SeedOwnership`,
+`Manifest.seeds`, historical `SeedReceipts`, and new `SeedOwnerClaims`. `mergeSeedRecord` and
+`dropSeedOwners` return typed ownership errors rather than discarding unresolved information.
+Define `seedClaimsFor :: ApplicationId -> ModuleName -> Manifest -> Either SeedOwnershipError (Map FilePath SeedRecord)`
+and `replaceSelectedSeedClaims :: Set ApplicationId -> Map FilePath SeedRecord -> Manifest -> Either SeedOwnershipError Manifest`.
+The latter receives all candidate claims for the selected applications (including an empty map),
+rejects incoming claims outside that selection, preserves prior settlement provenance on surviving
+paths, and retains unselected claims. Compute replacement in one pass; do not drop the last old
+claim and recreate its receipt with a new timestamp. `validateManifestInvariants` covers the final
+combined state after applications are attached. No new library dependency is selected.
 
-- `Seihou.Core.Types.SeedOutcome` (`SeedCreated | SeedFoundExisting | SeedReleasedFromManaged`),
-  `Seihou.Core.Types.SeedRecord` (`moduleName`, `applicationIds`, `outcome`, `settledAt`),
-  `Manifest.seeds :: Map FilePath SeedRecord`, and the capability constructor `SeedReceipts`.
-- `Seihou.Core.Seed.mergeSeedRecord`, `dropSeedOwner`, `seedsOwnedByModule`,
-  `validateManifestInvariants`, `ManifestInvariantError`.
-- `Seihou.Manifest.Types.currentManifestVersion == ManifestSchemaVersion 8`,
-  `minimumManifestVersion SeedReceipts == ManifestSchemaVersion 8`, `seedOutcomeToText`,
-  `seedOutcomeFromText`, `manifestEncodingLoss`.
-- `Seihou.Manifest.Upgrade.AddEmptySeedReceipts` and the 7 → 8 entry in
-  `manifestUpgradeSteps`.
-
-Consumers: `docs/plans/101-create-seed-files-once-during-seihou-run.md` (EP-3) writes
-receipts; `docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md` (EP-4) reads and
-drops them; `docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md`
-(EP-5) writes, drops, and stages schema 8 through `SeedReceipts`. No new library dependency.
+EP-3 uses the helpers to settle and reconcile run claims; EP-4 queries and retires exact claims;
+EP-5 replaces selected claims and stages capability preparation. The CLI legacy-evidence service
+is tested with an injected provider here and connected to compiled seed operations in EP-3.
 
 Revision note (2026-10-15): Implemented the declaration and receipt foundations required by plan 105; validated old-module compatibility, seed invariants, round trips, adjacent upgrade behavior, and schema pins. Tests use generated local-schema fixtures instead of duplicating static fixture files.
+
+Revision note (2026-10-26): reopen receipt ownership for qualified instance claims and lossless explicit legacy representation; preserve historical schema boundaries and current checkout data.
