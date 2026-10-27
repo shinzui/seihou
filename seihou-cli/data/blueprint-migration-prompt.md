@@ -65,6 +65,8 @@ The blueprint declares these shared library-upgrade references:
    mounted, ask the user for anything essential and never claim to have read it.
 3. Make only the changes needed for {{migration_from}} -> {{migration_to}}.
    Preserve unrelated user changes and do not pre-apply later migration edges.
+   Project-owned seed source/configuration may be edited when this edge requires
+   it; do not rerun templates or alter seed receipts to erase authored changes.
 4. Update source, configuration, and tests that are directly affected by this
    edge. Avoid broad cleanup unrelated to the upgrade.
 5. Run the most relevant project validation available for this library change.

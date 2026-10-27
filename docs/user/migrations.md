@@ -407,3 +407,14 @@ seihou migrate haskell-base --commit-message "chore: migrate haskell-base to 1.5
 - [`docs/user/registries-and-multi-module-repos.md`](registries-and-multi-module-repos.md#migrations-in-registries) —
   how migrations interact with multi-module repos
 - `seihou help migrations` — same content, embedded in the binary
+
+## Seed ownership boundaries
+
+Seihou 0.11.0.0 refuses declarative migration sources, destinations and ancestor
+operations that touch settled seeds or paths being released to the project.
+Force does not bypass ownership. Do not ship a migration script for managed-to-seed
+handoff: ordinary `seihou update TARGET` previews `release to project`, preserves
+bytes/absence and updates receipts. Fix inconsistent producer declarations before
+retrying. Arbitrary shell commands remain unsandboxed and authors must keep them
+away from seeds. Agent-guided library migrations can still edit project-owned
+source deliberately as part of the requested upgrade.

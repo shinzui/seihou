@@ -78,6 +78,11 @@ BASELINE MODULES
   agent runner records the applied blueprint in `.seihou/manifest.json` after
   a successful run, including baseline provenance.
 
+  Baseline seed steps create project-owned starters once and preserve edits or
+  deliberate deletion on rerun, including force. Agents extend those files as
+  authorized project work. Status/diff do not compare their contents. Commit seed
+  receipts for clones; ordinary update owns lifecycle transitions (see modules).
+
 REFERENCE FILES
 
   Files declared in the `files` list must live under the blueprint's `files/`

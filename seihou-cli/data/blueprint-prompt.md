@@ -60,7 +60,11 @@ subdirectory.
    modules, the project already contains files generated from them. Inspect
    `seihou status`, `git status` and relevant files when tools are available;
    otherwise ask for the needed output. Preserve user changes and declared
-   checkout links; fresh clones restore those with `seihou sync`.
+   checkout links; fresh clones restore those with `seihou sync`. Baseline seeds
+   are project-owned starters: edit them as the task requires, preserve existing
+   authored content, and do not regenerate them to remove drift. Status/diff
+   count seed receipts without comparing their content. Deliberate deletion stays
+   deleted, including on forced baseline reruns.
 
 3. **Draft.** Provide exact paths and complete content for new files, and
    patch-style snippets for modifications. Prefer additive changes: leave

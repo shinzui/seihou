@@ -23,14 +23,23 @@ import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
 
--- Read the executable's published schema pin from Git objects, independently
--- of the user's submodule checkout. All fixture imports remain local/offline.
+-- Use the published pin from Git objects in a checkout, or the explicitly
+-- identified schema staged by the package builder. Imports remain offline.
 copyPinnedSchema source destination = do
   let revision = T.unpack (last (init (T.splitOn "/" schemaUrl)))
-  files <- lines <$> readProcess "git" ["-C", source, "ls-tree", "--name-only", revision] ""
-  forM_ (filter ((== ".dhall") . takeExtension) files) $ \file -> do
-    content <- readProcess "git" ["-C", source, "show", revision <> ":" <> file] ""
-    TIO.writeFile (destination </> file) (T.pack content)
+      marker = source </> ".seihou-pinned-revision"
+  packaged <- D.doesFileExist marker
+  if packaged
+    then do
+      actual <- T.strip <$> TIO.readFile marker
+      unless (actual == T.pack revision) (fail "packaged schema does not match the executable's published pin")
+      files <- D.listDirectory source
+      forM_ (filter ((== ".dhall") . takeExtension) files) $ \file -> D.copyFile (source </> file) (destination </> file)
+    else do
+      files <- lines <$> readProcess "git" ["-C", source, "ls-tree", "--name-only", revision] ""
+      forM_ (filter ((== ".dhall") . takeExtension) files) $ \file -> do
+        content <- readProcess "git" ["-C", source, "show", revision <> ":" <> file] ""
+        TIO.writeFile (destination </> file) (T.pack content)
 
 -- Every invocation has an empty personal configuration/cache and no inherited HOME.
 invoke binary root home args = do

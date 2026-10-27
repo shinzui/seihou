@@ -72,6 +72,23 @@ in
   effectful = hackagePackage "effectful" "2.7.1.0"
     "sha256-1jr7uWldG/qzNljv41c8ustRFNLnD9DuOFBmL3BYT6g=";
 
+  # The shared scope advances Hspec to 2.11.18 while nixpkgs still carries
+  # hspec-api 2.11.17, whose exact core bound prevents native package tests.
+  # Keep the API package on the same verified upstream release as its peers.
+  hspec-api = final.callHackageDirect
+    {
+      pkg = "hspec-api";
+      ver = "2.11.18";
+      sha256 = "sha256-dFyNwoEuZfIYZ5xjYYEakjzYYVv5Cjd8rhISsMB41vk=";
+    }
+    { };
+
+  # tasty-hspec 1.2.0.4 (current Hackage revision 8) caps QuickCheck at
+  # 2.17; this scope uses 2.18. Its adapter passes args between Hspec and
+  # tasty-quickcheck, both built against that same scope. Keep package tests
+  # enabled and verify the bound relaxation with the complete native suites.
+  tasty-hspec = doJailbreak prev.tasty-hspec;
+
   # mori://shinzui/okf/packages/okf-core is supplied by the shared registry.
 
   seihou-core = pkgs.haskell.lib.compose.overrideCabal
@@ -100,6 +117,8 @@ in
       prePatch = (drv.prePatch or "") + (
         if seihou-schema-src != null then ''
           cp -r ${seihou-schema-src} ../schema
+          chmod u+w ../schema
+          printf '%s\n' '${seihou-schema-src.rev}' > ../schema/.seihou-pinned-revision
         '' else ""
       );
       # Integration tests shell out to `git` for fixture remotes; make it

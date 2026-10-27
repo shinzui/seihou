@@ -62,7 +62,7 @@ The module definition is a Dhall record with these fields:
 
 **dependencies** (List): Modules this module depends on, in record form. See [Dependencies and composition](#dependencies-and-composition).
 
-**removal** (Optional Removal.Type): Declares how this module can be removed with `seihou remove`. If `None`, the module cannot be removed. If present, contains a list of removal steps (`remove-file`, `remove-section`, `rewrite-file`) that describe exactly how to reverse the module's effects. See [Removing modules](#removing-modules).
+**removal** (Optional Removal.Type): Declares how this module can be removed with `seihou remove`. Managed-file deletion needs this declaration; recorded seed-only/checkout-only ownership can be retired without one. If present, contains a list of removal steps (`remove-file`, `remove-section`, `rewrite-file`) that describe exactly how to reverse the module's effects. See [Removing modules](#removing-modules).
 
 
 ## Variables
@@ -738,7 +738,7 @@ This adds missing fields (`version`, `patch`, `commands`), converts bare string 
 
 ## Removing modules
 
-Modules can declare removal steps in the `removal` section of their `module.dhall`. This allows users to undo the module's effects with `seihou remove <module>`. Modules without a `removal` section (`removal = None Removal.Type`) cannot be removed.
+Modules can declare removal steps in the `removal` section of their `module.dhall`. This allows users to undo the module's effects with `seihou remove <module>`. Modules owning managed files need a removal declaration. Recorded seed-only and checkout-only instances can be removed without one; seed files remain on disk.
 
 ```dhall
 { name = "my-template"
@@ -894,7 +894,7 @@ seihou update haskell-cli-app
 
 Its normal preview includes `release to project`; confirmation drops managed tracking while preserving bytes or absence. Update fetches recorded sources/dependencies and prepares supported manifests automatically. Repeat unchanged updates are no-ops. Commit the resulting manifest so clones preserve the same settlement. Seed-only removal needs no custom removal specification. Seed-to-managed adoption requires an explicit interactive keep/accept choice; force and JSON cannot supply consent. Retained managed/checkout claims and overlapping output paths block inconsistent declarations.
 
-Declarative migrations and removal actions must not mutate seeds. Arbitrary shell commands run with user permissions and are not sandboxed by lifecycle; audit commands and dependencies before publishing seeds. This runtime is implemented in the development source; the proposed minimum supporting release is **0.11.0.0**, pending publication and installed-binary acceptance. Do not publish seed-producing modules before that gate: older binaries may ignore lifecycle and overwrite project content. See [ADR 0017](../adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md).
+Declarative migrations and removal actions must not mutate seeds. Arbitrary shell commands run with user permissions and are not sandboxed by lifecycle; audit commands and dependencies before publishing seeds. Seed-producing modules require **Seihou 0.11.0.0 or newer**. Update the runtime before adopting them: older binaries may ignore lifecycle and overwrite project content. See [ADR 0017](../adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md).
 
 ### Checkout directory outputs
 

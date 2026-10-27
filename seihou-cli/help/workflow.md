@@ -25,7 +25,11 @@ EXISTING PROJECTS
   Update fetches recorded remote sources/dependencies, reuses accepted inputs,
   includes migrations and previews changes before confirmation. No prior install,
   upgrade or migrate sequence is needed. With no TARGET, it selects all recorded
-  applications. `--dry-run` gives a separate preview. See update and migrations.
+  applications. `--dry-run` gives a separate preview. A `release to project`
+  preview hands managed starters to the project without rewriting bytes or
+  recreating deletion. Commit the seed receipts. Reverse seed adoption requires
+  explicit interactive keep/accept consent; force cannot supply it. See update
+  and migrations.
 
   seihou sync
 
@@ -54,7 +58,8 @@ REMOVAL AND COMMITS
   seihou remove NAME
 
   Managed-file removal follows the module's removal declaration and protects
-  conflicts. Recorded checkout-only owners can be removed without a custom spec.
+  conflicts. Recorded seed-only/checkout-only owners need no custom spec; seed
+  retirement preserves files. Status/diff count seeds without content comparisons.
   Review changes and commit portable manifest/config, real source directories
   and ignore rules. Accepted link adoption can stage tracked-link removals.
   Ignore discovery links and transient caches/traces. See modules and sync.

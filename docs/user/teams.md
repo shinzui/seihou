@@ -350,3 +350,15 @@ unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 - [`seihou update` reference](../cli/update.md) — merge choices, JSON
   automation, and recovery.
 - `seihou help manifest` — what the manifest may and may not contain.
+
+## Project-owned seed files
+
+Commit seed receipts in `.seihou/manifest.json` with the project files. They record
+settlement and exact owners, without hashes or baselines. Clones/worktrees retain
+intentional deletion; sync does not recreate seeds. Use Seihou 0.11.0.0 or newer
+before adopting seed-producing releases, since older clients can ignore lifecycle.
+A maintainer adopts a producer with ordinary `seihou update TARGET`, reviews
+`release to project`, confirms once and commits the resulting manifest. Existing
+edited bytes or absence are preserved; status/diff do not report seed drift.
+Retiring the last claim keeps the file and forgets settlement. Reverse adoption
+requires explicit interactive keep/accept consent, even with force.

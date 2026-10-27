@@ -92,9 +92,14 @@ An ordinary `seihou update TARGET` fetches producers/dependencies and previews
 release prompts are needed. Reverse adoption requires explicit interactive
 keep/accept consent, even with force. Declarative migrations/removal cannot mutate
 seeds; arbitrary shell commands are unsandboxed and authors must keep them away.
-Runtime support is in development source, with proposed minimum release 0.11.0.0
-pending publication. Older binaries can ignore lifecycle and overwrite content;
-publish seed-producing modules only after the supporting runtime release.
+Seed-producing modules require Seihou 0.11.0.0 or newer. Older binaries can
+ignore lifecycle and overwrite content; users must update the runtime first.
+For example:
+
+```dhall
+S.Step::{ strategy = "template", src = "README.md.tpl",
+          dest = "README.md", lifecycle = Some "seed" }
+```
 
 ### Variables and dependencies
 
@@ -128,8 +133,10 @@ removal = Some S.Removal::{ steps =
 
 Removal steps use `action`, `dest`, and optional `src` (a Dhall rewrite function
 under `files/` for `rewrite-file`). `S.Removal` also has `commands`.
-Managed-file removal requires a removal declaration. Recorded checkout-only owners
-can be removed without one; this stops future setup without inventing inverse shell. Preview with
+Managed-file removal requires a removal declaration. Recorded checkout-only and
+seed-only owners can be removed without one. Seed retirement keeps project files;
+checkout retirement removes only the expected link and stops future setup, without
+inventing inverse shell. Preview with
 `seihou remove NAME --dry-run`; review conflicts before using `--force`.
 
 ### Versioning and migrations

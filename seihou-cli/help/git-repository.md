@@ -11,7 +11,7 @@ SINGLE-MODULE REPOSITORY
 
     my-module/
       module.dhall
-      templates/
+      files/
         ...
 
   Install with:

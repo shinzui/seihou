@@ -32,6 +32,10 @@ It supports four authorable artifact kinds:
 - **Incremental and safe to re-run.** A `.seihou/manifest.json` records what was
   generated. Re-running performs a three-state diff (manifest / plan / disk),
   detects files you've hand-edited, and never clobbers them without asking.
+- **Project-owned starter files.** Seed steps create a file once, preserve edits
+  and intentional deletion, and stay out of content drift. Existing applications
+  adopt them with ordinary `seihou update TARGET`; review `release to project`
+  and commit the manifest. Seed producers require Seihou 0.11.0.0 or newer.
 - **Reversible and upgradable.** Modules can declare `removal` steps and
   versioned `migrations`, so you can cleanly undo a module or move a project
   across module versions.
@@ -129,7 +133,7 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 | [`init`](docs/cli/init.md) | Create the Seihou config directory (`~/.config/seihou/`). |
 | [`run`](docs/cli/run.md) | Apply a module or recipe initially, or deliberately reconfigure it. |
 | [`update`](docs/cli/update.md) | Reconcile recorded applications with newer sources while preserving user edits. |
-| [`remove`](docs/cli/remove.md) | Reverse an applied module via its declared `removal` steps. |
+| [`remove`](docs/cli/remove.md) | Apply declared removal policy and retire recorded seed/checkout ownership. |
 | [`sync`](docs/cli/sync.md) | Rebuild ignored checkout links from the manifest in a fresh clone. |
 | [`status`](docs/cli/status.md) | Show applied modules, tracked-file state, and resolved variables. |
 | [`diff`](docs/cli/diff.md) | Show files changed on disk since the last generation. |
@@ -254,4 +258,4 @@ details.
 
 ### Rebuild local project wiring
 
-Modules can declare directory links such as `config/editor` → `.editor-local/config` with strategy `symlink` and lifecycle `Some "checkout"`. Ignore the destination, apply once and commit the source and manifest. In each fresh clone, `seihou sync --dry-run` previews setup and `seihou sync` restores the links without installed modules, upgrades or shell commands. [Sync reference](docs/cli/sync.md).
+Modules can declare directory links such as `config/editor` → `.editor-local/config` with strategy `symlink` and lifecycle `Some "checkout"`. Ignore the destination, apply once and commit the source and manifest. In each fresh clone, `seihou sync --dry-run` previews setup and `seihou sync` restores links and runs explicitly recorded repeatable checkout commands without installed producers or upgrades. [Sync reference](docs/cli/sync.md).

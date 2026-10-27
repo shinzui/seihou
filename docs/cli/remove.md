@@ -24,7 +24,7 @@ seihou remove MODULE [OPTIONS]
 
 ## Description
 
-Removes a module that was previously applied via `seihou run` by executing the removal steps declared in its `module.dhall`. Only modules that declare a `removal` section (`removal = Some { steps = [...] }`) can be removed. Modules with `removal = None` cannot be removed.
+Removes a module that was previously applied via `seihou run` by executing the removal steps declared in its `module.dhall`. Managed-file removal requires a `removal` section (`removal = Some { steps = [...] }`). Recorded seed-only or checkout-only instances can be removed without one; seed retirement preserves the project object.
 
 The command reads the module's `removal` field to determine which operations to perform. Each removal step is one of:
 

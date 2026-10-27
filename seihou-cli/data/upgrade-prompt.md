@@ -112,7 +112,9 @@ origin and its confidence, then run `seihou manifest upgrade`. Never pass
 
 ### no_recorded_applications and legacy_update_requires_one_target
 The manifest predates recorded applications. Run one `seihou update {{module}}`
-(exactly one target) to seed the record. Later updates can name any target.
+(exactly one target) to seed the record. This also works for an older recorded
+root alongside newer applications: update fetches its saved remote and includes
+matching recorded dependencies in the normal preview. Later updates can name any target.
 
 ### target_not_found
 `{{module}}` is not a recorded target. The message lists the ones that are. Ask
@@ -199,6 +201,21 @@ The new release does not compose with the rest of the project, or its files
 cannot be reconciled with what is recorded. Show the user the message; this is
 usually a module bug to report, not a project repair.
 
+### seed_release_blocked_by_owners
+
+A managed-to-seed release still has managed owners outside the selection, even if
+those owners previously wrote additive patches. Review `seihou update --dry-run`
+to include all recorded applications together. Every candidate owner must agree
+on seed lifecycle; mixed managed/seed/checkout declarations require a compatible
+producer release, not manual ledger edits.
+
+### seed_adoption_requires_interaction
+
+A producer proposes managing a project-owned seed. Run ordinary interactive
+`seihou update {{module}}` so the user can keep current content and manage it,
+accept generated content, or abort. A deleted seed offers recreate-and-manage or
+abort. Equal bytes still require consent. Neither force nor JSON can grant it.
+
 ### unresolved_paths
 Some files have conflicts that need a decision. Run an interactive
 `seihou update {{module}}` with the user and resolve each one.
@@ -225,7 +242,11 @@ when breaking one would make a check pass.
   what the user confirms.
 - Never mark a path `additive-only` without reading every owner's operations for
   that path in the modules themselves.
-- Never delete file records or applications to get past a gate.
+- Never delete file records, seed receipts or applications to get past a gate.
+- Treat `release to project` as a metadata handoff: preserve seed bytes and absence.
+  Do not auto-stage existing project edits because their paths were released.
+- During seed-creation recovery, preserve later edits/replacements and follow the
+  recovery message; never delete a project object to make the journal look clean.
 - Never lower a recorded version.
 - Never pass `--force` or `--allow-downgrade` without the user's agreement.
 - Never change anything under `~/.config/seihou/installed/` except through

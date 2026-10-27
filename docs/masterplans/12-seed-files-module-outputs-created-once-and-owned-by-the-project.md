@@ -232,8 +232,9 @@ EP-6 remains In Progress. The installed `seihou v0.10.1.0 (c3cbd9b)` was verifie
 unsafe for seed declarations: it records them as managed and force overwrites
 project edits. The proposed supporting runtime release is 0.11.0.0 (breaking public
 core API changes); version bump, release, producer publication, installation and
-released-artifact acceptance remain open. The repository release skill requires
-confirmation before editing versions. Source builds and redirected local candidate
+released-artifact acceptance remain open. The user has now approved this release, producer publication and installation.
+The versions, current documentation, embedded agent guidance and help are updated;
+final release gates are running. Source builds and redirected local candidate
 remotes prove implementation, not release availability.
 
 ## Surprises & Discoveries

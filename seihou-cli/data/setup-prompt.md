@@ -54,7 +54,8 @@ Adapt to the user's situation, but the general flow is:
    will be generated. Review the plan with the user before proceeding.
 
 6. **Execute**: Run `seihou run MODULE [--var K=V]` to generate files. Use `--force`
-   only if the user explicitly wants to overwrite conflicting files.
+   only if the user explicitly wants to overwrite conflicting managed files.
+   Seed steps preserve project edits and deliberate deletion even with force.
 
 7. **Verify**: Check the results with `seihou status` and `seihou diff`. Read key
    generated files to confirm they look correct.
@@ -67,7 +68,10 @@ Adapt to the user's situation, but the general flow is:
    edits, and previews before confirmation. No prerequisite `install`, `upgrade`,
    or `migrate` sequence is needed for a recorded remote-backed application.
    Use `--dry-run` for a separate preview and `--reconfigure` only to change
-   inputs deliberately. If blocked, `seihou agent upgrade TARGET --check` gives
+   inputs deliberately. A `release to project` preview hands managed starters to
+   the project without rewriting bytes; normal confirmation covers the release.
+   Commit receipts so clones preserve edits/deletion. Reverse seed adoption needs
+   an explicit interactive keep/accept decision; force cannot consent. If blocked, `seihou agent upgrade TARGET --check` gives
    a read-only diagnosis; `seihou agent upgrade TARGET` starts repair assistance.
 
 10. **Fresh clones and worktrees**: At the Git root, run `seihou sync` to rebuild
@@ -111,14 +115,14 @@ Suggest these commands when the user needs to run them locally:
 - `seihou run MODULE [--var K=V] [--dry-run] [--diff] [--force]` — run a module
   - `--dry-run`: preview the plan without writing files
   - `--diff`: show diff against current disk state
-  - `--force`: auto-resolve conflicts by overwriting
+  - `--force`: auto-resolve managed conflicts; settled seeds are preserved
   - `-m MODULE`: compose additional modules (repeatable)
   - `--namespace NS`: override namespace for config lookup
   - `-c CTX`: override context for config lookup
   - `--no-commands`: skip shell command steps
 - `seihou remove MODULE [--dry-run] [--force]` — remove an applied module by executing its declared removal steps
-  - Managed-file removal needs a `removal` section; recorded checkout-only owners can be removed without a custom spec. Removal stops future setup and does not undo arbitrary shell effects.
-  - `--dry-run`: preview the removal plan (Delete, Strip, Rewrite, Run operations)
+  - Managed-file removal needs a `removal` section; recorded seed-only/checkout-only owners can be removed without a custom spec. Seed retirement keeps project files. Removal stops future setup and does not undo arbitrary shell effects.
+  - `--dry-run`: preview the removal plan (Delete, Strip, Rewrite, Run, and protected Keep operations)
   - `--force`: skip confirmation prompts
 - `seihou agent run BLUEPRINT [PROMPT] [--var K=V] [--no-baseline]` — run a blueprint
   - Discovers the blueprint, resolves variables (same precedence chain as `seihou run`), optionally applies base modules, then starts the configured provider
@@ -143,7 +147,7 @@ Suggest these commands when the user needs to run them locally:
 
 ### Status and diagnostics
 - `seihou status [--full-prompt]` — inspect recorded applications, artifact identity/version warnings, pending migrations and checkout links; pending updates name the recorded root target
-- `seihou diff` — compare tracked files against disk (modified, deleted, orphaned)
+- `seihou diff` — compare managed files against disk (modified, deleted, orphaned); seed receipts are counted without content comparisons
 - `seihou validate-module [PATH]` — validate a module definition
 - `seihou schema-upgrade [PATH] [--dry-run] [--all]` — upgrade module.dhall to current schema
 

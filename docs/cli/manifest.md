@@ -64,7 +64,6 @@ steps in order, one at a time, and prints each one:
 | 8 -> 9 | Adds empty checkout output declarations. | lossless |
 | 9 -> 10 | Adds empty checkout command declarations. | lossless |
 | 10 -> 11 | Wraps old application-only seed owners as explicit legacy evidence without inventing instance claims. | lossless |
-| 10 -> 11 | Wraps legacy seed ownership without inventing instance claims. | lossless |
 
 `--to VERSION` stops after the step that reaches that version. A version newer
 than this build, or older than the manifest, is refused. The document's
@@ -428,5 +427,5 @@ not infer which module instances seeded a path. New receipts use
 Removing one instance preserves all other claims and the original settlement.
 Operations that need exact legacy owners obtain evidence from the recorded
 releases and saved inputs; unavailable evidence gives an error naming the path.
-Receipts contain no content hashes or baselines. Runtime seed commands are still
-being implemented; schema support alone does not enable seed lifecycle behavior.
+Receipts contain no content hashes or baselines. Seihou 0.11.0.0 implements the
+complete seed lifecycle; the older declaration/receipt-only releases do not.

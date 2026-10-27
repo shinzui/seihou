@@ -69,6 +69,7 @@ SCHEMA PACKAGE
             sha256:<hash>
 
     in  S.Module::{ name = "my-module"
+                  , version = Some "1.0.0"
                   , steps = [ S.Step::{ strategy = "template"
                                       , src = "foo.tpl", dest = "foo" } ]
                   }
@@ -107,8 +108,8 @@ STEP LIFECYCLES
   without comparing seed contents. Update TARGET previews "release to project"
   for managed-to-seed adoption; reverse adoption requires explicit consent.
   Shell commands are unsandboxed: authors must not mutate seed-owned files.
-  This is development-source behavior; supporting release publication is pending.
-  Older clients can ignore lifecycle and overwrite content.
+  Seed producers require Seihou 0.11.0.0 or newer. Update the runtime first;
+  older clients can ignore lifecycle and overwrite content.
 
 CHECKOUT DIRECTORY LINKS
 

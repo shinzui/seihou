@@ -11,11 +11,13 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+## [0.11.0.0] - 2026-10-26
+
 ### Added
 
 - **Starter files can belong to your project.** Seed steps create files once and preserve edits or deliberate deletion through reruns, force, update and removal. Status/diff count receipts without comparing seed content. Producers can use seed steps for changelogs, Cabal files and source stubs.
 - **Adopt seed ownership through ordinary update.** Run `seihou update haskell-cli-app`; the preview says `release to project`, then normal confirmation drops managed tracking without rewriting your files. No prerequisite installation, manifest edits or dependency target list is needed. Commit the manifest for clones. Reverse adoption asks explicitly whether to keep or accept content; force cannot consent.
-- Supporting runtime release and seed-producing module publication are pending. The proposed minimum release is 0.11.0.0; older clients can ignore lifecycle and overwrite content.
+- Seed-producing modules require Seihou 0.11.0.0 or newer. Older clients can ignore lifecycle and overwrite content; update the runtime before adopting those producer releases.
 
 ### Fixed
 
@@ -31,7 +33,7 @@ packages in the workspace share a single version.
   bootstrap and setup share current module guidance, including ignored directory
   links and `seihou sync`. Routine updates use `seihou update TARGET`, which fetches
   dependencies and reuses saved inputs. Guidance also corrects schema examples,
-  migration rules, variable types and agent configuration. Seed guidance distinguishes source implementation from the pending supporting runtime release.
+  migration rules, variable types and agent configuration. Seed guidance covers creation, adoption, retirement and the 0.11.0.0 minimum runtime.
 - **Help covers every command family.** Run `seihou help workflow` to choose a
   command, `seihou help sync` for clones and worktrees, or the new `recipes`,
   `registry` and `extensions` topics. Agent help now explains per-command settings,
@@ -1097,7 +1099,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.10.1.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.11.0.0...HEAD
+[0.11.0.0]: https://github.com/shinzui/seihou/compare/v0.10.1.0...v0.11.0.0
 [0.10.1.0]: https://github.com/shinzui/seihou/compare/v0.10.0.0...v0.10.1.0
 [0.10.0.0]: https://github.com/shinzui/seihou/compare/v0.9.0.0...v0.10.0.0
 [0.9.0.0]: https://github.com/shinzui/seihou/compare/v0.8.0.0...v0.9.0.0

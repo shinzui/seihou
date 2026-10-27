@@ -68,6 +68,41 @@ even with an empty cache; checkout setup remains the separate ordinary `seihou s
 
 ## Surprises & Discoveries
 
+Native packaging check (2026-10-26 Pacific): all 2,080 Cabal tests and the 0.11.0.0
+help/context audit pass (18 topics, 32 command pages, six example modules and eight
+provider-free renders). Actual `nix build .#default` found FRIC-2: the composed
+`mori://shinzui/haskell-nix` scope resolves Hspec/core/discover 2.11.18 but leaves
+hspec-api 2.11.17, whose exact core bound refuses configuration. The local overlay
+now selects published hspec-api 2.11.18 with its tarball hash; Hackage normal status,
+exact core bound and upstream 2.11.18 tag were verified. The next native check
+found tasty-hspec 1.2.0.4 revision 8 caps QuickCheck below the scope's 2.18;
+Mori-local adapter source passes arguments between same-scope Hspec and
+`tasty-quickcheck` rather than importing QuickCheck internals. Its latest registry
+release/revision and upstream v1.2.0.4 tag were checked. A scoped jailbreak retains
+all native package tests to verify compatibility. No application dependency bound
+changed. The same packaging review found Git-only fixture schema lookup would
+fail after Nix stages a plain source tree. The builder now records the fetched
+schema revision and tests copy it only when it matches the executable pin; native
+Git-backed fixtures continue preserving the developer's submodule state. Native package acceptance now passes with all 1,251 core, 778 CLI and 51 extension
+tests enabled. Hackage Haddocks for all three packages build, and private-sublibrary
+archives are flattened/repacked by the release recipe. FRIC-2 is resolved by this
+verified scope correction. The root Cabal suites independently pass with their
+resolved released dependency versions. Publication follows these completed gates.
+
+
+Release authorization (2026-10-26 Pacific): the user approved runtime 0.11.0.0,
+producer publication and installation, then explicitly required all relevant docs,
+CLI agent context and help guides to be updated. Package versions and all five
+internal core bounds are now 0.11.0.0; release notes and current guides describe
+the complete runtime rather than the old source-only/temporary refusal state.
+The semantic review covers all 18 help topics and seven task templates plus the
+shared module reference. It corrects old removal restrictions, stale update and
+recovery guidance, default force wording and blueprint seed ownership; the upgrade
+playbook now names seed release/adoption remedies. The provider-free audit also
+validates a sixth example module containing the exact documented seed declaration.
+Release/installed acceptance is still in progress, not completed by authorization.
+
+
 Producer refresh (2026-10-27): while EP-5 proceeded, the producer advanced to
 `b017e386856575da9b6d28059a22942bb6f63c2b` and the Keiro template became 0.2.0.
 The earlier 19-step Keiro candidate is historical preparation, not the final

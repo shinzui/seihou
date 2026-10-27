@@ -523,3 +523,12 @@ files, and references. Consumers install that blueprint, then invoke
 - [`seihou new-blueprint`](../cli/new-blueprint.md)
 - [`seihou validate-blueprint`](../cli/validate-blueprint.md)
 - [`seihou agent`](../cli/agent.md)
+
+## Project-owned baseline starters
+
+A baseline module may declare seed files with Seihou 0.11.0.0+. The baseline creates
+these once and hands them to the project; subsequent baseline runs, including force,
+preserve edits and deliberate deletion. The agent can extend those starters as the
+task requires. Status/diff count receipts without comparing seed content. Commit
+the manifest with the project; ordinary update owns lifecycle transitions rather
+than a forced baseline rerun. See [seed authoring](module-authoring.md#step-lifecycle).

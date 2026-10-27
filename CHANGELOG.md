@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0.0] - 2026-10-26
+
+### Added
+
 - Reconcile seed declarations in ordinary update: release managed files without touching project bytes, create new seeds exclusively, retire exact claims and require explicit reverse adoption. Journal native creation identity safely across rollback/recovery.
 - Adopt remote-backed legacy roots alongside newer application records, fetch candidates without an installed cache and include matching recorded dependency applications with explicit edge bindings in the normal preview.
 - Preserve differently bound instances of the same direct dependency; normalize public GitHub SSH/HTTPS repository transport spellings while preserving recorded origins.
@@ -15,12 +19,15 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- Breaking core API: `ComposedPlan` replaces positional composition results; `SeedFileOp`, exact `SeedOwnership` and lifecycle-aware reconciliation/transaction APIs carry seed semantics.
 - Breaking core API: typed command lifecycle on `Command`/`RunCommandOp`, ordered
   `AppliedComposition.checkoutCommands`, and version-selected application codecs.
   Tagged Dhall `Action.Apply`/`Action.Checkout` ensures older decoders refuse new specs;
   pinned legacy command records retain application semantics.
 
 ### Fixed
+
+- Native Nix packages align Hspec API with its core and retain test coverage against the composed QuickCheck scope; packaged fixtures consume the verified pinned schema without Git metadata.
 
 - Module commands can explicitly declare repeatable checkout setup. Application
   records resolved instructions in manifest schema 10; `seihou sync` executes them
@@ -33,7 +40,7 @@ All notable changes to this project will be documented in this file.
 - Audit embedded agent guidance and help against current behavior: share the module
   reference across assist/bootstrap/setup; correct removal fields, migration windows,
   variable/config precedence, pinned CLI models, update and checkout adoption workflows.
-  Explicitly distinguish seed schema support from the unfinished create-once runtime.
+  Document the complete seed runtime and its minimum supporting release.
 - Add workflow, recipes, sync, registry and extensions help topics, and restore manifest
   in the documented index. All 32 top-level commands map to the 18-topic catalog.
 
@@ -1178,7 +1185,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.10.1.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.11.0.0...HEAD
+[0.11.0.0]: https://github.com/shinzui/seihou/compare/v0.10.1.0...v0.11.0.0
 [0.10.1.0]: https://github.com/shinzui/seihou/compare/v0.10.0.0...v0.10.1.0
 [0.10.0.0]: https://github.com/shinzui/seihou/compare/v0.9.0.0...v0.10.0.0
 [0.9.0.0]: https://github.com/shinzui/seihou/compare/v0.8.0.0...v0.9.0.0

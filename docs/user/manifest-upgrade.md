@@ -235,6 +235,5 @@ The automatic structural step preserves uncertainty; it never assigns every clai
 to the first supplier. When an operation needs precise owners it uses the exact
 recorded releases and inputs, and refuses if that evidence cannot be obtained.
 A seed receipt records settlement without tracking file contents. Normal seed
-commands prepare these lossless schema steps when needed. Runtime support is
-implemented in development source; the supporting release and producer delivery
-gate remain pending. Schema compatibility alone does not establish safe runtime behavior.
+commands prepare these lossless schema steps when needed. Seihou 0.11.0.0 implements runtime seed support. Older declaration/receipt-only
+releases can ignore lifecycle; update the runtime before adopting seed producers.

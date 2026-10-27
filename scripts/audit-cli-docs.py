@@ -125,13 +125,14 @@ def runtime_audit(executable, topics, commands, report):
         # Type-check the actual authoring examples through the public validator.
         reference = (CLI / 'data/module-reference.md').read_text()
         examples = re.findall(r"```dhall\n(.*?)```", reference, re.S)
-        require(len(examples) == 4, 'expected module, checkout link, command lifecycle and removal examples')
+        require(len(examples) == 5, 'expected module, checkout link, command lifecycle, seed and removal examples')
         example_modules = {
             'nix-base': 'S.Module::{ name = "nix-base", version = Some "1.0.0" }',
             'my-module': examples[0],
             'audit-checkout': 'S.Module::{ name = "audit-checkout", version = Some "1.0.0", steps = [ ' + examples[1] + ' ] }',
             'audit-commands': 'S.Module::{ name = "audit-commands", version = Some "1.0.0", ' + examples[2] + ' }',
-            'audit-removal': 'S.Module::{ name = "audit-removal", version = Some "1.0.0", ' + examples[3] + ' }',
+            'audit-seed': 'S.Module::{ name = "audit-seed", version = Some "1.0.0", vars = [ S.VarDecl::{name="project.name",type="text",default=Some "sample"} ], steps = [ ' + examples[3] + ' ] }',
+            'audit-removal': 'S.Module::{ name = "audit-removal", version = Some "1.0.0", ' + examples[4] + ' }',
         }
         for name, body in example_modules.items():
             directory = modules / name

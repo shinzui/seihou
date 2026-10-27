@@ -186,8 +186,7 @@ every contributing qualified instance retains its own claim.
 
 Run refuses lifecycle changes before generation. Use ordinary `seihou update`
 for the recorded application to review a managed-to-seed release or explicit
-seed-to-managed adoption. This development implementation does not yet support
-seed transitions in update; use a runtime release with the complete seed workflow
-when adopting producer declarations. A partial run may leave a complete newly
+seed-to-managed adoption. Seihou 0.11.0.0 implements the complete workflow; update
+the runtime before adopting seed-producing modules. A partial run may leave a complete newly
 created file if another step fails; retry keeps it and settles ownership.
 Arbitrary module shell commands remain unsandboxed and must respect project files.

@@ -139,6 +139,15 @@ DUPLICATES AND OVERLAPS
   longer span and let the smaller overlapping edges sit unused — the
   cursor will advance past them after picking the leapfrog.
 
+PROJECT-OWNED SEEDS
+
+  Declarative move/delete operations cannot touch settled seeds or paths being
+  released to seed ownership, including ancestor directories and destinations.
+  Force does not bypass this. Managed-to-seed handoff needs no migration script;
+  ordinary update previews "release to project" and preserves bytes or absence.
+  Fix incompatible producer migrations rather than editing the manifest.
+  Arbitrary shell commands remain unsandboxed and must not mutate seeds.
+
 CONFLICT SEMANTICS
 
   Mirroring `seihou remove`, the engine classifies each

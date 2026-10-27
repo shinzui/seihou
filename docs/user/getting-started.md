@@ -567,7 +567,8 @@ When you run `seihou run` again in a project that already has a manifest, Seihou
 - **Modified files** — different hash in plan vs manifest, but user hasn't edited them (updated)
 - **Conflicts** — the plan wants to change a file that the user has also edited since the last generation
 
-Conflicts are shown interactively, and you choose per-file whether to accept the new version, keep your changes, or skip the file. Use `--force` to auto-accept all new versions.
+Conflicts are shown interactively, and you choose per-file whether to accept the new version, keep your changes, or skip the file. Use `--force` to auto-accept managed-file versions. Settled seeds preserve edits
+and deletion; reverse seed-to-managed adoption still requires an interactive choice.
 
 
 ### Removing a module
@@ -582,7 +583,8 @@ seihou remove haskell-base --dry-run
 seihou remove haskell-base
 ```
 
-The output shows each operation (Delete, Strip, Rewrite, Run) as it executes. Use `--force` to skip confirmation prompts. Modules without a `removal` section cannot be removed. See the [Module Authoring Reference](module-authoring.md#removing-modules) for details on declaring removal steps.
+The output shows each operation (Delete, Strip, Rewrite, Run) as it executes. Use `--force` to skip confirmation prompts. Managed-file removal needs a removal declaration. Recorded seed-only and
+checkout-only instances can be retired without one; seed files remain on disk. See the [Module Authoring Reference](module-authoring.md#removing-modules) for details on declaring removal steps.
 
 ### Check for updates
 
@@ -717,3 +719,12 @@ automation, recovery, and command policies.
 - Read [Registries and Multi-Module Repositories](registries-and-multi-module-repos.md) to learn how to publish multiple modules, recipes, blueprints, and prompts from a single git repository.
 - Read [Upgrading an Older Manifest](manifest-upgrade.md) if seihou reports that a project's `.seihou/manifest.json` uses an older schema version.
 - Explore the test fixtures at `seihou-core/test/fixtures/` for working examples of multi-module composition (`haskell-with-nix`), structured output (`structured-basic`), shell commands (`command-test`), and recipes (`haskell-with-nix-recipe`).
+
+## Project-owned starters
+
+Seihou 0.11.0.0 supports seed steps for files a project will maintain itself.
+They are created once; rerun, force, update and removal preserve edits and deliberate
+deletion. Existing projects adopt a producer's seed declarations with ordinary
+`seihou update TARGET`: review `release to project` and confirm once. Commit the
+manifest so clones retain settlement. See [module authoring](module-authoring.md#step-lifecycle)
+and [update](../cli/update.md) for declaration and reverse-adoption details.

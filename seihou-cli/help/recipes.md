@@ -28,6 +28,9 @@ UPDATES
   inputs, apply migrations and preserve project edits. You do not need to
   enumerate transitive modules. Use status to inspect the recorded application.
   Checkout links declared by its modules are restored in fresh clones with sync.
+  Seed steps from every contributing instance retain exact claims while the first
+  supplier provides initial bytes. Reruns/updates preserve edits and deletion;
+  removing the last claim retires settlement without deleting the project file.
 
 CHOOSING AN ARTIFACT
 

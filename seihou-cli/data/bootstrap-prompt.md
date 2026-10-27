@@ -203,6 +203,16 @@ A registry can also list blueprints and prompts alongside modules:
 - **structured**: Replaces placeholders, evaluates Dhall to record, serializes to JSON/YAML
 - **symlink** with checkout lifecycle: declares an ignored project directory link (see Module Schema Reference)
 
+### File ownership
+
+Choose lifecycle independently of rendering strategy. Use `lifecycle = Some "seed"`
+for project-authored starters such as source stubs, Cabal files and changelogs;
+keep policy/configuration that producers maintain managed. Seeds support only
+whole-file copy/template/dhall-text without patches. Verify first run, pre-existing
+files, forced reruns, deliberate deletion and ordinary update adoption. Do not add
+migration/removal shell that rewrites or deletes seeds. Require Seihou 0.11.0.0+
+when publishing seed producers; older clients can ignore lifecycle.
+
 ### Conditional expressions (when field)
 - `IsSet variable.name` — true if variable has a value
 - `Eq variable.name value` — true if variable equals value
