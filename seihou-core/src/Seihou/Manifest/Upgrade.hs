@@ -33,7 +33,7 @@ module Seihou.Manifest.Upgrade
   )
 where
 
-import Control.Monad (foldM, forM, unless)
+import Control.Monad (foldM, forM, unless, when)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -58,6 +58,7 @@ data UpgradeStepAction
     MakeSharedWriteEvidenceExplicit
   | AddEmptySeedReceipts
   | AddEmptyCheckoutOutputs
+  | MakeSeedOwnershipExplicit
   | AddEmptyCheckoutCommands
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
 
@@ -119,7 +120,8 @@ manifestUpgradeSteps =
     step 6 MakeSharedWriteEvidenceExplicit "explicit shared-write evidence",
     step 7 AddEmptySeedReceipts "seed receipts",
     step 8 AddEmptyCheckoutOutputs "checkout outputs",
-    step 9 AddEmptyCheckoutCommands "repeatable checkout commands"
+    step 9 AddEmptyCheckoutCommands "repeatable checkout commands",
+    step 10 MakeSeedOwnershipExplicit "explicit seed instance ownership"
   ]
   where
     step from stepAction =
@@ -132,6 +134,7 @@ upgradeStepKind MakeSharedWriteEvidenceExplicit = LosslessUpgrade
 upgradeStepKind AddEmptySeedReceipts = LosslessUpgrade
 upgradeStepKind AddEmptyCheckoutOutputs = LosslessUpgrade
 upgradeStepKind AddEmptyCheckoutCommands = LosslessUpgrade
+upgradeStepKind MakeSeedOwnershipExplicit = LosslessUpgrade
 
 -- | The contiguous steps from @source@ to @target@. Planning from a version
 -- to itself is an empty path.
@@ -187,6 +190,7 @@ applyLosslessUpgradeStep upgradeStep document = do
     Left (StepVersionMismatch upgradeStep actual)
   transformed <- case upgradeStep ^. #action of
     StampVersion -> Right document
+    MakeSeedOwnershipExplicit -> first (MalformedDocument actual) (makeSeedOwnershipExplicit document)
     AddEmptyCheckoutCommands -> case document of
       Aeson.Object fields -> do
         applications <- case KeyMap.lookup "applications" fields of
@@ -296,3 +300,22 @@ renderManifestUpgradeError err = case err of
   MalformedDocument v reason -> "the schema-" <> showVersion v <> " manifest is malformed: " <> reason
   where
     showVersion (ManifestSchemaVersion v) = T.pack (show v)
+
+-- | Wrap the old evidence without inventing instance claims. Unknown members
+-- survive at every level; malformed old ownership cannot acquire a new stamp.
+makeSeedOwnershipExplicit :: Aeson.Value -> Either Text Aeson.Value
+makeSeedOwnershipExplicit (Aeson.Object fields) = case KeyMap.lookup "seeds" fields of
+  Just (Aeson.Object seeds) -> do
+    converted <- KeyMap.traverseWithKey convert seeds
+    pure (Aeson.Object (KeyMap.insert "seeds" (Aeson.Object converted) fields))
+  _ -> Left "seeds must be an object"
+  where
+    convert _ (Aeson.Object receipt) = do
+      when (KeyMap.member "ownership" receipt) (Left "schema 10 seed cannot contain ownership")
+      apps <- case KeyMap.lookup "applications" receipt of
+        Just value | Aeson.Success (_ :: [Text]) <- Aeson.fromJSON value -> Right value
+        _ -> Left "seed applications must be an array of application IDs"
+      let ownership = Aeson.object ["kind" Aeson..= ("legacy-applications" :: Text), "applications" Aeson..= apps]
+      pure (Aeson.Object (KeyMap.insert "ownership" ownership (KeyMap.delete "applications" receipt)))
+    convert _ _ = Left "seed receipt must be an object"
+makeSeedOwnershipExplicit _ = Left "manifest must be an object"

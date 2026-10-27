@@ -7,6 +7,7 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Manifest.Types
@@ -97,6 +98,61 @@ spec = do
       let kindFrom source = upgradeStepKind . (^. #action) <$> lookup (v source) [(s ^. #fromVersion, s) | s <- manifestUpgradeSteps]
       kindFrom 5 `shouldBe` Just InferenceBearingUpgrade
       kindFrom 6 `shouldBe` Just LosslessUpgrade
+
+  describe "the 10 -> 11 seed ownership step" $ do
+    let legacy apps extra =
+          Aeson.object
+            ( [ "module" Aeson..= ("first" :: String),
+                "applications" Aeson..= apps,
+                "outcome" Aeson..= ("created" :: String),
+                "settledAt" Aeson..= ("2026-03-01T10:30:00Z" :: String)
+              ]
+                <> extra
+            )
+        document receipt = case upgradeDocumentLosslessly (v 10) schema6Document of
+          Right (_, Aeson.Object top) -> Aeson.Object (KeyMap.insert "seeds" (Aeson.object ["CHANGELOG.md" Aeson..= receipt]) top)
+          _ -> error "invalid fixture"
+    it "preserves application-only uncertainty and unknown fields losslessly" $ do
+      let old = document (legacy (["a", "b"] :: [String]) ["futureKey" Aeson..= True])
+      Right (steps, upgraded) <- pure (upgradeDocumentLosslessly (v 11) old)
+      map (^. #action) steps `shouldBe` [MakeSeedOwnershipExplicit]
+      map (upgradeStepKind . (^. #action)) steps `shouldBe` [LosslessUpgrade]
+      case upgraded of
+        Aeson.Object top -> do
+          KeyMap.lookup "producerOwned" top `shouldBe` Just (Aeson.object ["keep" Aeson..= True])
+          KeyMap.lookup "checkoutOutputs" top `shouldBe` Just (Aeson.object [])
+          case KeyMap.lookup "seeds" top of
+            Just (Aeson.Object seeds) -> case KeyMap.lookup "CHANGELOG.md" seeds of
+              Just (Aeson.Object receipt) -> do
+                KeyMap.lookup "applications" receipt `shouldBe` Nothing
+                KeyMap.lookup "futureKey" receipt `shouldBe` Just (Aeson.Bool True)
+                KeyMap.lookup "ownership" receipt `shouldBe` Just (Aeson.object ["kind" Aeson..= ("legacy-applications" :: String), "applications" Aeson..= (["a", "b"] :: [String])])
+              _ -> expectationFailure "missing receipt"
+            _ -> expectationFailure "missing seeds"
+        _ -> expectationFailure "not an object"
+      Right decoded <- pure (manifestFromJSON (Aeson.encode upgraded))
+      fmap (^. #ownership) (Map.lookup "CHANGELOG.md" (decoded ^. #seeds)) `shouldBe` Just (LegacySeedOwners (Set.fromList [ApplicationId "a", ApplicationId "b"]))
+      manifestFromJSON (manifestToJSON decoded) `shouldBe` Right decoded
+    it "preserves the old representation on every supported seed schema" $
+      forM_ [8, 9, 10] $ \version -> do
+        let old = setDocumentSchemaVersion (v version) (document (legacy (["a"] :: [String]) []))
+        Right decoded <- pure (manifestFromJSON (Aeson.encode old))
+        manifestFromJSON (manifestToJSON decoded) `shouldBe` Right decoded
+        fmap (^. #ownership) (Map.lookup "CHANGELOG.md" (decoded ^. #seeds)) `shouldBe` Just (LegacySeedOwners (Set.singleton (ApplicationId "a")))
+    it "rejects malformed legacy owners without stamping" $
+      forM_ [Aeson.Bool True, Aeson.String "a", Aeson.toJSON [False]] $ \apps ->
+        upgradeDocumentLosslessly (v 11) (document (legacy apps [])) `shouldSatisfy` either (const True) (const False)
+    it "rejects unknown ownership kinds and duplicate authoritative fields" $ do
+      let malformed = [Aeson.object ["kind" Aeson..= ("future" :: String)], Aeson.object ["kind" Aeson..= ("instances" :: String), "owners" Aeson..= True]]
+      forM_ malformed $ \ownership -> do
+        let raw = setDocumentSchemaVersion (v 11) (document (legacy (["a"] :: [String]) ["ownership" Aeson..= ownership]))
+        manifestFromJSON (Aeson.encode raw) `shouldSatisfy` either (const True) (const False)
+
+    it "requires valid tagged ownership without relying on duplicate field rejection" $ do
+      let receipt ownership = Aeson.object ["module" Aeson..= ("first" :: String), "outcome" Aeson..= ("created" :: String), "settledAt" Aeson..= ("2026-03-01T10:30:00Z" :: String), "ownership" Aeson..= ownership]
+          malformed = [Aeson.object ["kind" Aeson..= ("future" :: String)], Aeson.object ["kind" Aeson..= ("instances" :: String), "owners" Aeson..= True], Aeson.object ["kind" Aeson..= ("instances" :: String), "owners" Aeson..= Aeson.object []], Aeson.object ["kind" Aeson..= ("instances" :: String), "owners" Aeson..= Aeson.object ["a" Aeson..= (["x", "x"] :: [String])]]]
+      forM_ malformed $ \ownership ->
+        manifestFromJSON (Aeson.encode (setDocumentSchemaVersion (v 11) (document (receipt ownership)))) `shouldSatisfy` either (const True) (const False)
 
   describe "the 7 -> 8 step" $ do
     it "preserves unrelated raw fields and adds seed receipts" $ do

@@ -52,7 +52,7 @@ module Seihou.CLI.ManifestRepairOrigins
 where
 
 import Control.Applicative ((<|>))
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Types (parseMaybe, (.:))
 import Data.ByteString.Lazy qualified as LBS
@@ -75,7 +75,7 @@ import Seihou.Core.Types
     Manifest,
     ManifestSchemaVersion (..),
   )
-import Seihou.Manifest.Types (currentManifestVersion, manifestFromJSON, manifestToJSON)
+import Seihou.Manifest.Types (currentManifestVersion, manifestEncodingLoss, manifestFromJSON, manifestToJSON)
 import Seihou.Prelude
 import System.Directory (doesDirectoryExist, doesFileExist, getCurrentDirectory, renamePath)
 import System.Exit (ExitCode (..), exitFailure)
@@ -525,6 +525,8 @@ readCurrentManifest bytes =
 -- interrupted run never leaves a half-written manifest.
 writeManifestAtomically :: FilePath -> Manifest -> IO ()
 writeManifestAtomically manifestPath manifest = do
+  unless (null (manifestEncodingLoss manifest)) $
+    ioError (userError (T.unpack (T.intercalate "; " (manifestEncodingLoss manifest))))
   let temporaryPath = manifestPath <> ".tmp"
   LBS.writeFile temporaryPath (manifestToJSON manifest)
   renamePath temporaryPath manifestPath

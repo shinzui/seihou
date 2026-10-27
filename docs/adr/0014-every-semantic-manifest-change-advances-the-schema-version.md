@@ -85,6 +85,11 @@ additive co-writes and its two-layer safety check remain accepted.
 
 ## Implementation
 
+Schema 11 adds `SeedOwnerClaims` and a lossless adjacent 10-to-11 step that wraps
+application-only seed ownership explicitly as legacy evidence. It preserves all
+unknown raw members and never fabricates module claims. Exact instance claims
+cannot be written at an older schema; write boundaries reject that loss.
+
 Schema 10 adds ordered resolved `checkoutCommands` to every application, the
 `CheckoutLocalCommands` capability and an adjacent lossless 9-to-10 step adding
 empty lists. Application codecs are version-selected: new-schema lists are required,

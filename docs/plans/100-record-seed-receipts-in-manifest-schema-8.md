@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-27T00:43:50Z
       mode: "update"
       note: "Reopen exact seed-owner claims with versioned legacy representation and shared helpers"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-27T02:11:07Z
+      mode: "implement"
+      note: "Implement precise seed claims and lossless schema 11 ownership upgrade"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -46,11 +51,11 @@ needs from it is restated below.
 
 ## Current handoff (2026-10-26)
 
-Milestones 1–3 below are completed historical work. Current schema is 10 (checkout outputs
-and commands were added later), and `SeedReceipts` remains capability 8. This plan is reopened
-only for Milestone 4 below: the existing singular supplier plus application-ID set cannot
+Milestones 1–3 below are completed historical work. At reopening, schema was 10 (checkout outputs
+and commands were added later); Milestone 4 advances it to 11, and `SeedReceipts` remains capability 8. This plan is reopened
+for Milestone 4 below (now completed): the existing singular supplier plus application-ID set cannot
 identify multiple seeders in one application. EP-3 and EP-4 require Milestone 4, not merely
-the original schema-8 codec. No runtime seed writer is implemented yet.
+the original schema-8 codec. No runtime seed writer is implemented yet. The next work is plan 101.
 
 ## Purpose / Big Picture
 
@@ -89,9 +94,11 @@ Nothing yet writes a non-empty `seeds` map; `docs/plans/101-create-seed-files-on
       note; ADR 0017 amendment; root `CHANGELOG.md`.
 
 
-- [ ] Milestone 4: exact application/instance claims, explicit legacy ownership, versioned codec/upgrade, and invariant-preserving helpers support correct removal before runtime seed production.
+- [x] (2026-10-27) Milestone 4: exact application/instance claims, explicit legacy ownership, versioned codec/upgrade, and invariant-preserving helpers support correct removal before runtime seed production.
 
 ## Surprises & Discoveries
+
+Milestone 4 evidence (2026-10-27): the pinned GHC 9.12.4 shell passed `cabal test all` (core, CLI and OKF extension) and `nix flake check`. A built 0.10.1.0 executable upgraded a disposable schema-8 receipt project through 8→9→10→11, preserved unknown raw seed/top-level fields, and reported a no-op on repeat. No runtime lifecycle writer or released/installed seed support is claimed. `FRIC-1` in `docs/friction-log/` records the old local schema checkout causing checkout fixture failures; fixtures now read the executable-pinned schema from Git objects without altering that checkout.
 
 Implementation evidence (2026-10-15): `cabal build all` passed and all 1,163 core tests passed. The schema is published at revision 1d686cf9e3019cec061c1f4a4d83be53cb606e8b. The actual flake input is pinned to GitHub, so both flake.nix and flake.lock were updated with SchemaVersion.hs.
 
@@ -129,7 +136,7 @@ Implementation evidence (2026-10-15): `cabal build all` passed and all 1,163 cor
 
 ## Outcomes & Retrospective
 
-Milestones 1–3 were implemented and validated as a prerequisite of plan 105; Milestone 4 remains required before this plan is Complete. Lifecycle declarations retain old-module compatibility; schema 8 records seed settlement without content tracking and has a lossless adjacent upgrade. Runtime seed behavior remains intentionally delegated to plans 101–104. ADRs 0017 and 0014 contain the durable ownership and versioning decisions. Validation: `cabal build all` and `cabal test seihou-core-test --test-show-details=direct` passed (1,163 tests).
+Milestones 1–3 were implemented and validated as a prerequisite of plan 105. Milestone 4 is complete in source: schema 11, exact claims, lossless explicit legacy ownership, invariant-preserving helpers, injected recorded-release evidence preparation, and write guards are implemented. Lifecycle declarations retain old-module compatibility; schema 8 records seed settlement without content tracking and has a lossless adjacent upgrade. `FRIC-1` was resolved by making checkout fixtures independent of the mutable schema checkout. Runtime seed behavior remains intentionally delegated to plans 101–104. ADRs 0017 and 0014 contain the durable ownership and versioning decisions. Validation: `cabal build all` and `cabal test seihou-core-test --test-show-details=direct` passed (1,163 tests).
 
 
 ## Context and Orientation

@@ -124,7 +124,7 @@ manifestWithEveryStringPosition :: Manifest
 manifestWithEveryStringPosition =
   manifestWithEveryOriginPosition
     & #checkoutOutputs .~ Map.singleton ".local/shared" (CheckoutOutputRecord (DirectorySymlink "assets/shared") (Map.singleton (ApplicationId "app") (Set.singleton "haskell-base")))
-    & #seeds .~ Map.singleton "CHANGELOG.md" (SeedRecord "haskell-base" (Set.singleton (ApplicationId "app")) SeedCreated fixedTime)
+    & #seeds .~ Map.singleton "CHANGELOG.md" (SeedRecord "haskell-base" (KnownSeedOwners (Map.singleton (ApplicationId "app") (Set.singleton "docs"))) SeedCreated fixedTime)
     & #modules
       .~ [ AppliedModule
              { name = ModuleName "haskell-base",

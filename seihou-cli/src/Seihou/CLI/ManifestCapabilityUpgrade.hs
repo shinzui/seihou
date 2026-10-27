@@ -26,6 +26,10 @@
 -- closure rather than guessing.
 module Seihou.CLI.ManifestCapabilityUpgrade
   ( -- * Scope and evidence
+    SeedClaimEvidence,
+    resolveLegacySeedOwnership,
+    prepareSeedOwnership,
+    gatherSeedOwnershipEvidence,
     CertificationScope (..),
     EvidencePolicy (..),
     EvidenceSource (..),
@@ -49,6 +53,7 @@ module Seihou.CLI.ManifestCapabilityUpgrade
   )
 where
 
+import Control.Monad (when)
 import Data.Containers.ListUtils (nubOrd)
 import Data.Generics.Labels ()
 import Data.List (find)
@@ -64,6 +69,7 @@ import Seihou.Composition.Resolve (PromptPermission (..), resolveWithPromptPermi
 import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (resolveArtifactOrigin)
+import Seihou.Core.Seed (renderManifestInvariantError, validateManifestInvariants)
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.ConsoleInterp (runConsole)
@@ -454,3 +460,50 @@ renderEvidenceSource source =
     <> source ^. #originUrl
     <> " at "
     <> source ^. #revision
+
+-- | Exact recorded seed contributions, supplied by a compiler of recorded
+-- releases, never by the candidate release. A failed lookup remains unknown.
+type SeedClaimEvidence = Map ApplicationId (Either Text (Map FilePath (Set ModuleName)))
+
+-- | Resolve only receipts whose precise owners the operation needs. The caller
+-- stages the result with its accepted transaction; this function never writes.
+resolveLegacySeedOwnership :: Set FilePath -> Manifest -> SeedClaimEvidence -> Either Text Manifest
+resolveLegacySeedOwnership paths manifest evidence = do
+  seeds <- Map.traverseWithKey resolve (manifest ^. #seeds)
+  let candidate = manifest & #seeds .~ seeds
+  first renderManifestInvariantError (validateManifestInvariants candidate)
+  pure candidate
+  where
+    resolve path receipt
+      | Set.notMember path paths = Right receipt
+      | otherwise = case receipt ^. #ownership of
+          KnownSeedOwners _ -> Right receipt
+          LegacySeedOwners apps -> do
+            when (Set.null apps) (Left (failure path "has no recorded application owners"))
+            owners <- Map.fromList <$> traverse (contribution path) (Set.toAscList apps)
+            pure (receipt & #ownership .~ KnownSeedOwners owners)
+    contribution path app = case Map.lookup app evidence of
+      Just (Right claims) | Just names <- Map.lookup path claims, not (Set.null names) -> Right (app, names)
+      Just (Left reason) -> Left (failure path (app ^. #unApplicationId <> ": " <> reason))
+      _ -> Left (failure path (app ^. #unApplicationId <> " has no exact recorded seed contribution"))
+    failure path reason =
+      "cannot resolve seed ownership for '"
+        <> T.pack path
+        <> "': "
+        <> reason
+        <> "; restore access to the recorded module releases and retry the command"
+
+-- | The injectable evidence provider uses the same recorded-release policy as
+-- 'gatherApplicationEvidence'. EP-3 supplies seed claims from its compiler.
+prepareSeedOwnership :: Set FilePath -> Manifest -> (Set ApplicationId -> IO SeedClaimEvidence) -> IO (Either Text Manifest)
+prepareSeedOwnership paths manifest gather = do
+  let wanted = Set.unions [apps | (path, receipt) <- Map.toAscList (manifest ^. #seeds), Set.member path paths, LegacySeedOwners apps <- [receipt ^. #ownership]]
+  evidence <- if Set.null wanted then pure Map.empty else gather wanted
+  pure (resolveLegacySeedOwnership paths manifest evidence)
+
+-- | Reuse the verified recorded-release loader. The extractor is supplied by
+-- the seed compiler so ownership preparation does not depend on runtime effects.
+gatherSeedOwnershipEvidence :: EvidencePolicy -> FilePath -> [FilePath] -> Manifest -> ([Operation] -> Map FilePath (Set ModuleName)) -> Set ApplicationId -> IO SeedClaimEvidence
+gatherSeedOwnershipEvidence policy projectRoot searchPaths manifest extract wanted = do
+  recorded <- gatherApplicationEvidence policy projectRoot searchPaths manifest wanted
+  pure (Map.map (\case EvidenceUnavailable reason -> Left reason; EvidenceOperations operations _ -> Right (extract operations)) recorded)

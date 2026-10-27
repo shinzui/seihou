@@ -126,12 +126,13 @@ upgrade step in `seihou-core/src/Seihou/Manifest/Upgrade.hs`
 | 5 | `blueprintMigrations` receipt ledger | lossless |
 | 6 | Portable `origin` replaces machine-local `source` / `targetSource` | inference-bearing; explicit `seihou manifest upgrade` only ([ADR 0005](../../../adr/0005-legacy-manifests-convert-through-an-explicit-command.md)) |
 | 7 | Required `sharedWriteMode` on every file record | lossless: `additiveOnly: true` becomes `additive-only`, anything else `unknown` |
-
 | 8 | Portable seed receipts without content tracking | lossless: add empty `seeds` map |
-
 | 9 | Typed portable checkout outputs with application/instance ownership | lossless: add empty `checkoutOutputs` map |
 
-The ordinary decoder reads schemas 6 through 9. A schema-6 record's optional `additiveOnly: true`
+| 10 | Repeatable checkout commands in applications | lossless: add empty command lists |
+| 11 | Precise seed instance claims, explicit legacy ownership | lossless: wrap application-only evidence |
+
+The ordinary decoder reads schemas 6 through 11. A schema-6 record's optional `additiveOnly: true`
 decodes as `additive-only`; a missing or false key decodes as `unknown`, because schema 6
 omitted false and absence therefore proves nothing. Schema 7 requires `sharedWriteMode` to
 be one of `unknown`, `additive-only`, or `requires-ownership-closure`, and a record that

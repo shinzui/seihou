@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Add manifest schema 11 for precise application/module-instance seed claims, a lossless legacy ownership upgrade, and refusal of lossy manifest writes.
+
 ### Changed
 
 - Breaking core API: typed command lifecycle on `Command`/`RunCommandOp`, ordered

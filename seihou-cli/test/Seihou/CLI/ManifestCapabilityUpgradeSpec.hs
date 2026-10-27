@@ -111,6 +111,28 @@ modeIn path certification = (^. #sharedWriteMode) <$> Map.lookup path (certifica
 
 spec :: Spec
 spec = do
+  describe "legacy seed ownership evidence" $ do
+    let instanceState name = AppliedInstanceState name emptyParentVars (LocalOrigin (name ^. #unModuleName)) (Just "1.0.0") Map.empty
+        app = recordedApplication appA & #instances .~ map instanceState ["first", "second"]
+        receipt = SeedRecord "first" (LegacySeedOwners (Set.singleton appA)) SeedCreated testTime
+        old = emptyManifest testTime & #applications .~ [app] & #seeds .~ Map.singleton "a.txt" receipt
+        evidence = Map.singleton appA (Right (Map.singleton "a.txt" (Set.fromList ["first", "second"])))
+    it "infers every co-seeder from an injected recorded-evidence provider" $ do
+      result <- prepareSeedOwnership (Set.singleton "a.txt") old $ \wanted -> do
+        wanted `shouldBe` Set.singleton appA
+        pure evidence
+      case result of
+        Left err -> expectationFailure (T.unpack err)
+        Right prepared -> do
+          fmap (^. #ownership) (Map.lookup "a.txt" (prepared ^. #seeds)) `shouldBe` Just (KnownSeedOwners (Map.singleton appA (Set.fromList ["first", "second"])))
+          fmap (^. #moduleName) (Map.lookup "a.txt" (prepared ^. #seeds)) `shouldBe` Just "first"
+    it "preserves unrequested unknown receipts without asking for evidence" $ do
+      result <- prepareSeedOwnership Set.empty old (\_ -> expectationFailure "unexpected evidence lookup" >> pure Map.empty)
+      result `shouldBe` Right old
+    it "refuses absent, unavailable, and impossible evidence with an actionable path" $ do
+      let failures = [Map.empty, Map.singleton appA (Left "recorded release unavailable"), Map.singleton appA (Right Map.empty), Map.singleton appA (Right (Map.singleton "a.txt" (Set.singleton "unrecorded")))]
+      mapM_ (\e -> resolveLegacySeedOwnership (Set.singleton "a.txt") old e `shouldSatisfy` either (T.isInfixOf "a.txt") (const False)) failures
+
   describe "certifySharedWriteModes" $ do
     let everything = certifySharedWriteModes CertifyAllUnknownPaths fixtureManifest evidence
 
@@ -270,7 +292,7 @@ spec = do
         case manifestFromJSON written of
           Left err -> expectationFailure err
           Right upgraded -> do
-            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 10
+            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 11
             (^. #sharedWriteMode) <$> Map.lookup ".gitignore" (upgraded ^. #files)
               `shouldBe` Just SharedWriteAdditiveOnly
         TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` gitignoreBefore

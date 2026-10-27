@@ -47,7 +47,7 @@ seihou manifest upgrade [OPTIONS]
 |--------|-------------|
 | `--dry-run` | Print every step and conversion but leave the manifest untouched. |
 | `--force` | Accept inferred origins even when a converted artifact is missing or stale on this machine. Only the schema 5 to 6 step consults it. |
-| `--to VERSION` | Stop at this schema version instead of the current one (7). |
+| `--to VERSION` | Stop at this schema version instead of the current one (11). |
 
 ### Description
 
@@ -60,6 +60,10 @@ steps in order, one at a time, and prints each one:
 | 1 -> 2 through 4 -> 5 | Only the version changes; the fields those schemas added were optional. | lossless |
 | 5 -> 6 | Replaces machine-local artifact paths with portable origins (below). | inferred; reviewable |
 | 6 -> 7 | Gives every file record an explicit `sharedWriteMode`: an old `additiveOnly: true` becomes `additive-only`, anything else `unknown`. | lossless |
+| 7 -> 8 | Adds empty seed receipts. | lossless |
+| 8 -> 9 | Adds empty checkout output declarations. | lossless |
+| 9 -> 10 | Adds empty checkout command declarations. | lossless |
+| 10 -> 11 | Wraps legacy seed ownership without inventing instance claims. | lossless |
 
 `--to VERSION` stops after the step that reaches that version. A version newer
 than this build, or older than the manifest, is refused. The document's
@@ -412,3 +416,16 @@ Unknown kinds/owners, duplicate identities and missing/malformed fields refuse
 before effects. Older-schema round trips omit empty lists and cannot carry nonempty
 checkout commands. Sync reads supported old schemas without writing an upgrade.
 Apply/update records declarations; sync executes them without storing completion.
+
+## Seed instance ownership (schema 11)
+
+The lossless 10 → 11 step wraps each seed's old `applications` list in
+`ownership: {kind: "legacy-applications", applications: [...]}`. It preserves
+first supplier, outcome, time, unknown fields, and checkout declarations. It does
+not infer which module instances seeded a path. New receipts use
+`ownership: {kind: "instances", owners: {APPLICATION_ID: ["qualified-instance"]}}`.
+Removing one instance preserves all other claims and the original settlement.
+Operations that need exact legacy owners obtain evidence from the recorded
+releases and saved inputs; unavailable evidence gives an error naming the path.
+Receipts contain no content hashes or baselines. Runtime seed commands are still
+being implemented; schema support alone does not enable seed lifecycle behavior.

@@ -1,5 +1,6 @@
 module Seihou.Effect.ManifestStoreSpec (tests) where
 
+import Control.Exception (evaluate)
 import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -14,7 +15,7 @@ import Seihou.Effect.FilesystemPure (PureFS (..), emptyFS, runFilesystemPure)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Effect.ManifestStorePure (runManifestStorePure)
-import Seihou.Manifest.Types (emptyManifest)
+import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import System.Directory (doesFileExist)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -61,6 +62,12 @@ spec = do
             writeManifest sampleManifest
       finalState `shouldBe` Just sampleManifest
 
+  describe "write validation" $ do
+    it "refuses lossy exact ownership before writing any bytes" $ do
+      let receipt = SeedRecord "haskell-base" (KnownSeedOwners (Map.singleton (ApplicationId "app") (Set.singleton "haskell-base"))) SeedCreated fixedTime
+          invalid = sampleManifest & #version .~ ManifestSchemaVersion 10 & #seeds .~ Map.singleton "seed.txt" receipt
+      evaluate (runPureEff (runManifestStorePure Nothing (writeManifest invalid))) `shouldThrow` anyIOException
+
   describe "real interpreter (via pure filesystem)" $ do
     it "returns Right Nothing when manifest file does not exist" $ do
       let manifestPath = ".seihou/manifest.json"
@@ -88,7 +95,7 @@ spec = do
                 runManifestStore manifestPath (writeManifest sampleManifest)
                 c <- readFileText manifestPath
                 pure ((), c)
-      T.isInfixOf "\"version\":10" content `shouldBe` True
+      T.isInfixOf ("\"version\":" <> T.pack (show (currentManifestVersion ^. #unManifestSchemaVersion))) content `shouldBe` True
       T.isInfixOf "haskell-base" content `shouldBe` True
       T.isInfixOf "my-app" content `shouldBe` True
 

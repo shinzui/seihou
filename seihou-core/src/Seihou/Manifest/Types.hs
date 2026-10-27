@@ -16,7 +16,7 @@ module Seihou.Manifest.Types
   )
 where
 
-import Control.Monad (forM_, unless)
+import Control.Monad (forM_, unless, when)
 import Data.Aeson (FromJSON (..), ToJSON (..), (.:), (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -34,7 +34,7 @@ import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
 import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutRecords)
 import Seihou.Core.CommandFingerprint (checkoutCommandOperation, fingerprintCommand)
 import Seihou.Core.Path (validateCanonicalProjectPath)
-import Seihou.Core.Seed (ManifestInvariantError (..), validateManifestInvariants)
+import Seihou.Core.Seed (renderManifestInvariantError, seedApplicationIds, validateManifestInvariants)
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (baselineRefFromText)
 import Seihou.Manifest.JSON (decodeManifestValue)
@@ -80,7 +80,7 @@ import System.FilePath (takeFileName)
 -- change advances this number is
 -- docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md.
 currentManifestVersion :: ManifestSchemaVersion
-currentManifestVersion = ManifestSchemaVersion 10
+currentManifestVersion = ManifestSchemaVersion 11
 
 -- | The oldest schema the ordinary decoder reads. Anything older records
 -- machine-specific absolute paths and must go through the explicit
@@ -94,6 +94,7 @@ oldestDecodableManifestVersion = ManifestSchemaVersion 6
 minimumManifestVersion :: ManifestCapability -> ManifestSchemaVersion
 minimumManifestVersion TargetedAdditiveSharedPathUpdate = ManifestSchemaVersion 7
 minimumManifestVersion SeedReceipts = ManifestSchemaVersion 8
+minimumManifestVersion SeedOwnerClaims = ManifestSchemaVersion 11
 minimumManifestVersion CheckoutLocalOutputs = ManifestSchemaVersion 9
 minimumManifestVersion CheckoutLocalCommands = ManifestSchemaVersion 10
 
@@ -223,7 +224,7 @@ instance ToJSON Manifest where
         "blueprintMigrations" .= (m ^. #blueprintMigrations)
       ]
         ++ ["checkoutOutputs" .= Map.map checkoutToJSON (m ^. #checkoutOutputs) | m ^. #version >= ManifestSchemaVersion 9]
-        ++ ["seeds" .= Map.map seedToJSON (m ^. #seeds) | m ^. #version >= ManifestSchemaVersion 8]
+        ++ ["seeds" .= Map.map (seedToJSON (m ^. #version)) (m ^. #seeds) | m ^. #version >= ManifestSchemaVersion 8]
         ++ maybe [] (\r -> ["recipe" .= r]) (m ^. #recipe)
         ++ maybe [] (\b -> ["blueprint" .= b]) (m ^. #blueprint)
 
@@ -240,14 +241,14 @@ instance FromJSON Manifest where
         <*> o .: "modules"
         <*> (varsFromJSON =<< o .: "variables")
         <*> (filesFromJSON v =<< o .: "files")
-        <*> (if v >= ManifestSchemaVersion 8 then Map.traverseWithKey (\_ -> parseSeed) =<< o .: "seeds" else pure Map.empty)
+        <*> (if v >= ManifestSchemaVersion 8 then Map.traverseWithKey (\_ -> parseSeed v) =<< o .: "seeds" else pure Map.empty)
         <*> (if v >= ManifestSchemaVersion 9 then Map.traverseWithKey (\_ -> parseCheckout) =<< o .: "checkoutOutputs" else pure Map.empty)
         <*> (o Aeson..:? "applications" Aeson..!= [] >>= mapM (parseApplication v))
         <*> o Aeson..:? "recipe"
         <*> o Aeson..:? "blueprint"
         <*> o Aeson..:? "blueprintMigrations" Aeson..!= []
     case validateManifestInvariants manifest of
-      Left (PathBothManagedAndSeeded path) -> fail ("path " <> path <> " is recorded both as a tracked file and as a seed")
+      Left err -> fail (T.unpack (renderManifestInvariantError err))
       Right () -> case validateCheckoutRecords manifest [] of
         Left err -> fail (T.unpack (err ^. #message))
         Right () -> validateCheckoutCommands manifest >> pure manifest
@@ -780,22 +781,38 @@ strategyFromText "structured" = pure Structured
 strategyFromText "symlink" = fail "checkout symlinks cannot be managed file records"
 strategyFromText other = fail ("unknown strategy: " <> T.unpack other)
 
-seedToJSON :: SeedRecord -> Aeson.Value
-seedToJSON record =
-  Aeson.object
+seedToJSON :: ManifestSchemaVersion -> SeedRecord -> Aeson.Value
+seedToJSON version record =
+  Aeson.object $
     [ "module" .= (record ^. #moduleName . #unModuleName),
-      "applications" .= map (^. #unApplicationId) (Set.toAscList (record ^. #applicationIds)),
       "outcome" .= seedOutcomeToText (record ^. #outcome),
       "settledAt" .= (record ^. #settledAt)
     ]
+      <> if version < minimumManifestVersion SeedOwnerClaims
+        then ["applications" .= map (^. #unApplicationId) (Set.toAscList (seedApplicationIds record))]
+        else
+          [ "ownership" .= case record ^. #ownership of
+              LegacySeedOwners apps ->
+                Aeson.object
+                  ["kind" .= ("legacy-applications" :: Text), "applications" .= map (^. #unApplicationId) (Set.toAscList apps)]
+              KnownSeedOwners owners ->
+                Aeson.object
+                  ["kind" .= ("instances" :: Text), "owners" .= Map.mapKeys (^. #unApplicationId) (Map.map (map (^. #unModuleName) . Set.toAscList) owners)]
+          ]
 
 seedOutcomeToText :: SeedOutcome -> Text
 seedOutcomeToText SeedCreated = "created"
 seedOutcomeToText SeedFoundExisting = "found-existing"
 seedOutcomeToText SeedReleasedFromManaged = "released-from-managed"
 
-parseSeed :: Aeson.Value -> Aeson.Parser SeedRecord
-parseSeed = Aeson.withObject "seed receipt" $ \o -> do
+parseSeed :: ManifestSchemaVersion -> Aeson.Value -> Aeson.Parser SeedRecord
+parseSeed version = Aeson.withObject "seed receipt" $ \o -> do
+  ownership <-
+    if version < minimumManifestVersion SeedOwnerClaims
+      then LegacySeedOwners . Set.fromList . map ApplicationId <$> o .: "applications"
+      else do
+        when (KM.member "applications" o) (fail "seed receipt must not duplicate ownership with applications")
+        o .: "ownership" >>= parseSeedOwnership
   outcome <-
     o .: "outcome" >>= \case
       "created" -> pure SeedCreated
@@ -804,14 +821,30 @@ parseSeed = Aeson.withObject "seed receipt" $ \o -> do
       (other :: Text) -> fail ("unknown seed outcome: " <> T.unpack other <> "; expected created, found-existing, released-from-managed")
   SeedRecord
     <$> (ModuleName <$> o .: "module")
-    <*> (Set.fromList . map ApplicationId <$> o .: "applications")
+    <*> pure ownership
     <*> pure outcome
     <*> o .: "settledAt"
+
+parseSeedOwnership :: Aeson.Value -> Aeson.Parser SeedOwnership
+parseSeedOwnership = Aeson.withObject "seed ownership" $ \o -> do
+  kind <- o .: "kind" :: Aeson.Parser Text
+  case kind of
+    "legacy-applications" -> do
+      unless (Set.fromList (KM.keys o) == Set.fromList ["kind", "applications"]) (fail "legacy seed ownership requires exactly kind and applications")
+      LegacySeedOwners . Set.fromList . map ApplicationId <$> o .: "applications"
+    "instances" -> do
+      unless (Set.fromList (KM.keys o) == Set.fromList ["kind", "owners"]) (fail "seed instance ownership requires exactly kind and owners")
+      raw <- o .: "owners" :: Aeson.Parser (Map Text [Text])
+      forM_ (Map.elems raw) $ \names -> unless (length names == Set.size (Set.fromList names)) (fail "duplicate seed instance owner")
+      pure (KnownSeedOwners (Map.mapKeys ApplicationId (Map.map (Set.fromList . map ModuleName) raw)))
+    other -> fail ("unknown seed ownership kind: " <> T.unpack other)
 
 -- | Facts that would be lost if a caller encoded a value at its stated schema.
 manifestEncodingLoss :: Manifest -> [Text]
 manifestEncodingLoss manifest =
-  either (pure . T.pack) (const []) (Aeson.parseEither (const (validateCheckoutCommands manifest)) Aeson.Null)
+  either (pure . renderManifestInvariantError) (const []) (validateManifestInvariants manifest)
+    <> ["seed owner claims require manifest schema 11" | not (manifestSupports SeedOwnerClaims manifest), any (\r -> case r ^. #ownership of KnownSeedOwners _ -> True; _ -> False) (Map.elems (manifest ^. #seeds))]
+    <> either (pure . T.pack) (const []) (Aeson.parseEither (const (validateCheckoutCommands manifest)) Aeson.Null)
     <> ["removal commands cannot declare checkout setup" | applied <- manifest ^. #modules, removal <- maybe [] pure (applied ^. #removal), any ((== CheckoutCommandLifecycle) . (^. #lifecycle)) (removal ^. #commands)]
     <> ["checkout commands require manifest schema 10" | manifest ^. #version < ManifestSchemaVersion 10, any (not . null . (^. #checkoutCommands)) (manifest ^. #applications)]
     <> ["checkout outputs require manifest schema 9" | manifest ^. #version < ManifestSchemaVersion 9, not (Map.null (manifest ^. #checkoutOutputs))]

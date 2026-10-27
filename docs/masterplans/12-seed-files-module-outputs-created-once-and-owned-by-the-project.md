@@ -21,6 +21,11 @@ provenance:
       at: 2026-10-27T00:43:50Z
       mode: "update"
       note: "Correct shared ownership, safe creation and transitions, milestone ordering, ordinary adoption and delivery gates"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-27T02:11:07Z
+      mode: "implement"
+      note: "Resume ownership prerequisite and runtime implementation in declared dependency order"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -86,8 +91,8 @@ fallback. Delivery includes the runtime release, producers, and installed-binary
 ## Decomposition Strategy
 
 Keep six functional concerns. EP-1 declares and validates the field; it is complete. EP-2 owns
-receipts and versioning; its original schema-8 work is complete, but it is reopened for exact
-application/instance claims before runtime production. A first supplier plus application set
+receipts and versioning; its original schema-8 work and schema-11 exact
+application/instance claim correction are complete before runtime production. A first supplier plus application set
 cannot represent two modules seeding the same path within one recipe. EP-3 owns first creation,
 composition, common classification, and no-replace filesystem effects. EP-4 owns reporting and
 instance-aware removal. EP-5 owns lifecycle evolution within the existing update transaction.
@@ -117,15 +122,14 @@ seeds. The local ADR corpus has no OKF profile, verified with `mori show --full`
 | # | Title | Path | Hard Deps | Soft / Integration Deps | Status |
 |---|-------|------|-----------|-------------------------|--------|
 | 1 | Declare seed steps and validate them | docs/plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md | None | None | Complete |
-| 2 | Record seed receipts; correct exact ownership before runtime use | docs/plans/100-record-seed-receipts-in-manifest-schema-8.md | None | EP-1 vocabulary | In Progress |
+| 2 | Record seed receipts; correct exact ownership before runtime use | docs/plans/100-record-seed-receipts-in-manifest-schema-8.md | None | EP-1 vocabulary | Complete |
 | 3 | Create seed files once during run | docs/plans/101-create-seed-files-once-during-seihou-run.md | EP-1, EP-2 including M4 | EP-5 consumes common APIs | Not Started |
 | 4 | Report and remove seed ownership | docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md | EP-2 including M4 | EP-3 real-command acceptance | Not Started |
 | 5 | Reconcile seeds and release managed files | docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md | EP-1, EP-2 including M4, EP-3; M2 also needs EP-6 M1 candidate | EP-4 status acceptance | Not Started |
-| 6 | Adopt producers and verify delivery | docs/plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring.md | M1: none; M2–M4: EP-3, EP-4, EP-5 | EP-5 M2 consumer proof | Not Started |
+| 6 | Adopt producers and verify delivery | docs/plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring.md | M1: none; M2–M4: EP-3, EP-4, EP-5 | EP-5 M2 consumer proof | In Progress |
 
-Status values are Not Started, In Progress, Complete, Cancelled. EP-2's In Progress means its
-original milestones are accepted and its ownership correction remains; no new code was implemented
-in this review. M1/M2/M4 refer to the named milestones in the linked child, not whole-plan completion.
+Status values are Not Started, In Progress, Complete, Cancelled. EP-2 includes the accepted
+original receipt foundation and the completed schema-11 ownership correction. M1/M2/M4 refer to the named milestones in the linked child, not whole-plan completion.
 
 ## Dependency Graph
 
@@ -137,7 +141,7 @@ Only after that early proof expand EP-5 M3/M4. Complete EP-4/EP-5 integration be
 publish/adopt and verify released behavior. Whole-child states remain In Progress until all their
 acceptance criteria pass; no dependency is silently weakened.
 
-The next implementation work is EP-2 M4. EP-6 M1 is ready independent preparation. Release
+EP-2 M4 is implemented and accepted in source. The next implementation work is EP-3. EP-6 M1 is ready independent preparation. Release
 readiness requires EP-3, EP-4, and EP-5 together; the interim refusal is a safe development
 boundary, not a delivered seed workflow. A source build and a candidate checkout do not close
 the delivery gate.
@@ -158,7 +162,7 @@ helpers, legacy evidence preparation, and invariant checks; EP-3/EP-4/EP-5 use t
 Do not use supplier provenance as an ownership index. Last exact claim removal drops the receipt;
 unknown legacy owners are retained until evidence resolves them.
 
-Current schema is 10. Preserve historical `SeedReceipts = 8`, add `SeedOwnerClaims` at the next
+Schema 11 now implements this contract. Preserve historical `SeedReceipts = 8`, add `SeedOwnerClaims` at the next
 adjacent schema (11 absent intervening changes), and wrap old application-only ownership in an
 explicit legacy variant losslessly. Exact historical instance inference is separate and never
 faked by the structural upgrade. EP-2 tests that service with injected evidence; EP-3 connects
@@ -212,9 +216,11 @@ it lands. Child plans amend evidence, without claiming proposed APIs are already
 
 ## Progress
 
-EP-1 is complete. EP-2's schema-8 foundation is complete and its new ownership milestone is
-open. EP-3–EP-6 runtime/adoption work is not started. Next: finish precise receipt ownership,
-then prove run and ordinary existing-consumer update. The final cross-plan gate is released
+EP-1 and EP-2 are complete. Schema 11 now preserves exact application/qualified-instance
+seed claims and explicit legacy uncertainty. All three test suites and flake checks pass;
+a built binary verified ordinary schema-8 upgrade and repeat no-op. EP-3–EP-5 runtime work is not started; EP-6 M1 audit/candidate preparation is in progress. Next: prove run and ordinary existing-consumer update. EP-6 producer classification has
+been recorded and a disposable CLI seed candidate prepared; candidate validation and the
+pre-seed consumer remain before accepting EP-6 M1. The final cross-plan gate is released
 runtime plus published producers verified through the installed executable, including fresh use,
 existing edits, deletion, repeated use, clone/worktree setup, removal, and recovery.
 
@@ -254,8 +260,11 @@ application-only ownership assumptions are superseded above.
 
 ## Outcomes & Retrospective
 
-This update reviewed all six child plans against source, current producer declarations, and
-relevant ADRs, and reconciled the shared contracts and developer workflow. It changes plans and
+Current implementation: EP-1 and EP-2 are complete in source, including the schema-11
+correction and ordinary upgrade proof. Runtime, adoption, and release gates remain open.
+
+The preceding planning update reviewed all six child plans against source, current producer declarations, and
+relevant ADRs, and reconciled the shared contracts and developer workflow. That review changed plans and
 ADR 0017 only; runtime code, releases, and installations remain open work. Original authorship is
 `claude-opus-5[1m]` for the MasterPlan and all children; prior `gpt-6.1-sol` revisions cover the
 MasterPlan and EP-1/EP-2. None had recorded review entries before this pass.

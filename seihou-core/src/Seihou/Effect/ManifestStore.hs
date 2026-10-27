@@ -5,7 +5,10 @@ module Seihou.Effect.ManifestStore
   )
 where
 
+import Control.Exception (throw)
+import Data.Text qualified as T
 import Seihou.Core.Types (Manifest)
+import Seihou.Manifest.Types (manifestEncodingLoss)
 import Seihou.Prelude
 
 data ManifestStore :: Effect where
@@ -18,4 +21,6 @@ readManifest :: (ManifestStore :> es) => Eff es (Either Text (Maybe Manifest))
 readManifest = send ReadManifest
 
 writeManifest :: (ManifestStore :> es) => Manifest -> Eff es ()
-writeManifest m = send (WriteManifest m)
+writeManifest m = case manifestEncodingLoss m of
+  [] -> send (WriteManifest m)
+  problems -> throw (userError (T.unpack ("refusing to write invalid manifest: " <> T.intercalate "; " problems)))

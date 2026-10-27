@@ -89,7 +89,13 @@ in  Schema.Project::{ project =
         }
       ]
     , okfBundles =
-      [ Schema.OkfBundle::{ name = "improvement-requests"
+      [ Schema.OkfBundle::{ name = "friction-log"
+        , path = "docs/friction-log"
+        , okfVersion = "0.2"
+        , profile = Some "docs/friction-log/profile.dhall"
+        , description = Some "Friction met while implementing plans, before triage into bug reports and requests"
+        }
+      , Schema.OkfBundle::{ name = "improvement-requests"
         , path = "docs/improvement-requests"
         , okfVersion = "0.2"
         , profile = Some "docs/improvement-requests/profile.dhall"

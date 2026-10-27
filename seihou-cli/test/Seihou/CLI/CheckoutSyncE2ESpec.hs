@@ -10,6 +10,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
+import Seihou.CLI.SchemaVersion (schemaUrl)
 import Seihou.CLI.SeihouBinary (seihouBinary)
 import Seihou.Engine.UpdateTransaction (beginUpdateTransaction)
 import System.Directory qualified as D
@@ -21,6 +22,15 @@ import System.Process (CreateProcess (..), proc, readCreateProcessWithExitCode, 
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
+
+-- Read the executable's published schema pin from Git objects, independently
+-- of the user's submodule checkout. All fixture imports remain local/offline.
+copyPinnedSchema source destination = do
+  let revision = T.unpack (last (init (T.splitOn "/" schemaUrl)))
+  files <- lines <$> readProcess "git" ["-C", source, "ls-tree", "--name-only", revision] ""
+  forM_ (filter ((== ".dhall") . takeExtension) files) $ \file -> do
+    content <- readProcess "git" ["-C", source, "show", revision <> ":" <> file] ""
+    TIO.writeFile (destination </> file) (T.pack content)
 
 -- Every invocation has an empty personal configuration/cache and no inherited HOME.
 invoke binary root home args = do
@@ -68,9 +78,7 @@ prepare root home source destination secondSource secondDestination = do
   schema <- D.canonicalizePath (takeDirectory cwd </> "schema")
   let moduleDir = root </> ".seihou/modules/demo"
   D.createDirectoryIfMissing True (moduleDir </> "schema")
-  schemaFiles <- D.listDirectory schema
-  forM_ schemaFiles $ \file ->
-    if takeExtension file == ".dhall" then D.copyFile (schema </> file) (moduleDir </> "schema" </> file) else pure ()
+  copyPinnedSchema schema (moduleDir </> "schema")
   forM_ [source, secondSource, "config/next"] $ \dir -> do
     D.createDirectoryIfMissing True (root </> T.unpack dir)
     TIO.writeFile (root </> T.unpack dir </> "sentinel") "source bytes\n"
@@ -113,8 +121,7 @@ prepareAdoptionWithTracking temp failing tracked = do
   forM_ [initialHome, home] $ \gitHome -> do
     _ <- git gitHome ["config", "--file", gitHome </> ".gitconfig", "url." <> remote <> ".insteadOf", remoteUrl]
     pure ()
-  files <- D.listDirectory schema
-  forM_ files $ \file -> if takeExtension file == ".dhall" then D.copyFile (schema </> file) (remote </> "schema" </> file) else pure ()
+  copyPinnedSchema schema (remote </> "schema")
   TIO.writeFile
     (remote </> "module.dhall")
     ( moduleBody

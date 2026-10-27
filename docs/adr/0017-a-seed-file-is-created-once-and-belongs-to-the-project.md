@@ -76,3 +76,13 @@ A boolean would not express distinct ownership modes. A new generation strategy 
 
 - [ADR 0004](0004-the-manifest-is-the-only-record-of-applied-state.md)
 - [ADR 0014](0014-every-semantic-manifest-change-advances-the-schema-version.md)
+
+## Ownership implementation (2026-10-26)
+
+Schema 11 implements the precise-claims prerequisite: `KnownSeedOwners` maps
+applications to qualified instances; `LegacySeedOwners` retains old uncertainty.
+Exact merge, subtraction, query, and selected-application replacement preserve
+first settlement independently of active owners. Known claims require recorded
+applications and instances and canonical, nonoverlapping output paths. Evidence
+preparation is read-only and injected for testing; runtime compilation connects
+it in the dependent plan. Runtime seed behavior is still pending.

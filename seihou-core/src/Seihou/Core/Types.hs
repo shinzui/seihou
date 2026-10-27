@@ -15,6 +15,7 @@ module Seihou.Core.Types
     lifecycleToText,
     SeedOutcome (..),
     SeedRecord (..),
+    SeedOwnership (..),
     PatchOp (..),
     isAdditivePatchOp,
     Step (..),
@@ -594,6 +595,7 @@ data ManifestCapability
     -- explicit shared-write evidence introduced by schema 7.
     TargetedAdditiveSharedPathUpdate
   | SeedReceipts
+  | SeedOwnerClaims
   | CheckoutLocalOutputs
   | CheckoutLocalCommands
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
@@ -998,10 +1000,17 @@ data SeedOutcome = SeedCreated | SeedFoundExisting | SeedReleasedFromManaged
 
 data SeedRecord = SeedRecord
   { moduleName :: !ModuleName,
-    applicationIds :: !(Set ApplicationId),
+    ownership :: !SeedOwnership,
     outcome :: !SeedOutcome,
     settledAt :: !UTCTime
   }
+  deriving stock (Eq, Show, Generic)
+
+-- | Active claims are separate from immutable first-settlement provenance.
+-- Older receipts cannot identify which instances contributed to a path.
+data SeedOwnership
+  = LegacySeedOwners !(Set ApplicationId)
+  | KnownSeedOwners !(Map ApplicationId (Set ModuleName))
   deriving stock (Eq, Show, Generic)
 
 -- | A typed, portable specification reconstructed in each working copy.

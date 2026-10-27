@@ -224,3 +224,10 @@ The lossless 7 → 8 upgrade adds `seeds: {}`. Receipts record portable paths, m
 ## Checkout output declarations (schema 9)
 
 The adjacent lossless 8 → 9 upgrade adds `checkoutOutputs: {}` and preserves unrelated raw JSON. No declaration can be inferred from an old shell receipt. Apply a module release using `strategy = "symlink"` and `lifecycle = Some "checkout"` once, commit its portable declarations, and use [seihou sync](../cli/sync.md) in future clones. Sync itself never upgrades or writes a manifest.
+
+Schema 11 distinguishes precise seed owners from legacy application-only evidence.
+The automatic structural step preserves uncertainty; it never assigns every claim
+to the first supplier. When an operation needs precise owners it uses the exact
+recorded releases and inputs, and refuses if that evidence cannot be obtained.
+A seed receipt records settlement without tracking file contents. Runtime seed
+support remains separate from this manifest upgrade.
