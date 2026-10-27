@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Add `adopt-seed-lifecycle` to this repository's new authoring blueprint
+  registry. It classifies existing module steps, adds seed ownership to project
+  starters, audits conflicting writers and validates consumer adoption. Run it
+  through `seihou agent run adopt-seed-lifecycle`, or its recorded 0.10.1.0 to
+  0.11.0.0 migration edge.
+
 ## [0.11.0.1] - 2026-10-26
 
 ### Fixed

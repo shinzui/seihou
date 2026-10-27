@@ -36,6 +36,10 @@ It supports four authorable artifact kinds:
   and intentional deletion, and stay out of content drift. Existing applications
   adopt them with ordinary `seihou update TARGET`; review `release to project`
   and commit the manifest. Seed producers require Seihou 0.11.0.0 or newer.
+- **Seed adoption for module authors.** The
+  [adopt-seed-lifecycle blueprint](blueprints/adopt-seed-lifecycle/README.md)
+  inspects older modules, adds seed declarations to project-owned starters,
+  and checks managed policy, other writers and existing-consumer adoption.
 - **Reversible and upgradable.** Modules can declare `removal` steps and
   versioned `migrations`, so you can cleanly undo a module or move a project
   across module versions.

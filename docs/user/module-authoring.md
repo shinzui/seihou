@@ -896,6 +896,24 @@ Its normal preview includes `release to project`; confirmation drops managed tra
 
 Declarative migrations and removal actions must not mutate seeds. Arbitrary shell commands run with user permissions and are not sandboxed by lifecycle; audit commands and dependencies before publishing seeds. Seed-producing modules require **Seihou 0.11.0.0 or newer**. Update the runtime before adopting them: older binaries may ignore lifecycle and overwrite project content. See [ADR 0017](../adr/0017-a-seed-file-is-created-once-and-belongs-to-the-project.md).
 
+#### Migrate existing authored modules
+
+The [adopt-seed-lifecycle blueprint](../../blueprints/adopt-seed-lifecycle/README.md)
+helps classify and change existing module steps. Install it once from this
+repository, then run it from the root of your module-authoring repository:
+
+```bash
+seihou install https://github.com/shinzui/seihou.git --module adopt-seed-lifecycle
+seihou agent run adopt-seed-lifecycle
+```
+
+It inspects templates and ownership intent, adds seed declarations to suitable
+whole-file starters, retains managed policy and checkout steps, and reports
+ambiguous cases. It also checks schema compatibility, conflicting writers,
+module versions, documentation and disposable-consumer adoption. Review its
+changes and validation before publishing your updated modules. Existing
+consumers then adopt with ordinary `seihou update TARGET`.
+
 ### Checkout directory outputs
 
 Use `strategy = "symlink"` together with `lifecycle = Some "checkout"`, with no patch. Both source and destination support variable placeholders; `when` can enable or retire a declaration. The source names a consuming-project directory, not a file in the module's installed `files/` directory. Paths must be canonical forward-slash relative paths without empty, dot, dot-dot, drive, backslash or NUL components; `.git` and `.seihou` components are reserved. Source and destination cannot overlap. Destinations cannot overlap managed files, seeds or other checkout destinations, and sources cannot overlap any checkout destination.
