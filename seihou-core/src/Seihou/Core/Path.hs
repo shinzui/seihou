@@ -1,6 +1,7 @@
 module Seihou.Core.Path
   ( validateProjectRelativePath,
     validateCanonicalProjectPath,
+    pathsHaveConflictingSpelling,
   )
 where
 
@@ -40,3 +41,13 @@ validateCanonicalProjectPath raw = do
     || any (\part -> T.null part || part == "." || part == ".." || T.toCaseFold part `elem` [".git", ".seihou"]) (T.splitOn "/" raw)
     then Left ("path must use canonical project-relative components outside .git and .seihou: " <> raw)
     else Right ()
+
+-- | Refuse case aliases in the portable output namespace, including conflicting
+-- ancestor spellings, before any filesystem object is created.
+pathsHaveConflictingSpelling :: FilePath -> FilePath -> Bool
+pathsHaveConflictingSpelling a b = go (T.splitOn "/" (T.pack a)) (T.splitOn "/" (T.pack b))
+  where
+    go (x : xs) (y : ys)
+      | x == y = go xs ys
+      | otherwise = T.toCaseFold x == T.toCaseFold y
+    go _ _ = False

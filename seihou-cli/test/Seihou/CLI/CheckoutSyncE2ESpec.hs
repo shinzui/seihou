@@ -1,4 +1,4 @@
-module Seihou.CLI.CheckoutSyncE2ESpec (tests) where
+module Seihou.CLI.CheckoutSyncE2ESpec (tests, copyPinnedSchema) where
 
 import Control.Monad (forM_, unless, when)
 import Data.Aeson qualified as A

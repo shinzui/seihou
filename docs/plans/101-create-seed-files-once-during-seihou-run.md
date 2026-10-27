@@ -17,6 +17,11 @@ provenance:
       at: 2026-10-27T00:43:50Z
       mode: "update"
       note: "Specify named composition API, exclusive creation, exact claims and safe transition refusal"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-27T02:25:43Z
+      mode: "implement"
+      note: "Implement seed operations, shared planning, exclusive creation and run integration"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -53,11 +58,26 @@ command dry-run contract. A receipt is settlement history, not evidence that a f
 
 ## Progress
 
-- [ ] Milestone 1: compile and compose seed operations with named results and lifecycle collision checks; interim update refuses unsupported seed transitions before mutation.
-- [ ] Milestone 2: common classification and exclusive creation preserve existing objects and deliberate deletion in native and pure filesystem checks.
-- [ ] Milestone 3: run and agent run share receipt handling, previews, and real-binary acceptance; ordinary managed behavior remains intact.
+- [x] (2026-10-27) Milestone 1: compile and compose seed operations with named results and lifecycle collision checks; interim update refuses unsupported seed transitions before mutation.
+- [x] (2026-10-27) Milestone 2: common classification and exclusive creation preserve existing objects and deliberate deletion in native and pure filesystem checks.
+- [x] (2026-10-27) Milestone 3: run and agent run share receipt handling, previews, and real-binary acceptance; ordinary managed behavior remains intact.
 
 ## Surprises & Discoveries
+
+Early ordinary-path evidence (2026-10-27): built 0.10.1.0 executable ran a
+project-local seed module without special preparation after fixture creation.
+It created the starting file, preserved an edit on forced rerun, then respected
+deletion without recreating the now-absent parent directory. Receipts contained
+exact claims and no managed record. Native macOS tests also passed complete-byte
+publication, occupied regular files/directories/dangling links, partial-write
+cleanup, and eighty concurrent creator attempts. Linux native verification also passed against the identical standalone helper in
+`haskell:9.12.4-slim-bookworm`, digest
+`sha256:49aed9a48b0eb4a00dce6bc5e2ad33766f2371f570a019b47ba48f5070c1be15`.
+
+The `unix` dependency was absent from the Mori corpus (registry search returned
+no matching package). Hackage and upstream tag `v2.8.8.0` agree on the current
+release; source verifies `System.Posix.Files.createLink` calls native `link`.
+The bound remains `>=2.8 && <2.9`, compatible with the pinned compiler's boot library.
 
 Review (2026-10-26): `StepLifecycle` already includes `Checkout`; `Operation` includes
 `CheckoutOutputOp`; `PathEntry` and `inspectPath` already exist. The manifest is currently
@@ -86,7 +106,21 @@ release. Reapplication is for the recorded lifecycle; update owns evolution.
 
 ## Outcomes & Retrospective
 
-Planning correction only; runtime work is not implemented or verified yet.
+All three milestones are accepted in source. The pinned GHC 9.12.4 shell passed
+`cabal test all`; focused seed tests and `nix flake check` also passed. Real-binary
+coverage includes ordinary creation, pre-existing files without force, forced edits,
+deletion without parent resurrection, immutable previews, both lifecycle refusals,
+two parameterized instances plus their root in one application, a second application,
+false-condition retirement/reintroduction, and agent blueprint baselines. Native
+macOS/Linux checks cover occupied entry kinds, partial-write cleanup and concurrent
+creators. No additional friction entries were recorded under this child.
+
+The common publication helper is independent of the effect stack so precisely the
+same implementation runs in both native environments. Portable case aliases are
+refused before mutation; actual native spelling/ancestor checks complement that
+logical check. ADR 0017 records these durable boundaries. Update deliberately
+refuses seed candidates/selected owners until plan 103 integrates reconciliation;
+this checkpoint is not a runtime-ready seed release.
 
 ## Context and Orientation
 

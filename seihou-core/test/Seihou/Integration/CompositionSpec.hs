@@ -8,7 +8,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.Composition.Graph (buildGraph, topoSort)
 import Seihou.Composition.Instance (ModuleInstance (..), primaryInstance)
-import Seihou.Composition.Plan (compileComposedPlan)
+import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveComposedVariables)
 import Seihou.Core.Types
 import System.FilePath ((</>))
@@ -129,7 +129,7 @@ spec = do
               planResult <- compileComposedPlan quads
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
-                Right (ops, warnings, _) -> do
+                Right ComposedPlan {operations = ops, warnings} -> do
                   -- Should have operations for shell.nix, flake.nix, README.md,
                   -- src/Lib.hs, LICENSE, *.cabal, cabal.project, Makefile (+ dirs)
                   let writeOps = [d | WriteFileOp d _ _ <- ops]
@@ -155,7 +155,7 @@ spec = do
               planResult <- compileComposedPlan quads
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
-                Right (ops, warnings, _) -> do
+                Right ComposedPlan {operations = ops, warnings} -> do
                   -- Find the merged README.md
                   let readmeOps = [content | WriteFileOp dest content _ <- ops, dest == "README.md"]
                   length readmeOps `shouldBe` 1
@@ -184,7 +184,7 @@ spec = do
               planResult <- compileComposedPlan quads
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
-                Right (ops, warnings, _) -> do
+                Right ComposedPlan {operations = ops, warnings} -> do
                   -- Find the merged config.json
                   let configOps = [content | WriteFileOp dest content _ <- ops, dest == "config.json"]
                   length configOps `shouldBe` 1
@@ -245,7 +245,7 @@ spec = do
               planResult <- compileComposedPlan quads
               case planResult of
                 Left errs -> expectationFailure $ "Plan failed: " ++ show errs
-                Right (ops, _, _) -> do
+                Right ComposedPlan {operations = ops} -> do
                   let writeDests = [d | WriteFileOp d _ _ <- ops]
                   elem "out/leaf.txt" writeDests `shouldBe` True
                   elem "out/diamond.txt" writeDests `shouldBe` True

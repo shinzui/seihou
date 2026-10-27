@@ -19,7 +19,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Core.Checkout (pathsOverlap)
-import Seihou.Core.Path (validateCanonicalProjectPath)
+import Seihou.Core.Path (pathsHaveConflictingSpelling, validateCanonicalProjectPath)
 import Seihou.Core.Types
 import Seihou.Prelude
 
@@ -138,6 +138,6 @@ validateManifestInvariants manifest = do
           [app] -> unless (names `Set.isSubsetOf` Set.fromList [qualifiedName (ModuleInstance (state ^. #name) (state ^. #parentVars)) | state <- app ^. #instances]) $ bad path "names an instance outside its owning application"
           _ -> bad path "names an unknown or duplicate application owner"
       forM_ (Map.keys (manifest ^. #files) <> Map.keys (manifest ^. #checkoutOutputs) <> filter (/= path) (Map.keys (manifest ^. #seeds))) $ \other ->
-        when (pathsOverlap path other) $ Left (SeedPathOverlap path other)
+        when (pathsOverlap path other || pathsHaveConflictingSpelling path other) $ Left (SeedPathOverlap path other)
   where
     bad path = Left . InvalidSeedOwners path

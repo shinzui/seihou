@@ -20,7 +20,7 @@ import Data.Yaml qualified as Yaml
 import Dhall qualified
 import Dhall.Core qualified as DhallCore
 import Dhall.Src (Src)
-import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutPaths)
+import Seihou.Core.Checkout (CheckoutError (..), pathsOverlap, validateCheckoutPaths)
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Module (checkCheckoutSteps, checkSeedSteps)
 import Seihou.Core.Path (validateCanonicalProjectPath, validateProjectRelativePath)
@@ -48,7 +48,13 @@ compilePlan baseDir modul vars = do
   if null allErrors
     then case compileCommands modName vars (modul ^. #commands) of
       Left cmdErrs -> pure (Left cmdErrs)
-      Right cmdOps -> pure (Right (deduplicateDirs (concat allOps) ++ cmdOps))
+      Right cmdOps -> do
+        let operations = deduplicateDirs (concat allOps) ++ cmdOps
+            seedPaths = [dest | SeedFileOp {dest} <- operations]
+            bytePaths = [dest | op <- operations, dest <- case op of WriteFileOp {dest} -> [dest]; CopyFileOp {dest} -> [dest]; PatchFileOp {dest} -> [dest]; CheckoutOutputOp {dest} -> [dest]; _ -> []]
+            mixed = ["seed '" <> T.pack seed <> "' overlaps another output '" <> T.pack other <> "'" | seed <- seedPaths, other <- bytePaths, pathsOverlap seed other]
+            removals = ["removal action targets seed '" <> T.pack seed <> "'" | removal <- maybe [] pure (modul ^. #removal), action <- removal ^. #steps, Right dest <- [renderCommand (action ^. #dest) vars], seed <- seedPaths, pathsOverlap seed (T.unpack dest)]
+        pure (if null (mixed <> removals) then Right operations else Left (mixed <> removals))
     else pure (Left (concat allErrors))
 
 -- | Compile commands into 'RunCommandOp' operations, interpolating
@@ -116,7 +122,16 @@ compileStep baseDir modName vars step = do
         Just expr -> evalExpr vars expr
   if not shouldRun
     then pure (Right [])
-    else case step ^. #patch of
+    else do
+      compiled <- compileActiveStep
+      pure $ compiled >>= if step ^. #lifecycle == Seed then traverseSeed else Right
+  where
+    traverseSeed ops = traverse convert [op | op <- ops, case op of CreateDirOp {} -> False; _ -> True]
+    convert (WriteFileOp dest content strategy) = do
+      first pure (validateCanonicalProjectPath (T.pack dest))
+      Right (SeedFileOp dest content strategy modName)
+    convert _ = Left ["seed step must compile to a supported whole-file write"]
+    compileActiveStep = case step ^. #patch of
       Just _ -> compilePatchStep baseDir vars modName step
       Nothing -> case step ^. #strategy of
         Copy -> compileCopyStep baseDir vars step

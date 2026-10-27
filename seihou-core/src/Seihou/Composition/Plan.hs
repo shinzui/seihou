@@ -1,11 +1,13 @@
 module Seihou.Composition.Plan
-  ( compileComposedPlan,
+  ( ComposedPlan (..),
+    compileComposedPlan,
     mergeOperations,
     mergeStructuredContent,
     deepMergeJSON,
   )
 where
 
+import Control.Monad (forM_)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Encode.Pretty qualified as AesonPretty
 import Data.Aeson.KeyMap qualified as KM
@@ -19,11 +21,20 @@ import Data.Text.Lazy.Encoding qualified as TLE
 import Data.Yaml qualified as Yaml
 import Seihou.Composition.Instance (ModuleInstance, qualifiedName)
 import Seihou.Core.Checkout (CheckoutError (..), checkoutClaims, pathsOverlap)
+import Seihou.Core.Path (pathsHaveConflictingSpelling, validateCanonicalProjectPath)
 import Seihou.Core.Types
 import Seihou.Engine.Plan (compilePlan)
 import Seihou.Engine.Section (applyTextPatch)
 import Seihou.Prelude
 import System.FilePath (takeExtension)
+
+data ComposedPlan = ComposedPlan
+  { operations :: ![Operation],
+    warnings :: ![CompositionWarning],
+    managedOwners :: !(Map FilePath ModuleName),
+    seedOwners :: !(Map FilePath (Set ModuleName))
+  }
+  deriving stock (Eq, Show, Generic)
 
 -- | Compile plans for all modules in execution order and merge into a
 -- single operation list. File conflicts are resolved by last-writer-wins
@@ -36,7 +47,7 @@ import System.FilePath (takeExtension)
 -- collide on file ownership.
 compileComposedPlan ::
   [(ModuleInstance, Module, FilePath, Map VarName VarValue)] ->
-  IO (Either [Text] ([Operation], [CompositionWarning], Map FilePath ModuleName))
+  IO (Either [Text] ComposedPlan)
 compileComposedPlan modules = do
   results <- mapM compileOne modules
   let (errs, opsPerModule) = partitionResults results
@@ -49,7 +60,7 @@ compileComposedPlan modules = do
       pure $ case checkoutClaims (ApplicationId "composition") ops of
         Left err -> Left [err ^. #message]
         Right _ | not (null overlaps) -> Left overlaps
-        Right _ -> Right (mergeOperations opsPerModule)
+        Right _ -> mergeOperations opsPerModule
     else pure (Left (concat errs))
   where
     compileOne (inst, m, dir, vars) = do
@@ -81,10 +92,40 @@ compileComposedPlan modules = do
 --
 -- 'CreateDirOp' operations are silently deduplicated.
 -- 'RunCommandOp' operations are always included.
-mergeOperations ::
+mergeOperations :: [(ModuleName, [Operation])] -> Either [Text] ComposedPlan
+mergeOperations moduleOps = do
+  let allOps = concatMap snd moduleOps
+      seeds = [op | op@SeedFileOp {} <- allOps]
+      claims = Map.fromListWith Set.union [(dest, Set.singleton moduleName) | SeedFileOp {dest, moduleName} <- seeds]
+      destinations =
+        [(dest, False) | op <- allOps, Just dest <- [destOfOp op]]
+          <> [(dest, True) | SeedFileOp {dest} <- seeds]
+          <> [(dest, False) | CheckoutOutputOp {dest} <- allOps]
+      collisions = ["seed '" <> T.pack path <> "' overlaps a different lifecycle or file destination '" <> T.pack other <> "'" | SeedFileOp {dest = path} <- seeds, (other, isSeed) <- destinations, (pathsOverlap path other || pathsHaveConflictingSpelling path other), not (isSeed && path == other)]
+  forM_ seeds $ \SeedFileOp {dest} -> first pure (validateCanonicalProjectPath (T.pack dest))
+  if null seeds then Right () else forM_ destinations (\(dest, _) -> first pure (validateCanonicalProjectPath (T.pack dest)))
+  if not (null collisions)
+    then Left collisions
+    else do
+      let (ops, warnings, owners) = mergeManagedOperations [(name, filter (\case SeedFileOp {} -> False; _ -> True) operations) | (name, operations) <- moduleOps]
+          (selected, seedWarnings) = chooseSeeds Set.empty Map.empty seeds
+      Right (ComposedPlan (ops <> selected) (warnings <> seedWarnings) owners claims)
+  where
+    chooseSeeds _ _ [] = ([], [])
+    chooseSeeds seen suppliers (op@SeedFileOp {dest, content, moduleName} : rest)
+      | Set.member dest seen =
+          let (ops, warnings) = chooseSeeds seen suppliers rest
+              extra = case Map.lookup dest suppliers of
+                Just (firstContent, supplier) | firstContent /= content -> [SeedContentIgnored dest supplier moduleName]
+                _ -> []
+           in (ops, extra <> warnings)
+      | otherwise = let (ops, warnings) = chooseSeeds (Set.insert dest seen) (Map.insert dest (content, moduleName) suppliers) rest in (op : ops, warnings)
+    chooseSeeds seen suppliers (_ : rest) = chooseSeeds seen suppliers rest
+
+mergeManagedOperations ::
   [(ModuleName, [Operation])] ->
   ([Operation], [CompositionWarning], Map FilePath ModuleName)
-mergeOperations moduleOps =
+mergeManagedOperations moduleOps =
   let tagged = [(name, op) | (name, ops) <- moduleOps, op <- ops]
       (result, warnings, owners) = go tagged Map.empty Set.empty [] []
    in (reverse result, warnings, owners)
@@ -92,6 +133,7 @@ mergeOperations moduleOps =
     go [] fileOwner _ opsAcc warningsAcc = (opsAcc, warningsAcc, fileOwner)
     go ((name, op) : rest) fileOwner seenDirs opsAcc warningsAcc =
       case op of
+        SeedFileOp {} -> go rest fileOwner seenDirs opsAcc warningsAcc
         CheckoutOutputOp {} -> go rest fileOwner seenDirs (op : opsAcc) warningsAcc
         CreateDirOp p
           | Set.member p seenDirs -> go rest fileOwner seenDirs opsAcc warningsAcc

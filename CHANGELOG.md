@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Compile and create project-owned seed files once during run and agent baseline generation, preserving edits, deletion, and exact co-owner claims.
+- Report bounded seed receipt counts in status/diff and retire exact seed ownership through ordinary removal without changing project files.
+
 - Add manifest schema 11 for precise application/module-instance seed claims, a lossless legacy ownership upgrade, and refusal of lossy manifest writes.
 
 ### Changed

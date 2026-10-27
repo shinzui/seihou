@@ -1,12 +1,16 @@
 module Seihou.Effect.FilesystemInterp
   ( runFilesystem,
+    createFileExclusiveWith,
   )
 where
 
 import Control.Exception (IOException, catch, throwIO)
 import Control.Monad (when)
+import Data.ByteString qualified as BS
+import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
-import Seihou.Effect.Filesystem (Filesystem (..), PathEntry (..))
+import Seihou.Effect.Filesystem (ExclusiveCreateResult (..), Filesystem (..), PathEntry (..))
+import Seihou.Filesystem.Exclusive (createFileExclusiveWith)
 import Seihou.Prelude
 import System.Directory qualified as Dir
 import System.IO.Error (isDoesNotExistError)
@@ -15,6 +19,7 @@ import System.IO.Error (isDoesNotExistError)
 -- Delegates to System.Directory and Data.Text.IO.
 runFilesystem :: (IOE :> es) => Eff (Filesystem : es) a -> Eff es a
 runFilesystem = interpret $ \_ -> \case
+  CreateFileExclusive path content -> liftIO (createFileExclusiveWith (\handle -> BS.hPut handle (TE.encodeUtf8 content)) path)
   InspectPath path -> liftIO $ do
     linked <- Dir.pathIsSymbolicLink path `catch` \(err :: IOException) -> if isDoesNotExistError err then pure False else throwIO err
     if linked

@@ -53,7 +53,7 @@ import Seihou.CLI.Update.Selection
 import Seihou.CLI.Update.Source
 import Seihou.CLI.Update.Types
 import Seihou.Composition.Instance (ModuleInstance (..))
-import Seihou.Composition.Plan (compileComposedPlan)
+import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve
   ( PromptPermission (..),
@@ -67,6 +67,7 @@ import Seihou.Core.ArtifactRef (renderArtifactRefError, resolveArtifactOrigin)
 import Seihou.Core.Checkout
 import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
+import Seihou.Core.Seed (seedApplicationIds)
 import Seihou.Core.Types
 import Seihou.Core.Version (parseVersion)
 import Seihou.Effect.BaselineStore (pruneBaselines)
@@ -145,9 +146,12 @@ planProjectUpdateIn sessionDirectory request = do
               let base = resolution ^. #manifest
                   selected = resolution ^. #applications
                   seedWarnings = resolution ^. #warnings
-              staging <- case resolution ^. #staged of
-                Just staged -> pure (Right staged)
-                Nothing -> stageSelection request sessionDirectory projectRoot installedDirectory now selected
+              staging <-
+                if any (\receipt -> not (Set.null (seedApplicationIds receipt `Set.intersection` Set.fromList (map (^. #applicationId) selected)))) (Map.elems (base ^. #seeds))
+                  then pure (Left (UpdateCompositionFailed ["seed ownership update is not yet supported by this development build; use a runtime release with seed update support"]))
+                  else case resolution ^. #staged of
+                    Just staged -> pure (Right staged)
+                    Nothing -> stageSelection request sessionDirectory projectRoot installedDirectory now selected
               case staging of
                 Left err -> pure (Left err)
                 Right staged -> do
@@ -554,48 +558,51 @@ planApplication request projectRoot catalog now previous = do
                   ]
               case compiled of
                 Left errors -> pure (Left (UpdateCompositionFailed errors))
-                Right (operations, compositionWarnings, rawOwners) -> do
-                  targetOrigin <- publishedArtifactOrigin projectRoot targetArtifact
-                  originedModules <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
-                  let candidate0 =
-                        buildAppliedComposition
-                          (previous ^. #target)
-                          targetOrigin
-                          (targetArtifact ^. #version)
-                          (previous ^. #additionalModules)
-                          (Just namespace)
-                          (previous ^. #context)
-                          originedModules
-                          resolvedValues
-                          now
-                          & #checkoutCommands
-                          .~ checkoutCommandsFromOperations operations
-                          & #applicationId
-                          .~ (previous ^. #applicationId)
-                      candidate =
-                        setCompositionState
-                          (candidate0 ^. #instances)
-                          (previous ^. #commandReceipts)
-                          candidate0
-                      desiredOwners =
-                        Map.map
-                          (\owner -> DesiredFileOwner owner (Set.singleton (candidate ^. #applicationId)))
-                          rawOwners
-                      renderedWarnings = map compositionWarning compositionWarnings
-                  pure
-                    ( Right
-                        PlannedApplication
-                          { previous = Just previous,
-                            candidate,
-                            modulesInOrder,
-                            resolvedValues,
-                            operations,
-                            desiredOwners
-                          }
-                    )
+                Right ComposedPlan {operations, warnings = compositionWarnings, managedOwners = rawOwners, seedOwners}
+                  | not (Map.null seedOwners) -> pure (Left (UpdateCompositionFailed ["seed lifecycle update is not yet supported by this development build; use a runtime release with seed update support"]))
+                  | otherwise -> do
+                      targetOrigin <- publishedArtifactOrigin projectRoot targetArtifact
+                      originedModules <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
+                      let candidate0 =
+                            buildAppliedComposition
+                              (previous ^. #target)
+                              targetOrigin
+                              (targetArtifact ^. #version)
+                              (previous ^. #additionalModules)
+                              (Just namespace)
+                              (previous ^. #context)
+                              originedModules
+                              resolvedValues
+                              now
+                              & #checkoutCommands
+                              .~ checkoutCommandsFromOperations operations
+                              & #applicationId
+                              .~ (previous ^. #applicationId)
+                          candidate =
+                            setCompositionState
+                              (candidate0 ^. #instances)
+                              (previous ^. #commandReceipts)
+                              candidate0
+                          desiredOwners =
+                            Map.map
+                              (\owner -> DesiredFileOwner owner (Set.singleton (candidate ^. #applicationId)))
+                              rawOwners
+                          renderedWarnings = map compositionWarning compositionWarnings
+                      pure
+                        ( Right
+                            PlannedApplication
+                              { previous = Just previous,
+                                candidate,
+                                modulesInOrder,
+                                resolvedValues,
+                                operations,
+                                desiredOwners
+                              }
+                        )
   where
     compositionWarning (FileOverwritten path old new) = CrossApplicationLastWriter path old new
     compositionWarning (ContentMerged path old new) = CrossApplicationLastWriter path old new
+    compositionWarning (SeedContentIgnored path old new) = CrossApplicationLastWriter path old new
 
 candidateRoot ::
   CandidateCatalog ->

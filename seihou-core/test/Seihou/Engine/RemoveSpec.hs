@@ -79,6 +79,29 @@ runExecOps fs manifest plan keepSet =
 
 spec :: Spec
 spec = do
+  describe "seed preservation and exact selection" $ do
+    let appId = ApplicationId "a"
+        app = AppliedComposition appId (AppliedModuleTarget modName) (LocalOrigin "test-module") Nothing [] Nothing Nothing [AppliedInstanceState name emptyParentVars (LocalOrigin text) Nothing Map.empty | (name, text) <- [(modName, "test-module"), (otherMod, "other-module")]] Map.empty [] fixedTime
+        receipt = SeedRecord modName (KnownSeedOwners (Map.singleton appId (Set.fromList [modName, otherMod]))) SeedCreated fixedTime
+        manifest = mkManifest False [] & #applications .~ [app] & #seeds .~ Map.singleton "seed.txt" receipt
+    it "retires a no-spec instance without losing a co-seeder or original supplier" $ do
+      Right (Just selection) <- pure (selectRecordedRemoval manifest modName Nothing)
+      let candidate = selection ^. #candidateManifest
+      fmap (^. #ownership) (Map.lookup "seed.txt" (candidate ^. #seeds)) `shouldBe` Just (KnownSeedOwners (Map.singleton appId (Set.singleton otherMod)))
+      fmap (^. #moduleName) (Map.lookup "seed.txt" (candidate ^. #seeds)) `shouldBe` Just modName
+    it "keeps every declarative removal form without needing to read seed content" $ do
+      let removal = Removal [RemovalStep action "seed.txt" (Just "rewrite.dhall") | action <- [RemoveFileAction, RemoveSectionAction, RewriteFileAction]] []
+      Right plan <- pure (runBuildOps emptyFS manifest modName removal)
+      plan ^. #ops `shouldBe` replicate 3 (KeepSeedOp "seed.txt")
+    it "defends direct supplied operations, including path aliases, at execution too" $ do
+      let fs = mkFS [("seed.txt", "project bytes")]
+          plan = ExecutedRemovalPlan modName [DeleteFileOp "seed.txt" RFSafe, StripSectionOp "./seed.txt", RewriteOp "seed.txt" "rewrite.dhall"]
+          (_, after) = runExecOps fs manifest plan Set.empty
+      after ^. #files `shouldBe` fs ^. #files
+    it "refuses unresolved legacy subtraction rather than guessing from supplier" $ do
+      let legacy = manifest & #seeds .~ Map.singleton "seed.txt" (receipt & #ownership .~ LegacySeedOwners (Set.singleton appId))
+      selectRecordedRemoval legacy modName Nothing `shouldSatisfy` either (const True) (const False)
+
   describe "computeRemovalPlan" $ do
     it "returns ModuleNotApplied when module is not in manifest" $ do
       let manifest = emptyManifest fixedTime

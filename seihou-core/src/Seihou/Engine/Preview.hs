@@ -73,6 +73,7 @@ opToPreview mDiff ownerMap _ (WriteFileOp dest _ strat) =
       annotation = strategyName strat,
       module_ = Map.lookup dest ownerMap
     }
+opToPreview _ _ _ SeedFileOp {dest, moduleName} = FilePreview {status = FsNew, path = dest, annotation = "seed (create once)", module_ = Just moduleName}
 opToPreview _ _ _ (CheckoutOutputOp dest (DirectorySymlink source) _) = LinkPreview dest source
 opToPreview _ _ _ (CreateDirOp path) = DirPreview path
 opToPreview mDiff ownerMap _ (CopyFileOp _ dest) =

@@ -16,6 +16,7 @@ maintainer: nadeem@gmail.com
 copyright: (c) 2026 Nadeem Bitar
 category: Development
 build-type: Simple
+extra-source-files: test/native/SeedExclusive.hs
 
 source-repository head
   type: git
@@ -102,11 +103,13 @@ library
     Seihou.Engine.Reconcile
     Seihou.Engine.Remove
     Seihou.Engine.Section
+    Seihou.Engine.Seed
     Seihou.Engine.Template
     Seihou.Engine.ThreeWayMerge
     Seihou.Engine.TypedDhallText
     Seihou.Engine.UpdateTransaction
     Seihou.Engine.Validate
+    Seihou.Filesystem.Exclusive
     Seihou.Interaction.Confirm
     Seihou.Interaction.Prompt
     Seihou.Manifest.Hash
@@ -135,6 +138,7 @@ library
     text >=2.0 && <3,
     time >=1.12 && <2,
     transformers >=0.6 && <1,
+    unix >=2.8 && <2.9,
     yaml >=0.11 && <1,
 
 test-suite seihou-core-test
@@ -202,6 +206,7 @@ test-suite seihou-core-test
     Seihou.Engine.ReconcileSpec
     Seihou.Engine.RemoveSpec
     Seihou.Engine.SectionSpec
+    Seihou.Engine.SeedSpec
     Seihou.Engine.TemplateSpec
     Seihou.Engine.ThreeWayMergeSpec
     Seihou.Engine.UpdateTransactionSpec

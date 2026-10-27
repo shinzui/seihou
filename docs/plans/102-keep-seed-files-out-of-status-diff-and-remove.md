@@ -17,6 +17,11 @@ provenance:
       at: 2026-10-27T00:43:50Z
       mode: "update"
       note: "Specify precise removal, all declarative mutation protection and bounded reporting"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-27T02:42:58Z
+      mode: "implement"
+      note: "Integrate bounded receipt reporting and exact recorded-instance removal with seed preservation"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -52,9 +57,9 @@ leaves, forget settlement without deleting the file.
 
 ## Progress
 
-- [ ] Milestone 1: bounded status/diff summaries omit seed content and preserve checkout reporting.
-- [ ] Milestone 2: instance-aware removal works without a custom spec, preserves co-owners and all seed bytes, and explains retained files.
-- [ ] Milestone 3: real-command acceptance, documentation, and integration with EP-3 pass.
+- [x] (2026-10-27) Milestone 1: bounded status/diff summaries omit seed content and preserve checkout reporting.
+- [x] (2026-10-27) Milestone 2: instance-aware removal works without a custom spec, preserves co-owners and all seed bytes, and explains retained files.
+- [x] (2026-10-27) Milestone 3: real-command acceptance, documentation, and integration with EP-3 pass.
 
 ## Surprises & Discoveries
 
@@ -77,7 +82,15 @@ producer commands must honor ownership, and docs must state that boundary.
 
 ## Outcomes & Retrospective
 
-Planning correction only; implementation and acceptance remain open.
+All three milestones are accepted in source. `cabal test all` and `nix flake
+check` passed; focused seed tests exercise the real run/status/diff/remove sequence,
+including seed-only retirement without a custom spec, retained edited bytes, dry-run
+immutability and later reseeding after receipt retirement. Core tests cover all
+removal action forms, direct-operation defense, exact co-seeder retention and legacy
+refusal. Reporting tests use an empty filesystem with populated receipts to prove
+no seed content is requested. Existing checkout tests pass. ADR 0017 records the
+shared selection and preservation policy. No friction entries were recorded under
+this child; update/released delivery remain the next integration gates.
 
 ## Context and Orientation
 

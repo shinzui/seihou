@@ -40,6 +40,7 @@ import Seihou.CLI.RemoteVersionSpec qualified as RemoteVersionSpec
 import Seihou.CLI.RepairOriginsE2ESpec qualified as RepairOriginsE2ESpec
 import Seihou.CLI.RunBlueprintRefusalSpec qualified as RunBlueprintRefusalSpec
 import Seihou.CLI.SavePromptedSpec qualified as SavePromptedSpec
+import Seihou.CLI.SeedRunE2ESpec qualified as SeedRunE2E
 import Seihou.CLI.SharedManifestE2ESpec qualified as SharedManifestE2ESpec
 import Seihou.CLI.StatusSpec qualified as StatusSpec
 import Seihou.CLI.UpdateE2ESpec qualified as UpdateE2ESpec
@@ -105,4 +106,5 @@ main = do
         AgentUpgradeE2ESpec.tests,
         FzfSpec.tests
       ]
-  defaultMain (testGroup "seihou-cli" tests)
+  seedRunTests <- SeedRunE2E.tests
+  defaultMain (testGroup "seihou-cli" (seedRunTests : tests))

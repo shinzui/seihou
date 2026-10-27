@@ -13,7 +13,7 @@ module Seihou.CLI.AgentRun
 where
 
 import Control.Exception (IOException, displayException, try)
-import Control.Monad (when)
+import Control.Monad (unless, when)
 import Data.FileEmbed (embedFile)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -24,6 +24,7 @@ import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
 import Data.Time (UTCTime)
 import Data.Time.Clock (getCurrentTime)
+import Effectful.Exception qualified as E
 import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
     AgentProvider (..),
@@ -57,7 +58,9 @@ import Seihou.CLI.BlueprintExecution
     prepareBlueprintExecution,
     varValueToText,
   )
+import Seihou.CLI.CheckoutSync (renderCheckoutPlan)
 import Seihou.CLI.Commands (BlueprintRunOpts (..))
+import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecordedSeedOwnership)
 import Seihou.CLI.Shared
   ( deriveNamespace,
     formatVarError,
@@ -66,11 +69,15 @@ import Seihou.CLI.Shared
     unwrapConfig,
   )
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
-import Seihou.Composition.Plan (compileComposedPlan)
+import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
+import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
+import Seihou.Core.Checkout
+import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
+import Seihou.Core.Seed (renderSeedOwnershipError, replaceSelectedSeedClaims)
 import Seihou.Core.Types
 import Seihou.Effect.BaselineStore (pruneBaselines)
 import Seihou.Effect.BaselineStoreInterp (runBaselineStore)
@@ -87,10 +94,13 @@ import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.Logger (logError, logInfo, logWarn)
 import Seihou.Effect.ManifestStore (readManifest, writeManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
+import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Baseline (manifestBaselineRefs, recordGeneratedBaselines)
+import Seihou.Engine.Checkout
 import Seihou.Engine.Conflict (resolveConflicts)
 import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
+import Seihou.Engine.Seed
 import Seihou.Manifest.Types (currentManifestVersion, emptyManifest)
 import Seihou.Prelude
 import System.Directory (getCurrentDirectory)
@@ -405,7 +415,7 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
         | (inst, m, dir) <- modulesInOrder
         ]
   planResult <- compileComposedPlan quads
-  (ops, _warnings, ownerMap) <- case planResult of
+  ComposedPlan {operations = ops, managedOwners = ownerMap, seedOwners = seedOwnerMap} <- case planResult of
     Left errs -> do
       logIO level $ logError "Errors compiling baseline plan:"
       mapM_ (logIO level . logError . ("  " <>)) errs
@@ -429,6 +439,32 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
       logIO level $ logError $ "Error reading manifest: " <> err
       exitFailure
     Right m -> pure (fromMaybe (emptyManifest now) m)
+
+  case validateSeedRun manifest ops of
+    Left errors -> mapM_ (logIO level . logError . (^. #message)) errors >> exitFailure
+    Right () -> pure ()
+  let appliedTarget = AppliedModuleTarget primary
+      applicationId = mkApplicationId appliedTarget []
+      primaryOrigins = [(origin, m ^. #version) | (inst, m, origin) <- originedModules, inst ^. #module_ == primary]
+      (primaryOrigin, primaryVersion) = case primaryOrigins of pair : _ -> pair; [] -> (LocalOrigin (primary ^. #unModuleName), Nothing)
+      seedApplication = buildAppliedComposition appliedTarget primaryOrigin primaryVersion [] (Just namespace) context originedModules baseResolved now & #checkoutCommands .~ checkoutCommandsFromOperations ops
+  searchPaths <- defaultSearchPaths
+  let legacyPaths = Set.fromList [path | (path, receipt) <- Map.toAscList (manifest ^. #seeds), case receipt ^. #ownership of LegacySeedOwners apps -> Set.member applicationId apps || Map.member path seedOwnerMap; _ -> False]
+  preparedSeeds <- prepareRecordedSeedOwnership projectRoot searchPaths legacyPaths manifest
+  seedBase <- case preparedSeeds of Left err -> logIO level (logError err) >> exitFailure; Right prepared -> pure prepared
+  seedResult <- runEff $ runFilesystem $ planSeeds projectRoot seedBase seedOwnerMap ops
+  seedPlan <- case seedResult of
+    Left errors -> mapM_ (logIO level . logError . (^. #message)) errors >> exitFailure
+    Right plannedSeeds -> pure plannedSeeds
+  TIO.putStr (renderSeedPlan False seedPlan)
+  checkoutCandidate <- case replaceCheckoutApplications manifest [(seedApplication, ops)] of
+    Left err -> logIO level (logError (err ^. #message)) >> exitFailure
+    Right candidate -> pure candidate
+  checkoutResult <- runEff $ runFilesystem $ runProcessIO $ prepareCheckoutApplication projectRoot manifest checkoutCandidate ops
+  checkoutPlan <- case checkoutResult of
+    Left err -> logIO level (logError (err ^. #message)) >> exitFailure
+    Right candidate -> pure candidate
+  unless (checkoutApplicable checkoutPlan) (TIO.putStr (renderCheckoutPlan False checkoutPlan) >> exitFailure)
 
   diff <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
     let composedNames =
@@ -471,40 +507,57 @@ applyBaseline level opts (primary, modulesInOrder) cliOverridesIn resolvedBluepr
               ]
           skipPaths = [c ^. #path | (c, Skip) <- conflictResolved]
           excludePaths = Set.fromList (Map.keys keepRecords ++ skipPaths)
-          opsForExec = filter (not . opTargetsPath excludePaths) ops
+          opsForExec = filter (\op -> case op of SeedFileOp {} -> False; _ -> not (opTargetsPath excludePaths op)) ops
 
       generationAttempt <-
         try @IOException $
           runEff $
             runFilesystem $
-              runBaselineStore baselineDir $
-                runManifestStore manifestPath $ do
-                  recs <- executePlan "" opsForExec ownerMap primary now
-                  baselineResult <- recordGeneratedBaselines "" recs
-                  case baselineResult of
-                    Left err -> pure (Left err)
-                    Right baselineRecords -> do
-                      let orphanedPaths = map (^. #path) (diff ^. #orphaned)
-                          cleanedFiles = foldr Map.delete (manifest ^. #files) orphanedPaths
-                          allModuleEntries = updateAllModules (manifest ^. #modules) originedModules now
-                          allResolvedVals =
-                            Map.unions [Map.map (^. #value) vs | vs <- Map.elems baseResolved]
-                          newManifest =
-                            Manifest
-                              { version = currentManifestVersion,
-                                genAt = now,
-                                modules = allModuleEntries,
-                                vars = Map.union (Map.map varValueToText allResolvedVals) (manifest ^. #vars),
-                                files = Map.unions [baselineRecords, keepRecords, cleanedFiles],
-                                applications = manifest ^. #applications,
-                                recipe = manifest ^. #recipe,
-                                blueprint = manifest ^. #blueprint,
-                                seeds = manifest ^. #seeds,
-                                checkoutOutputs = manifest ^. #checkoutOutputs,
-                                blueprintMigrations = manifest ^. #blueprintMigrations
-                              }
-                      writeManifest newManifest
-                      pure (Right newManifest)
+              runProcessIO $
+                runBaselineStore baselineDir $
+                  runManifestStore manifestPath $ do
+                    recs <- executePlan "" opsForExec ownerMap primary now
+                    baselineResult <- recordGeneratedBaselines "" recs
+                    case baselineResult of
+                      Left err -> pure (Left err)
+                      Right baselineRecords -> do
+                        let orphanedPaths = map (^. #path) (diff ^. #orphaned)
+                            cleanedFiles = foldr Map.delete (manifest ^. #files) orphanedPaths
+                            allModuleEntries = updateAllModules (manifest ^. #modules) originedModules now
+                            allResolvedVals =
+                              Map.unions [Map.map (^. #value) vs | vs <- Map.elems baseResolved]
+                            newManifest =
+                              Manifest
+                                { version = currentManifestVersion,
+                                  genAt = now,
+                                  modules = allModuleEntries,
+                                  vars = Map.union (Map.map varValueToText allResolvedVals) (manifest ^. #vars),
+                                  files = Map.mapWithKey (\path record -> if Map.member path baselineRecords || Map.member path keepRecords then attachApplication applicationId (Map.lookup path (manifest ^. #files)) record else record) (Map.unions [baselineRecords, keepRecords, cleanedFiles]),
+                                  applications = manifest ^. #applications,
+                                  recipe = manifest ^. #recipe,
+                                  blueprint = manifest ^. #blueprint,
+                                  seeds = manifest ^. #seeds,
+                                  checkoutOutputs = checkoutCandidate ^. #checkoutOutputs,
+                                  blueprintMigrations = manifest ^. #blueprintMigrations
+                                }
+                        actualSeedResult <- executeSeeds projectRoot applicationId now seedPlan seedBase
+                        actualSeeds <- case actualSeedResult of
+                          Left err -> liftIO (ioError (userError (T.unpack (err ^. #message))))
+                          Right receipts -> pure receipts
+                        seededManifest <- case replaceSelectedSeedClaims (Set.singleton applicationId) actualSeeds (newManifest & #seeds .~ (seedBase ^. #seeds) & #applications .~ replaceAppliedComposition seedApplication (manifest ^. #applications)) of
+                          Left err -> liftIO (ioError (userError (T.unpack (renderSeedOwnershipError err))))
+                          Right candidate -> pure candidate
+                        actualCheckout <- prepareCheckoutPlan Reconcile ApplyDeclaration projectRoot manifest checkoutCandidate []
+                        checked <- case actualCheckout of
+                          Left err -> E.throwIO (userError (T.unpack (err ^. #message)))
+                          Right plan | checkoutApplicable plan -> pure plan
+                          Right plan -> E.throwIO (userError (T.unpack (renderCheckoutPlan False plan)))
+                        links <- applyCheckoutPlan ApplyDeclaration projectRoot checked
+                        case links ^. #failure of
+                          Just err -> E.throwIO (userError (T.unpack (err ^. #message)))
+                          Nothing -> pure ()
+                        writeManifest seededManifest `E.onException` (rollbackCheckout projectRoot (links ^. #undo) >> pure ())
+                        pure (Right seededManifest)
 
       newManifest <- case generationAttempt of
         Left err -> do

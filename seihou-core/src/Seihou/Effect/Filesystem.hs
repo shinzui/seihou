@@ -1,6 +1,8 @@
 module Seihou.Effect.Filesystem
   ( Filesystem (..),
     PathEntry (..),
+    ExclusiveCreateResult (..),
+    createFileExclusive,
     inspectPath,
     createLink,
     removeLink,
@@ -20,6 +22,7 @@ module Seihou.Effect.Filesystem
   )
 where
 
+import Seihou.Filesystem.Exclusive (ExclusiveCreateResult (..))
 import Seihou.Prelude
 
 -- | A filesystem entry, observed without following its final component.
@@ -27,6 +30,7 @@ data PathEntry = EntryMissing | EntryFile | EntryDirectory | EntrySymlink FilePa
   deriving stock (Eq, Show, Generic)
 
 data Filesystem :: Effect where
+  CreateFileExclusive :: FilePath -> Text -> Filesystem m ExclusiveCreateResult
   InspectPath :: FilePath -> Filesystem m PathEntry
   CreateDirectoryLink :: FilePath -> FilePath -> Filesystem m ()
   RemoveLink :: FilePath -> Filesystem m ()
@@ -98,3 +102,6 @@ removeLink = send . RemoveLink
 
 normalizePath :: (Filesystem :> es) => FilePath -> Eff es FilePath
 normalizePath = send . NormalizePath
+
+createFileExclusive :: (Filesystem :> es) => FilePath -> Text -> Eff es ExclusiveCreateResult
+createFileExclusive path content = send (CreateFileExclusive path content)

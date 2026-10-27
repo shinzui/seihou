@@ -28,6 +28,7 @@ import Seihou.CLI.CommandExecution
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
+import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecordedSeedOwnership)
 import Seihou.CLI.ManifestGuard
   ( blockingChecks,
     checkAppliedArtifactsFor,
@@ -47,7 +48,7 @@ import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatBlueprintRefusal, formatVarError, logIO, resolveAppliedArtifactDir, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
-import Seihou.Composition.Plan (compileComposedPlan)
+import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
@@ -58,6 +59,7 @@ import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations, isCheckou
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Migration (MigrationPlan (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
+import Seihou.Core.Seed (renderSeedOwnershipError, replaceSelectedSeedClaims)
 import Seihou.Core.Types
 import Seihou.Core.Variable (diagnoseResolution)
 import Seihou.Core.Version (renderVersion)
@@ -80,6 +82,7 @@ import Seihou.Engine.Conflict (resolveConflicts)
 import Seihou.Engine.Diff (computeDiff)
 import Seihou.Engine.Execute (executePlan)
 import Seihou.Engine.Preview (buildPreview)
+import Seihou.Engine.Seed
 import Seihou.Fzf (FzfResult (..), detectFzfConfig, isFzfUsable)
 import Seihou.Fzf.Selector (selectModule)
 import Seihou.Interaction.Confirm (confirmDefaults)
@@ -240,7 +243,7 @@ handleRun runOpts = do
         | (inst, m, dir) <- modulesInOrder
         ]
   planResult <- compileComposedPlan quads
-  (ops, warnings, ownerMap) <- case planResult of
+  ComposedPlan {operations = ops, warnings, managedOwners = ownerMap, seedOwners = seedOwnerMap} <- case planResult of
     Left errs -> do
       logIO level $ do
         logError "Errors compiling plan:"
@@ -277,6 +280,10 @@ handleRun runOpts = do
       exitFailure
     Right m -> pure (fromMaybe (emptyManifest now) m)
 
+  case validateSeedRun initialManifest opsFiltered of
+    Left errors -> mapM_ (TIO.putStrLn . (^. #message)) errors >> exitFailure
+    Right () -> pure ()
+
   let composedModuleNames =
         Set.fromList [m ^. #name | (_, m, _) <- modulesInOrder]
 
@@ -290,6 +297,10 @@ handleRun runOpts = do
   -- touch must not block it.
   projectRoot <- getCurrentDirectory
   searchPaths <- defaultSearchPaths
+  earlySeedResult <- runEff $ runFilesystem $ planSeeds projectRoot initialManifest seedOwnerMap opsFiltered
+  case earlySeedResult of
+    Left errors -> mapM_ (TIO.putStrLn . (^. #message)) errors >> exitFailure
+    Right _ -> pure ()
   guardChecks <-
     checkAppliedArtifactsFor projectRoot searchPaths (Just composedModuleNames) initialManifest
   enforceArtifactGuard (runOpts ^. #allowDowngrade) (blockingChecks guardChecks)
@@ -333,6 +344,17 @@ handleRun runOpts = do
 
   let declarationApplication =
         buildAppliedComposition appliedTarget targetOrigin targetVersion additional (Just namespace) context originedModules resolved now
+  let selectedSeedPaths = Set.fromList [path | (path, receipt) <- Map.toAscList (manifest ^. #seeds), case receipt ^. #ownership of LegacySeedOwners apps -> Set.member currentApplicationId apps || Map.member path seedOwnerMap; _ -> False]
+  seedPrepared <- prepareRecordedSeedOwnership projectRoot searchPaths selectedSeedPaths manifest
+  seedBase <- case seedPrepared of
+    Left err -> TIO.putStrLn err >> exitFailure
+    Right candidate -> pure candidate
+  seedResult <- runEff $ runFilesystem $ planSeeds projectRoot seedBase seedOwnerMap opsFiltered
+  seedPlan <- case seedResult of
+    Left errors -> mapM_ (TIO.putStrLn . (^. #message)) errors >> exitFailure
+    Right plannedSeeds -> pure plannedSeeds
+  TIO.putStr (renderSeedPlan (runOpts ^. #diff) seedPlan)
+
   checkoutCandidate <- case replaceCheckoutApplications manifest [(declarationApplication, opsFiltered)] of
     Left err -> TIO.putStrLn (err ^. #message) >> exitFailure
     Right candidate -> pure candidate
@@ -363,7 +385,7 @@ handleRun runOpts = do
       allVarValues =
         Map.unions
           [Map.map (^. #value) vs | vs <- Map.elems resolved]
-      preview = buildPreview opsFiltered (Just diff) ownerMap
+      preview = buildPreview (filter (\case SeedFileOp {} -> False; _ -> True) opsFiltered) (Just diff) ownerMap
 
   -- 6. Handle --dry-run: show plan view and exit
   if runOpts ^. #dryRun
@@ -424,7 +446,7 @@ handleRun runOpts = do
                       ]
                   skipPaths = [c ^. #path | (c, Skip) <- conflictResolved]
                   excludePaths = Set.fromList (Map.keys keepRecords ++ skipPaths)
-                  opsForExec = filter (not . opTargetsPath excludePaths) opsFiltered
+                  opsForExec = filter (\op -> case op of SeedFileOp {} -> False; _ -> not (opTargetsPath excludePaths op)) opsFiltered
 
               -- Execute the plan (excluding kept/skipped files), capture the
               -- exact post-execution baselines, and only then publish the
@@ -499,6 +521,13 @@ handleRun runOpts = do
                                           checkoutOutputs = checkoutCandidate ^. #checkoutOutputs,
                                           blueprintMigrations = manifest ^. #blueprintMigrations
                                         }
+                                actualSeedResult <- executeSeeds projectRoot currentApplicationId now seedPlan seedBase
+                                actualSeeds <- case actualSeedResult of
+                                  Left err -> E.throwIO (userError (T.unpack (err ^. #message)))
+                                  Right receipts -> pure receipts
+                                seededManifest <- case replaceSelectedSeedClaims (Set.singleton currentApplicationId) actualSeeds (newManifest & #seeds .~ (seedBase ^. #seeds)) of
+                                  Left err -> E.throwIO (userError (T.unpack (renderSeedOwnershipError err)))
+                                  Right candidate -> pure candidate
                                 actual <- prepareCheckoutPlan Reconcile ApplyDeclaration projectRoot manifest checkoutCandidate []
                                 checked <- case actual of
                                   Left err -> E.throwIO (userError (T.unpack (err ^. #message)))
@@ -508,8 +537,8 @@ handleRun runOpts = do
                                 case links ^. #failure of
                                   Just err -> E.throwIO (userError (T.unpack (err ^. #message)))
                                   Nothing -> pure ()
-                                writeManifest newManifest `E.onException` (rollbackCheckout projectRoot (links ^. #undo) >> pure ())
-                                pure (Right newManifest)
+                                writeManifest seededManifest `E.onException` (rollbackCheckout projectRoot (links ^. #undo) >> pure ())
+                                pure (Right seededManifest)
 
               newManifest <- case generationAttempt of
                 Left err -> do
@@ -601,6 +630,7 @@ handleRun runOpts = do
                 let filesToStage =
                       map (^. #path) (diff ^. #new)
                         ++ map (^. #path) (diff ^. #modified)
+                        ++ [plannedSeed ^. #dest | plannedSeed <- seedPlan, plannedSeed ^. #decision == SeedWrite, Just receipt <- [Map.lookup (plannedSeed ^. #dest) (newManifest ^. #seeds)], receipt ^. #outcome == SeedCreated]
                         ++ [manifestPath, baselineDir]
                 inGit <- runEff $ runProcessIO $ isGitRepo
                 if inGit
@@ -642,6 +672,7 @@ exitError level msg = do
   exitFailure
 
 printWarning :: LogLevel -> CompositionWarning -> IO ()
+printWarning level (SeedContentIgnored path supplier other) = printSeedWarning level path supplier other
 printWarning level (FileOverwritten path overwritten overwriter) =
   logIO level . logWarn $
     "Warning: "
@@ -904,3 +935,9 @@ updateAllModules existing modulesInOrder now =
         | (inst, m, origin) <- modulesInOrder
         ]
    in filtered ++ new
+
+printSeedWarning :: LogLevel -> FilePath -> ModuleName -> ModuleName -> IO ()
+printSeedWarning level path supplier other =
+  logIO level $
+    logWarn $
+      "Seed '" <> T.pack path <> "' uses the first supplier " <> supplier ^. #unModuleName <> "; ignored different proposed content from " <> other ^. #unModuleName

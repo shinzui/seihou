@@ -62,3 +62,18 @@ seihou remove haskell-base --force
 A module with checkout ownership can be removed without a custom removal spec. Automatic cleanup releases the selected application's qualified instance claim; it never authorizes unrelated file deletion or shell execution. Agreeing co-owners retain the link. Last-owner cleanup unlinks only the expected literal target; locally edited links and real objects are preserved and explained. Sources are never deleted by this automatic cleanup, and dangling links can be retired.
 
 Use `seihou remove MODULE --application ID` when the module is recorded in multiple applications. Ambiguous bare instance names refuse with concrete qualified selection commands. `--dry-run` previews cleanup. `--force` does not override checkout collision, tracked-path or modified-link preservation rules. Custom removal steps must not duplicate automatic checkout cleanup or delete another application's files.
+
+## Seed ownership
+
+Recorded seed-only instances can be removed without a custom removal specification.
+An instance that also owns managed files needs its existing explicit removal policy.
+`seihou remove MODULE` preserves every seed object and retires only that recorded
+instance's claims. Ambiguous selections name the supported
+`seihou remove QUALIFIED_INSTANCE --application ID` commands.
+
+Delete, remove-section, and rewrite actions overlapping a seed render `Keep PATH
+(seed file; owned by the project)` and do not read or change its contents, even with
+`--force`. Other seeders retain their claims and the original settlement. After the
+last claim leaves, the receipt disappears without touching disk; a later application
+may seed an absent path again. Dry-run previews this metadata retirement. Arbitrary
+removal shell commands are not sandboxed and must honor project ownership.

@@ -2,6 +2,7 @@ module Seihou.CLI.StatusSpec (tests) where
 
 import Control.Lens (to, (&), (.~))
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
@@ -14,6 +15,7 @@ import Seihou.CLI.StatusRender
     formatArtifactChecks,
     formatStatus,
     formatStatusWith,
+    seedSection,
   )
 import Seihou.CLI.VersionCompare
   ( OutdatedEntry (..),
@@ -40,6 +42,7 @@ import Seihou.Core.Types
     RecipeName (..),
     emptyParentVars,
   )
+import Seihou.Core.Types qualified as Types
 import Seihou.Core.Version qualified
 import Seihou.Manifest.Types (emptyManifest)
 import Test.Hspec
@@ -165,6 +168,12 @@ mkBlueprintMigrationReceiptWith blueprintName artifactVersion fromVersion toVers
 
 spec :: Spec
 spec = describe "formatStatus" $ do
+  describe "seed receipt summary" $ do
+    it "counts settlements in one line without listing paths" $ do
+      let receipt = Types.SeedRecord "supplier" (Types.LegacySeedOwners Set.empty) Types.SeedCreated fixedTime
+          manifest = emptyManifest fixedTime & #seeds .~ Map.fromList [("deleted.txt", receipt), ("edited.txt", receipt)]
+      seedSection manifest `shouldBe` ["", "Seed files: 2 (created once; owned by the project, not tracked)"]
+      seedSection (emptyManifest fixedTime) `shouldBe` []
   describe "blueprint provenance" $ do
     it "renders a populated blueprint with version, two baselines, and prompt" $ do
       let manifest =

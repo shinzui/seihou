@@ -9,7 +9,7 @@ import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Effectful.State.Static.Local (State, get, modify, put, runState)
-import Seihou.Effect.Filesystem (Filesystem (..), PathEntry (..))
+import Seihou.Effect.Filesystem (ExclusiveCreateResult (..), Filesystem (..), PathEntry (..))
 import Seihou.Prelude
 
 -- | In-memory filesystem state for testing.
@@ -31,6 +31,11 @@ runFilesystemPure initial = reinterpret (runState initial) handler
   where
     handler :: (State PureFS :> es') => EffectHandler Filesystem es'
     handler _ = \case
+      CreateFileExclusive path content -> do
+        fs <- get @PureFS
+        if Map.member path (fs ^. #files) || Map.member path (fs ^. #links) || Set.member path (fs ^. #dirs)
+          then pure ExclusiveOccupied
+          else modify @PureFS (#files %~ Map.insert path content) >> pure ExclusiveCreated
       InspectPath path -> do
         fs <- get @PureFS
         pure $ case Map.lookup path (fs ^. #links) of

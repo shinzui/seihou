@@ -55,6 +55,7 @@ operationDestination :: Operation -> Maybe FilePath
 operationDestination (WriteFileOp dest _ _) = Just dest
 operationDestination (CopyFileOp _ dest) = Just dest
 operationDestination (PatchFileOp dest _ _ _ _) = Just dest
+operationDestination SeedFileOp {} = Nothing
 operationDestination CheckoutOutputOp {} = Nothing
 operationDestination CreateDirOp {} = Nothing
 operationDestination RunCommandOp {} = Nothing
@@ -69,6 +70,7 @@ executeOp ::
   Operation ->
   Eff es (Maybe (FilePath, FileRecord))
 executeOp targetDir ownerFor modeFor now op = case op of
+  SeedFileOp {} -> error "seed operation passed to managed execution"
   CheckoutOutputOp {} -> pure Nothing
   WriteFileOp dest content strat -> do
     let fullPath = targetDir </> dest
@@ -139,6 +141,7 @@ dryRunPlan ops =
     else T.unlines (map formatOp ops)
   where
     formatOp :: Operation -> Text
+    formatOp SeedFileOp {dest} = "Seed " <> T.pack dest <> " (create once)"
     formatOp (WriteFileOp dest _ _) = "  write " <> T.pack dest
     formatOp (CheckoutOutputOp dest (DirectorySymlink source) _) = "  link  " <> T.pack dest <> " -> " <> T.pack source
     formatOp (CreateDirOp path) = "  mkdir " <> T.pack path

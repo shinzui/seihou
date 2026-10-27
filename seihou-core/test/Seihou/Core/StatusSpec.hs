@@ -3,6 +3,7 @@ module Seihou.Core.StatusSpec (tests) where
 import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text (Text)
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
 import Effectful
@@ -42,6 +43,13 @@ runStatus fs manifest =
 
 spec :: Spec
 spec = do
+  it "never reads seed bytes or treats deliberate deletion as drift" $ do
+    let receipt = SeedRecord modName (LegacySeedOwners Set.empty) SeedCreated fixedTime
+        manifest = emptyManifest fixedTime & #seeds .~ Map.fromList [("unreadable.txt", receipt), ("deleted.txt", receipt)]
+        (tracked, after) = runPureEff $ runFilesystemPure emptyFS $ computeTrackedFileStatuses manifest
+    tracked `shouldBe` []
+    after `shouldBe` emptyFS
+
   describe "computeTrackedFileStatuses" $ do
     it "classifies a file matching its manifest hash as TfsUnchanged" $ do
       let content = "# Hello World"

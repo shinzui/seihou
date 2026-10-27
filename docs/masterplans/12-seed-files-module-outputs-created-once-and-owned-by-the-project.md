@@ -123,8 +123,8 @@ seeds. The local ADR corpus has no OKF profile, verified with `mori show --full`
 |---|-------|------|-----------|-------------------------|--------|
 | 1 | Declare seed steps and validate them | docs/plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md | None | None | Complete |
 | 2 | Record seed receipts; correct exact ownership before runtime use | docs/plans/100-record-seed-receipts-in-manifest-schema-8.md | None | EP-1 vocabulary | Complete |
-| 3 | Create seed files once during run | docs/plans/101-create-seed-files-once-during-seihou-run.md | EP-1, EP-2 including M4 | EP-5 consumes common APIs | Not Started |
-| 4 | Report and remove seed ownership | docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md | EP-2 including M4 | EP-3 real-command acceptance | Not Started |
+| 3 | Create seed files once during run | docs/plans/101-create-seed-files-once-during-seihou-run.md | EP-1, EP-2 including M4 | EP-5 consumes common APIs | Complete |
+| 4 | Report and remove seed ownership | docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md | EP-2 including M4 | EP-3 real-command acceptance | Complete |
 | 5 | Reconcile seeds and release managed files | docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md | EP-1, EP-2 including M4, EP-3; M2 also needs EP-6 M1 candidate | EP-4 status acceptance | Not Started |
 | 6 | Adopt producers and verify delivery | docs/plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring.md | M1: none; M2–M4: EP-3, EP-4, EP-5 | EP-5 M2 consumer proof | In Progress |
 
@@ -141,7 +141,7 @@ Only after that early proof expand EP-5 M3/M4. Complete EP-4/EP-5 integration be
 publish/adopt and verify released behavior. Whole-child states remain In Progress until all their
 acceptance criteria pass; no dependency is silently weakened.
 
-EP-2 M4 is implemented and accepted in source. The next implementation work is EP-3. EP-6 M1 is ready independent preparation. Release
+EP-2 M4 is implemented and accepted in source. EP-3 and EP-4 are accepted in source, including native macOS/Linux creation and ordinary command tests. The next implementation work is EP-5 M1/M2. EP-6 M1 is ready independent preparation. Release
 readiness requires EP-3, EP-4, and EP-5 together; the interim refusal is a safe development
 boundary, not a delivered seed workflow. A source build and a candidate checkout do not close
 the delivery gate.
@@ -216,13 +216,14 @@ it lands. Child plans amend evidence, without claiming proposed APIs are already
 
 ## Progress
 
-EP-1 and EP-2 are complete. Schema 11 now preserves exact application/qualified-instance
-seed claims and explicit legacy uncertainty. All three test suites and flake checks pass;
-a built binary verified ordinary schema-8 upgrade and repeat no-op. EP-3–EP-5 runtime work is not started; EP-6 M1 audit/candidate preparation is in progress. Next: prove run and ordinary existing-consumer update. EP-6 producer classification has
-been recorded and a disposable CLI seed candidate prepared; candidate validation and the
-pre-seed consumer remain before accepting EP-6 M1. The final cross-plan gate is released
-runtime plus published producers verified through the installed executable, including fresh use,
-existing edits, deletion, repeated use, clone/worktree setup, removal, and recovery.
+EP-1–EP-4 are complete in source. The pinned toolchain passed all three suites,
+focused seed checks and flake checks. Run and agent baselines preserve edits/deletion;
+status/diff count receipts; exact recorded removal preserves project files. Native
+publication checks passed on macOS and Linux. EP-6 M1 is accepted: current producer
+classification, a validated disposable CLI candidate, and a preserved actual
+`mori://shinzui/reiko` pre-seed consumer are ready. Next: EP-5 M1 then the early
+ordinary existing-consumer update proof, before expanding variants. Runtime release,
+producer publication and installed-executable delivery remain open gates.
 
 ## Surprises & Discoveries
 
@@ -260,8 +261,8 @@ application-only ownership assumptions are superseded above.
 
 ## Outcomes & Retrospective
 
-Current implementation: EP-1 and EP-2 are complete in source, including the schema-11
-correction and ordinary upgrade proof. Runtime, adoption, and release gates remain open.
+Current implementation: EP-1–EP-4 are complete in source, including schema-11
+ownership, native no-replace creation, run/agent integration and reporting/removal. Runtime, adoption, and release gates remain open.
 
 The preceding planning update reviewed all six child plans against source, current producer declarations, and
 relevant ADRs, and reconciled the shared contracts and developer workflow. That review changed plans and

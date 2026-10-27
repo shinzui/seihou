@@ -450,7 +450,8 @@ recipeNameToModuleName (RecipeName t) = ModuleName t
 
 -- | Filesystem operations produced by the generation engine.
 data Operation
-  = CheckoutOutputOp
+  = SeedFileOp {dest :: !FilePath, content :: !Text, strategy :: !Strategy, moduleName :: !ModuleName}
+  | CheckoutOutputOp
       { dest :: !FilePath,
         spec :: !CheckoutOutputSpec,
         moduleName :: !ModuleName
@@ -495,6 +496,7 @@ data Operation
 isAdditiveOperation :: Operation -> Bool
 isAdditiveOperation (PatchFileOp _ _ op' _ _) = isAdditivePatchOp op'
 isAdditiveOperation CheckoutOutputOp {} = False
+isAdditiveOperation SeedFileOp {} = False
 isAdditiveOperation WriteFileOp {} = False
 isAdditiveOperation CopyFileOp {} = False
 isAdditiveOperation CreateDirOp {} = False
@@ -973,6 +975,7 @@ data ConfigScope
 data CompositionWarning
   = FileOverwritten FilePath ModuleName ModuleName
   | ContentMerged FilePath ModuleName ModuleName
+  | SeedContentIgnored FilePath ModuleName ModuleName
   deriving stock (Eq, Show, Generic)
 
 -- | Status of a tracked file relative to its manifest hash.

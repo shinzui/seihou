@@ -29,6 +29,7 @@ module Seihou.CLI.ManifestCapabilityUpgrade
     SeedClaimEvidence,
     resolveLegacySeedOwnership,
     prepareSeedOwnership,
+    prepareRecordedSeedOwnership,
     gatherSeedOwnershipEvidence,
     CertificationScope (..),
     EvidencePolicy (..),
@@ -54,6 +55,7 @@ module Seihou.CLI.ManifestCapabilityUpgrade
 where
 
 import Control.Monad (when)
+import Data.Aeson qualified as Aeson
 import Data.Containers.ListUtils (nubOrd)
 import Data.Generics.Labels ()
 import Data.List (find)
@@ -64,7 +66,7 @@ import Data.Text qualified as T
 import Seihou.CLI.ManifestGuard (ArtifactVerdict (..), judgeArtifact, machineLocalOriginNote)
 import Seihou.CLI.RecordedRelease (RecordedRelease (..), locateRecordedRelease, renderRecordedReleaseError)
 import Seihou.Composition.Instance (ModuleInstance (..))
-import Seihou.Composition.Plan (compileComposedPlan)
+import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Resolve (PromptPermission (..), resolveWithPromptPermission)
 import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
@@ -73,8 +75,12 @@ import Seihou.Core.Seed (renderManifestInvariantError, validateManifestInvariant
 import Seihou.Core.Types
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.ConsoleInterp (runConsole)
+import Seihou.Engine.Seed (seedOperationClaims)
+import Seihou.Manifest.Types (manifestFromJSON, minimumManifestVersion)
+import Seihou.Manifest.Upgrade (renderManifestUpgradeError, upgradeDocumentLosslessly)
 import Seihou.Prelude
 import System.Directory (doesPathExist)
+import System.IO.Temp (withSystemTempDirectory)
 
 -- | Which unknown paths to certify.
 data CertificationScope
@@ -235,6 +241,7 @@ operationDestination :: Operation -> Maybe FilePath
 operationDestination (WriteFileOp path _ _) = Just path
 operationDestination (CopyFileOp _ path) = Just path
 operationDestination (PatchFileOp path _ _ _ _) = Just path
+operationDestination SeedFileOp {} = Nothing
 operationDestination CheckoutOutputOp {} = Nothing
 operationDestination CreateDirOp {} = Nothing
 operationDestination RunCommandOp {} = Nothing
@@ -308,7 +315,7 @@ gatherApplicationEvidence policy projectRoot searchPaths manifest wanted =
                       ]
                   pure $ case compiled of
                     Left errors -> EvidenceUnavailable ("it no longer compiles: " <> T.intercalate "; " errors)
-                    Right (operations, _, _) -> EvidenceOperations operations sources
+                    Right ComposedPlan {operations, seedOwners} -> EvidenceOperations (expandSeedEvidence seedOwners operations) sources
 
     loadInstance state = do
       installed <- loadInstalled state
@@ -507,3 +514,21 @@ gatherSeedOwnershipEvidence :: EvidencePolicy -> FilePath -> [FilePath] -> Manif
 gatherSeedOwnershipEvidence policy projectRoot searchPaths manifest extract wanted = do
   recorded <- gatherApplicationEvidence policy projectRoot searchPaths manifest wanted
   pure (Map.map (\case EvidenceUnavailable reason -> Left reason; EvidenceOperations operations _ -> Right (extract operations)) recorded)
+
+-- Each exact historical claimant must remain visible in evidence even when
+-- composition chose one supplier for execution. Never use supplier provenance
+-- as an owner index.
+expandSeedEvidence :: Map FilePath (Set ModuleName) -> [Operation] -> [Operation]
+expandSeedEvidence claims = concatMap $ \case
+  SeedFileOp {dest, content, strategy} -> [SeedFileOp dest content strategy name | name <- Set.toAscList (Map.findWithDefault Set.empty dest claims)]
+  op -> [op]
+
+prepareRecordedSeedOwnership :: FilePath -> [FilePath] -> Set FilePath -> Manifest -> IO (Either Text Manifest)
+prepareRecordedSeedOwnership root searchPaths paths manifest
+  | Set.null paths = pure (Right manifest)
+  | otherwise = case first renderManifestUpgradeError (upgradeDocumentLosslessly (max (manifest ^. #version) (minimumManifestVersion SeedOwnerClaims)) (Aeson.toJSON manifest)) of
+      Left err -> pure (Left err)
+      Right (_, document) -> case first T.pack (manifestFromJSON (Aeson.encode document)) of
+        Left err -> pure (Left err)
+        Right prepared -> withSystemTempDirectory "seihou-seed-evidence" $ \session ->
+          prepareSeedOwnership paths prepared (gatherSeedOwnershipEvidence (FetchRecordedReleases session) root searchPaths prepared seedOperationClaims)

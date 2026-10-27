@@ -2,6 +2,7 @@ module Seihou.CLI.StatusRender
   ( formatStatus,
     formatStatusWith,
     formatCheckoutStatus,
+    seedSection,
     formatArtifactChecks,
     formatBlueprintMigrations,
     ModuleAdvice (..),
@@ -101,6 +102,7 @@ formatStatusWith display color manifest tracked mEntries pendings =
       ++ formatBlueprintMigrations (manifest ^. #blueprintMigrations)
       ++ appliedSection color manifest mEntries pendings
       ++ trackedSection color tracked
+      ++ seedSection manifest
       ++ varsSection manifest
       ++ updateSummarySection mEntries
       ++ recommendedActionsSection adviceList
@@ -495,3 +497,9 @@ applyColor False _ = id
 -- | Bounded checkout diagnostics, observed independently of artifact availability.
 formatCheckoutStatus :: CheckoutPlan -> Text
 formatCheckoutStatus = renderCheckoutStatus
+
+-- | Count committed settlements, never filesystem entries or live claims.
+seedSection :: Manifest -> [Text]
+seedSection manifest
+  | Map.null (manifest ^. #seeds) = []
+  | otherwise = ["", "Seed files: " <> T.pack (show (Map.size (manifest ^. #seeds))) <> " (created once; owned by the project, not tracked)"]

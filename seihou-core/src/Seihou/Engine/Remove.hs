@@ -7,6 +7,7 @@ module Seihou.Engine.Remove
     ExecutedRemovalPlan (..),
     CheckoutRemovalSelection (..),
     selectCheckoutRemoval,
+    selectRecordedRemoval,
     computeRemovalPlan,
     executeRemoval,
     buildRemovalOps,
@@ -26,13 +27,15 @@ import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Core.Checkout
-import Seihou.Core.Path (validateProjectRelativePath)
+import Seihou.Core.Path (pathsHaveConflictingSpelling, validateProjectRelativePath)
+import Seihou.Core.Seed
 import Seihou.Core.Types
 import Seihou.Effect.Filesystem (Filesystem, doesFileExist, readFileText, removeDirectoryIfEmpty, removeFile, writeFileText)
 import Seihou.Engine.Section (removeSection)
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Prelude
 import System.FilePath (takeDirectory)
+import System.FilePath.Posix qualified as P
 
 -- ============================================================
 -- Legacy types (used by current CLI handler, Milestone 4 replaces)
@@ -61,7 +64,8 @@ data RemovalPlan = RemovalPlan
 
 -- | A concrete removal operation ready to execute.
 data RemovalOp
-  = -- | Delete a file, with its current status.
+  = KeepSeedOp FilePath
+  | -- | Delete a file, with its current status.
     DeleteFileOp FilePath RemovalFileStatus
   | -- | Strip this module's section markers from a file.
     StripSectionOp FilePath
@@ -134,7 +138,7 @@ executeRemoval ::
   Eff es Manifest
 executeRemoval manifest plan keepSet now = do
   let toDelete = filesToDelete plan keepSet
-  mapM_ removeFile toDelete
+  mapM_ removeFile (filter (not . protectedSeedPath manifest) toDelete)
   cleanupEmptyDirs toDelete
   pure (removeFromManifest manifest (plan ^. #targetModule) now)
 
@@ -172,7 +176,13 @@ buildStepOp ::
   ModuleName ->
   RemovalStep ->
   Eff es (Either RemovalError RemovalOp)
-buildStepOp manifest _modName step = case step ^. #action of
+buildStepOp manifest modName step = case validateRemovalPath (case step ^. #action of RemoveFileAction -> "remove-file destination"; RemoveSectionAction -> "remove-section destination"; RewriteFileAction -> "rewrite-file destination") (step ^. #dest) of
+  Left err -> pure (Left err)
+  Right path | protectedSeedPath manifest path -> pure (Right (KeepSeedOp path))
+  _ -> buildUnprotectedStepOp manifest modName step
+
+buildUnprotectedStepOp :: (Filesystem :> es) => Manifest -> ModuleName -> RemovalStep -> Eff es (Either RemovalError RemovalOp)
+buildUnprotectedStepOp manifest _modName step = case step ^. #action of
   RemoveFileAction ->
     case validateRemovalPath "remove-file destination" (step ^. #dest) of
       Left err -> pure (Left err)
@@ -234,7 +244,10 @@ executeRemovalOps ::
   Eff es Manifest
 executeRemovalOps manifest plan keepSet now = do
   let modName = (plan ^. #targetModule)
-  deletedPaths <- foldM (execOp modName keepSet) [] (plan ^. #ops)
+  let protected op = case removalOpDestination op of
+        Just path | protectedSeedPath manifest path -> KeepSeedOp path
+        _ -> op
+  deletedPaths <- foldM (execOp modName keepSet) [] (map protected (plan ^. #ops))
   cleanupEmptyDirs deletedPaths
   pure (removeFromManifest manifest modName now)
 
@@ -246,6 +259,7 @@ execOp ::
   [FilePath] ->
   RemovalOp ->
   Eff es [FilePath]
+execOp _ _ acc KeepSeedOp {} = pure acc
 execOp _ keepSet acc (DeleteFileOp path status) =
   if Set.member path keepSet
     then pure acc
@@ -274,6 +288,16 @@ execOp _ _ acc (RewriteOp _ _) = do
 execOp _ _ acc (RemovalCommandOp _ _) = do
   -- Commands are executed by the CLI handler, not the engine
   pure acc
+
+protectedSeedPath :: Manifest -> FilePath -> Bool
+protectedSeedPath manifest path = any (\seed -> pathsOverlap (P.normalise path) (P.normalise seed) || pathsHaveConflictingSpelling (P.normalise path) (P.normalise seed)) (Map.keys (manifest ^. #seeds))
+
+removalOpDestination :: RemovalOp -> Maybe FilePath
+removalOpDestination (KeepSeedOp path) = Just path
+removalOpDestination (DeleteFileOp path _) = Just path
+removalOpDestination (StripSectionOp path) = Just path
+removalOpDestination (RewriteOp path _) = Just path
+removalOpDestination RemovalCommandOp {} = Nothing
 
 -- | Guess the comment prefix for a file based on its extension.
 guessCommentPrefix :: FilePath -> Text
@@ -380,9 +404,13 @@ data CheckoutRemovalSelection = CheckoutRemovalSelection
 -- | Resolve a name against recorded qualified instances, never installed modules.
 -- Ambiguous bare names and application choices require explicit selection.
 selectCheckoutRemoval :: Manifest -> ModuleName -> Maybe ApplicationId -> Either CheckoutError (Maybe CheckoutRemovalSelection)
-selectCheckoutRemoval manifest requested selectedApplication = case candidates of
+selectCheckoutRemoval = selectRecordedRemoval
+
+-- | Shared selection for seed, checkout-output and checkout-command ownership.
+selectRecordedRemoval :: Manifest -> ModuleName -> Maybe ApplicationId -> Either CheckoutError (Maybe CheckoutRemovalSelection)
+selectRecordedRemoval manifest requested selectedApplication = case candidates of
   []
-    | selectedApplication /= Nothing -> Left (checkoutError "checkout_remove_selection" "no matching checkout-owning instance in the selected application")
+    | selectedApplication /= Nothing -> Left (checkoutError "checkout_remove_selection" "no matching recorded owning instance in the selected application")
     | otherwise -> Right Nothing
   [(app, state, qualified)] -> do
     let appId = app ^. #applicationId
@@ -406,9 +434,19 @@ selectCheckoutRemoval manifest requested selectedApplication = case candidates o
         removeSelected applied = applied ^. #name /= state ^. #name || applied ^. #parentVars /= state ^. #parentVars || stillNeeded applied
         candidate = manifest & #checkoutOutputs .~ outputs & #applications .~ applications & #files .~ files & #modules %~ filter removeSelected
         custom = listToMaybe [spec | applied <- manifest ^. #modules, applied ^. #name == state ^. #name, applied ^. #parentVars == state ^. #parentVars, spec <- maybeToList (applied ^. #removal)]
-    validateCheckoutRecords candidate []
-    pure (Just (CheckoutRemovalSelection appId qualified (state ^. #name) custom candidate))
-  matches -> Left (checkoutError "checkout_remove_ambiguous" ("checkout removal is ambiguous; select one recorded instance/application: " <> T.intercalate "; " ["seihou remove " <> qualified ^. #unModuleName <> " --application " <> app ^. #applicationId . #unApplicationId | (app, _, qualified) <- matches]))
+    -- Retiring seed-only metadata does not authorize forgetting managed files.
+    case custom of
+      Nothing
+        | any (\record -> record ^. #moduleName == qualified && Set.member appId (record ^. #applicationIds)) (Map.elems (manifest ^. #files)) ->
+            Left (checkoutError "remove_managed_policy_required" "this instance also owns managed files; add a removal specification for those files before removing it")
+      _ -> Right ()
+    withSeeds <-
+      first (checkoutError "seed_owner_evidence_required" . renderSeedOwnershipError) $
+        foldM (\current path -> dropSeedOwners selected path current) candidate (Map.keys (manifest ^. #seeds))
+    first (checkoutError "seed_declaration_invalid" . renderManifestInvariantError) (validateManifestInvariants withSeeds)
+    validateCheckoutRecords withSeeds []
+    pure (Just (CheckoutRemovalSelection appId qualified (state ^. #name) custom withSeeds))
+  matches -> Left (checkoutError "checkout_remove_ambiguous" ("recorded removal is ambiguous; select one recorded instance/application: " <> T.intercalate "; " ["seihou remove " <> qualified ^. #unModuleName <> " --application " <> app ^. #applicationId . #unApplicationId | (app, _, qualified) <- matches]))
   where
     candidates =
       [ (app, state, qualified)
@@ -417,5 +455,5 @@ selectCheckoutRemoval manifest requested selectedApplication = case candidates o
         state <- app ^. #instances,
         let qualified = qualifiedName (ModuleInstance (state ^. #name) (state ^. #parentVars)),
         requested == qualified || requested == state ^. #name,
-        any ((== qualified) . (^. #moduleName)) (app ^. #checkoutCommands) || any (\record -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) (record ^. #owners))) (Map.elems (manifest ^. #checkoutOutputs))
+        any (\record -> case record ^. #ownership of KnownSeedOwners owners -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) owners); LegacySeedOwners apps -> Set.member (app ^. #applicationId) apps) (Map.elems (manifest ^. #seeds)) || any ((== qualified) . (^. #moduleName)) (app ^. #checkoutCommands) || any (\record -> Set.member qualified (Map.findWithDefault Set.empty (app ^. #applicationId) (record ^. #owners))) (Map.elems (manifest ^. #checkoutOutputs))
       ]

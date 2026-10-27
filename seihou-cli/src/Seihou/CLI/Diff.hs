@@ -5,6 +5,7 @@ module Seihou.CLI.Diff
 where
 
 import Data.Generics.Labels ()
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Shared (logIO)
@@ -29,7 +30,7 @@ handleDiff = do
       Right Nothing -> pure (Right Nothing)
       Right (Just manifest) -> do
         tracked <- computeTrackedFileStatuses manifest
-        pure (Right (Just tracked))
+        pure (Right (Just (tracked, Map.size (manifest ^. #seeds))))
 
   colorEnabled <- useColor
 
@@ -39,11 +40,17 @@ handleDiff = do
       exitFailure
     Right Nothing ->
       TIO.putStrLn "No Seihou manifest found. Run 'seihou run <module>' to generate a project."
-    Right (Just tracked) ->
-      TIO.putStr (formatDiffOutput colorEnabled tracked)
+    Right (Just (tracked, seedCount)) ->
+      TIO.putStr (formatDiffOutput colorEnabled tracked seedCount)
 
-formatDiffOutput :: Bool -> [TrackedFile] -> Text
-formatDiffOutput color tracked =
+formatDiffOutput :: Bool -> [TrackedFile] -> Int -> Text
+formatDiffOutput color tracked seedCount =
+  formatted <> if seedCount == 0 then "" else T.pack (show seedCount) <> " seed files not compared\n"
+  where
+    formatted = formatTrackedDiff color tracked
+
+formatTrackedDiff :: Bool -> [TrackedFile] -> Text
+formatTrackedDiff color tracked =
   let modified = filter (\t -> t ^. #status == TfsModified) tracked
       deleted = filter (\t -> t ^. #status == TfsDeleted) tracked
       unchanged = filter (\t -> t ^. #status == TfsUnchanged) tracked

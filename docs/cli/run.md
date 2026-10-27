@@ -172,3 +172,22 @@ nonzero and retains them; sync retries only checkout commands. Fix an ordinary
 application-command failure through the original run command. Arbitrary shell effects
 cannot be undone by Seihou; checkout commands must be repeatable and keep intended
 writes outside managed/tracked state. See [sync](sync.md).
+
+## Project-owned seed files
+
+A module may declare a whole file as a seed. Run creates it once when absent,
+keeps a pre-existing regular file, and records a content-free settlement receipt.
+Later runs, including `--force`, preserve edits and intentional deletion. Deleted
+nested seeds do not recreate their parent directories. Dry runs show `create once`,
+`keep existing`, `keep settled`, or `keep deleted`; `--diff` shows proposed seed
+content only for creation. A new directory or symlink at a seed destination is
+refused with a repair message. The first seeder in composition order supplies bytes;
+every contributing qualified instance retains its own claim.
+
+Run refuses lifecycle changes before generation. Use ordinary `seihou update`
+for the recorded application to review a managed-to-seed release or explicit
+seed-to-managed adoption. This development implementation does not yet support
+seed transitions in update; use a runtime release with the complete seed workflow
+when adopting producer declarations. A partial run may leave a complete newly
+created file if another step fails; retry keeps it and settles ownership.
+Arbitrary module shell commands remain unsandboxed and must respect project files.

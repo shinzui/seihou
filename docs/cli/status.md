@@ -190,3 +190,7 @@ Repeatable checkout commands are reported as declared instructions, for example
 `2 repeatable checkout commands declared; run seihou sync to execute them`.
 Status never executes them or labels their arbitrary effects healthy or broken.
 The same neutral message remains after sync because commands have no completion ledger.
+
+Seed receipts appear in one bounded line, `Seed files: N (created once; owned by
+the project, not tracked)`. This counts recorded settlements, including deliberately
+deleted paths. Status never reads seed contents or reports seed edits as drift.

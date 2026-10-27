@@ -580,7 +580,7 @@ checkSeedSteps m = concatMap checkStep seedSteps <> mixed <> removals
     seedSteps = filter ((== Seed) . (^. #lifecycle)) (m ^. #steps)
     checkStep s =
       ["step writing '" <> s ^. #dest <> "' is a seed but has a patch; a seed creates a whole file once and cannot patch one" | isJust (s ^. #patch)]
-        <> ["step writing '" <> s ^. #dest <> "' is a seed but uses the structured strategy; seeds support copy, template, and dhall-text" | s ^. #strategy == Structured]
+        <> ["step writing '" <> s ^. #dest <> "' is a seed but uses an unsupported strategy; seeds support copy, template, and dhall-text" | s ^. #strategy `notElem` [Copy, Template, DhallText]]
     mixed =
       [ "steps writing '" <> dest <> "' mix the seed and managed lifecycles; use one lifecycle per destination"
       | dest <- Set.toAscList (Set.fromList (map (^. #dest) seedSteps)),
@@ -590,7 +590,6 @@ checkSeedSteps m = concatMap checkStep seedSteps <> mixed <> removals
       [ "removal step deletes '" <> s ^. #dest <> "', which a seed step creates; seihou never deletes seed files"
       | removal <- maybeToList (m ^. #removal),
         r <- removal ^. #steps,
-        r ^. #action == RemoveFileAction,
         s <- seedSteps,
         s ^. #dest == r ^. #dest
       ]

@@ -86,3 +86,25 @@ first settlement independently of active owners. Known claims require recorded
 applications and instances and canonical, nonoverlapping output paths. Evidence
 preparation is read-only and injected for testing; runtime compilation connects
 it in the dependent plan. Runtime seed behavior is still pending.
+
+## Run and removal implementation (2026-10-26)
+
+Run and agent baselines now compile dedicated seed operations and retain every
+qualified claimant while selecting the first declared supplier. Native complete
+file publication uses an exclusive hard link from a private temporary file,
+verified on macOS and Linux with failed writes and concurrent creators. Seed
+operations cannot enter managed execution or baselines. Run refuses lifecycle
+transitions before migrations. Exact historical ownership preparation reuses the
+recorded-release loader and stages adjacent lossless schema steps when required.
+
+The portable seed namespace conservatively refuses conflicting case spellings,
+including ancestor components, before mutation. Existing native spelling and
+unsafe-parent checks remain necessary too. This avoids accepting two logical
+receipts for one object on a case-insensitive filesystem.
+
+Status and diff count receipts without inspecting seed bytes. Removal uses the
+same recorded application/instance selection as checkout, subtracts exact claims,
+and preserves seed objects even through direct declarative removal operations.
+Seed-only owners need no custom removal specification; managed files retain their
+explicit removal policy. Full seed update and released-producer acceptance remain
+separate open gates; intermediate update refuses selected seed changes safely.
