@@ -334,7 +334,13 @@ conflictLines reconciliation = concatMap renderOne (Map.toAscList (reconciliatio
     renderOne _ = []
 
 warningLines :: [UpdateWarning] -> [Text]
-warningLines = map (\case warning@DependencyApplicationIncluded {} -> "Dependency:  " <> warningText warning; warning -> "Warning:     " <> warningText warning)
+warningLines = map $ \warning ->
+  let label = case warning of
+        DependencyApplicationIncluded {} -> "Dependency:  "
+        CrossApplicationLastWriter {} -> "Ownership:   "
+        MissingLegacyValue {} -> "Inputs:      "
+        _ -> "Warning:     "
+   in label <> warningText warning
 
 versionValue :: VersionChange -> Value
 versionValue change =
@@ -631,7 +637,7 @@ errorMessage (UpdateCheckoutFailed err) = err ^. #message
 errorMessage (UpdateCompositionFailed problems) =
   "The candidate composition is invalid: " <> T.intercalate "; " problems
 errorMessage (UpdateSeedReleaseBlocked path owners) =
-  "Cannot release '" <> T.pack path <> "' while these managed application owners remain outside the selection: " <> T.intercalate ", " (map applicationLabel (Set.toAscList owners)) <> ". Review seihou update --include-shared-owners for the selected target; every candidate owner must declare seed ownership."
+  "Cannot release '" <> T.pack path <> "' while these managed application owners remain outside the selection: " <> T.intercalate ", " (map applicationLabel (Set.toAscList owners)) <> ". Review 'seihou update --dry-run' to include all recorded applications together; every candidate owner must declare seed ownership."
 errorMessage (UpdateReconciliationFailed err) =
   reconciliationErrorText err
 errorMessage (UpdateHasUnresolvedPaths paths) =
@@ -719,7 +725,7 @@ seedLines plan = ["Seed:        " <> label item <> " " <> T.pack path | (path, i
 
 reconciliationErrorText :: ReconciliationError -> Text
 reconciliationErrorText (Reconcile.SeedReconciliationFailed reason) = reason
-reconciliationErrorText (Reconcile.SeedReleaseBlockedByOwners path owners) = "cannot release '" <> T.pack path <> "' while unselected managed application owners remain: " <> T.intercalate ", " (map (^. #unApplicationId) (Set.toAscList owners)) <> "; review an update with --include-shared-owners"
+reconciliationErrorText (Reconcile.SeedReleaseBlockedByOwners path owners) = "cannot release '" <> T.pack path <> "' while unselected managed application owners remain: " <> T.intercalate ", " (map (^. #unApplicationId) (Set.toAscList owners)) <> "; review seihou update --dry-run to include all recorded applications"
 reconciliationErrorText (Reconcile.SeedPathAlsoManaged path) = "seed path '" <> T.pack path <> "' also has a managed or overlapping claim; publish compatible producer declarations"
 reconciliationErrorText (Reconcile.InvalidSeedAdoptionChoice path) = "adopting seed '" <> T.pack path <> "' requires an explicit supported keep or accept choice; a missing seed can only be accepted for recreation or the update aborted"
 reconciliationErrorText (InvalidReconciliationPath path reason) =

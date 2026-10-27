@@ -143,8 +143,10 @@ candidate baseline, never edited project content. Distinct direct dependency
 instances now survive loading and retain every seed claim.
 
 The real-consumer evidence in Milestone 2 closes the ordinary source workflow gate.
-EP-6 owns producer changes, release and installed-binary acceptance. No supporting
-runtime release or producer publication is claimed. FRIC-1 recurred in the CLI
+EP-6 owns producer changes, release and installed-binary acceptance. Healthy shared-owner attribution and defaulted new inputs use informational labels
+in the normal preview. Seed release refusals name recorded application owners and
+suggest all-application preview, which also includes formerly additive co-owners.
+No supporting runtime release or producer publication is claimed. FRIC-1 recurred in the CLI
 documentation audit; its fixture now also uses the executable-pinned schema from
 Git objects, preserving the pre-existing schema checkout.
 

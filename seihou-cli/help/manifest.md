@@ -62,8 +62,9 @@ OLDER MANIFESTS
       7 -> 8  seed receipts
       8 -> 9  checkout outputs
       9 -> 10 repeatable checkout commands
+      10 -> 11 precise seed ownership claims
 
-    ✓ Upgraded .seihou/manifest.json to schema version 10.
+    ✓ Upgraded .seihou/manifest.json to schema version 11.
       Review the diff and commit it: git diff .seihou/manifest.json
 
   Running it on a manifest that is already current reports that there is

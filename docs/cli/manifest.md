@@ -63,6 +63,7 @@ steps in order, one at a time, and prints each one:
 | 7 -> 8 | Adds empty seed receipts. | lossless |
 | 8 -> 9 | Adds empty checkout output declarations. | lossless |
 | 9 -> 10 | Adds empty checkout command declarations. | lossless |
+| 10 -> 11 | Wraps old application-only seed owners as explicit legacy evidence without inventing instance claims. | lossless |
 | 10 -> 11 | Wraps legacy seed ownership without inventing instance claims. | lossless |
 
 `--to VERSION` stops after the step that reaches that version. A version newer
@@ -353,7 +354,7 @@ A path with no evidence is reported with its remedy:
      pass --set beta=<url> for the artifact recorded under this path
 ```
 
-The command needs a manifest at the current schema (7). An older one is
+The command needs a manifest at schema 7 or newer. An older one is
 refused with a pointer to [`seihou manifest upgrade`](#seihou-manifest-upgrade),
 whose step to schema 7 is lossless.
 

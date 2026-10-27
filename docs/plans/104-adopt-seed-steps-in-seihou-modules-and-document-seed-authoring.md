@@ -62,11 +62,23 @@ even with an empty cache; checkout setup remains the separate ordinary `seihou s
 ## Progress
 
 - [x] (2026-10-27) Milestone 1: current three-module classification and command/removal audit produce a disposable candidate for EP-5's early real-consumer check.
-- [ ] Milestone 2: after engine acceptance, the three producer modules declare seeds, validate, and have reviewed release changes ready.
+- [ ] Milestone 2 (local preparation and checks complete; release/publication gate open): after engine acceptance, the three producer modules declare seeds, validate, and have reviewed release changes ready.
 - [ ] Milestone 3: fresh, existing, cloned, and repeated ordinary workflows pass using released artifacts and the installed executable.
-- [ ] Milestone 4: author guidance, release notes, and cross-repository ADR evidence describe the delivered behavior and limits.
+- [ ] Milestone 4 (source guidance, release notes and ADR complete; delivered-version evidence pending): author guidance, release notes, and cross-repository ADR evidence describe the delivered behavior and limits.
 
 ## Surprises & Discoveries
+
+Producer refresh (2026-10-27): while EP-5 proceeded, the producer advanced to
+`b017e386856575da9b6d28059a22942bb6f63c2b` and the Keiro template became 0.2.0.
+The earlier 19-step Keiro candidate is historical preparation, not the final
+classification. Re-reading current source added OpenAPI/probe tests, API/fixture
+starter configuration and optional Mori inventory to seed ownership. The maintained
+Nix tools import and `scripts/keiro-test-env` remain managed. No root/nested
+AGENTS.md or CLAUDE.md exists in that producer checkout. Existing intervening commits
+were retained. Upstream HEAD/registry confirmed CLI 0.3.1, library 0.2.0 and Keiro
+0.2.0; no artifact release tags exist. The release candidate advances those to
+0.4.0, 0.3.0 and 0.3.0, rather than reusing the early disposable CLI 0.3.2 version.
+
 
 Review (2026-10-26): Mori's registry snapshot lagged the producer working tree. Direct reads
 show `haskell-cli-app` 0.3.1 with additional root-module/test, per-package changelog/license,
@@ -92,8 +104,82 @@ behavior. Keep delivery open until the authorized publication/install steps are 
 
 ## Outcomes & Retrospective
 
-Planning update only. No producer files, releases, or user installation were changed in this
-review. Local source verification and published/installed delivery are separate gates.
+Local implementation and producer preparation are complete; delivery remains open.
+Producer commit `3bfe34f` in `mori://shinzui/seihou-modules` changes only classified
+lifecycle/schema/version declarations, corresponding author/registry/generated docs,
+the producer ADR and existing acceptance assertions. No producer template bytes,
+application dependency bounds, or unrelated producer history were changed. The
+published lifecycle-capable schema pin is
+`7d02695f5a716384ec2174a018c20ee680ab3d13`; its integrity hash is preserved in the
+three declarations. Existing direct commands/removals/migrations remain absent.
+Nix dependency historical migration paths were re-audited and do not target seeds.
+
+| Artifact | Candidate | Seeds | Managed |
+|----------|-----------|-------|---------|
+| `mori://shinzui/seihou-modules/templates/haskell-cli-app` | 0.4.0 | 12 | Nix package integration and three licenses |
+| `mori://shinzui/seihou-modules/templates/haskell-library` | 0.3.0 | 7 | License and fourmolu policy |
+| `mori://shinzui/seihou-modules/templates/haskell-keiro-project` | 0.3.0 | 28 | Seven licenses, .gitignore patch, Nix tools and test-environment helper |
+
+The Keiro seed list includes conditional Mori inventory; CLI/library test starters
+remain conditional. The producer scripts now verify settled seed preservation under
+changed namespace inputs, force, authored edits and deletion, rather than expecting
+managed conflicts. All module validation passes with lint; pre-existing advisory
+unused/default-only-variable findings remain. Registry versions validate and 18 OKF
+concepts were regenerated using the source-built extension. Catalog documentation
+commit `fbb42b3` also exposes project ownership and the minimum runtime directly
+in registry descriptions and generated concept summaries; module output bytes
+remain those accepted at 3bfe34f.
+
+Source validation evidence, using Seihou development 0.10.1.0 at runtime commit
+`5ad7c32` (publication version unchanged):
+
+- Ordinary empty-cache registry install (one `install URL --all`) and one library
+  run with explicit ordinary project variables produced seven receipts; repeat
+  `update haskell-library` was a no-op and preserved an authored changelog. The
+  isolated HOME Git configuration redirected the public producer URL to the local
+  candidate commit; no user installation was changed. Evidence locator:
+  `/tmp/seihou-seed-library-project` records the project path; `evidence.json`
+  is alongside that project directory.
+- Native library `nix develop --no-write-lock-file -c cabal build all` and `cabal test all`
+  pass, with status/diff excluding edited seeds. Existing library Cabal metadata
+  warns about parent-relative LICENSE/CHANGELOG paths when packaging; seed changes
+  preserve those bytes. This is a pre-existing distribution limitation, not a failed
+  build/test hidden by fixture repair.
+- The producer's CLI bootstrap `--case cli-bare` passes actual generation, canonical
+  lock, Nix evaluation/native package build, compiler shell and repeat generation.
+  Evidence is `/tmp/seihou-seed-cli-native/receipt.json` and its command logs.
+- The producer's full Keiro check passes both names/contexts, six Cabal package
+  checks, workspace/recipes, Mori/Cabal parity, interactive opt-in/skip through
+  module and agent baseline, and seed preservation. Its `--live` acceptance also
+  builds/tests all six packages and proves private PostgreSQL fixtures, distinct
+  leases, generated probes/OpenAPI/Hurl assertions, failure propagation, service
+  shutdown and clone cleanup. The retained fixture/log locator is
+  `/tmp/nix-shell.kaqwm1/seihou-keiro-bootstrap-hqkjdg1l/.artifacts/acceptance`.
+- The actual Reiko working state at `eb3f9cb54534c68f4c0c67e64856273edcb30f71`
+  passed ordinary adoption in EP-5; a new copy against producer 3bfe34f also
+  previews and applies 12 seeds with lossless schema 10→11, preserves all three
+  edited snapshots, and returns `Already up to date` on repeat. Cancellation preserves manifest,
+  index and separately saved edited changelog/Cabal bytes. The disposable fixture
+  is located by `/tmp/seihou-seed-final-adoption.json`.
+- Fresh clone and detached worktree, both with committed receipts and a deliberately
+  deleted changelog, report `Already up to date` with empty installed caches and
+  preserve deletion/manifest bytes. Evidence locator:
+  `/tmp/seihou-seed-portable-evidence.json`.
+- Installed `/Users/shinzui/.nix-profile/bin/seihou`, version 0.10.1.0 at c3cbd9b,
+  demonstrably ignores seed lifecycle, records managed hashes and overwrites edits
+  under force. The compatibility check used a disposable one-file module only.
+  `/tmp/seihou-seed-old-client-evidence.json` locates its receipt. This confirms
+  runtime release must precede producer publication; decoder support is insufficient.
+
+All runtime packages pass `cabal check`, build and source-distribution creation.
+The proposed release is 0.11.0.0 across all three packages because public core
+operations/composition/receipt APIs changed. Hackage reports 0.10.1.0 as the latest
+normal version for all three packages and the upstream latest tag is v0.10.1.0.
+The release skill requires version
+confirmation before editing package versions. Runtime/source tags, public producer
+availability, installed-binary replacement and acceptance against those released
+artifacts are still required. The installed executable and public producer were
+not changed. Keep this child and the MasterPlan In Progress until that work lands.
 
 ## Context and Orientation
 

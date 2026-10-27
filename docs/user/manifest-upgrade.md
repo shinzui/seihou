@@ -56,7 +56,12 @@ Reading .seihou/manifest.json (schema version 5)
   shared-write evidence
   .gitignore  unknown -> additive-only
 
-✓ Upgraded .seihou/manifest.json to schema version 7.
+  7 -> 8  seed receipts
+  8 -> 9  checkout outputs
+  9 -> 10 repeatable checkout commands
+  10 -> 11 precise seed ownership claims
+
+✓ Upgraded .seihou/manifest.json to schema version 11.
   Review the diff and commit it: git diff .seihou/manifest.json
 ```
 

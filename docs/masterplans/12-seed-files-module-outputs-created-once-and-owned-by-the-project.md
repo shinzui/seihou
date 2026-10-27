@@ -216,14 +216,25 @@ it lands. Child plans amend evidence, without claiming proposed APIs are already
 
 ## Progress
 
-EP-1–EP-4 are complete in source. The pinned toolchain passed all three suites,
-focused seed checks and flake checks. Run and agent baselines preserve edits/deletion;
-status/diff count receipts; exact recorded removal preserves project files. Native
-publication checks passed on macOS and Linux. EP-6 M1 is accepted: current producer
-classification, a validated disposable CLI candidate, and a preserved actual
-`mori://shinzui/reiko` pre-seed consumer are ready. Next: EP-5 M1 then the early
-ordinary existing-consumer update proof, before expanding variants. Runtime release,
-producer publication and installed-executable delivery remain open gates.
+EP-1–EP-5 are complete in source. All three Cabal suites, focused seed/update
+checks, flake checks, the provider-free help/context audit and native macOS/Linux
+publication checks pass. Ordinary adoption from actual `mori://shinzui/reiko`
+working state preserves the edited changelog and both Cabal files. Fresh clones
+and detached worktrees preserve a committed deliberate seed deletion with empty
+installed caches. Producer preparation is committed in
+`mori://shinzui/seihou-modules` at `3bfe34f`: CLI 0.4.0, library 0.3.0 and
+Keiro project 0.3.0 declare 12, 7 and 28 seeds respectively. Fresh CLI Nix build,
+library Cabal build/tests, and Keiro Cabal build/tests plus private live
+PostgreSQL-to-HTTP acceptance pass using the source-built runtime. Author guidance,
+registry/generated docs and release notes are prepared.
+
+EP-6 remains In Progress. The installed `seihou v0.10.1.0 (c3cbd9b)` was verified
+unsafe for seed declarations: it records them as managed and force overwrites
+project edits. The proposed supporting runtime release is 0.11.0.0 (breaking public
+core API changes); version bump, release, producer publication, installation and
+released-artifact acceptance remain open. The repository release skill requires
+confirmation before editing versions. Source builds and redirected local candidate
+remotes prove implementation, not release availability.
 
 ## Surprises & Discoveries
 
@@ -261,12 +272,15 @@ application-only ownership assumptions are superseded above.
 
 ## Outcomes & Retrospective
 
-Current implementation: EP-1–EP-4 are complete in source, including schema-11
-ownership, native no-replace creation, run/agent integration and reporting/removal. Runtime, adoption, and release gates remain open.
+Current implementation: EP-1–EP-5 are accepted in source, including precise ownership,
+native creation, run/report/removal and transactional update. EP-6 producer changes
+and source acceptance are prepared; runtime release, producer publication, installation
+and released-artifact acceptance remain open.
 
 The preceding planning update reviewed all six child plans against source, current producer declarations, and
 relevant ADRs, and reconciled the shared contracts and developer workflow. That review changed plans and
-ADR 0017 only; runtime code, releases, and installations remain open work. Original authorship is
+ADR 0017 only at that stage; the implementation evidence above now supersedes its
+open runtime work. Original authorship is
 `claude-opus-5[1m]` for the MasterPlan and all children; prior `gpt-6.1-sol` revisions cover the
 MasterPlan and EP-1/EP-2. None had recorded review entries before this pass.
 
