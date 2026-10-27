@@ -17,6 +17,11 @@ provenance:
       at: 2026-10-27T00:43:50Z
       mode: "update"
       note: "Refresh producers and require one-command adoption plus released installed-binary evidence"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-27T02:20:02Z
+      mode: "implement"
+      note: "Audit current producer classifications and prepare isolated CLI seed candidate for early adoption proof"
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -56,7 +61,7 @@ even with an empty cache; checkout setup remains the separate ordinary `seihou s
 
 ## Progress
 
-- [ ] Milestone 1: current three-module classification and command/removal audit produce a disposable candidate for EP-5's early real-consumer check.
+- [x] (2026-10-27) Milestone 1: current three-module classification and command/removal audit produce a disposable candidate for EP-5's early real-consumer check.
 - [ ] Milestone 2: after engine acceptance, the three producer modules declare seeds, validate, and have reviewed release changes ready.
 - [ ] Milestone 3: fresh, existing, cloned, and repeated ordinary workflows pass using released artifacts and the installed executable.
 - [ ] Milestone 4: author guidance, release notes, and cross-repository ADR evidence describe the delivered behavior and limits.
@@ -119,6 +124,51 @@ separates checkout repair. Relevant producer decision: `mori://shinzui/seihou-mo
 project-relative `docs/adr/2-separate-keiro-project-seeds-from-domain-implementation.md`
 (artifact-level URI pending because this plain ADR corpus has no discovered artifact handle).
 It makes generated Keiro libraries project-owned starters, rather than complete domain implementations.
+
+## Current producer audit (2026-10-26)
+
+Source is `mori://shinzui/seihou-modules` at revision
+`f822a12aa5657fdae90bab297b19491f8b26e5d9`. No root or nested AGENTS.md was
+present. Its unrelated untracked plan was left alone. Current declarations have
+no direct commands, removals, or migrations in any of the three modules.
+
+| Producer | Seed destinations | Retained managed destinations |
+|---|---|---|
+| `mori://shinzui/seihou-modules/templates/haskell-cli-app` 0.3.1 | `cabal.project`; both package Cabal files; core Prelude/root module; CLI Main/parser; conditional CLI test (`project.tests`); root and both package changelogs; README (12 steps total) | `nix/haskell-cli-app.nix`; root/core/CLI LICENSE |
+| `mori://shinzui/seihou-modules/templates/haskell-library` 0.2.0 | `cabal.project`; package Cabal file; Prelude/root module; conditional test (`project.tests`); changelog; README (7 steps total) | root LICENSE; `fourmolu.yaml` |
+| `mori://shinzui/seihou-modules/templates/haskell-keiro-project` 0.1.0 | `cabal.project`; core Prelude; workspace/shared DSL; justfile; README; bootstrap brief; all six package Cabal files and source stubs (19 steps total) | additive `.gitignore`; root and six package LICENSE files |
+
+`cabal.project`, justfile, domain workspace/DSL and the implementation brief are
+project-owned because applications extend them as implementation grows. Package
+Nix wiring stays managed because it integrates shared packaging outputs. Licenses
+remain policy-managed. The common dependency
+`mori://shinzui/seihou-modules/templates/nix-haskell-flake` manages shared Nix,
+lock, ignore, formatter, direnv, and optional service configuration. Its historical
+migration deletes only `treefmt.nix`; the newer migration shell removes the old
+`.envrc` ignore line. Neither targets the proposed seeds. No shell sandbox is
+assumed. Current producer staging needs no generated Git step: normal Git usage
+tracks both managed and seed outputs.
+
+The isolated candidate is `/var/folders/xf/z_902qyd0dg5m6n8pjv1vk300000gn/T/seihou-seed-adoption-bv9n5e6n/producer` at local commit
+`435643cd458674b5c346b5944badb0b21cfca124`, cloned with full recorded-release history from
+the source revision. Its CLI declaration and registry entry are proposed 0.3.2,
+with twelve seed steps and the executable's already-pinned published schema.
+`seihou validate-module <candidate>/modules/haskell/haskell-cli-app --lint` passed
+all validation and lint checks. This is neither a published release nor an installed
+producer; the real producer checkout and user installation remain untouched.
+
+The actual pre-seed consumer is `mori://shinzui/reiko` at source revision
+`eb3f9cb54534c68f4c0c67e64856273edcb30f71`. Its tracked working-tree bytes (including the
+schema-10 manifest, baselines, saved inputs, edited Cabal files and changelog)
+were copied to `/var/folders/xf/z_902qyd0dg5m6n8pjv1vk300000gn/T/seihou-seed-adoption-bv9n5e6n/project` and committed only inside that disposable
+fixture. Its recorded CLI module is 0.1.0, predating recorded applications; no
+application, origin or ownership was repaired. Snapshots of root changelog and
+both package Cabal files are stored outside the project in `/var/folders/xf/z_902qyd0dg5m6n8pjv1vk300000gn/T/seihou-seed-adoption-bv9n5e6n/before`.
+The empty isolated configuration at `/var/folders/xf/z_902qyd0dg5m6n8pjv1vk300000gn/T/seihou-seed-adoption-bv9n5e6n/home` contains only Git URL
+routing from the real recorded remote to the candidate repository. It contains
+no installed modules or optional caches. Setup is fixture preparation, never a
+step required of developers. EP-5 M2 owns running the ordinary update against
+this preserved state; a legacy-adoption failure remains engine work.
 
 ## Plan of Work
 
