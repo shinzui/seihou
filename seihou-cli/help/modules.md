@@ -85,7 +85,7 @@ COMMON COMMANDS
   seihou install <git-url>             Install modules, recipes, blueprints, or prompts from git
   seihou run <module> --var k=v        Run a module to generate files
   seihou update [target]                Update a recorded application and preserve user edits
-  seihou remove <module>               Remove an applied module and its files
+  seihou remove <module>               Remove a module; preserve project-owned seeds
   seihou schema-upgrade ./my-module    Upgrade module.dhall to current schema
 
 VERSIONING AND MIGRATIONS

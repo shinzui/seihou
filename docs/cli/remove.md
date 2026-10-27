@@ -1,6 +1,6 @@
 # seihou remove
 
-Remove an applied module by executing its declared removal steps.
+Remove a recorded module instance, execute its removal policy, and retire ownership.
 
 ## Usage
 
@@ -32,9 +32,9 @@ The command reads the module's `removal` field to determine which operations to 
 - **remove-section** — Strip a tagged section from a file (e.g., lines between `# --- seihou:module ---` markers). Output: `Strip section from path/to/file`.
 - **rewrite-file** — Rewrite a file's content using a Dhall expression or template transformation. Output: `Rewrite path/to/file`.
 
-After all removal steps execute, the manifest is updated: the module is removed from the applied modules list and its file records are deleted. Empty parent directories are cleaned up automatically.
+After successful removal, the manifest retires the selected instance and its claims. Other seed owners retain their receipts. Empty parent directories from deleted managed files are cleaned up automatically; seed retirement never changes project files.
 
-When `--force` is used, all operations proceed without confirmation prompts.
+With `--force`, conflicts in declared managed-file removal proceed without confirmation. Seed objects remain protected.
 
 ## Exit Codes
 

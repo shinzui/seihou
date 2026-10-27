@@ -3,8 +3,8 @@
 Use this before every release. The normal verification command is
 `just audit-cli-docs`; it builds the current executable and needs neither
 provider credentials nor an interactive agent. Run it again after corrections.
-It detects wiring/coverage failures, not incorrect prose. A human-facing semantic
-review is required as well.
+It detects wiring/coverage failures and selected lifecycle promises in command help.
+A semantic review of the remaining prose is required as well.
 
 ## Compare guidance with the implementation
 
@@ -28,6 +28,7 @@ Review these surfaces together:
 | `data/prompt-run-prompt.md` | `PromptRun.hs`, prompt renderer, command-derived vars/guidance/reference handling |
 | `data/upgrade-prompt.md` | `AgentUpgrade.hs`, upgrade diagnosis, update error codes/remedies and recovery |
 | `help/*.md`, `src-exe/Seihou/CLI/Help.hs` | actual command parsers/handlers, including agent config/models, effort/trace, kit and extensions |
+| `src-exe/Seihou/CLI/Commands.hs` info/footer/flag text | actual command handlers, especially removal eligibility, force limits and lifecycle transitions |
 | `docs/cli/help.md` | registered topics and top-level command coverage table |
 | `seihou-cli.cabal` extra-source-files | every embedded help/context asset, including shared references |
 
@@ -51,7 +52,9 @@ their group's topic too. Register new topics in Help.hs, document the index and
 coverage table, and package their Markdown in the Cabal source distribution.
 
 Read **all** help topics and all seven task templates, plus the shared module
-reference. Pay particular attention to inherited omissions and contradictions:
+reference. Read the affected `COMMAND --help` footers and nested subcommand help too;
+conceptual topic updates do not change compiled parser descriptions. Pay particular
+attention to inherited omissions and contradictions:
 
 - module/recipe/blueprint/prompt distinctions and their actual launch commands;
 - supported variable types, saved inputs and separate agent configuration precedence;
@@ -68,9 +71,10 @@ reference. Pay particular attention to inherited omissions and contradictions:
 ## Exercise and retain evidence
 
 `just audit-cli-docs` checks every registered topic and top-level command help,
+seed promises in six command pages and nested `agent run --help`,
 source-distribution entries, and eight debug renders: assist, bootstrap (single
 and repository), setup, blueprint run, blueprint migrate, prompt run and upgrade.
-It also validates the shared module/checkout/removal examples through
+It also validates the shared module/checkout/seed/removal examples through
 `validate-module`. The artifact renders use explicit temporary local-schema fixtures with isolated
 XDG directories. They contact no provider. This proves embedding/rendering, not
 that an arbitrary consumer or published dependency works.

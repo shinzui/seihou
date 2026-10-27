@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.11.0.1] - 2026-10-26
+
+### Fixed
+
+- Correct compiled run/update/remove/status/diff/migrate and agent-run help for seed ownership, force limits, seed-only retirement and reverse-adoption consent. Audit these command-help promises in addition to topic wiring.
+
 ## [0.11.0.0] - 2026-10-26
 
 ### Added
@@ -1185,7 +1191,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.11.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.11.0.1...HEAD
+[0.11.0.1]: https://github.com/shinzui/seihou/compare/v0.11.0.0...v0.11.0.1
 [0.11.0.0]: https://github.com/shinzui/seihou/compare/v0.10.1.0...v0.11.0.0
 [0.10.1.0]: https://github.com/shinzui/seihou/compare/v0.10.0.0...v0.10.1.0
 [0.10.0.0]: https://github.com/shinzui/seihou/compare/v0.9.0.0...v0.10.0.0

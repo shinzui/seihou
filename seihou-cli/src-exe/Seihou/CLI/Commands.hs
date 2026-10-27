@@ -581,6 +581,8 @@ runInfo =
                   pretty ("When re-running, Seihou uses the .seihou/manifest.json to detect" :: String),
                   pretty ("new, modified, unchanged, and conflicting files. Conflicts are" :: String),
                   pretty ("reported and block execution unless --force is used." :: String),
+                  pretty ("Seeds are created once; edits and deletion survive even with --force." :: String),
+                  pretty ("Lifecycle changes require seihou update <target>." :: String),
                   line,
                   pretty ("If an applied module's installed copy has advanced past the manifest's" :: String),
                   pretty ("recorded version and ships migrations that move project files," :: String),
@@ -613,7 +615,10 @@ updateInfo =
               vsep
                 [ pretty ("Reconciles recorded module and recipe applications with newer source" :: String),
                   pretty ("content. Saved inputs are reused, migrations are included automatically," :: String),
-                  pretty ("user edits are three-way merged, and unchanged commands are skipped." :: String),
+                  pretty ("managed edits are three-way merged, and unchanged commands are skipped." :: String),
+                  pretty ("Managed-to-seed releases preserve project bytes and absence. Seeds" :: String),
+                  pretty ("remain project-owned; seed-to-managed adoption requires explicit" :: String),
+                  pretty ("keep/accept consent. Neither --force nor --json supplies that consent." :: String),
                   line,
                   pretty ("With no TARGET, updates every recorded application in manifest order." :: String),
                   pretty ("Use --dry-run to preview or --json for a non-interactive machine result." :: String),
@@ -634,15 +639,16 @@ removeInfo =
   info
     (removeParser <**> helper)
     ( fullDesc
-        <> progDesc "Remove an applied module and delete its generated files"
+        <> progDesc "Remove a module and retire its ownership"
         <> footerDoc
           ( Just $
               vsep
                 [ pretty ("Removes a module that was previously applied via 'seihou run' and" :: String),
-                  pretty ("reverses its effects. Only modules with a 'removal' section" :: String),
-                  pretty ("in their module.dhall can be removed." :: String),
+                  pretty ("reverses its declared effects. Managed files require a removal" :: String),
+                  pretty ("specification. Seed-only ownership can be retired without one; seed" :: String),
+                  pretty ("files and their deliberate deletion are preserved, even with --force." :: String),
                   line,
-                  pretty ("Files that have been modified since generation are treated as" :: String),
+                  pretty ("Managed files modified since generation are treated as" :: String),
                   pretty ("conflicts. Use --force to delete them without prompting, or" :: String),
                   pretty ("respond interactively to keep or delete each one." :: String),
                   line,
@@ -662,9 +668,9 @@ removeParser =
   fmap Remove $
     RemoveOpts
       <$> argument moduleNameReader (metavar "MODULE" <> help "Module to remove")
-      <*> optional (ApplicationId . T.pack <$> strOption (long "application" <> metavar "ID" <> help "Select a checkout-owning recorded application"))
+      <*> optional (ApplicationId . T.pack <$> strOption (long "application" <> metavar "ID" <> help "Select the recorded application owning this instance"))
       <*> switch (long "dry-run" <> help "Show removal plan without executing")
-      <*> switch (long "force" <> help "Delete conflicted files without prompting")
+      <*> switch (long "force" <> help "Delete conflicted managed files without prompting; preserve seeds")
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
 
 varsInfo :: ParserInfo Command
@@ -732,6 +738,7 @@ statusInfo =
               vsep
                 [ pretty ("Reads .seihou/manifest.json in the current directory and displays" :: String),
                   pretty ("applied modules, tracked files, and resolved variable values." :: String),
+                  pretty ("Seed receipts are counted without reading project-owned content." :: String),
                   pretty ("If no manifest exists, reports that and exits successfully." :: String),
                   line,
                   pretty ("Use --check-updates to also report which applied modules have newer" :: String),
@@ -775,7 +782,8 @@ diffInfo =
               vsep
                 [ pretty ("Compares tracked files in .seihou/manifest.json against the current" :: String),
                   pretty ("disk state. Shows files that have been modified or deleted since the" :: String),
-                  pretty ("last 'seihou run'. Does not load modules or resolve variables." :: String)
+                  pretty ("last 'seihou run'. Does not load modules or resolve variables." :: String),
+                  pretty ("Seed receipts are counted; their content and deletion are not compared." :: String)
                 ]
           )
     )
@@ -902,7 +910,7 @@ runParser =
         )
       <*> switch (long "dry-run" <> help "Show plan without executing")
       <*> switch (long "diff" <> help "Show diff against current disk state")
-      <*> switch (long "force" <> help "Auto-resolve conflicts (accept new files)")
+      <*> switch (long "force" <> help "Accept generated managed files on conflicts; preserve seeds")
       <*> switch (long "no-commands" <> help "Skip shell command steps")
       <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
@@ -933,10 +941,10 @@ updateParser =
             varPair
             (long "var" <> metavar "KEY=VALUE" <> help "Variable override (repeatable)")
         )
-      <*> switch (long "dry-run" <> help "Show the complete update plan without modifying managed state")
+      <*> switch (long "dry-run" <> help "Show the complete update plan without modifying project state")
       <*> switch (long "json" <> help "Emit one JSON document and disable prompts")
       <*> switch (long "reconfigure" <> help "Ignore saved inputs and resolve them again")
-      <*> switch (long "force" <> help "Use generated content for safe conflicts and retain edited orphans")
+      <*> switch (long "force" <> help "Use generated content for managed conflicts; retain edited orphans; adoption still prompts")
       <*> updateCommandFlags
       <*> switch (long "commit" <> help "Commit successfully updated managed paths")
       <*> optional (option (T.pack <$> str) (long "commit-message" <> metavar "MSG" <> help "Custom commit message (implies --commit)"))
@@ -1404,7 +1412,9 @@ migrateFooter =
       line,
       pretty ("Conflict semantics mirror 'seihou remove': files whose disk hash differs" :: String),
       pretty ("from the manifest are flagged. Without --force the engine refuses to" :: String),
-      pretty ("overwrite them and exits non-zero. With --force, the migration proceeds." :: String),
+      pretty ("overwrite them and exits non-zero. With --force, managed conflicts proceed." :: String),
+      pretty ("Declarative migrations cannot mutate seed-owned paths, even with --force." :: String),
+      pretty ("Shell commands are unsandboxed; authors must preserve project-owned seeds." :: String),
       line,
       pretty ("Examples:" :: String),
       indent 2 $
@@ -1959,6 +1969,8 @@ agentRunInfo =
                   pretty ("optionally applies the blueprint's baseModules as a starting scaffold," :: String),
                   pretty ("renders the prompt template, and starts the configured" :: String),
                   pretty ("provider." :: String),
+                  pretty ("Baseline seeds are created once; edits and deletion survive --force." :: String),
+                  pretty ("Lifecycle changes require seihou update <recorded-target>." :: String),
                   line,
                   pretty ("Variable resolution follows the same precedence as 'seihou run':" :: String),
                   pretty ("CLI overrides > env > local config > namespace > context > global > defaults" :: String),
@@ -1999,7 +2011,7 @@ agentRunParser =
       <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
-      <*> switch (long "force" <> help "Auto-resolve baseline conflicts (accept new files)")
+      <*> switch (long "force" <> help "Accept generated managed baseline files on conflicts; preserve seeds")
       <*> switch (long "batch" <> help "Run a non-interactive CLI provider (automatic when stdin is not a terminal)")
       <*> providerOption
       <*> modelOption

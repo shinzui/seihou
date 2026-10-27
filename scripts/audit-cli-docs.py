@@ -107,8 +107,20 @@ def runtime_audit(executable, topics, commands, report):
             output = run(['help', topic], f'help-{topic}')
             require(output.strip() == (CLI / f'help/{topic}.md').read_text().strip(),
                     f'built help {topic} differs from source')
-        for command in sorted(commands):
-            run([command, '--help'])
+        command_help = {command: run([command, '--help']) for command in sorted(commands)}
+        # Review the user-facing lifecycle promises as well as command wiring.
+        for command in ('run', 'update', 'remove', 'status', 'diff', 'migrate'):
+            require('seed' in command_help[command].lower(),
+                    f'{command} --help omits seed ownership semantics')
+        require('Seed-only ownership can be retired without one' in command_help['remove'],
+                'remove --help must explain removal without a specification')
+        require('Only modules with a' not in command_help['remove'],
+                'remove --help retains the obsolete universal removal restriction')
+        require('keep/accept consent' in command_help['update'],
+                'update --help must explain explicit reverse-adoption consent')
+        baseline_help = run(['agent', 'run', '--help'], 'agent-run-help')
+        require('Baseline seeds are created once' in baseline_help,
+                'agent run --help omits seed preservation')
 
         # Explicit local-schema fixtures exercise renderers without a network or provider.
         modules = project / '.seihou/modules'
@@ -162,7 +174,7 @@ def runtime_audit(executable, topics, commands, report):
             if name in ('assist', 'bootstrap', 'bootstrap-repo', 'setup'):
                 require((CLI / 'data/module-reference.md').read_text().strip() in output,
                         f'{name}: shared module reference is not rendered')
-        print(f'Runtime audit passed: {version}; {len(topics)} topics, {len(commands)} command help pages, {len(example_modules)} example modules validated, {len(cases)} prompt renders (no providers).')
+        print(f'Runtime audit passed: {version}; {len(topics)} topics, {len(commands)} command help pages + agent run, {len(example_modules)} example modules validated, {len(cases)} prompt renders (no providers).')
 
 
 def main():

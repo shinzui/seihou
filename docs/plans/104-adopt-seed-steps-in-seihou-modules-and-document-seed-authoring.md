@@ -68,6 +68,17 @@ even with an empty cache; checkout setup remains the separate ordinary `seihou s
 
 ## Surprises & Discoveries
 
+Final installed-command review (2026-10-26 Pacific): published/installed 0.11.0.0
+passed all public-source acceptance, but `remove --help` still contained the old
+universal removal-specification restriction and a checkout-only selector label.
+Conceptual topic/render checks did not establish parser-footer correctness. The
+patch 0.11.0.1 updates compiled run/update/remove/status/diff/migrate and agent-run
+help, with a targeted audit of these lifecycle promises. Seed-only installed
+removal also passes: no custom spec, immutable preview, exact retirement and
+preservation of edited bytes under force. The patch changes guidance only; runtime
+seed semantics remain those shipped in 0.11.0.0. Final closure awaits its published
+and installed checks.
+
 Native packaging check (2026-10-26 Pacific): all 2,080 Cabal tests and the 0.11.0.0
 help/context audit pass (18 topics, 32 command pages, six example modules and eight
 provider-free renders). Actual `nix build .#default` found FRIC-2: the composed

@@ -11,6 +11,12 @@ packages in the workspace share a single version.
 
 ## Unreleased
 
+## [0.11.0.1] - 2026-10-26
+
+### Fixed
+
+- Command help now explains seed preservation, removal without a custom specification for seed-only modules, and explicit consent before adopting a seed as managed. Run `seihou remove --help` or `seihou update --help` for the current workflow.
+
 ## [0.11.0.0] - 2026-10-26
 
 ### Added
@@ -1099,7 +1105,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.11.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.11.0.1...HEAD
+[0.11.0.1]: https://github.com/shinzui/seihou/compare/v0.11.0.0...v0.11.0.1
 [0.11.0.0]: https://github.com/shinzui/seihou/compare/v0.10.1.0...v0.11.0.0
 [0.10.1.0]: https://github.com/shinzui/seihou/compare/v0.10.0.0...v0.10.1.0
 [0.10.0.0]: https://github.com/shinzui/seihou/compare/v0.9.0.0...v0.10.0.0
