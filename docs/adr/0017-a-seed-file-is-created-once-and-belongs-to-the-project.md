@@ -11,15 +11,15 @@ Starting files such as changelogs belong to the project after creation. Tracking
 
 Step lifecycle is independent of strategy. An omitted lifecycle means `managed`; `seed` declares a whole file to create once and hand to the project. Seeds support copy, template, and dhall-text, with no patch or structured merge. A destination has one lifecycle. Custom removal must not delete a seed.
 
-The declaration and schema-8 receipt foundations are implemented by [plan 99](../plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md) and [plan 100](../plans/100-record-seed-receipts-in-manifest-schema-8.md). Runtime seed creation and reporting remain the responsibility of [MasterPlan 12](../masterplans/12-seed-files-module-outputs-created-once-and-owned-by-the-project.md); until those changes land, declaring seed does not activate runtime seed behavior.
+The complete runtime contract is delivered in Seihou 0.11.0.0 and newer; 0.11.0.1 also corrects compiled command help. The declaration and schema-8 receipt foundations are implemented by [plan 99](../plans/99-declare-seed-steps-in-the-module-schema-and-validate-them.md) and [plan 100](../plans/100-record-seed-receipts-in-manifest-schema-8.md). Runtime creation, reporting, update and retirement are delivered by [MasterPlan 12](../masterplans/12-seed-files-module-outputs-created-once-and-owned-by-the-project.md). The historical implementation amendments below distinguish foundations from runtime support.
 
 Schema 8 adds a `seeds` map keyed by project-relative path. A receipt records its module, application owners, first outcome, and settlement time. It carries no hash or baseline. A path cannot be both managed and seeded. Merging owners preserves the first settlement; dropping the last owner drops the receipt without touching disk. The schema-8 ownership representation is a foundation; the amendment below defines the correction required before runtime producers are enabled. Schema 7 upgrades losslessly by adding an empty map. Older binaries ignore the lifecycle field; producers must require a release supporting runtime seed behavior.
 
 ## Runtime contract amendment (2026-10-26)
 
-This amendment is accepted design for the remaining work in MasterPlan 12; it is not a claim
-that the runtime or the next schema has shipped. The current implementation has schema 10 and
-application-only seed receipts, and still lacks runtime seed semantics.
+This amendment established the design before runtime implementation. At that point the
+implementation had schema 10, application-only receipts and no runtime seed semantics.
+The implementation and delivery amendments below record its completion.
 
 First settlement provenance and active ownership are distinct. Preserve the original supplier,
 outcome, and settlement time. Record live claims by application ID and qualified module instance,
@@ -66,7 +66,7 @@ compatibility and installed-binary evidence remain explicit delivery requirement
 
 ## Consequences
 
-The manifest remains the only applied-state record. Later runtime plans must create only absent seeds and never overwrite, merge, report content drift, or delete them. Decoder compatibility does not establish runtime support.
+The manifest remains the only applied-state record. Runtime commands create only absent, unsettled seeds and never overwrite, merge, report content drift, or delete project-owned seeds. Decoder compatibility does not establish runtime support.
 
 ## Rejected Alternatives
 
@@ -85,7 +85,7 @@ Exact merge, subtraction, query, and selected-application replacement preserve
 first settlement independently of active owners. Known claims require recorded
 applications and instances and canonical, nonoverlapping output paths. Evidence
 preparation is read-only and injected for testing; runtime compilation connects
-it in the dependent plan. Runtime seed behavior is still pending.
+it in the dependent plan. Runtime seed behavior was still pending at this stage.
 
 ## Run and removal implementation (2026-10-26)
 
@@ -106,8 +106,9 @@ Status and diff count receipts without inspecting seed bytes. Removal uses the
 same recorded application/instance selection as checkout, subtracts exact claims,
 and preserves seed objects even through direct declarative removal operations.
 Seed-only owners need no custom removal specification; managed files retain their
-explicit removal policy. Full seed update and released-producer acceptance remain
-separate open gates; intermediate update refuses selected seed changes safely.
+explicit removal policy. At this stage full seed update and released-producer
+acceptance were separate open gates; intermediate update refused selected seed
+changes safely. The later amendments record their completion.
 
 ## Update implementation (2026-10-27)
 
@@ -137,5 +138,27 @@ Legacy adoption resolves sources from saved origins; dependency edge bindings jo
 normal preview and become saved standalone inputs, while conflicting bindings refuse.
 The loader deduplicates exact dependency instances, not module names alone.
 
-These are source implementation results. Runtime release, producer publication and
-installed-binary acceptance remain the delivery gate in MasterPlan 12.
+These source results were followed by the completed released delivery below.
+
+## Released delivery and durable constraints (2026-10-27)
+
+Runtime 0.11.0.0 was published before CLI 0.4.0, library 0.3.0 and Keiro project
+0.3.0 in `mori://shinzui/seihou-modules`. The installed 0.11.0.1 patch adds accurate
+compiled command help. All three public producer workflows and ordinary adoption
+from actual `mori://shinzui/reiko` state pass against the installed release with
+empty caches. Repeated updates, forced reruns, clones/worktrees and seed-only
+removal preserve project edits and deliberate deletion. MasterPlan 12 and plan 104
+retain executable/release provenance and detailed acceptance evidence.
+
+Runtime-first publication is a safety constraint: a verified 0.10.1.0 client
+ignores lifecycle and can force-overwrite the same declarations. Until a future
+module minimum-client contract exists, producer documentation must state the
+minimum supported runtime (0.11.0.0); compatibility cannot be inferred from Dhall
+decoding. User guidance must cover compiled `COMMAND --help`, conceptual help and
+agent templates together, because they are distinct executable inputs.
+
+Exclusive publication, exact live claims, content-free settlement and selective
+recovery form one ownership contract. Keeping any of them as an engine-only
+prerequisite does not complete delivery. The normal update must own recorded
+source/dependency lookup, saved inputs and lossless preparation; hidden cache,
+manifest or index repair is not an accepted adoption workflow.

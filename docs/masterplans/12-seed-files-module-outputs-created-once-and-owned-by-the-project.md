@@ -126,7 +126,7 @@ seeds. The local ADR corpus has no OKF profile, verified with `mori show --full`
 | 3 | Create seed files once during run | docs/plans/101-create-seed-files-once-during-seihou-run.md | EP-1, EP-2 including M4 | EP-5 consumes common APIs | Complete |
 | 4 | Report and remove seed ownership | docs/plans/102-keep-seed-files-out-of-status-diff-and-remove.md | EP-2 including M4 | EP-3 real-command acceptance | Complete |
 | 5 | Reconcile seeds and release managed files | docs/plans/103-reconcile-seed-steps-during-seihou-update-and-release-managed-files-to-seeds.md | EP-1, EP-2 including M4, EP-3; M2 also needs EP-6 M1 candidate | EP-4 status acceptance | Complete |
-| 6 | Adopt producers and verify delivery | docs/plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring.md | M1: none; M2–M4: EP-3, EP-4, EP-5 | EP-5 M2 consumer proof | In Progress |
+| 6 | Adopt producers and verify delivery | docs/plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring.md | M1: none; M2–M4: EP-3, EP-4, EP-5 | EP-5 M2 consumer proof | Complete |
 
 Status values are Not Started, In Progress, Complete, Cancelled. EP-2 includes the accepted
 original receipt foundation and the completed schema-11 ownership correction. M1/M2/M4 refer to the named milestones in the linked child, not whole-plan completion.
@@ -141,10 +141,10 @@ Only after that early proof expand EP-5 M3/M4. Complete EP-4/EP-5 integration be
 publish/adopt and verify released behavior. Whole-child states remain In Progress until all their
 acceptance criteria pass; no dependency is silently weakened.
 
-EP-2 M4 is implemented and accepted in source. EP-3 and EP-4 are accepted in source, including native macOS/Linux creation and ordinary command tests. EP-5 is now accepted in source, including one-command adoption against the real Reiko working state, transition/recovery checks and the CLI help audit. EP-6 M1 prepared the early candidate; EP-6 M2–M4 remain the producer and delivery work. Release
-readiness requires EP-3, EP-4, and EP-5 together; the interim refusal is a safe development
-boundary, not a delivered seed workflow. A source build and a candidate checkout do not close
-the delivery gate.
+All six children and their integration gates are accepted. The complete runtime
+shipped as 0.11.0.0 before producer publication; patch 0.11.0.1 corrects compiled
+command help and is the final installed acceptance version. EP-6 records released
+artifacts and ordinary workflows separately from the earlier source proofs.
 
 ## Integration Points
 
@@ -162,9 +162,9 @@ helpers, legacy evidence preparation, and invariant checks; EP-3/EP-4/EP-5 use t
 Do not use supplier provenance as an ownership index. Last exact claim removal drops the receipt;
 unknown legacy owners are retained until evidence resolves them.
 
-Schema 11 now implements this contract. Preserve historical `SeedReceipts = 8`, add `SeedOwnerClaims` at the next
-adjacent schema (11 absent intervening changes), and wrap old application-only ownership in an
-explicit legacy variant losslessly. Exact historical instance inference is separate and never
+Schema 11 now implements this contract. Historical `SeedReceipts = 8` is preserved;
+`SeedOwnerClaims = 11` and the adjacent 10→11 step wrap old application-only ownership
+in an explicit legacy variant losslessly. Exact historical instance inference is separate and never
 faked by the structural upgrade. EP-2 tests that service with injected evidence; EP-3 connects
 compiled seed claims, preventing a dependency cycle. Normal commands own evidence lookup when
 needed, using exact recorded origins/versions and saved inputs. New writers emit known claims.
@@ -206,7 +206,7 @@ EP-6 owns final published-registry and installed-runtime evidence for all three 
 `mori://shinzui/seihou-modules/templates/haskell-library`, and
 `mori://shinzui/seihou-modules/templates/haskell-keiro-project`. Empty caches and older supported
 manifest state are part of acceptance. Local fixture preparation is disclosed, never treated as
-a user-facing feature. No code or producer release is performed by this planning update.
+a user-facing feature. EP-6 records final publication and installed-runtime acceptance.
 
 **Documentation/ADRs.** Each child owns documentation for its command and root changelog entry.
 EP-2 owns manifest/version docs; EP-3 run docs; EP-4 status/diff/remove; EP-5 update/automation;
@@ -216,26 +216,20 @@ it lands. Child plans amend evidence, without claiming proposed APIs are already
 
 ## Progress
 
-EP-1–EP-5 are complete in source. All three Cabal suites, focused seed/update
-checks, flake checks, the provider-free help/context audit and native macOS/Linux
-publication checks pass. Ordinary adoption from actual `mori://shinzui/reiko`
-working state preserves the edited changelog and both Cabal files. Fresh clones
-and detached worktrees preserve a committed deliberate seed deletion with empty
-installed caches. Producer preparation is committed in
-`mori://shinzui/seihou-modules` at `3bfe34f`: CLI 0.4.0, library 0.3.0 and
-Keiro project 0.3.0 declare 12, 7 and 28 seeds respectively. Fresh CLI Nix build,
-library Cabal build/tests, and Keiro Cabal build/tests plus private live
-PostgreSQL-to-HTTP acceptance pass using the source-built runtime. Author guidance,
-registry/generated docs and release notes are prepared.
+All six ExecPlans are complete. Runtime 0.11.0.0 was published to Hackage and
+GitHub before the producer registry; the final installed runtime is 0.11.0.1
+at `4ade3fb`, including corrected compiled command help. Public producer releases
+are CLI 0.4.0 (12 seeds), library 0.3.0 (7) and Keiro project 0.3.0 (28).
 
-EP-6 remains In Progress. The installed `seihou v0.10.1.0 (c3cbd9b)` was verified
-unsafe for seed declarations: it records them as managed and force overwrites
-project edits. The proposed supporting runtime release is 0.11.0.0 (breaking public
-core API changes); version bump, release, producer publication, installation and
-released-artifact acceptance remain open. The user has now approved this release, producer publication and installation.
-The versions, current documentation, embedded agent guidance and help are updated;
-final release gates are running. Source builds and redirected local candidate
-remotes prove implementation, not release availability.
+All 2,080 tests, Cabal/package checks, native Nix packaging and flake checks pass.
+The installed help/context audit covers 18 topics, 32 top-level command pages plus
+agent-run help, 26 packaged assets, six authoring examples and eight provider-free
+renders. Empty-cache public registry generation, ordinary adoption from actual
+`mori://shinzui/reiko` working state, cancellation/index preservation, forced
+reruns, deliberate deletion, no-op updates, fresh clones/worktrees and seed-only
+removal pass. Publication, installation and documentation delivery gates are closed;
+[EP-6](../plans/104-adopt-seed-steps-in-seihou-modules-and-document-seed-authoring.md)
+records exact provenance and commands.
 
 ## Surprises & Discoveries
 
@@ -273,26 +267,30 @@ application-only ownership assumptions are superseded above.
 
 ## Outcomes & Retrospective
 
-Current implementation: EP-1–EP-5 are accepted in source, including precise ownership,
-native creation, run/report/removal and transactional update. EP-6 producer changes
-and source acceptance are prepared; runtime release, producer publication, installation
-and released-artifact acceptance remain open.
+Delivered end to end: precise schema-11 claims, native exclusive creation,
+run and agent baselines, bounded reporting, instance-aware retirement and
+transactional update/recovery now preserve project-owned files. Ordinary update
+owns legacy adoption, source/dependency fetching and saved inputs. No additional
+preparation command, manual manifest/index edit or transitive target list is required.
+All three producer releases and their authoring/catalog guidance are public; the
+installed 0.11.0.1 workflow passes against that public registry. ADR 0017 distills
+the ownership, recovery, transition, shell and release-order constraints.
 
-The preceding planning update reviewed all six child plans against source, current producer declarations, and
-relevant ADRs, and reconciled the shared contracts and developer workflow. That review changed plans and
-ADR 0017 only at that stage; the implementation evidence above now supersedes its
-open runtime work. Original authorship is
-`claude-opus-5[1m]` for the MasterPlan and all children; prior `gpt-6.1-sol` revisions cover the
-MasterPlan and EP-1/EP-2. None had recorded review entries before this pass.
-
-Revision note (2026-10-26): correct unsafe intermediate writes, receipt ownership and race
-semantics; preserve current checkout/schema APIs; schedule early real adoption and require
-published/installed delivery evidence. Reopened EP-2 is reflected consistently in the registry.
+The early real-consumer proof found missing legacy/dependency adoption before
+variant expansion. Final installed-command review found stale parser help despite
+passing conceptual-topic/render checks; the patch release and expanded audit close
+that gap. Runtime support starts at 0.11.0.0; 0.11.0.1 also supplies corrected command
+help. Keeping these proofs separate from source builds prevented a premature
+completion claim.
 
 ### Cross-plan friction evidence (2026-10-27)
 
 [FRIC-1](../friction-log/1-checkout-tests-require-a-newer-schema-than-the-local-submodule.md)
-recurred under EP-5 after EP-2: both checkout command fixtures and the CLI help
-audit depended on a mutable local schema. Both now materialize the executable's
-published pin from Git objects, preserving developer checkout state. The resolved
-entry records this shared testing constraint; no user workaround is required.
+recurred under EP-5 after EP-2: checkout fixtures and the CLI help audit depended
+on a mutable local schema. Both now use the executable's published pin, preserving
+developer checkout state; Nix fixtures verify their staged schema's exact revision.
+[FRIC-2](../friction-log/2-native-nix-test-scope-mixes-incompatible-hspec-releases.md)
+blocked delivery packaging in the composed `mori://shinzui/haskell-nix` scope.
+A verified local compatibility correction retains every native package test.
+Both entries are resolved, with no remaining logged initiative friction or user
+workaround. The existing dirty schema submodule was preserved throughout.

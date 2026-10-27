@@ -61,10 +61,10 @@ even with an empty cache; checkout setup remains the separate ordinary `seihou s
 
 ## Progress
 
-- [x] (2026-10-27) Milestone 1: current three-module classification and command/removal audit produce a disposable candidate for EP-5's early real-consumer check.
-- [ ] Milestone 2 (local preparation and checks complete; release/publication gate open): after engine acceptance, the three producer modules declare seeds, validate, and have reviewed release changes ready.
-- [ ] Milestone 3: fresh, existing, cloned, and repeated ordinary workflows pass using released artifacts and the installed executable.
-- [ ] Milestone 4 (source guidance, release notes and ADR complete; delivered-version evidence pending): author guidance, release notes, and cross-repository ADR evidence describe the delivered behavior and limits.
+- [x] (2026-10-27) Milestone 1: current three-module classification and command/removal audit supplied the early producer candidate for EP-5's real-consumer proof.
+- [x] (2026-10-27) Milestone 2: publish runtime support first, then CLI 0.4.0, library 0.3.0 and Keiro project 0.3.0 with validated seed declarations and current catalog docs.
+- [x] (2026-10-27) Milestone 3: installed released runtime passes fresh, real existing, cloned/worktree, repeated and removal workflows using the public registry and empty caches.
+- [x] (2026-10-27) Milestone 4: current user/author guides, both changelogs, CLI agent context, conceptual and compiled command help, and cross-repository ADR delivery evidence are published.
 
 ## Surprises & Discoveries
 
@@ -76,8 +76,8 @@ patch 0.11.0.1 updates compiled run/update/remove/status/diff/migrate and agent-
 help, with a targeted audit of these lifecycle promises. Seed-only installed
 removal also passes: no custom spec, immutable preview, exact retirement and
 preservation of edited bytes under force. The patch changes guidance only; runtime
-seed semantics remain those shipped in 0.11.0.0. Final closure awaits its published
-and installed checks.
+seed semantics remain those shipped in 0.11.0.0. Its published and installed checks
+now pass; the release evidence below closes this gate.
 
 Native packaging check (2026-10-26 Pacific): all 2,080 Cabal tests and the 0.11.0.0
 help/context audit pass (18 topics, 32 command pages, six example modules and eight
@@ -111,7 +111,7 @@ shared module reference. It corrects old removal restrictions, stale update and
 recovery guidance, default force wording and blueprint seed ownership; the upgrade
 playbook now names seed release/adoption remedies. The provider-free audit also
 validates a sixth example module containing the exact documented seed declaration.
-Release/installed acceptance is still in progress, not completed by authorization.
+Authorization alone did not close delivery; the published/installed checks below now pass.
 
 
 Producer refresh (2026-10-27): while EP-5 proceeded, the producer advanced to
@@ -150,7 +150,7 @@ behavior. Keep delivery open until the authorized publication/install steps are 
 
 ## Outcomes & Retrospective
 
-Local implementation and producer preparation are complete; delivery remains open.
+All four milestones and delivery gates are complete. The released/installed evidence below supersedes the earlier source-preparation status.
 Producer commit `3bfe34f` in `mori://shinzui/seihou-modules` changes only classified
 lifecycle/schema/version declarations, corresponding author/registry/generated docs,
 the producer ADR and existing acceptance assertions. No producer template bytes,
@@ -160,7 +160,7 @@ published lifecycle-capable schema pin is
 three declarations. Existing direct commands/removals/migrations remain absent.
 Nix dependency historical migration paths were re-audited and do not target seeds.
 
-| Artifact | Candidate | Seeds | Managed |
+| Artifact | Published version | Seeds | Managed |
 |----------|-----------|-------|---------|
 | `mori://shinzui/seihou-modules/templates/haskell-cli-app` | 0.4.0 | 12 | Nix package integration and three licenses |
 | `mori://shinzui/seihou-modules/templates/haskell-library` | 0.3.0 | 7 | License and fourmolu policy |
@@ -217,15 +217,90 @@ Source validation evidence, using Seihou development 0.10.1.0 at runtime commit
   `/tmp/seihou-seed-old-client-evidence.json` locates its receipt. This confirms
   runtime release must precede producer publication; decoder support is insufficient.
 
-All runtime packages pass `cabal check`, build and source-distribution creation.
-The proposed release is 0.11.0.0 across all three packages because public core
-operations/composition/receipt APIs changed. Hackage reports 0.10.1.0 as the latest
-normal version for all three packages and the upstream latest tag is v0.10.1.0.
-The release skill requires version
-confirmation before editing package versions. Runtime/source tags, public producer
-availability, installed-binary replacement and acceptance against those released
-artifacts are still required. The installed executable and public producer were
-not changed. Keep this child and the MasterPlan In Progress until that work lands.
+### Published and installed acceptance (2026-10-27 UTC / 2026-10-26 Pacific)
+
+Runtime release `v0.11.0.0` is commit `5bd3002bbe555d53a391b65f4e3afe6b8ec12678`.
+All three packages were published in dependency order, with Hackage normal-version
+JSON and actual uploaded module-documentation pages verified. Producer `master`
+was then published through `9cea336fea6f3397e1bfdb966fb6259784c881c9` in
+`mori://shinzui/seihou-modules`. Registry declarations expose CLI 0.4.0, library
+0.3.0 and Keiro project 0.3.0; their output bytes are those accepted at `3bfe34f`.
+No artifact-tag convention existed, so publication used the registry's normal Git
+HEAD workflow. Runtime 0.11.0.0 preceded seed-producing publication; old-client
+safety was never inferred from decoding success.
+
+Final help patch `v0.11.0.1` is commit
+`4ade3fb63a0ec550b8a519d61b76c18b8de59b62`. It changes compiled guidance and the audit without changing seed runtime semantics. All three lockstep packages
+and their Haddocks are public on Hackage. The GitHub release is
+[0.11.0.1](https://github.com/shinzui/seihou/releases/tag/v0.11.0.1), following
+[0.11.0.0](https://github.com/shinzui/seihou/releases/tag/v0.11.0.0).
+Both source distribution sets were created from clean detached release checkouts.
+The published Nix tag builds with native package tests enabled. Independent Cabal
+and native suites pass 1,251 core, 778 CLI and 51 extension tests (2,080 total);
+all three `cabal check` runs, formatting and four flake checks pass. One existing
+completion expectation caught changed help-prefix wording; the retained prefix and
+seed clarification pass the repeated CLI suite before patch publication.
+
+The user's executable is `/Users/shinzui/.nix-profile/bin/seihou`, reporting
+`seihou v0.11.0.1 (4ade3fb)`. The profile selects the public GitHub tag at this
+exact commit, ahead of the retained Home Manager package; no unrelated system
+configuration was activated. The installed audit passes 18 topics, 32 top-level
+command pages plus nested agent-run help, 26 packaged assets, six actual authoring
+examples and eight provider-free prompt renders. It verifies seed eligibility,
+preservation and consent guidance in compiled command help as well as embedded
+topics/context. The source-only proofs above are not substituted for this result.
+
+Installed/public-source acceptance uses isolated empty HOME/XDG caches with no
+Git URL rewrite or substituted registry. The normal fresh sequence is:
+
+```bash
+seihou install https://github.com/shinzui/seihou-modules.git --all
+seihou run haskell-cli-app
+```
+
+The second command resolves ordinary project and dependency prompts. Automation
+supplies the three project values plus the two Nix service choices through the
+normal `--var` flags for CLI/library; it performs no internal repair. The Keiro
+provider-free `seihou agent --debug run haskell-keiro-service` baseline also exercises
+opted-in Mori inventory. All three record 12/7/28 receipts, preserve authored edits
+and deletion through forced reruns, report seeds without content comparison, and
+return `Already up to date` without manifest changes on ordinary update.
+
+An isolated copy of actual `mori://shinzui/reiko` tracked working bytes at
+`eb3f9cb54534c68f4c0c67e64856273edcb30f71` starts from its saved schema-10 manifest,
+legacy CLI application, recorded SSH producer origin and empty cache. The only
+adoption command is:
+
+```bash
+seihou update haskell-cli-app
+```
+
+Normal confirmation previews `release to project`, includes the recorded Nix
+dependency and losslessly prepares schema 11. Cancellation preserves manifest,
+index and existing edits; acceptance preserves the changelog and both Cabal files,
+records 12 receipts and repeats as a no-op. The actual Reiko checkout is untouched.
+A fresh clone and detached worktree each retain committed receipts and a deliberately
+deleted changelog through ordinary update with separate empty caches. A generated
+project-local seed-only module also passes immutable removal preview and
+`seihou remove release-seed-removal --force` without a custom spec, retiring its
+claim while preserving authored bytes.
+
+Retained evidence: `/tmp/seihou-release-acceptance-root` locates the final receipt
+and 25 ordinary-command logs (plus interactive cancellation/apply transcripts);
+`/tmp/seihou-release-removal-root` locates the removal receipt.
+`/tmp/seihou-release-patch-installed-audit.log` records the installed audit;
+`/tmp/seihou-release-patch-tag-build.log` records the released Nix build.
+The final acceptance root is
+`/var/folders/xf/z_902qyd0dg5m6n8pjv1vk300000gn/T/seihou-released-acceptance-4buauofb`.
+These are disposable acceptance artifacts, not prerequisites imposed on developers.
+
+ADR 0017 and the producer Keiro ADR record final release-order and delivered
+workflow evidence; the producer ADR completion is commit `556b217` in
+`mori://shinzui/seihou-modules` (documentation only). FRIC-1 is resolved across
+the initiative; this child's
+[FRIC-2](../friction-log/2-native-nix-test-scope-mixes-incompatible-hspec-releases.md)
+is resolved with verified Hspec scope alignment and all native tests retained.
+No release, installation, producer adoption or documentation gate remains open.
 
 ## Context and Orientation
 
