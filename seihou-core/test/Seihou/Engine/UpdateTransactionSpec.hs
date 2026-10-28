@@ -5,6 +5,7 @@ import Control.Lens ((&), (.~), (^.))
 import Control.Monad (unless, when)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
@@ -489,6 +490,79 @@ spec = do
         results `shouldSatisfy` singleMalformed
         Directory.doesDirectoryExist transactionDirectory `shouldReturn` False
         Directory.doesDirectoryExist quarantineDirectory `shouldReturn` True
+
+  describe "manifest snapshot" $ do
+    let manifestFile projectRoot = projectRoot </> ".seihou" </> "manifest.json"
+        -- Deliberately not what manifestToJSON would emit, so only a byte copy
+        -- (never a decode and re-encode) can reproduce it.
+        unusualBytes = "{\n    \"hand\" :   \"formatted\"\n}\n\n" :: BS.ByteString
+        filePlan =
+          ReconciliationPlan
+            (Set.singleton appA)
+            (Map.singleton "file.txt" (FileUpdate (desiredFile "file.txt" "new\n" [appA]) (plannedState "new\n" "new\n" True) (observed "old\n") Nothing))
+            Set.empty
+        prepareProject projectRoot = do
+          writeProject projectRoot "file.txt" "old\n"
+          Directory.createDirectoryIfMissing True (projectRoot </> ".seihou")
+          BS.writeFile (manifestFile projectRoot) unusualBytes
+        readJournalObject transaction = do
+          Right (Aeson.Object object) <- Aeson.eitherDecode <$> LBS.readFile (transaction ^. #transactionDirectory </> "journal.json")
+          pure object
+
+    it "journals a byte copy of the manifest in a version-5 journal" $
+      withSystemTempDirectory "seihou-update-manifest-journal" $ \projectRoot -> do
+        prepareProject projectRoot
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        object <- readJournalObject transaction
+        KeyMap.lookup "version" object `shouldBe` Just (Aeson.Number 5)
+        KeyMap.lookup "manifestBackup" object `shouldBe` Just (Aeson.String "manifest.json")
+        BS.readFile (transaction ^. #transactionDirectory </> "backups" </> "manifest.json") `shouldReturn` unusualBytes
+
+    it "restores the manifest byte for byte on rollback" $
+      withSystemTempDirectory "seihou-update-manifest-rollback" $ \projectRoot -> do
+        prepareProject projectRoot
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        candidate <- expectRight =<< applyReconciliation transaction filePlan (manifestWithFiles Map.empty)
+        LBS.writeFile (manifestFile projectRoot) (manifestToJSON candidate)
+        rollbackUpdateTransaction transaction `shouldReturn` Right ()
+        readProject projectRoot "file.txt" `shouldReturn` "old\n"
+        BS.readFile (manifestFile projectRoot) `shouldReturn` unusualBytes
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
+
+    it "restores the manifest when recovering a transaction whose published manifest is not the marker" $
+      withSystemTempDirectory "seihou-update-manifest-recover" $ \projectRoot -> do
+        prepareProject projectRoot
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        candidate <- expectRight =<< applyReconciliation transaction filePlan (manifestWithFiles Map.empty)
+        -- An orchestrator published a manifest before its commit marker, then crashed.
+        LBS.writeFile (manifestFile projectRoot) (manifestToJSON (candidate & #vars .~ Map.singleton "published" "early"))
+        recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
+        readProject projectRoot "file.txt" `shouldReturn` "old\n"
+        BS.readFile (manifestFile projectRoot) `shouldReturn` unusualBytes
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
+
+    it "leaves a committed manifest alone" $
+      withSystemTempDirectory "seihou-update-manifest-committed" $ \projectRoot -> do
+        prepareProject projectRoot
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        candidate <- expectRight =<< applyReconciliation transaction filePlan (manifestWithFiles Map.empty)
+        LBS.writeFile (manifestFile projectRoot) (manifestToJSON candidate)
+        recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
+        readProject projectRoot "file.txt" `shouldReturn` "new\n"
+        LBS.readFile (manifestFile projectRoot) `shouldReturn` manifestToJSON candidate
+
+    it "recovers a version-4 journal without a manifest copy as before" $
+      withSystemTempDirectory "seihou-update-manifest-v4" $ \projectRoot -> do
+        prepareProject projectRoot
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        object <- readJournalObject transaction
+        let legacy = KeyMap.insert "version" (Aeson.Number 4) (KeyMap.delete "manifestBackup" object)
+        LBS.writeFile (transaction ^. #transactionDirectory </> "journal.json") (Aeson.encode (Aeson.Object legacy))
+        writeProject projectRoot "file.txt" "interrupted\n"
+        BS.writeFile (manifestFile projectRoot) "{}"
+        recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
+        readProject projectRoot "file.txt" `shouldReturn` "old\n"
+        BS.readFile (manifestFile projectRoot) `shouldReturn` "{}"
 
   describe "path validation" $ do
     it "rejects traversal, absolute, Git, and Seihou targets" $

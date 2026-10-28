@@ -85,7 +85,11 @@ data JournalMetadata = JournalMetadata
     newDirectories :: ![FilePath],
     indexLinks :: !(Map FilePath Text),
     seedCreations :: !(Map FilePath (Maybe (SHA256, Integer, Integer))),
-    expectedManifest :: !(Maybe Manifest)
+    expectedManifest :: !(Maybe Manifest),
+    -- | Bare name, under @backups/@, of a byte copy of @.seihou/manifest.json@
+    -- taken when the transaction began. Absent when the project had no
+    -- manifest then, and for journals older than version 5.
+    manifestBackup :: !(Maybe FilePath)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -127,13 +131,14 @@ instance ToJSON JournalMetadata where
         "newDirectories" .= (metadata ^. #newDirectories),
         "indexLinks" .= (metadata ^. #indexLinks),
         "seedCreations" .= (metadata ^. #seedCreations),
-        "expectedManifest" .= (metadata ^. #expectedManifest)
+        "expectedManifest" .= (metadata ^. #expectedManifest),
+        "manifestBackup" .= (metadata ^. #manifestBackup)
       ]
 
 instance FromJSON JournalMetadata where
   parseJSON = Aeson.withObject "JournalMetadata" $ \object -> do
     version <- object .: "version"
-    unless (version `elem` [1, 2, 3, 4]) (fail "unsupported transaction journal version")
+    unless (version `elem` [1, 2, 3, 4, 5]) (fail "unsupported transaction journal version")
     JournalMetadata
       <$> pure version
       <*> object .: "createdAt"
@@ -142,6 +147,7 @@ instance FromJSON JournalMetadata where
       <*> (if version < 3 then pure Map.empty else object .: "indexLinks")
       <*> (if version < 4 then pure Map.empty else object .: "seedCreations")
       <*> object .:? "expectedManifest"
+      <*> (if version < 5 then pure Nothing else object .:? "manifestBackup")
 
 beginUpdateTransaction :: FilePath -> Set FilePath -> IO (Either TransactionError UpdateTransaction)
 beginUpdateTransaction root targets = beginSeedUpdateTransaction root targets Set.empty
@@ -176,19 +182,37 @@ initializeJournal transaction seedPaths safeTargets = do
         pure (JournalEntry relativePath (Just backupName) Nothing)
       EntryMissing -> pure (JournalEntry relativePath Nothing Nothing)
       EntryDirectory -> ioError (userError ("transaction target is a directory: " <> relativePath))
+  -- The manifest is never a target (validateTransactionPath rejects .seihou/),
+  -- but an orchestrator may publish it before the transaction commits. A byte
+  -- copy lets rollback and crash recovery return it to this exact state.
+  verifySafeParents (transaction ^. #projectRoot) manifestRelativePath
+  manifestEntry <- runEff $ runFilesystem $ inspectPath (transaction ^. #projectRoot </> manifestRelativePath)
+  manifestBackup <- case manifestEntry of
+    EntryFile -> do
+      BS.readFile (transaction ^. #projectRoot </> manifestRelativePath) >>= BS.writeFile (backupDirectory </> manifestBackupName)
+      pure (Just manifestBackupName)
+    EntryMissing -> pure Nothing
+    _ -> ioError (userError ("transaction manifest is not a regular file: " <> manifestRelativePath))
   missingDirectories <- missingParentDirectories (transaction ^. #projectRoot) safeTargets
   now <- getCurrentTime
   writeJournal
     (transaction ^. #transactionDirectory)
     JournalMetadata
-      { journalVersion = if Set.null seedPaths then 2 else 4,
+      { journalVersion = 5,
         createdAt = now,
         entries = entries,
         newDirectories = missingDirectories,
         indexLinks = Map.empty,
         seedCreations = Map.empty,
-        expectedManifest = Nothing
+        expectedManifest = Nothing,
+        manifestBackup = manifestBackup
       }
+
+manifestRelativePath :: FilePath
+manifestRelativePath = ".seihou" </> "manifest.json"
+
+manifestBackupName :: FilePath
+manifestBackupName = "manifest.json"
 
 -- | Only unchanged HEAD/index symlinks with ordinary index flags can be adopted.
 -- The checkout planner additionally checks path safety and the candidate target.
@@ -502,7 +526,8 @@ setExpectedManifestAndDirectories metadata additionalDirectories candidate =
           Set.fromList (metadata ^. #newDirectories <> additionalDirectories),
       indexLinks = metadata ^. #indexLinks,
       seedCreations = metadata ^. #seedCreations,
-      expectedManifest = Just candidate
+      expectedManifest = Just candidate,
+      manifestBackup = metadata ^. #manifestBackup
     }
 
 applyMutations :: (Int -> IO ()) -> UpdateTransaction -> ReconciliationPlan -> IO ()
@@ -587,6 +612,7 @@ rollbackUpdateTransaction transaction = do
             _ -> ioError (userError ("seed creation outcome is uncertain: " <> path <> "; preserve the object outside the destination and retry update --dry-run"))
         restoreIndexLinks (transaction ^. #projectRoot) (metadata ^. #indexLinks)
         forM_ (filter (\entry -> Map.notMember (entry ^. #targetPath) (metadata ^. #indexLinks)) (metadata ^. #entries)) (restoreEntry transaction)
+        traverse_ (restoreManifest transaction) (metadata ^. #manifestBackup)
         removeNewDirectories (transaction ^. #projectRoot) (metadata ^. #newDirectories)
         cleanupDirectory (transaction ^. #transactionDirectory)
       pure $ first (TransactionRollbackFailed . exceptionText) result
@@ -614,6 +640,27 @@ restoreEntry transaction entry = do
       content <- TIO.readFile backupPath
       atomicWriteText target content
     _ -> when (current == EntryFile) (Directory.removeFile target)
+
+-- | Return @.seihou/manifest.json@ to the bytes it held when the transaction
+-- began, through a temporary file renamed over the final path.
+restoreManifest :: UpdateTransaction -> FilePath -> IO ()
+restoreManifest transaction backupName = do
+  let root = transaction ^. #projectRoot
+      target = root </> manifestRelativePath
+      tempPath = target <> ".tmp"
+      backupPath = transaction ^. #transactionDirectory </> "backups" </> backupName
+  verifySafeParents root manifestRelativePath
+  seihouDirectory <- runEff $ runFilesystem $ inspectPath (root </> ".seihou")
+  unless (seihouDirectory == EntryDirectory) (ioError (userError "refusing to restore the manifest: .seihou is not a real directory"))
+  current <- runEff $ runFilesystem $ inspectPath target
+  case current of
+    EntryDirectory -> ioError (userError ("refusing to restore the manifest over a directory: " <> target))
+    EntrySymlink _ -> Directory.removeDirectoryLink target
+    _ -> pure ()
+  backupEntry <- runEff $ runFilesystem $ inspectPath backupPath
+  unless (backupEntry == EntryFile) (ioError (userError "transaction manifest backup is not a real file"))
+  BS.readFile backupPath >>= BS.writeFile tempPath
+  Directory.renamePath tempPath target
 
 -- | Recovery must not traverse a substituted parent. Check from the root down.
 verifySafeParents :: FilePath -> FilePath -> IO ()
@@ -662,7 +709,8 @@ setUpdateTransactionExpectedManifest transaction expected = do
                 newDirectories = metadata ^. #newDirectories,
                 indexLinks = metadata ^. #indexLinks,
                 seedCreations = metadata ^. #seedCreations,
-                expectedManifest = Just expected
+                expectedManifest = Just expected,
+                manifestBackup = metadata ^. #manifestBackup
               }
       result <- try @SomeException (writeJournal (transaction ^. #transactionDirectory) updated)
       pure $ first (\err -> TransactionApplyFailed (exceptionText err) Nothing) result
@@ -748,6 +796,7 @@ validateJournal metadata = do
     (Left "index adoption paths must have journaled symlink snapshots")
   traverse_ (validateJournalEntry . (^. #targetPath)) (metadata ^. #entries)
   traverse_ validateBackupName [name | JournalEntry _ (Just name) _ <- metadata ^. #entries]
+  traverse_ validateBackupName (metadata ^. #manifestBackup)
   traverse_ (first renderTransactionPathError . validateTransactionPath) (metadata ^. #newDirectories)
   pure metadata
   where
