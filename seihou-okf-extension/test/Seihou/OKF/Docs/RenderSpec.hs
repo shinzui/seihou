@@ -373,7 +373,7 @@ moduleArtifact name refs =
       prompts = [],
       steps = [],
       commands = [],
-      dependencies = [Dependency (ModuleName (ref ^. #name)) Map.empty | ref <- refs],
+      dependencies = [Dependency (ModuleName (ref ^. #name)) Map.empty Nothing | ref <- refs],
       removal = Nothing,
       migrations = []
     }
@@ -597,7 +597,8 @@ richRecipeEntry =
               description = Just "A recipe that preconfigures its modules",
               modules =
                 [ Dependency
-                    { module_ = ModuleName "rich",
+                    { source = Nothing,
+                      module_ = ModuleName "rich",
                       vars = Map.fromList [("project.name", "demo"), ("license", "MIT")]
                     }
                 ],

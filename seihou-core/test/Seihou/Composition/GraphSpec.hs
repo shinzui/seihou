@@ -141,8 +141,8 @@ spec = do
                 steps = [],
                 commands = [],
                 dependencies =
-                  [ Dependency "helper" (Map.singleton "skill.name" "exec-plan"),
-                    Dependency "helper" (Map.singleton "skill.name" "master-plan")
+                  [ Dependency "helper" (Map.singleton "skill.name" "exec-plan") Nothing,
+                    Dependency "helper" (Map.singleton "skill.name" "master-plan") Nothing
                   ],
                 removal = Nothing,
                 migrations = []
@@ -176,8 +176,8 @@ spec = do
                 steps = [],
                 commands = [],
                 dependencies =
-                  [ Dependency "child" (Map.singleton "x" "1"),
-                    Dependency "child" (Map.singleton "x" "1")
+                  [ Dependency "child" (Map.singleton "x" "1") Nothing,
+                    Dependency "child" (Map.singleton "x" "1") Nothing
                   ],
                 removal = Nothing,
                 migrations = []

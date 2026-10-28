@@ -374,7 +374,7 @@ spec = do
       withSystemTempDirectory "seihou-test" $ \tmpDir -> do
         let bad =
               withBlueprintBaseModules
-                [Dependency {module_ = "nope-not-here", vars = Map.empty}]
+                [Dependency {module_ = "nope-not-here", vars = Map.empty, source = Nothing}]
                 goodBlueprint
         result <- validateBlueprintWith [tmpDir] tmpDir bad
         case result of
@@ -389,7 +389,7 @@ spec = do
         writeFile (nestedDir </> "blueprint.dhall") (sampleBlueprintDhall "nested-bp")
         let bad =
               withBlueprintBaseModules
-                [Dependency {module_ = "nested-bp", vars = Map.empty}]
+                [Dependency {module_ = "nested-bp", vars = Map.empty, source = Nothing}]
                 goodBlueprint
         result <- validateBlueprintWith [tmpDir] tmpDir bad
         case result of

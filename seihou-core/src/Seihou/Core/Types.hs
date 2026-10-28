@@ -249,13 +249,14 @@ data Command = Command
 -- defaults in the precedence chain.
 data Dependency = Dependency
   { module_ :: !ModuleName,
-    vars :: !(Map VarName Text)
+    vars :: !(Map VarName Text),
+    source :: !(Maybe Text)
   }
   deriving stock (Eq, Show, Generic)
 
 -- | Create a bare dependency with no variable bindings.
 simpleDep :: ModuleName -> Dependency
-simpleDep name = Dependency {module_ = name, vars = mempty}
+simpleDep name = Dependency {module_ = name, vars = mempty, source = Nothing}
 
 -- | Extract module names from a list of dependencies.
 depModuleNames :: [Dependency] -> [ModuleName]

@@ -1,6 +1,7 @@
 module Seihou.Core.Blueprint
   ( validateBlueprint,
     validateBlueprintWith,
+    validateBlueprintForInstall,
     checkBlueprintNameFormat,
     checkBlueprintVersionPresent,
     checkBlueprintPromptNonEmpty,
@@ -77,8 +78,18 @@ validateBlueprintWith ::
   Blueprint ->
   IO (Either ModuleLoadError Blueprint)
 validateBlueprintWith searchPaths baseDir b = do
-  fileErrs <- checkBlueprintFiles baseDir b
   baseErrs <- checkBlueprintBaseModulesWith searchPaths b
+  validateBlueprintDefinition baseDir b baseErrs
+
+-- | Acquisition validates references against fetched registries, not the user's
+-- local cache. All declaration and payload checks still apply before install.
+validateBlueprintForInstall :: FilePath -> Blueprint -> IO (Either ModuleLoadError Blueprint)
+validateBlueprintForInstall baseDir b =
+  validateBlueprintDefinition baseDir b (concatMap baseDeclarationErrors (b ^. #baseModules))
+
+validateBlueprintDefinition :: FilePath -> Blueprint -> [Text] -> IO (Either ModuleLoadError Blueprint)
+validateBlueprintDefinition baseDir b baseErrs = do
+  fileErrs <- checkBlueprintFiles baseDir b
   let pureErrs =
         checkBlueprintNameFormat b
           <> checkBlueprintVersionPresent b
@@ -158,15 +169,6 @@ checkBlueprintBaseModulesWith searchPaths b =
     checkOne :: [FilePath] -> Dependency -> IO [Text]
     checkOne paths dep = do
       let n = (dep ^. #module_ . #unModuleName)
-          nameErrs =
-            [ "invalid baseModule name: " <> n
-            | not (isValidModuleName n)
-            ]
-          bindingErrs =
-            [ "baseModule '" <> n <> "' has invalid var binding name: " <> vn
-            | (VarName vn) <- Map.keys (dep ^. #vars),
-              not (isValidVarBindingName vn)
-            ]
       resolveErrs <-
         if not (isValidModuleName n)
           then pure []
@@ -184,16 +186,7 @@ checkBlueprintBaseModulesWith searchPaths b =
                 ["baseModule '" <> n <> "' not found in any search path"]
               Left _ ->
                 ["baseModule '" <> n <> "' failed to load"]
-      pure (nameErrs <> bindingErrs <> resolveErrs)
-
-    isValidVarBindingName :: Text -> Bool
-    isValidVarBindingName t = case T.uncons t of
-      Nothing -> False
-      Just (c, rest) ->
-        (c >= 'a' && c <= 'z')
-          && T.all
-            (\ch -> (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '.')
-            rest
+      pure (baseDeclarationErrors dep <> resolveErrs)
 
 -- Rule 7: every @files@ entry's source must exist on disk relative to
 -- @baseDir/files/@
@@ -377,3 +370,18 @@ checkBlueprintVersionProbe b =
   | Just probe <- [b ^. #versionProbe],
     T.null (T.strip probe)
   ]
+
+baseDeclarationErrors :: Dependency -> [Text]
+baseDeclarationErrors dep =
+  let n = dep ^. #module_ . #unModuleName
+   in ["invalid baseModule name: " <> n | not (isValidModuleName n)]
+        <> ["baseModule '" <> n <> "' has invalid var binding name: " <> vn | VarName vn <- Map.keys (dep ^. #vars), not (isValidVarBindingName vn)]
+  where
+    isValidVarBindingName :: Text -> Bool
+    isValidVarBindingName t = case T.uncons t of
+      Nothing -> False
+      Just (c, rest) ->
+        (c >= 'a' && c <= 'z')
+          && T.all
+            (\ch -> (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '.')
+            rest

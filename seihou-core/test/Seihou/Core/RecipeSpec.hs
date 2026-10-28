@@ -78,7 +78,7 @@ spec = do
                 version = Nothing,
                 description = Nothing,
                 modules =
-                  [ Dependency (ModuleName "mod-a") (Map.singleton (VarName "INVALID") "val")
+                  [ Dependency (ModuleName "mod-a") (Map.singleton (VarName "INVALID") "val") Nothing
                   ],
                 vars = [],
                 prompts = []
@@ -94,7 +94,7 @@ spec = do
                 version = Nothing,
                 description = Nothing,
                 modules =
-                  [ Dependency (ModuleName "mod-a") (Map.singleton (VarName "nix.system") "aarch64-darwin")
+                  [ Dependency (ModuleName "mod-a") (Map.singleton (VarName "nix.system") "aarch64-darwin") Nothing
                   ],
                 vars = [],
                 prompts = []

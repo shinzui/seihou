@@ -410,7 +410,7 @@ spec = do
   describe "resolveComposedVariables (parameterized dependencies)" $ do
     it "parent-supplied var resolves in dependency" $ do
       let child = mkModule "child" [] [mkTextVar "skill.name" Nothing True] []
-          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "exec-plan")] [] []
+          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "exec-plan") Nothing] [] []
           childInst = mkInstance "child" (ParentVars (Map.singleton "skill.name" "exec-plan"))
           parentInst = primaryInstance "parent"
           modules = [(childInst, child, "/fake/child"), (parentInst, parent', "/fake/parent")]
@@ -423,7 +423,7 @@ spec = do
 
     it "parent-supplied var overrides dependency's default" $ do
       let child = mkModule "child" [] [mkTextVar "skill.name" (Just (VText "old")) False] []
-          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "new")] [] []
+          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "new") Nothing] [] []
           childInst = mkInstance "child" (ParentVars (Map.singleton "skill.name" "new"))
           parentInst = primaryInstance "parent"
           modules = [(childInst, child, "/fake/child"), (parentInst, parent', "/fake/parent")]
@@ -436,7 +436,7 @@ spec = do
 
     it "CLI override beats parent-supplied var" $ do
       let child = mkModule "child" [] [mkTextVar "skill.name" Nothing True] []
-          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "from-parent")] [] []
+          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "from-parent") Nothing] [] []
           childInst = mkInstance "child" (ParentVars (Map.singleton "skill.name" "from-parent"))
           parentInst = primaryInstance "parent"
           modules = [(childInst, child, "/fake/child"), (parentInst, parent', "/fake/parent")]
@@ -450,7 +450,7 @@ spec = do
 
     it "config beats parent-supplied var" $ do
       let child = mkModule "child" [] [mkTextVar "skill.name" (Just (VText "default")) False] []
-          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "parent-val")] [] []
+          parent' = mkModuleWithDeps "parent" [Dependency "child" (Map.singleton "skill.name" "parent-val") Nothing] [] []
           childInst = mkInstance "child" (ParentVars (Map.singleton "skill.name" "parent-val"))
           parentInst = primaryInstance "parent"
           modules = [(childInst, child, "/fake/child"), (parentInst, parent', "/fake/parent")]
@@ -475,13 +475,13 @@ spec = do
           parentA =
             mkModuleWithDeps
               "parent-a"
-              [Dependency "helper" (Map.singleton "skill.name" "exec-plan")]
+              [Dependency "helper" (Map.singleton "skill.name" "exec-plan") Nothing]
               []
               []
           parentB =
             mkModuleWithDeps
               "parent-b"
-              [Dependency "helper" (Map.singleton "skill.name" "master-plan")]
+              [Dependency "helper" (Map.singleton "skill.name" "master-plan") Nothing]
               []
               []
           instA = mkInstance "helper" (ParentVars (Map.singleton "skill.name" "exec-plan"))

@@ -11,7 +11,7 @@ import Test.Tasty.Hspec (testSpec)
 tests :: IO TestTree
 tests = testSpec "Seihou.Composition.Recipe" spec
 
-expectExpanded :: Recipe -> (ModuleName, [ModuleName], Map.Map VarName Text, [VarDecl], [Prompt])
+expectExpanded :: Recipe -> (ModuleName, [ModuleName], Map.Map VarName Text, [VarDecl], [Prompt], [Dependency])
 expectExpanded recipe =
   case expandRecipe recipe of
     Right expanded -> expanded
@@ -28,15 +28,16 @@ spec = do
                 description = Nothing,
                 modules =
                   [ simpleDep "mod-a",
-                    simpleDep "mod-b",
+                    Dependency "mod-b" mempty (Just "https://example.com/registry"),
                     simpleDep "mod-c"
                   ],
                 vars = [],
                 prompts = []
               }
-          (primary, additional, _, _, _) = expectExpanded recipe
+          (primary, additional, _, _, _, requirements) = expectExpanded recipe
       primary `shouldBe` ModuleName "mod-a"
       additional `shouldBe` [ModuleName "mod-b", ModuleName "mod-c"]
+      requirements `shouldBe` [simpleDep "mod-a", Dependency "mod-b" mempty (Just "https://example.com/registry"), simpleDep "mod-c"]
 
     it "collects variable overrides from module entries" $ do
       let recipe =
@@ -45,13 +46,13 @@ spec = do
                 version = Nothing,
                 description = Nothing,
                 modules =
-                  [ Dependency (ModuleName "base") (Map.singleton "project.name" "my-app"),
-                    Dependency (ModuleName "nix") (Map.singleton "nix.system" "aarch64-darwin")
+                  [ Dependency (ModuleName "base") (Map.singleton "project.name" "my-app") Nothing,
+                    Dependency (ModuleName "nix") (Map.singleton "nix.system" "aarch64-darwin") Nothing
                   ],
                 vars = [],
                 prompts = []
               }
-          (_, _, overrides, _, _) = expectExpanded recipe
+          (_, _, overrides, _, _, _) = expectExpanded recipe
       Map.lookup (VarName "project.name") overrides `shouldBe` Just "my-app"
       Map.lookup (VarName "nix.system") overrides `shouldBe` Just "aarch64-darwin"
 
@@ -81,7 +82,7 @@ spec = do
                 vars = [recipeVar],
                 prompts = [recipePrompt]
               }
-          (_, _, _, vars, prompts) = expectExpanded recipe
+          (_, _, _, vars, prompts, _) = expectExpanded recipe
       vars `shouldBe` [recipeVar]
       prompts `shouldBe` [recipePrompt]
 
@@ -95,7 +96,7 @@ spec = do
                 vars = [],
                 prompts = []
               }
-          (primary, additional, overrides, _, _) = expectExpanded recipe
+          (primary, additional, overrides, _, _, _) = expectExpanded recipe
       primary `shouldBe` ModuleName "the-module"
       additional `shouldBe` []
       Map.null overrides `shouldBe` True

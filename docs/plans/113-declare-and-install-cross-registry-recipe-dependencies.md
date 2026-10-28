@@ -10,6 +10,12 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-28T12:31:19Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T12:57:06Z
+      mode: "implement"
+      note: "Implement source declarations and dependency closure installation"
 ---
 
 # Declare and install cross-registry recipe dependencies
@@ -26,16 +32,26 @@ The starting state is a fresh machine or worktree with no installed artifacts. T
 ## Progress
 
 
-- [ ] Source declarations decode compatibly and a real recipe can express local and external dependencies, including a transitive external dependency.
-- [ ] One ordinary install plans and acquires the complete closure, with source conflicts and unavailable dependencies rejected before cache changes.
-- [ ] Installed recipes retain source requirements through local resolution; compatibility, collision, retry, and dry-run checks pass.
+- [x] (2026-10-28) Source declarations decode compatibly, retain variable bindings, and roundtrip installed legacy names. The committed three-registry fixture expresses local, external, and transitive external edges. Schema candidate commit is `3b04970b13fd61c563b0b2bfa333344b0ab7bae1` in `mori://shinzui/seihou-schema` (unpublished).
+- [x] (2026-10-28) One ordinary install acquires exactly `local`, `leaf`, `external`, and `root` with their own origins. The public-command harness verifies missing/unavailable sources, cycles, contradictory origins even with force, repeat install, and preservation of cache markers on refusal.
+- [x] (2026-10-28) Source requirements survive recipe expansion and staged definitions; run, agent baselines, recursive modules, and update check requirements locally. Public-command checks cover offline dry-run cache equality, local shadows, collisions/force, diamond closure, retry, and legacy names. Core, CLI, and extension suites pass; final evidence is recorded below.
 - [ ] Published schema, executable, documentation, and producer artifacts pass the consumer workflow; installed-version evidence and remaining delivery gaps are recorded.
 
 ## Surprises & Discoveries
 
 
+2026-10-28: The user supplied the checkout for `mori://tan/tan-seihou-modules`. Its verified remote is `https://github.com/topagentnetwork/tan-seihou-modules.git`, and its planned recipe is `tan-keiro-project`. The registry contains no artifacts. Its MasterPlan explicitly gates all TAN implementation on Seihou's source-install, prompt, validation, and receipt prerequisites; no TAN scaffolding was implemented here. An isolated ordinary install from the committed local checkout exits 1 with “tan-keiro-project” not found. FRIC-4 in docs/friction-log/ records this delivery blocker.
+
+2026-10-28: Inferring implicit origins at runtime imposed new requirements on older installed definitions and displaced existing manifest-guard diagnostics. Installation now materializes implicit sources in dependency records while cloning context is available. Legacy cache files retain their behavior until reinstall; synthetic recipe/CLI additional edges never inherit the primary module's origin.
+
+2026-10-28: Normalizing legacy bare dependencies requires typed empty variable-binding lists in the emitted Dhall. A public run after reinstall caught an invalid list annotation that decoding alone missed; the installed-definition roundtrip test and the executable legacy check now cover it.
+
 ## Decision Log
 
+
+2026-10-28: Keep the schema candidate local until publication. The tracked schema gitlink and public Nix input/lock pins remain unchanged together; the working checkout uses candidate `3b04970`. The authoritative schema remote HEAD was `211cd628cb7dd1a0b5ec7306c78a603f67b950bd` and had no release tags when checked. Integrate the local candidate into current upstream before publishing; do not force-push over newer upstream work. Publishing the integrated candidate and advancing all three references remains milestone 4, alongside the compatible executable and TAN producer. Do not mark source verification as installed-version delivery.
+
+2026-10-28: Blueprint install validates payloads and dependency declaration syntax without consulting the user's installed search paths. The closure planner owns source/name/kind resolution, so an empty cache is supported. Ordinary blueprint authoring validation retains its existing local resolution behavior.
 
 2026-10-28: Put an optional Git source on each dependency edge rather than infer sources from Mori or search all known registries. The declaring producer owns the choice, and an absent source means the registry containing that declaration during installation. This covers recipes and transitive module dependencies with one contract.
 
@@ -45,6 +61,21 @@ The starting state is a fresh machine or worktree with no installed artifacts. T
 
 ## Outcomes & Retrospective
 
+
+The source implementation and isolated developer workflow are verified; delivery remains incomplete. The schema field and producer documentation are committed locally in the schema checkout. Seihou's tracked schema/Nix pins must advance together after that candidate is published. A compatible Seihou release and installation have not been performed. The installed executable remains `/Users/shinzui/.nix-profile/bin/seihou`, reporting `seihou v0.11.0.1 (4ade3fb)`; it reproduces the old recipe-only installation defect.
+
+Final source validation passed `nix develop -c cabal test all`: 1,254 core tests, 785 CLI tests, and 51 extension tests (2,090 total). `nix develop -c cabal build all`, `nix fmt`, strict friction-bundle validation, and `git diff --check` also passed. The source executable reports `seihou v0.11.0.1 (be31390)` because it was compiled from that base commit plus this implementation working tree; this is not a released version.
+
+The source executable is resolved with `nix develop -c cabal list-bin exe:seihou` and lives under `dist-newstyle/build/aarch64-osx/ghc-9.12.4/seihou-cli-0.11.0.1/x/seihou/build/seihou/seihou`. `bash scripts/test-install-closure.sh <that absolute path>` exercises the ordinary install/run pair in committed isolated Git repositories and verifies the complete failure/recovery matrix. The fixture maps `root`/`local` to registry `a`, `external` to registry `b`, and `leaf` to registry `c`; all unrelated sentinel entries remain absent. Each temporary absolute Git origin is printed in the command output. No developer cache or project is modified. The fixture has no ordinary recipe inputs; variable-binding preservation is checked separately in decoder and composition tests.
+
+The real intended consumer commands are:
+
+```bash
+seihou install https://github.com/topagentnetwork/tan-seihou-modules.git --module tan-keiro-project
+seihou run tan-keiro-project
+```
+
+These remain intended commands, not successful consumer evidence: the producer's recipe and both prerequisite TAN modules do not yet exist. Normal inputs and integration acceptance remain owned by `mori://tan/tan-seihou-modules/plans/3-publish-and-verify-the-tan-keiro-project-recipe`, gated by its parent MasterPlan. FRIC-4 remains logged because this blocker is unresolved; triage it when delivery can proceed. Durable source/acquisition and compatibility rules are distilled into [ADR 0020](../adr/0020-dependency-sources-belong-to-producer-edges.md).
 
 ## Context and Orientation
 

@@ -1,5 +1,7 @@
 module Seihou.Dhall.Eval
-  ( evalDhallExpr,
+  ( normalizeDhallFile,
+    normalizeInstalledDefinition,
+    evalDhallExpr,
     evalModuleFromFile,
     evalRecipeFromFile,
     evalBlueprintFromFile,
@@ -42,10 +44,11 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Data.Void (Void)
 import Dhall (defaultInputSettings, input, inputExprWithSettings, inputFile, list, record, rootDirectory, sourceName, strictText)
-import Dhall.Core (Chunks (..), makeRecordField)
+import Dhall.Core (Chunks (..), makeRecordField, recordFieldValue)
 import Dhall.Core qualified as Dhall (Expr (..))
 import Dhall.Map qualified as DhallMap
 import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, field, maybe, natural, string, union)
+import Dhall.Pretty (prettyExpr)
 import Dhall.Src (Src)
 import Seihou.Core.Expr (parseExpr)
 import Seihou.Core.Migration (BlueprintMigration (..), EntailedEdge (..), Migration (..), MigrationOp (..))
@@ -96,6 +99,7 @@ evalModuleFromFile path = do
     expr <- inputExprWithSettings settings text
     case extract moduleDecoder expr of
       Success m -> do
+        mapM_ evaluate (m ^. #dependencies)
         -- Force lazy decoder thunks that may contain 'error' calls
         mapM_ (\v -> evaluate (v ^. #type_)) (m ^. #vars)
         mapM_ (\s -> evaluate (s ^. #lifecycle) >> evaluate (s ^. #strategy) >> evaluate (s ^. #condition) >> mapM_ evaluate (s ^. #patch)) (m ^. #steps)
@@ -125,6 +129,7 @@ evalRecipeFromFile path = do
     expr <- inputExprWithSettings settings text
     case extract recipeDecoder expr of
       Success r -> do
+        mapM_ evaluate (r ^. #modules)
         -- Force lazy decoder thunks that may contain 'error' calls
         mapM_ (\v -> evaluate (v ^. #type_)) (r ^. #vars)
         mapM_ (\p -> evaluate (p ^. #condition)) (r ^. #prompts)
@@ -339,6 +344,7 @@ evalBlueprintFromFile path = do
     expr <- inputExprWithSettings settings text
     case extract blueprintDecoder expr of
       Success b -> do
+        mapM_ evaluate (b ^. #baseModules)
         mapM_ (\v -> evaluate (v ^. #type_)) (b ^. #vars)
         mapM_ (\p -> evaluate (p ^. #condition)) (b ^. #prompts)
         pure b
@@ -508,11 +514,13 @@ dependencyDecoder = Decoder extractDep expectedDep
 
     paramDepDecoder :: Decoder Dependency
     paramDepDecoder =
-      record
-        ( mkDep
-            <$> field "module" moduleNameDecoder
-            <*> field "vars" (list varBindingDecoder)
-        )
+      withDefaults [("source", noneText)] $
+        record
+          ( mkDep
+              <$> field "module" moduleNameDecoder
+              <*> field "vars" (list varBindingDecoder)
+              <*> field "source" (maybe strictText)
+          )
 
     varBindingDecoder :: Decoder (VarName, Text)
     varBindingDecoder =
@@ -522,8 +530,10 @@ dependencyDecoder = Decoder extractDep expectedDep
             <*> field "value" strictText
         )
 
-    mkDep :: ModuleName -> [(VarName, Text)] -> Dependency
-    mkDep name bindings = Dependency {module_ = name, vars = Map.fromList bindings}
+    mkDep :: ModuleName -> [(VarName, Text)] -> Maybe Text -> Dependency
+    mkDep name bindings src
+      | Just value <- src, T.null (T.strip value) || "${" `T.isInfixOf` value = error "dependency source must be a nonempty literal Git source"
+      | otherwise = Dependency {module_ = name, vars = Map.fromList bindings, source = src}
 
 -- | Decoder for VarType from a Dhall Text string.
 -- Dhall does not support recursive types, so VarType is represented as a
@@ -813,3 +823,39 @@ evalRegistryFromFile path = do
     Left (e :: SomeException) ->
       pure $ Left (RegistryEvalError (T.pack path) (T.pack (show e)))
     Right r -> pure (Right r)
+
+-- | Resolve imports while the source checkout is still available.
+normalizeDhallFile :: FilePath -> IO Text
+normalizeDhallFile path = do
+  contents <- TIO.readFile path
+  expr <- inputExprWithSettings (set rootDirectory (takeDirectory path) defaultInputSettings) contents
+  pure (T.pack (show (prettyExpr expr)))
+
+-- | Persist same-registry requirements at install time. Older installed files
+-- keep legacy behavior until reinstall, rather than inferring new constraints.
+normalizeInstalledDefinition :: Text -> FilePath -> IO Text
+normalizeInstalledDefinition origin path = do
+  contents <- TIO.readFile path
+  expr <- inputExprWithSettings (set rootDirectory (takeDirectory path) defaultInputSettings) contents
+  pure (T.pack (show (prettyExpr (rewrite expr))))
+  where
+    textLiteral value = Dhall.TextLit (Chunks [] value)
+    sourceField = makeRecordField (Dhall.Some (textLiteral origin))
+    bindingType = Dhall.Record (DhallMap.fromList [("name", makeRecordField Dhall.Text), ("value", makeRecordField Dhall.Text)])
+    edge (Dhall.TextLit (Chunks [] name)) =
+      Dhall.RecordLit
+        ( DhallMap.fromList
+            [("module", makeRecordField (textLiteral name)), ("vars", makeRecordField (Dhall.ListLit (Just (Dhall.App Dhall.List bindingType)) mempty)), ("source", sourceField)]
+        )
+    edge (Dhall.RecordLit fields) =
+      case recordFieldValue <$> DhallMap.lookup "source" fields of
+        Just (Dhall.Some _) -> Dhall.RecordLit fields
+        _ -> Dhall.RecordLit (DhallMap.insert "source" sourceField fields)
+    edge other = other
+    rewrite (Dhall.RecordLit fields) = Dhall.RecordLit (foldl' update fields ["dependencies", "modules", "baseModules"])
+    rewrite other = other
+    update fields key = case recordFieldValue <$> DhallMap.lookup key fields of
+      Just (Dhall.ListLit annotation values)
+        | not (null values) ->
+            DhallMap.insert key (makeRecordField (Dhall.ListLit annotation (fmap edge values))) fields
+      _ -> fields

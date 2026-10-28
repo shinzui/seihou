@@ -11,11 +11,11 @@ import Data.Text (Text)
 import Seihou.Core.Recipe (validateRecipe)
 import Seihou.Core.Types
 
-type ExpandedRecipe = (ModuleName, [ModuleName], Map VarName Text, [VarDecl], [Prompt])
+type ExpandedRecipe = (ModuleName, [ModuleName], Map VarName Text, [VarDecl], [Prompt], [Dependency])
 
 -- | Expand a 'Recipe' into the inputs that the existing composition pipeline
 -- expects: a primary module name, additional module names, variable overrides,
--- recipe-level variable declarations, and recipe-level prompts.
+-- recipe-level variable declarations, prompts, and intact source requirements.
 --
 -- The first module in the recipe's list becomes the primary module (used for
 -- config namespace derivation). All remaining modules become additional modules.
@@ -29,4 +29,4 @@ expandRecipe recipe = do
       let primaryName = (primary ^. #module_)
           additionalNames = map (^. #module_) additional
           overrides = Map.unions (map (^. #vars) (validated ^. #modules))
-       in Right (primaryName, additionalNames, overrides, validated ^. #vars, validated ^. #prompts)
+       in Right (primaryName, additionalNames, overrides, validated ^. #vars, validated ^. #prompts, validated ^. #modules)

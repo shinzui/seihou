@@ -52,6 +52,7 @@ import Seihou.Composition.Resolve
     SavedInstanceValues,
     loadComposition,
     resolveWithPromptPermission,
+    verifyDependencySources,
   )
 import Seihou.Core.Application (buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
 import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
@@ -547,7 +548,7 @@ planApplication request projectRoot catalog now previous = do
     Left err -> pure (Left err)
     Right (primary, recipeAdditional, recipeOverrides, targetArtifact) -> do
       let allAdditional = recipeAdditional <> (previous ^. #additionalModules)
-      loaded <- loadComposition (catalog ^. #searchRoot : fallback) primary allAdditional
+      loaded <- loadCandidateComposition (catalog ^. #searchRoot : fallback) targetArtifact primary allAdditional
       case loaded of
         Left err -> pure (Left (CandidateLoadFailed (primary ^. #unModuleName) err))
         Right modulesInOrder -> do
@@ -624,7 +625,7 @@ candidateRoot catalog previous = case previous ^. #target of
   AppliedRecipeTarget name -> do
     artifact <- lookupArtifact catalog CandidateRecipe (name ^. #unRecipeName)
     recipe <- maybe (Left (CandidateArtifactMissing CandidateRecipe (name ^. #unRecipeName))) Right (artifact ^. #recipeDefinition)
-    (primary, additional, overrides, _, _) <- first (CandidateRepositoryInvalid (name ^. #unRecipeName)) (expandRecipe recipe)
+    (primary, additional, overrides, _, _, _) <- first (CandidateRepositoryInvalid (name ^. #unRecipeName)) (expandRecipe recipe)
     Right (primary, additional, overrides, artifact)
 
 lookupArtifact :: CandidateCatalog -> CandidateArtifactKind -> Text -> Either UpdateError CandidateArtifact
@@ -694,9 +695,9 @@ seedLegacyApplication request session projectRoot installed manifest now request
       Left err -> pure (Left err)
       Right (catalog, sourceWarnings) -> case candidateRoot catalog provisional of
         Left err -> pure (Left err)
-        Right (primary, additional, overrides, _) -> do
+        Right (primary, additional, overrides, artifact) -> do
           paths <- defaultSearchPaths
-          loaded <- loadComposition (catalog ^. #searchRoot : paths) primary additional
+          loaded <- loadCandidateComposition (catalog ^. #searchRoot : paths) artifact primary additional
           case loaded of
             Left err -> pure (Left (CandidateLoadFailed requested err))
             Right modulesInOrder -> do
@@ -728,13 +729,18 @@ seedInstalledLegacyApplication request projectRoot manifest now requested = do
       let root = case runnable of
             RunnableModule modul directory -> Right (AppliedModuleTarget (modul ^. #name), modul ^. #name, [], Map.empty, directory, modul ^. #version)
             RunnableRecipe recipe directory -> do
-              (primary, additional, overrides, _, _) <- first (CandidateRepositoryInvalid requested) (expandRecipe recipe)
+              (primary, additional, overrides, _, _, _) <- first (CandidateRepositoryInvalid requested) (expandRecipe recipe)
               Right (AppliedRecipeTarget (recipe ^. #name), primary, additional, overrides, directory, recipe ^. #version)
             _ -> Left (CandidateArtifactMissing CandidateModule requested)
       case root of
         Left err -> pure (Left err)
         Right (target, primary, additional, recipeOverrides, targetSource, targetVersion) -> do
-          loaded <- loadComposition searchPaths primary additional
+          checked <- case runnable of
+            RunnableRecipe recipe directory -> verifyDependencySources searchPaths directory (recipe ^. #modules)
+            _ -> pure (Right ())
+          loaded <- case checked of
+            Left err -> pure (Left err)
+            Right () -> loadComposition searchPaths primary additional
           case loaded of
             Left err -> pure (Left (CandidateLoadFailed requested err))
             Right modulesInOrder -> do
@@ -1534,3 +1540,13 @@ includeLegacyDependencies request root manifest now legacy staged = do
 reconciliationUpdateError :: Manifest -> ReconciliationError -> UpdateError
 reconciliationUpdateError manifest (SeedReleaseBlockedByOwners path owners) = UpdateSeedReleaseBlocked path (Set.map (applicationRef manifest) owners)
 reconciliationUpdateError _ err = UpdateReconciliationFailed err
+
+-- Preserve recipe edge requirements when replaying a composition during update.
+loadCandidateComposition :: [FilePath] -> CandidateArtifact -> ModuleName -> [ModuleName] -> IO (Either ModuleLoadError [(ModuleInstance, Module, FilePath)])
+loadCandidateComposition paths artifact primary additional = do
+  checked <- case artifact ^. #recipeDefinition of
+    Nothing -> pure (Right ())
+    Just recipe -> verifyDependencySources paths (artifact ^. #sourceDirectory) (recipe ^. #modules)
+  case checked of
+    Left err -> pure (Left err)
+    Right () -> loadComposition paths primary additional

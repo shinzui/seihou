@@ -7,7 +7,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalDhallExpr, evalModuleFromFile, evalRecipeFromFile)
+import Seihou.Dhall.Eval (evalDhallExpr, evalModuleFromFile, evalRecipeFromFile, normalizeInstalledDefinition)
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
 import System.IO.Temp (withSystemTempDirectory)
@@ -301,6 +301,23 @@ spec = do
                \, removal = None { steps : List { action : Text, dest : Text, src : Optional Text }, commands : List { run : Text, workDir : Optional Text, when : Optional Text } }\n\
                \}"
 
+    it "preserves a declared source and its variable bindings" $
+      withSystemTempDirectory "seihou-source" $ \dir -> do
+        writeFile (dir </> "module.dhall") (emptyModuleWithDeps "[{ module = \"base\", source = Some \"https://example.com/registry.git\", vars = [{ name = \"x\", value = \"y\" }] }]")
+        result <- evalModuleFromFile (dir </> "module.dhall")
+        case result of
+          Right m -> m ^. #dependencies `shouldBe` [Dependency "base" (Map.singleton "x" "y") (Just "https://example.com/registry.git")]
+          Left err -> expectationFailure (show err)
+
+    it "rejects a malformed source instead of dropping it" $
+      withSystemTempDirectory "seihou-source" $ \dir -> do
+        forM_ ["42", "Some \"\""] $ \sourceExpr -> do
+          writeFile (dir </> "module.dhall") (emptyModuleWithDeps ("[{ module = \"base\", source = " <> sourceExpr <> ", vars = [] : List { name : Text, value : Text } }]"))
+          result <- evalModuleFromFile (dir </> "module.dhall")
+          case result of
+            Left _ -> pure ()
+            Right _ -> expectationFailure "malformed source was accepted"
+
     it "decodes a bare string dependency" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do
         writeFile (tmpDir </> "module.dhall") (emptyModuleWithDeps "[\"base\"]")
@@ -312,6 +329,16 @@ spec = do
             let dep = head (m ^. #dependencies)
             (dep ^. #module_) `shouldBe` ModuleName "base"
             Map.null (dep ^. #vars) `shouldBe` True
+
+    it "roundtrips installed legacy names as typed dependencies with sources" $
+      withSystemTempDirectory "seihou-source" $ \dir -> do
+        let path = dir </> "module.dhall"
+        writeFile path (emptyModuleWithDeps "[\"base\"]")
+        normalizeInstalledDefinition "https://example.com/registry" path >>= TIO.writeFile path
+        result <- evalModuleFromFile path
+        case result of
+          Right m -> m ^. #dependencies `shouldBe` [Dependency "base" mempty (Just "https://example.com/registry")]
+          Left err -> expectationFailure (show err)
 
     it "decodes a parameterized record dependency" $ do
       withSystemTempDirectory "seihou-eval-test" $ \tmpDir -> do

@@ -41,6 +41,48 @@ If neither `--module` nor `--all` is specified, an interactive picker is shown.
 The `--all` flag installs all registry entries. The `--module` flag name is kept
 for compatibility, but it can select any registry entry kind.
 
+### Recipe dependencies
+
+Install a selected recipe and then run it with its ordinary inputs:
+
+```sh
+seihou install https://github.com/your-team/recipes.git --module project
+seihou run project
+```
+
+Install follows recipe members, module dependencies, and blueprint base modules,
+including transitive dependencies in other Git registries. It installs only the
+selected entries and their required modules. Repeating the same install repairs
+an older installation missing members. Install never runs generation steps or
+asks for generation variables.
+
+Producers declare an external registry on a dependency:
+
+```dhall
+Dependency::{ module = "git-init", source = Some "https://github.com/shinzui/seihou-modules.git" }
+```
+
+An absent source means the registry containing the declaring artifact during
+installation. Legacy text names and records without `source` remain supported.
+Upgrade Seihou before adopting the new schema. Use portable Git URLs in published
+definitions; local Git paths are useful for development fixtures.
+
+The complete dependency closure is validated before cache replacement. Missing
+entries, cycles, conflicting sources for one name, and cache collisions stop the
+install with a requesting chain. Correct the declaration or restore the source,
+then repeat the same command. `--force` can replace an existing foreign cache entry;
+it cannot satisfy two different origins required under one name.
+
+Run and dry-run resolve locally and never acquire missing modules. Explicit source
+requirements must match the resolved module's recorded origin, even on a first run.
+A project-local shadow without provenance cannot satisfy an explicit requirement;
+correct or remove the shadow and reinstall the declaring artifact. Legacy local
+definitions without sources retain ordinary search-path behavior.
+
+Definitions are installed with Dhall imports resolved. Payload symlinks are rejected
+with their path rather than followed outside a checkout. Handled write failures roll
+back replaced entries; this is not a crash-atomic multi-directory transaction.
+
 ### Installing from a local checkout
 
 `GIT-URL` can be the path of a git checkout on this machine, which is handy
@@ -118,8 +160,8 @@ typing a different spelling than last time is not a collision.
 `--force` replaces the entry anyway and prints what it overrode. It is the only
 override for a registry entry, because `--name` applies to single-artifact
 repositories only and a registry entry has no rename escape hatch. When
-installing a whole registry, every entry is attempted and each refusal is
-printed; the command reports the totals and then exits non-zero.
+installing several entries, Seihou plans their combined dependencies and reports
+preflight failures before changing any installed artifact. A failed batch exits non-zero.
 
 If `--force` feels too blunt — you want the old entry gone rather than
 overwritten, and you want to see what disappears — remove it by hand first:

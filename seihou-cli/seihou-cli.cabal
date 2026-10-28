@@ -85,6 +85,7 @@ library seihou-cli-internal
     Seihou.CLI.Extension
     Seihou.CLI.Git
     Seihou.CLI.Init
+    Seihou.CLI.InstallClosure
     Seihou.CLI.InstallHistory
     Seihou.CLI.InstallShared
     Seihou.CLI.KitConfig
@@ -270,6 +271,7 @@ test-suite seihou-cli-test
     Seihou.CLI.ExtensionSpec
     Seihou.CLI.GitSpec
     Seihou.CLI.InitSpec
+    Seihou.CLI.InstallClosureSpec
     Seihou.CLI.InstallCollisionSpec
     Seihou.CLI.InstallHistorySpec
     Seihou.CLI.InstallSourceSpec

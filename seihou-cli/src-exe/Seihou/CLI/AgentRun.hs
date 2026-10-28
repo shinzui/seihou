@@ -70,7 +70,7 @@ import Seihou.CLI.Shared
   )
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
-import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
+import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts, verifyDependencySources)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.Checkout
@@ -140,6 +140,13 @@ handleAgentRun debug pending opts = do
           <> opts ^. #name . #unModuleName
           <> "'?"
     Left err -> exitErr level (renderModuleLoadError err)
+
+  unless (opts ^. #noBaseline) $ do
+    paths <- defaultSearchPaths
+    sourceCheck <- verifyDependencySources paths blueprintDir (bp ^. #baseModules)
+    case sourceCheck of
+      Left err -> exitErr level (T.pack (show err))
+      Right () -> pure ()
 
   -- (a2) Resolve the baseline composition — every declared base module plus
   -- its transitive dependencies — before anything is written. 'seihou run'

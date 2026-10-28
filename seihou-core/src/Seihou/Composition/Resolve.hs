@@ -1,5 +1,6 @@
 module Seihou.Composition.Resolve
   ( loadComposition,
+    verifyDependencySources,
     SavedInstanceValues,
     PromptPermission (..),
     resolveComposedVariables,
@@ -11,6 +12,8 @@ module Seihou.Composition.Resolve
   )
 where
 
+import Control.Monad (unless)
+import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Except (ExceptT (..), runExceptT)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
@@ -18,6 +21,8 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.Composition.Graph (buildGraph, topoSort)
 import Seihou.Composition.Instance (ModuleInstance (..), mkInstance, primaryInstance)
+import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
+import Seihou.Core.ArtifactOriginDetect (OriginInfo (..), readOriginInfo)
 import Seihou.Core.Module (discoverModule, validateModule)
 import Seihou.Core.Types
 import Seihou.Core.Variable (resolveVariablesWithSaved)
@@ -55,6 +60,7 @@ loadComposition searchPaths primary additional = runExceptT $ do
       loaded = Map.singleton primaryInst (effectivePrimary, primaryDir)
       seeds = [(mkInstance (dep ^. #module_) (parentVarsFromDep dep)) | dep <- effectivePrimary ^. #dependencies]
   allInstances <- ExceptT $ loadTransitive searchPaths loaded seeds
+  mapM_ (\(inst, (m, dir)) -> ExceptT (verifyDependencySources searchPaths dir ((if inst == primaryInst then primaryMod else m) ^. #dependencies))) (Map.toList allInstances)
   let entries = [(inst, m) | (inst, (m, _)) <- Map.toList allInstances]
       graph = buildGraph entries
   order <- ExceptT . pure $ topoSort graph
@@ -440,3 +446,30 @@ nubOrdBy f = go Set.empty
     go seen (x : xs)
       | Set.member (f x) seen = go seen xs
       | otherwise = x : go (Set.insert (f x) seen) xs
+
+-- | Verify producer requirements locally, including on the first generation.
+-- A local shadow without provenance cannot satisfy an explicit source.
+verifyDependencySources :: [FilePath] -> FilePath -> [Dependency] -> IO (Either ModuleLoadError ())
+verifyDependencySources paths _declaringDir deps = runExceptT $ do
+  mapM_ check deps
+  where
+    check dep = case dep ^. #source of
+      Nothing -> pure ()
+      Just required -> do
+        let name = dep ^. #module_
+        dir <- ExceptT (discoverModule paths name)
+        actual <- liftIO (readOriginInfo dir)
+        unless (maybe False (\info -> normalizeOriginUrl (info ^. #sourceUrl) == normalizeOriginUrl required) actual) $
+          ExceptT $
+            pure $
+              Left $
+                ValidationError
+                  name
+                  [ "Dependency '"
+                      <> name ^. #unModuleName
+                      <> "' requires "
+                      <> required
+                      <> "; resolved copy at "
+                      <> T.pack dir
+                      <> " has different or unknown provenance. Reinstall the declaring artifact and remove or correct the local shadow."
+                  ]

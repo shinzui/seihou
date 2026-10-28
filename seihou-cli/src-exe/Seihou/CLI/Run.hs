@@ -50,7 +50,7 @@ import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, us
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
-import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
+import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts, verifyDependencySources)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
@@ -135,7 +135,11 @@ handleRun runOpts = do
                   <> "': "
                   <> T.intercalate "; " errs
             exitFailure
-          Right (primary, recipeAdditional, overrides, _recipeVars, _recipePrompts) -> do
+          Right (primary, recipeAdditional, overrides, _recipeVars, _recipePrompts, requirements) -> do
+            sourceCheck <- verifyDependencySources searchPaths recipeDir requirements
+            case sourceCheck of
+              Left err -> TIO.putStrLn (T.pack (show err)) >> exitFailure
+              Right () -> pure ()
             logIO level $
               logInfo $
                 "Recipe '" <> recipe ^. #name . #unRecipeName <> "' expanding to " <> T.pack (show (length (recipe ^. #modules))) <> " modules"
