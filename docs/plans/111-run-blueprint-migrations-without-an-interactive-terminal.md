@@ -103,8 +103,18 @@ perform Nix/registry verification; the parent build is separate evidence.
 Claude Code 2.1.312 using the ordinary provider configuration and model
 claude-opus-4-8 returned a reported permission denial with no edits or receipt;
 bounded editing alone also failed on the missing read-only Mori grant. The
-latest replay includes that grant and is still running. No source proof has yet
-been accepted for Claude, so Milestone 1 remains open.
+latest replay completed the first edge without denials and recorded its
+receipt. The second edge edited the worker hooks and added an adoption report,
+but reported three Bash denials (a compound external-source query, a compound
+compiler-discovery call, and `ghc --version`). Exit 1; no second receipt and no
+repeat no-work proof. The model claimed “applied” in prose, which correctly did
+not override the structured refusal. Milestone 1 remains open. This final
+Claude build reported v0.11.0.1 (d3671b4), including the refinements now
+committed as d5eaf2f. Its selected and reported model was claude-opus-4-8.
+Codex was selected with gpt-6.1-sol; its JSONL does not attest the served model.
+Parent-run server, worker, and migration executable builds and architecture/diff
+checks also passed for the final Claude workspace. It retains exactly the
+kiroku-upgrade receipt; the denied keiro-upgrade attempt has no receipt.
 
 
 ## Surprises & Discoveries
@@ -201,23 +211,52 @@ and the containing milestone open; success with the other provider cannot substi
 
 ## Outcomes & Retrospective
 
-Implementation is in progress. The ordinary command now chooses batch mode
-through pipes and supports explicit `--batch`; terminal-backed behavior has
-real PTY regression coverage. Raw provider evidence gates outcome parsing and
-receipt creation. The first authenticated Codex consumer replay completed both
-edges, edited the workspace, and returned no-work success on repeat. Claude's
-first authenticated replay failed closed on reported permissions, leaving no
-receipt. Bounded editing enabled an edit but a further replay identified the denied
-read-only Mori command. The latest replay includes explicit read-only Mori
-grants and remains pending.
+Milestones 2 and 3 are verified. Automatic mode selection, explicit batch mode,
+real PTY behavior, strict provider-result classification, owner access,
+stop/resume, outcome precedence, stale and failed signal cleanup, missing
+startup, neutral instructions, and one trace destination have regression
+coverage. The final 782-test CLI suite, build, documentation audit, formatting,
+Nix checks, and whitespace checks pass. Source implementation is committed in
+d3671b4 and d5eaf2f; neither commit is an installed release claim.
 
-FRIC-3 in docs/friction-log/ is resolved: the supported Nix development shell
-supplies the native dependencies absent from the ambient Cabal toolchain.
+Milestone 1 remains open. Codex completed the real consumer migration, wrote
+both owner receipts, returned exit 0, and returned no-work exit 0 on repeat.
+Its server, worker, and migration executables build, and architecture, shell
+syntax, and diff checks pass. Claude really edited its separate workspace and
+completed/recorded the first edge after the permission workflow fixes. Its
+second edge still returned explicit permission denials despite the native-tool
+instructions. The strict boundary correctly rejected its nonempty “applied”
+prose, returned exit 1, and withheld that receipt. Authentication is available;
+the unresolved issue is Claude's selected tool calls under the bounded policy.
+Parent-run server, worker, and migration executable builds, architecture, and
+diff checks pass for its resulting source. These are separate evidence from
+the required successful provider result and repeat-run receipt proof.
+Do not waive this gate or convert those failures into applied receipts.
 
-No release, installed delivery claim, or consumer FRIC-2 amendment has been
-made. Milestone 4 remains open until packaging/publishing is authorized and a
-delivered executable passes both provider replays.
+Consumer evidence remains under the temporary validation directory
+`/var/folders/xf/z_902qyd0dg5m6n8pjv1vk300000gn/T/seihou-111-replay-40o528vq`.
+The `claude` and `codex` subdirectories are separate detached copies of
+`mori://tan/notification-hub` at 474ce4a. No manual source or manifest repairs
+were made in either copy. The Claude retries retain edits from its own failed
+attempts, exercising recovery, while the original consumer working tree was
+preserved. Final Claude diagnostics used a transparent PATH wrapper that
+forwarded the real CLI's argv and stdout verbatim and captured the raw result;
+it granted no tools or permissions. That capture wrapper is validation setup,
+not an adoption step. Preserve the worktrees and logs for follow-up, and use
+fresh checkpoints for delivered-executable validation.
 
+[FRIC-3](../friction-log/3-ambient-cabal-build-lacks-zlib.md) is resolved: the
+supported Nix development shell supplies native dependencies absent from the
+ambient Cabal toolchain. No entries under this plan remain logged. ADR 0019
+records the durable terminal-selection and strict-result policy.
+
+Milestone 4 remains open: release/package installation, fresh delivered
+consumer proofs with both providers, and the original FRIC-2 amendment are
+still required. No release or consumer closure was performed. Resume by
+resolving the remaining Claude permission workflow within the accepted
+boundaries and proving its edit/receipt/repeat path, then use the authorized
+release workflow and finish delivery. Passing source tests and Codex evidence
+do not close the unresolved Claude or delivery gates.
 
 
 ## Context and Orientation
