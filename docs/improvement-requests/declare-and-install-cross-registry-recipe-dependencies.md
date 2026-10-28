@@ -4,13 +4,14 @@ title: Declare and install cross-registry recipe dependencies
 description: Let a recipe declare authoritative sources for modules in other registries and install the required dependency closure through the ordinary install command without requiring users to install whole registries or guess module origins.
 requestId: IR-12
 status: proposed
+targetPlan: docs/plans/113-declare-and-install-cross-registry-recipe-dependencies.md
 origin: mori://tan/tan-seihou-modules
 affects: mori://shinzui/seihou
 affectedVersion: 0.11.0.1
 generated:
   by: codex-cli/gpt-6.1-sol
   at: "2026-10-28T12:26:39Z"
-timestamp: 2026-10-28T12:26:39Z
+timestamp: 2026-10-28T12:40:54Z
 reviews:
   - kind: model
     reviewer: codex-cli/gpt-6.1-sol
@@ -82,6 +83,8 @@ separate from dependency acquisition: a dry-run must not unexpectedly mutate the
 machine-wide install cache.
 
 ## Related work and handoff
+
+Implementation is planned in [ExecPlan 113](../plans/113-declare-and-install-cross-registry-recipe-dependencies.md). Implementation remains pending.
 
 [IR-4](refuse-to-overwrite-an-installation-from-a-different-source.md) and
 [ADR 0006](../adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md)
