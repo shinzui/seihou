@@ -5,7 +5,7 @@ module Seihou.CLI.Update.Source
 where
 
 import Control.Exception (SomeException, displayException, try)
-import Control.Monad (foldM, forM)
+import Control.Monad (foldM, forM, forM_)
 import Data.ByteString qualified as BS
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
@@ -16,6 +16,7 @@ import Seihou.CLI.InstallShared
   ( OriginInfo (..),
     cloneRepo,
     copyDirectoryRecursive,
+    writeOriginMeta,
   )
 import Seihou.CLI.Update.Types
 import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
@@ -318,7 +319,13 @@ insertCandidate searchRoot (Right artifacts) candidate =
     Nothing -> do
       let destination = searchRoot </> T.unpack (candidate ^. #name)
       Directory.createDirectoryIfMissing True destination
-      copied <- try @SomeException (copyDirectoryRecursive (candidate ^. #sourceDirectory) destination)
+      copied <- try @SomeException $ do
+        copyDirectoryRecursive (candidate ^. #sourceDirectory) destination
+        -- Resolution reads provenance from the staged directory, not from
+        -- CandidateCatalog. Use the fetched URL, overriding any origin file
+        -- in the repository; local fallbacks get no invented remote origin.
+        forM_ (candidate ^. #sourceUrl) $ \source ->
+          writeOriginMeta destination source (candidate ^. #repoName) (candidate ^. #version) (candidate ^. #tags)
       pure $ case copied of
         Left err -> Left (CandidateRepositoryInvalid (candidate ^. #name) [T.pack (displayException err)])
         Right () ->

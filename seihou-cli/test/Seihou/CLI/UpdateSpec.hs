@@ -2,6 +2,7 @@ module Seihou.CLI.UpdateSpec
   ( tests,
     UpdateFixture (..),
     prepareUpdateFixture,
+    prepareSourcePinnedUpdateFixture,
     SharedPathFixture (..),
     CoOwnerWriteMode (..),
     prepareSharedPathFixture,
@@ -780,6 +781,38 @@ prepareUpdateFixture root = do
     baselineContent
   LBS.writeFile manifestPath (manifestToJSON manifest)
   pure UpdateFixture {projectRoot, projectFile, manifestPath, xdgHome, installedModule, remote, applicationId}
+
+-- | Two fetched repositories with a source-pinned edge between them. The
+-- dependency deliberately carries stale origin metadata in its Git content;
+-- staging must record the fetched source rather than trust that file.
+prepareSourcePinnedUpdateFixture :: FilePath -> Maybe Text -> IO UpdateFixture
+prepareSourcePinnedUpdateFixture root requiredSource = do
+  fixture <- prepareUpdateFixture root
+  let dependencyRemote = root </> "shared-remote"
+      sourceUrl = T.pack dependencyRemote
+      sharedOrigin = RemoteOrigin sourceUrl "shared" Nothing
+      dependency =
+        "dependencies = [{ module = \"shared\", source = Some \""
+          <> fromMaybe sourceUrl requiredSource
+          <> "\", vars = [] : List { name : Text, value : Text } }]"
+      demoFile = fixture ^. #remote </> "module.dhall"
+  createDirectoryIfMissing True dependencyRemote
+  TIO.writeFile (dependencyRemote </> "module.dhall") (moduleDhall "shared" "2.0.0")
+  writeOrigin "https://example.com/stale-origin.git" dependencyRemote
+  callProcess "git" ["-C", dependencyRemote, "init", "-q"]
+  callProcess "git" ["-C", dependencyRemote, "add", "."]
+  callProcess "git" ["-C", dependencyRemote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "shared v2"]
+  demo <- TIO.readFile demoFile
+  TIO.writeFile demoFile (T.replace "dependencies = [] : List Text" dependency demo)
+  callProcess "git" ["-C", fixture ^. #remote, "add", "."]
+  callProcess "git" ["-C", fixture ^. #remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "commit", "-qm", "pin shared source"]
+  manifest <- either fail pure . manifestFromJSON =<< LBS.readFile (fixture ^. #manifestPath)
+  let updated =
+        manifest
+          & #applications .~ map (\app -> app & #instances .~ (app ^. #instances <> [instanceStateFrom "shared" sharedOrigin])) (manifest ^. #applications)
+          & #modules .~ (manifest ^. #modules <> [AppliedModule "shared" emptyParentVars sharedOrigin (Just "1.0.0") testTime Nothing])
+  LBS.writeFile (fixture ^. #manifestPath) (manifestToJSON updated)
+  pure fixture
 
 -- | How the co-owning application @beta@ writes the shared @.gitignore@.
 data CoOwnerWriteMode

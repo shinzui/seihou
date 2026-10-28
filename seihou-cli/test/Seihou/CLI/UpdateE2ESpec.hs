@@ -15,6 +15,7 @@ import Seihou.CLI.UpdateSpec
     UpdateFixture (..),
     installBetaVersion,
     prepareSharedPathFixture,
+    prepareSourcePinnedUpdateFixture,
     prepareUpdateFixture,
     publishBetaReleases,
   )
@@ -35,6 +36,31 @@ tests = testSpec "Update end-to-end" spec
 
 spec :: Spec
 spec = do
+  it "updates a source-pinned dependency using its fetched provenance" $
+    withSystemTempDirectory "seihou-update-source-pinned" $ \root -> do
+      fixture <- prepareSourcePinnedUpdateFixture root Nothing
+      binary <- seihouBinary
+      TIO.writeFile (fixture ^. #projectFile) "hello accepted by-user\nkeep\nv1\n"
+      (exitCode, stdoutText, stderrText) <- runSeihou binary fixture ["update", "demo", "--json"]
+      case exitCode of
+        ExitSuccess -> pure ()
+        ExitFailure code -> expectationFailure ("update exited " <> show code <> "\nstdout:\n" <> T.unpack stdoutText <> "\nstderr:\n" <> T.unpack stderrText)
+      TIO.readFile (fixture ^. #projectFile) `shouldReturn` "hello accepted by-user\nkeep\nv2\n"
+
+  it "rejects a source-pinned dependency fetched from another source without changing the project or cache" $
+    withSystemTempDirectory "seihou-update-source-mismatch" $ \root -> do
+      fixture <- prepareSourcePinnedUpdateFixture root (Just "https://example.com/required-registry.git")
+      binary <- seihouBinary
+      beforeProject <- LBS.readFile (fixture ^. #projectFile)
+      beforeManifest <- LBS.readFile (fixture ^. #manifestPath)
+      beforeInstalled <- LBS.readFile (fixture ^. #installedModule </> "module.dhall")
+      (exitCode, stdoutText, _) <- runSeihou binary fixture ["update", "demo", "--json"]
+      exitCode `shouldBe` ExitFailure 1
+      stdoutText `shouldSatisfy` T.isInfixOf "different or unknown provenance"
+      LBS.readFile (fixture ^. #projectFile) `shouldReturn` beforeProject
+      LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+      LBS.readFile (fixture ^. #installedModule </> "module.dhall") `shouldReturn` beforeInstalled
+
   it "updates through the executable and preserves a non-overlapping user edit" $
     withSystemTempDirectory "seihou-update-executable" $ \root -> do
       fixture <- prepareUpdateFixture root

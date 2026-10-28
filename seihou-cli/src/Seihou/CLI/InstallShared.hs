@@ -3,6 +3,7 @@ module Seihou.CLI.InstallShared
     OriginInfo (..),
     OriginMeta (..),
     readOriginInfo,
+    writeOriginMeta,
 
     -- * Install collisions
     InstallCollision (..),
@@ -61,8 +62,8 @@ import System.Process (readProcessWithExitCode)
 -- "Seihou.Core.ArtifactOriginDetect" because @seihou-core@ needs it to
 -- classify an artifact directory into a portable manifest origin and cannot
 -- depend on @seihou-cli-internal@. It is re-exported here so existing
--- importers are unaffected. The write side below stays in the CLI, which is
--- the only place that installs anything.
+-- importers are unaffected. The write side below stays in the CLI, which
+-- installs artifacts and stages fetched candidates for project updates.
 
 -- | Write side of @.seihou-origin.json@. Captures everything 'seihou
 -- install' / 'seihou upgrade' want to record at install time, including
@@ -85,6 +86,15 @@ instance ToJSON OriginMeta where
         "version" .= (m ^. #version),
         "tags" .= (m ^. #tags)
       ]
+
+-- | Record the source used to obtain an artifact, replacing any metadata
+-- carried by its files. Shared by installation and temporary update staging
+-- so both supply the resolver's provenance checks with the same contract.
+writeOriginMeta :: FilePath -> Text -> Maybe Text -> Maybe Text -> [Text] -> IO ()
+writeOriginMeta directory source registryName artifactVersion artifactTags = do
+  now <- getCurrentTime
+  let origin = OriginMeta source registryName (T.pack (iso8601Show now)) artifactVersion artifactTags
+  LBS.writeFile (directory </> ".seihou-origin.json") (encodePretty origin)
 
 -- ----------------------------------------------------------------------------
 -- Install collisions
@@ -374,9 +384,7 @@ installModuleDirInto root force moduleDir name source registryName moduleVersion
       createDirectoryIfMissing True installDir
       copyDirectoryRecursive moduleDir installDir
 
-      now <- getCurrentTime
-      let origin = OriginMeta source registryName (T.pack (iso8601Show now)) moduleVersion moduleTags
-      LBS.writeFile (installDir </> ".seihou-origin.json") (encodePretty origin)
+      writeOriginMeta installDir source registryName moduleVersion moduleTags
       pure InstallPerformed
 
 -- | Recursively copy a directory tree, excluding the @.git@ directory.

@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve fetched origin metadata in temporary update candidates, so dependencies with an explicit source pass the same provenance checks as installed artifacts. Staging replaces origin files carried by repositories with the source actually fetched; dependencies from a different source still fail before project or cache publication. No schema change or manual metadata repair is required.
+
 ## [0.12.1.0] - 2026-10-28
 
 ### Added

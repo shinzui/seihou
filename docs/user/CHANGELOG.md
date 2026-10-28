@@ -6,6 +6,10 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+### Fixed
+
+- `seihou update` no longer rejects correctly sourced cross-registry dependencies with “different or unknown provenance” after downloading them. Run the ordinary update command; no reinstall or metadata edits are needed. Dependencies from the wrong source are still rejected.
+
 ## [0.12.1.0] - 2026-10-28
 
 ### Fixed
