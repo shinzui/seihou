@@ -3,6 +3,7 @@ module Seihou.Composition.RecipeSpec (tests) where
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Seihou.Composition.Recipe (expandRecipe)
+import Seihou.Core.Recipe (validateRecipe)
 import Seihou.Core.Types
 import Test.Hspec
 import Test.Tasty
@@ -111,4 +112,19 @@ spec = do
                 vars = [],
                 prompts = []
               }
-      expandRecipe recipe `shouldBe` Left ["recipe must list at least one module"]
+      expandRecipe recipe `shouldBe` Left ["modules: recipe must list at least one module"]
+
+    it "shares rejection of malformed prompt targets and conditions with descriptor validation" $ do
+      let recipe =
+            Recipe
+              "bad-prompts"
+              Nothing
+              Nothing
+              [simpleDep "unavailable"]
+              []
+              [Prompt "missing-target" "Question" (Just (ExprNot (ExprIsSet "missing-condition"))) Nothing]
+      case validateRecipe recipe of
+        Left errors -> do
+          length errors `shouldBe` 2
+          expandRecipe recipe `shouldBe` Left errors
+        Right _ -> expectationFailure "Expected malformed prompt references to fail"

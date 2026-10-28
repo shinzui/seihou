@@ -12,6 +12,7 @@ module Seihou.CLI.Commands
     ValidateOpts (..),
     ValidateBlueprintOpts (..),
     ValidatePromptOpts (..),
+    ValidateRecipeOpts (..),
     ConfigOpts (..),
     ConfigAction (..),
     ContextAction (..),
@@ -83,6 +84,7 @@ data Command
   | ValidateModule ValidateOpts
   | ValidateBlueprint ValidateBlueprintOpts
   | ValidatePrompt ValidatePromptOpts
+  | ValidateRecipe ValidateRecipeOpts
   | Config ConfigOpts
   | Context ContextAction
   | Browse BrowseOpts
@@ -265,6 +267,11 @@ data ValidateBlueprintOpts = ValidateBlueprintOpts
 data ValidatePromptOpts = ValidatePromptOpts
   { path :: !(Maybe FilePath),
     lint :: !Bool
+  }
+  deriving stock (Eq, Show, Generic)
+
+data ValidateRecipeOpts = ValidateRecipeOpts
+  { path :: !(Maybe FilePath)
   }
   deriving stock (Eq, Show, Generic)
 
@@ -516,6 +523,7 @@ commandParser =
           <> command "validate-module" validateInfo
           <> command "validate-blueprint" validateBlueprintInfo
           <> command "validate-prompt" validatePromptInfo
+          <> command "validate-recipe" validateRecipeInfo
           <> command "vars" varsInfo
           <> command "schema-upgrade" schemaUpgradeInfo
           <> command "registry" registryInfo
@@ -1144,6 +1152,25 @@ validateBlueprintParser =
     ValidateBlueprintOpts
       <$> optional (argument str (metavar "PATH"))
       <*> switch (long "lint" <> help "Include advisory lint warnings")
+
+validateRecipeInfo :: ParserInfo Command
+validateRecipeInfo =
+  info
+    (ValidateRecipe . ValidateRecipeOpts <$> optional (argument str (metavar "PATH")))
+    ( fullDesc
+        <> progDesc "Validate a recipe descriptor without running its composition"
+        <> footerDoc
+          ( Just $
+              vsep
+                [ pretty ("Checks recipe.dhall, declarations, prompts, conditions, and binding names." :: String),
+                  pretty ("PATH is a directory and defaults to the current directory." :: String),
+                  pretty ("Does not ask questions, resolve members, generate files, or install modules." :: String),
+                  pretty ("Dhall imports are evaluated normally and may require network access." :: String),
+                  line,
+                  pretty ("CI: seihou validate-recipe ./my-stack </dev/null" :: String)
+                ]
+          )
+    )
 
 validatePromptInfo :: ParserInfo Command
 validatePromptInfo =

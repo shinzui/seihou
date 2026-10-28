@@ -7,6 +7,7 @@ modules already provide the generation logic and one command should apply them.
 AUTHOR AND RUN
 
   seihou new-recipe my-stack --module base --module editor
+  seihou validate-recipe ./my-stack
 
   This creates my-stack/recipe.dhall with the selected modules. Edit the
   generated definition to add variables or bindings. Preserve its field shapes. Put it in a normal search path (for example
@@ -17,8 +18,19 @@ AUTHOR AND RUN
   seihou run my-stack
 
   Dependencies resolve before generation. Supply declared values with --var
-  or normal config scopes. There is no validate-recipe command; inspect vars
-  and the run preview, and use registry validate for published entry metadata.
+  or normal config scopes for composition. Validate the descriptor separately:
+
+  seihou validate-recipe ./my-stack </dev/null
+
+  PATH defaults to the current directory. Validation checks Dhall, declarations,
+  prompts, condition references and binding names without asking for values,
+  finding/installing members, generating files or executing commands. Required
+  variables without defaults are valid. Exit codes: valid 0, invalid/unreadable 1,
+  missing recipe.dhall 4. Correct the named field and rerun. Dhall imports are
+  evaluated normally and remote imports may need network/cache access.
+
+  registry validate checks entry metadata; validate-recipe checks the descriptor;
+  run --dry-run resolves values and members to preview composition.
 
 UPDATES
 
@@ -46,6 +58,7 @@ SEE ALSO
   seihou help update
   seihou help registry
   seihou new-recipe --help
+  seihou validate-recipe --help
 
 ## Installing required modules
 

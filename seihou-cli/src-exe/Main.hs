@@ -50,6 +50,7 @@ import Seihou.CLI.Upgrade (handleUpgrade)
 import Seihou.CLI.Validate (handleValidateModule)
 import Seihou.CLI.ValidateBlueprint (handleValidateBlueprint)
 import Seihou.CLI.ValidatePrompt (handleValidatePrompt)
+import Seihou.CLI.ValidateRecipe (handleValidateRecipe)
 import Seihou.CLI.Vars (handleVars)
 import Seihou.CLI.Version (seihouVersionWithGit)
 import Seihou.Core.Module (RunnableKind (..))
@@ -119,6 +120,8 @@ dispatch cmd =
       handleValidateModule validateOpts
     ValidateBlueprint validateBpOpts ->
       handleValidateBlueprint validateBpOpts
+    ValidateRecipe validateRecipeOpts ->
+      handleValidateRecipe validateRecipeOpts
     ValidatePrompt validatePromptOpts ->
       handleValidatePrompt validatePromptOpts
     Config configOpts ->

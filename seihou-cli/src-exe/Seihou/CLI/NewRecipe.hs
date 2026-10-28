@@ -49,6 +49,10 @@ handleNewRecipe ropts = do
   TIO.putStrLn $ "Created " <> T.pack (outputDir </> "recipe.dhall")
 
   TIO.putStrLn $ "Recipe '" <> name <> "' created at " <> T.pack outputDir <> "/"
+  TIO.putStrLn $ "Next: seihou validate-recipe " <> "'" <> T.replace "'" "'\"'\"'" (T.pack outputDir) <> "'"
+  if null (ropts ^. #modules)
+    then TIO.putStrLn "Add at least one member to modules before validating."
+    else pure ()
 
 -- | Check if a recipe name matches [a-z][a-z0-9-]*
 isValidRecipeName :: Text -> Bool

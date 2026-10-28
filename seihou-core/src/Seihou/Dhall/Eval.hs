@@ -47,7 +47,7 @@ import Dhall (defaultInputSettings, input, inputExprWithSettings, inputFile, lis
 import Dhall.Core (Chunks (..), makeRecordField, recordFieldValue)
 import Dhall.Core qualified as Dhall (Expr (..))
 import Dhall.Map qualified as DhallMap
-import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, field, maybe, natural, string, union)
+import Dhall.Marshal.Decode (Decoder (..), Extractor, bool, constructor, extractError, field, maybe, natural, string, union)
 import Dhall.Pretty (prettyExpr)
 import Dhall.Src (Src)
 import Seihou.Core.Expr (parseExpr)
@@ -131,7 +131,7 @@ evalRecipeFromFile path = do
       Success r -> do
         mapM_ evaluate (r ^. #modules)
         -- Force lazy decoder thunks that may contain 'error' calls
-        mapM_ (\v -> evaluate (v ^. #type_)) (r ^. #vars)
+        mapM_ (\v -> evaluate (forceType (v ^. #type_))) (r ^. #vars)
         mapM_ (\p -> evaluate (p ^. #condition)) (r ^. #prompts)
         pure r
       Failure e -> throwIO e
@@ -140,6 +140,14 @@ evalRecipeFromFile path = do
       let name = guessModuleName path
        in pure $ Left (DhallEvalError name (T.pack (show e)))
     Right r -> pure (Right r)
+
+-- Evaluate nested type constructors within the recipe loader's exception boundary.
+forceType :: VarType -> ()
+forceType (VTList element) = forceType element
+forceType VTText = ()
+forceType VTBool = ()
+forceType VTInt = ()
+forceType (VTChoice _) = ()
 
 -- | Guess a module name from its file path by taking the parent directory name.
 guessModuleName :: FilePath -> ModuleName
@@ -275,16 +283,34 @@ migrationOpDecoder =
 
 -- | Decoder for the top-level Recipe type from Dhall.
 recipeDecoder :: Decoder Recipe
-recipeDecoder =
-  record
-    ( Recipe
-        <$> field "name" recipeNameDecoder
-        <*> field "version" (maybe strictText)
-        <*> field "description" (maybe strictText)
-        <*> field "modules" (list dependencyDecoder)
-        <*> field "vars" (list varDeclDecoder)
-        <*> field "prompts" (list promptDecoder)
-    )
+recipeDecoder = Decoder decodeRecipe (expected fieldsDecoder)
+  where
+    fieldsDecoder =
+      record
+        ( Recipe
+            <$> field "name" (decodeContext "name: expected a recipe name as Text" recipeNameDecoder)
+            <*> field "version" (decodeContext "version: expected Optional Text" (maybe strictText))
+            <*> field "description" (decodeContext "description: expected Optional Text" (maybe strictText))
+            <*> field "modules" (decodeContext "modules: expected a list of module names or records with module and vars bindings" (list dependencyDecoder))
+            <*> field "vars" (decodeContext "vars: expected variable declarations with name, type, default, description, required and validation fields" (list varDeclDecoder))
+            <*> field "prompts" (decodeContext "prompts: expected prompt records with var, text, when and choices fields" (list promptDecoder))
+        )
+
+    decodeRecipe expr@(Dhall.RecordLit fields) =
+      case filter (\key -> DhallMap.lookup key fields == Nothing) ["name", "version", "description", "modules", "vars", "prompts"] of
+        [] -> extract fieldsDecoder expr
+        missing -> extractError ("recipe.dhall: missing fields: " <> T.intercalate ", " missing)
+    decodeRecipe _ = extractError "recipe.dhall: expected a recipe record"
+
+-- Dhall extraction bypasses a single expected type to support both dependency
+-- forms. Give extraction failures author-facing field context rather than an
+-- internal InvalidDecoder report (which cannot name the enclosing field).
+decodeContext :: Text -> Decoder a -> Decoder a
+decodeContext context (Decoder decode expectedType) = Decoder decodeWithContext expectedType
+  where
+    decodeWithContext expr = case decode expr of
+      Success value -> Success value
+      Failure _ -> extractError context
 
 recipeNameDecoder :: Decoder RecipeName
 recipeNameDecoder = RecipeName <$> strictText
@@ -663,7 +689,11 @@ promptDecoder =
       Prompt
         { var = v,
           text = t,
-          condition = parseWhen whenText,
+          condition = case whenText of
+            Nothing -> Nothing
+            Just source -> case parseExpr source of
+              Right expr -> Just expr
+              Left err -> errorWithoutStackTrace ("prompts: '" <> T.unpack (v ^. #unVarName) <> "' when: " <> T.unpack err <> " (" <> T.unpack source <> ")"),
           choices = choices
         }
 

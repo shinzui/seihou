@@ -377,6 +377,23 @@ spec = do
             Map.lookup (VarName "skill.name") (dep ^. #vars) `shouldBe` Just "exec-plan"
 
   describe "evalRecipeFromFile" $ do
+    it "returns contextual load errors for malformed recipe conditions, types and defaults" $ do
+      withSystemTempDirectory "recipe-decoding" $ \tmpDir -> do
+        let descriptor ty def condition =
+              "{ name = \"probe\", version = None Text, description = None Text, modules = [\"unavailable\"], vars = [{ name = \"enabled\", type = \"" <> ty <> "\", default = " <> def <> ", description = None Text, required = True, validation = None Text }], prompts = [{ var = \"enabled\", text = \"Enable?\", when = " <> condition <> ", choices = None (List Text) }] }"
+        forM_
+          [ ("mystery", "None Text", "None Text", "type"),
+            ("list mystery", "None Text", "None Text", "type"),
+            ("bool", "Some \"invalid\"", "None Text", "enabled"),
+            ("bool", "None Text", "Some \"Eq enabled\"", "prompts: 'enabled' when")
+          ]
+          $ \(ty, def, cond, context) -> do
+            writeFile (tmpDir </> "recipe.dhall") (descriptor ty def cond)
+            result <- evalRecipeFromFile (tmpDir </> "recipe.dhall")
+            case result of
+              Left (DhallEvalError _ message) -> message `shouldSatisfy` T.isInfixOf context
+              other -> expectationFailure ("Expected controlled decode failure, got: " <> show other)
+
     it "decodes the haskell-with-nix-recipe fixture" $ do
       result <- evalRecipeFromFile (fixtureDir </> "haskell-with-nix-recipe" </> "recipe.dhall")
       case result of

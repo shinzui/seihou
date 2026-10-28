@@ -10,6 +10,12 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-28T12:32:47Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T13:53:24Z
+      mode: "implement"
+      note: "Implement descriptor-only recipe validation, public CLI coverage, and authoring guidance."
 ---
 
 # Validate recipes without running their composition
@@ -48,13 +54,31 @@ tests alone does not complete delivery.
 ## Progress
 
 
-- [ ] Milestone 1: The public command evaluates a local recipe and uses the shared validator; an ordinary scaffolded recipe passes with stdin closed and no installed members.
-- [ ] Milestone 2: Shared declaration, prompt, condition, and binding checks have actionable errors; automated public-command tests prove valid interactive recipes require no answers or composition effects.
-- [ ] Milestone 3: Help and CI documentation match the command, regression checks pass, and a published release plus the installed delivery executable pass the acceptance workflow.
+- [x] Milestone 1 (2026-10-28; Cabal-built CLI: unmodified unpublished-member scaffold, current-directory invocation, both existing recipe fixtures, and missing/malformed descriptors all passed with stdin closed): The public command evaluates a local recipe and uses the shared validator; an ordinary scaffolded recipe passes with stdin closed and no installed members.
+- [x] Milestone 2 (2026-10-28; shared core/composition regressions and 21 public-command cases pass, including snapshots with a valid effectful member present/absent, repeat runs, closed stdin, and isolated XDG state): Shared declaration, prompt, condition, and binding checks have actionable errors; automated public-command tests prove valid interactive recipes require no answers or composition effects.
+- [ ] Milestone 3: Help, CI documentation, scaffolding guidance, and ADR 0022 are implemented; all 2,134 source tests pass (1,271 core, 812 CLI, 51 extension), the CLI documentation audit and native flake checks pass. Published release and installed-executable acceptance remain open.
+
+Handoff (2026-10-28): Implementation is ready for release preparation. The release skill
+requires explicit ratification of the version before editing package versions, and
+confirmation of the bump/changelog before a release commit. No publishing authorization
+or version ratification has been received in this session. The pre-existing modified
+`schema` gitlink is preserved and excluded from implementation commits; a clean release
+checkout can avoid changing that work. Do not mistake the development executable's
+unchanged package version for a published feature.
 
 
 ## Surprises & Discoveries
 
+
+Dhall extraction supports both member declaration forms by bypassing a single expected
+record type. Wrong-shaped member lists previously produced an internal `InvalidDecoder`
+report with no enclosing field. The shared recipe decoder now gives field-specific
+extraction messages, lists missing fields, and identifies a non-record descriptor.
+Public-command cases cover those failures.
+
+Forcing only the outer variable type left invalid nested types such as `list mystery`
+unevaluated inside `VTList`. Recipe loading now forces nested types inside its existing
+exception boundary. Core loading and public-command tests prove controlled failure.
 
 
 ## Decision Log
@@ -85,6 +109,41 @@ boundary rather than requiring authors to preinstall modules.
 
 ## Outcomes & Retrospective
 
+
+The source implementation delivers `seihou validate-recipe [PATH]` without module
+discovery, input resolution, composition planning or side effects. Required unanswered
+conditional declarations pass. Invalid fields, declarations and prompt references have
+contextual diagnostics. The same semantic rules apply to composition and candidate
+recipes during update. Help, authoring prompts, CI docs and scaffolding next steps
+direct authors to the command. [ADR 0022](../adr/0022-recipe-descriptor-validation-is-independent-of-composition.md)
+records the durable boundary.
+
+Source verification used the Cabal executable at
+`dist-newstyle/build/aarch64-osx/ghc-9.12.4/seihou-cli-0.11.0.1/x/seihou/build/seihou/seihou`,
+reporting `seihou v0.11.0.1 (c245948)` with this implementation in the working tree.
+`nix develop -c cabal build all` and `nix develop -c cabal test all` passed. The 21
+`ValidateRecipe` tests are included in the 812 CLI tests. The documentation audit passed
+18 topics, 33 command pages plus agent run, 26 packaged assets, six example modules
+and eight provider-free prompt renders. All four native aarch64-darwin flake checks
+passed; incompatible systems were not checked. `cabal check` reported no warnings for
+all three packages, and `cabal sdist all` included the new handler, report and tests
+as well as updated embedded help/context assets.
+
+Retained manual acceptance fixtures are under `/tmp/seihou-plan115-acceptance-pl9omy8y`:
+`my-stack` is the unmodified unpublished-member scaffold, `local-import` exercises a local
+Dhall import, `empty-members` and `undeclared-prompt` exit 1 with field-specific messages,
+and `unreadable` demonstrated a controlled permission-denied loading error (its file
+permissions have been restored). The default-directory invocation passed; a missing
+directory exited 4. Shell quoting in the scaffold's next action was also checked with
+spaces, a quote, dollar sign and backticks in the output path.
+
+Published delivery remains outstanding. On 2026-10-28 all three authoritative Hackage
+package listings and the latest GitHub release still identify 0.11.0.1 as the current
+release. The installed `/Users/shinzui/.nix-profile/bin/seihou` reports
+`seihou v0.11.0.1 (4ade3fb)` and has not been replaced. Record the actual new release
+and installed workflow evidence here only after publishing and installation.
+
+No friction entries were recorded for this plan; the logged-entry query returned none.
 
 
 ## Context and Orientation

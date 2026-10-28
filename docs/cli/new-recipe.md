@@ -48,3 +48,15 @@ seihou new-recipe my-stack
 # Create at a specific path
 seihou new-recipe haskell-library --path ~/recipes/haskell-library
 ```
+
+## Validate before sharing
+
+Run `seihou validate-recipe ./my-stack` after editing. Add at least one member
+to an empty scaffold first. Members need not be installed and required recipe
+variables need no answers. For CI use:
+
+```sh
+seihou validate-recipe ./my-stack </dev/null
+```
+
+See [validate-recipe](validate-recipe.md) for checks, exit codes, and Dhall import behavior.

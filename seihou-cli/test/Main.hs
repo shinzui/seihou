@@ -52,6 +52,7 @@ import Seihou.CLI.UpdateRenderSpec qualified as UpdateRenderSpec
 import Seihou.CLI.UpdateSpec qualified as UpdateSpec
 import Seihou.CLI.UpgradeDiagnosisSpec qualified as UpgradeDiagnosisSpec
 import Seihou.CLI.UpgradeSpec qualified as UpgradeSpec
+import Seihou.CLI.ValidateRecipeE2ESpec qualified as ValidateRecipeE2E
 import Seihou.FzfSpec qualified as FzfSpec
 import Test.Tasty
 
@@ -111,6 +112,7 @@ main = do
         FzfSpec.tests
       ]
   seedUpdateTests <- SeedUpdateE2E.tests
+  validateRecipeTests <- ValidateRecipeE2E.tests
   recipeInputsTests <- RecipeInputsE2E.tests
   seedRunTests <- SeedRunE2E.tests
-  defaultMain (testGroup "seihou-cli" (recipeInputsTests : seedUpdateTests : seedRunTests : tests))
+  defaultMain (testGroup "seihou-cli" (validateRecipeTests : recipeInputsTests : seedUpdateTests : seedRunTests : tests))

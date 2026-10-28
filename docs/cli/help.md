@@ -47,7 +47,7 @@ Every public top-level command belongs to a topic. This table is checked by
 |-------|----------|
 | `workflow` | `init`, `run`, `remove`, `status`, `diff`, `help`, `completions` |
 | `modules` | `new-module`, `validate-module`, `schema-upgrade`, `list` |
-| `recipes` | `new-recipe` |
+| `recipes` | `new-recipe`, `validate-recipe` |
 | `variables` | `vars` |
 | `contexts` | `context` |
 | `config` | `config` |

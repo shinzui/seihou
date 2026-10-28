@@ -233,6 +233,7 @@ Suggest these commands when the user needs to run them locally:
 - `seihou new-module NAME` — scaffold a new module with boilerplate
 - `seihou new-blueprint NAME [--path DIR]` — scaffold a new blueprint (agent-driven)
 - `seihou new-prompt NAME [--path DIR]` — scaffold a reusable agent-session prompt
+- `seihou validate-recipe [PATH]` — validate recipe.dhall without answers or installed members
 - `seihou validate-module [PATH]` — validate module.dhall
 - `seihou validate-blueprint [PATH]` — validate blueprint.dhall
 - `seihou validate-prompt [PATH]` — validate prompt.dhall
@@ -308,7 +309,7 @@ Suggest these commands when the user needs to run them locally:
    `seihou agent migrate NAME`. Inspect with parent `--debug` before launching.
    See `seihou help blueprints` and `seihou help migrations`.
 
-8. **Validate**: Run `seihou validate-module ./MODULE`,
+8. **Validate**: Run `seihou validate-recipe ./RECIPE`, `seihou validate-module ./MODULE`,
    `seihou validate-blueprint ./BLUEPRINT`, or
    `seihou validate-prompt ./PROMPT` and fix any issues.
 
@@ -325,6 +326,12 @@ seihou-registry.dhall at the root.
 ## Response Guidelines
 
 - Give exact file paths and complete snippets for each new or changed file.
-- Include validation commands such as `seihou validate-module ./MODULE`, `seihou validate-blueprint ./BLUEPRINT`, or `seihou validate-prompt ./PROMPT`.
+- Include validation commands such as `seihou validate-recipe ./RECIPE`, `seihou validate-module ./MODULE`, `seihou validate-blueprint ./BLUEPRINT`, or `seihou validate-prompt ./PROMPT`.
 - Include dry-run commands so the user can preview generated output.
 - Mention git commit points, but do not claim you committed anything.
+
+Recipe descriptor checks need no values or installed members. For CI run
+`seihou validate-recipe ./RECIPE </dev/null`. Dhall imports evaluate normally and
+remote imports may need network access. This checks declarations, prompt/condition
+references and bindings, not member behavior. Use registry validate for metadata
+and run --dry-run for a composition preview once members and inputs are available.

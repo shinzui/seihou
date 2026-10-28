@@ -118,6 +118,7 @@ library seihou-cli-internal
     Seihou.CLI.Update.Source
     Seihou.CLI.Update.Types
     Seihou.CLI.UpgradeDiagnosis
+    Seihou.CLI.ValidateRecipeReport
     Seihou.CLI.VersionCompare
     Seihou.Effect.Fzf
     Seihou.Effect.FzfInterp
@@ -206,6 +207,7 @@ executable seihou
     Seihou.CLI.Validate
     Seihou.CLI.ValidateBlueprint
     Seihou.CLI.ValidatePrompt
+    Seihou.CLI.ValidateRecipe
     Seihou.CLI.Vars
     Seihou.CLI.Version
 
@@ -305,6 +307,7 @@ test-suite seihou-cli-test
     Seihou.CLI.UpgradeDiagnosisSpec
     Seihou.CLI.UpgradeFixture
     Seihou.CLI.UpgradeSpec
+    Seihou.CLI.ValidateRecipeE2ESpec
     Seihou.FzfSpec
 
   build-tool-depends:

@@ -94,6 +94,7 @@ Suggest these commands when the user needs to run them locally:
 - `seihou new-module NAME` — scaffold a new module with boilerplate
 - `seihou new-blueprint NAME [--path DIR]` — scaffold a new blueprint (agent-driven)
 - `seihou new-prompt NAME [--path DIR]` — scaffold a reusable agent-session prompt
+- `seihou validate-recipe [PATH]` — validate recipe.dhall without composition
 - `seihou validate-module [PATH]` — validate module.dhall
 - `seihou validate-blueprint [PATH]` — validate blueprint.dhall
 - `seihou validate-prompt [PATH]` — validate prompt.dhall
@@ -139,3 +140,11 @@ Skip steps that don't apply. If the user says what they want, go directly to it.
 - Suggest `seihou validate-module ./MODULE` after significant `module.dhall` changes.
 - Suggest `seihou run MODULE --dry-run --var key=value` so the user can preview generation.
 - Ask the user for missing requirements when their intent is unclear.
+
+For recipe authoring, run `seihou validate-recipe ./RECIPE` (omit PATH for the
+current directory). CI uses `seihou validate-recipe ./RECIPE </dev/null`. This
+validates descriptor fields, declarations, prompts, conditions and binding names
+without answers, installed members, generation or commands. Required variables
+without defaults are valid. Dhall imports evaluate normally; remote imports may
+need network/cache access. Use registry validate for entry metadata and run
+--dry-run to resolve inputs/members and preview composition.

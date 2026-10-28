@@ -162,6 +162,7 @@ Every command has a full reference under [`docs/cli/`](docs/cli/) and built-in
 | [`validate-module`](docs/cli/validate-module.md) · [`validate-blueprint`](docs/cli/validate-blueprint.md) · [`validate-prompt`](docs/cli/validate-prompt.md) | Validate an artifact directory (`--lint` for advisories). |
 | [`vars`](docs/cli/vars.md) | Inspect variable declarations and resolved values (`--explain`). |
 | [`schema-upgrade`](docs/cli/schema-upgrade.md) | Upgrade `module.dhall` files to the current schema. |
+| [`validate-recipe`](docs/cli/validate-recipe.md) | Check a recipe descriptor without prompts, installed members, or composition effects. |
 | [`registry`](docs/cli/registry.md) | Author `seihou-registry.dhall` files (`sync-versions`, `validate`). |
 
 **Configuration**

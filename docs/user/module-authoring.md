@@ -649,12 +649,32 @@ Seihou detects that `haskell-library` is a recipe (directory contains `recipe.dh
 
 ### Recipe validation
 
+Check an existing recipe directly, without installing members or answering questions:
+
+```sh
+seihou validate-recipe ./haskell-library </dev/null
+```
+
+Omit PATH to validate the current directory. Validation reads `recipe.dhall` and its
+Dhall imports without composing modules or modifying project/configuration state.
+Remote Dhall imports may need network access or cached imports. Required variables
+without defaults are valid; member availability and binding target schemas are not
+checked. `registry validate` checks entry metadata, while `run --dry-run` resolves
+values and available members to preview composition.
+
 Recipes are validated with these rules:
 
 1. Name matches `[a-z][a-z0-9-]*`
 2. At least one module listed
 3. No duplicate module names
 4. Variable binding names match `[a-z][a-z0-9.-]*`
+5. Recipe variable declarations are unique
+6. Prompts target declared recipe variables
+7. All variable references in prompt conditions are declared, including nested conditions
+
+Dhall loading checks field shapes, variable types/defaults and condition syntax.
+Exit codes are 0 for valid, 1 for invalid/unreadable, and 4 for a missing descriptor.
+See [validate-recipe](../cli/validate-recipe.md) for the full command contract.
 
 
 ## Module search paths

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add `validate-recipe [PATH]` for descriptor-only validation with no prompts, member discovery, or composition effects. Shared validation now rejects duplicate recipe declarations and undeclared prompt targets/condition references; malformed prompt conditions name their prompt and `when` field.
+
 - Resolve required recipe choices before module defaults, ask shared questions once, and replay accepted recipe inputs from manifest schema 12 during updates. Preserve false and reject invalid recipe input before generation.
 
 - Run blueprint migrations automatically without terminal input; `--batch` also selects this mode explicitly. Validate CLI completion and reported permission failures before recording an edge.

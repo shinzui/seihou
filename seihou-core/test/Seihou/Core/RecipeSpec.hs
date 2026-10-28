@@ -114,3 +114,36 @@ spec = do
       case validateRecipe recipe of
         Left errs -> length errs `shouldSatisfy` (>= 2)
         Right _ -> expectationFailure "Expected validation failure"
+
+    it "accepts unanswered required declarations and nested conditions" $ do
+      validateRecipe interactiveRecipe `shouldBe` Right interactiveRecipe
+
+    it "reports duplicate declarations, prompt targets and all nested references together" $ do
+      let recipe =
+            Recipe
+              "interactive"
+              Nothing
+              Nothing
+              [simpleDep "unavailable"]
+              [requiredVar "enabled", requiredVar "enabled"]
+              [Prompt "missing-target" "Question" (Just (ExprAnd (ExprIsSet "unknown-a") (ExprNot (ExprOr (ExprLit True) (ExprEq "unknown-b" (VBool False)))))) Nothing]
+      case validateRecipe recipe of
+        Left errs -> do
+          length errs `shouldBe` 4
+          mapM_
+            (\needle -> hasError needle errs `shouldBe` True)
+            ["vars: duplicate", "missing-target", "unknown-a", "unknown-b"]
+        Right _ -> expectationFailure "Expected all four descriptor errors"
+
+requiredVar :: VarName -> VarDecl
+requiredVar name = VarDecl name VTBool Nothing Nothing True Nothing
+
+interactiveRecipe :: Recipe
+interactiveRecipe =
+  Recipe
+    "interactive"
+    Nothing
+    Nothing
+    [Dependency "unavailable" (Map.singleton "member.only" "literal ${unchanged}") Nothing]
+    [requiredVar "enabled", requiredVar "owner"]
+    [Prompt "owner" "Owner?" (Just (ExprAnd (ExprEq "enabled" (VBool True)) (ExprNot (ExprOr (ExprIsSet "owner") (ExprLit False))))) Nothing]

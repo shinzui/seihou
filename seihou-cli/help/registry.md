@@ -18,7 +18,7 @@ AUTHOR WORKFLOW
   without writing; use it in CI. Validate checks structure and version agreement.
   Both commands accept --dir PATH, work locally and do not read installed copies.
 
-  Validate item contents with validate-module, validate-blueprint or
+  Validate item contents with validate-module, validate-recipe, validate-blueprint or
   validate-prompt as appropriate; registry validation checks metadata.
 
 CONSUMERS
