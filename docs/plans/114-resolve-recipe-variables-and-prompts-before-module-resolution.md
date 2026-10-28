@@ -44,7 +44,7 @@ For the motivating consumer, the two choices are `git.createGithub` and `nix.red
 - [x] M1 (2026-10-28; terminal true/false acceptance and closed-stdin E2E passed): The ordinary run command resolves recipe inputs before module defaults; a terminal asks each shared choice once, and closed stdin refuses unresolved required choices without changes.
 - [x] M2 (2026-10-28; core prompt regressions, recipe saving tests, and consumer acceptance passed): Conditional prompting, validation, source attribution, save-input behavior, and precedence work across recipe and module resolution without changing recipes that have no inputs.
 - [x] M3 (2026-10-28; schema roundtrips, historical adoption E2E, recipe-only replay, fresh-clone and new-consumer acceptance passed): Updates and fresh clones replay accepted recipe choices, including recipe-only inputs, and older supported manifests adopt the representation through the normal preview and atomic apply.
-- [ ] M4: Source consumer acceptance, help, documentation, and required checks passed on 2026-10-28. Release publication, installation, and released installed-binary acceptance remain open.
+- [x] M4 (2026-10-28): Seihou 0.12.0.1 is published and installed at f529a7a. The installed terminal, replay, fresh-clone/new-consumer and representative-consumer acceptance passed, together with source and full native package checks.
 
 Baseline: Installed `seihou --version` reported `seihou v0.11.0.1 (4ade3fb)` on 2026-10-28. IR-11 supplies the pre-fix command reproduction; the initial planning session inspected code but did not run its fixture. Implementation evidence follows below.
 
@@ -71,16 +71,75 @@ Baseline: Installed `seihou --version` reported `seihou v0.11.0.1 (4ade3fb)` on 
 
 ## Outcomes & Retrospective
 
-Source implementation includes shared recipe resolution, error-preserving prompts, recipe-aware saving and previews, schema 12 codecs/upgrades, and update replay/adoption. Durable decisions are recorded in [ADR 0021](../adr/0021-recipe-inputs-resolve-before-module-defaults.md) and the schema contract in [ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md). No friction occurrences crossed the recording threshold in this session.
+Source implementation includes shared recipe resolution, error-preserving prompts, recipe-aware saving and previews, schema 12 codecs/upgrades, and update replay/adoption. Durable decisions are recorded in [ADR 0021](../adr/0021-recipe-inputs-resolve-before-module-defaults.md) and the schema contract in [ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md). No friction entries were logged under this plan; shared release friction is triaged under plans 113 and 115.
 
 The representative consumer wrapper uses actual modules located through Mori, without changing their definitions. Its isolated preparation copies the dependency closure and pre-supplies unrelated project inputs. Shell commands are explicitly disabled to avoid creating remote repositories; this proves generation and prompting, not execution of remote provisioning. It is not a published TAN recipe. The `mori://shinzui/seihou-modules` producer revision is `a5cbd51d7cd45c0a872e208f43bf6dd32eafe4fe` and the `mori://shinzui/agent-seihou` producer revision is `50f38289478bc13f9e8002df228cdea955a3f581`; canonical artifact references are listed in Context and Orientation. Harness transcripts and preparation records live beneath `/tmp/seihou-recipe-final-114`; this final harness run passed synthetic terminal questions, command-marker protection, fresh-clone replay, new-consumer replay, and representative real consumers.
 
-Validation: `cabal test all` passed 1,267 core, 791 CLI, and 51 extension tests. `nix fmt`, `git diff --check`, the CLI source/runtime documentation audit, and all four native `nix flake check` checks passed. The flake checks cover the native Darwin system; incompatible systems were omitted by Nix. No package release was produced.
+Validation: `cabal test all` passed 1,267 core, 791 CLI, and 51 extension tests. `nix fmt`, `git diff --check`, the CLI source/runtime documentation audit, and all four native `nix flake check` checks passed. The flake checks cover the native Darwin system; incompatible systems were omitted by Nix. Those initial checks preceded publication; released and installed evidence follows.
 
-Delivery remains source-only: package version `0.11.0.1`, implemented on source base `8ea17ac`. The candidate is `dist-newstyle/build/aarch64-osx/ghc-9.12.4/seihou-cli-0.11.0.1/x/seihou/build/seihou/seihou` under this checkout. The installed binary remains `seihou v0.11.0.1 (4ade3fb)`, which has the bug. Release publication, installation, and rerunning acceptance against the released installed artifact remain open under M4.
+Delivery is complete in Seihou 0.12.0.1. The initial source checkpoint used base
+8ea17ac and an installed 0.11.0.1 baseline; final acceptance below uses the published
+and installed Nix artifact rather than a development executable.
+
+### Released and installed delivery (2026-10-28)
+
+
+Seihou 0.12.0.1 is published for `seihou-core`, `seihou-cli` and
+`seihou-okf-extension`, including API documentation. The GitHub release/tag is
+`v0.12.0.1`, at revision `f529a7ab63609c7494240d12e52b541bf7e3643b`.
+The dependency-source schema is published at
+`d3c78cd81d9697ebff3128732ec673a17e65c73f` in `mori://shinzui/seihou-schema`;
+the schema gitlink, emitted Dhall URL/integrity hash and Nix input/lock agree.
+
+The effective installed executable is `/Users/shinzui/.nix-profile/bin/seihou`,
+reporting `seihou v0.12.0.1 (f529a7a)`. Its Nix profile records
+`github:shinzui/seihou/v0.12.0.1`, resolving to that same revision. The standalone
+entry has priority 4 to preserve and override the Home Manager entry at priority 5.
+The source build and installed binary are separately verified.
+
+Source checks passed all 2,134 tests (1,271 core, 812 CLI, 51 extension), build,
+formatting, package checks, documentation audit and four native flake checks.
+The complete native Nix package build also passed all 2,134 tests before patch
+publication. Its evidence is `/tmp/seihou-release-patch-native.log`; incompatible
+platforms were not exercised. The audit covers 18 topics, 33 command pages plus
+agent run, 26 assets, six validated examples and eight provider-free prompt renders.
+
+Installed acceptance passed the following ordinary workflows, with isolated XDG
+state and no real remote provisioning:
+
+```bash
+bash scripts/test-install-closure.sh /Users/shinzui/.nix-profile/bin/seihou
+python3 scripts/verify-recipe-inputs.py --binary /Users/shinzui/.nix-profile/bin/seihou --area /tmp/seihou-release-0121-installed-inputs --consumer
+```
+
+The first verifies the required three-registry closure, origins, run, dry-run
+cache equality, repeat install, missing/unavailable sources, collision/force,
+contradictory origins, cycles, diamonds, local shadows and legacy declarations.
+The second verifies terminal true/false questions once, saved recipe inputs,
+fresh-clone and new-consumer replay, and representative real-module consumers
+with provisioning commands disabled. It is not a published TAN recipe.
+
+Installed `validate-recipe` also passed the unmodified unpublished-member scaffold,
+current-directory invocation, an unanswered conditional recipe in a directory with
+spaces, help and top-level discovery. Empty members, an undeclared prompt and
+malformed Dhall exited 1 with contextual messages; missing descriptors exited 4.
+Snapshots showed no project/configuration/install changes. Retained validation
+fixtures are `/tmp/seihou-release-0121-validation-8_oilm8b`; transcripts are
+`/tmp/seihou-release-installed-closure.log`,
+`/tmp/seihou-release-installed-inputs.log` and
+`/tmp/seihou-release-installed-validation.log`.
+
+Python is used only by test/acceptance harnesses, not by the Seihou executable.
+The three changed requests passed scoped strict profile/log validation. The full
+legacy request corpus retains its pre-existing recommended-field diagnostics on
+untouched requests.
+
+
 
 
 ## Context and Orientation
+
+The orientation below describes the pre-implementation baseline. Current behavior and delivery evidence are recorded above.
 
 
 Seihou is a Haskell CLI. A module declares typed inputs, templates and commands. A recipe names a composition (several modules run as one application), declares its own inputs, and supplies literal bindings through its module entries. A module instance identifies one invocation by module name and parent bindings; distinct parameterizations must retain distinct saved values. An application is the recorded root module or recipe plus its additional modules.

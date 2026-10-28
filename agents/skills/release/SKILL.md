@@ -384,3 +384,12 @@ section — no internal implementation detail.
   `just docs-tarball <package> <version>` before uploading them; the raw
   `cabal haddock` output is rejected three ways over. `seihou-core` uploads
   as-is.
+
+## Installed Nix verification
+
+After publication, install the new tag through the user's established Nix profile
+and verify its path, version/revision, recorded origin and ordinary workflows.
+Preserve other profile entries and existing package priorities. If Home Manager
+also supplies the same executable, retain that profile and use an explicit higher
+priority for the standalone release (for example `--priority 4` above its default
+5). Never remove the entire Home Manager profile to replace one executable.

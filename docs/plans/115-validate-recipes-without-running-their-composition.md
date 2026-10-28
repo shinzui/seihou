@@ -61,15 +61,11 @@ tests alone does not complete delivery.
 
 - [x] Milestone 1 (2026-10-28; Cabal-built CLI: unmodified unpublished-member scaffold, current-directory invocation, both existing recipe fixtures, and missing/malformed descriptors all passed with stdin closed): The public command evaluates a local recipe and uses the shared validator; an ordinary scaffolded recipe passes with stdin closed and no installed members.
 - [x] Milestone 2 (2026-10-28; shared core/composition regressions and 21 public-command cases pass, including snapshots with a valid effectful member present/absent, repeat runs, closed stdin, and isolated XDG state): Shared declaration, prompt, condition, and binding checks have actionable errors; automated public-command tests prove valid interactive recipes require no answers or composition effects.
-- [ ] Milestone 3: Help, CI documentation, scaffolding guidance, and ADR 0022 are implemented; all 2,134 source tests pass (1,271 core, 812 CLI, 51 extension), the CLI documentation audit and native flake checks pass. Published release and installed-executable acceptance remain open.
+- [x] Milestone 3 (2026-10-28): Help, CI documentation, scaffolding guidance and ADR 0022 are delivered in published/installed Seihou 0.12.0.1 at f529a7a. Source and complete native package tests pass; the installed ordinary valid/invalid workflow, help and CI invocation pass.
 
-Release preparation (2026-10-28): The user authorized the proposed 0.12.0.0
-coordinated release and closure of EPs 113–115. The published dependency-source schema
-is now pinned consistently. The 0.12.0.0 source build passed all 2,134 tests, the
-source/runtime CLI documentation audit, all four native flake checks, all three package
-metadata checks, the ordinary cross-registry install/run harness, and interactive
-recipe/representative-consumer acceptance. Published and installed evidence will be
-recorded before closing the final milestone.
+Delivery (2026-10-28): The user authorized the coordinated release and closure
+of EPs 113–115. Seihou 0.12.0.1 is published and installed, and ordinary acceptance
+passed against the installed executable. Complete delivery evidence follows below.
 
 
 ## Surprises & Discoveries
@@ -142,13 +138,66 @@ permissions have been restored). The default-directory invocation passed; a miss
 directory exited 4. Shell quoting in the scaffold's next action was also checked with
 spaces, a quote, dollar sign and backticks in the output path.
 
-Published delivery remains outstanding. On 2026-10-28 all three authoritative Hackage
-package listings and the latest GitHub release still identify 0.11.0.1 as the current
-release. The installed `/Users/shinzui/.nix-profile/bin/seihou` reports
-`seihou v0.11.0.1 (4ade3fb)` and has not been replaced. Record the actual new release
-and installed workflow evidence here only after publishing and installation.
+Published and installed delivery is complete in 0.12.0.1. The earlier installed
+0.11.0.1 binary and source-build evidence above are historical checkpoints.
+FRIC-6 is resolved by installing the released standalone profile at priority 4 while
+preserving Home Manager. Shared FRIC-5 is resolved by the verified native packaging
+fixes in 0.12.0.1.
 
-No friction entries were recorded for this plan; the logged-entry query returned none.
+### Released and installed delivery (2026-10-28)
+
+
+Seihou 0.12.0.1 is published for `seihou-core`, `seihou-cli` and
+`seihou-okf-extension`, including API documentation. The GitHub release/tag is
+`v0.12.0.1`, at revision `f529a7ab63609c7494240d12e52b541bf7e3643b`.
+The dependency-source schema is published at
+`d3c78cd81d9697ebff3128732ec673a17e65c73f` in `mori://shinzui/seihou-schema`;
+the schema gitlink, emitted Dhall URL/integrity hash and Nix input/lock agree.
+
+The effective installed executable is `/Users/shinzui/.nix-profile/bin/seihou`,
+reporting `seihou v0.12.0.1 (f529a7a)`. Its Nix profile records
+`github:shinzui/seihou/v0.12.0.1`, resolving to that same revision. The standalone
+entry has priority 4 to preserve and override the Home Manager entry at priority 5.
+The source build and installed binary are separately verified.
+
+Source checks passed all 2,134 tests (1,271 core, 812 CLI, 51 extension), build,
+formatting, package checks, documentation audit and four native flake checks.
+The complete native Nix package build also passed all 2,134 tests before patch
+publication. Its evidence is `/tmp/seihou-release-patch-native.log`; incompatible
+platforms were not exercised. The audit covers 18 topics, 33 command pages plus
+agent run, 26 assets, six validated examples and eight provider-free prompt renders.
+
+Installed acceptance passed the following ordinary workflows, with isolated XDG
+state and no real remote provisioning:
+
+```bash
+bash scripts/test-install-closure.sh /Users/shinzui/.nix-profile/bin/seihou
+python3 scripts/verify-recipe-inputs.py --binary /Users/shinzui/.nix-profile/bin/seihou --area /tmp/seihou-release-0121-installed-inputs --consumer
+```
+
+The first verifies the required three-registry closure, origins, run, dry-run
+cache equality, repeat install, missing/unavailable sources, collision/force,
+contradictory origins, cycles, diamonds, local shadows and legacy declarations.
+The second verifies terminal true/false questions once, saved recipe inputs,
+fresh-clone and new-consumer replay, and representative real-module consumers
+with provisioning commands disabled. It is not a published TAN recipe.
+
+Installed `validate-recipe` also passed the unmodified unpublished-member scaffold,
+current-directory invocation, an unanswered conditional recipe in a directory with
+spaces, help and top-level discovery. Empty members, an undeclared prompt and
+malformed Dhall exited 1 with contextual messages; missing descriptors exited 4.
+Snapshots showed no project/configuration/install changes. Retained validation
+fixtures are `/tmp/seihou-release-0121-validation-8_oilm8b`; transcripts are
+`/tmp/seihou-release-installed-closure.log`,
+`/tmp/seihou-release-installed-inputs.log` and
+`/tmp/seihou-release-installed-validation.log`.
+
+Python is used only by test/acceptance harnesses, not by the Seihou executable.
+The three changed requests passed scoped strict profile/log validation. The full
+legacy request corpus retains its pre-existing recommended-field diagnostics on
+untouched requests.
+
+
 
 
 ## Context and Orientation

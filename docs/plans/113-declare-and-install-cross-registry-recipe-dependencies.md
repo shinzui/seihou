@@ -37,10 +37,10 @@ The starting state is a fresh machine or worktree with no installed artifacts. T
 ## Progress
 
 
-- [x] (2026-10-28) Source declarations decode compatibly, retain variable bindings, and roundtrip installed legacy names. The committed three-registry fixture expresses local, external, and transitive external edges. Schema candidate commit is `3b04970b13fd61c563b0b2bfa333344b0ab7bae1` in `mori://shinzui/seihou-schema` (unpublished).
+- [x] (2026-10-28) Source declarations decode compatibly, retain variable bindings, and roundtrip installed legacy names. The committed three-registry fixture expresses local, external, and transitive external edges. The initial candidate was integrated with upstream and published at `d3c78cd81d9697ebff3128732ec673a17e65c73f` in `mori://shinzui/seihou-schema`.
 - [x] (2026-10-28) One ordinary install acquires exactly `local`, `leaf`, `external`, and `root` with their own origins. The public-command harness verifies missing/unavailable sources, cycles, contradictory origins even with force, repeat install, and preservation of cache markers on refusal.
 - [x] (2026-10-28) Source requirements survive recipe expansion and staged definitions; run, agent baselines, recursive modules, and update check requirements locally. Public-command checks cover offline dry-run cache equality, local shadows, collisions/force, diamond closure, retry, and legacy names. Core, CLI, and extension suites pass; final evidence is recorded below.
-- [ ] Published schema and executable pass the installed ordinary three-registry workflow; documentation and delivery evidence are recorded. TAN producer publication is separately owned as recorded in the release scope decision.
+- [x] (2026-10-28) Published schema and Seihou 0.12.0.1 pass the installed three-registry install/run and failure/recovery workflow. Native packaging, documentation and delivery evidence are complete; downstream TAN publication remains separately owned under the user-directed scope decision.
 
 ## Surprises & Discoveries
 
@@ -82,9 +82,12 @@ the earlier requirement to keep this Seihou plan open until TAN producer publica
 ## Outcomes & Retrospective
 
 
-The source implementation and isolated developer workflow are verified; delivery remains incomplete. The schema field and producer documentation are committed locally in the schema checkout. Seihou's tracked schema/Nix pins must advance together after that candidate is published. A compatible Seihou release and installation have not been performed. The installed executable remains `/Users/shinzui/.nix-profile/bin/seihou`, reporting `seihou v0.11.0.1 (4ade3fb)`; it reproduces the old recipe-only installation defect.
+The Seihou prerequisite implementation and published/installed delivery are complete.
+At the initial source-only checkpoint the schema candidate was local and the installed
+0.11.0.1 executable still reproduced the defect; the released evidence below supersedes
+that delivery gap. TAN producer implementation remains tracked by its own plan.
 
-Final source validation passed `nix develop -c cabal test all`: 1,254 core tests, 785 CLI tests, and 51 extension tests (2,090 total). `nix develop -c cabal build all`, `nix fmt`, strict friction-bundle validation, and `git diff --check` also passed. The source executable reports `seihou v0.11.0.1 (be31390)` because it was compiled from that base commit plus this implementation working tree; this is not a released version.
+Initial source validation passed `nix develop -c cabal test all`: 1,254 core tests, 785 CLI tests, and 51 extension tests (2,090 total). `nix develop -c cabal build all`, `nix fmt`, strict friction-bundle validation, and `git diff --check` also passed. The source executable reports `seihou v0.11.0.1 (be31390)` because it was compiled from that base commit plus this implementation working tree; this is not a released version.
 
 The source executable is resolved with `nix develop -c cabal list-bin exe:seihou` and lives under `dist-newstyle/build/aarch64-osx/ghc-9.12.4/seihou-cli-0.11.0.1/x/seihou/build/seihou/seihou`. `bash scripts/test-install-closure.sh <that absolute path>` exercises the ordinary install/run pair in committed isolated Git repositories and verifies the complete failure/recovery matrix. The fixture maps `root`/`local` to registry `a`, `external` to registry `b`, and `leaf` to registry `c`; all unrelated sentinel entries remain absent. Each temporary absolute Git origin is printed in the command output. No developer cache or project is modified. The fixture has no ordinary recipe inputs; variable-binding preservation is checked separately in decoder and composition tests.
 
@@ -95,9 +98,64 @@ seihou install https://github.com/topagentnetwork/tan-seihou-modules.git --modul
 seihou run tan-keiro-project
 ```
 
-These remain intended commands, not successful consumer evidence: the producer's recipe and both prerequisite TAN modules do not yet exist. Normal inputs and integration acceptance remain owned by `mori://tan/tan-seihou-modules/plans/3-publish-and-verify-the-tan-keiro-project-recipe`, gated by its parent MasterPlan. FRIC-4 remains logged because this blocker is unresolved; triage it when delivery can proceed. Durable source/acquisition and compatibility rules are distilled into [ADR 0020](../adr/0020-dependency-sources-belong-to-producer-edges.md).
+These remain intended commands, not successful consumer evidence: the producer's recipe and both prerequisite TAN modules do not yet exist. Normal inputs and integration acceptance remain owned by `mori://tan/tan-seihou-modules/plans/3-publish-and-verify-the-tan-keiro-project-recipe`, gated by its parent MasterPlan. FRIC-4 is accepted as downstream TAN work under the user-directed Seihou closure. FRIC-5 is resolved by the Python test-tool and offline-schema-fixture fixes in 0.12.0.1, verified by the complete native package build. Durable source/acquisition and compatibility rules are distilled into [ADR 0020](../adr/0020-dependency-sources-belong-to-producer-edges.md).
+
+### Released and installed delivery (2026-10-28)
+
+
+Seihou 0.12.0.1 is published for `seihou-core`, `seihou-cli` and
+`seihou-okf-extension`, including API documentation. The GitHub release/tag is
+`v0.12.0.1`, at revision `f529a7ab63609c7494240d12e52b541bf7e3643b`.
+The dependency-source schema is published at
+`d3c78cd81d9697ebff3128732ec673a17e65c73f` in `mori://shinzui/seihou-schema`;
+the schema gitlink, emitted Dhall URL/integrity hash and Nix input/lock agree.
+
+The effective installed executable is `/Users/shinzui/.nix-profile/bin/seihou`,
+reporting `seihou v0.12.0.1 (f529a7a)`. Its Nix profile records
+`github:shinzui/seihou/v0.12.0.1`, resolving to that same revision. The standalone
+entry has priority 4 to preserve and override the Home Manager entry at priority 5.
+The source build and installed binary are separately verified.
+
+Source checks passed all 2,134 tests (1,271 core, 812 CLI, 51 extension), build,
+formatting, package checks, documentation audit and four native flake checks.
+The complete native Nix package build also passed all 2,134 tests before patch
+publication. Its evidence is `/tmp/seihou-release-patch-native.log`; incompatible
+platforms were not exercised. The audit covers 18 topics, 33 command pages plus
+agent run, 26 assets, six validated examples and eight provider-free prompt renders.
+
+Installed acceptance passed the following ordinary workflows, with isolated XDG
+state and no real remote provisioning:
+
+```bash
+bash scripts/test-install-closure.sh /Users/shinzui/.nix-profile/bin/seihou
+python3 scripts/verify-recipe-inputs.py --binary /Users/shinzui/.nix-profile/bin/seihou --area /tmp/seihou-release-0121-installed-inputs --consumer
+```
+
+The first verifies the required three-registry closure, origins, run, dry-run
+cache equality, repeat install, missing/unavailable sources, collision/force,
+contradictory origins, cycles, diamonds, local shadows and legacy declarations.
+The second verifies terminal true/false questions once, saved recipe inputs,
+fresh-clone and new-consumer replay, and representative real-module consumers
+with provisioning commands disabled. It is not a published TAN recipe.
+
+Installed `validate-recipe` also passed the unmodified unpublished-member scaffold,
+current-directory invocation, an unanswered conditional recipe in a directory with
+spaces, help and top-level discovery. Empty members, an undeclared prompt and
+malformed Dhall exited 1 with contextual messages; missing descriptors exited 4.
+Snapshots showed no project/configuration/install changes. Retained validation
+fixtures are `/tmp/seihou-release-0121-validation-8_oilm8b`; transcripts are
+`/tmp/seihou-release-installed-closure.log`,
+`/tmp/seihou-release-installed-inputs.log` and
+`/tmp/seihou-release-installed-validation.log`.
+
+Python is used only by test/acceptance harnesses, not by the Seihou executable.
+The three changed requests passed scoped strict profile/log validation. The full
+legacy request corpus retains its pre-existing recommended-field diagnostics on
+untouched requests.
 
 ## Context and Orientation
+
+The orientation below describes the pre-implementation baseline. Current behavior and delivery evidence are recorded above.
 
 
 A registry is a Git repository with `seihou-registry.dhall` listing named artifacts and their directories. A recipe lists module dependencies; modules can themselves depend on modules. `seihou-cli/src-exe/Seihou/CLI/Install.hs` owns source selection, repository discovery, and `installSingleRecipe`, `installSingleModule`, `installFromRegistry`, and `installRegistryEntry`. Currently it installs selected directories individually. Recipe branches copy a definition without following its members. `seihou-core/src/Seihou/Core/Install.hs` only supplies name parsing; it is not the installer engine.

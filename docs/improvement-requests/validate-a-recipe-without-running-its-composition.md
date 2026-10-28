@@ -3,7 +3,10 @@ type: Improvement Request
 title: Validate a recipe without running its composition
 description: Provide a discoverable recipe validation command that checks recipe declarations and prompts without generating files, executing module commands, or requiring answers to project configuration questions.
 requestId: IR-13
-status: proposed
+status: completed
+completedAt: "2026-10-28T14:50:01Z"
+resolution: >-
+  Provides validate-recipe with shared contextual descriptor checks and no composition effects; installed Seihou 0.12.0.1 passes closed-stdin valid/invalid, default-directory, help and CI acceptance.
 targetPlan: docs/plans/115-validate-recipes-without-running-their-composition.md
 origin: mori://tan/tan-seihou-modules
 affects: mori://shinzui/seihou
@@ -11,7 +14,7 @@ affectedVersion: 0.11.0.1
 generated:
   by: codex-cli/gpt-6.1-sol
   at: "2026-10-28T12:27:03Z"
-timestamp: 2026-10-28T14:25:14Z
+timestamp: 2026-10-28T14:50:01Z
 reviews:
   - kind: model
     reviewer: codex-cli/gpt-6.1-sol
@@ -23,6 +26,16 @@ reviews:
     provider: openai
     model: gpt-6.1-sol
     effort: unspecified
+  - kind: model
+    reviewer: codex-cli/gpt-6.1-sol
+    reviewed_at: "2026-10-28T14:50:01Z"
+    document_timestamp: "2026-10-28T14:50:01Z"
+    scope: content-and-metadata
+    outcome: approved
+    context: Completion self-review against published artifacts, installed acceptance and the linked plan; not an independent review.
+    provider: openai
+    model: gpt-6.1-sol
+    effort: unspecified
 ---
 
 # Validate a recipe without running its composition
@@ -30,7 +43,8 @@ reviews:
 ## Implementation
 
 Implemented by [ExecPlan 115](../plans/115-validate-recipes-without-running-their-composition.md).
-The plan records implementation, verification, and published/installed delivery evidence.
+Completed in Seihou 0.12.0.1. The linked plan records published artifacts and
+acceptance against the installed executable at revision `f529a7a`.
 
 ## Observed authoring gap
 

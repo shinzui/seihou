@@ -3,7 +3,10 @@ type: Improvement Request
 title: Resolve recipe variables and prompts before module resolution
 description: Honor recipe-level declarations and prompts so a recipe can ask once for an optional feature and pass the answer to every composed module instead of silently using module defaults.
 requestId: IR-11
-status: proposed
+status: completed
+completedAt: "2026-10-28T14:50:01Z"
+resolution: >-
+  Resolves shared recipe decisions before member defaults, retains false, and replays manifest-schema-12 inputs in updates and fresh clones; installed Seihou 0.12.0.1 passes terminal and representative-consumer acceptance.
 targetPlan: docs/plans/114-resolve-recipe-variables-and-prompts-before-module-resolution.md
 origin: mori://tan/tan-seihou-modules
 affects: mori://shinzui/seihou
@@ -11,7 +14,7 @@ affectedVersion: 0.11.0.1
 generated:
   by: codex-cli/gpt-6.1-sol
   at: "2026-10-28T12:26:05Z"
-timestamp: 2026-10-28T14:24:43Z
+timestamp: 2026-10-28T14:50:01Z
 reviews:
   - kind: model
     reviewer: codex-cli/gpt-6.1-sol
@@ -23,6 +26,16 @@ reviews:
     provider: openai
     model: gpt-6.1-sol
     effort: unspecified
+  - kind: model
+    reviewer: codex-cli/gpt-6.1-sol
+    reviewed_at: "2026-10-28T14:50:01Z"
+    document_timestamp: "2026-10-28T14:50:01Z"
+    scope: content-and-metadata
+    outcome: approved
+    context: Completion self-review against published artifacts, installed acceptance and the linked plan; not an independent review.
+    provider: openai
+    model: gpt-6.1-sol
+    effort: unspecified
 ---
 
 # Resolve recipe variables and prompts before module resolution
@@ -30,7 +43,8 @@ reviews:
 ## Implementation
 
 Implemented by [ExecPlan 114](../plans/114-resolve-recipe-variables-and-prompts-before-module-resolution.md).
-The plan records implementation, verification, and published/installed delivery evidence.
+Completed in Seihou 0.12.0.1. The linked plan records published artifacts and
+acceptance against the installed executable at revision `f529a7a`.
 
 ## Context and observed behavior
 
