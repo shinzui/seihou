@@ -9,6 +9,7 @@ module Seihou.Engine.UpdateTransaction
     setUpdateTransactionExpectedManifest,
     completeUpdateTransaction,
     recoverIncompleteTransactions,
+    setAsideUnreferencedBaselines,
     trackedLinkIdentity,
     adoptTrackedLinks,
   )
@@ -25,6 +26,7 @@ import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
 import Data.List (sortOn)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (isJust)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -42,7 +44,7 @@ import Seihou.Effect.ProcessInterp (runProcessIO)
 import Seihou.Engine.Reconcile
 import Seihou.Engine.Seed (SeedDecision (..))
 import Seihou.Filesystem.Exclusive (createFileExclusiveAnchored)
-import Seihou.Manifest.Hash (hashContent)
+import Seihou.Manifest.Hash (baselineRefFromText, hashContent)
 import Seihou.Manifest.Types (manifestFromJSON)
 import Seihou.Prelude
 import System.Directory qualified as Directory
@@ -89,7 +91,11 @@ data JournalMetadata = JournalMetadata
     -- | Bare name, under @backups/@, of a byte copy of @.seihou/manifest.json@
     -- taken when the transaction began. Absent when the project had no
     -- manifest then, and for journals older than version 5.
-    manifestBackup :: !(Maybe FilePath)
+    manifestBackup :: !(Maybe FilePath),
+    -- | Baseline blob names moved from @.seihou/baselines@ into the
+    -- transaction's @set-aside-baselines/@ folder. Rollback moves them back;
+    -- completion deletes them with the transaction directory.
+    setAsideBaselines :: ![FilePath]
   }
   deriving stock (Eq, Generic, Show)
 
@@ -132,7 +138,8 @@ instance ToJSON JournalMetadata where
         "indexLinks" .= (metadata ^. #indexLinks),
         "seedCreations" .= (metadata ^. #seedCreations),
         "expectedManifest" .= (metadata ^. #expectedManifest),
-        "manifestBackup" .= (metadata ^. #manifestBackup)
+        "manifestBackup" .= (metadata ^. #manifestBackup),
+        "setAsideBaselines" .= (metadata ^. #setAsideBaselines)
       ]
 
 instance FromJSON JournalMetadata where
@@ -148,6 +155,7 @@ instance FromJSON JournalMetadata where
       <*> (if version < 4 then pure Map.empty else object .: "seedCreations")
       <*> object .:? "expectedManifest"
       <*> (if version < 5 then pure Nothing else object .:? "manifestBackup")
+      <*> (if version < 5 then pure [] else object .: "setAsideBaselines")
 
 beginUpdateTransaction :: FilePath -> Set FilePath -> IO (Either TransactionError UpdateTransaction)
 beginUpdateTransaction root targets = beginSeedUpdateTransaction root targets Set.empty
@@ -159,6 +167,7 @@ beginSeedUpdateTransaction projectRoot targets seedPaths = case traverse validat
     result <- try @SomeException $ do
       let transactionsRoot = projectRoot </> ".seihou" </> "transactions"
       Directory.createDirectoryIfMissing True transactionsRoot
+      ignoreTransactions transactionsRoot
       transactionDirectory <- createTempDirectory transactionsRoot "update-"
       let transaction = UpdateTransaction projectRoot transactionDirectory (Set.fromList safeTargets)
       initializeJournal transaction seedPaths safeTargets `onException` cleanupDirectory transactionDirectory
@@ -205,8 +214,18 @@ initializeJournal transaction seedPaths safeTargets = do
         indexLinks = Map.empty,
         seedCreations = Map.empty,
         expectedManifest = Nothing,
-        manifestBackup = manifestBackup
+        manifestBackup = manifestBackup,
+        setAsideBaselines = []
       }
+
+-- | Transactions are per-checkout recovery scaffolding, never applied state.
+-- A self-ignoring @.gitignore@ keeps a module command that snapshots the
+-- project (@git add -A@) from committing a transaction in flight.
+ignoreTransactions :: FilePath -> IO ()
+ignoreTransactions transactionsRoot = do
+  let ignoreFile = transactionsRoot </> ".gitignore"
+  exists <- Directory.doesPathExist ignoreFile
+  unless exists (TIO.writeFile ignoreFile "*\n")
 
 manifestRelativePath :: FilePath
 manifestRelativePath = ".seihou" </> "manifest.json"
@@ -527,7 +546,8 @@ setExpectedManifestAndDirectories metadata additionalDirectories candidate =
       indexLinks = metadata ^. #indexLinks,
       seedCreations = metadata ^. #seedCreations,
       expectedManifest = Just candidate,
-      manifestBackup = metadata ^. #manifestBackup
+      manifestBackup = metadata ^. #manifestBackup,
+      setAsideBaselines = metadata ^. #setAsideBaselines
     }
 
 applyMutations :: (Int -> IO ()) -> UpdateTransaction -> ReconciliationPlan -> IO ()
@@ -613,6 +633,7 @@ rollbackUpdateTransaction transaction = do
         restoreIndexLinks (transaction ^. #projectRoot) (metadata ^. #indexLinks)
         forM_ (filter (\entry -> Map.notMember (entry ^. #targetPath) (metadata ^. #indexLinks)) (metadata ^. #entries)) (restoreEntry transaction)
         traverse_ (restoreManifest transaction) (metadata ^. #manifestBackup)
+        restoreSetAsideBaselines transaction (metadata ^. #setAsideBaselines)
         removeNewDirectories (transaction ^. #projectRoot) (metadata ^. #newDirectories)
         cleanupDirectory (transaction ^. #transactionDirectory)
       pure $ first (TransactionRollbackFailed . exceptionText) result
@@ -640,6 +661,58 @@ restoreEntry transaction entry = do
       content <- TIO.readFile backupPath
       atomicWriteText target content
     _ -> when (current == EntryFile) (Directory.removeFile target)
+
+baselinesRelativePath :: FilePath
+baselinesRelativePath = ".seihou" </> "baselines"
+
+setAsideBaselinesDirectory :: UpdateTransaction -> FilePath
+setAsideBaselinesDirectory transaction = transaction ^. #transactionDirectory </> "set-aside-baselines"
+
+-- | Move every valid baseline blob that @keep@ does not reference out of
+-- @.seihou/baselines@ and into the transaction, so that before the transaction
+-- commits the baseline store already holds exactly what the published
+-- manifest references. A command that snapshots the project then captures no
+-- blob that pruning would delete afterwards. The names are journaled before
+-- any blob moves; rollback and crash recovery move them back.
+setAsideUnreferencedBaselines :: UpdateTransaction -> Set BaselineRef -> IO (Either TransactionError ())
+setAsideUnreferencedBaselines transaction keep = do
+  result <- try @SomeException $ do
+    let root = transaction ^. #projectRoot
+        baselineDirectory = root </> baselinesRelativePath
+    verifySafeParents root (baselinesRelativePath </> "blob")
+    exists <- Directory.doesDirectoryExist baselineDirectory
+    names <- if exists then Directory.listDirectory baselineDirectory else pure []
+    removable <- filterMIO (isUnreferencedBlob baselineDirectory) names
+    unless (null removable) $ do
+      metadata <- readJournal (transaction ^. #transactionDirectory) >>= either (ioError . userError . show) pure
+      writeJournal (transaction ^. #transactionDirectory) (metadata & #setAsideBaselines .~ removable)
+      Directory.createDirectoryIfMissing True (setAsideBaselinesDirectory transaction)
+      forM_ removable $ \name -> Directory.renamePath (baselineDirectory </> name) (setAsideBaselinesDirectory transaction </> name)
+  pure $ first (\err -> TransactionApplyFailed (exceptionText err) Nothing) result
+  where
+    isUnreferencedBlob baselineDirectory name = case baselineRefFromText (T.pack name) of
+      Nothing -> pure False
+      Just ref
+        | Set.member ref keep -> pure False
+        | otherwise -> do
+            entry <- runEff $ runFilesystem $ inspectPath (baselineDirectory </> name)
+            if entry /= EntryFile
+              then pure False
+              else (== ref ^. #unBaselineRef) . hashContent <$> TIO.readFile (baselineDirectory </> name)
+
+-- | Move set-aside blobs back. Blobs are content-addressed, so one already
+-- present at its name (or one a crash never moved) needs nothing.
+restoreSetAsideBaselines :: UpdateTransaction -> [FilePath] -> IO ()
+restoreSetAsideBaselines transaction names = forM_ names $ \name -> do
+  let root = transaction ^. #projectRoot
+      setAside = setAsideBaselinesDirectory transaction </> name
+      target = root </> baselinesRelativePath </> name
+  verifySafeParents root (baselinesRelativePath </> name)
+  setAsideEntry <- runEff $ runFilesystem $ inspectPath setAside
+  current <- runEff $ runFilesystem $ inspectPath target
+  when (setAsideEntry == EntryFile && current == EntryMissing) $ do
+    Directory.createDirectoryIfMissing True (root </> baselinesRelativePath)
+    Directory.renamePath setAside target
 
 -- | Return @.seihou/manifest.json@ to the bytes it held when the transaction
 -- began, through a temporary file renamed over the final path.
@@ -710,7 +783,8 @@ setUpdateTransactionExpectedManifest transaction expected = do
                 indexLinks = metadata ^. #indexLinks,
                 seedCreations = metadata ^. #seedCreations,
                 expectedManifest = Just expected,
-                manifestBackup = metadata ^. #manifestBackup
+                manifestBackup = metadata ^. #manifestBackup,
+                setAsideBaselines = metadata ^. #setAsideBaselines
               }
       result <- try @SomeException (writeJournal (transaction ^. #transactionDirectory) updated)
       pure $ first (\err -> TransactionApplyFailed (exceptionText err) Nothing) result
@@ -797,6 +871,7 @@ validateJournal metadata = do
   traverse_ (validateJournalEntry . (^. #targetPath)) (metadata ^. #entries)
   traverse_ validateBackupName [name | JournalEntry _ (Just name) _ <- metadata ^. #entries]
   traverse_ validateBackupName (metadata ^. #manifestBackup)
+  traverse_ validateBaselineName (metadata ^. #setAsideBaselines)
   traverse_ (first renderTransactionPathError . validateTransactionPath) (metadata ^. #newDirectories)
   pure metadata
   where
@@ -807,6 +882,9 @@ validateJournal metadata = do
     validateBackupName name
       | takeFileName name == name && name /= "." && name /= ".." = Right ()
       | otherwise = Left ("invalid backup filename: " <> T.pack name)
+    validateBaselineName name
+      | isJust (baselineRefFromText (T.pack name)) && takeFileName name == name = Right ()
+      | otherwise = Left ("invalid set-aside baseline name: " <> T.pack name)
 
 renderTransactionPathError :: TransactionError -> Text
 renderTransactionPathError (InvalidTransactionPath path reason) = T.pack path <> ": " <> reason

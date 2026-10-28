@@ -1,5 +1,6 @@
 module Seihou.CLI.CommandReceiptE2ESpec (tests) where
 
+import Control.Monad (filterM)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
@@ -8,13 +9,16 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.SeedRunE2ESpec (body, invoke, prepare, readManifest, success)
+import Seihou.CLI.SeihouBinary (seihouBinary)
+import Seihou.CLI.UpdateSpec (UpdateFixture (..), prepareUpdateFixture)
 import Seihou.Core.Types
 import Seihou.Manifest.Types (manifestFromJSON)
 import Seihou.Prelude
 import System.Directory qualified as D
+import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..))
 import System.IO.Temp (withSystemTempDirectory)
-import System.Process (callProcess, readProcess)
+import System.Process (CreateProcess (..), callProcess, proc, readCreateProcessWithExitCode, readProcess)
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -51,6 +55,29 @@ committedManifest root = do
   case manifestFromJSON (LBS.fromStrict bytes) of
     Left err -> fail err
     Right manifest -> pure (bytes, manifest)
+
+-- | Turn the update fixture's project into a git repository, and publish a
+-- 2.0.0 of @demo@ whose only command is @command@.
+prepareCommandUpdate :: FilePath -> Text -> IO (FilePath, UpdateFixture)
+prepareCommandUpdate root command = do
+  fixture <- prepareUpdateFixture root
+  binary <- seihouBinary
+  let project = fixture ^. #projectRoot
+      remote = fixture ^. #remote
+  callProcess "git" ["-C", project, "init", "-q", "-b", "master"]
+  callProcess "git" ["-C", project, "add", "-A"]
+  callProcess "git" ["-C", project, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "-qm", "Adopt demo 1.0.0"]
+  released <- TIO.readFile (remote </> "module.dhall")
+  TIO.writeFile (remote </> "module.dhall") (T.replace "printf should-not-run >> command.log" command released)
+  callProcess "git" ["-C", remote, "-c", "user.name=Seihou Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false", "commit", "-qam", "v2 command"]
+  pure (binary, fixture)
+
+runUpdate :: FilePath -> UpdateFixture -> [String] -> IO (ExitCode, Text)
+runUpdate binary fixture args = do
+  inherited <- getEnvironment
+  let environment = ("XDG_CONFIG_HOME", fixture ^. #xdgHome) : filter ((/= "XDG_CONFIG_HOME") . fst) inherited
+  (code, out, err) <- readCreateProcessWithExitCode (proc binary args) {cwd = Just (fixture ^. #projectRoot), env = Just environment} ""
+  pure (code, T.pack (out <> err))
 
 tests :: IO TestTree
 tests = testSpec "command receipts end-to-end" $ do
@@ -101,3 +128,34 @@ tests = testSpec "command receipts end-to-end" $ do
       _ <- success binary root ["run", "demo", "--dry-run"]
       D.doesPathExist (root </> ".seihou/manifest.json") `shouldReturn` False
       D.doesPathExist (root </> ".git") `shouldReturn` False
+
+  it "commits a complete manifest when an update's new command commits the project" $
+    withSystemTempDirectory "receipt-update-commit" $ \root -> do
+      let command = "git add -A && git -c user.name='Seihou Test' -c user.email=test@example.com -c commit.gpgsign=false commit -qm 'Adopt demo 2.0.0'"
+      (binary, fixture) <- prepareCommandUpdate root command
+      let project = fixture ^. #projectRoot
+      (code, output) <- runUpdate binary fixture ["update", "demo", "--json"]
+      code `shouldBe` ExitSuccess
+      output `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
+      readProcess "git" ["-C", project, "status", "--porcelain"] "" `shouldReturn` ""
+      (committedBytes, committed) <- committedManifest project
+      map (^. #command) (demoReceipts committed) `shouldBe` [command]
+      map (^. #moduleVersion) (committed ^. #modules) `shouldBe` [Just "2.0.0"]
+      BS.readFile (fixture ^. #manifestPath) `shouldReturn` committedBytes
+
+  it "restores the pre-update manifest and files when an update's command fails" $
+    withSystemTempDirectory "receipt-update-failure" $ \root -> do
+      (binary, fixture) <- prepareCommandUpdate root "exit 7"
+      let project = fixture ^. #projectRoot
+      beforeManifest <- BS.readFile (fixture ^. #manifestPath)
+      beforeReadme <- BS.readFile (fixture ^. #projectFile)
+      (code, output) <- runUpdate binary fixture ["update", "demo", "--json"]
+      code `shouldNotBe` ExitSuccess
+      output `shouldSatisfy` T.isInfixOf "\"command_failed\""
+      BS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
+      BS.readFile (fixture ^. #projectFile) `shouldReturn` beforeReadme
+      let transactions = project </> ".seihou/transactions"
+      exists <- D.doesDirectoryExist transactions
+      entries <- if exists then D.listDirectory transactions else pure []
+      leftovers <- filterM (D.doesDirectoryExist . (transactions </>)) entries
+      leftovers `shouldBe` []

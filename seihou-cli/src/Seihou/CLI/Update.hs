@@ -19,7 +19,7 @@ module Seihou.CLI.Update
   )
 where
 
-import Control.Exception (SomeException, displayException, throwIO, toException, try)
+import Control.Exception (SomeException, displayException, onException, throwIO, toException, try)
 import Control.Monad (foldM, forM, forM_, when)
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
@@ -519,29 +519,55 @@ applyAcceptedPlan plan = do
                             case linkResult of
                               Left err -> abortUpdate transaction err
                               Right checkoutWarnings -> do
-                                commandResult <-
-                                  runEff $
-                                    runProcessIO $
-                                      executeCommandPlan now (plan ^. #commandPlan)
-                                case commandResult of
-                                  Left err ->
-                                    abortUpdate
-                                      transaction
-                                      (UpdateCommandFailed err [ArbitraryCommandSideEffectsMayRemain])
-                                  Right completedReceipts -> do
-                                    let finalManifest = buildFinalManifest now plan filesManifest completedReceipts
-                                    markerResult <- setCommitMarkers transaction finalManifest
-                                    case markerResult of
+                                -- The manifest is published before the command
+                                -- phase, carrying the receipts a successful
+                                -- phase earns, and baselines it no longer
+                                -- references are set aside, so a command that
+                                -- commits the project captures both complete
+                                -- and leaves a clean tree. The commit
+                                -- markers are set only after the phase: until
+                                -- then a failure, an interrupt or a crash rolls
+                                -- back files, install cache and the journaled
+                                -- manifest copy together. See
+                                -- docs/adr/0023-command-receipts-are-published-before-the-command-phase-runs.md.
+                                let expectedManifest = buildFinalManifest now plan filesManifest (expectedCommandReceipts now (plan ^. #commandPlan))
+                                    manifestPath = plan ^. #snapshot . #manifestPath
+                                publication <- publishCandidates (plan ^. #candidateArtifacts)
+                                case publication of
+                                  Left err -> abortUpdate transaction err
+                                  Right () -> do
+                                    published <- writeManifestIO manifestPath expectedManifest
+                                    setAside <- case published of
+                                      Left err -> pure (Left err)
+                                      Right () -> first UpdateTransactionFailed <$> setAsideUnreferencedBaselines transaction (manifestBaselineRefs expectedManifest)
+                                    case setAside of
                                       Left err -> abortUpdate transaction err
                                       Right () -> do
-                                        publication <- publishCandidates (plan ^. #candidateArtifacts)
-                                        case publication of
-                                          Left err -> abortUpdate transaction err
-                                          Right () -> do
-                                            written <- writeManifestIO (plan ^. #snapshot . #manifestPath) finalManifest
-                                            case written of
+                                        commandResult <-
+                                          runEff (runProcessIO (executeCommandPlan now (plan ^. #commandPlan)))
+                                            `onException` abandonUpdate transaction
+                                        case commandResult of
+                                          Left err ->
+                                            abortUpdate
+                                              transaction
+                                              (UpdateCommandFailed err [ArbitraryCommandSideEffectsMayRemain])
+                                          Right completedReceipts -> do
+                                            -- A difference means expectedCommandReceipts
+                                            -- disagrees with execution, a bug rather
+                                            -- than an expected path; publish the
+                                            -- receipts the phase actually earned.
+                                            let finalManifest = buildFinalManifest now plan filesManifest completedReceipts
+                                            corrected <-
+                                              if finalManifest == expectedManifest
+                                                then pure (Right ())
+                                                else writeManifestIO manifestPath finalManifest
+                                            case corrected of
                                               Left err -> abortUpdate transaction err
-                                              Right () -> finishCommitted transaction plan finalManifest checkoutWarnings
+                                              Right () -> do
+                                                markerResult <- setCommitMarkers transaction finalManifest
+                                                case markerResult of
+                                                  Left err -> abortUpdate transaction err
+                                                  Right () -> finishCommitted transaction plan finalManifest checkoutWarnings
 
 planApplication ::
   UpdateRequest ->
@@ -1358,6 +1384,14 @@ readManifestForUpdate path = do
             _ -> do
               manifest <- first (UpdateManifestUnreadable path . T.pack) (manifestFromJSON bytes)
               Right (document, manifest)
+
+-- | Best-effort rollback while an exception (such as an interrupt) is
+-- propagating. Anything left behind is recovered by the next update.
+abandonUpdate :: UpdateTransaction -> IO ()
+abandonUpdate transaction = do
+  _ <- try @SomeException (restoreServiceBackups transaction)
+  _ <- try @SomeException (rollbackUpdateTransaction transaction)
+  pure ()
 
 abortUpdate :: UpdateTransaction -> UpdateError -> IO (Either UpdateError a)
 abortUpdate transaction original = do

@@ -564,6 +564,57 @@ spec = do
         readProject projectRoot "file.txt" `shouldReturn` "old\n"
         BS.readFile (manifestFile projectRoot) `shouldReturn` "{}"
 
+  describe "set-aside baselines" $ do
+    let baselineDirectory projectRoot = projectRoot </> ".seihou" </> "baselines"
+        writeBlob projectRoot content = do
+          let ref = baselineRefForContent content
+          Directory.createDirectoryIfMissing True (baselineDirectory projectRoot)
+          TIO.writeFile (baselineDirectory projectRoot </> refName ref) content
+          pure ref
+        blobExists projectRoot ref = Directory.doesFileExist (baselineDirectory projectRoot </> refName ref)
+
+    it "sets aside only valid unreferenced blobs and moves them back on rollback" $
+      withSystemTempDirectory "seihou-update-set-aside-rollback" $ \projectRoot -> do
+        writeProject projectRoot "file.txt" "old\n"
+        kept <- writeBlob projectRoot "kept\n"
+        stale <- writeBlob projectRoot "stale\n"
+        TIO.writeFile (baselineDirectory projectRoot </> "not-a-blob") "junk\n"
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        setAsideUnreferencedBaselines transaction (Set.singleton kept) `shouldReturn` Right ()
+        blobExists projectRoot kept `shouldReturn` True
+        blobExists projectRoot stale `shouldReturn` False
+        Directory.doesFileExist (baselineDirectory projectRoot </> "not-a-blob") `shouldReturn` True
+        rollbackUpdateTransaction transaction `shouldReturn` Right ()
+        blobExists projectRoot stale `shouldReturn` True
+        TIO.readFile (baselineDirectory projectRoot </> refName stale) `shouldReturn` "stale\n"
+
+    it "moves set-aside blobs back when recovering an uncommitted transaction" $
+      withSystemTempDirectory "seihou-update-set-aside-recover" $ \projectRoot -> do
+        writeProject projectRoot "file.txt" "old\n"
+        stale <- writeBlob projectRoot "stale\n"
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        setAsideUnreferencedBaselines transaction Set.empty `shouldReturn` Right ()
+        blobExists projectRoot stale `shouldReturn` False
+        recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
+        blobExists projectRoot stale `shouldReturn` True
+
+    it "discards set-aside blobs when the transaction completes" $
+      withSystemTempDirectory "seihou-update-set-aside-complete" $ \projectRoot -> do
+        writeProject projectRoot "file.txt" "old\n"
+        stale <- writeBlob projectRoot "stale\n"
+        transaction <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        setAsideUnreferencedBaselines transaction Set.empty `shouldReturn` Right ()
+        completeUpdateTransaction transaction `shouldReturn` Right ()
+        blobExists projectRoot stale `shouldReturn` False
+        Directory.doesDirectoryExist (transaction ^. #transactionDirectory) `shouldReturn` False
+
+    it "keeps transactions out of git with a self-ignoring .gitignore" $
+      withSystemTempDirectory "seihou-update-transactions-ignored" $ \projectRoot -> do
+        writeProject projectRoot "file.txt" "old\n"
+        _ <- expectRight =<< beginUpdateTransaction projectRoot (Set.singleton "file.txt")
+        TIO.readFile (projectRoot </> ".seihou" </> "transactions" </> ".gitignore") `shouldReturn` "*\n"
+        recoverIncompleteTransactions projectRoot `shouldReturn` [Right ()]
+
   describe "path validation" $ do
     it "rejects traversal, absolute, Git, and Seihou targets" $
       withSystemTempDirectory "seihou-update-validation" $ \projectRoot -> do
@@ -619,7 +670,7 @@ spec = do
           readProject projectRoot "edited.txt" `shouldReturn` "user orphan\n"
           Map.member "safe.txt" (candidate ^. #files) `shouldBe` False
           Map.member "edited.txt" (candidate ^. #files) `shouldBe` True
-          Directory.listDirectory (projectRoot </> ".seihou" </> "transactions") `shouldReturn` []
+          Directory.listDirectory (projectRoot </> ".seihou" </> "transactions") `shouldReturn` [".gitignore"]
 
 fixedTime :: UTCTime
 fixedTime = parseTimeOrError True defaultTimeLocale "%Y-%m-%dT%H:%M:%SZ" "2026-07-19T12:00:00Z"

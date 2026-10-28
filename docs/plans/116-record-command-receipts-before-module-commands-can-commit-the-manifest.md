@@ -63,7 +63,7 @@ them on failure.
 - [x] M1 (2026-10-28): `Seihou.CLI.CommandExecution` exposes the receipt list a fully successful command phase will return, and a unit test proves that `executeCommandPlan` on an all-success plan returns exactly that list. Evidence: `-p "Seihou.CLI.CommandExecution"` passes 17 tests, including the three `expectedCommandReceipts` cases and four `withReceiptWithdrawal` cases (success, `Left`, `UserInterrupt`, failing withdrawal).
 - [x] M2 (2026-10-28): `seihou run` writes the expected receipts before the command phase, withdraws them when the phase fails or is interrupted, and skips the redundant final write. An end-to-end test shows a module whose last command commits leaves a clean tree, a committed manifest with that application's receipts, and a fresh clone whose `seihou update demo --dry-run` prints `Already up to date.`; a module whose last command fails leaves the manifest as today's failed run does and prints the withdrawal notice. Evidence: `-p "command receipts end-to-end"` passes 3 tests; against the pre-change `Run.hs` the commit and failure cases fail (` M .seihou/manifest.json`, no withdrawal notice). Full `seihou-cli-test`: 822 passed.
 - [x] M3 (2026-10-28): The update transaction journal (version 5) snapshots `.seihou/manifest.json` when a transaction begins and restores it byte for byte on rollback and on crash recovery, with core tests for both paths and for decoding older journals. Evidence: five new "manifest snapshot" cases (version-5 journal with copy, rollback, crash recovery, committed path, version-4 journal) and the unchanged path-validation case pass; `-p "UpdateTransaction"` 34 passed; full `seihou-core-test` passes.
-- [ ] M4: `seihou update` writes the final manifest before the command phase and sets the recovery commit marker only after the phase succeeds. An end-to-end test shows an update whose new command commits leaves a clean tree with the receipt committed, and an update whose command fails restores the pre-update manifest and files with no transaction left behind.
+- [x] M4 (2026-10-28): `seihou update` writes the final manifest before the command phase and sets the recovery commit marker only after the phase succeeds. An end-to-end test shows an update whose new command commits leaves a clean tree with the receipt committed, and an update whose command fails restores the pre-update manifest and files with no transaction left behind. Meeting the clean-tree criterion also required setting aside unreferenced baselines before the phase and a self-ignoring `.seihou/transactions/.gitignore` (see Surprises & Discoveries and Decision Log). Evidence: `-p "command receipts end-to-end"` 5 passed; four new "set-aside baselines" core cases pass; full `seihou-core-test` and `seihou-cli-test` (824) pass.
 - [ ] M5: `docs/user/module-authoring.md`, `docs/dev/architecture/overview.md`, `docs/user/CHANGELOG.md` and a new ADR describe the new receipt timing; IR-9 is marked completed with evidence; `cabal test all`, `nix/check-record-conventions.sh` and `nix/check-cli-module-placement.sh` pass.
 
 
@@ -88,8 +88,52 @@ handle here only when it also changed the plan.
   directories that `SeedRunE2ESpec.invoke` points the environment at, so `git add -A` in the
   committing command and the `git status --porcelain` assertions see only project files.
 
+- (2026-10-28, M4) The first run of the update commit case left the tree dirty with
+  ` D .seihou/transactions/update-*/...` (journal, `backups/`, `service-backups/`,
+  `service-journal.json`) and ` D .seihou/baselines/<pre-update blob>`: the committing command
+  snapshotted the in-flight transaction and the baseline that `finishCommitted` prunes after
+  commit. Neither was anticipated by the plan; both are fixed in this milestone (Decision Log).
+  This also means that before this plan any update command that committed the project committed
+  the transaction scaffolding too.
+
+- (2026-10-28, M4) A rolled-back update leaves the new baseline blobs that `applyReconciliation`
+  wrote as untracked files under `.seihou/baselines/`. This predates the plan (the journal never
+  recorded them), is harmless because blobs are content-addressed and pruned by the next
+  successful run or update, and is out of scope; the failure case asserts the manifest, the
+  managed file and the absence of a transaction directory, not an empty `git status`.
+
 
 ## Decision Log
+
+- Decision: Before update's command phase, move every baseline blob the published manifest no
+  longer references from `.seihou/baselines/` into the transaction directory
+  (`set-aside-baselines/`), journaling the names in the version-5 journal field
+  `setAsideBaselines`. Rollback and crash recovery move them back; completion deletes them.
+  Rationale: Milestone 4's clean-tree criterion failed because `finishCommitted` prunes stale
+  baselines only after the commit marker, so a committing command captured the pre-update blob
+  and the prune then showed as ` D .seihou/baselines/<old>`. Pruning before the marker would lose
+  blobs the restored manifest references if the phase failed; setting them aside is the same
+  operation made reversible. `seihou run` already prunes before its command phase and needs
+  nothing.
+  Date: 2026-10-28.
+
+- Decision: `beginSeedUpdateTransaction` writes a self-ignoring `.gitignore` (`*`) in
+  `.seihou/transactions/` when absent.
+  Rationale: A committing command run during update otherwise commits the transaction in flight
+  (journal, backups, service backups), and completion then deletes it from the working tree. The
+  transaction directory is per-checkout recovery scaffolding (ADR 0004), never applied state.
+  The file persists after the transaction completes and is invisible to git; recovery and
+  `pendingUpdateRecovery` already skip non-directory entries.
+  Date: 2026-10-28.
+
+- Decision: An exception (such as Ctrl-C) propagating out of update's command phase rolls the
+  transaction back on the way out (`abandonUpdate`), best-effort, instead of waiting for the next
+  `seihou update` to recover it.
+  Rationale: The manifest is now published before the phase, so leaving an interrupted
+  transaction in place would leave receipts for commands that did not run visible to every
+  other command until the next update. Anything the best-effort rollback cannot finish is still
+  recovered at the next update's entry, as before.
+  Date: 2026-10-28.
 
 - Decision: Publish the receipts a command phase will produce before the phase runs (IR-9
   option A) instead of adding a schema-level command phase that runs after the receipt write
