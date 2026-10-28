@@ -122,6 +122,28 @@ Exports use `{ var : Text, alias : Optional Text }`. For a named composition
 without new generation logic, use `seihou new-recipe NAME --module MODULE`
 (repeat `--module`), then `seihou run NAME`; see `seihou help recipes`.
 
+### Recipe declarations and acquisition
+
+Recipe members, module dependencies and blueprint base modules can declare
+`S.Dependency::{ module = "external", source = Some "https://host/registry.git" }`.
+An omitted source means the declaring registry during install. Sources are literal
+Git URLs, not variable expressions. `seihou install SOURCE --module RECIPE` acquires
+the required closure; run and dry-run use local members and do not fetch. Upgrade
+the runtime to Seihou 0.12.0.0 before publishing source declarations.
+
+Recipes may declare shared typed variables and ordered conditional prompts.
+Recipe precedence is CLI, literal member bindings, saved recipe inputs on update,
+environment, local/namespace/context/global config, then recipe defaults. A required
+choice with no default asks once before member defaults and must be supplied in
+CI. Explicit false remains a value. Prompt conditions control interaction; they do
+not waive a required declaration. Use optional declarations for conditional details.
+Accepted recipe inputs are recorded in manifest schema 12 and replayed by ordinary
+update. Each consumer still validates the supplied value.
+
+Use `seihou validate-recipe PATH` for descriptor-only checks without answers or
+installed members. CI can run `seihou validate-recipe ./my-stack </dev/null`.
+Descriptor-authored Dhall imports evaluate normally and may use the network.
+
 ### Removal
 
 ```dhall

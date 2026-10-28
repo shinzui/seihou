@@ -1,23 +1,27 @@
 # Changelog
 
-## Unreleased
+User-facing release notes for Seihou. The [engineering changelog](../../CHANGELOG.md)
+records implementation and packaging details. All three packages share a version
+following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
-- Check a recipe before sharing or in CI with `seihou validate-recipe ./my-stack </dev/null`. No installed modules or answers are needed. Errors identify fields to fix, including duplicate variables and undeclared prompt/condition references, which are now rejected during composition too.
+## [Unreleased]
 
-- Resolve required recipe choices before module defaults, ask shared questions once, and replay accepted recipe inputs from manifest schema 12 during updates. Preserve false and reject invalid recipe input before generation.
+## [0.12.0.0] - 2026-10-28
 
-- Run blueprint migrations automatically without terminal input; `--batch` also selects this mode explicitly. Validate CLI completion and reported permission failures before recording an edge.
+### Added
 
-User-facing release notes for Seihou. This is a curated summary of
-user-visible changes; the [full engineering changelog](../../CHANGELOG.md) at
-the repository root records every change, including internal refactors and
-packaging.
+- **Install a recipe and its dependencies together.** Run `seihou install SOURCE --module RECIPE`, then `seihou run RECIPE`. Authors can declare an external supplying registry with `source = Some "GIT-URL"`; an omitted source means the declaring registry. Reinstall repairs an older incomplete installation. Conflicting origins and preflight failures preserve the existing cache. Run and dry-run remain local.
+- **Ask shared recipe questions once.** Required recipe choices are resolved before member defaults and passed to every consumer. For automation, supply values such as `--var git.createGithub=false`. Conditional optional prompts can ask GitHub details only when enabled. Successful applications record recipe inputs in manifest schema 12; ordinary update reuses them in fresh clones and adopts agreeing historical inputs through its normal preview.
+- **Validate a recipe before running it.** Use `seihou validate-recipe ./my-stack </dev/null` in CI or omit the redirect interactively. No installed members, answers, or configuration are required. Errors name fields to fix, including duplicate declarations and undeclared prompt/condition references. Omit PATH to validate the current directory.
+- **Adopt project-owned starter files.** The `adopt-seed-lifecycle` authoring blueprint helps classify and validate existing module outputs before publishing seed declarations.
 
-Versions follow the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`). All
-packages in the workspace share a single version.
+### Changed
 
+- Upgrade the CLI to 0.12.0.0 before adopting the new dependency-source schema. Existing legacy dependency declarations still work. Core library consumers must adapt to the dependency-source and recipe-input API additions; projects using only the CLI need no source edits.
 
-## Unreleased
+### Fixed
+
+- Blueprint migrations now finish automatically when stdin is not a terminal. Use `seihou agent migrate BLUEPRINT --batch` to request the same mode explicitly. Failed, incomplete or permission-denied provider results leave the edge unrecorded so it can be retried.
 
 ## [0.11.0.1] - 2026-10-26
 
@@ -1113,7 +1117,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.11.0.1...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.0.0...HEAD
+[0.12.0.0]: https://github.com/shinzui/seihou/compare/v0.11.0.1...v0.12.0.0
 [0.11.0.1]: https://github.com/shinzui/seihou/compare/v0.11.0.0...v0.11.0.1
 [0.11.0.0]: https://github.com/shinzui/seihou/compare/v0.10.1.0...v0.11.0.0
 [0.10.1.0]: https://github.com/shinzui/seihou/compare/v0.10.0.0...v0.10.1.0

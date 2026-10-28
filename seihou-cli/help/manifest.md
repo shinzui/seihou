@@ -63,8 +63,9 @@ OLDER MANIFESTS
       8 -> 9  checkout outputs
       9 -> 10 repeatable checkout commands
       10 -> 11 precise seed ownership claims
+      11 -> 12 recipe inputs
 
-    ✓ Upgraded .seihou/manifest.json to schema version 11.
+    ✓ Upgraded .seihou/manifest.json to schema version 12.
       Review the diff and commit it: git diff .seihou/manifest.json
 
   Running it on a manifest that is already current reports that there is
@@ -126,7 +127,7 @@ RECOVERING
   The write is atomic: a complete temporary file is renamed over the manifest,
   so an interrupted run cannot leave a truncated one.
 
-SCHEMA 8 THROUGH 11
+SCHEMA 8 THROUGH 12
 
   Schema 8 adds content-free seed receipts; schema 11 records exact application/
   qualified-instance claims and explicitly preserves legacy ownership uncertainty.
@@ -137,6 +138,15 @@ SCHEMA 8 THROUGH 11
   A maintainer adopts changed declarations through ordinary update and commits
   them. Teammates receive that commit and run seihou sync, without producers.
   Sync does not fetch, upgrade or write the manifest. See seihou help sync.
+
+RECIPE INPUTS
+
+  Schema 12 records accepted recipe inputs on each application, including values
+  used only by prompt conditions. The lossless 11-to-12 upgrade records unknown
+  inputs rather than guessing values. Ordinary recipe update reuses recorded
+  choices or adopts agreeing historical consumer values through its preview.
+  Conflicts need an explicit --var KEY=VALUE or --reconfigure. No JSON edits or
+  separate upgrade command are required for an ordinary recipe update.
 
 SEE ALSO
 

@@ -1,24 +1,27 @@
 # Changelog
 
-## Unreleased
-
-- Add `validate-recipe [PATH]` for descriptor-only validation with no prompts, member discovery, or composition effects. Shared validation now rejects duplicate recipe declarations and undeclared prompt targets/condition references; malformed prompt conditions name their prompt and `when` field.
-
-- Resolve required recipe choices before module defaults, ask shared questions once, and replay accepted recipe inputs from manifest schema 12 during updates. Preserve false and reject invalid recipe input before generation.
-
-- Run blueprint migrations automatically without terminal input; `--batch` also selects this mode explicitly. Validate CLI completion and reported permission failures before recording an edge.
-
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0.0] - 2026-10-28
+
 ### Added
 
-- Add `adopt-seed-lifecycle` to this repository's new authoring blueprint
-  registry. It classifies existing module steps, adds seed ownership to project
-  starters, audits conflicting writers and validates consumer adoption. Run it
-  through `seihou agent run adopt-seed-lifecycle`, or its recorded 0.10.1.0 to
-  0.11.0.0 migration edge.
+- Install the complete module dependency closure of selected recipes/modules/blueprints through the ordinary install command, including explicitly sourced cross-registry edges. Preflight the complete selection, preserve origin/collision checks, and normalize imported definitions before publication (ExecPlan 113).
+- Resolve recipe declarations and conditional prompts before module defaults, retain false values and source attribution, and persist/replay recipe inputs in manifest schema 12. Ordinary updates adopt agreeing historical inputs without manual migration (ExecPlan 114).
+- Add `validate-recipe [PATH]` for descriptor-only validation without answers, installed members, generation, or commands. Shared checks reject duplicate declarations and undeclared prompt/condition references with contextual diagnostics (ExecPlan 115).
+- Add `adopt-seed-lifecycle` to this repository's authoring blueprint registry, with classification, seed ownership, conflicting-writer and consumer-adoption guidance and its recorded 0.10.1.0 to 0.11.0.0 migration edge.
+
+### Changed
+
+- Breaking core API: `Dependency` carries an optional source, `AppliedComposition` carries recipe inputs, and recipe expansion/resolution APIs preserve both. Update downstream record construction and recipe callers.
+- Pin the published dependency-source schema, its Dhall integrity hash, the schema gitlink and the Nix input together. New source declarations require Seihou 0.12.0.0 or newer.
+
+### Fixed
+
+- Run blueprint migration CLI sessions automatically in batch mode without terminal stdin; `--batch` also selects it explicitly. Reject incomplete or permission-denied provider results before recording a receipt.
+- Keep authoring, setup and manifest guidance consistent with dependency acquisition, recipe input precedence, descriptor validation and schema 12.
 
 ## [0.11.0.1] - 2026-10-26
 
@@ -1207,7 +1210,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.11.0.1...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.0.0...HEAD
+[0.12.0.0]: https://github.com/shinzui/seihou/compare/v0.11.0.1...v0.12.0.0
 [0.11.0.1]: https://github.com/shinzui/seihou/compare/v0.11.0.0...v0.11.0.1
 [0.11.0.0]: https://github.com/shinzui/seihou/compare/v0.10.1.0...v0.11.0.0
 [0.10.1.0]: https://github.com/shinzui/seihou/compare/v0.10.0.0...v0.10.1.0

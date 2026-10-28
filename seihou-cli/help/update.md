@@ -91,6 +91,12 @@ SAVED INPUTS
   `--reconfigure` intentionally ignores saved values and resolves every input
   again. Use it to change configuration, not for routine source updates.
 
+  Recipe applications also reuse recorded recipe inputs before member variables.
+  Inputs used only by conditions survive fresh clones. Ordinary preview prepares
+  schema 12 as needed and adopts agreeing historical values; conflicting or newly
+  required choices need --var KEY=VALUE or --reconfigure. Recipe-only changes are
+  recorded even when no generated file changes.
+
 MIGRATIONS
 
   Applicable module migrations are always included. Declarative moves and

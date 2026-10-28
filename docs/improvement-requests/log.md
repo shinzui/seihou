@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Update**: Linked IR-11, IR-12 and IR-13 to ExecPlans 114, 113 and 115 respectively; source implementations are complete and coordinated release verification is in progress.
 * **Update**: Linked IR-12 to ExecPlan 113 for source declarations, dependency closure installation, origin-safe resolution, and released consumer verification; the plan links back to IR-12. Implementation remains pending.
 * **Addition**: IR-11 requests recipe-level variable and prompt resolution before module defaults; IR-12 requests declared cross-registry dependency sources and ordinary installation of their closure, extending existing BUG-2; IR-13 requests a recipe authoring validator. All were found while planning the TAN Keiro recipe against installed Seihou 0.11.0.1; the user will fix upstream before TAN implementation.
 

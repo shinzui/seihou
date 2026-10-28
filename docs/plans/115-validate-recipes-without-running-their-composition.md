@@ -16,6 +16,11 @@ provenance:
       at: 2026-10-28T13:53:24Z
       mode: "implement"
       note: "Implement descriptor-only recipe validation, public CLI coverage, and authoring guidance."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T14:22:49Z
+      mode: "update"
+      note: "Link completed request and verify released installed validator."
 ---
 
 # Validate recipes without running their composition
@@ -58,13 +63,13 @@ tests alone does not complete delivery.
 - [x] Milestone 2 (2026-10-28; shared core/composition regressions and 21 public-command cases pass, including snapshots with a valid effectful member present/absent, repeat runs, closed stdin, and isolated XDG state): Shared declaration, prompt, condition, and binding checks have actionable errors; automated public-command tests prove valid interactive recipes require no answers or composition effects.
 - [ ] Milestone 3: Help, CI documentation, scaffolding guidance, and ADR 0022 are implemented; all 2,134 source tests pass (1,271 core, 812 CLI, 51 extension), the CLI documentation audit and native flake checks pass. Published release and installed-executable acceptance remain open.
 
-Handoff (2026-10-28): Implementation is ready for release preparation. The release skill
-requires explicit ratification of the version before editing package versions, and
-confirmation of the bump/changelog before a release commit. No publishing authorization
-or version ratification has been received in this session. The pre-existing modified
-`schema` gitlink is preserved and excluded from implementation commits; a clean release
-checkout can avoid changing that work. Do not mistake the development executable's
-unchanged package version for a published feature.
+Release preparation (2026-10-28): The user authorized the proposed 0.12.0.0
+coordinated release and closure of EPs 113–115. The published dependency-source schema
+is now pinned consistently. The 0.12.0.0 source build passed all 2,134 tests, the
+source/runtime CLI documentation audit, all four native flake checks, all three package
+metadata checks, the ordinary cross-registry install/run harness, and interactive
+recipe/representative-consumer acceptance. Published and installed evidence will be
+recorded before closing the final milestone.
 
 
 ## Surprises & Discoveries

@@ -11,7 +11,7 @@ affectedVersion: 0.11.0.1
 generated:
   by: codex-cli/gpt-6.1-sol
   at: "2026-10-28T12:26:39Z"
-timestamp: 2026-10-28T12:40:54Z
+timestamp: 2026-10-28T14:24:43Z
 reviews:
   - kind: model
     reviewer: codex-cli/gpt-6.1-sol
@@ -26,6 +26,11 @@ reviews:
 ---
 
 # Declare and install cross-registry recipe dependencies
+
+## Implementation
+
+Implemented by [ExecPlan 113](../plans/113-declare-and-install-cross-registry-recipe-dependencies.md).
+The plan records implementation, verification, and published/installed delivery evidence.
 
 ## Context and evidence
 
@@ -84,7 +89,7 @@ machine-wide install cache.
 
 ## Related work and handoff
 
-Implementation is planned in [ExecPlan 113](../plans/113-declare-and-install-cross-registry-recipe-dependencies.md). Implementation remains pending.
+Implemented by [ExecPlan 113](../plans/113-declare-and-install-cross-registry-recipe-dependencies.md), including source declarations, dependency closure installation and origin-safe local resolution. Its delivery section records the published and installed verification.
 
 [IR-4](refuse-to-overwrite-an-installation-from-a-different-source.md) and
 [ADR 0006](../adr/0006-the-install-cache-will-not-silently-substitute-an-artifact.md)

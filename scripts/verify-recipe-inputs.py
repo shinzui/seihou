@@ -18,7 +18,7 @@ def fixture(root):
         (target / 'files').mkdir(parents=True)
         shutil.copytree(schema, target / 'schema', ignore=shutil.ignore_patterns('.git'))
         (target / 'files/value').write_text('{{git.createGithub}}/{{nix.redpanda}}\n')
-        (target / 'module.dhall').write_text('let S = ./schema/package.dhall in S.Module::{name="' + name + '",version=Some "1.0.0",vars=[S.VarDecl::{name="git.createGithub",type="bool",default=Some "false"},S.VarDecl::{name="nix.redpanda",type="bool",default=Some "false"}],steps=[S.Step::{strategy="template",src="value",dest="' + name + '.txt"}],commands=[S.Command::{run="touch command-marker"}]}')
+        (target / 'module.dhall').write_text('let S = ./schema/package.dhall in S.Module::{name="' + name + '",version=Some "1.0.0",vars=[S.VarDecl::{name="git.createGithub",type="bool",default=Some "false"},S.VarDecl::{name="nix.redpanda",type="bool",default=Some "false"}],steps=[S.Step::{strategy="template",src="value",dest="' + name + '.txt"}],commands=[S.Command::{action=S.Command.Action.Apply "touch command-marker"}]}')
     recipe = modules / 'recipe-input-probe'
     recipe.mkdir()
     (recipe / 'recipe.dhall').write_text('''let S = ../one/schema/package.dhall in S.Recipe::{name="recipe-input-probe",version=Some "1.0.0",modules=[S.Dependency::{module="one"},S.Dependency::{module="two"}],vars=[S.VarDecl::{name="git.createGithub",type="bool",required=True},S.VarDecl::{name="nix.redpanda",type="bool",required=True}],prompts=[S.Prompt::{var="git.createGithub",text="Create a GitHub repository?"},S.Prompt::{var="nix.redpanda",text="Enable Redpanda?"}]}''')

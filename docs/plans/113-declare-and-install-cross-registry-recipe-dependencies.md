@@ -16,6 +16,11 @@ provenance:
       at: 2026-10-28T12:57:06Z
       mode: "implement"
       note: "Implement source declarations and dependency closure installation"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T14:22:49Z
+      mode: "update"
+      note: "Link completed request and deliver the authorized coordinated release."
 ---
 
 # Declare and install cross-registry recipe dependencies
@@ -27,7 +32,7 @@ This ExecPlan is a living document. Keep Progress, Surprises & Discoveries, Deci
 
 Implement [IR-12](../improvement-requests/declare-and-install-cross-registry-recipe-dependencies.md): a producer declares which Git registry supplies each external dependency, and a developer installs a recipe with one ordinary `seihou install SOURCE --module RECIPE` command. Installation acquires the dependency closure, meaning every directly or indirectly required module, without installing unrelated entries. The developer then runs `seihou run RECIPE` with the recipe's ordinary inputs. No transitive module list, registry-wide installs, source-path edits, or installer wrapper is required.
 
-The starting state is a fresh machine or worktree with no installed artifacts. The same two-command workflow must work for an existing installation missing dependencies: reinstall the selected recipe, then run it. Acquisition belongs to install; run and dry-run remain local and never populate the machine-wide install cache. This plan includes the same-registry prerequisite in [BUG-2](../bug-reports/install-ignores-recipe-and-module-dependencies.md), schema integration, producer adoption, and released executable evidence. Creating this plan does not implement or publish those changes.
+The starting state is a fresh machine or worktree with no installed artifacts. The same two-command workflow must work for an existing installation missing dependencies: reinstall the selected recipe, then run it. Acquisition belongs to install; run and dry-run remain local and never populate the machine-wide install cache. This plan includes the same-registry prerequisite in [BUG-2](../bug-reports/install-ignores-recipe-and-module-dependencies.md), schema integration and released executable evidence; downstream TAN producer implementation is separately owned as recorded in the release scope decision. Creating this plan does not implement or publish those changes.
 
 ## Progress
 
@@ -35,7 +40,7 @@ The starting state is a fresh machine or worktree with no installed artifacts. T
 - [x] (2026-10-28) Source declarations decode compatibly, retain variable bindings, and roundtrip installed legacy names. The committed three-registry fixture expresses local, external, and transitive external edges. Schema candidate commit is `3b04970b13fd61c563b0b2bfa333344b0ab7bae1` in `mori://shinzui/seihou-schema` (unpublished).
 - [x] (2026-10-28) One ordinary install acquires exactly `local`, `leaf`, `external`, and `root` with their own origins. The public-command harness verifies missing/unavailable sources, cycles, contradictory origins even with force, repeat install, and preservation of cache markers on refusal.
 - [x] (2026-10-28) Source requirements survive recipe expansion and staged definitions; run, agent baselines, recursive modules, and update check requirements locally. Public-command checks cover offline dry-run cache equality, local shadows, collisions/force, diamond closure, retry, and legacy names. Core, CLI, and extension suites pass; final evidence is recorded below.
-- [ ] Published schema, executable, documentation, and producer artifacts pass the consumer workflow; installed-version evidence and remaining delivery gaps are recorded.
+- [ ] Published schema and executable pass the installed ordinary three-registry workflow; documentation and delivery evidence are recorded. TAN producer publication is separately owned as recorded in the release scope decision.
 
 ## Surprises & Discoveries
 
@@ -47,6 +52,14 @@ The starting state is a fresh machine or worktree with no installed artifacts. T
 2026-10-28: Normalizing legacy bare dependencies requires typed empty variable-binding lists in the emitted Dhall. A public run after reinstall caught an invalid list annotation that decoding alone missed; the installed-definition roundtrip test and the executable legacy check now cover it.
 
 ## Decision Log
+
+2026-10-28: The user requested completion of EPs 113–115 and their requests together
+with the coordinated release. Close Seihou's prerequisite delivery against the published
+schema/executable and the ordinary three-registry acceptance fixture. TAN recipe/module
+implementation and its eventual consumer integration remain owned by
+`mori://tan/tan-seihou-modules/plans/3-publish-and-verify-the-tan-keiro-project-recipe`;
+there is no claim that this still-unimplemented producer was tested. This supersedes
+the earlier requirement to keep this Seihou plan open until TAN producer publication.
 
 
 2026-10-28: Keep the schema candidate local until publication. The tracked schema gitlink and public Nix input/lock pins remain unchanged together; the working checkout uses candidate `3b04970`. The authoritative schema remote HEAD was `211cd628cb7dd1a0b5ec7306c78a603f67b950bd` and had no release tags when checked. Integrate the local candidate into current upstream before publishing; do not force-push over newer upstream work. Publishing the integrated candidate and advancing all three references remains milestone 4, alongside the compatible executable and TAN producer. Do not mark source verification as installed-version delivery.
@@ -137,7 +150,7 @@ Add meaningful tests in `seihou-cli/test/Seihou/CLI/InstallClosureSpec.hs`, exte
 
 Update `docs/cli/install.md`, `seihou-cli/help/recipes.md`, `seihou-cli/help/registry.md`, and producer schema documentation with one install followed by one run, legacy source defaults, collision handling, and actionable recovery. Distill the source and closure rules into a local ADR following agents/skills/exec-plan/ADR.md. Inspect `mori show --full` before writing an ADR to honor any current bundle profile.
 
-Publish the schema and compatible Seihou release through their established release process when authorized; update the submodule and Nix pins together, then adopt the contract in the actual producer. Verify the released executable and the user's installed executable separately from the source build. For TAN, publish or otherwise make available the selected producer artifact and run its normal install/run sequence from empty state, including the external transitive dependency. Coordinate its consumer MasterPlan without implementing unrelated TAN scaffolding here. If publication or the consumer is unavailable, retain this milestone as incomplete and state the concrete gap. A fixture and passing unit tests are not delivered-consumer evidence.
+Publish the schema and compatible Seihou release through their established release process; update the submodule, emitted Dhall URL/hash and Nix pins together. Verify the published executable and the user's installed executable separately from the source build using the committed three-registry public-command harness. Record exact versions, schema revision and successful install/run behavior. TAN producer implementation and its eventual end-to-end consumer sequence remain tracked by its own plan; preserve that boundary without claiming it was exercised here. Keep this milestone incomplete until published/installed Seihou acceptance passes.
 
 ## Concrete Steps
 
@@ -170,7 +183,7 @@ seihou install "$TAN_SOURCE" --module "$TAN_RECIPE"
 seihou run "$TAN_RECIPE"
 ```
 
-`TAN_SOURCE` and `TAN_RECIPE` stand for the verified published source and entry name, not extra configuration required from developers. Before final acceptance replace this illustrative transcript with concrete verified commands and document normal recipe inputs. For isolated acceptance, set XDG directories to new temporary directories and use an empty working directory. Add `--dry-run --no-save-prompted` for the cache immutability check; those are test instrumentation, not required normal workflow flags.
+`TAN_SOURCE` and `TAN_RECIPE` stand for the verified published source and entry name, not extra configuration required from developers. This is the downstream TAN sequence, not a Seihou completion prerequisite after the release scope decision. The committed three-registry harness prints the concrete temporary origins used for installed Seihou acceptance. For isolated acceptance, set XDG directories to new temporary directories and use an empty working directory. Add `--dry-run --no-save-prompted` for the cache immutability check; those are test instrumentation, not required normal workflow flags.
 
 ## Validation and Acceptance
 
@@ -181,7 +194,7 @@ For unavailable source and missing entry, require nonzero status, a dependency c
 
 Snapshot cache file contents and directory inventory before and after run dry-run; require equality. Exercise old record-only recipes and same-registry BUG-2 through ordinary install. After restoring an unavailable source or resolving an explicit cache collision, rerunning the same install command must complete without manual internal metadata edits.
 
-Final evidence must name executable path, version/commit, schema revision, producer revision, exact commands, selected root, installed closure with origins, and observed run result. Repeat the key real-consumer checks against the delivered executable. The separate recipe prompt-order request may affect ordinary inputs; if it blocks this acceptance, record and coordinate that prerequisite rather than hide it with special source edits.
+Final evidence must name executable path, version/commit, schema revision, producer revision, exact commands, selected root, installed closure with origins, and observed run result. Repeat the ordinary three-registry install/run and failure/recovery checks against the delivered executable. The separate recipe prompt-order request may affect ordinary inputs; if it blocks this acceptance, record and coordinate that prerequisite rather than hide it with special source edits.
 
 ## Idempotence and Recovery
 

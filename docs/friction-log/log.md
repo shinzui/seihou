@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Update**: FRIC-4 accepted: Close Seihou prerequisite work independently of the downstream TAN producer, preserving the observed acceptance boundary.
 * **Addition**: FRIC-4 records blocked environment friction with mori://tan/tan-seihou-modules: TAN consumer acceptance has no implemented producer artifact
 * **Update**: FRIC-3 resolved: Verified the supported development-shell workflow after the ambient native-library failure.
 * **Addition**: FRIC-3 records detour environment friction with mori://shinzui/seihou: Ambient Cabal build lacks zlib

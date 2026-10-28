@@ -4,13 +4,14 @@ title: Validate a recipe without running its composition
 description: Provide a discoverable recipe validation command that checks recipe declarations and prompts without generating files, executing module commands, or requiring answers to project configuration questions.
 requestId: IR-13
 status: proposed
+targetPlan: docs/plans/115-validate-recipes-without-running-their-composition.md
 origin: mori://tan/tan-seihou-modules
 affects: mori://shinzui/seihou
 affectedVersion: 0.11.0.1
 generated:
   by: codex-cli/gpt-6.1-sol
   at: "2026-10-28T12:27:03Z"
-timestamp: 2026-10-28T12:27:03Z
+timestamp: 2026-10-28T14:25:14Z
 reviews:
   - kind: model
     reviewer: codex-cli/gpt-6.1-sol
@@ -25,6 +26,11 @@ reviews:
 ---
 
 # Validate a recipe without running its composition
+
+## Implementation
+
+Implemented by [ExecPlan 115](../plans/115-validate-recipes-without-running-their-composition.md).
+The plan records implementation, verification, and published/installed delivery evidence.
 
 ## Observed authoring gap
 

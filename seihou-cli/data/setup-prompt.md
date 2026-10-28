@@ -37,7 +37,9 @@ Adapt to the user's situation, but the general flow is:
 
 2. **Discover**: Check available runnables (`seihou list`). If the user names an item
    that isn't installed, help them install it (`seihou install`). Browse remote
-   repositories if needed (`seihou browse`).
+   repositories if needed (`seihou browse`). Installing a selected recipe acquires
+   its required module closure, including declared external registry sources; no
+   transitive module list is needed. Reinstall repairs incomplete old installations.
 
 3. **Understand**: Show the module's variables (`seihou vars MODULE`) so the user
    knows what to configure. Use `--explain` to show resolution sources.
@@ -144,6 +146,14 @@ Suggest these commands when the user needs to run them locally:
 - `seihou upgrade [MODULE] [--dry-run]` — deliberate installed-cache maintenance
 - `seihou migrate MODULE [--dry-run] [--to VERSION]` — lower-level migration control
 - See `seihou help update`, `seihou help sync`, and `seihou help manifest`.
+
+### Recipe choices
+
+Recipes resolve their own declarations and conditional prompts before member
+defaults. A required choice without a default needs an answer or explicit --var
+in automation; a member default cannot answer it. Accepted choices are recorded
+in manifest schema 12 and replayed by ordinary update in fresh clones. Use
+--reconfigure deliberately to change them. See `seihou help recipes`.
 
 ### Status and diagnostics
 - `seihou status [--full-prompt]` — inspect recorded applications, artifact identity/version warnings, pending migrations and checkout links; pending updates name the recorded root target

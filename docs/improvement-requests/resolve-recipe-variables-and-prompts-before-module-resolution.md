@@ -4,13 +4,14 @@ title: Resolve recipe variables and prompts before module resolution
 description: Honor recipe-level declarations and prompts so a recipe can ask once for an optional feature and pass the answer to every composed module instead of silently using module defaults.
 requestId: IR-11
 status: proposed
+targetPlan: docs/plans/114-resolve-recipe-variables-and-prompts-before-module-resolution.md
 origin: mori://tan/tan-seihou-modules
 affects: mori://shinzui/seihou
 affectedVersion: 0.11.0.1
 generated:
   by: codex-cli/gpt-6.1-sol
   at: "2026-10-28T12:26:05Z"
-timestamp: 2026-10-28T12:26:05Z
+timestamp: 2026-10-28T14:24:43Z
 reviews:
   - kind: model
     reviewer: codex-cli/gpt-6.1-sol
@@ -25,6 +26,11 @@ reviews:
 ---
 
 # Resolve recipe variables and prompts before module resolution
+
+## Implementation
+
+Implemented by [ExecPlan 114](../plans/114-resolve-recipe-variables-and-prompts-before-module-resolution.md).
+The plan records implementation, verification, and published/installed delivery evidence.
 
 ## Context and observed behavior
 
