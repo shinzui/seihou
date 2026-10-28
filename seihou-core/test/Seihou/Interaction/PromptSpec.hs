@@ -1,12 +1,12 @@
 module Seihou.Interaction.PromptSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Effectful
 import Seihou.Composition.Instance (primaryInstance)
-import Seihou.Composition.Resolve (PromptPermission (..), resolveWithPromptPermission, resolveWithPrompts)
+import Seihou.Composition.Resolve (PromptPermission (..), RecipeInputSpec (..), resolveRecipeWithPrompts, resolveWithPromptPermission, resolveWithPrompts)
 import Seihou.Core.Types
 import Seihou.Effect.ConsolePure
 import Seihou.Interaction.Prompt (promptForVar, runPrompts)
@@ -94,6 +94,85 @@ mkExport name = VarExport {var = name, alias = Nothing}
 
 spec :: Spec
 spec = do
+  describe "recipe input resolution" $ do
+    let feature = mkBoolVar "feature" Nothing True
+        consumer = mkModule "consumer" [] [mkBoolVar "feature" (Just (VBool False)) False] [] []
+        modules = [(primaryInstance "consumer", consumer, "/fixture")]
+        resolve permission spec saved cli literals local =
+          resolveRecipeWithPrompts permission False spec modules saved cli literals Map.empty "" "" local Map.empty Map.empty Map.empty
+        recipe = RecipeInputSpec [feature] [mkPrompt "feature" "Feature?"] Nothing
+    it "requires the recipe choice before considering a consumer default" $ do
+      let (result, _) = runPureEff $ runConsolePureNonInteractive $ resolve PromptsForbidden recipe Map.empty Map.empty Map.empty Map.empty
+      result `shouldBe` Left [MissingRequiredVar "feature"]
+    it "broadcasts explicit false and retains prompt source" $ do
+      let (result, console) = runPureEff $ runConsolePure ["false"] $ resolve PromptsAllowed recipe Map.empty Map.empty Map.empty Map.empty
+      case result of
+        Left errs -> expectationFailure (show errs)
+        Right (inputs, values) -> do
+          (inputs Map.! "feature") ^. #value `shouldBe` VBool False
+          (values Map.! primaryInstance "consumer" Map.! "feature") ^. #source `shouldBe` FromPrompt
+      console ^. #outputs `shouldBe` ["Feature?"]
+    it "keeps CLI above literals, and literals above config" $ do
+      let check cli literal local = fst $ runPureEff $ runConsolePureNonInteractive $ resolve PromptsForbidden recipe Map.empty cli literal local
+      case check (Map.singleton "feature" "false") (Map.singleton "feature" "true") Map.empty of
+        Right (inputs, _) -> (inputs Map.! "feature") ^. #value `shouldBe` VBool False
+        Left errs -> expectationFailure (show errs)
+      case check Map.empty (Map.singleton "feature" "false") (Map.singleton "feature" "true") of
+        Right (inputs, _) -> (inputs Map.! "feature") ^. #value `shouldBe` VBool False
+        Left errs -> expectationFailure (show errs)
+    it "lets optional conditions see resolved siblings despite another missing input" $ do
+      let details = mkTextVar "details" Nothing False
+          spec =
+            RecipeInputSpec
+              [feature, mkBoolVar "other" Nothing True, details]
+              [mkPrompt "other" "Other?", mkConditionalPrompt "details" "Details?" (ExprEq "feature" (VBool True))]
+              Nothing
+          (result, console) = runPureEff $ runConsolePure ["false", "owner"] $ resolve PromptsAllowed spec Map.empty Map.empty Map.empty (Map.singleton "feature" "true")
+      case result of
+        Right (inputs, _) -> (inputs Map.! "details") ^. #value `shouldBe` VText "owner"
+        Left errs -> expectationFailure (show errs)
+      console ^. #outputs `shouldBe` ["Other?", "Details? [skip]:"]
+    it "rejects exhausted invalid optional answers" $ do
+      let optional = feature & #required .~ False
+          spec = RecipeInputSpec [optional] [mkPrompt "feature" "Feature?"] Nothing
+          (result, _) = runPureEff $ runConsolePure ["bad", "bad", "bad"] $ resolve PromptsAllowed spec Map.empty Map.empty Map.empty Map.empty
+      result `shouldBe` Left [CoercionFailed "feature" VTBool "bad"]
+    it "adopts historical false through recipe coercion and rejects disagreeing consumers" $ do
+      let second = primaryInstance "second"
+          both = modules <> [(second, consumer, "/second")]
+          check saved cli =
+            fst $
+              runPureEff $
+                runConsolePureNonInteractive $
+                  resolveRecipeWithPrompts PromptsForbidden False recipe both saved cli Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
+          saved a b = Map.fromList [(primaryInstance "consumer", Map.singleton "feature" a), (second, Map.singleton "feature" b)]
+      case check (saved "false" "no") Map.empty of
+        Right (inputs, _) -> (inputs Map.! "feature") ^. #value `shouldBe` VBool False
+        Left errs -> expectationFailure (show errs)
+      case check (saved "false" "true") Map.empty of
+        Left [ValidationFailed "feature" _] -> pure ()
+        other -> expectationFailure (show other)
+      case check (saved "false" "true") (Map.singleton "feature" "true") of
+        Right (inputs, _) -> (inputs Map.! "feature") ^. #value `shouldBe` VBool True
+        Left errs -> expectationFailure (show errs)
+    it "validates the broadcast against each consumer declaration" $ do
+      let invalid = consumer & #vars .~ [mkTextVar "feature" Nothing True & #validation .~ Just (ValMinLength 10)]
+          (result, _) =
+            runPureEff $
+              runConsolePureNonInteractive $
+                resolveRecipeWithPrompts PromptsForbidden False recipe [(primaryInstance "consumer", invalid, "/fixture")] Map.empty (Map.singleton "feature" "true") Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
+      case result of
+        Left [ValidationFailed "feature" _] -> pure ()
+        other -> expectationFailure (show other)
+    it "replays recorded choices before config and skips accepted optional omissions" $ do
+      let optional = mkTextVar "details" Nothing False
+          spec = RecipeInputSpec [feature, optional] [mkPrompt "details" "Details?"] (Just (Map.singleton "feature" "false"))
+          (result, console) = runPureEff $ runConsolePure [] $ resolve PromptsAllowed spec Map.empty Map.empty Map.empty (Map.singleton "feature" "true")
+      case result of
+        Right (inputs, _) -> (inputs Map.! "feature") ^. #value `shouldBe` VBool False
+        Left errs -> expectationFailure (show errs)
+      console ^. #outputs `shouldBe` []
+
   describe "runPrompts" $ do
     it "fills a required text variable with FromPrompt source" $ do
       let decl = mkTextVar "project.name" Nothing True

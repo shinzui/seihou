@@ -25,7 +25,7 @@ import Data.Aeson.Types qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
@@ -80,7 +80,7 @@ import System.FilePath (takeFileName)
 -- change advances this number is
 -- docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md.
 currentManifestVersion :: ManifestSchemaVersion
-currentManifestVersion = ManifestSchemaVersion 11
+currentManifestVersion = ManifestSchemaVersion 12
 
 -- | The oldest schema the ordinary decoder reads. Anything older records
 -- machine-specific absolute paths and must go through the explicit
@@ -94,6 +94,7 @@ oldestDecodableManifestVersion = ManifestSchemaVersion 6
 minimumManifestVersion :: ManifestCapability -> ManifestSchemaVersion
 minimumManifestVersion TargetedAdditiveSharedPathUpdate = ManifestSchemaVersion 7
 minimumManifestVersion SeedReceipts = ManifestSchemaVersion 8
+minimumManifestVersion RecipeInputs = ManifestSchemaVersion 12
 minimumManifestVersion SeedOwnerClaims = ManifestSchemaVersion 11
 minimumManifestVersion CheckoutLocalOutputs = ManifestSchemaVersion 9
 minimumManifestVersion CheckoutLocalCommands = ManifestSchemaVersion 10
@@ -397,6 +398,7 @@ applicationToJSON schema composition =
       ++ maybe [] (\v -> ["namespace" .= v]) (composition ^. #namespace)
       ++ maybe [] (\v -> ["context" .= v]) (composition ^. #context)
       ++ ["checkoutCommands" .= map checkoutCommandToJSON (composition ^. #checkoutCommands) | schema >= ManifestSchemaVersion 10]
+      ++ ["recipeInputs" .= fmap varsToJSON (composition ^. #recipeInputs) | schema >= ManifestSchemaVersion 12]
       ++ commandReceiptsField (composition ^. #commandReceipts)
   where
     commandReceiptsField receipts
@@ -408,6 +410,9 @@ instance FromJSON AppliedComposition where
 
 parseApplication :: ManifestSchemaVersion -> Aeson.Value -> Aeson.Parser AppliedComposition
 parseApplication schema = Aeson.withObject "AppliedComposition" $ \o -> do
+  when (schema < minimumManifestVersion RecipeInputs) $ do
+    legacyInputs <- o Aeson..:? "recipeInputs" :: Aeson.Parser (Maybe Aeson.Value)
+    unless (legacyInputs == Nothing) (fail "recipe inputs require manifest schema 12")
   commands <-
     if schema >= ManifestSchemaVersion 10
       then o .: "checkoutCommands" >>= mapM parseCheckoutCommand
@@ -426,6 +431,7 @@ parseApplication schema = Aeson.withObject "AppliedComposition" $ \o -> do
     <*> o Aeson..:? "instances" Aeson..!= []
     <*> (commandReceiptsFromJSON =<< o Aeson..:? "commandReceipts" Aeson..!= Aeson.object [])
     <*> pure commands
+    <*> (if schema >= ManifestSchemaVersion 12 then traverse varsFromJSON =<< o .: "recipeInputs" else pure Nothing)
     <*> o .: "appliedAt"
 
 instance ToJSON CommandReceipt where
@@ -843,6 +849,7 @@ parseSeedOwnership = Aeson.withObject "seed ownership" $ \o -> do
 manifestEncodingLoss :: Manifest -> [Text]
 manifestEncodingLoss manifest =
   either (pure . renderManifestInvariantError) (const []) (validateManifestInvariants manifest)
+    <> ["recipe inputs require manifest schema 12" | not (manifestSupports RecipeInputs manifest), any (isJust . (^. #recipeInputs)) (manifest ^. #applications)]
     <> ["seed owner claims require manifest schema 11" | not (manifestSupports SeedOwnerClaims manifest), any (\r -> case r ^. #ownership of KnownSeedOwners _ -> True; _ -> False) (Map.elems (manifest ^. #seeds))]
     <> either (pure . T.pack) (const []) (Aeson.parseEither (const (validateCheckoutCommands manifest)) Aeson.Null)
     <> ["removal commands cannot declare checkout setup" | applied <- manifest ^. #modules, removal <- maybe [] pure (applied ^. #removal), any ((== CheckoutCommandLifecycle) . (^. #lifecycle)) (removal ^. #commands)]

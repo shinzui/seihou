@@ -38,6 +38,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Generics.Labels ()
+import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Manifest.Types (currentManifestVersion, sharedWriteModeToText)
@@ -58,6 +59,7 @@ data UpgradeStepAction
     MakeSharedWriteEvidenceExplicit
   | AddEmptySeedReceipts
   | AddEmptyCheckoutOutputs
+  | AddUnknownRecipeInputs
   | MakeSeedOwnershipExplicit
   | AddEmptyCheckoutCommands
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
@@ -121,13 +123,15 @@ manifestUpgradeSteps =
     step 7 AddEmptySeedReceipts "seed receipts",
     step 8 AddEmptyCheckoutOutputs "checkout outputs",
     step 9 AddEmptyCheckoutCommands "repeatable checkout commands",
-    step 10 MakeSeedOwnershipExplicit "explicit seed instance ownership"
+    step 10 MakeSeedOwnershipExplicit "explicit seed instance ownership",
+    step 11 AddUnknownRecipeInputs "recipe inputs"
   ]
   where
     step from stepAction =
       ManifestUpgradeStep (ManifestSchemaVersion from) (ManifestSchemaVersion (from + 1)) stepAction
 
 upgradeStepKind :: UpgradeStepAction -> UpgradeStepKind
+upgradeStepKind AddUnknownRecipeInputs = LosslessUpgrade
 upgradeStepKind StampVersion = LosslessUpgrade
 upgradeStepKind ConvertMachineLocalPaths = InferenceBearingUpgrade
 upgradeStepKind MakeSharedWriteEvidenceExplicit = LosslessUpgrade
@@ -189,6 +193,9 @@ applyLosslessUpgradeStep upgradeStep document = do
   unless (actual == upgradeStep ^. #fromVersion) $
     Left (StepVersionMismatch upgradeStep actual)
   transformed <- case upgradeStep ^. #action of
+    AddUnknownRecipeInputs -> case document of
+      Aeson.Object fields -> Right (Aeson.Object (KeyMap.insert "applications" (addInputs (fromMaybe (Aeson.Array mempty) (KeyMap.lookup "applications" fields))) fields))
+      _ -> Right document
     StampVersion -> Right document
     MakeSeedOwnershipExplicit -> first (MalformedDocument actual) (makeSeedOwnershipExplicit document)
     AddEmptyCheckoutCommands -> case document of
@@ -319,3 +326,11 @@ makeSeedOwnershipExplicit (Aeson.Object fields) = case KeyMap.lookup "seeds" fie
       pure (Aeson.Object (KeyMap.insert "ownership" ownership (KeyMap.delete "applications" receipt)))
     convert _ _ = Left "seed receipt must be an object"
 makeSeedOwnershipExplicit _ = Left "manifest must be an object"
+
+-- Historical applications have no known recipe-resolution record.
+addInputs :: Aeson.Value -> Aeson.Value
+addInputs (Aeson.Array apps) = Aeson.Array (fmap add apps)
+  where
+    add (Aeson.Object fields) = Aeson.Object (KeyMap.insert "recipeInputs" Aeson.Null fields)
+    add other = other
+addInputs other = other

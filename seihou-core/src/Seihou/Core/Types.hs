@@ -598,6 +598,7 @@ data ManifestCapability
     -- explicit shared-write evidence introduced by schema 7.
     TargetedAdditiveSharedPathUpdate
   | SeedReceipts
+  | RecipeInputs
   | SeedOwnerClaims
   | CheckoutLocalOutputs
   | CheckoutLocalCommands
@@ -752,6 +753,7 @@ data AppliedComposition = AppliedComposition
     instances :: ![AppliedInstanceState],
     commandReceipts :: !(Map CommandFingerprint CommandReceipt),
     checkoutCommands :: ![CheckoutCommand],
+    recipeInputs :: !(Maybe (Map VarName Text)),
     appliedAt :: !UTCTime
   }
   deriving stock (Eq, Show, Generic)

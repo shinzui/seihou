@@ -44,13 +44,13 @@ import Seihou.CLI.PendingMigrations
   ( detectPendingMigrations,
     formatRefusalMessage,
   )
-import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
+import Seihou.CLI.SavePrompted (collectRecipePromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatBlueprintRefusal, formatVarError, logIO, resolveAppliedArtifactDir, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
-import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts, verifyDependencySources)
+import Seihou.Composition.Resolve (PromptPermission (..), RecipeInputSpec (..), loadComposition, resolveRecipeWithPrompts, verifyDependencySources)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
@@ -122,7 +122,7 @@ handleRun runOpts = do
 
   -- 0b. Recipe detection: check if the name resolves to a recipe or a module
   searchPaths <- defaultSearchPaths
-  (primaryName, allAdditional, recipeOverrides, recipeInfo, targetInfo) <- do
+  (primaryName, allAdditional, recipeOverrides, recipeDecls, recipePrompts, recipeInfo, targetInfo) <- do
     runnableResult <- discoverRunnable searchPaths modName
     case runnableResult of
       Right (RunnableRecipe recipe recipeDir) -> do
@@ -135,7 +135,7 @@ handleRun runOpts = do
                   <> "': "
                   <> T.intercalate "; " errs
             exitFailure
-          Right (primary, recipeAdditional, overrides, _recipeVars, _recipePrompts, requirements) -> do
+          Right (primary, recipeAdditional, overrides, recipeVars, recipePrompts, requirements) -> do
             sourceCheck <- verifyDependencySources searchPaths recipeDir requirements
             case sourceCheck of
               Left err -> TIO.putStrLn (T.pack (show err)) >> exitFailure
@@ -147,6 +147,8 @@ handleRun runOpts = do
               ( primary,
                 recipeAdditional ++ additional,
                 overrides,
+                recipeVars,
+                recipePrompts,
                 Just (recipe ^. #name, recipe ^. #version),
                 (AppliedRecipeTarget (recipe ^. #name), recipeDir, recipe ^. #version)
               )
@@ -155,6 +157,8 @@ handleRun runOpts = do
           ( modName,
             additional,
             Map.empty,
+            [],
+            [],
             Nothing,
             (AppliedModuleTarget modName, moduleDir, modul ^. #version)
           )
@@ -171,6 +175,8 @@ handleRun runOpts = do
           ( modName,
             additional,
             Map.empty,
+            [],
+            [],
             Nothing,
             (AppliedModuleTarget modName, "", Nothing)
           )
@@ -201,8 +207,7 @@ handleRun runOpts = do
   -- 2. Resolve variables with export visibility and interactive prompts
   envPairs <- getEnvironment
   -- Merge recipe overrides with CLI overrides (CLI wins on conflict)
-  let cliOverrides = Map.union (Map.fromList [(VarName k, v) | (k, v) <- runOpts ^. #vars]) recipeOverrides
-      envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
+  let envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
       namespace = fromMaybe (deriveNamespace primaryName) (runOpts ^. #namespace)
   context <- resolveContext (runOpts ^. #context) envVars
   let contextName = fromMaybe "" context
@@ -215,9 +220,9 @@ handleRun runOpts = do
         nm = toVarNameMap namespaceCfg
         cm = toVarNameMap contextCfg
         gm = toVarNameMap globalCfg
-    r <- resolveWithPrompts modulesInOrder cliOverrides envVars namespace contextName lm nm cm gm
+    r <- resolveRecipeWithPrompts PromptsAllowed (runOpts ^. #confirmDefaults) (RecipeInputSpec recipeDecls recipePrompts Nothing) modulesInOrder Map.empty (Map.fromList [(VarName k, v) | (k, v) <- runOpts ^. #vars]) recipeOverrides envVars namespace contextName lm nm cm gm
     pure (r, lm, nm, cm, gm)
-  resolvedInitial <- case resolveResult of
+  (recipeResolved, resolvedInitial) <- case resolveResult of
     Left errs -> do
       logIO level $ do
         logError "Error resolving variables:"
@@ -228,12 +233,12 @@ handleRun runOpts = do
   -- 2a. Optionally confirm default-sourced values.
   resolved <-
     if runOpts ^. #confirmDefaults
-      then runEff $ runConsole $ confirmDefaults modulesInOrder resolvedInitial
+      then runEff $ runConsole $ confirmDefaults [(i, m & #vars %~ filter (\d -> not (Map.member (d ^. #name) recipeResolved)), dir) | (i, m, dir) <- modulesInOrder] resolvedInitial
       else pure resolvedInitial
 
   -- 2b. Emit diagnostics for unused config keys
-  let allDecls = concatMap (\(_, m, _) -> m ^. #vars) modulesInOrder
-      allResolved = Map.unions [vs | vs <- Map.elems resolved]
+  let allDecls = recipeDecls ++ concatMap (\(_, m, _) -> m ^. #vars) modulesInOrder
+      allResolved = Map.union recipeResolved (Map.unions [vs | vs <- Map.elems resolved])
       (unusedKeys, _) = diagnoseResolution allResolved allDecls localMap nsMap ctxMap globalMap
   when (not (null unusedKeys)) $
     logIO level $
@@ -346,8 +351,9 @@ handleRun runOpts = do
       candidateCommandReceipts =
         finalizeCommandReceipts commandPlan [] priorCommandReceipts
 
+  let recordedRecipe = fmap (const (Map.map (varValueToText . (^. #value)) recipeResolved)) recipeInfo
   let declarationApplication =
-        buildAppliedComposition appliedTarget targetOrigin targetVersion additional (Just namespace) context originedModules resolved now
+        buildAppliedComposition appliedTarget targetOrigin targetVersion additional (Just namespace) context originedModules resolved now & #recipeInputs .~ recordedRecipe
   let selectedSeedPaths = Set.fromList [path | (path, receipt) <- Map.toAscList (manifest ^. #seeds), case receipt ^. #ownership of LegacySeedOwners apps -> Set.member currentApplicationId apps || Map.member path seedOwnerMap; _ -> False]
   seedPrepared <- prepareRecordedSeedOwnership projectRoot searchPaths selectedSeedPaths manifest
   seedBase <- case seedPrepared of
@@ -387,8 +393,9 @@ handleRun runOpts = do
 
   let modNames = map (\(_, m, _) -> m ^. #name) modulesInOrder
       allVarValues =
-        Map.unions
-          [Map.map (^. #value) vs | vs <- Map.elems resolved]
+        Map.union (Map.map (^. #value) recipeResolved) $
+          Map.unions
+            [Map.map (^. #value) vs | vs <- Map.elems resolved]
       preview = buildPreview (filter (\case SeedFileOp {} -> False; _ -> True) opsFiltered) (Just diff) ownerMap
 
   -- 6. Handle --dry-run: show plan view and exit
@@ -495,6 +502,8 @@ handleRun runOpts = do
                                         now
                                     appliedComposition =
                                       ( appliedCompositionWithoutReceipts
+                                          & #recipeInputs
+                                          .~ recordedRecipe
                                           & #commandReceipts
                                           .~ candidateCommandReceipts
                                           & #checkoutCommands
@@ -661,7 +670,7 @@ handleRun runOpts = do
                     logIO level (logDebug "--commit: not inside a git repository, skipping.")
 
               -- Offer to save prompted values to local config
-              let prompted = collectPromptedValues resolved localMap
+              let prompted = collectRecipePromptedValues recipeResolved resolved localMap
               when (not (null prompted)) $
                 runEff $
                   runConfigWriter $

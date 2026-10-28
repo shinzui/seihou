@@ -190,3 +190,24 @@ seed-to-managed adoption. Seihou 0.11.0.0 implements the complete workflow; upda
 the runtime before adopting seed-producing modules. A partial run may leave a complete newly
 created file if another step fails; retry keeps it and settles ownership.
 Arbitrary module shell commands remain unsandboxed and must respect project files.
+
+## Recipe inputs
+
+Recipe inputs are resolved before module variables. A required recipe boolean
+without a default asks once on an interactive terminal, even when every consuming
+module defaults it to false. In automation, supply `--var git.createGithub=false`
+(or configuration); missing required choices fail before generation.
+
+Recipe precedence is CLI, literal recipe bindings, saved recipe inputs on update,
+environment, local/namespace/context/global configuration, then recipe defaults.
+Resolved recipe inputs override module saved values and defaults. Each consumer
+still validates the value. Explicit false is a value, not an omitted answer.
+Optional prompt conditions see typed recipe values and earlier answers; a false
+condition skips interaction but does not waive a required declaration.
+
+Successful runs record recipe inputs in the checked-in manifest, including inputs
+used only by conditions. `seihou update RECIPE` reuses them in fresh clones;
+`--reconfigure` discards saved choices. Older applications adopt agreeing consumer
+values during ordinary preview; conflicts require `--var KEY=VALUE` or
+`--reconfigure`. Saving prompted values to local config remains optional and
+respects `--save-prompted` and `--no-save-prompted`; previews do not save them.

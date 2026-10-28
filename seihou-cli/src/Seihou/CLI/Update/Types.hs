@@ -350,6 +350,7 @@ isUpdateNoOp plan =
         && previous ^. #additionalModules == candidate ^. #additionalModules
         && previous ^. #namespace == candidate ^. #namespace
         && previous ^. #context == candidate ^. #context
+        && previous ^. #recipeInputs == candidate ^. #recipeInputs
         && length (previous ^. #instances) == length (candidate ^. #instances)
         && and (zipWith sameInstance (previous ^. #instances) (candidate ^. #instances))
         && previous ^. #commandReceipts == (candidate ^. #commandReceipts)

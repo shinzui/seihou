@@ -1,5 +1,6 @@
 module Seihou.Interaction.Prompt
   ( runPrompts,
+    runPromptsChecked,
     promptForVar,
   )
 where
@@ -9,7 +10,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Types
-import Seihou.Core.Variable (coerceValue, validateVarValue)
+import Seihou.Core.Variable (coerceDefault, coerceValue, validateVarValue)
 import Seihou.Effect.Console (Console, getLine, putText)
 import Seihou.Prelude
 import Prelude hiding (getLine)
@@ -31,31 +32,43 @@ runPrompts ::
   Map VarName VarValue ->
   Eff es (Map VarName ResolvedVar)
 runPrompts prompts unresolvedDecls currentBindings =
-  go prompts Map.empty
+  either (const Map.empty) id <$> runPromptsInternal False prompts unresolvedDecls currentBindings
+
+-- | Preserve exhausted invalid answers; an empty optional answer is a skip.
+runPromptsChecked ::
+  (Console :> es) =>
+  [Prompt] ->
+  [VarDecl] ->
+  Map VarName VarValue ->
+  Eff es (Either [VarError] (Map VarName ResolvedVar))
+runPromptsChecked = runPromptsInternal True
+
+runPromptsInternal ::
+  (Console :> es) =>
+  Bool ->
+  [Prompt] ->
+  [VarDecl] ->
+  Map VarName VarValue ->
+  Eff es (Either [VarError] (Map VarName ResolvedVar))
+runPromptsInternal checked prompts unresolvedDecls currentBindings = go prompts Map.empty
   where
     declMap = Map.fromList [(d ^. #name, d) | d <- unresolvedDecls]
-
-    go :: (Console :> es) => [Prompt] -> Map VarName ResolvedVar -> Eff es (Map VarName ResolvedVar)
-    go [] acc = pure acc
-    go (p : ps) acc = do
-      let vn = (p ^. #var)
-      -- Skip if variable is not in the unresolved set
-      case Map.lookup vn declMap of
-        Nothing -> go ps acc
-        Just decl -> do
-          -- Skip if already resolved by an earlier prompt
-          if Map.member vn acc
-            then go ps acc
-            else do
-              -- Evaluate when condition
-              let allBindings = Map.union (Map.map (^. #value) acc) currentBindings
-              if shouldPrompt p allBindings
-                then do
-                  result <- promptForVar p decl allBindings
-                  case result of
-                    Left _err -> go ps acc
-                    Right rv -> go ps (Map.insert vn rv acc)
-                else go ps acc
+    go [] acc = pure (Right acc)
+    go (p : ps) acc = case Map.lookup (p ^. #var) declMap of
+      Nothing -> go ps acc
+      Just decl
+        | Map.member (p ^. #var) acc -> go ps acc
+        | otherwise -> do
+            let bindings = Map.union (Map.map (^. #value) acc) currentBindings
+            if not (shouldPrompt p bindings)
+              then go ps acc
+              else do
+                result <- promptForVar p decl bindings
+                case result of
+                  Left (MissingRequiredVar _) | not (decl ^. #required) -> go ps acc
+                  Left err | checked -> pure (Left [err])
+                  Left _ -> go ps acc
+                  Right rv -> go ps (Map.insert (p ^. #var) rv acc)
 
 -- | Check if a prompt should be displayed based on its @when@ condition.
 shouldPrompt :: Prompt -> Map VarName VarValue -> Bool
@@ -94,16 +107,10 @@ promptFreeText prompt decl retriesLeft = do
   raw <- getLine
   if T.null (T.strip raw)
     then case decl ^. #default_ of
-      Just defVal ->
-        -- Accept the default value
-        pure
-          ( Right
-              ResolvedVar
-                { value = defVal,
-                  source = FromPrompt,
-                  decl = decl
-                }
-          )
+      Just defVal -> pure $ do
+        val <- coerceDefault (decl ^. #name) (decl ^. #type_) defVal
+        validateVarValue decl val
+        Right ResolvedVar {value = val, source = FromPrompt, decl = decl}
       Nothing
         | not (decl ^. #required) ->
             -- Optional variable with no default — skip
@@ -152,7 +159,7 @@ promptWithChoices prompt decl choices = do
                in case coerceAndValidate decl chosen of
                     Left err -> pure (Left err)
                     Right rv -> pure (Right rv)
-        _ -> pure (Left (MissingRequiredVar (decl ^. #name)))
+        _ -> pure (Left (ValidationFailed (decl ^. #name) "invalid selection"))
 
 -- | Coerce raw text to the variable's type and validate.
 coerceAndValidate :: VarDecl -> Text -> Either VarError ResolvedVar

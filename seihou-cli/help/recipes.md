@@ -59,3 +59,35 @@ Preflight failures leave installed artifacts unchanged. Correct a missing source
 entry and retry the same command. Existing foreign cache entries require an informed
 `--force`; contradictory sources within one closure always fail. A local shadow must
 have verifiable matching provenance for an explicit source requirement.
+
+## Recipe inputs
+
+Recipe inputs are resolved before module variables. A required recipe boolean
+without a default asks once on an interactive terminal, even when every consuming
+module defaults it to false. In automation, supply `--var git.createGithub=false`
+(or configuration); missing required choices fail before generation.
+
+Recipe precedence is CLI, literal recipe bindings, saved recipe inputs on update,
+environment, local/namespace/context/global configuration, then recipe defaults.
+Resolved recipe inputs override module saved values and defaults. Each consumer
+still validates the value. Explicit false is a value, not an omitted answer.
+Optional prompt conditions see typed recipe values and earlier answers; a false
+condition skips interaction but does not waive a required declaration.
+
+Successful runs record recipe inputs in the checked-in manifest, including inputs
+used only by conditions. `seihou update RECIPE` reuses them in fresh clones;
+`--reconfigure` discards saved choices. Older applications adopt agreeing consumer
+values during ordinary preview; conflicts require `--var KEY=VALUE` or
+`--reconfigure`. Saving prompted values to local config remains optional and
+respects `--save-prompted` and `--no-save-prompted`; previews do not save them.
+
+For example, a recipe can own a shared boolean decision:
+
+```dhall
+vars = [ S.VarDecl::{ name = "git.createGithub", type = "bool", required = True } ]
+prompts = [ S.Prompt::{ var = "git.createGithub", text = "Create a GitHub repository?" } ]
+```
+
+`seihou run RECIPE` asks once; `seihou run RECIPE --var git.createGithub=false`
+supplies an explicit answer without a terminal. Modules declaring that name receive
+the answer above their own defaults.

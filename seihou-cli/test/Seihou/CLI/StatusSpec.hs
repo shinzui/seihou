@@ -90,6 +90,7 @@ mkApplication target modules =
       instances = map mkInstance modules,
       commandReceipts = Map.empty,
       checkoutCommands = [],
+      recipeInputs = Nothing,
       appliedAt = fixedTime
     }
   where

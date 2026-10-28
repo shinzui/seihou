@@ -10,6 +10,12 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-28T12:32:47Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T13:28:31Z
+      mode: "implement"
+      note: "Implement shared recipe input resolution, replay, and acceptance checks"
 ---
 
 # Resolve recipe variables and prompts before module resolution
@@ -30,20 +36,24 @@ For the motivating consumer, the two choices are `git.createGithub` and `nix.red
 ## Progress
 
 
-- [ ] M1: The ordinary run command resolves recipe inputs before module defaults; a terminal asks each shared choice once, and closed stdin refuses unresolved required choices without changes.
-- [ ] M2: Conditional prompting, validation, source attribution, save-input behavior, and precedence work across recipe and module resolution without changing recipes that have no inputs.
-- [ ] M3: Updates and fresh clones replay accepted recipe choices, including recipe-only inputs, and older supported manifests adopt the representation through the normal preview and atomic apply.
-- [ ] M4: Consumer acceptance, help, documentation, and required checks pass; source, release, and installed-binary evidence identify exactly where the fix is available.
+- [x] M1 (2026-10-28; terminal true/false acceptance and closed-stdin E2E passed): The ordinary run command resolves recipe inputs before module defaults; a terminal asks each shared choice once, and closed stdin refuses unresolved required choices without changes.
+- [x] M2 (2026-10-28; core prompt regressions, recipe saving tests, and consumer acceptance passed): Conditional prompting, validation, source attribution, save-input behavior, and precedence work across recipe and module resolution without changing recipes that have no inputs.
+- [x] M3 (2026-10-28; schema roundtrips, historical adoption E2E, recipe-only replay, fresh-clone and new-consumer acceptance passed): Updates and fresh clones replay accepted recipe choices, including recipe-only inputs, and older supported manifests adopt the representation through the normal preview and atomic apply.
+- [ ] M4: Source consumer acceptance, help, documentation, and required checks passed on 2026-10-28. Release publication, installation, and released installed-binary acceptance remain open.
 
-Creation status: planning only. Installed `seihou --version` reported `seihou v0.11.0.1 (4ade3fb)` on 2026-10-28. IR-11 supplies the pre-fix command reproduction; this planning session inspected code but did not run its fixture or implement the fix.
+Baseline: Installed `seihou --version` reported `seihou v0.11.0.1 (4ade3fb)` on 2026-10-28. IR-11 supplies the pre-fix command reproduction; the initial planning session inspected code but did not run its fixture. Implementation evidence follows below.
 
 
 ## Surprises & Discoveries
 
+2026-10-28: Installed `seihou v0.11.0.1 (4ade3fb)` reproduced the required-input bug with closed stdin in `/tmp/seihou-recipe-baseline-114b`. The candidate terminal harness demonstrated both choices once and matching values in both consumers, then ordinary update from a fresh Git clone with empty config/cache. A third consumer received the saved choice despite conflicting environment input.
+
+2026-10-28: Update's no-op comparison ignored application recipe inputs. Including the field is necessary to publish recipe-only changes and adoption even when generated files do not change. Direct module applications retain unknown recipe inputs, preserving their existing repeat-update behavior.
 
 
 ## Decision Log
 
+2026-10-28: Prepare schema 12 when the selected applications include a recipe; retain the existing capability-driven preparation for module-only selections. Preserve module-only application records with `recipeInputs = Nothing`. Include recipe-only inputs in update summaries and application equality, and suppress module prompts for declarations owned by the recipe, including deliberately skipped optional inputs.
 
 2026-10-28: Use one recipe-input stage shared by run and update, before module variable resolution. Loading module definitions to discover the composition may happen first; module defaults must never satisfy a required recipe decision. Reusing the same stage avoids different first-use and update semantics.
 
@@ -56,6 +66,13 @@ Creation status: planning only. Installed `seihou --version` reported `seihou v0
 
 ## Outcomes & Retrospective
 
+Source implementation includes shared recipe resolution, error-preserving prompts, recipe-aware saving and previews, schema 12 codecs/upgrades, and update replay/adoption. Durable decisions are recorded in [ADR 0021](../adr/0021-recipe-inputs-resolve-before-module-defaults.md) and the schema contract in [ADR 0014](../adr/0014-every-semantic-manifest-change-advances-the-schema-version.md). No friction occurrences crossed the recording threshold in this session.
+
+The representative consumer wrapper uses actual modules located through Mori, without changing their definitions. Its isolated preparation copies the dependency closure and pre-supplies unrelated project inputs. Shell commands are explicitly disabled to avoid creating remote repositories; this proves generation and prompting, not execution of remote provisioning. It is not a published TAN recipe. The `mori://shinzui/seihou-modules` producer revision is `a5cbd51d7cd45c0a872e208f43bf6dd32eafe4fe` and the `mori://shinzui/agent-seihou` producer revision is `50f38289478bc13f9e8002df228cdea955a3f581`; canonical artifact references are listed in Context and Orientation. Harness transcripts and preparation records live beneath `/tmp/seihou-recipe-final-114`; this final harness run passed synthetic terminal questions, command-marker protection, fresh-clone replay, new-consumer replay, and representative real consumers.
+
+Validation: `cabal test all` passed 1,267 core, 791 CLI, and 51 extension tests. `nix fmt`, `git diff --check`, the CLI source/runtime documentation audit, and all four native `nix flake check` checks passed. The flake checks cover the native Darwin system; incompatible systems were omitted by Nix. No package release was produced.
+
+Delivery remains source-only: package version `0.11.0.1`, implemented on source base `8ea17ac`. The candidate is `dist-newstyle/build/aarch64-osx/ghc-9.12.4/seihou-cli-0.11.0.1/x/seihou/build/seihou/seihou` under this checkout. The installed binary remains `seihou v0.11.0.1 (4ade3fb)`, which has the bug. Release publication, installation, and rerunning acceptance against the released installed artifact remain open under M4.
 
 
 ## Context and Orientation
@@ -123,7 +140,7 @@ Run the real composition's preview interactively with both choices false and the
 
 Update `seihou-cli/help/recipes.md`, `seihou-cli/help/variables.md`, `docs/cli/run.md`, `docs/cli/update.md`, `docs/user/config-and-variables.md`, `CHANGELOG.md`, and `docs/user/CHANGELOG.md`. Explain recipe precedence, required choices versus defaults, conditional optional prompts, noninteractive values, saving, and update replay with one short recipe example. Distill the durable resolution contract into an ADR using the repository's ADR workflow; do not add unrelated schema authoring features.
 
-Run the checks below, then record candidate executable path, Git revision, package version, fixture revisions, and observations. Follow the repository's release workflow when release is authorized, and rerun acceptance with the released installed binary. Do not close the delivery obligation on the strength of `cabal run` alone: if release or installation remains, record the exact gap and leave M4 open. This create request authorizes writing the plan and its intention, not implementation or publishing a release now.
+Run the checks below, then record candidate executable path, Git revision, package version, fixture revisions, and observations. Follow the repository's release workflow when release is authorized, and rerun acceptance with the released installed binary. Do not close the delivery obligation on the strength of `cabal run` alone: if release or installation remains, record the exact gap and leave M4 open. Implementation was authorized on 2026-10-28. Publishing a release and replacing the installed executable have not been authorized; keep that delivery obligation open.
 
 
 ## Concrete Steps

@@ -29,7 +29,7 @@ tests :: IO TestTree
 tests = testSpec "seed update transactions" $ do
   let now = UTCTime (fromGregorian 2026 10 26) 0
       appId = ApplicationId "app"
-      app = AppliedComposition appId (AppliedModuleTarget "seeder") (LocalOrigin "seeder") Nothing [] Nothing Nothing [AppliedInstanceState "seeder" emptyParentVars (LocalOrigin "seeder") Nothing Map.empty] Map.empty [] now
+      app = AppliedComposition appId (AppliedModuleTarget "seeder") (LocalOrigin "seeder") Nothing [] Nothing Nothing [AppliedInstanceState "seeder" emptyParentVars (LocalOrigin "seeder") Nothing Map.empty] Map.empty [] Nothing now
       manifest = emptyManifest now & #applications .~ [app]
       claims = Map.singleton appId (Set.singleton "seeder")
       createAction = SeedAction "seed.txt" "seeder" claims SeedWrite (Just "seed bytes\n")

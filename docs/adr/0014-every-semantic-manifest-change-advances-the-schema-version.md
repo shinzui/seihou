@@ -141,6 +141,11 @@ Delivered by
   generic decode failure. An inference-bearing step is never staged by a
   feature command.
 
+Schema 12 adds application `recipeInputs` with a `RecipeInputs` capability and a
+lossless adjacent 11-to-12 step. Null records unknown historical inputs; an empty
+map records a resolved empty input set. Older encodings omit this field. Ordinary
+update stages adoption and publishes it atomically with accepted work.
+
 ## Consequences
 
 Future manifest evolution carries a small, deliberate cost: even an apparently

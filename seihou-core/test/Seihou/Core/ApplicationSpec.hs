@@ -70,6 +70,7 @@ mkComposition target additional =
       instances = [],
       commandReceipts = Map.empty,
       checkoutCommands = [],
+      recipeInputs = Nothing,
       appliedAt = fixedTime
     }
 

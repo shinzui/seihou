@@ -59,6 +59,7 @@ manifestWithLocalPaths =
           instances = [AppliedInstanceState "beta" emptyParentVars (origin localPath "beta") (Just "1.0.0") Map.empty],
           commandReceipts = Map.empty,
           checkoutCommands = [],
+          recipeInputs = Nothing,
           appliedAt = testTime
         }
     receipt =

@@ -7,6 +7,9 @@ module Seihou.Composition.Resolve
     resolveComposedVariablesWithSaved,
     resolveWithPrompts,
     resolveWithPromptPermission,
+    RecipeInputSpec (..),
+    resolveRecipeWithPrompts,
+    varValueToText,
     exportedVars,
     collectParentVars,
   )
@@ -16,7 +19,9 @@ import Control.Monad (unless)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Trans.Except (ExceptT (..), runExceptT)
 import Data.Generics.Labels ()
+import Data.List (find)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.Composition.Graph (buildGraph, topoSort)
@@ -25,10 +30,10 @@ import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
 import Seihou.Core.ArtifactOriginDetect (OriginInfo (..), readOriginInfo)
 import Seihou.Core.Module (discoverModule, validateModule)
 import Seihou.Core.Types
-import Seihou.Core.Variable (resolveVariablesWithSaved)
+import Seihou.Core.Variable (coerceValue, resolveVariablesWithSaved)
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.Console (Console, isInteractive, putText)
-import Seihou.Interaction.Prompt (runPrompts)
+import Seihou.Interaction.Prompt (promptForVar, runPrompts, runPromptsChecked)
 import Seihou.Prelude
 
 -- | Values captured by a previously accepted composition, kept distinct per
@@ -284,6 +289,100 @@ resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides e
                             rest
                             (Map.insert inst fullResolved perModule)
                             (Map.insert inst myExports allExports)
+
+-- | Recipe declarations are resolved before any consuming module defaults.
+-- Nothing denotes historical inputs that have not yet been adopted; Just empty
+-- records an accepted omission of all optional inputs.
+data RecipeInputSpec = RecipeInputSpec [VarDecl] [Prompt] (Maybe (Map VarName Text))
+
+resolveRecipeWithPrompts ::
+  (Console :> es) =>
+  PromptPermission ->
+  Bool ->
+  RecipeInputSpec ->
+  [(ModuleInstance, Module, FilePath)] ->
+  SavedInstanceValues ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map Text Text ->
+  Text ->
+  Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Eff es (Either [VarError] (Map VarName ResolvedVar, Map ModuleInstance (Map VarName ResolvedVar)))
+resolveRecipeWithPrompts permission confirmRecipe (RecipeInputSpec decls prompts recorded) modules saved cli literals env ns ctx local nsCfg ctxCfg global = do
+  interactive <- case permission of
+    PromptsForbidden -> pure False
+    PromptsAllowed -> isInteractive
+  let explicit = Map.union cli literals
+      historical d =
+        nubOrdBy
+          id
+          [ either (const raw) varValueToText (coerceValue (d ^. #name) (d ^. #type_) raw)
+          | (inst, m, _) <- modules,
+            any ((== d ^. #name) . (^. #name)) (m ^. #vars),
+            Just raw <- [Map.lookup inst saved >>= Map.lookup (d ^. #name)]
+          ]
+      conflicts =
+        [ ValidationFailed (d ^. #name) ("conflicting saved recipe inputs; supply --var " <> d ^. #name . #unVarName <> "=VALUE or use --reconfigure")
+        | d <- decls,
+          recorded == Nothing,
+          not (Map.member (d ^. #name) explicit),
+          length (historical d) > 1
+        ]
+      replay = fromMaybe (Map.fromList [(d ^. #name, raw) | d <- decls, [raw] <- [historical d]]) recorded
+      results = [resolveVariablesWithSaved [d] explicit replay env ns ctx local nsCfg ctxCfg global Map.empty | d <- decls]
+      values = Map.unions [v | Right v <- results]
+      errors = concat [e | Left e <- results]
+      (_, fatal) = partitionErrors errors
+  if not (null (conflicts ++ fatal))
+    then pure (Left (conflicts ++ fatal))
+    else do
+      confirmed <- if interactive && confirmRecipe then confirmValues (Map.toList values) values else pure (Right values)
+      case confirmed of
+        Left errs -> pure (Left errs)
+        Right initial -> do
+          let missing = [d | d <- decls, not (Map.member (d ^. #name) initial)]
+              eligible = case recorded of
+                Just _ -> filter (^. #required) missing
+                Nothing -> missing
+              required = filter (^. #required) eligible
+              optional = filter (not . (^. #required)) eligible
+          firstAnswers <- if interactive then runPromptsChecked prompts required (Map.map (^. #value) initial) else pure (Right Map.empty)
+          case firstAnswers of
+            Left errs -> pure (Left errs)
+            Right answers -> do
+              let current = Map.union answers initial
+              secondAnswers <- if interactive then runPromptsChecked prompts optional (Map.map (^. #value) current) else pure (Right Map.empty)
+              case secondAnswers of
+                Left errs -> pure (Left errs)
+                Right extras -> do
+                  let recipeValues = Map.union extras current
+                      omissions = [MissingRequiredVar (d ^. #name) | d <- decls, d ^. #required, not (Map.member (d ^. #name) recipeValues)]
+                      broadcast = Map.map (varValueToText . (^. #value)) recipeValues
+                  if not (null omissions)
+                    then pure (Left omissions)
+                    else do
+                      let owned = Set.fromList (map (^. #name) decls)
+                          consumers = [(i, m & #prompts %~ filter (\p -> not (Set.member (p ^. #var) owned)), dir) | (i, m, dir) <- modules]
+                      resolved <- resolveWithPromptPermission permission consumers saved (Map.union explicit broadcast) env ns ctx local nsCfg ctxCfg global
+                      pure $ fmap (\perModule -> (recipeValues, Map.map (Map.mapWithKey (restoreSource recipeValues)) perModule)) resolved
+  where
+    restoreSource recipeValues name rv = case Map.lookup name recipeValues of
+      Just recipeValue | not (Map.member name cli || Map.member name literals) -> rv & #source .~ recipeValue ^. #source
+      _ -> rv
+    confirmValues [] acc = pure (Right acc)
+    confirmValues ((name, rv) : rest) acc
+      | rv ^. #source /= FromDefault = confirmValues rest acc
+      | otherwise = do
+          let decl = rv ^. #decl
+              prompt = fromMaybe (Prompt name (name ^. #unVarName) Nothing Nothing) (find ((== name) . (^. #var)) prompts)
+          answer <- promptForVar prompt decl (Map.map (^. #value) acc)
+          case answer of
+            Left err -> pure (Left [err])
+            Right accepted -> confirmValues rest (Map.insert name accepted acc)
 
 -- | Collect the exports visible along a module's dependency edges.
 --

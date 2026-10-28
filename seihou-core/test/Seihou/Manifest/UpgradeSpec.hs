@@ -63,6 +63,13 @@ fileField _ _ _ = Nothing
 
 spec :: Spec
 spec = do
+  it "upgrades schema 11 with unknown recipe inputs without manufacturing answers" $ do
+    let document = Aeson.object ["version" Aeson..= (11 :: Int), "applications" Aeson..= [Aeson.object ["producerOwned" Aeson..= True]]]
+    case upgradeDocumentLosslessly (v 12) document of
+      Left err -> expectationFailure (show err)
+      Right (_, Aeson.Object fields) -> KeyMap.lookup "applications" fields `shouldBe` Just (Aeson.toJSON [Aeson.object ["producerOwned" Aeson..= True, "recipeInputs" Aeson..= Aeson.Null]])
+      Right _ -> expectationFailure "expected manifest object"
+
   describe "the step registry" $ do
     it "plans a contiguous path from every supported version to the current one" $
       -- ADR 0014's mechanical gap check: a schema bump without its adjacent

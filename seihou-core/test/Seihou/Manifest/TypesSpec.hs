@@ -108,6 +108,7 @@ manifestWithEveryOriginPosition =
                  ],
                commandReceipts = Map.empty,
                checkoutCommands = [],
+               recipeInputs = Nothing,
                appliedAt = fixedTime
              }
          ]
@@ -195,6 +196,7 @@ withCommandReceipts receipts composition =
       instances = composition ^. #instances,
       commandReceipts = receipts,
       checkoutCommands = [],
+      recipeInputs = composition ^. #recipeInputs,
       appliedAt = composition ^. #appliedAt
     }
 
@@ -230,6 +232,15 @@ machineSpecific text =
 
 spec :: Spec
 spec = do
+  describe "recipe inputs" $ do
+    forM_ [Nothing, Just Map.empty, Just (Map.singleton "feature" "false")] $ \inputs ->
+      it ("roundtrips unknown, empty and false recipe state: " <> show inputs) $ do
+        let manifest = manifestWithEveryOriginPosition & #applications %~ map (\app -> app & #recipeInputs .~ inputs)
+        manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
+    it "refuses to lose recipe input state through an older encoding" $ do
+      let manifest = manifestWithEveryOriginPosition & #version .~ ManifestSchemaVersion 11 & #applications %~ map (\app -> app & #recipeInputs .~ Just Map.empty)
+      manifestEncodingLoss manifest `shouldSatisfy` (not . null)
+
   -- The manifest is checked into version control and read on other machines,
   -- so no origin it records may name a location that only exists on the
   -- machine that wrote it. See
@@ -267,7 +278,7 @@ spec = do
 
   describe "checkout command codec" $ do
     let command = CheckoutCommand "demo" 0 "mkdir -p .local/setup" Nothing
-        application commands = AppliedComposition (ApplicationId "setup") (AppliedModuleTarget "demo") (ProjectOrigin "modules/demo") (Just "1") [] Nothing Nothing [AppliedInstanceState "demo" emptyParentVars (ProjectOrigin "modules/demo") (Just "1") Map.empty] Map.empty commands fixedTime
+        application commands = AppliedComposition (ApplicationId "setup") (AppliedModuleTarget "demo") (ProjectOrigin "modules/demo") (Just "1") [] Nothing Nothing [AppliedInstanceState "demo" emptyParentVars (ProjectOrigin "modules/demo") (Just "1") Map.empty] Map.empty commands Nothing fixedTime
         manifest commands = emptyManifest fixedTime & #applications .~ [application commands]
         mutateApp transform value = case value of
           Aeson.Object fields -> case KeyMap.lookup "applications" fields of
@@ -518,6 +529,7 @@ spec = do
                   ],
                 commandReceipts = Map.singleton fingerprint receipt,
                 checkoutCommands = [],
+                recipeInputs = Nothing,
                 appliedAt = fixedTime
               }
           application2 =
@@ -532,6 +544,7 @@ spec = do
                 instances = [],
                 commandReceipts = Map.empty,
                 checkoutCommands = [],
+                recipeInputs = Nothing,
                 appliedAt = fixedTime2
               }
           fileRecord =
@@ -702,6 +715,7 @@ spec = do
                 instances = [],
                 commandReceipts = Map.empty,
                 checkoutCommands = [],
+                recipeInputs = Nothing,
                 appliedAt = fixedTime
               }
           fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty SharedWriteUnknown

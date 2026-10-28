@@ -5,7 +5,7 @@ import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
-import Seihou.CLI.SavePrompted (collectPromptedValues, offerSavePrompted)
+import Seihou.CLI.SavePrompted (collectPromptedValues, collectRecipePromptedValues, offerSavePrompted)
 import Seihou.Composition.Instance (primaryInstance)
 import Seihou.Core.Types
 import Seihou.Effect.ConfigWriterPure (ConfigWriterState (..), emptyConfigWriterState, runConfigWriterPure)
@@ -39,6 +39,14 @@ mkResolved src val decl =
 
 spec :: Spec
 spec = do
+  it "saves recipe-only prompted false once and omits unchanged local values" $ do
+    let decl = mkDecl "feature"
+        value = ResolvedVar (VBool False) FromPrompt decl
+        recipe = Map.singleton "feature" value
+        modules = Map.singleton (primaryInstance "demo") recipe
+    collectRecipePromptedValues recipe modules Map.empty `shouldBe` [("feature", "false", Nothing)]
+    collectRecipePromptedValues recipe Map.empty (Map.singleton "feature" "false") `shouldBe` []
+
   describe "collectPromptedValues" $ do
     it "extracts variables with FromPrompt source" $ do
       let decl = mkDecl "project.name"

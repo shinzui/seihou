@@ -42,6 +42,7 @@ tests = testSpec "seed foundations" $ do
           [AppliedInstanceState name emptyParentVars (LocalOrigin (name ^. #unModuleName)) Nothing Map.empty | name <- ["demo", "second"]]
           Map.empty
           []
+          Nothing
           now
       exact = first & #ownership .~ claims a ["demo", "second"]
       known = emptyManifest now & #applications .~ map application [a, b] & #seeds .~ Map.singleton "CHANGELOG.md" exact

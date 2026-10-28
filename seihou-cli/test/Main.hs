@@ -34,6 +34,7 @@ import Seihou.CLI.ManifestUpgradeSpec qualified as ManifestUpgradeSpec
 import Seihou.CLI.MigrateSpec qualified as MigrateSpec
 import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
 import Seihou.CLI.PromptRenderSpec qualified as PromptRenderSpec
+import Seihou.CLI.RecipeInputsE2ESpec qualified as RecipeInputsE2E
 import Seihou.CLI.RecordedReleaseSpec qualified as RecordedReleaseSpec
 import Seihou.CLI.Registry.SyncSpec qualified as RegistrySyncSpec
 import Seihou.CLI.Registry.ValidateSpec qualified as RegistryValidateSpec
@@ -110,5 +111,6 @@ main = do
         FzfSpec.tests
       ]
   seedUpdateTests <- SeedUpdateE2E.tests
+  recipeInputsTests <- RecipeInputsE2E.tests
   seedRunTests <- SeedRunE2E.tests
-  defaultMain (testGroup "seihou-cli" (seedUpdateTests : seedRunTests : tests))
+  defaultMain (testGroup "seihou-cli" (recipeInputsTests : seedUpdateTests : seedRunTests : tests))

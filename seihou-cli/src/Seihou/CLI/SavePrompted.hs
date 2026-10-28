@@ -1,5 +1,6 @@
 module Seihou.CLI.SavePrompted
   ( collectPromptedValues,
+    collectRecipePromptedValues,
     offerSavePrompted,
   )
 where
@@ -21,12 +22,19 @@ collectPromptedValues ::
   Map ModuleInstance (Map VarName ResolvedVar) ->
   Map VarName Text ->
   [(VarName, Text, Maybe Text)]
-collectPromptedValues resolved localConfig =
+collectPromptedValues resolved = collectRecipePromptedValues Map.empty resolved
+
+collectRecipePromptedValues ::
+  Map VarName ResolvedVar ->
+  Map ModuleInstance (Map VarName ResolvedVar) ->
+  Map VarName Text ->
+  [(VarName, Text, Maybe Text)]
+collectRecipePromptedValues recipe resolved localConfig =
   let allPrompted =
         Map.toAscList $
           Map.unions
             [ Map.mapMaybe promptedOnly vs
-            | vs <- Map.elems resolved
+            | vs <- recipe : Map.elems resolved
             ]
       promptedOnly rv =
         case rv ^. #source of

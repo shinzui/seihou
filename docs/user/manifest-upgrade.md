@@ -60,8 +60,9 @@ Reading .seihou/manifest.json (schema version 5)
   8 -> 9  checkout outputs
   9 -> 10 repeatable checkout commands
   10 -> 11 precise seed ownership claims
+  11 -> 12 recipe inputs
 
-✓ Upgraded .seihou/manifest.json to schema version 11.
+✓ Upgraded .seihou/manifest.json to schema version 12.
   Review the diff and commit it: git diff .seihou/manifest.json
 ```
 
@@ -237,3 +238,12 @@ recorded releases and inputs, and refuses if that evidence cannot be obtained.
 A seed receipt records settlement without tracking file contents. Normal seed
 commands prepare these lossless schema steps when needed. Seihou 0.11.0.0 implements runtime seed support. Older declaration/receipt-only
 releases can ignore lifecycle; update the runtime before adopting seed producers.
+
+## Recipe input records (schema 12)
+
+Applications record accepted recipe inputs, including values used only by prompt
+conditions. A null record means historical inputs are unknown; an empty map means
+resolution accepted no values. The lossless 11-to-12 step adds null records.
+Ordinary update adopts agreeing saved consumer values during preview and records
+recipe inputs only when applied. Conflicts require an explicit `--var KEY=VALUE`
+or `--reconfigure`. Dry runs and failed updates preserve the original bytes.

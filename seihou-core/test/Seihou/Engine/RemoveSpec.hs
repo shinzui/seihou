@@ -81,7 +81,7 @@ spec :: Spec
 spec = do
   describe "seed preservation and exact selection" $ do
     let appId = ApplicationId "a"
-        app = AppliedComposition appId (AppliedModuleTarget modName) (LocalOrigin "test-module") Nothing [] Nothing Nothing [AppliedInstanceState name emptyParentVars (LocalOrigin text) Nothing Map.empty | (name, text) <- [(modName, "test-module"), (otherMod, "other-module")]] Map.empty [] fixedTime
+        app = AppliedComposition appId (AppliedModuleTarget modName) (LocalOrigin "test-module") Nothing [] Nothing Nothing [AppliedInstanceState name emptyParentVars (LocalOrigin text) Nothing Map.empty | (name, text) <- [(modName, "test-module"), (otherMod, "other-module")]] Map.empty [] Nothing fixedTime
         receipt = SeedRecord modName (KnownSeedOwners (Map.singleton appId (Set.fromList [modName, otherMod]))) SeedCreated fixedTime
         manifest = mkManifest False [] & #applications .~ [app] & #seeds .~ Map.singleton "seed.txt" receipt
     it "retires a no-spec instance without losing a co-seeder or original supplier" $ do

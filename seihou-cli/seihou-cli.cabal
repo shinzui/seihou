@@ -283,6 +283,7 @@ test-suite seihou-cli-test
     Seihou.CLI.MigrateSpec
     Seihou.CLI.PendingMigrationSpec
     Seihou.CLI.PromptRenderSpec
+    Seihou.CLI.RecipeInputsE2ESpec
     Seihou.CLI.RecordedReleaseSpec
     Seihou.CLI.Registry.SyncSpec
     Seihou.CLI.Registry.ValidateSpec

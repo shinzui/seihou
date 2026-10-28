@@ -49,9 +49,10 @@ import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Recipe (expandRecipe)
 import Seihou.Composition.Resolve
   ( PromptPermission (..),
+    RecipeInputSpec (..),
     SavedInstanceValues,
     loadComposition,
-    resolveWithPromptPermission,
+    resolveRecipeWithPrompts,
     verifyDependencySources,
   )
 import Seihou.Core.Application (buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
@@ -278,6 +279,11 @@ data SelectionResolution = SelectionResolution
 -- co-owners are compiled from their recorded state, and the closure is
 -- enforced again on the certified manifest. Nothing here writes outside the
 -- session directory, runs a command, or reconciles a co-owner's files.
+isRecipeApplication :: AppliedComposition -> Bool
+isRecipeApplication app = case app ^. #target of
+  AppliedRecipeTarget _ -> True
+  _ -> False
+
 resolveSelection ::
   UpdateRequest ->
   FilePath ->
@@ -291,7 +297,9 @@ resolveSelection ::
 resolveSelection request sessionDirectory projectRoot installedDirectory manifestPath document manifest now =
   case matchApplications (request ^. #selection) manifest of
     Left err -> pure (Left err)
-    Right (MatchedAll applications) -> pure (Right (SelectionResolution manifest applications [] Nothing []))
+    Right (MatchedAll applications) -> pure $ do
+      prepared <- if any isRecipeApplication applications then prepareManifestSchema manifestPath RecipeInputs document manifest else Right manifest
+      Right (SelectionResolution prepared applications [] Nothing [])
     Right (MatchedLegacy name) -> do
       seeded <- seedLegacyApplication request sessionDirectory projectRoot installedDirectory manifest now name
       case seeded of
@@ -301,7 +309,7 @@ resolveSelection request sessionDirectory projectRoot installedDirectory manifes
           included <- includeLegacyDependencies request projectRoot manifest now applications staged
           pure (fmap (\(allApplications, next, additions) -> SelectionResolution manifest allApplications (warnings <> additions) (Just next) []) included)
     Right (MatchedNamed named) ->
-      case prepareManifestSchema manifestPath TargetedAdditiveSharedPathUpdate document manifest of
+      case prepareManifestSchema manifestPath (if any isRecipeApplication (applicationsWithIds manifest named) then RecipeInputs else TargetedAdditiveSharedPathUpdate) document manifest of
         Left err -> pure (Left err)
         Right prepared -> closeOver (1 :: Int) prepared Nothing [] named
   where
@@ -557,10 +565,10 @@ planApplication request projectRoot catalog now previous = do
                 | otherwise = savedInstanceValues previous
               namespace = fromMaybe (deriveNamespace primary) (previous ^. #namespace)
               context = fromMaybe "" (previous ^. #context)
-          resolved <- resolveApplicationValues request namespace context savedValues recipeOverrides modulesInOrder
+          resolved <- resolveApplicationValues request namespace context savedValues (artifactRecipeInputs targetArtifact (if request ^. #reconfigure then Nothing else previous ^. #recipeInputs)) recipeOverrides modulesInOrder
           case resolved of
             Left err -> pure (Left err)
-            Right resolvedValues -> do
+            Right (recipeValues, resolvedValues) -> do
               compiled <-
                 compileComposedPlan
                   [ (instanceId, modul, directory, Map.map (^. #value) (resolvedValues Map.! instanceId))
@@ -584,6 +592,8 @@ planApplication request projectRoot catalog now previous = do
                           originedModules
                           resolvedValues
                           now
+                          & #recipeInputs
+                          .~ recordedRecipeInputs (previous ^. #target) recipeValues
                           & #checkoutCommands
                           .~ checkoutCommandsFromOperations operations
                           & #applicationId
@@ -632,22 +642,31 @@ lookupArtifact :: CandidateCatalog -> CandidateArtifactKind -> Text -> Either Up
 lookupArtifact catalog kind name =
   maybe (Left (CandidateArtifactMissing kind name)) Right (Map.lookup (kind, name) (catalog ^. #artifacts))
 
+recordedRecipeInputs :: AppliedTarget -> Map VarName ResolvedVar -> Maybe (Map VarName Text)
+recordedRecipeInputs (AppliedRecipeTarget _) values = Just (Map.map (varValueToText . (^. #value)) values)
+recordedRecipeInputs _ _ = Nothing
+
+artifactRecipeInputs :: CandidateArtifact -> Maybe (Map VarName Text) -> RecipeInputSpec
+artifactRecipeInputs artifact saved = case artifact ^. #recipeDefinition of
+  Just recipe -> RecipeInputSpec (recipe ^. #vars) (recipe ^. #prompts) saved
+  Nothing -> RecipeInputSpec [] [] saved
+
 resolveApplicationValues ::
   UpdateRequest ->
   Text ->
   Text ->
   SavedInstanceValues ->
+  RecipeInputSpec ->
   Map VarName Text ->
   [(ModuleInstance, Module, FilePath)] ->
-  IO (Either UpdateError (Map ModuleInstance (Map VarName ResolvedVar)))
-resolveApplicationValues request namespace context saved recipeOverrides modulesInOrder = do
+  IO (Either UpdateError (Map VarName ResolvedVar, Map ModuleInstance (Map VarName ResolvedVar)))
+resolveApplicationValues request namespace context saved recipeSpec recipeOverrides modulesInOrder = do
   envPairs <- getEnvironment
   configs <- loadConfigMaps namespace context
   case configs of
     Left err -> pure (Left err)
     Right (localConfig, namespaceConfig, contextConfig, globalConfig) -> do
       let cli = Map.fromList [(VarName name, value) | (name, value) <- request ^. #varOverrides]
-          overrides = Map.union cli recipeOverrides
           env = Map.fromList [(T.pack key, T.pack value) | (key, value) <- envPairs]
           promptPermission = case request ^. #promptPolicy of
             AllowPrompts -> PromptsAllowed
@@ -655,11 +674,14 @@ resolveApplicationValues request namespace context saved recipeOverrides modules
       result <-
         runEff $
           runConsole $
-            resolveWithPromptPermission
+            resolveRecipeWithPrompts
               promptPermission
+              False
+              recipeSpec
               modulesInOrder
               saved
-              overrides
+              cli
+              recipeOverrides
               env
               namespace
               context
@@ -689,7 +711,7 @@ seedLegacyApplication :: UpdateRequest -> FilePath -> FilePath -> FilePath -> Ma
 seedLegacyApplication request session projectRoot installed manifest now requested = case roots of
   [] -> fmap (fmap (\(apps, warnings) -> (apps, warnings, Nothing))) (seedInstalledLegacyApplication request projectRoot manifest now requested)
   (target, origin, version) : _ -> do
-    let provisional = AppliedComposition (mkApplicationId target []) target origin version [] (Just (deriveNamespace (ModuleName requested))) Nothing [] Map.empty [] now
+    let provisional = AppliedComposition (mkApplicationId target []) target origin version [] (Just (deriveNamespace (ModuleName requested))) Nothing [] Map.empty [] Nothing now
     staged <- stageCandidateSources (session </> "legacy-candidate") projectRoot installed [provisional]
     case staged of
       Left err -> pure (Left err)
@@ -703,12 +725,12 @@ seedLegacyApplication request session projectRoot installed manifest now request
             Right modulesInOrder -> do
               let (saved, legacyWarnings) = legacySavedValues manifest modulesInOrder
                   namespace = deriveNamespace primary
-              resolved <- resolveApplicationValues request namespace "" saved overrides modulesInOrder
+              resolved <- resolveApplicationValues request namespace "" saved (artifactRecipeInputs artifact Nothing) overrides modulesInOrder
               case resolved of
                 Left err -> pure (Left err)
-                Right values -> do
+                Right (recipeValues, values) -> do
                   origined <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
-                  let recorded = buildAppliedComposition target origin version additional (Just namespace) Nothing origined values now & #instances %~ map (restoreLegacyVersion manifest)
+                  let recorded = buildAppliedComposition target origin version additional (Just namespace) Nothing origined values now & #recipeInputs .~ recordedRecipeInputs target recipeValues & #instances %~ map (restoreLegacyVersion manifest)
                   planned <- planApplication request projectRoot catalog now recorded
                   pure $ do
                     candidate <- planned
@@ -746,17 +768,20 @@ seedInstalledLegacyApplication request projectRoot manifest now requested = do
             Right modulesInOrder -> do
               let (saved, warnings) = legacySavedValues manifest modulesInOrder
                   namespace = deriveNamespace primary
-              resolved <- resolveApplicationValues request namespace "" saved recipeOverrides modulesInOrder
+              let recipeSpec = case runnable of
+                    RunnableRecipe r _ -> RecipeInputSpec (r ^. #vars) (r ^. #prompts) Nothing
+                    _ -> RecipeInputSpec [] [] Nothing
+              resolved <- resolveApplicationValues request namespace "" saved recipeSpec recipeOverrides modulesInOrder
               case resolved of
                 Left err -> pure (Left err)
-                Right resolvedValues -> do
+                Right (recipeValues, resolvedValues) -> do
                   targetOrigin <- detectArtifactOrigin projectRoot targetSource
                   originedModules <-
                     traverse
                       (\(instanceId, modul, directory) -> (instanceId,modul,) <$> detectArtifactOrigin projectRoot directory)
                       modulesInOrder
                   let provisional0 =
-                        buildAppliedComposition target targetOrigin targetVersion [] (Just namespace) Nothing originedModules resolvedValues now
+                        buildAppliedComposition target targetOrigin targetVersion [] (Just namespace) Nothing originedModules resolvedValues now & #recipeInputs .~ recordedRecipeInputs target recipeValues
                       provisional =
                         ( provisional0
                             & #instances
@@ -986,27 +1011,37 @@ summarizeInputChanges seedWarnings planned =
             | (instanceId, values) <- Map.toList candidateValues,
               (name, value) <- Map.toList values
             ]
-          reusedCount = length [() | (_, _, value) <- resolvedList, value ^. #source == FromApplication]
+          moduleKeys = Set.unions (map Map.keysSet (Map.elems prior) <> map Map.keysSet (Map.elems candidateValues))
+          recipeOnly = Map.withoutKeys (fromMaybe Map.empty (application ^. #candidate . #recipeInputs)) moduleKeys
+          oldRecipeOnly = Map.withoutKeys (fromMaybe Map.empty (application ^. #previous >>= (^. #recipeInputs))) moduleKeys
+          recipeReused = Map.size (Map.intersectionWith (==) recipeOnly oldRecipeOnly & Map.filter id)
+          recipeChanged = Map.size (Map.intersection recipeOnly oldRecipeOnly) - recipeReused
+          recipeNew = Map.size (Map.difference recipeOnly oldRecipeOnly)
+          recipeRemoved = Map.size (Map.difference oldRecipeOnly recipeOnly)
+          reusedCount = recipeReused + length [() | (_, _, value) <- resolvedList, value ^. #source == FromApplication]
           overriddenCount =
-            length
-              [ ()
-              | (instanceId, name, value) <- resolvedList,
-                value ^. #source == FromCLI,
-                Map.member name (Map.findWithDefault Map.empty instanceId prior)
-              ]
+            recipeChanged
+              + length
+                [ ()
+                | (instanceId, name, value) <- resolvedList,
+                  value ^. #source == FromCLI,
+                  Map.member name (Map.findWithDefault Map.empty instanceId prior)
+                ]
           newCount =
-            length
-              [ ()
-              | (instanceId, name, _) <- resolvedList,
-                Map.notMember name (Map.findWithDefault Map.empty instanceId prior)
-              ]
+            recipeNew
+              + length
+                [ ()
+                | (instanceId, name, _) <- resolvedList,
+                  Map.notMember name (Map.findWithDefault Map.empty instanceId prior)
+                ]
           removedCount =
-            length
-              [ ()
-              | (instanceId, oldValues) <- Map.toList prior,
-                name <- Map.keys oldValues,
-                Map.notMember name (Map.findWithDefault Map.empty instanceId candidateValues)
-              ]
+            recipeRemoved
+              + length
+                [ ()
+                | (instanceId, oldValues) <- Map.toList prior,
+                  name <- Map.keys oldValues,
+                  Map.notMember name (Map.findWithDefault Map.empty instanceId candidateValues)
+                ]
        in summary
             & #reused
             %~ (+ reusedCount)
@@ -1226,6 +1261,7 @@ setCompositionState instances receipts composition =
       instances,
       commandReceipts = receipts,
       checkoutCommands = composition ^. #checkoutCommands,
+      recipeInputs = composition ^. #recipeInputs,
       appliedAt = composition ^. #appliedAt
     }
 

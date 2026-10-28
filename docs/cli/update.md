@@ -357,3 +357,24 @@ requested Git commit failure exit non-zero.
 ## Checkout declarations
 
 Update reconciles prior declarations, candidate declarations and disk through the shared checkout planner. Link-only and ownership-only changes are real updates. Unchanged specifications do not repair unrelated drift; use [sync](sync.md). A retarget accepts an absent path, the expected old link, or the already-correct new link; a third local target refuses. Last-owner retirement removes only the expected literal old link, even if its source is gone. Edited links and real objects survive with a warning. Surviving owners must agree. Managed-to-seed release and explicit reverse adoption use the ordinary update workflow described above. Checkout transitions that conflict with managed or seed claims refuse. Recovery journals read versions 1–4: version 2 added literal links, version 3 added Git-index adoption, and version 4 adds anchored exclusive seed creation evidence. Recovery never snapshots/restores metadata-only seed paths or follows link targets.
+
+## Recipe inputs
+
+Recipe inputs are resolved before module variables. A required recipe boolean
+without a default asks once on an interactive terminal, even when every consuming
+module defaults it to false. In automation, supply `--var git.createGithub=false`
+(or configuration); missing required choices fail before generation.
+
+Recipe precedence is CLI, literal recipe bindings, saved recipe inputs on update,
+environment, local/namespace/context/global configuration, then recipe defaults.
+Resolved recipe inputs override module saved values and defaults. Each consumer
+still validates the value. Explicit false is a value, not an omitted answer.
+Optional prompt conditions see typed recipe values and earlier answers; a false
+condition skips interaction but does not waive a required declaration.
+
+Successful runs record recipe inputs in the checked-in manifest, including inputs
+used only by conditions. `seihou update RECIPE` reuses them in fresh clones;
+`--reconfigure` discards saved choices. Older applications adopt agreeing consumer
+values during ordinary preview; conflicts require `--var KEY=VALUE` or
+`--reconfigure`. Saving prompted values to local config remains optional and
+respects `--save-prompted` and `--no-save-prompted`; previews do not save them.

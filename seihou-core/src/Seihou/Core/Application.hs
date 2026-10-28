@@ -66,6 +66,7 @@ buildAppliedComposition target targetOrigin targetVersion additional namespace c
       instances = map buildInstance modulesInOrder,
       commandReceipts = Map.empty,
       checkoutCommands = [],
+      recipeInputs = Nothing,
       appliedAt = now
     }
   where
