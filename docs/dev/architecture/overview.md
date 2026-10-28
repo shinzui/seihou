@@ -740,6 +740,14 @@ A manifest (`.seihou/manifest.json`) tracks what was generated, enabling:
 - Conflict detection when users edit generated files
 - Durable exact-edge receipts for completed blueprint migrations, so interrupted
   chains resume without rerunning successful steps unless `--rerun` is given
+- Success receipts for application commands, so update skips commands that already
+  completed unchanged. Both run and update publish the receipt set a successful
+  command phase will produce before the phase starts, so a command that commits the
+  project captures a complete manifest. Run withdraws the set if the phase fails or is
+  interrupted; update publishes its manifest inside the transaction, sets aside
+  baselines the new manifest no longer references, and sets its recovery commit marker
+  only after the phase, so failure, interrupt or crash rolls everything back. See
+  [ADR 0023](../../adr/0023-command-receipts-are-published-before-the-command-phase-runs.md).
 - Undo/rollback capability (future)
 
 The manifest is a **checked-in, machine-independent project artifact**. It
@@ -773,4 +781,4 @@ The diff engine compares three sources: the manifest (last known generated state
 
 ## Checkout output lifecycle
 
-Step strategy and lifecycle are independent. Managed outputs enter content reconciliation; seeds have their separate receipt foundation; checkout outputs record portable typed intent. `Core.Checkout` validates paths and ownership and plans from declarations and observations. `Engine.Checkout` observes through Filesystem/Process effects and applies guarded link mutations with in-memory rollback. Run, update, remove and status reuse it. Sync starts directly at the manifest boundary and requires no module/config evaluation, installed artifact, command receipt or manifest writer. The reusable `Seihou.CLI.CheckoutSync` library renders structured outcomes; `src-exe/Seihou/CLI/Sync.hs` is trapped by its Commands import. Update's recovery journal snapshots literal link targets (since version 2) and, since version 5, a byte copy of `.seihou/manifest.json` taken when the transaction begins, which rollback and crash recovery restore; it decodes every version from 1. See [ADR 0018](../../adr/0018-checkout-outputs-are-observable-portable-declarations.md).
+Step strategy and lifecycle are independent. Managed outputs enter content reconciliation; seeds have their separate receipt foundation; checkout outputs record portable typed intent. `Core.Checkout` validates paths and ownership and plans from declarations and observations. `Engine.Checkout` observes through Filesystem/Process effects and applies guarded link mutations with in-memory rollback. Run, update, remove and status reuse it. Sync starts directly at the manifest boundary and requires no module/config evaluation, installed artifact, command receipt or manifest writer. The reusable `Seihou.CLI.CheckoutSync` library renders structured outcomes; `src-exe/Seihou/CLI/Sync.hs` is trapped by its Commands import. Update's recovery journal snapshots literal link targets (since version 2) and, since version 5, a byte copy of `.seihou/manifest.json` taken when the transaction begins plus the names of baseline blobs set aside before the command phase, both of which rollback and crash recovery restore; it decodes every version from 1. `.seihou/transactions/` carries a self-ignoring `.gitignore`. See [ADR 0018](../../adr/0018-checkout-outputs-are-observable-portable-declarations.md).

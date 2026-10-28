@@ -6,6 +6,11 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+### Fixed
+
+- Modules whose commands commit the project, such as `git-init`, no longer leave `.seihou/manifest.json` modified, and the commit they make no longer holds a manifest without command receipts. `seihou run` and `seihou update` record the receipts before the first command starts and withdraw them if a command fails or the run is interrupted. A later `seihou update`, including one in a fresh clone, no longer re-runs those commands (such as `gh repo create`). If a command commits and a later command fails, rerun the module and commit the corrected manifest.
+- An update whose command commits the project no longer commits seihou's in-progress update transaction or a baseline that the update was about to prune.
+
 ## [0.12.0.1] - 2026-10-28
 
 ### Fixed

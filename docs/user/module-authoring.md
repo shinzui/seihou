@@ -348,6 +348,16 @@ executes neither. `--no-commands` suppresses both while retaining checkout instr
 in manifest schema 10. Fresh clones need only `seihou sync` to repair recorded links
 and execute the resolved checkout subset, without producers or config prompts.
 
+Run and update write the receipts for a phase's application commands into
+`.seihou/manifest.json` before the first command starts. A module's own command may
+therefore commit or push the project (as `git-init` does with `git add -A && git
+commit`): the manifest it captures already records the run, and the working tree is
+left clean. If the phase fails or is interrupted, run withdraws those receipts and
+update rolls back its whole transaction, manifest included. One caveat: when a command
+commits and a later command in the same phase fails, the commit records receipts for
+commands that did not complete. Correct the failure, rerun `seihou run MODULE` (or
+`seihou update --run-all-commands`), and commit the corrected manifest.
+
 Checkout commands must be repeatable and keep intended writes outside managed/tracked
 state. Commit any scripts they need as project assets. Their working directories
 must be real project-relative directories already present in the receiving checkout,

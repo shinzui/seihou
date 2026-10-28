@@ -64,7 +64,7 @@ them on failure.
 - [x] M2 (2026-10-28): `seihou run` writes the expected receipts before the command phase, withdraws them when the phase fails or is interrupted, and skips the redundant final write. An end-to-end test shows a module whose last command commits leaves a clean tree, a committed manifest with that application's receipts, and a fresh clone whose `seihou update demo --dry-run` prints `Already up to date.`; a module whose last command fails leaves the manifest as today's failed run does and prints the withdrawal notice. Evidence: `-p "command receipts end-to-end"` passes 3 tests; against the pre-change `Run.hs` the commit and failure cases fail (` M .seihou/manifest.json`, no withdrawal notice). Full `seihou-cli-test`: 822 passed.
 - [x] M3 (2026-10-28): The update transaction journal (version 5) snapshots `.seihou/manifest.json` when a transaction begins and restores it byte for byte on rollback and on crash recovery, with core tests for both paths and for decoding older journals. Evidence: five new "manifest snapshot" cases (version-5 journal with copy, rollback, crash recovery, committed path, version-4 journal) and the unchanged path-validation case pass; `-p "UpdateTransaction"` 34 passed; full `seihou-core-test` passes.
 - [x] M4 (2026-10-28): `seihou update` writes the final manifest before the command phase and sets the recovery commit marker only after the phase succeeds. An end-to-end test shows an update whose new command commits leaves a clean tree with the receipt committed, and an update whose command fails restores the pre-update manifest and files with no transaction left behind. Meeting the clean-tree criterion also required setting aside unreferenced baselines before the phase and a self-ignoring `.seihou/transactions/.gitignore` (see Surprises & Discoveries and Decision Log). Evidence: `-p "command receipts end-to-end"` 5 passed; four new "set-aside baselines" core cases pass; full `seihou-core-test` and `seihou-cli-test` (824) pass.
-- [ ] M5: `docs/user/module-authoring.md`, `docs/dev/architecture/overview.md`, `docs/user/CHANGELOG.md` and a new ADR describe the new receipt timing; IR-9 is marked completed with evidence; `cabal test all`, `nix/check-record-conventions.sh` and `nix/check-cli-module-placement.sh` pass.
+- [x] M5 (2026-10-28): `docs/user/module-authoring.md`, `docs/dev/architecture/overview.md`, `docs/user/CHANGELOG.md` and a new ADR describe the new receipt timing; IR-9 is marked completed with evidence; `cabal test all`, `nix/check-record-conventions.sh` and `nix/check-cli-module-placement.sh` pass. Evidence: ADR 0023 written; the root `CHANGELOG.md` also has an entry; `cabal test all` passes (core 1280, okf-extension 51, cli 824); the unenforced `okf validate` prints `OK: 13 concepts`, and the enforced run reports 9 pre-existing deviations, none for IR-9; `nix fmt` is a no-op and both convention checks pass.
 
 
 ## Surprises & Discoveries
@@ -208,7 +208,31 @@ this plan by handle with their triage outcome. Before marking the plan complete,
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Completed 2026-10-28. Both commands now publish the receipt set before the command phase.
+A committing module command leaves a clean tree and a complete committed manifest, and a fresh
+clone's `seihou update --dry-run` reports `Already up to date.`. Failures withdraw the receipts
+(run) or roll back the whole transaction, manifest included (update).
+
+Beyond the purpose as written, update had a second way to dirty the tree. A committing command
+also captured the in-flight transaction directory and a baseline blob that was pruned only after
+commit. Meeting milestone 4's clean-tree criterion added set-aside baselines (journal version 5)
+and a self-ignoring `.seihou/transactions/.gitignore`. As a consequence, any update command that
+committed the project before this plan also committed transaction scaffolding.
+
+Gaps: the optional SIGINT end-to-end case was not written. The interrupt path is covered by the
+`withReceiptWithdrawal` unit test (`UserInterrupt` withdraws once and rethrows). A rolled-back
+update still leaves the new baseline blobs that reconciliation wrote as untracked files; this
+predates the plan (Surprises & Discoveries).
+
+Optional real-module check, performed: `mori://shinzui/seihou-modules/templates/git-init` was
+copied into a throwaway project as a project-local module, then
+`seihou run git-init --var git.createGithub=false` was run with the development binary. The
+result was an empty `git status --porcelain`, both receipts (`git init -b master` and the
+initial commit) in `HEAD:.seihou/manifest.json`, and `Already up to date.` from
+`seihou update git-init --dry-run` in a `git clone` of the project.
+
+Friction: none recorded under this plan. Durable context is distilled into
+`docs/adr/0023-command-receipts-are-published-before-the-command-phase-runs.md`.
 
 
 ## Context and Orientation

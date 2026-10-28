@@ -4,6 +4,10 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Publish command receipts before the command phase. `seihou run` writes the receipt set a successful phase produces (`expectedCommandReceipts`) with its generation manifest and withdraws it on failure or interrupt (`withReceiptWithdrawal`); `seihou update` writes its final manifest before the phase and sets recovery commit markers after it. Update transaction journals move to version 5: a byte copy of the manifest and set-aside unreferenced baselines, both restored by rollback and crash recovery; versions 1-4 still decode. `.seihou/transactions/` carries a self-ignoring `.gitignore`. Manifest schema is unchanged (ExecPlan 116).
+
 ## [0.12.0.1] - 2026-10-28
 
 ### Fixed

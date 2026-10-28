@@ -9,27 +9,50 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-10-02T21:01:33Z"
-timestamp: 2026-10-28T16:42:16Z
+timestamp: 2026-10-28T17:05:30Z
 requestId: IR-9
-status: accepted
+status: completed
+completedAt: "2026-10-28T17:05:30Z"
+resolution: >-
+  seihou run and seihou update publish the receipts a successful command phase produces before the first command runs and withdraw or roll them back on failure, so a committing command such as git-init leaves a clean tree and a complete committed manifest.
 targetPlan: docs/plans/116-record-command-receipts-before-module-commands-can-commit-the-manifest.md
 origin: mori://shinzui/okf-profiles
+reviews:
+  - kind: model
+    reviewer: claude-code/claude-opus-5-5
+    reviewed_at: "2026-10-28T17:05:30Z"
+    document_timestamp: "2026-10-28T17:05:30Z"
+    scope: content-and-metadata
+    outcome: approved
+    context: Completion self-review against the implemented source, end-to-end tests and the linked plan; not an independent review.
+    provider: anthropic
+    model: claude-opus-5-5
+    effort: unspecified
 ---
 
 # Improvement Request: Record Command Receipts in a Manifest a Module Command Can Commit
 
 ## Status
 
-Accepted 2026-10-28 and planned in
+Completed 2026-10-28 by
 [ExecPlan 116](../plans/116-record-command-receipts-before-module-commands-can-commit-the-manifest.md),
-which implements option A below: both `seihou run` and `seihou update` write the receipt
-set a successful phase will produce before the first command runs, withdraw it when the
-phase fails or is interrupted, and `seihou update` snapshots the manifest in its
-transaction journal so a rollback restores it. Implementation remains pending as of
-2026-10-28. The current `Run.hs` still calls
-`executeCommandPlanWithOutput` before writing `receiptManifest`; `Update.hs` still
-calls `executeCommandPlan` before building and writing `finalManifest`.
-Neither option below has been implemented yet; the plan chooses A.
+which implements option A below; the decision is recorded in
+[ADR 0023](../adr/0023-command-receipts-are-published-before-the-command-phase-runs.md).
+`seihou run` writes the receipt set a successful phase will produce with its generation
+manifest and withdraws it if the phase fails or is interrupted. `seihou update` writes its
+final manifest inside the update transaction before the phase and sets its recovery commit
+marker after it. The version-5 transaction journal holds a byte copy of the manifest and
+the baselines set aside before the phase, so rollback and crash recovery restore both.
+`.seihou/transactions/` ignores itself in git.
+
+Evidence: `seihou-cli/test/Seihou/CLI/CommandReceiptE2ESpec.hs` runs the real executable.
+A project-local module whose commands are `git init` and `git add -A && git commit` leaves
+an empty `git status --porcelain`, and the committed manifest holds both receipts and
+matches the on-disk bytes. `seihou update demo --dry-run` in a fresh clone prints
+`Already up to date.` A trailing `exit 7` withdraws the receipts and prints the residual
+notice. An update whose new command commits leaves a clean tree with the receipt
+committed, and an update whose command fails restores the manifest and files byte for
+byte. Against the pre-change `Run.hs`, the run cases fail with ` M .seihou/manifest.json`.
 
 [ExecPlan 67](../plans/67-track-generated-commands-and-skip-unchanged-executions.md)
 introduced receipts and is background, not a plan to fix their publication order.
