@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Update**: IR-9 is accepted and planned in docs/plans/116-record-command-receipts-before-module-commands-can-commit-the-manifest.md, which chooses option A: seihou run and seihou update publish the receipt set a successful command phase will produce before the first command runs, withdraw it when the phase fails or is interrupted, and update snapshots the manifest in a version-5 transaction journal so rollback and crash recovery restore it. No schema change; git-init and the recipes that end with it need no edits. Implementation remains pending.
 * **Update**: Completed IR-11 via EP-114, IR-12 via EP-113 and IR-13 via EP-115 in Seihou 0.12.0.1. All three source packages and API docs are published; the tagged Nix build passes all 2134 tests and the installed CLI at f529a7a passes cross-registry install/run, terminal/replay, representative-consumer and descriptor-validation acceptance. TAN producer publication remains downstream work.
 * **Update**: Linked IR-11, IR-12 and IR-13 to ExecPlans 114, 113 and 115 respectively; source implementations are complete and coordinated release verification is in progress.
 * **Update**: Linked IR-12 to ExecPlan 113 for source declarations, dependency closure installation, origin-safe resolution, and released consumer verification; the plan links back to IR-12. Implementation remains pending.

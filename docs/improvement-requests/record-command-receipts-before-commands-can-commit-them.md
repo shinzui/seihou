@@ -9,9 +9,10 @@ description: >-
 generated:
   by: process:claude-code
   at: "2026-10-02T21:01:33Z"
-timestamp: 2026-10-15T15:09:14Z
+timestamp: 2026-10-28T16:42:16Z
 requestId: IR-9
-status: proposed
+status: accepted
+targetPlan: docs/plans/116-record-command-receipts-before-module-commands-can-commit-the-manifest.md
 origin: mori://shinzui/okf-profiles
 ---
 
@@ -19,11 +20,16 @@ origin: mori://shinzui/okf-profiles
 
 ## Status
 
-Proposed; no implementation plan found in `docs/plans/` or `docs/masterplans/` as
-of the 2026-10-15 audit. The current `Run.hs` still calls
+Accepted 2026-10-28 and planned in
+[ExecPlan 116](../plans/116-record-command-receipts-before-module-commands-can-commit-the-manifest.md),
+which implements option A below: both `seihou run` and `seihou update` write the receipt
+set a successful phase will produce before the first command runs, withdraw it when the
+phase fails or is interrupted, and `seihou update` snapshots the manifest in its
+transaction journal so a rollback restores it. Implementation remains pending as of
+2026-10-28. The current `Run.hs` still calls
 `executeCommandPlanWithOutput` before writing `receiptManifest`; `Update.hs` still
 calls `executeCommandPlan` before building and writing `finalManifest`.
-Neither option below has been implemented.
+Neither option below has been implemented yet; the plan chooses A.
 
 [ExecPlan 67](../plans/67-track-generated-commands-and-skip-unchanged-executions.md)
 introduced receipts and is background, not a plan to fix their publication order.
