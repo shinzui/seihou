@@ -49,3 +49,9 @@ adopting a schema that emits the new field.
 The schema, executable, and actual producer must be delivered together before a
 consumer workflow can be called complete. Source tests and a fixture establish
 implementation behavior, while published and installed versions need separate proof.
+
+A source test run and `nix flake check` do not prove Nix package installability.
+The release workflow must build the complete native package with its tests before
+publishing; test runtimes belong in the package's test tools. Schema fixtures copy
+schema definitions, excluding unrelated project metadata such as `mori.dhall` so
+that an offline fixture does not acquire hidden network dependencies.

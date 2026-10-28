@@ -44,6 +44,13 @@ The starting state is a fresh machine or worktree with no installed artifacts. T
 
 ## Surprises & Discoveries
 
+2026-10-28: The complete published-tag Nix build caught native CLI test environment
+gaps after the source and flake checks passed: Python process fixtures lacked their
+interpreter, and copying the schema's unrelated `mori.dhall` triggered a network import
+in offline fixture installation. FRIC-5 records the detour. Fix the test inputs and
+copy only schema definitions, then deliver the patch release through a full native
+package build before publication. No source-only success substitutes for this gate.
+
 
 2026-10-28: The user supplied the checkout for `mori://tan/tan-seihou-modules`. Its verified remote is `https://github.com/topagentnetwork/tan-seihou-modules.git`, and its planned recipe is `tan-keiro-project`. The registry contains no artifacts. Its MasterPlan explicitly gates all TAN implementation on Seihou's source-install, prompt, validation, and receipt prerequisites; no TAN scaffolding was implemented here. An isolated ordinary install from the committed local checkout exits 1 with “tan-keiro-project” not found. FRIC-4 in docs/friction-log/ records this delivery blocker.
 

@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Addition**: FRIC-5 records detour tooling friction with mori://shinzui/seihou: Nix package tests lack Python and copy non-schema Mori imports
 * **Update**: FRIC-4 accepted: Close Seihou prerequisite work independently of the downstream TAN producer, preserving the observed acceptance boundary.
 * **Addition**: FRIC-4 records blocked environment friction with mori://tan/tan-seihou-modules: TAN consumer acceptance has no implemented producer artifact
 * **Update**: FRIC-3 resolved: Verified the supported development-shell workflow after the ambient native-library failure.

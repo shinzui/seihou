@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.12.0.1] - 2026-10-28
+
+### Fixed
+
+- Add Python to native CLI test tools and keep Mori project metadata out of isolated schema fixtures, so the Nix package builds without test-fixture network access.
+
 ## [0.12.0.0] - 2026-10-28
 
 ### Added
@@ -1210,7 +1216,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.0.1...HEAD
+[0.12.0.1]: https://github.com/shinzui/seihou/compare/v0.12.0.0...v0.12.0.1
 [0.12.0.0]: https://github.com/shinzui/seihou/compare/v0.11.0.1...v0.12.0.0
 [0.11.0.1]: https://github.com/shinzui/seihou/compare/v0.11.0.0...v0.11.0.1
 [0.11.0.0]: https://github.com/shinzui/seihou/compare/v0.10.1.0...v0.11.0.0

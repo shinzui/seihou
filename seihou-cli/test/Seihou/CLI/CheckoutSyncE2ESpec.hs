@@ -23,6 +23,8 @@ import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
 
+-- Copy schema definitions only: mori.dhall is project metadata with unrelated
+-- remote imports, not a dependency of package.dhall.
 -- Use the published pin from Git objects in a checkout, or the explicitly
 -- identified schema staged by the package builder. Imports remain offline.
 copyPinnedSchema source destination = do
@@ -34,10 +36,10 @@ copyPinnedSchema source destination = do
       actual <- T.strip <$> TIO.readFile marker
       unless (actual == T.pack revision) (fail "packaged schema does not match the executable's published pin")
       files <- D.listDirectory source
-      forM_ (filter ((== ".dhall") . takeExtension) files) $ \file -> D.copyFile (source </> file) (destination </> file)
+      forM_ (filter (\file -> takeExtension file == ".dhall" && file /= "mori.dhall") files) $ \file -> D.copyFile (source </> file) (destination </> file)
     else do
       files <- lines <$> readProcess "git" ["-C", source, "ls-tree", "--name-only", revision] ""
-      forM_ (filter ((== ".dhall") . takeExtension) files) $ \file -> do
+      forM_ (filter (\file -> takeExtension file == ".dhall" && file /= "mori.dhall") files) $ \file -> do
         content <- readProcess "git" ["-C", source, "show", revision <> ":" <> file] ""
         TIO.writeFile (destination </> file) (T.pack content)
 

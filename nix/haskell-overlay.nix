@@ -121,9 +121,8 @@ in
           printf '%s\n' '${seihou-schema-src.rev}' > ../schema/.seihou-pinned-revision
         '' else ""
       );
-      # Integration tests shell out to `git` for fixture remotes; make it
-      # available inside the Nix test sandbox.
-      testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git ];
+      # Integration tests use git remotes and Python-owned provider processes.
+      testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git pkgs.python3 ];
     })
     (dontHaddock (doJailbreak (final.callCabal2nix "seihou-cli" ../seihou-cli { })));
 

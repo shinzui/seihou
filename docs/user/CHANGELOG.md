@@ -6,6 +6,12 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+## [0.12.0.1] - 2026-10-28
+
+### Fixed
+
+- Fix installation through the Nix release flake. Its tests now have Python available and avoid unrelated remote imports from schema project metadata. Recipe behavior and the public API are unchanged from 0.12.0.0.
+
 ## [0.12.0.0] - 2026-10-28
 
 ### Added
@@ -1117,7 +1123,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.0.1...HEAD
+[0.12.0.1]: https://github.com/shinzui/seihou/compare/v0.12.0.0...v0.12.0.1
 [0.12.0.0]: https://github.com/shinzui/seihou/compare/v0.11.0.1...v0.12.0.0
 [0.11.0.1]: https://github.com/shinzui/seihou/compare/v0.11.0.0...v0.11.0.1
 [0.11.0.0]: https://github.com/shinzui/seihou/compare/v0.10.1.0...v0.11.0.0

@@ -246,9 +246,16 @@ git add \
   CHANGELOG.md \
   docs/user/CHANGELOG.md
 git commit -m "chore(release): vA.B.C.D"
+nix build .#seihou --no-link  # full native package build and tests, before publishing
 git tag -a vA.B.C.D -m "Release vA.B.C.D"    # annotated, v-prefixed
 git push && git push --tags
 ```
+
+The full native package build is required before tagging or publishing because
+`nix flake check` checks formatting/conventions but does not build the CLI package.
+It catches missing test tools and fixture network dependencies hidden by the
+development environment. Run it against the clean release commit; retain all
+package tests. After publication, install the tagged artifact and verify it.
 
 ### 8. Publish to Hackage — in dependency order
 
