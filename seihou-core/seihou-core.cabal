@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: seihou-core
-version: 0.12.0.1
+version: 0.12.1.0
 synopsis: Core library for Seihou project scaffolding
 description:
   Core library for Seihou, a composable project scaffolding system.

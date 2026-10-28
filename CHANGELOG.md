@@ -4,9 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.12.1.0] - 2026-10-28
+
+### Added
+
+- `seihou-core`: `Seihou.Engine.UpdateTransaction` exports `setAsideUnreferencedBaselines`, which moves baseline blobs a candidate manifest no longer references into the transaction's `set-aside-baselines/` folder so rollback can restore them and completion deletes them (ExecPlan 116).
+
 ### Fixed
 
 - Publish command receipts before the command phase. `seihou run` writes the receipt set a successful phase produces (`expectedCommandReceipts`) with its generation manifest and withdraws it on failure or interrupt (`withReceiptWithdrawal`); `seihou update` writes its final manifest before the phase and sets recovery commit markers after it. Update transaction journals move to version 5: a byte copy of the manifest and set-aside unreferenced baselines, both restored by rollback and crash recovery; versions 1-4 still decode. `.seihou/transactions/` carries a self-ignoring `.gitignore`. Manifest schema is unchanged (ExecPlan 116).
+- Release context audit: `help/update.md` no longer says receipts are published after the command phase or that the manifest is the final publication marker (commit markers are); `data/module-reference.md` (assist/bootstrap/setup) and `docs/cli/run.md`/`docs/cli/update.md` explain that commands committing the project capture a complete manifest.
 
 ## [0.12.0.1] - 2026-10-28
 
@@ -1220,7 +1227,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.0.1...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.1.0...HEAD
+[0.12.1.0]: https://github.com/shinzui/seihou/compare/v0.12.0.1...v0.12.1.0
 [0.12.0.1]: https://github.com/shinzui/seihou/compare/v0.12.0.0...v0.12.0.1
 [0.12.0.0]: https://github.com/shinzui/seihou/compare/v0.11.0.1...v0.12.0.0
 [0.11.0.1]: https://github.com/shinzui/seihou/compare/v0.11.0.0...v0.11.0.1

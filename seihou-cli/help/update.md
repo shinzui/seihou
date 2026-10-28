@@ -132,8 +132,10 @@ COMMANDS
   A true no-op executes neither lifecycle; use sync to repeat recorded local setup.
   --run-all-commands explicitly makes command execution actionable; --no-commands
   suppresses both lifecycles while retaining checkout declarations. Those flags
-  are mutually exclusive. Only application commands receive success receipts,
-  published after the entire phase succeeds.
+  are mutually exclusive. Only application commands receive success receipts.
+  They are written to the manifest before the first command starts, so a
+  command that commits the project captures them and leaves a clean tree; a
+  failure or interrupt rolls the manifest back with the rest of the update.
 
 PREVIEW, AUTOMATION, AND COMMITS
 
@@ -151,7 +153,9 @@ TRANSACTION SAFETY
   Before mutation, Seihou checks that the manifest, project files, and staged
   sources still match the accepted plan. Managed migrations, files, baseline
   blobs, installed-cache entries, and the manifest are protected by recovery
-  journals. The manifest is the final publication marker.
+  journals. Commit markers, set after the command phase, are the final
+  publication step; until then a failure, interrupt or crash rolls back files,
+  install cache and the journaled manifest copy together.
 
   External effects from module or migration shell commands cannot be undone.
   A failure reports that limitation instead of claiming a full rollback.

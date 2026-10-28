@@ -263,7 +263,11 @@ selected repeatable checkout commands in the original mixed order. Their presenc
 alone does not make an update actionable; a changed declaration does. A true no-op
 executes neither lifecycle. Use sync to repeat local setup.
 `--run-all-commands` replays everything and `--no-commands` disables execution.
-Receipts are published only after the whole command phase succeeds.
+Receipts are written into the manifest before the first command starts, so a
+command that commits the project (such as `git-init`) captures a complete
+manifest and leaves a clean tree. A failure or interrupt rolls the manifest back
+with the rest of the transaction; the commit markers set after the phase are the
+final publication step.
 
 Command side effects outside Seihou's managed file, cache, baseline, and
 manifest paths cannot be rolled back. A failure reports this limitation.

@@ -168,7 +168,9 @@ application receipts; `S.Command.Action.Checkout` records resolved repeatable lo
 setup for sync. Run executes both in composition order after file/link generation.
 `--no-commands` suppresses execution while retaining every checkout declaration.
 Run publishes desired declarations before its command phase. A failure returns
-nonzero and retains them; sync retries only checkout commands. Fix an ordinary
+nonzero and retains them; sync retries only checkout commands. The receipts a
+successful phase earns are written then too, so a command that commits the project
+captures a complete manifest; a failure or interrupt withdraws those receipts. Fix an ordinary
 application-command failure through the original run command. Arbitrary shell effects
 cannot be undone by Seihou; checkout commands must be repeatable and keep intended
 writes outside managed/tracked state. See [sync](sync.md).

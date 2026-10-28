@@ -70,6 +70,9 @@ checkout declarations. A true no-op update executes neither. Sync executes only 
 resolved checkout subset stored in manifest schema 10, without module/configuration
 resolution or receipts. Repeated sync reruns all of it. Commit scripts needed by
 these commands as project assets; never depend on a producer cache path.
+Run and update write a phase's application receipts into the manifest before its
+first command starts, so a command may commit the project (`git add -A && git
+commit`) and capture a complete manifest; failure or interrupt withdraws them.
 
 Checkout working directories must be real project-relative directories already
 present in a receiving clone, with no symlink ancestors. Sync preflights all links
