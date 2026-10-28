@@ -268,6 +268,7 @@ test-suite seihou-cli-test
     Seihou.CLI.CheckoutSyncE2ESpec
     Seihou.CLI.CheckoutSyncSpec
     Seihou.CLI.CommandExecutionSpec
+    Seihou.CLI.CommandReceiptE2ESpec
     Seihou.CLI.CommitMessageSpec
     Seihou.CLI.DiffSpec
     Seihou.CLI.ExtensionSpec

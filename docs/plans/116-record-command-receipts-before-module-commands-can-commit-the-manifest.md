@@ -10,6 +10,12 @@ provenance:
     model: "claude-fable-5-1"
     harness: "claude-code"
     at: 2026-10-28T16:30:24Z
+  revisions:
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-10-28T16:55:38Z
+      mode: "implement"
+      note: "Milestones implemented"
 ---
 
 # Record command receipts before module commands can commit the manifest
@@ -54,8 +60,8 @@ them on failure.
 
 ## Progress
 
-- [ ] M1: `Seihou.CLI.CommandExecution` exposes the receipt list a fully successful command phase will return, and a unit test proves that `executeCommandPlan` on an all-success plan returns exactly that list.
-- [ ] M2: `seihou run` writes the expected receipts before the command phase, withdraws them when the phase fails or is interrupted, and skips the redundant final write. An end-to-end test shows a module whose last command commits leaves a clean tree, a committed manifest with that application's receipts, and a fresh clone whose `seihou update demo --dry-run` prints `Already up to date.`; a module whose last command fails leaves the manifest as today's failed run does and prints the withdrawal notice.
+- [x] M1 (2026-10-28): `Seihou.CLI.CommandExecution` exposes the receipt list a fully successful command phase will return, and a unit test proves that `executeCommandPlan` on an all-success plan returns exactly that list. Evidence: `-p "Seihou.CLI.CommandExecution"` passes 17 tests, including the three `expectedCommandReceipts` cases and four `withReceiptWithdrawal` cases (success, `Left`, `UserInterrupt`, failing withdrawal).
+- [x] M2 (2026-10-28): `seihou run` writes the expected receipts before the command phase, withdraws them when the phase fails or is interrupted, and skips the redundant final write. An end-to-end test shows a module whose last command commits leaves a clean tree, a committed manifest with that application's receipts, and a fresh clone whose `seihou update demo --dry-run` prints `Already up to date.`; a module whose last command fails leaves the manifest as today's failed run does and prints the withdrawal notice. Evidence: `-p "command receipts end-to-end"` passes 3 tests; against the pre-change `Run.hs` the commit and failure cases fail (` M .seihou/manifest.json`, no withdrawal notice). Full `seihou-cli-test`: 822 passed.
 - [ ] M3: The update transaction journal (version 5) snapshots `.seihou/manifest.json` when a transaction begins and restores it byte for byte on rollback and on crash recovery, with core tests for both paths and for decoding older journals.
 - [ ] M4: `seihou update` writes the final manifest before the command phase and sets the recovery commit marker only after the phase succeeds. An end-to-end test shows an update whose new command commits leaves a clean tree with the receipt committed, and an update whose command fails restores the pre-update manifest and files with no transaction left behind.
 - [ ] M5: `docs/user/module-authoring.md`, `docs/dev/architecture/overview.md`, `docs/user/CHANGELOG.md` and a new ADR describe the new receipt timing; IR-9 is marked completed with evidence; `cabal test all`, `nix/check-record-conventions.sh` and `nix/check-cli-module-placement.sh` pass.
@@ -74,6 +80,13 @@ handle here only when it also changed the plan.
   `reviews` field and IR-10 lacks `resolution`. Without `--profile-enforce` the bundle validates
   (`OK: 13 concepts`). Milestone 5 therefore requires that the enforced run report no deviation
   for IR-9 itself, not that the whole bundle pass; the other deviations are out of scope.
+
+- (2026-10-28, M2) The `--no-commands --force` case cannot assert unchanged manifest bytes, as
+  the plan proposed: every run restamps `genAt` and the application's `appliedAt`. The test
+  asserts instead that the `demo` application's receipts are identical before and after.
+  The fixture also writes a `.gitignore` for the in-project `home/`, `config/` and `cache/`
+  directories that `SeedRunE2ESpec.invoke` points the environment at, so `git add -A` in the
+  committing command and the `git status --porcelain` assertions see only project files.
 
 
 ## Decision Log

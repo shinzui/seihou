@@ -1,6 +1,8 @@
 module Seihou.CLI.CommandExecutionSpec (tests) where
 
+import Control.Exception (AsyncException (UserInterrupt), throwIO, try)
 import Data.Generics.Labels ()
+import Data.IORef (modifyIORef', newIORef, readIORef)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust)
 import Data.Time (UTCTime, defaultTimeLocale, parseTimeOrError)
@@ -165,3 +167,73 @@ spec = do
           plan = planCommands DisableCommands prior [old, new]
       finalizeCommandReceipts plan [] prior
         `shouldBe` Map.singleton (oldReceipt ^. #fingerprint) oldReceipt
+
+  describe "expectedCommandReceipts" $ do
+    it "equals the receipts a fully successful execution returns" $ do
+      let first = commandOp "echo first" Nothing "app" 0
+          second = commandOp "echo second" (Just "subdir") "app" 0
+          plan = planCommands RunAllCommands Map.empty [first, second]
+      result <-
+        runEff $
+          runProcessPure [successMock "echo first", successMock "echo second"] $
+            executeCommandPlan laterTime plan
+      result `shouldBe` Right (expectedCommandReceipts laterTime plan)
+      map (^. #fingerprint) (expectedCommandReceipts laterTime plan) `shouldBe` map fingerprintOf [first, second]
+
+    it "yields no receipt for skipped, disabled, or checkout commands" $ do
+      let unchanged = commandOp "echo unchanged" Nothing "app" 0
+          checkout = RunCommandOp "echo checkout" Nothing "app" 0 CheckoutCommandLifecycle
+          prior = Map.singleton (fingerprintOf unchanged) (receiptFor fixedTime unchanged)
+      expectedCommandReceipts laterTime (planCommands RunChangedCommands prior [unchanged, checkout]) `shouldBe` []
+      expectedCommandReceipts laterTime (planCommands DisableCommands Map.empty [unchanged]) `shouldBe` []
+
+    it "finalizes to the same receipt map as a successful execution" $ do
+      let unchanged = commandOp "echo unchanged" Nothing "app" 0
+          changed = commandOp "echo changed" Nothing "app" 0
+          removed = commandOp "echo removed" Nothing "app" 0
+          prior =
+            Map.fromList
+              [ (fingerprintOf unchanged, receiptFor fixedTime unchanged),
+                (fingerprintOf removed, receiptFor fixedTime removed)
+              ]
+          plan = planCommands RunChangedCommands prior [unchanged, changed]
+      result <- runEff $ runProcessPure [successMock "echo changed"] $ executeCommandPlan laterTime plan
+      case result of
+        Right actual ->
+          finalizeCommandReceipts plan (expectedCommandReceipts laterTime plan) prior
+            `shouldBe` finalizeCommandReceipts plan actual prior
+        Left err -> expectationFailure ("Expected success, got: " <> show err)
+
+  describe "withReceiptWithdrawal" $ do
+    let failing = commandOp "exit 7" Nothing "app" 0
+        failure =
+          CommandExecutionError
+            { command = PlannedCommand failing (fingerprintOf failing) CommandWillRun,
+              exitCode = 7,
+              stdout = "",
+              stderr = ""
+            }
+
+    it "does not withdraw after a successful phase" $ do
+      withdrawals <- newIORef (0 :: Int)
+      result <- withReceiptWithdrawal (modifyIORef' withdrawals (+ 1)) (pure (Right ()))
+      result `shouldBe` Right ()
+      readIORef withdrawals `shouldReturn` 0
+
+    it "withdraws once and returns a failed phase unchanged" $ do
+      withdrawals <- newIORef (0 :: Int)
+      result <- withReceiptWithdrawal (modifyIORef' withdrawals (+ 1)) (pure (Left failure :: Either CommandExecutionError ()))
+      result `shouldBe` Left failure
+      readIORef withdrawals `shouldReturn` 1
+
+    it "withdraws once and rethrows an interrupted phase" $ do
+      withdrawals <- newIORef (0 :: Int)
+      result <-
+        try @AsyncException $
+          withReceiptWithdrawal (modifyIORef' withdrawals (+ 1)) (throwIO UserInterrupt :: IO (Either CommandExecutionError ()))
+      result `shouldBe` Left UserInterrupt
+      readIORef withdrawals `shouldReturn` 1
+
+    it "does not let a failing withdrawal mask the phase failure" $ do
+      result <- withReceiptWithdrawal (ioError (userError "disk full")) (pure (Left failure :: Either CommandExecutionError ()))
+      result `shouldBe` Left failure

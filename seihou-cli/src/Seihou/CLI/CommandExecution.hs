@@ -10,6 +10,8 @@ module Seihou.CLI.CommandExecution
     summarizeCommandPlan,
     executeCommandPlan,
     executeCommandPlanWithOutput,
+    expectedCommandReceipts,
+    withReceiptWithdrawal,
     finalizeCommandReceipts,
     CommandOutcome (..),
     CommandOutcomeStatus (..),
@@ -19,8 +21,8 @@ module Seihou.CLI.CommandExecution
   )
 where
 
-import Control.Exception (IOException, displayException, try)
-import Control.Monad (forM, forM_, when)
+import Control.Exception (IOException, SomeException, displayException, onException, try)
+import Control.Monad (forM, forM_, void, when)
 import Data.Generics.Labels ()
 import Data.List (find)
 import Data.Map.Strict qualified as Map
@@ -231,10 +233,45 @@ executeCommands completedAt onSuccess completed commands = do
   where
     receipt outcome
       | outcome ^. #status /= CommandSucceeded = Nothing
-      | isCheckoutCommand (outcome ^. #command . #operation) = Nothing
-      | otherwise = case outcome ^. #command . #operation of
-          RunCommandOp {moduleName, command, workDir} -> Just (CommandReceipt (outcome ^. #command . #fingerprint) moduleName command workDir completedAt)
-          _ -> Nothing
+      | otherwise = plannedReceipt completedAt (outcome ^. #command)
+
+-- | The receipts 'executeCommandPlan' returns when every runnable command in
+-- the plan succeeds, stamped with @completedAt@. Known before the first
+-- command runs, because fingerprints and the stamp do not depend on execution.
+expectedCommandReceipts :: UTCTime -> CommandPlan -> [CommandReceipt]
+expectedCommandReceipts completedAt commandPlan =
+  mapMaybe expected (commandPlan ^. #commands)
+  where
+    expected planned
+      | planned ^. #disposition /= CommandWillRun = Nothing
+      | otherwise = plannedReceipt completedAt planned
+
+-- | The receipt a successful run of one planned command earns. Checkout
+-- commands and non-command operations never earn one.
+plannedReceipt :: UTCTime -> PlannedCommand -> Maybe CommandReceipt
+plannedReceipt completedAt planned
+  | isCheckoutCommand (planned ^. #operation) = Nothing
+  | otherwise = case planned ^. #operation of
+      RunCommandOp {moduleName, command, workDir} -> Just (CommandReceipt (planned ^. #fingerprint) moduleName command workDir completedAt)
+      _ -> Nothing
+
+-- | Run a command phase whose receipts were published in advance. If the
+-- phase returns a failure or throws, run the withdrawal action first, then
+-- return the failure or rethrow. The withdrawal runs at most once, and an
+-- exception it throws is discarded so it never masks the phase's own outcome;
+-- callers that want to report a failed withdrawal do so inside the action.
+withReceiptWithdrawal ::
+  IO () ->
+  IO (Either CommandExecutionError a) ->
+  IO (Either CommandExecutionError a)
+withReceiptWithdrawal withdraw phase = do
+  result <- phase `onException` withdrawQuietly
+  case result of
+    Left _ -> withdrawQuietly
+    Right _ -> pure ()
+  pure result
+  where
+    withdrawQuietly = void (try @SomeException withdraw)
 
 -- | Produce the accepted receipt map for the plan's current declaration set.
 -- Removed commands are dropped. Fresh successes replace old receipts;

@@ -6,6 +6,7 @@ where
 import Control.Exception (IOException, displayException, try)
 import Control.Monad (foldM, forM_, unless, when)
 import Data.Generics.Labels ()
+import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Set qualified as Set
@@ -22,8 +23,10 @@ import Seihou.CLI.CommandExecution
     CommandPolicy (..),
     PlannedCommand (..),
     executeCommandPlanWithOutput,
+    expectedCommandReceipts,
     finalizeCommandReceipts,
     planCommands,
+    withReceiptWithdrawal,
   )
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
@@ -325,6 +328,11 @@ handleRun runOpts = do
   -- Commands are planned against the previously accepted receipts for this
   -- exact top-level application. Ordinary run deliberately remains run-all;
   -- --no-commands disables execution while retaining matching old receipts.
+  -- The receipts a successful phase will produce are known before it runs,
+  -- so the manifest written before the phase already carries them: a module
+  -- command that commits the project then captures a complete manifest. The
+  -- candidate set is what the manifest must fall back to if the phase fails.
+  -- See docs/adr/0023-command-receipts-are-published-before-the-command-phase-runs.md.
   -- What lands in the manifest must mean the same thing on every machine, so
   -- each artifact's discovery directory is classified into a portable origin
   -- before it is recorded. See docs/adr/0001-manifest-is-a-checked-in-machine-independent-artifact.md.
@@ -350,6 +358,8 @@ handleRun runOpts = do
       commandPlan = planCommands commandPolicy priorCommandReceipts ops
       candidateCommandReceipts =
         finalizeCommandReceipts commandPlan [] priorCommandReceipts
+      expectedCommandReceiptMap =
+        finalizeCommandReceipts commandPlan (expectedCommandReceipts now commandPlan) priorCommandReceipts
 
   let recordedRecipe = fmap (const (Map.map (varValueToText . (^. #value)) recipeResolved)) recipeInfo
   let declarationApplication =
@@ -505,7 +515,7 @@ handleRun runOpts = do
                                           & #recipeInputs
                                           .~ recordedRecipe
                                           & #commandReceipts
-                                          .~ candidateCommandReceipts
+                                          .~ expectedCommandReceiptMap
                                           & #checkoutCommands
                                           .~ checkoutCommandsFromOperations ops
                                       )
@@ -587,22 +597,41 @@ handleRun runOpts = do
                   <> T.pack (show nUnch)
                   <> " unchanged."
 
-              -- Execute commands after file generation. The command library
-              -- returns candidate receipts only when the entire phase
-              -- succeeds, so a failed run leaves the candidate manifest with
-              -- no newly-minted success evidence.
+              -- Execute commands after file generation. The manifest written
+              -- above already holds the receipts a successful phase earns; a
+              -- failed or interrupted phase withdraws them, leaving the
+              -- manifest with no newly-minted success evidence.
               forM_ (commandPlan ^. #commands) $ \planned ->
                 when (planned ^. #disposition == CommandWillRun) $
                   logIO level (logDebug $ "  run  " <> plannedCommandText planned)
+              let receiptsPublished = expectedCommandReceiptMap /= candidateCommandReceipts
+              receiptsWithdrawn <- newIORef False
+              let withdrawReceipts = when receiptsPublished $ do
+                    withdrawAttempt <-
+                      try @IOException $
+                        runEff $
+                          runFilesystem $
+                            runManifestStore manifestPath $
+                              writeManifest (setApplicationCommandReceipts currentApplicationId candidateCommandReceipts newManifest)
+                    case withdrawAttempt of
+                      Left err ->
+                        logIO level $
+                          logError $
+                            "Could not withdraw this run's command receipts from "
+                              <> T.pack manifestPath
+                              <> ": "
+                              <> T.pack (displayException err)
+                      Right () -> writeIORef receiptsWithdrawn True
               commandResult <-
-                runEff $
-                  runProcessIO $
-                    executeCommandPlanWithOutput
-                      now
-                      ( \_ commandStdout _ ->
-                          when (not (T.null commandStdout)) (liftIO $ TIO.putStr commandStdout)
-                      )
-                      commandPlan
+                withReceiptWithdrawal withdrawReceipts $
+                  runEff $
+                    runProcessIO $
+                      executeCommandPlanWithOutput
+                        now
+                        ( \_ commandStdout _ ->
+                            when (not (T.null commandStdout)) (liftIO $ TIO.putStr commandStdout)
+                        )
+                        commandPlan
               completedReceipts <- case commandResult of
                 Right receipts -> pure receipts
                 Left commandError -> do
@@ -617,26 +646,38 @@ handleRun runOpts = do
                   if isCheckoutCommand (commandError ^. #command . #operation)
                     then TIO.putStrLn "Accepted checkout declarations remain recorded. Correct the failure and retry seihou sync; ordinary application commands are not retried by sync."
                     else TIO.putStrLn ("Ordinary application commands are not retried by sync. Correct the failure and rerun seihou run " <> modName ^. #unModuleName <> "; accepted checkout declarations remain recorded.")
+                  withdrawn <- readIORef receiptsWithdrawn
+                  when withdrawn $
+                    TIO.putStrLn
+                      ( "The command receipts this run published in advance were withdrawn from "
+                          <> T.pack manifestPath
+                          <> ". If a command in this run committed or pushed the manifest, that snapshot records receipts for commands that did not complete; rerun seihou run "
+                          <> modName ^. #unModuleName
+                          <> " after correcting the failure and commit the result."
+                      )
                   exitFailure
 
+              -- The receipts were published before the phase. Rewrite the
+              -- manifest only if the phase's actual receipts differ from that
+              -- expectation, which would indicate a bug in
+              -- expectedCommandReceipts rather than an expected path.
               let finalCommandReceipts =
                     finalizeCommandReceipts commandPlan completedReceipts priorCommandReceipts
-                  receiptManifest =
-                    setApplicationCommandReceipts
-                      currentApplicationId
-                      finalCommandReceipts
-                      newManifest
-              receiptWriteAttempt <-
-                try @IOException $
-                  runEff $
-                    runFilesystem $
-                      runManifestStore manifestPath $
-                        writeManifest receiptManifest
-              case receiptWriteAttempt of
-                Left err -> do
-                  logIO level $ logError $ "Commands succeeded but their receipts could not be recorded: " <> T.pack (displayException err)
-                  exitFailure
-                Right () -> pure ()
+              if finalCommandReceipts == expectedCommandReceiptMap
+                then logIO level (logDebug "Command receipts published before the command phase were confirmed.")
+                else do
+                  logIO level (logDebug "Command receipts differed from those published before the command phase; rewriting the manifest.")
+                  receiptWriteAttempt <-
+                    try @IOException $
+                      runEff $
+                        runFilesystem $
+                          runManifestStore manifestPath $
+                            writeManifest (setApplicationCommandReceipts currentApplicationId finalCommandReceipts newManifest)
+                  case receiptWriteAttempt of
+                    Left err -> do
+                      logIO level $ logError $ "Commands succeeded but their receipts could not be recorded: " <> T.pack (displayException err)
+                      exitFailure
+                    Right () -> pure ()
 
               -- Commit generated files if --commit or --commit-message
               when (runOpts ^. #commit || isJust (runOpts ^. #commitMessage)) $ do

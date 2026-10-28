@@ -17,6 +17,7 @@ import Seihou.CLI.BrowseFormatSpec qualified as BrowseFormatSpec
 import Seihou.CLI.CheckoutSyncE2ESpec qualified as CheckoutSyncE2ESpec
 import Seihou.CLI.CheckoutSyncSpec qualified as CheckoutSyncSpec
 import Seihou.CLI.CommandExecutionSpec qualified as CommandExecutionSpec
+import Seihou.CLI.CommandReceiptE2ESpec qualified as CommandReceiptE2E
 import Seihou.CLI.CommitMessageSpec qualified as CommitMessageSpec
 import Seihou.CLI.DiffSpec qualified as DiffSpec
 import Seihou.CLI.ExtensionSpec qualified as ExtensionSpec
@@ -115,4 +116,5 @@ main = do
   validateRecipeTests <- ValidateRecipeE2E.tests
   recipeInputsTests <- RecipeInputsE2E.tests
   seedRunTests <- SeedRunE2E.tests
-  defaultMain (testGroup "seihou-cli" (validateRecipeTests : recipeInputsTests : seedUpdateTests : seedRunTests : tests))
+  commandReceiptTests <- CommandReceiptE2E.tests
+  defaultMain (testGroup "seihou-cli" (validateRecipeTests : recipeInputsTests : seedUpdateTests : seedRunTests : commandReceiptTests : tests))
