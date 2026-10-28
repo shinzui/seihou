@@ -10,6 +10,18 @@ provenance:
     model: "gpt-6.1-sol"
     harness: "codex-cli"
     at: 2026-10-27T20:44:30Z
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-28T02:34:17Z
+      verdict: "changes-requested"
+      note: "Specify structured refusal and malformed-response handling before receipt creation; require real editing evidence for both CLI providers."
+  revisions:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-28T02:44:35Z
+      mode: "update"
+      note: "Define strict batch result validation before receipts and require independent authenticated Claude and Codex consumer proofs."
 ---
 
 # Run blueprint migrations without an interactive terminal
@@ -50,16 +62,21 @@ this plan requires replacing that resolution with evidence of the delivered fix.
 ## Progress
 
 
-- [ ] Milestone 1: the ordinary migration command selects batch CLI execution through pipes, with a representative consumer proof and a focused real-binary regression for Claude and Codex.
+- [ ] Milestone 1: the ordinary migration command selects batch CLI execution through pipes, with separate authenticated consumer proofs and focused real-binary regressions for both Claude and Codex.
 - [ ] Milestone 2: automated execution preserves workspace access, edge ownership, outcomes, stop/resume behavior, and interactive behavior under the migration regression suite.
 - [ ] Milestone 3: shipped help and guides explain mode selection and recovery, relevant ADR context is recorded, and source/build/documentation checks pass.
-- [ ] Milestone 4: a delivered executable passes the reporting consumer workflow, and the original FRIC-2 resolution records that the product fix addressed the friction, with version and evidence.
+- [ ] Milestone 4: a delivered executable passes the reporting consumer workflow with both CLI providers, and the original FRIC-2 resolution records that the product fix addressed the friction, with version and evidence.
 
 
 ## Surprises & Discoveries
 
 
-(None yet.)
+Review finding (2026-10-27): the existing completion wrapper returns only an error or
+assistant text. The inspected Codex adapter skips malformed JSON lines, and the wrapper
+accepts nonempty text when no provider error survives conversion. Reusing that interface
+without preserving structured run evidence cannot establish the required refusal and
+protocol-failure checks before receipt creation. Source inspection is not proof of how
+every installed provider version behaves; capture versioned fixtures during implementation.
 
 
 ## Decision Log
@@ -70,9 +87,10 @@ terminal, or when `--batch` is supplied. Keep terminal-backed invocations intera
 This makes the normal command own the reported workflow without requiring a PTY wrapper.
 Redirecting only stdout does not select batch; document the explicit flag for that case.
 
-Decision (2026-10-27): reuse Seihou's existing CLI-access completion boundary initially.
+Decision (2026-10-27, refined by the review revision below): reuse Seihou's existing
+CLI-access configuration, with a strict migration-specific result boundary.
 A text-only provider call that cannot edit the workspace does not meet acceptance. Prove
-actual file edits with an authenticated CLI early. If the existing boundary cannot honor
+actual file edits with each authenticated CLI early. If the existing boundary cannot honor
 workspace access or fails to return safely, correct that boundary within this plan;
 consult Baikai's source and unattended-run surface before choosing a larger dependency
 change. Do not solve missing approvals with bypass-permissions or unrestricted sandbox flags.
@@ -88,6 +106,18 @@ and consumer verification. Its profile supports `resolved`, not an `addressed` s
 Keep `resolved`, record explicitly that the cause is addressed by the product fix, preserve
 historical observations/workaround and authorship, and append the new resolution evidence.
 Do not mark the report fixed during plan creation or after source-only tests.
+
+
+Decision (2026-10-27, review revision): batch migration success requires a validated
+provider result before outcome-marker parsing or receipt creation. Preserve process exit,
+protocol validity, terminal completion, and explicit provider error/refusal evidence until
+that decision is made. Assistant prose alone cannot establish success. Use a migration-specific
+strict boundary so ordinary completion callers retain their existing contract.
+
+Decision (2026-10-27, review revision): Claude and Codex each need an authenticated edit,
+receipt, and repeat-run proof from a fresh consumer checkpoint, both early and after delivery.
+A missing executable, authentication, or supported protocol leaves that provider's acceptance
+and the containing milestone open; success with the other provider cannot substitute.
 
 
 ## Outcomes & Retrospective
@@ -128,6 +158,10 @@ and extra readable directories. Its Claude arguments include `--allowedTools` an
 `--add-dir`; Codex receives `--sandbox workspace-write` and `--add-dir`, together with
 Seihou kit session arguments. The source currently passes an omitted user prompt through
 as no user message, so mode selection alone is insufficient proof of a usable migration.
+Its `Either Text Text` result also discards structured execution evidence. Add the strict
+migration boundary described below in this module, retaining the existing wrapper for
+other callers. A parser that has already discarded failure information is not a suitable
+input to the strict boundary.
 
 `seihou-cli/src/Seihou/CLI/BlueprintMigration.hs` owns the sequential runner and outcome
 signal parsing. `seihou-cli/src/Seihou/CLI/AppliedBlueprintMigration.hs` writes receipts.
@@ -180,7 +214,8 @@ working tree exist. Do not replace it with an ambiguous cross-repository filenam
 
 
 Before expanding test coverage, use an isolated copy of the consumer checkpoint to
-reproduce the launch choice and exercise one real editing migration through pipes.
+reproduce the launch choice, then exercise real editing migrations through pipes with
+each provider in a separate fresh worktree at the same checkpoint.
 Capture the original executable version, invocation, and observed launch. Bound the
 pre-fix reproduction and terminate only its owned process tree; there is no need to wait
 another five minutes after the interactive launch is established. Do not run a replay
@@ -190,9 +225,11 @@ Add `batch :: Bool` to `BlueprintMigrationOpts` and its parser, mirroring `agent
 Compute the effective mode once in `handleAgentMigrate` using the explicit flag and stdin
 terminal state, then pass it to `launchMigration`. Leave `--debug`, `--mark-applied`, and
 no-work paths provider-free. Route CLI providers in batch mode through
-`runAgentCompletionWithCliAccess`, with only the current edge owner's mounted files and
-allowed tools. Keep the API branch and terminal-backed interactive branch coherent with
-the existing behavior. Reuse the one trace sink created for the command.
+`runAgentMigrationCompletionWithCliAccess`, the new strict boundary in
+`seihou-cli/src/Seihou/CLI/AgentCompletion.hs`, with only the current edge owner's mounted
+files and allowed tools. Reuse the existing access-argument and request construction,
+while retaining structured provider evidence until the success decision. Keep the API
+branch and terminal-backed interactive branch coherent with the existing behavior. Reuse the one trace sink created for the command.
 
 Implement or reuse `resolveAgentInitialPrompt :: AgentProvider -> Maybe Text -> Maybe Text`
 in `seihou-cli/src/Seihou/CLI/AgentCompletion.hs`, following plan 106: omitted or blank CLI
@@ -206,9 +243,22 @@ piped stdin, no positional instruction, and no `--batch`. The fake provider must
 interactive argv, log its actual inputs, edit a workspace file, and return the actual
 provider's supported response format. Assert exit zero, the edit, and the receipt. Bound
 test execution and clean up the owned child process tree so a regression fails promptly.
-A fake file edit proves wiring; the early authenticated consumer run must separately prove
-that the provider really performs edits. If permission or transport behavior blocks that
-proof, repair it before expanding the remaining test matrix.
+A fake file edit proves wiring; separate early authenticated consumer runs must prove
+that both Claude and Codex really perform edits. Record each executable/version, effective
+model, invocation, changed files, per-edge receipts, exit status, and repeat-run no-work
+result. Never reuse one provider's migrated worktree to test the other. If permission or
+transport behavior blocks either proof, repair it before expanding the remaining test
+matrix; if credentials are unavailable, record that provider as unverified and keep
+Milestone 1 open.
+
+Before accepting the first receipt, implement and exercise the structured success contract
+in Interfaces and Dependencies. Obtain versioned result fixtures from the supported local
+CLIs and their authoritative protocol documentation, including errors and refusals. Verify
+that the selected transport exposes all required fields. If Baikai's completion conversion
+loses them, implement a narrow migration-specific subprocess adapter using existing process
+support, or a verified upstream structured-result interface; do not inspect flattened prose
+for words such as “denied”. Keep raw protocol validation separate from outcome-marker
+parsing and preserve the existing single trace destination.
 
 
 ### Milestone 2: preserve migration lifecycle and interactive use
@@ -231,7 +281,13 @@ invoked blueprint, using distinguishable tool lists and reference directories.
 
 Missing executables, provider errors, permission refusals, malformed or empty responses,
 and receipt-write failure must return nonzero with a useful cause and recovery action.
-Do not report success or write an applied receipt for a refused or failed child. Required
+Do not report success or write an applied receipt for a refused or failed child. Add
+fixtures with nonempty assistant text followed by a provider failure, an explicit permission
+denial in an otherwise successful result, malformed JSON after valid assistant text, and
+truncated output lacking the provider's successful terminal result. Each must fail without
+any receipt for that edge, even if a not-applicable marker or signal file also exists.
+Include a successful response containing harmless unknown fields/events to prove forward
+compatibility does not depend on accepting corrupt protocol data. Required
 blueprint variables must either resolve through the existing normal configuration path or
 fail promptly with the needed `--var KEY=VALUE`; no hanging input prompt is acceptable.
 Use existing variable checks where sufficient and fix a demonstrated migration blocker
@@ -265,7 +321,9 @@ Use the repository's release workflow in `agents/skills/release/SKILL.md` when p
 and publishing are authorized; otherwise keep this milestone open with the concrete
 remaining delivery step. Do not describe an unreleased source build as installed delivery.
 Verify the fixed executable using the user's normal installation path, then repeat the
-isolated consumer migration through pipes and the unchanged ordinary command. Record
+isolated consumer migration through pipes with both authenticated providers, each in a
+new worktree at the original checkpoint. Also verify the unchanged ordinary command under
+the reporting consumer's normal provider configuration. Record
 Seihou's version/commit/path, local provider version, exit status, resulting file changes,
 per-edge receipts, and the second-run no-work result. Use existing consumer checks for the
 files that the migration actually changed. No service deployment or persistent database
@@ -302,9 +360,10 @@ seihou --version
 ```
 
 Read the dependency sources at Mori's returned location before changing provider-facing
-code. Existing dependencies are sufficient for the proposed path; do not change bounds
-or pins speculatively. If a dependency change becomes necessary, first verify the current
-released packages in the authoritative registry and upstream tags, then record the reason.
+code, including `mori://shinzui/baikai/docs/unattended-agent-runs`. Existing dependencies
+are the starting point, but their ability to preserve the strict result contract must be
+verified; do not change bounds or pins speculatively. If a dependency change becomes
+necessary, first verify the current released packages in the authoritative registry and upstream tags, then record the reason.
 Do not search or traverse `/nix/store` or the filesystem root.
 
 Create a detached disposable worktree for the real consumer proof. This reproduces existing
@@ -335,7 +394,15 @@ Run this from an execution tool with PTY allocation disabled. The debug command 
 pending steps without writing receipts; the first real run must edit the project and
 return; the second must report that all selected migrations have receipts and launch no
 provider. No `--rerun`, `--mark-applied`, extra instruction, or PTY may manufacture this
-proof. Repeat with the delivered executable in Milestone 4. An installed blueprint cache
+proof. This block proves the unchanged command under the consumer's normal configuration.
+Count the ordinary run toward its verified effective provider. For the other provider,
+repeat the entire block in a fresh worktree, adding `--provider claude-cli` or
+`--provider codex-cli` immediately after `agent` on each debug and migration invocation.
+If the ordinary run uses an API provider, run both explicit CLI cases in fresh worktrees. These are validation selectors, not new adoption requirements.
+Capture `claude --version` or `codex --version` and the effective configuration for each
+run; do not let ambient model/effort settings select an incompatible model for the other
+provider. Record any explicit supported model selection as validation setup. Repeat the ordinary command and both provider proofs with the delivered executable in Milestone 4, creating fresh replay directories
+rather than reusing applied receipts. An installed blueprint cache
 is an ordinary documented prerequisite, not something these commands pretend to create.
 If it is unavailable, count its normal installation as a preparation step and verify that
 the instructions actually work; do not silently copy a privileged local artifact.
@@ -391,8 +458,12 @@ planning. Discover and honor consumer-local AGENTS.md instructions before writin
 The decisive behavior is the reported command, with ordinary authenticated CLI prerequisites,
 through pipes and without a trailing instruction: it edits the intended workspace and returns,
 then the second run finds the applied receipts. This must be proved with the real consumer
-checkpoint early and with the delivered executable at completion. Record source-build,
-released, and installed evidence separately. A debug run, fake process, or process exit
+checkpoint early and with the delivered executable at completion, separately for Claude
+and Codex in fresh worktrees, including the unchanged command under the reporting
+consumer's normal configuration. That ordinary run may also satisfy its effective CLI
+provider's matrix entry. Record source-build, released, and installed evidence separately
+for each provider. Unavailable authentication or an unsupported provider leaves its proof
+and the containing milestone open. A debug run, fake process, or process exit
 alone does not prove a working real migration.
 
 Real-binary automated tests must show Claude receives `-p` and Codex receives `exec` in
@@ -408,6 +479,11 @@ For an applied first edge and failed second edge, assert exactly one applied rec
 no third launch, a nonzero exit, and a cause-specific error. A retry must skip the first
 and complete the rest. A not-applicable result must record its reason and remain eligible
 on a later run. A failed provider cannot leave a success receipt or reuse an old signal.
+Nonempty assistant text never overrides an explicit failure/refusal, malformed protocol,
+or missing successful terminal result. The adversarial fixtures in Milestone 2 must each
+return nonzero, leave the failing edge without any receipt, consume its signal, and stop
+the chain. Unknown well-formed events may be ignored only when they do not replace a
+required terminal result; malformed protocol lines may not be silently skipped.
 A receipt-write failure stops the chain and says source edits may already exist. Debug,
 no-work, and `--mark-applied` must not start a provider; debug must leave manifest bytes
 unchanged. Existing guard and cohort tests must remain meaningful after their fixture
@@ -454,21 +530,45 @@ receives that choice explicitly. These are executable-internal interfaces. Updat
 construction sites together; no manifest format, migration planner, receipt identity,
 blueprint schema, or artifact upgrade is required.
 
-Reuse the existing completion interface in
-`seihou-cli/src/Seihou/CLI/AgentCompletion.hs`:
+Keep the existing completion interface for ordinary callers and add a strict migration
+interface in `seihou-cli/src/Seihou/CLI/AgentCompletion.hs`:
 
 ```haskell
 runAgentCompletionWithCliAccess
   :: [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
 
+runAgentMigrationCompletionWithCliAccess
+  :: [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
+
 resolveAgentInitialPrompt :: AgentProvider -> Maybe Text -> Maybe Text
 ```
 
-The first signature already exists. The second is the shared initial-instruction policy
-specified by plan 106 and must be reused if that plan lands first. Keep the three
-interactive launcher signatures intact. Batch replies flow through the existing
-`sessionResultFromSignal` outcome handling, including marker parsing, before the sequential
-runner decides whether to record and continue.
+The first signature already exists. The new migration function may return `Right` only
+after checking the full structured run result; its text result is a validated projection,
+not a substitute for validation. Internally retain process exit status, protocol validity,
+terminal outcome, explicit provider errors, permission denials, and assistant text until
+classification finishes. Map failure to `Left` with a cause and recovery action; the caller
+clears the signal and maps it to `BlueprintMigrationProviderFailure` before returning to
+the sequential runner. Keep the existing public wrapper's behavior for unrelated callers.
+
+For Claude, require a decodable final result with a successful outcome, `is_error` false,
+no reported permission denials, and nonblank result text. For Codex, validate the JSON event
+stream through a successful terminal turn result, requiring nonblank assistant text and
+no explicit run error, failed turn, or reported permission denial. Verify the exact field
+and event shapes against the supported executable versions before coding the adapters;
+record those versions alongside fixtures. Exit failure always wins, even after useful text.
+Missing required result fields, malformed protocol, or an absent terminal result are protocol
+failures. Ignore unknown well-formed fields/events only while retaining all required checks.
+A reported denial conservatively fails this attempt even if the agent later reports success;
+the developer inspects partial edits, fixes permission configuration, and retries. Do not
+claim to detect semantic refusal expressed only in arbitrary prose or to verify migration
+correctness from the response; consumer checks remain necessary under ADR 0011.
+
+Only a validated `Right` reaches `sessionResultFromSignal`, where the existing signal-file
+over-text-marker precedence determines applied versus not-applicable. Neither channel may
+rescue a failed or unvalidated run. The final signature is the shared initial-instruction
+policy specified by plan 106 and must be reused if that plan lands first. Keep the three
+interactive launcher signatures intact and retain existing API dispatch behavior.
 
 Use existing Baikai, `directory`, `process`, `text`, and test dependencies initially.
 No bounds or pin change is proposed. If genuine provider execution demonstrates that an
@@ -477,3 +577,10 @@ released versions before recording the revised interface and delivery requiremen
 That is work toward this plan's existing editing acceptance, not a separate task the user
 must commission. The report's owner remains `mori://tan/notification-hub`; use canonical
 cross-repository references in amendments, commits, and durable documentation.
+
+
+Revision note (2026-10-27): addressed the review by defining a strict migration result
+boundary before receipt creation, adversarial protocol/refusal regressions, and separate
+real Claude and Codex proofs from fresh consumer checkpoints at source and delivery stages.
+The prior review remains in provenance as history; these edits do not claim implementation
+or provider validation has passed.
