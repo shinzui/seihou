@@ -64,8 +64,11 @@ validateMigrationOutput claude bytes = case validate of
         _ -> Left ("Claude reported permission denials: " <> deniedTools event <> ". " <> detail event)
       when (field "is_error" event == Just (Bool True) || field "type" event == Just (String "error")) (Left "Claude reported an error.")
     deniedTools event = case field "permission_denials" event of
-      Just (Array values) -> T.intercalate ", " [name | value <- V.toList values, Just (String name) <- [field "tool_name" value]]
+      Just (Array values) -> T.intercalate ", " [name <> commandDetail value | value <- V.toList values, Just (String name) <- [field "tool_name" value]]
       _ -> "unspecified tool"
+    commandDetail value = case field "tool_input" value >>= field "command" of
+      Just (String command) -> " (" <> T.take 240 command <> ")"
+      _ -> ""
     decodeValue raw = case eitherDecodeStrict' raw of
       Left _ -> Left "Malformed migration provider JSON."
       Right value -> Right value

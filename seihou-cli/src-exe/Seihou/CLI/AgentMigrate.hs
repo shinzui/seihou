@@ -260,7 +260,7 @@ handleAgentMigrate debug pendingConfig opts = do
                             then
                               "\n\n## Batch execution permissions\n\nThis run has no approval terminal. Preapproved tools: "
                                 <> T.intercalate ", " (map T.pack (migrationAllowedTools (prepared ^. #allowedTools)))
-                                <> ". Use file tools for inspection and editing. Do not invoke shell commands outside these grants or request additional permissions. A reported permission denial fails this attempt even if you later recover. If a validation command is outside the grants, complete the authorized edits and report that exact check as pending.\n"
+                                <> ". Use native Read, Glob, and Grep tools with absolute paths for dependency-source inspection; do not cd into dependency checkouts. Use native file tools for edits. Run shell commands individually: no cd wrappers, command substitution, pipelines, or chained commands. Do not invoke shell commands outside these grants or request additional permissions. A reported permission denial fails this attempt even if you later recover. If a validation command is outside the grants, complete the authorized edits and report that exact check as pending.\n"
                             else ""
                   renderDebugStep position total step =
                     renderStep position total step

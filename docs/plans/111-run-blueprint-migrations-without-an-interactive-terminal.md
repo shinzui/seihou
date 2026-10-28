@@ -109,6 +109,16 @@ been accepted for Claude, so Milestone 1 remains open.
 
 ## Surprises & Discoveries
 
+Authenticated replay refinement (2026-10-27): after the missing Mori grant was
+fixed, Claude still requested a compound shell call beginning with `cd` into
+the dependency checkout and containing command substitution. Its final result
+reported that Bash denial even though source adaptation was present. Batch
+instructions now explicitly require native Read/Glob/Grep with absolute paths
+for dependency-source inspection and individual shell commands without `cd`
+wrappers or shell composition. Keep the strict refusal gate; do not replace it
+with broad shell grants to make this fixture pass.
+
+
 Implementation evidence (2026-10-27): the installed v0.11.0.1 (4ade3fb)
 returned exit 1 through pipes, with Claude's “Input must be provided” diagnostic,
 before editing the detached consumer checkpoint. This installation did not
