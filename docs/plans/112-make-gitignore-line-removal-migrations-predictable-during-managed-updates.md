@@ -10,6 +10,18 @@ provenance:
     model: "gpt-6.1-sol"
     harness: "codex-cli"
     at: 2026-10-27T20:51:42Z
+  reviews:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-28T02:36:22Z
+      verdict: "changes-requested"
+      note: "Design, decoder compatibility, ADRs, producer edge, and consumer checkpoint verified; concrete replay commands must isolate XDG_CONFIG_HOME to avoid publishing candidates into the real installed cache."
+  revisions:
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-28T02:41:58Z
+      mode: "update"
+      note: "Isolate all consumer replays with temporary XDG_CONFIG_HOME and verify the real installed cache remains unchanged."
 ---
 
 # Make gitignore line-removal migrations predictable during managed updates
@@ -331,7 +343,9 @@ that would run too late to fix the original failing transition.
 
 Repeat the consumer replay using the executable installed through the user's normal
 installation path and the public fix-containing module source. Verify the human command
-and the report's JSON command on separate untouched replays. Record the executable path,
+and the report's JSON command on separate untouched replays, each with a fresh isolated
+`XDG_CONFIG_HOME` as shown below. Using the installed executable does not authorize
+publishing replay candidates into the user's real installed-module cache. Record the executable path,
 version/commit, schema commit/hash, module version/source revision, starting consumer
 checkpoint, exit result, resulting diff, and stable follow-up preview. Preserve saved inputs
 and both `.gitignore` owners. Required dependency locks and template-generated changes must
@@ -385,7 +399,12 @@ APIs are needed, locate their sources with `mori registry search dhall` and
 upstream tags before choosing any new bounds or pins. Never search the filesystem root
 or `/nix/store`.
 
-Prepare the untouched consumer checkpoint, retaining its tracked manifest and baselines:
+Prepare the untouched consumer checkpoint, retaining its tracked manifest and baselines.
+Capture the real installed-module cache before any replay and use an empty temporary
+configuration directory for every replay invocation. A worktree alone does not isolate
+that cache: successful update calls `publishCandidates` and writes installed modules.
+The temporary configuration directory is test infrastructure, not a new adoption step;
+saved application inputs must still come from the untouched consumer manifest.
 
 ```bash
 seihou_source="$PWD"
@@ -393,16 +412,35 @@ fixed_seihou="$(cabal list-bin exe:seihou)"
 consumer_root="$(mori path mori://tan/notification-hub)"
 replay_parent="$(mktemp -d -t seihou-fric1-replay)"
 replay_project="$replay_parent/notification-hub"
+replay_config="$replay_parent/config"
+real_installed="${XDG_CONFIG_HOME:-$HOME/.config}/seihou/installed"
+mkdir -p "$replay_config"
+if [ -e "$real_installed" ]; then
+  cp -RP "$real_installed" "$replay_parent/installed-before"
+fi
 git -C "$consumer_root" worktree add --detach "$replay_project" ef0f4f4c12821d58518b8e2958b5909b775f2895
 cd "$replay_project"
 git status --short
-"$fixed_seihou" --version
-"$fixed_seihou" update nix-haskell-flake --dry-run --include-shared-owners
-"$fixed_seihou" update nix-haskell-flake --json --include-shared-owners
-"$fixed_seihou" update nix-haskell-flake --dry-run --json --include-shared-owners
+XDG_CONFIG_HOME="$replay_config" "$fixed_seihou" --version
+XDG_CONFIG_HOME="$replay_config" "$fixed_seihou" update nix-haskell-flake --dry-run --include-shared-owners
+XDG_CONFIG_HOME="$replay_config" "$fixed_seihou" update nix-haskell-flake --json --include-shared-owners
+XDG_CONFIG_HOME="$replay_config" "$fixed_seihou" update nix-haskell-flake --dry-run --json --include-shared-owners
 git diff --stat
 cd "$seihou_source"
+if [ -e "$replay_parent/installed-before" ]; then
+  git diff --no-index --exit-code -- "$replay_parent/installed-before" "$real_installed"
+else
+  test ! -e "$real_installed"
+fi
 ```
+
+The final cache comparison must exit zero with no diff; if the real cache was absent,
+it must remain absent. Run this check after failed replays as well as successful ones.
+Keep the snapshot until acceptance evidence is recorded. Apply the same per-command
+environment to historical-candidate tests, human apply, retries, and delivered-executable
+checks. Start each independent replay with a new empty `replay_config`, then reuse it
+within that replay for its follow-up preview. Do not copy the real cache into it or
+export a replacement configuration directory into the user's ongoing shell.
 
 Before the fix, use the controlled historical candidate described in Milestone 1; after
 publication use the public candidate. Record that distinction and all preparation steps.
@@ -568,3 +606,8 @@ FRIC-1 amendment. This is a standalone ExecPlan with no prerequisite MasterPlan 
 dependency. Existing Haskell dependencies suffice; if serialized manifest meaning must
 change, revise this plan and follow ADR 0014's versioned upgrade contract rather than
 silently altering hashes or ownership semantics.
+
+Revision (2026-10-28): isolate every consumer replay with a temporary `XDG_CONFIG_HOME`
+and compare the real installed-module cache before and after. This addresses the review
+finding that disposable worktrees alone do not prevent update from publishing replay
+candidates into the user's shared cache.
