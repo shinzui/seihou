@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-28
+* **Addition**: IR-11 requests recipe-level variable and prompt resolution before module defaults; IR-12 requests declared cross-registry dependency sources and ordinary installation of their closure, extending existing BUG-2; IR-13 requests a recipe authoring validator. All were found while planning the TAN Keiro recipe against installed Seihou 0.11.0.1; the user will fix upstream before TAN implementation.
+
 ## 2026-10-15
 * **Update**: IR-10 is completed by ExecPlan 105: typed schema-9 directory-link declarations, manifest-only sync with dry-run/JSON and no artifact/config/command/manifest writes, bounded status, shared ownership and safe run/update/remove reconciliation. Real clone tests pass for agent and editor/shared-asset consumers, empty/newer caches, linked worktrees, repair, same-run sources, no-spec removal and rollback; core effect/recovery checks pass. Validation ran on macOS; Linux execution and producer adoption remain downstream verification/release work.
 * **Update**: IR-6 is accepted and linked to [ExecPlan 106](../plans/106-supply-default-initial-instructions-to-cli-agent-providers.md). The four-milestone plan supplies one shared default initial instruction for missing/blank CLI prompts at batch and interactive launch boundaries, preserves explicit user prompts and API behavior, exposes the effective migration instruction in debug output, and proves execution with fake providers. Generated defaults stay out of user-authored manifest provenance. Implementation remains pending.
