@@ -21,7 +21,10 @@ import Seihou.CLI.AgentCompletion
   ( AgentModelConfig (..),
     AgentProvider (..),
     buildAgentCompletionRequestWith,
+    migrationAllowedTools,
+    resolveAgentInitialPrompt,
     runAgentCompletion,
+    runAgentMigrationCompletionWithCliAccess,
   )
 import Seihou.CLI.AgentConfig
   ( PendingAgentConfig,
@@ -96,6 +99,7 @@ import System.Directory
   )
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath (takeDirectory)
+import System.IO (hFlush, hIsTerminalDevice, stdin, stdout)
 import System.Timeout (timeout)
 
 migrationPromptTemplate :: Text
@@ -103,6 +107,8 @@ migrationPromptTemplate = TE.decodeUtf8 $(embedFile "data/blueprint-migration-pr
 
 handleAgentMigrate :: Bool -> PendingAgentConfig -> BlueprintMigrationOpts -> IO ()
 handleAgentMigrate debug pendingConfig opts = do
+  terminal <- hIsTerminalDevice stdin
+  let batchMode = opts ^. #batch || not terminal
   let level = if opts ^. #verbose then LogVerbose else LogNormal
       manifestPath = ".seihou" </> "manifest.json"
 
@@ -250,12 +256,18 @@ handleAgentMigrate debug pendingConfig opts = do
                           position
                           total
                           step
+                          <> if batchMode && modelConfig ^. #provider == AgentProviderClaudeCli
+                            then
+                              "\n\n## Batch execution permissions\n\nThis run has no approval terminal. Preapproved tools: "
+                                <> T.intercalate ", " (map T.pack (migrationAllowedTools (prepared ^. #allowedTools)))
+                                <> ". Use file tools for inspection and editing. Do not invoke shell commands outside these grants or request additional permissions. A reported permission denial fails this attempt even if you later recover. If a validation command is outside the grants, complete the authorized edits and report that exact check as pending.\n"
+                            else ""
                   renderDebugStep position total step =
                     renderStep position total step
                       <> maybe
                         ""
                         ("\n\n===== Initial user instruction =====\n" <>)
-                        (opts ^. #prompt)
+                        (resolveAgentInitialPrompt (modelConfig ^. #provider) (opts ^. #prompt))
 
               if debug
                 then
@@ -274,7 +286,7 @@ handleAgentMigrate debug pendingConfig opts = do
                   createDirectoryIfMissing True (takeDirectory signalPath)
                   result <-
                     runBlueprintMigrationsWith
-                      (launchMigration traceSink modelConfig opts preparedByOwner signalPath renderStep)
+                      (launchMigration batchMode traceSink modelConfig opts preparedByOwner signalPath renderStep)
                       (recordMigration manifestPath cohort)
                       pending
                   handleRunResult level (blueprint ^. #name) result
@@ -619,6 +631,7 @@ readNotApplicableSignal signalPath = do
       pure (Just (fromMaybe unstatedNotApplicableReason firstLine))
 
 launchMigration ::
+  Bool ->
   -- | built once per command, so every migration edge appends to one destination
   TraceSink ->
   AgentModelConfig ->
@@ -632,22 +645,33 @@ launchMigration ::
   Int ->
   BlueprintMigrationStep ->
   IO (Either BlueprintMigrationLaunchFailure BlueprintMigrationLaunchResult)
-launchMigration traceSink modelConfig opts preparedByOwner signalPath renderStep position total step = do
+launchMigration batchMode traceSink modelConfig opts preparedByOwner signalPath renderStep position total step = do
   TIO.putStrLn $
     "Running blueprint migration "
       <> stepLabel
       <> ": "
       <> formatMigrationStepLabel step
+      <> (if batchMode then " (batch)" else " (interactive)")
+  hFlush stdout
   clearNotApplicableSignal signalPath
   let systemPrompt = renderStep position total step
   case Map.lookup (step ^. #owner) preparedByOwner of
     Nothing -> pure (Left (BlueprintMigrationProviderFailure (missingOwnerMessage step)))
     Just prepared -> case modelConfig ^. #provider of
-      AgentProviderClaudeCli -> launchInteractive prepared systemPrompt
-      AgentProviderCodexCli -> launchInteractive prepared systemPrompt
+      AgentProviderClaudeCli -> launchCli prepared systemPrompt
+      AgentProviderCodexCli -> launchCli prepared systemPrompt
       AgentProviderAnthropic -> launchCompletion systemPrompt
       AgentProviderOpenAI -> launchCompletion systemPrompt
   where
+    launchCli prepared systemPrompt
+      | batchMode =
+          finishCompletion $
+            runAgentMigrationCompletionWithCliAccess
+              (maybeToList (prepared ^. #mountedFilesDir))
+              (prepared ^. #allowedTools)
+              (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt (opts ^. #prompt))
+      | otherwise = launchInteractive prepared systemPrompt
+
     stepLabel = T.pack (show position) <> "/" <> T.pack (show total)
 
     -- An interactive session communicates only through its exit code, so the
@@ -663,7 +687,7 @@ launchMigration traceSink modelConfig opts preparedByOwner signalPath renderStep
           (prepared ^. #allowedTools)
           False
           systemPrompt
-          (opts ^. #prompt)
+          (resolveAgentInitialPrompt (modelConfig ^. #provider) (opts ^. #prompt))
       case exitCode of
         ExitSuccess -> Right <$> sessionResultFromSignal Nothing
         failure -> do
@@ -674,10 +698,13 @@ launchMigration traceSink modelConfig opts preparedByOwner signalPath renderStep
     -- An API provider hands us its reply directly, so the marker line works.
     -- The signal file is still checked, because a provider given tool access
     -- may take the prompt's first instruction rather than its fallback.
-    launchCompletion systemPrompt = do
-      result <-
+    launchCompletion systemPrompt =
+      finishCompletion $
         runAgentCompletion
           (buildAgentCompletionRequestWith traceSink modelConfig systemPrompt (opts ^. #prompt))
+
+    finishCompletion action = do
+      result <- action
       case result of
         Left err -> do
           clearNotApplicableSignal signalPath

@@ -22,6 +22,11 @@ provenance:
       at: 2026-10-28T02:44:35Z
       mode: "update"
       note: "Define strict batch result validation before receipts and require independent authenticated Claude and Codex consumer proofs."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T02:47:56Z
+      mode: "implement"
+      note: "Begin batch migration implementation and provider verification."
 ---
 
 # Run blueprint migrations without an interactive terminal
@@ -63,12 +68,56 @@ this plan requires replacing that resolution with evidence of the delivered fix.
 
 
 - [ ] Milestone 1: the ordinary migration command selects batch CLI execution through pipes, with separate authenticated consumer proofs and focused real-binary regressions for both Claude and Codex.
-- [ ] Milestone 2: automated execution preserves workspace access, edge ownership, outcomes, stop/resume behavior, and interactive behavior under the migration regression suite.
-- [ ] Milestone 3: shipped help and guides explain mode selection and recovery, relevant ADR context is recorded, and source/build/documentation checks pass.
+- [x] (2026-10-27) Milestone 2: automated execution preserves workspace access, edge ownership, outcomes, stop/resume behavior, and interactive behavior under the migration regression suite.
+- [x] (2026-10-27) Milestone 3: shipped help and guides explain mode selection and recovery, relevant ADR context is recorded, and source/build/documentation checks pass.
 - [ ] Milestone 4: a delivered executable passes the reporting consumer workflow with both CLI providers, and the original FRIC-2 resolution records that the product fix addressed the friction, with version and evidence.
 
 
+Source acceptance (2026-10-27): `nix develop --no-write-lock-file -c cabal
+build all` passed, as did the full 782-test CLI suite, the 28 real-binary
+migration tests, the documentation audit (18 topics, 32 commands, 26 packaged
+assets), `nix fmt`, `nix flake check` (four aarch64-darwin checks), and whitespace
+validation. The regression fixtures reject interactive argv through pipes;
+pre-change migration launches therefore fail before producing an edit or
+receipt. Real PTY tests retain interactive argv and prove `--batch` overrides
+terminal selection. Failure/resume tests verify owner directories and tools,
+explicit instructions/model/effort, signal cleanup, and six trace events for
+three attempted edges across one trace destination. Existing runner tests
+cover stopping later edges after provider failure and receipt-write failure.
+
+Early consumer evidence: isolated detached worktrees at `474ce4a` in
+`mori://tan/notification-hub`, with the already installed blueprint cache (no
+manual manifest or blueprint preparation). Source executable:
+`dist-newstyle/build/aarch64-osx/ghc-9.12.4/seihou-cli-0.11.0.1/x/seihou/build/seihou/seihou`,
+reporting v0.11.0.1 (59aa11d), with this session's uncommitted implementation.
+Codex CLI 0.164.0, explicit model `gpt-6.1-sol`, inherited medium effort,
+completed the normal version-window command through pipes with provider/model
+selectors. It edited runtime hooks, migration inventory tests, acceptance
+scripts, operations guidance, and validation documentation. Receipts record
+kiroku-upgrade 0.11.0.1 -> 0.12.0.0 and keiro-upgrade 0.21.0.0 -> 0.22.0.0,
+both applied; exit 0, then repeat exit 0 with “already have receipts”. The
+consumer's architecture check, shell syntax check, and diff check passed.
+Parent-run `nix build .#notification-hub-server .#notification-hub-migrate
+--no-link --no-write-lock-file` also passed. Codex's own sandbox could not
+perform Nix/registry verification; the parent build is separate evidence.
+Claude Code 2.1.312 using the ordinary provider configuration and model
+claude-opus-4-8 returned a reported permission denial with no edits or receipt;
+bounded editing alone also failed on the missing read-only Mori grant. The
+latest replay includes that grant and is still running. No source proof has yet
+been accepted for Claude, so Milestone 1 remains open.
+
+
 ## Surprises & Discoveries
+
+Implementation evidence (2026-10-27): the installed v0.11.0.1 (4ade3fb)
+returned exit 1 through pipes, with Claude's “Input must be provided” diagnostic,
+before editing the detached consumer checkpoint. This installation did not
+reproduce the older five-minute wait; it demonstrates the missing initial turn.
+Claude Code 2.1.312 emits a JSON array of events ending in a result, while
+Codex 0.164.0 emits JSONL ending in turn.completed. Both authenticated protocol
+probes returned PROTOCOL_OK. The strict adapter accepts the shipped Claude
+object and array forms and rejects malformed array members.
+
 
 
 Review finding (2026-10-27): the existing completion wrapper returns only an error or
@@ -80,6 +129,26 @@ every installed provider version behaves; capture versioned fixtures during impl
 
 
 ## Decision Log
+
+Decision (2026-10-27, consumer evidence): the captured remaining Claude denial
+is precisely `mori registry show shinzui/kiroku --full 2>&1 | head -80`.
+The source-discovery instructions require Mori, while the installed blueprint's
+shell grants omit it. Extend the shared migration baseline with specific
+read-only Mori discovery commands (list/search/show/docs/dependents/path) and
+`head`, preserving per-owner additions and excluding registry writes. Include
+the exact effective grants in the unattended prompt. This repairs ordinary
+adoption without a blueprint rewrite or a blanket shell grant. The consumer
+replay retains raw structured output for diagnosing the actual refused call.
+
+
+Decision (2026-10-27, implementation): authenticated Claude batch execution
+returned reported permission denials before any edit. Baikai's unattended guide
+maps workspace editing to `--permission-mode acceptEdits`; use that bounded mode
+for migration-only Claude launches, alongside the unchanged owner tool grants.
+This grants workspace editing without bypassing shell approvals, matching the
+existing Codex workspace-write intent. Include the provider's result explanation
+in a permission failure so recovery names the actual blocked work.
+
 
 
 Decision (2026-10-27): match `agent run`: select batch execution when stdin is not a
@@ -122,8 +191,23 @@ and the containing milestone open; success with the other provider cannot substi
 
 ## Outcomes & Retrospective
 
+Implementation is in progress. The ordinary command now chooses batch mode
+through pipes and supports explicit `--batch`; terminal-backed behavior has
+real PTY regression coverage. Raw provider evidence gates outcome parsing and
+receipt creation. The first authenticated Codex consumer replay completed both
+edges, edited the workspace, and returned no-work success on repeat. Claude's
+first authenticated replay failed closed on reported permissions, leaving no
+receipt. Bounded editing enabled an edit but a further replay identified the denied
+read-only Mori command. The latest replay includes explicit read-only Mori
+grants and remains pending.
 
-(To be filled during implementation.)
+FRIC-3 in docs/friction-log/ is resolved: the supported Nix development shell
+supplies the native dependencies absent from the ambient Cabal toolchain.
+
+No release, installed delivery claim, or consumer FRIC-2 amendment has been
+made. Milestone 4 remains open until packaging/publishing is authorized and a
+delivered executable passes both provider replays.
+
 
 
 ## Context and Orientation
@@ -522,6 +606,15 @@ milestone, not a reason to close the consumer's report early.
 
 
 ## Interfaces and Dependencies
+
+Implementation uses a narrow subprocess provider registered through Baikai's
+existing trace boundary. It reuses the public Claude/Codex command renderers;
+no dependency versions changed. `AgentMigrationProtocol.hs` validates raw
+output before text projection. Ordinary completions keep their existing error
+format; migration errors use the provider's human message. The shared neutral
+initial-instruction resolver is active for CLI completions and migration launch
+and preview, while receipt provenance keeps the raw user argument.
+
 
 
 `BlueprintMigrationOpts` gains the migration-only `batch` switch and the parser/help expose

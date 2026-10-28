@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Run blueprint migrations automatically without terminal input; `--batch` also selects this mode explicitly. Validate CLI completion and reported permission failures before recording an edge.
+
 User-facing release notes for Seihou. This is a curated summary of
 user-visible changes; the [full engineering changelog](../../CHANGELOG.md) at
 the repository root records every change, including internal refactors and

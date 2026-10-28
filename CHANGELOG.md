@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Run blueprint migrations automatically without terminal input; `--batch` also selects this mode explicitly. Validate CLI completion and reported permission failures before recording an edge.
+
 All notable changes to this project will be documented in this file.
 
 ## [Unreleased]

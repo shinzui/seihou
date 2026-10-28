@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-10-28
+* **Update**: FRIC-3 resolved: Verified the supported development-shell workflow after the ambient native-library failure.
+* **Addition**: FRIC-3 records detour environment friction with mori://shinzui/seihou: Ambient Cabal build lacks zlib
+
 ## 2026-10-27
 * **Update**: FRIC-2 resolved: Verified upstream releases/bounds and adapter source; native core, CLI and extension suites and bundle build pass.
 * **Addition**: FRIC-2 records blocked tooling friction with mori://shinzui/haskell-nix: Native Nix test scope mixes incompatible Hspec releases

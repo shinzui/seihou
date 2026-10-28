@@ -242,6 +242,24 @@ Resolves the named blueprint, prompts for required variables, optionally applies
 
 ### agent migrate
 
+
+Blueprint migration CLI sessions automatically run in batch mode when stdin is
+not a terminal. Use `seihou agent migrate BLUEPRINT --batch` to request batch
+mode explicitly, including when only stdout is redirected. Authenticate the
+selected `claude` or `codex` CLI first and supply required blueprint inputs with
+`--var KEY=VALUE` or normal configuration. Batch mode keeps workspace permissions,
+blueprint tools, and reference directories; it does not bypass approvals.
+It also preapproves specific read-only Mori discovery commands for dependency
+inspection, excluding registry mutations.
+
+Batch processes return when work finishes. With terminal input, sessions remain
+interactive: exit each session normally to record its edge. If a batch provider
+fails, reports a permission denial, or returns incomplete output, no receipt is
+written for that edge. Inspect partial edits, repair the reported problem, and
+rerun the same command; completed edges are skipped. Receipts do not verify that
+the migrated project builds or passes tests.
+
+
 Run ordered library-upgrade prompts declared by a blueprint.
 
 ```text
@@ -256,6 +274,7 @@ seihou agent migrate BLUEPRINT [--from VERSION] [--to VERSION] [PROMPT] [OPTIONS
 | `--namespace NS` | Override namespace for config lookup |
 | `--context CTX`, `-c CTX` | Override context for config lookup |
 | `--verbose`, `-v` | Show detailed progress messages |
+| `--batch` | Run non-interactively; selected automatically when stdin is not a terminal |
 | `--rerun` | Ignore matching exact-edge receipts, applied ones included, and run the selected steps again |
 | `--mark-applied` | Record the pending edges in the window as already applied, without running them |
 | `--allow-downgrade` | Proceed even when the blueprint installed locally is older than, or from a different source than, `.seihou/manifest.json` records |

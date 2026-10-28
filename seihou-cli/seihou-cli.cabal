@@ -66,6 +66,7 @@ library seihou-cli-internal
     Seihou.CLI.AgentConfigShow
     Seihou.CLI.AgentGuard
     Seihou.CLI.AgentLaunch
+    Seihou.CLI.AgentMigrationProtocol
     Seihou.CLI.AgentModels
     Seihou.CLI.AgentTrace
     Seihou.CLI.ApplicationDisplay

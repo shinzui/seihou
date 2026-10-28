@@ -21,6 +21,7 @@ import System.Directory
     createDirectoryIfMissing,
     doesFileExist,
     executable,
+    findExecutable,
     getPermissions,
     listDirectory,
     removeDirectoryRecursive,
@@ -37,6 +38,8 @@ import Test.Tasty.Hspec (testSpec)
 
 tests :: IO TestTree
 tests = testSpec "Agent migrate end-to-end" $ do
+  mapM_ batchMigrationProof ["claude-cli", "codex-cli"]
+
   it "exposes non-interactive blueprint runs in help" $ do
     binary <- seihouBinary
     (exitCode, output, _) <- runProcessText binary ["agent", "run", "--help"] Nothing Nothing
@@ -61,7 +64,7 @@ tests = testSpec "Agent migrate end-to-end" $ do
         "{\"name\":\"seihou-test-skill\",\"kind\":\"skill\",\"hash\":\"test\",\"installedAt\":\"2026-10-15T00:00:00Z\",\"visibility\":\"tool-only\"}"
       TIO.writeFile
         fakeCodex
-        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'codex-cli 1.0.0\\n'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"kit session complete\"}}'\n"
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'codex-cli 1.0.0\\n'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"kit session complete\"}}'\nprintf '%s\\n' '{\"type\":\"turn.completed\",\"usage\":{}}'\n"
       permissions <- getPermissions fakeCodex
       -- Permissions comes from directory and has no Generic instance.
       setPermissions fakeCodex (permissions {executable = True})
@@ -263,7 +266,7 @@ tests = testSpec "Agent migrate end-to-end" $ do
       createDirectoryIfMissing True xdgHome
       createDirectoryIfMissing True fakeBin
       TIO.writeFile blueprintPath migrationBlueprintDhall
-      TIO.writeFile fakeClaude "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nexit 0\n"
+      TIO.writeFile fakeClaude "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"migration complete\",\"is_error\":false,\"permission_denials\":[]}'\nexit 0\n"
       permissions <- getPermissions fakeClaude
       -- Permissions comes from `directory` and has no Generic instance, so it
       -- has no #executable label. Record update syntax is the only option.
@@ -335,7 +338,7 @@ tests = testSpec "Agent migrate end-to-end" $ do
       -- edge applies for real when it is replanned.
       TIO.writeFile
         fakeClaude
-        "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nif [ \"$(wc -l < \"$SEIHOU_FAKE_AGENT_LOG\" | tr -d ' ')\" = \"1\" ]; then\n  printf '%s\\n' \"$SEIHOU_FAKE_SIGNAL_REASON\" > \"$SEIHOU_FAKE_SIGNAL_FILE\"\nfi\nexit 0\n"
+        "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nif [ \"$(wc -l < \"$SEIHOU_FAKE_AGENT_LOG\" | tr -d ' ')\" = \"1\" ]; then\n  printf '%s\\n' \"$SEIHOU_FAKE_SIGNAL_REASON\" > \"$SEIHOU_FAKE_SIGNAL_FILE\"\nfi\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"migration complete\",\"is_error\":false,\"permission_denials\":[]}'\nexit 0\n"
       permissions <- getPermissions fakeClaude
       -- Permissions comes from `directory` and has no Generic instance, so it
       -- has no #executable label. Record update syntax is the only option.
@@ -408,6 +411,57 @@ tests = testSpec "Agent migrate end-to-end" $ do
       expectSuccess "settled migration" settledExit settledOutput settledError
       settledOutput `shouldSatisfy` T.isInfixOf "already have receipts"
       T.lines <$> TIO.readFile launchLog `shouldReturn` ["called", "called", "called"]
+
+  it "keeps the first receipt, stops on a failed owner, and resumes only pending work" $
+    withCohortProject $ \root run -> do
+      let args = ["agent", "migrate", "keiro-upgrade", "--from", "2.4.0", "--to", "3.0.0", "Keep my explicit instruction", "--model", "migration-model", "--effort", "high", "--trace", "file"]
+          script = root </> "bin/claude"
+          logPath = root </> "agent-launch.log"
+          manifestPath = root </> ".seihou/manifest.json"
+          success = "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"permission_denials\":[],\"result\":\"done\"}"
+      TIO.writeFile
+        (root </> ".seihou/modules/kiroku-upgrade/blueprint.dhall")
+        (T.replace "allowedTools = None (List Text)" "allowedTools = Some [ \"Bash(kiroku *)\" ]" (kirokuBlueprintDhall "1.9.0"))
+      TIO.writeFile
+        (root </> ".seihou/modules/keiro-upgrade/blueprint.dhall")
+        (T.replace "allowedTools = None (List Text)" "allowedTools = Some [ \"Bash(keiro *)\" ]" keiroBlueprintDhall)
+      TIO.writeFile script $
+        T.unlines
+          [ "#!/bin/sh",
+            "printf '%s\\0' \"$*\" >> \"$SEIHOU_FAKE_AGENT_LOG\"",
+            "if [ -f first-done ] && [ ! -f retry-ready ]; then printf reason > .seihou/.migrate-signal; echo provider-failure >&2; exit 9; fi",
+            "touch first-done",
+            "cat <<'RESULT'",
+            success,
+            "RESULT"
+          ]
+      (failed, _, failure) <- run args
+      failed `shouldSatisfy` (/= ExitSuccess)
+      failure `shouldSatisfy` T.isInfixOf "provider-failure"
+      receipts <- readReceipts manifestPath
+      receipts `shouldBe` [("1.9.0", "2.0.0", MigrationApplied)]
+      doesFileExist (root </> ".seihou/.migrate-signal") `shouldReturn` False
+      launches <- filter (not . T.null) . T.splitOn "\0" <$> TIO.readFile logPath
+      length launches `shouldBe` 2
+      T.concat (take 1 launches) `shouldSatisfy` T.isInfixOf (T.pack (root </> ".seihou/modules/kiroku-upgrade/files"))
+      T.concat (take 1 launches) `shouldNotSatisfy` T.isInfixOf (T.pack (root </> ".seihou/modules/keiro-upgrade/files"))
+      last launches `shouldSatisfy` T.isInfixOf (T.pack (root </> ".seihou/modules/keiro-upgrade/files"))
+      last launches `shouldSatisfy` T.isInfixOf "Keep my explicit instruction"
+      T.concat (take 1 launches) `shouldSatisfy` T.isInfixOf "Bash(kiroku *)"
+      last launches `shouldSatisfy` T.isInfixOf "Bash(keiro *)"
+      last launches `shouldSatisfy` T.isInfixOf "--model migration-model"
+      last launches `shouldSatisfy` T.isInfixOf "--effort high"
+      TIO.writeFile (root </> "retry-ready") ""
+      (resumed, output, errors) <- run args
+      expectSuccess "resume after failed second owner" resumed output errors
+      completed <- readReceipts manifestPath
+      length completed `shouldBe` 2
+      allLaunches <- filter (not . T.null) . T.splitOn "\0" <$> TIO.readFile logPath
+      length allLaunches `shouldBe` 3
+      last allLaunches `shouldNotSatisfy` T.isInfixOf (T.pack (root </> ".seihou/modules/kiroku-upgrade/files"))
+
+      traces <- T.lines <$> TIO.readFile (root </> ".seihou/trace.jsonl")
+      length traces `shouldBe` 6
 
   -- The cohort story end to end. A keiro edge entails a kiroku edge; one
   -- command plans both, in order, each carrying its own blueprint's reference
@@ -782,7 +836,7 @@ withProbeProject action =
     -- The fake logs every invocation so a test can prove a session did NOT
     -- start. An assertion that the log is absent is only evidence when the
     -- fake would have written it; a silently succeeding fake proves nothing.
-    TIO.writeFile fakeClaude "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nexit 0\n"
+    TIO.writeFile fakeClaude "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"migration complete\",\"is_error\":false,\"permission_denials\":[]}'\nexit 0\n"
     permissions <- getPermissions fakeClaude
     -- Permissions comes from `directory` and has no Generic instance, so it
     -- has no #executable label. Record update syntax is the only option.
@@ -861,7 +915,7 @@ withCohortProject action =
     -- The fake logs every invocation so a test can prove a session did NOT
     -- start. An assertion that the log is absent is only evidence when the
     -- fake would have written it; a silently succeeding fake proves nothing.
-    TIO.writeFile fakeClaude "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nexit 0\n"
+    TIO.writeFile fakeClaude "#!/bin/sh\nprintf 'called\\n' >> \"$SEIHOU_FAKE_AGENT_LOG\"\nprintf '%s\\n' '{\"type\":\"result\",\"subtype\":\"success\",\"result\":\"migration complete\",\"is_error\":false,\"permission_denials\":[]}'\nexit 0\n"
     permissions <- getPermissions fakeClaude
     -- Permissions comes from `directory` and has no Generic instance, so it
     -- has no #executable label. Record update syntax is the only option.
@@ -966,8 +1020,30 @@ runProcessText ::
   Maybe [(String, String)] ->
   IO (ExitCode, T.Text, T.Text)
 runProcessText binary args workingDirectory environment = do
-  let command = (proc binary args) {cwd = workingDirectory, env = environment}
-  (exitCode, stdoutText, stderrText) <- readCreateProcessWithExitCode command ""
+  -- Own the process group and bound each real-binary fixture, including its
+  -- descendants, so an accidental interactive launch cannot stall the suite.
+  python <- findExecutable "python3" >>= maybe (fail "python3 is required for process fixture ownership") pure
+  let bounded =
+        unlines
+          [ "import subprocess,sys,os,signal",
+            "p=subprocess.Popen(sys.argv[1:],stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)",
+            "try:",
+            " o,e=p.communicate(timeout=45)",
+            "except subprocess.TimeoutExpired:",
+            " pairs=[tuple(map(int,line.split())) for line in subprocess.check_output(['ps','-axo','pid=,ppid='],text=True).splitlines()]",
+            " owned={p.pid}",
+            " while True:",
+            "  expanded=owned|{pid for pid,parent in pairs if parent in owned}",
+            "  if expanded==owned: break",
+            "  owned=expanded",
+            " for pid in reversed(sorted(owned)):",
+            "  try: os.kill(pid,signal.SIGKILL)",
+            "  except ProcessLookupError: pass",
+            " o,e=p.communicate(); sys.stderr.write('migration fixture timed out\\n'); p.returncode=124",
+            "sys.stdout.buffer.write(o); sys.stderr.buffer.write(e); sys.exit(p.returncode)"
+          ]
+      wrapped = (proc python (["-c", bounded, binary] <> args)) {cwd = workingDirectory, env = environment}
+  (exitCode, stdoutText, stderrText) <- readCreateProcessWithExitCode wrapped ""
   pure (exitCode, T.pack stdoutText, T.pack stderrText)
 
 -- | Fail with the captured streams when a run that was expected to succeed
@@ -1119,3 +1195,129 @@ batchBlueprintDhall =
       ", migrations = [] : List { from : Text, to : Text, prompt : Text }",
       "}"
     ]
+
+-- Minimal envelopes captured from Claude Code 2.1.312 and Codex 0.164.0.
+-- The executable must select the editing transport without a positional prompt.
+batchMigrationProof :: String -> Spec
+batchMigrationProof provider = it ("migrates through pipes with " <> provider <> " and preserves terminal mode") $
+  withSystemTempDirectory "seihou-migration-mode" $ \root -> do
+    binary <- seihouBinary
+    inherited <- getEnvironment
+    let blueprintDir = root </> ".seihou/modules/payments"
+        binDir = root </> "bin"
+        logPath = root </> "args"
+        workspace = root </> "edited"
+        isClaude = provider == "claude-cli"
+        executableName = if isClaude then "claude" else "codex"
+        script = binDir </> executableName
+        reply =
+          if isClaude
+            then "{\"type\":\"result\",\"future_field\":true,\"subtype\":\"success\",\"is_error\":false,\"permission_denials\":[],\"result\":\"edited\"}"
+            else "{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"edited\"}}\n{\"type\":\"turn.completed\",\"usage\":{}}"
+        command = ["agent", "migrate", "payments", "--from", "1.0.0", "--to", "2.0.0", "--var", "library.name=baikai"]
+        environment =
+          [("PATH", binDir <> [searchPathSeparator] <> fromMaybe "" (lookup "PATH" inherited)), ("XDG_CONFIG_HOME", root </> "xdg"), ("SEIHOU_AGENT_PROVIDER", provider), ("SEIHOU_FAKE_AGENT_LOG", logPath)]
+            <> filter (\(key, _) -> key /= "PATH" && key /= "XDG_CONFIG_HOME" && key /= "SEIHOU_CONTEXT" && not ("SEIHOU_AGENT_" `T.isPrefixOf` T.pack key)) inherited
+        run args = runProcessText binary args (Just root) (Just environment)
+    mapM_ (createDirectoryIfMissing True) [blueprintDir, binDir, root </> "xdg"]
+    TIO.writeFile (blueprintDir </> "blueprint.dhall") migrationBlueprintDhall
+    TIO.writeFile script $
+      T.unlines
+        [ "#!/bin/sh",
+          "if [ ! -t 0 ]; then case \"$1\" in -p|exec) ;; *) echo interactive-argv-through-pipes >&2; exit 91;; esac; fi",
+          "printf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"",
+          "printf edited > edited",
+          "cat <<'RESULT'",
+          T.pack reply,
+          "RESULT"
+        ]
+    permissions <- getPermissions script
+    setPermissions script (permissions {executable = True})
+    -- Every adversarial attempt writes an outcome signal too: validation must
+    -- reject it before either outcome channel can create a receipt.
+    let good = T.pack reply
+        badReplies =
+          if isClaude
+            then
+              [ "not-json",
+                "{}",
+                "",
+                T.replace "false" "true" good,
+                T.replace "\"permission_denials\":[]" "\"permission_denials\":[{\"tool_name\":\"Write\"}]" good,
+                "[" <> good <> ",{\"type\":\"error\",\"message\":\"failed\"}]",
+                good <> "garbage"
+              ]
+            else
+              [ "not-json",
+                "{}",
+                "",
+                good <> "\n{\"type\":\"error\",\"message\":\"failed\"}",
+                T.takeWhile (/= '\n') good,
+                good <> "\ncorrupt",
+                good <> "\n{\"type\":\"permission_denied\"}"
+              ]
+        writeReply body exitStatus =
+          TIO.writeFile script $
+            T.unlines
+              ["#!/bin/sh", "printf reason > .seihou/.migrate-signal", "cat <<'RESULT'", body, "RESULT", "exit " <> exitStatus]
+        checkFailure body status = do
+          writeReply body status
+          (failed, _, failure) <- run command
+          failed `shouldSatisfy` (/= ExitSuccess)
+          failure `shouldSatisfy` T.isInfixOf "retry"
+          doesFileExist (root </> ".seihou/manifest.json") `shouldReturn` False
+          doesFileExist (root </> ".seihou/.migrate-signal") `shouldReturn` False
+    mapM_ (\body -> checkFailure body "0") badReplies
+    checkFailure good "7"
+    -- A missing executable/interpreter is an actionable startup failure.
+    TIO.writeFile script ("#!" <> T.pack (root </> "missing-interpreter") <> "\n")
+    (missing, _, missingError) <- runProcessText binary command (Just root) (Just (("PATH", binDir) : filter ((/= "PATH") . fst) environment))
+    missing `shouldSatisfy` (/= ExitSuccess)
+    missingError `shouldSatisfy` T.isInfixOf "Could not start"
+    doesFileExist (root </> ".seihou/manifest.json") `shouldReturn` False
+    TIO.writeFile (root </> ".seihou/.migrate-signal") "stale reason"
+    -- Restore the editing executable for the ordinary-path proof.
+    TIO.writeFile script $
+      T.unlines
+        [ "#!/bin/sh",
+          "if [ ! -t 0 ]; then case \"$1\" in -p|exec) ;; *) echo interactive-argv-through-pipes >&2; exit 91;; esac; fi",
+          "printf '%s\\n' \"$@\" > \"$SEIHOU_FAKE_AGENT_LOG\"",
+          "printf edited > edited",
+          "cat <<'RESULT'",
+          good,
+          "RESULT"
+        ]
+    (code, out, err) <- run command
+    expectSuccess "automatic migration" code out err
+    out `shouldSatisfy` T.isInfixOf "(batch)"
+    TIO.readFile workspace `shouldReturn` "edited"
+    argv <- T.lines <$> TIO.readFile logPath
+    argv `shouldSatisfy` elem (if isClaude then "-p" else "exec")
+    argv `shouldSatisfy` any (T.isInfixOf "Follow the instructions in the system prompt.")
+    receipts <- readReceipts (root </> ".seihou/manifest.json")
+    length receipts `shouldBe` 1
+    (again, output, errors) <- run command
+    expectSuccess "repeat migration" again output errors
+    output `shouldSatisfy` T.isInfixOf "already have receipts"
+    -- A real terminal on stdin selects interactive argv; --batch overrides it.
+    let ptyCode = "import os,pty,subprocess,sys; m,s=pty.openpty(); p=subprocess.run(sys.argv[1:],stdin=s); os.close(s); os.close(m); sys.exit(p.returncode)"
+        runPty flags = runProcessText "python3" (["-c", ptyCode, binary] <> command <> ["--rerun"] <> flags) (Just root) (Just environment)
+    (interactive, io, ie) <- runPty []
+    expectSuccess "terminal migration" interactive io ie
+    interactiveArgs <- T.lines <$> TIO.readFile logPath
+    interactiveArgs `shouldSatisfy` notElem (if isClaude then "-p" else "exec")
+    (explicit, bo, be) <- runPty ["--batch"]
+    expectSuccess "explicit terminal batch" explicit bo be
+    batchArgs <- T.lines <$> TIO.readFile logPath
+    batchArgs `shouldSatisfy` elem (if isClaude then "-p" else "exec")
+    -- A valid completion can report inapplicability by text or file; the
+    -- file takes precedence. These outcomes remain eligible on a later run.
+    writeReply (T.replace "edited" "SEIHOU: not-applicable text-marker" good) "0"
+    (skipped, so, se) <- run (command <> ["--rerun"])
+    expectSuccess "not-applicable file over marker" skipped so se
+    outcomes <- readReceipts (root </> ".seihou/manifest.json")
+    outcomes `shouldBe` [("1.0.0", "2.0.0", MigrationNotApplicable "reason")]
+    TIO.writeFile script $ T.unlines ["#!/bin/sh", "cat <<'RESULT'", T.replace "edited" "SEIHOU: not-applicable text-marker" good, "RESULT"]
+    (marker, mo, me) <- run command
+    expectSuccess "text-marker retry" marker mo me
+    readReceipts (root </> ".seihou/manifest.json") `shouldReturn` [("1.0.0", "2.0.0", MigrationNotApplicable "text-marker")]

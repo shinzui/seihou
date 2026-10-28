@@ -420,6 +420,7 @@ data BlueprintMigrationOpts = BlueprintMigrationOpts
     namespace :: !(Maybe Text),
     context :: !(Maybe Text),
     verbose :: !Bool,
+    batch :: !Bool,
     rerun :: !Bool,
     -- | When 'True', record a receipt for every pending step in the window
     -- without starting an agent session, on the user's assertion that the
@@ -2031,7 +2032,11 @@ agentMigrateInfo =
         <> footerDoc
           ( Just $
               vsep
-                [ pretty ("Selects the blueprint migrations inside the version window," :: String),
+                [ pretty ("CLI migrations run in batch mode when stdin is not a terminal." :: String),
+                  pretty ("Use --batch to request this explicitly. Terminal sessions stay interactive;" :: String),
+                  pretty ("exit each session normally before its edge is recorded." :: String),
+                  line,
+                  pretty ("Selects the blueprint migrations inside the version window," :: String),
                   pretty ("runs one provider interaction per edge, and records each successful" :: String),
                   pretty ("edge so an interrupted chain resumes without repeating completed work." :: String),
                   line,
@@ -2088,6 +2093,7 @@ agentMigrateParser =
       <*> optional (option (T.pack <$> str) (long "namespace" <> metavar "NS" <> help "Override namespace for config lookup"))
       <*> optional (option (T.pack <$> str) (long "context" <> short 'c' <> metavar "CTX" <> help "Override context for config lookup"))
       <*> switch (long "verbose" <> short 'v' <> help "Show detailed progress messages")
+      <*> switch (long "batch" <> help "Run non-interactively (automatic when stdin is not a terminal)")
       <*> switch (long "rerun" <> help "Run matching migrations even when a receipt already exists")
       <*> switch
         ( long "mark-applied"

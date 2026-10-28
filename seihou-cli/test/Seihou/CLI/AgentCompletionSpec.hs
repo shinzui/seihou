@@ -25,6 +25,23 @@ import Test.Tasty.Hspec (testSpec)
 
 tests :: IO TestTree
 tests = testSpec "Seihou.CLI.AgentCompletion" $ do
+  describe "initial CLI instructions" $ do
+    it "supplies a neutral CLI user turn and preserves explicit/API inputs" $ do
+      let neutral = Just "Follow the instructions in the system prompt."
+      mapM_
+        ( \provider -> do
+            resolveAgentInitialPrompt provider Nothing `shouldBe` neutral
+            resolveAgentInitialPrompt provider (Just "  ") `shouldBe` neutral
+            resolveAgentInitialPrompt provider (Just "  migrate carefully  ") `shouldBe` Just "  migrate carefully  "
+        )
+        [AgentProviderClaudeCli, AgentProviderCodexCli]
+      mapM_
+        ( \provider -> do
+            resolveAgentInitialPrompt provider Nothing `shouldBe` Nothing
+            resolveAgentInitialPrompt provider (Just "  ") `shouldBe` Just "  "
+        )
+        [AgentProviderAnthropic, AgentProviderOpenAI]
+
   describe "provider text helpers" $ do
     it "parses known providers case-insensitively" $ do
       providerFromText "claude-cli" `shouldBe` Right AgentProviderClaudeCli

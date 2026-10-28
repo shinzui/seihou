@@ -188,3 +188,20 @@ FURTHER READING
   docs/cli/validate-blueprint.md   command reference for validation
   seihou help variables            variable precedence and overrides
   seihou help modules              deterministic module authoring
+
+
+Blueprint migration CLI sessions automatically run in batch mode when stdin is
+not a terminal. Use `seihou agent migrate BLUEPRINT --batch` to request batch
+mode explicitly, including when only stdout is redirected. Authenticate the
+selected `claude` or `codex` CLI first and supply required blueprint inputs with
+`--var KEY=VALUE` or normal configuration. Batch mode keeps workspace permissions,
+blueprint tools, and reference directories; it does not bypass approvals.
+It also preapproves specific read-only Mori discovery commands for dependency
+inspection, excluding registry mutations.
+
+Batch processes return when work finishes. With terminal input, sessions remain
+interactive: exit each session normally to record its edge. If a batch provider
+fails, reports a permission denial, or returns incomplete output, no receipt is
+written for that edge. Inspect partial edits, repair the reported problem, and
+rerun the same command; completed edges are skipped. Receipts do not verify that
+the migrated project builds or passes tests.

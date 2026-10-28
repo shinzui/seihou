@@ -18,6 +18,9 @@ module Seihou.CLI.AgentCompletion
     buildBaikaiModel,
     runAgentCompletion,
     runAgentCompletionWithCliAccess,
+    runAgentMigrationCompletionWithCliAccess,
+    resolveAgentInitialPrompt,
+    migrationAllowedTools,
     runAgentCompletionWith,
     responseText,
   )
@@ -34,15 +37,20 @@ import Baikai.Response qualified as BaikaiResponse
 import Baikai.ThinkingLevel (ThinkingLevel (..), renderThinkingLevel)
 import Baikai.Trace qualified as BaikaiTrace
 import Baikai.Trace.Sink (TraceSink, silent)
-import Control.Exception (try)
+import Control.Exception (IOException, throwIO, try)
 import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
+import Data.List (nub)
 import Data.Text (Text)
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as TE
 import Data.Vector qualified as V
 import GHC.Generics (Generic)
+import Seihou.CLI.AgentMigrationProtocol (validateMigrationOutput)
 import Seihou.CLI.KitConfig (seihouKitConfig)
 import System.Directory (getCurrentDirectory)
+import System.Exit (ExitCode (..))
+import System.Process qualified as Process
 
 data AgentProvider
   = AgentProviderClaudeCli
@@ -258,13 +266,16 @@ runAgentCompletionWithCliAccess extraDirs tools =
 -- register. Exported so tests can install a stub provider in place of a real
 -- one; production callers should use one of the two wrappers.
 runAgentCompletionWith :: IO () -> AgentCompletionRequest -> IO (Either Text Text)
-runAgentCompletionWith registerProviders req = do
+runAgentCompletionWith = runAgentCompletionUsing (Text.pack . show)
+
+runAgentCompletionUsing :: (Baikai.BaikaiError -> Text) -> IO () -> AgentCompletionRequest -> IO (Either Text Text)
+runAgentCompletionUsing renderError registerProviders req = do
   registerProviders
   initialMessages <-
     maybe
       (pure V.empty)
       (fmap V.singleton . Baikai.userNow)
-      (req ^. #initialPrompt)
+      (resolveAgentInitialPrompt (req ^. #modelConfig . #provider) (req ^. #initialPrompt))
   let model = buildBaikaiModel (req ^. #modelConfig)
       ctx =
         Baikai.emptyContext
@@ -279,7 +290,7 @@ runAgentCompletionWith registerProviders req = do
     -- Retained deliberately. 'withTrace' does not throw for provider failures,
     -- but its doc comment states that downstream-of-the-fold exceptions still
     -- propagate — an unwritable trace path, for instance.
-    Left err -> Left (Text.pack (show err))
+    Left err -> Left (renderError err)
     Right resp -> case BaikaiResponse.responseError resp of
       -- 'withTrace' surfaces a provider failure as an error-shaped Response
       -- rather than an exception, and such a response has no assistant text.
@@ -288,7 +299,7 @@ runAgentCompletionWith registerProviders req = do
       -- below and be reported as "Provider returned no assistant text.",
       -- losing the message the user needs. Formatting matches the exception
       -- branch exactly, so the text a user sees is what it always was.
-      Just err -> Left (Text.pack (show err))
+      Just err -> Left (renderError err)
       Nothing ->
         let body = responseText resp
          in if Text.null (Text.strip body)
@@ -345,3 +356,89 @@ codexAccessArgs :: [FilePath] -> [Text]
 codexAccessArgs extraDirs =
   ["--sandbox", "workspace-write"]
     <> concatMap (\dir -> ["--add-dir", Text.pack dir]) extraDirs
+
+-- | CLI transports need a user turn even when all instructions live in the
+-- system prompt. Preserve explicit instructions and API semantics.
+resolveAgentInitialPrompt :: AgentProvider -> Maybe Text -> Maybe Text
+resolveAgentInitialPrompt provider prompt = case provider of
+  AgentProviderClaudeCli -> cliPrompt
+  AgentProviderCodexCli -> cliPrompt
+  AgentProviderAnthropic -> prompt
+  AgentProviderOpenAI -> prompt
+  where
+    cliPrompt = case prompt of
+      Just value | not (Text.null (Text.strip value)) -> prompt
+      _ -> Just "Follow the instructions in the system prompt."
+
+-- | A migration must retain raw process/protocol failures until classification.
+-- Register this narrow adapter behind the usual trace wrapper, so it emits to
+-- the command's existing sink and ordinary completion callers remain unchanged.
+runAgentMigrationCompletionWithCliAccess :: [FilePath] -> [String] -> AgentCompletionRequest -> IO (Either Text Text)
+runAgentMigrationCompletionWithCliAccess dirs tools req =
+  case req ^. #modelConfig . #provider of
+    AgentProviderClaudeCli -> runAgentCompletionUsing (^. #message) (registerStrict Baikai.AnthropicMessagesCli) req
+    AgentProviderCodexCli -> runAgentCompletionUsing (^. #message) (registerStrict Baikai.OpenAICompletionsCli) req
+    _ -> runAgentCompletion req
+  where
+    registerStrict api = do
+      cwd <- getCurrentDirectory
+      sessionArgs <- KitSession.codexSessionArgs seihouKitConfig
+      let complete m ctx options = do
+            let (exe, args) = case req ^. #modelConfig . #provider of
+                  AgentProviderClaudeCli ->
+                    ClaudeCli.claudeCliCommand
+                      (ClaudeCli.defaultClaudeCliConfig {ClaudeCli.extraArgs = ["--permission-mode", "acceptEdits"] <> claudeAccessArgs dirs (migrationAllowedTools tools)})
+                      m
+                      ctx
+                      options
+                  _ ->
+                    CodexCli.codexCliCommand
+                      (CodexCli.defaultCodexCliConfig {CodexCli.extraArgs = codexAccessArgs dirs <> sessionArgs})
+                      m
+                      ctx
+                      options
+            attempted <-
+              try
+                ( Process.readCreateProcessWithExitCode
+                    ((Process.proc exe args) {Process.cwd = Just cwd, Process.create_group = True})
+                    ""
+                ) ::
+                IO (Either IOException (ExitCode, String, String))
+            let result = case attempted of
+                  Left err -> Left ("Could not start " <> Text.pack exe <> ": " <> Text.pack (show err) <> ". Check installation and authentication, then retry.")
+                  Right (code, out, err) -> case code of
+                    ExitFailure n -> Left (Text.pack exe <> " exited " <> Text.pack (show n) <> ": " <> Text.take 2000 (Text.pack err <> Text.pack out) <> ". Inspect partial edits, fix the provider error, then retry.")
+                    ExitSuccess -> validateMigrationOutput (req ^. #modelConfig . #provider == AgentProviderClaudeCli) (TE.encodeUtf8 (Text.pack out))
+            case result of
+              Left err -> throwIO (Baikai.providerError err)
+              Right body ->
+                pure $
+                  BaikaiResponse.emptyResponse
+                    { BaikaiResponse.model = m,
+                      BaikaiResponse.message =
+                        Baikai.AssistantPayload
+                          { Baikai.content = V.singleton (Baikai.AssistantText (Baikai.TextContent body)),
+                            Baikai.usage = Baikai.zeroUsage,
+                            Baikai.stopReason = Baikai.Stop,
+                            Baikai.errorMessage = Nothing,
+                            Baikai.timestamp = Nothing
+                          }
+                    }
+      Baikai.registerApiProvider (Baikai.apiProviderWith api (Baikai.liftCompleteToStream complete) complete)
+
+-- | Source discovery is part of the ordinary migration workflow. Keep grants
+-- specific to read-only Mori commands; registry writes are never implied.
+migrationAllowedTools :: [String] -> [String]
+migrationAllowedTools tools =
+  nub
+    ( tools
+        <> [ "Bash(mori registry list)",
+             "Bash(mori registry list *)",
+             "Bash(mori registry search *)",
+             "Bash(mori registry show *)",
+             "Bash(mori registry docs *)",
+             "Bash(mori registry dependents *)",
+             "Bash(mori path *)",
+             "Bash(head *)"
+           ]
+    )
