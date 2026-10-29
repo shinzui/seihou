@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-29
+* **Addition**: Add BUG-3: a recipe cannot enforce a variable that global config sets (from mori://tan/tan-platform).
+
 ## 2026-10-05
 * **Addition**: BUG-2 reported against seihou v0.9.0.0 (`01173c3`) by `mori://shinzui/seihou-modules`.
 `seihou install --module github-repo` installs only the named recipe and never its declared
@@ -13,7 +16,7 @@ install the whole registry with `--all`. Reproduced with `--dry-run`. Status `re
 confirmed by seihou.
 
 ## 2026-09-18
-* **Update**: BUG-1 status reported -> fixed. Resolved by mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe: schema 7 sharedWriteMode, targeted in-plan certification of unknown shared paths without updating co-owners, labels instead of application ids, and prose for every update warning. Regression in seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs.
+* **Update**: BUG-1 status reported -\> fixed. Resolved by mori://shinzui/seihou/masterplans/11-make-manifest-evolution-explicit-and-targeted-updates-upgrade-safe: schema 7 sharedWriteMode, targeted in-plan certification of unknown shared paths without updating co-owners, labels instead of application ids, and prose for every update warning. Regression in seihou-cli/test/Seihou/CLI/UpdateE2ESpec.hs.
 
 ## 2026-09-17
 * **Addition**: BUG-1 reported against seihou v0.9.0.0 (`9979f8d`) by `mori://tan/mls-service-v2`.
