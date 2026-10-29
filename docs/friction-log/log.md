@@ -1,6 +1,8 @@
 # Bundle Update Log
 
 ## 2026-10-29
+* **Update**: FRIC-9 resolved: Reconcile existing review metadata while recording verified BUG-3 delivery.
+* **Addition**: FRIC-9 records slowdown documentation friction with mori://shinzui/seihou: Strict bug-report validation lacked review metadata in existing reports
 * **Update**: FRIC-7 resolved: Correct the workaround: retaining Git and gh config paths alone did not preserve macOS keyring authentication under the isolated HOME.
 * **Update**: FRIC-8 accepted: Retain the origin safety boundary and document the reproducible candidate-test preparation.
 * **Update**: FRIC-7 resolved: Record the working private-registry authentication preparation; no credentials are written into evidence.

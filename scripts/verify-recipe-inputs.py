@@ -6,6 +6,7 @@ from pathlib import Path
 import pty
 import select
 import shutil
+import shlex
 import subprocess
 import sys
 import time
@@ -269,7 +270,7 @@ def main():
         env['GH_TOKEN'] = subprocess.check_output(['gh', 'auth', 'token'], text=True).strip()
         env.update(GIT_CONFIG_COUNT='2', GIT_CONFIG_KEY_0='credential.https://github.com.helper',
                    GIT_CONFIG_VALUE_0='', GIT_CONFIG_KEY_1='credential.https://github.com.helper',
-                   GIT_CONFIG_VALUE_1='gh auth git-credential')
+                   GIT_CONFIG_VALUE_1='!' + shlex.quote(shutil.which('gh')) + ' auth git-credential')
     if args.candidate_repo:
         assert args.owner_policy, '--candidate-repo requires --owner-policy'
         candidate = args.candidate_repo.resolve()

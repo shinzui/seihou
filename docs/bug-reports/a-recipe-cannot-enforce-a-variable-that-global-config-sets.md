@@ -12,7 +12,15 @@ affects: mori://shinzui/seihou
 affectedVersion: 0.12.1.0
 origin: mori://tan/tan-platform
 severity: degraded
-status: reported
+status: fixed
+fixedVersion: 0.13.0.0
+resolution: >-
+  Seihou 0.13.0.0 accepts camelCase recipe/blueprint bindings and enforces whole-value
+  POSIX patterns across every selected value source, preserving source attribution.
+  Published mori://tan/tan-seihou-modules/templates/tan-keiro-project version 0.1.1
+  binds and constrains git.githubOwner to topagentnetwork. Installed-release acceptance
+  verifies conflicting personal config, explicit refusal before effects, old saved-input
+  adoption and fresh clones. See docs/plans/117-let-recipes-enforce-configured-variable-values.md.
 generated:
   by: "claude-code/claude-opus-5-5"
   at: "2026-10-28T20:45:00Z"
@@ -39,6 +47,18 @@ reproduction:
   - Observe `git.githubOwner = "someone-else"` and `gh repo create someone-else/probe` in the plan, although the recipe defaults the owner to `topagentnetwork`.
   - Add `validation = Some "^topagentnetwork\$"` to the recipe's `git.githubOwner` VarDecl, reinstall, and rerun; observe the same plan with no validation error.
   - Instead add `vars = [ { name = "git.githubOwner", value = "topagentnetwork" } ]` to the recipe's `git-init` dependency and reinstall; observe `invalid var binding name 'git.githubOwner'`.
+timestamp: "2026-10-29T13:01:54Z"
+reviews:
+  - kind: model
+    reviewer: codex-cli/gpt-6.1-sol
+    reviewed_at: "2026-10-29T13:01:54Z"
+    document_timestamp: "2026-10-29T13:01:54Z"
+    scope: content-and-metadata
+    outcome: commented
+    context: Completion self-review against published Seihou 0.13.0.0, installed owner-policy acceptance and the local profile; not an independent review.
+    provider: openai
+    model: gpt-6.1-sol
+    effort: unspecified
 ---
 
 # Bug Report: A recipe cannot enforce a variable that global config sets
@@ -105,5 +125,10 @@ that matcher with whole-value POSIX extended validation and preserves original
 sources through recipe consumer validation. The candidate TAN recipe binds the
 owner above personal preferences and constrains explicit overrides. Tests verify
 that invalid run/update/reconfigure inputs preserve generated files, command logs
-and manifests. The bug remains reported until released/installed Seihou and the
-published recipe pass the same workflow; an unreleased source fix is not delivery.
+and manifests. The released and installed `seihou v0.13.0.0 (adba3af)` passes that workflow
+against published recipe 0.1.1 at revision `0746cbe161d31b36a28cc0e69de84e94d9928182`.
+Evidence in `/tmp/seihou-013-installed-owner-verified` includes ordinary installation
+of all nine artifacts, interactive use, command-argument capture with provisioning
+stubbed, refusal before effects, repeat use, update/reconfigure and fresh-clone
+replay, plus adoption from the actual previous recipe. No current-producer candidate
+rewrite or manifest repair is used.

@@ -1,6 +1,8 @@
 # Bundle Update Log
 
 ## 2026-10-29
+* **Update**: Record current model review metadata: BUG-3 completion evidence, and structural metadata only for BUG-1/BUG-2 without changing their dispositions or claiming historical verification.
+* **Update**: BUG-3 fixed in released and installed Seihou 0.13.0.0 with published TAN recipe 0.1.1; verified ordinary owner-policy delivery.
 * **Addition**: Add BUG-3: a recipe cannot enforce a variable that global config sets (from mori://tan/tan-platform).
 
 ## 2026-10-05

@@ -52,6 +52,18 @@ reproduction:
   - Observe it fail with `Update failed [shared_path_requires_applications]`, naming the co-owners by their `applicationId` SHA and listing `--include-shared-owners` before "run seihou update with no targets".
   - Follow the error's second suggestion, `seihou update nix-haskell-flake --include-shared-owners --dry-run`, and observe it expand to both skill-link applications and plan to rewrite seven unrelated `agents/skills/exec-plan/*` files, emitting eight `CrossApplicationLastWriter` warnings printed as raw Haskell (`CrossApplicationLastWriter "…" (ModuleName {unModuleName = "exec-plan"}) (ModuleName {unModuleName = "exec-plan#bfa0a336"})`).
   - Re-run the bare `seihou update nix-haskell-flake` and observe it fail identically — the flag recorded nothing.
+timestamp: "2026-10-29T13:01:54Z"
+reviews:
+  - kind: model
+    reviewer: codex-cli/gpt-6.1-sol
+    reviewed_at: "2026-10-29T13:01:54Z"
+    document_timestamp: "2026-10-29T13:01:54Z"
+    scope: catalog-metadata
+    outcome: commented
+    context: Structural metadata review while closing BUG-3; historical behavior and disposition are unchanged and were not reverified. No historical review is inferred.
+    provider: openai
+    model: gpt-6.1-sol
+    effort: unspecified
 ---
 
 # Bug Report: Targeted `seihou update` is broken on manifests that predate `additiveOnly`

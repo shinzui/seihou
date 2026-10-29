@@ -32,6 +32,18 @@ reproduction:
   - Run `seihou install https://github.com/shinzui/seihou-modules.git --module github-repo` and observe it report `Installed recipe as: github-repo` with no mention of `repo-dir`.
   - Run `seihou run github-repo --dry-run --var repo.parentDir=/tmp/x --var repo.name=demo --var git.githubOwner=shinzui --var git.githubVisibility=private`.
   - Observe it fail with `ERROR Module 'repo-dir' not found.` and the three searched paths, even though `repo-dir` exists in the same registry the recipe was installed from.
+timestamp: "2026-10-29T13:01:54Z"
+reviews:
+  - kind: model
+    reviewer: codex-cli/gpt-6.1-sol
+    reviewed_at: "2026-10-29T13:01:54Z"
+    document_timestamp: "2026-10-29T13:01:54Z"
+    scope: catalog-metadata
+    outcome: commented
+    context: Structural metadata review while closing BUG-3; historical behavior and disposition are unchanged and were not reverified. No historical review is inferred.
+    provider: openai
+    model: gpt-6.1-sol
+    effort: unspecified
 ---
 
 # Bug Report: `seihou install` ignores a recipe's (or module's) declared dependencies
