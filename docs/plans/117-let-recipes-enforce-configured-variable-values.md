@@ -1,0 +1,271 @@
+---
+id: 117
+slug: let-recipes-enforce-configured-variable-values
+title: "Let recipes enforce configured variable values"
+kind: exec-plan
+created_at: 2026-10-29T03:31:43Z
+intention: "intention_01m62v8nmfev680kgzyarc5g6t"
+provenance:
+  created_by:
+    model: "gpt-6.1-sol"
+    harness: "codex-cli"
+    at: 2026-10-29T03:31:43Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-29T03:36:32Z
+      mode: "other"
+      note: "Ground initial plan in BUG-3, installed CLI reproductions, current recipe resolution, ADRs, and released regex API evidence"
+---
+
+# Let recipes enforce configured variable values
+
+
+This ExecPlan is a living document. Keep Progress, Surprises & Discoveries, Decision Log, and Outcomes & Retrospective current. Follow `agents/skills/exec-plan/PLANS.md`, `agents/skills/exec-plan/ADR.md`, and `agents/skills/exec-plan/FRICTION.md` during implementation.
+
+
+## Purpose / Big Picture
+
+
+Fix [BUG-3](../bug-reports/a-recipe-cannot-enforce-a-variable-that-global-config-sets.md): a recipe author must be able to bind `git.githubOwner=topagentnetwork` and enforce an owner constraint even when the developer has a different owner in global configuration. Invalid resolved inputs must fail before generation or shell commands, with an error naming the variable, its source, the constraint, and a supported correction.
+
+The acceptance starting state is an installed TAN recipe, a personal global owner configured once with `seihou config set git.githubOwner someone-else --global`, and an empty project directory. After the producer adopts a binding and constraint, the normal interactive workflow is one command, `seihou run tan-keiro-project`, with the existing project questions. The planned GitHub command must target `topagentnetwork/<repo>`. No additional owner flag, configuration cleanup, dependency enumeration, or manifest edit is required. A deliberate conflicting `--var git.githubOwner=someone-else` must fail the recipe constraint. A recipe default alone remains overridable; the producer must actually declare its policy.
+
+This plan covers source fixes, consumer adoption, documentation, and verified delivery. Creating the plan does not implement or release the change. Keep delivery open until the installed executable and published recipe pass acceptance.
+
+
+## Progress
+
+
+- [ ] M1: Recipe and blueprint bindings accept camelCase names, and ordinary recipe runs use literal bindings above global configuration while preserving CLI precedence.
+- [ ] M2: Real pattern validation rejects disallowed values from every supported source, including recipe inputs and consuming module declarations, with useful source-aware errors before effects.
+- [ ] M3: The actual TAN recipe adopts the owner policy; ordinary installation, first use, update, and fresh-clone checks pass, with documentation and regression coverage.
+- [ ] M4: Published Seihou packages and the installed executable pass the same workflow against the published consumer recipe; delivery versions and remaining gaps are recorded.
+
+Planning baseline: installed `seihou v0.12.1.0 (ce67843)` reproduces both failures in an isolated local fixture. No implementation milestone is complete.
+
+
+## Surprises & Discoveries
+
+
+(None yet.)
+
+
+## Decision Log
+
+
+2026-10-28: Preserve existing precedence. CLI values outrank literal recipe bindings; bindings outrank recipe history, environment, configuration, and defaults. A binding removes dependence on personal config, while a recipe constraint rejects disallowed explicit overrides. Changing all parent-binding precedence or adding an immutable-variable schema would broaden this bug fix unnecessarily.
+
+2026-10-28: Replace the permissive pattern stub with a real regular expression engine and require a whole-value match. The resolver already validates configuration values; unsupported patterns returning success cause the reported bypass. Whole-value matching preserves the existing `[a-z][a-z0-9-]*` behavior and gives `private|public|internal` the intended choice semantics. Invalid patterns must produce errors, never success or uncaught exceptions.
+
+2026-10-28: Include actual recipe adoption in delivery. Fixing Seihou cannot turn an unconstrained default in a producer into an enforced policy. Normal preview source annotations are optional follow-up work; source attribution for validation errors is required here.
+
+
+## Outcomes & Retrospective
+
+
+(To be filled during implementation and delivery.)
+
+
+## Context and Orientation
+
+
+Seihou is a Haskell command-line scaffolding tool. A module declares inputs and file or shell operations. A recipe groups modules, declares shared inputs, and supplies literal text bindings in module entries. A `VarDecl` is a variable declaration containing its name, type, optional default, and optional constraint. A `ResolvedVar` carries the chosen value, declaration, and `VarSource` identifying its origin. A module instance identifies a particular parameterization of a module. An application records an accepted module or recipe run in `.seihou/manifest.json`.
+
+`seihou-core/src/Seihou/Core/Recipe.hs` owns pure descriptor validation. `checkVarBindingNames` accepts only `[a-z][a-z0-9.-]*`, rejecting `git.githubOwner`, `git.createGithub`, and `git.githubVisibility`. `baseDeclarationErrors` in `seihou-core/src/Seihou/Core/Blueprint.hs` duplicates this rule for blueprint base bindings. Module dependency bindings in `seihou-core/src/Seihou/Core/Module.hs` only require nonempty names. Module and recipe names have a separate lowercase, hyphenated grammar that must retain its behavior. Existing tests are `seihou-core/test/Seihou/Core/RecipeSpec.hs`, `seihou-core/test/Seihou/Core/BlueprintSpec.hs`, and `seihou-core/test/Seihou/Composition/RecipeSpec.hs`.
+
+`expandRecipe` in `seihou-core/src/Seihou/Composition/Recipe.hs` collects module-entry bindings into one map, with the first occurrence winning. These are flattened composition-wide overrides, not independent entry-specific parameters. `resolveRecipeWithPrompts` in `seihou-core/src/Seihou/Composition/Resolve.hs` merges CLI values over literals, resolves recipe declarations first, and broadcasts accepted recipe inputs to modules. Preserve this behavior and parameterized module instance identity; redesigning binding scope is outside this plan.
+
+`seihou-core/src/Seihou/Core/Variable.hs` already sends CLI, saved application values, environment, all four configuration layers, parent values, and defaults through `validateAndWrap` and `validateVarValue`. However, `simplePatternMatch` recognizes only `[a-z][a-z0-9-]*`; every other pattern returns `True`. Consequently `^topagentnetwork$` accepts `someone-else` from any source. `varDeclDecoder` in `seihou-core/src/Seihou/Dhall/Eval.hs` decodes Dhall `validation` strings as `ValPattern`. This is a matcher defect, not evidence that configuration skips validation. Preserve typed `ValRange`, `ValMinLength`, and `ValMaxLength` behavior; repairing the separately documented Dhall numeric-range syntax is outside scope.
+
+`seihou-core/src/Seihou/Interaction/Prompt.hs` validates typed answers, numbered choices, and accepted defaults through the shared validator. `runPromptsChecked` returns recipe prompt errors. Verify exhausted retries and `--confirm-defaults` rather than assuming noninteractive tests cover them. Focused suites are `seihou-core/test/Seihou/Core/VariableSpec.hs`, `seihou-core/test/Seihou/Composition/ResolveSpec.hs`, and `seihou-core/test/Seihou/Interaction/PromptSpec.hs`.
+
+`seihou-cli/src-exe/Seihou/CLI/Run.hs` and `seihou-cli/src/Seihou/CLI/Update.hs` use the shared recipe resolver. `seihou-cli/src/Seihou/CLI/Shared.hs` renders `VarError`, including `ValidationFailed VarName Text`; `seihou-cli/src/Seihou/CLI/Update/Render.hs` delegates variable failures to that renderer. `formatExplain` in the core variable module already has source labels. Recipe broadcasting temporarily uses the CLI override channel and restores sources only after success; consumer error attribution must retain the actual recipe input source.
+
+`seihou-cli/test/Seihou/CLI/RecipeInputsE2ESpec.hs` supplies public-binary recipe tests. Its helpers come from `seihou-cli/test/Seihou/CLI/SeedRunE2ESpec.hs`; `invoke` uses isolated HOME/config/cache directories and closed stdin. `seihou-cli/test/Seihou/CLI/SeihouBinary.hs` locates the test build's executable without falling back to the installed binary. `scripts/verify-recipe-inputs.py` supplies terminal and consumer examples, but its consumer mode copies a dependency closure manually and substitutes a wrapper recipe. That is useful regression coverage, not proof of the actual TAN install workflow.
+
+The consumer is `mori://tan/tan-seihou-modules/templates/tan-keiro-project`, located at planning time in project `mori://tan/tan-seihou-modules`, project-relative path `recipes/tan-keiro-project/recipe.dhall`. The intended template URI currently does not resolve because registry data is stale. The inspected producer revision is `7fb151f0b0e3c904de6e8321b31f577e963e8c8f`. It declares `git.githubOwner` with default `topagentnetwork` and no owner constraint or binding. Dependency `mori://shinzui/seihou-modules/templates/git-init`, inspected at project revision `e4e2ead953ab473ba224acd587788389d6d7d837`, consumes that input in `gh repo create` and recommends a global owner. Caller `mori://tan/tan-platform` supplies an explicit owner workaround. Re-discover these projects through Mori and inspect local instructions before editing; durable references must use canonical Mori URIs.
+
+The relevant accepted ADRs are [ADR 0021](../adr/0021-recipe-inputs-resolve-before-module-defaults.md), [ADR 0022](../adr/0022-recipe-descriptor-validation-is-independent-of-composition.md), and [ADR 0015](../adr/0015-diagnostics-name-things-as-users-do-and-never-fall-back-to-show.md). ADR 0021 requires recipe resolution before consumers, preserved sources, independent validation by every consumer, and saved recipe inputs in manifest schema 12. ADR 0022 requires standalone recipe validation to remain independent of installed members, prompts, and execution. ADR 0015 requires explicit human-readable diagnostics and remedies specific to the failure. This plan needs no manifest or Dhall schema change.
+
+Planning verification used the installed binary with empty isolated config/cache directories and local schema imports. A recipe with `validation = Some "^topagentnetwork\$"` accepted global value `someone-else` in its preview. The known hard-coded pattern rejected CLI value `SomeoneElse`. `validate-recipe` rejected a camelCase literal binding. Transcripts remain under `/var/folders/xf/z_902qyd0dg5m6n8pjv1vk300000gn/T/seihou-bug3-plan-br8tekux`; this temporary evidence is not an implementation prerequisite. Concrete Steps recreates the key cases.
+
+
+## Plan of Work
+
+
+### M1 — Accept bindings for the variables modules declare
+
+
+Share `isValidVarBindingName :: Text -> Bool` from `seihou-core/src/Seihou/Core/Variable.hs` between recipe and blueprint base validation. Accept `[a-z][A-Za-z0-9.-]*`: a lowercase ASCII first character, then ASCII letters, digits, dots, or hyphens. Preserve rejection of empty names, leading uppercase/digits, whitespace, underscores, and other punctuation. Do not apply this predicate to module names or add restrictions to module dependency declarations.
+
+Add recipe and blueprint tests for the three camelCase Git variables and unchanged invalid-name diagnostics. Extend composition coverage to preserve first-binding-wins flattening. Exercise the public binary with a literal organization owner, conflicting global owner, and no owner CLI flag; preview must show the organization. A conflicting CLI flag must still win at this stage. Acceptance requires both validators and that ordinary command to work.
+
+Before expanding the regression matrix, exercise the actual TAN producer through normal `seihou install` in an isolated environment, first with its original descriptor, then with a candidate producer revision containing the binding. Record both results. Install a committed local candidate through its Git URL until publication; do not populate installed modules or copy dependencies by hand. If ordinary install fails to acquire a declared dependency, resolve that integration instead of hiding it in fixture preparation.
+
+
+### M2 — Enforce patterns on resolved values and preserve error sources
+
+
+Replace `simplePatternMatch` with a total matcher backed by `regex-tdfa`. A regular expression describes accepted strings. Use POSIX extended syntax, including anchors (`^` and `$`), character classes, repetition, grouping, and alternation (`|`). Match the entire value, case-sensitively. Compile an anchored grouped pattern with multiline matching disabled so a matching single line or alternative cannot admit other text. Exercise empty strings, embedded/trailing newlines, and already anchored patterns. Use compilation APIs returning `Either`; avoid operators that throw on malformed patterns. No pattern may succeed merely because it is unrecognized.
+
+Keep `validateVarValue` as the shared value-validation boundary. Compilation failure becomes a clear `ValidationFailed` naming the malformed pattern; nonmatches retain a distinct constraint message. An invalid selected value must not fall through to lower-priority sources. Preserve existing typed constraints and resolution order. Check pattern syntax during resolution even for an absent optional input, without effects or member lookup. Descriptor-local syntax checks may share that helper, but standalone recipe validation must retain ADR 0022's boundaries.
+
+Add source attribution while resolution still knows declaration and source. Reuse or extract source-label formatting. Distinguish CLI, literal recipe binding, saved application input, environment variable, local/namespace/context/global config, parent binding, default, and prompt on applicable paths. A consuming module's rejection of a recipe input must report its original source. Preserve existing error constructors where practical; any public `VarError` or `VarSource` changes require exhaustive renderer updates and appropriate release versioning. Error text must give a supported next action, such as `--var git.githubOwner=topagentnetwork` for the fixed-owner case, without requiring removal of personal global config or revealing unrelated secrets.
+
+Prove valid and invalid values through `resolveVariablesWithSaved`, the recipe resolver, and scripted prompt interpreters. Cover CLI, history, environment, all config scopes, literals, parent values, defaults, exported defaults, and prompts where supported. Recipe and module constraints must each apply independently. Revalidate saved pre-fix values. Include invalid patterns and invalid high-priority input with a valid fallback. Exercise run, ordinary update, and reconfigure. Acceptance is failure before generated output, shell markers, config saving, or manifest publication, with useful human errors and the existing update JSON error envelope.
+
+
+### M3 — Adopt and prove the actual recipe workflow
+
+
+In the TAN producer, bind `git.githubOwner` to `topagentnetwork` on the `git-init` entry and add `validation = Some "^topagentnetwork\$"` to the recipe declaration. Keep the useful default. The binding supplies the organization above ambient preferences; validation blocks disallowed CLI overrides. Advance the artifact version and registry metadata according to producer conventions. Record its revision and canonical artifact URI. Standalone `seihou validate-recipe` must accept it without installed members.
+
+Add public-binary regressions in `seihou-cli/test/Seihou/CLI/RecipeInputsE2ESpec.hs` and an owner-policy acceptance mode to `scripts/verify-recipe-inputs.py`. That mode must install the actual producer through the public installer into empty isolated caches, set global config through `seihou config set`, and run the actual recipe. Synthetic fixtures remain appropriate for the source matrix. Preserve producer definitions and record all preparation. For execution checks, stub `gh` and other provisioning commands with argument-recording test executables; no real repository creation or registration is required. Dry run proves planned destination, while a controlled command fixture proves validation prevents effects. `--no-commands` proves safe generation, not that validation blocked a bad command.
+
+Use the bug report's noninteractive invocation without an owner override, then the interactive one-command workflow. Verify successful organization policy and explicit rejection. Apply a safe local case, repeat it, and update from a fresh Git clone with conflicting personal config and empty caches. Adopt an existing application with a personal saved owner: the new binding must win. Separately prove constraints reject invalid history when no binding replaces it. Previews and failures must preserve the manifest and files. Do not manually repair internal state.
+
+Update `docs/user/config-and-variables.md` and `docs/user/module-authoring.md` with binding grammar, whole-value POSIX pattern semantics, invalid-pattern errors, source-independent enforcement, and defaults versus bindings versus constraints. Reconcile affected help and embedded agent context with `scripts/audit-cli-docs.py`. Update the bug report's diagnosis and verified status when appropriate. Update ADR 0021 for durable validation/source invariants and ADR 0022 only if its descriptor contract changes. Retain the caller workaround until the released producer workflow passes.
+
+
+### M4 — Deliver the executable and consumer together
+
+
+Run the final gates, then follow the repository release skill when publication is authorized. Select the Seihou version under Haskell PVP according to final public API changes; this plan does not preselect a version. Publish the required package set and release artifacts, update the installed executable through its established installation mechanism, and publish the consumer recipe change. Replay acceptance against the installed binary and public producer revision with empty test caches. Record executable path, `seihou --version`, release, producer revision/version, and outcome.
+
+Only then remove the repeated owner workaround in `mori://tan/tan-platform` and verify its normal kickoff command. Deferred release, installation, or consumer publication leaves this milestone open even when source tests pass. At completion, triage friction entries and promote durable decisions to relevant ADRs. Do not mark the whole plan complete based on a source build alone.
+
+
+## Concrete Steps
+
+
+Run development commands from the Seihou repository root. `nix develop` supplies supported tools; `cabal.project` includes all three packages with tests enabled. Begin with:
+
+```bash
+mori registry search tan-seihou-modules
+mori registry show tan/tan-seihou-modules --full
+mori registry search regex-tdfa
+mori registry show haskell-hvr/regex-tdfa --full
+mori registry docs haskell-hvr/regex-tdfa
+nix develop -c cabal build exe:seihou
+nix develop -c cabal list-bin exe:seihou
+```
+
+The final command prints the exact source-built executable path. Use that path for candidate checks, separately from the installed binary. Run this disposable reproduction from the repository root, supplying either executable. It writes only beneath a new temporary directory and retains its location:
+
+```bash
+python3 - /absolute/path/to/seihou <<'PY'
+import os, pathlib, shutil, subprocess, sys, tempfile
+binary = str(pathlib.Path(sys.argv[1]).resolve())
+root = pathlib.Path(tempfile.mkdtemp(prefix='seihou-owner-policy-'))
+module = root / '.seihou/modules/owner-probe'
+(module / 'files').mkdir(parents=True)
+shutil.copytree('schema', module / 'schema',
+                ignore=shutil.ignore_patterns('.git'))
+(module / 'files/value').write_text('{{git.githubOwner}}\n')
+(module / 'module.dhall').write_text('''let S = ./schema/package.dhall in
+S.Module::{name="owner-probe",version=Some "1.0.0",
+vars=[S.VarDecl::{name="git.githubOwner",type="text"}],
+steps=[S.Step::{strategy="template",src="value",dest="owner.txt"}]}''')
+recipe = root / '.seihou/modules/owner-policy'
+recipe.mkdir()
+env = {k: v for k, v in os.environ.items()
+       if not k.startswith('SEIHOU_VAR_') and k != 'SEIHOU_CONTEXT'}
+env.update(HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'config'),
+           XDG_CACHE_HOME=str(root / 'cache'))
+def run(*args):
+    result = subprocess.run([binary, *args], cwd=root, env=env, input='',
+                            text=True, capture_output=True, timeout=60)
+    print('COMMAND:', *args, '\nEXIT:', result.returncode)
+    print(result.stdout + result.stderr)
+    return result
+run('--version')
+run('config', 'set', 'git.githubOwner', 'someone-else', '--global')
+def write_recipe(binding, constraint):
+    entry = 'S.Dependency::{module="owner-probe"' + (
+        ',vars=[{name="git.githubOwner",value="topagentnetwork"}]'
+        if binding else '') + '}'
+    validation = ',validation=Some "^topagentnetwork\\$"' if constraint else ''
+    (recipe / 'recipe.dhall').write_text(
+        'let S = ../owner-probe/schema/package.dhall in '
+        'S.Recipe::{name="owner-policy",version=Some "1.0.0",modules=['
+        + entry + '],vars=[S.VarDecl::{name="git.githubOwner",type="text",'
+        'default=Some "topagentnetwork"' + validation + '}]}')
+write_recipe(False, True)
+run('run', 'owner-policy', '--dry-run', '--no-save-prompted')
+write_recipe(True, True)
+run('validate-recipe', str(recipe))
+run('run', 'owner-policy', '--dry-run', '--no-save-prompted')
+run('run', 'owner-policy', '--dry-run', '--no-save-prompted',
+    '--var', 'git.githubOwner=someone-else')
+print('Retained fixture:', root)
+PY
+```
+
+Before the fix, the unbound constrained run succeeds with `someone-else`, and binding cases fail descriptor validation. After the fix, the unbound run exits 1 naming global config and the constraint; standalone validation succeeds; the bound run succeeds with `topagentnetwork`; the conflicting CLI override exits 1 naming the CLI source and constraint. No preview creates `owner.txt` or a manifest.
+
+Before broadening the matrix, install and preview the real producer in a disposable project with isolated HOME/config/cache and no ambient `SEIHOU_VAR_*` values. Use the actual candidate executable in place of `seihou`; a committed local Git URL replaces the producer URL until publication. Apart from creating the empty directory and selecting that environment, these commands are the full preparation and application path:
+
+```bash
+seihou install https://github.com/topagentnetwork/tan-seihou-modules.git --module tan-keiro-project
+seihou config set git.githubOwner someone-else --global
+seihou run tan-keiro-project --dry-run --no-save-prompted \
+  --var project.name=probe --var project.namespace=Probe \
+  --var project.description=probe --var git.createGithub=true \
+  --var git.repoName=probe --var nix.redpanda=false
+```
+
+After adoption, preview must show `git.githubOwner = "topagentnetwork"` and `gh repo create topagentnetwork/probe`, never `someone-else/probe`. Flags supply unrelated answers for automation; interactive developers run `seihou run tan-keiro-project`. Installation is a one-time ordinary command that must acquire its own dependency closure.
+
+Use focused checks while developing, then the complete final gates:
+
+```bash
+nix develop -c cabal test seihou-core-test --test-options='-p Recipe'
+nix develop -c cabal test seihou-core-test --test-options='-p Variable'
+nix develop -c cabal test seihou-core-test --test-options='-p Blueprint'
+nix develop -c cabal test seihou-cli-test --test-options='-p Recipe'
+nix develop -c cabal build all
+nix develop -c cabal test all
+nix fmt
+nix flake check
+nix develop -c just audit-cli-docs
+git diff --check
+```
+
+All gates must exit 0. Run M3's added owner-policy mode using the exact candidate path and a fresh evidence directory, then the installed released path in M4. Add its actual invocation and acceptance evidence here when implemented; the existing wrapper mode does not prove TAN adoption.
+
+
+## Validation and Acceptance
+
+
+M1 passes when both validators accept camelCase Git bindings while retaining invalid-name errors; a literal defeats personal global config; and CLI precedence remains intact. Include bindings absent from recipe declarations: descriptor validation must not require member schemas or a duplicate recipe declaration.
+
+M2 passes when `^topagentnetwork$` accepts only the organization and rejects personal, prefix, suffix, and newline variants; `private|public|internal` accepts exactly those complete values; the existing lowercase pattern still rejects uppercase and invalid names; malformed `[` returns an explanatory error. Exercise valid and invalid text through every applicable source and retain coercion/typed-constraint tests. Test both a recipe constraint rejecting a module-acceptable value and a module constraint rejecting a recipe-acceptable value, preserving real source attribution. Optional absence remains valid with a well-formed pattern.
+
+Public-command failure must occur before file writes, config saving, manifest changes, or shell execution in run, update, and reconfigure. Compare starting bytes and directory contents after failure. Use harmless marker commands and captured provisioning arguments for execution evidence. Interactive retry exhaustion must fail cleanly, while a subsequent valid answer succeeds. Inspect human output and existing update JSON errors without requiring JSON for ordinary use.
+
+M3 passes with the actual producer installed by its normal command, targeting the organization under conflicting personal preferences and rejecting disallowed CLI input. Repeat use, supported pre-fix state, and fresh clones must work without internal-state repair. Documentation must distinguish overridable defaults, bindings above ambient config, and constraints on every selected value. Count setup commands and disclose harness preparation.
+
+M4 passes only with the published recipe and installed released executable, recording exact versions/revisions. Replay the same consumer workflow and verify the caller needs no owner workaround. If publication or installation is pending, report source acceptance separately and leave M4 unchecked.
+
+
+## Idempotence and Recovery
+
+
+Reproductions use new temporary projects and isolated config/cache roots. Preserve actual personal config. Repeated previews and rejected runs must preserve files and manifests. Revalidate existing history through the normal resolver; do not rewrite saved answers to hide failure. An explicit supported value recovers from disallowed historical/config values; reconfigure retains its existing role of discarding history.
+
+Keep producer before/after revisions and replace the same-origin artifact through ordinary installation. Do not force an origin mismatch or edit installed metadata. Retain the caller workaround until the released path passes. Preview and stubs prove GitHub destination without creating remote resources. Release retries follow the release skill's version/artifact checks.
+
+Commit implementation at meaningful boundaries on the current branch. Include `ExecPlan: docs/plans/117-let-recipes-enforce-configured-variable-values.md` and `Intention: intention_01m62v8nmfev680kgzyarc5g6t` on every plan-related commit. Cross-repository commits reference the plan with `mori://shinzui/seihou/plans/117-let-recipes-enforce-configured-variable-values`, not a foreign relative path.
+
+
+## Interfaces and Dependencies
+
+
+Preserve `validateRecipe :: Recipe -> Either [Text] Recipe`, `expandRecipe`'s flattened-binding contract, `validateVarValue :: VarDecl -> VarValue -> Either VarError ()`, and source-independent enforcement in `resolveVariablesWithSaved` and `resolveRecipeWithPrompts`. The new name predicate is pure and needs no member declarations. Reuse the `ValidationFailed` error path where practical. New error/source representations need exhaustive rendering and must retain the existing JSON envelope contract. No new configuration field, Dhall constraint field, manifest representation, or precedence tier is needed.
+
+Use dependency `mori://haskell-hvr/regex-tdfa/packages/regex-tdfa`, adding it directly to `seihou-core/seihou-core.cabal` and the appropriate metadata in `mori.dhall`. Mori locates the corpus project. Within project `mori://haskell-hvr/regex-tdfa`, source `regex-tdfa/lib/Text/Regex/TDFA/Text.hs` exposes `compile :: CompOption -> ExecOption -> Text -> Either String Regex` and `execute :: Regex -> Text -> Either String (Maybe MatchArray)`. Source `regex-tdfa/lib/Text/Regex/TDFA/Common.hs` defines options; default multiline matching is enabled and must be disabled for whole-value policy. Source-file artifact URIs are pending, so these paths are explicitly scoped to the canonical project.
+
+On 2026-10-28, the authoritative [Hackage version index](https://hackage.haskell.org/package/regex-tdfa.json) reported 1.3.2.7 as the newest normal release. Upstream tag [v1.3.2.7](https://github.com/haskell-hvr/regex-tdfa/tree/v1.3.2.7) resolves to `58330dcf9c9807d7e363da27f6ff0896c5ad1693`; its [package metadata](https://hackage.haskell.org/package/regex-tdfa-1.3.2.7/regex-tdfa.cabal) lists GHC 9.12.4 and 9.14.1 as tested. The corpus is 1.3.2.6; the released source was checked for the same API. Begin with compatible bounds `regex-tdfa >=1.3.2 && <1.4`, since these APIs exist in that family, and test actual resolved versions. Recheck Hackage and upstream tags before final bounds or compatibility overrides. Do not traverse `/nix/store` for dependency code.
+
+This standalone plan builds on the current results of [plan 114](114-resolve-recipe-variables-and-prompts-before-module-resolution.md) and [plan 115](115-validate-recipes-without-running-their-composition.md); it is not a MasterPlan child. Delivery participants are producer `mori://tan/tan-seihou-modules`, module producer `mori://shinzui/seihou-modules`, and caller `mori://tan/tan-platform`. Required producer/caller edits are the recipe policy and removal of the verified workaround.
