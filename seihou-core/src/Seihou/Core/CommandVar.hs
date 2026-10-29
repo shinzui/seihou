@@ -11,7 +11,7 @@ import Data.Text qualified as T
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Path (validateProjectRelativePath)
 import Seihou.Core.Types
-import Seihou.Core.Variable (coerceValue, validateVarValue)
+import Seihou.Core.Variable (coerceValue, validateVarValueFrom)
 import Seihou.Effect.Process (Process, runProcess)
 import Seihou.Prelude
 import System.Exit (ExitCode (..))
@@ -112,7 +112,7 @@ coerceCommandOutput decl cv stdoutText = do
           Left (ValidationFailed (cv ^. #name) ("command output exceeds maxBytes " <> T.pack (show n)))
     _ -> do
       value <- coerceValue (decl ^. #name) (decl ^. #type_) output
-      validateVarValue decl value
+      validateVarValueFrom (FromCommand (cv ^. #run)) decl value
       Right
         ResolvedVar
           { value = value,

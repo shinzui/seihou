@@ -12,6 +12,7 @@ import Data.Text qualified as T
 import Seihou.Core.Expr (exprRefs)
 import Seihou.Core.Module (isValidModuleName)
 import Seihou.Core.Types
+import Seihou.Core.Variable (isValidVarBindingName, validateVarPattern)
 
 -- | Validate a 'Recipe' against recipe-specific rules.
 -- Returns 'Right' with the recipe if all rules pass, or 'Left' with a
@@ -21,7 +22,7 @@ import Seihou.Core.Types
 --   1. Name matches @[a-z][a-z0-9-]*@
 --   2. At least one module listed
 --   3. No duplicate module names in the list
---   4. All variable binding names in module entries match @[a-z][a-z0-9.-]*@
+--   4. All variable binding names in module entries match @[a-z][A-Za-z0-9.-]*@
 --   5. Recipe variable declarations are unique
 --   6. Prompt targets and condition references name declared recipe variables
 validateRecipe :: Recipe -> Either [Text] Recipe
@@ -62,7 +63,7 @@ findDupes seen reported (x : xs)
   | Set.member x seen && not (Set.member x reported) = x : findDupes seen (Set.insert x reported) xs
   | otherwise = findDupes (Set.insert x seen) reported xs
 
--- Rule 4: Variable binding names must match [a-z][a-z0-9.-]*
+-- Rule 4: Variable binding names must match [a-z][A-Za-z0-9.-]*
 checkVarBindingNames :: Recipe -> [Text]
 checkVarBindingNames recipe =
   concatMap checkDep (recipe ^. #modules)
@@ -75,13 +76,6 @@ checkVarBindingNames recipe =
               else ["modules.vars: invalid var binding name '" <> vn <> "' in module '" <> dep ^. #module_ . #unModuleName <> "'"]
         )
         (Map.keys (dep ^. #vars))
-
-    isValidVarBindingName :: Text -> Bool
-    isValidVarBindingName t = case T.uncons t of
-      Nothing -> False
-      Just (c, rest) ->
-        (c >= 'a' && c <= 'z')
-          && T.all (\ch -> (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '.') rest
 
 -- Descriptor-local checks deliberately require no values or member schemas.
 checkRecipeVarsAndPrompts :: Recipe -> [Text]
@@ -97,5 +91,7 @@ checkRecipeVarsAndPrompts recipe =
                  | (name@(VarName ref), _) <- refs,
                    undeclared name
                  ]
-   in map (\name -> "vars: duplicate variable declaration '" <> name <> "'") (findDupes Set.empty Set.empty names)
+      patternErrors = ["vars: '" <> name <> "' " <> msg | d <- recipe ^. #vars, Left (ValidationFailed (VarName name) msg) <- [validateVarPattern d]]
+   in patternErrors
+        <> map (\name -> "vars: duplicate variable declaration '" <> name <> "'") (findDupes Set.empty Set.empty names)
         <> concatMap promptErrors (recipe ^. #prompts)

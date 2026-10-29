@@ -7,6 +7,7 @@ import pty
 import select
 import shutil
 import subprocess
+import sys
 import time
 
 
@@ -116,17 +117,174 @@ def consumer(binary, area, env):
     print('Representative consumer acceptance passed; commands intentionally disabled to avoid remote effects')
 
 
+def owner_policy(binary, area, env, producer, previous_revision):
+    """Install the actual producer; never synthesize or populate its members."""
+    root = area / 'owner-policy'
+    root.mkdir()
+    commands = []
+
+    def run(label, args, answers=None, cwd=root, run_env=env, expected=0):
+        commands.append({'label': label, 'command': [binary, *args], 'answers': answers})
+        code, output = invoke(binary, cwd, run_env, args, answers)
+        (area / (label + '.txt')).write_text(output)
+        (area / 'owner-policy-preparation.json').write_text(json.dumps(commands, indent=2))
+        assert code == expected, output
+        return output
+
+    run('owner-version', ['--version'])
+    run('owner-install', ['install', producer, '--module', 'tan-keiro-project'])
+    run('owner-config', ['config', 'set', 'git.githubOwner', 'someone-else', '--global'])
+    # Closed stdin proves the bug report's unattended path, without an owner flag.
+    flags = ['--var', 'project.name=probe', '--var', 'project.namespace=Probe',
+             '--var', 'project.description=probe', '--var', 'git.createGithub=true',
+             '--var', 'git.repoName=probe', '--var', 'nix.redpanda=false']
+    output = run('owner-preview', ['run', 'tan-keiro-project', '--dry-run', '--no-save-prompted', *flags])
+    assert 'gh repo create topagentnetwork/probe' in output, output
+    assert 'gh repo create someone-else/' not in output, output
+    assert not (root / '.seihou/manifest.json').exists()
+    output = run('owner-rejected', ['run', 'tan-keiro-project', *flags,
+                                   '--var', 'git.githubOwner=someone-else'], expected=1)
+    assert 'git.githubOwner' in output and '--var' in output and '^topagentnetwork$' in output, output
+    assert not (root / '.seihou/manifest.json').exists()
+    assert not (root / 'flake.nix').exists()
+    # Preview the ordinary one-command interactive workflow; no project answer flags.
+    answers = {'Create a private GitHub repository in topagentnetwork?': 'true',
+               'Enable Redpanda lifecycle tools?': 'false',
+               'Project name? (lowercase, hyphenated)': 'probe',
+               'One-line project synopsis?': 'probe',
+               'Haskell namespace? (single PascalCase segment)': 'Probe',
+               'GitHub repository name?': 'probe', 'Organization team to grant access?': '', 'Save? [Y/n]': 'n'}
+    output = run('owner-interactive-preview', ['run', 'tan-keiro-project', '--dry-run'], answers)
+    assert 'gh repo create topagentnetwork/probe' in output, output
+    # Safe generation deliberately skips provisioning. Command suppression is
+    # recorded here; the separate public-binary fixture tests effect prevention.
+    run('owner-apply', ['run', 'tan-keiro-project', '--no-commands', '--no-save-prompted', *flags])
+    manifest = root / '.seihou/manifest.json'
+    before = manifest.read_bytes()
+    assert json.loads(before)['applications'][0]['recipeInputs']['git.githubOwner'] == 'topagentnetwork'
+    run('owner-repeat', ['run', 'tan-keiro-project', '--no-commands', '--no-save-prompted', *flags])
+    before = manifest.read_bytes()
+    for label, extra in [('owner-update', []), ('owner-reconfigure', ['--reconfigure', *flags])]:
+        run(label, ['update', 'tan-keiro-project', '--dry-run', *extra])
+        assert manifest.read_bytes() == before
+    run('owner-update-rejected', ['update', 'tan-keiro-project', '--var', 'git.githubOwner=someone-else'], expected=1)
+    assert manifest.read_bytes() == before
+    for command in [['git', 'init', '-q'], ['git', 'add', '.'],
+                    ['git', '-c', 'commit.gpgsign=false', '-c', 'user.name=Recipe acceptance',
+                     '-c', 'user.email=recipe@example.test', 'commit', '-qm', 'fixture']]:
+        subprocess.run(command, cwd=root, env=env, check=True, capture_output=True)
+    clone = area / 'owner-clone'
+    subprocess.run(['git', 'clone', '-q', str(root), str(clone)], env=env, check=True, capture_output=True)
+    clone_env = dict(env, HOME=str(area / 'clone-home'), XDG_CONFIG_HOME=str(area / 'clone-config'),
+                     XDG_CACHE_HOME=str(area / 'clone-cache'))
+    run('owner-clone-config', ['config', 'set', 'git.githubOwner', 'someone-else', '--global'], cwd=clone, run_env=clone_env)
+    run('owner-clone-update', ['update', 'tan-keiro-project', '--dry-run'], cwd=clone, run_env=clone_env)
+    # Exercise the actual producer command phase with harmless provisioning
+    # stubs. Git runs normally in this disposable project; gh and registration
+    # record arguments and never contact GitHub or the operator's Mori registry.
+    stubs = area / 'command-stubs'
+    stubs.mkdir()
+    command_log = area / 'provisioning.jsonl'
+    for name in ('gh', 'sh'):
+        executable = stubs / name
+        executable.write_text('#!' + sys.executable + '\n' +
+            "import json, os, sys\n" +
+            "from pathlib import Path\n" +
+            "name = Path(sys.argv[0]).name\n" +
+            "with open(os.environ['OWNER_POLICY_COMMAND_LOG'], 'a') as stream: stream.write(json.dumps([name, *sys.argv[1:]]) + '\\n')\n" +
+            "if name == 'sh' and sys.argv[1:] != ['scripts/tan-mori-register']: os.execv('/bin/sh', ['/bin/sh', *sys.argv[1:]])\n")
+        executable.chmod(0o755)
+    effect_root = area / 'owner-effects'
+    effect_root.mkdir()
+    effect_env = dict(env, PATH=str(stubs) + os.pathsep + env['PATH'],
+                      OWNER_POLICY_COMMAND_LOG=str(command_log),
+                      GIT_AUTHOR_NAME='Recipe acceptance', GIT_COMMITTER_NAME='Recipe acceptance',
+                      GIT_AUTHOR_EMAIL='recipe@example.test', GIT_COMMITTER_EMAIL='recipe@example.test')
+    run('owner-effects-rejected', ['run', 'tan-keiro-project', *flags, '--var', 'git.githubOwner=someone-else'],
+        cwd=effect_root, run_env=effect_env, expected=1)
+    assert not command_log.exists()
+    assert not (effect_root / '.seihou/manifest.json').exists()
+    assert not (effect_root / 'flake.nix').exists()
+    run('owner-effects-apply', ['run', 'tan-keiro-project', '--no-save-prompted', *flags], cwd=effect_root, run_env=effect_env)
+    records = [json.loads(line) for line in command_log.read_text().splitlines()]
+    assert ['gh', 'repo', 'create', 'topagentnetwork/probe', '--private', '--source=.', '--remote=origin', '--push'] in records, records
+    assert ['sh', 'scripts/tan-mori-register'] in records, records
+    manifest_before = (effect_root / '.seihou/manifest.json').read_bytes()
+    commands_before = command_log.read_bytes()
+    run('owner-effects-repeat-rejected', ['run', 'tan-keiro-project', *flags, '--var', 'git.githubOwner=someone-else'],
+        cwd=effect_root, run_env=effect_env, expected=1)
+    assert (effect_root / '.seihou/manifest.json').read_bytes() == manifest_before
+    assert command_log.read_bytes() == commands_before
+    if previous_revision:
+        # Recreate an actual older application using committed producer history
+        # and only public install/run/update commands. No manifest edits.
+        old_repo = area / 'previous-producer'
+        subprocess.run(['git', 'clone', '-q', producer, str(old_repo)], env=env, check=True, capture_output=True)
+        subprocess.run(['git', '-C', str(old_repo), 'checkout', '-q', previous_revision], env=env, check=True, capture_output=True)
+        old_env = dict(env)
+        # Replace an existing candidate redirect, or append one for published checks.
+        index = int(old_env.get('GIT_CONFIG_COUNT', '0'))
+        rewrite_key = 'url.'
+        for i in range(index):
+            if old_env.get(f'GIT_CONFIG_KEY_{i}', '').startswith(rewrite_key) and old_env.get(f'GIT_CONFIG_VALUE_{i}') == producer:
+                old_env[f'GIT_CONFIG_KEY_{i}'] = 'url.' + old_repo.as_uri() + '.insteadOf'
+                break
+        else:
+            old_env.update({f'GIT_CONFIG_KEY_{index}': 'url.' + old_repo.as_uri() + '.insteadOf',
+                            f'GIT_CONFIG_VALUE_{index}': producer, 'GIT_CONFIG_COUNT': str(index + 1)})
+        adoption = area / 'owner-adoption'
+        adoption.mkdir()
+        old_env.update(HOME=str(area / 'adoption-home'), XDG_CONFIG_HOME=str(area / 'adoption-config'),
+                       XDG_CACHE_HOME=str(area / 'adoption-cache'))
+        run('owner-previous-install', ['install', producer, '--module', 'tan-keiro-project'], cwd=adoption, run_env=old_env)
+        run('owner-previous-config', ['config', 'set', 'git.githubOwner', 'someone-else', '--global'], cwd=adoption, run_env=old_env)
+        run('owner-previous-apply', ['run', 'tan-keiro-project', '--no-commands', '--no-save-prompted', *flags], cwd=adoption, run_env=old_env)
+        old_manifest = adoption / '.seihou/manifest.json'
+        before = old_manifest.read_bytes()
+        assert json.loads(before)['applications'][0]['recipeInputs']['git.githubOwner'] == 'someone-else'
+        next_env = dict(env, HOME=old_env['HOME'], XDG_CONFIG_HOME=old_env['XDG_CONFIG_HOME'], XDG_CACHE_HOME=old_env['XDG_CACHE_HOME'])
+        run('owner-adoption-preview', ['update', 'tan-keiro-project', '--dry-run', '--no-commands'], cwd=adoption, run_env=next_env)
+        assert old_manifest.read_bytes() == before
+        run('owner-adoption-apply', ['update', 'tan-keiro-project', '--no-commands'], {'Organization team to grant access?': '', 'Apply? [Y/n]': 'y'}, cwd=adoption, run_env=next_env)
+        assert json.loads(old_manifest.read_bytes())['applications'][0]['recipeInputs']['git.githubOwner'] == 'topagentnetwork'
+    print('Actual TAN owner policy passed: install, preview, interactive, rejection, safe generation, repeat, update, reconfigure and fresh clone')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--binary', required=True)
     parser.add_argument('--area', type=Path, required=True)
     parser.add_argument('--expect-unresolved-bug', action='store_true')
     parser.add_argument('--consumer', action='store_true')
+    parser.add_argument('--owner-policy', action='store_true', help='Install and exercise the actual TAN recipe')
+    parser.add_argument('--producer', default='https://github.com/topagentnetwork/tan-seihou-modules.git')
+    parser.add_argument('--previous-producer-revision', help='Replay adoption from this committed producer revision using normal install/run/update')
+    parser.add_argument('--candidate-repo', type=Path, help='Redirect only the TAN Git URL to this committed candidate for unpublished acceptance')
+    parser.add_argument('--github-auth', action='store_true', help='Retain current gh credentials in subprocess memory for private-registry installs')
     args = parser.parse_args()
-    binary = shutil.which(args.binary) or str(Path(args.binary).resolve())
+    binary = str(Path(shutil.which(args.binary) or args.binary).resolve())
     args.area.mkdir(parents=True, exist_ok=False)
-    env = {k: v for k, v in os.environ.items() if not k.startswith('SEIHOU_VAR_')}
+    env = {k: v for k, v in os.environ.items() if not k.startswith('SEIHOU_VAR_') and k != 'SEIHOU_CONTEXT'}
+    if args.github_auth:
+        env['GH_TOKEN'] = subprocess.check_output(['gh', 'auth', 'token'], text=True).strip()
+        env.update(GIT_CONFIG_COUNT='2', GIT_CONFIG_KEY_0='credential.https://github.com.helper',
+                   GIT_CONFIG_VALUE_0='', GIT_CONFIG_KEY_1='credential.https://github.com.helper',
+                   GIT_CONFIG_VALUE_1='gh auth git-credential')
+    if args.candidate_repo:
+        assert args.owner_policy, '--candidate-repo requires --owner-policy'
+        candidate = args.candidate_repo.resolve()
+        assert not subprocess.check_output(['git', '-C', str(candidate), 'status', '--porcelain'], text=True).strip(), 'Commit the producer candidate before acceptance'
+        index = int(env.get('GIT_CONFIG_COUNT', '0'))
+        env.update({f'GIT_CONFIG_KEY_{index}': 'url.' + candidate.as_uri() + '.insteadOf',
+                    f'GIT_CONFIG_VALUE_{index}': args.producer, 'GIT_CONFIG_COUNT': str(index + 1)})
+        (args.area / 'candidate-source.json').write_text(json.dumps({
+            'url': args.producer, 'candidate': str(candidate),
+            'revision': subprocess.check_output(['git', '-C', str(candidate), 'rev-parse', 'HEAD'], text=True).strip(),
+            'preparation': 'Git URL rewrite for unpublished candidate; installer and update still own the complete closure'}, indent=2))
     env.update(HOME=str(args.area / 'home'), XDG_CONFIG_HOME=str(args.area / 'config'), XDG_CACHE_HOME=str(args.area / 'cache'))
+    if args.owner_policy:
+        owner_policy(binary, args.area, env, args.producer, args.previous_producer_revision)
+        return
     for label, choice in [('true', 'true'), ('false', 'false')]:
         root = args.area / label
         root.mkdir()

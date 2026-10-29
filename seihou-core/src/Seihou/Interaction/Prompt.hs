@@ -10,7 +10,7 @@ import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Expr (evalExpr)
 import Seihou.Core.Types
-import Seihou.Core.Variable (coerceDefault, coerceValue, validateVarValue)
+import Seihou.Core.Variable (coerceDefault, coerceValue, validateVarValueFrom)
 import Seihou.Effect.Console (Console, getLine, putText)
 import Seihou.Prelude
 import Prelude hiding (getLine)
@@ -109,7 +109,7 @@ promptFreeText prompt decl retriesLeft = do
     then case decl ^. #default_ of
       Just defVal -> pure $ do
         val <- coerceDefault (decl ^. #name) (decl ^. #type_) defVal
-        validateVarValue decl val
+        validateVarValueFrom FromPrompt decl val
         Right ResolvedVar {value = val, source = FromPrompt, decl = decl}
       Nothing
         | not (decl ^. #required) ->
@@ -165,7 +165,7 @@ promptWithChoices prompt decl choices = do
 coerceAndValidate :: VarDecl -> Text -> Either VarError ResolvedVar
 coerceAndValidate decl raw = do
   val <- coerceValue (decl ^. #name) (decl ^. #type_) raw
-  validateVarValue decl val
+  validateVarValueFrom FromPrompt decl val
   pure
     ResolvedVar
       { value = val,

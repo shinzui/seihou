@@ -104,3 +104,15 @@ prompts = [ S.Prompt::{ var = "git.createGithub", text = "Create a GitHub reposi
 `seihou run RECIPE` asks once; `seihou run RECIPE --var git.createGithub=false`
 supplies an explicit answer without a terminal. Modules declaring that name receive
 the answer above their own defaults.
+
+
+Recipe policy: defaults are overridable fallbacks. Literal member bindings outrank
+ambient config and saved input; CLI still wins. Add a recipe input constraint to
+reject disallowed overrides. For example, bind `git.githubOwner=topagentnetwork`
+and declare `validation = Some "^topagentnetwork\$"`. Binding names allow
+`[a-z][A-Za-z0-9.-]*`, including camelCase. Patterns are case-sensitive POSIX
+extended regexes matching the whole text value with multiline anchors disabled;
+`private|public|internal` accepts exactly those values. Malformed patterns fail,
+even on absent optional inputs. Recipe and consumer constraints apply independently
+to every selected source; errors name the original source and a supported
+correction before generation or commands. Ordinary update revalidates saved inputs.

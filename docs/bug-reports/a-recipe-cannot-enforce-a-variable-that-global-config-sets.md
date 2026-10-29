@@ -4,7 +4,7 @@ title: "A recipe cannot enforce a variable that global config sets, so a TAN rep
 description: >-
   A recipe has no way to hold a module variable to a fixed value once the user sets it in global
   config. Dependency var bindings reject camelCase names such as `git.githubOwner`, and a recipe
-  VarDecl's `validation` is not applied to values that come from config. `seihou run
+  VarDecl's pattern validation silently accepts unrecognized patterns from every source, including config. `seihou run
   tan-keiro-project` with `git.createGithub=true` therefore creates the repository under whatever
   owner the user configured globally, not the organization the recipe declares.
 bugId: BUG-3
@@ -53,9 +53,11 @@ overrides it. Both mechanisms a recipe has for holding the value fail:
    `seihou-core/src/Seihou/Core/Blueprint.hs`) requires `[a-z][a-z0-9.-]*`. Modules declare
    camelCase variables, for example git-init's `git.githubOwner`, `git.createGithub` and
    `git.githubVisibility`. Those are valid module variables that a recipe still cannot bind.
-2. **Recipe validation does not apply to config-sourced values.** A value read from global config
-   is used without being checked against the recipe VarDecl's `validation`. Whether validation
-   applies to other sources was not checked here.
+2. **The pattern matcher accepts unrecognized patterns.** Configuration already passes through
+   the shared validator. Its matcher recognizes only `[a-z][a-z0-9-]*` and returns success for
+   every other pattern, including `^topagentnetwork$`. This affects every selected source. The
+   original report attributed the failure specifically to configuration; source inspection and
+   CLI reproductions corrected that diagnosis.
 
 A recipe default is the lowest precedence, so with neither mechanism available the recipe has no
 way to stop a global value.
@@ -77,8 +79,7 @@ been created under the personal account. The repositories were then created unde
 ## Why this is a bug, not an improvement request
 
 The binding rule contradicts the names modules are allowed to declare: a recipe cannot bind a
-variable that its own dependency defines. Declared validation that only some value sources go
-through is a validation gap. In both cases the declared policy is silently not enforced, and the
+variable that its own dependency defines. A declared pattern that silently accepts unsupported syntax is a validation gap. In both cases the declared policy is silently not enforced, and the
 effect is an outward-facing GitHub repository created in the wrong account.
 
 ## Suggested direction
@@ -95,3 +96,14 @@ effect is an outward-facing GitHub repository created in the wrong account.
 
 - `mori://tan/tan-platform` commit `818b03a` makes `transition kickoff` pass the owner explicitly
   as a workaround.
+
+
+## Implementation verification
+
+Plan [117](../plans/117-let-recipes-enforce-configured-variable-values.md) replaces
+that matcher with whole-value POSIX extended validation and preserves original
+sources through recipe consumer validation. The candidate TAN recipe binds the
+owner above personal preferences and constrains explicit overrides. Tests verify
+that invalid run/update/reconfigure inputs preserve generated files, command logs
+and manifests. The bug remains reported until released/installed Seihou and the
+published recipe pass the same workflow; an unreleased source fix is not delivery.

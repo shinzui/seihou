@@ -133,6 +133,7 @@ negativeCases =
     ("invalid type", replace "type = \"bool\"" "type = \"mystery\"", ["type", "mystery"]),
     ("invalid nested type", replace "type = \"bool\"" "type = \"list mystery\"", ["type", "mystery"]),
     ("invalid default", replace "type = \"bool\", default = None Text" "type = \"bool\", default = Some \"invalid\"", ["default", "github.enabled"]),
+    ("malformed optional pattern", replace "required = True, validation = None Text } ]" "required = False, validation = Some \"[\" } ]", ["vars", "github.owner", "invalid pattern"]),
     ("invalid condition syntax", replace "Eq github.enabled true" "Eq github.enabled", ["prompts", "github.owner", "when"]),
     ("empty members", replace "modules = [{module = \"demo\", vars = [{name = \"member.only\", value = \"literal\"}]}]" "modules = [] : List Text", ["modules", "at least one"]),
     ("invalid name", replace "name = \"my-stack\"" "name = \"BadName\"", ["name", "BadName"]),

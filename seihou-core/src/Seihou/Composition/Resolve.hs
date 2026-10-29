@@ -30,7 +30,7 @@ import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
 import Seihou.Core.ArtifactOriginDetect (OriginInfo (..), readOriginInfo)
 import Seihou.Core.Module (discoverModule, validateModule)
 import Seihou.Core.Types
-import Seihou.Core.Variable (coerceValue, resolveVariablesWithSaved)
+import Seihou.Core.Variable (coerceValue, resolveVariablesWithSaved, resolveVariablesWithSources)
 import Seihou.Dhall.Eval (evalModuleFromFile)
 import Seihou.Effect.Console (Console, isInteractive, putText)
 import Seihou.Interaction.Prompt (promptForVar, runPrompts, runPromptsChecked)
@@ -177,7 +177,24 @@ resolveWithPromptPermission ::
   Map VarName Text ->
   Map VarName Text ->
   Eff es (Either [VarError] (Map ModuleInstance (Map VarName ResolvedVar)))
-resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig = do
+resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides =
+  resolveWithSources permission modulesInOrder savedValues (Map.map (\raw -> (raw, FromCLI)) cliOverrides)
+
+resolveWithSources ::
+  (Console :> es) =>
+  PromptPermission ->
+  [(ModuleInstance, Module, FilePath)] ->
+  SavedInstanceValues ->
+  Map VarName (Text, VarSource) ->
+  Map Text Text ->
+  Text ->
+  Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Eff es (Either [VarError] (Map ModuleInstance (Map VarName ResolvedVar)))
+resolveWithSources permission modulesInOrder savedValues cliOverrides envVars namespace context localConfig nsConfig ctxConfig globalConfig = do
   interactive <- case permission of
     PromptsAllowed -> isInteractive
     PromptsForbidden -> pure False
@@ -198,7 +215,7 @@ resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides e
           adjustedDecls = map (injectExportDefault visibleExports) (m ^. #vars)
           myParentVars = Map.findWithDefault Map.empty inst parentVarsMap
           saved = Map.findWithDefault Map.empty inst savedValues
-      case resolveVariablesWithSaved adjustedDecls cliOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
+      case resolveVariablesWithSources adjustedDecls cliOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
         Right resolved -> do
           let declaredNames = Set.fromList (map (^. #name) (m ^. #vars))
               inherited =
@@ -247,8 +264,8 @@ resolveWithPromptPermission permission modulesInOrder savedValues cliOverrides e
                     else do
                       let promptedOverrides =
                             Map.union cliOverrides $
-                              Map.map (varValueToText . (^. #value)) prompted
-                      case resolveVariablesWithSaved adjustedDecls promptedOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
+                              Map.map (\rv -> (varValueToText (rv ^. #value), FromPrompt)) prompted
+                      case resolveVariablesWithSources adjustedDecls promptedOverrides saved envVars namespace context localConfig nsConfig ctxConfig globalConfig myParentVars of
                         Left errs' -> pure (Left errs')
                         Right resolved -> do
                           let resolvedWithPromptSource =
@@ -316,7 +333,7 @@ resolveRecipeWithPrompts permission confirmRecipe (RecipeInputSpec decls prompts
   interactive <- case permission of
     PromptsForbidden -> pure False
     PromptsAllowed -> isInteractive
-  let explicit = Map.union cli literals
+  let explicit = Map.union (Map.map (\raw -> (raw, FromCLI)) cli) (Map.map (\raw -> (raw, FromRecipeBinding)) literals)
       historical d =
         nubOrdBy
           id
@@ -333,7 +350,7 @@ resolveRecipeWithPrompts permission confirmRecipe (RecipeInputSpec decls prompts
           length (historical d) > 1
         ]
       replay = fromMaybe (Map.fromList [(d ^. #name, raw) | d <- decls, [raw] <- [historical d]]) recorded
-      results = [resolveVariablesWithSaved [d] explicit replay env ns ctx local nsCfg ctxCfg global Map.empty | d <- decls]
+      results = [resolveVariablesWithSources [d] explicit replay env ns ctx local nsCfg ctxCfg global Map.empty | d <- decls]
       values = Map.unions [v | Right v <- results]
       errors = concat [e | Left e <- results]
       (_, fatal) = partitionErrors errors
@@ -361,18 +378,15 @@ resolveRecipeWithPrompts permission confirmRecipe (RecipeInputSpec decls prompts
                 Right extras -> do
                   let recipeValues = Map.union extras current
                       omissions = [MissingRequiredVar (d ^. #name) | d <- decls, d ^. #required, not (Map.member (d ^. #name) recipeValues)]
-                      broadcast = Map.map (varValueToText . (^. #value)) recipeValues
+                      broadcast = Map.map (\rv -> (varValueToText (rv ^. #value), rv ^. #source)) recipeValues
                   if not (null omissions)
                     then pure (Left omissions)
                     else do
                       let owned = Set.fromList (map (^. #name) decls)
                           consumers = [(i, m & #prompts %~ filter (\p -> not (Set.member (p ^. #var) owned)), dir) | (i, m, dir) <- modules]
-                      resolved <- resolveWithPromptPermission permission consumers saved (Map.union explicit broadcast) env ns ctx local nsCfg ctxCfg global
-                      pure $ fmap (\perModule -> (recipeValues, Map.map (Map.mapWithKey (restoreSource recipeValues)) perModule)) resolved
+                      resolved <- resolveWithSources permission consumers saved (Map.union explicit broadcast) env ns ctx local nsCfg ctxCfg global
+                      pure $ fmap (\perModule -> (recipeValues, perModule)) resolved
   where
-    restoreSource recipeValues name rv = case Map.lookup name recipeValues of
-      Just recipeValue | not (Map.member name cli || Map.member name literals) -> rv & #source .~ recipeValue ^. #source
-      _ -> rv
     confirmValues [] acc = pure (Right acc)
     confirmValues ((name, rv) : rest) acc
       | rv ^. #source /= FromDefault = confirmValues rest acc

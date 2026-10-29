@@ -177,3 +177,15 @@ Use `seihou migrate` for deliberate lower-level recovery or intermediate targets
 `seihou upgrade` only refreshes the installed cache. For blocked updates, inspect
 `seihou agent upgrade TARGET --check` before requesting an agent repair.
 See `seihou help update`, `seihou help migrations`, and `seihou help manifest`.
+
+
+Recipe policy: defaults are overridable fallbacks. Literal member bindings outrank
+ambient config and saved input; CLI still wins. Add a recipe input constraint to
+reject disallowed overrides. For example, bind `git.githubOwner=topagentnetwork`
+and declare `validation = Some "^topagentnetwork\$"`. Binding names allow
+`[a-z][A-Za-z0-9.-]*`, including camelCase. Patterns are case-sensitive POSIX
+extended regexes matching the whole text value with multiline anchors disabled;
+`private|public|internal` accepts exactly those values. Malformed patterns fail,
+even on absent optional inputs. Recipe and consumer constraints apply independently
+to every selected source; errors name the original source and a supported
+correction before generation or commands. Ordinary update revalidates saved inputs.

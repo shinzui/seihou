@@ -6,6 +6,8 @@ All notable changes to this project are documented in this file.
 
 ### Fixed
 
+- Enforce whole-value POSIX variable patterns from every selected source, report malformed patterns and original recipe input sources, and accept camelCase recipe/blueprint bindings. `VarSource` gains `FromRecipeBinding`; the explicit-input resolver carries sources through consumer validation (ExecPlan 117).
+
 - Preserve fetched origin metadata in temporary update candidates, so dependencies with an explicit source pass the same provenance checks as installed artifacts. Staging replaces origin files carried by repositories with the source actually fetched; dependencies from a different source still fail before project or cache publication. No schema change or manual metadata repair is required.
 
 ## [0.12.1.0] - 2026-10-28

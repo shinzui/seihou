@@ -1,5 +1,7 @@
 module Seihou.Core.RecipeSpec (tests) where
 
+import Control.Lens ((&), (.~))
+import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
 import Seihou.Core.Recipe (validateRecipe)
@@ -17,6 +19,10 @@ hasError needle = any (T.isInfixOf needle)
 spec :: Spec
 spec = do
   describe "validateRecipe" $ do
+    it "accepts camelCase bindings without recipe declarations or installed members" $ do
+      let recipe = interactiveRecipe & #modules .~ [Dependency "unavailable" (Map.fromList [("git.githubOwner", "tan"), ("git.createGithub", "true"), ("git.githubVisibility", "private")]) Nothing]
+      validateRecipe recipe `shouldBe` Right recipe
+
     it "passes a valid recipe" $ do
       let recipe =
             Recipe
@@ -114,6 +120,12 @@ spec = do
       case validateRecipe recipe of
         Left errs -> length errs `shouldSatisfy` (>= 2)
         Right _ -> expectationFailure "Expected validation failure"
+
+    it "rejects malformed patterns without resolving absent optional inputs or members" $ do
+      let recipe = interactiveRecipe & #vars .~ [VarDecl "owner" VTText Nothing Nothing False (Just (ValPattern "["))] & #prompts .~ []
+      case validateRecipe recipe of
+        Left errs -> hasError "invalid pattern" errs `shouldBe` True
+        Right _ -> expectationFailure "Expected descriptor-local pattern failure"
 
     it "accepts unanswered required declarations and nested conditions" $ do
       validateRecipe interactiveRecipe `shouldBe` Right interactiveRecipe

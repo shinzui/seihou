@@ -1,9 +1,11 @@
 module Seihou.Interaction.PromptSpec (tests) where
 
 import Control.Lens ((&), (.~), (^.))
+import Control.Monad (forM_)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text (Text)
+import Data.Text qualified as T
 import Effectful
 import Seihou.Composition.Instance (primaryInstance)
 import Seihou.Composition.Resolve (PromptPermission (..), RecipeInputSpec (..), resolveRecipeWithPrompts, resolveWithPromptPermission, resolveWithPrompts)
@@ -172,6 +174,59 @@ spec = do
         Right (inputs, _) -> (inputs Map.! "feature") ^. #value `shouldBe` VBool False
         Left errs -> expectationFailure (show errs)
       console ^. #outputs `shouldBe` []
+
+  describe "owner policy" $ do
+    let owner = mkTextVar "git.githubOwner" Nothing True
+        policy = owner & #validation .~ Just (ValPattern "^topagentnetwork$")
+        prompt = mkPrompt "git.githubOwner" "Owner?"
+        check source (Left [ValidationFailed "git.githubOwner" msg]) = msg `shouldSatisfy` T.isInfixOf source
+        check _ other = expectationFailure (show other)
+        resolve recipeDecl memberDecl recorded cli literals global answers confirm =
+          fst $
+            runPureEff $
+              runConsolePure answers $
+                resolveRecipeWithPrompts
+                  PromptsAllowed
+                  confirm
+                  (RecipeInputSpec [recipeDecl] [prompt] recorded)
+                  [(primaryInstance "consumer", mkModule "consumer" [] [memberDecl] [] [], "/fixture")]
+                  Map.empty
+                  cli
+                  literals
+                  Map.empty
+                  ""
+                  ""
+                  Map.empty
+                  Map.empty
+                  Map.empty
+                  global
+    forM_ [True, False] $ \recipeOwnsPolicy -> do
+      let r = if recipeOwnsPolicy then policy else owner
+          m = if recipeOwnsPolicy then owner else policy
+      it ("rejects global input with its source; recipe policy=" <> show recipeOwnsPolicy) $
+        check "global config" (resolve r m Nothing Map.empty Map.empty (Map.singleton "git.githubOwner" "personal") [] False)
+      it ("revalidates history with its source; recipe policy=" <> show recipeOwnsPolicy) $
+        check "application" (resolve r m (Just (Map.singleton "git.githubOwner" "personal")) Map.empty Map.empty Map.empty [] False)
+      it ("rejects literals with their source; recipe policy=" <> show recipeOwnsPolicy) $
+        check "literal recipe binding" (resolve r m Nothing Map.empty (Map.singleton "git.githubOwner" "personal") Map.empty [] False)
+      it ("rejects prompt input with its source; recipe policy=" <> show recipeOwnsPolicy) $
+        check "prompt" (resolve r m Nothing Map.empty Map.empty Map.empty ["personal", "personal", "personal"] False)
+    it "accepts a valid retry after a rejected answer" $ do
+      case resolve policy owner Nothing Map.empty Map.empty Map.empty ["personal", "topagentnetwork"] False of
+        Right (inputs, _) -> (inputs Map.! "git.githubOwner") ^. #source `shouldBe` FromPrompt
+        other -> expectationFailure (show other)
+    it "validates numbered prompt choices" $ do
+      let (result, _) = runPureEff $ runConsolePure ["1"] $ promptForVar (mkChoicePrompt "git.githubOwner" "Owner?" ["personal", "topagentnetwork"]) policy Map.empty
+      case result of
+        Left (ValidationFailed _ msg) -> msg `shouldSatisfy` T.isInfixOf "prompt"
+        other -> expectationFailure (show other)
+    it "validates a changed answer during confirm-defaults" $
+      check "prompt" (resolve (policy & #default_ .~ Just (VText "topagentnetwork")) owner Nothing Map.empty Map.empty Map.empty ["personal", "personal", "personal"] True)
+    it "validates an accepted prompt default" $ do
+      let (result, _) = runPureEff $ runConsolePure [""] $ promptForVar prompt (policy & #default_ .~ Just (VText "personal")) Map.empty
+      case result of
+        Left (ValidationFailed _ msg) -> msg `shouldSatisfy` T.isInfixOf "prompt"
+        other -> expectationFailure (show other)
 
   describe "runPrompts" $ do
     it "fills a required text variable with FromPrompt source" $ do

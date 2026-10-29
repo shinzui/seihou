@@ -1,6 +1,7 @@
 module Seihou.Core.VariableSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
+import Control.Monad (forM_)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -64,6 +65,57 @@ choiceVar name req options def =
 
 spec :: Spec
 spec = do
+  describe "binding names" $ do
+    forM_ ["git.githubOwner", "git.createGithub", "git.githubVisibility", "a", "a.Z-9"] $ \name ->
+      it ("accepts " <> T.unpack name) $ isValidVarBindingName name `shouldBe` True
+    forM_ ["", "Owner", "9name", "git_owner", "git owner", "git/owner", "aé"] $ \name ->
+      it ("rejects " <> T.unpack name) $ isValidVarBindingName name `shouldBe` False
+  describe "whole-value patterns" $ do
+    let validate pat value = validateVarValue (textVar "owner" False Nothing (Just (ValPattern pat))) (VText value)
+        rejected (Left (ValidationFailed _ _)) = True
+        rejected _ = False
+    forM_ ["^topagentnetwork$", "topagentnetwork", "(topagentnetwork)"] $ \pat -> do
+      it ("accepts the exact owner with " <> T.unpack pat) $ validate pat "topagentnetwork" `shouldBe` Right ()
+      forM_ ["", "someone-else", "xtopagentnetwork", "topagentnetworkx", "topagentnetwork\n", "x\ntopagentnetwork", "topagentnetwork\nx"] $ \bad ->
+        it ("rejects " <> show bad <> " with " <> T.unpack pat) $ validate pat bad `shouldSatisfy` rejected
+    forM_ ["private", "public", "internal"] $ \value ->
+      it ("accepts choice " <> T.unpack value) $ validate "private|public|internal" value `shouldBe` Right ()
+    forM_ ["private-extra", "xpublic", "internal\n", "Private"] $ \value ->
+      it ("rejects partial choice " <> show value) $ validate "private|public|internal" value `shouldSatisfy` rejected
+    it "handles an empty pattern as exactly the empty value" $ do
+      validate "" "" `shouldBe` Right ()
+      validate "" "x" `shouldSatisfy` rejected
+    it "supports POSIX classes, repetition and grouping" $ validate "[[:upper:]][[:alnum:]]{1,3}" "A12" `shouldBe` Right ()
+    it "rejects parentheses that the wrapper could otherwise balance" $ validate "a)|b|(" "b" `shouldSatisfy` rejected
+    it "preserves absence of a well-formed optional input" $ do
+      let decl = textVar "owner" False Nothing (Just (ValPattern "^topagentnetwork$"))
+      resolveVariablesWithSaved [decl] Map.empty Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty Map.empty `shouldBe` Right Map.empty
+    it "reports malformed syntax even for an absent optional input" $ do
+      let decl = textVar "owner" False Nothing (Just (ValPattern "["))
+      validate "[" "x" `shouldSatisfy` rejected
+      resolveVariables [decl] Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty Map.empty `shouldSatisfy` either (any (\e -> case e of ValidationFailed _ msg -> "invalid pattern" `T.isInfixOf` msg; _ -> False)) (const False)
+  describe "constraint source enforcement" $ do
+    let name = "git.githubOwner"
+        decl = textVar name False (Just (VText "topagentnetwork")) (Just (ValPattern "^topagentnetwork$"))
+        resolve source raw =
+          let values = Map.singleton name raw
+              layer label = if source == label then values else Map.empty
+              explicit = if source == "literal recipe binding" then Map.singleton name (raw, FromRecipeBinding) else Map.map (\v -> (v, FromCLI)) (layer "--var")
+              env = if source == "env SEIHOU_VAR_GIT_GITHUBOWNER" then Map.singleton "SEIHOU_VAR_GIT_GITHUBOWNER" raw else Map.empty
+              parent = if source == "parent: parent" then Map.singleton name (raw, "parent") else Map.empty
+              selected = if source == "default" then decl & #default_ .~ Just (VText raw) else decl
+           in resolveVariablesWithSources [selected] explicit (layer "application") env "test-ns" "test-ctx" (layer "local config") (layer "namespace: test-ns") (layer "context: test-ctx") (layer "global config") parent
+    forM_ ["--var", "literal recipe binding", "application", "env SEIHOU_VAR_GIT_GITHUBOWNER", "local config", "namespace: test-ns", "context: test-ctx", "global config", "parent: parent", "default"] $ \source -> do
+      it ("accepts policy from " <> T.unpack source) $ case resolve source "topagentnetwork" of
+        Left errs -> expectationFailure (show errs)
+        Right values -> (values Map.! name) ^. #value `shouldBe` VText "topagentnetwork"
+      it ("rejects policy violation from " <> T.unpack source <> " without falling back") $ case resolve source "personal-secret" of
+        Left [ValidationFailed key msg] -> do
+          key `shouldBe` name
+          msg `shouldSatisfy` T.isInfixOf source
+          msg `shouldSatisfy` T.isInfixOf "^topagentnetwork$"
+          msg `shouldSatisfy` (not . T.isInfixOf "personal-secret")
+        other -> expectationFailure (show other)
   describe "envVarName" $ do
     it "converts project.name to SEIHOU_VAR_PROJECT_NAME" $ do
       envVarName "project.name" `shouldBe` "SEIHOU_VAR_PROJECT_NAME"

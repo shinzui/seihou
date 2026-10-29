@@ -1,6 +1,11 @@
 module Seihou.Core.Variable
   ( resolveVariables,
     resolveVariablesWithSaved,
+    resolveVariablesWithSources,
+    isValidVarBindingName,
+    validateVarPattern,
+    validateVarValueFrom,
+    formatVarSource,
     coerceValue,
     coerceDefault,
     validateVarValue,
@@ -19,6 +24,16 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Seihou.Core.Types
 import Seihou.Prelude
+import Text.Regex.TDFA (CompOption (..), defaultCompOpt, defaultExecOpt)
+import Text.Regex.TDFA.Text qualified as Regex
+
+-- | Binding names follow the variable vocabulary, including camelCase segments.
+isValidVarBindingName :: Text -> Bool
+isValidVarBindingName t = case T.uncons t of
+  Nothing -> False
+  Just (c, rest) -> lower c && T.all (\x -> lower x || (x >= 'A' && x <= 'Z') || (x >= '0' && x <= '9') || x == '.' || x == '-') rest
+  where
+    lower c = c >= 'a' && c <= 'z'
 
 -- | Derive the environment variable name for a given variable.
 -- @VarName "project.name"@ becomes @"SEIHOU_VAR_PROJECT_NAME"@.
@@ -76,9 +91,12 @@ validateVarValue decl val =
 
 checkValidation :: VarName -> Validation -> VarValue -> Either VarError ()
 checkValidation name (ValPattern pat) (VText t) =
-  if simplePatternMatch pat t
-    then Right ()
-    else Left (ValidationFailed name ("value does not match pattern: " <> pat))
+  do
+    regex <- compilePattern name pat
+    case Regex.execute regex t of
+      Left err -> Left (ValidationFailed name ("pattern execution failed: " <> T.pack err))
+      Right Nothing -> Left (ValidationFailed name ("value does not match pattern: " <> pat))
+      Right (Just _) -> Right ()
 checkValidation name (ValPattern _) _ =
   Left (ValidationFailed name "pattern validation requires a text value")
 checkValidation name (ValRange lo hi) (VInt n)
@@ -119,20 +137,36 @@ checkValidation name (ValMaxLength n) (VText t)
 checkValidation name (ValMaxLength _) _ =
   Left (ValidationFailed name "max-length validation requires a text value")
 
--- | Simple pattern matching for variable validation.
--- For M2, this checks whether the text matches the character class pattern
--- @[a-z][a-z0-9-]*@ style patterns. A full regex library can be added later.
-simplePatternMatch :: Text -> Text -> Bool
-simplePatternMatch pat t
-  | pat == "[a-z][a-z0-9-]*" =
-      case T.uncons t of
-        Just (c, rest) ->
-          isLowerAlpha c && T.all (\x -> isLowerAlpha x || isDigit x || x == '-') rest
-        Nothing -> False
-  | otherwise = True -- unknown patterns pass by default
+-- | Compile a whole-value POSIX extended pattern without throwing on bad syntax.
+compilePattern :: VarName -> Text -> Either VarError Regex.Regex
+compilePattern name pat = do
+  -- Check the author's pattern separately: the surrounding group must not
+  -- accidentally balance an unmatched parenthesis in the declaration.
+  _ <- compile (if T.null pat then "()" else pat)
+  compile ("^(" <> pat <> ")$")
   where
-    isLowerAlpha c = c >= 'a' && c <= 'z'
-    isDigit c = c >= '0' && c <= '9'
+    -- regex-tdfa CompOption has no Generic instance; record update syntax is required.
+    compile patternText = case Regex.compile (defaultCompOpt {multiline = False}) defaultExecOpt patternText of
+      Left err -> Left (ValidationFailed name ("invalid pattern '" <> pat <> "'; correct the declaration's validation: " <> T.pack err))
+      Right regex -> Right regex
+
+-- | Check declarations even when an optional input has no selected value.
+validateVarPattern :: VarDecl -> Either VarError ()
+validateVarPattern decl = case decl ^. #validation of
+  Just (ValPattern pat) -> () <$ compilePattern (decl ^. #name) pat
+  _ -> Right ()
+
+-- | Attach the selected source while it is still available, without displaying
+-- potentially secret values. The suggested override is supported by run/update.
+validateVarValueFrom :: VarSource -> VarDecl -> VarValue -> Either VarError ()
+validateVarValueFrom source decl val = case validateVarValue decl val of
+  Left (ValidationFailed name msg) ->
+    Left (ValidationFailed name ("from " <> formatVarSource source <> ": " <> msg <> "; supply --var " <> name ^. #unVarName <> "=" <> correction <> " satisfying the constraint"))
+  other -> other
+  where
+    correction = case decl ^. #default_ of
+      Just (VText raw) | Right () <- validateVarValue decl (VText raw) -> raw
+      _ -> "VALUE"
 
 -- | Resolve all variables for a module given CLI overrides, environment variables,
 -- four config file layers, and parent-supplied variable bindings.
@@ -179,39 +213,58 @@ resolveVariablesWithSaved ::
   Map VarName Text -> -- Global config
   Map VarName (Text, ModuleName) -> -- Parent-supplied vars
   Either [VarError] (Map VarName ResolvedVar)
-resolveVariablesWithSaved decls cliOverrides savedValues envVars namespace context localConfig nsConfig ctxConfig globalConfig parentVars =
+resolveVariablesWithSaved decls cliOverrides =
+  resolveVariablesWithSources decls (Map.map (\raw -> (raw, FromCLI)) cliOverrides)
+
+-- | Resolve explicit inputs carrying their actual source (recipe bindings and
+-- already accepted recipe inputs use the same precedence as explicit values).
+resolveVariablesWithSources ::
+  [VarDecl] ->
+  Map VarName (Text, VarSource) ->
+  Map VarName Text ->
+  Map Text Text ->
+  Text ->
+  Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName (Text, ModuleName) ->
+  Either [VarError] (Map VarName ResolvedVar)
+resolveVariablesWithSources decls explicitValues savedValues envVars namespace context localConfig nsConfig ctxConfig globalConfig parentVars =
   case partitionResults (map resolveOne decls) of
     ([], resolved) -> Right (Map.fromList (catMaybes resolved))
     (errs, _) -> Left errs
   where
     resolveOne :: VarDecl -> Either VarError (Maybe (VarName, ResolvedVar))
-    resolveOne decl =
+    resolveOne decl = do
+      validateVarPattern decl
       let name = (decl ^. #name)
           ty = (decl ^. #type_)
-       in case lookupCLI name ty of
+      case lookupCLI name ty of
+        Just result -> fmap Just (result >>= validateAndWrap decl)
+        Nothing -> case lookupSaved name ty of
+          Just result -> fmap Just (result >>= validateAndWrap decl)
+          Nothing -> case lookupEnv name ty of
             Just result -> fmap Just (result >>= validateAndWrap decl)
-            Nothing -> case lookupSaved name ty of
+            Nothing -> case lookupConfig name ty localConfig FromLocalConfig of
               Just result -> fmap Just (result >>= validateAndWrap decl)
-              Nothing -> case lookupEnv name ty of
+              Nothing -> case lookupConfig name ty nsConfig (FromNamespaceConfig namespace) of
                 Just result -> fmap Just (result >>= validateAndWrap decl)
-                Nothing -> case lookupConfig name ty localConfig FromLocalConfig of
+                Nothing -> case lookupConfig name ty ctxConfig (FromContextConfig context) of
                   Just result -> fmap Just (result >>= validateAndWrap decl)
-                  Nothing -> case lookupConfig name ty nsConfig (FromNamespaceConfig namespace) of
+                  Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
                     Just result -> fmap Just (result >>= validateAndWrap decl)
-                    Nothing -> case lookupConfig name ty ctxConfig (FromContextConfig context) of
+                    Nothing -> case lookupParent name ty of
                       Just result -> fmap Just (result >>= validateAndWrap decl)
-                      Nothing -> case lookupConfig name ty globalConfig FromGlobalConfig of
-                        Just result -> fmap Just (result >>= validateAndWrap decl)
-                        Nothing -> case lookupParent name ty of
-                          Just result -> fmap Just (result >>= validateAndWrap decl)
-                          Nothing -> case decl ^. #default_ of
-                            Just defVal ->
-                              case coerceDefault name ty defVal of
-                                Left err -> Left err
-                                Right val -> fmap Just (validateAndWrap decl (val, FromDefault))
-                            Nothing
-                              | decl ^. #required -> Left (MissingRequiredVar name)
-                              | otherwise -> Right Nothing
+                      Nothing -> case decl ^. #default_ of
+                        Just defVal ->
+                          case coerceDefault name ty defVal of
+                            Left err -> Left err
+                            Right val -> fmap Just (validateAndWrap decl (val, FromDefault))
+                        Nothing
+                          | decl ^. #required -> Left (MissingRequiredVar name)
+                          | otherwise -> Right Nothing
 
     lookupSaved :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
     lookupSaved name ty =
@@ -233,12 +286,12 @@ resolveVariablesWithSaved decls cliOverrides savedValues envVars namespace conte
 
     lookupCLI :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
     lookupCLI name ty =
-      case Map.lookup name cliOverrides of
+      case Map.lookup name explicitValues of
         Nothing -> Nothing
-        Just rawText ->
+        Just (rawText, source) ->
           Just $ case coerceValue name ty rawText of
             Left err -> Left err
-            Right val -> Right (val, FromCLI)
+            Right val -> Right (val, source)
 
     lookupEnv :: VarName -> VarType -> Maybe (Either VarError (VarValue, VarSource))
     lookupEnv name ty =
@@ -261,7 +314,7 @@ resolveVariablesWithSaved decls cliOverrides savedValues envVars namespace conte
 
     validateAndWrap :: VarDecl -> (VarValue, VarSource) -> Either VarError (VarName, ResolvedVar)
     validateAndWrap decl (val, source) =
-      case validateVarValue decl val of
+      case validateVarValueFrom source decl val of
         Left err -> Left err
         Right () ->
           Right
@@ -306,18 +359,23 @@ formatExplain resolved =
     showValue (VInt n) = T.pack (show n)
     showValue (VList vs) = "[" <> T.intercalate ", " (map showValue vs) <> "]"
 
-    showSource :: VarSource -> Text
-    showSource FromCLI = "[--var]"
-    showSource FromApplication = "[application]"
-    showSource (FromEnv envKey) = "[env " <> envKey <> "]"
-    showSource FromLocalConfig = "[local config]"
-    showSource (FromNamespaceConfig ns) = "[namespace: " <> ns <> "]"
-    showSource (FromContextConfig ctx) = "[context: " <> ctx <> "]"
-    showSource FromGlobalConfig = "[global config]"
-    showSource (FromParent mn) = "[parent: " <> mn ^. #unModuleName <> "]"
-    showSource FromDefault = "[default]"
-    showSource FromPrompt = "[prompt]"
     showSource (FromCommand cmd) = "[command: " <> cmd <> "]"
+    showSource source = "[" <> formatVarSource source <> "]"
+
+-- | Shared human-readable source vocabulary for diagnostics and --explain.
+formatVarSource :: VarSource -> Text
+formatVarSource FromCLI = "--var"
+formatVarSource FromRecipeBinding = "literal recipe binding"
+formatVarSource FromApplication = "application"
+formatVarSource (FromEnv envKey) = "env " <> envKey
+formatVarSource FromLocalConfig = "local config"
+formatVarSource (FromNamespaceConfig ns) = "namespace: " <> ns
+formatVarSource (FromContextConfig ctx) = "context: " <> ctx
+formatVarSource FromGlobalConfig = "global config"
+formatVarSource (FromParent mn) = "parent: " <> mn ^. #unModuleName
+formatVarSource FromDefault = "default"
+formatVarSource FromPrompt = "prompt"
+formatVarSource (FromCommand _) = "command"
 
 -- | Format variable declarations for default mode output.
 -- Produces aligned output with @=@ signs and 2-space indent.

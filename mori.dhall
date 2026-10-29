@@ -55,7 +55,8 @@ in  Schema.Project::{ project =
         }
       ]
     , dependencies =
-      [ "effectful/effectful"
+      [ "haskell-hvr/regex-tdfa"
+      , "effectful/effectful"
       , "pcapriotti/optparse-applicative"
       , "shinzui/seihou-schema"
       ]

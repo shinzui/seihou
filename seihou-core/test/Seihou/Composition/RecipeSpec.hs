@@ -21,6 +21,11 @@ expectExpanded recipe =
 spec :: Spec
 spec = do
   describe "expandRecipe" $ do
+    it "keeps the first camelCase binding across the flattened composition" $ do
+      let recipe = Recipe "policy" Nothing Nothing [Dependency "one" (Map.singleton "git.githubOwner" "first") Nothing, Dependency "two" (Map.singleton "git.githubOwner" "second") Nothing] [] []
+          (_, _, overrides, _, _, _) = expectExpanded recipe
+      Map.lookup "git.githubOwner" overrides `shouldBe` Just "first"
+
     it "returns correct primary and additional module names" $ do
       let recipe =
             Recipe

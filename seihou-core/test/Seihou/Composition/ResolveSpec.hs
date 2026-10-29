@@ -1,9 +1,10 @@
 module Seihou.Composition.ResolveSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Text qualified
 import Seihou.Composition.Instance (ModuleInstance (..), mkInstance, primaryInstance)
 import Seihou.Composition.Resolve
 import Seihou.Core.Types
@@ -103,6 +104,15 @@ spec = do
       Map.null result `shouldBe` True
 
   describe "resolveComposedVariables" $ do
+    it "validates exported defaults against the consuming declaration" $ do
+      let base = mkModule "base" [] [mkTextVar "git.githubOwner" (Just (VText "personal")) False] [mkExport "git.githubOwner"]
+          owner = mkTextVar "git.githubOwner" Nothing True & #validation .~ Just (ValPattern "^topagentnetwork$")
+          app = mkModule "app" ["base"] [owner] []
+          result = resolveComposedVariables (asInstances [(base, "/base"), (app, "/app")]) Map.empty Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
+      case result of
+        Left [ValidationFailed "git.githubOwner" msg] -> msg `shouldSatisfy` Data.Text.isInfixOf "default"
+        other -> expectationFailure (show other)
+
     it "resolves a single module with no dependencies" $ do
       let m = mkModule "base" [] [mkTextVar "project.name" (Just (VText "default")) False] []
           modules = asInstances [(m, "/fake/base")]

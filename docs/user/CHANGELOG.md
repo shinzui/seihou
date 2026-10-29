@@ -8,6 +8,8 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ### Fixed
 
+- Recipes can bind camelCase variables such as `git.githubOwner` above personal configuration and enforce a whole-value pattern against every source, including CLI overrides and saved inputs. Invalid patterns fail clearly; consuming-module errors preserve the original source. Defaults remain overridable.
+
 - `seihou update` no longer rejects correctly sourced cross-registry dependencies with “different or unknown provenance” after downloading them. Run the ordinary update command; no reinstall or metadata edits are needed. Dependencies from the wrong source are still rejected.
 
 ## [0.12.1.0] - 2026-10-28

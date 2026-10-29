@@ -1,5 +1,12 @@
 # Bundle Update Log
 
+## 2026-10-29
+* **Update**: FRIC-7 resolved: Correct the workaround: retaining Git and gh config paths alone did not preserve macOS keyring authentication under the isolated HOME.
+* **Update**: FRIC-8 accepted: Retain the origin safety boundary and document the reproducible candidate-test preparation.
+* **Update**: FRIC-7 resolved: Record the working private-registry authentication preparation; no credentials are written into evidence.
+* **Addition**: FRIC-8 records detour interface friction with mori://shinzui/seihou: Unpublished local registry candidates cannot replay in empty clones
+* **Addition**: FRIC-7 records detour environment friction with mori://shinzui/seihou: Isolated acceptance HOME hides private registry credentials
+
 ## 2026-10-28
 * **Update**: FRIC-6 resolved: Record the successful priority-aware installation without removing Home Manager.
 * **Update**: FRIC-5 resolved: The patch release resolves the native packaging gaps and adds the missing publication gate.

@@ -1050,7 +1050,7 @@ summarizeInputChanges seedWarnings planned =
               + length
                 [ ()
                 | (instanceId, name, value) <- resolvedList,
-                  value ^. #source == FromCLI,
+                  value ^. #source `elem` [FromCLI, FromRecipeBinding],
                   Map.member name (Map.findWithDefault Map.empty instanceId prior)
                 ]
           newCount =

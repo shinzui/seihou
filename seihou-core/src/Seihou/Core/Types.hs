@@ -517,6 +517,7 @@ data ModuleLoadError
 -- | Tracks where a variable's value came from (for provenance / @--explain@).
 data VarSource
   = FromCLI
+  | FromRecipeBinding
   | FromApplication
   | FromEnv Text
   | FromLocalConfig

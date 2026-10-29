@@ -513,3 +513,19 @@ used only by conditions. `seihou update RECIPE` reuses them in fresh clones;
 values during ordinary preview; conflicts require `--var KEY=VALUE` or
 `--reconfigure`. Saving prompted values to local config remains optional and
 respects `--save-prompted` and `--no-save-prompted`; previews do not save them.
+
+
+A default remains overridable. To enforce an organization owner, a recipe author
+binds `git.githubOwner=topagentnetwork` on a member and declares
+`validation = Some "^topagentnetwork\$"` on the recipe input. The ordinary
+`seihou run RECIPE` then uses that owner above personal global config; no config
+cleanup or owner flag is needed. A conflicting `--var` still has precedence and
+fails the constraint before generation or commands. Errors identify the original
+source and a supported correction, including when a consuming module rejects a
+recipe input or update reuses an older saved value.
+
+Patterns use case-sensitive POSIX extended syntax and match the whole value,
+with multiline anchors disabled. `private|public|internal` accepts exactly those
+three values. Malformed patterns fail even on absent optional inputs; they never
+disable validation. Binding names allow `[a-z][A-Za-z0-9.-]*`, including camelCase
+Git variables.

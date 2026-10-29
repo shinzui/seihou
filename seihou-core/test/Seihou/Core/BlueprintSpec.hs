@@ -237,6 +237,19 @@ spec = do
         Left err -> expectationFailure ("Expected Right, got: " <> show err)
 
   describe "validateBlueprintWith (rule-by-rule)" $ do
+    it "accepts camelCase base bindings and preserves invalid-name diagnostics" $
+      withSystemTempDirectory "seihou-binding-names" $ \tmpDir -> do
+        let base = tmpDir </> "base"
+        createDirectoryIfMissing True base
+        cwd <- getCurrentDirectory
+        writeFile (base </> "module.dhall") ("let S = " <> cwd <> "/../schema/package.dhall in S.Module::{name=\"base\"}")
+        let bp names = withBlueprintBaseModules [Dependency "base" (Map.fromList [(VarName name, "value") | name <- names]) Nothing] goodBlueprint
+        validateBlueprintWith [tmpDir] tmpDir (bp ["git.githubOwner", "git.createGithub", "git.githubVisibility"]) `shouldReturn` Right (bp ["git.githubOwner", "git.createGithub", "git.githubVisibility"])
+        result <- validateBlueprintWith [tmpDir] tmpDir (bp ["INVALID", "git_owner", ""])
+        case result of
+          Left (ValidationError _ errs) -> length (filter (T.isInfixOf "invalid var binding name") errs) `shouldBe` 3
+          other -> expectationFailure (show other)
+
     it "rejects an invalid blueprint name" $ do
       withSystemTempDirectory "seihou-test" $ \tmpDir -> do
         let bad = withBlueprintName "Bad_Name" goodBlueprint

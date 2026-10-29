@@ -107,10 +107,10 @@ All values are stored as text internally. Type declarations control validation a
 
 ### Validation
 
-- `validation = Some "[a-z][a-z0-9-]*"`: A regex pattern the value must match. Applied regardless of the value's source.
+- `validation = Some "[a-z][a-z0-9-]*"`: A case-sensitive POSIX extended regex that must match the entire text value, including any newline. Alternation such as `private|public|internal` accepts exactly those three strings. Anchors, groups, character classes and repetition are supported; multiline matching is disabled. Malformed patterns are errors, including on absent optional inputs. Every selected value is checked regardless of its source.
 - `validation = None Text`: No validation.
 
-For `int` variables, you can specify a range: `validation = Some "0:100"` (min:max).
+The Dhall `validation` field currently declares text patterns. Integer ranges cannot currently be expressed through this field.
 
 
 ## Prompts
@@ -625,7 +625,7 @@ The name "recipe" aligns with seihou (製法, "method of production / recipe"): 
 
 **description** (Optional Text): Human-readable description shown by `seihou list`.
 
-**modules** (List, required): The modules to compose, using the same `{ module, vars }` record format as module dependencies. The first module becomes the "primary" for namespace derivation. Variable bindings in `vars` are pre-configured values that act like CLI `--var` overrides.
+**modules** (List, required): The modules to compose, using the same `{ module, vars }` record format as module dependencies. The first module becomes the "primary" for namespace derivation. Literal bindings in `vars` outrank saved recipe inputs, environment, configuration and defaults; explicit CLI `--var` values still win. Binding names follow `[a-z][A-Za-z0-9.-]*`, including `git.githubOwner`. Bindings are flattened across the recipe, with the first occurrence winning.
 
 **vars** (List): Recipe-level variable declarations injected into variable resolution.
 
@@ -648,6 +648,29 @@ seihou run haskell-library
 ```
 
 Seihou detects that `haskell-library` is a recipe (directory contains `recipe.dhall`), expands it into its constituent modules, and runs the existing composition pipeline. Recipe variable bindings are merged with any CLI `--var` overrides (CLI wins on conflict).
+
+### Enforcing a recipe policy
+
+A default supplies a fallback and remains overridable. A binding supplies the
+recipe's value above personal configuration. Add a constraint when overrides must
+also obey the policy:
+
+```dhall
+, modules = [ S.Dependency::{ module = "git-init"
+            , vars = [ { name = "git.githubOwner", value = "topagentnetwork" } ]
+            } ]
+, vars = [ S.VarDecl::{ name = "git.githubOwner", type = "text"
+         , default = Some "topagentnetwork"
+         , validation = Some "^topagentnetwork\$"
+         } ]
+```
+
+With a personal global owner, `seihou run RECIPE` uses `topagentnetwork` without
+another owner flag. A conflicting explicit override fails before generation or
+commands, naming the variable, original source, constraint and correction. Saved
+inputs are revalidated on update. Each consuming module independently validates
+the recipe value against its own declaration, preserving its original source.
+Blueprint base-module bindings use the same name grammar.
 
 ### Recipes vs dependencies vs -m flags
 
@@ -677,10 +700,11 @@ Recipes are validated with these rules:
 1. Name matches `[a-z][a-z0-9-]*`
 2. At least one module listed
 3. No duplicate module names
-4. Variable binding names match `[a-z][a-z0-9.-]*`
+4. Variable binding names match `[a-z][A-Za-z0-9.-]*`
 5. Recipe variable declarations are unique
 6. Prompts target declared recipe variables
 7. All variable references in prompt conditions are declared, including nested conditions
+8. Validation patterns have valid POSIX extended syntax, even on optional unanswered inputs
 
 Dhall loading checks field shapes, variable types/defaults and condition syntax.
 Exit codes are 0 for valid, 1 for invalid/unreadable, and 4 for a missing descriptor.

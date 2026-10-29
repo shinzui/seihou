@@ -20,7 +20,7 @@ composition. Normal Dhall imports retain their network and evaluator-cache behav
 self-contained descriptors and local imports can be checked offline.
 
 The shared validator owns descriptor-local rules for recipe names, nonempty and
-unique members, binding names, unique variable declarations, declared prompt
+unique members, binding names, unique variable declarations, well-formed POSIX validation patterns, declared prompt
 targets and declared references throughout prompt conditions. Composition and
 update use the same validator. The Dhall loader owns field shapes, types/defaults
 and condition parsing, and malformed conditions identify their prompt and `when`.

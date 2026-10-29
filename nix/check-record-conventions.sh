@@ -60,6 +60,7 @@ REQUIRED_EXTENSIONS=(
 EXEMPT_UPDATE_FIELDS=(
   cwd std_in std_out std_err env  # System.Process.CreateProcess
   executable readable writable searchable  # System.Directory.Permissions
+  multiline  # Text.Regex.TDFA.CompOption (no Generic instance)
 )
 
 failures=0

@@ -25,6 +25,7 @@ import Data.Text qualified as T
 import Seihou.Core.Migration (BlueprintMigration (..), EntailedEdge (..))
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable, isValidModuleName)
 import Seihou.Core.Types
+import Seihou.Core.Variable (isValidVarBindingName)
 import Seihou.Core.Version (parseVersion)
 import Seihou.Prelude
 import System.Directory (doesFileExist)
@@ -376,12 +377,3 @@ baseDeclarationErrors dep =
   let n = dep ^. #module_ . #unModuleName
    in ["invalid baseModule name: " <> n | not (isValidModuleName n)]
         <> ["baseModule '" <> n <> "' has invalid var binding name: " <> vn | VarName vn <- Map.keys (dep ^. #vars), not (isValidVarBindingName vn)]
-  where
-    isValidVarBindingName :: Text -> Bool
-    isValidVarBindingName t = case T.uncons t of
-      Nothing -> False
-      Just (c, rest) ->
-        (c >= 'a' && c <= 'z')
-          && T.all
-            (\ch -> (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' || ch == '.')
-            rest
