@@ -4,6 +4,12 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.13.0.0] - 2026-10-29
+
+### Changed
+
+- **Breaking:** `VarSource` adds `FromRecipeBinding`; downstream exhaustive matches must handle it. Validation strings now enforce whole-value POSIX extended syntax, and malformed patterns fail instead of silently accepting values.
+
 ### Fixed
 
 - Enforce whole-value POSIX variable patterns from every selected source, report malformed patterns and original recipe input sources, and accept camelCase recipe/blueprint bindings. `VarSource` gains `FromRecipeBinding`; the explicit-input resolver carries sources through consumer validation (ExecPlan 117).
@@ -1233,7 +1239,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.1.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.13.0.0...HEAD
+[0.13.0.0]: https://github.com/shinzui/seihou/compare/v0.12.1.0...v0.13.0.0
 [0.12.1.0]: https://github.com/shinzui/seihou/compare/v0.12.0.1...v0.12.1.0
 [0.12.0.1]: https://github.com/shinzui/seihou/compare/v0.12.0.0...v0.12.0.1
 [0.12.0.0]: https://github.com/shinzui/seihou/compare/v0.11.0.1...v0.12.0.0

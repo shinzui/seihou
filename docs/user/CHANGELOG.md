@@ -6,6 +6,8 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+## [0.13.0.0] - 2026-10-29
+
 ### Fixed
 
 - Recipes can bind camelCase variables such as `git.githubOwner` above personal configuration and enforce a whole-value pattern against every source, including CLI overrides and saved inputs. Invalid patterns fail clearly; consuming-module errors preserve the original source. Defaults remain overridable.
@@ -1136,7 +1138,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.12.1.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.13.0.0...HEAD
+[0.13.0.0]: https://github.com/shinzui/seihou/compare/v0.12.1.0...v0.13.0.0
 [0.12.1.0]: https://github.com/shinzui/seihou/compare/v0.12.0.1...v0.12.1.0
 [0.12.0.1]: https://github.com/shinzui/seihou/compare/v0.12.0.0...v0.12.0.1
 [0.12.0.0]: https://github.com/shinzui/seihou/compare/v0.11.0.1...v0.12.0.0

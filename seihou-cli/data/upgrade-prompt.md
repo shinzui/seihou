@@ -173,10 +173,14 @@ Show the user the versions involved; this usually needs a fixed release of the
 module rather than a change to the project.
 
 ### variable_errors and configuration_failed
-A variable has no value or the configuration does not load. Supply values with
-`--var KEY=VALUE` or `seihou config set KEY VALUE`, asking the user for anything
-that is not already recorded. `seihou vars {{module}} --explain` shows where each
-value comes from.
+A variable is missing, cannot be converted, violates a declared constraint, or
+the configuration does not load. Read the named variable, original source and
+constraint in the error. Supply a permitted `--var KEY=VALUE` or correct the
+configuration; a malformed pattern requires correcting the producer declaration.
+Recipe constraints also validate explicit overrides and saved inputs. Personal
+global preferences need no cleanup when a recipe binding supplies its own value.
+Ask for required values that are not already recorded. Use
+`seihou vars {{module}} --explain` to inspect resolution sources.
 
 ### migration_plan_failed, migration_stage_failed, migration_failed, changed_after_migration_command
 A module migration between the recorded and the new version failed. The update

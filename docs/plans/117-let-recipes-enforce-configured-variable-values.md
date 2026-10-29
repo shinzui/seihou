@@ -21,6 +21,11 @@ provenance:
       at: 2026-10-29T03:43:08Z
       mode: "implement"
       note: "Implement owner bindings and total source-aware pattern validation, then verify consumer delivery"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-29T12:43:42Z
+      mode: "implement"
+      note: "Release approved Seihou 0.13.0.0 and verify published TAN owner-policy delivery"
 ---
 
 # Let recipes enforce configured variable values
@@ -47,7 +52,7 @@ This plan covers source fixes, consumer adoption, documentation, and verified de
 - [x] M3 (2026-10-28): Actual TAN recipe version 0.1.1 at `8301b75637024f3bf0b64e0d701087df7136b0f4` adopts binding and constraint. The owner-policy harness passes ordinary install, interactive and unattended previews, command execution with provisioning stubs, repeat, update/reconfigure, empty-cache fresh-clone replay, and adoption from producer `7fb151f`. User/help/agent guidance and ADRs are updated.
 - [ ] M4: Published Seihou packages and the installed executable pass the same workflow against the published consumer recipe; delivery versions and remaining gaps are recorded.
 
-Current delivery boundary: M1–M3 are implemented in source; M4 remains open pending release confirmation and published/installed acceptance. The installed executable is still `/Users/shinzui/.nix-profile/bin/seihou`, `v0.12.1.0 (ce67843)`. Do not remove the TAN caller workaround before M4 passes.
+Current delivery boundary: M1–M3 are implemented in source; M4 is in progress: the user approved release 0.13.0.0 and TAN recipe 0.1.1 on 2026-10-29; published/installed acceptance remains. The installed executable is still `/Users/shinzui/.nix-profile/bin/seihou`, `v0.12.1.0 (ce67843)`. Do not remove the TAN caller workaround before M4 passes.
 
 Planning baseline: installed `seihou v0.12.1.0 (ce67843)` reproduces both failures in an isolated local fixture. This is retained as pre-fix evidence.
 
@@ -81,6 +86,8 @@ Planning baseline: installed `seihou v0.12.1.0 (ce67843)` reproduces both failur
 
 Revision note (2026-10-28): Record the actual prepublication candidate-fetch setup after local origins proved unsuitable for fresh-clone testing; preserve public delivery acceptance unchanged.
 
+2026-10-29 release preparation: the approved 0.13.0.0 package versions and all five internal core bounds are updated, both changelogs are cut, and the context audit clarifies validation failures plus the minimum producer runtime. All 2,247 tests, metadata checks and the runtime audit pass for source executable `v0.13.0.0 (320a7c9)`. Nonlocal dependencies resolve from Hackage tarballs or the compiler; no source-repository-package pin is present. The native release build and publication are next.
+
 2026-10-28 source outcome: recipe authors can bind camelCase inputs above personal configuration and enforce constraints against every selected source. Errors retain literal, saved, environment, configuration, parent, default or prompt provenance when a consumer rejects a recipe value. Syntax checks remain descriptor-local. No manifest or Dhall schema change is required. ADR 0021 records source/constraint invariants; ADR 0022 records descriptor-local pattern syntax checks.
 
 The real producer acceptance passes at recipe version 0.1.1, revision `8301b75637024f3bf0b64e0d701087df7136b0f4`, using a source-built executable reporting `v0.12.1.0 (3888583)`. This executable is not a new release. Evidence is retained in `/tmp/seihou-117-owner-final`: `candidate-source.json` records the sole candidate Git rewrite; `owner-policy-preparation.json` records every CLI command and terminal answer. All nine artifacts are acquired by the installer. `provisioning.jsonl` captures `gh repo create topagentnetwork/probe --private --source=. --remote=origin --push` and the stubbed registration call. Git runs in a disposable project, and neither external provisioning action executes. Rejected runs preserve that log and the manifest. Older producer revision `7fb151f` is installed and applied through ordinary commands with a saved personal owner, then ordinary confirmed update adopts the candidate organization binding. No internal state is repaired.
@@ -89,7 +96,7 @@ FRIC-7 in `docs/friction-log/` is resolved: private-registry authentication is r
 
 Final source gates (2026-10-28) pass: `cabal build all`; `cabal test all` with 1,365 core, 831 CLI and 51 extension tests (2,247 total); `nix fmt`; `nix flake check` with all four native checks; `just audit-cli-docs` with 18 topics, 33 command help pages, 26 packaged assets, six validated examples and eight provider-free renders; `cabal check` for all three packages without warnings; and `git diff --check`. Bug-report and friction bundles pass strict profile/log validation. The dependency solver selected regex-tdfa 1.3.2.7, and the Hackage index plus dereferenced upstream tag were rechecked. These are source gates; the clean release commit's native package build and installed-tag acceptance remain part of M4.
 
-Delivery is unfinished. Proposed Seihou release `0.13.0.0` requires confirmation under the release skill because adding a public `VarSource` constructor is a breaking PVP change. Producer publication, installed-release replay, and removal/verification of the caller workaround remain open.
+Delivery is unfinished. The user approved Seihou release `0.13.0.0` on 2026-10-29; adding a public `VarSource` constructor is a breaking PVP change. Producer publication, installed-release replay, and removal/verification of the caller workaround remain open.
 
 
 ## Context and Orientation

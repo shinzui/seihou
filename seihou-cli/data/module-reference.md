@@ -189,3 +189,7 @@ extended regexes matching the whole text value with multiline anchors disabled;
 even on absent optional inputs. Recipe and consumer constraints apply independently
 to every selected source; errors name the original source and a supported
 correction before generation or commands. Ordinary update revalidates saved inputs.
+
+Recipe and blueprint producers using camelCase bindings or relying on POSIX
+pattern enforcement require Seihou 0.13.0.0 or newer. Older runtimes can reject
+those binding names or silently accept patterns they do not recognize.
