@@ -737,7 +737,7 @@ seedLegacyApplication :: UpdateRequest -> FilePath -> FilePath -> FilePath -> Ma
 seedLegacyApplication request session projectRoot installed manifest now requested = case roots of
   [] -> fmap (fmap (\(apps, warnings) -> (apps, warnings, Nothing))) (seedInstalledLegacyApplication request projectRoot manifest now requested)
   (target, origin, version) : _ -> do
-    let provisional = AppliedComposition (mkApplicationId target []) target origin version [] (Just (deriveNamespace (ModuleName requested))) Nothing [] Map.empty [] Nothing now
+    let provisional = AppliedComposition (mkApplicationId target []) target origin version [] (Just (deriveNamespace (ModuleName requested))) Nothing [] Map.empty [] Nothing Nothing now
     staged <- stageCandidateSources (session </> "legacy-candidate") projectRoot installed [provisional]
     case staged of
       Left err -> pure (Left err)
@@ -1288,7 +1288,8 @@ setCompositionState instances receipts composition =
       commandReceipts = receipts,
       checkoutCommands = composition ^. #checkoutCommands,
       recipeInputs = composition ^. #recipeInputs,
-      appliedAt = composition ^. #appliedAt
+      appliedAt = composition ^. #appliedAt,
+      recipeChain = composition ^. #recipeChain
     }
 
 -- | The portable manifest identity an artifact will have once this update

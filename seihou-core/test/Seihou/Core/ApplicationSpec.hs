@@ -71,7 +71,8 @@ mkComposition target additional =
       commandReceipts = Map.empty,
       checkoutCommands = [],
       recipeInputs = Nothing,
-      appliedAt = fixedTime
+      appliedAt = fixedTime,
+      recipeChain = Nothing
     }
 
 spec :: Spec

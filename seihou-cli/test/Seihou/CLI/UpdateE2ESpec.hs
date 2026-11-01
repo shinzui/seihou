@@ -237,7 +237,7 @@ spec = do
       expectSuccess "targeted update" exitCode stdoutText stderrText
       stdoutText `shouldSatisfy` T.isInfixOf "\"outcome\":\"applied\""
       manifestText <- TIO.readFile (fixture ^. #manifestPath)
-      manifestText `shouldSatisfy` T.isInfixOf "\"version\":12"
+      manifestText `shouldSatisfy` T.isInfixOf "\"version\":13"
       manifestText `shouldSatisfy` T.isInfixOf "\"sharedWriteMode\":\"additive-only\""
       -- Recording an answer must not touch a single byte of the project.
       TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` beforeGitignore
@@ -297,7 +297,7 @@ spec = do
       case decoded of
         Left err -> expectationFailure err
         Right manifest -> do
-          (manifest ^. #version) `shouldBe` ManifestSchemaVersion 12
+          (manifest ^. #version) `shouldBe` ManifestSchemaVersion 13
           case Map.lookup ".gitignore" (manifest ^. #files) of
             Nothing -> expectationFailure "the manifest lost .gitignore"
             Just record -> do

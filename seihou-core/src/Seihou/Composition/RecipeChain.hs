@@ -1,6 +1,6 @@
 -- | Offline discovery of a recipe chain and its member origins. Acquisition
 -- belongs to install/update; this loader never fetches or changes the cache.
-module Seihou.Composition.RecipeChain (loadRecipeChain) where
+module Seihou.Composition.RecipeChain (loadRecipeChain, recordRecipeChain) where
 
 import Control.Lens ((^.))
 import Control.Monad (forM, unless, when)
@@ -15,6 +15,9 @@ import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin, readOriginInfo)
 import Seihou.Core.Module (discoverModule, discoverRunnable)
 import Seihou.Core.Recipe (validateRecipe, validateRecipeVersion)
 import Seihou.Core.Types
+import Seihou.Dhall.Eval (normalizeDhallFile)
+import Seihou.Manifest.Hash (hashContent)
+import System.FilePath ((</>))
 
 loadRecipeChain :: FilePath -> [FilePath] -> Recipe -> FilePath -> IO (Either ModuleLoadError ExpandedRecipe)
 loadRecipeChain projectRoot paths target targetDir = do
@@ -75,3 +78,9 @@ describe (ValidationError _ reasons) = T.intercalate "; " reasons
 describe (CircularDependency names) = "Dependency cycle: " <> T.intercalate " -> " [name | ModuleName name <- names]
 describe (MissingSourceFile (ModuleName name) path) = "Member '" <> name <> "' is missing " <> T.pack path
 describe (RegistryEvalError source reason) = "Cannot evaluate registry '" <> source <> "': " <> reason
+
+-- | Descriptor evidence is normalized Dhall, independent of import/cache paths.
+recordRecipeChain :: ExpandedRecipe -> IO [AppliedRecipeNode]
+recordRecipeChain expanded = forM (expanded ^. #chain) $ \node -> do
+  canonical <- normalizeDhallFile (node ^. #directory </> "recipe.dhall")
+  pure (AppliedRecipeNode (node ^. #definition . #name) (node ^. #origin) (node ^. #definition . #version) (hashContent canonical))

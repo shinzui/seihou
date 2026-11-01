@@ -584,7 +584,7 @@ spec = do
       withSystemTempDirectory "seihou-update-schema-5" $ \root -> do
         fixture <- prepareSharedPathFixture CoOwnerAppends root
         manifestText <- TIO.readFile (fixture ^. #manifestPath)
-        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":12" "\"version\":5" manifestText)
+        TIO.writeFile (fixture ^. #manifestPath) (T.replace "\"version\":13" "\"version\":5" manifestText)
         withSavedEnv "XDG_CONFIG_HOME" (Just (fixture ^. #xdgHome)) $
           withCurrentDirectory (fixture ^. #projectRoot) $ do
             forM_ [NamedUpdateTargets ["alpha"], AllRecordedApplications] $ \selection -> do
@@ -1072,7 +1072,8 @@ prepareRecipeUpdateFixture root = do
             commandReceipts = Map.empty,
             checkoutCommands = [],
             recipeInputs = Nothing,
-            appliedAt = testTime
+            appliedAt = testTime,
+            recipeChain = Nothing
           }
       base = emptyManifest testTime
       manifest =
@@ -1176,7 +1177,8 @@ application target instances =
       commandReceipts = Map.empty,
       checkoutCommands = [],
       recipeInputs = Nothing,
-      appliedAt = testTime
+      appliedAt = testTime,
+      recipeChain = Nothing
     }
   where
     targetName = case target of

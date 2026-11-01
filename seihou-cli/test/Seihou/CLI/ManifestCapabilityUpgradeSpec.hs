@@ -54,7 +54,8 @@ recordedApplication applicationId =
       commandReceipts = Map.empty,
       checkoutCommands = [],
       recipeInputs = Nothing,
-      appliedAt = testTime
+      appliedAt = testTime,
+      recipeChain = Nothing
     }
 
 record :: [ApplicationId] -> SharedWriteMode -> FileRecord
@@ -293,7 +294,7 @@ spec = do
         case manifestFromJSON written of
           Left err -> expectationFailure err
           Right upgraded -> do
-            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 12
+            (upgraded ^. #version) `shouldBe` ManifestSchemaVersion 13
             (^. #sharedWriteMode) <$> Map.lookup ".gitignore" (upgraded ^. #files)
               `shouldBe` Just SharedWriteAdditiveOnly
         TIO.readFile (fixture ^. #gitignorePath) `shouldReturn` gitignoreBefore

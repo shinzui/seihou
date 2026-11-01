@@ -62,6 +62,7 @@ module Seihou.Core.Types
     CommandReceipt (..),
     AppliedInstanceState (..),
     AppliedComposition (..),
+    AppliedRecipeNode (..),
     AppliedModule (..),
     AppliedRecipe (..),
     AppliedBlueprint (..),
@@ -628,6 +629,7 @@ data ManifestCapability
     TargetedAdditiveSharedPathUpdate
   | SeedReceipts
   | RecipeInputs
+  | RecipeInheritance
   | SeedOwnerClaims
   | CheckoutLocalOutputs
   | CheckoutLocalCommands
@@ -770,6 +772,15 @@ data AppliedInstanceState = AppliedInstanceState
   }
   deriving stock (Eq, Show, Generic)
 
+-- | One recipe descriptor used by an accepted application, oldest first.
+data AppliedRecipeNode = AppliedRecipeNode
+  { name :: !RecipeName,
+    origin :: !ArtifactOrigin,
+    recipeVersion :: !(Maybe Text),
+    descriptorHash :: !SHA256
+  }
+  deriving stock (Eq, Show, Generic)
+
 -- | A complete, re-runnable top-level module or recipe composition.
 data AppliedComposition = AppliedComposition
   { applicationId :: !ApplicationId,
@@ -783,6 +794,7 @@ data AppliedComposition = AppliedComposition
     commandReceipts :: !(Map CommandFingerprint CommandReceipt),
     checkoutCommands :: ![CheckoutCommand],
     recipeInputs :: !(Maybe (Map VarName Text)),
+    recipeChain :: !(Maybe [AppliedRecipeNode]),
     appliedAt :: !UTCTime
   }
   deriving stock (Eq, Show, Generic)

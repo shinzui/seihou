@@ -1,7 +1,7 @@
 # ADR 0003 — Generating from a stale or substituted artifact is a hard error
 
 - Status: Accepted
-- Date: 2026-07-28
+- Date: 2026-11-01
 
 ## Context
 
@@ -25,6 +25,14 @@ recorded name installed from a different repository is a different module, and
 generating from it substitutes one artifact for another silently.
 
 ## Decision
+
+Recipe inheritance extends this check to every recorded base in the selected
+application, not merely the manifest's last recipe summary. A changed descriptor
+at the same version is visible preview evidence; a newer compatible base is legal.
+Chain additions, removals and reparenting are reported. An unknown older chain can
+adopt current provenance without asserting what produced the old files. Producer
+source/interval requirements apply independently of `--allow-downgrade` and are
+never bypassed by it.
 
 A command that is about to **generate** from an artifact refuses when the local
 copy is older than, or came from somewhere other than, what the manifest

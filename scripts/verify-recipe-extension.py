@@ -93,7 +93,14 @@ def main():
     assert (project/'flake.nix').exists() and (project/'extension-probe-core/extension-probe-core.cabal').exists()
     assert '.codex/' in (project/'.gitignore').read_text()
     assert snapshot(cache) == before
-    run('repeat-preview', ['run', TARGET, '--dry-run', *flags], selected_env=offline)
+    manifest = json.loads((project/'.seihou/manifest.json').read_text())
+    if manifest['version'] >= 13:
+        chain = manifest['applications'][0]['recipeChain']
+        assert [node['name'] for node in chain] == ['haskell-cli-app-repo', TARGET]
+        assert all(len(node['descriptorHash']) == 64 for node in chain)
+        assert all(node['origin']['kind'] == 'remote' for node in chain)
+    repeated = run('repeat-preview', ['run', TARGET, '--dry-run', *flags], selected_env=offline)
+    assert 'Recipe descriptor changed:' not in repeated
     interactive = area/'interactive'
     interactive.mkdir()
     output = run('interactive', ['run', TARGET], cwd=interactive, selected_env=offline, answers={

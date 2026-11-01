@@ -43,6 +43,7 @@ tests = testSpec "seed foundations" $ do
           Map.empty
           []
           Nothing
+          Nothing
           now
       exact = first & #ownership .~ claims a ["demo", "second"]
       known = emptyManifest now & #applications .~ map application [a, b] & #seeds .~ Map.singleton "CHANGELOG.md" exact

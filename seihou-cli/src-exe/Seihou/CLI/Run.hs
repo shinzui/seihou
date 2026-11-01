@@ -31,11 +31,13 @@ import Seihou.CLI.CommandExecution
 import Seihou.CLI.Commands (RunOpts (..))
 import Seihou.CLI.CommitMessage (generateCommitMessage)
 import Seihou.CLI.Git (gitAdd, gitCheckIgnore, gitCommit, gitDiffCached, isGitRepo)
-import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecordedSeedOwnership)
+import Seihou.CLI.ManifestCapabilityUpgrade (prepareRecipeInheritance, prepareRecordedSeedOwnership)
 import Seihou.CLI.ManifestGuard
   ( blockingChecks,
     checkAppliedArtifactsFor,
+    checkRecipeChain,
     enforceArtifactGuard,
+    summarizeCheck,
   )
 import Seihou.CLI.Migrate
   ( MigrateError (..),
@@ -54,7 +56,7 @@ import Seihou.CLI.ValidateRecipeReport (recipeLoadErrorText)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
 import Seihou.Composition.Recipe (recipeLiteralSources)
-import Seihou.Composition.RecipeChain (loadRecipeChain)
+import Seihou.Composition.RecipeChain (loadRecipeChain, recordRecipeChain)
 import Seihou.Composition.Resolve (PromptPermission (..), RecipeInputSpec (..), loadComposition, resolveRecipeWithSources)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin, readOriginInfo)
@@ -128,10 +130,12 @@ handleRun runOpts = do
   -- 0b. Recipe detection: check if the name resolves to a recipe or a module
   projectRoot <- getCurrentDirectory
   searchPaths <- defaultSearchPaths
-  (primaryName, allAdditional, recipeOverrides, recipeDecls, recipePrompts, recipeInfo, targetInfo) <- do
+  (primaryName, allAdditional, recipeOverrides, recipeDecls, recipePrompts, recipeInfo, targetInfo, recipeChain) <- do
     runnableResult <- discoverRunnable searchPaths modName
     case runnableResult of
       Right (RunnableRecipe recipe recipeDir) -> do
+        when (recipe ^. #name . #unRecipeName /= modName ^. #unModuleName) $
+          exitError level "Recipe descriptor name does not match the requested artifact; correct its name before generating."
         expanded <- loadRecipeChain projectRoot searchPaths recipe recipeDir >>= either (exitError level . recipeLoadErrorText) pure
         let members = map (^. #dependency . #module_) (expanded ^. #members)
             sources = case recipe ^. #extends of
@@ -146,6 +150,7 @@ handleRun runOpts = do
           TIO.putStrLn $
             "  " <> node ^. #definition . #name . #unRecipeName <> " " <> fromMaybe "<unversioned>" (node ^. #definition . #version) <> " from " <> originText (node ^. #origin)
         TIO.putStrLn $ "Primary module: " <> expanded ^. #primary . #unModuleName
+        chain <- recordRecipeChain expanded
         pure
           ( expanded ^. #primary,
             drop 1 members <> additional,
@@ -153,7 +158,8 @@ handleRun runOpts = do
             expanded ^. #declarations,
             expanded ^. #prompts,
             Just (recipe ^. #name, recipe ^. #version),
-            (AppliedRecipeTarget (recipe ^. #name), recipeDir, recipe ^. #version)
+            (AppliedRecipeTarget (recipe ^. #name), recipeDir, recipe ^. #version),
+            chain
           )
       Right (RunnableModule modul moduleDir) ->
         pure
@@ -163,7 +169,8 @@ handleRun runOpts = do
             [],
             [],
             Nothing,
-            (AppliedModuleTarget modName, moduleDir, modul ^. #version)
+            (AppliedModuleTarget modName, moduleDir, modul ^. #version),
+            []
           )
       Right (RunnableBlueprint _b _blueprintDir) -> do
         -- Use the user-typed name (modName) rather than the blueprint's
@@ -172,6 +179,13 @@ handleRun runOpts = do
         -- can re-type to find the same artifact.
         logIO level $ logError (formatBlueprintRefusal modName)
         exitFailure
+      Left err
+        | case err of ModuleNotFound _ _ -> False; _ -> True ->
+            exitError level $
+              "Cannot load '" <> modName ^. #unModuleName <> "': " <> case err of
+                DhallEvalError _ reason -> reason
+                DhallDecodeError _ reason -> reason
+                _ -> recipeLoadErrorText err
       Left _ ->
         -- Discovery failed — let loadComposition handle the error with its detailed message
         pure
@@ -181,7 +195,8 @@ handleRun runOpts = do
             [],
             [],
             Nothing,
-            (AppliedModuleTarget modName, "", Nothing)
+            (AppliedModuleTarget modName, "", Nothing),
+            []
           )
 
   let explainRecipeRepair = case recipeInfo of
@@ -219,6 +234,18 @@ handleRun runOpts = do
   when (length modulesInOrder > 1) $ do
     TIO.putStrLn $ "Composing " <> T.pack (show (length modulesInOrder)) <> " modules:"
     mapM_ (\(_, m, _) -> TIO.putStrLn $ "  " <> m ^. #name . #unModuleName) modulesInOrder
+
+  now <- getCurrentTime
+  let manifestPath = ".seihou" </> "manifest.json"
+  existingRes <- runEff $ runFilesystem $ runManifestStore manifestPath readManifest
+  initialManifest <- case existingRes of
+    Left err -> exitError level ("Error reading manifest: " <> err)
+    Right m -> pure (fromMaybe (emptyManifest now) m)
+  let (appliedTargetForGuard, _, _) = targetInfo
+      (recipeChecks, recipeChanges) = checkRecipeChain (mkApplicationId appliedTargetForGuard additional) recipeChain initialManifest
+  mapM_ TIO.putStrLn recipeChanges
+  enforceArtifactGuard (runOpts ^. #allowDowngrade) (blockingChecks recipeChecks)
+  mapM_ TIO.putStrLn [message | check <- recipeChecks, null (blockingChecks [check]), Just message <- [summarizeCheck check]]
 
   -- 2. Resolve variables with export visibility and interactive prompts
   envPairs <- getEnvironment
@@ -286,24 +313,10 @@ handleRun runOpts = do
   mapM_ (printWarning level) warnings
 
   -- 6. Compute diff (shared by dry-run, --diff, and execution paths)
-  now <- getCurrentTime
-  let manifestPath = ".seihou" </> "manifest.json"
-      baselineDir = ".seihou" </> "baselines"
+  let baselineDir = ".seihou" </> "baselines"
       planned =
         [(dest, content, modName, Nothing) | WriteFileOp dest content _ <- opsFiltered]
           ++ [(dest, content, mName, Just pOp) | PatchFileOp dest content pOp _ mName <- opsFiltered]
-
-  -- 6a. Read the manifest before computing the diff so the pre-flight
-  -- migration check can run against it (and, with --with-migrations, so
-  -- 'runMigrate' can rewrite it before the diff is taken).
-  existingRes <- runEff $ runFilesystem $ runManifestStore manifestPath $ do
-    createDirectoryIfMissing True (takeDirectory manifestPath)
-    readManifest
-  initialManifest <- case existingRes of
-    Left err -> do
-      logIO level (logError $ "Error reading manifest: " <> err)
-      exitFailure
-    Right m -> pure (fromMaybe (emptyManifest now) m)
 
   case validateSeedRun initialManifest opsFiltered of
     Left errors -> mapM_ (TIO.putStrLn . (^. #message)) errors >> exitFailure
@@ -375,9 +388,10 @@ handleRun runOpts = do
 
   let recordedRecipe = fmap (const (Map.map (varValueToText . (^. #value)) recipeResolved)) recipeInfo
   let declarationApplication =
-        buildAppliedComposition appliedTarget targetOrigin targetVersion additional (Just namespace) context originedModules resolved now & #recipeInputs .~ recordedRecipe
+        buildAppliedComposition appliedTarget targetOrigin targetVersion additional (Just namespace) context originedModules resolved now & #recipeInputs .~ recordedRecipe & #recipeChain .~ Just recipeChain
   let selectedSeedPaths = Set.fromList [path | (path, receipt) <- Map.toAscList (manifest ^. #seeds), case receipt ^. #ownership of LegacySeedOwners apps -> Set.member currentApplicationId apps || Map.member path seedOwnerMap; _ -> False]
-  seedPrepared <- prepareRecordedSeedOwnership projectRoot searchPaths selectedSeedPaths manifest
+  inheritancePrepared <- either (exitError level) pure (prepareRecipeInheritance manifest)
+  seedPrepared <- prepareRecordedSeedOwnership projectRoot searchPaths selectedSeedPaths inheritancePrepared
   seedBase <- case seedPrepared of
     Left err -> TIO.putStrLn err >> exitFailure
     Right candidate -> pure candidate
@@ -526,6 +540,8 @@ handleRun runOpts = do
                                       ( appliedCompositionWithoutReceipts
                                           & #recipeInputs
                                           .~ recordedRecipe
+                                          & #recipeChain
+                                          .~ Just recipeChain
                                           & #commandReceipts
                                           .~ expectedCommandReceiptMap
                                           & #checkoutCommands

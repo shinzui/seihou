@@ -140,6 +140,8 @@ installClosureInto cache force rootDir recorded roots = withSystemTempDirectory 
               let ready = tmp </> "ready"
                   dir = ready </> T.unpack (e ^. #entryName)
               recipe <- evalRecipeFromFile (dir </> "recipe.dhall") >>= decoded
+              unless (recipe ^. #name . #unRecipeName == e ^. #entryName) $
+                failWith ("Recipe descriptor name must match registry entry '" <> e ^. #entryName <> "'")
               _ <- loadRecipeChain tmp [ready] recipe dir >>= either (failWith . recipeLoadErrorText) pure
               pure ()
             current <- forM planned $ \e -> classifyInstallCollision (cache </> T.unpack (e ^. #entryName)) (e ^. #entrySource)

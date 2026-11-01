@@ -20,6 +20,7 @@ module Seihou.CLI.ManifestGuard
     ArtifactVerdict (..),
     ArtifactCheck (..),
     judgeArtifact,
+    checkRecipeChain,
 
     -- * Checking a manifest against this machine
     checkAppliedArtifacts,
@@ -41,13 +42,13 @@ module Seihou.CLI.ManifestGuard
 where
 
 import Data.Generics.Labels ()
-import Data.List (maximumBy, nubBy)
+import Data.List (find, maximumBy, nubBy)
 import Data.Maybe (fromMaybe)
 import Data.Ord (comparing)
 import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, normalizeOriginUrl, normalizeProjectPath)
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, normalizeOriginUrl, normalizeProjectPath, sameArtifactIdentity)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef
   ( ArtifactRefError,
@@ -55,14 +56,19 @@ import Seihou.Core.ArtifactRef
     resolveArtifactOrigin,
   )
 import Seihou.Core.Types
-  ( AppliedBlueprint (..),
+  ( ApplicationId,
+    AppliedBlueprint (..),
     AppliedBlueprintMigration (..),
+    AppliedComposition (..),
     AppliedModule (..),
+    AppliedRecipeNode (..),
+    AppliedTarget (..),
     ArtifactOrigin (..),
     Blueprint (..),
     Manifest (..),
     Module (..),
     ModuleName (..),
+    RecipeName (..),
   )
 import Seihou.Core.Version (parseVersion)
 import Seihou.Dhall.Eval (evalBlueprintFromFile, evalModuleFromFile)
@@ -569,3 +575,37 @@ originDescription :: ArtifactOrigin -> Text
 originDescription (RemoteOrigin url _ _) = url
 originDescription (ProjectOrigin path) = T.pack path <> " (inside this project)"
 originDescription (LocalOrigin artifact) = artifact <> " (no recorded provenance)"
+
+-- | Compare against the selected application's own history, rather than the
+-- manifest's last-recipe summary. Missing history stays explicitly unknown.
+checkRecipeChain :: ApplicationId -> [AppliedRecipeNode] -> Manifest -> ([ArtifactCheck], [Text])
+checkRecipeChain selected current manifest =
+  let results = map check [app | app <- manifest ^. #applications, app ^. #applicationId == selected]
+   in (nubBy (\a b -> a ^. #name == b ^. #name && a ^. #origin == b ^. #origin) (concatMap fst results), concatMap snd results)
+  where
+    byName name = find (\node -> node ^. #name == name) current
+    compareNode old new =
+      ArtifactCheck
+        (ModuleName (old ^. #name . #unRecipeName))
+        (old ^. #origin)
+        (judgeArtifact (old ^. #origin) (old ^. #recipeVersion) (new ^. #origin) (new ^. #recipeVersion))
+    label node = node ^. #name . #unRecipeName
+    version node = fromMaybe "<unversioned>" (node ^. #recipeVersion)
+    check app =
+      let targetCheck = case app ^. #target of
+            AppliedRecipeTarget name -> case byName name of
+              Just node -> [compareNode (AppliedRecipeNode name (app ^. #targetOrigin) (app ^. #targetVersion) (node ^. #descriptorHash)) node]
+              Nothing -> []
+            _ -> []
+       in case app ^. #recipeChain of
+            Nothing -> (targetCheck, ["Record current recipe-chain provenance; the prior chain is unknown." | not (null current)])
+            Just previous ->
+              ( targetCheck <> [compareNode old new | old <- previous, Just new <- [byName (old ^. #name)]],
+                ["Removed recipe from chain: " <> label old | old <- previous, byName (old ^. #name) == Nothing]
+                  <> ["Added recipe to chain: " <> label new | new <- current, not (any (\old -> old ^. #name == new ^. #name) previous)]
+                  <> concat [changes old new | old <- previous, Just new <- [byName (old ^. #name)]]
+              )
+    changes old new =
+      ["Recipe version changed: " <> label new <> " " <> version old <> " -> " <> version new | old ^. #recipeVersion /= new ^. #recipeVersion]
+        <> ["Recipe descriptor changed: " <> label new <> " (" <> version new <> ")" | old ^. #descriptorHash /= new ^. #descriptorHash]
+        <> ["Recipe origin changed: " <> label new | not (sameArtifactIdentity (old ^. #origin) (new ^. #origin))]

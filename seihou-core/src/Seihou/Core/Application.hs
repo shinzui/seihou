@@ -67,7 +67,8 @@ buildAppliedComposition target targetOrigin targetVersion additional namespace c
       commandReceipts = Map.empty,
       checkoutCommands = [],
       recipeInputs = Nothing,
-      appliedAt = now
+      appliedAt = now,
+      recipeChain = Nothing
     }
   where
     buildInstance (inst, modul, origin) =

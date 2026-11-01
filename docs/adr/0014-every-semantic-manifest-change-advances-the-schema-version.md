@@ -1,7 +1,7 @@
 # ADR 0014 — Every semantic manifest change advances the schema version
 
 - Status: Accepted
-- Date: 2026-09-17
+- Date: 2026-11-01
 
 ## Context
 
@@ -84,6 +84,13 @@ decision to leave this field at schema version 6; its definition of safe
 additive co-writes and its two-layer safety check remain accepted.
 
 ## Implementation
+
+Schema 13 adds the `RecipeInheritance` capability and a lossless 12-to-13 step
+adding `recipeChain: null` on historical applications. Null is unrecorded history;
+only accepted composition work may record the current oldest-first chain. A new
+recipe application has a matching final target node; a module application has an
+empty chain. Descriptor digests are change evidence, while name plus portable
+origin remains identity. Preview and preflight prepare the schema in memory.
 
 Schema 11 adds `SeedOwnerClaims` and a lossless adjacent 10-to-11 step that wraps
 application-only seed ownership explicitly as legacy evidence. It preserves all

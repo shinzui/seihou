@@ -35,6 +35,7 @@ import Seihou.CLI.ManifestUpgradeSpec qualified as ManifestUpgradeSpec
 import Seihou.CLI.MigrateSpec qualified as MigrateSpec
 import Seihou.CLI.PendingMigrationSpec qualified as PendingMigrationSpec
 import Seihou.CLI.PromptRenderSpec qualified as PromptRenderSpec
+import Seihou.CLI.RecipeExtensionE2ESpec qualified as RecipeExtensionE2E
 import Seihou.CLI.RecipeInputsE2ESpec qualified as RecipeInputsE2E
 import Seihou.CLI.RecordedReleaseSpec qualified as RecordedReleaseSpec
 import Seihou.CLI.Registry.SyncSpec qualified as RegistrySyncSpec
@@ -61,7 +62,8 @@ main :: IO ()
 main = do
   tests <-
     sequence
-      [ AgentLaunchSpec.tests,
+      [ RecipeExtensionE2E.tests,
+        AgentLaunchSpec.tests,
         AgentMigrateE2ESpec.tests,
         AgentGuardE2ESpec.tests,
         AgentCompletionSpec.tests,

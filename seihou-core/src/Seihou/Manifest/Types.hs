@@ -23,6 +23,7 @@ import Data.Aeson.Key qualified as Key
 import Data.Aeson.KeyMap qualified as KM
 import Data.Aeson.Types qualified as Aeson
 import Data.ByteString.Lazy qualified as LBS
+import Data.Char (isHexDigit)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
@@ -30,10 +31,11 @@ import Data.Set qualified as Set
 import Data.Text qualified as T
 import Data.Time (UTCTime)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
-import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, sameArtifactIdentity)
 import Seihou.Core.Checkout (CheckoutError (..), validateCheckoutRecords)
 import Seihou.Core.CommandFingerprint (checkoutCommandOperation, fingerprintCommand)
-import Seihou.Core.Path (validateCanonicalProjectPath)
+import Seihou.Core.Module (isValidModuleName)
+import Seihou.Core.Path (validateCanonicalProjectPath, validateProjectRelativePath)
 import Seihou.Core.Seed (renderManifestInvariantError, seedApplicationIds, validateManifestInvariants)
 import Seihou.Core.Types
 import Seihou.Manifest.Hash (baselineRefFromText)
@@ -79,8 +81,9 @@ import System.FilePath (takeFileName)
 -- step lives in "Seihou.Manifest.Upgrade"; the rule that every semantic
 -- change advances this number is
 -- docs/adr/0014-every-semantic-manifest-change-advances-the-schema-version.md.
+-- Schema 13 records application recipe-chain evidence; null denotes unknown history.
 currentManifestVersion :: ManifestSchemaVersion
-currentManifestVersion = ManifestSchemaVersion 12
+currentManifestVersion = ManifestSchemaVersion 13
 
 -- | The oldest schema the ordinary decoder reads. Anything older records
 -- machine-specific absolute paths and must go through the explicit
@@ -95,6 +98,7 @@ minimumManifestVersion :: ManifestCapability -> ManifestSchemaVersion
 minimumManifestVersion TargetedAdditiveSharedPathUpdate = ManifestSchemaVersion 7
 minimumManifestVersion SeedReceipts = ManifestSchemaVersion 8
 minimumManifestVersion RecipeInputs = ManifestSchemaVersion 12
+minimumManifestVersion RecipeInheritance = ManifestSchemaVersion 13
 minimumManifestVersion SeedOwnerClaims = ManifestSchemaVersion 11
 minimumManifestVersion CheckoutLocalOutputs = ManifestSchemaVersion 9
 minimumManifestVersion CheckoutLocalCommands = ManifestSchemaVersion 10
@@ -399,6 +403,7 @@ applicationToJSON schema composition =
       ++ maybe [] (\v -> ["context" .= v]) (composition ^. #context)
       ++ ["checkoutCommands" .= map checkoutCommandToJSON (composition ^. #checkoutCommands) | schema >= ManifestSchemaVersion 10]
       ++ ["recipeInputs" .= fmap varsToJSON (composition ^. #recipeInputs) | schema >= ManifestSchemaVersion 12]
+      ++ ["recipeChain" .= (composition ^. #recipeChain) | schema >= minimumManifestVersion RecipeInheritance]
       ++ commandReceiptsField (composition ^. #commandReceipts)
   where
     commandReceiptsField receipts
@@ -420,19 +425,63 @@ parseApplication schema = Aeson.withObject "AppliedComposition" $ \o -> do
         legacy <- o Aeson..:? "checkoutCommands" Aeson..!= ([] :: [Aeson.Value])
         unless (null legacy) (fail "checkout commands require manifest schema 10")
         pure []
-  AppliedComposition
-    <$> (ApplicationId <$> o .: "applicationId")
-    <*> o .: "target"
-    <*> o .: "targetOrigin"
-    <*> o Aeson..:? "targetVersion"
-    <*> (map ModuleName <$> o Aeson..:? "additionalModules" Aeson..!= [])
-    <*> o Aeson..:? "namespace"
-    <*> o Aeson..:? "context"
-    <*> o Aeson..:? "instances" Aeson..!= []
-    <*> (commandReceiptsFromJSON =<< o Aeson..:? "commandReceipts" Aeson..!= Aeson.object [])
-    <*> pure commands
-    <*> (if schema >= ManifestSchemaVersion 12 then traverse varsFromJSON =<< o .: "recipeInputs" else pure Nothing)
-    <*> o .: "appliedAt"
+  when (schema < minimumManifestVersion RecipeInheritance) $ do
+    legacyChain <- o Aeson..:? "recipeChain" :: Aeson.Parser (Maybe Aeson.Value)
+    unless (legacyChain == Nothing) (fail "recipe chain requires manifest schema 13")
+  composition <-
+    AppliedComposition
+      <$> (ApplicationId <$> o .: "applicationId")
+      <*> o .: "target"
+      <*> o .: "targetOrigin"
+      <*> o Aeson..:? "targetVersion"
+      <*> (map ModuleName <$> o Aeson..:? "additionalModules" Aeson..!= [])
+      <*> o Aeson..:? "namespace"
+      <*> o Aeson..:? "context"
+      <*> o Aeson..:? "instances" Aeson..!= []
+      <*> (commandReceiptsFromJSON =<< o Aeson..:? "commandReceipts" Aeson..!= Aeson.object [])
+      <*> pure commands
+      <*> (if schema >= ManifestSchemaVersion 12 then traverse varsFromJSON =<< o .: "recipeInputs" else pure Nothing)
+      <*> (if schema >= minimumManifestVersion RecipeInheritance then o .: "recipeChain" else pure Nothing)
+      <*> o .: "appliedAt"
+  either (fail . T.unpack) pure (validateRecipeChain composition)
+  pure composition
+
+validateRecipeChain :: AppliedComposition -> Either Text ()
+validateRecipeChain composition = case composition ^. #recipeChain of
+  Nothing -> Right ()
+  Just nodes -> do
+    mapM_ validateRecipeNode nodes
+    unless (length nodes == Set.size (Set.fromList (map (^. #name . #unRecipeName) nodes))) (Left "recipe chain has duplicate names")
+    case composition ^. #target of
+      AppliedModuleTarget _ -> unless (null nodes) (Left "module application must have an empty recipe chain")
+      AppliedRecipeTarget target -> case reverse nodes of
+        [] -> Left "recipe application must have a nonempty recorded chain"
+        lastNode : _ ->
+          unless
+            (lastNode ^. #name == target && sameArtifactIdentity (lastNode ^. #origin) (composition ^. #targetOrigin) && lastNode ^. #recipeVersion == composition ^. #targetVersion)
+            (Left "recipe chain final node must match the application target identity and version")
+
+validateRecipeNode :: AppliedRecipeNode -> Either Text ()
+validateRecipeNode node = do
+  let name = node ^. #name . #unRecipeName
+      digest = node ^. #descriptorHash . #unSHA256
+  unless (isValidModuleName name) (Left "recipe chain name is invalid")
+  unless (T.length digest == 64 && T.all isHexDigit digest) (Left "recipe descriptorHash must be SHA-256 hexadecimal")
+  case node ^. #origin of
+    ProjectOrigin path -> unless (path == ".") (() <$ validateProjectRelativePath (T.pack path))
+    LocalOrigin artifact -> unless (artifact == name) (Left "recipe local origin must name its recipe")
+    RemoteOrigin source artifact _ -> do
+      unless (artifact == name) (Left "recipe remote origin must name its recipe")
+      when (T.null source || isMachineLocalOriginUrl source) (Left "recipe remote origin must be a portable Git source")
+
+instance ToJSON AppliedRecipeNode where
+  toJSON node = Aeson.object ["name" .= (node ^. #name . #unRecipeName), "origin" .= (node ^. #origin), "version" .= (node ^. #recipeVersion), "descriptorHash" .= (node ^. #descriptorHash . #unSHA256)]
+
+instance FromJSON AppliedRecipeNode where
+  parseJSON = Aeson.withObject "AppliedRecipeNode" $ \o -> do
+    digest <- o .: "descriptorHash"
+    unless (T.length digest == 64 && T.all isHexDigit digest) (fail "recipe descriptorHash must be SHA-256 hexadecimal")
+    AppliedRecipeNode <$> (RecipeName <$> o .: "name") <*> o .: "origin" <*> o Aeson..:? "version" <*> pure (SHA256 (T.toLower digest))
 
 instance ToJSON CommandReceipt where
   toJSON receipt =
@@ -849,6 +898,8 @@ parseSeedOwnership = Aeson.withObject "seed ownership" $ \o -> do
 manifestEncodingLoss :: Manifest -> [Text]
 manifestEncodingLoss manifest =
   either (pure . renderManifestInvariantError) (const []) (validateManifestInvariants manifest)
+    <> ["recipe chain requires manifest schema 13" | not (manifestSupports RecipeInheritance manifest), any (isJust . (^. #recipeChain)) (manifest ^. #applications)]
+    <> concat [either pure (const []) (validateRecipeChain application) | application <- manifest ^. #applications]
     <> ["recipe inputs require manifest schema 12" | not (manifestSupports RecipeInputs manifest), any (isJust . (^. #recipeInputs)) (manifest ^. #applications)]
     <> ["seed owner claims require manifest schema 11" | not (manifestSupports SeedOwnerClaims manifest), any (\r -> case r ^. #ownership of KnownSeedOwners _ -> True; _ -> False) (Map.elems (manifest ^. #seeds))]
     <> either (pure . T.pack) (const []) (Aeson.parseEither (const (validateCheckoutCommands manifest)) Aeson.Null)

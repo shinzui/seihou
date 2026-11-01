@@ -60,7 +60,8 @@ manifestWithLocalPaths =
           commandReceipts = Map.empty,
           checkoutCommands = [],
           recipeInputs = Nothing,
-          appliedAt = testTime
+          appliedAt = testTime,
+          recipeChain = Nothing
         }
     receipt =
       AppliedBlueprintMigration "service" (origin localPath "service") (Just "2.0.0") "1.0.0" "2.0.0" MigrationApplied testTime Nothing

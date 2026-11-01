@@ -109,7 +109,8 @@ manifestWithEveryOriginPosition =
                commandReceipts = Map.empty,
                checkoutCommands = [],
                recipeInputs = Nothing,
-               appliedAt = fixedTime
+               appliedAt = fixedTime,
+               recipeChain = Nothing
              }
          ]
 
@@ -197,7 +198,8 @@ withCommandReceipts receipts composition =
       commandReceipts = receipts,
       checkoutCommands = [],
       recipeInputs = composition ^. #recipeInputs,
-      appliedAt = composition ^. #appliedAt
+      appliedAt = composition ^. #appliedAt,
+      recipeChain = composition ^. #recipeChain
     }
 
 -- | Every string in a document, each paired with the JSON path that reaches
@@ -232,6 +234,23 @@ machineSpecific text =
 
 spec :: Spec
 spec = do
+  describe "recipe inheritance provenance" $ do
+    let origin = RemoteOrigin "https://example.com/recipes.git" "child" Nothing
+        base = AppliedRecipeNode "base" (ProjectOrigin ".seihou/modules/base") (Just "1") (hashContent "base")
+        child = AppliedRecipeNode "child" origin (Just "1") (hashContent "child")
+        app = AppliedComposition (ApplicationId "recipe-app") (AppliedRecipeTarget "child") origin (Just "1") [] Nothing Nothing [] Map.empty [] Nothing (Just [base, child]) fixedTime
+        manifest = emptyManifest fixedTime & #applications .~ [app]
+    it "roundtrips portable ordered nodes without cache paths" $ do
+      manifestFromJSON (manifestToJSON manifest) `shouldBe` Right manifest
+      LBS8.unpack (manifestToJSON manifest) `shouldSatisfy` (not . isInfixOf "/Users/")
+    it "rejects loss at older schemas, a mismatched target, and absolute project origins" $ do
+      manifestEncodingLoss (manifest & #version .~ ManifestSchemaVersion 12) `shouldSatisfy` (not . null)
+      manifestEncodingLoss (manifest & #applications .~ [app & #recipeChain .~ Just [base]]) `shouldSatisfy` (not . null)
+      manifestEncodingLoss (manifest & #applications .~ [app & #recipeChain .~ Just [base & #origin .~ ProjectOrigin "/tmp/private", child]]) `shouldSatisfy` (not . null)
+    it "decodes older recipe applications with unknown chain history" $ do
+      let old = manifest & #version .~ ManifestSchemaVersion 12 & #applications .~ [app & #recipeChain .~ Nothing]
+      fmap (map (^. #recipeChain) . (^. #applications)) (manifestFromJSON (manifestToJSON old)) `shouldBe` Right [Nothing]
+
   describe "recipe inputs" $ do
     forM_ [Nothing, Just Map.empty, Just (Map.singleton "feature" "false")] $ \inputs ->
       it ("roundtrips unknown, empty and false recipe state: " <> show inputs) $ do
@@ -278,7 +297,7 @@ spec = do
 
   describe "checkout command codec" $ do
     let command = CheckoutCommand "demo" 0 "mkdir -p .local/setup" Nothing
-        application commands = AppliedComposition (ApplicationId "setup") (AppliedModuleTarget "demo") (ProjectOrigin "modules/demo") (Just "1") [] Nothing Nothing [AppliedInstanceState "demo" emptyParentVars (ProjectOrigin "modules/demo") (Just "1") Map.empty] Map.empty commands Nothing fixedTime
+        application commands = AppliedComposition (ApplicationId "setup") (AppliedModuleTarget "demo") (ProjectOrigin "modules/demo") (Just "1") [] Nothing Nothing [AppliedInstanceState "demo" emptyParentVars (ProjectOrigin "modules/demo") (Just "1") Map.empty] Map.empty commands Nothing Nothing fixedTime
         manifest commands = emptyManifest fixedTime & #applications .~ [application commands]
         mutateApp transform value = case value of
           Aeson.Object fields -> case KeyMap.lookup "applications" fields of
@@ -530,7 +549,8 @@ spec = do
                 commandReceipts = Map.singleton fingerprint receipt,
                 checkoutCommands = [],
                 recipeInputs = Nothing,
-                appliedAt = fixedTime
+                appliedAt = fixedTime,
+                recipeChain = Nothing
               }
           application2 =
             AppliedComposition
@@ -545,7 +565,8 @@ spec = do
                 commandReceipts = Map.empty,
                 checkoutCommands = [],
                 recipeInputs = Nothing,
-                appliedAt = fixedTime2
+                appliedAt = fixedTime2,
+                recipeChain = Nothing
               }
           fileRecord =
             FileRecord
@@ -716,7 +737,8 @@ spec = do
                 commandReceipts = Map.empty,
                 checkoutCommands = [],
                 recipeInputs = Nothing,
-                appliedAt = fixedTime
+                appliedAt = fixedTime,
+                recipeChain = Nothing
               }
           fileRecord = FileRecord (SHA256 "hash") "base" Template fixedTime Nothing mempty SharedWriteUnknown
           recipe = AppliedRecipe "recipe" (LocalOrigin "recipe") (Just "1.0.0") fixedTime

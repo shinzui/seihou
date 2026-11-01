@@ -47,7 +47,7 @@ seihou manifest upgrade [OPTIONS]
 |--------|-------------|
 | `--dry-run` | Print every step and conversion but leave the manifest untouched. |
 | `--force` | Accept inferred origins even when a converted artifact is missing or stale on this machine. Only the schema 5 to 6 step consults it. |
-| `--to VERSION` | Stop at this schema version instead of the current one (11). |
+| `--to VERSION` | Stop at this schema version instead of the current one (13). |
 
 ### Description
 
@@ -64,10 +64,28 @@ steps in order, one at a time, and prints each one:
 | 8 -> 9 | Adds empty checkout output declarations. | lossless |
 | 9 -> 10 | Adds empty checkout command declarations. | lossless |
 | 10 -> 11 | Wraps old application-only seed owners as explicit legacy evidence without inventing instance claims. | lossless |
+| 11 -> 12 | Adds unknown saved recipe inputs without manufacturing answers. | lossless |
+| 12 -> 13 | Adds unknown recipe-chain history without inferring prior composition. | lossless |
 
 `--to VERSION` stops after the step that reaches that version. A version newer
 than this build, or older than the manifest, is refused. The document's
 `version` always names the last step that actually ran.
+
+#### Schema 12 to 13: recipe inheritance provenance
+
+The lossless step adds `recipeChain: null` to each older application. Null means
+that its prior recipe chain was never recorded; it does not claim the recipe was
+flat. Accepted run work records an oldest-first array of recipe names, portable
+origins, declared versions and normalized descriptor SHA-256 hashes. Module
+applications record an empty array. The final recipe node must match the
+application target's name, origin and version.
+
+Ordinary run previews adoption and base descriptor/version/chain changes. It
+refuses older or substituted recorded bases before prompting or generation;
+`--allow-downgrade` remains visible and cannot bypass producer source or interval
+requirements. Preview, decline and preflight failure do not write the prepared
+schema or chain. Run's command-failure behavior remains unchanged: generated state
+and its provenance survive while incomplete command receipts are withdrawn.
 
 #### Schema 5 to 6: portable origins
 

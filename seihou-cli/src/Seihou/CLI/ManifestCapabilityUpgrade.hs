@@ -30,6 +30,7 @@ module Seihou.CLI.ManifestCapabilityUpgrade
     resolveLegacySeedOwnership,
     prepareSeedOwnership,
     prepareRecordedSeedOwnership,
+    prepareRecipeInheritance,
     gatherSeedOwnershipEvidence,
     CertificationScope (..),
     EvidencePolicy (..),
@@ -532,3 +533,11 @@ prepareRecordedSeedOwnership root searchPaths paths manifest
         Left err -> pure (Left err)
         Right prepared -> withSystemTempDirectory "seihou-seed-evidence" $ \session ->
           prepareSeedOwnership paths prepared (gatherSeedOwnershipEvidence (FetchRecordedReleases session) root searchPaths prepared seedOperationClaims)
+
+-- | Lossless preparation is in memory. The accepting operation owns publication.
+prepareRecipeInheritance :: Manifest -> Either Text Manifest
+prepareRecipeInheritance manifest = do
+  (_, document) <-
+    first renderManifestUpgradeError $
+      upgradeDocumentLosslessly (max (manifest ^. #version) (minimumManifestVersion RecipeInheritance)) (Aeson.toJSON manifest)
+  first T.pack (manifestFromJSON (Aeson.encode document))

@@ -60,6 +60,7 @@ data UpgradeStepAction
   | AddEmptySeedReceipts
   | AddEmptyCheckoutOutputs
   | AddUnknownRecipeInputs
+  | AddUnknownRecipeChain
   | MakeSeedOwnershipExplicit
   | AddEmptyCheckoutCommands
   deriving stock (Eq, Ord, Show, Enum, Bounded, Generic)
@@ -124,7 +125,8 @@ manifestUpgradeSteps =
     step 8 AddEmptyCheckoutOutputs "checkout outputs",
     step 9 AddEmptyCheckoutCommands "repeatable checkout commands",
     step 10 MakeSeedOwnershipExplicit "explicit seed instance ownership",
-    step 11 AddUnknownRecipeInputs "recipe inputs"
+    step 11 AddUnknownRecipeInputs "recipe inputs",
+    step 12 AddUnknownRecipeChain "recipe inheritance provenance"
   ]
   where
     step from stepAction =
@@ -132,6 +134,7 @@ manifestUpgradeSteps =
 
 upgradeStepKind :: UpgradeStepAction -> UpgradeStepKind
 upgradeStepKind AddUnknownRecipeInputs = LosslessUpgrade
+upgradeStepKind AddUnknownRecipeChain = LosslessUpgrade
 upgradeStepKind StampVersion = LosslessUpgrade
 upgradeStepKind ConvertMachineLocalPaths = InferenceBearingUpgrade
 upgradeStepKind MakeSharedWriteEvidenceExplicit = LosslessUpgrade
@@ -193,6 +196,19 @@ applyLosslessUpgradeStep upgradeStep document = do
   unless (actual == upgradeStep ^. #fromVersion) $
     Left (StepVersionMismatch upgradeStep actual)
   transformed <- case upgradeStep ^. #action of
+    AddUnknownRecipeChain -> case document of
+      Aeson.Object fields -> do
+        apps <- case KeyMap.lookup "applications" fields of
+          Nothing -> Right []
+          Just value -> first (MalformedDocument actual . T.pack) (Aeson.fromJSON value & \case Aeson.Error err -> Left err; Aeson.Success xs -> Right (xs :: [Aeson.Value]))
+        upgraded <- forM apps $ \case
+          Aeson.Object app -> case KeyMap.lookup "recipeChain" app of
+            Nothing -> Right (Aeson.Object (KeyMap.insert "recipeChain" Aeson.Null app))
+            Just Aeson.Null -> Right (Aeson.Object app)
+            _ -> Left (MalformedDocument actual "schema 12 cannot contain recipe chain evidence")
+          _ -> Left (MalformedDocument actual "application must be an object")
+        Right (Aeson.Object (KeyMap.insert "applications" (Aeson.toJSON upgraded) fields))
+      _ -> Left (MalformedDocument actual "manifest must be an object")
     AddUnknownRecipeInputs -> case document of
       Aeson.Object fields -> Right (Aeson.Object (KeyMap.insert "applications" (addInputs (fromMaybe (Aeson.Array mempty) (KeyMap.lookup "applications" fields))) fields))
       _ -> Right document

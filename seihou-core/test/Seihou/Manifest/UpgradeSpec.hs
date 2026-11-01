@@ -63,6 +63,16 @@ fileField _ _ _ = Nothing
 
 spec :: Spec
 spec = do
+  it "upgrades schema 12 with unknown recipe chain history and preserves unknown raw fields" $ do
+    let document = Aeson.object ["version" Aeson..= (12 :: Int), "futureTop" Aeson..= True, "applications" Aeson..= [Aeson.object ["producerOwned" Aeson..= True]]]
+    case upgradeDocumentLosslessly (v 13) document of
+      Left err -> expectationFailure (show err)
+      Right (steps, Aeson.Object fields) -> do
+        map (^. #action) steps `shouldBe` [AddUnknownRecipeChain]
+        KeyMap.lookup "futureTop" fields `shouldBe` Just (Aeson.Bool True)
+        KeyMap.lookup "applications" fields `shouldBe` Just (Aeson.toJSON [Aeson.object ["producerOwned" Aeson..= True, "recipeChain" Aeson..= Aeson.Null]])
+      Right _ -> expectationFailure "expected manifest object"
+
   it "upgrades schema 11 with unknown recipe inputs without manufacturing answers" $ do
     let document = Aeson.object ["version" Aeson..= (11 :: Int), "applications" Aeson..= [Aeson.object ["producerOwned" Aeson..= True]]]
     case upgradeDocumentLosslessly (v 12) document of

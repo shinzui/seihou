@@ -1,22 +1,23 @@
 module Seihou.CLI.ManifestGuardSpec (tests) where
 
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Data.Generics.Labels ()
+import Data.Map.Strict qualified as Map
 import Data.Text (Text)
 import Data.Text qualified as T
 import Seihou.CLI.ManifestGuard
   ( ArtifactCheck (..),
     ArtifactVerdict (..),
     blockingChecks,
+    checkRecipeChain,
     formatGuardRefusal,
     judgeArtifact,
     summarizeCheck,
   )
 import Seihou.Core.ArtifactRef (ArtifactRefError (..))
 import Seihou.Core.Types
-  ( ArtifactOrigin (..),
-    ModuleName (..),
-  )
+import Seihou.Manifest.Hash (hashContent)
+import Seihou.Manifest.Types (emptyManifest)
 import Test.Hspec
 import Test.Tasty
 import Test.Tasty.Hspec (testSpec)
@@ -39,6 +40,30 @@ check origin verdict =
 
 spec :: Spec
 spec = do
+  describe "application recipe-chain guard" $ do
+    let origin name = RemoteOrigin demoUrl name Nothing
+        base = AppliedRecipeNode "base" (origin "base") (Just "2") (hashContent "base")
+        child = AppliedRecipeNode "child" (origin "child") (Just "1") (hashContent "child")
+        selected = ApplicationId "selected"
+        app = AppliedComposition selected (AppliedRecipeTarget "child") (origin "child") (Just "1") [] Nothing Nothing [] Map.empty [] Nothing (Just [base, child]) (read "2026-11-01 00:00:00 UTC")
+        manifest = emptyManifest (read "2026-11-01 00:00:00 UTC") & #applications .~ [app]
+    it "blocks a base-only downgrade while the derived version stays unchanged" $ do
+      let (checks, _) = checkRecipeChain selected [base & #recipeVersion .~ Just "1", child] manifest
+      map (^. #name) (blockingChecks checks) `shouldBe` [ModuleName "base"]
+    it "blocks same-name substitution and reports metadata-only changes" $ do
+      let (checks, changes) = checkRecipeChain selected [base & #origin .~ RemoteOrigin otherUrl "base" Nothing & #descriptorHash .~ hashContent "changed", child] manifest
+      length (blockingChecks checks) `shouldBe` 1
+      T.unlines changes `shouldSatisfy` T.isInfixOf "Recipe descriptor changed: base"
+    it "keeps unknown history unknown and scopes guards to the selected application" $ do
+      let unknown = manifest & #applications .~ [app & #recipeChain .~ Nothing]
+          (_, changes) = checkRecipeChain selected [base, child] unknown
+      T.unlines changes `shouldSatisfy` T.isInfixOf "prior chain is unknown"
+      checkRecipeChain (ApplicationId "another") [base & #recipeVersion .~ Just "0", child] manifest `shouldBe` ([], [])
+    it "reports chain removal without requiring the removed base to remain installed" $ do
+      let (checks, changes) = checkRecipeChain selected [child] manifest
+      blockingChecks checks `shouldBe` []
+      T.unlines changes `shouldSatisfy` T.isInfixOf "Removed recipe from chain: base"
+
   describe "judgeArtifact version comparison" $ do
     it "reports a strictly older local copy as stale" $
       judgeArtifact (remote demoUrl) (Just "2.0.0") (remote demoUrl) (Just "1.4.0")
