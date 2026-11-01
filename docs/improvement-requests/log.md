@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-11-01
+* **Update**: IR-14 is accepted and linked to [ExecPlan 118](../plans/118-extend-recipes-through-a-single-origin-aware-base.md), which plans single-base recipe extension, dependency acquisition, provenance guards, base-only updates, and released consumer verification. Implementation remains pending.
 * **Addition**: IR-14 proposes single-base recipe extension: inherit modules and settings with explicit override rules, resolve and install the dependency closure across registries, detect cycles and conflicts, and retain base-chain versions and origins. Acceptance covers empty caches, fresh clones, base-only upgrades, and backward compatibility; implementation remains proposed.
 
 ## 2026-10-28

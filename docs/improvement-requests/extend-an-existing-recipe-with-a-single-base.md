@@ -8,9 +8,10 @@ description: >-
 generated:
   by: process:codex
   at: "2026-11-01T17:48:21Z"
-timestamp: 2026-11-01T17:48:21Z
+timestamp: 2026-11-01T18:53:14Z
 requestId: IR-14
-status: proposed
+status: accepted
+targetPlan: docs/plans/118-extend-recipes-through-a-single-origin-aware-base.md
 origin: mori://shinzui/seihou-modules
 reviews:
   - kind: model
@@ -32,10 +33,11 @@ reviews:
 
 ## Status
 
-Proposed following a recipe-reuse discussion on 2026-11-01. This request records
-the desired behavior and acceptance criteria; no implementation or target plan
-is supplied by this change. The single-base shape below is a proposal, not an
-existing schema field.
+Accepted and planned in [ExecPlan 118](../plans/118-extend-recipes-through-a-single-origin-aware-base.md)
+following a recipe-reuse discussion on 2026-11-01. The plan covers the schema,
+recipe expansion, dependency installation, provenance, updates, and released
+consumer workflow. Implementation remains pending; the single-base shape below
+is a proposal, not an existing schema field.
 
 ## Context
 
