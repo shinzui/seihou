@@ -903,7 +903,11 @@ normalizeInstalledDefinition origin path = do
         Just (Dhall.Some _) -> Dhall.RecordLit fields
         _ -> Dhall.RecordLit (DhallMap.insert "source" sourceField fields)
     edge other = other
-    rewrite (Dhall.RecordLit fields) = Dhall.RecordLit (foldl' update fields ["dependencies", "modules", "baseModules"])
+    rewrite (Dhall.RecordLit fields) =
+      let sourced = foldl' update fields ["dependencies", "modules", "baseModules"]
+       in Dhall.RecordLit $ case recordFieldValue <$> DhallMap.lookup "extends" sourced of
+            Just (Dhall.Some ref) -> DhallMap.insert "extends" (makeRecordField (Dhall.Some (edge ref))) sourced
+            _ -> sourced
     rewrite other = other
     update fields key = case recordFieldValue <$> DhallMap.lookup key fields of
       Just (Dhall.ListLit annotation values)

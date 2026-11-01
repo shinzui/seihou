@@ -23,14 +23,14 @@ with tempfile.TemporaryDirectory(prefix='seihou-closure-acceptance-') as tmp:
     for repo in [a,b,c]:
         repo.mkdir(); git(repo,'init','-q')
     def module(repo,name,deps=[]):
-        text = f'let S = {schema}/package.dhall in S.Module::{{ name = "{name}", version = Some "1.0.0", steps = [ S.Step::{{ strategy = "copy", src = "payload", dest = "{name}.txt" }} ]'
+        text = f'let S = {schema}/package.dhall in S.Module.default // {{ name = "{name}", version = Some "1.0.0", steps = [ S.Step::{{ strategy = "copy", src = "payload", dest = "{name}.txt" }} ]'
         if deps: text += ', dependencies = [ '+', '.join(deps)+' ]'
         text += ' }'
         write(repo/name/'module.dhall',text); write(repo/name/'files'/'payload',name)
     module(c,'leaf'); module(c,'sentinel-c')
     module(b,'external',[dep('leaf',c)]); module(b,'sentinel-b')
     module(a,'local'); module(a,'sentinel-a')
-    write(a/'root'/'recipe.dhall',f'let S = {schema}/package.dhall in S.Recipe::{{ name = "root", modules = [ '+dep('local')+', '+dep('external',b)+' ] }')
+    write(a/'root'/'recipe.dhall',f'let S = {schema}/package.dhall in S.Recipe.default // {{ name = "root", modules = [ '+dep('local')+', '+dep('external',b)+' ] }')
     def registry(repo,mods,recipes=[]):
         entries=lambda names: '[ '+', '.join(f'{{ name = "{n}", path = "{n}", version = None Text, description = None Text, tags = [] : List Text }}' for n in names)+' ]'
         text='{ repoName = "fixture", repoDescription = None Text, modules = '+entries(mods)
@@ -54,7 +54,7 @@ with tempfile.TemporaryDirectory(prefix='seihou-closure-acceptance-') as tmp:
         git(repo,'-c','user.name=Fixture','-c','user.email=fixture@example.com','commit','--allow-empty','-qm','scenario')
     original=(a/'root'/'recipe.dhall').read_text()
     def recipe(members):
-        write(a/'root'/'recipe.dhall',f'let S = {schema}/package.dhall in S.Recipe::{{ name = "root", modules = [ '+', '.join(members)+' ] }'); save(a)
+        write(a/'root'/'recipe.dhall',f'let S = {schema}/package.dhall in S.Recipe.default // {{ name = "root", modules = [ '+', '.join(members)+' ] }'); save(a)
     def refused(*flags,contains):
         before=snapshot(); out=run('install',str(a),'--module','root',*flags,ok=False)
         assert contains in out, (contains,out)
@@ -95,5 +95,67 @@ with tempfile.TemporaryDirectory(prefix='seihou-closure-acceptance-') as tmp:
     write(a/'root'/'recipe.dhall','{ name = "root", version = None Text, description = None Text, modules = ["local"], vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }, prompts = [] : List { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) } }'); save(a)
     run('install',str(a),'--module','root')
     run('run','root','--dry-run','--no-save-prompted')
-    print('PASS: closure, origins, run, dry-run, repeat, missing/unavailable source, collisions, force, contradictory sources, cycle, diamond, local shadow, legacy names')
+    # A real cross-registry base edge, an explicit repeated member, and a
+    # transitive graph edge all share one executable module instance.
+    leaf=c/'leaf'/'module.dhall'
+    text=leaf.read_text().rstrip()
+    leaf.write_text(text[:-1]+', commands = [ S.Command::{ action = S.Command.Action.Apply "printf once >> shared-marker" } ] }')
+    save(c)
+    def base_recipe(repo,name,members,extension=''):
+        member_list = '[ '+', '.join(members)+' ]' if members else '[] : List Text'
+        write(repo/name/'recipe.dhall', '{name = '+json.dumps(name)+', version = Some "1.0.0", description = None Text, modules = '+member_list+', vars = [] : List {name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text}, prompts = [] : List {var : Text, text : Text, when : Optional Text, choices : Optional (List Text)}'+extension+'}')
+    base_recipe(b,'base',[dep('external')])
+    registry(b,['external','sentinel-b'],['base'])
+    reference=', extends = Some { recipe = "base", source = Some '+json.dumps(str(b))+', versionRange = Some {minimum = "1", before = "2"} }'
+    base_recipe(a,'root',[dep('local'),dep('leaf',c)],reference); save(a)
+    run('install',str(a),'--module','root')
+    assert (cache/'base'/'recipe.dhall').exists()
+    out=run('run','root')
+    assert 'Base chain: base -> root' in out and 'Primary module: external' in out
+    assert (work/'shared-marker').read_text()=='once'
+    # A settings-only child inherits its primary, members and bindings.
+    base_recipe(a,'root',[],reference+', moduleOverrides = [{module = "external", vars = [{name = "policy.owner", value = "child"}]}]'); save(a)
+    run('install',str(a),'--module','root')
+    run('run','root','--dry-run','--no-save-prompted')
+    assert (work/'shared-marker').read_text()=='once'
+    # Producer requirements apply on run even when a consumer allows downgrades.
+    shadow=work/'.seihou/modules/base'
+    shutil.copytree(cache/'base',shadow)
+    (shadow/'.seihou-origin.json').unlink()
+    manifest_before=(work/'.seihou/manifest.json').read_bytes()
+    cached_before=snapshot()
+    out=run('run','root','--dry-run','--allow-downgrade',ok=False)
+    assert 'different or unknown' in out and 'seihou install' in out
+    assert snapshot()==cached_before and (work/'.seihou/manifest.json').read_bytes()==manifest_before
+    assert (work/'shared-marker').read_text()=='once'
+    shutil.rmtree(shadow)
+    base_descriptor=cache/'base/recipe.dhall'
+    base_before=base_descriptor.read_text()
+    base_descriptor.write_text(base_before.replace('"1.0.0"','"3.0.0"'))
+    incompatible_before=snapshot()
+    out=run('run','root','--dry-run','--allow-downgrade',ok=False)
+    assert 'outside required interval' in out and snapshot()==incompatible_before
+    assert (work/'.seihou/manifest.json').read_bytes()==manifest_before
+    base_descriptor.write_text(base_before)
+    # Every acquisition refusal preserves all previously installed bytes.
+    good=(a/'root'/'recipe.dhall').read_text()
+    write(a/'root'/'recipe.dhall',good.replace('before = "2"','before = "1"')); save(a)
+    refused('--force',contains='minimum')
+    write(a/'root'/'recipe.dhall',good.replace('minimum = "1"','minimum = "1.1"')); save(a)
+    refused('--force',contains='outside required interval')
+    write(a/'root'/'recipe.dhall',good.replace('recipe = "base"','recipe = "external"')); save(a)
+    refused(contains='recipe')
+    write(a/'root'/'recipe.dhall',good.replace('module = "external", vars = [{name = "policy.owner"','module = "missing", vars = [{name = "policy.owner"')); save(a)
+    refused(contains='inherited member')
+    write(a/'root'/'recipe.dhall',good); save(a)
+    # A single-recipe repository is a valid explicit base source too.
+    single=base/'single'; single.mkdir(); git(single,'init','-q')
+    single_definition='{name = "single-base", version = Some "1.0.0", description = None Text, modules = [ '+dep('external',b)+' ], vars = [] : List {name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text}, prompts = [] : List {var : Text, text : Text, when : Optional Text, choices : Optional (List Text)}}'
+    write(single/'recipe.dhall',single_definition); save(single)
+    base_recipe(a,'root',[],', extends = Some {recipe = "single-base", source = Some '+json.dumps(str(single))+'}'); save(a)
+    run('install',str(a),'--module','root')
+    assert (cache/'single-base'/'recipe.dhall').exists()
+    run('run','root','--dry-run','--no-save-prompted')
+    print('PASS: module closure plus recipe bases, shared execution once, settings-only specialization, intervals, wrong-kind and merged-override refusal, single-recipe source')
+
 PY

@@ -1,7 +1,7 @@
 # ADR 0020 — Dependency sources belong to producer edges and install owns acquisition
 
 - Status: Accepted
-- Date: 2026-10-28
+- Date: 2026-11-01
 
 ## Context
 
@@ -24,6 +24,15 @@ Repository identity uses the shared URL normalization rules; artifact identity i
 origin plus name. Bindings distinguish generation instances, never acquired artifacts.
 Conflicting origins under one name cannot be satisfied by force. Cache collisions
 retain the explicit force override from ADR 0006.
+
+A recipe's `extends` edge explicitly requires a recipe, while members and module
+dependencies require modules. Single-recipe sources are valid. Install follows
+both kinds, checks each declared base interval against default-branch HEAD, and
+validates every merged recipe inside the staged closure before cache publication.
+An interval never triggers historical tag selection. Run reuses offline chain
+expansion and verifies producer requirements before input prompts; consumer
+`--allow-downgrade` cannot bypass a declared source or interval. Each installed
+base reference receives its declaring source when omitted, just like a member.
 
 Definitions are normalized while their source checkouts exist, so imports outside
 an artifact directory do not dangle after installation. Payload path escapes and

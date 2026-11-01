@@ -7,14 +7,17 @@ import Data.Generics.Labels ()
 import Data.IORef
 import Data.List (find)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (maybeToList)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.InstallShared
+import Seihou.CLI.ValidateRecipeReport (recipeLoadErrorText)
+import Seihou.Composition.RecipeChain (loadRecipeChain)
 import Seihou.Core.AgentPrompt (validateAgentPrompt)
 import Seihou.Core.ArtifactIdentity (normalizeOriginUrl)
 import Seihou.Core.Blueprint (validateBlueprintForInstall)
 import Seihou.Core.Module (validateModule)
-import Seihou.Core.Recipe (validateRecipe)
+import Seihou.Core.Recipe (validateRecipe, validateRecipeVersion)
 import Seihou.Core.Registry
 import Seihou.Core.Types
 import Seihou.Dhall.Eval
@@ -37,6 +40,13 @@ data Entry = Entry
   deriving stock (Generic)
 
 data Repo = Repo FilePath Text RepoContents
+
+data ExpectedArtifact = AnyArtifact | ModuleArtifact | RecipeArtifact RecipeReference
+
+data Requirement = Requirement Text (Maybe Text) ExpectedArtifact
+
+moduleRequirements :: [Dependency] -> [Requirement]
+moduleRequirements = map (\dep -> Requirement (dep ^. #module_ . #unModuleName) (dep ^. #source) ModuleArtifact)
 
 -- | Roots are registry entries, or a name and directory for a single artifact.
 -- All failures discovered across selected roots are reported before staging.
@@ -66,7 +76,7 @@ installClosureInto cache force rootDir recorded roots = withSystemTempDirectory 
             let repo = Repo dir origin discovered
             modifyIORef' repos (Map.insert (normalizeOriginUrl source) repo . Map.insert (normalizeOriginUrl origin) repo)
             pure repo
-      visit active chain repo@(Repo repoDir origin _) name dir mustBeModule = do
+      visit active chain repo@(Repo repoDir origin _) name dir expectedArtifact = do
         let key = (normalizeOriginUrl origin, name)
             context = chain <> name <> " [" <> origin <> "]"
         unless (safeName name) $ failWith (context <> ": unsafe install name")
@@ -76,21 +86,20 @@ installClosureInto cache force rootDir recorded roots = withSystemTempDirectory 
           Just (other, _) | other /= fst key -> failWith (context <> ": conflicting sources for " <> name <> "; also required from " <> other)
           _ -> pure ()
         checkTree repoDir dir
-        (file, deps, version) <- inspect dir mustBeModule `withContext` context
+        (file, deps, version) <- inspect dir expectedArtifact `withContext` context
         case Map.lookup name known of
           Just _ -> pure ()
           Nothing -> do
             modifyIORef' nodes (Map.insert name (fst key, context))
             -- Evaluate every declaration independently of generation bindings.
-            forM_ deps $ \dep -> do
-              let depName = dep ^. #module_ . #unModuleName
-              depRepo <- case dep ^. #source of
+            forM_ deps $ \(Requirement depName source expected) -> do
+              depRepo <- case source of
                 Nothing -> pure repo
                 Just src -> do
                   when (T.null (T.strip src) || "${" `T.isInfixOf` src) $ failWith (context <> ": invalid dependency source")
                   getRepo src `withContext` context
-              depDir <- locate depRepo depName `withContext` context
-              visit (key : active) (context <> " -> ") depRepo depName depDir True
+              depDir <- locate depRepo depName expected `withContext` context
+              visit (key : active) (context <> " -> ") depRepo depName depDir expected
             let tags = case repo of
                   Repo _ _ (MultiModule reg) -> maybe [] (^. #tags) (find ((== name) . (^. #name . #unModuleName)) (entries reg))
                   _ -> []
@@ -100,10 +109,10 @@ installClosureInto cache force rootDir recorded roots = withSystemTempDirectory 
             checkTree repoDir dir
             modifyIORef' ordered (++ [Entry name origin dir file version registry tags context])
       rootRepo = Repo rootDir recorded contents
-  outcomes <- forM roots $ \(name, dir) -> try @IOException (visit [] "" rootRepo name dir False)
+  outcomes <- forM roots $ \(name, dir) -> try @IOException (visit [] "" rootRepo name dir AnyArtifact)
   let errors = [T.pack (displayException e) | Left e <- outcomes]
   if not (null errors)
-    then pure (Left (T.intercalate "\n" errors))
+    then pure (Left (T.intercalate "\n" errors <> "\nRetry: seihou install " <> recorded <> T.concat [" --module " <> name | (name, _) <- roots]))
     else do
       planned <- readIORef ordered
       collisions <- forM planned $ \e -> classifyInstallCollision (cache </> T.unpack (e ^. #entryName)) (e ^. #entrySource)
@@ -124,6 +133,14 @@ installClosureInto cache force rootDir recorded roots = withSystemTempDirectory 
             forM_ planned $ \e -> do
               let name = T.unpack (e ^. #entryName)
               _ <- installModuleDirInto (tmp </> "ready") False (tmp </> "stage" </> name) name (e ^. #entrySource) (e ^. #entryRegistry) (e ^. #entryVersion) (e ^. #entryTags)
+              pure ()
+            -- Validate every merged recipe against only this staged closure.
+            -- No ambient cache entry can hide a missing or contradictory edge.
+            forM_ planned $ \e -> when (e ^. #entryFile == "recipe.dhall") $ do
+              let ready = tmp </> "ready"
+                  dir = ready </> T.unpack (e ^. #entryName)
+              recipe <- evalRecipeFromFile (dir </> "recipe.dhall") >>= decoded
+              _ <- loadRecipeChain tmp [ready] recipe dir >>= either (failWith . recipeLoadErrorText) pure
               pure ()
             current <- forM planned $ \e -> classifyInstallCollision (cache </> T.unpack (e ^. #entryName)) (e ^. #entrySource)
             unless (current == collisions) $ failWith "Install cache changed during preparation; retry the same install command."
@@ -180,9 +197,9 @@ safeName name = not (T.null name) && name /= "." && name /= ".." && T.all (\c ->
 entries :: Registry -> [RegistryEntry]
 entries reg = reg ^. #modules ++ reg ^. #recipes ++ reg ^. #blueprints ++ reg ^. #prompts
 
-locate :: Repo -> Text -> IO FilePath
-locate (Repo dir origin contents) name = case contents of
-  MultiModule reg -> case find ((== name) . (^. #name . #unModuleName)) (entries reg) of
+locate :: Repo -> Text -> ExpectedArtifact -> IO FilePath
+locate (Repo dir origin contents) name expected = case contents of
+  MultiModule reg -> case find ((== name) . (^. #name . #unModuleName)) (allowedEntries reg) of
     Just entry -> do
       let candidate = dir </> (entry ^. #path)
       checkTree dir candidate
@@ -190,10 +207,20 @@ locate (Repo dir origin contents) name = case contents of
     Nothing -> missing
   SingleModule _ -> do
     m <- evalModuleFromFile (dir </> "module.dhall") >>= decoded
-    if m ^. #name . #unModuleName == name then pure dir else missing
+    if m ^. #name . #unModuleName == name && isModule then pure dir else missing
+  SingleRecipe _ -> do
+    r <- evalRecipeFromFile (dir </> "recipe.dhall") >>= decoded
+    if r ^. #name . #unRecipeName == name && isRecipe then pure dir else missing
   _ -> missing
   where
-    missing = throwIO (userError (T.unpack (name <> " not found as a module in " <> origin)))
+    allowedEntries reg = case expected of
+      AnyArtifact -> entries reg
+      ModuleArtifact -> reg ^. #modules
+      RecipeArtifact _ -> reg ^. #recipes
+    isModule = case expected of RecipeArtifact _ -> False; _ -> True
+    isRecipe = case expected of ModuleArtifact -> False; _ -> True
+    kind = case expected of RecipeArtifact _ -> "recipe"; ModuleArtifact -> "module"; AnyArtifact -> "artifact"
+    missing = throwIO (userError (T.unpack (name <> " not found as a " <> kind <> " in " <> origin)))
 
 -- Reject escapes and symlinks rather than copying files from outside the clone.
 checkTree :: FilePath -> FilePath -> IO ()
@@ -213,35 +240,40 @@ checkTree root candidate = do
 decoded :: (Show e) => Either e a -> IO a
 decoded = either (throwIO . userError . show) pure
 
-inspect :: FilePath -> Bool -> IO (FilePath, [Dependency], Maybe Text)
-inspect dir mustBeModule = do
+inspect :: FilePath -> ExpectedArtifact -> IO (FilePath, [Requirement], Maybe Text)
+inspect dir expected = do
   hasModule <- doesFileExist (dir </> "module.dhall")
-  if hasModule
-    then do
+  hasRecipe <- doesFileExist (dir </> "recipe.dhall")
+  case expected of
+    ModuleArtifact | not hasModule -> wrong "module"
+    RecipeArtifact _ | not hasRecipe -> wrong "recipe"
+    _ -> pure ()
+  case expected of
+    RecipeArtifact ref -> recipe (Just ref)
+    _ | hasModule -> do
       m <- evalModuleFromFile (dir </> "module.dhall") >>= decoded
       _ <- validateModule dir m >>= decoded
-      pure ("module.dhall", m ^. #dependencies, m ^. #version)
-    else
-      if mustBeModule
-        then throwIO (userError ("Expected module at " <> dir))
+      pure ("module.dhall", moduleRequirements (m ^. #dependencies), m ^. #version)
+    _ | hasRecipe -> recipe Nothing
+    _ -> do
+      blueprint <- doesFileExist (dir </> "blueprint.dhall")
+      if blueprint
+        then do
+          b <- evalBlueprintFromFile (dir </> "blueprint.dhall") >>= decoded
+          _ <- validateBlueprintForInstall dir b >>= decoded
+          pure ("blueprint.dhall", moduleRequirements (b ^. #baseModules), b ^. #version)
         else do
-          recipe <- doesFileExist (dir </> "recipe.dhall")
-          blueprint <- doesFileExist (dir </> "blueprint.dhall")
-          if recipe
-            then do
-              r <- evalRecipeFromFile (dir </> "recipe.dhall") >>= decoded
-              _ <- decoded (validateRecipe r)
-              pure ("recipe.dhall", r ^. #modules, r ^. #version)
-            else
-              if blueprint
-                then do
-                  b <- evalBlueprintFromFile (dir </> "blueprint.dhall") >>= decoded
-                  _ <- validateBlueprintForInstall dir b >>= decoded
-                  pure ("blueprint.dhall", b ^. #baseModules, b ^. #version)
-                else do
-                  p <- evalAgentPromptFromFile (dir </> "prompt.dhall") >>= decoded
-                  _ <- validateAgentPrompt dir p >>= decoded
-                  pure ("prompt.dhall", [], p ^. #version)
+          p <- evalAgentPromptFromFile (dir </> "prompt.dhall") >>= decoded
+          _ <- validateAgentPrompt dir p >>= decoded
+          pure ("prompt.dhall", [], p ^. #version)
+  where
+    wrong kind = throwIO (userError ("Expected " <> kind <> " at " <> dir))
+    recipe requirement = do
+      r <- evalRecipeFromFile (dir </> "recipe.dhall") >>= decoded
+      _ <- decoded (validateRecipe r)
+      forM_ requirement $ \ref -> decoded (validateRecipeVersion ref r)
+      let base = [Requirement (ref ^. #recipe . #unRecipeName) (ref ^. #source) (RecipeArtifact ref) | ref <- maybeToList (r ^. #extends)]
+      pure ("recipe.dhall", base <> moduleRequirements (r ^. #modules), r ^. #version)
 
 -- A malformed registry must not silently fall back to a stray root module.
 readContents :: FilePath -> IO RepoContents

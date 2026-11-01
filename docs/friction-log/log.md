@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-11-01
+* **Update**: FRIC-10 resolved: Resolve fixture/schema coupling after the full closure acceptance passes.
+* **Addition**: FRIC-10 records detour tooling friction with mori://shinzui/seihou: Closure acceptance fixtures depend on the working schema gitlink
+
 ## 2026-10-29
 * **Update**: FRIC-9 resolved: Reconcile existing review metadata while recording verified BUG-3 delivery.
 * **Addition**: FRIC-9 records slowdown documentation friction with mori://shinzui/seihou: Strict bug-report validation lacked review metadata in existing reports

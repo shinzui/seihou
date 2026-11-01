@@ -50,12 +50,14 @@ import Seihou.CLI.PendingMigrations
 import Seihou.CLI.SavePrompted (collectRecipePromptedValues, offerSavePrompted)
 import Seihou.CLI.Shared (deriveNamespace, formatBlueprintRefusal, formatVarError, logIO, resolveAppliedArtifactDir, toVarNameMap, unwrapConfig)
 import Seihou.CLI.Style (bold, dim, formatPlanViewColor, green, magenta, red, useColor, yellow)
+import Seihou.CLI.ValidateRecipeReport (recipeLoadErrorText)
 import Seihou.Composition.Instance (ModuleInstance (..), qualifiedName)
 import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
-import Seihou.Composition.Recipe (expandRecipe)
-import Seihou.Composition.Resolve (PromptPermission (..), RecipeInputSpec (..), loadComposition, resolveRecipeWithPrompts, verifyDependencySources)
+import Seihou.Composition.Recipe (recipeLiteralSources)
+import Seihou.Composition.RecipeChain (loadRecipeChain)
+import Seihou.Composition.Resolve (PromptPermission (..), RecipeInputSpec (..), loadComposition, resolveRecipeWithSources)
 import Seihou.Core.Application (attachApplication, buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
-import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
+import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin, readOriginInfo)
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
 import Seihou.Core.Checkout
 import Seihou.Core.CommandFingerprint (checkoutCommandsFromOperations, isCheckoutCommand)
@@ -124,37 +126,35 @@ handleRun runOpts = do
           exitFailure
 
   -- 0b. Recipe detection: check if the name resolves to a recipe or a module
+  projectRoot <- getCurrentDirectory
   searchPaths <- defaultSearchPaths
   (primaryName, allAdditional, recipeOverrides, recipeDecls, recipePrompts, recipeInfo, targetInfo) <- do
     runnableResult <- discoverRunnable searchPaths modName
     case runnableResult of
       Right (RunnableRecipe recipe recipeDir) -> do
-        case expandRecipe recipe of
-          Left errs -> do
-            logIO level $
-              logError $
-                "Invalid recipe '"
-                  <> recipe ^. #name . #unRecipeName
-                  <> "': "
-                  <> T.intercalate "; " errs
-            exitFailure
-          Right (primary, recipeAdditional, overrides, recipeVars, recipePrompts, requirements) -> do
-            sourceCheck <- verifyDependencySources searchPaths recipeDir requirements
-            case sourceCheck of
-              Left err -> TIO.putStrLn (T.pack (show err)) >> exitFailure
-              Right () -> pure ()
-            logIO level $
-              logInfo $
-                "Recipe '" <> recipe ^. #name . #unRecipeName <> "' expanding to " <> T.pack (show (length (recipe ^. #modules))) <> " modules"
-            pure
-              ( primary,
-                recipeAdditional ++ additional,
-                overrides,
-                recipeVars,
-                recipePrompts,
-                Just (recipe ^. #name, recipe ^. #version),
-                (AppliedRecipeTarget (recipe ^. #name), recipeDir, recipe ^. #version)
-              )
+        expanded <- loadRecipeChain projectRoot searchPaths recipe recipeDir >>= either (exitError level . recipeLoadErrorText) pure
+        let members = map (^. #dependency . #module_) (expanded ^. #members)
+            sources = case recipe ^. #extends of
+              Nothing -> Map.map (\literal -> (literal ^. #value, FromRecipeBinding)) (expanded ^. #literals)
+              Just _ -> recipeLiteralSources expanded
+            originText (RemoteOrigin url _ _) = url
+            originText (ProjectOrigin path) = "project:" <> T.pack path
+            originText (LocalOrigin name) = name <> " (unverified local origin)"
+        TIO.putStrLn $ "Recipe '" <> recipe ^. #name . #unRecipeName <> "' expanding to " <> T.pack (show (length members)) <> " members"
+        TIO.putStrLn $ "Base chain: " <> T.intercalate " -> " [node ^. #definition . #name . #unRecipeName | node <- expanded ^. #chain]
+        forM_ (expanded ^. #chain) $ \node ->
+          TIO.putStrLn $
+            "  " <> node ^. #definition . #name . #unRecipeName <> " " <> fromMaybe "<unversioned>" (node ^. #definition . #version) <> " from " <> originText (node ^. #origin)
+        TIO.putStrLn $ "Primary module: " <> expanded ^. #primary . #unModuleName
+        pure
+          ( expanded ^. #primary,
+            drop 1 members <> additional,
+            sources,
+            expanded ^. #declarations,
+            expanded ^. #prompts,
+            Just (recipe ^. #name, recipe ^. #version),
+            (AppliedRecipeTarget (recipe ^. #name), recipeDir, recipe ^. #version)
+          )
       Right (RunnableModule modul moduleDir) ->
         pure
           ( modName,
@@ -184,6 +184,15 @@ handleRun runOpts = do
             (AppliedModuleTarget modName, "", Nothing)
           )
 
+  let explainRecipeRepair = case recipeInfo of
+        Nothing -> pure ()
+        Just (name, _) -> do
+          let (_, dir, _) = targetInfo
+          origin <- readOriginInfo dir
+          TIO.putStrLn $ case origin of
+            Just info -> "Retry: seihou install " <> info ^. #sourceUrl <> " --module " <> name ^. #unRecipeName
+            Nothing -> "Restore the local composition for recipe '" <> name ^. #unRecipeName <> "', or install it from its declaring registry."
+
   -- 1. Load all modules in the composition (primary + additional + transitive deps)
   compositionResult <- loadComposition searchPaths primaryName allAdditional
   modulesInOrder <- case compositionResult of
@@ -192,20 +201,24 @@ handleRun runOpts = do
         logError $ "Module '" <> name ^. #unModuleName <> "' not found."
         logError "Searched in:"
         mapM_ (\p -> logError $ "  " <> T.pack p) searched
+      explainRecipeRepair
       exitFailure
     Left (CircularDependency names) -> do
       logIO level $ do
         logError "Circular dependency detected:"
         logError $ "  " <> T.intercalate " -> " (map (^. #unModuleName) names)
+      explainRecipeRepair
       exitFailure
-    Left err -> exitError level (T.pack (show err))
+    Left err -> do
+      TIO.putStrLn (recipeLoadErrorText err)
+      explainRecipeRepair
+      exitFailure
     Right ms -> pure ms
 
   -- Report composition when multiple modules are involved
-  when (length modulesInOrder > 1) $
-    logIO level $ do
-      logInfo $ "Composing " <> T.pack (show (length modulesInOrder)) <> " modules:"
-      mapM_ (\(_, m, _) -> logInfo $ "  " <> m ^. #name . #unModuleName) modulesInOrder
+  when (length modulesInOrder > 1) $ do
+    TIO.putStrLn $ "Composing " <> T.pack (show (length modulesInOrder)) <> " modules:"
+    mapM_ (\(_, m, _) -> TIO.putStrLn $ "  " <> m ^. #name . #unModuleName) modulesInOrder
 
   -- 2. Resolve variables with export visibility and interactive prompts
   envPairs <- getEnvironment
@@ -223,7 +236,7 @@ handleRun runOpts = do
         nm = toVarNameMap namespaceCfg
         cm = toVarNameMap contextCfg
         gm = toVarNameMap globalCfg
-    r <- resolveRecipeWithPrompts PromptsAllowed (runOpts ^. #confirmDefaults) (RecipeInputSpec recipeDecls recipePrompts Nothing) modulesInOrder Map.empty (Map.fromList [(VarName k, v) | (k, v) <- runOpts ^. #vars]) recipeOverrides envVars namespace contextName lm nm cm gm
+    r <- resolveRecipeWithSources PromptsAllowed (runOpts ^. #confirmDefaults) (RecipeInputSpec recipeDecls recipePrompts Nothing) modulesInOrder Map.empty (Map.fromList [(VarName k, v) | (k, v) <- runOpts ^. #vars]) recipeOverrides envVars namespace contextName lm nm cm gm
     pure (r, lm, nm, cm, gm)
   (recipeResolved, resolvedInitial) <- case resolveResult of
     Left errs -> do
@@ -307,7 +320,6 @@ handleRun runOpts = do
   -- would point the wrong way. Like the migration check, it considers only
   -- modules in the current composition; a stale module this run does not
   -- touch must not block it.
-  projectRoot <- getCurrentDirectory
   searchPaths <- defaultSearchPaths
   earlySeedResult <- runEff $ runFilesystem $ planSeeds projectRoot initialManifest seedOwnerMap opsFiltered
   case earlySeedResult of

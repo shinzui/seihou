@@ -17,13 +17,22 @@ import Seihou.Core.Recipe (validateRecipe, validateRecipeVersion)
 import Seihou.Core.Types
 
 loadRecipeChain :: FilePath -> [FilePath] -> Recipe -> FilePath -> IO (Either ModuleLoadError ExpandedRecipe)
-loadRecipeChain projectRoot paths target targetDir = runExceptT $ do
-  nodes <- visit [] target targetDir
-  ExceptT $ pure $ either (Left . ValidationError targetName) Right (mergeRecipeChain nodes)
+loadRecipeChain projectRoot paths target targetDir = do
+  result <- runExceptT $ do
+    nodes <- visit [] target targetDir
+    ExceptT $ pure $ either (Left . ValidationError targetName) Right (mergeRecipeChain nodes)
+  case result of
+    Right expanded -> pure (Right expanded)
+    Left err -> do
+      info <- readOriginInfo targetDir
+      let repair = case info of
+            Just origin -> "Retry: seihou install " <> origin ^. #sourceUrl <> " --module " <> target ^. #name . #unRecipeName
+            Nothing -> "Restore the required local recipes and members, or install the derived recipe from its declaring registry."
+      pure (Left (ValidationError targetName ["Recipe '" <> target ^. #name . #unRecipeName <> "': " <> describe err, repair]))
   where
     targetName = ModuleName (target ^. #name . #unRecipeName)
     failure :: T.Text -> ExceptT ModuleLoadError IO a
-    failure msg = ExceptT (pure (Left (ValidationError targetName [msg <> ". Reinstall the derived recipe '" <> target ^. #name . #unRecipeName <> "' and its closure."])))
+    failure msg = ExceptT (pure (Left (ValidationError targetName [msg])))
     visit active descriptor dir = do
       _ <- ExceptT $ pure $ either (Left . ValidationError targetName) Right (validateRecipe descriptor)
       origin <- liftIO (detectArtifactOrigin projectRoot dir)
@@ -33,7 +42,10 @@ loadRecipeChain projectRoot paths target targetDir = runExceptT $ do
       parents <- case descriptor ^. #extends of
         Nothing -> pure []
         Just ref -> do
-          found <- ExceptT (discoverRunnable paths (ModuleName (ref ^. #recipe . #unRecipeName)))
+          foundResult <- liftIO (discoverRunnable paths (ModuleName (ref ^. #recipe . #unRecipeName)))
+          found <- case foundResult of
+            Left err -> failure ("Base chain " <> T.intercalate " -> " (map ((^. #unRecipeName) . fst) (reverse ((name, origin) : active)) <> [ref ^. #recipe . #unRecipeName]) <> ": " <> describe err)
+            Right value -> pure value
           case found of
             RunnableRecipe base baseDir -> do
               case ref ^. #source of
@@ -42,7 +54,9 @@ loadRecipeChain projectRoot paths target targetDir = runExceptT $ do
                   actual <- liftIO (readOriginInfo baseDir)
                   unless (maybe False (\info -> normalizeOriginUrl (info ^. #sourceUrl) == normalizeOriginUrl required) actual) $
                     failure ("Base '" <> ref ^. #recipe . #unRecipeName <> "' requires " <> required <> "; resolved origin is different or unknown")
-              ExceptT $ pure $ either (Left . ValidationError targetName) Right (validateRecipeVersion ref base)
+              case validateRecipeVersion ref base of
+                Left errors -> failure ("Base '" <> ref ^. #recipe . #unRecipeName <> "' from " <> maybe "local discovery" id (ref ^. #source) <> ": " <> T.intercalate "; " errors)
+                Right () -> pure ()
               visit ((name, origin) : active) base baseDir
             _ -> failure ("Expected recipe base '" <> ref ^. #recipe . #unRecipeName <> "'")
       ExceptT (verifyDependencySources paths dir (descriptor ^. #modules))
@@ -51,3 +65,13 @@ loadRecipeChain projectRoot paths target targetDir = runExceptT $ do
         memberOrigin <- liftIO (detectArtifactOrigin projectRoot memberDir)
         pure (ResolvedRecipeMember dep name origin dir memberOrigin)
       pure (parents <> [ResolvedRecipeNode descriptor origin dir members])
+
+-- Keep local discovery failures useful without exposing Haskell constructors.
+describe :: ModuleLoadError -> T.Text
+describe (ModuleNotFound (ModuleName name) _) = "Required recipe or member '" <> name <> "' was not found locally"
+describe (DhallEvalError _ reason) = "Cannot evaluate descriptor: " <> reason
+describe (DhallDecodeError _ reason) = "Cannot decode descriptor: " <> reason
+describe (ValidationError _ reasons) = T.intercalate "; " reasons
+describe (CircularDependency names) = "Dependency cycle: " <> T.intercalate " -> " [name | ModuleName name <- names]
+describe (MissingSourceFile (ModuleName name) path) = "Member '" <> name <> "' is missing " <> T.pack path
+describe (RegistryEvalError source reason) = "Cannot evaluate registry '" <> source <> "': " <> reason
