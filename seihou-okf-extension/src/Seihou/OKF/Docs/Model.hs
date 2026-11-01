@@ -3,6 +3,7 @@ module Seihou.OKF.Docs.Model
     DocArtifact (..),
     DocEntry (..),
     ModuleRef (..),
+    BaseRecipeRef (..),
     EntailedRef (..),
     DocModel (..),
     DocLoadError (..),
@@ -10,7 +11,7 @@ module Seihou.OKF.Docs.Model
   )
 where
 
-import Control.Lens ((&), (.~), (^.))
+import Control.Lens ((%~), (&), (.~), (^.))
 import Data.Generics.Labels ()
 import Data.Text qualified as T
 import GHC.Generics (Generic)
@@ -23,6 +24,7 @@ import Seihou.Core.Types
     Module (..),
     ModuleLoadError,
     Recipe (..),
+    RecipeReference (..),
     depModuleNames,
   )
 import Seihou.Dhall.Eval
@@ -62,10 +64,18 @@ data DocEntry = DocEntry
     path :: !FilePath,
     artifact :: !DocArtifact,
     moduleRefs :: ![ModuleRef],
+    baseRecipe :: !(Maybe BaseRecipeRef),
     -- | Every edge this entry\'s migrations entail, flattened across the
     -- entry\'s migration edges in declaration order. Empty for every kind but
     -- a blueprint, which is the only artifact that can declare entailment.
     entailedRefs :: ![EntailedRef]
+  }
+  deriving stock (Eq, Generic, Show)
+
+-- | A descriptor-local base edge. Documentation never fetches its source.
+data BaseRecipeRef = BaseRecipeRef
+  { reference :: !RecipeReference,
+    resolved :: !Bool
   }
   deriving stock (Eq, Generic, Show)
 
@@ -130,8 +140,9 @@ buildDocModel registryDir Registry {repoName, repoDescription, modules, recipes,
   pure $ do
     entries <- entriesResult
     let moduleNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocModuleKind]
+        recipeNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocRecipeKind]
         blueprintNames = [entry ^. #name | entry <- entries, entry ^. #kind == DocBlueprintKind]
-        resolvedEntries = map (resolveEntryRefs moduleNames blueprintNames) entries
+        resolvedEntries = map (resolveEntryRefs moduleNames recipeNames blueprintNames) entries
     Right
       DocModel
         { repoName = repoName,
@@ -230,6 +241,9 @@ docEntryFromRegistry entry kind artifact refs entailed =
       path = entry ^. #path,
       artifact = artifact,
       moduleRefs = refs,
+      baseRecipe = case artifact of
+        DocRecipeArtifact recipe -> (\ref -> BaseRecipeRef ref False) <$> recipe ^. #extends
+        _ -> Nothing,
       entailedRefs = entailed
     }
 
@@ -254,10 +268,11 @@ entailedRefs migrations =
 -- | The single place that decides whether a reference points inside this
 -- registry. Module references resolve against the registry\'s module names,
 -- entailed edges against its blueprint names.
-resolveEntryRefs :: [T.Text] -> [T.Text] -> DocEntry -> DocEntry
-resolveEntryRefs moduleNames blueprintNames entry =
+resolveEntryRefs :: [T.Text] -> [T.Text] -> [T.Text] -> DocEntry -> DocEntry
+resolveEntryRefs moduleNames recipeNames blueprintNames entry =
   entry
     & #moduleRefs .~ [ref & #resolved .~ ((ref ^. #name) `elem` moduleNames) | ref <- entry ^. #moduleRefs]
+    & #baseRecipe %~ fmap (\ref -> ref & #resolved .~ ((ref ^. #reference . #recipe . #unRecipeName) `elem` recipeNames && ref ^. #reference . #source == Nothing))
     & #entailedRefs .~ [ref & #resolved .~ ((ref ^. #blueprint) `elem` blueprintNames) | ref <- entry ^. #entailedRefs]
 
 renderModuleLoadError :: ModuleLoadError -> T.Text

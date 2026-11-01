@@ -5,6 +5,7 @@ import Data.Generics.Labels ()
 import Data.List (find)
 import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
 import Seihou.OKF.Docs.Model
 import System.Directory (createDirectoryIfMissing)
 import System.FilePath ((</>))
@@ -56,6 +57,18 @@ spec = do
             blueprint = requireEntry "app-blueprint" model
         (recipe ^. #moduleRefs) `shouldMatchList` [ModuleRef "base" True, ModuleRef "app" True]
         (blueprint ^. #moduleRefs) `shouldBe` [ModuleRef "base" True]
+
+    it "retains an external base reference without fetching it or requiring installed members" $
+      withFixtureRegistry $ \registryDir -> do
+        let path = registryDir </> "recipes/app-recipe/recipe.dhall"
+        TIO.writeFile path ("(" <> T.pack recipeDhall <> ") // {extends=Some {recipe=\"external\",source=Some \"https://example.invalid/base.git\",versionRange=Some {minimum=\"1\",before=\"2\"}}}")
+        model <- shouldLoad registryDir
+        case requireEntry "app-recipe" model ^. #baseRecipe of
+          Nothing -> expectationFailure "missing base relationship"
+          Just base -> do
+            base ^. #resolved `shouldBe` False
+            base ^. #reference . #source `shouldBe` Just "https://example.invalid/base.git"
+            base ^. #reference . #recipe `shouldBe` "external"
 
     it "resolves an entailed edge naming a blueprint in the same registry" $ do
       withFixtureRegistry $ \registryDir -> do

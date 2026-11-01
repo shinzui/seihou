@@ -193,3 +193,30 @@ correction before generation or commands. Ordinary update revalidates saved inpu
 Recipe and blueprint producers using camelCase bindings or relying on POSIX
 pattern enforcement require Seihou 0.13.0.0 or newer. Older runtimes can reject
 those binding names or silently accept patterns they do not recognize.
+
+### Single-base recipe inheritance
+
+A recipe may declare `extends = Some { recipe = "base-recipe", source = Some
+"GIT-URL", versionRange = Some { minimum = "1", before = "2" } }`. Source and
+range are optional; absent source means the declaring registry on install. Follow
+the base chain oldest first, retaining its first member as primary; children
+append members or keep modules empty for settings-only specialization.
+Use moduleOverrides for inherited literal keys, promptOverrides for replacing
+inherited questions in place. Identical member repeats deduplicate; conflicts
+fail. Bindings remain global by variable name: child literals outrank ancestors
+and saved inputs, CLI still wins, defaults remain fallbacks. Inherited declaration
+type, requiredness and validation must agree. Errors preserve recipe/origin.
+
+Install/update acquire the full candidate closure and validate source/range
+requirements before publication; run remains offline. Ordinary update handles
+base-only metadata, fresh-clone cache restoration and unknown-history adoption,
+reuses saved answers and optional omissions, and skips unchanged commands.
+Schema 13 records ordered chain names/origins/versions/descriptor hashes; null
+means unknown prior history. Neither a historical base nor dropped member is a
+mandatory fetch unless independently needed by migration/baseline work. Cache-only
+`seihou upgrade RECIPE` includes bases and recommends `seihou update RECIPE`.
+Never repair routine adoption by hand-editing the manifest or installing members
+individually. See `seihou help recipes` for the complete shape and recovery.
+
+Recipe inheritance producers require Seihou 0.14.0.0 or newer. Update the runtime
+before adopting descriptors that use `extends` or inherited overrides.

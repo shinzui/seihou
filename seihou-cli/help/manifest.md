@@ -64,8 +64,9 @@ OLDER MANIFESTS
       9 -> 10 repeatable checkout commands
       10 -> 11 precise seed ownership claims
       11 -> 12 recipe inputs
+      12 -> 13 unknown recipe-chain history
 
-    ✓ Upgraded .seihou/manifest.json to schema version 12.
+    ✓ Upgraded .seihou/manifest.json to schema version 13.
       Review the diff and commit it: git diff .seihou/manifest.json
 
   Running it on a manifest that is already current reports that there is
@@ -153,3 +154,13 @@ SEE ALSO
   seihou help migrations       moving a project between module versions
   seihou manifest upgrade -h   the full flag reference
   seihou manifest repair-origins -h
+
+RECIPE INHERITANCE
+
+  Schema 13 adds recipeChain to each application: ordered oldest-first nodes with
+  recipe name, portable origin, declared version and normalized descriptor hash.
+  Null means unknown older history; module applications record an empty array.
+  Accepted run/update records the resolved chain. Preview and decline preserve
+  the old manifest. Metadata-only base changes need acceptance, and unchanged
+  application command receipts remain valid. Use the normal recipe update to
+  adopt unknown history; no manual manifest editing is required.

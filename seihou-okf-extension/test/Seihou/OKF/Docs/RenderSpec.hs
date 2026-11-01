@@ -1,6 +1,6 @@
 module Seihou.OKF.Docs.RenderSpec (tests) where
 
-import Control.Lens ((&), (?~), (^.))
+import Control.Lens ((%~), (&), (.~), (?~), (^.))
 import Data.Generics.Labels ()
 import Data.List (sort)
 import Data.Map.Strict qualified as Map
@@ -154,6 +154,29 @@ spec = do
     it "shows the variable bindings a recipe supplies along each edge" $ do
       body <- requireBody "recipes/rich-recipe" testOptions richModel
       body `shouldSatisfy` T.isInfixOf "(with `license` = `MIT`, `project.name` = `demo`)"
+
+    it "documents an external settings-only base and explicit overrides without dangling links" $ do
+      let ref = RecipeReference "external-base" (Just "https://example.test/base.git") (Just (RecipeVersionRange "1" "2"))
+          model = derivedModel ref False
+      (concepts, problems) <- renderOrFail testOptions model
+      problems `shouldBe` []
+      body <- requireBody "recipes/app-recipe" testOptions model
+      body `shouldSatisfy` T.isInfixOf "## Extends"
+      body `shouldSatisfy` T.isInfixOf "`external-base` from `https://example.test/base.git`"
+      body `shouldSatisfy` T.isInfixOf "version >= `1` and < `2`"
+      body `shouldSatisfy` T.isInfixOf "Uses its inherited members without adding modules."
+      body `shouldSatisfy` T.isInfixOf "`external-member` (with `license` = `MIT`)"
+      body `shouldSatisfy` T.isInfixOf "## Inherited prompt overrides"
+      body `shouldNotSatisfy` T.isInfixOf "does not compose any modules"
+      length concepts `shouldBe` length (wellFormedModel ^. #entries) + 1
+
+    it "links a base known to be in the same registry" $ do
+      let parent = recipeEntry & #name .~ "parent" & #path .~ "recipes/parent"
+          model = derivedModel (RecipeReference "parent" Nothing Nothing) True & #entries %~ (<> [parent])
+      (_, problems) <- renderOrFail testOptions model
+      problems `shouldBe` []
+      body <- requireBody "recipes/app-recipe" testOptions model
+      body `shouldSatisfy` T.isInfixOf "[parent](/recipes/parent.md)"
 
     it "links an entailed edge whose blueprint is in the same registry" $ do
       body <- requireBody "blueprints/rich-blueprint" testOptions richModel
@@ -319,6 +342,7 @@ silentEntry artifactDescription =
       path = "modules/base",
       artifact = DocModuleArtifact (silentModuleArtifact artifactDescription),
       moduleRefs = [],
+      baseRecipe = Nothing,
       entailedRefs = []
     }
 
@@ -359,6 +383,7 @@ moduleEntry name refs path =
       path = path,
       artifact = DocModuleArtifact (moduleArtifact name refs),
       moduleRefs = refs,
+      baseRecipe = Nothing,
       entailedRefs = []
     }
 
@@ -401,6 +426,7 @@ recipeEntry =
               promptOverrides = []
             },
       moduleRefs = [ModuleRef "base" True, ModuleRef "app" True],
+      baseRecipe = Nothing,
       entailedRefs = []
     }
 
@@ -431,6 +457,7 @@ blueprintEntry =
               versionProbe = Nothing
             },
       moduleRefs = [ModuleRef "base" True],
+      baseRecipe = Nothing,
       entailedRefs = []
     }
 
@@ -460,6 +487,7 @@ promptEntry =
               guidance = []
             },
       moduleRefs = [],
+      baseRecipe = Nothing,
       entailedRefs = []
     }
 
@@ -485,6 +513,7 @@ richModuleEntry =
       path = "modules/rich",
       artifact = DocModuleArtifact richModule,
       moduleRefs = [],
+      baseRecipe = Nothing,
       entailedRefs = []
     }
 
@@ -612,6 +641,7 @@ richRecipeEntry =
               promptOverrides = []
             },
       moduleRefs = [ModuleRef "rich" True],
+      baseRecipe = Nothing,
       entailedRefs = []
     }
 
@@ -628,6 +658,7 @@ richBlueprintEntry =
       moduleRefs = [],
       -- One entailed edge resolves inside this registry and one does not, which
       -- is the distinction the renderer has to honour.
+      baseRecipe = Nothing,
       entailedRefs =
         [ EntailedRef {blueprint = "other-blueprint", from = "1.9.0", to = "2.0.0", resolved = True},
           EntailedRef {blueprint = "kiroku", from = "1.9.0", to = "2.0.0", resolved = False}
@@ -698,6 +729,7 @@ otherBlueprintEntry =
               versionProbe = Nothing
             },
       moduleRefs = [],
+      baseRecipe = Nothing,
       entailedRefs = []
     }
 
@@ -742,5 +774,17 @@ richPromptEntry =
               launch = Nothing
             },
       moduleRefs = [],
+      baseRecipe = Nothing,
       entailedRefs = []
     }
+
+derivedModel :: RecipeReference -> Bool -> DocModel
+derivedModel reference resolved = wellFormedModel & #entries %~ map derive
+  where
+    derive entry = case entry ^. #artifact of
+      DocRecipeArtifact recipe ->
+        entry
+          & #artifact .~ DocRecipeArtifact (recipe & #modules .~ [] & #extends .~ Just reference & #moduleOverrides .~ [RecipeModuleOverride "external-member" (Map.singleton "license" "MIT")] & #promptOverrides .~ [Prompt "license" "Choose a license" Nothing Nothing])
+          & #moduleRefs .~ []
+          & #baseRecipe .~ Just (BaseRecipeRef reference resolved)
+      _ -> entry

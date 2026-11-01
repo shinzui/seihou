@@ -51,7 +51,7 @@ handleNewRecipe ropts = do
   TIO.putStrLn $ "Recipe '" <> name <> "' created at " <> T.pack outputDir <> "/"
   TIO.putStrLn $ "Next: seihou validate-recipe " <> "'" <> T.replace "'" "'\"'\"'" (T.pack outputDir) <> "'"
   if null (ropts ^. #modules)
-    then TIO.putStrLn "Add at least one member to modules before validating."
+    then TIO.putStrLn "Add a member for a root recipe, or set extends for a derived recipe; see seihou help recipes."
     else pure ()
 
 -- | Check if a recipe name matches [a-z][a-z0-9-]*
@@ -70,6 +70,8 @@ recipeDhall name mods =
     <> "\"\n"
     <> ", version = Some \"0.1.0\"\n"
     <> ", description = Some \"\"\n"
+    <> "-- Derived recipes may keep modules empty and add extends = Some { recipe = \"base-recipe\" }.\n"
+    <> "-- Use moduleOverrides for inherited bindings; see seihou help recipes for source and range fields.\n"
     <> ", modules =\n"
     <> modulesSection mods
     <> ", vars = [] : List { name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text }\n"

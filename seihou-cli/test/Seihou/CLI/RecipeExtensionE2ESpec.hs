@@ -53,6 +53,22 @@ readManifest root = LBS.fromStrict <$> BS.readFile (root </> ".seihou/manifest.j
 
 tests :: IO TestTree
 tests = testSpec "RecipeExtension" $ do
+  it "inspects inherited declarations and literal sources through vars without generation" $
+    withSystemTempDirectory "recipe-chain-vars" $ \root -> do
+      binary <- fixture root
+      let base = root </> ".seihou/modules/base/recipe.dhall"
+      body <- TIO.readFile base
+      TIO.writeFile base (T.replace "vars=[] : List {name : Text,type : Text,default : Optional Text,description : Optional Text,required : Bool,validation : Optional Text}" "vars=[{name=\"project.owner\",type=\"text\",default=Some \"base\",description=None Text,required=False,validation=None Text}]" body)
+      writeRecipe root "child" "1" "[] : List Text" ", extends=Some {recipe=\"base\"},moduleOverrides=[{module=\"demo\",vars=[{name=\"project.owner\",value=\"child\"}]}]"
+      declarations <- successful binary root ["vars", "child"]
+      declarations `shouldSatisfy` T.isInfixOf "project.owner"
+      explained <- successful binary root ["vars", "child", "--explain"]
+      explained `shouldSatisfy` T.isInfixOf "literal recipe binding from 'child'"
+      explained `shouldSatisfy` T.isInfixOf "project.owner"
+      explained `shouldNotSatisfy` T.isInfixOf "Unresolved optional variables:"
+      D.doesFileExist (root </> ".seihou/manifest.json") `shouldReturn` False
+      D.doesFileExist (root </> "command-marker") `shouldReturn` False
+
   it "records the chain and refuses base-only downgrades before files, commands or manifest writes" $
     withSystemTempDirectory "recipe-chain-guard" $ \root -> do
       binary <- fixture root

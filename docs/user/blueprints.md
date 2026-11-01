@@ -88,7 +88,7 @@ Important fields:
 | `prompt` | Required prompt body. Usually `./prompt.md as Text`. |
 | `vars` | Variables resolved before the prompt is rendered. |
 | `prompts` | Interactive questions for missing variables. |
-| `baseModules` | Modules or recipes to apply before the agent runs. |
+| `baseModules` | Modules to apply before the agent runs. |
 | `files` | Reference files under the blueprint's `files/` directory. |
 | `allowedTools` | Extra tools to pre-approve in addition to the runner's base set. |
 | `tags` | Discovery tags for registries, browse, install, and list filters. |
@@ -472,7 +472,7 @@ seihou validate-blueprint api-service
 
 Validation checks that `blueprint.dhall` evaluates, the prompt is non-empty,
 variables are unique, prompts reference declared variables, base modules
-resolve to modules or recipes, declared reference files exist, migration
+resolve to runnable targets (use modules for executable baselines), declared reference files exist, migration
 edges have valid forward dotted versions, unique starts, and non-empty prompts,
 and a declared `versionProbe` is non-blank. Add `--lint` for advisory warnings
 about best practices.

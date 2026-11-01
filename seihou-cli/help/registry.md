@@ -41,7 +41,7 @@ SEE ALSO
 ## Installing required modules
 
 `seihou install SOURCE --module RECIPE` installs the selected recipe and its complete
-module dependency closure, including external registries declared with
+inherited-base and module dependency closure, including external registries declared with
 `source = Some "GIT-URL"`. Then use `seihou run RECIPE` with ordinary recipe inputs.
 A missing source means the declaring registry during install. Reinstalling repairs
 older incomplete installs. Run and dry-run use local modules and never fetch.
@@ -50,3 +50,9 @@ Preflight failures leave installed artifacts unchanged. Correct a missing source
 entry and retry the same command. Existing foreign cache entries require an informed
 `--force`; contradictory sources within one closure always fail. A local shadow must
 have verifiable matching provenance for an explicit source requirement.
+
+Recipes can declare one base with `extends`, including an explicit Git source and
+optional numeric version interval. Install validates the whole candidate closure
+before publication. Use `seihou help recipes` for overrides and authoring rules.
+`seihou upgrade RECIPE` refreshes its full cache closure, including unchanged
+children with changed bases; project reconciliation uses `seihou update RECIPE`.

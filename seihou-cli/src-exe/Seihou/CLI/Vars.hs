@@ -11,8 +11,11 @@ import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
 import Seihou.CLI.Commands (VarsOpts (..))
 import Seihou.CLI.Shared (deriveNamespace, formatVarError, logIO, toVarNameMap, unwrapConfig)
+import Seihou.CLI.ValidateRecipeReport (recipeLoadErrorText)
 import Seihou.Composition.Instance (ModuleInstance (..))
-import Seihou.Composition.Resolve (loadComposition, resolveWithPrompts)
+import Seihou.Composition.Recipe (ExpandedRecipe (..), recipeLiteralSources)
+import Seihou.Composition.RecipeChain (loadRecipeChain)
+import Seihou.Composition.Resolve (PromptPermission (..), RecipeInputSpec (..), loadComposition, resolveRecipeWithSources, resolveWithPrompts)
 import Seihou.Core.Context (resolveContext)
 import Seihou.Core.Module (defaultSearchPaths, discoverRunnable)
 import Seihou.Core.Types
@@ -25,6 +28,7 @@ import Seihou.Effect.Logger (logError, logInfo)
 import Seihou.Fzf (FzfResult (..), detectFzfConfig, isFzfUsable)
 import Seihou.Fzf.Selector (selectModule)
 import Seihou.Prelude
+import System.Directory (getCurrentDirectory)
 import System.Environment (getEnvironment)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 
@@ -71,12 +75,20 @@ handleVars vopts = do
       exitFailure
     Right (RunnableModule m _) ->
       if vopts ^. #explain
-        then explainMode modName vopts
+        then explainMode modName vopts Nothing
         else declarationModeModule m
-    Right (RunnableRecipe r _) ->
-      if vopts ^. #explain
-        then explainMode modName vopts
-        else declarationModeRecipe r
+    Right (RunnableRecipe r dir) ->
+      if not (vopts ^. #explain) && r ^. #extends == Nothing
+        then declarationModeRecipe r
+        else do
+          root <- getCurrentDirectory
+          expanded <- loadRecipeChain root searchPaths r dir
+          case expanded of
+            Left err -> logIO LogNormal (logError (recipeLoadErrorText err)) >> exitFailure
+            Right recipe ->
+              if vopts ^. #explain
+                then explainMode modName vopts (Just recipe)
+                else declarationModeRecipe (r & #vars .~ (recipe ^. #declarations))
     Right (RunnableBlueprint b _) ->
       if vopts ^. #explain
         then do
@@ -101,7 +113,7 @@ declarationModeModule modul = do
 
 -- | Declaration mode for a recipe: list its declared variables. Recipes
 -- carry their own @vars@ list (separately from the modules they
--- compose); this prints those without expanding the recipe.
+-- compose); derived callers supply their merged declaration list.
 declarationModeRecipe :: Recipe -> IO ()
 declarationModeRecipe r = do
   let vs = (r ^. #vars)
@@ -126,11 +138,13 @@ declarationModeBlueprint b = do
       TIO.putStr (formatDeclarations vs)
 
 -- | Explain mode: load full composition, resolve variables with exports, show provenance
-explainMode :: ModuleName -> VarsOpts -> IO ()
-explainMode modName vopts = do
+explainMode :: ModuleName -> VarsOpts -> Maybe ExpandedRecipe -> IO ()
+explainMode modName vopts expansion = do
   -- Load the full composition (target module + transitive dependencies)
   searchPaths <- defaultSearchPaths
-  compositionResult <- loadComposition searchPaths modName []
+  let primary = maybe modName (^. #primary) expansion
+      additional = maybe [] (drop 1 . map (^. #dependency . #module_) . (^. #members)) expansion
+  compositionResult <- loadComposition searchPaths primary additional
   modulesInOrder <- case compositionResult of
     Left (ModuleNotFound name searched) -> do
       logIO LogNormal $ do
@@ -160,7 +174,7 @@ explainMode modName vopts = do
   envPairs <- getEnvironment
   let cliOverrides = Map.fromList [(VarName k, v) | (k, v) <- vopts ^. #vars]
       envVars = Map.fromList [(T.pack k, T.pack v) | (k, v) <- envPairs]
-      namespace = fromMaybe (deriveNamespace modName) (vopts ^. #namespace)
+      namespace = fromMaybe (deriveNamespace primary) (vopts ^. #namespace)
   context <- resolveContext (vopts ^. #context) envVars
   let contextName = fromMaybe "" context
   (resolveResult, localMap, nsMap, ctxMap, globalMap) <- runEff $ runConfigReader $ runConsole $ do
@@ -172,7 +186,9 @@ explainMode modName vopts = do
         nm = toVarNameMap namespaceCfg
         cm = toVarNameMap contextCfg
         gm = toVarNameMap globalCfg
-    r <- resolveWithPrompts modulesInOrder cliOverrides envVars namespace contextName lm nm cm gm
+    r <- case expansion of
+      Nothing -> fmap (fmap (\values -> (Map.empty, values))) (resolveWithPrompts modulesInOrder cliOverrides envVars namespace contextName lm nm cm gm)
+      Just recipe -> resolveRecipeWithSources PromptsAllowed False (RecipeInputSpec (recipe ^. #declarations) (recipe ^. #prompts) Nothing) modulesInOrder Map.empty cliOverrides (recipeLiteralSources recipe) envVars namespace contextName lm nm cm gm
     pure (r, lm, nm, cm, gm)
   case resolveResult of
     Left errs -> do
@@ -180,17 +196,18 @@ explainMode modName vopts = do
         logError "Error resolving variables:"
         mapM_ (logError . ("  " <>) . formatVarError) errs
       exitFailure
-    Right resolved -> do
-      -- Show only the target module's resolved variables. `seihou vars` is
-      -- scoped to a module name, so if multiple instances exist we merge
-      -- their resolved maps (last wins on overlap — matches how a user
+    Right (recipeValues, resolved) -> do
+      -- Modules show their target values; recipes show accepted recipe inputs
+      -- and the complete consumer composition. Multiple instances merge
+      -- their maps in the existing order — matching how a user
       -- reads "the variables of module X" before any disambiguation UI).
       let targetResolved =
-            Map.unions
-              [ vs
-              | (inst, vs) <- Map.toList resolved,
-                inst ^. #module_ == modName
-              ]
+            Map.union recipeValues $
+              Map.unions
+                [ vs
+                | (inst, vs) <- Map.toList resolved,
+                  maybe (inst ^. #module_ == modName) (const True) expansion
+                ]
       TIO.putStrLn $ "Variables for " <> modName ^. #unModuleName <> ":"
       TIO.putStrLn ""
       if Map.null targetResolved
@@ -198,8 +215,8 @@ explainMode modName vopts = do
         else TIO.putStr (formatExplain targetResolved)
 
       -- Show diagnostics
-      let allDecls = concatMap (\(_, m, _) -> m ^. #vars) modulesInOrder
-          allResolved = Map.unions [vs | vs <- Map.elems resolved]
+      let allDecls = maybe [] (^. #declarations) expansion <> concatMap (\(_, m, _) -> m ^. #vars) modulesInOrder
+          allResolved = Map.union recipeValues (Map.unions [vs | vs <- Map.elems resolved])
           (unusedKeys, unresolvedOpt) = diagnoseResolution allResolved allDecls localMap nsMap ctxMap globalMap
       when (not (null unusedKeys)) $ do
         TIO.putStrLn ""

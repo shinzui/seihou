@@ -254,7 +254,7 @@ when breaking one would make a check pass.
 - Never lower a recorded version.
 - Never pass `--force` or `--allow-downgrade` without the user's agreement.
 - Never change anything under `~/.config/seihou/installed/` except through
-  `seihou install` and `seihou upgrade`.
+  `seihou install`, `seihou upgrade`, and accepted `seihou update`.
 - After any manual edit, run `seihou status`, `seihou manifest upgrade --dry-run`,
   and `seihou agent upgrade {{module}} --check`.
 - Blueprint migrations (`seihou agent migrate`) are a different mechanism,
@@ -273,3 +273,11 @@ End the session with a short section titled `Repair report` that tells the user:
   command could not express the fix, so the maintainers know what to automate
   next;
 - the final `Upgrade readiness` line.
+
+For derived recipes, diagnose the selected root and its full candidate base/member
+closure. Recipe-chain provenance is application-scoped in schema 13; null older
+history is adopted through ordinary update. Base-only changes can be actionable
+with no file or command change. Never prescribe fetching a removed historical
+base merely to preserve old chain evidence, enumerate transitive selectors, or
+waive producer source/version intervals with --allow-downgrade. Normal update
+restores a fresh clone cache and reuses saved inputs and optional omissions.

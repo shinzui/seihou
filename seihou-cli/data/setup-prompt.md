@@ -38,7 +38,7 @@ Adapt to the user's situation, but the general flow is:
 2. **Discover**: Check available runnables (`seihou list`). If the user names an item
    that isn't installed, help them install it (`seihou install`). Browse remote
    repositories if needed (`seihou browse`). Installing a selected recipe acquires
-   its required module closure, including declared external registry sources; no
+   its inherited-base and required module closure, including declared external registry sources; no
    transitive module list is needed. Reinstall repairs incomplete old installations.
 
 3. **Understand**: Show the module's variables (`seihou vars MODULE`) so the user
@@ -143,7 +143,7 @@ Suggest these commands when the user needs to run them locally:
 - `seihou manifest upgrade [--dry-run]` — explicitly convert older manifest schemas
 - `seihou manifest repair-origins [--dry-run] [--set NAME=URL]` — repair machine-local recorded origins
 - `seihou outdated` — inspect installed copies against their sources
-- `seihou upgrade [MODULE] [--dry-run]` — deliberate installed-cache maintenance
+- `seihou upgrade [MODULE_OR_RECIPE] [--dry-run]` — deliberate installed-cache maintenance
 - `seihou migrate MODULE [--dry-run] [--to VERSION]` — lower-level migration control
 - See `seihou help update`, `seihou help sync`, and `seihou help manifest`.
 

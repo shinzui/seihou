@@ -36,7 +36,7 @@ SCHEMA FIELDS
     prompt         Required prompt body. Usually `./prompt.md as Text`.
     vars           Variables resolved before the prompt is rendered.
     prompts        Interactive questions for missing required variables.
-    baseModules    Modules or recipes to apply before the agent runs.
+    baseModules    Modules to apply before the agent runs.
     files          Reference files under the blueprint's files/ directory.
     allowedTools   Extra tools to pre-approve in addition to the base set.
     tags           Optional discovery tags.
@@ -74,7 +74,8 @@ BASELINE MODULES
     , vars = [ { name = "project.name", value = "demo" } ]
     }
 
-  Base modules must resolve to modules or recipes, not other blueprints. The
+  Use actual modules in baseModules. Named recipes run separately through
+  `seihou run`; they are not executable blueprint baselines. The
   agent runner records the applied blueprint in `.seihou/manifest.json` after
   a successful run, including baseline provenance.
 
@@ -175,7 +176,7 @@ VALIDATION
     - the prompt body is non-empty
     - variables are unique
     - prompts reference declared variables
-    - baseModules resolve to modules or recipes
+    - baseModules targets are discoverable; executable baselines use modules
     - declared reference files exist under files/
     - migrations have dotted forward versions, unique starts, and non-empty prompts
 

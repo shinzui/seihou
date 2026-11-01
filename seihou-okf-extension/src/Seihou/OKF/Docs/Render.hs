@@ -62,6 +62,7 @@ import Seihou.Core.Types
     Prompt (..),
     PromptGuidance (..),
     Recipe (..),
+    RecipeReference (..),
     Removal (..),
     RemovalAction (..),
     RemovalStep (..),
@@ -421,10 +422,14 @@ kindSections entry =
         <> optionalSection "Commands" (renderCommands commands)
         <> foldMap (optionalSection "Removal" . renderRemoval) removal
         <> optionalSection "Migrations" (renderMigrations migrations)
-    DocRecipeArtifact Recipe {modules = recipeModules, vars, prompts} ->
-      [section "Composes" (renderDependencies "This recipe does not compose any modules." recipeModules)]
+    DocRecipeArtifact Recipe {modules = recipeModules, vars, prompts, extends, moduleOverrides, promptOverrides} ->
+      foldMap (\ref -> [section "Extends" (renderRecipeBase entry ref)]) extends
+        <> [section "Composes" (renderDependencies (maybe "This recipe does not compose any modules." (const "Uses its inherited members without adding modules.") extends) recipeModules)]
+        <> optionalSection "Inherited module overrides" (T.unlines ["- `" <> (override ^. #module_ . #unModuleName) <> "`" <> renderSuppliedVars (override ^. #vars) | override <- moduleOverrides])
+        <> [section "Override rules" "The oldest base supplies the primary module. Child literals override ancestor literals globally by variable name; defaults remain fallbacks. Explicit module overrides replace selected keys without adding instances. Prompt overrides replace inherited questions in place; new prompts append." | extends /= Nothing]
         <> optionalSection "Variables" (renderVarDecls' vars)
         <> optionalSection "Prompts" (renderPrompts prompts)
+        <> optionalSection "Inherited prompt overrides" (renderPrompts promptOverrides)
     DocBlueprintArtifact Blueprint {prompt, vars, prompts, baseModules, files, allowedTools, migrations, launch, versionProbe} ->
       [ section "Base modules" (renderDependencies "This blueprint declares no base modules." baseModules),
         section "Agent prompt" (renderAgentPrompt prompt)
@@ -466,6 +471,18 @@ optionalSection heading body
 resolvedEntailedBlueprints :: DocEntry -> [T.Text]
 resolvedEntailedBlueprints entry =
   [ref ^. #blueprint | ref <- entry ^. #entailedRefs, ref ^. #resolved]
+
+renderRecipeBase :: DocEntry -> RecipeReference -> T.Text
+renderRecipeBase entry ref =
+  let name = ref ^. #recipe . #unRecipeName
+      linked = case entry ^. #baseRecipe of
+        Just base | base ^. #resolved -> case conceptIdFor DocRecipeKind name of
+          Right conceptId -> renderConceptLink conceptId name
+          Left _ -> "`" <> name <> "`"
+        _ -> "`" <> name <> "`"
+      source = maybe " (declaring registry)" (\url -> " from `" <> url <> "`") (ref ^. #source)
+      interval = maybe "" (\range -> "; version >= `" <> range ^. #minimum <> "` and < `" <> range ^. #before <> "`") (ref ^. #versionRange)
+   in linked <> source <> interval <> ". Selected from the source's default-branch HEAD; no historical tag search."
 
 renderDependencies :: T.Text -> [Dependency] -> T.Text
 renderDependencies emptyMessage [] = emptyMessage

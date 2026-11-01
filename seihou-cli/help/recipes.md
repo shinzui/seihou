@@ -63,7 +63,7 @@ SEE ALSO
 ## Installing required modules
 
 `seihou install SOURCE --module RECIPE` installs the selected recipe and its complete
-module dependency closure, including external registries declared with
+recipe-base and module dependency closure, including external registries declared with
 `source = Some "GIT-URL"`. Then use `seihou run RECIPE` with ordinary recipe inputs.
 A missing source means the declaring registry during install. Reinstalling repairs
 older incomplete installs. Run and dry-run use local modules and never fetch.
@@ -116,3 +116,45 @@ extended regexes matching the whole text value with multiline anchors disabled;
 even on absent optional inputs. Recipe and consumer constraints apply independently
 to every selected source; errors name the original source and a supported
 correction before generation or commands. Ordinary update revalidates saved inputs.
+
+## Extending a recipe
+
+Declare one `extends = Some { recipe = "base-recipe", source = Some "GIT-URL",
+versionRange = Some { minimum = "1.0.0", before = "2.0.0" } }`. Source and range
+are optional. A missing source means the declaring registry during install.
+Acquisition validates the version at default-branch HEAD, without searching tags.
+The lower interval bound is inclusive; the upper bound is exclusive.
+
+Expand oldest base first; append child members. The oldest first member stays
+primary. A root needs members; a derived recipe may have `modules = [] : List Text`
+for settings-only specialization. Identical repeated members from the same origin
+are deduplicated. Conflicting origins or repeated bindings fail.
+
+Use `moduleOverrides = [{ module = "git-init", vars =
+[{ name = "git.githubOwner", value = "shinzui" }] }]` to change literal keys on
+exactly one inherited member. Unmentioned keys survive; no extra instance runs.
+Literals use global variable names: nearest child wins across layers. Unequal
+values within one layer of an extended chain fail. CLI still wins; constraints
+still apply. A child default cannot defeat an inherited literal.
+
+Inherited variable type, requiredness and validation must agree. A child's supplied
+default/description wins; None retains the inherited value. Questions keep their
+order: identical repeats deduplicate; `promptOverrides` explicitly replaces an
+inherited question in place; new questions append. Merged validation proves
+inherited references. Descriptor-only validation needs no installed base.
+
+Install the derived root once, then run it offline. Retry that same install to
+repair missing cached entries. Ordinary `seihou update RECIPE` fetches the current
+closure, includes base-only changes, restores an empty cache in fresh clones and
+reuses saved choices, including omitted optional answers. `--reconfigure` revisits
+them. Producer source/range requirements cannot be bypassed with --allow-downgrade.
+
+Schema 13 records the ordered recipe chain with portable origins, versions and
+normalized descriptor hashes. Unknown older history is adopted visibly through
+ordinary accepted run/update. Base substitution/downgrade is guarded; compatible
+base or descriptor-only changes appear in preview. A metadata-only update keeps
+unchanged commands skipped. `seihou upgrade RECIPE` refreshes only the cache and
+recommends the corresponding project update; --dry-run never publishes.
+
+Recipe inheritance producers require Seihou 0.14.0.0 or newer. Update the runtime
+before adopting descriptors that use `extends` or inherited overrides.

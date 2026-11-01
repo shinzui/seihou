@@ -50,7 +50,7 @@ seihou install https://github.com/your-team/recipes.git --module project
 seihou run project
 ```
 
-Install follows recipe members, module dependencies, and blueprint base modules,
+Install follows inherited recipe bases, recipe members, module dependencies, and blueprint base modules,
 including transitive dependencies in other Git registries. It installs only the
 selected entries and their required modules. Repeating the same install repairs
 an older installation missing members. Install never runs generation steps or
@@ -226,3 +226,8 @@ seihou install
 # Replace an artifact installed from a different repository
 seihou install https://github.com/acme/two.git --module shared-thing --force
 ```
+
+For a derived recipe, the selected root owns acquisition of every inherited base
+and member, including newly required registries. You do not need to install the
+base separately. Source and version-interval requirements are validated together
+before any shared cache entry changes. See [recipe extension](../user/module-authoring.md#extending-one-existing-recipe).

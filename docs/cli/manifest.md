@@ -75,7 +75,7 @@ than this build, or older than the manifest, is refused. The document's
 
 The lossless step adds `recipeChain: null` to each older application. Null means
 that its prior recipe chain was never recorded; it does not claim the recipe was
-flat. Accepted run work records an oldest-first array of recipe names, portable
+flat. Accepted run or update work records an oldest-first array of recipe names, portable
 origins, declared versions and normalized descriptor SHA-256 hashes. Module
 applications record an empty array. The final recipe node must match the
 application target's name, origin and version.

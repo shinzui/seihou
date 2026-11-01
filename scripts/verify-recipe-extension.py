@@ -27,8 +27,9 @@ def main():
     parser.add_argument('--binary', required=True)
     parser.add_argument('--area', type=Path, required=True)
     parser.add_argument('--candidate-repo', type=Path, action='append', default=[])
+    parser.add_argument('--check-update', action='store_true', help='Also verify ordinary update from a fresh committed clone')
     args = parser.parse_args()
-    binary = str(Path(shutil.which(args.binary) or args.binary).resolve())
+    binary = os.path.abspath(shutil.which(args.binary) or args.binary)
     area = args.area.resolve()
     area.mkdir(parents=True, exist_ok=False)
     env = {k: v for k, v in os.environ.items() if not k.startswith(('SEIHOU_VAR_', 'GIT_CONFIG_')) and k != 'SEIHOU_CONTEXT'}
@@ -115,6 +116,30 @@ def main():
     })
     assert 'Base chain:' in output and (interactive/'flake.nix').exists()
     assert snapshot(cache) == before
+    if args.check_update:
+        # The offline proof above ran with these checkouts physically absent.
+        # Recreate only the Git transport fixtures for the network-enabled replay.
+        for index, candidate in enumerate(args.candidate_repo):
+            subprocess.run(['git', 'clone', '-q', '--no-local', str(candidate.resolve()), str(sources/str(index))], check=True)
+        fresh = area/'fresh-clone'
+        fresh.mkdir()
+        clone = fresh/'project'
+        subprocess.run(['git', 'clone', '-q', str(interactive), str(clone)], check=True)
+        replay_env = dict(env, HOME=str(fresh/'home'), XDG_CONFIG_HOME=str(fresh/'config'),
+                          XDG_CACHE_HOME=str(fresh/'cache'), XDG_DATA_HOME=str(fresh/'data'),
+                          XDG_STATE_HOME=str(fresh/'state'))
+        replay_cache = fresh/'config/seihou/installed'
+        prior = snapshot(clone)
+        preview = run('fresh-preview', ['update', TARGET, '--dry-run'], cwd=clone, selected_env=replay_env)
+        assert 'Cache:' in preview and snapshot(clone) == prior and not replay_cache.exists()
+        run('fresh-decline', ['update', TARGET], cwd=clone, selected_env=replay_env, answers={'Apply? [Y/n]': 'n'})
+        assert snapshot(clone) == prior and not replay_cache.exists()
+        run('fresh-accept', ['update', TARGET], cwd=clone, selected_env=replay_env, answers={'Apply? [Y/n]': 'y'})
+        assert {p.name for p in replay_cache.iterdir()} == required
+        before_repeat = snapshot(clone)
+        repeated = run('fresh-repeat', ['update', TARGET, '--dry-run'], cwd=clone, selected_env=replay_env)
+        assert 'Already up to date.' in repeated and snapshot(clone) == before_repeat
+        print('PASS: fresh-clone update preview, decline, cache restoration and repeat no-op', flush=True)
     print('PASS: real producer install, origins, offline generation, inherited primary, agent files, repeat preview and interactive confirmation', flush=True)
 
 

@@ -6,6 +6,22 @@ following the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 
 ## [Unreleased]
 
+## [0.14.0.0] - 2026-11-01
+
+### Added
+
+- **Specialize a shared recipe without copying it.** Authors can declare one `extends` base, add modules, and explicitly override inherited bindings or questions. A child may only change settings. The oldest base keeps its primary module and shared members execute once. Base source/version requirements are checked before changes.
+- **Install and run the derived root normally.** `seihou install SOURCE --module RECIPE`, then `seihou run RECIPE`, acquires all bases and members. `seihou vars RECIPE` shows inherited recipe declarations; `--explain` resolves recipe and member inputs with their sources.
+- **Update the recipe, including its bases.** `seihou update RECIPE` shows compatible base-only changes, fetches newly required registries, reuses saved choices and restores missing caches in fresh clones. It does not require removed historical registries. Metadata-only updates skip unchanged application commands. `seihou upgrade RECIPE` refreshes only its full cache closure and recommends the project update afterward.
+
+### Changed
+
+- Manifest schema 13 records the ordered recipe chain, portable sources, versions and descriptor hashes. Older unknown history is adopted through ordinary preview and acceptance; no JSON edits are needed. Older executables reject the new manifest schema, so update the runtime before adopting inheritance. Core library record and source constructors also change.
+
+### Fixed
+
+- Ordinary update preserves optional answers that were left blank. Use `--reconfigure` to revisit them deliberately.
+
 ## [0.13.0.0] - 2026-10-29
 
 ### Fixed
@@ -1138,7 +1154,8 @@ regeneration.
 
 ---
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.13.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.14.0.0...HEAD
+[0.14.0.0]: https://github.com/shinzui/seihou/compare/v0.13.0.0...v0.14.0.0
 [0.13.0.0]: https://github.com/shinzui/seihou/compare/v0.12.1.0...v0.13.0.0
 [0.12.1.0]: https://github.com/shinzui/seihou/compare/v0.12.0.1...v0.12.1.0
 [0.12.0.1]: https://github.com/shinzui/seihou/compare/v0.12.0.0...v0.12.0.1

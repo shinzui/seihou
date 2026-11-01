@@ -47,6 +47,12 @@ project-local legacy declarations keep ordinary discovery until reinstalled.
 Synthetic dependencies introduced by recipe expansion or additional CLI modules do
 not inherit the primary module's origin: only producer-declared edges do.
 
+Candidate update and recipe cache upgrade reuse the same kind-aware normalized
+closure planner. They discover new producer sources until the candidate graph is
+complete; removed historical bases are not compulsory acquisition roots. Cache
+publication belongs to the accepting operation, and preview never installs. See
+[ADR 0024](0024-recipes-extend-one-origin-aware-base.md) for the merge contract.
+
 ## Consequences
 
 A normal recipe workflow is one install followed by one run. Reinstall repairs older

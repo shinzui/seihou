@@ -34,7 +34,8 @@ Checks blueprint well-formedness:
 - Every entry in the `files` list resolves to an actual file under
   `files/` in the blueprint directory
 - Every entry in `baseModules` is well-formed and resolves to a
-  module or recipe — not another blueprint
+  discoverable module or recipe — not another blueprint. Executable baselines
+  require actual modules; use `seihou run RECIPE` separately for a named recipe
 - Tags and `allowedTools` entries are non-empty
 - The `launch` record, when present, sets no blank field, and its
   declared `provider` and `effort` name values seihou recognizes

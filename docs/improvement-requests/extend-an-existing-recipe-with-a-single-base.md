@@ -8,7 +8,7 @@ description: >-
 generated:
   by: process:codex
   at: "2026-11-01T17:48:21Z"
-timestamp: 2026-11-01T18:53:14Z
+timestamp: 2026-11-01T20:59:11Z
 requestId: IR-14
 status: accepted
 targetPlan: docs/plans/118-extend-recipes-through-a-single-origin-aware-base.md
@@ -33,11 +33,7 @@ reviews:
 
 ## Status
 
-Accepted and planned in [ExecPlan 118](../plans/118-extend-recipes-through-a-single-origin-aware-base.md)
-following a recipe-reuse discussion on 2026-11-01. The plan covers the schema,
-recipe expansion, dependency installation, provenance, updates, and released
-consumer workflow. Implementation remains pending; the single-base shape below
-is a proposal, not an existing schema field.
+Source implementation is accepted through [ExecPlan 118](../plans/118-extend-recipes-through-a-single-origin-aware-base.md): single-base expansion, closure acquisition, schema-13 provenance and guards, ordinary updates/cache refresh, author guidance and generated registry docs are implemented. Source-built real-consumer proofs cover first use, base-only changes and empty-cache clones. The schema is published; the compatible CLI release, producer publication and released installed-binary acceptance remain open. The request remains accepted until that delivery workflow is verified.
 
 ## Context
 
@@ -49,8 +45,7 @@ only the specialization, while fixes to the base's module composition remain
 available through the normal upgrade workflow.
 
 [ExecPlan 6](../plans/6-recipe-module-composition.md) deliberately limited recipes
-to flat lists of modules and deferred recipe inheritance. Current source still
-implements that boundary:
+to flat lists of modules and deferred recipe inheritance. At the time this request was raised, source implemented that boundary:
 
 - `Seihou.Core.Types.Recipe` contains module dependencies, variable declarations,
   and prompts, with no parent-recipe reference.

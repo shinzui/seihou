@@ -84,3 +84,9 @@ extended regexes matching the whole text value with multiline anchors disabled;
 even on absent optional inputs. Recipe and consumer constraints apply independently
 to every selected source; errors name the original source and a supported
 correction before generation or commands. Ordinary update revalidates saved inputs.
+
+Inherited recipe inputs merge before resolution. Nearest child literals override
+ancestor literals globally; defaults remain fallbacks. Explicit moduleOverrides
+change inherited keys without adding instances. Declarations retain inherited
+type, requiredness and validation. Literal errors name their recipe and origin.
+See `seihou help recipes` for the complete extension rules.

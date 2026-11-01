@@ -112,7 +112,7 @@ handleUpgrade uopts = do
       if null entries
         then TIO.putStrLn "No installed modules or recipes with origin metadata found."
         else do
-          if uopts ^. #json then LBS.putStr (encodePretty entries) else renderUpgradeTable entries
+          if uopts ^. #json then LBS.putStr (encodePretty entries) else renderUpgradeTable (uopts ^. #dryRun) entries
           unless (uopts ^. #dryRun) $ do
             handlePostUpgradeMigrations uopts entries
             when (not (uopts ^. #json)) $ forM_ selectedRecipes $ \recipe -> TIO.putStrLn $ "Run 'seihou update " <> recipe ^. #name <> "' to reconcile the recorded project application."
@@ -273,10 +273,11 @@ doUpgrade cloneDir contents sourceUrl origin name installedVer availableVer = do
                   TIO.putStrLn $ "    Upgraded " <> name
                   pure UpgradeEntry {moduleName = name, oldVersion = installedVer, newVersion = availableVer, upgradeStatus = Upgraded}
 
-renderUpgradeTable :: [UpgradeEntry] -> IO ()
-renderUpgradeTable entries = do
+renderUpgradeTable :: Bool -> [UpgradeEntry] -> IO ()
+renderUpgradeTable dryRun entries = do
   colorEnabled <- useColor
-  let maxNameLen = max 6 (maximum (map (T.length . (^. #moduleName)) entries))
+  let upgradedLabel = if dryRun then "would upgrade" else "upgraded"
+      maxNameLen = max 6 (maximum (map (T.length . (^. #moduleName)) entries))
       maxOldLen = max 3 (maximum (map (T.length . maybe "(none)" id . (^. #oldVersion)) entries))
       maxNewLen = max 3 (maximum (map (T.length . maybe "(none)" id . (^. #newVersion)) entries))
 
@@ -292,7 +293,7 @@ renderUpgradeTable entries = do
         let oldText = maybe "(none)" id (e ^. #oldVersion)
             newText = maybe "(none)" id (e ^. #newVersion)
             statusTxt = case e ^. #upgradeStatus of
-              Upgraded -> if colorEnabled then green "upgraded" else "upgraded"
+              Upgraded -> if colorEnabled then green upgradedLabel else upgradedLabel
               AlreadyUpToDate -> if colorEnabled then dim "up to date" else "up to date"
               Skipped -> if colorEnabled then yellow "skipped (unversioned)" else "skipped (unversioned)"
               UpgradeFailed reason -> if colorEnabled then red ("failed: " <> reason) else "failed: " <> reason
@@ -314,7 +315,8 @@ renderUpgradeTable entries = do
     T.pack (show (length entries))
       <> " artifact(s) checked, "
       <> T.pack (show upgraded)
-      <> " upgraded"
+      <> " "
+      <> upgradedLabel
       <> (if failed > 0 then ", " <> T.pack (show failed) <> " failed" else "")
       <> (if skipped > 0 then ", " <> T.pack (show skipped) <> " skipped" else "")
       <> "."

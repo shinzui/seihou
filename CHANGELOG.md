@@ -4,6 +4,23 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.14.0.0] - 2026-11-01
+
+### Added
+
+- Extend recipes through one typed, origin-aware base, with optional numeric intervals, settings-only children, inherited module/prompt overrides, oldest-first composition and attributed literal sources (ExecPlan 118).
+- Share complete normalized closure staging across install, recipe update and recipe cache upgrade. Ordinary update discovers newly declared sources, omits removed historical fetch roots, restores empty caches and previews base-only provenance changes. JSON plan schema 1 adds `recipeChains` and `cacheChanges`.
+- Generate registry documentation for base relationships, intervals and override rules; expose inherited declarations and attributed inputs through recipe `vars` inspection.
+
+### Changed
+
+- **Breaking core API:** `Recipe` gains base and override fields; `AppliedComposition` gains ordered `AppliedRecipeNode` evidence; `VarSource` adds attributed recipe literals. Origin-aware expansion/resolution APIs retain declaring context. Manifest schema 13 adds nullable recipe-chain history with a lossless adjacent upgrade and ordinary accepted adoption.
+- Pin the published recipe-extension schema, integrity hash, gitlink and Nix input together. Update the executable before publishing descriptors using inheritance.
+
+### Fixed
+
+- Preserve omitted optional answers during ordinary update instead of asking again on a terminal. Metadata-only recipe updates retain unchanged application-command receipts. Recipe cache upgrade checks inherited bases even when the child version is unchanged and publishes its validated refresh together on handled failures.
+
 ## [0.13.0.0] - 2026-10-29
 
 ### Changed
@@ -1239,7 +1256,8 @@ regeneration.
 - Integration and golden tests for scaffold, composition merge, text patching,
   structured merge, removal engine, and CLI output formats.
 
-[Unreleased]: https://github.com/shinzui/seihou/compare/v0.13.0.0...HEAD
+[Unreleased]: https://github.com/shinzui/seihou/compare/v0.14.0.0...HEAD
+[0.14.0.0]: https://github.com/shinzui/seihou/compare/v0.13.0.0...v0.14.0.0
 [0.13.0.0]: https://github.com/shinzui/seihou/compare/v0.12.1.0...v0.13.0.0
 [0.12.1.0]: https://github.com/shinzui/seihou/compare/v0.12.0.1...v0.12.1.0
 [0.12.0.1]: https://github.com/shinzui/seihou/compare/v0.12.0.0...v0.12.0.1

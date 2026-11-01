@@ -32,7 +32,9 @@ Record recipe inputs at application scope in manifest schema 12. Null means no
 historical record; an empty map means the stage accepted no values. The lossless
 11-to-12 upgrade records null without inferring choices. Ordinary update may adopt
 agreeing saved instance values, while conflicts need explicit input or reconfigure.
-A recipe-only required value with no history is new input. Reconfigure discards
+A recipe-only required value with no history is new input. Ordinary update keeps
+omitted optional answers omitted rather than asking again on terminal input.
+Reconfigure discards
 both recipe and instance history. Publish adoption only with accepted application
 work; previews and failures preserve the original manifest.
 

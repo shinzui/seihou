@@ -529,3 +529,12 @@ with multiline anchors disabled. `private|public|internal` accepts exactly those
 three values. Malformed patterns fail even on absent optional inputs; they never
 disable validation. Binding names allow `[a-z][A-Za-z0-9.-]*`, including camelCase
 Git variables.
+
+### Inputs inherited from a base recipe
+
+A derived recipe merges its ancestors before resolving inputs. Child literals
+outrank ancestor literals and saved values; defaults remain fallbacks and do not
+replace an ancestor literal. Redeclared variables retain the inherited type,
+requiredness and validation contract. Use `moduleOverrides` for inherited literal
+keys and `promptOverrides` to replace inherited questions in place. Errors retain
+the supplying recipe and origin. See [the complete extension rules](module-authoring.md#extending-one-existing-recipe).

@@ -625,11 +625,99 @@ The name "recipe" aligns with seihou (製法, "method of production / recipe"): 
 
 **description** (Optional Text): Human-readable description shown by `seihou list`.
 
-**modules** (List, required): The modules to compose, using the same `{ module, vars }` record format as module dependencies. The first module becomes the "primary" for namespace derivation. Literal bindings in `vars` outrank saved recipe inputs, environment, configuration and defaults; explicit CLI `--var` values still win. Binding names follow `[a-z][A-Za-z0-9.-]*`, including `git.githubOwner`. Bindings are flattened across the recipe, with the first occurrence winning.
+**modules** (List, required): The modules to compose, using the same `{ module, vars }` record format as module dependencies. The first module becomes the "primary" for namespace derivation. Literal bindings in `vars` outrank saved recipe inputs, environment, configuration and defaults; explicit CLI `--var` values still win. Binding names follow `[a-z][A-Za-z0-9.-]*`, including `git.githubOwner`. Bindings use global variable names. In a flat recipe the first occurrence wins; extended chains apply the explicit layer rules below.
 
 **vars** (List): Recipe-level variable declarations injected into variable resolution.
 
 **prompts** (List): Recipe-level interactive prompts.
+
+### Extending one existing recipe
+
+A recipe can name one base recipe through `extends`. Seihou expands the oldest
+base first, then adds each child's modules in declaration order. The oldest base's
+first member remains primary and supplies the default namespace. A derived recipe
+may have an empty `modules` list, making a settings-only specialization practical.
+A root recipe still needs at least one module.
+
+This complete descriptor specializes the published Haskell CLI scaffold:
+
+```dhall
+{ name = "haskell-cli-app-with-agents"
+, version = Some "0.1.0"
+, description = Some "Haskell CLI scaffold with agent ignore rules"
+, extends = Some
+    { recipe = "haskell-cli-app-repo"
+    , source = Some "https://github.com/shinzui/seihou-modules.git"
+    , versionRange = Some { minimum = "0.1.0", before = "0.2.0" }
+    }
+, modules =
+    [ { module = "agent-gitignore"
+      , vars = [] : List { name : Text, value : Text }
+      }
+    ]
+, moduleOverrides =
+    [ { module = "git-init"
+      , vars = [ { name = "git.githubOwner", value = "shinzui" } ]
+      }
+    ]
+, vars = [] : List
+    { name : Text, type : Text, default : Optional Text
+    , description : Optional Text, required : Bool, validation : Optional Text
+    }
+, prompts = [] : List
+    { var : Text, text : Text, when : Optional Text, choices : Optional (List Text) }
+}
+```
+
+The base recipe is [haskell-cli-app-repo](mori://shinzui/seihou-modules/templates/haskell-cli-app-repo).
+The derived artifact is [haskell-cli-app-with-agents](mori://shinzui/agent-seihou/templates/haskell-cli-app-with-agents).
+Consumers install and run the derived root without naming dependencies:
+
+```sh
+seihou install https://github.com/shinzui/agent-seihou.git --module haskell-cli-app-with-agents
+seihou run haskell-cli-app-with-agents
+```
+
+A missing `source` means the declaring registry during install. Install records
+that source explicitly in normalized cached definitions. `versionRange` is
+optional; its numeric `minimum` is inclusive and `before` exclusive. Acquisition
+uses the source's default-branch HEAD and validates its declared version. It does
+not search tags for a satisfying historical release. A range violation, missing
+version, wrong artifact kind, source conflict or cycle refuses the candidate
+before publication. Publish a compatible producer version or correct the declared
+requirement, then retry the same ordinary command. `--allow-downgrade` does not
+waive producer source or interval requirements.
+
+Identical repeated members from the same origin are deduplicated. A different
+origin or different literal bindings on a repeated declaration is an error.
+Use `moduleOverrides` to replace selected literal keys on exactly one inherited
+member; unmentioned keys survive. This does not add another module instance or
+change genuine parameterized module dependencies.
+
+Bindings retain global variable-name semantics: a nearest child literal outranks
+an ancestor literal, saved input and ambient configuration. Unequal literals for
+one variable within a layer of an extended chain are rejected. CLI `--var` still
+wins and constraints still apply. A child default is an overridable fallback and
+cannot defeat an inherited literal. Diagnostics identify the recipe and origin
+that supplied a literal.
+
+A child may add variables or redeclare an inherited variable with the same type,
+requiredness and validation. Its nearest supplied default and description win;
+`None` retains the inherited value. Different contracts are rejected. Prompts are
+inherited in order. Identical repeats are deduplicated; use `promptOverrides` to
+replace exactly one inherited question in place. New questions append. A derived
+question can refer to inherited declarations; merged validation proves those
+references once the base is available.
+
+`seihou validate-recipe PATH` checks the local descriptor without needing the
+base. Install and run/update check the complete chain. Run remains offline;
+repeat the root install command to repair an incomplete cache. Use
+`seihou update haskell-cli-app-with-agents` for base-only project updates or an
+empty-cache fresh clone with a checked-in manifest. Preview shows chain changes,
+including same-version descriptor changes and adoption of unknown older history.
+Accepted metadata-only updates preserve unchanged command receipts. Cache-only
+refresh uses `seihou upgrade haskell-cli-app-with-agents`, which recommends the
+project update command afterward.
 
 ### Creating a recipe
 
@@ -698,12 +786,12 @@ values and available members to preview composition.
 Recipes are validated with these rules:
 
 1. Name matches `[a-z][a-z0-9-]*`
-2. At least one module listed
+2. A root recipe lists at least one module; a derived recipe may list none
 3. No duplicate module names
 4. Variable binding names match `[a-z][A-Za-z0-9.-]*`
 5. Recipe variable declarations are unique
-6. Prompts target declared recipe variables
-7. All variable references in prompt conditions are declared, including nested conditions
+6. Root prompts target declared recipe variables; derived inherited references are checked during expansion
+7. All prompt-condition references are declared in the final merged scope, including nested conditions
 8. Validation patterns have valid POSIX extended syntax, even on optional unanswered inputs
 
 Dhall loading checks field shapes, variable types/defaults and condition syntax.
@@ -975,3 +1063,6 @@ Use `strategy = "symlink"` together with `lifecycle = Some "checkout"`, with no 
 Ignore destinations in Git and commit sources. Run may establish source directories through deterministic ordinary file generation before linking; arbitrary commands cannot supply missing sources. Agreeing applications share ownership. Removing the last claim retires only the expected link and preserves modified objects. Sources must be real directories without symlinked ancestors. New output kinds need explicit typed validation, observation, application, retirement, rollback, rendering and a manifest schema advance. File links and arbitrary command outputs are not currently supported.
 
 For the producer at `mori://shinzui/agent-seihou`, project-relative file `modules/link-skill/module.dhall` (artifact-level URI pending), replace each skill-link shell command with a normal symlink/checkout step whose source is the project's skill directory and whose destination is the consumer's ignored discovery path. Validate with a supporting Seihou release, publish the declaring module release, apply it once in each consumer and commit the new manifest. Old shell receipts do not create declarations. Producer adoption and release numbering are separate work.
+
+Recipe inheritance producers require Seihou 0.14.0.0 or newer. Update the runtime
+before adopting descriptors that use `extends` or inherited overrides.
