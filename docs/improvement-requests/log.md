@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-11-01
+* **Completed**: IR-14: released and installed Seihou 0.14.0.0 with published schema and registry recipes; verified public install/run, empty-cache fresh-clone update and a compatible base-only refresh. ExecPlan 118 records delivery evidence.
 * **Update**: IR-14 source implementation now covers inheritance, acquisition, schema-13 chain guards, ordinary updates/cache refresh, author help and registry documentation. ExecPlan 118 retains CLI release, producer publication and installed consumer verification as open delivery work; the published schema is dbeff0d.
 * **Update**: IR-14 is accepted and linked to [ExecPlan 118](../plans/118-extend-recipes-through-a-single-origin-aware-base.md), which plans single-base recipe extension, dependency acquisition, provenance guards, base-only updates, and released consumer verification. Implementation remains pending.
 * **Addition**: IR-14 proposes single-base recipe extension: inherit modules and settings with explicit override rules, resolve and install the dependency closure across registries, detect cycles and conflicts, and retain base-chain versions and origins. Acceptance covers empty caches, fresh clones, base-only upgrades, and backward compatibility; implementation remains proposed.

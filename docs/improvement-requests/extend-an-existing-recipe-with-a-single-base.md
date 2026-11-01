@@ -8,9 +8,14 @@ description: >-
 generated:
   by: process:codex
   at: "2026-11-01T17:48:21Z"
-timestamp: 2026-11-01T20:59:11Z
+timestamp: 2026-11-01T21:39:42Z
 requestId: IR-14
-status: accepted
+status: completed
+completedAt: "2026-11-01T21:39:42Z"
+resolution: >-
+  Released and installed Seihou 0.14.0.0 supports origin-aware recipe inheritance,
+  complete acquisition and update closures, schema-13 provenance, and published
+  producer workflows verified from empty caches and a fresh clone.
 targetPlan: docs/plans/118-extend-recipes-through-a-single-origin-aware-base.md
 origin: mori://shinzui/seihou-modules
 reviews:
@@ -33,7 +38,7 @@ reviews:
 
 ## Status
 
-Source implementation is accepted through [ExecPlan 118](../plans/118-extend-recipes-through-a-single-origin-aware-base.md): single-base expansion, closure acquisition, schema-13 provenance and guards, ordinary updates/cache refresh, author guidance and generated registry docs are implemented. Source-built real-consumer proofs cover first use, base-only changes and empty-cache clones. The schema is published; the compatible CLI release, producer publication and released installed-binary acceptance remain open. The request remains accepted until that delivery workflow is verified.
+Completed through [ExecPlan 118](../plans/118-extend-recipes-through-a-single-origin-aware-base.md) in released and installed Seihou 0.14.0.0 (`b371308`). The schema and both producer registries are published. The installed executable passes public install/run, offline generation, ordinary interactive confirmation, fresh-clone empty-cache update, and a compatible base-only cache refresh followed by accepted update with unchanged command receipts. The plan records release artifacts and acceptance evidence.
 
 ## Context
 
