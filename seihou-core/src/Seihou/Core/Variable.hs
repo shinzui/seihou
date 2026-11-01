@@ -366,6 +366,11 @@ formatExplain resolved =
 formatVarSource :: VarSource -> Text
 formatVarSource FromCLI = "--var"
 formatVarSource FromRecipeBinding = "literal recipe binding"
+formatVarSource (FromRecipeBindingAt recipe origin) = "literal recipe binding from '" <> recipe ^. #unRecipeName <> "' (" <> sourceLabel origin <> ")"
+  where
+    sourceLabel (RemoteOrigin url _ _) = url
+    sourceLabel (ProjectOrigin path) = T.pack path
+    sourceLabel (LocalOrigin name) = name <> "; unverified local origin"
 formatVarSource FromApplication = "application"
 formatVarSource (FromEnv envKey) = "env " <> envKey
 formatVarSource FromLocalConfig = "local config"

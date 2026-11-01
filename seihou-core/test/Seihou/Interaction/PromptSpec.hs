@@ -8,7 +8,7 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Effectful
 import Seihou.Composition.Instance (primaryInstance)
-import Seihou.Composition.Resolve (PromptPermission (..), RecipeInputSpec (..), resolveRecipeWithPrompts, resolveWithPromptPermission, resolveWithPrompts)
+import Seihou.Composition.Resolve (PromptPermission (..), RecipeInputSpec (..), resolveRecipeWithPrompts, resolveRecipeWithSources, resolveWithPromptPermission, resolveWithPrompts)
 import Seihou.Core.Types
 import Seihou.Effect.ConsolePure
 import Seihou.Interaction.Prompt (promptForVar, runPrompts)
@@ -103,6 +103,20 @@ spec = do
         resolve permission spec saved cli literals local =
           resolveRecipeWithPrompts permission False spec modules saved cli literals Map.empty "" "" local Map.empty Map.empty Map.empty
         recipe = RecipeInputSpec [feature] [mkPrompt "feature" "Feature?"] Nothing
+    it "preserves declaring-recipe provenance for declared and undeclared literals in every consumer" $ do
+      let origin = RemoteOrigin "https://example.com/policy.git" "child" Nothing
+          source = FromRecipeBindingAt "child" origin
+          literals = Map.singleton "feature" ("false", source)
+      forM_ [recipe, RecipeInputSpec [] [] Nothing] $ \inputSpec -> do
+        let (result, _) =
+              runPureEff $
+                runConsolePureNonInteractive $
+                  resolveRecipeWithSources PromptsForbidden False inputSpec modules Map.empty Map.empty literals Map.empty "" "" Map.empty Map.empty Map.empty Map.empty
+        case result of
+          Left errs -> expectationFailure (show errs)
+          Right (_, values) -> do
+            (values Map.! primaryInstance "consumer" Map.! "feature") ^. #value `shouldBe` VBool False
+            (values Map.! primaryInstance "consumer" Map.! "feature") ^. #source `shouldBe` source
     it "requires the recipe choice before considering a consumer default" $ do
       let (result, _) = runPureEff $ runConsolePureNonInteractive $ resolve PromptsForbidden recipe Map.empty Map.empty Map.empty Map.empty
       result `shouldBe` Left [MissingRequiredVar "feature"]

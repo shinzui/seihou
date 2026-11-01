@@ -24,9 +24,16 @@ availability or behavior of its members.
 ## Checks
 
 The command evaluates Dhall and checks field shapes, variable types and defaults,
-and condition syntax. It also checks the recipe name, a nonempty module list,
-unique members, binding-name syntax, unique variable declarations, declared prompt
-targets, and declared variable references throughout nested prompt conditions.
+and condition syntax. It also checks the recipe name, unique members, binding-name
+syntax, unique variable declarations, base-reference and interval shapes, and
+explicit override lists. A root recipe needs a nonempty module list. Flat recipes
+must declare prompt targets and references throughout nested prompt conditions.
+
+A descriptor with `extends` may add no members and may reference inherited
+variables. Validation checks its local fields without finding the base. Successful
+derived validation also prints: `Local descriptor validation passed; the base and
+composition were not checked.` Inherited override targets, merged declarations and
+prompt references require full chain expansion.
 Semantic failures are reported together with their fields and affected names.
 
 Member bindings remain literal text and may name variables declared only by member

@@ -1,7 +1,7 @@
 # ADR 0022 — Recipe descriptor validation is independent of composition
 
 - Status: Accepted
-- Date: 2026-10-28
+- Date: 2026-11-01
 
 ## Context
 
@@ -19,10 +19,15 @@ installs members, resolves configuration or values, runs prompts, or plans/execu
 composition. Normal Dhall imports retain their network and evaluator-cache behavior;
 self-contained descriptors and local imports can be checked offline.
 
-The shared validator owns descriptor-local rules for recipe names, nonempty and
-unique members, binding names, unique variable declarations, well-formed POSIX validation patterns, declared prompt
-targets and declared references throughout prompt conditions. Composition and
-update use the same validator. The Dhall loader owns field shapes, types/defaults
+The shared validator owns descriptor-local rules for recipe names, unique members,
+binding names, unique variable declarations, well-formed POSIX validation patterns,
+reference shapes, numeric base intervals and explicit override lists. A root must
+have a member. A recipe declaring `extends` may add none and may refer to inherited
+variables in its prompts. The descriptor command reports that the base and
+composition have not been checked. Full expansion validates inherited override
+targets, merged prompt references and declaration compatibility. Flat descriptors
+retain their local declared-target/reference checks. Composition and update use
+the same validator. The Dhall loader owns field shapes, types/defaults
 and condition parsing, and malformed conditions identify their prompt and `when`.
 
 Bindings remain literal text addressed to member variables; those variables need

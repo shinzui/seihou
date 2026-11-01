@@ -395,7 +395,10 @@ recipeEntry =
               description = Just "Recipe",
               modules = [simpleDep "base", simpleDep "app"],
               vars = [],
-              prompts = []
+              prompts = [],
+              extends = Nothing,
+              moduleOverrides = [],
+              promptOverrides = []
             },
       moduleRefs = [ModuleRef "base" True, ModuleRef "app" True],
       entailedRefs = []
@@ -603,7 +606,10 @@ richRecipeEntry =
                     }
                 ],
               vars = [],
-              prompts = []
+              prompts = [],
+              extends = Nothing,
+              moduleOverrides = [],
+              promptOverrides = []
             },
       moduleRefs = [ModuleRef "rich" True],
       entailedRefs = []

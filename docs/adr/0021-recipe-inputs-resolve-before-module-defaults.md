@@ -1,7 +1,7 @@
 # ADR 0021 — Recipe inputs resolve before module defaults
 
 - Status: Accepted
-- Date: 2026-10-28
+- Date: 2026-11-01
 
 ## Context
 
@@ -19,6 +19,14 @@ through the broadcast itself so consumer failures identify the original source,
 including literal recipe bindings, rather than the temporary explicit-input
 channel. Required inputs
 remain required when a prompt condition is false; optional absence is valid.
+
+Origin-aware recipe expansion retains each literal's declaring recipe and origin.
+The source-aware resolution API accepts that attribution directly, preserving it
+for declared inputs, undeclared literals and consumer validation. The flat adapter
+retains its historical generic literal-binding label. Descendant literal deltas
+outrank ancestor deltas; changing a declaration default does not replace a literal.
+Member override keys remain global recipe literals, separate from the module
+instance's parent-edge bindings.
 
 Record recipe inputs at application scope in manifest schema 12. Null means no
 historical record; an empty map means the stage accepted no values. The lossless

@@ -35,4 +35,8 @@ handleValidateRecipe opts = do
         Left err -> invalid [recipeLoadErrorText err] 1
         Right recipe -> case validateRecipe recipe of
           Left errors -> invalid errors 1
-          Right valid -> TIO.putStrLn $ "Recipe '" <> valid ^. #name . #unRecipeName <> "' is valid."
+          Right valid -> do
+            TIO.putStrLn $ "Recipe '" <> valid ^. #name . #unRecipeName <> "' is valid."
+            case valid ^. #extends of
+              Nothing -> pure ()
+              Just _ -> TIO.putStrLn "Local descriptor validation passed; the base and composition were not checked."

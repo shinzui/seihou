@@ -34,6 +34,9 @@ module Seihou.Core.Types
     Module (..),
     RecipeName (..),
     Recipe (..),
+    RecipeReference (..),
+    RecipeVersionRange (..),
+    RecipeModuleOverride (..),
     BlueprintFile (..),
     Blueprint (..),
     CommandVar (..),
@@ -330,15 +333,39 @@ newtype RecipeName = RecipeName {unRecipeName :: Text}
   deriving stock (Eq, Ord, Show, Generic)
   deriving newtype (IsString)
 
--- | A recipe: a named, reusable composition of modules with optional
--- pre-configured variable bindings.
+-- | Inclusive minimum and exclusive upper bound on numeric recipe versions.
+data RecipeVersionRange = RecipeVersionRange
+  { minimum :: !Text,
+    before :: !Text
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | One parent, selected from its source default branch and checked locally.
+data RecipeReference = RecipeReference
+  { recipe :: !RecipeName,
+    source :: !(Maybe Text),
+    versionRange :: !(Maybe RecipeVersionRange)
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | Literal changes to an inherited member; never a new executable instance.
+data RecipeModuleOverride = RecipeModuleOverride
+  { module_ :: !ModuleName,
+    vars :: !(Map VarName Text)
+  }
+  deriving stock (Eq, Show, Generic)
+
+-- | A named composition, optionally specializing one inherited recipe.
 data Recipe = Recipe
   { name :: !RecipeName,
     version :: !(Maybe Text),
     description :: !(Maybe Text),
     modules :: ![Dependency],
     vars :: ![VarDecl],
-    prompts :: ![Prompt]
+    prompts :: ![Prompt],
+    extends :: !(Maybe RecipeReference),
+    moduleOverrides :: ![RecipeModuleOverride],
+    promptOverrides :: ![Prompt]
   }
   deriving stock (Eq, Show, Generic)
 
@@ -518,6 +545,7 @@ data ModuleLoadError
 data VarSource
   = FromCLI
   | FromRecipeBinding
+  | FromRecipeBindingAt RecipeName ArtifactOrigin
   | FromApplication
   | FromEnv Text
   | FromLocalConfig

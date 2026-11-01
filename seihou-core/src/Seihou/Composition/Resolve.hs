@@ -9,6 +9,7 @@ module Seihou.Composition.Resolve
     resolveWithPromptPermission,
     RecipeInputSpec (..),
     resolveRecipeWithPrompts,
+    resolveRecipeWithSources,
     varValueToText,
     exportedVars,
     collectParentVars,
@@ -329,11 +330,31 @@ resolveRecipeWithPrompts ::
   Map VarName Text ->
   Map VarName Text ->
   Eff es (Either [VarError] (Map VarName ResolvedVar, Map ModuleInstance (Map VarName ResolvedVar)))
-resolveRecipeWithPrompts permission confirmRecipe (RecipeInputSpec decls prompts recorded) modules saved cli literals env ns ctx local nsCfg ctxCfg global = do
+resolveRecipeWithPrompts permission confirmRecipe spec modules saved cli literals =
+  resolveRecipeWithSources permission confirmRecipe spec modules saved cli (Map.map (\raw -> (raw, FromRecipeBinding)) literals)
+
+resolveRecipeWithSources ::
+  (Console :> es) =>
+  PromptPermission ->
+  Bool ->
+  RecipeInputSpec ->
+  [(ModuleInstance, Module, FilePath)] ->
+  SavedInstanceValues ->
+  Map VarName Text ->
+  Map VarName (Text, VarSource) ->
+  Map Text Text ->
+  Text ->
+  Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Map VarName Text ->
+  Eff es (Either [VarError] (Map VarName ResolvedVar, Map ModuleInstance (Map VarName ResolvedVar)))
+resolveRecipeWithSources permission confirmRecipe (RecipeInputSpec decls prompts recorded) modules saved cli literals env ns ctx local nsCfg ctxCfg global = do
   interactive <- case permission of
     PromptsForbidden -> pure False
     PromptsAllowed -> isInteractive
-  let explicit = Map.union (Map.map (\raw -> (raw, FromCLI)) cli) (Map.map (\raw -> (raw, FromRecipeBinding)) literals)
+  let explicit = Map.union (Map.map (\raw -> (raw, FromCLI)) cli) literals
       historical d =
         nubOrdBy
           id

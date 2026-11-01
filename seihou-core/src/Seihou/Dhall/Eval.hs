@@ -132,7 +132,7 @@ evalRecipeFromFile path = do
         mapM_ evaluate (r ^. #modules)
         -- Force lazy decoder thunks that may contain 'error' calls
         mapM_ (\v -> evaluate (forceType (v ^. #type_))) (r ^. #vars)
-        mapM_ (\p -> evaluate (p ^. #condition)) (r ^. #prompts)
+        mapM_ (\p -> evaluate (p ^. #condition)) ((r ^. #prompts) <> (r ^. #promptOverrides))
         pure r
       Failure e -> throwIO e
   case result of
@@ -283,7 +283,7 @@ migrationOpDecoder =
 
 -- | Decoder for the top-level Recipe type from Dhall.
 recipeDecoder :: Decoder Recipe
-recipeDecoder = Decoder decodeRecipe (expected fieldsDecoder)
+recipeDecoder = withDefaults [("extends", noneText), ("moduleOverrides", emptyRecordList), ("promptOverrides", emptyRecordList)] $ Decoder decodeRecipe (expected fieldsDecoder)
   where
     fieldsDecoder =
       record
@@ -294,6 +294,9 @@ recipeDecoder = Decoder decodeRecipe (expected fieldsDecoder)
             <*> field "modules" (decodeContext "modules: expected a list of module names or records with module and vars bindings" (list dependencyDecoder))
             <*> field "vars" (decodeContext "vars: expected variable declarations with name, type, default, description, required and validation fields" (list varDeclDecoder))
             <*> field "prompts" (decodeContext "prompts: expected prompt records with var, text, when and choices fields" (list promptDecoder))
+            <*> field "extends" (maybe recipeReferenceDecoder)
+            <*> field "moduleOverrides" (list recipeModuleOverrideDecoder)
+            <*> field "promptOverrides" (list promptDecoder)
         )
 
     decodeRecipe expr@(Dhall.RecordLit fields) =
@@ -301,6 +304,24 @@ recipeDecoder = Decoder decodeRecipe (expected fieldsDecoder)
         [] -> extract fieldsDecoder expr
         missing -> extractError ("recipe.dhall: missing fields: " <> T.intercalate ", " missing)
     decodeRecipe _ = extractError "recipe.dhall: expected a recipe record"
+
+recipeReferenceDecoder :: Decoder RecipeReference
+recipeReferenceDecoder =
+  withDefaults [("source", noneText), ("versionRange", noneText)] $
+    record
+      ( RecipeReference
+          <$> field "recipe" recipeNameDecoder
+          <*> field "source" (maybe strictText)
+          <*> field "versionRange" (maybe (record (RecipeVersionRange <$> field "minimum" strictText <*> field "before" strictText)))
+      )
+
+recipeModuleOverrideDecoder :: Decoder RecipeModuleOverride
+recipeModuleOverrideDecoder =
+  record
+    ( RecipeModuleOverride
+        <$> field "module" moduleNameDecoder
+        <*> field "vars" (Map.fromList <$> list (record ((,) <$> field "name" varNameDecoder <*> field "value" strictText)))
+    )
 
 -- Dhall extraction bypasses a single expected type to support both dependency
 -- forms. Give extraction failures author-facing field context rather than an

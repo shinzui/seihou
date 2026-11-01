@@ -22,6 +22,11 @@ provenance:
       at: 2026-11-01T18:57:29Z
       mode: "update"
       note: "Correct member-origin and literal-attribution contracts, override/default/prompt semantics, candidate closure removal, and guard/publication guarantees after source review."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-11-01T19:15:11Z
+      mode: "implement"
+      note: "Implement descriptor validation and pure origin-aware recipe-chain expansion."
 ---
 
 # Extend recipes through a single origin-aware base
@@ -51,12 +56,16 @@ This plan owns schema, executable, author documentation, manifest compatibility,
 ## Progress
 
 
-- [ ] M1: Old flat descriptors still load, and the new single-base descriptor, override rules, and pure expansion have deterministic, testable semantics.
+- [x] M1 (2026-11-01): Legacy descriptor decoding, new descriptor-local validation, origin-aware pure merging, offline chain loading and source-attributed literal resolution pass all 1,381 core tests. The source-built CLI also validates a settings-only child without an installed base, reports its local-only scope, and leaves project/config/cache bytes untouched. The schema package and derived example type-check/evaluate; producer changes are committed locally as `dbeff0d`.
 - [ ] M2: One ordinary install and run expand a real base across registries from empty caches, preserving the base primary module and running shared modules once.
 - [ ] M3: Run records and guards the full recipe chain; older manifests decode and adopt chain provenance without fabricated history or preflight writes.
 - [ ] M4: Ordinary update and cache upgrade include base-only changes and new transitive sources, including fresh-clone use, with honest previews and rollback behavior.
 - [ ] M5: The published schema, released and installed CLI, author help, and published registry example pass the complete consumer workflow.
 
+
+Implementation checkpoint (2026-11-01): `Recipe` has explicit base/module/prompt override fields. `ExpandedRecipe`, `ResolvedRecipeNode`, `ResolvedRecipeMember` and `RecipeLiteral` preserve the origin and declaring-directory context; `mergeRecipeChain` implements oldest-first merging without turning literals into module-instance parent bindings. `loadRecipeChain` is offline and verifies source/range requirements. The legacy tuple wrapper rejects derived recipes explicitly. `resolveRecipeWithSources` preserves literal attribution through recipe and consumer resolution while the original API remains a flat compatibility adapter. Validation commands: `nix develop -c cabal test seihou-core-test` passed 1,381 tests; the focused Recipe run selected 40 tests. `nix develop -c cabal build exe:seihou` passed. `nix develop -c cabal test seihou-cli-test --test-options='-p ValidateRecipe'` passed all 23 selected public-command regressions, including the new derived-descriptor case and snapshot preservation. The candidate executable is `dist-newstyle/build/aarch64-osx/ghc-9.12.4/seihou-cli-0.13.0.0/x/seihou/build/seihou/seihou`, reporting `seihou v0.13.0.0 (7c56bfa)` before the implementation commit; this is a source build, not an installed release. `nix develop -c cabal test seihou-okf-extension-test` passed all 51 tests. `nix develop -c cabal build all`, Fourmolu checks on changed Haskell files, and `git diff --check` passed. The effective installed executable remains `/Users/shinzui/.nix-profile/bin/seihou`, version `0.10.1.0 (c3cbd9b)`; it has not been replaced. Public install/run/update have not yet been routed through the new expansion, and M2–M5 remain unimplemented; this checkpoint does not deliver recipe inheritance to users.
+
+The schema producer `mori://shinzui/seihou-schema` was fast-forwarded to authoritative upstream HEAD `d3c78cd81d9697ebff3128732ec673a17e65c73f`; its new descriptor exports are committed locally as `dbeff0d`. Package type-checking and an evaluated settings-only derived example pass. The producer's unrelated `Step.dhall` edit and this repository's pre-existing modified `schema` gitlink were preserved. The new schema commit is unpublished and the CLI schema pins remain unchanged pending coordinated M5 delivery.
 
 ## Surprises & Discoveries
 

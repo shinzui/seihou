@@ -38,6 +38,7 @@ library
     Seihou.Composition.Instance
     Seihou.Composition.Plan
     Seihou.Composition.Recipe
+    Seihou.Composition.RecipeChain
     Seihou.Composition.Resolve
     Seihou.Core.AgentPrompt
     Seihou.Core.Application

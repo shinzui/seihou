@@ -394,6 +394,22 @@ spec = do
               Left (DhallEvalError _ message) -> message `shouldSatisfy` T.isInfixOf context
               other -> expectationFailure ("Expected controlled decode failure, got: " <> show other)
 
+    it "decodes a settings-only derived descriptor and rejects malformed override conditions" $ do
+      withSystemTempDirectory "recipe-extension-decoding" $ \tmpDir -> do
+        let descriptor condition = "{ name = \"child\", version = None Text, description = None Text, modules = [] : List Text, vars = [] : List {name : Text, type : Text, default : Optional Text, description : Optional Text, required : Bool, validation : Optional Text}, prompts = [] : List {var : Text, text : Text, when : Optional Text, choices : Optional (List Text)}, extends = Some {recipe = \"base\"}, moduleOverrides = [{module = \"one\", vars = [{name = \"x\", value = \"new\"}]}], promptOverrides = [{var = \"x\", text = \"New?\", when = " <> condition <> ", choices = None (List Text)}]}"
+        writeFile (tmpDir </> "recipe.dhall") (descriptor "None Text")
+        result <- evalRecipeFromFile (tmpDir </> "recipe.dhall")
+        case result of
+          Left err -> expectationFailure (show err)
+          Right recipe -> do
+            recipe ^. #extends `shouldBe` Just (RecipeReference "base" Nothing Nothing)
+            recipe ^. #moduleOverrides `shouldBe` [RecipeModuleOverride "one" (Map.singleton "x" "new")]
+        writeFile (tmpDir </> "recipe.dhall") (descriptor "Some \"Eq x\"")
+        bad <- evalRecipeFromFile (tmpDir </> "recipe.dhall")
+        case bad of
+          Left _ -> pure ()
+          Right _ -> expectationFailure "Malformed override condition escaped the loader"
+
     it "decodes the haskell-with-nix-recipe fixture" $ do
       result <- evalRecipeFromFile (fixtureDir </> "haskell-with-nix-recipe" </> "recipe.dhall")
       case result of

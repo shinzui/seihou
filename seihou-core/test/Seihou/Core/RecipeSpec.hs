@@ -1,6 +1,7 @@
 module Seihou.Core.RecipeSpec (tests) where
 
 import Control.Lens ((&), (.~))
+import Data.Either (isLeft)
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as T
@@ -19,6 +20,38 @@ hasError needle = any (T.isInfixOf needle)
 spec :: Spec
 spec = do
   describe "validateRecipe" $ do
+    it "validates settings-only children without discovering inherited prompt names" $ do
+      let recipe =
+            interactiveRecipe
+              & #modules .~ []
+              & #vars .~ []
+              & #extends .~ Just (RecipeReference "missing-base" Nothing Nothing)
+              & #moduleOverrides .~ [RecipeModuleOverride "inherited" mempty]
+      validateRecipe recipe `shouldBe` Right recipe
+
+    it "rejects malformed references, reversed intervals, and duplicate override targets" $ do
+      let base = interactiveRecipe & #extends .~ Just (RecipeReference "base" Nothing Nothing)
+      mapM_
+        (\ref -> validateRecipe (base & #extends .~ Just ref) `shouldSatisfy` isLeft)
+        [ RecipeReference "BadName" Nothing Nothing,
+          RecipeReference "base" (Just "${source}") Nothing,
+          RecipeReference "base" Nothing (Just (RecipeVersionRange "2" "1")),
+          RecipeReference "base" Nothing (Just (RecipeVersionRange "1.0" "1")),
+          RecipeReference "base" Nothing (Just (RecipeVersionRange "latest" "2")),
+          RecipeReference "base" Nothing (Just (RecipeVersionRange "+1" "2"))
+        ]
+      validateRecipe (base & #moduleOverrides .~ replicate 2 (RecipeModuleOverride "inherited" mempty)) `shouldSatisfy` isLeft
+      validateRecipe (base & #promptOverrides .~ replicate 2 (Prompt "inherited" "Question?" Nothing Nothing)) `shouldSatisfy` isLeft
+
+    it "rejects overriding an addition or overriding without a base" $ do
+      validateRecipe (interactiveRecipe & #moduleOverrides .~ [RecipeModuleOverride "inherited" mempty]) `shouldSatisfy` isLeft
+      validateRecipe
+        ( interactiveRecipe
+            & #extends .~ Just (RecipeReference "base" Nothing Nothing)
+            & #moduleOverrides .~ [RecipeModuleOverride "unavailable" mempty]
+        )
+        `shouldSatisfy` isLeft
+
     it "accepts camelCase bindings without recipe declarations or installed members" $ do
       let recipe = interactiveRecipe & #modules .~ [Dependency "unavailable" (Map.fromList [("git.githubOwner", "tan"), ("git.createGithub", "true"), ("git.githubVisibility", "private")]) Nothing]
       validateRecipe recipe `shouldBe` Right recipe
@@ -31,7 +64,10 @@ spec = do
                 description = Just "A valid recipe",
                 modules = [simpleDep "mod-a", simpleDep "mod-b"],
                 vars = [],
-                prompts = []
+                prompts = [],
+                extends = Nothing,
+                moduleOverrides = [],
+                promptOverrides = []
               }
       validateRecipe recipe `shouldBe` Right recipe
 
@@ -43,7 +79,10 @@ spec = do
                 description = Nothing,
                 modules = [],
                 vars = [],
-                prompts = []
+                prompts = [],
+                extends = Nothing,
+                moduleOverrides = [],
+                promptOverrides = []
               }
       case validateRecipe recipe of
         Left errs -> hasError "at least one module" errs `shouldBe` True
@@ -57,7 +96,10 @@ spec = do
                 description = Nothing,
                 modules = [simpleDep "mod-a"],
                 vars = [],
-                prompts = []
+                prompts = [],
+                extends = Nothing,
+                moduleOverrides = [],
+                promptOverrides = []
               }
       case validateRecipe recipe of
         Left errs -> hasError "recipe name must match" errs `shouldBe` True
@@ -71,7 +113,10 @@ spec = do
                 description = Nothing,
                 modules = [simpleDep "mod-a", simpleDep "mod-b", simpleDep "mod-a"],
                 vars = [],
-                prompts = []
+                prompts = [],
+                extends = Nothing,
+                moduleOverrides = [],
+                promptOverrides = []
               }
       case validateRecipe recipe of
         Left errs -> hasError "duplicate module" errs `shouldBe` True
@@ -87,7 +132,10 @@ spec = do
                   [ Dependency (ModuleName "mod-a") (Map.singleton (VarName "INVALID") "val") Nothing
                   ],
                 vars = [],
-                prompts = []
+                prompts = [],
+                extends = Nothing,
+                moduleOverrides = [],
+                promptOverrides = []
               }
       case validateRecipe recipe of
         Left errs -> hasError "invalid var binding name" errs `shouldBe` True
@@ -103,7 +151,10 @@ spec = do
                   [ Dependency (ModuleName "mod-a") (Map.singleton (VarName "nix.system") "aarch64-darwin") Nothing
                   ],
                 vars = [],
-                prompts = []
+                prompts = [],
+                extends = Nothing,
+                moduleOverrides = [],
+                promptOverrides = []
               }
       validateRecipe recipe `shouldBe` Right recipe
 
@@ -115,7 +166,10 @@ spec = do
                 description = Nothing,
                 modules = [],
                 vars = [],
-                prompts = []
+                prompts = [],
+                extends = Nothing,
+                moduleOverrides = [],
+                promptOverrides = []
               }
       case validateRecipe recipe of
         Left errs -> length errs `shouldSatisfy` (>= 2)
@@ -139,6 +193,9 @@ spec = do
               [simpleDep "unavailable"]
               [requiredVar "enabled", requiredVar "enabled"]
               [Prompt "missing-target" "Question" (Just (ExprAnd (ExprIsSet "unknown-a") (ExprNot (ExprOr (ExprLit True) (ExprEq "unknown-b" (VBool False)))))) Nothing]
+              Nothing
+              []
+              []
       case validateRecipe recipe of
         Left errs -> do
           length errs `shouldBe` 4
@@ -159,3 +216,6 @@ interactiveRecipe =
     [Dependency "unavailable" (Map.singleton "member.only" "literal ${unchanged}") Nothing]
     [requiredVar "enabled", requiredVar "owner"]
     [Prompt "owner" "Owner?" (Just (ExprAnd (ExprEq "enabled" (VBool True)) (ExprNot (ExprOr (ExprIsSet "owner") (ExprLit False))))) Nothing]
+    Nothing
+    []
+    []

@@ -92,6 +92,22 @@ tests = testSpec "ValidateRecipe" $ do
           (code, output) `shouldBe` (ExitSuccess, "Recipe 'my-stack' is valid.\n")
           snapshot root `shouldReturn` before
 
+  it "validates a settings-only child with inherited prompts without acquiring its base" $
+    withSystemTempDirectory "validate-derived-recipe" $ \root -> do
+      binary <- seihouBinary
+      prepareState root
+      let descriptor =
+            T.replace
+              "modules = [{module = \"demo\", vars = [{name = \"member.only\", value = \"literal\"}]}]"
+              "extends = Some {recipe = \"unpublished-base\", source = Some \"https://example.invalid/registry.git\"}, modules = [] : List Text"
+              $ T.replace "var = \"github.owner\"" "var = \"inherited.input\"" recipe
+      TIO.writeFile (root </> "recipe.dhall") descriptor
+      before <- snapshot root
+      (code, output) <- invoke binary root root ["validate-recipe"]
+      code `shouldBe` ExitSuccess
+      output `shouldSatisfy` T.isInfixOf "Local descriptor validation passed; the base and composition were not checked."
+      snapshot root `shouldReturn` before
+
   it "supports the ordinary new-recipe workflow without members or configuration" $
     withSystemTempDirectory "validate-recipe-scaffold" $ \root -> do
       binary <- seihouBinary
