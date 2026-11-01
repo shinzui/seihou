@@ -276,7 +276,7 @@ spec = do
       dryOut `shouldSatisfy` T.isInfixOf "\"outcome\":\"plan\""
       dryOut `shouldSatisfy` T.isInfixOf "\"alreadyUpToDate\":false"
       dryOut `shouldSatisfy` T.isInfixOf "\"fromSchema\":6"
-      dryOut `shouldSatisfy` T.isInfixOf "\"toSchema\":7"
+      dryOut `shouldSatisfy` T.isInfixOf "\"toSchema\":13"
       dryOut `shouldSatisfy` T.isInfixOf "{\"from\":\"unknown\",\"path\":\".gitignore\",\"to\":\"additive-only\"}"
       dryOut `shouldNotSatisfy` T.isInfixOf "shared_path_requires_applications"
       LBS.readFile (fixture ^. #manifestPath) `shouldReturn` beforeManifest
@@ -317,7 +317,7 @@ spec = do
       binary <- seihouBinary
       (dryExit, dryOut, dryErr) <- runSeihouShared binary bug1 ["update", "alpha", "--dry-run"]
       expectSuccess "human dry run" dryExit dryOut dryErr
-      dryOut `shouldSatisfy` T.isInfixOf "Manifest:    schema 6 -> 7"
+      dryOut `shouldSatisfy` T.isInfixOf "Manifest:    schema 6 -> 13"
       dryOut `shouldSatisfy` T.isInfixOf ".gitignore evidence unknown -> additive-only"
       (dryOut <> dryErr) `shouldNotSatisfy` leaksInternals
 

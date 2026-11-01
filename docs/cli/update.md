@@ -287,8 +287,29 @@ warnings. Error documents include a stable `error.code` and human-readable
 `error.message`.
 
 ```json
-{"schemaVersion":1,"outcome":"plan","applications":["application-id"],"versions":[],"inputs":{"reused":4,"overridden":0,"newlyResolved":0,"removed":0,"ambiguousLegacy":[]},"migrations":[],"files":[],"commands":[],"warnings":[]}
+{"schemaVersion":1,"outcome":"plan","applications":["application-id"],"versions":[],"recipeChains":[],"inputs":{"reused":4,"overridden":0,"newlyResolved":0,"removed":0,"ambiguousLegacy":[]},"migrations":[],"files":[],"commands":[],"warnings":[]}
 ```
+
+Recipe plans also include the additive `recipeChains` array in JSON schema
+version 1. The additive `cacheChanges` array names cache entries that acceptance
+will restore or refresh. Both arrays are empty when no corresponding work remains. Each `recipeChains`
+entry contains
+`applicationId`, `previous`, `candidate`, and `adopted`. The two chain values
+are oldest-base-first arrays of manifest recipe nodes (`name`, `origin`,
+`version`, `descriptorHash`); `previous: null` and `adopted: true` mean that
+older history was unknown. These records describe provenance, independently
+of module `versions` and generated file changes. A base-only descriptor or
+version change can therefore require acceptance while every file and command
+stays unchanged. Unchanged command receipts remain valid.
+
+A recipe update fetches its candidate root, inherited bases and transitive
+members, including newly introduced registries. A fresh clone needs no installed
+cache: use `seihou update haskell-cli-app-with-agents` to acquire the recorded
+remote recipe and reuse its saved inputs. Removed bases do not require their
+old registry to remain reachable. Declared base source and version intervals
+are checked before planning and cannot be bypassed by `--allow-downgrade`.
+Ordinary update preserves omitted optional answers; use `--reconfigure` to
+revisit optional configuration.
 
 JSON mode is non-interactive. An unresolved conflict fails unless `--force`
 provides a permitted deterministic choice. A non-dry-run JSON plan applies

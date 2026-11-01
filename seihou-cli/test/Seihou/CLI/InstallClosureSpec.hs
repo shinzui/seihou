@@ -2,7 +2,7 @@ module Seihou.CLI.InstallClosureSpec (tests) where
 
 import Data.Either (isLeft)
 import Data.Text qualified as T
-import Seihou.CLI.InstallClosure (installClosureInto)
+import Seihou.CLI.InstallClosure (installClosureInto, publishStagedClosure, stageClosuresInto)
 import Seihou.CLI.InstallShared (installModuleDirInto)
 import System.Directory
 import System.FilePath ((</>))
@@ -105,6 +105,26 @@ tests = testSpec "Seihou.CLI.InstallClosure" $ do
       result `shouldSatisfy` isLeft
       readFile (cache </> "good" </> "marker") `shouldReturn` "original"
       readFile (cache </> "blocked") `shouldReturn` "occupied file"
+
+  it "restores every cache entry if publishing a staged recipe refresh fails" $
+    withSystemTempDirectory "closure-upgrade-rollback" $ \tmp -> do
+      let repo = tmp </> "repo"
+          staged = tmp </> "staged"
+          cache = tmp </> "cache"
+          source = "https://example.com/registry.git"
+      moduleDir repo "first"
+      moduleDir repo "second"
+      installClosureInto cache False repo source [("first", repo </> "first"), ("second", repo </> "second")] `shouldReturn` Right ()
+      writeFile (cache </> "first/marker") "original"
+      result <- stageClosuresInto False staged False [(repo, source, [("first", repo </> "first"), ("second", repo </> "second")])]
+      case result of
+        Left err -> expectationFailure (T.unpack err)
+        Right artifacts -> do
+          removeDirectoryRecursive (staged </> "second")
+          published <- publishStagedClosure cache artifacts
+          published `shouldSatisfy` isLeft
+          readFile (cache </> "first/marker") `shouldReturn` "original"
+          doesFileExist (cache </> "second/module.dhall") `shouldReturn` True
 
 moduleDir :: FilePath -> String -> IO ()
 moduleDir root name = do

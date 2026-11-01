@@ -226,6 +226,7 @@ data UpdatePlan = UpdatePlan
     checkoutAdoptions :: !(Map FilePath Text),
     commandPlan :: !CommandPlan,
     candidateArtifacts :: ![CandidateArtifact],
+    cacheChanges :: ![Text],
     warnings :: ![UpdateWarning],
     request :: !UpdateRequest,
     snapshot :: !UpdateSnapshot,
@@ -310,6 +311,7 @@ isUpdateNoOp plan =
     && Map.null (plan ^. #checkoutAdoptions)
     && all ((== UnchangedLink) . (^. #action)) (plan ^. #checkoutPlan . #entries)
     && isNothing (plan ^. #manifestPreparation)
+    && null (plan ^. #cacheChanges)
     && null (plan ^. #versionChanges)
     && null (plan ^. #migrations)
     && plan ^. #inputChanges . #overridden == 0
@@ -351,6 +353,7 @@ isUpdateNoOp plan =
         && previous ^. #namespace == candidate ^. #namespace
         && previous ^. #context == candidate ^. #context
         && previous ^. #recipeInputs == candidate ^. #recipeInputs
+        && previous ^. #recipeChain == candidate ^. #recipeChain
         && length (previous ^. #instances) == length (candidate ^. #instances)
         && and (zipWith sameInstance (previous ^. #instances) (candidate ^. #instances))
         && previous ^. #commandReceipts == (candidate ^. #commandReceipts)

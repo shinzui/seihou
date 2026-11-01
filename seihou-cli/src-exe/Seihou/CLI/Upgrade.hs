@@ -5,17 +5,20 @@ where
 
 import Control.Applicative ((<|>))
 import Control.Exception (SomeException, try)
-import Control.Monad (when)
+import Control.Monad (forM, forM_, when)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Generics.Labels ()
 import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
+import Data.Time (getCurrentTime)
 import Seihou.CLI.Commands (UpgradeOpts (..))
 import Seihou.CLI.Install (installModuleDir)
-import Seihou.CLI.InstallShared (InstallOutcome (..), OriginInfo (..), summarizeInstallRefusal)
+import Seihou.CLI.InstallClosure (ClosureArtifact (..), publishStagedClosure)
+import Seihou.CLI.InstallShared (InstallOutcome (..), OriginInfo (..), installedRoot, readOriginInfo, summarizeInstallRefusal)
 import Seihou.CLI.Migrate
   ( MigrateError (..),
     MigrateOpts (..),
@@ -27,18 +30,23 @@ import Seihou.CLI.Outdated (moduleNameFromDm, readOriginWithModule)
 import Seihou.CLI.RemoteVersion (fetchTrueModuleVersion)
 import Seihou.CLI.Shared (resolveAppliedArtifactDir)
 import Seihou.CLI.Style (dim, green, red, useColor, yellow)
+import Seihou.CLI.Update.Render (errorOutput, renderUpdateHuman)
+import Seihou.CLI.Update.Source (hashArtifactDirectory, stageCandidateSources)
+import Seihou.CLI.Update.Types (CandidateArtifact (..), CandidateCatalog (..))
 import Seihou.CLI.VersionCompare (OutdatedStatus (..), compareVersions)
+import Seihou.Core.Application (buildAppliedComposition)
 import Seihou.Core.Install (parseModuleName)
 import Seihou.Core.Migration (MigrationPlan (..))
-import Seihou.Core.Module (DiscoveredModule (..), ModuleSource (..), defaultSearchPaths, discoverAllModules, validateModule)
+import Seihou.Core.Module (DiscoveredModule (..), DiscoveredRunnable (..), ModuleSource (..), RunnableKind (..), defaultSearchPaths, discoverAllModules, discoverAllRunnables, validateModule)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), RepoContents (..), discoverRepoContents)
-import Seihou.Core.Types (AppliedModule (..), Manifest (..), Module (..), ModuleName (..))
+import Seihou.Core.Types (AppliedModule (..), AppliedTarget (..), ArtifactOrigin (..), Manifest (..), Module (..), ModuleName (..), RecipeName (..))
 import Seihou.Core.Version (renderVersion)
 import Seihou.Dhall.Eval (evalModuleFromFile, evalRegistryFromFile)
 import Seihou.Effect.FilesystemInterp (runFilesystem)
 import Seihou.Effect.ManifestStore (readManifest)
 import Seihou.Effect.ManifestStoreInterp (runManifestStore)
 import Seihou.Prelude
+import System.Directory qualified as Directory
 import System.Exit (ExitCode (..), exitFailure)
 import System.IO.Temp (withSystemTempDirectory)
 import System.Process (readProcessWithExitCode)
@@ -79,46 +87,77 @@ handleUpgrade :: UpgradeOpts -> IO ()
 handleUpgrade uopts = do
   searchPaths <- defaultSearchPaths
   modules <- discoverAllModules searchPaths
+  runnables <- discoverAllRunnables searchPaths
   let installed = filter (\dm -> dm ^. #source == SourceInstalled) modules
-
-  if null installed
-    then TIO.putStrLn "No installed modules found."
-    else do
-      originsWithModules <- mapM readOriginWithModule installed
-      let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
-
-      filtered <- case uopts ^. #modules of
-        [] -> pure withOrigins
-        names -> do
-          let result = [(dm, origin) | (dm, origin) <- withOrigins, moduleNameFromDm dm `elem` names]
-              found = map (moduleNameFromDm . fst) result
-              missing = filter (`notElem` found) names
-          when (not (null missing)) $ do
-            TIO.putStrLn $ "Module(s) not found: " <> T.intercalate ", " missing
-            exitFailure
-          pure result
-
-      if null filtered
-        then TIO.putStrLn "No installed modules with origin metadata found."
+      recipes = [recipe | recipe <- runnables, recipe ^. #source == SourceInstalled, recipe ^. #kind == KindRecipe]
+      requested = uopts ^. #modules
+      selectedRecipes = [recipe | recipe <- recipes, null requested || recipe ^. #name `elem` requested]
+  originsWithModules <- mapM readOriginWithModule installed
+  let withOrigins = [(dm, origin) | (dm, Just origin) <- originsWithModules]
+      found = map (moduleNameFromDm . fst) withOrigins <> map (^. #name) recipes
+      missing = filter (`notElem` found) requested
+  when (not (null missing)) $ TIO.putStrLn ("Module(s) or recipe(s) not found: " <> T.intercalate ", " missing) >> exitFailure
+  recipeResult <- upgradeRecipes uopts selectedRecipes
+  case recipeResult of
+    Left message -> do
+      if uopts ^. #json
+        then LBS.putStr (encodePretty [UpgradeEntry (recipe ^. #name) Nothing Nothing (UpgradeFailed message) | recipe <- selectedRecipes])
+        else TIO.putStrLn ("Recipe upgrade failed: " <> message)
+      exitFailure
+    Right (recipeEntries, covered) -> do
+      let filtered = [(dm, origin) | (dm, origin) <- withOrigins, null requested || moduleNameFromDm dm `elem` requested, moduleNameFromDm dm `notElem` covered]
+          grouped = Map.toList $ Map.fromListWith (++) [(origin ^. #sourceUrl, [(dm, origin)]) | (dm, origin) <- filtered]
+      moduleEntries <- concat <$> mapM (upgradeSource uopts) grouped
+      let entries = recipeEntries <> moduleEntries
+      if null entries
+        then TIO.putStrLn "No installed modules or recipes with origin metadata found."
         else do
-          let grouped = Map.toList $ Map.fromListWith (++) [(origin ^. #sourceUrl, [(dm, origin)]) | (dm, origin) <- filtered]
-
-          if uopts ^. #dryRun
-            then TIO.putStrLn "Checking installed modules for updates (dry run)..."
-            else TIO.putStrLn "Upgrading installed modules..."
-
-          entries <- concat <$> mapM (upgradeSource uopts) grouped
-
-          if uopts ^. #json
-            then LBS.putStr (encodePretty entries)
-            else renderUpgradeTable entries
-
-          -- After all upgrades, see whether the *current project* has
-          -- migrations pending for any module that was upgraded just
-          -- now. Either run them (--with-migrations) or print a
-          -- one-line advisory per module.
-          unless (uopts ^. #dryRun) $
+          if uopts ^. #json then LBS.putStr (encodePretty entries) else renderUpgradeTable entries
+          unless (uopts ^. #dryRun) $ do
             handlePostUpgradeMigrations uopts entries
+            when (not (uopts ^. #json)) $ forM_ selectedRecipes $ \recipe -> TIO.putStrLn $ "Run 'seihou update " <> recipe ^. #name <> "' to reconcile the recorded project application."
+
+-- Refresh each selected recipe's complete candidate closure, including an
+-- unchanged child whose base has changed. Publication uses staged bytes only.
+upgradeRecipes :: UpgradeOpts -> [DiscoveredRunnable] -> IO (Either Text ([UpgradeEntry], [Text]))
+upgradeRecipes _ [] = pure (Right ([], []))
+upgradeRecipes opts recipes = withSystemTempDirectory "seihou-recipe-upgrade" $ \session -> do
+  now <- getCurrentTime
+  root <- Directory.getCurrentDirectory
+  cache <- installedRoot
+  roots <- forM recipes $ \recipe -> do
+    origin <- readOriginInfo (recipe ^. #dir)
+    pure $ case origin of
+      Nothing -> Left ("Recipe '" <> recipe ^. #name <> "' has no origin metadata; reinstall it from its registry.")
+      Just info -> Right (buildAppliedComposition (AppliedRecipeTarget (RecipeName (recipe ^. #name))) (RemoteOrigin (info ^. #sourceUrl) (recipe ^. #name) (info ^. #repoName)) (info ^. #version) [] Nothing Nothing [] Map.empty now)
+  case sequence roots of
+    Left message -> pure (Left message)
+    Right applications -> do
+      staged <- stageCandidateSources session root cache applications
+      case staged of
+        Left err -> pure (Left (renderUpdateHuman False (errorOutput err)))
+        Right (catalog, _) -> do
+          compared <- forM (Map.elems (catalog ^. #artifacts)) $ \artifact -> do
+            let path = cache </> T.unpack (artifact ^. #name)
+            old <- readOriginInfo path
+            present <- Directory.doesDirectoryExist path
+            oldHash <- if present then Just <$> hashArtifactDirectory path else pure Nothing
+            let changed = oldHash /= Just (artifact ^. #contentHash)
+                skipped = opts ^. #skipUnversioned && (artifact ^. #version == Nothing || maybe False ((== Nothing) . (^. #version)) old)
+                status
+                  | changed && skipped = Skipped
+                  | changed = Upgraded
+                  | otherwise = AlreadyUpToDate
+                entry = UpgradeEntry (artifact ^. #name) (old >>= (^. #version)) (artifact ^. #version) status
+                prepared = ClosureArtifact (artifact ^. #name) (fromMaybe "" (artifact ^. #sourceUrl)) (artifact ^. #repoName) (artifact ^. #version) (artifact ^. #tags) (artifact ^. #sourceRevision) (artifact ^. #sourceDirectory)
+            pure (entry, prepared)
+          let blocked = any ((== Skipped) . (^. #upgradeStatus) . fst) compared
+              entries = [if blocked && entry ^. #upgradeStatus == Upgraded then entry & #upgradeStatus .~ Skipped else entry | (entry, _) <- compared]
+              changes = [artifact | (entry, artifact) <- compared, entry ^. #upgradeStatus == Upgraded]
+          published <- if opts ^. #dryRun || blocked || null changes then pure (Right ()) else publishStagedClosure cache changes
+          pure $ do
+            published
+            Right (entries, map (^. #name) (Map.elems (catalog ^. #artifacts)))
 
 upgradeSource :: UpgradeOpts -> (Text, [(DiscoveredModule, OriginInfo)]) -> IO [UpgradeEntry]
 upgradeSource uopts (sourceUrl, modulesWithOrigins) = do
@@ -244,7 +283,7 @@ renderUpgradeTable entries = do
       padR n t = t <> T.replicate (n - T.length t + 2) " "
 
       header =
-        padR maxNameLen "Module"
+        padR maxNameLen "Artifact"
           <> padR maxOldLen "Old"
           <> padR maxNewLen "New"
           <> "Status"
@@ -273,7 +312,7 @@ renderUpgradeTable entries = do
   TIO.putStrLn ""
   TIO.putStrLn $
     T.pack (show (length entries))
-      <> " module(s) checked, "
+      <> " artifact(s) checked, "
       <> T.pack (show upgraded)
       <> " upgraded"
       <> (if failed > 0 then ", " <> T.pack (show failed) <> " failed" else "")

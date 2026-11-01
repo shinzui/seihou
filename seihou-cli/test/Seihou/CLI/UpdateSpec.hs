@@ -560,7 +560,7 @@ spec = do
                   Nothing -> expectationFailure "expected a manifest preparation"
                   Just preparation -> do
                     (preparation ^. #fromVersion) `shouldBe` ManifestSchemaVersion 6
-                    (preparation ^. #toVersion) `shouldBe` ManifestSchemaVersion 7
+                    (preparation ^. #toVersion) `shouldBe` currentManifestVersion
                     (preparation ^. #modeChanges)
                       `shouldBe` Map.singleton ".gitignore" (SharedWriteUnknown, SharedWriteAdditiveOnly)
                 map (^. #applicationId) (plan ^. #applications) `shouldBe` [fixture ^. #alphaApplicationId]
@@ -1295,6 +1295,7 @@ breakCandidatePublication plan =
       reconciliation = plan ^. #reconciliation,
       commandPlan = plan ^. #commandPlan,
       candidateArtifacts = map breakArtifact (plan ^. #candidateArtifacts),
+      cacheChanges = plan ^. #cacheChanges,
       warnings = plan ^. #warnings,
       request = plan ^. #request,
       snapshot = plan ^. #snapshot,

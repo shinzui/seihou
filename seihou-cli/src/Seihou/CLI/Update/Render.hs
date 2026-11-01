@@ -31,6 +31,7 @@ import Seihou.CLI.CommandExecution
     summarizeCommandPlan,
   )
 import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), EvidenceSource (..), renderEvidenceSource)
+import Seihou.CLI.ManifestGuard (blockingChecks, checkRecipeChain, formatGuardOverride)
 import Seihou.CLI.Shared (formatVarError)
 import Seihou.CLI.Update.Types
 import Seihou.Core.ArtifactRef (renderArtifactRefError)
@@ -40,9 +41,11 @@ import Seihou.Core.Migration (MigrationPlan (..), MigrationPlanError (..))
 import Seihou.Core.Types
   ( ApplicationId (..),
     AppliedComposition (..),
+    AppliedRecipeNode (..),
     AppliedTarget (..),
     BaselineRef (..),
     CommandFingerprint (..),
+    Manifest (..),
     ManifestSchemaVersion (..),
     ModuleLoadError (..),
     ModuleName (..),
@@ -78,7 +81,7 @@ import Seihou.Engine.Reconcile
   )
 import Seihou.Engine.Reconcile qualified as Reconcile
 import Seihou.Engine.UpdateTransaction (TransactionError (..))
-import Seihou.Manifest.Types (currentManifestVersion, sharedWriteModeToText)
+import Seihou.Manifest.Types (currentManifestVersion, emptyManifest, sharedWriteModeToText)
 import Seihou.Prelude
 
 newtype UpdatePlanView = UpdatePlanView UpdatePlan
@@ -121,7 +124,9 @@ renderUpdateHuman _ (UpdatePlanOutput (UpdatePlanView plan)) =
   T.unlines $
     seedLines (plan ^. #reconciliation)
       <> preparationLines (displayedPreparation plan)
+      <> ["Cache:       refresh " <> T.intercalate ", " (plan ^. #cacheChanges) | not (null (plan ^. #cacheChanges))]
       <> versionLines plan
+      <> concatMap (recipeChainLines (plan ^. #request . #allowDowngrade)) (plan ^. #plannedApplications)
       <> [ renderInputs (plan ^. #inputChanges),
            "Migrations:  " <> count (length (plan ^. #migrations)) <> migrationCaveat plan,
            renderFiles (reconciliationSummary (plan ^. #reconciliation)),
@@ -162,6 +167,8 @@ outputValue (UpdatePlanOutput (UpdatePlanView plan)) =
       "manifestPreparation" .= fmap preparationValue (displayedPreparation plan),
       "applications" .= map applicationIdText (plan ^. #applications),
       "versions" .= map versionValue (plan ^. #versionChanges),
+      "cacheChanges" .= (plan ^. #cacheChanges),
+      "recipeChains" .= [recipeChainValue app | app <- plan ^. #plannedApplications, chainChanged app],
       "inputs" .= inputValue (plan ^. #inputChanges),
       "migrations" .= map migrationValue (plan ^. #migrations),
       "checkout" .= checkoutReportJSON (CheckoutSyncResult (plan ^. #snapshot . #projectRoot) True (plan ^. #checkoutPlan) (CheckoutExecution Map.empty [] Nothing) [] [] []),
@@ -788,3 +795,28 @@ count = T.pack . show
 
 showText :: (Show a) => a -> Text
 showText = T.pack . show
+
+-- Additive schema-version-1 plan evidence: old readers may ignore this field.
+-- Arrays retain full ordered portable node records, including descriptor hashes.
+chainChanged :: PlannedApplication -> Bool
+chainChanged app = case app ^. #candidate . #target of
+  AppliedRecipeTarget _ -> (app ^. #previous >>= (^. #recipeChain)) /= app ^. #candidate . #recipeChain
+  _ -> False
+
+recipeChainValue :: PlannedApplication -> Value
+recipeChainValue app =
+  object
+    [ "applicationId" .= (app ^. #candidate . #applicationId . #unApplicationId),
+      "previous" .= (app ^. #previous >>= (^. #recipeChain)),
+      "candidate" .= (app ^. #candidate . #recipeChain),
+      "adopted" .= (isNothing (app ^. #previous >>= (^. #recipeChain)))
+    ]
+
+recipeChainLines :: Bool -> PlannedApplication -> [Text]
+recipeChainLines allow app
+  | not (chainChanged app) = []
+  | otherwise =
+      let current = app ^. #candidate
+          manifest = emptyManifest (current ^. #appliedAt) & #applications .~ maybe [] pure (app ^. #previous)
+          (checks, changes) = checkRecipeChain (current ^. #applicationId) (fromMaybe [] (current ^. #recipeChain)) manifest
+       in changes <> [formatGuardOverride (blockingChecks checks) | allow, not (null (blockingChecks checks))]

@@ -5,13 +5,19 @@ module Seihou.CLI.Update.Source
 where
 
 import Control.Exception (SomeException, displayException, try)
-import Control.Monad (foldM, forM, forM_)
+import Control.Monad (foldM, forM, forM_, unless)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.Except (ExceptT (..), runExceptT)
 import Data.ByteString qualified as BS
 import Data.Foldable (traverse_)
 import Data.Generics.Labels ()
-import Data.List (sort)
+import Data.IORef
+import Data.List (find, sort)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (maybeToList)
 import Data.Text qualified as T
+import Data.Text.IO qualified as TIO
+import Seihou.CLI.InstallClosure (normalizePayload, stageClosuresInto)
 import Seihou.CLI.InstallShared
   ( OriginInfo (..),
     cloneRepo,
@@ -25,7 +31,7 @@ import Seihou.Core.Module (defaultSearchPaths, validateModule)
 import Seihou.Core.Recipe (validateRecipe)
 import Seihou.Core.Registry (Registry (..), RegistryEntry (..), validateRegistry)
 import Seihou.Core.Types
-import Seihou.Dhall.Eval (evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile)
+import Seihou.Dhall.Eval (evalModuleFromFile, evalRecipeFromFile, evalRegistryFromFile, normalizeDhallFile)
 import Seihou.Manifest.Hash (hashContent)
 import Seihou.Prelude
 import System.Directory qualified as Directory
@@ -56,7 +62,11 @@ stageCandidateSources ::
   FilePath ->
   [AppliedComposition] ->
   IO (Either UpdateError (CandidateCatalog, [UpdateWarning]))
-stageCandidateSources sessionRoot projectRoot installedDirectory selected = do
+stageCandidateSources sessionRoot projectRoot installedDirectory selected
+  | any (\app -> case app ^. #target of AppliedRecipeTarget _ -> True; _ -> False) selected = stageRecipeCandidateSources sessionRoot projectRoot installedDirectory selected
+  | otherwise = stageFlatCandidateSources sessionRoot projectRoot installedDirectory selected
+
+stageFlatCandidateSources sessionRoot projectRoot installedDirectory selected = do
   requirements <- requirementsFor projectRoot installedDirectory selected
   let remoteOrigins =
         Map.fromList
@@ -400,3 +410,90 @@ hashArtifactDirectory root = do
                   then pure []
                   else collectFiles base childRelative
               else pure [childRelative]
+
+-- | Recipe roots own their candidate closure. Historical base/member origins
+-- remain comparison evidence and never become mandatory acquisition roots.
+-- Remote traversal and normalization use the same kind-aware planner as install.
+stageRecipeCandidateSources :: FilePath -> FilePath -> FilePath -> [AppliedComposition] -> IO (Either UpdateError (CandidateCatalog, [UpdateWarning]))
+stageRecipeCandidateSources session projectRoot installed applications = runExceptT $ do
+  let search = session </> "search"
+      clones = session </> "clones"
+  liftIO (Directory.createDirectoryIfMissing True search >> Directory.createDirectoryIfMissing True clones)
+  roots <- liftIO (requirementsFor projectRoot installed (map rootScope applications))
+  locals <- liftIO (newIORef Map.empty)
+  remotes <- liftIO (newIORef [])
+  let visit requirement = case requirement ^. #origin of
+        Just _ -> liftIO (modifyIORef' remotes (requirement :))
+        Nothing -> do
+          known <- liftIO (readIORef locals)
+          let key = (requirement ^. #kind, requirement ^. #name)
+          unless (Map.member key known) $ do
+            dir <- ExceptT (pure (first CandidateArtifactUnresolved (requirement ^. #sourceDirectory)))
+            candidate <- ExceptT $ case requirement ^. #kind of
+              CandidateModule -> loadModuleArtifact Nothing Nothing [] Nothing dir
+              CandidateRecipe -> loadRecipeArtifact Nothing Nothing [] Nothing dir
+            inserted <- ExceptT (insertCandidate search (Right known) candidate)
+            let staged = inserted Map.! key
+            liftIO $ do
+              -- Resolve imports while the local declaring tree is available,
+              -- without inventing a registry for implicit local edges.
+              normalizePayload dir (staged ^. #sourceDirectory) (definitionFileFor (requirement ^. #kind))
+              normalized <- normalizeDhallFile (dir </> definitionFileFor (requirement ^. #kind))
+              TIO.writeFile (staged ^. #sourceDirectory </> definitionFileFor (requirement ^. #kind)) normalized
+              writeIORef locals inserted
+            mapM_ visit =<< liftIO (mapM edgeRequirement (candidateEdges candidate))
+      edgeRequirement (kind, name, source) = do
+        paths <- defaultSearchPaths
+        resolved <- resolveArtifactOrigin projectRoot paths (definitionFileFor kind) (LocalOrigin name)
+        pure (ArtifactRequirement kind name resolved (fmap (\url -> OriginInfo url Nothing Nothing) source))
+  mapM_ visit roots
+  remoteRequirements <- liftIO (readIORef remotes)
+  let grouped = Map.elems (Map.fromListWith (\(origin, xs) (_, ys) -> (origin, xs <> ys)) [(normalizeOriginUrl (origin ^. #sourceUrl), (origin, [requirement])) | requirement <- remoteRequirements, Just origin <- [requirement ^. #origin]])
+  groups <- forM (zip [0 :: Int ..] grouped) $ \(index, (origin, requirements)) -> do
+    let url = origin ^. #sourceUrl
+        clone = clones </> show index
+    ExceptT (fmap (first (CandidateCloneFailed url)) (cloneRepo url clone))
+    selected <- forM requirements $ \requirement -> do
+      dir <- ExceptT (locateCandidateRoot clone requirement)
+      pure (requirement ^. #name, dir)
+    pure (clone, url, selected)
+  remoteArtifacts <-
+    if null groups
+      then pure []
+      else ExceptT $ do
+        staged <- stageClosuresInto False search False groups
+        pure (first (CandidateRepositoryInvalid "recipe candidate closure" . pure) staged)
+  localArtifacts <- liftIO (readIORef locals)
+  remoteCandidates <- forM remoteArtifacts $ \artifact -> do
+    hasRecipe <- liftIO (Directory.doesFileExist (artifact ^. #directory </> "recipe.dhall"))
+    ExceptT $
+      if hasRecipe
+        then loadRecipeArtifact (Just (artifact ^. #sourceUrl)) (artifact ^. #repoName) (artifact ^. #tags) (artifact ^. #sourceRevision) (artifact ^. #directory)
+        else loadModuleArtifact (Just (artifact ^. #sourceUrl)) (artifact ^. #repoName) (artifact ^. #tags) (artifact ^. #sourceRevision) (artifact ^. #directory)
+  let artifacts = Map.union localArtifacts (Map.fromList [((artifact ^. #kind, artifact ^. #name), artifact) | artifact <- remoteCandidates])
+  pure (CandidateCatalog search artifacts (Map.fromList [(url, clone) | (clone, url, _) <- groups]), [LocalArtifactHasNoRemote name | ((_, name), _) <- Map.toList localArtifacts])
+  where
+    rootScope app = case app ^. #target of
+      AppliedRecipeTarget _ -> app & #instances %~ filter (\state -> state ^. #name `elem` app ^. #additionalModules)
+      _ -> app
+    candidateEdges artifact =
+      [ (CandidateModule, dep ^. #module_ . #unModuleName, dep ^. #source)
+      | dep <- maybe [] (^. #dependencies) (artifact ^. #moduleDefinition) <> maybe [] (^. #modules) (artifact ^. #recipeDefinition)
+      ]
+        <> [(CandidateRecipe, ref ^. #recipe . #unRecipeName, ref ^. #source) | recipe <- maybeToList (artifact ^. #recipeDefinition), ref <- maybeToList (recipe ^. #extends)]
+
+locateCandidateRoot :: FilePath -> ArtifactRequirement -> IO (Either UpdateError FilePath)
+locateCandidateRoot repo requirement = do
+  hasRegistry <- Directory.doesFileExist (repo </> "seihou-registry.dhall")
+  if not hasRegistry
+    then do
+      present <- Directory.doesFileExist (repo </> definitionFileFor (requirement ^. #kind))
+      pure (if present then Right repo else missing)
+    else do
+      result <- evalRegistryFromFile (repo </> "seihou-registry.dhall")
+      pure $ do
+        registry <- first (CandidateLoadFailed (requirement ^. #name)) result
+        let entries = case requirement ^. #kind of CandidateModule -> registry ^. #modules; CandidateRecipe -> registry ^. #recipes
+        maybe missing (Right . (repo </>) . (^. #path)) (find ((== requirement ^. #name) . (^. #name . #unModuleName)) entries)
+  where
+    missing = Left (CandidateArtifactMissing (requirement ^. #kind) (requirement ^. #name))

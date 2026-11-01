@@ -1344,10 +1344,10 @@ upgradeParser :: Parser Command
 upgradeParser =
   fmap Upgrade $
     UpgradeOpts
-      <$> many (argument (T.pack <$> str) (metavar "MODULE" <> help "Module(s) to upgrade (default: all)"))
+      <$> many (argument (T.pack <$> str) (metavar "MODULE_OR_RECIPE" <> help "Modules or recipes to upgrade (default: all)"))
       <*> switch (long "dry-run" <> help "Show what would be upgraded without making changes")
       <*> switch (long "json" <> help "Output as JSON")
-      <*> switch (long "skip-unversioned" <> help "Skip modules without version information")
+      <*> switch (long "skip-unversioned" <> help "Skip unversioned changes (keeps recipe closures together)")
       <*> switch
         ( long "with-migrations"
             <> help "After each upgrade, also run 'seihou migrate' against the current project for that module"
@@ -1356,14 +1356,14 @@ upgradeParser =
 upgradeFooter :: Doc
 upgradeFooter =
   vsep
-    [ pretty ("Refreshes installed-cache modules to the latest version available from their" :: String),
-      pretty ("source repository. Only modules installed via 'seihou install' are checked." :: String),
+    [ pretty ("Refreshes installed modules and recipe closures from their" :: String),
+      pretty ("source repositories. Only artifacts installed via 'seihou install' are checked." :: String),
       pretty ("It does not reconcile the current project; use 'seihou update' for that." :: String),
       pretty ("Modules without version information are upgraded by default." :: String),
       pretty ("Use --skip-unversioned to skip them." :: String),
       line,
-      pretty ("With no arguments, checks all installed modules. Pass module names to" :: String),
-      pretty ("upgrade specific modules only." :: String),
+      pretty ("With no arguments, checks all installed modules and recipes. Pass names to" :: String),
+      pretty ("upgrade selected artifacts and their recipe closures." :: String),
       line,
       pretty ("Examples:" :: String),
       indent 2 $

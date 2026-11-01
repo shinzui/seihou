@@ -5,14 +5,14 @@ Refresh shared installed-cache sources to their latest versions.
 ## Usage
 
 ```
-seihou upgrade [MODULE...] [OPTIONS]
+seihou upgrade [MODULE_OR_RECIPE...] [OPTIONS]
 ```
 
 ## Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `MODULE` | No | Specific modules to upgrade (repeatable). Defaults to all. |
+| `MODULE_OR_RECIPE` | No | Specific installed modules or recipes to upgrade (repeatable). Defaults to all. |
 
 ## Options
 
@@ -20,11 +20,12 @@ seihou upgrade [MODULE...] [OPTIONS]
 |--------|-------------|
 | `--dry-run` | Show what would be upgraded without making changes |
 | `--json` | Output as JSON |
+| `--skip-unversioned` | Skip changes without version information; keep selected recipe closures together |
 | `--with-migrations` | After each successful per-module upgrade, also run `seihou migrate` against the current project. Without this flag, `seihou upgrade` emits a one-line advisory pointing at the next command. |
 
 ## Description
 
-Refreshes installed modules from their source repository. Only modules installed via `seihou install` are eligible. This is cache maintenance: it does not reconcile templates, migrations, commands, or user edits in the current project. Use [`seihou update`](update.md) for that project-aware workflow.
+Refreshes installed modules and recipes from their source repository. Only artifacts installed via `seihou install` are eligible. This is cache maintenance: it does not reconcile templates, migrations, commands, or user edits in the current project. Use [`seihou update`](update.md) for that project-aware workflow.
 
 Each module is refetched from the URL its own `.seihou-origin.json` records, so
 an upgrade is always a same-source reinstall and never hits the different-source
@@ -35,6 +36,26 @@ likely because something replaced the directory outside seihou. The module is
 reported as failed rather than overwritten; inspect
 `~/.config/seihou/installed/<name>/.seihou-origin.json` and reinstall
 deliberately with `seihou install <url> --force`.
+
+## Recipe closures
+
+`seihou upgrade haskell-cli-app-with-agents --dry-run` stages and validates the
+recipe's full candidate closure. Its output includes inherited bases and members,
+even when the child version has not changed. Repeating a selected module name
+already in that closure does not refresh it twice. With no names, upgrade includes
+all installed recipe roots and deduplicates their members.
+
+`seihou upgrade haskell-cli-app-with-agents` publishes the validated cache entries
+together on handled failures. It leaves project files and manifest unchanged,
+then recommends `seihou update haskell-cli-app-with-agents` for reconciliation.
+Recipe closure comparison includes normalized content, so same-version base
+descriptor changes also refresh. A producer's base interval or source conflict
+refuses the whole recipe refresh before publication.
+
+`--skip-unversioned` skips changes without declared version information. If one
+changed entry in a selected recipe closure is skipped, the entire selected recipe
+refresh is skipped to keep the cache consistent. Module-only upgrades retain their
+per-module behavior. `--dry-run` never publishes cache entries.
 
 ## How "outdated" detection works
 

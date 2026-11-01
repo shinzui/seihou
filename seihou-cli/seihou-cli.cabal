@@ -149,6 +149,7 @@ library seihou-cli-internal
     temporary >=1.3 && <2,
     text >=2.0 && <3,
     time >=1.12 && <2,
+    transformers >=0.6 && <0.7,
     vector ^>=0.13.2.0,
 
 executable seihou

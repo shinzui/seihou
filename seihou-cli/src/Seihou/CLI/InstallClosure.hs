@@ -1,5 +1,5 @@
 -- | Acquisition is completed and validated before any installed entry changes.
-module Seihou.CLI.InstallClosure (installClosure, installClosureInto) where
+module Seihou.CLI.InstallClosure (installClosure, installClosureInto, stageClosuresInto, ClosureArtifact (..), normalizePayload, publishStagedClosure) where
 
 import Control.Exception (IOException, displayException, mask, onException, throwIO, try)
 import Control.Monad (forM, forM_, unless, when)
@@ -23,8 +23,10 @@ import Seihou.Core.Types
 import Seihou.Dhall.Eval
 import Seihou.Prelude
 import System.Directory
+import System.Exit (ExitCode (..))
 import System.FilePath (isAbsolute, makeRelative, splitDirectories)
 import System.IO.Temp (createTempDirectory, withSystemTempDirectory)
+import System.Process (readProcessWithExitCode)
 
 -- Paths refer to temporary checkouts until every selected root passes preflight.
 data Entry = Entry
@@ -38,6 +40,19 @@ data Entry = Entry
     entryChain :: !Text
   }
   deriving stock (Generic)
+
+-- | Normalized artifacts in the caller-owned staging directory. No temporary
+-- checkout paths escape; revision and provenance are captured before cleanup.
+data ClosureArtifact = ClosureArtifact
+  { name :: !Text,
+    sourceUrl :: !Text,
+    repoName :: !(Maybe Text),
+    version :: !(Maybe Text),
+    tags :: ![Text],
+    sourceRevision :: !(Maybe Text),
+    directory :: !FilePath
+  }
+  deriving stock (Eq, Show, Generic)
 
 data Repo = Repo FilePath Text RepoContents
 
@@ -57,10 +72,19 @@ installClosure force rootDir recorded roots = do
 
 -- | Explicit cache root for isolated callers and concurrent tests.
 installClosureInto :: FilePath -> Bool -> FilePath -> Text -> [(Text, FilePath)] -> IO (Either Text ())
-installClosureInto cache force rootDir recorded roots = withSystemTempDirectory "seihou-closure" $ \tmp -> do
-  repos <- newIORef Map.empty
-  contents <- readContents rootDir
-  modifyIORef' repos (Map.insert (normalizeOriginUrl recorded) (Repo rootDir recorded contents))
+installClosureInto cache force rootDir recorded roots =
+  fmap (fmap (const ())) $
+    stageClosuresInto True cache force [(rootDir, recorded, roots)]
+
+-- | The acquisition planner is shared by install and read-only candidate work.
+-- The caller chooses an isolated directory for previews; publication into the
+-- real cache remains the accepting command's transaction.
+stageClosuresInto :: Bool -> FilePath -> Bool -> [(FilePath, Text, [(Text, FilePath)])] -> IO (Either Text [ClosureArtifact])
+stageClosuresInto report cache force groups = withSystemTempDirectory "seihou-closure" $ \tmp -> do
+  rootRepos <- forM groups $ \(rootDir, recorded, roots) -> do
+    contents <- readContents rootDir
+    pure (Repo rootDir recorded contents, roots)
+  repos <- newIORef (Map.fromList [(normalizeOriginUrl recorded, repo) | (repo@(Repo _ recorded _), _) <- rootRepos])
   nodes <- newIORef Map.empty
   ordered <- newIORef []
   let failWith = throwIO . userError . T.unpack
@@ -108,11 +132,12 @@ installClosureInto cache force rootDir recorded roots = withSystemTempDirectory 
                   _ -> Nothing
             checkTree repoDir dir
             modifyIORef' ordered (++ [Entry name origin dir file version registry tags context])
-      rootRepo = Repo rootDir recorded contents
-  outcomes <- forM roots $ \(name, dir) -> try @IOException (visit [] "" rootRepo name dir AnyArtifact)
+  outcomes <- fmap concat $ forM rootRepos $ \(repo, roots) ->
+    forM roots $ \(name, dir) -> try @IOException (visit [] "" repo name dir AnyArtifact)
+  let repairs = T.concat ["\nRetry: seihou install " <> recorded <> T.concat [" --module " <> name | (name, _) <- roots] | (_, recorded, roots) <- groups]
   let errors = [T.pack (displayException e) | Left e <- outcomes]
   if not (null errors)
-    then pure (Left (T.intercalate "\n" errors <> "\nRetry: seihou install " <> recorded <> T.concat [" --module " <> name | (name, _) <- roots]))
+    then pure (Left (T.intercalate "\n" errors <> repairs))
     else do
       planned <- readIORef ordered
       collisions <- forM planned $ \e -> classifyInstallCollision (cache </> T.unpack (e ^. #entryName)) (e ^. #entrySource)
@@ -179,9 +204,22 @@ installClosureInto cache force rootDir recorded roots = withSystemTempDirectory 
           case result of
             Left e -> pure (Left (T.pack (displayException e)))
             Right () -> do
-              forM_ planned $ \e -> TIO.putStrLn $ "  Installed " <> (e ^. #entryName) <> " from " <> (e ^. #entrySource) <> if (e ^. #entryName) `elem` map fst roots then " (selected)" else " (required)"
-              TIO.putStrLn $ T.pack (show (length planned)) <> " entries installed; selected artifacts are ready."
-              pure (Right ())
+              when report $ do
+                forM_ planned $ \e -> TIO.putStrLn $ "  Installed " <> (e ^. #entryName) <> " from " <> (e ^. #entrySource) <> if (e ^. #entryName) `elem` [name | (_, _, roots) <- groups, (name, _) <- roots] then " (selected)" else " (required)"
+                TIO.putStrLn $ T.pack (show (length planned)) <> " entries installed; selected artifacts are ready."
+              artifacts <- forM planned $ \e -> do
+                revision <- try @IOException (readProcessWithExitCode "git" ["-C", e ^. #entryDir, "rev-parse", "HEAD"] "")
+                pure
+                  ( ClosureArtifact
+                      (e ^. #entryName)
+                      (e ^. #entrySource)
+                      (e ^. #entryRegistry)
+                      (e ^. #entryVersion)
+                      (e ^. #entryTags)
+                      (case revision of Right (ExitSuccess, out, _) -> Just (T.strip (T.pack out)); _ -> Nothing)
+                      (cache </> T.unpack (e ^. #entryName))
+                  )
+              pure (Right artifacts)
 
 withContext :: IO a -> Text -> IO a
 withContext action context = do
@@ -296,3 +334,42 @@ normalizePayload sourceDir stagedDir definition = do
     if directory
       then normalizePayload src dst ""
       else when (".dhall" `T.isSuffixOf` T.pack name) $ normalizeDhallFile src >>= TIO.writeFile dst
+
+-- | Publish already validated staged bytes atomically across cache entries on
+-- handled failures. No acquisition or project writes occur here.
+publishStagedClosure :: FilePath -> [ClosureArtifact] -> IO (Either Text ())
+publishStagedClosure cache artifacts = do
+  collisions <- forM artifacts $ \artifact -> classifyInstallCollision (cache </> T.unpack (artifact ^. #name)) (artifact ^. #sourceUrl)
+  let refused = [formatInstallRefusal (T.unpack (artifact ^. #name)) (artifact ^. #sourceUrl) collision | (artifact, collision) <- zip artifacts collisions, blocked collision]
+  if not (null refused)
+    then pure (Left (T.intercalate "\n" refused))
+    else do
+      result <- try @IOException $ do
+        createDirectoryIfMissing True cache
+        transaction <- createTempDirectory cache ".seihou-transaction"
+        changed <- newIORef []
+        let rollback =
+              readIORef changed
+                >>= mapM_
+                  ( \(dest, backup, existed) -> do
+                      present <- doesDirectoryExist dest
+                      when present (removeDirectoryRecursive dest)
+                      when existed (renameDirectory backup dest)
+                  )
+        mask $ \restore ->
+          ( forM_ (zip artifacts collisions) $ \(artifact, collision) -> do
+              let name = T.unpack (artifact ^. #name)
+                  dest = cache </> name
+                  backup = transaction </> name
+              current <- classifyInstallCollision dest (artifact ^. #sourceUrl)
+              unless (current == collision) $ throwIO (userError "Install cache changed during recipe upgrade; retry the same upgrade command.")
+              exists <- doesDirectoryExist dest
+              when exists (renameDirectory dest backup)
+              modifyIORef' changed ((dest, backup, exists) :)
+              restore $ do
+                createDirectoryIfMissing True dest
+                copyDirectoryRecursive (artifact ^. #directory) dest
+          )
+            `onException` rollback
+        removeDirectoryRecursive transaction
+      pure (first (T.pack . displayException) result)

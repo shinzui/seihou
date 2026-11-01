@@ -21,6 +21,8 @@ where
 
 import Control.Exception (SomeException, displayException, onException, throwIO, toException, try)
 import Control.Monad (foldM, forM, forM_, when)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Trans.Except (ExceptT (..), runExceptT)
 import Data.Aeson qualified as Aeson
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
@@ -38,6 +40,7 @@ import Effectful (runEff)
 import Seihou.CLI.CommandExecution
 import Seihou.CLI.InstallShared (InstallOutcome (..), installModuleDir, summarizeInstallRefusal)
 import Seihou.CLI.ManifestCapabilityUpgrade (CertificationGap (..), CertificationScope (..), EvidencePolicy (..), EvidenceSource, SharedWriteCertification, certifiedChanges, certifySharedWriteModesIO, prepareRecordedSeedOwnership)
+import Seihou.CLI.ManifestGuard (blockingChecks, checkRecipeChain, formatGuardRefusal)
 import Seihou.CLI.Shared (deriveNamespace, toVarNameMap)
 import Seihou.CLI.Update.Migrations
 import Seihou.CLI.Update.Recovery
@@ -46,17 +49,18 @@ import Seihou.CLI.Update.Source
 import Seihou.CLI.Update.Types
 import Seihou.Composition.Instance (ModuleInstance (..))
 import Seihou.Composition.Plan (ComposedPlan (..), compileComposedPlan)
-import Seihou.Composition.Recipe (expandRecipe)
+import Seihou.Composition.Recipe (ExpandedRecipe (..), ResolvedRecipeMember (..), ResolvedRecipeNode (..), recipeLiteralSources)
+import Seihou.Composition.RecipeChain (loadRecipeChain, recordRecipeChain)
 import Seihou.Composition.Resolve
   ( PromptPermission (..),
     RecipeInputSpec (..),
     SavedInstanceValues,
     loadComposition,
-    resolveRecipeWithPrompts,
+    resolveRecipeWithSources,
     verifyDependencySources,
   )
 import Seihou.Core.Application (buildAppliedComposition, mkApplicationId, replaceAppliedComposition)
-import Seihou.Core.ArtifactIdentity (sameArtifactIdentity)
+import Seihou.Core.ArtifactIdentity (isMachineLocalOriginUrl, sameArtifactIdentity)
 import Seihou.Core.ArtifactOriginDetect (detectArtifactOrigin)
 import Seihou.Core.ArtifactRef (renderArtifactRefError, resolveArtifactOrigin)
 import Seihou.Core.Checkout
@@ -86,6 +90,7 @@ import Seihou.Manifest.Hash (hashContent)
 import Seihou.Manifest.JSON (decodeManifestValue)
 import Seihou.Manifest.Types
   ( currentManifestVersion,
+    emptyManifest,
     manifestFromJSON,
     manifestSupports,
     minimumManifestVersion,
@@ -159,7 +164,7 @@ planProjectUpdateIn sessionDirectory request = do
                       selectedIdsForSeeds = Set.fromList (map (^. #candidate . #applicationId) plannedApplications)
                       neededLegacy = Set.fromList [path | (path, receipt) <- Map.toAscList (base ^. #seeds), LegacySeedOwners apps <- [receipt ^. #ownership], Map.member path claims || not (Set.null (apps `Set.intersection` selectedIdsForSeeds))]
                       relevant = not (Map.null claims) || any (\receipt -> not (Set.null (seedApplicationIds receipt `Set.intersection` selectedIdsForSeeds))) (Map.elems (base ^. #seeds))
-                      structurallyPrepared = if relevant then prepareManifestSchema manifestPath SeedOwnerClaims document base else Right base
+                      structurallyPrepared = prepareManifestSchema manifestPath RecipeInheritance document base >>= \prepared -> if relevant then prepareManifestSchema manifestPath SeedOwnerClaims (Aeson.toJSON prepared) prepared else Right prepared
                   paths <- defaultSearchPaths
                   preparedResult <- case structurallyPrepared of
                     Left err -> pure (Left err)
@@ -210,6 +215,7 @@ planProjectUpdateIn sessionDirectory request = do
                                     observePaths
                                       projectRoot
                                       (Set.insert (".seihou" </> "manifest.json") transactionTargets)
+                                  cacheChanges <- candidateCacheChanges installedDirectory usedArtifacts
                                   let snapshot =
                                         UpdateSnapshot
                                           { sessionDirectory,
@@ -235,6 +241,7 @@ planProjectUpdateIn sessionDirectory request = do
                                             checkoutAdoptions,
                                             commandPlan,
                                             candidateArtifacts = usedArtifacts,
+                                            cacheChanges,
                                             warnings,
                                             request,
                                             snapshot,
@@ -578,91 +585,133 @@ planApplication ::
   IO (Either UpdateError PlannedApplication)
 planApplication request projectRoot catalog now previous = do
   fallback <- defaultSearchPaths
-  case candidateRoot catalog previous of
+  rootResult <- candidateRoot projectRoot catalog previous
+  case rootResult of
     Left err -> pure (Left err)
-    Right (primary, recipeAdditional, recipeOverrides, targetArtifact) -> do
-      let allAdditional = recipeAdditional <> (previous ^. #additionalModules)
-      loaded <- loadCandidateComposition (catalog ^. #searchRoot : fallback) targetArtifact primary allAdditional
-      case loaded of
-        Left err -> pure (Left (CandidateLoadFailed (primary ^. #unModuleName) err))
-        Right modulesInOrder -> do
-          let savedValues
-                | (request ^. #reconfigure) = Map.empty
-                | otherwise = savedInstanceValues previous
-              namespace = fromMaybe (deriveNamespace primary) (previous ^. #namespace)
-              context = fromMaybe "" (previous ^. #context)
-          resolved <- resolveApplicationValues request namespace context savedValues (artifactRecipeInputs targetArtifact (if request ^. #reconfigure then Nothing else previous ^. #recipeInputs)) recipeOverrides modulesInOrder
-          case resolved of
-            Left err -> pure (Left err)
-            Right (recipeValues, resolvedValues) -> do
-              compiled <-
-                compileComposedPlan
-                  [ (instanceId, modul, directory, Map.map (^. #value) (resolvedValues Map.! instanceId))
-                  | (instanceId, modul, directory) <- modulesInOrder
-                  ]
-              case compiled of
-                Left errors -> pure (Left (UpdateCompositionFailed errors))
-                Right ComposedPlan {operations, warnings = compositionWarnings, managedOwners = rawOwners, seedOwners} -> do
-                  proposedOrigin <- publishedArtifactOrigin projectRoot targetArtifact
-                  let targetOrigin = if sameArtifactIdentity proposedOrigin (previous ^. #targetOrigin) then previous ^. #targetOrigin else proposedOrigin
-                  proposedModules <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
-                  let originedModules = [(instanceId, modul, maybe origin (\state -> if sameArtifactIdentity origin (state ^. #origin) then state ^. #origin else origin) (find (\state -> state ^. #name == instanceId ^. #module_ && state ^. #parentVars == instanceId ^. #parentVars) (previous ^. #instances))) | (instanceId, modul, origin) <- proposedModules]
-                  let candidate0 =
-                        buildAppliedComposition
-                          (previous ^. #target)
-                          targetOrigin
-                          (targetArtifact ^. #version)
-                          (previous ^. #additionalModules)
-                          (Just namespace)
-                          (previous ^. #context)
-                          originedModules
-                          resolvedValues
-                          now
-                          & #recipeInputs
-                          .~ recordedRecipeInputs (previous ^. #target) recipeValues
-                          & #checkoutCommands
-                          .~ checkoutCommandsFromOperations operations
-                          & #applicationId
-                          .~ (previous ^. #applicationId)
-                      candidate =
-                        setCompositionState
-                          (candidate0 ^. #instances)
-                          (previous ^. #commandReceipts)
-                          candidate0
-                      desiredOwners =
-                        Map.map
-                          (\owner -> DesiredFileOwner owner (Set.singleton (candidate ^. #applicationId)))
-                          rawOwners
-                      renderedWarnings = map compositionWarning compositionWarnings
-                  pure
-                    ( Right
-                        PlannedApplication
-                          { previous = Just previous,
-                            candidate,
-                            modulesInOrder,
-                            resolvedValues,
-                            operations = expandSeedClaims seedOwners operations,
-                            desiredOwners
-                          }
-                    )
+    Right CandidateRoot {primary, additional = recipeAdditional, literals = recipeOverrides, artifact = targetArtifact, expansion} -> do
+      chain <- maybe (pure []) recordRecipeChain expansion
+      let (checks, _) = checkRecipeChain (previous ^. #applicationId) chain (emptyManifest now & #applications .~ [previous])
+      if not (request ^. #allowDowngrade) && not (null (blockingChecks checks))
+        then pure (Left (UpdateCompositionFailed [formatGuardRefusal (blockingChecks checks)]))
+        else do
+          let allAdditional = recipeAdditional <> (previous ^. #additionalModules)
+          loaded <- loadCandidateComposition (catalog ^. #searchRoot : fallback) targetArtifact primary allAdditional
+          case loaded of
+            Left err -> pure (Left (CandidateLoadFailed (primary ^. #unModuleName) err))
+            Right modulesInOrder -> do
+              let savedValues
+                    | (request ^. #reconfigure) = Map.empty
+                    | otherwise = savedInstanceValues previous
+                  namespace = fromMaybe (deriveNamespace primary) (previous ^. #namespace)
+                  context = fromMaybe "" (previous ^. #context)
+              resolved <- resolveApplicationValues request namespace context savedValues (artifactRecipeInputs expansion (if request ^. #reconfigure then Nothing else previous ^. #recipeInputs)) recipeOverrides modulesInOrder
+              case resolved of
+                Left err -> pure (Left err)
+                Right (recipeValues, resolvedValues) -> do
+                  compiled <-
+                    compileComposedPlan
+                      [ (instanceId, modul, directory, Map.map (^. #value) (resolvedValues Map.! instanceId))
+                      | (instanceId, modul, directory) <- modulesInOrder
+                      ]
+                  case compiled of
+                    Left errors -> pure (Left (UpdateCompositionFailed errors))
+                    Right ComposedPlan {operations, warnings = compositionWarnings, managedOwners = rawOwners, seedOwners} -> do
+                      proposedOrigin <- case reverse chain of
+                        node : _ -> pure (node ^. #origin)
+                        [] -> publishedArtifactOrigin projectRoot targetArtifact
+                      let targetOrigin = if sameArtifactIdentity proposedOrigin (previous ^. #targetOrigin) then previous ^. #targetOrigin else proposedOrigin
+                      proposedModules <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
+                      let originedModules = [(instanceId, modul, maybe origin (\state -> if sameArtifactIdentity origin (state ^. #origin) then state ^. #origin else origin) (find (\state -> state ^. #name == instanceId ^. #module_ && state ^. #parentVars == instanceId ^. #parentVars) (previous ^. #instances))) | (instanceId, modul, origin) <- proposedModules]
+                      let candidate0 =
+                            buildAppliedComposition
+                              (previous ^. #target)
+                              targetOrigin
+                              (targetArtifact ^. #version)
+                              (previous ^. #additionalModules)
+                              (Just namespace)
+                              (previous ^. #context)
+                              originedModules
+                              resolvedValues
+                              now
+                              & #recipeChain
+                              .~ Just chain
+                              & #recipeInputs
+                              .~ recordedRecipeInputs (previous ^. #target) recipeValues
+                              & #checkoutCommands
+                              .~ checkoutCommandsFromOperations operations
+                              & #applicationId
+                              .~ (previous ^. #applicationId)
+                          candidate =
+                            setCompositionState
+                              (candidate0 ^. #instances)
+                              (previous ^. #commandReceipts)
+                              candidate0
+                          desiredOwners =
+                            Map.map
+                              (\owner -> DesiredFileOwner owner (Set.singleton (candidate ^. #applicationId)))
+                              rawOwners
+                          renderedWarnings = map compositionWarning compositionWarnings
+                      pure
+                        ( Right
+                            PlannedApplication
+                              { previous = Just previous,
+                                candidate,
+                                modulesInOrder,
+                                resolvedValues,
+                                operations = expandSeedClaims seedOwners operations,
+                                desiredOwners
+                              }
+                        )
   where
     compositionWarning (FileOverwritten path old new) = CrossApplicationLastWriter path old new
     compositionWarning (ContentMerged path old new) = CrossApplicationLastWriter path old new
     compositionWarning (SeedContentIgnored path old new) = CrossApplicationLastWriter path old new
 
-candidateRoot ::
-  CandidateCatalog ->
-  AppliedComposition ->
-  Either UpdateError (ModuleName, [ModuleName], Map VarName Text, CandidateArtifact)
-candidateRoot catalog previous = case previous ^. #target of
+data CandidateRoot = CandidateRoot
+  { primary :: !ModuleName,
+    additional :: ![ModuleName],
+    literals :: !(Map VarName (Text, VarSource)),
+    artifact :: !CandidateArtifact,
+    expansion :: !(Maybe ExpandedRecipe)
+  }
+  deriving stock (Generic)
+
+candidateRoot :: FilePath -> CandidateCatalog -> AppliedComposition -> IO (Either UpdateError CandidateRoot)
+candidateRoot projectRoot catalog previous = runExceptT $ case previous ^. #target of
   AppliedModuleTarget name -> do
-    artifact <- lookupArtifact catalog CandidateModule (name ^. #unModuleName)
-    Right (name, [], Map.empty, artifact)
+    artifact <- ExceptT (pure (lookupArtifact catalog CandidateModule (name ^. #unModuleName)))
+    pure (CandidateRoot name [] Map.empty artifact Nothing)
   AppliedRecipeTarget name -> do
-    artifact <- lookupArtifact catalog CandidateRecipe (name ^. #unRecipeName)
-    recipe <- maybe (Left (CandidateArtifactMissing CandidateRecipe (name ^. #unRecipeName))) Right (artifact ^. #recipeDefinition)
-    (primary, additional, overrides, _, _, _) <- first (CandidateRepositoryInvalid (name ^. #unRecipeName)) (expandRecipe recipe)
-    Right (primary, additional, overrides, artifact)
+    artifact <- ExceptT (pure (lookupArtifact catalog CandidateRecipe (name ^. #unRecipeName)))
+    recipe <- ExceptT (pure (maybe (Left (CandidateArtifactMissing CandidateRecipe (name ^. #unRecipeName))) Right (artifact ^. #recipeDefinition)))
+    expanded <- ExceptT (fmap (first (CandidateLoadFailed (name ^. #unRecipeName))) (loadRecipeChain projectRoot [catalog ^. #searchRoot] recipe (artifact ^. #sourceDirectory)))
+    portable <- liftIO (portableExpansion projectRoot catalog expanded)
+    let sources = case recipe ^. #extends of
+          Nothing -> Map.map (\literal -> (literal ^. #value, FromRecipeBinding)) (portable ^. #literals)
+          Just _ -> recipeLiteralSources portable
+    pure (CandidateRoot (portable ^. #primary) (drop 1 (map (^. #dependency . #module_) (portable ^. #members))) sources artifact (Just portable))
+
+-- Staging directories are machine-local. Recover each recipe's portable
+-- identity from its candidate provenance or original project location.
+portableExpansion :: FilePath -> CandidateCatalog -> ExpandedRecipe -> IO ExpandedRecipe
+portableExpansion root catalog expanded = do
+  nodes <- forM (expanded ^. #chain) $ \node -> do
+    let name = node ^. #definition . #name . #unRecipeName
+    origin <- case Map.lookup (CandidateRecipe, name) (catalog ^. #artifacts) of
+      Nothing -> pure (node ^. #origin)
+      Just artifact -> case artifact ^. #sourceUrl of
+        Just source | isMachineLocalOriginUrl source -> pure (LocalOrigin name)
+        _ -> publishedArtifactOrigin root artifact
+    pure (node & #origin .~ origin)
+  let origins = Map.fromList [(node ^. #definition . #name, node ^. #origin) | node <- nodes]
+  let retagMember member = do
+        memberOrigin <- case Map.lookup (CandidateModule, member ^. #dependency . #module_ . #unModuleName) (catalog ^. #artifacts) of
+          Nothing -> pure (member ^. #memberOrigin)
+          Just artifact -> publishedArtifactOrigin root artifact
+        pure (member & #declaringOrigin .~ Map.findWithDefault (member ^. #declaringOrigin) (member ^. #declaringRecipe) origins & #memberOrigin .~ memberOrigin)
+  members <- traverse retagMember (expanded ^. #members)
+  fullNodes <- traverse (\node -> (\nodeMembers -> node & #members .~ nodeMembers) <$> traverse retagMember (node ^. #members)) nodes
+  pure (expanded & #chain .~ fullNodes & #members .~ members & #literals %~ Map.map (\literal -> literal & #origin .~ Map.findWithDefault (literal ^. #origin) (literal ^. #recipe) origins))
 
 lookupArtifact :: CandidateCatalog -> CandidateArtifactKind -> Text -> Either UpdateError CandidateArtifact
 lookupArtifact catalog kind name =
@@ -672,10 +721,9 @@ recordedRecipeInputs :: AppliedTarget -> Map VarName ResolvedVar -> Maybe (Map V
 recordedRecipeInputs (AppliedRecipeTarget _) values = Just (Map.map (varValueToText . (^. #value)) values)
 recordedRecipeInputs _ _ = Nothing
 
-artifactRecipeInputs :: CandidateArtifact -> Maybe (Map VarName Text) -> RecipeInputSpec
-artifactRecipeInputs artifact saved = case artifact ^. #recipeDefinition of
-  Just recipe -> RecipeInputSpec (recipe ^. #vars) (recipe ^. #prompts) saved
-  Nothing -> RecipeInputSpec [] [] saved
+artifactRecipeInputs :: Maybe ExpandedRecipe -> Maybe (Map VarName Text) -> RecipeInputSpec
+artifactRecipeInputs (Just expanded) saved = RecipeInputSpec (expanded ^. #declarations) (expanded ^. #prompts) saved
+artifactRecipeInputs Nothing saved = RecipeInputSpec [] [] saved
 
 resolveApplicationValues ::
   UpdateRequest ->
@@ -683,7 +731,7 @@ resolveApplicationValues ::
   Text ->
   SavedInstanceValues ->
   RecipeInputSpec ->
-  Map VarName Text ->
+  Map VarName (Text, VarSource) ->
   [(ModuleInstance, Module, FilePath)] ->
   IO (Either UpdateError (Map VarName ResolvedVar, Map ModuleInstance (Map VarName ResolvedVar)))
 resolveApplicationValues request namespace context saved recipeSpec recipeOverrides modulesInOrder = do
@@ -697,14 +745,19 @@ resolveApplicationValues request namespace context saved recipeSpec recipeOverri
           promptPermission = case request ^. #promptPolicy of
             AllowPrompts -> PromptsAllowed
             ForbidPrompts -> PromptsForbidden
+      -- An omitted optional answer is also a saved choice. Ordinary update
+      -- must not ask for it again merely because stdin is a terminal.
+      let replayModules
+            | request ^. #reconfigure = modulesInOrder
+            | otherwise = [(inst, modul & #prompts %~ filter (\prompt -> any (\decl -> decl ^. #name == prompt ^. #var && decl ^. #required) (modul ^. #vars)), dir) | (inst, modul, dir) <- modulesInOrder]
       result <-
         runEff $
           runConsole $
-            resolveRecipeWithPrompts
+            resolveRecipeWithSources
               promptPermission
               False
               recipeSpec
-              modulesInOrder
+              replayModules
               saved
               cli
               recipeOverrides
@@ -741,26 +794,28 @@ seedLegacyApplication request session projectRoot installed manifest now request
     staged <- stageCandidateSources (session </> "legacy-candidate") projectRoot installed [provisional]
     case staged of
       Left err -> pure (Left err)
-      Right (catalog, sourceWarnings) -> case candidateRoot catalog provisional of
-        Left err -> pure (Left err)
-        Right (primary, additional, overrides, artifact) -> do
-          paths <- defaultSearchPaths
-          loaded <- loadCandidateComposition (catalog ^. #searchRoot : paths) artifact primary additional
-          case loaded of
-            Left err -> pure (Left (CandidateLoadFailed requested err))
-            Right modulesInOrder -> do
-              let (saved, legacyWarnings) = legacySavedValues manifest modulesInOrder
-                  namespace = deriveNamespace primary
-              resolved <- resolveApplicationValues request namespace "" saved (artifactRecipeInputs artifact Nothing) overrides modulesInOrder
-              case resolved of
-                Left err -> pure (Left err)
-                Right (recipeValues, values) -> do
-                  origined <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
-                  let recorded = buildAppliedComposition target origin version additional (Just namespace) Nothing origined values now & #recipeInputs .~ recordedRecipeInputs target recipeValues & #instances %~ map (restoreLegacyVersion manifest)
-                  planned <- planApplication request projectRoot catalog now recorded
-                  pure $ do
-                    candidate <- planned
-                    Right ([recorded], legacyWarnings, Just (StagedSelection (Set.singleton (recorded ^. #applicationId)) catalog sourceWarnings [candidate]))
+      Right (catalog, sourceWarnings) -> do
+        rootResult <- candidateRoot projectRoot catalog provisional
+        case rootResult of
+          Left err -> pure (Left err)
+          Right CandidateRoot {primary, additional, literals = overrides, artifact, expansion} -> do
+            paths <- defaultSearchPaths
+            loaded <- loadCandidateComposition (catalog ^. #searchRoot : paths) artifact primary additional
+            case loaded of
+              Left err -> pure (Left (CandidateLoadFailed requested err))
+              Right modulesInOrder -> do
+                let (saved, legacyWarnings) = legacySavedValues manifest modulesInOrder
+                    namespace = deriveNamespace primary
+                resolved <- resolveApplicationValues request namespace "" saved (artifactRecipeInputs expansion Nothing) overrides modulesInOrder
+                case resolved of
+                  Left err -> pure (Left err)
+                  Right (recipeValues, values) -> do
+                    origined <- traverse (withInstanceOrigin projectRoot catalog) modulesInOrder
+                    let recorded = buildAppliedComposition target origin version [] (Just namespace) Nothing origined values now & #recipeInputs .~ recordedRecipeInputs target recipeValues & #instances %~ map (restoreLegacyVersion manifest)
+                    planned <- planApplication request projectRoot catalog now recorded
+                    pure $ do
+                      candidate <- planned
+                      Right ([recorded], legacyWarnings, Just (StagedSelection (Set.singleton (recorded ^. #applicationId)) catalog sourceWarnings [candidate]))
   where
     roots =
       [(AppliedModuleTarget (applied ^. #name), applied ^. #origin, applied ^. #moduleVersion) | applied <- manifest ^. #modules, applied ^. #name == ModuleName requested, applied ^. #parentVars == emptyParentVars]
@@ -774,46 +829,40 @@ seedInstalledLegacyApplication request projectRoot manifest now requested = do
   case discovered of
     Left err -> pure (Left (CandidateLoadFailed requested err))
     Right runnable -> do
-      let root = case runnable of
-            RunnableModule modul directory -> Right (AppliedModuleTarget (modul ^. #name), modul ^. #name, [], Map.empty, directory, modul ^. #version)
-            RunnableRecipe recipe directory -> do
-              (primary, additional, overrides, _, _, _) <- first (CandidateRepositoryInvalid requested) (expandRecipe recipe)
-              Right (AppliedRecipeTarget (recipe ^. #name), primary, additional, overrides, directory, recipe ^. #version)
+      let artifactTarget = case runnable of
+            RunnableModule modul dir -> Right (AppliedModuleTarget (modul ^. #name), dir, modul ^. #version)
+            RunnableRecipe recipe dir -> Right (AppliedRecipeTarget (recipe ^. #name), dir, recipe ^. #version)
             _ -> Left (CandidateArtifactMissing CandidateModule requested)
-      case root of
-        Left err -> pure (Left err)
-        Right (target, primary, additional, recipeOverrides, targetSource, targetVersion) -> do
-          checked <- case runnable of
-            RunnableRecipe recipe directory -> verifyDependencySources searchPaths directory (recipe ^. #modules)
-            _ -> pure (Right ())
-          loaded <- case checked of
-            Left err -> pure (Left err)
-            Right () -> loadComposition searchPaths primary additional
+      expandedResult <- case runnable of
+        RunnableRecipe recipe dir -> fmap (fmap Just . first (CandidateLoadFailed requested)) (loadRecipeChain projectRoot searchPaths recipe dir)
+        _ -> pure (Right Nothing)
+      case (artifactTarget, expandedResult) of
+        (Right (target, targetSource, targetVersion), Right expansion) -> do
+          let primary = maybe (ModuleName requested) (^. #primary) expansion
+              additional = maybe [] (drop 1 . map (^. #dependency . #module_) . (^. #members)) expansion
+              overrides = maybe Map.empty recipeLiteralSources expansion
+          loaded <- loadComposition searchPaths primary additional
           case loaded of
             Left err -> pure (Left (CandidateLoadFailed requested err))
             Right modulesInOrder -> do
               let (saved, warnings) = legacySavedValues manifest modulesInOrder
                   namespace = deriveNamespace primary
-              let recipeSpec = case runnable of
-                    RunnableRecipe r _ -> RecipeInputSpec (r ^. #vars) (r ^. #prompts) Nothing
-                    _ -> RecipeInputSpec [] [] Nothing
-              resolved <- resolveApplicationValues request namespace "" saved recipeSpec recipeOverrides modulesInOrder
+              resolved <- resolveApplicationValues request namespace "" saved (artifactRecipeInputs expansion Nothing) overrides modulesInOrder
               case resolved of
                 Left err -> pure (Left err)
                 Right (recipeValues, resolvedValues) -> do
                   targetOrigin <- detectArtifactOrigin projectRoot targetSource
-                  originedModules <-
-                    traverse
-                      (\(instanceId, modul, directory) -> (instanceId,modul,) <$> detectArtifactOrigin projectRoot directory)
-                      modulesInOrder
-                  let provisional0 =
-                        buildAppliedComposition target targetOrigin targetVersion [] (Just namespace) Nothing originedModules resolvedValues now & #recipeInputs .~ recordedRecipeInputs target recipeValues
-                      provisional =
-                        ( provisional0
-                            & #instances
-                            %~ map (restoreLegacyVersion manifest)
-                        )
+                  originedModules <- traverse (\(instanceId, modul, dir) -> (instanceId,modul,) <$> detectArtifactOrigin projectRoot dir) modulesInOrder
+                  -- Unknown history remains unknown until the candidate is accepted.
+                  let provisional =
+                        buildAppliedComposition target targetOrigin targetVersion [] (Just namespace) Nothing originedModules resolvedValues now
+                          & #recipeInputs
+                          .~ recordedRecipeInputs target recipeValues
+                          & #instances
+                          %~ map (restoreLegacyVersion manifest)
                   pure (Right ([provisional], warnings))
+        (Left err, _) -> pure (Left err)
+        (_, Left err) -> pure (Left err)
 
 legacySavedValues ::
   Manifest ->
@@ -1005,6 +1054,18 @@ validateVersionChange allowDowngrade change
           else Right ()
       _ -> Right ()
 
+-- Restoring a fresh clone's missing cache is real accepted work even when
+-- its recorded project already agrees with the candidate composition.
+candidateCacheChanges :: FilePath -> [CandidateArtifact] -> IO [Text]
+candidateCacheChanges installed artifacts = fmap catMaybes $ forM artifacts $ \artifact ->
+  case artifact ^. #sourceUrl of
+    Nothing -> pure Nothing
+    Just _ -> do
+      let destination = installed </> T.unpack (artifact ^. #name)
+      present <- Directory.doesDirectoryExist destination
+      current <- if present then Just <$> hashArtifactDirectory destination else pure Nothing
+      pure (if current == Just (artifact ^. #contentHash) then Nothing else Just (artifact ^. #name))
+
 artifactsUsedBy :: CandidateCatalog -> [PlannedApplication] -> [CandidateArtifact]
 artifactsUsedBy catalog planned = Map.elems (Map.restrictKeys (catalog ^. #artifacts) keys)
   where
@@ -1013,7 +1074,9 @@ artifactsUsedBy catalog planned = Map.elems (Map.restrictKeys (catalog ^. #artif
         concatMap applicationKeys planned
     applicationKeys application =
       targetKey (application ^. #candidate . #target)
-        : [(CandidateModule, modul ^. #name . #unModuleName) | (_, modul, _) <- application ^. #modulesInOrder]
+        : ( [(CandidateModule, modul ^. #name . #unModuleName) | (_, modul, _) <- application ^. #modulesInOrder]
+              <> [(CandidateRecipe, node ^. #name . #unRecipeName) | node <- fromMaybe [] (application ^. #candidate . #recipeChain)]
+          )
     targetKey (AppliedModuleTarget name) = (CandidateModule, name ^. #unModuleName)
     targetKey (AppliedRecipeTarget name) = (CandidateRecipe, name ^. #unRecipeName)
 
@@ -1325,9 +1388,8 @@ publishCandidates artifacts = do
     forM_ artifacts $ \artifact -> case artifact ^. #sourceUrl of
       Nothing -> pure ()
       Just sourceUrl -> do
-        -- Pass force = False deliberately. Every candidate was fetched from
-        -- the URL the manifest itself records for that artifact, so this is
-        -- structurally the same-source case and must never refuse. A refusal
+        -- Pass force = False deliberately. Candidates follow recorded root URLs and
+        -- producer-declared edges. A refusal
         -- means the shared cache holds a different artifact under this name,
         -- which would make the update publish over somebody else's
         -- installation — reported as a publication failure rather than
