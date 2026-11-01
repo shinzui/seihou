@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-11-01
+* **Addition**: IR-14 proposes single-base recipe extension: inherit modules and settings with explicit override rules, resolve and install the dependency closure across registries, detect cycles and conflicts, and retain base-chain versions and origins. Acceptance covers empty caches, fresh clones, base-only upgrades, and backward compatibility; implementation remains proposed.
+
 ## 2026-10-28
 * **Update**: IR-9 is completed by ExecPlan 116: run and update publish command receipts before the command phase and withdraw or roll them back on failure; ADR 0023 records the decision.
 * **Update**: IR-9 is accepted and planned in docs/plans/116-record-command-receipts-before-module-commands-can-commit-the-manifest.md, which chooses option A: seihou run and seihou update publish the receipt set a successful command phase will produce before the first command runs, withdraw it when the phase fails or is interrupted, and update snapshots the manifest in a version-5 transaction journal so rollback and crash recovery restore it. No schema change; git-init and the recipes that end with it need no edits. Implementation remains pending.
