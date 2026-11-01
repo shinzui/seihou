@@ -35,7 +35,11 @@ expansion and verifies producer requirements before input prompts; consumer
 base reference receives its declaring source when omitted, just like a member.
 
 Definitions are normalized while their source checkouts exist, so imports outside
-an artifact directory do not dangle after installation. Payload path escapes and
+an artifact directory do not dangle after installation. Copied source files may
+retain read-only bits, so normalization makes only disposable staged files owner
+writable while preserving executable bits; source permissions and bytes remain
+untouched. Test immutable inputs explicitly, including in native package builds.
+Payload path escapes and
 symlinks are rejected. Replacements retain backups until success; handled failures
 restore them, and failed recovery preserves its directory for inspection. This is
 not a crash-atomic transaction across the entire cache.

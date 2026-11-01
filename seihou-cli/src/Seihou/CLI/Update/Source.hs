@@ -17,7 +17,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (maybeToList)
 import Data.Text qualified as T
 import Data.Text.IO qualified as TIO
-import Seihou.CLI.InstallClosure (normalizePayload, stageClosuresInto)
+import Seihou.CLI.InstallClosure (normalizePayload, stageClosuresInto, writeStagedText)
 import Seihou.CLI.InstallShared
   ( OriginInfo (..),
     cloneRepo,
@@ -439,7 +439,7 @@ stageRecipeCandidateSources session projectRoot installed applications = runExce
               -- without inventing a registry for implicit local edges.
               normalizePayload dir (staged ^. #sourceDirectory) (definitionFileFor (requirement ^. #kind))
               normalized <- normalizeDhallFile (dir </> definitionFileFor (requirement ^. #kind))
-              TIO.writeFile (staged ^. #sourceDirectory </> definitionFileFor (requirement ^. #kind)) normalized
+              writeStagedText (staged ^. #sourceDirectory </> definitionFileFor (requirement ^. #kind)) normalized
               writeIORef locals inserted
             mapM_ visit =<< liftIO (mapM edgeRequirement (candidateEdges candidate))
       edgeRequirement (kind, name, source) = do

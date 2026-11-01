@@ -191,6 +191,20 @@ tests = testSpec "RecipeExtension" $ do
       repeated `shouldBe` ExitSuccess
       unchanged `shouldSatisfy` T.isInfixOf "Already up to date"
 
+  it "updates a local recipe with read-only definitions and schema payloads without changing the originals" $
+    withSystemTempDirectory "recipe-chain-read-only" $ \root -> do
+      binary <- fixture root
+      let files = [root </> ".seihou/modules/demo/module.dhall", root </> ".seihou/modules/demo/schema/Migration.dhall"]
+      forM_ files $ \file -> D.getPermissions file >>= D.setPermissions file . D.setOwnerWritable False
+      permissions <- mapM D.getPermissions files
+      before <- mapM BS.readFile files
+      _ <- successful binary root ["run", "child"]
+      writeRecipe root "base" "1.1" "[\"demo\"]" ""
+      _ <- successful binary root ["update", "child", "--json"]
+      mapM D.getPermissions files `shouldReturn` permissions
+      mapM BS.readFile files `shouldReturn` before
+      readFile (root </> "command-marker") `shouldReturn` "once"
+
   it "adopts unknown recipe history through update only on acceptance" $
     withSystemTempDirectory "recipe-chain-update-adopt" $ \root -> do
       binary <- fixture root
@@ -363,8 +377,10 @@ tests = testSpec "RecipeExtension" $ do
       before <- readManifest root
       writeRecipe root "base" "1.1" "[\"demo\"]" ""
       let request = U.UpdateRequest (U.NamedUpdateTargets ["child"]) [] False U.ForbidPrompts RunChangedCommands False False False
-      result <- bracket (lookupEnv "XDG_CONFIG_HOME") (maybe (unsetEnv "XDG_CONFIG_HOME") (setEnv "XDG_CONFIG_HOME")) $ \_ -> do
+      let environmentKeys = ["XDG_CONFIG_HOME", "XDG_CACHE_HOME"]
+      result <- bracket (mapM lookupEnv environmentKeys) (\previous -> forM_ (zip environmentKeys previous) $ \(key, value) -> maybe (unsetEnv key) (setEnv key) value) $ \_ -> do
         setEnv "XDG_CONFIG_HOME" (root </> "config")
+        setEnv "XDG_CACHE_HOME" (root </> "cache")
         D.withCurrentDirectory root $ U.withProjectUpdate request $ \case
           Left err -> pure (Left err)
           Right plan -> do

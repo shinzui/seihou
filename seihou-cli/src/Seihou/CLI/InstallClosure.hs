@@ -1,5 +1,5 @@
 -- | Acquisition is completed and validated before any installed entry changes.
-module Seihou.CLI.InstallClosure (installClosure, installClosureInto, stageClosuresInto, ClosureArtifact (..), normalizePayload, publishStagedClosure) where
+module Seihou.CLI.InstallClosure (installClosure, installClosureInto, stageClosuresInto, ClosureArtifact (..), normalizePayload, writeStagedText, publishStagedClosure) where
 
 import Control.Exception (IOException, displayException, mask, onException, throwIO, try)
 import Control.Monad (forM, forM_, unless, when)
@@ -153,7 +153,7 @@ stageClosuresInto report cache force groups = withSystemTempDirectory "seihou-cl
               copyDirectoryRecursive (e ^. #entryDir) stage
               normalizePayload (e ^. #entryDir) stage (e ^. #entryFile)
               definition <- normalizeInstalledDefinition (e ^. #entrySource) ((e ^. #entryDir) </> (e ^. #entryFile))
-              TIO.writeFile (stage </> (e ^. #entryFile)) definition
+              writeStagedText (stage </> (e ^. #entryFile)) definition
             -- Build metadata with the existing writer, entirely outside the cache.
             forM_ planned $ \e -> do
               let name = T.unpack (e ^. #entryName)
@@ -333,7 +333,16 @@ normalizePayload sourceDir stagedDir definition = do
     directory <- doesDirectoryExist src
     if directory
       then normalizePayload src dst ""
-      else when (".dhall" `T.isSuffixOf` T.pack name) $ normalizeDhallFile src >>= TIO.writeFile dst
+      else when (".dhall" `T.isSuffixOf` T.pack name) $ normalizeDhallFile src >>= writeStagedText dst
+
+-- | Normalization replaces only disposable staging bytes. A copied source may
+-- be read-only (including immutable schema imports); do not change its original
+-- permissions or lose executable bits merely to write the normalized copy.
+writeStagedText :: FilePath -> Text -> IO ()
+writeStagedText destination content = do
+  permissions <- getPermissions destination
+  setPermissions destination (setOwnerWritable True permissions)
+  TIO.writeFile destination content
 
 -- | Publish already validated staged bytes atomically across cache entries on
 -- handled failures. No acquisition or project writes occur here.

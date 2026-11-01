@@ -30,6 +30,22 @@ tests = testSpec "Seihou.CLI.InstallClosure" $ do
       installClosureInto cache False repo source [("child", repo </> "child")] `shouldReturn` Right ()
       doesFileExist (cache </> "base/recipe.dhall") `shouldReturn` True
 
+  it "normalizes read-only descriptors and payload imports without changing source permissions" $
+    withSystemTempDirectory "closure-read-only" $ \tmp -> do
+      let repo = tmp </> "repo"
+          cache = tmp </> "cache"
+          descriptor = repo </> "member/module.dhall"
+          payload = repo </> "member/files/value.dhall"
+      moduleDir repo "member"
+      createDirectoryIfMissing True (repo </> "member/files")
+      writeFile payload "let value = \"hello\" in value"
+      mapM_ (\file -> getPermissions file >>= setPermissions file . setOwnerWritable False) [descriptor, payload]
+      before <- mapM getPermissions [descriptor, payload]
+      installClosureInto cache False repo "https://example.com/registry.git" [("member", repo </> "member")] `shouldReturn` Right ()
+      mapM getPermissions [descriptor, payload] `shouldReturn` before
+      normalized <- readFile (cache </> "member/files/value.dhall")
+      T.strip (T.pack normalized) `shouldBe` "\"hello\""
+
   it "rejects wrong-kind bases, range violations, cycles and invalid merged overrides before publishing" $
     withSystemTempDirectory "closure-recipe-refusals" $ \tmp -> do
       let repo = tmp </> "repo"
